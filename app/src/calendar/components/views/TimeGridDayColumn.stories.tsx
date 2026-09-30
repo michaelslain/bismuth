@@ -18,6 +18,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// Derived corners: a corner exists where both of its edges are drawn, and `data-edges` (the
+// primitive's runtime hook) is the contract the count reads.
+const corners = (root: ParentNode, v: 'top' | 'bottom', h: 'left' | 'right') =>
+    root.querySelectorAll(`[data-edges~="${v}"][data-edges~="${h}"]`).length
+
 const store = new EventStore(new MemoryBackend())
 const categories: Category[] = [{ name: 'Work', color: 'blue' }]
 const events: CalendarEvent[] = [
@@ -60,6 +65,27 @@ export const DayWithOverlap: Story = {
         expect(c.getByTestId('downs').textContent).toBe('1')
         await fireEvent.mouseDown(col, { clientY: 300 })
         expect(c.getByTestId('downs').textContent).toBe('1,column')
+    },
+}
+
+/** The typed grid: 24 hour blocks each host one overlay (top `-` + left `|`, + the column's right
+ *  `|` since it stands alone), the half-hour cell carries none, and no CSS border draws a line. */
+export const TypedGrid: Story = {
+    render: () => <Harness />,
+    play: async ({ canvasElement }) => {
+        const col = within(canvasElement).getByTestId('time-grid-day-col')
+        expect(getComputedStyle(col).borderLeftWidth).toBe('0px')
+        // one overlay per hour block, a top-left corner in each (first hour included: standalone)
+        expect(col.querySelectorAll('[data-edges]')).toHaveLength(24)
+        expect(corners(col, 'top', 'left')).toBe(24)
+        // closed on the right in every hour, and at the bottom of the last hour only
+        expect(corners(col, 'top', 'right')).toBe(24)
+        expect(corners(col, 'bottom', 'left')).toBe(1)
+        expect(corners(col, 'bottom', 'right')).toBe(1)
+        // the overlay is a third child of the hour block, after the hour and half-hour cells
+        const block = col.firstElementChild as HTMLElement
+        expect(block.children).toHaveLength(3)
+        expect(getComputedStyle(block.children[0] as HTMLElement).borderTopWidth).toBe('0px')
     },
 }
 

@@ -1,6 +1,8 @@
 // Visual + behaviour spec for <MonthCell> — one day of the month grid: the day number and whatever
 // the register puts in it. A tasks-register cell is a drop target for a dragged task chip; an
-// events cell is not. Both hold real state, read back in play().
+// events cell is not. Both hold real state, read back in play(). A lone cell is given every
+// position flag, so it types all four edges and reads as one closed cell — inside a grid each
+// boundary is typed by exactly one cell (see MonthCell.tsx).
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, within } from 'storybook/test'
@@ -26,7 +28,7 @@ export const InMonth: Story = {
         const [clicks, setClicks] = createSignal(0)
         return (
             <Frame>
-                <MonthCell date="2026-01-14" day={14} inMonth today={false} onOpen={() => setClicks(n => n + 1)}>
+                <MonthCell date="2026-01-14" day={14} inMonth today={false} isLastCol isLastRow onOpen={() => setClicks(n => n + 1)}>
                     <Text as="span" size="micro">A chip</Text>
                 </MonthCell>
                 <output data-testid="clicks">{clicks()}</output>
@@ -38,14 +40,18 @@ export const InMonth: Story = {
         await fireEvent.click(c.getByTestId('month-cell'))
         expect(c.getByTestId('clicks').textContent).toBe('1')
         expect(c.getByText('A chip')).toBeInTheDocument()
+        // a lone cell with every position flag types all four edges, in the contract's fixed order
+        expect(
+            canvasElement.querySelector('[data-edges]')!.getAttribute('data-edges'),
+        ).toBe('top right bottom left')
     },
 }
 
 export const SpillDayIsDimmed: Story = {
     render: () => (
         <Frame>
-            <MonthCell date="2026-01-31" day={31} inMonth={false} today={false} onOpen={() => {}} />
-            <MonthCell date="2026-02-01" day={1} inMonth today={false} onOpen={() => {}} />
+            <MonthCell date="2026-01-31" day={31} inMonth={false} today={false} isLastCol onOpen={() => {}} />
+            <MonthCell date="2026-02-01" day={1} inMonth today={false} isLastCol isLastRow onOpen={() => {}} />
         </Frame>
     ),
     play: async ({ canvasElement }) => {
@@ -66,6 +72,8 @@ export const TasksCellAcceptsADrop: Story = {
                     day={20}
                     inMonth
                     today={false}
+                    isLastCol
+                    isLastRow
                     onOpen={() => {}}
                     onDropTask={(ref, date) => setDropped(`${ref.path}:${ref.line}->${date}`)}
                 />
@@ -87,7 +95,7 @@ export const TasksCellAcceptsADrop: Story = {
 export const EventsCellIgnoresADrop: Story = {
     render: () => (
         <Frame>
-            <MonthCell date="2026-01-20" day={20} inMonth today={false} onOpen={() => {}} />
+            <MonthCell date="2026-01-20" day={20} inMonth today={false} isLastCol isLastRow onOpen={() => {}} />
         </Frame>
     ),
     play: async ({ canvasElement }) => {

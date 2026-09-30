@@ -1,0 +1,103 @@
+/* app/src/ui/ascii/AsciiCellEdges.module.css — the typed cell-grid overlay. Sole importer:
+   AsciiCellEdges.tsx.
+
+   ONE edges element per cell and no children (plus one optional `backdrop` ring before it): the edges are a nine-slice MASK over a background-color of
+   the ink token. The mask is a 3x3 sprite of the UI font's own `+ - = |` glyphs, rasterised once by
+   asciiGlyphTiles.ts (canvas fillText in the computed --ui-font-stack at --fs-ui, at
+   devicePixelRatio) and installed on :root as --ascii-edges-<key>. No
+   text, no pseudo-elements, no container queries, no per-cell measurement: a 2000x8 table
+   costs one masked box per cell.
+
+   Geometry. A corner tile is --ascii-corner-w x --ascii-tile-h (the `+` ink + one dash gap each
+   way). The element overhangs the host by half a corner tile on every side, so the nine-slice's
+   corner tiles are centred ON the host's corners and its edge tiles are centred ON the host's edges:
+     - corners paint 1:1 (a `+` is never resampled), its ink centre drawn on the tile centre;
+     - the top/bottom slices repeat one `-`/`=` dash per --ascii-pitch and the left/right slices one
+       `|` dash (the font's stem cropped to the `-` length) per the SAME pitch — the
+       --ascii-dash-pitch token, a dash then a blank `ch` — so both axes read `- - - -` and the gap
+       from a `+` to its first dash is the gap between dashes; both repeat with `round`: a whole
+       number of dashes fits, stretched by under 1/(2n), so a fluid width never cuts one;
+     - `-`/`=` share the `+`'s crossbar and `|` its stem.
+   Which glyph sits in which slice is the sprite, selected by the
+   edge set's runtime hooks — data-edges (drawn edges, in top right bottom left order) and data-heavy
+   (the ones typed `=`, absent when none), asciiGlyphTiles.ts's edgeAttrs — one rule per edge set below.
+   Until the sprites are installed (the UI font still loading) the mask is fully transparent, so
+   nothing paints rather than a solid block. */
+
+.edges {
+    position: absolute;
+    top: calc(var(--ascii-tile-h, var(--cell-h)) / -2);
+    bottom: calc(var(--ascii-tile-h, var(--cell-h)) / -2);
+    left: calc(var(--ascii-corner-w, 1ch) / -2);
+    right: calc(var(--ascii-corner-w, 1ch) / -2);
+    pointer-events: none;
+    background-color: var(--border-soft);
+    -webkit-mask-box-image-source: linear-gradient(transparent, transparent);
+    -webkit-mask-box-image-slice: var(--ascii-slice-y, 1) var(--ascii-slice-x, 1);
+    -webkit-mask-box-image-width: var(--ascii-tile-h, var(--cell-h)) var(--ascii-corner-w, 1ch);
+    -webkit-mask-box-image-outset: 0;
+    -webkit-mask-box-image-repeat: round;
+}
+
+.firm {
+    background-color: var(--border);
+}
+
+/* `backdrop`: an opaque --bg RING over the glyph overhang (the half tile outside the host on every
+   side) and nothing else — the border is exactly the overhang wide, so the content box is the host's
+   own box and its background, label and inset cues (a table header's drag accent) stay visible.
+   For a cell inside a sticky header: the header's own background covers only its box, so without
+   this the body scrolling beneath shows through the glyphs' overhang. Painted BEFORE .edges, so the
+   host's own glyphs sit on top. Not a grid line: it draws no rule, only hides what is beneath. */
+.backdrop {
+    position: absolute;
+    inset: calc(var(--ascii-tile-h, var(--cell-h)) / -2) calc(var(--ascii-corner-w, 1ch) / -2);
+    box-sizing: border-box;
+    border: calc(var(--ascii-tile-h, var(--cell-h)) / 2) solid var(--bg);
+    border-left-width: calc(var(--ascii-corner-w, 1ch) / 2);
+    border-right-width: calc(var(--ascii-corner-w, 1ch) / 2);
+    background: transparent;
+    pointer-events: none;
+}
+/* No `top` edge: the cell above types that boundary, so its own glyph overhang is not this cell's to
+   hide — the ring starts at the host's top and paints no top band. Otherwise it would sit on the
+   header above's heavy `=` and halve it. */
+.backdropNoTop {
+    top: 0;
+    border-top-width: 0;
+}
+.edges[data-edges='left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0001, linear-gradient(transparent, transparent)); }
+.edges[data-edges='bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0010, linear-gradient(transparent, transparent)); }
+.edges[data-edges='bottom left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0011, linear-gradient(transparent, transparent)); }
+.edges[data-edges='bottom'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-0020, linear-gradient(transparent, transparent)); }
+.edges[data-edges='bottom left'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-0021, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0100, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0101, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0110, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right bottom left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0111, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right bottom'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-0120, linear-gradient(transparent, transparent)); }
+.edges[data-edges='right bottom left'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-0121, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1000, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1001, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1010, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1011, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-1020, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom left'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-1021, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1100, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1101, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1110, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-1111, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-1120, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom left'][data-heavy='bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-1121, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2000, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top left'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2001, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2010, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom left'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2011, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2020, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top bottom left'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2021, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2100, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right left'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2101, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2110, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom left'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2111, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2120, linear-gradient(transparent, transparent)); }
+.edges[data-edges='top right bottom left'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2121, linear-gradient(transparent, transparent)); }

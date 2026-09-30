@@ -209,6 +209,7 @@ export function TimeGrid(props: Props) {
                         <DayHeaderRow dates={props.dates} today={today} />
                         <AllDayRow
                             dates={props.dates}
+                            backdrop
                             cell={ds => (
                                 <For each={allDayOn(props.events, ds)}>
                                     {e => (
@@ -242,12 +243,14 @@ export function TimeGrid(props: Props) {
                             </Index>
                         </DayGutter>
                         <For each={props.dates}>
-                            {d => {
+                            {(d, i) => {
                                 const ds = todayISO(d)
                                 return (
                                     <TimeGridDayColumn
                                         date={ds}
                                         today={ds === today}
+                                        last={i() === props.dates.length - 1}
+                                        topTyped
                                         events={props.events}
                                         categories={props.categories}
                                         store={props.store}

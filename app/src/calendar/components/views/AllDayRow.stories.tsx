@@ -13,6 +13,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// Derived corners: a corner exists where both of its edges are drawn, and `data-edges` (the
+// primitive's runtime hook) is the contract the count reads.
+const corners = (root: ParentNode, v: 'top' | 'bottom', h: 'left' | 'right') =>
+    root.querySelectorAll(`[data-edges~="${v}"][data-edges~="${h}"]`).length
+
 const anchor = new Date(2026, 8, 1)
 const dates = Array.from({ length: 5 }, (_, i) => addDays(anchor, i))
 
@@ -35,6 +40,12 @@ export const FillsParent: Story = {
         // Fails if `fill` stops growing the row (reverts to content-sized) — the row's bottom
         // would sit well above the parent's, leaving a blank void below it.
         expect(Math.abs(cells[0].parentElement!.getBoundingClientRect().bottom - parentBottom)).toBeLessThanOrEqual(1)
+        // typed as an ASCII grid: this is the band's last row, so every cell closes its bottom, and
+        // its top belongs to the header above (none here)
+        expect(corners(canvasElement, 'bottom', 'left')).toBe(5)
+        expect(corners(canvasElement, 'top', 'left')).toBe(0)
+        expect(corners(canvasElement, 'bottom', 'right')).toBe(1)
+        cells.forEach(c => expect(getComputedStyle(c).borderLeftWidth).toBe('0px'))
     },
 }
 

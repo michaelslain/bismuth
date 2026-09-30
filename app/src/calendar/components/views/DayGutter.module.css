@@ -1,2 +1,3 @@
-/* DayGutter.module.css — was `.time-gutter` */
-.gutter { width: var(--time-gutter-width, 54px); flex-shrink: 0; border-right: 1px solid var(--border-soft); }
+/* DayGutter.module.css — was `.time-gutter`. It draws no line of its own: the first day column's
+   typed `|` is the gutter/grid boundary. */
+.gutter { width: var(--time-gutter-width, 54px); flex-shrink: 0; }

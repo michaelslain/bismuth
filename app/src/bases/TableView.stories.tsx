@@ -63,6 +63,122 @@ export const Default: Story = {
             ;(titleLink as HTMLAnchorElement).click()
         })
         expect(opened).toBe('projects/Draft the roadmap.md')
+        // The grid is typed, not drawn: every body cell hosts an overlay, no cell or header
+        // carries a border, the header underline is `=` and the last column closes the right edge.
+        const table = canvasElement.querySelector('table')!
+        for (const c of table.querySelectorAll('td, th')) {
+            expect(c.querySelector('[data-edges]')).toBeTruthy()
+            expect(getComputedStyle(c).borderBottomWidth).toBe('0px')
+        }
+        const headerRuns = table.querySelectorAll<HTMLElement>('th [data-heavy~="bottom"]')
+        expect(headerRuns.length).toBe(table.querySelectorAll('th').length)
+        const lastCol = table.querySelectorAll('tbody tr:first-child td')
+        expect(
+            lastCol[lastCol.length - 1]!.querySelector('[data-edges~="right"]'),
+        ).toBeTruthy()
+        expect(lastCol[0]!.querySelector('[data-edges~="right"]')).toBeNull()
+        // The rows' own rule (bodyEdges in TableView.tsx): the first row under the header omits
+        // its top, every later row types it, and the last row closes the grid with its bottom.
+        const rows = [...table.querySelectorAll('tbody tr')]
+        expect(rows.length).toBeGreaterThan(1)
+        const edge = (tr: Element, s: string) =>
+            [...tr.querySelectorAll('td')].map(
+                td => !!td.querySelector(`[data-edges~="${s}"]`),
+            )
+        expect(edge(rows[0]!, 'top').some(Boolean)).toBe(false)
+        expect(edge(rows[1]!, 'top').every(Boolean)).toBe(true)
+        expect(edge(rows.at(-1)!, 'bottom').every(Boolean)).toBe(true)
+    },
+}
+
+/** A `Sum` over the numeric `priority` column adds the footer: it types its top as the heavy `=`,
+ *  and the last body row — one above it — omits its bottom so the two never overprint. */
+export const WithSummary: Story = {
+    render: () => {
+        const view = {
+            type: 'table' as const,
+            summaries: { priority: 'Sum' },
+        }
+        return (
+            <TableView
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const foot = [...canvasElement.querySelectorAll('tfoot td')]
+        expect(foot.length).toBeGreaterThan(0)
+        canvasElement
+            .querySelectorAll('tbody tr:last-child td')
+            .forEach(td =>
+                expect(td.querySelector('[data-edges~="bottom"]')).toBeNull(),
+            )
+        foot.forEach(td =>
+            expect(
+                td.querySelector('[data-edges~="top"][data-heavy~="top"]'),
+            ).toBeTruthy(),
+        )
+    },
+}
+
+// 2000 rows x 8 columns, built here (no fetch) — the fixture bench/tableRenderPerf.ts loads to
+// time a cold render and a scroll. Note rows, so the first column is a live link like a real vault.
+const LARGE_COLS = [
+    'title',
+    'status',
+    'owner',
+    'due',
+    'pages',
+    'rating',
+    'area',
+    'notes',
+]
+const LARGE_CONFIG: BaseConfig = {
+    declaredProperties: LARGE_COLS,
+    view: { type: 'table' },
+}
+const LARGE_ROWS: Row[] = Array.from({ length: 2000 }, (_, i) => ({
+    file: {
+        ...EMPTY_FILE,
+        name: `row ${i + 1}`,
+        basename: `row ${i + 1}`,
+        path: `perf/row ${i + 1}.md`,
+    },
+    note: {
+        title: `row ${i + 1}`,
+        status: ['todo', 'doing', 'done'][i % 3],
+        owner: ['ada', 'grace', 'linus', 'ken'][i % 4],
+        due: `2026-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 27) + 1).padStart(2, '0')}`,
+        pages: (i * 7) % 900,
+        rating: (i % 5) + 1,
+        area: ['inbox', 'projects', 'archive'][i % 3],
+        notes: `synthetic note number ${i + 1}`,
+    },
+    formula: {},
+}))
+// Resolved ONCE at module level: an inline `result={runView(…)}` is a getter in Solid, so every
+// `props.result` read in the table re-ran the 2000-row query and the bench timed the story's query,
+// not the table.
+const LARGE_RESULT = runView(LARGE_CONFIG, LARGE_ROWS)
+
+/** 2000 rows x 8 columns in a fixed-height scroller: the fixture `bench/tableRenderPerf.ts`
+ *  measures (render time + scroll fps), so the typed grid's cost on a big table stays a number. */
+export const LargeTable: Story = {
+    render: () => (
+        <div
+            data-testid="large-table-scroller"
+            style={{ height: '600px', overflow: 'auto' }}
+        >
+            <TableView
+                result={LARGE_RESULT}
+                config={LARGE_CONFIG}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        expect(canvasElement.querySelectorAll('tbody tr').length).toBe(2000)
+        expect(canvasElement.querySelectorAll('thead th').length).toBe(8)
     },
 }
 
@@ -87,6 +203,17 @@ export const Grouped: Story = {
         ]
         expect(bands.length).toBeGreaterThan(1)
         for (const b of bands) expect(b.textContent).toMatch(/\S+\s*\/\/\s*\d+/)
+        // A band types top/left/right only — no interior bars, no bottom — and the first band,
+        // directly under the header, omits its own top too.
+        const edge = (td: HTMLElement, side: string) =>
+            td.querySelector(`[data-edges~="${side}"]`)
+        for (const b of bands) {
+            expect(edge(b, 'left')).toBeTruthy()
+            expect(edge(b, 'right')).toBeTruthy()
+            expect(edge(b, 'bottom')).toBeNull()
+        }
+        expect(edge(bands[0]!, 'top')).toBeNull()
+        expect(edge(bands[1]!, 'top')).toBeTruthy()
     },
 }
 

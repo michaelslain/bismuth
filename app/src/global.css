@@ -480,6 +480,11 @@
      shared geometry. Values unchanged. */
   --cell-h: var(--row-h, 18px);  /* line box = the app's unified row unit */
   --cell-h-dense: 7px;
+  /* The typed grid's dash pitch (AsciiCellEdges), in `ch` tiles, on BOTH axes: 2 = a dash, then one
+     blank tile — `+ - - - +` across, the same spaced dashes down. Every dash is the `-` ink's length.
+     asciiGlyphTiles.ts reads this ONE token, bakes it into the glyph sprites and installs the
+     resolved length as --ascii-pitch; tune the rhythm here and nowhere else. */
+  --ascii-dash-pitch: 2;
 }
 
 /* The view-bar icon rhythm — read only within global.css's `ui/ui.css` section's `.viewbar` section today, but a

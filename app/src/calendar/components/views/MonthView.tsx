@@ -15,6 +15,7 @@ import type { TaskRowRef } from '../../taskDrag'
 import { monthGrid, weekdayNames } from '../../dates'
 import { todayISO } from '../../../../../core/src/dates'
 import Text from '../../../ui/Text'
+import AsciiCellEdges from '../../../ui/ascii/AsciiCellEdges'
 import MonthCell from './MonthCell'
 import TaskDayCell from './TaskDayCell'
 import styles from './MonthView.module.css'
@@ -53,24 +54,40 @@ export function MonthView(props: MonthViewProps) {
             <div class={styles.scroller} data-testid="month-scroller">
                 <div class={styles['month-grid-header']}>
                     <For each={weekdayNames(mondayFirst())}>
-                        {d => (
-                            <Text
-                                as="div"
-                                size="micro"
-                                tone="faint"
-                                weight="inherit"
-                                eyebrow
-                                class={styles['month-day-name']}
-                                data-testid="month-day-name"
-                            >
-                                {d}
-                            </Text>
+                        {(d, col) => (
+                            <div class={styles['month-day']}>
+                                <Text
+                                    as="div"
+                                    size="micro"
+                                    tone="faint"
+                                    weight="inherit"
+                                    eyebrow
+                                    class={styles['month-day-name']}
+                                    data-testid="month-day-name"
+                                >
+                                    {d}
+                                </Text>
+                                {/* the header types its top + left (the last also its right) and its bottom
+                                    HEAVY — the `=` under the labels; the first body row omits its top.
+                                    A sibling of the label, not a child: the eyebrow's letter-spacing is
+                                    inherited and would break the one-glyph-one-ch rule. */}
+                                <AsciiCellEdges
+                                    edges={[
+                                        'top',
+                                        'left',
+                                        ...(col() === 6 ? (['right'] as const) : []),
+                                        'bottom',
+                                    ]}
+                                    edgeWeight={{ bottom: 'heavy' }}
+                                    backdrop
+                                />
+                            </div>
                         )}
                     </For>
                 </div>
                 <div class={styles['month-grid']}>
                     <Index each={cells()}>
-                        {cell => {
+                        {(cell, i) => {
                             const dateStr = () => todayISO(cell().date)
                             return (
                                 <MonthCell
@@ -78,6 +95,9 @@ export function MonthView(props: MonthViewProps) {
                                     day={cell().date.getDate()}
                                     inMonth={cell().inMonth}
                                     today={dateStr() === today}
+                                    isFirstRow={i < 7}
+                                    isLastCol={i % 7 === 6}
+                                    isLastRow={i >= cells().length - 7}
                                     // Tasks register: a bare click opens the inline composer for THIS
                                     // day rather than the create-event modal — tasks and events are
                                     // different files, and the composer knows which to write to.

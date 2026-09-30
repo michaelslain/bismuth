@@ -2,5 +2,15 @@
    chips and composer are direct children of the cell), so the button anchors to the CELL that
    holds this — a month cell, an all-day cell — which reveals it on hover/focus-within through a
    `[data-add-task]` selector. IconButton's own `.btn--icon.btn--normal` (0,2,0) sets
-   `opacity: 1`; `.add[data-add-task]` matches that specificity, and loads after it, to win. */
-.add[data-add-task] { position: absolute; top: var(--sp-2); right: var(--sp-2); opacity: 0; transition: opacity var(--dur) var(--ease); }
+   `opacity: 1`; `.add[data-add-task]` matches that specificity, and loads after it, to win.
+   Placement: level with the day number. The host (a month cell) insets its first line by half of
+   (one typed row - one line box) — the table row's inset — so the number's line is centred in the
+   cell's first typed row, and the button's box (--h-control tall) is centred in that same row:
+   `top: (row - control) / 2`, which is 0 while a control is at least a typed row tall. Its box then
+   starts on the top `-` run's centre line, its icon ink well below it. Its right inset is the day
+   number's left inset (--ascii-tile-w), so its box ends a full `ch` clear of the right `|` stem;
+   `TaskDayCell.stories.tsx` measures both against a host typed on all four edges. A host that pads
+   its own clearance (AllDayRow) sets `--add-task-top` instead. In the all-day strip it anchors to
+   `.cellInner`, which sits inside AllDayRow's cell padding, so it clears the glyphs by that much
+   more. */
+.add[data-add-task] { position: absolute; top: var(--add-task-top, calc((max(var(--ascii-row-h, var(--h-control)), var(--h-control)) - var(--h-control)) / 2)); right: var(--ascii-tile-w, 1ch); opacity: 0; transition: opacity var(--dur) var(--ease); }
