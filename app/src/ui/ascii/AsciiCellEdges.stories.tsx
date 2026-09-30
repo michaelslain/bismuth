@@ -3,7 +3,7 @@
 // table, calendar month/week) is built from. See DESIGN.md's Typed Grid Rule.
 //
 // Props: edges? (default ['top','left']), weight? ('rule' `-` | 'heavy' `=`), edgeWeight?
-// ({ top?, bottom? } per-edge override), ink? ('soft' --faint | 'firm' --border), class?.
+// ({ top?, bottom? } per-edge override), ink? ('soft' --border-soft | 'firm' --border), class?.
 //
 // The mini-grid stories build a 4x3 grid with the ownership rule exactly as a caller would, at
 // two container widths that are NOT a whole number of `ch`, and `play()` checks the geometry
@@ -84,7 +84,7 @@ export const TopLeftBottom: Story = single(['top', 'left', 'bottom'])
 /** All four edges: a lone cell, or the bottom-right cell of a grid. */
 export const AllFour: Story = single(['top', 'right', 'bottom', 'left'])
 
-/** `-` (rule) vs `=` (heavy), and --faint (soft) vs --border (firm). */
+/** `-` (rule) vs `=` (heavy), and --border-soft (soft) vs --border (firm). */
 export const WeightsAndInks: Story = {
     render: () => (
         <Row label="rule / heavy x soft / firm">

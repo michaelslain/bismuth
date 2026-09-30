@@ -21,7 +21,7 @@ export type AsciiCellEdgesProps = {
     weight?: AsciiEdgeWeight
     /** Per-edge override of `weight`, e.g. { bottom: 'heavy' } for a header cell. */
     edgeWeight?: Partial<Record<'top' | 'bottom', AsciiEdgeWeight>>
-    /** 'soft' = --faint ink (row/column rules), 'firm' = --border ink (structural). Default 'soft'. */
+    /** 'soft' = --border-soft ink (the hairline the grid replaced), 'firm' = --border ink (structural). Default 'soft'. */
     ink?: 'soft' | 'firm'
     /** Paint an opaque `--bg` ring over this cell's glyph overhang, for cells in a sticky header, so
      *  content scrolling beneath never shows through. With no `top` edge the ring skips its top band

@@ -31,7 +31,7 @@
     left: calc(var(--ascii-tile-w, 1ch) / -2);
     right: calc(var(--ascii-tile-w, 1ch) / -2);
     pointer-events: none;
-    background-color: var(--faint);
+    background-color: var(--border-soft);
     -webkit-mask-box-image-source: linear-gradient(transparent, transparent);
     -webkit-mask-box-image-slice: var(--ascii-slice-y, 1) var(--ascii-slice-x, 1);
     -webkit-mask-box-image-width: var(--ascii-tile-h, var(--cell-h)) var(--ascii-tile-w, 1ch);
