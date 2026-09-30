@@ -117,6 +117,57 @@ export function nextPosAfterGrade(
 }
 
 /**
+ * Cards graded in a persisted review whose new due date has not reached `rows` yet: itemKey →
+ * the due value the card carried WHEN it was graded.
+ *
+ * Staying put (`nextPosAfterGrade`) leans on the host's refetch to drop the graded card, and that
+ * refetch cannot be trusted to see the write: BaseView serves it from a cache that stays "fresh"
+ * until the server's version bump arrives over SSE, which lands after the write's own response. So
+ * the refetch came back with the pre-write rows, the same card was still `current()`, and it
+ * turned back to its front — the reported "flips back, grade it again to move on" (and that second
+ * grade wrote a second review). Hiding the graded card locally advances on the grade itself.
+ *
+ * An entry hides its card only while the row still carries the due value it was graded at; once
+ * the refetch brings the new due the entry is inert, and `livePending` prunes it.
+ */
+export type PendingGrades = ReadonlyMap<string, unknown>
+
+/** The due value a pending entry records for `it` — `null` for a never-scheduled card, so an
+ *  absent and an empty-null column compare equal. */
+export function pendingDue(it: QueueItem): unknown {
+    return it.r.note[it.dueField] ?? null
+}
+
+/** The queue minus every card still pending (see `PendingGrades`). */
+export function withoutPending(
+    queue: QueueItem[],
+    pending: PendingGrades,
+): QueueItem[] {
+    if (pending.size === 0) return queue
+    return queue.filter(it => !isPending(it, pending))
+}
+
+/** The entries of `pending` that still hide a card in `queue` — the rest have landed (the row's
+ *  due moved, or it left the due queue) and are dropped, so a later row shifting into a landed
+ *  entry's index is never hidden by it. Returns `pending` itself when nothing changed. */
+export function livePending(
+    queue: QueueItem[],
+    pending: PendingGrades,
+): PendingGrades {
+    if (pending.size === 0) return pending
+    const live = new Map<string, unknown>()
+    for (const it of queue)
+        if (isPending(it, pending))
+            live.set(itemKey(it), pending.get(itemKey(it)))
+    return live.size === pending.size ? pending : live
+}
+
+function isPending(it: QueueItem, pending: PendingGrades): boolean {
+    const k = itemKey(it)
+    return pending.has(k) && pending.get(k) === pendingDue(it)
+}
+
+/**
  * Cram traversal: after grading the card at `pos`, find the next card still in the
  * cram pool — i.e. NOT yet rated "easy" — scanning forward from `pos` and WRAPPING
  * around to the front. Returns the queue position to show next, or `-1` when every

@@ -17,6 +17,9 @@
   --flip-card-h: 420px;
   --flip-caption-img-max: 200px;
   --flip-img-max: 320px;
+  /* The flip's one duration — `data-flipping`'s window (FlipCard.tsx) ends on animationend, so
+     nothing else needs to know it. */
+  --flip-dur: 200ms;
   position: relative; width: 100%;
 }
 
@@ -45,7 +48,7 @@
    share one eased progress per segment); 75-100% mirrors it. `50cqi` is half the width of the
    `.cardwrap` size container this card sits in. `reverse` plays the same path back for a card that
    un-flips. */
-.flip-inner[data-flipping] { animation: card-flip 0.5s reverse; }
+.flip-inner[data-flipping] { animation: card-flip var(--flip-dur) reverse; }
 .flip-card.flipped .flip-inner[data-flipping] { animation-direction: normal; }
 @keyframes card-flip {
   0% { transform: translateZ(0) rotateY(0deg); animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0.75); }
@@ -79,7 +82,7 @@
 .host:hover .flip-face { border-color: var(--accent); }
 .flip-face[data-face='back'] { transform: rotateY(180deg); justify-content: flex-start; }
 
-/* Flip scrollbars inside the card: `data-flipping` (set for the 0.5s `card-flip` animation, cleared
+/* Flip scrollbars inside the card: `data-flipping` (set for the `--flip-dur` `card-flip` animation, cleared
    on its animationend/animationcancel — FlipCard.tsx) forces both faces and the answer body to
    `overflow: hidden` for that window, so no scrollbar can appear mid-rotation even on a face whose
    content overflows at rest. Once settled, their own `overflow-y: auto` takes back over so a long
@@ -108,6 +111,11 @@
 .card-md :global(h4) { font-size: var(--fs-h4); font-weight: var(--fw-h4); line-height: var(--lh-tight); }
 .card-md :global(h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); text-transform: uppercase; letter-spacing: var(--ls-label); }
 .card-md :global(h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); }
+/* The prompt, alone on the front face, is the card's one headline: the display size, never below
+   the prose it would otherwise be (a large editor size wins), and larger than the answer body's
+   --fs-title on the back so the two faces read as question -> answer. Set on the front face, so
+   the back's italic prompt echo (.qcaption) stays caption-sized. */
+.flip-face[data-face='front'] .card-md { font-size: max(var(--fs-display), var(--prose-font-size)); line-height: var(--lh-tight); }
 .card-md.abody { font-size: var(--fs-title); line-height: 1.62; color: color-mix(in srgb, var(--fg) 86%, var(--text-muted)); text-align: left; width: 100%; }
 .card-md p { margin: 0 0 var(--sp-5); }
 .card-md p:last-child { margin-bottom: 0; }

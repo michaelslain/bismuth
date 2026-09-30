@@ -157,6 +157,18 @@ export const Default: Story = {
     },
 }
 
+/** Hands-on: the same real deck as `Default` with NO play function, so it opens at rest for a
+ *  person to drive — click the card (or Space) to flip, 1/2/3 to grade, `[review again]` at the
+ *  end. Every other interactive story here runs its play() on load and is already mid-walk or
+ *  finished by the time anyone looks. */
+export const TryIt: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
+        </Pane>
+    ),
+}
+
 // A distinct basePath keys the module-level session store (flashcardsQueue.ts's `sessions`
 // map), so seeding `cram: true` there before mount is picked up by FlashcardsView's own
 // `loadSession()` call on render — the same restore path a real tab-switch-and-back exercises,
@@ -298,7 +310,7 @@ export const MeterShrinksNarrow: Story = {
 }
 
 /** Every scrolling overflow seen on ANY frame of a flip, per element and axis, plus how many frames
- *  carried `data-flipping`. A flip lasts 0.5s and its scrollbars lived only mid-turn, so sampling
+ *  carried `data-flipping`. A flip lasts `--flip-dur` (200ms) and its scrollbars lived only mid-turn, so sampling
  *  before and after (what this file's stories used to do) passed while the user watched a
  *  scrollbar flash on every flip. This runs a rAF loop across the whole flip instead.
  *
@@ -420,16 +432,19 @@ export const Revealed: Story = {
         )
         await expect(getComputedStyle(front).overflowY).toBe('auto')
 
-        // Grading row: three same-tone TextButtons, no `hard` danger colour and no boxed Kbd
-        // chips (both removed by bases-polish Task 6) — each button's title carries the live
-        // keybinding instead.
+        // Grading row: three same-tone TextButtons, no `hard` danger colour (bases-polish Task 6),
+        // each with its live keybinding as a cap set UNDER the label (GradeButton) — the cap sits
+        // below the button and centred on it — and named in the button's title too.
         const hard = await within(canvasElement).findByRole('button', {
             name: 'hard',
         })
         await expect(hard.getAttribute('title')).toBe('hard (1)')
-        await expect(
-            canvasElement.querySelector('.asc-kbd'),
-        ).toBeNull()
+        const cap = hard.parentElement!.querySelector('.asc-kbd') as HTMLElement
+        await expect(cap.textContent).toBe('1')
+        const b = hard.getBoundingClientRect()
+        const k = cap.getBoundingClientRect()
+        await expect(k.top).toBeGreaterThanOrEqual(b.bottom)
+        await expect(Math.abs(k.left + k.width / 2 - (b.left + b.width / 2))).toBeLessThan(1.5)
     },
 }
 
@@ -635,12 +650,14 @@ export const KeyboardDefaultsRevealAndGrade: Story = {
         })
 
         // Space still reveals with the "SPACE to reveal answer" hint gone (bases-polish Task 6
-        // deleted `.fliphint`), and the grade row carries no boxed Kbd chip any more — the
-        // keybinding now lives only in each button's `title`.
+        // deleted `.fliphint`). Each grade shows its default key as a cap under its label
+        // (GradeButton), in grade order, and names it in its `title` too.
         await expect(
             canvasElement.textContent?.includes('to reveal answer'),
         ).toBe(false)
-        await expect(canvasElement.querySelector('.asc-kbd')).toBeNull()
+        await expect(
+            [...canvasElement.querySelectorAll('.asc-kbd')].map(k => k.textContent),
+        ).toEqual(['1', '2', '3'])
         const hardBtn = await within(canvasElement).findByRole('button', {
             name: 'hard',
         })
@@ -883,6 +900,54 @@ export const Bidirectional: Story = {
         expect(cols).toEqual(['due', 'dueBack'])
         expect(calls.map(c => c.args[1])).toEqual([0, 0])
         expect(reviewed.n).toBe(2)
+    },
+}
+
+const PERSISTED_BASE_PATH = 'stories/flashcards-persisted-grade-demo.md'
+let persistedSpy: ReturnType<typeof spyApi> | undefined
+let finishWrite: () => void = () => {}
+
+/** One grade advances, even when the host's refetch never shows the write. The reported bug: a
+ *  persisted grade stayed on the same card until the refetch dropped it, the refetch came back
+ *  from a still-"fresh" cache with the pre-write rows, and the card turned back to its front —
+ *  so it had to be revealed and graded AGAIN (a second review written) to move on. Here the rows
+ *  are fixed (the refetch that never sees the write) and the write is held open, so the next
+ *  card must appear on the grade itself, at rest, before the write even settles. */
+export const PersistedGradeAdvancesOnce: Story = {
+    beforeEach: () => {
+        reviewed.n = 0
+        saveSession(PERSISTED_BASE_PATH, { cram: false, pos: 0, good: 0, hard: 0, easy: 0, retired: [] })
+        persistedSpy = spyApi(['reviewCardRow'], {
+            reviewCardRow: () => new Promise<void>(resolve => (finishWrite = resolve)),
+        })
+        return persistedSpy.restore
+    },
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                basePath={PERSISTED_BASE_PATH}
+                onReviewed={() => reviewed.n++}
+            />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const shown = () =>
+            canvasElement.querySelector('[data-face="front"]')?.textContent ?? ''
+        const card = () => canvasElement.querySelector('[data-flip-card]') as HTMLElement
+        await waitFor(() => expect(shown()).toContain('capital of France'))
+        await userEvent.click(card())
+        await waitFor(() => expect(card().getAttribute('aria-pressed')).toBe('true'))
+        await userEvent.keyboard('2')
+        // The write is still in flight: the NEXT card is up, at rest — not France face-down again.
+        await waitFor(() => expect(shown()).toContain('capital of Japan'))
+        expect(card().getAttribute('aria-pressed')).toBe('false')
+        finishWrite()
+        await waitFor(() => expect(reviewed.n).toBe(1))
+        // The stale refetch (same rows) does not bring France back.
+        expect(shown()).toContain('capital of Japan')
+        expect(persistedSpy!.named('reviewCardRow')).toHaveLength(1)
     },
 }
 

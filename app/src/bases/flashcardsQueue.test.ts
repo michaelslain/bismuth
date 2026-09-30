@@ -9,6 +9,9 @@ import {
     canGrade,
     progressTotal,
     nextPosAfterGrade,
+    withoutPending,
+    livePending,
+    pendingDue,
     emptySession,
     loadSession,
     saveSession,
@@ -503,4 +506,91 @@ test('reindexRetiredAfterInsert undoes reindexRetiredAfterDelete for surviving r
 
 test('reindexRetiredAfterInsert on an empty pool returns empty', () => {
     expect(reindexRetiredAfterInsert([], 0)).toEqual([])
+})
+
+// Regression: a persisted grade used to leave the graded card as `current()` until the host's
+// refetch saw the write — which it did not (a cache still "fresh" until the SSE bump), so the card
+// turned back to its front and had to be graded a second time.
+test('a pending grade hides its card at once, while the rows still hold the pre-write due', () => {
+    const rows = [
+        row({ front: 'a', due: '2026-01-01' }),
+        row({ front: 'b', due: null }),
+        row({ front: 'c', due: '2026-01-02' }),
+    ]
+    const q = buildQueue(rows, 'due', '2026-01-05', false)
+    const pending = new Map([[itemKey(q[0]), pendingDue(q[0])]])
+    const shown = withoutPending(q, pending)
+    // stay-put pos 0 now lands on the NEXT card, not the one just graded
+    expect(shown.map(it => it.r.note.front)).toEqual(['b', 'c'])
+    expect(
+        shown[nextPosAfterGrade(0, { cram: false, persisted: true })].r.note
+            .front,
+    ).toBe('b')
+})
+
+test('a never-scheduled card is hidden by its pending grade too', () => {
+    const q = buildQueue(
+        [row({ front: 'a' }), row({ front: 'b', due: null })],
+        'due',
+        '2026-01-05',
+        false,
+    )
+    const pending = new Map([[itemKey(q[0]), pendingDue(q[0])]])
+    expect(withoutPending(q, pending).map(it => it.r.note.front)).toEqual(['b'])
+})
+
+test('once the refetch brings the new due, the entry is inert and pruned', () => {
+    const before = buildQueue(
+        [row({ front: 'a', due: '2026-01-01' }), row({ front: 'b' })],
+        'due',
+        '2026-01-05',
+        false,
+    )
+    const pending = new Map([[itemKey(before[0]), pendingDue(before[0])]])
+    // the write landed: card a is due in the future, so it left the due queue
+    const after = buildQueue(
+        [row({ front: 'a', due: '2026-01-09' }), row({ front: 'b' })],
+        'due',
+        '2026-01-05',
+        false,
+    )
+    expect(withoutPending(after, pending).map(it => it.r.note.front)).toEqual([
+        'b',
+    ])
+    expect(livePending(after, pending).size).toBe(0)
+    // a later row shifting into index 0 (card a deleted) is not hidden by the landed entry
+    const shifted = buildQueue(
+        [row({ front: 'b' })],
+        'due',
+        '2026-01-05',
+        false,
+    )
+    expect(
+        withoutPending(shifted, livePending(after, pending)).map(
+            it => it.r.note.front,
+        ),
+    ).toEqual(['b'])
+})
+
+test('livePending returns the same map when every entry is still pending', () => {
+    const q = buildQueue(
+        [row({ front: 'a', due: '2026-01-01' })],
+        'due',
+        '2026-01-05',
+        false,
+    )
+    const pending = new Map([[itemKey(q[0]), pendingDue(q[0])]])
+    expect(livePending(q, pending)).toBe(pending)
+})
+
+test('bidirectional: a pending forward grade leaves the reverse entry showing', () => {
+    const q = buildQueue(
+        [row({ front: 'a', due: null, dueBack: null })],
+        'due',
+        '2026-01-05',
+        false,
+        true,
+    )
+    const pending = new Map([[itemKey(q[0]), pendingDue(q[0])]])
+    expect(withoutPending(q, pending).map(it => it.dir)).toEqual(['rev'])
 })
