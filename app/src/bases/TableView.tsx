@@ -48,6 +48,24 @@ import styles from './TableView.module.css'
 // Pixels from the right edge of a header that count as the resize grab zone.
 const RESIZE_GRAB_PX = 10
 
+// The edges a body cell types, by the grid's ownership rule: every cell owns its top + left, the
+// last column adds right and the last row adds bottom. The first body row directly under the
+// header omits top (the header types its own bottom), and the last row omits bottom when a summary
+// row follows (the summary types its own top). Eight stable arrays indexed by three bits, so a
+// cell's read allocates nothing and re-uses one reference.
+const BODY_EDGES: AsciiEdge[][] = Array.from(
+    { length: 8 },
+    (_, n) =>
+        [
+            'left',
+            ...(n & 1 ? [] : ['top']), // bit 1 = first row under the header
+            ...(n & 2 ? ['right'] : []), // bit 2 = last column
+            ...(n & 4 ? ['bottom'] : []), // bit 4 = closes the grid
+        ] as AsciiEdge[],
+)
+const bodyEdges = (first: boolean, right: boolean, bottom: boolean): AsciiEdge[] =>
+    BODY_EDGES[(first ? 1 : 0) | (right ? 2 : 0) | (bottom ? 4 : 0)]!
+
 export function TableView(props: {
     result: ViewResult
     config: BaseConfig
@@ -319,17 +337,9 @@ export function TableView(props: {
     }
 
     const hasSummary = () => Object.keys(props.result.summaries).length > 0
-    // The edges a body cell types, by the grid's ownership rule: every cell owns its top + left,
-    // the last column adds right and the last row adds bottom. The first body row directly under
-    // the header omits top (the header types its own bottom), and the last row omits bottom when a
-    // summary row follows (the summary types its own top).
-    const bodyEdges = (first: boolean, last: boolean, ci: number): AsciiEdge[] => {
-        const edges: AsciiEdge[] = ['left']
-        if (!first) edges.push('top')
-        if (ci === cols().length - 1) edges.push('right')
-        if (last && !hasSummary()) edges.push('bottom')
-        return edges
-    }
+    // Memoised once per table, not per cell: every body cell reads these.
+    const lastCol = createMemo(() => cols().length - 1)
+    const summed = createMemo(hasSummary)
 
     return (
         <div class={styles.frame}>
@@ -395,6 +405,18 @@ export function TableView(props: {
                                     </Show>
                                     <For each={keyed().keys}>
                                         {(key, ri) => {
+                                            const first = createMemo(
+                                                () =>
+                                                    gi === 0 &&
+                                                    group().key === '' &&
+                                                    ri() === 0,
+                                            )
+                                            const closes = createMemo(
+                                                () =>
+                                                    !summed() &&
+                                                    gi === props.result.groups.length - 1 &&
+                                                    ri() === keyed().keys.length - 1,
+                                            )
                                             // Keeps the last row while <For> disposes a removed
                                             // key, so a getter re-running mid-teardown never sees
                                             // undefined.
@@ -466,12 +488,9 @@ export function TableView(props: {
                                                                     </div>
                                                                     <AsciiCellEdges
                                                                         edges={bodyEdges(
-                                                                            gi === 0 &&
-                                                                                group().key === '' &&
-                                                                                ri() === 0,
-                                                                            gi === props.result.groups.length - 1 &&
-                                                                                ri() === keyed().keys.length - 1,
-                                                                            ci(),
+                                                                            first(),
+                                                                            ci() === lastCol(),
+                                                                            closes(),
                                                                         )}
                                                                     />
                                                                 </td>
@@ -487,7 +506,7 @@ export function TableView(props: {
                         }}
                     </Index>
                 </tbody>
-                <Show when={Object.keys(props.result.summaries).length > 0}>
+                <Show when={summed()}>
                     <TableSummaryRow
                         cols={cols()}
                         summaries={props.result.summaries}
