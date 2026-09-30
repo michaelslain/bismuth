@@ -79,6 +79,7 @@ export function MonthView(props: MonthViewProps) {
                                         'bottom',
                                     ]}
                                     edgeWeight={{ bottom: 'heavy' }}
+                                    backdrop
                                 />
                             </div>
                         )}

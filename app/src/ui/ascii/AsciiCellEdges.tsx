@@ -8,7 +8,7 @@
 // types its top + left; the last column adds right, the last row adds bottom; a header types its
 // bottom heavy and the first body row omits top; a summary row types its top heavy and the row
 // above omits bottom; a full-width band types top, left, right (no interior `|`).
-import { createMemo, type Component } from 'solid-js'
+import { createMemo, Show, type Component } from 'solid-js'
 import { edgeAttrs, edgesKey } from './asciiGlyphTiles'
 import styles from './AsciiCellEdges.module.css'
 
@@ -23,6 +23,9 @@ export type AsciiCellEdgesProps = {
     edgeWeight?: Partial<Record<'top' | 'bottom', AsciiEdgeWeight>>
     /** 'soft' = --faint ink (row/column rules), 'firm' = --border ink (structural). Default 'soft'. */
     ink?: 'soft' | 'firm'
+    /** Paint an opaque `--bg` ring over this cell's glyph overhang, for cells in a sticky header, so
+     *  content scrolling beneath never shows through. Default false. */
+    backdrop?: boolean
     class?: string
 }
 
@@ -33,15 +36,22 @@ const AsciiCellEdges: Component<AsciiCellEdgesProps> = props => {
     const attrs = createMemo(() =>
         edgeAttrs(edgesKey(props.edges, props.weight, props.edgeWeight)),
     )
-    // ONE element, no children: the edges are a nine-slice mask of the UI font's own glyphs
-    // (asciiGlyphTiles.ts) over the ink colour
+    // The edges are ONE element, no children: a nine-slice mask of the UI font's own glyphs
+    // (asciiGlyphTiles.ts) over the ink colour. With `backdrop`, one ring element precedes it — an
+    // opaque `--bg` frame over the overhang only, never the host's own box — so the glyphs paint on
+    // top of it.
     return (
-        <div
-            aria-hidden="true"
-            data-edges={attrs().edges}
-            data-heavy={attrs().heavy}
-            class={`${styles.edges} ${props.ink === 'firm' ? styles.firm : ''} ${props.class ?? ''}`}
-        />
+        <>
+            <Show when={props.backdrop}>
+                <div aria-hidden="true" data-backdrop class={styles.backdrop} />
+            </Show>
+            <div
+                aria-hidden="true"
+                data-edges={attrs().edges}
+                data-heavy={attrs().heavy}
+                class={`${styles.edges} ${props.ink === 'firm' ? styles.firm : ''} ${props.class ?? ''}`}
+            />
+        </>
     )
 }
 

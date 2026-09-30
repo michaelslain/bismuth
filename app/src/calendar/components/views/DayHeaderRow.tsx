@@ -52,6 +52,7 @@ const DayHeaderRow: Component<DayHeaderRowProps> = props => (
                                     : ['top', 'left', 'bottom']
                             }
                             edgeWeight={{ bottom: 'heavy' }}
+                            backdrop
                         />
                     </div>
                 )

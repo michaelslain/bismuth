@@ -5,7 +5,9 @@
    label): an uppercase, widely-tracked eyebrow at --fs-micro, not the body's --fs-ui prose. */
 .th {
   position: sticky;
-  top: 0;
+  /* half a line down: the header's top rule straddles its box, and the scroll edge would clip it;
+     the `backdrop` ring covers the strip above (the table frame already pads the top by that much) */
+  top: calc(var(--ascii-tile-h, var(--cell-h)) / 2);
   /* a vertical run types one `|` per line box and needs two lines of room (its box is inset half a
      line at each end), so a row is never shorter than two lines or its bars vanish */
   box-sizing: border-box;

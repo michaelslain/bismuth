@@ -14,6 +14,9 @@ export type AllDayRowProps = {
      *  hour labels. A grid with no TimeGrid under it (the tasks strip) passes false: there is
      *  nothing to align to and the column is empty. */
     gutter?: boolean
+    /** Paint each cell's `AsciiCellEdges` backdrop ring — for a row inside a sticky header (TimeGrid's
+     *  all-day row), so content scrolling beneath never shows through the glyph overhang. */
+    backdrop?: boolean
     onCellDragOver?: (e: DragEvent, date: string) => void
     onCellDrop?: (e: DragEvent, date: string) => void
     class?: string
@@ -43,6 +46,7 @@ const AllDayRow: Component<AllDayRowProps> = props => (
                                     ? ['left', 'right', 'bottom']
                                     : ['left', 'bottom']
                             }
+                            backdrop={props.backdrop}
                         />
                     </div>
                 )

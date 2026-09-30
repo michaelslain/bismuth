@@ -157,6 +157,100 @@ export const SummaryCell: Story = {
     ),
 }
 
+/** `backdrop`: for a cell in a sticky header. The ring is an opaque `--bg` frame over the glyph
+ *  overhang only, so busy content scrolling beneath the header cannot show through the half tile the
+ *  glyphs straddle outside the host. Left: backdrop on; right: off, the overhang shows the content. */
+const BUSY = Array.from({ length: 9 }, (_, i) => (i % 2 ? '+-----+-----+-----+' : '|     |     |     |')).join('\n')
+
+function BackdropHost(props: { backdrop: boolean; label: string }) {
+    return (
+        <div style={{ position: 'relative', margin: '18px' }}>
+            <Text as="div" size="ui" tone="faint" style={{ 'white-space': 'pre', 'line-height': 'var(--cell-h)' }}>
+                {BUSY}
+            </Text>
+            <div
+                data-cell-host={props.label}
+                style={{
+                    position: 'absolute',
+                    top: 'calc(var(--cell-h) * 3)',
+                    left: '40px',
+                    width: '96px',
+                    height: 'calc(var(--cell-h) * 2)',
+                    'box-sizing': 'border-box',
+                    padding: 'var(--sp-3) var(--sp-4)',
+                    background: 'var(--bg)',
+                }}
+            >
+                <Text as="span" size="ui" tone="muted" data-cell-label>
+                    {props.label}
+                </Text>
+                <AsciiCellEdges
+                    edges={['top', 'right', 'bottom', 'left']}
+                    edgeWeight={{ bottom: 'heavy' }}
+                    backdrop={props.backdrop}
+                />
+            </div>
+        </div>
+    )
+}
+
+export const Backdrop: Story = {
+    render: () => (
+        <Row label="backdrop on // off">
+            <BackdropHost backdrop label="on" />
+            <BackdropHost backdrop={false} label="off" />
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        await whenAsciiGlyphTilesInstalled()
+        const cs = getComputedStyle(document.documentElement)
+        const tileW = parseFloat(cs.getPropertyValue('--ascii-tile-w'))
+        const tileH = parseFloat(cs.getPropertyValue('--ascii-tile-h'))
+        expect(tileW, 'the glyph tiles are installed').toBeGreaterThan(0)
+        const on = canvasElement.querySelector<HTMLElement>('[data-cell-host="on"]')!
+        const off = canvasElement.querySelector<HTMLElement>('[data-cell-host="off"]')!
+        expect(off.querySelectorAll('[data-backdrop]').length, 'no ring without backdrop').toBe(0)
+        const rings = on.querySelectorAll<HTMLElement>('[data-backdrop]')
+        expect(rings.length, 'exactly one ring with backdrop').toBe(1)
+        const ring = rings[0]
+        const r = ring.getBoundingClientRect()
+        const h = on.getBoundingClientRect()
+        const near = (a: number, b: number) => Math.abs(a - b) <= 0.75
+        // outside the host box on all four sides, by half a tile
+        expect(near(h.top - r.top, tileH / 2), 'ring overhangs the top by half a tile').toBe(true)
+        expect(near(r.bottom - h.bottom, tileH / 2), 'ring overhangs the bottom by half a tile').toBe(true)
+        expect(near(h.left - r.left, tileW / 2), 'ring overhangs the left by half a tile').toBe(true)
+        expect(near(r.right - h.right, tileW / 2), 'ring overhangs the right by half a tile').toBe(true)
+        // it is a ring: its own border is exactly the overhang wide, so its inner edge IS the host box
+        const rc = getComputedStyle(ring)
+        expect(near(r.left + parseFloat(rc.borderLeftWidth), h.left), 'inner left edge is the host left').toBe(true)
+        expect(near(r.right - parseFloat(rc.borderRightWidth), h.right), 'inner right edge is the host right').toBe(true)
+        expect(near(r.top + parseFloat(rc.borderTopWidth), h.top), 'inner top edge is the host top').toBe(true)
+        expect(near(r.bottom - parseFloat(rc.borderBottomWidth), h.bottom), 'inner bottom edge is the host bottom').toBe(true)
+        expect(rc.borderTopColor, 'the ring is opaque --bg').not.toBe('rgba(0, 0, 0, 0)')
+        expect(rc.backgroundColor, 'the ring does not fill the host box').toBe('rgba(0, 0, 0, 0)')
+        // and it never reaches the host's content: the label sits wholly inside the ring's hole
+        const l = on.querySelector<HTMLElement>('[data-cell-label]')!.getBoundingClientRect()
+        const hole = {
+            left: r.left + parseFloat(rc.borderLeftWidth),
+            right: r.right - parseFloat(rc.borderRightWidth),
+            top: r.top + parseFloat(rc.borderTopWidth),
+            bottom: r.bottom - parseFloat(rc.borderBottomWidth),
+        }
+        const disjoint =
+            l.right <= hole.left || l.left >= hole.right || l.bottom <= hole.top || l.top >= hole.bottom
+        const inside = l.left >= hole.left && l.right <= hole.right && l.top >= hole.top && l.bottom <= hole.bottom
+        expect(disjoint, 'the label is not under a ring band').toBe(false)
+        expect(inside, 'the label sits inside the ring hole').toBe(true)
+        // the glyph element paints after the ring, so the host's own glyphs stay on top of it
+        const glyphs = on.querySelector<HTMLElement>('[data-edges]')!
+        expect(
+            ring.compareDocumentPosition(glyphs) & Node.DOCUMENT_POSITION_FOLLOWING,
+            'the glyph element follows the ring',
+        ).toBeTruthy()
+    },
+}
+
 // ---------------------------------------------------------------------------------------------
 // the mini grid: 4 columns x 3 rows (header + two body rows), the ownership rule verbatim
 // ---------------------------------------------------------------------------------------------

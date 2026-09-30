@@ -56,6 +56,7 @@ const TableHeader: Component<TableHeaderProps> = props => (
                         <AsciiCellEdges
                             edges={headerEdges(i() === props.cols.length - 1)}
                             edgeWeight={{ bottom: 'heavy' }}
+                            backdrop
                         />
                         <Label inline class={styles.thLabel}>
                             {columnLabel(c, props.config)}

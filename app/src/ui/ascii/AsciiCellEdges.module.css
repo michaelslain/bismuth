@@ -42,6 +42,23 @@
 .firm {
     background-color: var(--border);
 }
+
+/* `backdrop`: an opaque --bg RING over the glyph overhang (the half tile outside the host on every
+   side) and nothing else — the border is exactly the overhang wide, so the content box is the host's
+   own box and its background, label and inset cues (a table header's drag accent) stay visible.
+   For a cell inside a sticky header: the header's own background covers only its box, so without
+   this the body scrolling beneath shows through the glyphs' overhang. Painted BEFORE .edges, so the
+   host's own glyphs sit on top. Not a grid line: it draws no rule, only hides what is beneath. */
+.backdrop {
+    position: absolute;
+    inset: calc(var(--ascii-tile-h, var(--cell-h)) / -2) calc(var(--ascii-tile-w, 1ch) / -2);
+    box-sizing: border-box;
+    border: calc(var(--ascii-tile-h, var(--cell-h)) / 2) solid var(--bg);
+    border-left-width: calc(var(--ascii-tile-w, 1ch) / 2);
+    border-right-width: calc(var(--ascii-tile-w, 1ch) / 2);
+    background: transparent;
+    pointer-events: none;
+}
 .edges[data-edges='left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0001, linear-gradient(transparent, transparent)); }
 .edges[data-edges='bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0010, linear-gradient(transparent, transparent)); }
 .edges[data-edges='bottom left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0011, linear-gradient(transparent, transparent)); }

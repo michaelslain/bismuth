@@ -209,6 +209,7 @@ export function TimeGrid(props: Props) {
                         <DayHeaderRow dates={props.dates} today={today} />
                         <AllDayRow
                             dates={props.dates}
+                            backdrop
                             cell={ds => (
                                 <For each={allDayOn(props.events, ds)}>
                                     {e => (
