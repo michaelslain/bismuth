@@ -45,6 +45,7 @@ const TimeGridEvent: Component<TimeGridEventProps> = props => {
             <EventChip
                 event={props.item.event}
                 compact={props.item.compact}
+                hideTime={props.item.short}
                 inGrid
                 masterId={masterId()}
                 occurrenceDate={props.item.event.recurrence ? props.date : undefined}

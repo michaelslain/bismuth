@@ -106,6 +106,11 @@
   /* ── Type scale — UNCHANGED VALUES, moved verbatim from ui.css:19-25. Names and numbers are
      exactly what shipped; the wave-0 mandate is "nothing moves," not "adopt §2.2's renames." */
   --fs-micro: 10.5px;   /* eyebrows, meta, legends, status bar */
+  /* --fs-nano: AVOID. The one step below the 10.5px floor, for secondary meta in a view so dense
+     that --fs-micro crowds the line it trails. Its only sanctioned use is a calendar event chip's
+     location (EventChip.module.css). A new consumer needs a DESIGN.md change first — see its
+     "Nano" entry. Default to --fs-micro. */
+  --fs-nano: 9.5px;
   --fs-ui: 11.5px;      /* rail, tabs, tables, chrome — the workhorse (== asciiGrid.ts FONT_PX) */
   --fs-body: 13px;      /* note prose in panels */
   /* --fs-body-lg used to be its own step (13.5px, note prose in the full editor column) — the

@@ -37,7 +37,7 @@ const DragGhost: Component<DragGhostProps> = props => {
         >
             <Text as="span" inherit>
                 {formatTime(minutesToStr(props.startMin), settings.value.militaryTime)}
-                {' — '}
+                {'—'}
                 {formatTime(minutesToStr(props.endMin), settings.value.militaryTime)}
             </Text>
         </div>

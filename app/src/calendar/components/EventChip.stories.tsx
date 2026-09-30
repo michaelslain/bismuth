@@ -1,5 +1,5 @@
 // Visual spec for <EventChip> — the single event pill rendered inside the day grid, month
-// cell, and all-day row. Its category colour(s) draw a 1px frame + 2px leading edge over a faint
+// cell, and all-day row. Its category colour(s) draw an even 1px frame over a faint
 // wash of the first category, title in the prose face; a 2+ category event splits its frame into
 // one band per category and shows a dot per category (up to three, then "+n"); no resolvable
 // category renders an outline-only "ghost" chip.
@@ -12,6 +12,7 @@ import { EventStore, MemoryBackend } from '../EventStore'
 import { createSignal, Show } from 'solid-js'
 import type { CalendarEvent, Category } from '../types'
 import { Row } from '../../ui/_storyKit'
+import { layoutDay } from './views/timeGridLayout'
 
 const meta = {
     title: 'Calendar/EventChip',
@@ -111,7 +112,7 @@ export const Variants: Story = {
             {/* The compact-mode CSS is scoped to ".event-chip.in-grid.compact", so the chip
           needs the `inGrid` prop for it to apply; the plain sized box stands in for the
           time-grid slot TimeGrid itself renders. */}
-            <div style={{ position: 'static', width: '220px', height: '34px' }}>
+            <div style={{ position: 'static', width: '220px', height: '22px' }}>
                 <EventChip
                     event={{
                         id: '4',
@@ -123,6 +124,7 @@ export const Variants: Story = {
                     }}
                     categories={CATEGORIES}
                     compact
+                    hideTime
                     inGrid
                     store={store}
                 />
@@ -199,6 +201,106 @@ export const InGrid: Story = {
     },
 }
 
+
+const MORE_CATEGORIES: Category[] = [...CATEGORIES, { name: 'Health', color: 'green' }]
+
+/** One event in a real time-grid slot: height and `compact` come from `layoutDay`, the same
+ *  geometry TimeGrid uses, so the story tracks the layout rule instead of a hand-typed box.
+ *  `next` is a back-to-back event, which removes a short block's visual padding. */
+function GridSlot(props: {
+    event: CalendarEvent
+    next?: CalendarEvent
+    width?: string
+    categories?: Category[]
+}) {
+    const item = () =>
+        layoutDay(props.next ? [props.event, props.next] : [props.event])[0]
+    return (
+        <div
+            style={{
+                position: 'relative',
+                width: props.width ?? '130px',
+                height: `${item().height}px`,
+            }}
+        >
+            <EventChip
+                event={props.event}
+                compact={item().compact}
+                hideTime={item().short}
+                inGrid
+                categories={props.categories ?? CATEGORIES}
+                store={store}
+            />
+        </div>
+    )
+}
+
+const at = (id: string, title: string, startTime: string, endTime: string, extra: Partial<CalendarEvent> = {}): CalendarEvent => ({
+    id,
+    title,
+    date: '2026-01-12',
+    startTime,
+    endTime,
+    category: 'Work',
+    ...extra,
+})
+
+/** Every block height a week column actually draws, at a narrow column width: 30-min blocks
+ *  (which drop their time — padded ~34px, back-to-back ~22px, uncategorised), a 45-min block
+ *  (time over one title line), and 1h+ blocks carrying four categories (three dots + "+1")
+ *  beside their time range. */
+export const GridSizes: Story = {
+    render: () => (
+        <Row gap="10px" column>
+            <GridSlot event={at('g1', 'Veritus - NOTES review', '10:30', '11:00')} />
+            <GridSlot
+                event={at('g2', 'Veritus - NOTES review', '10:30', '11:00')}
+                next={at('g2n', 'Next', '11:00', '12:00')}
+            />
+            <GridSlot event={at('g3', 'Unfiled quick call', '10:30', '11:00', { category: undefined })} />
+            <GridSlot
+                event={at('g3m', 'Veritus - NOTES review', '10:30', '11:00', { categories: ['Work', 'Personal', 'Focus', 'Health'] })}
+                categories={MORE_CATEGORIES}
+            />
+            <GridSlot event={at('g3b', 'Veritus - NOTES review', '10:30', '11:15')} />
+            <GridSlot
+                event={at('g4', 'Morning Routine', '08:00', '09:00', { categories: ['Work', 'Personal', 'Focus', 'Health'] })}
+                categories={MORE_CATEGORIES}
+            />
+            <GridSlot
+                event={at('g5', 'Morning Routine', '08:00', '09:00', { categories: ['Work', 'Personal', 'Focus', 'Health'] })}
+                categories={MORE_CATEGORIES}
+                width="100px"
+            />
+            <GridSlot
+                event={at('g6', 'Offsite planning', '13:00', '15:00', {
+                    categories: ['Work', 'Personal', 'Focus', 'Health'],
+                    location: 'Room 4B',
+                })}
+                categories={MORE_CATEGORIES}
+            />
+        </Row>
+    ),
+}
+
+/** Where the location sits: under the title, with and without a link, in a free-flowing chip
+ *  (month cell / all-day row) and in a 2h grid slot. */
+export const LocationPlacement: Story = {
+    render: () => (
+        <Row gap="16px">
+            <Row gap="10px" column>
+                <div style={{ width: '200px' }}>
+                    <EventChip event={at('p1', 'Lunch with Sam', '12:00', '13:00', { location: 'Café Borrone' })} categories={CATEGORIES} store={store} />
+                </div>
+                <div style={{ width: '200px' }}>
+                    <EventChip event={at('p2', 'Lunch with Sam', '12:00', '13:00', { location: 'Café Borrone', link: 'https://example.com' })} categories={CATEGORIES} store={store} />
+                </div>
+            </Row>
+            <GridSlot event={at('p3', 'Speak Out BBQ', '12:00', '14:00', { location: 'Marina Park, San Leandro' })} width="150px" />
+            <GridSlot event={at('p4', 'Speak Out BBQ', '12:00', '14:00', { location: 'Marina Park', link: 'https://example.com' })} width="150px" />
+        </Row>
+    ),
+}
 
 // ---- keyboard, link safety, delete + undo -------------------------------------------------
 
