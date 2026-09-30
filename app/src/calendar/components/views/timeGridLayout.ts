@@ -9,8 +9,10 @@ import { clamp, minutesToStr, snap } from './timeGridDrag'
 export const MINUTES_PER_DAY = 24 * 60
 export const GRID_PX = 1200
 
-/** A block shorter than this many px lays out on one line (time + title side by side). */
-const COMPACT_BELOW_PX = 42
+/** A block shorter than this many px lays out on one line (time + title side by side). Only a
+ *  back-to-back 30-min block (~22px) is that short; a padded one (~34px) has room for the time
+ *  over a full-width title line, which reads far better than a title squeezed beside the time. */
+const COMPACT_BELOW_PX = 30
 /** Every chip trims this much so neighbours keep a hairline gap. */
 const CHIP_TRIM_PX = 3
 const MIN_HEIGHT_PX = 8
@@ -111,8 +113,11 @@ export type DayLayoutItem = {
     height: number
     lane: number
     lanes: number
-    /** Only genuinely tiny blocks lay out on one line; 1h+ blocks keep time-over-title. */
+    /** Only genuinely tiny blocks lay out on one line; everything else keeps time-over-title. */
     compact: boolean
+    /** At most `SHORT_MIN` long: the chip drops its time — the block's position already says when,
+     *  and the title gets the room. */
+    short: boolean
 }
 
 /** Geometry + lane for every timed event of ONE day (pass `timedOn(...)`'s result). */
@@ -145,6 +150,7 @@ export function layoutDay(dayEvents: CalendarEvent[]): DayLayoutItem[] {
             lane: li?.lane ?? 0,
             lanes: li?.lanes ?? 1,
             compact: height < COMPACT_BELOW_PX,
+            short: endMin - startMin <= SHORT_MIN,
         }
     })
 }

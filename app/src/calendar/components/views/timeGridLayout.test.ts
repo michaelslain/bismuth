@@ -57,7 +57,11 @@ test('layoutDay puts overlapping events in lanes and pads short ones', () => {
     expect(byId.c.lanes).toBe(1)
     // 30 min event gets +15min of height, minus the 3px trim
     expect(byId.c.height).toBeCloseTo(minutesToPx(45) - 3)
-    expect(byId.c.compact).toBe(true)
+    // ...which leaves room for time over title, so it is not the one-line compact layout
+    expect(byId.c.compact).toBe(false)
+    // 30 min or less drops its time; a 1h block keeps it
+    expect(byId.c.short).toBe(true)
+    expect(byId.a.short).toBe(false)
     expect(byId.a.top).toBe(minutesToPx(540))
     expect(byId.a.compact).toBe(false)
 })
@@ -66,6 +70,8 @@ test('padding never spills into a back-to-back event', () => {
     const out = layoutDay([ev('a', 'd', '08:00', '08:30'), ev('b', 'd', '08:30', '10:00')])
     const a = out.find(l => l.event.id === 'a')!
     expect(a.height).toBeCloseTo(minutesToPx(30) - 3)
+    // an unpadded 30-min block is too short for two lines: one-line compact
+    expect(a.compact).toBe(true)
 })
 
 test('an untimed-end event is capped at the next start so back-to-backs stack', () => {
