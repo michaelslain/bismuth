@@ -2,7 +2,7 @@ import { For, Index, Show, createMemo, type Component } from 'solid-js'
 import type { CalendarEvent, Category } from '../../types'
 import { EventStore } from '../../EventStore'
 import { dragState } from '../../state'
-import { categoryFill, eventCategoryColors } from '../../categoryColor'
+import { eventCategoryColors } from '../../categoryColor'
 import DragGhost from './DragGhost'
 import TimeGridEvent from './TimeGridEvent'
 import {
@@ -41,16 +41,14 @@ const TimeGridDayColumn: Component<TimeGridDayColumnProps> = props => {
             return {
                 startMin: Math.min(state.startMinutes, state.currentMinutes),
                 endMin: Math.max(state.startMinutes, state.currentMinutes),
-                color: 'var(--accent)',
+                colors: [] as string[],
             }
         }
         const span = eventMinutes(state.event)
         return {
             startMin: state.startMinutes,
             endMin: clamp(state.startMinutes + (span.endMin - span.startMin)),
-            color:
-                categoryFill(eventCategoryColors(state.event, props.categories)) ??
-                'var(--accent)',
+            colors: eventCategoryColors(state.event, props.categories),
         }
     }
     const movingId = () => {
@@ -93,7 +91,7 @@ const TimeGridDayColumn: Component<TimeGridDayColumnProps> = props => {
                             height={box().height}
                             startMin={g().startMin}
                             endMin={box().endMin}
-                            color={g().color}
+                            colors={g().colors}
                         />
                     )
                 }}

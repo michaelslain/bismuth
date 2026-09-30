@@ -3,9 +3,8 @@ import {
     resolveCategoryColor,
     eventCategoryNames,
     eventCategoryColors,
-    categoryFill,
-    eventCategoryFill,
     categoryOverflow,
+    categoryBands,
 } from './categoryColor'
 import type { Category } from './types'
 
@@ -42,65 +41,21 @@ test('eventCategoryColors resolves each known category and drops unknown names',
     expect(eventCategoryColors({ category: 'Nope' }, cats)).toEqual([])
 })
 
-test('categoryFill: 0 colours → undefined (ghost)', () => {
-    expect(categoryFill([])).toBeUndefined()
+test('categoryBands: 0 colours → undefined', () => {
+    expect(categoryBands([], 180)).toBeUndefined()
 })
 
-test('categoryFill: 1 colour → solid 85% tint, not a gradient', () => {
-    const fill = categoryFill(['var(--blue)'])
-    expect(fill).toBe('color-mix(in srgb, var(--blue) 85%, transparent)')
-    expect(fill).not.toContain('linear-gradient')
+test('categoryBands: one colour is still an image (a flat two-stop gradient)', () => {
+    expect(categoryBands(['var(--blue)'], 180)).toBe(
+        'linear-gradient(180deg, var(--blue) 0%, var(--blue) 100%)',
+    )
 })
 
-test('categoryFill: 2 colours → two HARD-EDGED bands, not a blend', () => {
-    const fill = categoryFill(['var(--blue)', 'var(--green)'])!
-    expect(fill.startsWith('linear-gradient(90deg,')).toBe(true)
-    // The signature of a hard edge is a colour appearing at TWO offsets that another colour also
-    // occupies — i.e. coincident stops. A blend would give each colour exactly one offset.
-    expect(fill).toContain('color-mix(in srgb, var(--blue) 85%, transparent) 0%')
-    expect(fill).toContain('color-mix(in srgb, var(--blue) 85%, transparent) 50%')
-    expect(fill).toContain('color-mix(in srgb, var(--green) 85%, transparent) 50%')
-    expect(fill).toContain('color-mix(in srgb, var(--green) 85%, transparent) 100%')
-})
-
-test('categoryFill: 3 colours → three bands at 0/33.3/66.6/100', () => {
-    const fill = categoryFill(['var(--blue)', 'var(--green)', '#ff0000'])!
-    expect(fill).toContain('var(--blue) 85%, transparent) 0%')
-    expect(fill).toContain('var(--green) 85%, transparent) 33.3333%')
-    expect(fill).toContain('#ff0000 85%, transparent) 100%')
-})
-
-test('categoryFill: NO band interpolates into its neighbour', () => {
-    // The regression this whole change exists to prevent. Every colour must occupy a closed
-    // interval [a%, b%] — if any colour appears at only ONE offset, CSS interpolates from it to the
-    // next and the bands turn back into the mud they replaced.
-    for (const colors of [
-        ['#111111', '#222222'],
-        ['#111111', '#222222', '#333333'],
-    ]) {
-        const fill = categoryFill(colors)!
-        for (const c of colors) {
-            const occurrences = fill.split(c).length - 1
-            expect(
-                occurrences,
-                `${c} appears ${occurrences}x in ${fill} — a band needs exactly 2 stops (start and end); 1 means it blends`,
-            ).toBe(2)
-        }
-    }
-})
-
-test('categoryFill: caps at MAX_BANDS and reports the overflow', () => {
-    const five = ['#1', '#2', '#3', '#4', '#5']
-    const fill = categoryFill(five)!
-    expect(fill).toContain('#3')
-    expect(fill).not.toContain('#4') // beyond the cap — counted, not drawn
-    expect(categoryOverflow(five)).toBe(2)
-    expect(categoryOverflow(['#1', '#2'])).toBe(0)
-})
-
-test('eventCategoryFill: single-category event stays solid, multi-category blends', () => {
-    const single = eventCategoryFill({ category: 'Work' }, cats)!
-    expect(single).not.toContain('linear-gradient')
-    const multi = eventCategoryFill({ categories: ['Work', 'Home'] }, cats)!
-    expect(multi).toContain('linear-gradient')
+test('categoryBands: full-strength hard bands, capped at MAX_BANDS, in the given direction', () => {
+    expect(categoryBands(['var(--blue)', 'var(--rose)'], 90)).toBe(
+        'linear-gradient(90deg, var(--blue) 0%, var(--blue) 50%, var(--rose) 50%, var(--rose) 100%)',
+    )
+    const four = categoryBands(['a', 'b', 'c', 'd'], 180)!
+    expect(four).not.toContain(' d ')
+    expect(four).toContain('b 33.3333%, b 66.6667%')
 })
