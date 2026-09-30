@@ -3,6 +3,7 @@ import {
     createMemo,
     createEffect,
     untrack,
+    batch,
     onMount,
     onCleanup,
     Show,
@@ -31,6 +32,7 @@ import { parseCombo } from '../ui/ascii/parseCombo'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
 import FlipCard from './FlipCard'
+import GradeButton from './GradeButton'
 import FlashcardsSummary from './FlashcardsSummary'
 import FlashcardsProgress from './FlashcardsProgress'
 import {
@@ -54,6 +56,10 @@ import type { KeybindingId } from '../../../core/src/keybindings'
 import {
     buildQueue,
     nextPosAfterGrade,
+    withoutPending,
+    livePending,
+    pendingDue,
+    type PendingGrades,
     nextCramPos,
     reindexRetiredAfterDelete,
     reindexRetiredAfterInsert,
@@ -283,9 +289,18 @@ export function FlashcardsView(props: {
     // Bidirectional decks emit a forward + reverse entry per row (see flashcardsQueue).
     // `today` is derived inside the memo via todayISO() so it's the LOCAL date and is
     // re-evaluated on every recompute (not captured once at mount, in UTC).
-    const queue = createMemo(() =>
+    const dueQueue = createMemo(() =>
         buildQueue(props.rows, dueField(), todayISO(), cram(), bidirectional()),
     )
+    // Persisted grades whose new due has not reached `props.rows` yet — hidden from the queue so
+    // one grade advances on its own, without waiting on the host's refetch (flashcardsQueue.ts's
+    // `PendingGrades` has the whole account). Pruned as soon as the refetch lands.
+    const [pending, setPending] = createSignal<PendingGrades>(new Map())
+    createEffect(() => {
+        const live = livePending(dueQueue(), untrack(pending))
+        if (live !== untrack(pending)) setPending(live)
+    })
+    const queue = createMemo(() => withoutPending(dueQueue(), pending()))
 
     const [pos, setPos] = createSignal(restored.pos)
     const [revealed, setRevealed] = createSignal(false)
@@ -385,12 +400,20 @@ export function FlashcardsView(props: {
         if (!c || !canGrade({ revealed: revealed(), grading: grading() }))
             return
         setGrading(true)
-        setRevealed(false)
+        // Cram mode never writes scheduling — it's practice, not review.
+        const persisted = !cram() && !!props.basePath
+        const key = itemKey(c)
+        // One batch, so the graded card leaves the queue in the same update that un-reveals it:
+        // the keyed mount below swaps to the next card at rest, instead of the SAME card turning
+        // back to its front while the write is in flight.
+        batch(() => {
+            if (persisted)
+                setPending(p => new Map(p).set(key, pendingDue(c)))
+            setRevealed(false)
+        })
         if (response === 'hard') setHardCount(n => n + 1)
         else if (response === 'easy') setEasyCount(n => n + 1)
         else setGoodCount(n => n + 1)
-        // Cram mode never writes scheduling — it's practice, not review.
-        const persisted = !cram() && !!props.basePath
         try {
             if (cram()) {
                 // Cram-until-easy: only an "easy" grade retires the card from the pool; a
@@ -403,18 +426,27 @@ export function FlashcardsView(props: {
                 const np = nextCramPos(queue(), pos(), pool)
                 setPos(np === -1 ? queue().length : np)
             } else {
-                // Track the card by its stable row index (c.index), not the positional queue
-                // offset: reviewCardRow pushes the card's due date forward so it drops out of
-                // the due-only queue on the onReviewed refetch. The shorter queue shifts the
-                // next card into the current pos, so we stay put (mirrors deleteCurrent)
-                // rather than incrementing into a queue whose membership just changed.
-                if (persisted)
-                    await api.reviewCardRow(
-                        props.basePath!,
-                        c.index,
-                        response,
-                        scheduleColumns(c.dir, baseSchedule()),
-                    )
+                // Stay put (mirrors deleteCurrent): the graded card already left the queue via
+                // `pending` above, so the next card shifted into the current pos. The refetch
+                // then drops it for real (its due moved forward) and the entry is pruned.
+                if (persisted) {
+                    try {
+                        await api.reviewCardRow(
+                            props.basePath!,
+                            c.index,
+                            response,
+                            scheduleColumns(c.dir, baseSchedule()),
+                        )
+                    } catch (e) {
+                        // Nothing was scheduled: put the card back where it was.
+                        setPending(p => {
+                            const next = new Map(p)
+                            next.delete(key)
+                            return next
+                        })
+                        throw e
+                    }
+                }
                 setPos(nextPosAfterGrade(pos(), { cram: false, persisted }))
                 props.onReviewed()
             }
@@ -734,12 +766,12 @@ export function FlashcardsView(props: {
                             <div class={styles['grade-row']}>
                                 <For each={GRADE_KEYS}>
                                     {g => (
-                                        <TextButton
+                                        <GradeButton
+                                            label={g.response}
+                                            combo={settings.keybindings[g.id]}
                                             title={`${g.response} (${gradeKeyLabel(g.id)})`}
-                                            onClick={() => grade(g.response)}
-                                        >
-                                            {g.response}
-                                        </TextButton>
+                                            onClick={() => void grade(g.response)}
+                                        />
                                     )}
                                 </For>
                             </div>
