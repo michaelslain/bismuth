@@ -4,6 +4,7 @@
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, within } from 'storybook/test'
+import AsciiCellEdges from '../../../ui/ascii/AsciiCellEdges'
 import TaskDayCell from './TaskDayCell'
 import { placeRows } from '../../taskPlacement'
 import type { TaskComposeProps } from '../../taskCompose'
@@ -45,7 +46,8 @@ const Harness = () => {
         cancel: () => setComposeDate(null),
     }
     return (
-        <div style={{ position: 'relative', width: '240px', 'min-height': '120px', padding: '8px', border: '1px solid var(--border-soft)' }}>
+        <div style={{ position: 'relative', width: '240px', 'min-height': '120px', padding: '8px', margin: '12px' }}>
+            <AsciiCellEdges edges={['top', 'right', 'bottom', 'left']} />
             <TaskDayCell date={today} tasks={tasks()} compose={compose} onToggleTask={() => setToggled(n => n + 1)} />
             <output data-testid="toggled">{toggled()}</output>
         </div>
@@ -66,6 +68,15 @@ export const ChipsAndAddButton: Story = {
         // the button is quiet at rest, the composer takes over when it is pressed
         const add = c.getByRole('button', { name: 'Add task' })
         expect(getComputedStyle(add).opacity).toBe('0')
+        // revealed, the button sits inside the cell's typed edges: clear of the top-right `+` (its
+        // corner box spans half a `ch` inside the cell) and below the top `-` run's stroke
+        const host = add.parentElement!.getBoundingClientRect()
+        const corner = canvasElement
+            .querySelector<HTMLElement>('[data-corner="top-right"]')!
+            .getBoundingClientRect()
+        const ab = add.getBoundingClientRect()
+        expect(ab.right, 'add button overlaps the top-right +').toBeLessThanOrEqual(corner.left + 0.5)
+        expect(ab.top - host.top, 'add button sits on the top - run').toBeGreaterThanOrEqual(3)
         await fireEvent.click(add)
         expect(c.queryByRole('button', { name: 'Add task' })).toBeNull()
     },
