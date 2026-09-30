@@ -71,11 +71,15 @@ export const ChipsAndAddButton: Story = {
         // revealed, the button sits inside the cell's typed edges: clear of the top-right `+` (its
         // corner box spans half a `ch` inside the cell) and below the top `-` run's stroke
         const host = add.parentElement!.getBoundingClientRect()
-        const corner = canvasElement
-            .querySelector<HTMLElement>('[data-corner="top-right"]')!
-            .getBoundingClientRect()
+        // the overlay overhangs the host by half a tile, so its top-right corner tile is one tile
+        // wide ending at the overlay's right edge: it starts half a tile inside the host
+        const corner = canvasElement.querySelector<HTMLElement>('[data-edges~="top"][data-edges~="right"]')
+        expect(corner, 'the cell types a top-right corner').toBeTruthy()
+        const overlay = corner!.getBoundingClientRect()
+        const tileW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ascii-tile-w'))
+        expect(tileW, 'the glyph tiles are installed').toBeGreaterThan(0)
         const ab = add.getBoundingClientRect()
-        expect(ab.right, 'add button overlaps the top-right +').toBeLessThanOrEqual(corner.left + 0.5)
+        expect(ab.right, 'add button overlaps the top-right +').toBeLessThanOrEqual(overlay.right - tileW + 0.5)
         expect(ab.top - host.top, 'add button sits on the top - run').toBeGreaterThanOrEqual(3)
         await fireEvent.click(add)
         expect(c.queryByRole('button', { name: 'Add task' })).toBeNull()

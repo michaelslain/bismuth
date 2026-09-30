@@ -41,6 +41,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// Derived corners: a corner exists where both of its edges are drawn, and `data-edges` (the
+// primitive's runtime hook) is the contract the count reads.
+const corners = (root: ParentNode, v: 'top' | 'bottom', h: 'left' | 'right') =>
+    root.querySelectorAll(`[data-edges~="${v}"][data-edges~="${h}"]`).length
+
 const anchor = new Date(2026, 0, 12)
 
 /** The standard sample events (timed events, an all-day event, a two-category gradient
@@ -62,12 +67,20 @@ export const Default: Story = {
     play: async ({ canvasElement }) => {
         const cells = canvasElement.querySelectorAll('[data-testid="month-cell"]').length
         const rows = cells / 7
-        const n = (corner: string) =>
-            canvasElement.querySelectorAll(`[data-corner="${corner}"]`).length
-        expect(n('top-left')).toBe(7 + 7 * (rows - 1))
-        expect(n('top-right')).toBe(rows)
-        expect(n('bottom-left')).toBe(14) // the header's heavy underline + the last row, one per column
-        expect(n('bottom-right')).toBe(2) // the header's last column + the grid's last cell
+        const n = (v: 'top' | 'bottom', h: 'left' | 'right') => corners(canvasElement, v, h)
+        // the seven weekday header cells each type their bottom heavy: the `=` under the labels
+        const names = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-day-name"]'),
+        ]
+        expect(names).toHaveLength(7)
+        names.forEach(nm =>
+            expect(nm.parentElement!.querySelector('[data-heavy~="bottom"]')).toBeTruthy(),
+        )
+        expect(canvasElement.querySelectorAll('[data-heavy~="bottom"]')).toHaveLength(7)
+        expect(n('top', 'left')).toBe(7 + 7 * (rows - 1))
+        expect(n('top', 'right')).toBe(rows)
+        expect(n('bottom', 'left')).toBe(14) // the header's heavy underline + the last row, one per column
+        expect(n('bottom', 'right')).toBe(2) // the header's last column + the grid's last cell
         // the header is tall enough (two line boxes) for a whole `|` between its corners
         const head = canvasElement
             .querySelector<HTMLElement>('[data-testid="month-day-name"]')!

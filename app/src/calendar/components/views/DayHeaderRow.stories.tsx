@@ -15,6 +15,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// Derived corners: a corner exists where both of its edges are drawn, and `data-edges` (the
+// primitive's runtime hook) is the contract the count reads.
+const corners = (root: ParentNode, v: 'top' | 'bottom', h: 'left' | 'right') =>
+    root.querySelectorAll(`[data-edges~="${v}"][data-edges~="${h}"]`).length
+
 const anchor = new Date(2026, 8, 1) // a Tuesday
 const dates = Array.from({ length: 7 }, (_, i) => addDays(anchor, i))
 
@@ -43,8 +48,10 @@ export const Week: Story = {
         expect(withCircle).toHaveLength(1)
         // typed as an ASCII grid: every header types a top-left and a bottom-left corner (its
         // bottom is the heavy `=` under the labels), and only the LAST adds the right ones
-        expect(canvasElement.querySelectorAll('[data-corner="bottom-left"]')).toHaveLength(7)
-        expect(canvasElement.querySelectorAll('[data-corner="bottom-right"]')).toHaveLength(1)
+        expect(corners(canvasElement, 'bottom', 'left')).toBe(7)
+        expect(corners(canvasElement, 'bottom', 'right')).toBe(1)
+        // the line under every label is the heavy `=`, one per header cell
+        heads.forEach(h => expect(h.querySelector('[data-heavy~="bottom"]')).toBeTruthy())
         heads.forEach(h => expect(getComputedStyle(h).borderLeftWidth).toBe('0px'))
     },
 }

@@ -40,6 +40,10 @@ export const InMonth: Story = {
         await fireEvent.click(c.getByTestId('month-cell'))
         expect(c.getByTestId('clicks').textContent).toBe('1')
         expect(c.getByText('A chip')).toBeInTheDocument()
+        // a lone cell with every position flag types all four edges, in the contract's fixed order
+        expect(
+            canvasElement.querySelector('[data-edges]')!.getAttribute('data-edges'),
+        ).toBe('top right bottom left')
     },
 }
 
