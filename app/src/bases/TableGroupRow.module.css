@@ -1,6 +1,12 @@
 /* TableGroupRow.tsx is the sole importer. Table keeps its tinted band as the row background. */
 .row { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+/* The band is a host for its own top/left/right edges (see AsciiCellEdges): positioned, not
+   clipping. It types no bottom — the row after it types its own top. */
 .cell {
+  position: relative;
+  /* a vertical run types one `|` per line box and needs two lines of room (its box is inset half a
+     line at each end), so a row is never shorter than two lines or its bars vanish */
+  box-sizing: border-box;
+  height: calc(var(--cell-h) * 2);
   padding: var(--sp-4) var(--sp-5);
-  border-bottom: var(--rule-soft, 1px solid var(--border-soft));
 }

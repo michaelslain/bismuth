@@ -6,6 +6,7 @@ import type { BaseConfig } from '../../../core/src/bases/types'
 import { columnLabel } from './columnLabel'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
+import AsciiCellEdges, { type AsciiEdge } from '../ui/ascii/AsciiCellEdges'
 import styles from './TableHeader.module.css'
 
 export type TableHeaderProps = {
@@ -27,6 +28,13 @@ export type TableHeaderProps = {
     class?: string
 }
 
+// A header cell types its top + left (the last one its right too) and its bottom as the heavy `=`;
+// the first body row under it omits its own top so the two never overprint.
+const headerEdges = (last: boolean): AsciiEdge[] =>
+    last
+        ? ['top', 'left', 'right', 'bottom']
+        : ['top', 'left', 'bottom']
+
 const TableHeader: Component<TableHeaderProps> = props => (
     <thead ref={el => props.ref?.(el)} class={props.class}>
         <tr>
@@ -44,6 +52,11 @@ const TableHeader: Component<TableHeaderProps> = props => (
                         onPointerMove={e => props.onPointerMove?.(i(), e)}
                         onPointerLeave={() => props.onPointerLeave?.()}
                     >
+                        {/* First, so the resize handle below paints on top of the `|` run. */}
+                        <AsciiCellEdges
+                            edges={headerEdges(i() === props.cols.length - 1)}
+                            edgeWeight={{ bottom: 'heavy' }}
+                        />
                         <Label inline class={styles.thLabel}>
                             {columnLabel(c, props.config)}
                         </Label>

@@ -1,12 +1,21 @@
 /* TableSummaryRow.tsx is the sole importer. */
+/* The cell is a host for the typed grid's edges (see AsciiCellEdges): positioned, not clipping.
+   The gutter and the ellipsis live on `.clip`. */
 .cell {
-  padding: var(--sp-4) var(--sp-5);
+  position: relative;
+  /* a vertical run types one `|` per line box and needs two lines of room (its box is inset half a
+     line at each end), so a row is never shorter than two lines or its bars vanish */
+  box-sizing: border-box;
+  height: calc(var(--cell-h) * 2);
   font-weight: 500;
   color: var(--text-muted);
   white-space: nowrap;
   vertical-align: middle;
+  min-width: 0;
+}
+.clip {
+  padding: var(--sp-4) var(--sp-5);
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  border-top: 2px solid var(--border);
 }
