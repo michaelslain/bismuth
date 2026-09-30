@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import {
     EDGE_KEYS,
     edgeAttrs,
@@ -7,6 +8,7 @@ import {
     fitTiles,
     glyphOrigin,
     spriteGlyphs,
+    spriteVar,
     tileCacheKey,
     tileSize,
 } from './asciiGlyphTiles'
@@ -100,5 +102,14 @@ describe('edgeAttrs (the data-edges / data-heavy contract)', () => {
         expect(new Set(sels).size).toBe(EDGE_KEYS.length)
         expect(edgeSelector('1001')).toBe("[data-edges='top left']:not([data-heavy])")
         expect(edgeSelector('2001')).toBe("[data-edges='top left'][data-heavy='top']")
+    })
+})
+
+describe('AsciiCellEdges.module.css', () => {
+    test('the stylesheet has exactly one rule per key, wired to its sprite var', () => {
+        const css = readFileSync(new URL('./AsciiCellEdges.module.css', import.meta.url), 'utf8')
+        for (const k of EDGE_KEYS)
+            expect(css).toContain(`.edges${edgeSelector(k)} { -webkit-mask-box-image-source: var(${spriteVar(k)},`)
+        expect(css.split('\n').filter(l => l.startsWith('.edges[')).length).toBe(EDGE_KEYS.length)
     })
 })
