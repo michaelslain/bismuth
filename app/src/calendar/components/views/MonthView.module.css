@@ -13,15 +13,16 @@
    floor that misaligned the week view).
    THE GRID IS TYPED, NOT DRAWN: every header and day cell hosts <AsciiCellEdges> (`+ - | =` as
    text), and its glyphs straddle the cell boundary — half a line box past the top/bottom, half a
-   `ch` past the left/right. The scroller clips overflow, so it carries that overhang as padding
-   (a vertical --cell-h / 2, a horizontal --sp-3). The sticky header (`top: 0` is measured from the scroller's
-   CONTENT box, so below that padding) therefore sticks one half line down, and its box-shadow (offset up, no blur) is the header's own background over the
-   strip above it, so the month never scrolls through the gap.
+   `ch` past the left/right. The scroller clips overflow, so it carries the bottom and side overhang
+   as padding (--cell-h / 2 below, --sp-3 each side). The sticky header owns its TOP overhang as its
+   own `padding-top` (--cell-h / 2) and sticks at `top: 0`: its background covers that padding, so
+   the month never scrolls through the strip above the `=`, with no shadow painted (the same
+   pattern as TimeGrid and TaskAllDayStrip).
    A vertical run only prints WHOLE `|` lines between its two corners, so the header cell is floored
    at two line boxes: shorter than that and its `|` would have no room at all (`+` over `+`). */
 .month-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-.scroller { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: calc(var(--cell-h) / 2) var(--sp-3); }
-.month-grid-header { position: sticky; top: 0; z-index: 1; background: var(--bg); display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); box-shadow: 0 calc(var(--cell-h) / -2) 0 var(--bg); }
+.scroller { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 0 var(--sp-3) calc(var(--cell-h) / 2); }
+.month-grid-header { position: sticky; top: 0; z-index: 1; background: var(--bg); display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding-top: calc(var(--cell-h) / 2); }
 .month-day { position: relative; min-width: 0; display: flex; align-items: center; min-height: calc(var(--cell-h) * 2); }
 .month-day-name { flex: 1; min-width: 0; padding: 0 var(--sp-5); text-transform: uppercase; }
 .month-grid { flex: 1 0 auto; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: auto; align-content: stretch; }
