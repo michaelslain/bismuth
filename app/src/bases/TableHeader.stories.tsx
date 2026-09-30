@@ -35,6 +35,9 @@ export const Static: Story = {
             expect(th.querySelector('[data-heavy~="bottom"]')).toBeTruthy()
             expect(getComputedStyle(th).borderBottomWidth).toBe('0px')
         }
+        // Each header rings its glyph overhang (it is a sticky header), one ring per <th>.
+        expect(canvasElement.querySelectorAll('[data-backdrop]').length).toBe(ths.length)
+        for (const th of ths) expect(th.querySelector('[data-backdrop]')).toBeTruthy()
         // Only the last header closes the right edge.
         expect(ths[3].querySelector('[data-edges~="right"]')).toBeTruthy()
         expect(ths[0].querySelector('[data-edges~="right"]')).toBeNull()

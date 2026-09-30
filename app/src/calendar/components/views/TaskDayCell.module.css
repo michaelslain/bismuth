@@ -3,10 +3,12 @@
    holds this — a month cell, an all-day cell — which reveals it on hover/focus-within through a
    `[data-add-task]` selector. IconButton's own `.btn--icon.btn--normal` (0,2,0) sets
    `opacity: 1`; `.add[data-add-task]` matches that specificity, and loads after it, to win.
-   Placement: its host cell types its edges with <AsciiCellEdges>, so the button's `--sp-2` top inset
-   clears the top `-` run's stroke, and its `--sp-4` right inset (the cell's own padding, mirroring the
+   Placement: its host cell types its edges with <AsciiCellEdges>, and a cell under a sticky header
+   (the month's first row) has a half-tile `--bg` ring band hanging in from that header, so the
+   button's top inset is half a tile + `--sp-1` (it clears the top `-` run and the band); a host
+   that already pads that clearance itself (AllDayRow) sets `--add-task-top` to shrink it. Its `--sp-4` right inset (the cell's own padding, mirroring the
    day number's left inset) keeps a gap of at least 1ch before the right `|`;
    `TaskDayCell.stories.tsx` measures it against a host typed on all four edges. In the all-day strip
    it anchors to `.cellInner`, which sits inside AllDayRow's cell padding, so it clears the glyphs by
    that much more. */
-.add[data-add-task] { position: absolute; top: var(--sp-2); right: var(--sp-4); opacity: 0; transition: opacity var(--dur) var(--ease); }
+.add[data-add-task] { position: absolute; top: var(--add-task-top, calc(var(--ascii-tile-h, var(--cell-h)) / 2 + var(--sp-1))); right: var(--sp-4); opacity: 0; transition: opacity var(--dur) var(--ease); }
