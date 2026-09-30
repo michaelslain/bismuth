@@ -11,7 +11,7 @@ import {
     spriteGlyphs,
     spriteVar,
     tileCacheKey,
-    tileSize,
+    tileGeometry,
 } from './asciiGlyphTiles'
 
 describe('edgesKey', () => {
@@ -75,13 +75,47 @@ describe('installKey', () => {
     })
 })
 
-describe('tileSize', () => {
+describe('tileGeometry', () => {
+    // Monaspace Xenon at 11.5px, dpr 2, as the face draws them: a 6px `-`, an 11.5px `|`, a 5.5px `+`
+    const xenon = { dashW: 6, pipeH: 11.5, plusH: 5.5 }
     test('bitmap is whole device pixels, painted 1:1', () => {
-        expect(tileSize(6.9, 18, 1)).toEqual({ bw: 7, bh: 18, cssW: 7, cssH: 18 })
-        expect(tileSize(6.9, 18, 2)).toEqual({ bw: 14, bh: 36, cssW: 7, cssH: 18 })
-        const t = tileSize(6.9, 18, 3)
+        const g = tileGeometry(7.13, xenon, 2)
+        expect(g.bw).toBe(14)
+        expect(g.cssW).toBe(7)
+        expect(g.cssH).toBe(g.cy / 2)
+        expect(g.cssPitchY).toBe(g.py / 2)
+        const t = tileGeometry(6.9, xenon, 3)
         expect(t.bw).toBe(21)
         expect(Math.abs(t.cssW - 6.9)).toBeLessThanOrEqual(0.5 / 3)
+    })
+    test('a vertical run leaves the same ink gap as a horizontal one', () => {
+        for (const dpr of [1, 1.5, 2, 3])
+            for (const ink of [xenon, { dashW: 4.2, pipeH: 11.5, plusH: 5.5 }, { dashW: 5, pipeH: 14, plusH: 7 }]) {
+                const g = tileGeometry(7.13, ink, dpr)
+                const gapX = g.bw - ink.dashW * dpr
+                const gapY = g.py - ink.pipeH * dpr
+                expect(Math.abs(gapY - gapX)).toBeLessThanOrEqual(0.5)
+                expect(gapX).toBeCloseTo(g.gap, 6)
+            }
+        // the old build: one `|` per 18px line box, a 13 device-px gap against a 2 — never again
+        const g = tileGeometry(7.13, xenon, 2)
+        expect(g.py).toBeLessThan(36)
+        expect(g.py).toBe(25)
+    })
+    test('a corner row holds the `+` plus one gap, rounded to an even bitmap so the half-tile overhang is whole device pixels', () => {
+        for (const dpr of [1, 2, 3]) {
+            const g = tileGeometry(7.13, xenon, dpr)
+            expect(g.cy % 2).toBe(0)
+            expect(Math.abs(g.cy - (xenon.plusH * dpr + g.gap))).toBeLessThanOrEqual(1)
+        }
+        expect(tileGeometry(7.13, xenon, 2).cy).toBe(14)
+    })
+    test('never degenerate', () => {
+        const g = tileGeometry(0.1, { dashW: 9, pipeH: 0, plusH: 0 }, 1)
+        expect(g.bw).toBeGreaterThanOrEqual(1)
+        expect(g.gap).toBe(0)
+        expect(g.py).toBeGreaterThanOrEqual(1)
+        expect(g.cy).toBeGreaterThanOrEqual(2)
     })
 })
 

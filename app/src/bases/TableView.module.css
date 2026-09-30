@@ -5,10 +5,10 @@
 /* One root for the table + its empty state; a plain block, so the parent sees a single child. */
 .frame {
   display: block;
-  /* The typed grid's outer glyphs straddle the table's edge — half a line box above the top run,
-     half a glyph left of the left `|` — so the frame leaves that room, or a scroll container
+  /* The typed grid's outer glyphs straddle the table's edge — half a corner tile above the top
+     run, half a glyph left of the left `|` — so the frame leaves that room, or a scroll container
      around the table would cut the outer corners. */
-  padding: calc(var(--cell-h) / 2) calc(var(--fs-ui) * 0.4);
+  padding: calc(var(--ascii-tile-h, var(--cell-h)) / 2) calc(var(--fs-ui) * 0.4);
 }
 .table { border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
 /* The cell is the typed grid's HOST (position: relative, no clipping — see AsciiCellEdges), so it
@@ -16,17 +16,24 @@
    which spans the cell's whole box, so an open editor still overflows into the gutter as before. */
 .cell {
   position: relative;
-  /* a vertical run types one `|` per line box and needs two lines of room (its box is inset half a
-     line at each end), so a row is never shorter than two lines or its bars vanish */
+  /* one typed row: tall enough for a control (the in-cell editor) and never shorter than the
+     glyphs' own shortest row (corner halves + one `|`, --ascii-row-h), so a one-line row is its
+     text line plus an equal inset; the vertical run stretches its one `|` by the difference */
   box-sizing: border-box;
-  height: calc(var(--cell-h) * 2);
+  /* the gutter is `.clip`'s; the UA's 1px cell padding would make every row 2px taller than one
+     typed row and push its vertical run to the wrong whole number of `|` */
+  padding: 0;
+  height: max(var(--ascii-row-h, var(--h-control)), var(--h-control));
   color: var(--fg);
   white-space: nowrap;
   vertical-align: middle;
   min-width: 0;
 }
 .clip {
-  padding: var(--sp-4) var(--sp-5);
+  /* the inset: ~1ch from the `|` centre across, and the rest of the row split evenly above and
+     below the text line — so the text sits the same short distance from all four lines, and the
+     clip still spans the whole row (an open editor overflows into it, never past it) */
+  padding: calc((max(var(--ascii-row-h, var(--h-control)), var(--h-control)) - var(--cell-h)) / 2) var(--ascii-tile-w, 1ch);
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;

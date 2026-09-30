@@ -4,9 +4,10 @@
    clipping. It types no bottom — the row after it types its own top. */
 .cell {
   position: relative;
-  /* a vertical run types one `|` per line box and needs two lines of room (its box is inset half a
-     line at each end), so a row is never shorter than two lines or its bars vanish */
+  /* one typed row: tall enough for a control (matching the body rows) and never shorter than the
+     glyphs' own shortest row (corner halves + one `|`, --ascii-row-h), so a one-line row is its
+     text line plus an equal inset; the vertical run stretches its one `|` by the difference */
   box-sizing: border-box;
-  height: calc(var(--cell-h) * 2);
-  padding: var(--sp-4) var(--sp-5);
+  height: max(var(--ascii-row-h, var(--h-control)), var(--h-control));
+  padding: calc((max(var(--ascii-row-h, var(--h-control)), var(--h-control)) - var(--cell-h)) / 2) var(--ascii-tile-w, 1ch);
 }

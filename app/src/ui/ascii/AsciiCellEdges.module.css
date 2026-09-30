@@ -3,17 +3,19 @@
 
    ONE edges element per cell and no children (plus one optional `backdrop` ring before it): the edges are a nine-slice MASK over a background-color of
    the ink token. The mask is a 3x3 sprite of the UI font's own `+ - = |` glyphs, rasterised once by
-   asciiGlyphTiles.ts (canvas fillText in the computed --ui-font-stack at --fs-ui, one tile = the
-   font's `ch` x --cell-h at devicePixelRatio) and installed on :root as --ascii-edges-<key>. No
+   asciiGlyphTiles.ts (canvas fillText in the computed --ui-font-stack at --fs-ui, at
+   devicePixelRatio) and installed on :root as --ascii-edges-<key>. No
    text, no pseudo-elements, no container queries, no per-cell measurement: a 2000x8 table
    costs one masked box per cell.
 
-   Geometry. The element overhangs the host by half a tile on every side (inset: -tile-h/2
+   Geometry. A corner tile is --ascii-tile-w (the font's `ch`) x --ascii-tile-h (the `+` ink + one
+   glyph gap). The element overhangs the host by half a corner tile on every side (inset: -tile-h/2
    -tile-w/2), so the nine-slice's corner tiles are centred ON the host's corners and its edge
    tiles are centred ON the host's edges:
      - corners paint 1:1 (a `+` is never resampled), its ink centre drawn on the tile centre;
-     - the top/bottom slices repeat `-`/`=` between the two corner tiles, and the left/right
-       slices stack `|` at --cell-h pitch between them, both with `round`: a whole number of
+     - the top/bottom slices repeat `-`/`=` at `ch` pitch between the two corner tiles, and the
+       left/right slices stack `|` at --ascii-pitch-y (the `|` ink + the SAME ink gap a `-` run
+       leaves), so both axes carry one dashed rhythm; both repeat with `round`: a whole number of
        glyphs fits, stretched by under 1/(2n) of a glyph, so a fluid width never cuts a glyph
        into a sliver beside a `+`;
      - every glyph shares the `+`'s origin inside its tile, so `-`/`=` share its baseline and

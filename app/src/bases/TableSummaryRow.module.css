@@ -3,10 +3,14 @@
    The gutter and the ellipsis live on `.clip`. */
 .cell {
   position: relative;
-  /* a vertical run types one `|` per line box and needs two lines of room (its box is inset half a
-     line at each end), so a row is never shorter than two lines or its bars vanish */
+  /* one typed row: tall enough for a control (matching the body rows) and never shorter than the
+     glyphs' own shortest row (corner halves + one `|`, --ascii-row-h), so a one-line row is its
+     text line plus an equal inset; the vertical run stretches its one `|` by the difference */
   box-sizing: border-box;
-  height: calc(var(--cell-h) * 2);
+  /* the gutter is `.clip`'s; the UA's 1px cell padding would make every row 2px taller than one
+     typed row and push its vertical run to the wrong whole number of `|` */
+  padding: 0;
+  height: max(var(--ascii-row-h, var(--h-control)), var(--h-control));
   font-weight: 500;
   color: var(--text-muted);
   white-space: nowrap;
@@ -14,7 +18,7 @@
   min-width: 0;
 }
 .clip {
-  padding: var(--sp-4) var(--sp-5);
+  padding: calc((max(var(--ascii-row-h, var(--h-control)), var(--h-control)) - var(--cell-h)) / 2) var(--ascii-tile-w, 1ch);
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;

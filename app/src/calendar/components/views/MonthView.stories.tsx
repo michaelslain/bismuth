@@ -14,6 +14,7 @@ import { MonthView } from './MonthView'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import CalendarFrame from '../CalendarFrame'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
+import { whenAsciiGlyphTilesInstalled } from '../../../ui/ascii/asciiGlyphTiles'
 import { currentDate } from '../../state'
 import { placeRows } from '../../taskPlacement'
 import type { PlacedTask } from '../../taskPlacement'
@@ -81,11 +82,19 @@ export const Default: Story = {
         expect(n('top', 'right')).toBe(rows)
         expect(n('bottom', 'left')).toBe(14) // the header's heavy underline + the last row, one per column
         expect(n('bottom', 'right')).toBe(2) // the header's last column + the grid's last cell
-        // the header is tall enough (two line boxes) for a whole `|` between its corners
+        // the header is one typed row: tall enough for a whole `|` between its corners (corner
+        // halves + one vertical pitch, --ascii-row-h), and no taller than a table header's row —
+        // not the old two line boxes, which left the weekday names floating
         const head = canvasElement
             .querySelector<HTMLElement>('[data-testid="month-day-name"]')!
             .parentElement!.getBoundingClientRect()
-        expect(head.height).toBeGreaterThanOrEqual(36)
+        await whenAsciiGlyphTilesInstalled()
+        const rootCs = getComputedStyle(document.documentElement)
+        const rowH = parseFloat(rootCs.getPropertyValue('--ascii-row-h'))
+        const control = parseFloat(rootCs.getPropertyValue('--h-control'))
+        expect(rowH, 'the glyph tiles are installed').toBeGreaterThan(0)
+        expect(head.height).toBeGreaterThanOrEqual(rowH - 0.5)
+        expect(head.height).toBeLessThanOrEqual(Math.max(rowH, control) + 0.5)
     },
 }
 

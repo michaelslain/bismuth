@@ -68,7 +68,8 @@ export const ChipsAndAddButton: Story = {
         // the button is quiet at rest, the composer takes over when it is pressed
         const add = c.getByRole('button', { name: 'Add task' })
         expect(getComputedStyle(add).opacity).toBe('0')
-        // revealed, the button sits inside the cell's typed edges: below the top `-` run's stroke, and
+        // revealed, the button sits inside the cell's typed edges: never above the top `-` run's
+        // centre line (it is centred in the cell's first typed row, level with the day number), and
         // at least one `ch` clear of the right `|` stem. The overlay overhangs the host by half a
         // tile, so the stem (centre of the right-edge tile) is the HOST's right edge.
         const host = add.parentElement!.getBoundingClientRect()
@@ -76,7 +77,8 @@ export const ChipsAndAddButton: Story = {
         expect(tileW, 'the glyph tiles are installed').toBeGreaterThan(0)
         const ab = add.getBoundingClientRect()
         expect(host.right - ab.right, 'add button clears the right | by at least 1ch').toBeGreaterThanOrEqual(tileW - 0.5)
-        expect(ab.top - host.top, 'add button sits on the top - run').toBeGreaterThanOrEqual(3)
+        expect(ab.top - host.top, 'add button never rises above the top - run').toBeGreaterThanOrEqual(0)
+        expect(ab.top - host.top, 'add button is centred in the first typed row, not dropped below it').toBeLessThanOrEqual(tileW)
         await fireEvent.click(add)
         expect(c.queryByRole('button', { name: 'Add task' })).toBeNull()
     },

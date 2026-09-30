@@ -3,8 +3,8 @@
 //
 // Why: a typed grid of thousands of cells cannot afford a line of text per edge (a 2000x8 table
 // took ~17s to lay out as glyph runs). So each glyph is drawn once, with canvas `fillText` in the
-// COMPUTED `--ui-font-stack` at `--fs-ui`, into a one-`ch` x `--cell-h` tile at devicePixelRatio,
-// and a cell becomes ONE element whose edges are a nine-slice mask over its ink colour.
+// COMPUTED `--ui-font-stack` at `--fs-ui`, into one-`ch`-wide tiles at devicePixelRatio, and a cell
+// becomes ONE element whose edges are a nine-slice mask over its ink colour.
 //
 // A sprite is 3x3 tiles — the nine-slice of one cell's edges:
 //
@@ -13,8 +13,14 @@
 //     + - +        and an empty tile wherever the cell does not own that part.
 //
 // One sprite per edge set (top none/rule/heavy x right x bottom none/rule/heavy x left = 36 keys,
-// 35 with ink), installed on :root as `--ascii-edges-<key>: url(data:…)` plus the tile's CSS size
-// (`--ascii-tile-w`, `--ascii-tile-h`) and its bitmap size (`--ascii-slice-x`, `--ascii-slice-y`).
+// 35 with ink), installed on :root as `--ascii-edges-<key>: url(data:…)` plus the corner tile's CSS
+// size (`--ascii-tile-w`, `--ascii-tile-h`), the vertical run's pitch (`--ascii-pitch-y`), the
+// shortest typed row (`--ascii-row-h` = tile-h + pitch-y: corner halves + one `|`) and the corner
+// tile's bitmap size (`--ascii-slice-x`, `--ascii-slice-y`).
+//
+// The rows are NOT equal: corners and top/bottom runs are `+`-ink + one gap tall, the side slice is
+// `|`-ink + one gap tall, where the gap is the one a `-` run leaves between two `-` — so a vertical
+// line reads as the same dashed stroke as a horizontal one (tileGeometry).
 // Colour is NOT in the sprite: it is a mask, and the ink comes from the element's
 // background-color, so a theme switch needs no regeneration. Only the font stack, font size, cell
 // height or dpr changing does (the cache key).
@@ -22,7 +28,7 @@
 // Every glyph in a sprite is drawn at the SAME offset inside its tile, chosen so the `+`'s ink
 // centre lands exactly on the tile centre: the tile centre is the cell corner, so the `+` sits
 // centred on its corner, the `|` stems share its x (same advance, same origin) and the `-`/`=`
-// strokes share its baseline — exactly as the text-run build typed them.
+// strokes share its baseline. A `|` is centred, ink on the tile centre, in its own side slice.
 
 /** 0 = edge not drawn, 1 = rule (`-`), 2 = heavy (`=`); vertical edges are 0 or 1 (`|`). */
 export type HorizontalEdge = 0 | 1 | 2
@@ -96,13 +102,26 @@ export function installKey(cacheKey: string, ready: boolean): string {
     return ready ? cacheKey : `${cacheKey}|fallback`
 }
 
-/** A tile's bitmap size in device pixels and the CSS size it is painted at. The bitmap is a whole
- *  number of device pixels and is painted 1:1 (the CSS size is bitmap / dpr), so a `+` is never
- *  resampled; that moves a corner by at most a quarter of a device pixel from the true `ch`. */
-export function tileSize(chPx: number, cellHPx: number, dpr: number) {
+/** The ink extents the geometry is derived from, in CSS px, measured from the face itself:
+ *  `dashW` = the `-` ink width, `pipeH` = the `|` ink height, `plusH` = the `+` ink height. */
+export type GlyphInk = { dashW: number; pipeH: number; plusH: number }
+
+/** The nine-slice's geometry in device pixels, and the CSS sizes it is painted at (bitmap / dpr, so
+ *  every glyph paints 1:1 and is never resampled).
+ *
+ *  ONE rhythm on both axes: `gap` is the ink-to-ink gap between two `-` in a horizontal run (a
+ *  `ch` advance minus the `-` ink), and a vertical run stacks `|` at `py` = `|` ink + that same gap,
+ *  so a vertical line reads as the same dashed stroke as a horizontal one. The corner (and
+ *  top/bottom run) tiles are `bw` x `cy`, with `cy` = `+` ink + that gap: the `+` is centred in it,
+ *  so the first `|` below a `+` sits one gap from the `+` ink too (half a gap each side of the slice
+ *  boundary). `cy` is rounded to an EVEN number of device pixels: the overlay overhangs the host by
+ *  half of it, and a half-device-pixel overhang would resample every glyph. */
+export function tileGeometry(chPx: number, ink: GlyphInk, dpr: number) {
     const bw = Math.max(1, Math.round(chPx * dpr))
-    const bh = Math.max(1, Math.round(cellHPx * dpr))
-    return { bw, bh, cssW: bw / dpr, cssH: bh / dpr }
+    const gap = Math.max(0, bw - ink.dashW * dpr)
+    const py = Math.max(1, Math.round(ink.pipeH * dpr + gap))
+    const cy = Math.max(2, 2 * Math.round((ink.plusH * dpr + gap) / 2))
+    return { bw, cy, py, gap, cssW: bw / dpr, cssH: cy / dpr, cssPitchY: py / dpr }
 }
 
 /** What `mask-repeat: round` does to a run: a whole number of tiles fills `room`, each stretched
@@ -181,9 +200,32 @@ function install(retried = false): void {
     if (!ctx) return
     ctx.font = `400 ${m.size * dpr}px ${m.family}`
     const ch = ctx.measureText('-').width / dpr
-    const { bw, bh, cssW, cssH } = tileSize(ch, m.cellH, dpr)
+    // the ink extents, in CSS px, of the three glyphs the rhythm is built from
+    const box = (g: string) => {
+        const t = ctx.measureText(g)
+        return {
+            left: t.actualBoundingBoxLeft,
+            right: t.actualBoundingBoxRight,
+            ascent: t.actualBoundingBoxAscent,
+            descent: t.actualBoundingBoxDescent,
+        }
+    }
+    const plus = box('+')
+    const pipe = box('|')
+    const dash = box('-')
+    const { bw, cy, py, cssW, cssH, cssPitchY } = tileGeometry(
+        ch,
+        {
+            dashW: (dash.left + dash.right) / dpr,
+            pipeH: (pipe.ascent + pipe.descent) / dpr,
+            plusH: (plus.ascent + plus.descent) / dpr,
+        },
+        dpr,
+    )
+    // rows of the sprite: corner/run tiles (cy), the side slice (py), corner/run tiles (cy)
+    const rowY = [0, cy, cy + py]
     canvas.width = bw * 3
-    canvas.height = bh * 3
+    canvas.height = cy * 2 + py
     const setup = () => {
         // resizing the canvas resets its state
         ctx.font = `400 ${m.size * dpr}px ${m.family}`
@@ -193,26 +235,30 @@ function install(retried = false): void {
         ctx.fillStyle = '#000'
     }
     setup()
-    const plus = ctx.measureText('+')
-    const o = glyphOrigin(bw, bh, {
-        left: plus.actualBoundingBoxLeft,
-        right: plus.actualBoundingBoxRight,
-        ascent: plus.actualBoundingBoxAscent,
-        descent: plus.actualBoundingBoxDescent,
-    })
+    // corners and runs: the `+` ink centred in its bw x cy tile (`-`/`=` share its baseline);
+    // the side slice: the `|` ink centred in its bw x py tile — so on the same x as the `+` ink
+    // centre (the face's `|` sits a fraction of a pixel off the `+` stem at a shared origin)
+    const o = glyphOrigin(bw, cy, plus)
+    const oSide = glyphOrigin(bw, py, pipe)
 
     const root = document.documentElement.style
     for (const k of EDGE_KEYS) {
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         spriteGlyphs(k).forEach((g, i) => {
-            if (g) ctx.fillText(g, (i % 3) * bw + o.x, Math.floor(i / 3) * bh + o.y)
+            if (!g) return
+            const row = Math.floor(i / 3)
+            const at = row === 1 ? oSide : o
+            ctx.fillText(g, (i % 3) * bw + at.x, rowY[row]! + at.y)
         })
         root.setProperty(spriteVar(k), `url(${canvas.toDataURL('image/png')})`)
     }
     root.setProperty('--ascii-tile-w', `${cssW}px`)
     root.setProperty('--ascii-tile-h', `${cssH}px`)
+    root.setProperty('--ascii-pitch-y', `${cssPitchY}px`)
+    // the shortest typed row: two corner halves + one `|` — a row this tall gets exactly one
+    root.setProperty('--ascii-row-h', `${cssH + cssPitchY}px`)
     root.setProperty('--ascii-slice-x', String(bw))
-    root.setProperty('--ascii-slice-y', String(bh))
+    root.setProperty('--ascii-slice-y', String(cy))
     installedKey = key
     markInstalled()
 }

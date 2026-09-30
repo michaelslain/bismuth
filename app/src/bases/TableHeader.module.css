@@ -8,16 +8,17 @@
   /* half a line down: the header's top rule straddles its box, and the scroll edge would clip it;
      the `backdrop` ring covers the strip above (the table frame already pads the top by that much) */
   top: calc(var(--ascii-tile-h, var(--cell-h)) / 2);
-  /* a vertical run types one `|` per line box and needs two lines of room (its box is inset half a
-     line at each end), so a row is never shorter than two lines or its bars vanish */
+  /* one typed row: tall enough for a control (matching the body rows) and never shorter than the
+     glyphs' own shortest row (corner halves + one `|`, --ascii-row-h), so a one-line row is its
+     text line plus an equal inset; the vertical run stretches its one `|` by the difference */
   box-sizing: border-box;
-  height: calc(var(--cell-h) * 2);
+  height: max(var(--ascii-row-h, var(--h-control)), var(--h-control));
   z-index: 1;
   background: var(--bg);
   text-align: left;
   font-weight: 500;
   color: var(--text-muted);
-  padding: var(--sp-4) var(--sp-5);
+  padding: calc((max(var(--ascii-row-h, var(--h-control)), var(--h-control)) - var(--cell-h)) / 2) var(--ascii-tile-w, 1ch);
   white-space: nowrap;
   font-family: var(--ui-font-stack);
   font-size: var(--fs-micro);

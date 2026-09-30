@@ -316,7 +316,7 @@ function MiniGrid(props: { width: number }) {
     )
 }
 
-type Ink = { cx: number; cy: number; strokes: number }
+type Ink = { cx: number; cy: number; strokes: number; w: number; h: number; top: number; bottom: number }
 
 /** Where one tile of a sprite puts its ink, in CSS px from the tile's top-left, read off the
  *  sprite's own pixels: `cx` = the x of its vertical stroke (the columns carrying at least half the
@@ -324,13 +324,17 @@ type Ink = { cx: number; cy: number; strokes: number }
  *  over rows. So a `+` gives its stem and its crossbar, a `|` its stem, a `-`/`=` its stroke —
  *  unaffected by a neighbouring glyph's ink. `strokes` = the number of maximal runs of rows whose
  *  alpha is at least half the peak row's: 1 for a `-`, 2 for an `=` (its two bars), which is what
- *  tells the two sprites apart. `null` = the tile is empty. */
-function tileInk(px: ImageData, col: number, row: number, bw: number, bh: number, dpr: number): Ink | null {
+ *  tells the two sprites apart. `w`/`h` = the ink's extent in DEVICE px (pixels of at least half
+ *  alpha along its horizontal stroke / down its vertical stroke), `top`/`bottom` = its first / last such row
+ *  from the tile's top — what the rhythm checks measure gaps with. The sprite's rows are NOT equal
+ *  (corner rows `bh` tall, the side row the vertical pitch), so a tile is addressed by its row's
+ *  top `y0` and height `th`. `null` = the tile is empty. */
+function tileInk(px: ImageData, col: number, y0: number, th: number, bw: number, dpr: number): Ink | null {
     const cols = new Array<number>(bw).fill(0)
-    const rows = new Array<number>(bh).fill(0)
-    for (let y = 0; y < bh; y++)
+    const rows = new Array<number>(th).fill(0)
+    for (let y = 0; y < th; y++)
         for (let x = 0; x < bw; x++) {
-            const a = px.data[((row * bh + y) * px.width + col * bw + x) * 4 + 3]!
+            const a = px.data[((y0 + y) * px.width + col * bw + x) * 4 + 3]!
             cols[x]! += a
             rows[y]! += a
         }
@@ -348,7 +352,25 @@ function tileInk(px: ImageData, col: number, row: number, bw: number, bh: number
     rows.forEach((v, i) => {
         if (v >= rowMax / 2 && !(i > 0 && rows[i - 1]! >= rowMax / 2)) strokes++
     })
-    return { cx: peak(cols) / dpr, cy: peak(rows) / dpr, strokes }
+    // extents at the half-alpha threshold, read along the glyph's own strokes: the width along the
+    // horizontal stroke's row, the height down the vertical stroke's column — so a `+` reports its
+    // full stem, not just its crossbar, and a `-` its length, not its thickness
+    const a = (x: number, y: number) => px.data[((y0 + y) * px.width + col * bw + x) * 4 + 3]!
+    const sx = Math.min(bw - 1, Math.floor(peak(cols)))
+    const sy = Math.min(th - 1, Math.floor(peak(rows)))
+    const across = cols.map((_, x) => x).filter(x => a(x, sy) >= 128)
+    const down = rows.map((_, y) => y).filter(y => a(sx, y) >= 128)
+    const ox = { first: across[0] ?? 0, last: across[across.length - 1] ?? -1 }
+    const oy = { first: down[0] ?? 0, last: down[down.length - 1] ?? -1 }
+    return {
+        cx: peak(cols) / dpr,
+        cy: peak(rows) / dpr,
+        strokes,
+        w: ox.last - ox.first + 1,
+        h: oy.last - oy.first + 1,
+        top: oy.first,
+        bottom: oy.last,
+    }
 }
 
 async function spritePixels(url: string) {
@@ -368,7 +390,11 @@ const urlOf = (css: string) => css.match(/url\("?([^")]+)"?\)/)?.[1] ?? ''
 /** Measures every overlay in `root` against what it paints and returns what disagrees. `problems`
  *  empty means acceptance item 5 holds: each `+` ink centre is on its cell corner (x within 1px,
  *  y within 0.75px), the `|` stems are within 1px of the `+` stem, and the `-`/`=` strokes are
- *  within 1px of its crossbar. */
+ *  within 1px of its crossbar. And ONE rhythm on both axes, read off the sprite in device px: the
+ *  gap a `|` leaves to the next `|` (side slice height - `|` ink) is within 1 device px of the gap
+ *  a `-` leaves to the next `-` (tile width - `-` ink), and the gap from a `+` down to the `|`
+ *  below it is within 1.5 (the corner row is rounded to an even height). The old build stacked
+ *  `|` at one per line box: a 13 device-px gap against a 2 — this fails on that. */
 async function probeGrid(root: HTMLElement) {
     await whenAsciiGlyphTilesInstalled()
     const rootCs = getComputedStyle(document.documentElement)
@@ -376,10 +402,12 @@ async function probeGrid(root: HTMLElement) {
     const tileH = parseFloat(rootCs.getPropertyValue('--ascii-tile-h'))
     const bw = Number(rootCs.getPropertyValue('--ascii-slice-x'))
     const bh = Number(rootCs.getPropertyValue('--ascii-slice-y'))
+    const pitchY = parseFloat(rootCs.getPropertyValue('--ascii-pitch-y'))
     const dpr = bw / tileW
+    expect(pitchY, 'the vertical pitch is installed').toBeGreaterThan(0)
     const overlays = [...root.querySelectorAll<HTMLElement>('[data-edges]')]
     const problems: string[] = []
-    const stats = { overlays: overlays.length, corners: 0, bars: 0, runs: 0, heavy: 0, maxOff: 0, maxDx: 0, maxDy: 0 }
+    const stats = { overlays: overlays.length, corners: 0, bars: 0, runs: 0, heavy: 0, maxOff: 0, maxDx: 0, maxDy: 0, gapX: 0, gapY: 0, gapPlusBar: 0 }
     const pixels = new Map<string, ImageData>()
     for (const el of overlays) {
         const edges = el.dataset.edges!.split(' ')
@@ -415,8 +443,13 @@ async function probeGrid(root: HTMLElement) {
 
         if (!pixels.has(src)) pixels.set(src, await spritePixels(src))
         const px = pixels.get(src)!
+        // the sprite's three rows: corners/runs (bh), the side slice (the vertical pitch), corners/runs
+        const sideH = px.height - 2 * bh
+        if (Math.abs(sideH - pitchY * dpr) > 0.5) problems.push(`side slice ${sideH}px, not the ${pitchY * dpr}px pitch`)
+        const rowY = [0, bh, bh + sideH]
+        const rowH = [bh, sideH, bh]
         // what each of the nine tiles holds, and where its ink sits
-        const ink = (col: number, row: number) => tileInk(px, col, row, bw, bh, dpr)
+        const ink = (col: number, row: number) => tileInk(px, col, rowY[row]!, rowH[row]!, bw, dpr)
         const expectInk = (col: number, row: number, want: boolean, what: string) => {
             if (!!ink(col, row) !== want) problems.push(`[${el.dataset.edges}] ${what} ${want ? 'missing' : 'painted where it is not owned'}`)
         }
@@ -442,6 +475,16 @@ async function probeGrid(root: HTMLElement) {
             if (Math.abs(dy) > 0.75) problems.push(`'+' crossbar ${dy.toFixed(2)}px off its corner [${el.dataset.edges}]`)
             // the `|` beside it (same column) shares the stem, the run beside it (same row) the crossbar
             const bar = ink(col, 1)
+            const run0 = ink(1, row)
+            if (bar && run0 && !heavy.includes(v)) {
+                // one rhythm: `|` to `|`, `-` to `-`, and `+` to the `|` beside it, in device px
+                const gapX = bw - run0.w
+                const gapY = sideH - bar.h
+                const gapPlusBar = v === 'top' ? bh - 1 - plus.bottom + bar.top : sideH - 1 - bar.bottom + plus.top
+                Object.assign(stats, { gapX, gapY, gapPlusBar })
+                if (Math.abs(gapY - gapX) > 1) problems.push(`'|' gap ${gapY}px vs '-' gap ${gapX}px (device px)`)
+                if (Math.abs(gapPlusBar - gapX) > 1.5) problems.push(`'+' to '|' gap ${gapPlusBar}px vs '-' gap ${gapX}px (device px)`)
+            }
             if (bar) {
                 stats.maxDx = Math.max(stats.maxDx, Math.abs(bar.cx - plus.cx))
                 if (Math.abs(bar.cx - plus.cx) > 1) problems.push(`'|' ${(bar.cx - plus.cx).toFixed(2)}px off the '+' stem`)
