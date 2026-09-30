@@ -8,18 +8,16 @@
    text, no pseudo-elements, no container queries, no per-cell measurement: a 2000x8 table
    costs one masked box per cell.
 
-   Geometry. A corner tile is --ascii-tile-w (the font's `ch`) x --ascii-tile-h (the `+` ink + one
-   glyph gap). The element overhangs the host by half a corner tile on every side (inset: -tile-h/2
-   -tile-w/2), so the nine-slice's corner tiles are centred ON the host's corners and its edge
-   tiles are centred ON the host's edges:
+   Geometry. A corner tile is --ascii-corner-w x --ascii-tile-h (the `+` ink + one dash gap each
+   way). The element overhangs the host by half a corner tile on every side, so the nine-slice's
+   corner tiles are centred ON the host's corners and its edge tiles are centred ON the host's edges:
      - corners paint 1:1 (a `+` is never resampled), its ink centre drawn on the tile centre;
-     - the top/bottom slices repeat `-`/`=` at `ch` pitch between the two corner tiles, and the
-       left/right slices stack `|` at --ascii-pitch-y (the `|` ink + the SAME ink gap a `-` run
-       leaves), so both axes carry one dashed rhythm; both repeat with `round`: a whole number of
-       glyphs fits, stretched by under 1/(2n) of a glyph, so a fluid width never cuts a glyph
-       into a sliver beside a `+`;
-     - every glyph shares the `+`'s origin inside its tile, so `-`/`=` share its baseline and
-       `|` shares its stem, exactly as the text-run build typed them.
+     - the top/bottom slices repeat one `-`/`=` dash per --ascii-pitch and the left/right slices one
+       `|` dash (the font's stem cropped to the `-` length) per the SAME pitch — the
+       --ascii-dash-pitch token, a dash then a blank `ch` — so both axes read `- - - -` and the gap
+       from a `+` to its first dash is the gap between dashes; both repeat with `round`: a whole
+       number of dashes fits, stretched by under 1/(2n), so a fluid width never cuts one;
+     - `-`/`=` share the `+`'s crossbar and `|` its stem.
    Which glyph sits in which slice is the sprite, selected by the
    edge set's runtime hooks — data-edges (drawn edges, in top right bottom left order) and data-heavy
    (the ones typed `=`, absent when none), asciiGlyphTiles.ts's edgeAttrs — one rule per edge set below.
@@ -30,13 +28,13 @@
     position: absolute;
     top: calc(var(--ascii-tile-h, var(--cell-h)) / -2);
     bottom: calc(var(--ascii-tile-h, var(--cell-h)) / -2);
-    left: calc(var(--ascii-tile-w, 1ch) / -2);
-    right: calc(var(--ascii-tile-w, 1ch) / -2);
+    left: calc(var(--ascii-corner-w, 1ch) / -2);
+    right: calc(var(--ascii-corner-w, 1ch) / -2);
     pointer-events: none;
     background-color: var(--border-soft);
     -webkit-mask-box-image-source: linear-gradient(transparent, transparent);
     -webkit-mask-box-image-slice: var(--ascii-slice-y, 1) var(--ascii-slice-x, 1);
-    -webkit-mask-box-image-width: var(--ascii-tile-h, var(--cell-h)) var(--ascii-tile-w, 1ch);
+    -webkit-mask-box-image-width: var(--ascii-tile-h, var(--cell-h)) var(--ascii-corner-w, 1ch);
     -webkit-mask-box-image-outset: 0;
     -webkit-mask-box-image-repeat: round;
 }
@@ -53,11 +51,11 @@
    host's own glyphs sit on top. Not a grid line: it draws no rule, only hides what is beneath. */
 .backdrop {
     position: absolute;
-    inset: calc(var(--ascii-tile-h, var(--cell-h)) / -2) calc(var(--ascii-tile-w, 1ch) / -2);
+    inset: calc(var(--ascii-tile-h, var(--cell-h)) / -2) calc(var(--ascii-corner-w, 1ch) / -2);
     box-sizing: border-box;
     border: calc(var(--ascii-tile-h, var(--cell-h)) / 2) solid var(--bg);
-    border-left-width: calc(var(--ascii-tile-w, 1ch) / 2);
-    border-right-width: calc(var(--ascii-tile-w, 1ch) / 2);
+    border-left-width: calc(var(--ascii-corner-w, 1ch) / 2);
+    border-right-width: calc(var(--ascii-corner-w, 1ch) / 2);
     background: transparent;
     pointer-events: none;
 }

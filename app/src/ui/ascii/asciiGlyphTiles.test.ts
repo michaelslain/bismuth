@@ -4,6 +4,7 @@ import {
     EDGE_KEYS,
     edgeAttrs,
     edgeSelector,
+    dashOffset,
     edgesKey,
     fitTiles,
     glyphOrigin,
@@ -47,13 +48,14 @@ describe('spriteGlyphs', () => {
 })
 
 describe('tileCacheKey', () => {
-    test('changes with font, size, cell height and dpr only', () => {
+    test('changes with font, size, cell height, dpr and dash pitch only', () => {
         const k = tileCacheKey('"Monaspace Xenon", monospace', 11.5, 18, 2)
         expect(tileCacheKey('"Monaspace Xenon", monospace', 11.5, 18, 2)).toBe(k)
         expect(tileCacheKey('Lora', 11.5, 18, 2)).not.toBe(k)
         expect(tileCacheKey('"Monaspace Xenon", monospace', 12, 18, 2)).not.toBe(k)
         expect(tileCacheKey('"Monaspace Xenon", monospace', 11.5, 20, 2)).not.toBe(k)
         expect(tileCacheKey('"Monaspace Xenon", monospace', 11.5, 18, 1)).not.toBe(k)
+        expect(tileCacheKey('"Monaspace Xenon", monospace', 11.5, 18, 2, 3)).not.toBe(k)
     })
 })
 
@@ -76,46 +78,62 @@ describe('installKey', () => {
 })
 
 describe('tileGeometry', () => {
-    // Monaspace Xenon at 11.5px, dpr 2, as the face draws them: a 6px `-`, an 11.5px `|`, a 5.5px `+`
-    const xenon = { dashW: 6, pipeH: 11.5, plusH: 5.5 }
+    // Monaspace Xenon at 11.5px, dpr 2, as the face paints them: a 6px `-`, a 5.5 x 5.5px `+`
+    const xenon = { dashW: 6, plusW: 5.5, plusH: 5.5 }
     test('bitmap is whole device pixels, painted 1:1', () => {
         const g = tileGeometry(7.13, xenon, 2)
         expect(g.bw).toBe(14)
         expect(g.cssW).toBe(7)
         expect(g.cssH).toBe(g.cy / 2)
-        expect(g.cssPitchY).toBe(g.py / 2)
+        expect(g.cssCornerW).toBe(g.cx / 2)
+        expect(g.cssPitch).toBe(g.pitch / 2)
         const t = tileGeometry(6.9, xenon, 3)
         expect(t.bw).toBe(21)
         expect(Math.abs(t.cssW - 6.9)).toBeLessThanOrEqual(0.5 / 3)
     })
-    test('a vertical run leaves the same ink gap as a horizontal one', () => {
-        for (const dpr of [1, 1.5, 2, 3])
-            for (const ink of [xenon, { dashW: 4.2, pipeH: 11.5, plusH: 5.5 }, { dashW: 5, pipeH: 14, plusH: 7 }]) {
-                const g = tileGeometry(7.13, ink, dpr)
-                const gapX = g.bw - ink.dashW * dpr
-                const gapY = g.py - ink.pipeH * dpr
-                expect(Math.abs(gapY - gapX)).toBeLessThanOrEqual(0.5)
-                expect(gapX).toBeCloseTo(g.gap, 6)
-            }
-        // the old build: one `|` per 18px line box, a 13 device-px gap against a 2 — never again
+    test('one dash, one pitch, one gap on both axes: a dash then a blank `ch` by default', () => {
         const g = tileGeometry(7.13, xenon, 2)
-        expect(g.py).toBeLessThan(36)
-        expect(g.py).toBe(25)
+        expect(g.pitch).toBe(2 * g.bw)
+        expect(g.dash).toBe(12)
+        expect(g.gap).toBe(16)
+        expect(g.gap).toBe(g.pitch - g.dash)
+        // the pitch is the token's, in `ch` tiles
+        expect(tileGeometry(7.13, xenon, 2, 3).pitch).toBe(3 * g.bw)
+        expect(tileGeometry(7.13, xenon, 2, 1).gap).toBe(2)
     })
-    test('a corner row holds the `+` plus one gap, rounded to an even bitmap so the half-tile overhang is whole device pixels', () => {
-        for (const dpr of [1, 2, 3]) {
-            const g = tileGeometry(7.13, xenon, dpr)
-            expect(g.cy % 2).toBe(0)
-            expect(Math.abs(g.cy - (xenon.plusH * dpr + g.gap))).toBeLessThanOrEqual(1)
-        }
-        expect(tileGeometry(7.13, xenon, 2).cy).toBe(14)
+    test('a corner is the `+` ink + one gap each way, even, so + to first dash = one gap (+-1)', () => {
+        for (const dpr of [1, 1.5, 2, 3])
+            for (const ink of [xenon, { dashW: 4.2, plusW: 5, plusH: 6 }, { dashW: 5, plusW: 7, plusH: 7 }]) {
+                const g = tileGeometry(7.13, ink, dpr)
+                expect(g.cx % 2).toBe(0)
+                expect(g.cy % 2).toBe(0)
+                const d0 = dashOffset(g.pitch, g.dash)
+                // + arm end to the corner tile edge, then the run tile's lead-in to its dash
+                const plusW = Math.round(ink.plusW * dpr)
+                const plusH = Math.round(ink.plusH * dpr)
+                const across = [Math.floor((g.cx - plusW) / 2), g.cx - plusW - Math.floor((g.cx - plusW) / 2)]
+                const down = [Math.floor((g.cy - plusH) / 2), g.cy - plusH - Math.floor((g.cy - plusH) / 2)]
+                const tail = g.pitch - d0 - g.dash
+                for (const lead of [...across, ...down])
+                    for (const run of [d0, tail]) expect(Math.abs(lead + run - g.gap)).toBeLessThanOrEqual(1.5)
+            }
+        expect(tileGeometry(7.13, xenon, 2).cy).toBe(28)
     })
     test('never degenerate', () => {
-        const g = tileGeometry(0.1, { dashW: 9, pipeH: 0, plusH: 0 }, 1)
+        const g = tileGeometry(0.1, { dashW: 9, plusW: 0, plusH: 0 }, 1)
         expect(g.bw).toBeGreaterThanOrEqual(1)
         expect(g.gap).toBe(0)
-        expect(g.py).toBeGreaterThanOrEqual(1)
+        expect(g.dash).toBeLessThanOrEqual(g.pitch)
+        expect(g.cx).toBeGreaterThanOrEqual(2)
         expect(g.cy).toBeGreaterThanOrEqual(2)
+    })
+})
+
+describe('dashOffset', () => {
+    test('centres a dash in its pitch: half a gap each side (+-1)', () => {
+        expect(dashOffset(28, 12)).toBe(8)
+        expect(dashOffset(27, 12)).toBe(7)
+        expect(dashOffset(10, 12)).toBe(0)
     })
 })
 

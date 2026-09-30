@@ -375,9 +375,10 @@ reads them.
 `-`, `|` and `=` are all `--border-soft`, the same ink as the hairlines they replaced; the doubled
 glyph alone carries the weight. (`ink="firm"` maps to `--border`, a step firmer; callers do not
 pass it.) Each boundary is typed by exactly one
-cell, so neighbouring cells never overprint. Both axes carry ONE rhythm: a vertical run stacks `|`
-at `--ascii-pitch-y` (the `|` ink plus the same ink gap a `-` run leaves between two `-`), so a
-`|` line reads as the same dashed stroke as a `-` line. Content is inset equally and tightly: about
+cell, so neighbouring cells never overprint. Both axes carry ONE spaced-out dash, `+ - - - +`: every
+dash is the `-` ink's length (a `|` is the font's stem cropped to it, an `=` held to it), and dashes
+repeat at one pitch on both axes — the `--ascii-dash-pitch` token, `2` `ch` tiles, a dash then a
+blank — so the gap between dashes, and from a `+` to its first dash, is the same across and down. Content is inset equally and tightly: about
 `1ch` (`--ascii-tile-w`) in from a `|`, and a one-line row is one typed row
 (`max(--ascii-row-h, --h-control)`) with its line box centred, so text sits the same short
 distance from all four lines.

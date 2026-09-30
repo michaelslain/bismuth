@@ -13,22 +13,23 @@
 //     + - +        and an empty tile wherever the cell does not own that part.
 //
 // One sprite per edge set (top none/rule/heavy x right x bottom none/rule/heavy x left = 36 keys,
-// 35 with ink), installed on :root as `--ascii-edges-<key>: url(data:…)` plus the corner tile's CSS
-// size (`--ascii-tile-w`, `--ascii-tile-h`), the vertical run's pitch (`--ascii-pitch-y`), the
-// shortest typed row (`--ascii-row-h` = tile-h + pitch-y: corner halves + one `|`) and the corner
-// tile's bitmap size (`--ascii-slice-x`, `--ascii-slice-y`).
+// 35 with ink), installed on :root as `--ascii-edges-<key>: url(data:…)` plus the `ch` tile
+// (`--ascii-tile-w`), the corner tile's CSS size (`--ascii-corner-w`, `--ascii-tile-h`), the dash
+// pitch both axes repeat at (`--ascii-pitch`), the shortest typed row (`--ascii-row-h` = tile-h +
+// pitch: corner halves + one dash) and the corner tile's bitmap size (`--ascii-slice-x`/`-y`).
 //
-// The rows are NOT equal: corners and top/bottom runs are `+`-ink + one gap tall, the side slice is
-// `|`-ink + one gap tall, where the gap is the one a `-` run leaves between two `-` — so a vertical
-// line reads as the same dashed stroke as a horizontal one (tileGeometry).
+// ONE dash on both axes (tileGeometry): every dash is the `-` ink's length — a `|` is the font's own
+// stem CROPPED to that length, an `=` held to it — and dashes repeat at the `--ascii-dash-pitch`
+// token (global.css, in `ch` tiles; 2 = a dash then a blank tile, `- - - -`) along both axes. The
+// tiles are NOT equal: run tiles are one pitch long, corner tiles the `+` ink + one gap each way,
+// so the gap from a `+` to its first dash is the gap between two dashes.
 // Colour is NOT in the sprite: it is a mask, and the ink comes from the element's
 // background-color, so a theme switch needs no regeneration. Only the font stack, font size, cell
-// height or dpr changing does (the cache key).
+// height, dpr or pitch changing does (the cache key).
 //
-// Every glyph in a sprite is drawn at the SAME offset inside its tile, chosen so the `+`'s ink
-// centre lands exactly on the tile centre: the tile centre is the cell corner, so the `+` sits
-// centred on its corner, the `|` stems share its x (same advance, same origin) and the `-`/`=`
-// strokes share its baseline. A `|` is centred, ink on the tile centre, in its own side slice.
+// The `+` ink is centred in its corner tile — the tile centre is the cell corner, so the `+` sits
+// centred on its corner; the `-`/`=` strokes share its baseline (its crossbar) and the `|` ink is
+// centred on its stem x. Every glyph draws at a whole device-pixel origin.
 
 /** 0 = edge not drawn, 1 = rule (`-`), 2 = heavy (`=`); vertical edges are 0 or 1 (`|`). */
 export type HorizontalEdge = 0 | 1 | 2
@@ -91,8 +92,14 @@ export function spriteGlyphs(key: string): string[] {
 }
 
 /** The cache key: regenerate only when one of these changes. Colour is deliberately absent. */
-export function tileCacheKey(fontFamily: string, fontSizePx: number, cellHPx: number, dpr: number): string {
-    return `${fontFamily}|${fontSizePx}|${cellHPx}|${dpr}`
+export function tileCacheKey(
+    fontFamily: string,
+    fontSizePx: number,
+    cellHPx: number,
+    dpr: number,
+    pitchTiles: number = DEFAULT_DASH_PITCH,
+): string {
+    return `${fontFamily}|${fontSizePx}|${cellHPx}|${dpr}|${pitchTiles}`
 }
 
 /** The key an install is recorded under: the cache key, plus `|fallback` when the tiles were drawn
@@ -102,26 +109,52 @@ export function installKey(cacheKey: string, ready: boolean): string {
     return ready ? cacheKey : `${cacheKey}|fallback`
 }
 
-/** The ink extents the geometry is derived from, in CSS px, measured from the face itself:
- *  `dashW` = the `-` ink width, `pipeH` = the `|` ink height, `plusH` = the `+` ink height. */
-export type GlyphInk = { dashW: number; pipeH: number; plusH: number }
+/** The dash pitch, in `ch` tiles, when the `--ascii-dash-pitch` token (global.css — the ONE place
+ *  the rhythm is tuned) is absent: a dash, then one blank tile, so a run reads `- - - -`. */
+export const DEFAULT_DASH_PITCH = 2
+
+/** The ink extents the geometry is derived from, in CSS px, measured from the face's painted
+ *  pixels: `dashW` = the `-` ink length (the ONE dash length both axes use), `plusW`/`plusH` = the
+ *  `+` ink's width and height. */
+export type GlyphInk = { dashW: number; plusW: number; plusH: number }
 
 /** The nine-slice's geometry in device pixels, and the CSS sizes it is painted at (bitmap / dpr, so
  *  every glyph paints 1:1 and is never resampled).
  *
- *  ONE rhythm on both axes: `gap` is the ink-to-ink gap between two `-` in a horizontal run (a
- *  `ch` advance minus the `-` ink), and a vertical run stacks `|` at `py` = `|` ink + that same gap,
- *  so a vertical line reads as the same dashed stroke as a horizontal one. The corner (and
- *  top/bottom run) tiles are `bw` x `cy`, with `cy` = `+` ink + that gap: the `+` is centred in it,
- *  so the first `|` below a `+` sits one gap from the `+` ink too (half a gap each side of the slice
- *  boundary). `cy` is rounded to an EVEN number of device pixels: the overlay overhangs the host by
- *  half of it, and a half-device-pixel overhang would resample every glyph. */
-export function tileGeometry(chPx: number, ink: GlyphInk, dpr: number) {
+ *  ONE dash on both axes: a dash is `dash` long (the `-` ink; a `|` is its own stem CROPPED to that
+ *  length), and dashes repeat at `pitch` = `pitchTiles` x the `ch` tile along BOTH axes, so the gap
+ *  between two dashes is `gap` = pitch - dash on both. The sprite is 3x3 tiles of unequal size:
+ *  columns [cx, pitch, cx], rows [cy, pitch, cy]. A run tile holds one dash centred in its pitch
+ *  (half a gap each side, dashOffset); a corner tile is the `+` ink + one gap on each axis, the `+`
+ *  centred in it — so from a `+` arm or stem to the first dash is half a gap + half a gap = one gap,
+ *  and the rhythm runs straight through a crossing. `cx`/`cy` are rounded to EVEN device pixels:
+ *  the overlay overhangs the host by half a corner, and a half-device-pixel overhang would
+ *  resample every glyph. */
+export function tileGeometry(chPx: number, ink: GlyphInk, dpr: number, pitchTiles: number = DEFAULT_DASH_PITCH) {
     const bw = Math.max(1, Math.round(chPx * dpr))
-    const gap = Math.max(0, bw - ink.dashW * dpr)
-    const py = Math.max(1, Math.round(ink.pipeH * dpr + gap))
-    const cy = Math.max(2, 2 * Math.round((ink.plusH * dpr + gap) / 2))
-    return { bw, cy, py, gap, cssW: bw / dpr, cssH: cy / dpr, cssPitchY: py / dpr }
+    const pitch = Math.max(1, Math.round(pitchTiles * bw))
+    const dash = Math.max(1, Math.min(pitch, Math.round(ink.dashW * dpr)))
+    const gap = pitch - dash
+    const even = (v: number) => Math.max(2, 2 * Math.round(v / 2))
+    const cx = even(ink.plusW * dpr + gap)
+    const cy = even(ink.plusH * dpr + gap)
+    return {
+        bw,
+        pitch,
+        dash,
+        gap,
+        cx,
+        cy,
+        cssW: bw / dpr,
+        cssCornerW: cx / dpr,
+        cssH: cy / dpr,
+        cssPitch: pitch / dpr,
+    }
+}
+
+/** Where a dash starts inside its pitch-long run tile: centred, half a gap each side. */
+export function dashOffset(pitch: number, dash: number): number {
+    return Math.max(0, Math.floor((pitch - dash) / 2))
 }
 
 /** What `mask-repeat: round` does to a run: a whole number of tiles fills `room`, each stretched
@@ -168,10 +201,12 @@ function readMetrics() {
         'height:var(--cell-h);font-family:var(--ui-font-stack);font-size:var(--fs-ui)'
     root.append(probe)
     const cs = getComputedStyle(probe)
+    const pitch = parseFloat(getComputedStyle(root).getPropertyValue('--ascii-dash-pitch'))
     const out = {
         family: cs.fontFamily,
         size: parseFloat(cs.fontSize),
         cellH: parseFloat(cs.height),
+        pitch: pitch > 0 ? pitch : DEFAULT_DASH_PITCH,
     }
     probe.remove()
     return out
@@ -192,7 +227,7 @@ function install(retried = false): void {
     }
     // the key records whether the face was loaded: fallback tiles are redrawn once the real face
     // arrives (its key differs), yet a permanently missing face is not redrawn on every call
-    const key = installKey(tileCacheKey(m.family, m.size, m.cellH, dpr), ready)
+    const key = installKey(tileCacheKey(m.family, m.size, m.cellH, dpr, m.pitch), ready)
     if (key === installedKey) return
 
     const canvas = document.createElement('canvas')
@@ -200,27 +235,32 @@ function install(retried = false): void {
     if (!ctx) return
     ctx.font = `400 ${m.size * dpr}px ${m.family}`
     const ch = ctx.measureText('-').width / dpr
-    // the ink extents of the three glyphs the rhythm is built from, read the way the eye (and the
-    // story probe) reads them: the pixels a glyph paints at half alpha or more, drawn at an
-    // INTEGER baseline. TextMetrics' bounding box is fractional and lands a device pixel off the
-    // painted ink, which is how a `|` once touched the `+` at one end of a run and not the other.
+    // the ink of each glyph read the way the eye (and the story probe) reads it: the pixels it
+    // paints at half alpha or more, drawn at a WHOLE-pixel origin and baseline. TextMetrics' box is
+    // fractional and lands a device pixel off the painted ink, which is how a `|` once touched the
+    // `+` at one end of a run and not the other. The sprite draws at whole origins too, so every
+    // glyph paints exactly as it was measured.
     const scratch = document.createElement('canvas')
     const sctx = scratch.getContext('2d', { willReadFrequently: true })
     if (!sctx) return
     const bw = Math.max(1, Math.round(ch * dpr))
     const baseline = Math.ceil(m.size * dpr * 2)
-    scratch.width = bw * 2
+    const ox = bw
+    scratch.width = bw * 3
     scratch.height = baseline * 2
-    sctx.font = `400 ${m.size * dpr}px ${m.family}`
-    sctx.textBaseline = 'alphabetic'
-    sctx.textAlign = 'left'
-    ;(sctx as CanvasRenderingContext2D & { fontKerning?: string }).fontKerning = 'none'
-    sctx.fillStyle = '#000'
-    /** `top`: the ink's first row relative to the baseline (negative = above it), `h`/`w`: its size. */
+    const setup = (c: CanvasRenderingContext2D) => {
+        // (re)sizing a canvas resets its state
+        c.font = `400 ${m.size * dpr}px ${m.family}`
+        c.textBaseline = 'alphabetic'
+        c.textAlign = 'left'
+        ;(c as CanvasRenderingContext2D & { fontKerning?: string }).fontKerning = 'none'
+        c.fillStyle = '#000'
+    }
+    setup(sctx)
+    /** `left`/`top`: the ink's first column / row relative to the draw origin / baseline. */
     const inkOf = (g: string) => {
         sctx.clearRect(0, 0, scratch.width, scratch.height)
-        const t = sctx.measureText(g)
-        sctx.fillText(g, bw / 2 - (t.actualBoundingBoxRight - t.actualBoundingBoxLeft) / 2, baseline)
+        sctx.fillText(g, ox, baseline)
         const { data, width, height } = sctx.getImageData(0, 0, scratch.width, scratch.height)
         let x0 = width, x1 = -1, y0 = height, y1 = -1
         for (let y = 0; y < height; y++)
@@ -229,55 +269,65 @@ function install(retried = false): void {
                     x0 = Math.min(x0, x); x1 = Math.max(x1, x)
                     y0 = Math.min(y0, y); y1 = Math.max(y1, y)
                 }
-        return { top: y0 - baseline, h: y1 - y0 + 1, w: x1 - x0 + 1, box: t }
+        return x1 < 0
+            ? { left: 0, top: 0, w: 0, h: 0 }
+            : { left: x0 - ox, top: y0 - baseline, w: x1 - x0 + 1, h: y1 - y0 + 1 }
     }
     const plus = inkOf('+')
     const pipe = inkOf('|')
     const dash = inkOf('-')
-    const { cy, py, cssW, cssH, cssPitchY } = tileGeometry(
-        ch,
-        { dashW: dash.w / dpr, pipeH: pipe.h / dpr, plusH: plus.h / dpr },
-        dpr,
-    )
-    // rows of the sprite: corner/run tiles (cy), the side slice (py), corner/run tiles (cy)
-    const rowY = [0, cy, cy + py]
-    canvas.width = bw * 3
-    canvas.height = cy * 2 + py
-    const setup = () => {
-        // resizing the canvas resets its state
-        ctx.font = `400 ${m.size * dpr}px ${m.family}`
-        ctx.textBaseline = 'alphabetic'
-        ctx.textAlign = 'left'
-        ;(ctx as CanvasRenderingContext2D & { fontKerning?: string }).fontKerning = 'none'
-        ctx.fillStyle = '#000'
+    const heavy = inkOf('=')
+    const g = tileGeometry(ch, { dashW: dash.w / dpr, plusW: plus.w / dpr, plusH: plus.h / dpr }, dpr, m.pitch)
+    const { pitch, cx, cy } = g
+    const colX = [0, cx, cx + pitch]
+    const rowY = [0, cy, cy + pitch]
+    canvas.width = cx * 2 + pitch
+    canvas.height = cy * 2 + pitch
+    setup(ctx)
+    // the `+` ink centred in its corner tile; `-`/`=` share its baseline, so its crossbar
+    const plusL = Math.floor((cx - plus.w) / 2)
+    const baseY = Math.floor((cy - plus.h) / 2) - plus.top
+    // the `|` ink centred on the `+` ink's centre x (the face's `|` sits a fraction off the `+`
+    // stem at a shared origin), and on the side tile's centre y — then cropped to ONE dash
+    const pipeL = Math.round(plusL + plus.w / 2 - pipe.w / 2)
+    const pipeY = Math.floor((pitch - pipe.h) / 2) - pipe.top
+    const d0 = dashOffset(pitch, g.dash)
+    const draw = (glyph: string, col: number, row: number) => {
+        const x = colX[col]!
+        const y = rowY[row]!
+        if (glyph === '+') return ctx.fillText('+', x + plusL - plus.left, y + baseY)
+        ctx.save()
+        ctx.beginPath()
+        if (glyph === '|') {
+            // the font's own stem, just a dash-long piece of it: same thickness, same ink
+            ctx.rect(x, y + d0, cx, g.dash)
+            ctx.clip()
+            ctx.fillText('|', x + pipeL - pipe.left, y + pipeY)
+        } else {
+            // a `-` is naturally one dash long; an `=` is held to the same length (both strokes)
+            const ink = glyph === '=' ? heavy : dash
+            ctx.rect(x + d0, y, g.dash, cy)
+            ctx.clip()
+            ctx.fillText(glyph, x + Math.floor((pitch - ink.w) / 2) - ink.left, y + baseY)
+        }
+        ctx.restore()
     }
-    setup()
-    // corners and runs: the `+` ink centred in its bw x cy tile (`-`/`=` share its baseline);
-    // the side slice: the `|` ink centred in its bw x py tile — so on the same x as the `+` ink
-    // centre (the face's `|` sits a fraction of a pixel off the `+` stem at a shared origin).
-    // Baselines are whole device pixels, so every glyph paints exactly as it was measured.
-    const originX = (g: ReturnType<typeof inkOf>) =>
-        bw / 2 - (g.box.actualBoundingBoxRight - g.box.actualBoundingBoxLeft) / 2
-    const o = { x: originX(plus), y: Math.floor((cy - plus.h) / 2) - plus.top }
-    const oSide = { x: originX(pipe), y: Math.floor((py - pipe.h) / 2) - pipe.top }
 
     const root = document.documentElement.style
     for (const k of EDGE_KEYS) {
         ctx.clearRect(0, 0, canvas.width, canvas.height)
-        spriteGlyphs(k).forEach((g, i) => {
-            if (!g) return
-            const row = Math.floor(i / 3)
-            const at = row === 1 ? oSide : o
-            ctx.fillText(g, (i % 3) * bw + at.x, rowY[row]! + at.y)
+        spriteGlyphs(k).forEach((glyph, i) => {
+            if (glyph) draw(glyph, i % 3, Math.floor(i / 3))
         })
         root.setProperty(spriteVar(k), `url(${canvas.toDataURL('image/png')})`)
     }
-    root.setProperty('--ascii-tile-w', `${cssW}px`)
-    root.setProperty('--ascii-tile-h', `${cssH}px`)
-    root.setProperty('--ascii-pitch-y', `${cssPitchY}px`)
-    // the shortest typed row: two corner halves + one `|` — a row this tall gets exactly one
-    root.setProperty('--ascii-row-h', `${cssH + cssPitchY}px`)
-    root.setProperty('--ascii-slice-x', String(bw))
+    root.setProperty('--ascii-tile-w', `${g.cssW}px`)
+    root.setProperty('--ascii-corner-w', `${g.cssCornerW}px`)
+    root.setProperty('--ascii-tile-h', `${g.cssH}px`)
+    root.setProperty('--ascii-pitch', `${g.cssPitch}px`)
+    // the shortest typed row: two corner halves + one dash pitch — a row this tall gets exactly one
+    root.setProperty('--ascii-row-h', `${g.cssH + g.cssPitch}px`)
+    root.setProperty('--ascii-slice-x', String(cx))
     root.setProperty('--ascii-slice-y', String(cy))
     installedKey = key
     markInstalled()
