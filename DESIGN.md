@@ -372,8 +372,9 @@ reads them.
 
 **The Typed Grid Rule.** A cell grid (a table, a calendar) is typed with `+ - | =` through
 `AsciiCellEdges`, never drawn with `border`. `=` marks a header underline or a summary line;
-`-` and `|` are `--faint`, `=` is `--border`. Each boundary is typed by exactly one cell, so
-neighbouring cells never overprint.
+`-`, `|` and `=` are all `--faint`; the doubled glyph alone carries the weight. (`ink="firm"`
+exists and maps to `--border`, but callers do not pass it.) Each boundary is typed by exactly one
+cell, so neighbouring cells never overprint.
 
 ## Components
 
