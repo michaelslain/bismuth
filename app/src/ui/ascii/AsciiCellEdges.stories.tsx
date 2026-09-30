@@ -6,9 +6,10 @@
 // ({ top?, bottom? } per-edge override), ink? ('soft' --faint | 'firm' --border), class?.
 //
 // The mini-grid stories build a 4x3 grid with the ownership rule exactly as a caller would, at
-// two container widths that are NOT a whole number of `ch`, and `play()` asserts the geometry
-// acceptance item 5 states: every `+` shares its x-centre with the `|` glyphs above and below
-// it and its crossbar sits on the same baseline as the adjacent `-`/`=` runs.
+// two container widths that are NOT a whole number of `ch`, and `play()` checks the geometry
+// acceptance item 5 states from layout boxes plus canvas ink metrics (not painted pixels): every
+// `+` shares its x-centre with the `|` glyphs above and below it and its crossbar sits on the
+// same baseline as the adjacent `-`/`=` runs.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { For, type JSX } from 'solid-js'
 import { expect } from 'storybook/test'
@@ -249,9 +250,10 @@ function inkCentre(sample: HTMLElement, glyph: string): InkBox {
     }
 }
 
-/** Measures every glyph in `root` and returns what disagrees. `problems` empty means acceptance
- *  item 5 holds: each `+`'s stem is within 1px of the `|` glyphs above/below it, its crossbar
- *  is within 1px of the `-`/`=` runs beside it, and both land on the cell boundary. */
+/** Measures every glyph in `root` (layout boxes + canvas ink metrics, not painted pixels) and
+ *  returns what disagrees. `problems` empty means acceptance item 5 holds: each `+`'s stem is
+ *  within 1px of the `|` glyphs above/below it, its crossbar is within 1px of the `-`/`=` runs
+ *  beside it, and both land on the cell boundary. */
 async function probeGrid(root: HTMLElement) {
     await document.fonts.ready
     const parts = [...root.querySelectorAll('[aria-hidden="true"] > div')]
@@ -323,9 +325,10 @@ const miniGrid = (width: number): Story => ({
     play: async ({ canvasElement }) => {
         const grid = canvasElement.querySelector<HTMLElement>('[data-mini-grid]')!
         const { problems, stats } = await probeGrid(grid)
-        // 4x3 cells with the ownership rule: 5 corners across the header/first-body seam are
-        // typed once each, so the corner count is fixed by the rule, not by the width
-        expect(stats.corners).toBeGreaterThan(0)
+        // 20 corners, 15 bars, 16 runs are fixed by the ownership rule for 4x3
+        expect(stats.corners).toBe(20)
+        expect(stats.bars).toBe(15)
+        expect(stats.runs).toBe(16)
         expect(problems).toEqual([])
     },
 })
