@@ -77,6 +77,48 @@ export const Default: Story = {
             lastCol[lastCol.length - 1]!.querySelector('[data-edges~="right"]'),
         ).toBeTruthy()
         expect(lastCol[0]!.querySelector('[data-edges~="right"]')).toBeNull()
+        // The rows' own rule (bodyEdges in TableView.tsx): the first row under the header omits
+        // its top, every later row types it, and the last row closes the grid with its bottom.
+        const rows = [...table.querySelectorAll('tbody tr')]
+        expect(rows.length).toBeGreaterThan(1)
+        const edge = (tr: Element, s: string) =>
+            [...tr.querySelectorAll('td')].map(
+                td => !!td.querySelector(`[data-edges~="${s}"]`),
+            )
+        expect(edge(rows[0]!, 'top').some(Boolean)).toBe(false)
+        expect(edge(rows[1]!, 'top').every(Boolean)).toBe(true)
+        expect(edge(rows.at(-1)!, 'bottom').every(Boolean)).toBe(true)
+    },
+}
+
+/** A `Sum` over the numeric `priority` column adds the footer: it types its top as the heavy `=`,
+ *  and the last body row — one above it — omits its bottom so the two never overprint. */
+export const WithSummary: Story = {
+    render: () => {
+        const view = {
+            type: 'table' as const,
+            summaries: { priority: 'Sum' },
+        }
+        return (
+            <TableView
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const foot = [...canvasElement.querySelectorAll('tfoot td')]
+        expect(foot.length).toBeGreaterThan(0)
+        canvasElement
+            .querySelectorAll('tbody tr:last-child td')
+            .forEach(td =>
+                expect(td.querySelector('[data-edges~="bottom"]')).toBeNull(),
+            )
+        foot.forEach(td =>
+            expect(
+                td.querySelector('[data-edges~="top"][data-heavy~="top"]'),
+            ).toBeTruthy(),
+        )
     },
 }
 

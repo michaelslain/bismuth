@@ -2,8 +2,9 @@
 // 2000-row x 8-column table takes to reach the DOM (and its first painted frame), and how smoothly
 // its scroller scrolls.
 //
-//   render  median of 5 loads: ms from Page.navigate to the LAST row being in the DOM AND one
-//           painted frame after it (a double rAF) — style/layout/paint of the whole table is
+//   render  median of 5 loads: ms from Page.navigate to the LAST row being in the DOM, the glyph
+//           tiles installed (--ascii-tile-w set, overlay mask = the sprite) AND one painted frame
+//           after both (a double rAF) — style/layout/paint of the whole table is
 //           what a per-cell overlay costs, and a bare "row exists" check would not see any of it.
 //   fps     frames per second over a 2s programmatic scroll of the table's scroller, sweeping
 //           top to bottom and back (headless Chrome caps at 60).
@@ -57,10 +58,14 @@ await page('Emulation.setDeviceMetricsOverride', {
 
 const url = `${BASE}/iframe.html?id=${ID}&viewMode=story`
 const LAST_ROW = `document.querySelector('[data-testid="large-table-scroller"] tbody tr:last-child td')?.textContent?.includes('row 2000')`
-// Resolves after the last row is in the DOM and one full frame has been produced after it.
+// The glyph tiles install after fonts.ready: the root carries --ascii-tile-w once they are in, and
+// an overlay's computed mask image is the rasterised sprite (a data: PNG) rather than nothing.
+const TILES_READY = `document.documentElement.style.getPropertyValue('--ascii-tile-w') !== '' && getComputedStyle(document.querySelector('[data-testid="large-table-scroller"] [data-edges]')).webkitMaskBoxImageSource.startsWith('url("data:image/png')`
+// Resolves after the last row is in the DOM, the tiles are installed, and one full frame has been
+// produced after both — so sprite rasterisation and the restyle of every masked overlay are in the window.
 const untilPainted = `new Promise(res => {
   const tick = () => {
-    if (${LAST_ROW}) requestAnimationFrame(() => requestAnimationFrame(() => res(true)))
+    if (${LAST_ROW} && ${TILES_READY}) requestAnimationFrame(() => requestAnimationFrame(() => res(true)))
     else setTimeout(tick, 2)
   }
   tick()
