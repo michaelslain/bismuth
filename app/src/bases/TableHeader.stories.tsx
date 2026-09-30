@@ -42,7 +42,7 @@ export const Static: Story = {
 }
 
 /** The header over one body row: the `=` under the labels is the header's own bottom, and the
- *  body row (typed exactly as TableView types its first row) omits its top so nothing overprints. */
+ *  body row starts where the header ends. */
 export const WithBodyRow: Story = {
     render: () => (
         <div style={{ padding: '12px' }}>
@@ -81,10 +81,9 @@ export const WithBodyRow: Story = {
         const td = tdEl.getBoundingClientRect()
         // the body row starts where the header ends: one shared boundary, typed once
         expect(Math.abs(td.top - th.bottom)).toBeLessThanOrEqual(1)
-        // typed once: the header owns the line (its bottom, heavy), the first body cell omits its top
+        // typed once: the header owns the line (its bottom, heavy). Whether the first body row
+        // omits its top is TableView's rule, asserted in TableView.stories.tsx Default.
         expect(thEl.querySelector('[data-edges~="bottom"]')).toBeTruthy()
-        expect(tdEl.querySelector('[data-edges]')).toBeTruthy()
-        expect(tdEl.querySelector('[data-edges~="top"]')).toBeNull()
     },
 }
 
