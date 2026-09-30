@@ -230,7 +230,7 @@ are for data that genuinely has categories.
 - **Rail Ground** (`--rail`): the sidebar and terminal, one step sunk below it.
 - **Surfaces 1 / 2 / 3** (`--surface-1`, `--surface-2`, `--surface-3`): cards, panels, and
   nested fills, in that order of depth.
-- **Border** (`--border`): structural rules. **Soft Border** (`--border-soft`): hairline row rules.
+- **Border** (`--border`): structural rules. **Soft Border** (`--border-soft`): hairline row rules for lists, bands and field underlines (a table or calendar cell grid is typed with glyphs instead, see The Typed Grid Rule).
 - **Paper Ink** (`--fg`): anything you read.
 - **Muted Ink** (`--text-muted`): anything you scan (metadata, secondary labels, graph edges).
 - **Faint Ink** (`--faint`): structure only (rules, tree connectors, empty meter cells, resting glyphs).
@@ -358,7 +358,7 @@ borders, not shadows. Nothing in the app is blurred. Things that genuinely float
 
 Every corner is square (`--r-0`), whether chip, control, card, panel, modal or popover. The only
 curve is a genuine circle (status dots, at 50%). Lines are one of four named rules: `--rule`
-(structure), `--rule-soft` (row hairline), `--rule-accent`, `--rule-dashed` (drop cues). A 2px
+(structure), `--rule-soft` (list-row and band hairline; never a table or calendar grid line, which is typed), `--rule-accent`, `--rule-dashed` (drop cues). A 2px
 accent left edge (`--accent-edge`) marks exactly two things: the frontmatter block and a
 callout/proposal.
 
@@ -369,6 +369,11 @@ grid stays as hard as the character grid.
 **The Square Corner Rule.** Radius is `0` or `50%`. The older `--r-chip` / `--r-control` /
 `--r-card` / `--r-panel` steps (2–5px) are deprecated aliases awaiting removal; new code never
 reads them.
+
+**The Typed Grid Rule.** A cell grid (a table, a calendar) is typed with `+ - | =` through
+`AsciiCellEdges`, never drawn with `border`. `=` marks a header underline or a summary line;
+`-` and `|` are `--faint`, `=` is `--border`. Each boundary is typed by exactly one cell, so
+neighbouring cells never overprint.
 
 ## Components
 
@@ -509,10 +514,16 @@ the accent. An outline appears only when it means something.
 - **Keyboard caps** (`Kbd`) use `⌘ ⌥ ↵ ↑ ↓ esc`.
 
 ### ASCII primitives (signature)
-`Glyph`, `AsciiTree`, `AsciiMeter` and `GraphField` (in `app/src/ui/ascii/`) draw structure as
-text on the cell grid (`--cell-h` = the row unit). Graph node weight *is* degree: `.` leaf, `o`
+`Glyph`, `AsciiTree`, `AsciiMeter`, `AsciiCellEdges` and `GraphField` (in `app/src/ui/ascii/`) draw
+structure as text on the cell grid (`--cell-h` = the row unit). Graph node weight *is* degree: `.` leaf, `o`
 linked, `@` hub, coloured by cluster from the ramp, over a noise field at 45% opacity that clears
 under every edge and label.
+
+`AsciiCellEdges` types one cell's edges (`+` at every corner where two drawn edges meet, `-`
+or `=` along top and bottom, `|` down left and right) as an absolutely positioned,
+non-clipping overlay in the UI mono face; the host cell is `position: relative` and each
+boundary is owned by exactly one cell: a cell types `top` + `left`, the last column adds `right`,
+the last row adds `bottom`, a header types `bottom` as `=` and the first body row omits `top`.
 
 ## Do's and Don'ts
 
