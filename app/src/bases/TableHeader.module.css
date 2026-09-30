@@ -1,15 +1,21 @@
-/* TableHeader.tsx is the sole importer. Column headers are chrome (like the view tabs / query
+/* TableHeader.tsx is the sole importer. The <th> is the typed grid's host for its own edges
+   (`=` underneath, see AsciiCellEdges): sticky is already a positioned box, and it does not clip,
+   so the glyphs that straddle its edges show. z-index 1 keeps the header AND its `=` above the
+   body cells' overhanging glyphs while the table scrolls. Column headers are chrome (like the view tabs / query
    label): an uppercase, widely-tracked eyebrow at --fs-micro, not the body's --fs-ui prose. */
 .th {
   position: sticky;
   top: 0;
+  /* a vertical run types one `|` per line box and needs two lines of room (its box is inset half a
+     line at each end), so a row is never shorter than two lines or its bars vanish */
+  box-sizing: border-box;
+  height: calc(var(--cell-h) * 2);
   z-index: 1;
   background: var(--bg);
   text-align: left;
   font-weight: 500;
   color: var(--text-muted);
   padding: var(--sp-4) var(--sp-5);
-  border-bottom: var(--rule);
   white-space: nowrap;
   font-family: var(--ui-font-stack);
   font-size: var(--fs-micro);

@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import TableHeader from './TableHeader'
+import AsciiCellEdges from '../ui/ascii/AsciiCellEdges'
 import { sampleBaseConfig } from '../ui/_baseFixtures'
 
 const meta = {
@@ -28,6 +29,56 @@ export const Static: Story = {
         expect(getComputedStyle(ths[0]).textTransform).toBe('uppercase')
         expect(getComputedStyle(ths[0]).cursor).not.toBe('grab')
         expect(canvasElement.querySelector('th [class*="thResize"]')).toBeNull()
+        // The typed grid: each header hosts its own overlay, and there is no border-bottom rule.
+        for (const th of ths) {
+            expect(th.querySelector('[aria-hidden="true"]')).toBeTruthy()
+            expect(th.querySelector('[class*="heavy"]')).toBeTruthy()
+            expect(getComputedStyle(th).borderBottomWidth).toBe('0px')
+        }
+        // Only the last header closes the right edge.
+        expect(ths[3].querySelector('[class*="right"]')).toBeTruthy()
+        expect(ths[0].querySelector('[class*="right"]')).toBeNull()
+    },
+}
+
+/** The header over one body row: the `=` under the labels is the header's own bottom, and the
+ *  body row (typed exactly as TableView types its first row) omits its top so nothing overprints. */
+export const WithBodyRow: Story = {
+    render: () => (
+        <div style={{ padding: '12px' }}>
+            <table style={{ width: '100%', 'border-collapse': 'collapse' }}>
+                <TableHeader cols={COLS} config={sampleBaseConfig()} />
+                <tbody>
+                    <tr>
+                        {COLS.map((c, i) => (
+                            <td
+                                style={{
+                                    position: 'relative',
+                                    padding: 'var(--sp-4) var(--sp-5)',
+                                    'box-sizing': 'border-box',
+                                    height: 'calc(var(--cell-h) * 2)',
+                                }}
+                            >
+                                {c} value
+                                <AsciiCellEdges
+                                    edges={
+                                        i === COLS.length - 1
+                                            ? ['left', 'right', 'bottom']
+                                            : ['left', 'bottom']
+                                    }
+                                />
+                            </td>
+                        ))}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const th = canvasElement.querySelector('th')!.getBoundingClientRect()
+        const td = canvasElement.querySelector('td')!.getBoundingClientRect()
+        // the body row starts where the header ends: one shared boundary, typed once
+        expect(Math.abs(td.top - th.bottom)).toBeLessThanOrEqual(1)
     },
 }
 

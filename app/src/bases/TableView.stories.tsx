@@ -63,6 +63,77 @@ export const Default: Story = {
             ;(titleLink as HTMLAnchorElement).click()
         })
         expect(opened).toBe('projects/Draft the roadmap.md')
+        // The grid is typed, not drawn: every body cell hosts an overlay, no cell or header
+        // carries a border, the header underline is `=` and the last column closes the right edge.
+        const table = canvasElement.querySelector('table')!
+        const overlays = (el: Element) => el.querySelectorAll('[aria-hidden="true"]')
+        for (const c of table.querySelectorAll('td, th')) {
+            expect(overlays(c).length).toBeGreaterThan(0)
+            expect(getComputedStyle(c).borderBottomWidth).toBe('0px')
+        }
+        const headerRuns = table.querySelectorAll<HTMLElement>('th [class*="heavy"]')
+        expect(headerRuns.length).toBe(table.querySelectorAll('th').length)
+        const lastCol = table.querySelectorAll('tbody tr:first-child td')
+        expect(
+            lastCol[lastCol.length - 1]!.querySelector('[class*="right"]'),
+        ).toBeTruthy()
+        expect(lastCol[0]!.querySelector('[class*="right"]')).toBeNull()
+    },
+}
+
+// 2000 rows x 8 columns, built here (no fetch) — the fixture bench/tableRenderPerf.ts loads to
+// time a cold render and a scroll. Note rows, so the first column is a live link like a real vault.
+const LARGE_COLS = [
+    'title',
+    'status',
+    'owner',
+    'due',
+    'pages',
+    'rating',
+    'area',
+    'notes',
+]
+const LARGE_CONFIG: BaseConfig = {
+    declaredProperties: LARGE_COLS,
+    view: { type: 'table' },
+}
+const LARGE_ROWS: Row[] = Array.from({ length: 2000 }, (_, i) => ({
+    file: {
+        ...EMPTY_FILE,
+        name: `row ${i + 1}`,
+        basename: `row ${i + 1}`,
+        path: `perf/row ${i + 1}.md`,
+    },
+    note: {
+        title: `row ${i + 1}`,
+        status: ['todo', 'doing', 'done'][i % 3],
+        owner: ['ada', 'grace', 'linus', 'ken'][i % 4],
+        due: `2026-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 27) + 1).padStart(2, '0')}`,
+        pages: (i * 7) % 900,
+        rating: (i % 5) + 1,
+        area: ['inbox', 'projects', 'archive'][i % 3],
+        notes: `synthetic note number ${i + 1}`,
+    },
+    formula: {},
+}))
+
+/** 2000 rows x 8 columns in a fixed-height scroller: the fixture `bench/tableRenderPerf.ts`
+ *  measures (render time + scroll fps), so the typed grid's cost on a big table stays a number. */
+export const LargeTable: Story = {
+    render: () => (
+        <div
+            data-testid="large-table-scroller"
+            style={{ height: '600px', overflow: 'auto' }}
+        >
+            <TableView
+                result={runView(LARGE_CONFIG, LARGE_ROWS)}
+                config={LARGE_CONFIG}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        expect(canvasElement.querySelectorAll('tbody tr').length).toBe(2000)
+        expect(canvasElement.querySelectorAll('thead th').length).toBe(8)
     },
 }
 
@@ -87,6 +158,17 @@ export const Grouped: Story = {
         ]
         expect(bands.length).toBeGreaterThan(1)
         for (const b of bands) expect(b.textContent).toMatch(/\S+\s*\/\/\s*\d+/)
+        // A band types top/left/right only — no interior bars, no bottom — and the first band,
+        // directly under the header, omits its own top too.
+        const bar = (td: HTMLElement, side: string) =>
+            td.querySelector(`[class*="bar"][class*="${side}"]`)
+        for (const b of bands) {
+            expect(bar(b, 'left')).toBeTruthy()
+            expect(bar(b, 'right')).toBeTruthy()
+            expect(b.querySelector('[class*="bottom"]')).toBeNull()
+        }
+        expect(bands[0]!.querySelector('[class*="top"]')).toBeNull()
+        expect(bands[1]!.querySelector('[class*="run"][class*="top"]')).toBeTruthy()
     },
 }
 

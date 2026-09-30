@@ -1,16 +1,32 @@
 /* ---------- table view ---------- */
-/* --fs-ui cells, per bases-table.card.html; hairline row rules. The header, group band and
+/* --fs-ui cells, per bases-table.card.html; the grid is typed by AsciiCellEdges, not drawn. The header, group band and
    summary footer are their own components (TableHeader / TableGroupRow / TableSummaryRow), each
    with its own module — this file is the table shell and the data cell. */
 /* One root for the table + its empty state; a plain block, so the parent sees a single child. */
-.frame { display: block; }
+.frame {
+  display: block;
+  /* The typed grid's outer glyphs straddle the table's edge — half a line box above the top run,
+     half a glyph left of the left `|` — so the frame leaves that room, or a scroll container
+     around the table would cut the outer corners. */
+  padding: calc(var(--cell-h) / 2) calc(var(--fs-ui) * 0.4);
+}
 .table { border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
+/* The cell is the typed grid's HOST (position: relative, no clipping — see AsciiCellEdges), so it
+   carries no padding and no overflow of its own: the gutter and the ellipsis live on `.clip`,
+   which spans the cell's whole box, so an open editor still overflows into the gutter as before. */
 .cell {
-  padding: var(--sp-4) var(--sp-5);
-  border-bottom: var(--rule-soft, 1px solid var(--border-soft));
+  position: relative;
+  /* a vertical run types one `|` per line box and needs two lines of room (its box is inset half a
+     line at each end), so a row is never shorter than two lines or its bars vanish */
+  box-sizing: border-box;
+  height: calc(var(--cell-h) * 2);
   color: var(--fg);
   white-space: nowrap;
   vertical-align: middle;
+  min-width: 0;
+}
+.clip {
+  padding: var(--sp-4) var(--sp-5);
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;

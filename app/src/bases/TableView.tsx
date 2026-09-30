@@ -35,6 +35,7 @@ import { mountKeys } from './reconcileRows'
 import TableHeader from './TableHeader'
 import TableGroupRow from './TableGroupRow'
 import TableSummaryRow from './TableSummaryRow'
+import AsciiCellEdges, { type AsciiEdge } from '../ui/ascii/AsciiCellEdges'
 import {
     columnAtX,
     moveColumn,
@@ -317,6 +318,19 @@ export function TableView(props: {
             : undefined
     }
 
+    const hasSummary = () => Object.keys(props.result.summaries).length > 0
+    // The edges a body cell types, by the grid's ownership rule: every cell owns its top + left,
+    // the last column adds right and the last row adds bottom. The first body row directly under
+    // the header omits top (the header types its own bottom), and the last row omits bottom when a
+    // summary row follows (the summary types its own top).
+    const bodyEdges = (first: boolean, last: boolean, ci: number): AsciiEdge[] => {
+        const edges: AsciiEdge[] = ['left']
+        if (!first) edges.push('top')
+        if (ci === cols().length - 1) edges.push('right')
+        if (last && !hasSummary()) edges.push('bottom')
+        return edges
+    }
+
     return (
         <div class={styles.frame}>
             <table class={styles.table} style={tableStyle()}>
@@ -354,7 +368,7 @@ export function TableView(props: {
                         a re-resolve so only the inner reference-keyed row <For> diffs — no
                         whole-table remount flash on a task toggle. */}
                     <Index each={props.result.groups}>
-                        {group => {
+                        {(group, gi) => {
                             // Rows keyed by `mountKeys`, NOT by object identity: reconcileRows
                             // hands an edited row a fresh object (so identity-keyed views
                             // repaint it), which under an identity-keyed <For> would unmount the
@@ -376,10 +390,11 @@ export function TableView(props: {
                                             label={group().key}
                                             count={group().rows.length}
                                             colspan={cols().length}
+                                            first={gi === 0}
                                         />
                                     </Show>
                                     <For each={keyed().keys}>
-                                        {key => {
+                                        {(key, ri) => {
                                             // Keeps the last row while <For> disposes a removed
                                             // key, so a getter re-running mid-teardown never sees
                                             // undefined.
@@ -419,34 +434,46 @@ export function TableView(props: {
                                                                             ),
                                                                     }}
                                                                 >
-                                                                    <Show
-                                                                        when={check()}
-                                                                        fallback={cellBody(
-                                                                            c,
-                                                                            ci(),
-                                                                            row,
-                                                                        )}
-                                                                    >
-                                                                        <TaskCheck
-                                                                            variant="cell"
-                                                                            status={checkStatus(
-                                                                                row().note
-                                                                                    .status,
+                                                                    <div class={styles.clip}>
+                                                                        <Show
+                                                                            when={check()}
+                                                                            fallback={cellBody(
+                                                                                c,
+                                                                                ci(),
+                                                                                row,
                                                                             )}
-                                                                            onToggle={e =>
-                                                                                props.onToggle?.(
-                                                                                    row(),
-                                                                                    e,
-                                                                                )
-                                                                            }
-                                                                            onSetStatus={e =>
-                                                                                props.onSetStatus?.(
-                                                                                    row(),
-                                                                                    e,
-                                                                                )
-                                                                            }
-                                                                        />
-                                                                    </Show>
+                                                                        >
+                                                                            <TaskCheck
+                                                                                variant="cell"
+                                                                                status={checkStatus(
+                                                                                    row().note
+                                                                                        .status,
+                                                                                )}
+                                                                                onToggle={e =>
+                                                                                    props.onToggle?.(
+                                                                                        row(),
+                                                                                        e,
+                                                                                    )
+                                                                                }
+                                                                                onSetStatus={e =>
+                                                                                    props.onSetStatus?.(
+                                                                                        row(),
+                                                                                        e,
+                                                                                    )
+                                                                                }
+                                                                            />
+                                                                        </Show>
+                                                                    </div>
+                                                                    <AsciiCellEdges
+                                                                        edges={bodyEdges(
+                                                                            gi === 0 &&
+                                                                                group().key === '' &&
+                                                                                ri() === 0,
+                                                                            gi === props.result.groups.length - 1 &&
+                                                                                ri() === keyed().keys.length - 1,
+                                                                            ci(),
+                                                                        )}
+                                                                    />
                                                                 </td>
                                                             )
                                                         }}
