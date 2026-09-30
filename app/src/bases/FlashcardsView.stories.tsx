@@ -439,7 +439,7 @@ export const Revealed: Story = {
             name: 'hard',
         })
         await expect(hard.getAttribute('title')).toBe('hard (1)')
-        const cap = hard.parentElement!.querySelector('.asc-kbd') as HTMLElement
+        const cap = hard.parentElement!.querySelector('[data-kbd]') as HTMLElement
         await expect(cap.textContent).toBe('1')
         const b = hard.getBoundingClientRect()
         const k = cap.getBoundingClientRect()
@@ -656,7 +656,7 @@ export const KeyboardDefaultsRevealAndGrade: Story = {
             canvasElement.textContent?.includes('to reveal answer'),
         ).toBe(false)
         await expect(
-            [...canvasElement.querySelectorAll('.asc-kbd')].map(k => k.textContent),
+            [...canvasElement.querySelectorAll('[data-kbd]')].map(k => k.textContent),
         ).toEqual(['1', '2', '3'])
         const hardBtn = await within(canvasElement).findByRole('button', {
             name: 'hard',

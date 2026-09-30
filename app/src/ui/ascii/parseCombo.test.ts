@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'bun:test'
-import { parseCombo } from './parseCombo'
+import { isGlyph, parseCombo, spaceBetween } from './parseCombo'
+
+/** A chord typed the way Kbd renders it. */
+const typed = (keys: string[]) =>
+    keys.map((k, i) => (i > 0 && spaceBetween(keys[i - 1], k) ? ` ${k}` : k)).join('')
 
 describe('parseCombo', () => {
-    it('splits a chord into adjacent caps', () => {
-        expect(parseCombo('Mod+Shift+D', true)).toEqual([['⌘', 'Shift', 'D']])
+    it('splits a chord into its keys', () => {
+        expect(parseCombo('Mod+Shift+D', true)).toEqual([['⌘', 'shift', 'D']])
         expect(parseCombo('Mod+Shift+D', false)).toEqual([
-            ['Ctrl', 'Shift', 'D'],
+            ['ctrl', 'shift', 'D'],
         ])
     })
 
@@ -23,9 +27,9 @@ describe('parseCombo', () => {
         ])
     })
 
-    it('maps Mod to ⌘ on mac and Ctrl elsewhere', () => {
+    it('maps Mod to ⌘ on mac and ctrl elsewhere', () => {
         expect(parseCombo('Mod+K', true)).toEqual([['⌘', 'K']])
-        expect(parseCombo('Mod+K', false)).toEqual([['Ctrl', 'K']])
+        expect(parseCombo('Mod+K', false)).toEqual([['ctrl', 'K']])
     })
 
     it('maps Cmd/Meta to ⌘ regardless of platform', () => {
@@ -33,10 +37,10 @@ describe('parseCombo', () => {
         expect(parseCombo('Meta+K', false)).toEqual([['⌘', 'K']])
     })
 
-    it('maps Alt/Option per platform; Shift is always text (not a sanctioned keyboard cap)', () => {
-        expect(parseCombo('Alt+Shift+X', true)).toEqual([['⌥', 'Shift', 'X']])
+    it('maps Alt/Option per platform; shift is always a word (not a sanctioned glyph)', () => {
+        expect(parseCombo('Alt+Shift+X', true)).toEqual([['⌥', 'shift', 'X']])
         expect(parseCombo('Alt+Shift+X', false)).toEqual([
-            ['Alt', 'Shift', 'X'],
+            ['alt', 'shift', 'X'],
         ])
         expect(parseCombo('Option+X', false)).toEqual([['⌥', 'X']])
     })
@@ -56,14 +60,30 @@ describe('parseCombo', () => {
         expect(parseCombo('Space', true)).toEqual([['space']])
     })
 
-    it('passes through unrecognized keys literally', () => {
+    it('passes single characters through literally and lowercases unmapped named keys', () => {
         expect(parseCombo('Mod+`', true)).toEqual([['⌘', '`']])
         expect(parseCombo('Q', true)).toEqual([['Q']])
+        expect(parseCombo('PageDown', true)).toEqual([['pagedown']])
     })
 
     it('returns an empty array for empty/undefined/null input', () => {
         expect(parseCombo('')).toEqual([])
         expect(parseCombo(undefined)).toEqual([])
         expect(parseCombo(null)).toEqual([])
+    })
+
+    it('types a chord as one run: glyphs glue, words take a space each side', () => {
+        expect(typed(['⌘', 'K'])).toBe('⌘K')
+        expect(typed(['⌘', '⌥', 'K'])).toBe('⌘⌥K')
+        expect(typed(['⌘', '`'])).toBe('⌘`')
+        expect(typed(['⌘', 'shift', '3'])).toBe('⌘ shift 3')
+        expect(typed(['ctrl', 'shift', 'D'])).toBe('ctrl shift D')
+        expect(typed(['esc'])).toBe('esc')
+        expect(typed([])).toBe('')
+    })
+
+    it('knows the sanctioned glyphs and nothing else', () => {
+        for (const g of ['⌘', '⌥', '↵', '↑', '↓']) expect(isGlyph(g)).toBe(true)
+        for (const k of ['K', 'shift', 'esc', '<', '`']) expect(isGlyph(k)).toBe(false)
     })
 })

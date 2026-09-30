@@ -117,7 +117,7 @@ export function PaletteModal(props: Props) {
                             sublabel={r.item.sublabel}
                             shortcut={
                                 r.item.shortcut ? (
-                                    <Kbd combo={r.item.shortcut} />
+                                    <Kbd combo={r.item.shortcut} muted />
                                 ) : undefined
                             }
                         />

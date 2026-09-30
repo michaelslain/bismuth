@@ -529,7 +529,10 @@ the accent. An outline appears only when it means something.
 ### Navigation
 - **ViewBar:** the single view header (see Layout). **Tab rail / top strip / sidebar:** `--fs-ui`
   mono on `--rail`, rows at `--row-h`; the active tab carries the sheen rule.
-- **Keyboard caps** (`Kbd`) use `⌘ ⌥ ↵ ↑ ↓ esc`.
+- **Keybindings** (`Kbd`) are typed, never drawn: one run of mono text per chord at `--fs-micro`, in
+  `--text-muted` (`--faint` inside a menu/palette row or under a control, via `muted`), no box, border
+  or background. Glyphs glue and word keys take a space (`⌘K`, `⌘ shift 3`); alternatives join with
+  a faint `or`. Keys are the glyphs `⌘ ⌥ ↵ ↑ ↓` or lowercase words (`shift`, `ctrl`, `esc`, `tab`).
 
 ### ASCII primitives (signature)
 `Glyph`, `AsciiTree`, `AsciiMeter`, `AsciiCellEdges` and `GraphField` (in `app/src/ui/ascii/`) draw
