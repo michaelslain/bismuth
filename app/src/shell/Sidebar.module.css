@@ -38,14 +38,16 @@
    producing a smooth slide instead of an instant on/off. */
 .sidebar > * { width: var(--sidebar-width, 266px); box-sizing: border-box; }
 .sidebar-files { flex: 1; overflow: auto; padding: 0 var(--sp-4) var(--sp-4); min-height: 0; }
-/* width:auto (overriding the `.sidebar > *` pin) keeps the slot at the sidebar's
-   content width — one pixel narrower than the box — so the graph floater that snaps
-   onto it doesn't paint over the sidebar's 1px border-right. The file tree above can
-   stay pinned because its 8px padding already keeps content off that border. */
-.sidebar-graph-section { display: flex; flex-direction: column; flex-shrink: 0; }
+/* Pinned one pixel narrower than `.sidebar > *` — the sidebar's content width, not its box — so
+   the graph floater that App.tsx snaps onto `.sidebar-graph` (position: fixed, z-index 2) stops
+   at the sidebar's 1px border-right instead of painting over it. Still a fixed width rather than
+   `auto`, so the slot never shrinks while --sidebar-w animates: the floater's docked clip-path is
+   what collapses the graph, with no canvas resize. The file tree above can stay at the full pin
+   because its padding already keeps content off that border. */
+.sidebar-graph-section { display: flex; flex-direction: column; flex-shrink: 0; width: calc(var(--sidebar-width, 266px) - 1px); }
 .sidebar-graph-section.collapsed { display: none; }
 /* --border-soft, not --border — every other hairline in this file already reads --border-soft
    (the sidebar's own right edge, this row's bottom edge below); this one was the odd one out,
    with no comment explaining why (visual-unification audit §4.8). It wasn't deliberate: fixed. */
-.sidebar-graph { border-top: 1px solid var(--border-soft); height: var(--sidebar-graph-height, 305px); width: auto; }
+.sidebar-graph { border-top: 1px solid var(--border-soft); height: var(--sidebar-graph-height, 305px); }
 .sidebar canvas { display: block; }

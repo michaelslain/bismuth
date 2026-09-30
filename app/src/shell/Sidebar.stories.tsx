@@ -22,17 +22,20 @@
 // an auto-height parent (Storybook's default canvas) collapses it to its content's natural size
 // instead of the real app's viewport-height column. Every story wraps in `height: 600px`.
 //
-// THREE STORIES: `Default` — toolbar slot of three real <CommandButton>s, tree slot of a stub,
+// STORIES: `Default` — toolbar slot of three real <CommandButton>s, tree slot of a stub,
 // graph section expanded. `GraphCollapsed` — the `collapsed` state class (`display: none`), the
 // only story reaching it; without it the rule has zero coverage. `Hidden` — `visible: false`.
 // Documents that `.sidebar.hidden` is unstyled TODAY (see the component header) so a future rule
-// added for it cannot land unmeasured by this gate.
+// added for it cannot land unmeasured by this gate. `DockedGraph` — the sidebar in an app-shaped
+// 266px grid track with a real <GraphFloater> placed over the graph slot, the only story where the
+// sidebar's border-right can be painted over.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
-import { For } from 'solid-js'
+import { For, onMount } from 'solid-js'
 import sidebarStyles from './Sidebar.module.css'
 import { Sidebar } from './Sidebar'
 import { CommandButton } from './CommandButton'
+import { GraphFloater } from './GraphFloater'
 
 const noop = () => {}
 
@@ -156,5 +159,60 @@ export const Overflowing: Story = {
         const cs = getComputedStyle(scroller)
         expect(cs.overscrollBehavior).toBe('none')
         expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
+    },
+}
+
+/** The docked graph as the app lays it out: the sidebar in a `var(--sidebar-width)` grid track (the
+ *  other stories' wrapper squeezes it 2px narrower than the app does), and a real <GraphFloater>
+ *  snapped onto the graph slot's rect the way App.tsx's `placeFloater` does — `position: fixed`,
+ *  `z-index: 2`, top/left/width/height written from `getBoundingClientRect()`. Both columns fill
+ *  with `--bg`, like the graph canvas beside a note, so the sidebar's 1px `--border-soft`
+ *  border-right is the only thing separating them. The floater once measured the slot at the full
+ *  266px and painted over that hairline; `play` pins that it now stops at the border. */
+export const DockedGraph: Story = {
+    render: () => {
+        let slot: HTMLDivElement | undefined
+        let floater: HTMLDivElement | undefined
+        onMount(() => {
+            if (!slot || !floater) return
+            const r = slot.getBoundingClientRect()
+            floater.style.top = `${r.top}px`
+            floater.style.left = `${r.left}px`
+            floater.style.width = `${r.width}px`
+            floater.style.height = `${r.height}px`
+        })
+        return (
+            <div
+                style={{
+                    display: 'grid',
+                    'grid-template-columns': 'var(--sidebar-width, 266px) 320px',
+                    height: '600px',
+                    width: 'max-content',
+                    '--sidebar-w': 'var(--sidebar-width, 266px)',
+                }}
+            >
+                <Sidebar
+                    visible={true}
+                    graphCollapsed={false}
+                    graphSlotRef={el => (slot = el)}
+                    toolbar={toolbar()}
+                    tree={treeStub}
+                />
+                <div style={{ background: 'var(--bg)' }} />
+                <GraphFloater docked={true} ref={el => (floater = el)}>
+                    <div style={{ width: '100%', height: '100%', background: 'var(--bg)' }} />
+                </GraphFloater>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const aside = canvasElement.querySelector('aside') as HTMLElement
+        const floater = canvasElement.querySelector('[data-graph-floater]') as HTMLElement
+        expect(aside).not.toBeNull()
+        expect(floater).not.toBeNull()
+        const borderX =
+            aside.getBoundingClientRect().right - parseFloat(getComputedStyle(aside).borderRightWidth)
+        expect(floater.getBoundingClientRect().width).toBeGreaterThan(0)
+        expect(floater.getBoundingClientRect().right).toBeLessThanOrEqual(borderX)
     },
 }
