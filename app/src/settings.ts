@@ -107,7 +107,7 @@ export interface Settings {
     }
     ui: {
         paletteTopOffset: string // CSS length, e.g. "12vh"
-        paneDividerWidth: number // px
+        paneDividerWidth: number // px — the divider's GRAB width; its line is always the 1px border
         cardGridMinWidth: number // px
         kanbanColumnMinWidth: number // px
         kanbanColumnMaxWidth: number // px

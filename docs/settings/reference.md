@@ -253,7 +253,7 @@ Miscellaneous layout sizing for panes, palettes, and Bases views.
 | Key | Type | Default | Bounds | Doc |
 |-----|------|---------|--------|-----|
 | `paletteTopOffset` | string | `12vh` | — | How far down the screen the command palette appears (CSS length, e.g. `12vh`). |
-| `paneDividerWidth` | number | `5` | min `3`, max `12` | Thickness of the draggable divider between split panes (px). |
+| `paneDividerWidth` | number | `5` | min `3`, max `12` | Grab width of the divider between split panes (px). The visible line is always the app's 1px border; this is the invisible strip around it you drag. |
 | `cardGridMinWidth` | number | `220` | min `150`, max `360` | Minimum card width in the Bases cards view (px). |
 | `kanbanColumnMinWidth` | number | `248` | min `180`, max `360` | Minimum Bases kanban column width (px). |
 | `kanbanColumnMaxWidth` | number | `288` | min `220`, max `420` | Maximum Bases kanban column width (px). |
