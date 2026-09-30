@@ -18,6 +18,7 @@ import App from './App'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { SAMPLE_ROWS } from './ui/_baseFixtures'
+import { recheckUpdate } from './updateCheck'
 
 const meta = {
     title: 'App/App',
@@ -34,7 +35,9 @@ type Story = StoryObj<typeof meta>
 const STORY_H = '760px'
 
 const Frame = (props: { children: unknown }) => (
-    <div style={{ height: STORY_H, width: '100%' }}>{props.children as never}</div>
+    <div style={{ height: STORY_H, width: '100%' }}>
+        {props.children as never}
+    </div>
 )
 
 /** A small seeded vault so the file tree and the graph home tab both have real content, not an
@@ -42,7 +45,7 @@ const Frame = (props: { children: unknown }) => (
  *  `projects/`/`eng/` folders): FileTree renders folders COLLAPSED by default, so a note inside
  *  one is invisible to a query until something expands it — a root file needs no interaction to
  *  prove the tree has real content. */
-function seedVault(): void {
+function seedVault(opts: { updateBehind?: number } = {}): void {
     localStorage.clear()
     const names = SAMPLE_ROWS.map(r => r.file.name)
     const files = Object.fromEntries(
@@ -63,8 +66,24 @@ function seedVault(): void {
                 })),
                 edges: [],
             },
+            ...(opts.updateBehind
+                ? {
+                      updateStatus: {
+                          available: true,
+                          behind: opts.updateBehind,
+                          localSha: 'abc1234',
+                          remoteSha: 'def5678',
+                          builtSha: 'abc1234',
+                          dirty: false,
+                      },
+                  }
+                : {}),
         }),
     )
+    // updateCheck.ts's status is a MODULE-level signal shared by every story in this browser, so
+    // re-read it against this story's transport — otherwise the banner one story shows would leak
+    // into the next.
+    recheckUpdate()
 }
 
 /** A fresh window: no persisted tabs, so App seeds one Knowledge Graph tab (the "tabs never
@@ -91,13 +110,35 @@ export const Default: Story = {
         expect(canvas.getByLabelText('Vault files')).toBeInTheDocument()
         await waitFor(() => {
             expect(
-                canvasElement.querySelector('[data-graph-host], .graph-floater'),
+                canvasElement.querySelector(
+                    '[data-graph-host], .graph-floater',
+                ),
             ).not.toBeNull()
         })
         // The seeded vault's notes are real content, not an empty tree.
         await waitFor(() => {
+            expect(canvas.getByText('Draft the roadmap')).toBeInTheDocument()
+        })
+    },
+}
+
+/** The whole app with an update available — the banner in its real place at the top of the
+ *  editor column, over the graph tab's view bar, beside the sidebar's toolbar and the tab rail, so
+ *  its height, inset and hairline can be checked against the chrome around it. */
+export const WithUpdateBanner: Story = {
+    render: () => {
+        seedVault({ updateBehind: 5 })
+        return (
+            <Frame>
+                <App />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => {
             expect(
-                canvas.getByText('Draft the roadmap'),
+                canvas.getByText(/Bismuth update available/),
             ).toBeInTheDocument()
         })
     },
@@ -157,9 +198,8 @@ export const OpenWithSplitKeepsPanes: Story = {
             expect(canvas.getByText('2 panes')).toBeInTheDocument()
         })
 
-        const chipsBefore = canvasElement.querySelectorAll(
-            '[data-tab-chip]',
-        ).length
+        const chipsBefore =
+            canvasElement.querySelectorAll('[data-tab-chip]').length
         const panesBefore = Array.from(
             canvasElement.querySelectorAll('[data-pane-leaf]'),
         ).map(el => el.textContent)
@@ -169,10 +209,7 @@ export const OpenWithSplitKeepsPanes: Story = {
         // Pins two things at once: the runtime hook actually exists (viewDrag's
         // reference geometry silently degrades without it), and note A really opened
         // before the split (the graph home tab also renders one pane).
-        expect(paneContentsBefore.slice().sort()).toEqual([
-            '::empty',
-            noteA,
-        ])
+        expect(paneContentsBefore.slice().sort()).toEqual(['::empty', noteA])
 
         // Fire the open event for a DIFFERENT note while this split tab is active and its
         // EMPTY pane is focused — the exact shape that used to clobber the focused pane.
@@ -203,9 +240,9 @@ export const OpenWithSplitKeepsPanes: Story = {
         })
         // Neither surviving pane was rewritten to hold the newly-opened note.
         expect(
-            Array.from(
-                canvasElement.querySelectorAll('[data-pane-leaf]'),
-            ).some(el => el.textContent?.includes('Ship storybook coverage')),
+            Array.from(canvasElement.querySelectorAll('[data-pane-leaf]')).some(
+                el => el.textContent?.includes('Ship storybook coverage'),
+            ),
         ).toBe(false)
     },
 }
