@@ -4,7 +4,7 @@
 //
 // Host contract: the host cell is `position: relative` and does not clip (the glyphs straddle
 // the boundary — half a line box above the top edge, half a `ch` left of the left edge). Render
-// this as a child of the host. Ownership: each boundary is typed by exactly one cell — a cell
+// this as a child of the host; it renders one overlay, plus one `backdrop` ring before it when asked. Ownership: each boundary is typed by exactly one cell — a cell
 // types its top + left; the last column adds right, the last row adds bottom; a header types its
 // bottom heavy and the first body row omits top; a summary row types its top heavy and the row
 // above omits bottom; a full-width band types top, left, right (no interior `|`).
@@ -24,7 +24,8 @@ export type AsciiCellEdgesProps = {
     /** 'soft' = --faint ink (row/column rules), 'firm' = --border ink (structural). Default 'soft'. */
     ink?: 'soft' | 'firm'
     /** Paint an opaque `--bg` ring over this cell's glyph overhang, for cells in a sticky header, so
-     *  content scrolling beneath never shows through. Default false. */
+     *  content scrolling beneath never shows through. With no `top` edge the ring skips its top band
+     *  (the cell above owns that line). Default false. */
     backdrop?: boolean
     class?: string
 }
@@ -43,7 +44,11 @@ const AsciiCellEdges: Component<AsciiCellEdgesProps> = props => {
     return (
         <>
             <Show when={props.backdrop}>
-                <div aria-hidden="true" data-backdrop class={styles.backdrop} />
+                <div
+                    aria-hidden="true"
+                    data-backdrop
+                    class={`${styles.backdrop} ${(props.edges ?? ['top', 'left']).includes('top') ? '' : styles.backdropNoTop}`}
+                />
             </Show>
             <div
                 aria-hidden="true"

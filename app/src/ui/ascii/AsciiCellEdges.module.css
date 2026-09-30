@@ -1,7 +1,7 @@
 /* app/src/ui/ascii/AsciiCellEdges.module.css — the typed cell-grid overlay. Sole importer:
    AsciiCellEdges.tsx.
 
-   ONE element per cell and no children: the edges are a nine-slice MASK over a background-color of
+   ONE edges element per cell and no children (plus one optional `backdrop` ring before it): the edges are a nine-slice MASK over a background-color of
    the ink token. The mask is a 3x3 sprite of the UI font's own `+ - = |` glyphs, rasterised once by
    asciiGlyphTiles.ts (canvas fillText in the computed --ui-font-stack at --fs-ui, one tile = the
    font's `ch` x --cell-h at devicePixelRatio) and installed on :root as --ascii-edges-<key>. No
@@ -58,6 +58,13 @@
     border-right-width: calc(var(--ascii-tile-w, 1ch) / 2);
     background: transparent;
     pointer-events: none;
+}
+/* No `top` edge: the cell above types that boundary, so its own glyph overhang is not this cell's to
+   hide — the ring starts at the host's top and paints no top band. Otherwise it would sit on the
+   header above's heavy `=` and halve it. */
+.backdropNoTop {
+    top: 0;
+    border-top-width: 0;
 }
 .edges[data-edges='left']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0001, linear-gradient(transparent, transparent)); }
 .edges[data-edges='bottom']:not([data-heavy]) { -webkit-mask-box-image-source: var(--ascii-edges-0010, linear-gradient(transparent, transparent)); }

@@ -154,6 +154,17 @@ export const AllDayRow: Story = {
             </div>
         )
     },
+    play: async ({ canvasElement }) => {
+        // every header cell and every all-day cell of the sticky top carries its ring: without the
+        // all-day one, content scrolling under the row shows through its glyph overhang
+        const rings = canvasElement.querySelectorAll('[data-backdrop]')
+        expect(rings.length).toBeGreaterThan(0)
+        const heads = canvasElement.querySelectorAll('[data-testid="day-header"]')
+        const cells = canvasElement.querySelectorAll('[data-testid="allday-cell"]')
+        expect(heads.length).toBeGreaterThan(0)
+        for (const h of heads) expect(h.querySelector('[data-backdrop]')).toBeTruthy()
+        for (const c of cells) expect(c.querySelector('[data-backdrop]')).toBeTruthy()
+    },
 }
 
 /** The tasks register: `placed` selects it, so the view draws all-day task chips through

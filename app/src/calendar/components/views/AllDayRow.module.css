@@ -4,4 +4,8 @@
 /* fill: the tasks register's only row. Grows into the rest of the strip so each day is a full-height
    column (and a full-height drop target), instead of a short row over a blank void. */
 .row.fill { flex: 1 0 auto; }
-.cell { flex: 1; min-width: 0; padding: var(--sp-2) var(--sp-3); position: relative; }
+/* padding-top: the header above types its heavy `=` on its own bottom edge and, in a sticky header,
+   rings that edge with a half-tile band of --bg that hangs DOWN into this cell — the chips start
+   below it. `--add-task-top` is the same clearance already paid by this padding, so a
+   TaskDayCell `[data-add-task]` button inside (which reads it) does not add it twice. */
+.cell { flex: 1; min-width: 0; padding: calc(var(--ascii-tile-h, var(--cell-h)) / 2 + var(--sp-1)) var(--sp-3) var(--sp-2); position: relative; --add-task-top: var(--sp-2); }

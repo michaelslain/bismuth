@@ -34,21 +34,20 @@
 /* When the pointer is in the right-edge grab zone, the whole cell shows col-resize
    (overrides the .thDrag grab cursor) so the affordance is obvious. */
 .thAtEdge, .thAtEdge:active { cursor: col-resize !important; }
-/* Visible resize handle pinned to the right edge. A 12px grab strip; a 2px line
-   inside it lights up on hover so users can see where to grab. */
+/* Visible resize handle pinned inside the right edge. A 12px strip; a 2px line inside it lights up
+   on hover so users can see where to grab. It stays wholly inside its own <th> (the next header's
+   `backdrop` ring covers half a tile into this one, so a line centred on the boundary would be
+   half hidden), its line sitting 5px in — clear of that band. */
 .thResize {
   position: absolute;
   top: 0;
-  right: -6px;
+  right: 0;
   width: 12px;
   height: 100%;
   cursor: col-resize;
   display: flex;
   justify-content: center;
 }
-/* The last column's handle would hang 6px past the table's right edge — past the viewport when
-   the table fills it — so it tucks inside the cell instead. */
-.thResizable:last-child .thResize { right: 0; }
 .thResize::after {
   content: "";
   width: 2px;
