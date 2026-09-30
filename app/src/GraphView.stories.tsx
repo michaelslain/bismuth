@@ -326,54 +326,25 @@ export const MiniModeSwitcher: Story = {
 }
 
 /**
- * THE HUD BADGES — the hover-label pill and the `.graph-stats` readout, shown together (Task 3,
- * ds-polish: "one size, one baseline, full separators" — both at `--fs-ui`, bottoms aligned).
- * Neither has a prop to force it on, so each is forced the way this file's other stateful stories
- * already do (see MiniModeSwitcher above), never with a `setTimeout`-and-hope:
+ * THE STATUS LINE — the floor's one strip (graph/GraphStatusLine): hovered path left, the
+ * `//`-joined readout right, fps appended. Neither half has a prop to force it on from here, so
+ * each is forced the way this file's other stateful stories already do, never with a timeout:
  *
- * - The frame is a fixed 700px wide, not `STORY_H`'s usual `width: '100%'` — and NOT the narrow
- *   480px this story used before Task 3. `.graph-stats` is `display: none` under
- *   `@container grapharea (max-width: 520px)` (GraphView.module.css), so a narrow render — the
- *   old choice — showed the hover pill and the bottom bar's OWN separate fps badge
- *   (`.graph-bottom-fps`) but never `.graph-stats` itself, which is exactly the gap this task's
- *   ruling calls out ("currently shows the hover badge and the fps pill but no node/edge
- *   readout"). 700px sits comfortably past the 521px breakpoint, so `.graph-stats` renders (with
- *   its own embedded fps segment) and the narrow bottom-bar's `.graph-bottom-narrow`/
- *   `.graph-bottom-fps` correctly hide instead — the same responsive split every other width
- *   already gets, not a new rule.
- * - The fps segment only renders while `settings.graph.showFps` is on (default off) AND the
- *   renderer has measured a real frame rate — its own accumulator only calls back once ~500ms of
- *   REAL rAF time has elapsed (AsciiGraphRenderer's fpsAccum). `showFps` is flipped the same way
- *   MiniModeSwitcher flips `daemon.enabled`: captured, set, restored in `onCleanup`. The `waitFor`
- *   below polls for that real callback to have fired — a genuine settled signal, not a guess.
- * - The hover pill only renders while the mouse is genuinely over a node (`hovered()`, set by the
- *   renderer's own `pointermove` listener on `window` — see AsciiGraphRenderer.ts). There is no
- *   prop to fake a hover, so this dispatches a REAL synthetic `pointermove` at the exact center of
- *   the canvas. That lands on the index hub note (`SAMPLE_HUB_ID`) deterministically, not by luck:
- *   `sampleGraphData(8)` and its layout (`computeLayout`) are pure functions of fixed inputs, and
- *   the hub sits at the layout's centroid (it links to every other note) — the renderer
- *   fits+centers the world in the canvas regardless of aspect ratio, so the hub's cell stays
- *   under the canvas's own center point at this width just as it did at the old 480px one
- *   (verified empirically the same way: the center always lands inside a node's cell).
- * - Both `waitFor`s below also assert a non-zero bounding box, not just presence + text — a
- *   `display: none` badge still has DOM text, so text alone doesn't prove it's visible (this is
- *   exactly how the fps pill's invisibility at full width went unnoticed before).
- * - The trailing assertions check the ruling's own claims directly: "bottoms aligned" — the hover
- *   pill and the `.graph-stats` box share the same CSS `bottom` (6px) / flex `align-items: center`,
- *   which pins both boxes' bottom edges to the same Y regardless of their differing heights/padding
- *   — and "never overlaps" (fix-2-4, ds-polish): the hub note's id is renamed to a 61-char
- *   title, a length nothing bounded the hover pill's width against before `.graph-stats` moved off
- *   `position: absolute` to become the bottom bar's last flex child (GraphView.module.css). A
- *   local fixture override, not a change to `sampleGraphData` itself, which every other story here
- *   also uses — `hoverLabel()` (GraphView.tsx) shows a note as `<id>.md`, so renaming the hub's id
- *   (and the edges that name it) is the deterministic way to grow the hover pill's text without
- *   disturbing which node the centered pointermove below lands on (still the hub, still at the
- *   canvas center, same guarantee the doc comment above already established).
+ * - 700px wide, past the 521px breakpoint: under it `.graph-status` hides and the bottom bar's own
+ *   fps badge takes over, which is the narrow story's job, not this one's.
+ * - fps renders only while `settings.graph.showFps` is on AND the renderer has measured a real
+ *   frame rate (~500ms of rAF time — AsciiGraphRenderer's fpsAccum). `showFps` is captured, set and
+ *   restored in `onCleanup`; the `waitFor` polls for that real callback.
+ * - The hover only exists while the pointer is genuinely over a node, so this dispatches a real
+ *   `pointermove` at the canvas centre, which lands on the hub note (`SAMPLE_HUB_ID`)
+ *   deterministically: the fixture and its layout are pure, and the hub sits at the centroid.
+ * - The hub's id is renamed to a 61-char title so the path has to give way to the readout: the
+ *   trailing assertions prove the two halves share one row and never overlap.
  */
 const LONG_HOVER_LABEL =
     'Quarterly North American Expansion Planning And Budget Review'
 
-export const HudBadges: Story = {
+export const StatusLine: Story = {
     render: () => {
         resetLayers()
         const previousShowFps = settings.graph.showFps
@@ -418,62 +389,42 @@ export const HudBadges: Story = {
                 bubbles: true,
             }),
         )
+        const path = () =>
+            canvasElement.querySelector('[data-testid="graph-status-path"]')!
+        const readout = () =>
+            canvasElement.querySelector('[data-testid="graph-status-readout"]')!
         await waitFor(
             () => {
-                const pill = canvasElement.querySelector(
-                    '[class*="graph-hud-hover"]',
-                )
-                expect(pill).not.toBeNull()
-                expect(pill!.textContent).not.toBe('')
-                const box = pill!.getBoundingClientRect()
-                expect(box.width).toBeGreaterThan(0)
-                expect(box.height).toBeGreaterThan(0)
+                expect(path().textContent).toBe(`${LONG_HOVER_LABEL}.md`)
+                expect(path().getBoundingClientRect().width).toBeGreaterThan(0)
             },
             { timeout: 3000 },
         )
 
-        // Waits on the renderer's OWN real fps callback (500ms of accumulated frame time), not a
-        // fixed sleep — see this story's doc comment. The fps segment now lives INSIDE the wide
-        // `.graph-stats` readout (Task 3), not the narrow bottom-bar's own fps badge, which this
-        // width hides on purpose.
+        // Waits on the renderer's OWN real fps callback, not a fixed sleep — see the doc comment.
         await waitFor(
             () => {
-                const stats = canvasElement.querySelector(
-                    '[class*="graph-stats"]',
-                )
-                expect(stats).not.toBeNull()
-                expect(stats!.textContent ?? '').toMatch(
+                expect(readout().textContent ?? '').toMatch(
                     // `[^/]+` (not `.+`) for the mode segment: it cannot swallow a `/`, so a
-                    // missing space beside any `//` (the flex-item edge-trimming bug this task's
-                    // JSX works around — see GraphView.tsx's note) fails this instead of silently
-                    // matching via backtracking.
+                    // missing space beside any `//` fails this instead of matching by backtracking.
                     /^\d+ nodes? \/\/ \d+ edges? \/\/ [^/]+ \/\/ \d+% \/\/ \d+ fps$/,
                 )
-                const box = stats!.getBoundingClientRect()
-                expect(box.width).toBeGreaterThan(0)
-                expect(box.height).toBeGreaterThan(0)
+                expect(readout().getBoundingClientRect().width).toBeGreaterThan(0)
             },
             { timeout: 5000 },
         )
 
-        // Bottoms aligned — the ruling's own acceptance check, not just "both visible".
-        const hoverPill = canvasElement.querySelector('[class*="graph-hud-hover"]')!
-        const stats = canvasElement.querySelector('[class*="graph-stats"]')!
+        // One row: both halves centred on the same line, and the strip sits on the canvas floor.
+        const p = path().getBoundingClientRect()
+        const r = readout().getBoundingClientRect()
+        expect(Math.abs((p.top + p.bottom) / 2 - (r.top + r.bottom) / 2)).toBeLessThanOrEqual(1)
+        const strip = canvasElement.querySelector('[data-testid="graph-status"]')!
         expect(
-            Math.abs(
-                hoverPill.getBoundingClientRect().bottom -
-                    stats.getBoundingClientRect().bottom,
-            ),
+            Math.abs(strip.getBoundingClientRect().bottom - canvas.getBoundingClientRect().bottom),
         ).toBeLessThanOrEqual(1)
 
-        // Never overlaps (fix-2-4): confirms this IS the long-label render, then proves the hover
-        // pill's right edge stays clear of the readout's left edge — the regression this story
-        // exists to catch. Before the readout moved off `position: absolute`, nothing bounded the
-        // pill's width above 520px and a label this long painted straight over the readout text.
-        expect(hoverPill.textContent).toBe(`${LONG_HOVER_LABEL}.md`)
-        expect(hoverPill.getBoundingClientRect().right).toBeLessThanOrEqual(
-            stats.getBoundingClientRect().left,
-        )
+        // Never overlaps: the long path gives way before the readout.
+        expect(p.right).toBeLessThanOrEqual(r.left)
     },
 }
 
