@@ -513,7 +513,7 @@ const miniGrid = (width: number): Story => ({
         expect(stats.bars).toBe(15)
         expect(stats.runs).toBe(16)
         expect(stats.heavy).toBe(4)
-        expect(problems).toEqual([])
+        expect(problems.join(' // ')).toBe('')
     },
 })
 

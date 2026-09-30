@@ -200,26 +200,43 @@ function install(retried = false): void {
     if (!ctx) return
     ctx.font = `400 ${m.size * dpr}px ${m.family}`
     const ch = ctx.measureText('-').width / dpr
-    // the ink extents, in CSS px, of the three glyphs the rhythm is built from
-    const box = (g: string) => {
-        const t = ctx.measureText(g)
-        return {
-            left: t.actualBoundingBoxLeft,
-            right: t.actualBoundingBoxRight,
-            ascent: t.actualBoundingBoxAscent,
-            descent: t.actualBoundingBoxDescent,
-        }
+    // the ink extents of the three glyphs the rhythm is built from, read the way the eye (and the
+    // story probe) reads them: the pixels a glyph paints at half alpha or more, drawn at an
+    // INTEGER baseline. TextMetrics' bounding box is fractional and lands a device pixel off the
+    // painted ink, which is how a `|` once touched the `+` at one end of a run and not the other.
+    const scratch = document.createElement('canvas')
+    const sctx = scratch.getContext('2d', { willReadFrequently: true })
+    if (!sctx) return
+    const bw = Math.max(1, Math.round(ch * dpr))
+    const baseline = Math.ceil(m.size * dpr * 2)
+    scratch.width = bw * 2
+    scratch.height = baseline * 2
+    sctx.font = `400 ${m.size * dpr}px ${m.family}`
+    sctx.textBaseline = 'alphabetic'
+    sctx.textAlign = 'left'
+    ;(sctx as CanvasRenderingContext2D & { fontKerning?: string }).fontKerning = 'none'
+    sctx.fillStyle = '#000'
+    /** `top`: the ink's first row relative to the baseline (negative = above it), `h`/`w`: its size. */
+    const inkOf = (g: string) => {
+        sctx.clearRect(0, 0, scratch.width, scratch.height)
+        const t = sctx.measureText(g)
+        sctx.fillText(g, bw / 2 - (t.actualBoundingBoxRight - t.actualBoundingBoxLeft) / 2, baseline)
+        const { data, width, height } = sctx.getImageData(0, 0, scratch.width, scratch.height)
+        let x0 = width, x1 = -1, y0 = height, y1 = -1
+        for (let y = 0; y < height; y++)
+            for (let x = 0; x < width; x++)
+                if (data[(y * width + x) * 4 + 3]! >= 128) {
+                    x0 = Math.min(x0, x); x1 = Math.max(x1, x)
+                    y0 = Math.min(y0, y); y1 = Math.max(y1, y)
+                }
+        return { top: y0 - baseline, h: y1 - y0 + 1, w: x1 - x0 + 1, box: t }
     }
-    const plus = box('+')
-    const pipe = box('|')
-    const dash = box('-')
-    const { bw, cy, py, cssW, cssH, cssPitchY } = tileGeometry(
+    const plus = inkOf('+')
+    const pipe = inkOf('|')
+    const dash = inkOf('-')
+    const { cy, py, cssW, cssH, cssPitchY } = tileGeometry(
         ch,
-        {
-            dashW: (dash.left + dash.right) / dpr,
-            pipeH: (pipe.ascent + pipe.descent) / dpr,
-            plusH: (plus.ascent + plus.descent) / dpr,
-        },
+        { dashW: dash.w / dpr, pipeH: pipe.h / dpr, plusH: plus.h / dpr },
         dpr,
     )
     // rows of the sprite: corner/run tiles (cy), the side slice (py), corner/run tiles (cy)
@@ -237,9 +254,12 @@ function install(retried = false): void {
     setup()
     // corners and runs: the `+` ink centred in its bw x cy tile (`-`/`=` share its baseline);
     // the side slice: the `|` ink centred in its bw x py tile — so on the same x as the `+` ink
-    // centre (the face's `|` sits a fraction of a pixel off the `+` stem at a shared origin)
-    const o = glyphOrigin(bw, cy, plus)
-    const oSide = glyphOrigin(bw, py, pipe)
+    // centre (the face's `|` sits a fraction of a pixel off the `+` stem at a shared origin).
+    // Baselines are whole device pixels, so every glyph paints exactly as it was measured.
+    const originX = (g: ReturnType<typeof inkOf>) =>
+        bw / 2 - (g.box.actualBoundingBoxRight - g.box.actualBoundingBoxLeft) / 2
+    const o = { x: originX(plus), y: Math.floor((cy - plus.h) / 2) - plus.top }
+    const oSide = { x: originX(pipe), y: Math.floor((py - pipe.h) / 2) - pipe.top }
 
     const root = document.documentElement.style
     for (const k of EDGE_KEYS) {
