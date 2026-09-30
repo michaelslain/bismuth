@@ -1,15 +1,16 @@
-// Visual spec for <AsciiCellEdges> — a cell's edges typed with `+ - | =` as real text, the
-// overlay every typed grid (Bases table, calendar month/week) is built from. See DESIGN.md's
-// Typed Grid Rule.
+// Visual spec for <AsciiCellEdges> — a cell's edges typed with the UI font's own `+ - | =` glyphs
+// (rasterised once into mask sprites by asciiGlyphTiles.ts), the overlay every typed grid (Bases
+// table, calendar month/week) is built from. See DESIGN.md's Typed Grid Rule.
 //
 // Props: edges? (default ['top','left']), weight? ('rule' `-` | 'heavy' `=`), edgeWeight?
 // ({ top?, bottom? } per-edge override), ink? ('soft' --faint | 'firm' --border), class?.
 //
 // The mini-grid stories build a 4x3 grid with the ownership rule exactly as a caller would, at
 // two container widths that are NOT a whole number of `ch`, and `play()` checks the geometry
-// acceptance item 5 states from layout boxes plus canvas ink metrics (not painted pixels): every
-// `+` shares its x-centre with the `|` glyphs above and below it and its crossbar sits on the
-// same baseline as the adjacent `-`/`=` runs.
+// acceptance item 5 states against what is actually painted: each overlay's box, its computed
+// nine-slice mask (sprite, slice, width, round), and the ink of the sprite's own pixels — every
+// `+` is centred on its cell corner, the `|` stems share its x-centre and the `-`/`=` strokes
+// share its crossbar.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { For, type JSX } from 'solid-js'
 import { expect } from 'storybook/test'
@@ -17,6 +18,7 @@ import AsciiCellEdges, {
     type AsciiCellEdgesProps,
     type AsciiEdge,
 } from './AsciiCellEdges'
+import { whenAsciiGlyphTilesInstalled } from './asciiGlyphTiles'
 import Text from '../Text'
 import { Row } from '../_storyKit'
 
@@ -220,101 +222,132 @@ function MiniGrid(props: { width: number }) {
     )
 }
 
-const glyphOf = (el: Element) =>
-    getComputedStyle(el, '::before').content.charAt(1)
+type Ink = { cx: number; cy: number }
 
-type InkBox = { cx: number; cy: number }
-
-/** The ink centre of `glyph`, relative to the LEFT of its advance box (x) and to the top of a
- *  line box of the same font and height (y). The baseline is read off a real inline-block in a
- *  real line box rather than computed from font metrics: Chrome rounds ascent and descent to
- *  whole pixels for layout, so a metrics formula is off by up to a pixel. */
-function inkCentre(sample: HTMLElement, glyph: string): InkBox {
-    const cs = getComputedStyle(sample)
-    const ctx = document.createElement('canvas').getContext('2d')!
-    ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
-    const m = ctx.measureText(glyph)
-    const probe = document.createElement('div')
-    probe.style.cssText = `position:absolute;visibility:hidden;left:0;top:0;white-space:pre;
-        font:${cs.fontWeight} ${cs.fontSize}/${cs.lineHeight} ${cs.fontFamily};
-        font-variant-ligatures:none;font-feature-settings:'calt' 0,'liga' 0;font-kerning:none`
-    const strut = document.createElement('span')
-    strut.style.cssText = 'display:inline-block;width:0;height:0'
-    probe.append(strut, glyph)
-    document.body.append(probe)
-    const baseline = strut.getBoundingClientRect().bottom - probe.getBoundingClientRect().top
-    probe.remove()
-    return {
-        cx: (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2,
-        cy: baseline - (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2,
+/** Where one tile of a sprite puts its ink, in CSS px from the tile's top-left, read off the
+ *  sprite's own pixels: `cx` = the x of its vertical stroke (the columns carrying at least half the
+ *  heaviest column's alpha, alpha-weighted), `cy` = the y of its horizontal stroke, the same way
+ *  over rows. So a `+` gives its stem and its crossbar, a `|` its stem, a `-`/`=` its stroke —
+ *  unaffected by a neighbouring glyph's ink. `null` = the tile is empty. */
+function tileInk(px: ImageData, col: number, row: number, bw: number, bh: number, dpr: number): Ink | null {
+    const cols = new Array<number>(bw).fill(0)
+    const rows = new Array<number>(bh).fill(0)
+    for (let y = 0; y < bh; y++)
+        for (let x = 0; x < bw; x++) {
+            const a = px.data[((row * bh + y) * px.width + col * bw + x) * 4 + 3]!
+            cols[x]! += a
+            rows[y]! += a
+        }
+    const peak = (sums: number[]) => {
+        const max = Math.max(...sums)
+        let w = 0, at = 0
+        sums.forEach((v, i) => {
+            if (v >= max / 2) (w += v), (at += v * (i + 0.5))
+        })
+        return at / w
     }
+    if (Math.max(...cols) === 0) return null
+    return { cx: peak(cols) / dpr, cy: peak(rows) / dpr }
 }
 
-/** Measures every glyph in `root` (layout boxes + canvas ink metrics, not painted pixels) and
- *  returns what disagrees. `problems` empty means acceptance item 5 holds: each `+`'s stem is
- *  within 1px of the `|` glyphs above/below it, its crossbar is within 1px of the `-`/`=` runs
- *  beside it, and both land on the cell boundary. */
+async function spritePixels(url: string) {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    const c = document.createElement('canvas')
+    c.width = img.naturalWidth
+    c.height = img.naturalHeight
+    const ctx = c.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    return ctx.getImageData(0, 0, c.width, c.height)
+}
+
+const urlOf = (css: string) => css.match(/url\("?([^")]+)"?\)/)?.[1] ?? ''
+
+/** Measures every overlay in `root` against what it paints and returns what disagrees. `problems`
+ *  empty means acceptance item 5 holds: each `+` ink centre is on its cell corner (x within 1px,
+ *  y within 0.75px), the `|` stems are within 1px of the `+` stem, and the `-`/`=` strokes are
+ *  within 1px of its crossbar. */
 async function probeGrid(root: HTMLElement) {
-    await document.fonts.ready
-    const parts = [...root.querySelectorAll('[aria-hidden="true"] > div')]
-        .map(el => ({ el: el as HTMLElement, g: glyphOf(el) }))
-        .filter(p => '+-=|'.includes(p.g))
-    const rect = (el: HTMLElement) => el.getBoundingClientRect()
-    const corners = parts.filter(p => p.g === '+')
-    const bars = parts.filter(p => p.g === '|')
-    const runs = parts.filter(p => p.g === '-' || p.g === '=')
+    await whenAsciiGlyphTilesInstalled()
+    const rootCs = getComputedStyle(document.documentElement)
+    const tileW = parseFloat(rootCs.getPropertyValue('--ascii-tile-w'))
+    const tileH = parseFloat(rootCs.getPropertyValue('--ascii-tile-h'))
+    const bw = Number(rootCs.getPropertyValue('--ascii-slice-x'))
+    const bh = Number(rootCs.getPropertyValue('--ascii-slice-y'))
+    const dpr = bw / tileW
+    const overlays = [...root.querySelectorAll<HTMLElement>('[data-edges]')]
     const problems: string[] = []
-    const stats = { corners: corners.length, bars: bars.length, runs: runs.length, maxDx: 0, maxDy: 0, maxOff: 0, maxGap: 0 }
-    if (corners.length === 0) problems.push('no + glyphs rendered')
+    const stats = { overlays: overlays.length, corners: 0, bars: 0, runs: 0, heavy: 0, maxOff: 0, maxDx: 0, maxDy: 0 }
+    const pixels = new Map<string, ImageData>()
+    for (const el of overlays) {
+        const edges = el.dataset.edges!.split(' ')
+        const heavy = el.dataset.heavy?.split(' ') ?? []
+        const has = (e: string) => edges.includes(e)
+        const corners = (['top', 'bottom'] as const).flatMap(v =>
+            (['left', 'right'] as const).filter(h => has(v) && has(h)).map(h => [v, h] as const),
+        )
+        stats.corners += corners.length
+        stats.bars += +has('left') + +has('right')
+        stats.runs += +has('top') + +has('bottom')
+        stats.heavy += heavy.length
 
-    const ink: Record<string, InkBox> = {}
-    for (const g of ['+', '-', '=', '|'])
-        ink[g] = inkCentre((parts.find(p => p.g === g) ?? corners[0]!).el, g)
-    // ink centres relative to each box's own origin (left / line-box top)
-    const cross = ink['+']!.cy
-    for (const g of ['-', '=']) {
-        const d = Math.abs(ink[g]!.cy - cross)
-        if (d > 1) problems.push(`'${g}' crossbar is ${d.toFixed(2)}px off the '+' crossbar`)
-    }
-    const dxGlyph = Math.abs(ink['|']!.cx - ink['+']!.cx)
-    if (dxGlyph > 1) problems.push(`'|' stem is ${dxGlyph.toFixed(2)}px off the '+' stem`)
-
-    for (const c of corners) {
-        const cr = rect(c.el)
-        const host = rect(c.el.parentElement!.parentElement as HTMLElement)
-        const isTop = Math.abs(cr.top + cr.height / 2 - host.top) < cr.height
-        const isLeft = Math.abs(cr.left + cr.width / 2 - host.left) < cr.width
-        const boundaryY = isTop ? host.top : host.bottom
-        const boundaryX = isLeft ? host.left : host.right
-        // where the ink actually lands
-        const inkY = cr.top + ink['+']!.cy
-        const inkX = cr.left + ink['+']!.cx
-        stats.maxOff = Math.max(stats.maxOff, Math.abs(inkY - boundaryY), Math.abs(inkX - boundaryX))
-        if (Math.abs(inkY - boundaryY) > 0.75) problems.push(`'+' crossbar ${(inkY - boundaryY).toFixed(2)}px off its boundary`)
-        if (Math.abs(inkX - boundaryX) > 1) problems.push(`'+' stem ${(inkX - boundaryX).toFixed(2)}px off its boundary`)
-
-        // the `|` runs above and below (this cell's own and the neighbour's) share the stem
-        const cy = cr.top + cr.height / 2
-        for (const b of bars) {
-            const br = rect(b.el)
-            const near = br.top < cy + cr.height * 1.6 && br.bottom > cy - cr.height * 1.6
-            const dx = br.left + ink['|']!.cx - inkX
-            if (!near || Math.abs(dx) > 4) continue
-            stats.maxDx = Math.max(stats.maxDx, Math.abs(dx))
-            if (Math.abs(dx) > 1) problems.push(`'|' ${dx.toFixed(2)}px off the '+' stem`)
+        // the mask actually applied: this edge set's sprite, sliced into one-glyph tiles, round
+        const cs = getComputedStyle(el)
+        const src = urlOf(cs.webkitMaskBoxImageSource)
+        if (!src.startsWith('data:image/png')) {
+            problems.push(`[${el.dataset.edges}] has no glyph sprite (${cs.webkitMaskBoxImageSource.slice(0, 40)})`)
+            continue
         }
-        // the runs beside share the crossbar, and abut the '+' box
-        for (const r of runs) {
-            const rr = rect(r.el)
-            // a run ends within half a glyph of the '+' box: it is clipped to whole glyphs and
-            // the leftover is split across both ends
-            const gap = Math.min(Math.abs(rr.left - cr.right), Math.abs(rr.right - cr.left))
-            if (gap > cr.width || Math.abs(rr.top + rr.height / 2 - cy) > cr.height) continue
-            stats.maxGap = Math.max(stats.maxGap, gap)
-            if (gap > cr.width / 2 + 0.5) problems.push(`'${r.g}' run ends ${gap.toFixed(2)}px from its '+'`)
-            const dy = rr.top + ink[r.g]!.cy - inkY
-            stats.maxDy = Math.max(stats.maxDy, Math.abs(dy))
-            if (Math.abs(dy) > 1) problems.push(`'${r.g}' run ${dy.toFixed(2)}px off the '+' crossbar`)
+        if (cs.webkitMaskBoxImageRepeat !== 'round') problems.push(`mask repeat ${cs.webkitMaskBoxImageRepeat}, not round`)
+        if (cs.webkitMaskBoxImageSlice !== `${bh} ${bw}`) problems.push(`mask slice ${cs.webkitMaskBoxImageSlice}`)
+        if (cs.webkitMaskBoxImageWidth !== `${tileH}px ${tileW}px`) problems.push(`mask width ${cs.webkitMaskBoxImageWidth}`)
+
+        // the overlay overhangs its host by exactly half a tile on every side
+        const r = el.getBoundingClientRect()
+        const host = el.parentElement!.getBoundingClientRect()
+        const hang = [host.left - r.left, r.right - host.right].map(d => d - tileW / 2)
+            .concat([host.top - r.top, r.bottom - host.bottom].map(d => d - tileH / 2))
+        if (hang.some(d => Math.abs(d) > 0.5)) problems.push(`[${el.dataset.edges}] overhang off by ${hang.map(d => d.toFixed(2))}`)
+
+        if (!pixels.has(src)) pixels.set(src, await spritePixels(src))
+        const px = pixels.get(src)!
+        // what each of the nine tiles holds, and where its ink sits
+        const ink = (col: number, row: number) => tileInk(px, col, row, bw, bh, dpr)
+        const expectInk = (col: number, row: number, want: boolean, what: string) => {
+            if (!!ink(col, row) !== want) problems.push(`[${el.dataset.edges}] ${what} ${want ? 'missing' : 'painted where it is not owned'}`)
+        }
+        for (const [v, h] of [['top', 'left'], ['top', 'right'], ['bottom', 'left'], ['bottom', 'right']] as const)
+            expectInk(h === 'left' ? 0 : 2, v === 'top' ? 0 : 2, has(v) && has(h), `${v}-${h} +`)
+        expectInk(1, 0, has('top'), 'top run')
+        expectInk(1, 2, has('bottom'), 'bottom run')
+        expectInk(0, 1, has('left'), 'left |')
+        expectInk(2, 1, has('right'), 'right |')
+        expectInk(1, 1, false, 'centre')
+
+        for (const [v, h] of corners) {
+            const col = h === 'left' ? 0 : 2
+            const row = v === 'top' ? 0 : 2
+            const plus = ink(col, row)!
+            // the tile sits in the overlay's corner; its ink must land on the host's corner
+            const inkX = (h === 'left' ? r.left : r.right - tileW) + plus.cx
+            const inkY = (v === 'top' ? r.top : r.bottom - tileH) + plus.cy
+            const dx = inkX - (h === 'left' ? host.left : host.right)
+            const dy = inkY - (v === 'top' ? host.top : host.bottom)
+            stats.maxOff = Math.max(stats.maxOff, Math.abs(dx), Math.abs(dy))
+            if (Math.abs(dx) > 1) problems.push(`'+' stem ${dx.toFixed(2)}px off its corner [${el.dataset.edges}]`)
+            if (Math.abs(dy) > 0.75) problems.push(`'+' crossbar ${dy.toFixed(2)}px off its corner [${el.dataset.edges}]`)
+            // the `|` beside it (same column) shares the stem, the run beside it (same row) the crossbar
+            const bar = ink(col, 1)
+            if (bar) {
+                stats.maxDx = Math.max(stats.maxDx, Math.abs(bar.cx - plus.cx))
+                if (Math.abs(bar.cx - plus.cx) > 1) problems.push(`'|' ${(bar.cx - plus.cx).toFixed(2)}px off the '+' stem`)
+            }
+            const run = ink(1, row)
+            if (run) {
+                stats.maxDy = Math.max(stats.maxDy, Math.abs(run.cy - plus.cy))
+                if (Math.abs(run.cy - plus.cy) > 1) problems.push(`'${heavy.includes(v) ? '=' : '-'}' ${(run.cy - plus.cy).toFixed(2)}px off the '+' crossbar`)
+            }
         }
     }
     return { problems, stats }
@@ -325,10 +358,13 @@ const miniGrid = (width: number): Story => ({
     play: async ({ canvasElement }) => {
         const grid = canvasElement.querySelector<HTMLElement>('[data-mini-grid]')!
         const { problems, stats } = await probeGrid(grid)
-        // 20 corners, 15 bars, 16 runs are fixed by the ownership rule for 4x3
+        // fixed by the ownership rule for 4x3: 12 overlays, 20 `+`, 15 `|` columns, 16 runs, and
+        // the header's 4 `=` underlines
+        expect(stats.overlays).toBe(12)
         expect(stats.corners).toBe(20)
         expect(stats.bars).toBe(15)
         expect(stats.runs).toBe(16)
+        expect(stats.heavy).toBe(4)
         expect(problems).toEqual([])
     },
 })
