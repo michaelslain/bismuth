@@ -32,7 +32,7 @@ type Edge = 'top' | 'right' | 'bottom' | 'left'
 type Weight = 'rule' | 'heavy'
 
 /** The sprite key for an edge set: four digits, top right bottom left (clockwise, like CSS).
- *  Pure — AsciiCellEdges derives its `data-ascii-edges` attribute from this. */
+ *  Pure — AsciiCellEdges derives its data-edges / data-heavy attributes from this (edgeAttrs). */
 export function edgesKey(
     edges: readonly Edge[] | undefined,
     weight: Weight | undefined,
@@ -87,6 +87,13 @@ export function spriteGlyphs(key: string): string[] {
 /** The cache key: regenerate only when one of these changes. Colour is deliberately absent. */
 export function tileCacheKey(fontFamily: string, fontSizePx: number, cellHPx: number, dpr: number): string {
     return `${fontFamily}|${fontSizePx}|${cellHPx}|${dpr}`
+}
+
+/** The key an install is recorded under: the cache key, plus `|fallback` when the tiles were drawn
+ *  before the face passed `document.fonts.check`. A face that loads later therefore re-keys and is
+ *  redrawn; one that never loads keeps `|fallback` and is drawn once. */
+export function installKey(cacheKey: string, ready: boolean): string {
+    return ready ? cacheKey : `${cacheKey}|fallback`
 }
 
 /** A tile's bitmap size in device pixels and the CSS size it is painted at. The bitmap is a whole
@@ -159,11 +166,14 @@ function install(retried = false): void {
     // never rasterise from a fallback face: wait for the real one and come back ONCE. If the load
     // rejects (a face that 404s) or the check is still false after it, draw with whatever face
     // resolved rather than leave the mask transparent and the whole grid invisible.
-    if (!retried && !document.fonts.check(font, '+-=|')) {
+    const ready = document.fonts.check(font, '+-=|')
+    if (!retried && !ready) {
         document.fonts.load(font, '+-=|').then(() => install(true), () => install(true))
         return
     }
-    const key = tileCacheKey(m.family, m.size, m.cellH, dpr)
+    // the key records whether the face was loaded: fallback tiles are redrawn once the real face
+    // arrives (its key differs), yet a permanently missing face is not redrawn on every call
+    const key = installKey(tileCacheKey(m.family, m.size, m.cellH, dpr), ready)
     if (key === installedKey) return
 
     const canvas = document.createElement('canvas')

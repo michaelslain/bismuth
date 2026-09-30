@@ -7,6 +7,7 @@ import {
     edgesKey,
     fitTiles,
     glyphOrigin,
+    installKey,
     spriteGlyphs,
     spriteVar,
     tileCacheKey,
@@ -53,6 +54,24 @@ describe('tileCacheKey', () => {
         expect(tileCacheKey('"Monaspace Xenon", monospace', 12, 18, 2)).not.toBe(k)
         expect(tileCacheKey('"Monaspace Xenon", monospace', 11.5, 20, 2)).not.toBe(k)
         expect(tileCacheKey('"Monaspace Xenon", monospace', 11.5, 18, 1)).not.toBe(k)
+    })
+})
+
+describe('installKey', () => {
+    test('tiles drawn from a fallback face are redrawn once the real face loads', () => {
+        const base = tileCacheKey('"Monaspace Xenon", monospace', 11.5, 18, 2)
+        // install() skips when key === installedKey: fallback first, then ready must NOT match
+        const drawnFallback = installKey(base, false)
+        const afterLoad = installKey(base, true)
+        expect(afterLoad).not.toBe(drawnFallback)
+        expect(afterLoad).toBe(base)
+    })
+    test('a permanently missing face keeps one stable fallback key (no redraw per call)', () => {
+        const base = tileCacheKey('Lora', 12, 18, 1)
+        expect(installKey(base, false)).toBe(installKey(base, false))
+    })
+    test('a different face never collides with another face fallback key', () => {
+        expect(installKey(tileCacheKey('A', 12, 18, 1), false)).not.toBe(installKey(tileCacheKey('B', 12, 18, 1), false))
     })
 })
 
