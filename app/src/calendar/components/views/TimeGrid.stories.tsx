@@ -30,6 +30,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// Derived corners: a corner exists where both of its edges are drawn, and `data-edges` (the
+// primitive's runtime hook) is the contract the count reads.
+const corners = (root: ParentNode, v: 'top' | 'bottom', h: 'left' | 'right') =>
+    root.querySelectorAll(`[data-edges~="${v}"][data-edges~="${h}"]`).length
+
 const anchor = new Date(2026, 0, 12)
 
 // A fresh function call, not an inline `showEventModal.value` read: TS's control-flow narrowing
@@ -72,6 +77,18 @@ export const Default: Story = {
             expect(Math.abs(b.left - a.left), `day ${i} left edge`).toBeLessThanOrEqual(1)
             expect(Math.abs(b.width - a.width), `day ${i} width`).toBeLessThanOrEqual(1)
         })
+        // The ownership wiring, read off the derived corners (5 dates: header + all-day + 24 hours).
+        // Each boundary is typed by exactly one cell: the header types its own top, so hour 0 omits
+        // its top (`topTyped`); only the last column types a right; the header, the all-day row and
+        // hour 23 type a bottom.
+        // top-left: header 5 + hours 1..23 x 5 columns
+        expect(corners(canvasElement, 'top', 'left')).toBe(5 + 23 * 5)
+        // top-right: header 1 + hours 1..23 of the last column
+        expect(corners(canvasElement, 'top', 'right')).toBe(1 + 23)
+        // bottom-left: header 5 + all-day 5 + hour 23 x 5 columns
+        expect(corners(canvasElement, 'bottom', 'left')).toBe(5 + 5 + 5)
+        // bottom-right: header 1 + all-day 1 + hour 23 of the last column
+        expect(corners(canvasElement, 'bottom', 'right')).toBe(1 + 1 + 1)
     },
 }
 

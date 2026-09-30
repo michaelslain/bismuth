@@ -12,6 +12,7 @@ import {
     type Settings,
 } from './settings'
 import { resolveAppearance, semanticTokens, shadowTokens } from './themes'
+import { refreshAsciiGlyphTiles } from './ui/ascii/asciiGlyphTiles'
 
 /** Pure: the full `{ "--var": "value" }` map for the given settings. DOM-free + testable.
  *  The color tokens (--bg/--fg/--border/--panel/--text-muted/surfaces/etc.) all come from
@@ -237,4 +238,7 @@ export function setCssVars(vars: Record<string, string>): void {
     if (typeof document === 'undefined') return
     const root = document.documentElement
     for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v)
+    // the typed grid's glyph mask tiles are drawn in the UI font at its size: re-rasterise if
+    // either just changed (a no-op, after one cheap read, when nothing in its key did)
+    refreshAsciiGlyphTiles()
 }

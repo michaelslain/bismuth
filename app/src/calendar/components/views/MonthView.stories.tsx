@@ -14,6 +14,7 @@ import { MonthView } from './MonthView'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import CalendarFrame from '../CalendarFrame'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
+import { whenAsciiGlyphTilesInstalled } from '../../../ui/ascii/asciiGlyphTiles'
 import { currentDate } from '../../state'
 import { placeRows } from '../../taskPlacement'
 import type { PlacedTask } from '../../taskPlacement'
@@ -41,6 +42,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// Derived corners: a corner exists where both of its edges are drawn, and `data-edges` (the
+// primitive's runtime hook) is the contract the count reads.
+const corners = (root: ParentNode, v: 'top' | 'bottom', h: 'left' | 'right') =>
+    root.querySelectorAll(`[data-edges~="${v}"][data-edges~="${h}"]`).length
+
 const anchor = new Date(2026, 0, 12)
 
 /** The standard sample events (timed events, an all-day event, a two-category gradient
@@ -55,6 +61,40 @@ export const Default: Story = {
                 </CalendarFrame>
             </div>
         )
+    },
+    // The grid is typed, closed on all four sides, each boundary typed by exactly one cell:
+    // header + body cells each type a top-left `+`, except the first body row (the header's heavy
+    // `=` is its top); the right column adds top-right, the last row adds bottom-right.
+    play: async ({ canvasElement }) => {
+        const cells = canvasElement.querySelectorAll('[data-testid="month-cell"]').length
+        const rows = cells / 7
+        const n = (v: 'top' | 'bottom', h: 'left' | 'right') => corners(canvasElement, v, h)
+        // the seven weekday header cells each type their bottom heavy: the `=` under the labels
+        const names = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-day-name"]'),
+        ]
+        expect(names).toHaveLength(7)
+        names.forEach(nm =>
+            expect(nm.parentElement!.querySelector('[data-heavy~="bottom"]')).toBeTruthy(),
+        )
+        expect(canvasElement.querySelectorAll('[data-heavy~="bottom"]')).toHaveLength(7)
+        expect(n('top', 'left')).toBe(7 + 7 * (rows - 1))
+        expect(n('top', 'right')).toBe(rows)
+        expect(n('bottom', 'left')).toBe(14) // the header's heavy underline + the last row, one per column
+        expect(n('bottom', 'right')).toBe(2) // the header's last column + the grid's last cell
+        // the header is one typed row: tall enough for a whole `|` between its corners (corner
+        // halves + one vertical pitch, --ascii-row-h), and no taller than a table header's row —
+        // not the old two line boxes, which left the weekday names floating
+        const head = canvasElement
+            .querySelector<HTMLElement>('[data-testid="month-day-name"]')!
+            .parentElement!.getBoundingClientRect()
+        await whenAsciiGlyphTilesInstalled()
+        const rootCs = getComputedStyle(document.documentElement)
+        const rowH = parseFloat(rootCs.getPropertyValue('--ascii-row-h'))
+        const control = parseFloat(rootCs.getPropertyValue('--h-control'))
+        expect(rowH, 'the glyph tiles are installed').toBeGreaterThan(0)
+        expect(head.height).toBeGreaterThanOrEqual(rowH - 0.5)
+        expect(head.height).toBeLessThanOrEqual(Math.max(rowH, control) + 0.5)
     },
 }
 
@@ -218,8 +258,13 @@ export const QuietTasks: Story = {
             scroller.clientHeight + 1,
         )
         const last = cells[cells.length - 1].getBoundingClientRect()
+        // the scroller pads its bottom by half a line box, room for the last row's typed `-`
+        const padBottom = parseFloat(getComputedStyle(scroller).paddingBottom)
+        expect(padBottom).toBeGreaterThan(0)
         expect(
-            Math.abs(last.bottom - scroller.getBoundingClientRect().bottom),
+            Math.abs(
+                last.bottom - (scroller.getBoundingClientRect().bottom - padBottom),
+            ),
         ).toBeLessThanOrEqual(2)
         const heights = new Set(
             cells.map(c => Math.round(c.getBoundingClientRect().height)),

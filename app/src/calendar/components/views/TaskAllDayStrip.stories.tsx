@@ -65,6 +65,16 @@ export const WeekStrip: Story = {
             </CalendarFrame>
         )
     },
+    play: async ({ canvasElement }) => {
+        // only the sticky header's cells are ringed; the task row under it is not sticky and its
+        // cells carry none (a ring there would clip its chips)
+        const heads = canvasElement.querySelectorAll('[data-testid="day-header"]')
+        const cells = canvasElement.querySelectorAll('[data-testid="allday-cell"]')
+        expect(heads.length).toBe(7)
+        expect(canvasElement.querySelectorAll('[data-backdrop]').length).toBe(7)
+        for (const h of heads) expect(h.querySelector('[data-backdrop]')).toBeTruthy()
+        for (const c of cells) expect(c.querySelector('[data-backdrop]')).toBeNull()
+    },
 }
 
 /** A single day (the DayView shape) with no tasks — the empty-cell case, so a bare gutter

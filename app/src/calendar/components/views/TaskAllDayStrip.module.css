@@ -1,8 +1,11 @@
 /* TaskAllDayStrip.module.css — the tasks register's week/3-day/day layout. ONE scroll container
    holding the sticky header AND the task row: a scrollbar on the row alone would make it narrower
    than the header and bring back D1's drift. */
-.strip { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; isolation: isolate; }
-.head { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+.strip { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; isolation: isolate;
+    /* room for the typed grid's outer glyphs (the left/right `|`, the closing bottom `-`), which
+       straddle the edge and would print half cut against this scroll container's clip */
+    padding: 0 var(--sp-4) calc(var(--cell-h) / 2); }
+.head { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-top: calc(var(--cell-h) / 2); }
 /* Wraps a day's chips + the inline composer inside AllDayRow's own `.cell` (AllDayRow.module.css,
    not ours — it owns the outer cell box). Fills that cell's full height so a click anywhere in
    the empty area of a quiet day still opens the composer, not just a click landing on a chip. */

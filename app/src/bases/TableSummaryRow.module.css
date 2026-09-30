@@ -1,12 +1,25 @@
 /* TableSummaryRow.tsx is the sole importer. */
+/* The cell is a host for the typed grid's edges (see AsciiCellEdges): positioned, not clipping.
+   The gutter and the ellipsis live on `.clip`. */
 .cell {
-  padding: var(--sp-4) var(--sp-5);
+  position: relative;
+  /* one typed row: tall enough for a control (matching the body rows) and never shorter than the
+     glyphs' own shortest row (corner halves + one `|`, --ascii-row-h), so a one-line row is its
+     text line plus an equal inset; the vertical run stretches its one `|` by the difference */
+  box-sizing: border-box;
+  /* the gutter is `.clip`'s; the UA's 1px cell padding would make every row 2px taller than one
+     typed row and push its vertical run to the wrong whole number of `|` */
+  padding: 0;
+  height: max(var(--ascii-row-h, var(--h-control)), var(--h-control));
   font-weight: 500;
   color: var(--text-muted);
   white-space: nowrap;
   vertical-align: middle;
+  min-width: 0;
+}
+.clip {
+  padding: calc((max(var(--ascii-row-h, var(--h-control)), var(--h-control)) - var(--cell-h)) / 2) var(--ascii-tile-w, 1ch);
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  border-top: 2px solid var(--border);
 }
