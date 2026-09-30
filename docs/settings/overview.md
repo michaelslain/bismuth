@@ -271,7 +271,7 @@ Two-way Google Calendar sync — connection-level config shared by every synced 
 | Key | Type | Default | Range | Description |
 |---|---|---|---|---|
 | `paletteTopOffset` | string | `12vh` | — | How far down the screen the command palette appears (CSS length, e.g. `12vh`). |
-| `paneDividerWidth` | number | `5` | 3–12 | Thickness of the draggable divider between split panes in px. |
+| `paneDividerWidth` | number | `5` | 3–12 | Grab width of the divider between split panes in px; the visible line is always the app's 1px border. |
 | `cardGridMinWidth` | number | `220` | 150–360 | Minimum card width in Bases cards view in px. |
 | `kanbanColumnMinWidth` | number | `248` | 180–360 | Minimum Bases kanban column width in px. |
 | `kanbanColumnMaxWidth` | number | `288` | 220–420 | Maximum Bases kanban column width in px. |

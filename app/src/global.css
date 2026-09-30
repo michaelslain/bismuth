@@ -936,10 +936,8 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 /* The `.pane-*` family (splits, leaves, headers, dropzones, dividers) and its `@keyframes pane-in`
    moved out of App.css into what was then PaneTree.module.css, shared by PaneTree/PaneLeaf/
    PaneHeader/PaneDropZone. The old separate PaneTree.css was folded into it at the same time.
-   Each of the four has since been split into its own module (PaneTree.module.css,
-   PaneLeaf.module.css, PaneHeader.module.css, PaneDropZone.module.css); the selectors that used
-   to cross the file boundary now reach the ancestor through the unhashed `data-pane-focused`
-   attribute PaneLeaf.tsx sets on its own root. */
+   Each has since been split into its own module (PaneTree.module.css, PaneLeaf.module.css,
+   PaneDropZone.module.css); PaneHeader has none now, being a name-only ui/ViewBar. */
 /* ── Knowledge-graph chrome ──────────────────────────────────────────────────
    GraphView is ONE component used full-pane AND in the narrow sidebar mini-panel, so the full
    chrome (crumb, Find, floating legend/stats cards, in-bar 2D/3D) is gated to wide width via a

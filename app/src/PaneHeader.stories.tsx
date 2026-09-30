@@ -1,20 +1,12 @@
-// Visual spec for <PaneHeader> — the mini view-bar breadcrumb shown atop a pane leaf when its
-// tab's tree has more than one pane (a split). A faint content icon, then the title; the whole
-// header brightens to --fg when its pane is focused, via a `data-pane-focused` RUNTIME HOOK set
-// on the ancestor pane leaf (PaneHeader.module.css's `[data-pane-focused] .pane-header
-// .pane-header-label` rule) — not anything this component controls itself, hence the `Focused`
-// story below wrapping it in that ancestor attribute rather than passing a prop.
-//
-// WHY THIS FILE EXISTS: recorded BEFORE `.pane-header`/`.pane-header-icon`/`.pane-header-label`/
-// `.pane-header-x` move from the global App.css + colocated PaneTree.css into the shared
-// PaneTree.module.css (Task 12's CSS half) — see the plan's THE RECIPE for why the recording order
-// is load-bearing. `bench/cssBaseline.ts` is what actually verifies the migration; this file is
-// its input.
+// Visual spec for <PaneHeader> — the title row of a split pane whose view draws no bar of its own
+// (notes, terminal, sheets, drawings). It is a name-only ui/ViewBar under its own pane chrome
+// (ui/paneChrome.ts), so its height, hairline, [×] and drag handle are ViewBar's — the same as a
+// neighbouring pane whose view's bar claimed the chrome (see App/PaneTree's RowSplitBarBesideNote).
+// Unfocused, its title dims; focused (the default), it reads at --fg.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect } from 'storybook/test'
 import { PaneHeader } from './PaneHeader'
-import styles from './PaneHeader.module.css'
 
 const noop = () => {}
 
@@ -27,7 +19,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Resting state: icon + label + close button, unfocused (muted text). */
+/** Resting state: icon + label + close button, in the focused pane. */
 export const Default: Story = {
     args: {
         icon: 'File',
@@ -37,22 +29,19 @@ export const Default: Story = {
     },
 }
 
-/** Wrapped in the ancestor `data-pane-focused` attribute — the only story reaching
- *  `[data-pane-focused] .pane-header .pane-header-label` (PaneHeader.module.css), which brightens
- *  the title to --fg. PaneHeader itself has no `focused` prop; the brightening is entirely a
- *  cross-file descendant selector keyed off a data attribute, so this story exists specifically
- *  to keep that rule covered. */
-export const Focused: Story = {
-    render: () => (
-        <div data-pane-focused style={{ display: 'inline-block' }}>
-            <PaneHeader
-                icon="File"
-                label="design-notes.md"
-                onPointerDown={noop}
-                onClose={noop}
-            />
-        </div>
-    ),
+/** An unfocused pane: the title dims to --text-muted — a split's one focus cue. */
+export const Unfocused: Story = {
+    args: {
+        icon: 'File',
+        label: 'design-notes.md',
+        focused: false,
+        onPointerDown: noop,
+        onClose: noop,
+    },
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector('[data-viewbar]')!
+        await expect(bar.hasAttribute('data-pane-dim')).toBe(true)
+    },
 }
 
 /** No `icon` prop — the leading `<Icon>` is entirely absent (not a blank placeholder), per the
@@ -66,8 +55,7 @@ export const WithIcon: Story = {
     },
 }
 
-/** A title long enough to exercise `.pane-header-label`'s `overflow:hidden; text-overflow:ellipsis`
- *  inside a fixed-width wrapper. */
+/** A title long enough to ellipsize inside a fixed-width wrapper, with the [×] still showing. */
 export const LongLabel: Story = {
     render: () => (
         <div style={{ width: '220px', border: '1px solid var(--border-soft)' }}>
@@ -124,7 +112,7 @@ export const CloseDoesNotDrag: Story = {
             new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
         )
 
-        const header = canvasElement.querySelector(`.${styles['pane-header']}`)
+        const header = canvasElement.querySelector('[data-viewbar]')
         if (!(header instanceof HTMLElement))
             throw new Error('header not found')
         header.dispatchEvent(

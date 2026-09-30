@@ -113,6 +113,16 @@
 .vb-lead { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 1 1 auto; min-width: 0; }
 .vb-trail { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 0 0 auto; }
 .vb-identity, .vb-locus, .vb-facet, .vb-readouts, .vb-config, .vb-actions { display: flex; align-items: center; gap: var(--bar-icon-gap); min-width: 0; }
+/* PANE CHROME (ui/paneChrome.ts): the bar that claimed a split pane's close + drag. The [×] wrapper
+   is the trail's last group, so --bar-crumb-gap (the trail's own gap) already sets it apart like
+   any group boundary. It is NOT a .vbRegion, so the collapse ladder never hides it. The bar is the
+   pane's drag handle, so it reads as one — PaneHeader's same grab/grabbing pair. */
+.vb-pane { display: flex; align-items: center; }
+.viewbar[data-pane-chrome] { cursor: grab; }
+.viewbar[data-pane-chrome]:active { cursor: grabbing; }
+/* An unfocused split pane dims its title — the one focus cue a split has, the same on a view's bar
+   and on PaneHeader (which is a name-only ViewBar). */
+.viewbar[data-pane-dim] .crumb b { color: var(--text-muted); }
 .viewbar .crumb { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; min-width: 0; }
 .viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .viewbar .crumb svg { color: var(--faint); }
