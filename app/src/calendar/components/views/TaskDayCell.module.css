@@ -5,5 +5,7 @@
    `opacity: 1`; `.add[data-add-task]` matches that specificity, and loads after it, to win.
    Placement: its host cell types its edges with <AsciiCellEdges>, so the button's `--sp-2` inset
    clears the top `-` run's stroke and the top-right `+` (which only reaches half a `ch` inside);
-   TaskDayCell.stories.tsx measures both, for a month cell and an all-day cell alike. */
+   `TaskDayCell.stories.tsx` measures it against a host typed on all four edges. In the all-day strip
+   it anchors to `.cellInner`, which sits inside AllDayRow's cell padding, so it clears the glyphs by
+   that much more. */
 .add[data-add-task] { position: absolute; top: var(--sp-2); right: var(--sp-2); opacity: 0; transition: opacity var(--dur) var(--ease); }
