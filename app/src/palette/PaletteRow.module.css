@@ -77,10 +77,8 @@
 .palette-sub { font-size: var(--fs-micro); margin-left: auto; padding-left: var(--sp-5); }
 /* Fuzzy-matched characters: accent color carries the emphasis — no bold-on-top-of-color. */
 .palette-match { color: var(--accent); font-weight: var(--fw-regular); }
-/* Shortcut caps: a layout slot only — the Kbd primitive (`.asc-kbd`/`.asc-key`) supplies the
-   chip look, and `.row-kbd` (global.css's `ui/ui.css` section) makes the caps recede to --faint
-   the way a menu row's
-   caps do everywhere else in the system. */
+/* Shortcut: a layout slot only — the Kbd primitive types the chord, and the caller passes
+   `muted` so it recedes to --faint the way a menu row's keybinding does. */
 .palette-shortcut {
   margin-left: auto;
   flex-shrink: 0;

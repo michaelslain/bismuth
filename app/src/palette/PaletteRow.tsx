@@ -60,7 +60,7 @@ function PaletteRow(props: PaletteRowProps) {
                 <Text
                     as="span"
                     inherit
-                    class={`${styles['palette-shortcut']} row-kbd`}
+                    class={styles['palette-shortcut']}
                 >
                     {props.shortcut}
                 </Text>

@@ -55,9 +55,8 @@
 @keyframes switcher-drop { from { transform: translateX(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .switcher-bar { animation: none; } }
 
-/* Small resting "esc" hint on the right edge of the bar — a layout slot only, the Kbd
-   primitive (.asc-kbd/.asc-key, global.css's `ui/ui.css` section) supplies the cap's own chip
-   look. */
+/* Small resting "esc" hint on the right edge of the bar — a layout slot only; the Kbd
+   primitive types the key itself. */
 .switcher-esc {
   flex: none;
 }

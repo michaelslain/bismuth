@@ -52,11 +52,10 @@ function MenuRow(props: {
                     {props.detail}
                 </span>
             </Show>
-            {/* row-kbd (global.css's `ui/ui.css` section): the caps recede to --faint, the same treatment every
-          .asc-menurow shortcut gets. */}
+            {/* A row's keybinding recedes to --faint (Kbd's `muted`), as in every palette row. */}
             <Show when={props.shortcut}>
-                <span class="bismuth-popover-shortcut row-kbd">
-                    <Kbd combo={props.shortcut} />
+                <span class="bismuth-popover-shortcut">
+                    <Kbd combo={props.shortcut} muted />
                 </span>
             </Show>
             <Show when={props.hasSubmenu}>

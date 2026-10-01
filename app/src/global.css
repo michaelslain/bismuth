@@ -410,6 +410,10 @@
      DERIVED, never a literal font-size: --prose-font-size tracks appearance.editorFontSize, so the
      user's editor size still moves prose with it. */
   --prose-scale: 1;
+  /* The sanctioned keyboard glyphs (⌘ ⌥ ↵ ↑ ↓) are not in Monaspace and fall back to a system
+     face (Menlo on macOS) that draws ⌘ at ~73% of the letters' cap height. This scale brings it
+     to ~90%, measured the way --prose-scale is — read by ui/ascii/Kbd.module.css only. */
+  --glyph-scale: 1.25;
   --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale));
 
   /* THE ONE SIZE FOR MONO INSIDE PROSE — code blocks and both their fences, frontmatter, inline code,
@@ -881,7 +885,7 @@ details.callout > summary::-webkit-details-marker {
 
 /* `.kbd` / `.kbd b` (keyboard hint chips) DELETED, not migrated — Task 11 confirmed zero
    consumers anywhere in `.tsx`/`.ts` (the app's keyboard-hint chips all render through
-   `ui/ascii/Kbd.tsx`'s `.asc-kbd` family instead). Dead-rule removal beats migrating dead CSS. */
+   `ui/ascii/Kbd.tsx` instead). Dead-rule removal beats migrating dead CSS. */
 /* `.editor-pane`/`.editor-body` (shell/EditorPane.tsx's own chrome) moved into
    shell/EditorPane.module.css (Task 11 — single owner; see that module's header for the
    `[data-editor-pane]` cross-boundary fix palette/switcher.css needed alongside the move). */
@@ -988,11 +992,8 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
       fix, 2026-09-20, see the rule's own comment below): its would-be owner, ui/Caret.tsx, has
       no production importer, so the module CSS never reached the bundle and every caret in the
       shipped app rendered with no colour and no blink. It stays here, genuinely global, with
-      seven bare outside writers and no real owner yet. `.row-kbd`/`.asc-key`'s shared compound (written
-      bare by ui/popover/MenuRow.tsx and palette/PaletteModal.tsx) remains undone the same way:
-      accepting the `class` prop `ui/Button.tsx` already exposes at each call site, or extracting
-      a shared component, is real work, deliberately deferred to a follow-up plan rather than
-      done here.
+      seven bare outside writers and no real owner yet. `.row-kbd`/`.asc-key`'s shared compound was later
+      dissolved (2026-09-30) — Kbd's `muted` prop replaced it.
    2. DESIGN TOKENS moved to `app/src/styles/tokens.css` (`--ui-font-stack`, `--row-h`,
       `--accent-edge`, `--blink`, `--sheen`, `--field-noise-op`, `--cell-h`, `--cell-h-dense`,
       `--bar-icon-gap`, `--bar-icon-size`, `--bar-crumb-gap`) — a token is never chrome regardless
@@ -1008,8 +1009,8 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
       template strings.
 
    Two more findings recorded but NOT acted on this round (reported, not fixed — see the ownership
-   map): `bases/FlashcardsView.tsx` writes `.asc-kbd`/`.asc-key` directly instead of using
-   `ui/ascii/Kbd.tsx`, and `graph/EmbeddedGraph.tsx` writes `.btn-label`/`.ui-input` directly
+   map): `bases/FlashcardsView.tsx` wrote `.asc-kbd`/`.asc-key` directly instead of using
+   `ui/ascii/Kbd.tsx` (since resolved: it composes GradeButton → Kbd), and `graph/EmbeddedGraph.tsx` writes `.btn-label`/`.ui-input` directly
    instead of composing `Button`/`TextInput`. Both are missing-component symptoms in files outside
    this task's scope, not CSS problems. */
 
@@ -1225,37 +1226,9 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    ASCII design-system port that never got wired up to a real consumer. */
 
 /* ── Kbd ────────────────────────────────────────────────────────────────────
-   A keybinding is a run of individual CAPS, not one box: adjacency is the
-   chord. The caps are the one place a Unicode modifier glyph is allowed in
-   chrome (⌘ ⌥ ↵ ↑ ↓ — not box-drawing). */
-.asc-kbd { display: inline-flex; align-items: center; gap: var(--sp-1); vertical-align: baseline; }
-.asc-kbd.muted { opacity: .6; }
-.asc-key {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 15px;
-  padding: 0 var(--sp-2);
-  border: var(--rule);
-  border-bottom-width: 2px;
-  border-radius: var(--r-0);
-  background: var(--surface-1);
-  color: var(--text-muted);
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-micro);
-  line-height: 1;
-}
-/* .asc-kbd-then / .asc-kbd-hint / .asc-kbd-desc / .asc-kbd-hints MOVED to
-   ui/ascii/Kbd.module.css 2026-09-12 (CSS modules migration Task 7) — ui/ascii/Kbd.tsx was the
-   sole reader of all four anywhere in the app. `.asc-kbd`/`.asc-kbd.muted`/`.asc-key` directly
-   above STAY here: bases/FlashcardsView.tsx writes `.asc-kbd`/`.asc-key` directly too, bypassing
-   the Kbd component (a reported finding, not fixed in this task — see
-   .claude/plans/ui-css-ownership.md). */
-/* In a menu/palette row the caps sit right-aligned and recede. `.row-kbd` is written directly by
-   ui/popover/MenuRow.tsx and palette/PaletteModal.tsx (neither imports this file); the
-   `.asc-menurow` ancestor variant this selector used to also match was deleted above as dead. */
-.row-kbd .asc-key { background: transparent; border-bottom-width: 1px; color: var(--faint); }
+   `.asc-kbd`/`.asc-kbd.muted`/`.asc-key` (the drawn keycaps) and `.row-kbd .asc-key` (their
+   menu/palette recede) DELETED 2026-09-30: the keybinding is now TYPED text owned entirely by
+   ui/ascii/Kbd.module.css, and a row asks it to recede with Kbd's `muted` prop. */
 
 /* ── ASCII primitives: tree / meter / field / glyph / node-label ────────────
    Consumed by AsciiTree / AsciiMeter / GraphField components.
