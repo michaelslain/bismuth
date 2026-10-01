@@ -66,6 +66,7 @@ export const AllStates: Story = {
             <MenuRow label="Delete" icon="Trash2" danger />
             <MenuRow label="Paste" icon="Clipboard" disabled />
             <MenuRow label="Undo" icon="Undo2" detail="⌘Z" />
+            <MenuRow label="Duplicate" icon="Copy" shortcut="Mod+Shift+D" />
             <MenuRow label="Move to…" icon="FolderInput" hasSubmenu />
         </Wrap>
     ),

@@ -43,7 +43,7 @@ export const WithDescriptionAndShortcut: Story = {
                 icon="Sparkles"
                 label="New note from template"
                 desc="Creates a note prefilled from the selected template"
-                shortcut={<Kbd combo="Mod+N" />}
+                shortcut={<Kbd combo="Mod+N" muted />}
             />
         </Frame>
     ),

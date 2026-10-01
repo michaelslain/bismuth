@@ -6,8 +6,8 @@ import styles from './GradeButton.module.css'
 export type GradeButtonProps = {
     /** The grade word, lowercase: "hard" | "good" | "easy". */
     label: string
-    /** The grade's live keybinding in the app's syntax ("1", "Mod+1"), drawn as caps under the
-     *  label — pass `settings.keybindings[id]`, so a rebind changes the caps too. */
+    /** The grade's live keybinding in the app's syntax ("1", "Mod+1"), typed under the
+     *  label — pass `settings.keybindings[id]`, so a rebind changes the hint too. */
     combo?: string
     /** Tooltip on the button, e.g. "good (2)". */
     title?: string
@@ -16,8 +16,8 @@ export type GradeButtonProps = {
 }
 
 /**
- * One flashcard grade: the `[ label ]` button with its keybinding caps set quietly underneath, so
- * the row teaches its own shortcuts. The caps are a hint, not a second control — hidden from
+ * One flashcard grade: the `[ label ]` button with its keybinding typed quietly underneath, so
+ * the row teaches its own shortcuts. The key is a hint, not a second control — hidden from
  * assistive tech, since the button's title already names the key.
  */
 const GradeButton: Component<GradeButtonProps> = props => (
