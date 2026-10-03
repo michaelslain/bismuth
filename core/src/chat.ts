@@ -34,6 +34,11 @@ import {
     type DenyEntry,
 } from './visibility'
 import { readDaemonSessionIds } from './daemon'
+import {
+    localUnreachableMessage,
+    resolveLocalSpawn,
+    type ResolvedLocal,
+} from './agentBackends/localModelProbe'
 import { backfillLegacyDaemonSessions } from './chatDaemonLegacy'
 import {
     detachSessionSink,
@@ -474,6 +479,10 @@ interface ChatSession {
      *  sendMessage tears down + respawns query() with a fresh deny list (managedSettings/sandbox are
      *  spawn-fixed and can't be updated live, so a respawn is the only way to re-gate them). */
     visibilityDirty?: boolean
+    /** Set when the vault's `localModel` setting was on at spawn: the local-server env this session's
+     *  `claude` runs with (kept so a visibility respawn rebuilds the same env) and the model ids the
+     *  server listed (the header picker shows these instead of Claude's own list). */
+    local?: ResolvedLocal
     /** From init: "none" when the user is on a Claude subscription login (no API key) — in that case
      *  the SDK's total_cost_usd is a notional API-equivalent figure the user does NOT pay, so we hide
      *  it. Any other value means real API-key billing, where the cost is meaningful. */
@@ -1117,12 +1126,29 @@ async function createSession(
         }
     }
 
+    // Local model (docs/chat/local-models.md): when the vault's `localModel` setting is on, this chat
+    // runs against that server. A resumed chat's remembered cloud model ("opus") is ignored by the
+    // resolver unless the server lists it. Down / nothing loaded is an error, never a silent fallback
+    // to the user's cloud account.
+    const resolved = await resolveLocalSpawn('claude', cwd, savedModel)
+    if (resolved.kind === 'unreachable') {
+        sink({
+            type: 'error',
+            code: 'local-model-unreachable',
+            binary: 'claude',
+            message: localUnreachableMessage(resolved.url),
+        })
+        return null
+    }
+    const local = resolved.kind === 'ready' ? resolved.local : undefined
+
     const input = makeInputQueue()
     const session: ChatSession = {
         id: chatId,
         cwd,
         input,
-        model: savedModel,
+        model: local ? local.model : savedModel,
+        local,
         // q is assigned by spawnChatQuery below; the canUseTool closure only runs after query()
         // returns, so the forward reference through `session` is safe.
         q: undefined as unknown as Query,
@@ -1314,7 +1340,11 @@ function spawnChatQuery(
                 // (this session, running its own Bash tool) from the vault owner's (an unstamped `bismuth`
                 // invocation). This IS the chat surface, so "chat" — never "daemon", which is the DIFFERENT
                 // always-on session daemon/src/daemon/session.ts spawns.
-                env: { ...process.env, BISMUTH_AGENT_CHANNEL: 'chat' },
+                env: {
+                    ...process.env,
+                    ...session.local?.env,
+                    BISMUTH_AGENT_CHANNEL: 'chat',
+                },
                 includePartialMessages: true,
                 // resume an existing Claude Code session (keeps its history + session_id) when asked; a
                 // brand-new session simply omits it.
@@ -1913,6 +1943,21 @@ export async function searchChatSessions(
  */
 function emitSupportedModels(session: ChatSession): void {
     if (session.modelsSent || !session.q) return
+    if (session.local) {
+        // The server's own ids — Claude's supportedModels() would list cloud models a local server
+        // has never heard of.
+        session.modelsSent = true
+        emit(session, {
+            type: 'models',
+            models: session.local.models.map(id => ({
+                value: id,
+                label: id,
+                description: 'local model',
+                effortLevels: [],
+            })),
+        })
+        return
+    }
     session.q
         .supportedModels()
         .then(ms => {
@@ -2112,7 +2157,9 @@ async function drain(session: ChatSession): Promise<void> {
                     // Carry the chosen model onto the (new) durable id (Bug #89): a set_model that landed
                     // before the first id was known persists HERE, and a resume that forks a fresh id keeps
                     // the conversation's model reachable under the id the client will resume by next time.
-                    if (session.model)
+                    // Not for a local-model session: its ids mean nothing to the cloud login a later
+                    // resume may run on.
+                    if (session.model && !session.local)
                         saveSessionModel(anyMsg.session_id, session.model)
                 }
             }
@@ -2392,7 +2439,7 @@ export function setModel(chatId: string, model: string): void {
     // Persist the choice under the conversation's durable id (Bug #89) so resuming it — in any tab,
     // after any restart — comes back on this model. If the session_id isn't known yet (a pre-turn
     // pick on a fresh session), the drain loop saves it the moment the id is learned.
-    if (s.sessionId) saveSessionModel(s.sessionId, model)
+    if (s.sessionId && !s.local) saveSessionModel(s.sessionId, model)
     try {
         s.q.setModel(model)?.catch(() => {})
     } catch {
