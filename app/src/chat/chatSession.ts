@@ -70,6 +70,8 @@ import {
 import { providerCan, sanitizeChatProvider } from '../chatProvider'
 import { restoreQueuedComposerState } from '../chatQueueRestore'
 import { lastChange } from '../serverVersion'
+import { vaultTree, refreshVaultTree } from '../treeStore'
+import { gateDone, gateStop } from './chatTurnGate'
 import { reconcilePermissionMode } from '../chatPermissionMode'
 import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from '../chatEffort'
 import {
@@ -336,41 +338,29 @@ export function createChatSession(chatId: string): ChatSession {
     }
 
     // ── Hidden paths + @file candidates, refreshed on every vault change ───────────────────────
-    const [hiddenPaths, setHiddenPaths] = createSignal<ReadonlySet<string>>(
-        new Set(),
+    const hiddenPaths = createMemo<ReadonlySet<string>>(
+        () =>
+            new Set(
+                vaultTree()
+                    .filter(e => e.visibility === 'hidden')
+                    .map(e => e.path),
+            ),
     )
-    const [fileCandidates, setFileCandidates] = createSignal<FileCandidate[]>(
-        [],
+    const fileCandidates = createMemo<FileCandidate[]>(() =>
+        vaultTree()
+            .filter(e => e.kind === 'file' && e.visibility !== 'hidden')
+            .map(e => ({
+                label: noteNameFromPath(e.path),
+                path: e.path,
+                folder: e.path.includes('/') ? e.path.split('/')[0] : undefined,
+            })),
     )
-    const refreshHiddenPaths = async () => {
-        try {
-            const entries = await api.tree()
-            if (disposed) return
-            setHiddenPaths(
-                new Set(
-                    entries
-                        .filter(e => e.visibility === 'hidden')
-                        .map(e => e.path),
-                ),
-            )
-            setFileCandidates(
-                entries
-                    .filter(e => e.kind === 'file' && e.visibility !== 'hidden')
-                    .map(e => ({
-                        label: noteNameFromPath(e.path),
-                        path: e.path,
-                        folder: e.path.includes('/')
-                            ? e.path.split('/')[0]
-                            : undefined,
-                    })),
-            )
-        } catch {
-            // Leave the last-known set — better a stale filter than none.
-        }
-    }
+    // One shared, in-flight-deduped fetch for every session; the memos above follow the cache.
     createEffect(() => {
         lastChange()
-        void refreshHiddenPaths()
+        refreshVaultTree().catch(() => {
+            // Keep the last-known tree — better a stale filter than none.
+        })
     })
 
     // ── History panel data ────────────────────────────────────────────────────────────────────
@@ -412,6 +402,10 @@ export function createChatSession(chatId: string): ChatSession {
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
     let reconnectAttempt = 0
     let disposed = false
+    // Stopped turns whose `done` has not arrived yet (chatTurnGate.ts).
+    let staleDones = 0
+    // Bumped on every rebind; an async resume replay bails when it no longer holds the latest.
+    let bindGen = 0
     // Latched false at each new/resumed session: the desired mode/effort/model are pushed on the
     // session's FIRST manifest; later manifests are reconciled instead (BUG #14).
     let modeEnforced = false
@@ -526,10 +520,14 @@ export function createChatSession(chatId: string): ChatSession {
                     setTurnError('The turn ended with an error.')
                 applyFrameToTranscript(frame)
                 break
-            case 'done':
+            case 'done': {
+                const gate = gateDone(staleDones)
+                staleDones = gate.stale
+                if (!gate.finished) break // the stopped turn's done — a newer turn may be running
                 setStreaming(false)
                 dispatchQueued()
                 break
+            }
             case 'models':
                 setModels(frame.models)
                 break
@@ -960,6 +958,7 @@ export function createChatSession(chatId: string): ChatSession {
             )
             return
         }
+        staleDones = gateStop(staleDones, streaming())
         setStreaming(false)
         // Stop cancels the queue too, restoring the queued text + images into the composer (Row 83).
         const queued = queuedTurns()
@@ -1076,6 +1075,8 @@ export function createChatSession(chatId: string): ChatSession {
     // ── New chat / resume / provider switch ───────────────────────────────────────────────────
     /** Wipe the transcript + transient turn state back to empty (shared by New, resume, provider). */
     const resetTranscript = () => {
+        bindGen++
+        staleDones = 0
         setTranscript([])
         setStreaming(false)
         setTurnError(null)
@@ -1091,6 +1092,8 @@ export function createChatSession(chatId: string): ChatSession {
 
     /** Tear the current WS down cleanly and reconnect on `id`. */
     const reconnectOn = (id: string) => {
+        bindGen++
+        staleDones = 0
         clearTimeout(reconnectTimer)
         reconnectAttempt = 0
         modeEnforced = false
@@ -1175,13 +1178,14 @@ export function createChatSession(chatId: string): ChatSession {
         reconnectOn(activeChatId())
         pendingResume = sessionId // set AFTER reconnectOn — the new socket's onopen flushes it
         resumedSession = true
+        const gen = bindGen
         let frames: ChatFrame[] = []
         try {
             frames = await api.chatSessionMessages(sessionId, provider())
         } catch {
             frames = []
         }
-        if (disposed) return
+        if (disposed || gen !== bindGen) return
         for (const frame of frames) onFrame(frame)
         emitAppend(true) // jump to the latest turn of the resumed conversation
     }
