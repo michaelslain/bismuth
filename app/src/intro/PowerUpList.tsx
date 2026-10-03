@@ -28,6 +28,7 @@ const PowerUpList: Component<PowerUpListProps> = props => {
                             label={p.name}
                             description={p.desc}
                             checked={props.selected.includes(p.id)}
+                            muted={!props.selected.includes(p.id)}
                             onToggle={() => props.onToggle(p.id)}
                         />
                     </Card>
