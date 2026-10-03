@@ -1,24 +1,21 @@
-/* app/src/chat/ChatHistoryPanel.module.css — the session-history popover BODY: the content-search
-   box, the user/daemon/all scope filter, and the resume list / search-hit rows. Moved out of
-   ChatHeader.module.css now that ChatHistoryPanel.tsx (not ChatHeader.tsx) renders this markup —
-   the anchor + toggle button stay in ChatControls.module.css, which owns "where does this attach".
+/* app/src/chat/ChatHistoryPanel.module.css — ChatHistoryPanel.tsx is the only importer. The
+   history pane body: one header line, then the grouped resume list / search hits. The rows
+   themselves are ChatHistoryRow's (its own stylesheet); this file owns only the frame, the age
+   group labels and the empty/loading lines.
 
-   `.list` is a plain local class: PopoverList already accepts a `class` prop and carries it on the
-   exact element this rule targets, so no `:global()` bridge is needed there. `.search` is
-   layout-only now (search-prompt Task 6) — the search row is `<SearchBar>` itself, which owns its
-   own fill/underline/lead-icon styling; this file only sets the row's horizontal inset. `.scope-toggle`
-   is handed to SegmentedToggle via its own `class` prop for the same reason — bracket-toggles Task 3
-   dropped `.scope-segment` (the full-width `flex: 1 1 0` stretch on each option) along with
-   `.scope-toggle`'s own `width: 100%`, so the scope row now sits at natural width, left-aligned,
-   `--sp-4` between options instead of stretched edge to edge.
+   ONE COLUMN, TWO INSETS. Wide panes centre the chat's own 680px reading column (the width
+   ChatTurnColumn and ChatComposerBar cap at), so opening history from a chat does not shift the
+   left edge: `--col-pad` leaves room for the rows' --sp-4 hover inset OUTSIDE those 680px, and the
+   header's prompt glyph, the group labels, the state lines and each row's icon all start exactly
+   where the transcript's text did. No divider under the header: SearchBar's own underline is the
+   header rule.
 
-   STILL REACHES `:global(.bismuth-popover-row)` + `:global(.bismuth-popover-detail)` — MenuRow now
-   accepts `class`/`detailClass` for exactly this (one-global-followups Task 3), but PopoverList
-   (this file's actual child, ui/popover/PopoverList.tsx — not in this task's file set) renders
-   MenuRow internally and exposes no prop to pass either through; the bridge stays until PopoverList
-   forwards them. */
+   No surface of its own (no fill, border or `.bismuth-popover`): in the app it sits inside
+   ChatHistoryModal, whose <Modal> panel already is the surface — a second one inside it would draw
+   a frame within the frame. */
 
 .panel {
+    --col-pad: max(var(--sp-2), calc((100% - 680px) / 2 - var(--sp-4)));
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
@@ -26,127 +23,42 @@
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    box-shadow: none;
+    color: var(--fg);
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
 }
-.title {
+
+.head {
+    flex: none;
+    padding: var(--sp-4) calc(var(--col-pad) + var(--sp-4)) 0;
+}
+/* Narrow hosts only: the scope + new chat, on their own line under the prompt. */
+.subhead {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--sp-3);
-    padding: var(--sp-4) var(--sp-5) var(--sp-4);
-    font-size: var(--fs-ui);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--faint);
-    border-bottom: 1px solid var(--border-soft);
-}
-.state {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--sp-6) var(--sp-5);
-    font-size: var(--fs-body);
-    color: var(--text-muted);
-    text-align: center;
-}
-.scroll {
-    flex: 1 1 auto;
-    min-height: 0;
-    max-height: none;
-    overflow-y: auto;
-    padding-block: var(--sp-2);
-    padding-inline: max(var(--sp-2), calc((100% - 720px) / 2));
-}
-.list {
-    border: none;
-    box-shadow: none;
-    background: transparent;
-    padding: 0;
-    min-width: 0;
-    width: 100%;
-}
-.list :global(.bismuth-popover-row) {
-    padding-block: var(--sp-3);
-}
-.panel :global(.bismuth-popover-detail) {
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-ui);
-    white-space: nowrap;
-}
-
-.search {
-    margin: 0 var(--sp-5);
-}
-.close {
-    flex: 0 0 auto;
-}
-
-.scope {
-    display: flex;
-    padding: var(--sp-3) var(--sp-5);
-    border-bottom: 1px solid var(--border-soft);
-}
-.scope-toggle {
     gap: var(--sp-4);
+    padding-top: var(--sp-4);
 }
 
-.hits {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-.hit {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-2);
-    width: 100%;
-    text-align: left;
-    padding: var(--sp-4) var(--sp-4);
-    border: none;
-    border-radius: var(--r-0);
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-}
-.hit:hover {
-    background: var(--hover-bg);
-}
-.hit-head {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-}
-.hit-icon {
-    color: var(--faint);
-    flex: 0 0 auto;
-}
-.hit-head .hit-title {
-    line-height: inherit;
+.body {
     flex: 1 1 auto;
-    min-width: 0;
-    font-size: var(--fs-body);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--sp-4) var(--col-pad) var(--sp-6);
 }
-.hit-head .hit-time {
-    line-height: inherit;
-    flex: 0 0 auto;
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-ui);
-    color: var(--faint);
-    white-space: nowrap;
+
+.group {
+    display: flex;
+    flex-direction: column;
 }
-.hit-snippet {
-    font-size: var(--fs-ui);
-    line-height: 1.4;
-    color: var(--text-muted);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    padding-left: 19px;
+.group + .group {
+    margin-top: var(--sp-5);
+}
+.group-label {
+    padding: var(--sp-2) var(--sp-4);
+}
+
+.state {
+    padding: var(--sp-2) var(--sp-4);
 }

@@ -1,7 +1,7 @@
 // app/src/chat/ChatSessionBody.tsx — ChatSessionBody.tsx is the ONLY importer of
 // ChatSessionBody.module.css.
 // The one session body the chat tab (ChatView) and the daemon page's chat (DaemonChat) share: the
-// setup/refusal gate, the transcript, the history panel and the composer bar with ChatControls as
+// setup/refusal gate, the transcript, the history dialog and the composer bar with ChatControls as
 // its `below` row, wired to one ChatSession, plus the composer refocus (createComposerFocus).
 //
 // It renders a FRAGMENT: its pieces are flex children of whatever column the host provides (ChatView's
@@ -10,13 +10,15 @@
 // daemon before its arming gesture); the composer renders in its no-session mode either way.
 //
 // The two hosts differ in how the pieces nest, so `variant` picks one of two layouts:
-//   pane   — a gate that fills the host; history panel AND composer both sit inside the gate; the
-//            composer is inset 40px; the transcript is always rendered (its `empty` greeting shows
-//            when there are no items); with no session an empty `pending` filler holds the
-//            transcript's place so the composer sits at the bottom edge.
-//   column — a compact gate (content height); the history panel replaces everything, and the
-//            composer sits OUTSIDE the gate so a dead end never hides it; the transcript is `flush`
-//            with the composer's edge and grows to fill; the composer wrapper is full width.
+//   pane   — a gate that fills the host; the composer sits inside the gate, inset 40px; the
+//            transcript is always rendered (its `empty` greeting shows when there are no items);
+//            with no session an empty `pending` filler holds the transcript's place so the
+//            composer sits at the bottom edge.
+//   column — a compact gate (content height); the composer sits OUTSIDE the gate so a dead end
+//            never hides it; the transcript is `flush` with the composer's edge and grows to
+//            fill; the composer wrapper is full width.
+// In both, history is a dialog (ChatHistoryModal, portaled) OVER the body, never a swap: the
+// transcript and composer stay mounted underneath, so closing it returns to the chat untouched.
 // A transcript with no `empty` slot is rendered only once it has items (the daemon's face above is
 // its greeting). Remaining per-host values are plain props: `persona`, `avatarMood`, `onGesture`,
 // `chatId` (the controls' pre-session fallback seed) and `composerTestId` (a test-only hook).
@@ -25,7 +27,7 @@ import type { ChatSession } from './chatSession'
 import ChatTranscript from './ChatTranscript'
 import ChatComposerBar from './ChatComposerBar'
 import ChatControls from './ChatControls'
-import ChatHistoryPanel from './ChatHistoryPanel'
+import ChatHistoryModal from './ChatHistoryModal'
 import ChatSetupGate from './ChatSetupGate'
 import { createComposerFocus } from './createComposerFocus'
 import type { ComposerHandle } from '../ChatComposer'
@@ -106,7 +108,19 @@ const ChatSessionBody: Component<ChatSessionBodyProps> = props => {
         </div>
     )
 
-    return (
+    // Keyed on the session itself, so the dialog never outlives the session it was opened on.
+    const historyModal = () => (
+        <Show when={props.session?.history.open() ? props.session : undefined}>
+            {s => (
+                <ChatHistoryModal
+                    history={s().history}
+                    onNewChat={s().startNewChat}
+                />
+            )}
+        </Show>
+    )
+
+    const body = () => (
         <Show
             when={column()}
             fallback={
@@ -121,34 +135,14 @@ const ChatSessionBody: Component<ChatSessionBodyProps> = props => {
                 >
                     {s => (
                         <ChatSetupGate session={s()}>
-                            <Show
-                                when={s().history.open()}
-                                fallback={
-                                    <>
-                                        {transcript(s())}
-                                        {composerBar()}
-                                    </>
-                                }
-                            >
-                                <ChatHistoryPanel
-                                    history={s().history}
-                                    onNewChat={s().startNewChat}
-                                />
-                            </Show>
+                            {transcript(s())}
+                            {composerBar()}
                         </ChatSetupGate>
                     )}
                 </Show>
             }
         >
-            <Show
-                when={!props.session?.history.open()}
-                fallback={
-                    <ChatHistoryPanel
-                        history={props.session!.history}
-                        onNewChat={props.session!.startNewChat}
-                    />
-                }
-            >
+            <>
                 <Show when={props.session}>
                     {s => (
                         <ChatSetupGate session={s()} compact>
@@ -164,8 +158,15 @@ const ChatSessionBody: Component<ChatSessionBodyProps> = props => {
                     )}
                 </Show>
                 {composerBar()}
-            </Show>
+            </>
         </Show>
+    )
+
+    return (
+        <>
+            {body()}
+            {historyModal()}
+        </>
     )
 }
 

@@ -13,9 +13,8 @@
 //     Actions render identically either way.
 //
 // The auth popover (ChatAuthPanel) is anchored inside `actions` in both shapes — this file owns
-// only the ANCHOR + the toggle pill/button, never the popover body. History's own popover
-// (ChatHistoryPanel) is no longer anchored here at all: Task 4 has it render as a full-region pane
-// in the HOST (ChatView.tsx / DaemonChat.tsx), in place of the transcript + composer, so this file
+// only the ANCHOR + the toggle pill/button, never the popover body. History is not anchored here
+// at all: ChatSessionBody.tsx opens it as a dialog over the chat (ChatHistoryModal), so this file
 // keeps only the "history" toggle button.
 import { createSignal, Show, type Component } from 'solid-js'
 import styles from './ChatControls.module.css'
@@ -239,10 +238,9 @@ const Actions: Component<{ session: ChatControlsView }> = props => {
                 </div>
             </Show>
             {/* NEVER DROPPED — a row with no way to reach past chats or start a new one is a
-                broken one, same reasoning as "New chat" below. The popover itself is no longer
-                anchored here: Task 4 has the host (ChatView/DaemonChat) render ChatHistoryPanel as
-                a full-region pane in place of the transcript/composer when open, so this is just
-                the toggle. */}
+                broken one, same reasoning as "New chat" below. The history itself is a dialog
+                ChatSessionBody opens over the chat (ChatHistoryModal), so this is just the
+                toggle. */}
             <Show when={providerCan(props.session.provider(), 'sessionPicker')}>
                 <RowAction
                     icon="RotateCcw"

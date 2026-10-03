@@ -297,7 +297,9 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                     />
                 }
                 conversing={conversing()}
-                chatFills={conversing() || !!session()?.history.open()}
+                // Only a conversation fills the region now — chat history opens as a dialog over
+                // the page (chat/ChatHistoryModal.tsx), not as a pane inside it.
+                chatFills={conversing()}
                 chat={
                     <DaemonChat
                         session={session()}
