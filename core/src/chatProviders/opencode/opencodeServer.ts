@@ -1,8 +1,9 @@
 // core/src/chatProviders/opencodeServer.ts
 // Lifecycle for the ONE persistent `opencode serve` process shared by every opencode chat this core
 // process hosts — started lazily on the first opencode chat, kept alive for the rest of the
-// process's life, never one-per-chat. Every request below carries a `directory` query param, so one
-// server multiplexes every vault/chat this core process serves, mirroring the daemon's "one process,
+// process's life, never one-per-chat — except that a change to the local-model config (the
+// `OPENCODE_CONFIG_CONTENT` it was spawned with) replaces it, once no turn is in flight. Every
+// request below carries a `directory` query param, so one server multiplexes every vault/chat this core process serves, mirroring the daemon's "one process,
 // many vault brains" shape (core/src/daemon.ts).
 //
 // SDK-vs-raw-HTTP: this module uses @opencode-ai/sdk's TYPED CLIENT (createOpencodeClient) — the
@@ -54,6 +55,42 @@ import { homedir } from 'node:os'
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk'
 import { claudeSpawnEnv } from '../../claudeWhich'
 
+/** What a server spawn needs from the local-model seam: the env (`OPENCODE_CONFIG_CONTENT`) — a
+ *  `ResolvedLocal` from agentBackends/localModelProbe.ts satisfies it. */
+export type OpencodeLocalEnv = { env: Record<string, string> }
+
+/** The env `opencode serve` is spawned with: the base env (claudeSpawnEnv's) with PWD pinned to the
+ *  server's own cwd, plus — when the local model is on — the inline config that declares the `local`
+ *  provider. `OPENCODE_CONFIG_CONTENT` outranks the user's own opencode config and merges into it,
+ *  so nothing the user configured is lost and nothing of theirs is written. Pure. */
+export function serverSpawnEnv(
+    base: Record<string, string>,
+    local?: OpencodeLocalEnv | null,
+): Record<string, string> {
+    return { ...base, PWD: homedir(), ...(local?.env ?? {}) }
+}
+
+/** Identity of a server's config: the inline config content, or null for none. Two servers with
+ *  the same key are interchangeable; a different key means the live one must be replaced. */
+export function opencodeServerConfigKey(
+    local: OpencodeLocalEnv | null | undefined,
+): string | null {
+    return local?.env.OPENCODE_CONFIG_CONTENT ?? null
+}
+
+/** What to do with the live server when a caller wants config `want` (undefined = no preference,
+ *  e.g. an abort or a history read; null = no local config). `turns` = turns in flight on it. */
+export function planServerChange(s: {
+    live: boolean
+    liveKey: string | null
+    want: string | null | undefined
+    turns: number
+}): 'keep' | 'restart' | 'wait' {
+    if (!s.live || s.want === undefined || s.want === s.liveKey)
+        return s.live ? 'keep' : 'restart'
+    return s.turns > 0 ? 'wait' : 'restart'
+}
+
 export interface OpencodeServerHandle {
     client: OpencodeClient
     url: string
@@ -89,7 +126,19 @@ export function registerOpencodeServerListener(
     listeners.set(sessionId, handler)
     return () => {
         if (listeners.get(sessionId) === handler) listeners.delete(sessionId)
+        if (listeners.size === 0) {
+            const waiting = idleWaiters.splice(0)
+            for (const wake of waiting) wake()
+        }
     }
+}
+
+/** Resolvers parked by a pending server replacement until no turn is in flight (see
+ *  replaceServer). A turn is "in flight" exactly while its listener is registered above. */
+const idleWaiters: (() => void)[] = []
+function whenNoTurnActive(): Promise<void> {
+    if (listeners.size === 0) return Promise.resolve()
+    return new Promise(resolve => idleWaiters.push(resolve))
 }
 
 /** Pull the opencode session id out of one raw event, whatever shape it turns out to carry — the
@@ -182,7 +231,10 @@ function watchExit(handle: LiveServer): void {
  *  on any failure/timeout) — same detection technique @opencode-ai/sdk's own createOpencodeServer
  *  uses (dist/server.js), reimplemented here so the spawn itself goes through Bun.spawn +
  *  claudeSpawnEnv (augmented PATH) instead of cross-spawn + bare process.env. */
-function spawnAndWaitForBanner(bin: string): Promise<LiveServer | null> {
+function spawnAndWaitForBanner(
+    bin: string,
+    env: Record<string, string>,
+): Promise<LiveServer | null> {
     return new Promise(resolve => {
         let proc: ReturnType<typeof Bun.spawn>
         try {
@@ -207,13 +259,7 @@ function spawnAndWaitForBanner(bin: string): Promise<LiveServer | null> {
                     // `opencodeSpawnEnv`, the per-turn RUN-mode equivalent of this same fix) — harmless here
                     // either way (every server-mode request scopes itself via its own `directory` query param,
                     // not process cwd), but cheap insurance against depending on that distinction staying true.
-                    env: {
-                        ...(claudeSpawnEnv(process.env, 'chat') as Record<
-                            string,
-                            string
-                        >),
-                        PWD: homedir(),
-                    },
+                    env,
                 },
             )
         } catch {
@@ -264,18 +310,25 @@ function spawnAndWaitForBanner(bin: string): Promise<LiveServer | null> {
     })
 }
 
-/**
- * Lazily start the one shared opencode server for this core process, or return the already-running
- * one. `bin` is only consulted on the FIRST successful spawn attempt for the process's lifetime (or
- * again after a genuine mid-life crash) — resolves null when the installed opencode can't serve
- * (old CLI, spawn failure, banner timeout), so callers fall back to the per-turn `run` path.
- */
-export function ensureOpencodeServer(
+/** The config key + env the live (or in-flight) server was started with — kept past a crash so a
+ *  bare `ensureOpencodeServer(bin)` after one restarts it with the same local model, not without. */
+let liveKey: string | null = null
+let lastLocal: OpencodeLocalEnv | null = null
+/** A replacement waiting on running turns; every caller that wants a different config queues on it. */
+let replacing: Promise<void> | null = null
+
+function startServer(
     bin: string,
+    local: OpencodeLocalEnv | null,
 ): Promise<OpencodeServerHandle | null> {
-    if (starting) return starting
-    starting = (async () => {
-        const handle = await spawnAndWaitForBanner(bin)
+    liveKey = opencodeServerConfigKey(local)
+    lastLocal = local
+    const env = serverSpawnEnv(
+        claudeSpawnEnv(process.env, 'chat') as Record<string, string>,
+        local,
+    )
+    const attempt = (async () => {
+        const handle = await spawnAndWaitForBanner(bin, env)
         if (!handle) return null
         live = handle
         watchExit(handle)
@@ -289,7 +342,71 @@ export function ensureOpencodeServer(
         await subscribeToEvents(handle).catch(() => {})
         return { client: handle.client, url: handle.url }
     })()
-    return starting
+    starting = attempt
+    return attempt
+}
+
+/** Replace the shared server with one carrying `local`. Waits for any in-flight turn on the old
+ *  server to settle first (the old server keeps serving that turn), then kills it and starts anew. */
+function replaceServer(
+    bin: string,
+    local: OpencodeLocalEnv | null,
+): Promise<OpencodeServerHandle | null> {
+    const prior = starting
+    const swap = (async () => {
+        await prior?.catch(() => null)
+        await whenNoTurnActive()
+        const old = live
+        live = null
+        starting = null
+        if (old) {
+            try {
+                old.proc.kill()
+            } catch {
+                /* already exited */
+            }
+        }
+    })()
+    const pending: Promise<void> = swap.finally(() => {
+        if (replacing === pending) replacing = null
+    })
+    replacing = pending
+    return swap.then(() => startServer(bin, local))
+}
+
+/**
+ * Lazily start the one shared opencode server for this core process, or return the already-running
+ * one. `bin` is only consulted on the FIRST successful spawn attempt for the process's lifetime (or
+ * again after a genuine mid-life crash) — resolves null when the installed opencode can't serve
+ * (old CLI, spawn failure, banner timeout), so callers fall back to the per-turn `run` path.
+ *
+ * `local` is the local-model env the CALLER wants the server to carry: omitted = no preference (turn
+ * calls, aborts, history reads just use whatever is live); `null` = none; an object = that config.
+ * When it differs from the live server's, the server is replaced — immediately if no turn is in
+ * flight, else once the running turn settles (this call waits for that), so a turn is never cut off.
+ */
+export function ensureOpencodeServer(
+    bin: string,
+    local?: OpencodeLocalEnv | null,
+): Promise<OpencodeServerHandle | null> {
+    if (
+        replacing &&
+        local !== undefined &&
+        opencodeServerConfigKey(local) !== liveKey
+    ) {
+        // A replacement is pending: queue behind it, then re-evaluate against the server it leaves.
+        return replacing.then(() => ensureOpencodeServer(bin, local))
+    }
+    const plan = planServerChange({
+        live: !!starting,
+        liveKey,
+        want: local === undefined ? undefined : opencodeServerConfigKey(local),
+        turns: listeners.size,
+    })
+    if (plan === 'keep') return starting as Promise<OpencodeServerHandle | null>
+    if (!starting)
+        return startServer(bin, local === undefined ? lastLocal : local)
+    return replaceServer(bin, local ?? null)
 }
 
 // Never leave an orphaned `opencode serve` running past this core process's own life.
