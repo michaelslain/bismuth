@@ -112,6 +112,16 @@ export const Overflow: Story = {
         const panel = tab?.parentElement?.parentElement
         expect(panel).toBeTruthy()
         expect(Math.round(panel!.getBoundingClientRect().width)).toBe(510)
+        // The width is fixed by `.vi-term`, so it holds with or without the clip. The clip lives on
+        // the line div (TermPanel.module.css `.vi-term-line`): the innermost div (no div inside it)
+        // whose text holds the long command. It must really clip, not just be allowed to.
+        const line = [...canvasElement.querySelectorAll('div')].find(
+            el => !el.querySelector('div') && el.textContent?.includes('bismuth base create'),
+        )
+        expect(line).toBeTruthy()
+        expect(getComputedStyle(line!).textOverflow).toBe('ellipsis')
+        expect(getComputedStyle(line!).overflow).toBe('hidden')
+        expect(line!.scrollWidth).toBeGreaterThan(line!.clientWidth)
     },
 }
 
