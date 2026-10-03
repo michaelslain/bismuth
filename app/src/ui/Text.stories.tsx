@@ -5,7 +5,7 @@
 // than usual — every future call site inherits it.
 //
 // Props: as ('p' default | 'span' | 'div'), size ('micro' | 'ui' | 'body' default | 'body-lg' |
-// 'lead' — global.css's `ui/ui.css` section's fixed --fs-* scale), tone ('default' | 'muted' |
+// 'lead' | 'title' — global.css's `ui/ui.css` section's fixed --fs-* scale), tone ('default' | 'muted' |
 // 'faint'), weight
 // ('regular' default | 'medium' | 'bold'), eyebrow (the uppercase/tracked section-label
 // register), class, children.
@@ -22,7 +22,7 @@ const meta = {
         as: { control: 'inline-radio', options: ['p', 'span', 'div'] },
         size: {
             control: 'inline-radio',
-            options: ['micro', 'ui', 'body', 'body-lg', 'lead'],
+            options: ['micro', 'ui', 'body', 'body-lg', 'lead', 'title'],
         },
         tone: {
             control: 'inline-radio',
@@ -75,6 +75,7 @@ export const Sizes: Story = {
                 body-lg — note prose in the full editor column
             </Text>
             <Text size="lead">lead — section heads inside prose</Text>
+            <Text size="title">title — panel titles, intro body copy</Text>
         </Stack>
     ),
 }
@@ -237,6 +238,7 @@ export const AllVariants: Story = {
                 <Text size="body">body</Text>
                 <Text size="body-lg">body-lg</Text>
                 <Text size="lead">lead</Text>
+                <Text size="title">title</Text>
             </Row>
             <Row label="tone">
                 <Text tone="default">default</Text>

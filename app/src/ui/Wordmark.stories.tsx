@@ -1,93 +1,113 @@
-// Visual spec for the app-shell wordmark — the ASCII mark in the top strip
-// (`app/src/App.tsx`'s `.asc-wordmark` span, styled in global.css's `App.css` section).
+// Visual spec for <Wordmark> — the word `bismuth` in `.asc-wordmark`'s gradient sheen, the app's
+// one name mark: `body` size in the top strip (with its blinking caret), `hero` size where it
+// is the whole screen.
 //
-// This is chrome, not a `ui/` primitive, so there is no `Wordmark` component to import: the story
-// renders the same span + class the shell does. Kept here anyway because the mark is a brand
-// decision that needs to be LOOKED at, and the shell has no other visual surface.
-//
-// The mark paints via `background-clip: text` with `color: transparent`, so it needs `--grad`.
-// It does NOT need one here: `.storybook/preview.ts` already runs
+// The mark paints via `background-clip: text` with `color: transparent`, so it needs `--grad`. It
+// takes the REAL one: `.storybook/preview.ts` already runs
 // `setCssVars(settingsToCssVars(DEFAULTS))` at module scope — the same projection App.tsx performs
-// at runtime — so every theme token, `--grad` included, is live on :root for every story.
-// An earlier draft of this file hardcoded its own rainbow. That was worse than redundant: it meant
-// these stories displayed an INVENTED gradient, so anyone judging the mark's colour here was
-// grading a fabrication. Never stand in for a design token; take the real one.
+// at runtime — so every theme token is live on :root. `AcrossThemes` re-projects per theme the
+// same way `BismuthWord.stories` does. Never stand in for a design token; take the real one.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { Label } from './_storyKit'
-
-/** The mark itself — a hopper-crystal silhouette in punctuation. */
-const MARK = ",;']--]';,"
-
-function Strip(props: { tracking?: string; children?: string }) {
-    return (
-        <div
-            style={{
-                ...(props.tracking
-                    ? { '--wordmark-tracking': props.tracking }
-                    : {}),
-                background: 'var(--bg, #0d0d0f)',
-                padding: '10px 14px',
-                'border-radius': '4px',
-                display: 'flex',
-                'align-items': 'center',
-                'min-width': '180px',
-            }}
-        >
-            <span class="asc-wordmark">{props.children ?? MARK}</span>
-        </div>
-    )
-}
+import Wordmark from './Wordmark'
+import { settingsToCssVars } from '../settingsCssVars'
+import { THEME_NAMES, THEME_LABELS } from '../themes'
+import { DEFAULTS } from '../../../core/src/schema/settingsSchema'
+import type { Settings } from '../settings'
 
 const meta = {
-    title: 'App Shell/Wordmark',
+    title: 'UI/Wordmark',
+    component: Wordmark,
     parameters: { layout: 'centered' },
-} satisfies Meta
+} satisfies Meta<typeof Wordmark>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** The shipped mark at its default tracking (-0.22em, global.css's `App.css` section
- *  `.asc-wordmark`). */
-export const Default: Story = {
-    render: () => <Strip />,
+const Panel = (props: { children: any }) => (
+    <div
+        style={{
+            background: 'var(--bg)',
+            padding: '14px 18px',
+            display: 'flex',
+            'align-items': 'center',
+        }}
+    >
+        {props.children}
+    </div>
+)
+
+/** The top-strip size (`--fs-body`) at the word's 0.04em tracking. */
+export const Body: Story = {
+    render: () => (
+        <Panel>
+            <Wordmark size="body" />
+        </Panel>
+    ),
+    play: async ({ canvasElement }) => {
+        const mark = canvasElement.querySelector('.asc-wordmark') as HTMLElement
+        await expect(mark).not.toBeNull()
+        const cs = getComputedStyle(mark)
+        const px = parseFloat(cs.fontSize)
+        await expect(px).toBeGreaterThan(0)
+        await expect(parseFloat(cs.letterSpacing) / px).toBeCloseTo(0.04, 3)
+    },
 }
 
-/**
- * Tracking ladder. The mark is ASCII art, not lettering — the glyphs have to close into one
- * silhouette, so this reads bottom-up: looser values break it into loose punctuation, tighter
- * values fuse the `--` bar into the bracket shoulders. Pick by eye.
- */
-export const Tracking: Story = {
+/** With the trailing blinking caret, as the top strip renders it. */
+export const BodyWithCaret: Story = {
+    render: () => (
+        <Panel>
+            <Wordmark size="body" caret />
+        </Panel>
+    ),
+    play: async ({ canvasElement }) => {
+        await expect(canvasElement.querySelectorAll('.asc-caret').length).toBe(1)
+    },
+}
+
+/** The hero size (`--fs-hero`). */
+export const Hero: Story = {
+    render: () => (
+        <Panel>
+            <Wordmark size="hero" />
+        </Panel>
+    ),
+}
+
+/** One row per theme, each re-projecting the real per-theme tokens as App.tsx does at runtime —
+ *  `--grad` shifts with the theme, and this is where that gets looked at. */
+export const AcrossThemes: Story = {
     render: () => (
         <div
-            style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}
         >
-            {(
-                [
-                    '.08em (old, for lettering)',
-                    '0',
-                    '-0.03em',
-                    '-0.06em',
-                    '-0.09em',
-                    '-0.12em',
-                    '-0.16em',
-                    '-0.22em (current)',
-                    '-0.28em',
-                ] as const
-            ).map(t => {
-                const value = t.split(' ')[0]
+            {THEME_NAMES.map(name => {
+                const vars = settingsToCssVars({
+                    ...(DEFAULTS as unknown as Settings),
+                    appearance: {
+                        ...(DEFAULTS as unknown as Settings).appearance,
+                        theme: name,
+                    },
+                })
                 return (
                     <div
                         style={{
+                            ...vars,
+                            background: 'var(--bg)',
+                            color: 'var(--fg)',
+                            padding: '14px 18px',
                             display: 'flex',
                             'align-items': 'center',
-                            gap: '12px',
+                            gap: '18px',
                         }}
                     >
-                        <span style={{ 'min-width': '170px' }}>
-                            <Label>{t}</Label>
+                        <span style={{ 'min-width': '90px' }}>
+                            <Label>{THEME_LABELS[name] ?? name}</Label>
                         </span>
-                        <Strip tracking={value} />
+                        <Wordmark size="body" caret />
+                        <Wordmark size="hero" />
                     </div>
                 )
             })}

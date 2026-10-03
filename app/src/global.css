@@ -173,20 +173,11 @@
   --fw-h4: var(--fw-medium);
   --fw-h5: var(--fw-medium);
   --fw-h6: var(--fw-medium);
-  /* NEW, scoped-use only (§2.2, §9). Not a step in the chrome scale — intro/VaultIntro's own
-     three hero literals (48/40/38px) are the only sanctioned consumer, and that reassignment is
-     a later wave's edit, not this one's. Nothing reads this token yet. */
+  /* Display steps above --fs-title, scoped to the vault intro's headline and the wordmark (never
+     app chrome); read through ui/Heading's `size` ('hero' / 'hero-xl') and ui/Wordmark. */
   --fs-hero: 40px;
-  /* VaultIntro's hero headline (.vi-title), fixed — not fluid. bench/invariants.ts's
-     font-size-off-scale check only accepts a flat SCALE/SCALE_EXEMPT membership (48 is in
-     SCALE_EXEMPT) or a live-resolved prose size, and a vw-derived clamp only lands on a scale
-     step at one specific viewport width. 48px is the scale step directly above --fs-hero
-     (40px), which VaultIntro's own <980px rule still drops to. */
-  --fs-intro-title: 48px;
-  /* VaultIntro's body copy (.vi-body), fixed at the type scale's 19px step for the same reason
-     --fs-intro-title is fixed above — was a fluid clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem)
-     that rendered 19.2px at the audited viewport, 0.2px off this exact step. */
-  --fs-intro-body: 19px;
+  /* display step above --fs-hero; Heading size='hero-xl' */
+  --fs-hero-xl: 48px;
 
   /* fixed dev-HUD traffic light, deliberately theme-independent (graph fps HUD) */
   --hud-fps-good: #3fb950;
@@ -807,12 +798,11 @@ details.callout > summary::-webkit-details-marker {
    faint speck rather than a mark. 16px restores the presence the corner had. Line-height is
    pinned so the taller glyphs cannot grow the top strip. */
 .asc-wordmark {
-  /* Tracking is -0.22em, well past where a lettering face would break. That is correct HERE: the
-     mark is ASCII art, not a word — the glyphs have to overlap into ONE hopper-crystal silhouette,
-     and anything looser reads as loose punctuation. Picked by eye in devtools, then added to
-     ui/Wordmark.stories.tsx's ladder. This file had shipped -0.03em while that ladder already
-     labelled -0.06em "current", so the two silently drifted; the story IS the deciding surface —
-     change the value there and here together, never one alone. */
+  /* Tracking is -0.22em, well past where a lettering face would break. That is correct for the
+     ASCII crystal this class was drawn for: the glyphs have to overlap into ONE hopper-crystal
+     silhouette, and anything looser reads as loose punctuation. A real word is set with the
+     opposite tracking — ui/Wordmark.module.css overrides --wordmark-tracking to 0.04em per
+     instance, and ui/Wordmark composes this class for the top strip. */
   /* Size is a token for the same reason tracking is: the ASCII crystal and a set word want
      different values, and an instance should be able to say which it is rather than fighting a
      hardcoded default with a descendant selector. --fs-lead stays the default (the crystal's
@@ -989,10 +979,9 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
       each still `:global()`-bridged to its bare outside writers (palette/Palette.module.css;
       graph/GraphView.tsx) until wave 2 converts those call sites to compose the new components.
       `.asc-caret` (+ its `@keyframes asc-blink`) took the same trip and came back (regression
-      fix, 2026-09-20, see the rule's own comment below): its would-be owner, ui/Caret.tsx, has
-      no production importer, so the module CSS never reached the bundle and every caret in the
-      shipped app rendered with no colour and no blink. It stays here, genuinely global, with
-      seven bare outside writers and no real owner yet. `.row-kbd`/`.asc-key`'s shared compound was later
+      fix, 2026-09-20, see the rule's own comment below): it stays here, as a bare global,
+      written only by ui/Caret (and ui/Wordmark's `caret`, via Caret). Terminal.tsx's xterm cursor and
+      ChatComposer's CodeMirror cursor imitate its look but do not reference the class. `.row-kbd`/`.asc-key`'s shared compound was later
       dissolved (2026-09-30) — Kbd's `muted` prop replaced it.
    2. DESIGN TOKENS moved to `app/src/styles/tokens.css` (`--ui-font-stack`, `--row-h`,
       `--accent-edge`, `--blink`, `--sheen`, `--field-noise-op`, `--cell-h`, `--cell-h-dense`,
@@ -1179,15 +1168,12 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    Backlinks.module.css instead of sitting here as a bare global one component reached into. */
 
 /* .asc-caret (+ its @keyframes asc-blink) briefly MOVED to ui/Caret.module.css
-   (one-global-stylesheet Task 7), then moved BACK here (regression fix, 2026-09-20):
-   Caret.tsx has no production importer — only its own story imports it — so Rollup never pulled
-   the module's CSS into the production bundle and every caret shipped invisible. Seven
-   components write the class bare with no owning importer (ChatComposer, Terminal,
-   intro/TermPanel, chat/ChatTranscript, shell/TopStrip, shell/StatusBar,
-   palette/SwitcherBar) — exactly the shape of a genuine global register entry, not a
-   component-private rule that merely lacks its `:global()` bridge yet. ui/Caret.tsx still
-   exists and writes the same literal class (see its own header), for the one caller that wants
-   the primitive rather than the bare string. */
+   (one-global-stylesheet Task 7), then moved BACK here (regression fix, 2026-09-20): a module's
+   CSS only reaches the production bundle if something imports it, and the bare class was then
+   being written with no owning import, so every caret shipped invisible. It lives here as a bare
+   global, written only by ui/Caret (and ui/Wordmark's `caret`, via Caret). Terminal.tsx's xterm
+   cursor and ChatComposer's CodeMirror cursor imitate its look (an accent underline) but do NOT
+   reference the class. */
 @keyframes asc-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 .asc-caret { color: var(--accent); animation: asc-blink var(--blink) step-end infinite; }
 

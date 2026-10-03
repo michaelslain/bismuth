@@ -34,6 +34,7 @@ import Kbd from '../ui/ascii/Kbd'
 import PlainButton from '../ui/PlainButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import Text from '../ui/Text'
+import Caret from '../ui/Caret'
 import EmptyState, { Loading } from '../ui/EmptyState'
 import { createMenuNav } from '../ui/popover/createMenuNav'
 import {
@@ -498,13 +499,9 @@ export function SwitcherBar(props: Props) {
                         class={switcherStyles['switcher-ai-panel']}
                         bodyClass={switcherStyles['switcher-ai-body']}
                         icon={
-                            <Text
-                                as="span"
-                                inherit
-                                class={`${switcherStyles['switcher-loading-spinner']} asc-caret`}
-                            >
-                                _
-                            </Text>
+                            <Caret
+                                class={switcherStyles['switcher-loading-spinner']}
+                            />
                         }
                         title="Searching your vault with Bismuth AI…"
                     >

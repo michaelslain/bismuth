@@ -1,0 +1,10 @@
+/* ui/LogoMark.module.css — the square box around a shipped /logos/<icon>.svg mark. */
+.logomark {
+  display: block;
+  flex: none;
+}
+.logomark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

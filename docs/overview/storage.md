@@ -413,7 +413,7 @@ All `localStorage` access is guarded against unavailability and quota errors; fa
 | `bismuth-sidebar-visible-v1` | `App.tsx` | Sidebar visible/hidden boolean (`"1"` / `"0"`) |
 | `bismuth-tab-rail-pinned-v1` | `App.tsx` | Right tab rail held-open boolean (`"1"` / `"0"`); toggled by the "Toggle tab rail" command/keybinding, defaults OFF (hover-to-expand still works) |
 | `bismuth-graph-cache-v2` | `App.tsx` | Last fetched `GraphData` (structure only, no `views` layouts); seeds the graph on boot so it paints instantly |
-| `bismuth-theme-vars-v1` | `App.tsx` | CSS variable map for the active theme; also read by an inline `<head>` script in `index.html` to apply the theme before the bundle loads |
+| `bismuth-theme-vars-v1` | `App.tsx` | CSS variable map for the active theme. Nothing reads it today (index.html's inline script reads the stale key `oa-theme-vars-v1`). |
 | `bismuth-settings-cache-v1` | `app/src/settings.ts` | Last hydrated `Settings` object; seeds the reactive store on the next launch |
 | `three-brains.settings` | `app/src/settings.ts` | **Legacy key** — read once for first-launch migration, then removed |
 | `bismuth:graph:viewMode` | `app/src/GraphView.tsx` | 2D / 3D toggle (`"2d"` or `"3d"`); **not** in `.settings` |
@@ -421,7 +421,7 @@ All `localStorage` access is guarded against unavailability and quota errors; fa
 | `three-brains.harper` | `app/src/editor/harperStore.ts` | Harper spell-checker personal dictionary and ignored lints (`{ words, ignoredLints }`) |
 
 
-> **Removed: the client-side graph position cache.** `bismuth-graphpos:v5:2d`/`v5:3d` (formerly written by a since-deleted renderer, `app/src/graph/WebGLRenderer.ts`) and its `evictOtherPositionCaches` quota-eviction helper no longer exist — `app/src/intro/VaultIntro.tsx` (`SMALL_GRAPH`/`BIG_GRAPH`) notes they were removed because nothing reads or writes them: layout is backend-precomputed and attached to each `GraphData` response (see `docs/graph/overview.md`'s Backend-Precomputed 2D/3D Layout section — `core/src/layout-cache.ts` is the durable cache today, under `~/.bismuth/layout-cache/`, not `localStorage`), and the current renderer (`AsciiGraphRenderer.ts`) rescales those positions rather than settling and persisting its own.
+> **Removed: the client-side graph position cache.** `bismuth-graphpos:v5:2d`/`v5:3d` (formerly written by a since-deleted renderer, `app/src/graph/WebGLRenderer.ts`) and its `evictOtherPositionCaches` quota-eviction helper no longer exist — nothing reads or writes them any more (the first-run intro's `SMALL_GRAPH`/`BIG_GRAPH` in `app/src/intro/vaultIntroGraph.ts` bake their own positions): layout is backend-precomputed and attached to each `GraphData` response (see `docs/graph/overview.md`'s Backend-Precomputed 2D/3D Layout section — `core/src/layout-cache.ts` is the durable cache today, under `~/.bismuth/layout-cache/`, not `localStorage`), and the current renderer (`AsciiGraphRenderer.ts`) rescales those positions rather than settling and persisting its own.
 
 ### Notes on the row cache
 
@@ -481,7 +481,7 @@ Browser localStorage:
   bismuth-sidebar-visible-v1              # sidebar state
   bismuth-tab-rail-pinned-v1              # right tab rail held-open state
   bismuth-graph-cache-v2                  # last GraphData for instant boot paint
-  bismuth-theme-vars-v1                   # CSS variable map for pre-bundle theme apply
+  bismuth-theme-vars-v1                   # CSS variable map — written, not yet read (see above)
   bismuth-settings-cache-v1               # last Settings object for instant boot seed
   bismuth:graph:viewMode             # "2d" or "3d" toggle (not in .settings)
   bismuth-folds:<path>                    # per-note locked fold block ids

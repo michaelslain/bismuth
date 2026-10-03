@@ -3,7 +3,8 @@
 // canonical heading scale, already rendered by editor/livePreview.ts's .cm-h1..h6 (CodeMirror) —
 // see Heading.module.css. <Heading level={3}> now matches what `###` looks like in the editor.
 //
-// Props: level (1-6, picks the tag AND the ramp step; 2 is the default), class, children.
+// Props: level (1-6, picks the tag AND the ramp step; 2 is the default), size ('hero' | 'hero-xl' —
+// a display step replacing the level's own), register ('chrome' default | 'prose'), class, children.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
 import Heading from './Heading'
@@ -15,6 +16,8 @@ const meta = {
     parameters: { layout: 'centered' },
     argTypes: {
         level: { control: 'inline-radio', options: [1, 2, 3, 4, 5, 6] },
+        size: { control: 'inline-radio', options: [undefined, 'hero', 'hero-xl'] },
+        register: { control: 'inline-radio', options: ['chrome', 'prose'] },
         children: { control: 'text' },
     },
     args: {
@@ -50,6 +53,36 @@ export const AllLevels: Story = {
             <Heading level={4}>Heading level 4 — --fs-body</Heading>
             <Heading level={5}>Heading level 5 — --fs-ui</Heading>
             <Heading level={6}>Heading level 6 — --fs-micro</Heading>
+        </Stack>
+    ),
+}
+
+/** `size` — the display steps that replace the level's own ramp step: 'hero' (--fs-hero, 40px) and
+ *  'hero-xl' (--fs-hero-xl, 48px, stepping down to 40px below 980px). Both are regular weight with
+ *  tight leading and balanced wrapping. Shown in the chrome face and in the prose face. */
+export const HeroSizes: Story = {
+    render: () => (
+        <Stack>
+            <Row label="hero // chrome">
+                <Heading level={1} size="hero">
+                    Notes that think.
+                </Heading>
+            </Row>
+            <Row label="hero // prose">
+                <Heading level={1} size="hero" register="prose">
+                    Notes that think.
+                </Heading>
+            </Row>
+            <Row label="hero-xl // chrome">
+                <Heading level={1} size="hero-xl">
+                    Notes that think.
+                </Heading>
+            </Row>
+            <Row label="hero-xl // prose">
+                <Heading level={1} size="hero-xl" register="prose">
+                    Notes that think.
+                </Heading>
+            </Row>
         </Stack>
     ),
 }

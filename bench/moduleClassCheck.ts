@@ -96,9 +96,6 @@ const ALLOW = new Set<string>([
     // modularization, and this task changes nothing but location." Deliberately-retained dead rule, so
     // it is an orphan by construction. Delete this line when Task 11 deletes the rule.
     'FileTree.module.css:ft-chevron',
-    // intro/VaultIntro.module.css's own header: no `.tsx` renders `.vi-graph3d-labels`
-    // (IntroGraph mounts `.vi-graph3d-canvas` + <GraphAtmosphere>, never a labels layer).
-    'intro/VaultIntro.module.css:vi-graph3d-labels',
     // ui/Button.module.css's `.btn`/`.btn--*` family (ds-bridges Task 1): these ARE reachable —
     // Button.tsx passes its own `styles` map into `buttonClass(opts, cls)`
     // (app/src/ui/buttonClass.ts), which reads `cls['btn']`/`` cls[`btn--${kind}`] ``/etc at

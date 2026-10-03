@@ -1,6 +1,7 @@
 import { Show } from 'solid-js'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
+import Caret from '../ui/Caret'
 import { InboxIndicator } from './InboxIndicator'
 import styles from './StatusBar.module.css'
 
@@ -139,13 +140,7 @@ export function StatusBar(props: {
                 >
                     {DAEMON_TEXT[props.daemon]}
                 </Text>
-                <Text
-                    as="span"
-                    inherit
-                    class={`asc-caret ${styles['status-caret']}`}
-                >
-                    _
-                </Text>
+                <Caret class={styles['status-caret']} />
             </Text>
         </div>
     )

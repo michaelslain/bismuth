@@ -18,6 +18,7 @@ import {
 } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
+import Caret from '../ui/Caret'
 import { openNote } from '../ui/openNote'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextButton } from '../ui/TextButton'
@@ -246,9 +247,7 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
                         <ChatTurnLabel label={props.persona} avatar={face()} />
                         <div class={styles['chat-awaiting-dots']}>
                             working
-                            <Text as="span" inherit class="asc-caret">
-                                _
-                            </Text>
+                            <Caret />
                         </div>
                     </ChatTurnColumn>
                 </Show>
