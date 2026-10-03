@@ -189,6 +189,15 @@ export interface BackendCapabilities {
     selfSandboxes: boolean
     mcp: McpRegistrationMode
     memory: MemoryInjectionMode
+    /**
+     * Can this backend's chat run against the vault's `localModel` server (any OpenAI/Anthropic-
+     * compatible local server — LM Studio, Ollama, …) through spawn-time env/argv alone, never by
+     * editing the CLI's own config? The mapping itself lives in `./localModel.ts`'s `localSpawnFor`;
+     * this flag is the claim that it exists. `true` for claude (Anthropic `/v1/messages`), codex
+     * (`/v1/responses` via an inline `--config` provider), opencode (`OPENCODE_CONFIG_CONTENT`) and
+     * goose (its `openai` provider via env); `false` for every other entry.
+     */
+    localModel: boolean
 }
 
 /** A backend's static identity + capabilities. Effectful wiring lives in ./registry.ts. */
@@ -261,6 +270,7 @@ const CLAUDE: BackendDescriptor = {
         selfSandboxes: true,
         mcp: 'cli',
         memory: 'hooks',
+        localModel: true,
     },
 }
 
@@ -385,6 +395,7 @@ const OPENCODE: BackendDescriptor = {
         // the daemon's spawn-fixed system-prompt append. Run mode still has no such hook and stays
         // MCP-tool-only for memory.
         memory: 'systemPrompt',
+        localModel: true,
     },
 }
 
@@ -489,6 +500,7 @@ const CODEX: BackendDescriptor = {
         selfSandboxes: true,
         mcp: 'cli',
         memory: 'agentsMd',
+        localModel: true,
     },
 }
 
@@ -562,6 +574,8 @@ const ACP_SHARED_CAPABILITIES: BackendCapabilities = {
     selfSandboxes: false,
     mcp: 'cli',
     memory: 'mcpOnly',
+    // goose overrides to true (its `openai` provider reads OPENAI_HOST/GOOSE_MODEL from env).
+    localModel: false,
 }
 
 /** Cline — native ACP support (`cline --acp`), verified directly from the compiled binary. */
@@ -593,7 +607,7 @@ const GOOSE: BackendDescriptor = {
     label: 'Goose',
     binary: 'goose',
     installHint: 'Install Goose (goose-docs.ai) to use this provider.',
-    capabilities: ACP_SHARED_CAPABILITIES,
+    capabilities: { ...ACP_SHARED_CAPABILITIES, localModel: true },
 }
 
 /** OpenClaw — `openclaw acp`. Confirmed identical wire format to Zed's ACP (OpenClaw's own docs:
