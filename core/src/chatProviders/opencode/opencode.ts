@@ -329,7 +329,7 @@ function emitOpenFrames(
  *  server-mode guard). `why` names the SPECIFIC unmet precondition — never a vague "can't protect
  *  this" — so the message never claims a mechanism that wasn't actually checked.
  *
- *  DISTINCT from core/src/chat.ts's `visibilityRefusalMessage`, and deliberately not merged with it:
+ *  DISTINCT from core/src/visibility.ts's `visibilityRefusalMessage`, and deliberately not merged with it:
  *  that one answers "this backend has no verified mechanism at all" (decided up-front by the router's
  *  chokepoint, agentBackends/visibilityGate.ts), whereas this one answers "opencode normally CAN
  *  enforce, but a specific precondition failed right here" — wrong platform, no sandbox-exec, or a
