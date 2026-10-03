@@ -57,7 +57,7 @@ const NOT_ICONS = new Set([
  *  core/src/schema/settingsSchema.ts, a completely separate asset set — `hopper-crystal` is a
  *  correct value there and would be a miss here. Matching by component name rather than by the
  *  value keeps a genuinely mistyped registry name from hiding behind a permissive value list. */
-const LOGO_MARK_COMPONENTS = /<(?:Lockup|WordmarkHero)[^>]*$/
+const LOGO_MARK_COMPONENTS = /<(?:Lockup|WordmarkHero|LogoMark|IntroHeader)[^>]*$/
 
 const walk = (dir: string): string[] =>
     readdirSync(dir).flatMap(e => {

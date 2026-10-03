@@ -3,9 +3,7 @@
 // decorative flourish, `.asc-wordmark`'s gradient sheen on "bismuth".
 //
 // A colocated file, matching this repo's `<Component>.tsx` + `<Component>.stories.tsx`
-// convention — `intro/IntroMarks.stories.tsx` already renders this component too (a combined
-// spec for both WordmarkHero and its sibling Lockup, kept for the direct A/B between them). This
-// file is the dedicated one so the component is discoverable by name, not only inside the pair.
+// convention. The hero composes `ui/LogoMark` and `ui/Wordmark`, which have their own stories.
 //
 // `.asc-wordmark` paints via `background-clip: text` + `color: transparent`, so it needs
 // `--grad` live on :root. It gets the REAL one: `.storybook/preview.ts` already runs
