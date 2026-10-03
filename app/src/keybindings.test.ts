@@ -8,6 +8,7 @@ import {
     modifierFamily,
     codeToKey,
     toCmKeys,
+    toMenuAccelerator,
 } from './keybindings'
 import { KEYBINDING_CATALOG } from '../../core/src/keybindings'
 
@@ -565,5 +566,32 @@ describe('toCmKeys — the CodeMirror key-string converter', () => {
         KEYBINDING_CATALOG.forEach(spec => {
             expect(toCmKeys(spec.default).length).toBeGreaterThan(0)
         })
+    })
+})
+
+describe('toMenuAccelerator — the native menu accelerator converter', () => {
+    it('maps Mod to CmdOrCtrl and uppercases the key', () => {
+        expect(toMenuAccelerator('Mod+N')).toBe('CmdOrCtrl+N')
+        expect(toMenuAccelerator('Mod+Shift+o')).toBe('CmdOrCtrl+Shift+O')
+    })
+    it('keeps exact Cmd/Ctrl/Alt tokens', () => {
+        expect(toMenuAccelerator('Cmd+Alt+P')).toBe('Cmd+Alt+P')
+        expect(toMenuAccelerator('Ctrl+Space')).toBe('Ctrl+Space')
+    })
+    it('uses only the first alternative', () => {
+        expect(toMenuAccelerator('Mod+`, Mod+J')).toBe('CmdOrCtrl+`')
+    })
+    it('is null for empty settings and keys with no accelerator spelling', () => {
+        expect(toMenuAccelerator('')).toBeNull()
+        expect(toMenuAccelerator(undefined)).toBeNull()
+        expect(toMenuAccelerator('Mod+ß')).toBeNull()
+    })
+    it('gives every File-menu binding an accelerator', () => {
+        const kb = Object.fromEntries(
+            KEYBINDING_CATALOG.map(s => [s.id, s.default]),
+        )
+        expect(toMenuAccelerator(kb['new-window'])).toBe('CmdOrCtrl+N')
+        expect(toMenuAccelerator(kb['open-folder'])).toBe('CmdOrCtrl+Shift+O')
+        expect(toMenuAccelerator(kb['export'])).toBe('CmdOrCtrl+Shift+P')
     })
 })
