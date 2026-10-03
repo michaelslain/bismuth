@@ -222,12 +222,6 @@
   "count": 1
  },
  {
-  "file": "chat/ChatAuthPanel.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px var(--sp-2)",
-  "count": 1
- },
- {
   "file": "chat/ChatHistoryPanel.module.css",
   "rule": "spacing-literal",
   "detail": "19px",

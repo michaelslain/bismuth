@@ -1,11 +1,7 @@
-// Visual spec for <ChatModelMenu> — the row's one control folding provider/model/effort behind the
-// current model word (Task 2). CHAT_PROVIDER_OPTIONS is a real, module-level constant (the backend
-// catalog) with several entries in every build this app ships, so a story cannot exercise the
-// "provider row omitted" branch by shrinking it — that would need mocking a shared module out from
-// under every other story that imports chatProvider.ts. The "row omitted when there's only one
-// choice" behaviour is identical code for all three rows (`length > 1` gates each independently), so
-// OneModel below exercises it via the model row instead, with a real (non-empty) provider list left
-// alone.
+// Visual spec for <ChatModelMenu> — the row's one control: the current model word, which opens
+// ChatModelPicker (the one dialog for connector / model / effort / opencode providers), which
+// portals itself to <body> over a scrim. The picker's own states live in Chat/ChatModelPicker; these stories prove the trigger
+// opens it. The backend catalog (CHAT_PROVIDER_OPTIONS) is a real module-level constant.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor, within } from 'storybook/test'
 import ChatModelMenu from './ChatModelMenu'
@@ -41,8 +37,19 @@ const EFFORT_OPTIONS = [
     { value: 'high', label: 'High' },
 ]
 
-/** All three rows present: several providers (the real catalog), several models, several efforts.
- *  The trigger itself just shows the current model word — the menu is closed here. */
+/** The picker is a modal portalled to <body>, outside the canvas, so look there. */
+const findDialog = (canvasElement: HTMLElement) =>
+    waitFor(() => {
+        const el =
+            canvasElement.ownerDocument.body.querySelector<HTMLElement>(
+                '[role="dialog"]',
+            )
+        if (!el) throw new Error('model dialog not rendered yet')
+        return el
+    })
+
+/** Several connectors (the real catalog), several models, several efforts. Clicking the model
+ *  word opens the picker. */
 export const AllRows: Story = {
     render: () => (
         <ChatModelMenu
@@ -59,18 +66,12 @@ export const AllRows: Story = {
         const canvas = within(canvasElement)
         const trigger = await canvas.findByText('opus 4.8')
         trigger.click()
-        await waitFor(() => {
-            expect(
-                document.querySelectorAll('.bismuth-popover-row').length,
-            ).toBeGreaterThan(0)
-        })
+        await findDialog(canvasElement)
     },
 }
 
-/** Only one model to pick from: the model row's own submenu would offer nothing to choose, so
- *  ChatModelMenu omits it — the same "no real choice, don't show a dead submenu" rule the provider
- *  and effort rows follow via their own `length > 1` gates. Effort still has a real choice, so its
- *  row stays. */
+/** Only one model to pick from: the picker still lists it, checked, so the panel never reads as
+ *  broken. */
 export const OneModel: Story = {
     render: () => (
         <ChatModelMenu
@@ -87,17 +88,16 @@ export const OneModel: Story = {
         const canvas = within(canvasElement)
         const trigger = await canvas.findByText('opus 4.8')
         trigger.click()
-        await waitFor(() => {
-            expect(
-                document.querySelectorAll('.bismuth-popover-row').length,
-            ).toBeGreaterThan(0)
-        })
-        expect(document.body.textContent).not.toContain('model')
+        await findDialog(canvasElement)
+        // a single model is still listed — the panel always shows the connector's own models
+        expect(canvasElement.ownerDocument.body.textContent).toContain(
+            'Opus 4.8',
+        )
     },
 }
 
-/** The menu OPEN, via play() — the submenu chrome (rows, the current-value `detail`, the `Check`
- *  icon on the active row) needs to actually render for a visual check to see it. */
+/** The picker OPEN, via play() — the check icon on the current model and the effort row need to
+ *  actually render for a visual check to see them. */
 export const MenuOpen: Story = {
     render: () => (
         <ChatModelMenu
@@ -114,22 +114,12 @@ export const MenuOpen: Story = {
         const canvas = within(canvasElement)
         const trigger = await canvas.findByText('opus 4.8')
         trigger.click()
-        await waitFor(() => {
-            expect(
-                document.querySelectorAll('.bismuth-popover-row').length,
-            ).toBeGreaterThan(0)
-        })
-        // The three top-level rows this session's choices earn.
-        expect(document.body.textContent).toContain('provider')
-        expect(document.body.textContent).toContain('model')
-        expect(document.body.textContent).toContain('effort')
-        // Open the model row's submenu too, so its current-value `Check` icon lands in the shot.
-        const modelRow = within(document.body).getByText('model')
-        modelRow.click()
-        await waitFor(() => {
-            expect(
-                document.querySelectorAll('.bismuth-popover').length,
-            ).toBeGreaterThan(1)
-        })
+        await findDialog(canvasElement)
+        // connectors left, the current model checked on the right, effort below it
+        const picker = within(await findDialog(canvasElement))
+        // header subtitle + the connector's own row
+        expect(picker.getAllByText('claude code').length).toBe(2)
+        expect(picker.getByText('effort')).not.toBeNull()
+        expect(picker.getByText('Sonnet 4.5')).not.toBeNull()
     },
 }

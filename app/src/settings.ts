@@ -138,6 +138,14 @@ export interface Settings {
     chat: {
         provider: string // default provider for NEW chats: "claude" | "opencode"
     }
+    localModel: {
+        // Run chats on a local OpenAI/Anthropic-compatible server (LM Studio, Ollama…) through the
+        // existing connectors — see core/src/agentBackends/localModel.ts.
+        enabled: boolean
+        url: string // base URL without /v1, e.g. http://localhost:1234 (LM Studio), :11434 (Ollama)
+        model: string // "" = the first model the server lists
+        apiKey: string // bearer token; most local servers ignore it
+    }
     mcp: {
         // Additional agent CLIs (besides Claude Code, which always auto-registers) to also register
         // Bismuth's MCP server with, e.g. ["codex", "gemini"] — see core/src/agentBackends/mcpRegistrars.ts.

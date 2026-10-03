@@ -62,6 +62,10 @@ import {
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import type { ChatBackend, ChatTurnContext } from '../backends'
 import { readCodexOptIns } from '../../settings'
+import {
+    localUnreachableMessage,
+    resolveLocalSpawn,
+} from '../../agentBackends/localModelProbe'
 import { writeAgentsMdBlock } from '../../agentBackends/agentsMd'
 import { writeCodexHooksFiles } from '../../agentBackends/codexHooks'
 import { titleFromPrompt } from '../titleFromPrompt'
@@ -147,7 +151,22 @@ function blankManifest(model: string): ChatManifest {
     }
 }
 
-function buildCodexEnv(): Record<string, string> {
+/** codex reports, as an `error` item, that it has no metadata for any model outside its own catalog
+ *  ("Model metadata for `qwen3` not found. Defaulting to fallback metadata…") — which is every local
+ *  model. It is a warning (the turn goes on and completes), so a local turn must not surface it as an
+ *  error or end flagged `isError`. */
+export function isModelMetadataWarning(frame: ChatFrame): boolean {
+    return (
+        frame.type === 'error' &&
+        /^Model metadata for .+ not found/.test(frame.message)
+    )
+}
+
+/** `localEnv` is the local-model spawn env (`BISMUTH_LOCAL_MODEL_KEY` for the custom provider's
+ *  `env_key`) — absent when the vault's `localModel` setting is off. */
+export function buildCodexEnv(
+    localEnv?: Record<string, string>,
+): Record<string, string> {
     // claudeSpawnEnv's name is a historical artifact (see core/src/claudeWhich.ts) — it's a general
     // "spawn env for a CLI that needs Keychain/PATH access" builder, already reused unmodified by
     // ../opencode.ts and ../acp/driver.ts for their own (non-Claude) child processes.
@@ -156,7 +175,10 @@ function buildCodexEnv(): Record<string, string> {
     // drives for Claude) — stamps BISMUTH_AGENT_CHANNEL so a `bismuth` invocation from this codex
     // process's own Bash-equivalent tool is gated by core/src/visibilityCliGate.ts rather than running
     // as the vault owner's own hand (the unstamped default).
-    return claudeSpawnEnv(process.env, 'chat') as Record<string, string>
+    return {
+        ...(claudeSpawnEnv(process.env, 'chat') as Record<string, string>),
+        ...localEnv,
+    }
 }
 
 interface CodexExecArgsInput {
@@ -166,6 +188,9 @@ interface CodexExecArgsInput {
     effort?: ModelReasoningEffort
     threadId: string | null
     imagePaths: string[]
+    /** Local-model provider `--config` overrides (agentBackends/localModel.ts), inserted right after
+     *  `--skip-git-repo-check`. Absent = the user's own codex config decides. */
+    localArgs?: string[]
 }
 
 /** Build `codex exec`'s argv. Flag choice/order mirrors the (now-removed) official SDK's own
@@ -177,12 +202,13 @@ interface CodexExecArgsInput {
  *  directly to execve (no shell involved), so none of this needs quoting; the prompt is written to
  *  the child's stdin instead (see runTurn), matching that same verified SDK behavior (it always
  *  piped stdin, resume or not, rather than ever passing the prompt as a CLI argument). */
-function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
+export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     const args: string[] = ['exec', a.jsonFlag]
     if (a.model) args.push('--model', a.model)
     args.push('--sandbox', 'workspace-write')
     args.push('--cd', a.cwd)
     args.push('--skip-git-repo-check')
+    if (a.localArgs) args.push(...a.localArgs)
     if (a.effort) args.push('--config', `model_reasoning_effort="${a.effort}"`)
     // `codex exec` has no TTY to prompt on anyway (there is no session/request_permission-shaped
     // event in the ThreadEvent union) — explicit for determinism, matching opencode.ts's `--auto`
@@ -331,15 +357,41 @@ async function runTurn(
     // reused id can never diff against stale state from an earlier turn.
     resetCodexTurnState(s.translateState)
 
+    // Local model (docs/chat/local-models.md): read per turn, so a settings change applies on the
+    // next turn. Down / nothing loaded ends the turn with an error, never a silent cloud fallback.
+    const resolved = await resolveLocalSpawn('codex', s.cwd, s.model)
+    if (sessions.get(s.id) !== s) return // closed while the server was being probed
+    if (resolved.kind === 'unreachable') {
+        emit(s, {
+            type: 'error',
+            code: 'local-model-unreachable',
+            binary: 'codex',
+            message: localUnreachableMessage(resolved.url),
+        })
+        emit(s, { type: 'result', isError: true, numTurns: 1, costUsd: null })
+        emit(s, { type: 'done' })
+        s.turnActive = false
+        s.lastActivityAt = Date.now()
+        const next = s.queue.shift()
+        if (next) void runTurn(s, next.text, next.images)
+        return
+    }
+    const local = resolved.kind === 'ready' ? resolved.local : undefined
+    // Show the model in the header without writing it to s.model: if the setting is later turned off,
+    // a remembered local id would be sent to the cloud account.
+    if (local && !s.model)
+        emit(s, { type: 'manifest', manifest: blankManifest(local.model) })
+
     const { paths, cleanup } = materializeImages(images)
     const jsonFlag = useFallbackFlag ? fallbackJsonFlag(s.jsonFlag) : s.jsonFlag
     const args = buildCodexExecArgs({
         jsonFlag,
         cwd: s.cwd,
-        model: s.model,
+        model: local ? local.model : s.model,
         effort: s.effort,
         threadId: s.threadId,
         imagePaths: paths,
+        localArgs: local?.args,
     })
 
     let proc: ReturnType<typeof Bun.spawn>
@@ -349,7 +401,7 @@ async function runTurn(
             stdin: 'pipe',
             stdout: 'pipe',
             stderr: 'pipe',
-            env: buildCodexEnv(),
+            env: buildCodexEnv(local?.env),
         })
     } catch (e) {
         cleanup()
@@ -396,6 +448,7 @@ async function runTurn(
                     ev,
                     s.translateState,
                 )) {
+                    if (local && isModelMetadataWarning(frame)) continue
                     if (frame.type === 'error') sawErrorFrame = true
                     emit(s, frame)
                 }

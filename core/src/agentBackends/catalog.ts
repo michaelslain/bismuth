@@ -19,7 +19,7 @@
  *  "codex" drives OpenAI's own `codex` binary directly (chatProviders/codex/, a Bun.spawn subprocess
  *  driver, deliberately not the `@openai/codex-sdk` npm package — see that driver's header) —
  *  distinct from "codex-acp" below, which bridges the SAME CLI through a third-party ACP adapter.
- *  The last six are ACP (Agent Client Protocol) agents — one hand-rolled JSON-RPC driver
+ *  The last seven are ACP (Agent Client Protocol) agents — one hand-rolled JSON-RPC driver
  *  (chatProviders/acp/driver.ts) covers all of them; see chatProviders/acp/agents.ts for exactly
  *  what's verified vs guessed per CLI. */
 export const BACKEND_IDS = [
@@ -30,6 +30,7 @@ export const BACKEND_IDS = [
     'gemini',
     'goose',
     'openclaw',
+    'hermes',
     'claude-code-acp',
     'codex-acp',
 ] as const
@@ -190,6 +191,15 @@ export interface BackendCapabilities {
     selfSandboxes: boolean
     mcp: McpRegistrationMode
     memory: MemoryInjectionMode
+    /**
+     * Can this backend's chat run against the vault's `localModel` server (any OpenAI/Anthropic-
+     * compatible local server — LM Studio, Ollama, …) through spawn-time env/argv alone, never by
+     * editing the CLI's own config? The mapping itself lives in `./localModel.ts`'s `localSpawnFor`;
+     * this flag is the claim that it exists. `true` for claude (Anthropic `/v1/messages`), codex
+     * (`/v1/responses` via an inline `--config` provider), opencode (`OPENCODE_CONFIG_CONTENT`) and
+     * goose (its `openai` provider via env); `false` for every other entry.
+     */
+    localModel: boolean
 }
 
 /** A backend's static identity + capabilities. Effectful wiring lives in chatProviders/index.ts, mcpRegistrars.ts and doctor.ts. */
@@ -262,6 +272,7 @@ const CLAUDE: BackendDescriptor = {
         selfSandboxes: true,
         mcp: 'cli',
         memory: 'hooks',
+        localModel: true,
     },
 }
 
@@ -386,6 +397,7 @@ const OPENCODE: BackendDescriptor = {
         // the daemon's spawn-fixed system-prompt append. Run mode still has no such hook and stays
         // MCP-tool-only for memory.
         memory: 'systemPrompt',
+        localModel: true,
     },
 }
 
@@ -490,6 +502,7 @@ const CODEX: BackendDescriptor = {
         selfSandboxes: true,
         mcp: 'cli',
         memory: 'agentsMd',
+        localModel: true,
     },
 }
 
@@ -563,6 +576,8 @@ const ACP_SHARED_CAPABILITIES: BackendCapabilities = {
     selfSandboxes: false,
     mcp: 'cli',
     memory: 'mcpOnly',
+    // goose overrides to true (its `openai` provider reads OPENAI_HOST/GOOSE_MODEL from env).
+    localModel: false,
 }
 
 /** Cline — native ACP support (`cline --acp`), verified directly from the compiled binary. */
@@ -594,7 +609,7 @@ const GOOSE: BackendDescriptor = {
     label: 'Goose',
     binary: 'goose',
     installHint: 'Install Goose (goose-docs.ai) to use this provider.',
-    capabilities: ACP_SHARED_CAPABILITIES,
+    capabilities: { ...ACP_SHARED_CAPABILITIES, localModel: true },
 }
 
 /** OpenClaw — `openclaw acp`. Confirmed identical wire format to Zed's ACP (OpenClaw's own docs:
@@ -620,6 +635,22 @@ const OPENCLAW: BackendDescriptor = {
     installHint:
         'Install OpenClaw to use this provider — it runs against your own configured Gateway/model.',
     capabilities: { ...ACP_SHARED_CAPABILITIES, mcp: 'none' },
+}
+
+/** Hermes Agent (Nous Research) — native ACP via `hermes acp` (docs:
+ *  hermes-agent.nousresearch.com/docs/user-guide/features/acp). Per those docs it reuses the user's
+ *  `~/.hermes/config.yaml` (model, provider, credentials), accepts `session/new.mcpServers`, and its
+ *  sessions are resumable — the shared ACP profile below. NOT verified against a live binary: hermes
+ *  is not installed on the machine this entry was authored on, so it rests on the docs alone.
+ *  `localModel` stays false (shared default): a spawn-time env override for a custom base URL that
+ *  leaves `~/.hermes` untouched is unconfirmed. */
+const HERMES: BackendDescriptor = {
+    id: 'hermes',
+    label: 'Hermes Agent',
+    binary: 'hermes',
+    installHint:
+        'Install Hermes Agent (hermes-agent.nousresearch.com) with its ACP extra — Bismuth spawns `hermes acp` automatically when you pick this provider.',
+    capabilities: { ...ACP_SHARED_CAPABILITIES },
 }
 
 /** Claude Code via Zed's `@zed-industries/claude-code-acp` adapter — an ADAPTER, not native ACP
@@ -667,6 +698,7 @@ export const BACKENDS: Record<BackendId, BackendDescriptor> = {
     gemini: GEMINI,
     goose: GOOSE,
     openclaw: OPENCLAW,
+    hermes: HERMES,
     'claude-code-acp': CLAUDE_CODE_ACP,
     'codex-acp': CODEX_ACP,
 }

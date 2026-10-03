@@ -10,19 +10,17 @@
 //     ancestor selectors in ChatControls.module.css overriding the shared picker chrome; Config and
 //     Actions render identically either way.
 //
-// The auth popover (ChatAuthPanel) is anchored inside `actions` in both shapes — this file owns
-// only the ANCHOR + the toggle pill/button, never the popover body. History is not anchored here
-// at all: ChatSessionBody.tsx opens it as a dialog over the chat (ChatHistoryModal), so this file
-// keeps only the "history" toggle button.
-import { createSignal, Show, type Component } from 'solid-js'
+// opencode credentials are managed inside ChatModelPicker (opened from the model word), so the
+// row carries no auth pill. History is not anchored here at all: ChatSessionBody.tsx opens it as a
+// dialog over the chat (ChatHistoryModal), so this file keeps only the "history" toggle button.
+import { Show, type Component } from 'solid-js'
 import styles from './ChatControls.module.css'
 import type { ChatSession } from './chatSession'
 import Select from '../ui/Select'
-import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import Text from '../ui/Text'
 import ChatModelMenu from './ChatModelMenu'
-import { opencodeAuthSummary, providerCan, sanitizeChatProvider } from '../chatProvider'
+import { providerCan, sanitizeChatProvider } from '../chatProvider'
 import { PERMISSION_MODE_OPTIONS } from '../chatPermissionMode'
 import {
     browserStorage,
@@ -32,7 +30,6 @@ import {
     readProviderChoice,
 } from './chatSessionPrefs'
 import { settings } from '../settings'
-import ChatAuthPanel from './ChatAuthPanel'
 
 /** The members the controls row reads off a session — ChatModelMenu, Config and Actions take this
  *  rather than the whole `ChatSession`, so the no-session row builds only what it renders. */
@@ -45,7 +42,6 @@ export type ChatControlsView = Pick<
     | 'effortOptions'
     | 'effortValue'
     | 'permMode'
-    | 'authProviders'
     | 'switchProvider'
     | 'switchModel'
     | 'switchEffort'
@@ -140,43 +136,14 @@ const Config: Component<{ session: ChatControlsView }> = props => {
     )
 }
 
-/** The auth pill + history + new-chat actions, with their two popovers anchored here. Wrapped in
- *  ONE `.actions` cluster — a single child of `.row` — so the three sit `--sp-4` apart with NO `//`
+/** The history + new-chat actions. Wrapped in
+ *  ONE `.actions` cluster — a single child of `.row` — so they sit `--sp-4` apart with NO `//`
  *  between them: brackets already separate adjacent commands, and `//` is reserved for separating
  *  readout GROUPS (Acceptance 7: "opus 4.8 // bypass // [history] [new chat]" — exactly two `//`,
  *  none inside the actions cluster itself). */
 const Actions: Component<{ session: ChatControlsView }> = props => {
-    const [authOpen, setAuthOpen] = createSignal(false)
     return (
         <div class={styles.actions}>
-            {/* Text-only, like every other control in the row (Acceptance: "every control a
-                lowercase text label") — the KeyRound glyph that used to sit in front of the summary
-                is dropped; the summary text itself is the app's own copy (e.g. "signed out"), left
-                as returned rather than force-lowercased. `danger` (not a hand-rolled `.auth-out`
-                class) carries the signed-out tone — the same orthogonal prop every other danger
-                control in the app uses. */}
-            <Show when={props.session.provider() === 'opencode'}>
-                <div class={styles['auth-anchor']} data-chat-auth-anchor>
-                    <TextButton
-                        variant={authOpen() ? 'selected' : 'unselected'}
-                        danger={
-                            opencodeAuthSummary(props.session.authProviders())
-                                .signedIn === false
-                        }
-                        data-testid="chat-auth"
-                        title="opencode credentials"
-                        onClick={() => setAuthOpen(v => !v)}
-                    >
-                        {opencodeAuthSummary(props.session.authProviders()).label}
-                    </TextButton>
-                    <Show when={authOpen()}>
-                        <ChatAuthPanel
-                            providers={props.session.authProviders()}
-                            onClose={() => setAuthOpen(false)}
-                        />
-                    </Show>
-                </div>
-            </Show>
             {/* NEVER DROPPED — a row with no way to reach past chats or start a new one is a
                 broken one, same reasoning as "New chat" below. The history itself is a dialog
                 ChatSessionBody opens over the chat (ChatHistoryModal), so this is just the
@@ -252,7 +219,6 @@ function buildDisabledSession(chatId?: string): ChatControlsView {
         effortOptions: () => [],
         effortValue: () => readLastEffort(storage),
         permMode: () => readLastMode(storage),
-        authProviders: () => null,
         switchProvider: () => {},
         switchModel: () => {},
         switchEffort: () => {},

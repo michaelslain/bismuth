@@ -174,6 +174,18 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         supportsSessionMcpServers: false,
     },
     {
+        // Hermes Agent (Nous Research): `hermes acp`. DOC-CONFIRMED only
+        // (hermes-agent.nousresearch.com/docs/user-guide/features/acp): the `acp` subcommand, that it
+        // reuses ~/.hermes/config.yaml, that session/new.mcpServers is accepted, and that sessions are
+        // resumable. UNVERIFIED against a live binary — hermes is not installed on the machine this
+        // entry was written on, so the handshake, model-shape (old vs new) and any quirk of its
+        // session/new are unobserved.
+        id: 'hermes',
+        label: 'Hermes Agent',
+        binary: 'hermes',
+        args: ['acp'],
+    },
+    {
         // ADAPTER, not a native agent: this package bridges Claude Code (via Anthropic's own Claude
         // Agent SDK, per its README) onto ACP. Not installed as a global binary by default — spawned
         // on-demand via npx, matching how Zed's own agent_servers config invokes it. Pinned to

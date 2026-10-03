@@ -77,6 +77,13 @@ import {
     type DenyEntry,
 } from '../../visibility'
 import { can } from '../../agentBackends/catalog'
+import { LOCAL_PROVIDER_ID } from '../../agentBackends/localModel'
+import {
+    localUnreachableMessage,
+    resolveLocalSpawn,
+    type ResolvedLocal,
+} from '../../agentBackends/localModelProbe'
+import type { OpencodeClient } from '@opencode-ai/sdk'
 import {
     checkSandboxWrapperAvailability,
     describeSandboxWrapperUnavailable,
@@ -120,8 +127,13 @@ interface OpencodeSession {
     /** opencode's durable session id (ses_…), learned from server.session.create()/the first run's
      *  events; preset when resuming. `-s`/the server session id continues it on every later turn. */
     sessionId: string | null
-    /** The `provider/model` the user picked in the header (set_model); rides every turn. */
+    /** The `provider/model` the user picked in the header (set_model); rides every turn. With the
+     *  local model on and no pick, defaults to `local/<model>` (the server ignores the inline
+     *  config's `model` key until a turn names one — see backendEnv.ts's opencode note). */
     model?: string
+    /** The local-model env this session was opened under (null = off). Server mode carries it on the
+     *  shared server; a RUN-mode turn (restricted vault / no `serve`) spawns with it directly. */
+    localEnv: Record<string, string> | null
     bin: string
     /** Decided once at session creation — see top-of-file note. */
     mode: 'server' | 'run'
@@ -179,11 +191,43 @@ export function sessionCount(): number {
  * operating directory must be THE SAME directory, or a deny list is enforcement theater — it would
  * faithfully deny paths under a vault the agent was never even operating in.
  */
-function opencodeSpawnEnv(cwd: string): Record<string, string> {
-    return { ...claudeSpawnEnv(process.env, 'chat'), PWD: cwd } as Record<
-        string,
-        string
-    >
+function opencodeSpawnEnv(
+    cwd: string,
+    extra?: Record<string, string> | null,
+): Record<string, string> {
+    return {
+        ...claudeSpawnEnv(process.env, 'chat'),
+        PWD: cwd,
+        ...(extra ?? {}),
+    } as Record<string, string>
+}
+
+/** A new session's model under the local setting: the user's pick when there is one, else
+ *  `local/<model>`. Pure. */
+export function localSessionModel(
+    picked: string | undefined,
+    local: { model: string } | null,
+): string | undefined {
+    return picked ?? (local ? `${LOCAL_PROVIDER_ID}/${local.model}` : undefined)
+}
+
+/** Resolve the local-model setting for a session open. `ok:false` means the setting is on but the
+ *  server is down / lists nothing — an error frame has already gone to `sink`, and the session must
+ *  not open (never a silent fall back to opencode's own account). */
+export async function resolveOpencodeLocal(
+    cwd: string,
+    sink: ChatSink,
+): Promise<{ ok: true; local: ResolvedLocal | null } | { ok: false }> {
+    const res = await resolveLocalSpawn('opencode', cwd)
+    if (res.kind === 'unreachable') {
+        sink({
+            type: 'error',
+            code: 'spawn',
+            message: localUnreachableMessage(res.url),
+        })
+        return { ok: false }
+    }
+    return { ok: true, local: res.kind === 'ready' ? res.local : null }
 }
 
 /** One opencode CLI invocation → stdout text (stderr ignored). Every RUN-mode open-time discovery
@@ -215,6 +259,9 @@ async function runCliText(
 let modelsCache: OpencodeModelEntry[] | null = null
 let commandsCache: OpencodeCommandEntry[] | null = null
 let openInfoInFlight: Promise<void> | null = null
+/** The inline-config key the cached model list was fetched under. A local-model change adds,
+ *  removes or renames the `local/*` models, so the cache is dropped when it moves. */
+let openInfoKey: string | null = null
 function ensureOpenInfo(
     bin: string,
     cwd: string,
@@ -312,16 +359,51 @@ function emitOpenFrames(
     // id namespace, so it can never be the daemon's — no membership test to make.
     if (s.sessionId)
         emit(s, { type: 'session', sessionId: s.sessionId, origin: 'user' })
-    void ensureOpenInfo(s.bin, s.cwd, server).then(async () => {
-        if (sessions.get(s.id) !== s) return
-        if (!hadCommands && commandsCache?.length) emit(s, manifestFrame(s))
-        const models = withZenFreeRotate(modelsCache ?? [])
-        if (models.length) emit(s, { type: 'models', models })
-        const providers = parseOpencodeAuthList(
-            await runCliText(s.bin, s.cwd, ['auth', 'list']).catch(() => ''),
-        )
-        if (sessions.get(s.id) === s) emit(s, { type: 'auth', providers })
-    })
+    void emitModelsAndAuth(s, server, hadCommands)
+}
+
+/** The `models` + `auth` header frames for one session (the manifest again when the command registry
+ *  only just landed). Shared by session open and by a provider connect, which re-emits both to every
+ *  live session so a freshly connected provider's models appear without reopening the chat. */
+async function emitModelsAndAuth(
+    s: OpencodeSession,
+    server: OpencodeServerHandle | null,
+    hadCommands = true,
+): Promise<void> {
+    await ensureOpenInfo(s.bin, s.cwd, server)
+    if (sessions.get(s.id) !== s) return
+    if (!hadCommands && commandsCache?.length) emit(s, manifestFrame(s))
+    const models = withZenFreeRotate(modelsCache ?? [])
+    if (models.length) emit(s, { type: 'models', models })
+    const providers = parseOpencodeAuthList(
+        await runCliText(s.bin, s.cwd, ['auth', 'list']).catch(() => ''),
+    )
+    if (sessions.get(s.id) === s) emit(s, { type: 'auth', providers })
+}
+
+/** The shared server's typed client for the provider-connect routes, or null when opencode is not
+ *  installed or its server will not start. */
+export async function opencodeClient(): Promise<OpencodeClient | null> {
+    const bin = whichBinary('opencode')
+    if (!bin) return null
+    const server = await ensureOpencodeServer(bin).catch(() => null)
+    return server?.client ?? null
+}
+
+/** After a provider connect: refetch the model list once and re-emit `models` + `auth` to every live
+ *  opencode session. */
+export async function refreshOpencodeFrames(): Promise<void> {
+    modelsCache = null
+    openInfoInFlight = null
+    await Promise.all(
+        [...sessions.values()].map(async s => {
+            const server =
+                s.mode === 'server'
+                    ? await ensureOpencodeServer(s.bin).catch(() => null)
+                    : null
+            await emitModelsAndAuth(s, server)
+        }),
+    )
 }
 
 /** Human-facing refusal text for a restricted vault opencode can't (or can no longer) protect —
@@ -432,14 +514,30 @@ async function getOrCreateSession(
         }
     }
 
+    // Local model (the `localModel` setting): resolved fresh at every open. Server down / nothing
+    // loaded -> an error frame and no session, never a silent run on opencode's own account.
+    const resolved = await resolveOpencodeLocal(cwd, sink)
+    if (!resolved.ok) return null
+    const local = resolved.local
+    const localKey = local?.env.OPENCODE_CONFIG_CONTENT ?? null
+    if (localKey !== openInfoKey) {
+        openInfoKey = localKey
+        modelsCache = null
+        openInfoInFlight = null
+    }
+
+    // `local` rides the shared server's spawn env; a different config than the live server's replaces
+    // it (after any running turn settles — ensureOpencodeServer waits).
     const server = restricted
         ? null
-        : await ensureOpencodeServer(bin).catch(() => null)
+        : await ensureOpencodeServer(bin, local ?? null).catch(() => null)
     const session: OpencodeSession = {
         id: chatId,
         cwd,
         sink,
         sessionId: resume ?? null,
+        model: localSessionModel(undefined, local),
+        localEnv: local?.env ?? null,
         bin,
         mode: server ? 'server' : 'run',
         memoryDir,
@@ -757,7 +855,7 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
             cwd: s.cwd,
             stdout: 'pipe',
             stderr: 'pipe',
-            env: opencodeSpawnEnv(s.cwd),
+            env: opencodeSpawnEnv(s.cwd, s.localEnv),
         })
     } catch (e) {
         s.turnActive = false
@@ -1103,8 +1201,21 @@ export function respondPermission(
 export function setModel(chatId: string, model: string): void {
     const s = sessions.get(chatId)
     if (!s) return
-    if (!/^[\w.-]+\/[\w.:-]+$/.test(model)) return
+    if (!acceptsModelPick(s.localEnv, model)) return
     s.model = model
+}
+
+/** Whether `setModel` takes `model`. The id is `provider/model`, and the model part may itself hold
+ *  `/` (LM Studio's `local/qwen/qwen3-coder-30b`) — the first `/` is the provider split. While the
+ *  vault's local model is on (`localEnv` set) the chat is PINNED to the local server: the app re-applies
+ *  the last pick on a fresh chat, and a remembered cloud id would otherwise run it on the cloud account. */
+export function acceptsModelPick(
+    localEnv: Record<string, string> | null,
+    model: string,
+): boolean {
+    if (!/^[\w.-]+\/[\w.:/@-]+$/.test(model)) return false
+    if (localEnv && !model.startsWith(`${LOCAL_PROVIDER_ID}/`)) return false
+    return true
 }
 
 export function closeChat(chatId: string): void {

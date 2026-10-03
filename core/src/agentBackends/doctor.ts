@@ -50,6 +50,7 @@ export interface BackendReport {
         daemon: boolean
         mcp: BackendCapabilities['mcp']
         memory: BackendCapabilities['memory']
+        localModel: boolean
     }
     installHint?: string
 }
@@ -66,6 +67,7 @@ export function surfaceSummary(
         daemon: c.daemon,
         mcp: c.mcp,
         memory: c.memory,
+        localModel: c.localModel,
     }
 }
 

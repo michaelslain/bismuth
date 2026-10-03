@@ -13,10 +13,10 @@
    `<Select caretClass={styles['mode-caret']}>`) rather than a `:global(.ui-select-caret)` reach —
    `.mode-caret` below is a plain local class.
 
-   NO `:global()` REACH IN THIS FILE. The row's action controls (RowAction, the auth pill —
+   NO `:global()` REACH IN THIS FILE. The row's action controls (RowAction, the history/new-chat buttons —
    ChatControls.tsx) are `TextButton` (one-button migration) — every clickable command in this row
    is a real button-family control (`variant`/`danger` props), never a hand-styled `PlainButton`.
-   `.actions` below is a plain LOCAL layout class (gap only, no look) wrapping the auth pill +
+   `.actions` below is a plain LOCAL layout class (gap only, no look) wrapping
    history + new-chat into one cluster — see `.actions`' own comment for why. */
 
 .bar-item {
@@ -28,8 +28,7 @@
     max-width: 130px;
 }
 
-/* One cluster — a SINGLE child of `.row` — holding the auth pill (opencode only) + history +
-   new-chat. `.row > * + *::before` (below) puts exactly one `//` before this whole cluster,
+/* One cluster — a SINGLE child of `.row` — holding history + new-chat. `.row > * + *::before` (below) puts exactly one `//` before this whole cluster,
    separating it from the readout groups (model word, permission mode) that precede it; INSIDE the
    cluster, spacing carries the gap between the bracket buttons themselves — no `//` between two
    adjacent commands (Acceptance 7 / the ruling table: "brackets already separate them").
@@ -47,14 +46,6 @@
 }
 .actions > * + * {
     margin-left: var(--sp-4);
-}
-.auth-anchor {
-    position: relative;
-    display: inline-flex;
-    /* `align-items: center`, not the flex default `stretch` — the anchor is itself an `.actions`
-       flex ITEM. Without this it stretched to the cluster's full cross-axis height instead of
-       centring on the text baseline like its siblings. */
-    align-items: center;
 }
 
 /* ── The quiet row: faint ui-size mono, no boxes, no fill, no caret (Acceptance). Shared by the

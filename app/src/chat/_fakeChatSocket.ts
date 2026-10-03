@@ -24,7 +24,13 @@ import { forgetChatSession } from '../chatSessionStore'
 import { retainChatSessions } from './chatSessions'
 import type { ChatFrame } from '../../../core/src/chat'
 
-export function makeFakeChatSocketClass(frames: readonly ChatFrame[]) {
+/** A fixed script replayed on every connect, or one script per backend — the latter answers the
+ *  session's `{type:"open", provider}` with that provider's frames, so a story can switch connector
+ *  in the model picker and see THAT connector's models instead of the first one's. */
+export type FakeChatFrames =
+    readonly ChatFrame[] | ((provider: string) => readonly ChatFrame[])
+
+export function makeFakeChatSocketClass(frames: FakeChatFrames) {
     return class FakeChatSocket {
         static readonly CONNECTING = 0
         static readonly OPEN = 1
@@ -46,16 +52,34 @@ export function makeFakeChatSocketClass(frames: readonly ChatFrame[]) {
                 this.readyState = FakeChatSocket.OPEN
                 // The session's onopen sends `{type:"open"}`; a real backend then streams frames back.
                 this.onopen?.(new Event('open'))
-                for (const frame of frames) {
-                    this.onmessage?.({
-                        data: JSON.stringify(frame),
-                    } as unknown as MessageEvent)
-                }
+                if (typeof frames !== 'function') this.replay(frames)
             })
         }
 
-        send(..._args: unknown[]): void {
-            // Ignore everything the session sends: there is no backend on the other end.
+        private replay(script: readonly ChatFrame[]): void {
+            for (const frame of script) {
+                this.onmessage?.({
+                    data: JSON.stringify(frame),
+                } as unknown as MessageEvent)
+            }
+        }
+
+        send(...args: unknown[]): void {
+            // No backend on the other end. A per-provider script is the one exception: the session's
+            // `{type:"open", provider}` picks which script answers, as the real router would.
+            if (typeof frames !== 'function' || typeof args[0] !== 'string')
+                return
+            let msg: { type?: string; provider?: string }
+            try {
+                msg = JSON.parse(args[0])
+            } catch {
+                return
+            }
+            if (msg.type !== 'open') return
+            const script = frames(msg.provider ?? 'claude')
+            queueMicrotask(() => {
+                if (this.readyState === FakeChatSocket.OPEN) this.replay(script)
+            })
         }
 
         close(): void {
@@ -67,9 +91,7 @@ export function makeFakeChatSocketClass(frames: readonly ChatFrame[]) {
 }
 
 /** Installs the fake as `globalThis.WebSocket`; returns a restore function. */
-export function installFakeChatSocket(
-    frames: readonly ChatFrame[],
-): () => void {
+export function installFakeChatSocket(frames: FakeChatFrames): () => void {
     const original = globalThis.WebSocket
     globalThis.WebSocket = makeFakeChatSocketClass(
         frames,
@@ -85,7 +107,7 @@ export function installFakeChatSocket(
  *  a component body, before anything reads the session registry. */
 export function retainFakeChat(
     chatId: string,
-    frames: readonly ChatFrame[] = [],
+    frames: FakeChatFrames = [],
 ): void {
     const restore = installFakeChatSocket(frames)
     forgetChatSession(chatId)
