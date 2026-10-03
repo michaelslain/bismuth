@@ -92,9 +92,13 @@ function drawLines(f: GlyphFrame, t: number): void {
     const rowsDrawn = Math.floor(
         (LINE_STEPS + 1) * clamp01((t - REVEAL_MS * 0.5) / (REVEAL_MS * 0.4)),
     )
-    for (let r = LINE_TOP; r < LINE_TOP + rowsDrawn; r++)
-        for (let i = 0; i < AGENTS.length; i++)
-            putChar(f, lineCol(i, r), r, lineGlyph(i), 'faint')
+    for (let r = LINE_TOP; r < LINE_TOP + rowsDrawn; r++) {
+        // Every line has reached MCP_COL by the bottom row: one `|`, not a last-writer-wins glyph.
+        if (r === LINE_BOTTOM) putChar(f, MCP_COL, r, '|', 'faint')
+        else
+            for (let i = 0; i < AGENTS.length; i++)
+                putChar(f, lineCol(i, r), r, lineGlyph(i), 'faint')
+    }
 }
 
 function drawPackets(f: GlyphFrame, a: number): void {

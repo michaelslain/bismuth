@@ -19,11 +19,23 @@ describe('agentsScene', () => {
         const r = rows(agentsScene.revealMs)
         for (let i = 2; i <= 9; i++) expect(/^[ \\|/]*$/.test(r[i])).toBe(true)
         expect(r[9].replace(/ /g, '').length).toBeGreaterThanOrEqual(1)
+        expect(r[2].replace(/ /g, '').length).toBe(AGENTS.length)
+        for (const a of AGENTS) {
+            const s = r[1].indexOf(`[${a}]`)
+            expect(r[2].slice(s, s + a.length + 2).trim().length).toBe(1)
+        }
+        const first = [...r[9]].findIndex(ch => ch !== ' ')
+        expect(first).toBeGreaterThanOrEqual(r[10].indexOf('['))
+        expect(first).toBeLessThanOrEqual(r[10].indexOf(']'))
     })
     it('packets move', () => {
-        const a = rows(agentsScene.revealMs + 500).join('\n')
-        const b = rows(agentsScene.revealMs + 740).join('\n')
+        // the body only: row 1's agent names contain 'o' on their own
+        const body = (t: number) => {
+            const r = rows(t)
+            return [...r.slice(2, 10), ...r.slice(11, 13)].join('')
+        }
+        const a = body(agentsScene.revealMs + 500)
         expect(a).toContain('o')
-        expect(a).not.toBe(b)
+        expect(a).not.toBe(body(agentsScene.revealMs + 740))
     })
 })

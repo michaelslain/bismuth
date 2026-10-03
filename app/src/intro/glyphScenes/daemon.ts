@@ -29,13 +29,18 @@ export const DAEMON_LOG: readonly { verb: string; result: string }[] = [
 const COLS = 96
 const ROWS = 16
 const REVEAL_MS = 1200
-const LEFT = 12
 const PROMPT = '> bismuth daemon status'
 // the widest bracketed expression: 14 cells, the every-15-minutes one
 const EXPR_WIDTH = Math.max(...DAEMON_CRONS.map(cr => cr.expr.length)) + 2
 const JOB_WIDTH = 14
 const VERB_WIDTH = 16
 const BAR_CELLS = 10
+const CRON_WIDTH = EXPR_WIDTH + 2 + JOB_WIDTH + 2 + 1 + BAR_CELLS + 1
+const RESULT_WIDTH = Math.max(...DAEMON_LOG.map(l => l.result.length))
+const LOG_WIDTH = 5 + 2 + VERB_WIDTH + 2 + 3 + RESULT_WIDTH
+const CONTENT_WIDTH = Math.max(PROMPT.length, CRON_WIDTH, LOG_WIDTH)
+// centre the widest row the scene can draw in the hero, so the block sits mid-box
+const LEFT = Math.floor((COLS - CONTENT_WIDTH) / 2)
 const LOG_TOP = 7
 const LOG_LINES = 9
 /** Bar 0 advances one cell per step; every wrap (11 steps) the log gains a line. */
