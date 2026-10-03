@@ -13,3 +13,8 @@ export function gateDone(stale: number): { stale: number; finished: boolean } {
         ? { stale: stale - 1, finished: false }
         : { stale: 0, finished: true }
 }
+
+/** An `error` frame ended the turn with no `done`: nothing stale can still arrive. */
+export function gateError(): number {
+    return 0
+}

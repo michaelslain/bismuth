@@ -71,7 +71,7 @@ import { providerCan, sanitizeChatProvider } from '../chatProvider'
 import { restoreQueuedComposerState } from '../chatQueueRestore'
 import { lastChange } from '../serverVersion'
 import { vaultTree, refreshVaultTree } from '../treeStore'
-import { gateDone, gateStop } from './chatTurnGate'
+import { gateDone, gateError, gateStop } from './chatTurnGate'
 import { reconcilePermissionMode } from '../chatPermissionMode'
 import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from '../chatEffort'
 import {
@@ -550,6 +550,7 @@ export function createChatSession(chatId: string): ChatSession {
                 })
                 break
             case 'error':
+                staleDones = gateError() // an error ends the turn with no `done`; nothing stale can still arrive
                 setStreaming(false)
                 if (frame.code === 'no-claude') setSetupError('claude')
                 else if (frame.code === 'no-opencode') setSetupError('opencode')
