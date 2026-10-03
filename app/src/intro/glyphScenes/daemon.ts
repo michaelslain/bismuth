@@ -43,7 +43,7 @@ const CONTENT_WIDTH = Math.max(PROMPT.length, CRON_WIDTH, LOG_WIDTH)
 const LEFT = Math.floor((COLS - CONTENT_WIDTH) / 2)
 const LOG_TOP = 7
 const LOG_LINES = 9
-/** Bar 0 advances one cell per step; every wrap (11 steps) the log gains a line. */
+/** Bar 0 starts partly filled and advances one cell per step; every wrap (11 steps) the log gains a line. */
 const BAR_STEP_MS = 300
 const BAR_WRAP_MS = BAR_STEP_MS * (BAR_CELLS + 1)
 /** The other two crons hold still. */
@@ -110,7 +110,7 @@ export const daemonScene: GlyphScene = {
 
         const a = Math.max(0, t - REVEAL_MS)
         const fills = [
-            Math.floor(a / BAR_STEP_MS) % (BAR_CELLS + 1),
+            (3 + Math.floor(a / BAR_STEP_MS)) % (BAR_CELLS + 1),
             HELD_FILLS[1],
             HELD_FILLS[2],
         ]
@@ -118,11 +118,12 @@ export const daemonScene: GlyphScene = {
             if (t >= REVEAL_MS * (0.5 + 0.1 * i))
                 drawCron(out, 3 + i, i, fills[i])
 
-        // How many log lines exist: 3 from the reveal (80/90/100%), then one per bar wrap.
+        // How many log lines exist: the full block bursts in over the last 30% of the reveal
+        // (like `tail -f` catching up), then one more per bar wrap.
         let count = 0
-        for (let k = 0; k < 3; k++)
-            if (t >= REVEAL_MS * (0.8 + 0.1 * k)) count = k + 1
-        if (t >= REVEAL_MS) count = 3 + Math.floor(a / BAR_WRAP_MS)
+        for (let k = 0; k < LOG_LINES; k++)
+            if (t >= REVEAL_MS * (0.7 + (0.3 * k) / LOG_LINES)) count = k + 1
+        if (t >= REVEAL_MS) count = LOG_LINES + Math.floor(a / BAR_WRAP_MS)
         // Lines fill down from the top slot, then scroll once the 9 slots are full.
         const first = Math.max(0, count - LOG_LINES)
         for (let n = first; n < count; n++)

@@ -19,7 +19,7 @@ describe('beginScene', () => {
     })
     it('the wordmark is formed from t = 0', () => {
         expect(
-            text(0).slice(1, 10).join('').replace(/[^#@]/g, '').length,
+            text(0).slice(3, 12).join('').replace(/[^#@]/g, '').length,
         ).toBeGreaterThan(150)
     })
 })
