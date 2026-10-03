@@ -420,8 +420,9 @@ the accent. An outline appears only when it means something.
   button carries a collar or a width floor that would add slack outside its brackets.
 - **Toggles are brackets too:** a segmented control is a row of `[option]` buttons `--sp-4`
   apart; the on option is `selected` (accent + bold), the rest `unselected`. Icon-only tool
-  groups (the drawing dock, the embedded-graph icon groups) are the same bracket idiom, rendered
-  `[▣]` per option — there is no separate butted look any more.
+  groups (the drawing dock, the embedded-graph icon groups) are the same bracket idiom: the on
+  option draws `[▣]`, the off ones are bare glyphs holding their brackets' space, so the group
+  never changes width as the selection moves. There is no separate butted look.
 - **`accent` recolours a selected toggle** (a category's own colour).
 - **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
   confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
@@ -429,11 +430,15 @@ the accent. An outline appears only when it means something.
 - **Focus:** no outline or ring on any button or clickable card/chip, on any focus — mouse or
   keyboard. Decided 2026-09-27: keyboard users lose the cue; focus is not drawn anywhere in this
   system.
-- **Icon button:** a separate register, no box — `[▣]`, the pixel icon set between generated
-  `[`/`]` bracket glyphs (same device as the text button's brackets, and hidden from the
-  accessible name the same way). Brackets rest at `--faint`; both brackets and glyph move to
-  `--accent` on hover; `selected` paints accent brackets and icon together. The
-  brackets are the edge, as on a text button: no collar and no width floor. **One bracket size:**
+- **Icon button — brackets mean "on":** a separate register, no box. A **standalone** icon button
+  (`normal`, `danger` included) is the bare pixel glyph with `--sp-1` of side room, `--accent` on
+  hover. Only a **`selected`** toggle member draws `[▣]` — generated `[`/`]` glyphs (same device
+  as the text button's brackets, hidden from the accessible name the same way) painted accent with
+  the icon. An **`unselected`** member lays its brackets out invisibly, so it occupies the same
+  width as when on. Text buttons (`[label]`) and icon-text buttons (`[▣ label]`) are a worded
+  command and keep their brackets in every state; the bare-vs-bracketed rule is icon-only.
+  Where brackets are drawn they are the edge, as on a text button: no collar and no width floor.
+  **One bracket size:**
   the brackets draw at the icon size (`--icon`, the `appearance.iconSize` setting), standalone or
   in a toolbar, so `[`, glyph and `]` share one scale. 24px tall outside a
   bar (WCAG 2.5.8 is met by the spacing exception, siblings being `--sp-4` apart); inside a view
@@ -448,8 +453,11 @@ the accent. An outline appears only when it means something.
     tab-rail actions and the mini-graph mode switcher (an `IconBar` inside a `ViewBar` slot) all
     draw 12px brackets and glyphs, 8px apart ink to ink, in one `ui/Band` (36px, 12px side
     padding). A plain icon button placed directly in a `ViewBar` keeps that bar's `--fs-ui` register.
-  - **Brackets are always drawn**, at rest included — decided 2026-09-27 over a bare-icon-at-rest
-    variant that showed them only on hover, focus and selection.
+  - **Brackets are drawn only when on** — reversed 2026-10-02 from 2026-09-27's "always drawn":
+    bracketed icon actions sat directly above the tab rail's bare tab icons as two idioms in one
+    column, so brackets now mean "on" app-wide — a selected icon button, the active tab, a
+    checked `[x]`. Rejected alongside: brackets on hover only (they flicker in and out under the
+    pointer) and a boxed "ghost cell" (breaks no-box).
 
 ### Chips
 - **Chip toggle:** no box (no border, no fill) — `[label]` bracket text in the same register as
@@ -457,7 +465,8 @@ the accent. An outline appears only when it means something.
   brackets + label to `--accent` or, with a `tone`, to that category's own hue.
 - **Segmented toggle:** a row of `[option]` buttons `--sp-4` apart, same bracket idiom; the on
   option is `selected` (accent + bold). Icon-only tool groups (the drawing dock) render each
-  option as a bracket icon button, `[▣]`, the same idiom rather than a separate look.
+  option as an icon button — `[▣]` for the on option, bare for the rest — the same idiom rather
+  than a separate look.
 - **On/off toggle row** (`ToggleRow`, settings-form checkboxes): a full `--row-h` row rendering
   `[x]` checked / `[ ]` unchecked (`BracketToggle`) — no box fill, just the bracket glyph flipping.
 
@@ -528,7 +537,10 @@ the accent. An outline appears only when it means something.
 
 ### Navigation
 - **ViewBar:** the single view header (see Layout). **Tab rail / top strip / sidebar:** `--fs-ui`
-  mono on `--rail`, rows at `--row-h`; the active tab carries the sheen rule.
+  mono on `--rail`, rows at `--row-h`. The rail's **active tab** is marked by accent `[`/`]` around
+  its icon plus accent text — the same "on" mark as a selected icon button — with no fill and no
+  edge bar; the brackets sit outside the icon's box, so the active icon stays on the column's axis,
+  and revealed names sit 0.6em off their icon on every row so they keep one column.
 - **Keybindings** (`Kbd`) are typed, never drawn: one run of mono text per chord at `--fs-micro`, in
   `--text-muted` (`--faint` inside a menu/palette row or under a control, via `muted`), no box, border
   or background. Glyphs glue and word keys take a space (`⌘K`, `⌘ shift 3`); alternatives join with

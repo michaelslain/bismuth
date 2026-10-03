@@ -74,14 +74,25 @@
   transition: background 0.12s ease, color 0.12s ease;
 }
 .tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
-/* Active tab: accent-soft fill + accent text, plus a 2px left bar marking the active row.
-   THE BAR IS A FLAT --accent, not --grad. It used to paint the wordmark's gradient, on the
-   reasoning that the gradient was the design vocabulary's one flourish and this was its second
-   use. In a 2px sliver a three-stop gradient cannot read AS a gradient — it reads as a bar whose
-   colour is slightly wrong, and it disagreed with the accent text and accent-soft fill on the very
-   same row. Removed on request; the flourish stays where it is legible, on the wordmark. */
-.tab-rail-row.active { background: var(--accent-soft); color: var(--accent); }
-.tab-rail-row.active::before { content: ""; position: absolute; left: -5px; top: 2px; bottom: 2px; width: 2px; background: var(--accent); }
+/* Active tab: accent text + accent BRACKETS around its icon (icon-brackets-on, 2026-10-02) — the
+   app's one "this is on" mark, the same `[▣]` a selected icon button draws. It replaced an
+   accent-soft fill + a 2px left bar: the rail's action buttons above sat bracketed while the tabs
+   below were bare, two idioms in one column; brackets now mean "on" everywhere.
+   The brackets are absolutely positioned OUTSIDE the icon's own box (the icon is their containing
+   block), so the active icon stays on the exact axis the inactive icons share — inline brackets
+   would widen the row's content and shove the glyph right. Same face, size, cap-height trim and
+   0.055em lift as Button.module.css's icon brackets, so the two read as one mark. */
+.tab-rail-row.active { color: var(--accent); }
+.tab-rail-row.active .tab-rail-icon { position: relative; }
+.tab-rail-row.active .tab-rail-icon::before,
+.tab-rail-row.active .tab-rail-icon::after {
+  position: absolute; top: 50%;
+  font-family: var(--ui-font-stack); font-size: var(--icon); line-height: 1;
+  text-box: trim-both cap alphabetic; translate: 0 calc(-50% - 0.055em);
+  color: var(--accent);
+}
+.tab-rail-row.active .tab-rail-icon::before { content: '[' / ''; right: calc(100% + 1px); }
+.tab-rail-row.active .tab-rail-icon::after { content: ']' / ''; left: calc(100% + 1px); }
 .tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
 .tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
 .tab-rail-row.active .tab-rail-icon { color: var(--accent); }
@@ -110,6 +121,11 @@
    module split. */
 [data-tab-rail]:hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
 [data-tab-rail][data-rail-pinned] .tab-rail-label { flex-grow: 1; visibility: visible; opacity: 1; transition: opacity 0.16s ease, visibility 0s; }
+/* Revealed labels sit 0.6em off their icon on EVERY row, so the active icon's `]` (drawn outside the
+   icon, see above) never touches its name and all names keep one column. Only when revealed: a
+   collapsed label is 0 wide, and a margin there would overflow the 46px rail. */
+[data-tab-rail]:hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
+[data-tab-rail][data-rail-pinned] .tab-rail-label { margin-left: 0.6em; }
 /* Restores the row's real gap the moment the rail is expanded — every row gets this, not just a
    hovered one, exactly like the label reveal above (an expanded rail is never short on width, so
    there is nothing left to protect by keeping this at 0). */
