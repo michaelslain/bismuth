@@ -341,35 +341,6 @@ function ChatStub(props: { tall?: boolean }) {
     )
 }
 
-/** A stub standing in for `chat/ChatHistoryPanel.tsx` when it has taken over the hub's chat
- *  region — a full-height list, never a sliver, which is exactly what `chatFills` exists to
- *  prove: without it this pane would render in the content-height box the resting composer gets
- *  instead of the column's full remaining height. */
-function HistoryStub() {
-    return (
-        <div
-            data-testid="chat-history-stub"
-            style={{
-                display: 'flex',
-                'flex-direction': 'column',
-                height: '100%',
-                'min-height': '0',
-                border: 'var(--rule)',
-                'border-radius': 'var(--r-0)',
-                padding: 'var(--sp-4)',
-                overflow: 'hidden',
-                gap: 'var(--sp-3)',
-            }}
-        >
-            <Text size="ui" tone="muted">
-                history
-            </Text>
-            <Text size="ui">morning brief — 2h ago</Text>
-            <Text size="ui">inbox review — yesterday</Text>
-        </div>
-    )
-}
-
 function pageProps(
     mood: DaemonMood,
     status: string,
@@ -806,33 +777,6 @@ export const ConversingNarrow: Story = {
             stacked: true,
             conversing: true,
         })
-    },
-}
-
-/** Task 4's chat-history takeover: the hub's chat slot holds a full-region pane instead of the
- *  composer, and `chatFills` gives it the column's full remaining height. */
-export const HistoryOpen: Story = {
-    render: () => (
-        <Frame>
-            <DaemonPage
-                {...pageProps('idle', 'watching // last: dream 4m ago', {
-                    chat: <HistoryStub />,
-                    chatFills: true,
-                })}
-            />
-        </Frame>
-    ),
-    play: async ({ canvasElement }) => {
-        await assertLayout(canvasElement, { chat: true, compact: true })
-        const hub = canvasElement.querySelector(
-            '[data-testid="daemon-page-hub"]',
-        )!
-        const chat = canvasElement.querySelector(
-            '[data-testid="daemon-page-chat"]',
-        )!
-        await expect(
-            rect(chat).height / rect(hub).height,
-        ).toBeGreaterThanOrEqual(0.5)
     },
 }
 

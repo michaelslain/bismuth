@@ -208,37 +208,6 @@ export const Conversing: Story = {
     },
 }
 
-/** A full-height pane (chat history) with NO conversation: there is no transcript to carry the
- *  face, so it keeps the one-line compact header — small glyph, bare name beside it. */
-export const HistoryOpenNoConversation: Story = {
-    render: () => (
-        <Frame>
-            <DaemonHub
-                name="daemon"
-                blurb="keeps a living model of the vault"
-                mood="idle"
-                enabled
-                conversing={false}
-                chatFills
-                chat={<ChatStub tall />}
-                onEditIdentity={noop}
-            />
-        </Frame>
-    ),
-    play: async ({ canvasElement }) => {
-        const face = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="daemon-face"]',
-        )!
-        await expect(face).not.toBeNull()
-        await expect(parseFloat(getComputedStyle(face).fontSize)).toBeLessThan(
-            30,
-        )
-        await expect(
-            within(canvasElement).getByText('daemon'),
-        ).toBeInTheDocument()
-    },
-}
-
 export const NoBlurb: Story = {
     render: () => (
         <Frame tall>

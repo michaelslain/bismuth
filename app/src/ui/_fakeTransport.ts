@@ -19,7 +19,13 @@
 // An unmapped GET throws
 // instead of guessing a shape, since a silently-wrong response is worse than a loud "add a case
 // here" error.
-import type { Transport } from '../api'
+import type {
+    ChatScope,
+    ChatSearchHit,
+    ChatSessionInfo,
+    Transport,
+} from '../api'
+import type { ChatFrame } from '../../../core/src/chat'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
 import {
@@ -33,12 +39,14 @@ import {
     serverVersion,
     type StartDeps,
 } from '../serverVersion'
-import {
-    sampleDaemonSnapshot,
-    sampleActivity,
-} from './_daemonFixtures'
+import { sampleDaemonSnapshot, sampleActivity } from './_daemonFixtures'
 
 export interface FakeTransportSeed {
+    /** GET /chat/sessions, GET /chat/session-messages, POST /chat/search — the chat history panel's
+     *  past conversations, each with the frames a resume replays into the transcript. Unseeded: no
+     *  past conversations, an empty list rather than a throw, because "nothing yet" is exactly what
+     *  the real server answers for a fresh vault. */
+    chatHistory?: { session: ChatSessionInfo; frames: ChatFrame[] }[]
     /** Vault-relative path -> file contents. Drives GET/PUT /file and the default /tree. */
     files?: Record<string, string>
     /** GET /daemon/status — components that gate on the daemon being enabled read this on mount. */
@@ -180,12 +188,52 @@ function splitPath(pathAndQuery: string): {
  *  serve as a gallery/story's REAL mutable row store with no separate store abstraction. */
 function indexRow(index: Map<string, Row>, row: Row): void {
     index.set(row.file.path, row)
-    if (row.index !== undefined) index.set(`${row.file.path}::${row.index}`, row)
+    if (row.index !== undefined)
+        index.set(`${row.file.path}::${row.index}`, row)
 }
 
 /** Build an in-memory Transport over a plain `Map<path, contents>`. Call `setTransport
  *  (fakeTransport(...))` (app/src/api.ts) before rendering a component that calls `api.*` —
  *  e.g. in a story's `render`, or a decorator shared by every story in a file. */
+/** Mirrors core/src/chat.ts's scope filter: `user` = everything not minted by the daemon. */
+function inChatScope(s: ChatSessionInfo, scope: ChatScope): boolean {
+    if (scope === 'all') return true
+    return scope === 'daemon' ? s.origin === 'daemon' : s.origin !== 'daemon'
+}
+
+/** POST /chat/search over seeded history: a case-insensitive substring match on the title and
+ *  every user/assistant text frame, with a snippet cut around the first body match. */
+function searchChatHistory(
+    history: { session: ChatSessionInfo; frames: ChatFrame[] }[],
+    query: string,
+    scope: ChatScope,
+): ChatSearchHit[] {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    const hits: ChatSearchHit[] = []
+    for (const { session, frames } of history) {
+        if (!inChatScope(session, scope)) continue
+        const body = frames
+            .map(f =>
+                f.type === 'user-message' || f.type === 'assistant-text'
+                    ? f.text
+                    : '',
+            )
+            .join(' ')
+            .replace(/\s+/g, ' ')
+        const inTitle = session.summary.toLowerCase().includes(q)
+        const at = body.toLowerCase().indexOf(q)
+        if (!inTitle && at < 0) continue
+        const from = Math.max(0, at - 40)
+        const snippet =
+            at < 0
+                ? body.slice(0, 120)
+                : `${from > 0 ? '…' : ''}${body.slice(from, at + 120)}${at + 120 < body.length ? '…' : ''}`
+        hits.push({ ...session, snippet, inTitle })
+    }
+    return hits
+}
+
 export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
     const files = new Map<string, string>(Object.entries(seed.files ?? {}))
     const tree =
@@ -201,7 +249,8 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
     // An ARRAY seed is known up front, so index it now: a component handed those same rows
     // directly (a MapView story renders `sampleViewResult(rows)` with no `/rows` call of its own)
     // can still write into them and see the write on its next re-render.
-    if (Array.isArray(seedRows)) for (const row of seedRows) indexRow(rowIndex, row)
+    if (Array.isArray(seedRows))
+        for (const row of seedRows) indexRow(rowIndex, row)
     // Every row ARRAY the seed has handed out (the array seed up front, each resolver result as it
     // is first seen) — where a CREATED row has to go for the next read to include it. A new note
     // joins every array already holding a note in its folder (the shape of a folder-scoped base,
@@ -211,7 +260,11 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
     const createdNotes: Row[] = []
     const adopt = (arr: Row[], row: Row): void => {
         if (arr.includes(row)) return
-        if (!arr.some(r => r.index === undefined && r.file.folder === row.file.folder))
+        if (
+            !arr.some(
+                r => r.index === undefined && r.file.folder === row.file.folder,
+            )
+        )
             return
         if (arr.some(r => r.file.path === row.file.path)) return
         arr.push(row)
@@ -219,7 +272,9 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
     const noteFromText = (path: string, text: string): Row | undefined => {
         if (!path.endsWith('.md')) return undefined
         const name = path.split('/').pop()!.replace(/\.md$/, '')
-        const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+        const folder = path.includes('/')
+            ? path.slice(0, path.lastIndexOf('/'))
+            : ''
         return {
             file: {
                 name,
@@ -258,11 +313,14 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         // A versioned transport answers like the wire: a fresh copy, so a refetch after a write
         // is a NEW array Solid sees change, while the index above keeps the seed objects the
         // writes mutate.
-        return seed.versioned ? (JSON.parse(JSON.stringify(rows)) as Row[]) : rows
+        return seed.versioned
+            ? (JSON.parse(JSON.stringify(rows)) as Row[])
+            : rows
     }
     if (seed.versioned) armFakeServerVersion()
     const bump = async (pathname: string) => {
-        if (seed.versioned && pathname !== '/rows') await bumpFakeServerVersion()
+        if (seed.versioned && pathname !== '/rows')
+            await bumpFakeServerVersion()
     }
 
     /** Every plain-`post` route; `post` below runs this, then bumps the version for a
@@ -342,7 +400,11 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 if (raw !== undefined)
                     files.set(
                         w.path,
-                        setFrontmatterKey(flattenBaseViews(raw), w.key, w.value),
+                        setFrontmatterKey(
+                            flattenBaseViews(raw),
+                            w.key,
+                            w.value,
+                        ),
                     )
                 const row = rowIndex.get(w.path)
                 if (row) row.note[w.key] = w.value
@@ -356,14 +418,21 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         // refetch) hands back the same unedited text, so a gallery tile's kanban column
         // rename/delete looks acked but never shows.
         if (pathname === '/set-property') {
-            const { path: p, key, value } = body as {
+            const {
+                path: p,
+                key,
+                value,
+            } = body as {
                 path: string
                 key: string
                 value: unknown
             }
             const raw = files.get(p)
             if (raw !== undefined)
-                files.set(p, setFrontmatterKey(flattenBaseViews(raw), key, value))
+                files.set(
+                    p,
+                    setFrontmatterKey(flattenBaseViews(raw), key, value),
+                )
             const row = rowIndex.get(p)
             if (row) row.note[key] = value
             return new Response('ok')
@@ -385,7 +454,9 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             const { pathname, params } = splitPath(path)
             if (pathname === '/tree') return tree as unknown as T
             if (pathname === '/version')
-                return { version: seed.versioned ? fakeVersion : 1 } as unknown as T
+                return {
+                    version: seed.versioned ? fakeVersion : 1,
+                } as unknown as T
             // Read-only status/graph routes that components hit on mount. Without these a story renders
             // its error state instead of the component — InboxPageView did exactly that, failing on
             // `unhandled GET /daemon/status`. `seed` overrides win so a story can pose a specific state
@@ -412,6 +483,20 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 return (seed.daemonLogs ?? sampleActivity()) as unknown as T
             if (pathname === '/graph') {
                 return (seed.graph ?? { nodes: [], edges: [] }) as unknown as T
+            }
+            if (pathname === '/chat/sessions') {
+                const scope = (params.get('scope') ?? 'user') as ChatScope
+                const sessions = (seed.chatHistory ?? [])
+                    .map(h => h.session)
+                    .filter(x => inChatScope(x, scope))
+                return { sessions } as unknown as T
+            }
+            if (pathname === '/chat/session-messages') {
+                const id = params.get('id')
+                const frames =
+                    seed.chatHistory?.find(h => h.session.sessionId === id)
+                        ?.frames ?? []
+                return { frames } as unknown as T
             }
             if (pathname === '/update/status') {
                 return (seed.updateStatus ?? {
@@ -484,6 +569,18 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             // above and already fall through to a generic 200 ack) — give it the same generic
             // ack this file's header comment already promises for "delete", so a story can
             // drive a real FileTree delete + Cmd+Z undo round trip.
+            if (pathname === '/chat/search') {
+                const { query, scope } = body as {
+                    query: string
+                    scope?: ChatScope
+                }
+                const hits = searchChatHistory(
+                    seed.chatHistory ?? [],
+                    query,
+                    scope ?? 'user',
+                )
+                return { hits } as unknown as T
+            }
             if (pathname === '/delete') {
                 const { path: p } = body as { path: string }
                 await bump(pathname)
@@ -499,8 +596,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             // A path an indexed ROW already holds is taken even with no seeded file text — the
             // real server reads that note off disk, so a create aimed at it must conflict.
             const current =
-                files.get(path) ??
-                (rowIndex.has(path) ? '---\n---\n' : '')
+                files.get(path) ?? (rowIndex.has(path) ? '---\n---\n' : '')
             if (current !== baseText)
                 return { conflict: true as const, current }
             const isNew = !files.has(path) && !rowIndex.has(path)
@@ -527,10 +623,8 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 return seed.onUpload(targetPath, bytes) || targetPath
             throw new Error('fakeTransport: uploadAsset is not supported')
         },
-        fetchAsset: async (
-            _url: string,
-            targetPath: string,
-        ): Promise<string> => targetPath,
+        fetchAsset: async (_url: string, targetPath: string): Promise<string> =>
+            targetPath,
         assetUrl: (target: string) => target,
         eventsUrl: () => '',
         base: () => 'fake://storybook',
