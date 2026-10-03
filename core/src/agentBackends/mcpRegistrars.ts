@@ -56,6 +56,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parseDocument } from 'yaml'
 import { whichBinary } from '../claudeWhich'
+import { spawnWithTimeout } from './spawnWithTimeout'
 
 /** What the caller wants registered: our compiled MCP binary + the env it needs to find the docs
  *  tree / cli binary / (optionally) a specific vault. Mirrors the env vars bismuthInstall.ts's
@@ -102,30 +103,13 @@ async function spawnBestEffort(
     args: string[],
     timeoutMs: number,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-    try {
-        const proc = Bun.spawn([bin, ...args], {
-            env: process.env,
-            stdin: 'ignore',
-            stdout: 'pipe',
-            stderr: 'pipe',
-        })
-        const timer = setTimeout(() => proc.kill(), timeoutMs)
-        try {
-            const [stdout, stderr, code] = await Promise.all([
-                new Response(proc.stdout).text(),
-                new Response(proc.stderr).text(),
-                proc.exited,
-            ])
-            return { code, stdout, stderr }
-        } finally {
-            clearTimeout(timer)
-        }
-    } catch (e) {
-        return {
-            code: -1,
-            stdout: '',
-            stderr: e instanceof Error ? e.message : String(e),
-        }
+    const r = await spawnWithTimeout([bin, ...args], timeoutMs, {
+        env: process.env,
+    })
+    return {
+        code: r.code ?? -1,
+        stdout: r.stdout,
+        stderr: r.error ?? r.stderr,
     }
 }
 
@@ -481,7 +465,14 @@ export function createCodexRegistrar(
             const codex = bin()
             if (!codex) return false
             const r = await io.run(codex, ['mcp', 'list'])
-            return r.code === 0 && r.stdout.includes('bismuth')
+            // Match a server NAMED bismuth: the first column of a row, never a substring (a
+            // `bismuth-notes` server, or any path under ~/.bismuth, must not read as registered).
+            return (
+                r.code === 0 &&
+                r.stdout
+                    .split('\n')
+                    .some(line => line.trim().split(/\s+/)[0] === 'bismuth')
+            )
         },
         async register(spec) {
             const codex = bin()
@@ -773,6 +764,17 @@ function createGeminiFamilyRegistrar(
                 )
                 if (patched.text != null)
                     io.writeFile(configPath(), patched.text)
+                writeLedgerEntry(io, id, {
+                    at: io.now(),
+                    method: 'cli',
+                    path: configPath(),
+                })
+                if (patched.text == null)
+                    return {
+                        ok: true,
+                        warning: `${binaryName} mcp add succeeded but its env block could not be patched in`,
+                    }
+                return { ok: true }
             }
             writeLedgerEntry(io, id, {
                 at: io.now(),
@@ -833,7 +835,10 @@ function createMcpAddRegistrar(
     configPathParts: string[],
     mcpServersPath: string[],
     configNoun: string,
-    buildAddArgs: (spec: BismuthMcpSpec, env: Record<string, string>) => string[],
+    buildAddArgs: (
+        spec: BismuthMcpSpec,
+        env: Record<string, string>,
+    ) => string[],
     io: RegistrarIO,
 ): McpRegistrar {
     const bin = () => io.which(binaryName)
@@ -846,9 +851,7 @@ function createMcpAddRegistrar(
         async isRegistered() {
             const parsed = parseJsonLenient(io.readFile(configPath()))
             if (!parsed) return false
-            return (
-                getPath(parsed, [...mcpServersPath, 'bismuth']) !== undefined
-            )
+            return getPath(parsed, [...mcpServersPath, 'bismuth']) !== undefined
         },
         async register(spec) {
             const cli = bin()
