@@ -1,12 +1,12 @@
-// Visual spec for <ChatModelPicker> — the ONE model panel: connectors on the left, the current
-// connector's models / effort / (opencode) provider manager on the right. Every story hands the
-// panel a stub session (no socket) and a real trigger button to anchor against, the way
-// ChatModelMenu does. The opencode story's provider lists come from the preview's fakeTransport.
-import { createSignal, Show, type JSX } from 'solid-js'
+// Visual spec for <ChatModelPicker> — the ONE model dialog: connectors on the left, the current
+// connector's models / effort / (opencode) provider manager on the right, under a `model //
+// <connector>` header over the scrim. Every story hands it a stub session (no socket); the dialog
+// portals itself, so the stories are fullscreen. The opencode story's provider lists come from the
+// preview's fakeTransport.
+import { Show, type JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor, within } from 'storybook/test'
 import ChatModelPicker from './ChatModelPicker'
-import PlainButton from '../ui/PlainButton'
 import {
     makeStubChatSession,
     type StubChatSessionInit,
@@ -15,7 +15,7 @@ import {
 const meta = {
     title: 'Chat/ChatModelPicker',
     component: ChatModelPicker,
-    parameters: { layout: 'padded' },
+    parameters: { layout: 'fullscreen' },
 } satisfies Meta<typeof ChatModelPicker>
 
 export default meta
@@ -49,43 +49,30 @@ const EFFORT = [
     { value: 'high', label: 'High' },
 ]
 
-/** A trigger word near the top of the story with the panel anchored beneath it. `narrow` clamps the
- *  panel to 92% of a 360px viewport (the real `max-width: min(560px, 92vw)` at that width). */
+/** The dialog over its scrim. `narrow` clamps the panel to 328px — a 360px viewport's
+ *  `max-width: calc(100vw - 32px)` — since a story cannot resize the viewport itself. */
 const hosted =
     (init: StubChatSessionInit, narrow?: boolean): (() => JSX.Element) =>
     () => {
         const session = makeStubChatSession(init)
-        const [anchor, setAnchor] = createSignal<HTMLElement>()
         return (
-            <div style={{ height: '680px' }}>
+            <>
                 <Show when={narrow}>
-                    <style>{`[data-chat-model-picker] { width: 331px; max-width: 331px; }`}</style>
+                    <style>{`[role="dialog"][data-modal-panel] { width: 328px; max-width: 328px; }`}</style>
                 </Show>
-                <PlainButton
-                    ref={setAnchor}
-                    data-chat-model-anchor
-                    style={{ margin: '24px 0 0 0', color: 'var(--faint)' }}
-                >
-                    {init.displayModel || 'default model'}
-                </PlainButton>
-                <Show when={anchor()}>
-                    {a => (
-                        <ChatModelPicker
-                            {...{ session }}
-                            anchor={a()}
-                            onClose={() => {}}
-                        />
-                    )}
-                </Show>
-            </div>
+                <ChatModelPicker {...{ session }} onClose={() => {}} />
+            </>
         )
     }
 
 const findPanel = async (canvasElement: HTMLElement) =>
     waitFor(() => {
-        const el = canvasElement.querySelector('[data-chat-model-picker]')
+        const el =
+            canvasElement.ownerDocument.body.querySelector<HTMLElement>(
+                '[role="dialog"]',
+            )
         if (!el) throw new Error('picker not rendered yet')
-        return el as HTMLElement
+        return el
     })
 
 /** claude code: three models, the current one checked, and an effort row. */
@@ -102,6 +89,8 @@ export const ClaudeCode: Story = {
         const panel = await findPanel(canvasElement)
         const c = within(panel)
         await expect(c.getByText('model')).not.toBeNull()
+        // the connector appears twice: the header subtitle and its row in the left column
+        await expect(c.getAllByText('claude code').length).toBe(2)
         await expect(c.getByText('Opus 4.8')).not.toBeNull()
         await expect(c.getByText('effort')).not.toBeNull()
         await expect(panel.querySelectorAll('svg').length).toBe(1)
@@ -136,7 +125,7 @@ export const OpencodeGrouped: Story = {
     },
 }
 
-/** A 360px phone: the panel shrinks to 92vw and the connector column to its floor. */
+/** A 360px phone: the dialog shrinks to the viewport minus its gutters and the connector column to its floor. */
 export const Narrow360: Story = {
     render: hosted(
         {
@@ -150,7 +139,7 @@ export const Narrow360: Story = {
     play: async ({ canvasElement }) => {
         const panel = await findPanel(canvasElement)
         await expect(panel.getBoundingClientRect().width).toBeLessThanOrEqual(
-            332,
+            328,
         )
         await within(panel).findByPlaceholderText('add a provider…')
     },

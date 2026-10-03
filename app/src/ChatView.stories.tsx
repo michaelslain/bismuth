@@ -619,11 +619,11 @@ export const ModelPicker: Story = {
             return el
         })
         word.click()
-        // the picker is portalled to <body> (the controls row clips its overflow), so look there
+        // the picker is a modal portalled to <body>, so look there
         const page = canvasElement.ownerDocument.body
         await waitFor(() => {
-            if (!page.querySelector('[data-chat-model-picker]'))
-                throw new Error('model picker not rendered yet')
+            if (!page.querySelector('[role="dialog"]'))
+                throw new Error('model dialog not rendered yet')
         })
         await findText(page, 'kimi-k2')
         // the provider manager's filter renders once the provider list has loaded

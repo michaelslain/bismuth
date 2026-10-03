@@ -1,106 +1,41 @@
 // app/src/chat/ChatModelPicker.tsx
-// The ONE model panel (replaces the provider ▸ / model ▸ / effort ▸ context-menu submenus AND the
+// The ONE model dialog (replaces the provider ▸ / model ▸ / effort ▸ context-menu submenus AND the
 // separate `[N providers]` pill): a left column of connectors (claude code, codex, opencode, …) and
 // a right column holding the current connector's models, its effort levels, and — for opencode
-// only — the provider manager (OpencodeProviderManager). Picking a connector keeps the panel open
+// only — the provider manager (OpencodeProviderManager). Picking a connector keeps the dialog open
 // so its models show up beside it; picking a model closes it.
 //
-// Fixed-position, placed against `props.anchor` (the model word) — below it unless that would clip
-// past the bottom of the viewport, then above — and portalled to <body> by the caller, because the
-// controls row clips its overflow. Dismisses on an outside pointerdown (the trigger carries
-// `data-chat-model-anchor`, so its own click toggles instead of dismissing-then-reopening) and Esc.
-import {
-    For,
-    Show,
-    createEffect,
-    createSignal,
-    onCleanup,
-    onMount,
-    type Component,
-} from 'solid-js'
+// A FormModal: it portals itself over the scrim, owns Esc / backdrop dismiss, the focus trap and
+// the `model // <connector>` header. There is no footer — nothing to confirm, a pick applies at once.
+// The columns have a fixed height so switching connector never resizes the dialog; the right column
+// scrolls on its own and the connector column stays put.
+import { For, Show, type Component } from 'solid-js'
 import styles from './ChatModelPicker.module.css'
 import type { ChatControlsView } from './ChatControls'
 import type { ChatModelOption } from './chatSession'
 import { Icon } from '../icons/Icon'
+import FormModal from '../ui/FormModal'
+import ModalBody from '../ui/ModalBody'
+import ModalHeader from '../ui/ModalHeader'
 import PlainButton from '../ui/PlainButton'
 import SegmentedToggle from '../ui/SegmentedToggle'
 import Text from '../ui/Text'
 import OpencodeProviderManager from './OpencodeProviderManager'
 import { CHAT_PROVIDER_OPTIONS, modelPriceBadge } from '../chatProvider'
-import { placeBelowOrAbove, EDGE_GAP } from '../ui/popover/placeAnchored'
-import { isDismissKey } from '../ui/widgetKeys'
 import { groupModels } from './modelPickerGroups'
 
 export type ChatModelPickerProps = {
     session: ChatControlsView
-    /** The element the panel is placed against — the model word. */
-    anchor: HTMLElement
     onClose: () => void
     class?: string
 }
 
 const ChatModelPicker: Component<ChatModelPickerProps> = props => {
-    let panel!: HTMLDivElement
-    const [top, setTop] = createSignal(0)
-    const [left, setLeft] = createSignal(0)
-
-    // Viewport coordinates (the panel is `position: fixed`): left-aligned to the anchor when there
-    // is room, the right edge clamped inside the viewport; below the anchor unless that would clip,
-    // then above.
-    const reposition = () => {
-        if (!panel) return
-        const a = props.anchor.getBoundingClientRect()
-        const box = panel.getBoundingClientRect()
-        setTop(
-            placeBelowOrAbove({
-                y: a.bottom + EDGE_GAP,
-                h: box.height,
-                viewportH: window.innerHeight,
-                flipFrom: a.top,
-            }),
-        )
-        setLeft(
-            Math.max(
-                EDGE_GAP,
-                Math.min(a.left, window.innerWidth - box.width - EDGE_GAP),
-            ),
-        )
-    }
-
-    const onDocPointerDown = (e: PointerEvent) => {
-        const t = e.target as Node
-        if (
-            panel?.contains(t) ||
-            (t as HTMLElement)?.closest?.('[data-chat-model-anchor]')
-        )
-            return
-        props.onClose()
-    }
-    const onDocKey = (e: KeyboardEvent) => {
-        if (isDismissKey(e)) props.onClose()
-    }
-    onMount(() => {
-        reposition()
-        // The panel changes height as the model list, effort row and provider catalog arrive.
-        const ro = new ResizeObserver(reposition)
-        ro.observe(panel)
-        onCleanup(() => ro.disconnect())
-        document.addEventListener('pointerdown', onDocPointerDown, true)
-        document.addEventListener('keydown', onDocKey, true)
-        window.addEventListener('resize', reposition)
-        window.addEventListener('scroll', reposition, true)
-    })
-    onCleanup(() => {
-        document.removeEventListener('pointerdown', onDocPointerDown, true)
-        document.removeEventListener('keydown', onDocKey, true)
-        window.removeEventListener('resize', reposition)
-        window.removeEventListener('scroll', reposition, true)
-    })
-    createEffect(() => {
-        props.session.provider() // track: a connector switch reshapes the right column
-        props.session.models()
-        queueMicrotask(reposition)
-    })
+    // The header subtitle: the connector whose models the right column is showing.
+    const connector = () =>
+        CHAT_PROVIDER_OPTIONS.find(
+            o => o.value === props.session.provider(),
+        )?.label.toLowerCase()
 
     const groups = () =>
         groupModels(props.session.models(), props.session.provider())
@@ -112,18 +47,18 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
     }
 
     return (
-        <div
-            ref={panel!}
-            class={`${styles.panel} ${props.class ?? ''}`}
-            style={{ top: `${top()}px`, left: `${left()}px` }}
-            role="dialog"
-            aria-label="model"
-            data-chat-model-picker
+        <FormModal
+            onClose={props.onClose}
+            label="model"
+            width={640}
+            class={props.class}
         >
-            <Text as="div" inherit class={styles.title}>
-                model
-            </Text>
-            <div class={styles.body}>
+            <ModalHeader
+                title="model"
+                subtitle={connector()}
+                onClose={props.onClose}
+            />
+            <ModalBody class={styles.body}>
                 <div class={styles.connectors}>
                     <For each={CHAT_PROVIDER_OPTIONS}>
                         {o => {
@@ -243,8 +178,8 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
                         />
                     </Show>
                 </div>
-            </div>
-        </div>
+            </ModalBody>
+        </FormModal>
     )
 }
 

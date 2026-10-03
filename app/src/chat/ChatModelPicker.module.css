@@ -1,37 +1,18 @@
-/* app/src/chat/ChatModelPicker.module.css — the ONE model panel (ONE importer: ChatModelPicker.tsx).
-   Frame tokens are the popover's own (--bg, --rule, --popover-*); nothing here is uppercase or
-   tracked, and every label is lowercase text — no boxed badges. */
+/* app/src/chat/ChatModelPicker.module.css — the ONE model dialog's body (ONE importer:
+   ChatModelPicker.tsx). The frame, scrim, header and Esc/backdrop dismiss are FormModal's; this file
+   is only the two columns. Nothing here is uppercase or tracked, and every label is lowercase text —
+   no boxed badges. */
 
-.panel {
-    /* `top`/`left` are set inline from the anchor's measured rect (ChatModelPicker.tsx). Fixed, not
-       absolute: the chat controls row clips its overflow, which hid an absolute panel. */
-    position: fixed;
-    z-index: 50;
-    display: flex;
-    flex-direction: column;
-    width: 560px;
-    max-width: min(560px, 92vw);
-    max-height: min(560px, 80vh);
-    background: var(--bg);
-    border: var(--rule);
-    border-radius: var(--popover-radius);
-    box-shadow: var(--popover-shadow);
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-ui);
-    color: var(--fg);
+/* The ModalBody itself is the two-column row. ModalBody's own `.body` is a padded, gapped, scrolling
+   column at the same specificity, so the doubled selector wins without depending on stylesheet
+   order. The height is FIXED (never content-sized) so switching connector does not resize the
+   dialog; the whole dialog stays under 80vh (this + the header row) and only `.detail` scrolls. */
+.body.body {
+    flex-direction: row;
+    gap: 0;
+    padding: 0;
     overflow: hidden;
-}
-.title {
-    flex: none;
-    padding: var(--sp-4) var(--sp-5);
-    font-size: var(--fs-ui);
-    color: var(--faint);
-    border-bottom: var(--rule-soft);
-}
-.body {
-    display: flex;
-    flex: 1;
-    min-height: 0;
+    height: min(440px, calc(80vh - var(--row-h)));
 }
 
 /* ── left: connectors ── */
