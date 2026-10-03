@@ -45,3 +45,23 @@
   text-transform: uppercase;
   letter-spacing: var(--ls-label);
 }
+
+/* ── size — a display step that REPLACES the level's own ramp step. These are declared AFTER the
+   .heading--h1..h6 rules above at the same single-class specificity, so source order alone makes
+   `size` win without doubling a selector. Keep them last. ── */
+.heading--hero,
+.heading--hero-xl {
+  font-weight: var(--fw-regular);
+  line-height: 1.02;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+.heading--hero { font-size: var(--fs-hero); }
+.heading--hero-xl { font-size: var(--fs-hero-xl); }
+@media (max-width: 980px) {
+  .heading--hero-xl { font-size: var(--fs-hero); }
+}
+
+/* ── register — what a person WROTE is set in the prose face; ONLY the family changes. Mirrors
+   Text.module.css's .text--prose. ── */
+.heading--prose { font-family: var(--prose-font); }
