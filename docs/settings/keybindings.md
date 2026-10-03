@@ -1,6 +1,6 @@
 # Keybindings
 
-Bismuth reads its 49 global shortcuts from the `keybindings:` section of `.settings` at match time. To rebind a command, change its combo there. This page explains the combo grammar, exact modifier rules, aliases, comma-separated alternatives, `event.code` fallback, and the full action catalog.
+Bismuth reads its 52 global shortcuts from the `keybindings:` section of `.settings` at match time. To rebind a command, change its combo there. This page explains the combo grammar, exact modifier rules, aliases, comma-separated alternatives, `event.code` fallback, and the full action catalog.
 
 `KEYBINDING_CATALOG` in `core/src/keybindings.ts` is the source of truth for every id, default combo, and description. The schema derives one `keybind` YAML key per catalog entry; `App.tsx` matches each `KeyboardEvent` with the pure matcher in `app/src/keybindings.ts`.
 
@@ -38,7 +38,7 @@ keybindings:
   zoom-reset: Mod+0
 ```
 
-The block above is a **representative sample** — the real `keybindings:` section a fresh vault generates has all 49 ids; see [the full catalog](#the-full-keybinding_catalog) below for every id and its default. Each value is the action's **default** — defaults equal the combos that were previously hardcoded across `App.tsx` and the editor/chat/graph/flashcard/ink surfaces, so writing the schema's defaults into a file is a behavioral no-op. To rebind an action, change the string. To remove a shortcut, set it to an empty string — an empty/nullish setting matches nothing (`matchesKeybinding(e, "")` and `matchesKeybinding(e, undefined)`/`null` all return `false`), **with one exception**: `ui-dismiss` treats an empty setting as `Escape` rather than "unbound", so a user can never rebind themselves out of a way to close a modal (see [Shared widget ids](#shared-widget-ids-ui-dismiss-and-ui-confirm) below).
+The block above is a **representative sample** — the real `keybindings:` section a fresh vault generates has all 52 ids; see [the full catalog](#the-full-keybinding_catalog) below for every id and its default. Each value is the action's **default** — defaults equal the combos that were previously hardcoded across `App.tsx` and the editor/chat/graph/flashcard/ink surfaces, so writing the schema's defaults into a file is a behavioral no-op. To rebind an action, change the string. To remove a shortcut, set it to an empty string — an empty/nullish setting matches nothing (`matchesKeybinding(e, "")` and `matchesKeybinding(e, undefined)`/`null` all return `false`), **with one exception**: `ui-dismiss` treats an empty setting as `Escape` rather than "unbound", so a user can never rebind themselves out of a way to close a modal (see [Shared widget ids](#shared-widget-ids-ui-dismiss-and-ui-confirm) below).
 
 Settings are persisted by PATCHing only the changed leaf via `POST /set-setting` (the backend merges that one key in place, preserving comments/order); see [the settings overview](./overview.md).
 
@@ -254,6 +254,9 @@ Every action id, its human label, default combo, and what it does. Ids are the Y
 | `close-pane` | `Mod+W` | Close pane — close the focused pane (closes the whole tab when it's the last pane). |
 | `new-tab` | `Mod+T` | New tab — open a new tab (the Knowledge Graph home). |
 | `reopen-tab` | `Mod+Shift+T` | Reopen closed tab — reopen the most recently closed tab. |
+| `new-window` | `Mod+N` | New window — open the current vault in a new window (File > New window). |
+| `open-folder` | `Mod+Shift+O` | Open folder — open another folder as its own vault in a new window (File > Open folder…). `Shift+O` because `Mod+O` is the quick switcher. |
+| `export` | `Mod+Shift+P` | Export — export the focused note, base, sheet or drawing (File > Export…). `Shift+P` because `Mod+P` is the command palette. |
 | `history-back` | `Mod+[` | Back — go back in the focused pane's navigation history. |
 | `history-forward` | `Mod+]` | Forward — go forward in the focused pane's navigation history. |
 | `focus-pane-left` | `Mod+Alt+ArrowLeft` | Focus pane left — move focus to the pane on the left. |

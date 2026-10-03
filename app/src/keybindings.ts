@@ -367,3 +367,58 @@ export function toCmKeys(setting: string | undefined | null): string[] {
         .map(comboToCmKey)
         .filter((k): k is string => k !== null)
 }
+
+// Normalized combo keys → the Tauri menu accelerator key token. Anything not here (and not a
+// single letter/digit) has no accelerator spelling we trust, so the menu just shows no shortcut.
+const ACCELERATOR_KEYS: Record<string, string> = {
+    '-': '-',
+    '=': '=',
+    '[': '[',
+    ']': ']',
+    '\\': '\\',
+    ';': ';',
+    "'": "'",
+    '`': '`',
+    ',': ',',
+    '.': '.',
+    '/': '/',
+    ' ': 'Space',
+    enter: 'Enter',
+    escape: 'Escape',
+    tab: 'Tab',
+    arrowleft: 'ArrowLeft',
+    arrowright: 'ArrowRight',
+    arrowup: 'ArrowUp',
+    arrowdown: 'ArrowDown',
+}
+
+/**
+ * A settings keybinding → the accelerator a native menu item shows beside it
+ * ("Mod+Shift+O" → "CmdOrCtrl+Shift+O"). Only the FIRST comma-separated
+ * alternative is used — a menu item carries one accelerator. Null when the
+ * setting is empty or its key has no accelerator spelling. The webview's own
+ * keydown handler still does the work (and preventDefaults, so the menu never
+ * double-fires); this only puts the shortcut where a user looks for it.
+ */
+export function toMenuAccelerator(
+    setting: string | undefined | null,
+): string | null {
+    const first = setting?.split(',')[0]?.trim()
+    if (!first) return null
+    const p = parseCombo(first)
+    if (!p) return null
+    const key = /^[a-z0-9]$/.test(p.key)
+        ? p.key.toUpperCase()
+        : /^f([1-9]|1[0-2])$/.test(p.key)
+          ? p.key.toUpperCase()
+          : ACCELERATOR_KEYS[p.key]
+    if (!key) return null
+    const mods = [
+        p.mod && 'CmdOrCtrl',
+        p.meta && 'Cmd',
+        p.ctrl && 'Ctrl',
+        p.alt && 'Alt',
+        p.shift && 'Shift',
+    ].filter((m): m is string => !!m)
+    return [...mods, key].join('+')
+}

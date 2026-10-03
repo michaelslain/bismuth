@@ -100,6 +100,24 @@ export const KEYBINDING_CATALOG = [
         doc: 'Reopen the most recently closed tab.',
     },
     {
+        id: 'new-window',
+        label: 'New window',
+        default: 'Mod+N',
+        doc: 'Open the current vault in a new window (File > New window).',
+    },
+    {
+        id: 'open-folder',
+        label: 'Open folder',
+        default: 'Mod+Shift+O',
+        doc: 'Open another folder as its own vault in a new window (File > Open folder…). Shift+O because Mod+O is the quick switcher.',
+    },
+    {
+        id: 'export',
+        label: 'Export',
+        default: 'Mod+Shift+P',
+        doc: 'Export the focused note, base, sheet or drawing (File > Export…). Shift+P because Mod+P is the command palette.',
+    },
+    {
         id: 'history-back',
         label: 'Back',
         default: 'Mod+[',

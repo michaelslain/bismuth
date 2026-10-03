@@ -20,13 +20,37 @@ export interface AppMenuActions {
     openSearch: () => void
 }
 
-export async function installAppMenu(a: AppMenuActions): Promise<void> {
+/** Tauri accelerator strings shown beside File-menu items (see toMenuAccelerator). */
+export interface AppMenuAccelerators {
+    openFolder?: string | null
+    newWindow?: string | null
+    exportActive?: string | null
+}
+
+// Rebuilt whenever a File-menu keybinding changes in .settings, so the shown
+// shortcut always matches the one the keydown handler actually fires on.
+export async function installAppMenu(
+    a: AppMenuActions,
+    keys: AppMenuAccelerators = {},
+): Promise<void> {
     if (!isTauri()) return
     try {
         const { Menu, Submenu, MenuItem, PredefinedMenuItem } =
             await import('@tauri-apps/api/menu')
-        const item = (text: string, action: () => void) =>
-            MenuItem.new({ text, action })
+        // An accelerator the platform rejects would throw and take the whole menu bar
+        // down with it, so a bad one falls back to the item without a shortcut.
+        const item = async (
+            text: string,
+            action: () => void,
+            accelerator?: string | null,
+        ) => {
+            if (!accelerator) return MenuItem.new({ text, action })
+            try {
+                return await MenuItem.new({ text, action, accelerator })
+            } catch {
+                return MenuItem.new({ text, action })
+            }
+        }
         const sep = () => PredefinedMenuItem.new({ item: 'Separator' })
 
         // macOS: the FIRST submenu is the app menu (named after the app).
@@ -48,14 +72,14 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
         const fileMenu = await Submenu.new({
             text: 'File',
             items: [
-                await item('Open folder…', a.openFolder),
-                await item('New window', a.newWindow),
+                await item('Open folder…', a.openFolder, keys.openFolder),
+                await item('New window', a.newWindow, keys.newWindow),
                 await sep(),
                 await item('New note', a.newNote),
                 await item('New folder', a.newFolder),
                 await item('New base', a.newBase),
                 await sep(),
-                await item('Export…', a.exportActive),
+                await item('Export…', a.exportActive, keys.exportActive),
             ],
         })
 

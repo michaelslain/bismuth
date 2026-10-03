@@ -720,6 +720,13 @@
     "max": null,
     "required": false
   },
+  "keybindings.export": {
+    "type": "keybind",
+    "default": "Mod+Shift+P",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.find": {
     "type": "keybind",
     "default": "Mod+F",
@@ -867,9 +874,23 @@
     "max": null,
     "required": false
   },
+  "keybindings.new-window": {
+    "type": "keybind",
+    "default": "Mod+N",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.open-completion": {
     "type": "keybind",
     "default": "Ctrl+Space, Mod+Shift+Space",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.open-folder": {
+    "type": "keybind",
+    "default": "Mod+Shift+O",
     "min": null,
     "max": null,
     "required": false

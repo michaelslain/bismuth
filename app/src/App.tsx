@@ -39,7 +39,7 @@ import { BASE_VIEW_KINDS } from './baseViews'
 import { settings, settingsHydrated } from './settings'
 import { settingsToCssVars, setCssVars } from './settingsCssVars'
 import { resolveAppearance } from './themes'
-import { matchesKeybinding } from './keybindings'
+import { matchesKeybinding, toMenuAccelerator } from './keybindings'
 import { initZoom, zoomIn, zoomOut, zoomReset } from './zoom'
 import { lastChange, currentConnectionState } from './serverVersion'
 import { debounce } from './debounce'
@@ -1456,17 +1456,26 @@ export default function App() {
 
     // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
     // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
-    onMount(() => {
-        void installAppMenu({
-            openFolder,
-            newWindow,
-            newNote,
-            newFolder,
-            newBase,
-            exportActive,
-            openSettings,
-            openSearch,
-        })
+    // Re-runs when a File-menu keybinding changes so the menu shows the live shortcut.
+    createEffect(() => {
+        const kb = settings.keybindings
+        void installAppMenu(
+            {
+                openFolder,
+                newWindow,
+                newNote,
+                newFolder,
+                newBase,
+                exportActive,
+                openSettings,
+                openSearch,
+            },
+            {
+                openFolder: toMenuAccelerator(kb['open-folder']),
+                newWindow: toMenuAccelerator(kb['new-window']),
+                exportActive: toMenuAccelerator(kb['export']),
+            },
+        )
     })
 
     // Apply settings to the document as CSS custom properties (theme, accent, fonts,
@@ -2475,6 +2484,23 @@ export default function App() {
         if (matchesKeybinding(e, kb['new-tab'])) {
             e.preventDefault()
             newTab()
+            return
+        }
+        // File-menu actions (defaults Mod+N, Mod+Shift+O, Mod+Shift+P). The native menu shows
+        // the same combos as accelerators; preventDefault here keeps it from firing a second time.
+        if (matchesKeybinding(e, kb['new-window'])) {
+            e.preventDefault()
+            void newWindow()
+            return
+        }
+        if (matchesKeybinding(e, kb['open-folder'])) {
+            e.preventDefault()
+            void openFolder()
+            return
+        }
+        if (matchesKeybinding(e, kb['export'])) {
+            e.preventDefault()
+            exportActive()
             return
         }
         // New Claude chat (default Mod+Shift+C): open a fresh chat session tab. Don't hijack the
