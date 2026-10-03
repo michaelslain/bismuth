@@ -84,12 +84,16 @@ export const BeginBusy: Story = {
 }
 
 /** Slide 1 at a phone width: the headline steps down from 48px (`--fs-hero-xl`) to 40px
- *  (`--fs-hero`) below 980px. */
+ *  (`--fs-hero`) below 980px. The `viewport` global only resizes the preview inside Storybook's
+ *  own manager; the bare iframe the sweeps drive keeps the browser's width, so the assertion
+ *  follows whichever side of 980px the frame actually landed on — 40px at `mobile2` in the
+ *  manager, 48px in a full-width sweep. */
 export const NarrowTitle: Story = {
     args: { startAt: 'welcome' },
     globals: { viewport: { value: 'mobile2', isRotated: false } },
     play: async ({ canvasElement }) => {
         const h1 = canvasElement.querySelector('h1') as HTMLElement
-        await expect(getComputedStyle(h1).fontSize).toBe('40px')
+        const narrow = window.matchMedia('(max-width: 980px)').matches
+        await expect(getComputedStyle(h1).fontSize).toBe(narrow ? '40px' : '48px')
     },
 }
