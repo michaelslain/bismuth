@@ -13,6 +13,7 @@ import {
     planServerChange,
 } from '../../src/chatProviders/opencode/opencodeServer'
 import {
+    acceptsModelPick,
     localSessionModel,
     resolveOpencodeLocal,
 } from '../../src/chatProviders/opencode/opencode'
@@ -125,6 +126,24 @@ describe('localSessionModel', () => {
     })
 })
 
+describe('acceptsModelPick', () => {
+    const env = local().env
+    test('a remembered cloud model is refused while local is on', () => {
+        expect(acceptsModelPick(env, 'anthropic/claude-sonnet-4-5')).toBe(false)
+    })
+    test('a local/ model is accepted while local is on', () => {
+        expect(acceptsModelPick(env, 'local/qwen')).toBe(true)
+    })
+    test('a nested id (LM Studio shape) is accepted', () => {
+        expect(acceptsModelPick(env, 'local/qwen/qwen3-coder-30b')).toBe(true)
+        expect(acceptsModelPick(null, 'local/qwen/qwen3-coder-30b')).toBe(true)
+    })
+    test('with local off any provider/model passes, a bare id does not', () => {
+        expect(acceptsModelPick(null, 'anthropic/claude-sonnet-4-5')).toBe(true)
+        expect(acceptsModelPick(null, 'claude-sonnet-4-5')).toBe(false)
+    })
+})
+
 describe('resolveOpencodeLocal (session open)', () => {
     const vaultWith = (url: string | null) => {
         const dir = tempDir('opencode-local-')
@@ -195,12 +214,30 @@ describe('ensureOpencodeServer replaces the server when the local config changes
     const dir = tempDir('opencode-fake-bin-')
     const bin = join(dir, 'opencode')
     const log = join(dir, 'spawns.log')
+    const pidLog = join(dir, 'pids.log')
     writeFileSync(
         bin,
-        `#!/bin/sh\necho "$OPENCODE_CONFIG_CONTENT" >> "${log}"\necho "opencode server listening on http://127.0.0.1:1"\nexec sleep 60\n`,
+        `#!/bin/sh\necho "$OPENCODE_CONFIG_CONTENT" >> "${log}"\necho $$ >> "${pidLog}"\necho "opencode server listening on http://127.0.0.1:1"\nexec sleep 60\n`,
     )
     chmodSync(bin, 0o755)
     // one line per spawn (blank = spawned with no config)
+    // `exec sleep` keeps the shell's pid, so each line is the live opencode process of that spawn
+    const pids = () =>
+        readFileSync(pidLog, 'utf8')
+            .split('\n')
+            .filter(Boolean)
+            .map(Number)
+    const alive = (pid: number) => {
+        try {
+            process.kill(pid, 0)
+            return true
+        } catch {
+            return false
+        }
+    }
+    const waitDead = async (pid: number) => {
+        for (let i = 0; i < 40 && alive(pid); i++) await Bun.sleep(50)
+    }
     const spawns = () => readFileSync(log, 'utf8').split('\n').slice(0, -1)
     const A = local()
     const B = localSpawnFor(
@@ -226,6 +263,10 @@ describe('ensureOpencodeServer replaces the server when the local config changes
             A.env.OPENCODE_CONFIG_CONTENT,
             B.env.OPENCODE_CONFIG_CONTENT,
         ])
+        const [oldPid, newPid] = pids()
+        await waitDead(oldPid)
+        expect(alive(oldPid)).toBe(false) // the replaced server is killed, not leaked
+        expect(alive(newPid)).toBe(true)
     })
 
     test('with a turn in flight the old server stays until it settles, then the next session gets the new one', async () => {
@@ -250,5 +291,29 @@ describe('ensureOpencodeServer replaces the server when the local config changes
     test('turning the local model off restarts without the config', async () => {
         await ensureOpencodeServer(bin, null)
         expect(spawns().at(-1)).toBe('')
+    })
+
+    test('two concurrent opens with different configs leave exactly one live server', async () => {
+        await ensureOpencodeServer(bin, A)
+        const before = pids().length
+        await Promise.all([
+            ensureOpencodeServer(bin, A),
+            ensureOpencodeServer(bin, B),
+        ])
+        const all = pids()
+        for (const pid of all) await waitDead(pid).catch(() => {})
+        const live = all.filter(alive)
+        // the last spawn is the survivor; nothing spawned before the race may outlive it
+        expect(live).toEqual([all.at(-1)!])
+        expect(all.length).toBeGreaterThan(before - 1)
+    })
+
+    test('cleanup', async () => {
+        for (const pid of pids())
+            try {
+                process.kill(pid, 'SIGTERM')
+            } catch {
+                /* gone */
+            }
     })
 })

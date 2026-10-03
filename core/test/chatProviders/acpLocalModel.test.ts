@@ -12,7 +12,10 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { localUnreachableMessage } from '../../src/agentBackends/localModelProbe'
-import { acpSpawnEnv } from '../../src/chatProviders/acp/driver'
+import {
+    acceptsModelPick,
+    acpSpawnEnv,
+} from '../../src/chatProviders/acp/driver'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
 import { tempDir } from '../helpers'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
@@ -44,6 +47,19 @@ describe('acpSpawnEnv', () => {
     test('is a no-op on null', () => {
         const base = { A: '1' }
         expect(acpSpawnEnv(base, null)).toEqual({ A: '1' })
+    })
+})
+
+describe('acceptsModelPick (a local chat is pinned to the server models)', () => {
+    test('a remembered cloud id is refused while local is on', () => {
+        expect(acceptsModelPick(fakeLocal({}), 'claude-sonnet-4-5')).toBe(false)
+    })
+    test('a listed id is accepted, bare or local/-prefixed', () => {
+        expect(acceptsModelPick(fakeLocal({}), 'm')).toBe(true)
+        expect(acceptsModelPick(fakeLocal({}), 'local/m')).toBe(true)
+    })
+    test('with local off any id passes', () => {
+        expect(acceptsModelPick(null, 'claude-sonnet-4-5')).toBe(true)
     })
 })
 

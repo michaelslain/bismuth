@@ -235,6 +235,16 @@ function killWithEscalation(
         .catch(() => {})
 }
 
+/** Whether `setModel` takes `model`. While the vault's local model resolved for this session the chat
+ *  is PINNED to the local server's ids — the app re-applies the last pick on a fresh chat, and a
+ *  remembered cloud id would be forwarded to goose and fail the turn. */
+export function acceptsModelPick(
+    local: ResolvedLocal | null,
+    model: string,
+): boolean {
+    return !local || local.models.includes(model.replace(/^local\//, ''))
+}
+
 /** The env an ACP agent is spawned with: the base, with the vault's local-model env (goose's
  *  `GOOSE_PROVIDER`/`OPENAI_HOST`/… from `localSpawnFor`) laid over it when the setting resolved
  *  for this agent. Pure — `null` (setting off, or an agent with no local mechanism) is `base`. */
@@ -922,6 +932,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         setModel: (chatId: string, model: string) => {
             const s = sessions.get(chatId)
             if (!s || !s.sessionId) return
+            if (!acceptsModelPick(s.local, model)) return
             if (s.modelShape.shape === 'new' && s.modelShape.modelConfigId) {
                 const configId = s.modelShape.modelConfigId
                 void call(s, 'session/set_config_option', {
