@@ -117,6 +117,17 @@ import {
     type DensityField,
 } from './densityField'
 import { dollyForT, zoomT } from './cameraModel'
+import {
+    FAN_EDGE_ALPHA,
+    FIXED_CUTS,
+    clipFieldLabel,
+    degreeCuts,
+    edgeDensityAlpha,
+    flatGlyphTier,
+    isFanEdge,
+    tierForCuts,
+    type DegreeCuts,
+} from './flatField'
 import { blendPosition, lerp, MODE_MORPH_MS, morphProgress } from './modeMorph'
 import {
     scaleToSpacing,
@@ -186,6 +197,7 @@ import {
     maxResFor,
     nearestCellNode,
     nodeGlyph,
+    NODE_GLYPHS,
     pxToCell,
     quantizePan,
     resFromPercent,
@@ -650,12 +662,16 @@ function nodePathLabels(n: GraphNode): string[] | undefined {
 }
 
 /** Wikilink/tag flavouring so a label reads like the vault does (design's `[[note name]]`). */
-function labelText(n: GraphNode): string {
+function labelText(n: GraphNode, diagram: boolean): string {
     // vault.ts already builds a tag node's label WITH its "#" (`label: \`#${tag}\``), so prefixing
     // unconditionally printed "##research" on the field.
     if (n.kind === 'tag')
         return n.label.startsWith('#') ? n.label : '#' + n.label
-    if (n.kind === 'note' || n.kind === 'memory') return '[[' + n.label + ']]'
+    // A ```graph diagram and the intro graph keep the `[[…]]` wikilink spelling: their names are
+    // their content. The knowledge graph (GraphView, which always sets showLodMasses) drops it — every note label carried it, so it doubled the ink and
+    // told the reader nothing — and clips a long title so one book name cannot claim a third of a row.
+    if (n.kind === 'note' || n.kind === 'memory')
+        return diagram ? '[[' + n.label + ']]' : clipFieldLabel(n.label)
     return n.label
 }
 
@@ -882,6 +898,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     private edgeAccent: EdgeView[] = [] // hovered-incident, full alpha
     private edgeDim: EdgeView[] = [] // dimmed by an active focus/highlight set
     private edgeMain: EdgeView[] = [] // 2D, no depth fade
+    private edgeFan: EdgeView[] = [] // flat 2D field: an edge into a hub's fan, a step quieter
     private edgeBands: EdgeView[][] = Array.from(
         { length: EDGE_DEPTH_BANDS },
         () => [],
@@ -1010,6 +1027,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
     private searchMatches = new Set<string>()
     private highlightSet: Set<string> | null = null
     private alwaysOn = new Set<string>()
+    // The FLAT field's rank-based glyph cut-offs (flatField.ts `degreeCuts`) — recomputed per
+    // structural build, read by the leaf raster pass and the fan-edge split whenever [clusters] is off.
+    private degreeCuts: DegreeCuts = FIXED_CUTS
+    // Per-frame multiplier on the flat field's member edges, from how many it strokes over the grid's
+    // cell count (flatField.ts `edgeDensityAlpha`); 1 whenever [clusters] is on.
+    private flatEdgeFade = 1
 
     // theme tokens
     private colors: string[] = [...COLOR_FALLBACK]
@@ -1540,6 +1563,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
                 ),
         )
 
+        this.degreeCuts = degreeCuts(this.nodes.map(nv => nv.deg))
         this.radius3 = boundingRadius(this.nodes.map(nv => nv.p3))
         this.radius2 = boundingRadius(this.nodes.map(nv => nv.p2))
         this.half2 = boundingHalfExtents(this.nodes.map(nv => nv.p2))
@@ -1898,13 +1922,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // unscaled `baseCellH` readTokens() maintains — never off `cellH` itself, or a pane that
         // stays small across several measure() calls (no readTokens() in between, e.g. the plain
         // ResizeObserver path) would compound the shrink smaller every time instead of holding steady.
-        // 2D ONLY: 3D's deep-zoom camera ladder (maxResFor, the dolly) is derived FROM cellW, so
-        // shrinking it there would silently retune the camera ceiling with the pane size — a coupling
-        // nothing about "the panel got smaller" should imply. 2D has no such coupling (LOD/label
-        // placement only), which is also where every reported instance of the swallowed-panel bug
-        // (and both screenshots it was reported with) actually is.
-        this.sizeScale =
-            this.cfg.viewMode === '3d' ? 1 : compactScale(this.W, this.H)
+        // BOTH dimensions. 3D was once held at 1 because its deep-zoom camera ladder (maxResFor, and
+        // the dolly keyed off it) is derived from the cell width, so a shrunk cell retuned the camera
+        // ceiling with the pane size. fit() now feeds that ladder `ladderCellW()` — the UNSCALED cell —
+        // so 3D shrinks its glyphs in a small pane exactly like 2D without touching the camera.
+        this.sizeScale = compactScale(this.W, this.H)
         this.cellH = this.baseCellH * this.sizeScale
         this.dpr = clampDprToCanvasArea(
             Math.min(
@@ -2029,11 +2051,20 @@ export class AsciiGraphRenderer implements GraphRenderer {
      *  3D keeps the original radius-based `fitPxPerWorld` (a fraction of the shorter screen axis) —
      *  the orbiting camera has no fixed box to fill, only a distance to keep the whole cloud in frame
      *  regardless of yaw/pitch. */
+    /** The cell width the zoom ladder (`maxResFor`) is measured in. 2D: the live cell, so the
+     *  deepest stop keeps its fixed world-per-cell however small the compact shrink makes the cell.
+     *  3D: the UNSCALED cell — the dolly rides `resolutionT(res, maxRes)`, and the orbit camera's
+     *  ceiling must not move because the pane got smaller (compactScale is a function of the pane,
+     *  never the camera). */
+    private ladderCellW(is2d: boolean): number {
+        return is2d ? this.cellW : this.cellW / Math.max(1e-6, this.sizeScale)
+    }
+
     private fit(resetCamera = false) {
         if (!this.boxReady) return
         const is2d = this.cfg.viewMode === '2d'
         this.pxPerWorld = this.fitPxPerWorldFor(is2d)
-        this.maxRes = maxResFor(this.pxPerWorld, this.cellW)
+        this.maxRes = maxResFor(this.pxPerWorld, this.ladderCellW(is2d))
         if (resetCamera) {
             this.zoomPct = 100
             this.res = 1
@@ -2575,6 +2606,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.edgeAccent.length = 0
         this.edgeDim.length = 0
         this.edgeMain.length = 0
+        this.edgeFan.length = 0
+        this.flatEdgeFade = 1
         for (const band of this.edgeBands) band.length = 0
         for (const list of this.intraBuckets.values()) list.length = 0
         this.intraOn = false
@@ -2621,6 +2654,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
             this.levelCount > 0 &&
             this.entityLevels.length > 0
         this.lodOn = lodOn
+        // [clusters] OFF on the knowledge graph (an explicit false — see layoutLabels): the every-note
+        // FLAT field, quieted by flatField.ts — rank-based glyph weight, a density fade on member edges,
+        // hub fans a step below ordinary links. Clustered, the intro graph and ```graph diagrams never
+        // set it false and keep exactly what they had.
+        const flatField = this.cfg.showLodMasses === false
         // THE THREE-BAND LADDER (backbone.ts §5.4, via lodMix): far = territory masses + aggregate
         // connectors; mid = individual glyphs + the hub-to-hub backbone; near = individual glyphs + real
         // member edges. With LOD off (3D, "local" mode, community-less graphs) there is no mass band to
@@ -2839,6 +2877,17 @@ export class AsciiGraphRenderer implements GraphRenderer {
                         continue
                     }
                 }
+                // FIXED_CUTS = a graph too small to rank (local mode's neighbourhood, a small vault): there
+                // every hub IS the structure, so nothing is demoted to the fan. 2D and 3D alike — a tag's
+                // fan is the same one fact told hundreds of times whichever way the camera looks at it.
+                if (
+                    flatField &&
+                    this.degreeCuts !== FIXED_CUTS &&
+                    isFanEdge(a.deg, b.deg, this.degreeCuts)
+                ) {
+                    this.edgeFan.push(e)
+                    continue
+                }
                 if (is2d) {
                     this.edgeMain.push(e)
                     continue
@@ -2847,6 +2896,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
                     safeDepthBand((a.dr + b.dr) / 2, EDGE_DEPTH_BANDS)
                 ].push(e)
             }
+            let stroked = this.edgeMain.length + this.edgeFan.length
+            for (const band of this.edgeBands) stroked += band.length
+            this.flatEdgeFade = flatField
+                ? edgeDensityAlpha(stroked, m.cols * m.rows)
+                : 1
 
             // Layer 3 — nodes. Weight is the glyph (degree ramp, shifted by depth band in 3D), colour is
             // the cluster; the hovered / active node takes the accent.
@@ -2888,7 +2942,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
                 const glyph =
                     nv.node.kind === 'self'
                         ? '@'
-                        : nodeGlyph(nv.deg, nv.dr, !is2d, DEPTH_BANDS)
+                        : flatField
+                          ? NODE_GLYPHS[
+                                flatGlyphTier(
+                                    tierForCuts(nv.deg, this.degreeCuts),
+                                    nv.dr,
+                                    !is2d,
+                                    DEPTH_BANDS,
+                                )
+                            ]
+                          : nodeGlyph(nv.deg, nv.dr, !is2d, DEPTH_BANDS)
                 this.charBuf[idx] = glyph.charCodeAt(0)
                 this.layerBuf[idx] = LAYER_NODE
                 this.colorBuf[idx] = hot
@@ -3688,13 +3751,21 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // (clusters toggled off) shares that same open budget + pinned alpha below, but NOT the
         // other-side retry or the never-drop skip a few lines down — a large vault with clusters off
         // must still DROP colliding names rather than draw them over each other.
+        // The KNOWLEDGE GRAPH (GraphView always sets `showLodMasses`, true or false) treats a
+        // community-less graph like `flat`: the row budget at fit, every name only as the camera zooms
+        // in, and colliding names DROPPED — a small vault named every glyph and drew colliding names
+        // straight over each other. Callers that never set the flag (the intro graph) keep the open
+        // all-names behaviour a community-less graph always had.
+        const knowledgeGraph = this.cfg.showLodMasses !== undefined
         const everyNode =
-            this.cfg.labelEveryNode === true || this.levelCount === 0
+            this.cfg.labelEveryNode === true ||
+            (this.levelCount === 0 && !knowledgeGraph)
         // `flat` opens to every name only as the camera zooms in — at fit it names the pane's
         // row budget of biggest hubs, so the field is labelled without a name on every glyph.
+        const flatBudget = flat || (this.levelCount === 0 && knowledgeGraph)
         const budget = everyNode
             ? ordered.length
-            : flat
+            : flatBudget
               ? flatLabelBudget(t, m.rows, ordered.length)
               : fileLabelBudget(t, ordered.length)
 
@@ -3731,7 +3802,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
         for (const nv of ordered) {
             const force = forced(nv)
             if (!force && drawn >= budget) break // forced labels sort to the front, so this can break
-            const text = labelText(nv.node)
+            const text = labelText(
+                nv.node,
+                !knowledgeGraph || this.cfg.labelEveryNode === true,
+            )
             const len = text.length
             let col = nv.col + 2
             if (col + len > m.cols) col = nv.col - 2 - len
@@ -3770,7 +3844,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
                 row,
                 color: this.resolveFillColor(colorSlot),
                 accent,
-                alpha: force || everyNode || flat ? 1 : fAlpha,
+                alpha: force || everyNode || flatBudget ? 1 : fAlpha,
                 widthCells: len,
             })
             drawn++
@@ -4124,8 +4198,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
         }
         // 3. REAL MEMBER EDGES — `memberEdgeAlpha` (the NEAR band), never the glyph gate: across the mid
         //    band glyphs are fully on while these are fully off, the backbone standing in for them.
-        const base = this.edgeBaseAlpha * this.memberEdgeAlpha
-        if (base <= 0.004) {
+        // `lit` is what hover asks for — the hovered node's own links at full strength. Every resting
+        // pass rides `base`, which also carries the flat field's density fade.
+        const lit = this.edgeBaseAlpha * this.memberEdgeAlpha
+        const base = lit * this.flatEdgeFade
+        if (lit <= 0.004) {
             ctx.globalAlpha = 1
             return
         }
@@ -4176,6 +4253,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // Dim (non-focus) and flat-2D edges first, then 3D depth bands far→near (so alpha compositing
         // order matches the old renderer's back-to-front pass), then the hovered-incident accent on top.
         pass(this.edgeDim, base * EDGE_DIM_ALPHA, edgeHex)
+        pass(this.edgeFan, base * FAN_EDGE_ALPHA, edgeHex)
         pass(this.edgeMain, base, edgeHex)
         for (let bi = 0; bi < EDGE_DEPTH_BANDS; bi++) {
             const fade =
@@ -4184,9 +4262,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
                     Math.pow((bi + 0.5) / EDGE_DEPTH_BANDS, EDGE_DEPTH_CURVE)
             pass(this.edgeBands[bi], base * fade, edgeHex)
         }
-        // `base`, not the bare `memberEdgeAlpha` — see EDGE_BASE_ALPHA_FALLBACK's comment: base already
+        // `lit`, not the bare `memberEdgeAlpha` — see EDGE_BASE_ALPHA_FALLBACK's comment: it already
         // folds in the per-theme edgeBaseAlpha, so every pass (including this one) stays on the one knob.
-        pass(this.edgeAccent, base, accentHex)
+        pass(this.edgeAccent, lit, accentHex)
         ctx.globalAlpha = 1 // leave clean for the row loop + label pass right after
     }
 
