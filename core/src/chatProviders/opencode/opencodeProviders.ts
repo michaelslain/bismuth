@@ -33,8 +33,20 @@ export function validProviderId(id: unknown): id is string {
     return typeof id === 'string' && /^[\w.:-]{1,100}$/.test(id)
 }
 
+/** Scrub `secret` from `text` in every spelling an echo plausibly takes: literal, URL-encoded, and
+ *  JSON-escaped. Longest variant first so a shorter one never leaves a fragment of a longer one. */
 function redact(text: string, secret?: string): string {
-    return secret ? text.split(secret).join('[redacted]') : text
+    if (!secret) return text
+    const variants = [
+        ...new Set([
+            secret,
+            encodeURIComponent(secret),
+            JSON.stringify(secret).slice(1, -1),
+        ]),
+    ]
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length)
+    return variants.reduce((t, v) => t.split(v).join('[redacted]'), text)
 }
 
 /** A displayable message out of whatever opencode (or fetch) returned, with `secret` scrubbed. */
@@ -50,6 +62,8 @@ function messageOf(err: unknown, fallback: string, secret?: string): string {
         if (typeof e.data?.message === 'string') raw = e.data.message
         else if (typeof e.message === 'string') raw = e.message
         else if (typeof e.error === 'string') raw = e.error
+        else if (e.error && typeof e.error === 'object')
+            return messageOf(e.error, fallback, secret)
     }
     return redact(raw.trim() || fallback, secret)
 }
@@ -138,14 +152,15 @@ export async function setProviderKey(
         throw new OpencodeBadRequest('Unknown provider id.')
     if (typeof key !== 'string' || !key.trim())
         throw new OpencodeBadRequest('An API key is required.')
+    const k = key.trim()
     await call(
         () =>
             client.auth.set({
                 path: { id },
-                body: { type: 'api', key },
+                body: { type: 'api', key: k },
             }) as never,
         'opencode rejected the API key',
-        key,
+        k,
     )
 }
 

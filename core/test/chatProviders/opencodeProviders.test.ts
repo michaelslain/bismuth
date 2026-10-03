@@ -9,7 +9,6 @@ import {
     OpencodeBadRequest,
     setProviderKey,
 } from '../../src/chatProviders/opencode/opencodeProviders'
-import { whichBinary } from '../../src/claudeWhich'
 import { createServer } from '../../src/server'
 import { makeSampleVault } from '../helpers'
 
@@ -151,7 +150,62 @@ describe('setProviderKey', () => {
         expect(err).toBeInstanceOf(OpencodeBadRequest)
         expect(err.message).toContain('bad key')
         expect(err.message).not.toContain(KEY)
-        expect(JSON.stringify(err)).not.toContain(KEY)
+        expect(err.stack).not.toContain(KEY)
+    })
+
+    test('a nested { error: { data: { message } } } echo is scrubbed', async () => {
+        const { client } = fakeClient({
+            setResult: {
+                error: { error: { data: { message: `nope ${KEY} nope` } } },
+            },
+        })
+        const err = await setProviderKey(client, 'openai', KEY).catch(e => e)
+        expect(err).toBeInstanceOf(OpencodeBadRequest)
+        expect(err.message).toContain('nope')
+        expect(err.message).not.toContain(KEY)
+        expect(err.stack).not.toContain(KEY)
+    })
+
+    test('a URL-encoded or JSON-escaped echo of the key is scrubbed', async () => {
+        const odd = 'sk-a b/c+d"e\\f'
+        for (const echo of [
+            encodeURIComponent(odd),
+            JSON.stringify(odd).slice(1, -1),
+            odd,
+        ]) {
+            const { client } = fakeClient({
+                setResult: {
+                    error: { data: { message: `rejected key=${echo}` } },
+                },
+            })
+            const err = await setProviderKey(client, 'openai', odd).catch(
+                e => e,
+            )
+            expect(err).toBeInstanceOf(OpencodeBadRequest)
+            expect(err.message).toContain('rejected')
+            expect(err.message).not.toContain(echo)
+            expect(err.stack).not.toContain(echo)
+        }
+    })
+
+    test('a whitespace-padded key is trimmed before sending and before scrubbing', async () => {
+        const padded = `  ${KEY}\n`
+        const ok = fakeClient()
+        await setProviderKey(ok.client, 'openai', padded)
+        expect(ok.calls[0].arg).toEqual({
+            path: { id: 'openai' },
+            body: { type: 'api', key: KEY },
+        })
+        // opencode echoes the key back trimmed — the untrimmed copy would not have matched
+        const bad = fakeClient({
+            setResult: { error: { data: { message: `bad key ${KEY}` } } },
+        })
+        const err = await setProviderKey(bad.client, 'openai', padded).catch(
+            e => e,
+        )
+        expect(err).toBeInstanceOf(OpencodeBadRequest)
+        expect(err.message).not.toContain(KEY)
+        expect(err.stack).not.toContain(KEY)
     })
 
     test('a thrown transport error that echoes the key is scrubbed too', async () => {
@@ -264,10 +318,16 @@ describe('routes', () => {
                 owner: boolean,
             ) => Promise<Response>,
         ) => Promise<void>,
+        opencodeClient?: () => Promise<OpencodeClient | null>,
     ) {
         process.env.BISMUTH_OWNER_TOKEN = TOKEN
         const { vault, memory } = await makeSampleVault()
-        const server = createServer({ vault, memory, port: 0 })
+        const server = createServer({
+            vault,
+            memory,
+            port: 0,
+            opencodeClient: opencodeClient ?? (async () => null),
+        })
         try {
             await run((method, path, body, owner) =>
                 fetch(`http://localhost:${server.port}${path}`, {
@@ -296,10 +356,9 @@ describe('routes', () => {
         })
     })
 
-    test.skipIf(!!whichBinary('opencode'))(
-        'every route answers 409 opencode-missing for the owner when the binary is absent',
-        async () => {
-            await withServer(async call => {
+    test('every route answers 409 opencode-missing for the owner when there is no opencode client', async () => {
+        await withServer(
+            async call => {
                 for (const [m, p, b] of routes) {
                     const res = await call(m, p, b, true)
                     expect([m, p, res.status]).toEqual([m, p, 409])
@@ -310,7 +369,25 @@ describe('routes', () => {
                     expect(body.error).toBe('opencode-missing')
                     expect(body.message).toBeTruthy()
                 }
-            })
-        },
-    )
+            },
+            async () => null,
+        )
+    })
+
+    test('every route answers 409 opencode-missing when the opencode server fails to start', async () => {
+        await withServer(
+            async call => {
+                for (const [m, p, b] of routes) {
+                    const res = await call(m, p, b, true)
+                    expect([m, p, res.status]).toEqual([m, p, 409])
+                    expect(
+                        ((await res.json()) as { error: string }).error,
+                    ).toBe('opencode-missing')
+                }
+            },
+            async () => {
+                throw new Error('spawn failed')
+            },
+        )
+    })
 })

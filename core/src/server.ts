@@ -228,6 +228,9 @@ export interface CoreConfig {
     vault: string
     memory?: string
     port?: number
+    /** Test seam for the /opencode/* routes: resolves the shared opencode server's client, or null
+     *  when opencode is absent. Defaults to the real lookup. A rejection counts as null. */
+    opencodeClient?: () => Promise<Awaited<ReturnType<typeof opencodeClient>>>
 }
 
 const enc = new TextEncoder()
@@ -944,7 +947,9 @@ export function createServer(cfg: CoreConfig) {
     ): Promise<Response> {
         if (requestChannel(req) !== 'owner')
             return Response.json({ error: 'forbidden' }, { status: 403 })
-        const client = await opencodeClient()
+        const client = await (cfg.opencodeClient ?? opencodeClient)().catch(
+            () => null,
+        )
         if (!client)
             return Response.json(
                 {
