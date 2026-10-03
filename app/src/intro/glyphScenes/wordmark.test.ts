@@ -30,18 +30,18 @@ describe('wordmarkScene', () => {
     it('is 96x16 and plain ASCII at every phase', () => {
         for (const t of [0, 450, 900, 5000, 12000]) expect(ascii(frameToText(render(t)))).toBe(true)
     })
-    it('reveal converges: frame(revealMs) has every letter cell drawn as # or +', () => {
+    it('reveal converges: frame(revealMs) has every letter cell drawn as # (or @ under the sheen)', () => {
         const f = render(wordmarkScene.revealMs)
         const col0 = Math.floor((96 - WORDMARK[0].length) / 2)
         for (let r = 0; r < WORDMARK_ROWS; r++)
             for (let c = 0; c < WORDMARK[0].length; c++)
                 if (WORDMARK[r][c] === '#') {
                     const ch = String.fromCharCode(f.chars[(r + 3) * 96 + col0 + c])
-                    expect('#+@').toContain(ch)
+                    expect('#@').toContain(ch)
                 }
     })
     it('frame(0) shows fewer letter glyphs than frame(revealMs)', () => {
-        const count = (f: ReturnType<typeof render>) => [...frameToText(f)].filter(ch => ch === '#' || ch === '+').length
+        const count = (f: ReturnType<typeof render>) => [...frameToText(f)].filter(ch => ch === '#').length
         expect(count(render(0))).toBeLessThan(count(render(wordmarkScene.revealMs)) / 4)
     })
     it('is deterministic and the sheen moves', () => {

@@ -20,13 +20,22 @@ const ROWS = 16
 const WORDMARK_TOP = 3
 const SHEEN_WIDTH = 3
 const SHEEN_COLORS: readonly GlyphColor[] = ['graph0', 'graph1', 'graph2', 'graph3', 'graph4']
-/** Plain-ASCII noise vocabulary, a subset of ui/ascii/noiseField.ts's. */
-const NOISE = ['.', '`', "'", '-', '+', '/', '\\', '|']
-const NOISE_DENSITY = 0.12
+/**
+ * Plain-ASCII noise vocabulary: light marks only. It deliberately shares no glyph with the
+ * letters (all '#', and '@' in the sheen) so noise never blurs into a stroke.
+ */
+const NOISE = ['.', '`', "'", ',', ':']
+const NOISE_DENSITY = 0.08
+/** Noise-free margin around the wordmark: columns left/right, rows above/below. */
+const QUIET_COLS = 2
+const QUIET_ROWS = 1
 const WORDMARK_WIDTH = WORDMARK[0].length
 
 const filled = (x: number, y: number) =>
     y >= 0 && y < WORDMARK_ROWS && x >= 0 && x < WORDMARK_WIDTH && WORDMARK[y][x] === '#'
+
+const inQuietZone = (x: number, y: number) =>
+    x >= -QUIET_COLS && x < WORDMARK_WIDTH + QUIET_COLS && y >= -QUIET_ROWS && y < WORDMARK_ROWS + QUIET_ROWS
 
 /** Sheen band's left edge (bitmap column) `ambientMs` after the reveal ended. */
 function sheenLeft(ambientMs: number): number {
@@ -55,15 +64,14 @@ export function drawWordmark(out: GlyphFrame, col: number, row: number, t: numbe
                 putChar(out, c, r, '@', SHEEN_COLORS[x % 5])
                 continue
             }
-            const edge = !filled(x - 1, y) || !filled(x + 1, y) || !filled(x, y - 1) || !filled(x, y + 1)
-            if (edge) putChar(out, c, r, '+', 'muted')
-            else putChar(out, c, r, '#', 'fg')
+            putChar(out, c, r, '#', 'fg')
         }
     }
 }
 
 /**
- * The sparse noise field over every cell the wordmark does not cover (and `skipRow`, if given).
+ * The sparse noise field over every cell outside the wordmark's quiet zone (its bounding box
+ * grown by QUIET_COLS each side and QUIET_ROWS above/below) and not on `skipRow`, if given.
  * Re-seeds every 8 ambient frames, so it twinkles at about 1.5Hz while the cadence stays 12fps.
  */
 export function drawNoiseField(out: GlyphFrame, t: number, wordmarkCol: number, wordmarkRow: number, skipRow = -1): void {
@@ -72,9 +80,9 @@ export function drawNoiseField(out: GlyphFrame, t: number, wordmarkCol: number, 
     for (let r = 0; r < out.rows; r++) {
         if (r === skipRow) continue
         for (let c = 0; c < out.cols; c++) {
-            if (filled(c - wordmarkCol, r - wordmarkRow)) continue
+            if (inQuietZone(c - wordmarkCol, r - wordmarkRow)) continue
             if (cellHash(c, r, seed) >= NOISE_DENSITY) continue
-            putChar(out, c, r, NOISE[Math.floor(cellHash(c, r, 11) * NOISE.length)], 'faint', 110)
+            putChar(out, c, r, NOISE[Math.floor(cellHash(c, r, 11) * NOISE.length)], 'faint', 90)
         }
     }
 }
