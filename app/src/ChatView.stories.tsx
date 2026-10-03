@@ -24,7 +24,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { onCleanup } from 'solid-js'
 import { ChatView } from './ChatView'
-import { retainFakeChat } from './chat/_fakeChatSocket'
+import { retainFakeChat, type FakeChatFrames } from './chat/_fakeChatSocket'
 import { providerStorageKey } from './chatProvider'
 import {
     expectProseFace,
@@ -35,10 +35,7 @@ import {
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 
 /** Wraps <ChatView> with the fake socket + session lifecycle, scoped to exactly this story instance. */
-function FakeSocketChat(props: {
-    chatId: string
-    frames: readonly ChatFrame[]
-}) {
+function FakeSocketChat(props: { chatId: string; frames: FakeChatFrames }) {
     retainFakeChat(props.chatId, props.frames)
     return (
         <ChatView
@@ -541,7 +538,7 @@ export const TagTypography: Story = {
 
 /** <FakeSocketChat> as an opencode tab: writes the per-tab provider key a real tab persists BEFORE the
  *  session is retained (the session reads it once, at creation), and removes it on cleanup. */
-function OpencodeChat(props: { chatId: string; frames: readonly ChatFrame[] }) {
+function OpencodeChat(props: { chatId: string; frames: FakeChatFrames }) {
     try {
         localStorage.setItem(providerStorageKey(props.chatId), 'opencode')
     } catch {}
@@ -553,60 +550,97 @@ function OpencodeChat(props: { chatId: string; frames: readonly ChatFrame[] }) {
     return <FakeSocketChat chatId={props.chatId} frames={props.frames} />
 }
 
+/** One script per connector, so switching connector in the picker shows THAT connector's models,
+ *  the way the real router answers each backend with its own `models` frame. */
+const OPENCODE_PICKER_FRAMES: ChatFrame[] = [
+    {
+        type: 'manifest',
+        manifest: {
+            ...MANIFEST,
+            model: 'anthropic/claude-sonnet-4-5',
+        },
+    },
+    {
+        type: 'models',
+        models: [
+            {
+                value: 'anthropic/claude-sonnet-4-5',
+                label: 'anthropic/claude-sonnet-4-5',
+                description: '',
+                effortLevels: [],
+            },
+            {
+                value: 'anthropic/claude-opus-4-8',
+                label: 'anthropic/claude-opus-4-8',
+                description: '',
+                effortLevels: [],
+            },
+            {
+                value: 'opencode/kimi-k2',
+                label: 'opencode/kimi-k2',
+                description: '',
+                effortLevels: [],
+                free: true,
+            },
+        ],
+    },
+    {
+        type: 'user-message',
+        text: 'Which notes link to [[Reading List]]?',
+    },
+    {
+        type: 'assistant-text',
+        text: 'Three notes link to [[Reading List]]: [[2026-09-30]], [[Books]] and [[Queue]].',
+    },
+    { type: 'result', isError: false, numTurns: 1, costUsd: 0 },
+    { type: 'done' },
+]
+
+const CLAUDE_PICKER_FRAMES: ChatFrame[] = [
+    { type: 'manifest', manifest: { ...MANIFEST, model: 'opus' } },
+    {
+        type: 'models',
+        models: [
+            {
+                value: 'opus',
+                label: 'Opus 4.8',
+                description: 'Most capable',
+                effortLevels: ['low', 'medium', 'high'],
+            },
+            {
+                value: 'sonnet',
+                label: 'Sonnet 4.5',
+                description: 'Balanced',
+                effortLevels: ['low', 'medium', 'high'],
+            },
+            {
+                value: 'haiku',
+                label: 'Haiku 4.5',
+                description: 'Fastest',
+                effortLevels: [],
+            },
+        ],
+    },
+]
+
+const pickerFrames = (provider: string): readonly ChatFrame[] =>
+    provider === 'opencode'
+        ? OPENCODE_PICKER_FRAMES
+        : provider === 'claude'
+          ? CLAUDE_PICKER_FRAMES
+          : [{ type: 'manifest', manifest: { ...MANIFEST, model: '' } }]
+
 /** The unified model picker in the context it actually appears in: an opencode chat with the model
  *  word clicked open over its transcript — connectors on the left, grouped models and the provider
  *  manager on the right. The manager's lists come from the preview's global fakeTransport
- *  (`GET /opencode/providers`). The fake socket replays the SAME frames for every connector, so
- *  switching connector here shows the same model list; per-connector states live in
- *  Chat/ChatModelPicker. */
+ *  (`GET /opencode/providers`). Each connector answers with its own script (`pickerFrames`), so
+ *  switching to claude code lists Claude's models and the others report none. */
 export const ModelPicker: Story = {
     render: () => (
         <div style={{ height: STORY_H, width: '100%' }}>
             <OpencodeChat
                 chatId="story-chat-opencode-providers"
-                frames={[
-                    {
-                        type: 'manifest',
-                        manifest: {
-                            ...MANIFEST,
-                            model: 'anthropic/claude-sonnet-4-5',
-                        },
-                    },
-                    {
-                        type: 'models',
-                        models: [
-                            {
-                                value: 'anthropic/claude-sonnet-4-5',
-                                label: 'anthropic/claude-sonnet-4-5',
-                                description: '',
-                                effortLevels: [],
-                            },
-                            {
-                                value: 'anthropic/claude-opus-4-8',
-                                label: 'anthropic/claude-opus-4-8',
-                                description: '',
-                                effortLevels: [],
-                            },
-                            {
-                                value: 'opencode/kimi-k2',
-                                label: 'opencode/kimi-k2',
-                                description: '',
-                                effortLevels: [],
-                                free: true,
-                            },
-                        ],
-                    },
-                    {
-                        type: 'user-message',
-                        text: 'Which notes link to [[Reading List]]?',
-                    },
-                    {
-                        type: 'assistant-text',
-                        text: 'Three notes link to [[Reading List]]: [[2026-09-30]], [[Books]] and [[Queue]].',
-                    },
-                    { type: 'result', isError: false, numTurns: 1, costUsd: 0 },
-                    { type: 'done' },
-                ]}
+                frames={pickerFrames}
             />
         </div>
     ),
@@ -630,6 +664,57 @@ export const ModelPicker: Story = {
         await waitFor(() => {
             if (!page.querySelector('input[placeholder="add a provider…"]'))
                 throw new Error('provider filter not rendered yet')
+        })
+    },
+}
+
+/** Switching connector inside the picker: start on opencode, pick claude code, and the right column
+ *  must list Claude's own models (each connector answers with its own `models` frame) — never the
+ *  opencode list it just left. */
+export const ModelPickerSwitchToClaude: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <OpencodeChat
+                chatId="story-chat-picker-switch"
+                frames={pickerFrames}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const page = canvasElement.ownerDocument.body
+        const openPicker = async () => {
+            const word = await waitFor(() => {
+                const el = canvasElement.querySelector<HTMLElement>(
+                    '[data-testid="chat-model"] button',
+                )
+                if (!el) throw new Error('model word not rendered yet')
+                return el
+            })
+            word.click()
+            return waitFor(() => {
+                const d = page.querySelector<HTMLElement>('[role="dialog"]')
+                if (!d) throw new Error('model dialog not rendered yet')
+                return d
+            })
+        }
+        let dialog = await openPicker()
+        await findText(dialog, 'kimi-k2')
+        const claudeRow = [...dialog.querySelectorAll('button')].find(
+            b => b.textContent?.trim() === 'claude code',
+        )
+        await expect(claudeRow).toBeTruthy()
+        claudeRow!.click()
+        // switching keeps the dialog open; if a rerender replaced it, reopen
+        dialog =
+            page.querySelector<HTMLElement>('[role="dialog"]') ??
+            (await openPicker())
+        await waitFor(() => {
+            const d =
+                page.querySelector<HTMLElement>('[role="dialog"]') ?? dialog
+            if (!d.textContent?.includes('Opus 4.8'))
+                throw new Error("claude's models not listed yet")
+            if (d.textContent.includes('kimi-k2'))
+                throw new Error('opencode models still listed')
         })
     },
 }
