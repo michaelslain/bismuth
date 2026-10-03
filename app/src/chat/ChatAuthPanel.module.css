@@ -15,10 +15,9 @@
     overflow: hidden;
 }
 .title {
+    /* Lowercase and untracked, like ModalHeader's title (DESIGN.md › Overlays). */
     padding: var(--sp-4) var(--sp-5) var(--sp-4);
     font-size: var(--fs-ui);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     color: var(--faint);
     border-bottom: 1px solid var(--border-soft);
 }
@@ -42,13 +41,9 @@
     flex: 1;
 }
 .kind {
-    font-size: var(--fs-micro);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    /* Plain lowercase text, no box — the req/opt badge idiom (DESIGN.md › Forms). */
+    font-size: var(--fs-ui);
     color: var(--faint);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--r-0);
-    padding: 1px var(--sp-2);
 }
 .filter {
     padding: var(--sp-3) var(--sp-5);
