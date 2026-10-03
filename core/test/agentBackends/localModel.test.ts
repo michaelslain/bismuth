@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BACKEND_LIST, can } from '../../src/agentBackends/catalog'
 import {
+    CLOUD_ENV,
     LOCAL_PROVIDER_ID,
     localSpawnFor,
     parseLocalModel,
+    withoutCloudEnv,
     type LocalModel,
 } from '../../src/agentBackends/localModel'
 import {
@@ -43,6 +45,22 @@ describe('parseLocalModel', () => {
         expect(
             parseLocalModel({ enabled: true, url: 'http://h:1/', model: 3 }),
         ).toEqual({ url: 'http://h:1', model: '', apiKey: '' })
+    })
+})
+
+describe('withoutCloudEnv', () => {
+    test('drops every claude cloud credential and routing var, keeps the rest', () => {
+        const env: Record<string, string | undefined> = { PATH: '/bin', HOME: '/h' }
+        for (const k of CLOUD_ENV.claude!) env[k] = 'x'
+        const out = withoutCloudEnv('claude', env)
+        for (const k of CLOUD_ENV.claude!) expect(k in out).toBe(false)
+        expect(out.PATH).toBe('/bin')
+        expect(out.HOME).toBe('/h')
+        expect(env.ANTHROPIC_API_KEY).toBe('x') // the input is not mutated
+    })
+    test('a backend with no cloud list is passed through unchanged', () => {
+        const env = { ANTHROPIC_API_KEY: 'x' }
+        expect(withoutCloudEnv('codex', env)).toEqual(env)
     })
 })
 

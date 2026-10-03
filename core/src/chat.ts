@@ -17,6 +17,7 @@ import {
 import { whichClaude } from './claudeWhich'
 import { loadSessionModel, saveSessionModel } from './chatModelStore'
 import { can } from './agentBackends/catalog'
+import { withoutCloudEnv } from './agentBackends/localModel'
 import {
     buildAutoNoteBody,
     extractText,
@@ -483,6 +484,8 @@ interface ChatSession {
      *  `claude` runs with (kept so a visibility respawn rebuilds the same env) and the model ids the
      *  server listed (the header picker shows these instead of Claude's own list). */
     local?: ResolvedLocal
+    /** The last permission mode the user set, so a re-emitted manifest does not reset it. */
+    permissionMode?: string
     /** From init: "none" when the user is on a Claude subscription login (no API key) — in that case
      *  the SDK's total_cost_usd is a notional API-equivalent figure the user does NOT pay, so we hide
      *  it. Any other value means real API-key billing, where the cost is meaningful. */
@@ -1340,8 +1343,12 @@ function spawnChatQuery(
                 // (this session, running its own Bash tool) from the vault owner's (an unstamped `bismuth`
                 // invocation). This IS the chat surface, so "chat" — never "daemon", which is the DIFFERENT
                 // always-on session daemon/src/daemon/session.ts spawns.
+                // A local-model chat drops the cloud credentials/routing the user exported (withoutCloudEnv),
+                // so a real key is never sent to the local host and Bedrock/Vertex can't bypass the base URL.
                 env: {
-                    ...process.env,
+                    ...(session.local
+                        ? withoutCloudEnv('claude', process.env)
+                        : process.env),
                     ...session.local?.env,
                     BISMUTH_AGENT_CHANNEL: 'chat',
                 },
@@ -2419,6 +2426,7 @@ export function respondPermission(
 export function setPermissionMode(chatId: string, mode: string): void {
     const s = sessions.get(chatId)
     if (!s) return
+    s.permissionMode = mode
     try {
         s.q
             .setPermissionMode(
@@ -2435,6 +2443,22 @@ export function setPermissionMode(chatId: string, mode: string): void {
 export function setModel(chatId: string, model: string): void {
     const s = sessions.get(chatId)
     if (!s) return
+    if (s.local && !s.local.models.includes(model)) {
+        // A cloud id the app re-applied from the last pick for this provider — the local server has
+        // never heard of it. Keep the session's local model and re-emit the manifest so the client
+        // adopts it instead of showing the cloud pick.
+        emit(s, {
+            type: 'manifest',
+            manifest: {
+                model: s.model ?? '',
+                permissionMode: s.permissionMode ?? 'default',
+                slashCommands: withLocalSlashCommands([]),
+                tools: [],
+                mcpServers: [],
+            },
+        })
+        return
+    }
     s.model = model
     // Persist the choice under the conversation's durable id (Bug #89) so resuming it — in any tab,
     // after any restart — comes back on this model. If the session_id isn't known yet (a pre-turn

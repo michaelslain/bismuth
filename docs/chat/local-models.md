@@ -8,6 +8,7 @@ Run Bismuth's chats on an open model served from your own machine — LM Studio,
 - **Never edits a CLI's own config.** Nothing is written to `~/.claude`, `~/.codex`, `~/.config/opencode` or `~/.config/goose`. The wiring is spawn-time env vars and flags, so running `claude` or `codex` yourself in a terminal is unaffected.
 - **Picked up by the next chat or turn.** Claude Code reads the setting when a chat opens (a chat already open keeps its server); Codex reads it on every turn. Opencode and Goose read it when they next spawn.
 - **No silent fallback.** If the setting is on and the server answers `GET <url>/v1/models` with no models (not running, or nothing loaded), the chat shows `No local model server answered at <url> (or it lists no models). Start LM Studio or Ollama, or turn off localModel in .settings.` as an error. It does not quietly use your cloud account.
+- **Pinned to the server's models.** While `localModel` is on, a chat's model picker lists the server's ids only; a cloud model remembered from an earlier chat is ignored. Turn the setting off to use cloud models again.
 - **The header model picker lists the server's models.** In a Claude Code chat the picker shows the ids from `/v1/models`, and picking one applies from the next turn. A model remembered from a cloud chat (a resumed chat's `opus`) is ignored unless the server lists it.
 
 ## The four fields
@@ -28,7 +29,7 @@ Run Bismuth's chats on an open model served from your own machine — LM Studio,
 | opencode | `/v1/chat/completions` | any server serving it |
 | Goose | `/v1/chat/completions` | any server serving it |
 
-Every other backend (cline, gemini, openclaw, Hermes and the other ACP adapters) ignores the setting. `bismuth backends` shows each backend's `localModel` capability.
+Every other backend (cline, gemini, openclaw, Hermes and the other ACP adapters) ignores the setting. `bismuth backends` lists `local` among the surfaces of each backend that supports it.
 
 How each is wired, all at spawn time:
 
