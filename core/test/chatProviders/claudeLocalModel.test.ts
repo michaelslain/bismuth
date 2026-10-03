@@ -11,6 +11,7 @@ import {
     closeChat,
     hasSession,
     newChatId,
+    openSession,
     sendMessage,
     setModel,
 } from '../../src/chat'
@@ -149,4 +150,33 @@ describeFast('claude chat on an unreachable local model', () => {
         expect(hasSession(chatId)).toBe(false)
         expect(frames.some(f => f.type === 'assistant-text')).toBe(false)
     })
+})
+
+describeFast('claude chat on a local model: a cloud model id', () => {
+    test('setModel with an id the server does not list keeps the local model and re-emits the manifest', async () => {
+        mock = await startMockLlm()
+        for (const k of ENV_KEYS) delete process.env[k]
+        process.env.CLAUDE_CONFIG_DIR = await mkdtemp(
+            join(tmpdir(), 'bismuth-claude-config-'),
+        )
+        tempDirs.push(process.env.CLAUDE_CONFIG_DIR)
+        const cwd = await vaultWith(
+            `localModel:\n  enabled: true\n  url: ${mock.url}\n  model: mock-local\n`,
+        )
+        const chatId = newChatId()
+        chatIds.push(chatId)
+        const { sink, frames, waitFor } = makeChatFrameCollector(60_000)
+
+        await openSession(chatId, cwd, sink)
+        await waitFor(f => f.type === 'manifest')
+        const before = frames.filter(f => f.type === 'manifest').length
+
+        setModel(chatId, 'claude-opus-4-7')
+        const manifests = frames.filter(f => f.type === 'manifest')
+        expect(manifests.length).toBe(before + 1)
+        const last = manifests[manifests.length - 1]
+        expect(last.type === 'manifest' && last.manifest.model).toBe(
+            'mock-local',
+        )
+    }, 90_000)
 })

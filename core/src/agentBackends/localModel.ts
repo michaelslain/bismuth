@@ -164,3 +164,31 @@ export function localSpawnFor(
             return null
     }
 }
+
+/**
+ * Cloud credentials and routing a backend's CLI reads from the user's own environment. A local-model
+ * spawn must not inherit them: a real key would be sent to whatever host `localModel.url` names, and
+ * Bedrock/Vertex routing ignores the base URL entirely (a silent cloud fallback).
+ */
+export const CLOUD_ENV: Partial<Record<BackendId, string[]>> = {
+    claude: [
+        'ANTHROPIC_API_KEY',
+        'CLAUDE_CODE_OAUTH_TOKEN',
+        'ANTHROPIC_CUSTOM_HEADERS',
+        'CLAUDE_CODE_USE_BEDROCK',
+        'CLAUDE_CODE_USE_VERTEX',
+        'ANTHROPIC_BEDROCK_BASE_URL',
+        'ANTHROPIC_VERTEX_BASE_URL',
+        'ANTHROPIC_SMALL_FAST_MODEL',
+    ],
+}
+
+/** Pure: a copy of `env` without the backend's cloud credentials/routing vars. */
+export function withoutCloudEnv(
+    id: BackendId,
+    env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+    const out = { ...env }
+    for (const k of CLOUD_ENV[id] ?? []) delete out[k]
+    return out
+}

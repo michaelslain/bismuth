@@ -379,7 +379,7 @@ chat:
 
 ## `localModel`
 
-Run chats on an open model served locally — LM Studio, Ollama, llama.cpp, vLLM, anything OpenAI/Anthropic-compatible — through the **existing** chat connectors. Applied at spawn time through env/argv only: Bismuth never edits Claude Code's, Codex's, opencode's or Goose's own config, so only Bismuth's chats go local. Which backends honor it is the catalog's `localModel` capability (`bismuth backends`); the rest run as normal. Full guide: [local models](../chat/local-models.md).
+Run chats on an open model served locally — LM Studio, Ollama, llama.cpp, vLLM, anything OpenAI/Anthropic-compatible — through the **existing** chat connectors. Applied at spawn time through env/argv only: Bismuth never edits Claude Code's, Codex's, opencode's or Goose's own config, so only Bismuth's chats go local. Which backends honor it is the catalog's `localModel` capability (`bismuth backends` shows `local` for those); the rest run as normal. Full guide: [local models](../chat/local-models.md).
 
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
