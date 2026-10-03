@@ -10,11 +10,11 @@
 // strip of 8+ controls"). They live in exactly ONE place now: the quiet `<ChatControls session/>`
 // row rendered via `ChatComposerBar`'s `below` slot, under the composer — shared verbatim by the
 // chat tab and the daemon page, so both surfaces show one composer + one quiet controls row and
-// never two. This component places only `ChatReadouts`.
+// never two. This component places only `ChatReadouts` (the context meter + an MCP-down warning).
 import type { Component } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
 import type { ChatSession } from './chatSession'
-import { ChatReadouts } from './ChatControls'
+import ChatReadouts from './ChatReadouts'
 import styles from './ChatHeader.module.css'
 
 export type ChatHeaderProps = {
@@ -31,7 +31,7 @@ const ChatHeader: Component<ChatHeaderProps> = props => {
     return (
         <ViewBar
             class={props.class}
-            parts={{ identity: styles.identity, readouts: styles.readouts }}
+            parts={{ identity: styles.identity }}
             identity={
                 <Crumb icon={props.originIcon} class={styles.crumb}>
                     {props.title}

@@ -7,16 +7,16 @@
    `<ChatControls session/>` row under the composer, shared by the chat tab and the daemon page. The
    picker-chrome register that used to live here (transparent-at-rest `.ui-select-trigger`/`.ui-input`
    overrides) went with them — ChatControls.module.css's `.row` owns that look now, for the one place
-   pickers render. The readout markup and its classes live in chat/ChatControls.tsx +
-   ChatControls.module.css. The view root (tint, `--chat-*` token localisation, drop affordance) is
+   pickers render. The readout markup and its classes live in chat/ChatReadouts.tsx +
+   ChatReadouts.module.css. The view root (tint, `--chat-*` token localisation, drop affordance) is
    ChatView.module.css.
 
    PARTS PROPS, NOT REACHES (one-global-stylesheet followups, task 1). This file used to reach
    `:global(.viewbar)`/`:global(.vb-identity)`/`:global(.crumb)`/`:global(.vb-readouts)` — the
    unhashed literals ui/ViewBar.tsx wrote by hand. ViewBar.module.css's family is real hashed
    CSS-module locals now, so those literals no longer exist to reach. ChatHeader.tsx passes
-   `parts={{ identity: styles.identity, readouts: styles.readouts }}` (appended to ViewBar's own
-   `vb-identity`/`vb-readouts` wrappers) and `class={styles.crumb}` straight to `<Crumb>` — every
+   `parts={{ identity: styles.identity }}` (appended to ViewBar's own `vb-identity`
+   wrapper) and `class={styles.crumb}` straight to `<Crumb>` — every
    rule below is a plain local class, not a global compound. */
 
 /* The chat's title lives in the toolbar crumb — give it a real slice of the bar and let a long
@@ -28,8 +28,3 @@
 .identity { flex: 0 1 auto; min-width: 0; max-width: 44cqi; }
 .crumb { flex: 0 1 auto; min-width: 0; }
 .crumb b { min-width: 0; }
-
-/* The readout region buys its own gap: ViewBar's regions sit at `--bar-icon-gap` (`--sp-4`) because
-   their usual contents carry their own padding, and a readout stat is a bare span that would
-   otherwise run flush into its neighbour — so readouts want `--sp-5` instead. */
-.readouts { gap: var(--sp-5); }

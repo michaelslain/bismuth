@@ -1,6 +1,6 @@
 // Visual spec for <ChatControls> — the quiet inline controls row for a host with no ViewBar (the
-// daemon page). The readouts (`ChatReadouts`) are exercised by ChatHeader.stories.tsx, which renders
-// through the real bar.
+// daemon page). The header's readouts are ChatReadouts.stories.tsx, and ChatHeader.stories.tsx
+// renders them through the real bar.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import ChatControls from './ChatControls'
@@ -57,8 +57,8 @@ export const Row: Story = {
         />
     ),
     play: async ({ canvasElement }) => {
-        // Readouts are OMITTED from the row (Acceptance) — no tool/mcp/context chips here.
-        expect(canvasElement.querySelector('[data-testid="chat-tools"]')).toBeNull()
+        // Readouts are OMITTED from the row (Acceptance) — the context meter is the header's.
+        expect(canvasElement.querySelector('[data-testid="chat-context"]')).toBeNull()
         await expect(
             canvasElement.querySelector('[data-testid="chat-perm-mode"]'),
         ).not.toBeNull()
