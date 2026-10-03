@@ -11,7 +11,7 @@
 
    Size is the only thing that differs: --fs-body (13px) in the 36px top-strip band, one step
    under the old --fs-lead and a step above the strip's own --fs-ui so it reads as the mark and
-   not a label; --fs-hero on the intro splash, where it is the whole screen.
+   not a label; --fs-hero where it is the whole screen.
 
    The wrapper lays the word and its optional <Caret /> out as one prompt. */
 .wordmark {

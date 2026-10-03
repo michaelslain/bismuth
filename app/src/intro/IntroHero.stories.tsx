@@ -1,6 +1,6 @@
 // The per-slide hero of the first-run intro, one story per kind, each drawn at a pinned time well
 // past its scene's reveal so the frame is the resting one. The wrapper is the hero box IntroFrame
-// gives it (96 x 16 cells). Canvas proof is pixels: each play counts inked pixels on the canvas.
+// gives it (96 x 16 cells at IntroFrame's 1.5 `--intro-glyph-scale`). Canvas proof is pixels: each play counts inked pixels on the canvas.
 // `WordmarkLive` has no pinned time, so the real loop runs.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
@@ -19,8 +19,8 @@ const meta = {
         (Story: () => JSX.Element) => (
             <div
                 style={{
-                    width: 'calc(96 * var(--cell-w))',
-                    height: 'calc(16 * var(--row-h))',
+                    width: 'calc(96 * var(--cell-w) * 1.5)',
+                    height: 'calc(16 * var(--row-h) * 1.5)',
                 }}
             >
                 <Story />

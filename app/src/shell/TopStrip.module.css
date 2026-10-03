@@ -10,7 +10,7 @@
 
    The wordmark and its caret are NOT styled here: ui/Wordmark owns them (the bare global
    `.asc-wordmark` / `.asc-caret` classes plus its own tracking and size tokens), so the corner mark
-   and the intro splash's hero are one component and cannot drift apart.
+   is one component and cannot drift.
 
    ONE RULE IN THIS FILE IS OUTSIDE THE COMPUTED-STYLE BASELINE'S REACH FOR A DIFFERENT REASON THAN
    USUAL: none of `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` has a `:hover` state, so all

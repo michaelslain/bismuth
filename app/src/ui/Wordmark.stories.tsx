@@ -1,6 +1,6 @@
 // Visual spec for <Wordmark> — the word `bismuth` in `.asc-wordmark`'s gradient sheen, the app's
-// one name mark: `body` size in the top strip (with its blinking caret), `hero` size on the
-// intro splash.
+// one name mark: `body` size in the top strip (with its blinking caret), `hero` size where it
+// is the whole screen.
 //
 // The mark paints via `background-clip: text` with `color: transparent`, so it needs `--grad`. It
 // takes the REAL one: `.storybook/preview.ts` already runs
@@ -67,7 +67,7 @@ export const BodyWithCaret: Story = {
     },
 }
 
-/** The intro splash size (`--fs-hero`). */
+/** The hero size (`--fs-hero`). */
 export const Hero: Story = {
     render: () => (
         <Panel>

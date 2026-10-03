@@ -802,7 +802,7 @@ details.callout > summary::-webkit-details-marker {
      ASCII crystal this class was drawn for: the glyphs have to overlap into ONE hopper-crystal
      silhouette, and anything looser reads as loose punctuation. A real word is set with the
      opposite tracking — ui/Wordmark.module.css overrides --wordmark-tracking to 0.04em per
-     instance, and ui/Wordmark composes this class for the top strip and the intro splash. */
+     instance, and ui/Wordmark composes this class for the top strip. */
   /* Size is a token for the same reason tracking is: the ASCII crystal and a set word want
      different values, and an instance should be able to say which it is rather than fighting a
      hardcoded default with a descendant selector. --fs-lead stays the default (the crystal's

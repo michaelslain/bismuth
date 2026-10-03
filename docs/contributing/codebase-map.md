@@ -1492,7 +1492,7 @@ Dialog for picking a vault folder (used by "Open folder" flow).
 The takeover (`position: fixed`, mounted by `index.tsx` on first run). Owns four signals (slide index, theme, busy, selected power-ups), snapshots `:root`'s theme vars on mount and restores them on unmount, and composes the pieces below. Props: `startAt` (which slide opens first), `initialTheme`, and `onEnter` (the CTA seam; default `introEnterVault.enterVault` with the real Tauri/localStorage deps). No component asks which slide is showing — a slide's row in `introSlides.ts` says which pieces it wants.
 
 #### `introSlides.ts`
-`SLIDES` (key, title, body, `graph`, `hero`, `extra`, `corner`, `layout` per slide), `POWER_UPS` + `DEFAULT_POWERUPS`, `powerUpCommands()` (selected ids → command-palette ids) and `togglePowerUp()`. Tested.
+`SLIDES` (key, title, body, `graph`, `hero`, `extra`, `corner` per slide), `POWER_UPS` + `DEFAULT_POWERUPS`, `powerUpCommands()` (selected ids → command-palette ids) and `togglePowerUp()`. Tested.
 
 #### `introPager.ts` / `introKeys.ts`
 `step(index, count, move, target)` is the pager arithmetic (`next` on the last slide asks the caller to enter the vault; `skip` jumps to the last slide); `startIndex()` resolves `startAt`. `introKeyAction(e)` maps ArrowRight/ArrowLeft/the shared dismiss key to `next`/`prev`/`skip` (the arrow keys are the pager's recorded keybinding exception). Both tested.
