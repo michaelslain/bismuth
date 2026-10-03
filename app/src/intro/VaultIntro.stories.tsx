@@ -8,7 +8,11 @@
 //
 // `layout: 'fullscreen'` is required: .vi-root is `position: fixed; inset: 0`, so a padded
 // or centered canvas would clip it rather than show the takeover at its real size.
+//
+// Reduced motion (the slide-in enter animations switch off under `prefers-reduced-motion`) cannot
+// be emulated from inside a story — it is a browser-level media feature — so it has no story.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import VaultIntro from './VaultIntro'
 
 const meta = {
@@ -40,3 +44,52 @@ export const PowerUps: Story = { args: { startAt: 'powerups' } }
 
 /** Slide 7 — the terminal slide carrying the one bracket-primary CTA. */
 export const Begin: Story = { args: { startAt: 'begin' } }
+
+/** Slide 2 with the paper theme picked: the picker's selection ring, the swatch preview and the
+ *  whole takeover (graph included) in the light palette. */
+export const ThemePaperPicked: Story = {
+    args: { startAt: 'theme', initialTheme: 'paper' },
+}
+
+/** Slide 6 with the CLI + MCP power-up switched off, then DAEMON toggled from the keyboard. */
+export const PowerUpOff: Story = {
+    args: { startAt: 'powerups' },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const cli = canvas.getByRole('switch', { name: /CLI \+ MCP/ })
+        const daemon = canvas.getByRole('switch', { name: /DAEMON/ })
+        await expect(cli.getAttribute('aria-checked')).toBe('true')
+        await userEvent.click(cli)
+        await waitFor(() => expect(cli.getAttribute('aria-checked')).toBe('false'))
+        daemon.focus()
+        await userEvent.keyboard(' ')
+        await waitFor(() =>
+            expect(daemon.getAttribute('aria-checked')).toBe('false'),
+        )
+    },
+}
+
+/** Slide 7 while the native folder picker is open: the CTA reads `opening…` and is disabled.
+ *  The never-resolving `onEnter` holds that state. */
+export const BeginBusy: Story = {
+    args: { startAt: 'begin', onEnter: () => new Promise(() => {}) },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(
+            canvas.getByRole('button', { name: /enter your vault/ }),
+        )
+        const cta = await canvas.findByRole('button', { name: /opening…/ })
+        await expect((cta as HTMLButtonElement).disabled).toBe(true)
+    },
+}
+
+/** Slide 1 at a phone width: the headline steps down from 48px (`--fs-hero-xl`) to 40px
+ *  (`--fs-hero`) below 980px. */
+export const NarrowTitle: Story = {
+    args: { startAt: 'welcome' },
+    globals: { viewport: { value: 'mobile2', isRotated: false } },
+    play: async ({ canvasElement }) => {
+        const h1 = canvasElement.querySelector('h1') as HTMLElement
+        await expect(getComputedStyle(h1).fontSize).toBe('40px')
+    },
+}

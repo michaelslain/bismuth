@@ -59,10 +59,6 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: 'grid arrow-key navigation + Enter-to-pick inside the symbol gallery — the spatial contract of a gallery grid',
     },
     {
-        file: 'intro/VaultIntro.tsx',
-        reason: "ArrowLeft/ArrowRight paging through the intro slides — a pager's spatial contract",
-    },
-    {
         file: 'intro/introKeys.ts',
         reason: "ArrowLeft/ArrowRight paging through the intro slides — a pager's spatial contract (the pager exception, moved here out of VaultIntro.tsx)",
     },
