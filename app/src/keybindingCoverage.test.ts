@@ -63,6 +63,10 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: "ArrowLeft/ArrowRight paging through the intro slides — a pager's spatial contract",
     },
     {
+        file: 'intro/introKeys.ts',
+        reason: "ArrowLeft/ArrowRight paging through the intro slides — a pager's spatial contract (the pager exception, moved here out of VaultIntro.tsx)",
+    },
+    {
         file: 'palette/SwitcherBar.tsx',
         reason: 'Enter routing (planSwitcherEnter) commits the highlighted row or runs ask-ai — part of the switcher list\'s own createMenuNav-style contract, not an independently rebindable command',
     },
