@@ -7,7 +7,7 @@
 // (ChatUserTurn/ChatAssistantTurn/ChatSystemNote/ChatTranscript) — the "shared stylesheet means a
 // missing component" case. Owns ONLY the width/centering; callers still bring their own
 // flex-direction/gap/color via `class`.
-import type { JSX } from 'solid-js'
+import type { Component, JSX } from 'solid-js'
 import styles from './ChatTurnColumn.module.css'
 
 export type ChatTurnColumnProps = {
@@ -16,7 +16,7 @@ export type ChatTurnColumnProps = {
     classList?: Record<string, boolean>
 }
 
-export default function ChatTurnColumn(props: ChatTurnColumnProps) {
+const ChatTurnColumn: Component<ChatTurnColumnProps> = props => {
     return (
         <div
             class={`${styles['chat-turn-column']} ${props.class ?? ''}`}
@@ -26,3 +26,5 @@ export default function ChatTurnColumn(props: ChatTurnColumnProps) {
         </div>
     )
 }
+
+export default ChatTurnColumn

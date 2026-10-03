@@ -1,10 +1,16 @@
 // app/src/chat/ChatHistoryPanel.tsx
-// The session-history popover body — moved out of ChatView.tsx's inline `HistoryPanel()` (~2852-
-//3090) so it renders from a `ChatHistoryState` (the reactive slice ChatSession.history exposes)
-// instead of nine loose ChatView signals. The ANCHOR (positioning + the toggle button) stays in
-// ChatControls.tsx, which owns "where does this popover attach"; this file owns only the body:
-// the content search box, the user/daemon/all scope filter, and the resume list / search hits.
-import { createMemo, For, onCleanup, onMount, Show } from 'solid-js'
+// The session-history pane body, rendered from a `ChatHistoryState` (the reactive slice
+// ChatSession.history exposes). The ANCHOR (the toggle button and where the pane mounts) stays in
+// ChatControls.tsx; this file owns only the body: the content search box, the user/daemon/all
+// scope filter, and the resume list / search hits.
+import {
+    createMemo,
+    For,
+    onCleanup,
+    onMount,
+    Show,
+    type Component,
+} from 'solid-js'
 import styles from './ChatHistoryPanel.module.css'
 import type { ChatHistoryState } from './chatSession'
 import type { ChatScope } from '../api'
@@ -36,7 +42,7 @@ const SCOPE_OPTIONS: SegmentedOption<ChatScope>[] = [
     { id: 'all', label: 'all', title: "Both, with the daemon's marked" },
 ]
 
-export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
+const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
     // Read `props.history` at each use below, never bind it to a local — this is a Solid
     // component, and `const history = props.history` would read the prop ONCE at setup and keep
     // that ChatHistoryState forever even if a later render handed the panel a different one.
@@ -197,3 +203,5 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
         </div>
     )
 }
+
+export default ChatHistoryPanel

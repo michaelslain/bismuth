@@ -1,8 +1,7 @@
 /* ChatTextBubble.module.css — ChatTextBubble.tsx is the ONLY importer. The rendered-markdown prose
    register (`.chat-bubble` + descendants) moved verbatim from ChatTranscript.module.css, plus the
-   slash-command boxed panel moved verbatim from ChatTurnParts.module.css — both rendered by the
-   same component now that it is extracted. `--chat-*` custom properties carry a plain-token
-   FALLBACK (`var(--chat-surface-1, var(--surface-1))`) so this renders correctly in Storybook too,
+   slash-command output body (its surrounding box lives in ChatCommandOutputFrame.module.css).
+   `--chat-*` custom properties carry a plain-token FALLBACK (`var(--chat-surface-1, var(--surface-1))`) so this renders correctly in Storybook too,
    where there is no ancestor chat host localising them (app/src/ChatView.module.css's `.host`) — inside
    the real chat view the ancestor's value wins as before; only the untinted default changes. */
 
@@ -188,26 +187,7 @@
     font-size: var(--code-font-size);
 }
 
-/* ── Slash-command output (#28): a boxed "command output" panel — reads like the Claude Code TUI,
-   not loose prose. The body carries `.chat-bubble`, so its content renders as real markdown. ── */
-.chat-command-output {
-    margin: var(--sp-1) 0;
-    border: 1px solid var(--chat-border-soft, var(--border-soft));
-    border-radius: var(--r-0);
-    background: var(--chat-surface-1, var(--surface-1));
-    overflow: hidden;
-}
-.chat-command-output-head {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-2) var(--sp-5);
-    border-bottom: 1px solid var(--chat-border-soft, var(--border-soft));
-    font-size: var(--fs-micro);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--faint);
-}
+/* ── Slash-command output (#28): the body inside ChatCommandOutputFrame's box. ── */
 .chat-command-output-body {
     padding: var(--sp-5) var(--sp-5);
     max-height: 460px;
