@@ -75,9 +75,15 @@ describe('upsertAgentsMdBlock (pure)', () => {
     })
 })
 
-describe("Codex's composed AGENTS.md content points at the base-authoring skill", () => {
-    test('contains the skill name and the bismuth_skill tool', () => {
+describe("Codex's composed AGENTS.md content points at the shipped skills", () => {
+    test('contains every skill name and the bismuth_skill tool', () => {
         expect(CODEX_AGENTS_MD_CONTENT).toContain('authoring-bismuth-bases')
+        expect(CODEX_AGENTS_MD_CONTENT).toContain(
+            'converting-obsidian-to-bismuth',
+        )
+        expect(CODEX_AGENTS_MD_CONTENT).toContain(
+            'converting-bismuth-to-obsidian',
+        )
         expect(CODEX_AGENTS_MD_CONTENT).toContain('bismuth_skill')
     })
 

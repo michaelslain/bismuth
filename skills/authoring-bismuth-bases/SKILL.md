@@ -19,7 +19,7 @@ For another view of the same rows, make a second base file that composes the fir
 # Board.md
 ---
 type: base
-source: notes where "#book"
+source: notes where file.hasTag("book")
 view: kanban
 groupBy:
   property: note.status
@@ -80,7 +80,7 @@ stats:
 
 ## Cross-cutting gotchas (apply to every kind)
 
-- **`source:` accepts a string or an object** — `source: notes where #book` and `source: { kind: notes, where: '#book' }` are equivalent (`normalizeSource()` coerces both). An unrecognized `source` (bad `kind`, a typo) doesn't error — it silently becomes `undefined`, and the caller falls back to `{ kind: "notes" }` (whole vault) or `{ kind: "base" }` (own body rows), which is rarely what you wanted. Double-check `source:` renders the row set you expect.
+- **`source:` accepts a string or an object** — `source: notes where file.hasTag("book")` and `source: { kind: notes, where: 'file.hasTag("book")' }` are equivalent (`normalizeSource()` coerces both). A bare `#tag` is not a filter: unquoted it is a YAML comment (`source: notes where #book` silently becomes the whole vault); inside the string form (`notes where "#book"`) it is a non-empty string, true for every note; as `where: "#book"` it is a parse error (zero rows). Write `file.hasTag("book")` — no `#`, exact tag only (not `book/x`). An unrecognized `source` (bad `kind`, a typo) doesn't error — it silently becomes `undefined`, and the caller falls back to `{ kind: "notes" }` (whole vault) or `{ kind: "base" }` (own body rows), which is rarely what you wanted. Double-check `source:` renders the row set you expect.
 - **A base referenced by `from:` resolves its OWN source recursively.** `from: "[[Keep]]"` doesn't just intersect against Keep's static rows — it re-runs Keep's declared `source` (which may itself be `notes`/`tasks`/another `base`). This composition is cycle-guarded (a config loop or a symlink loop returns `[]`, never throws), but it means changing an upstream base's `source:` can silently change what every base composing it shows.
 - **The only embedded block is ` ```query ` — there is no ` ```base `, ` ```view `, or ` ```tasks `.** A base itself is always a `type: base` file; inside a note you reference or query it with a ` ```query ` fence (`of: [[Base]]` or `tasks: <dsl>`, plus `view:`/`where:`/`group:`/`limit:`), never a differently-named fence.
 

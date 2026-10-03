@@ -27,7 +27,7 @@ columnWidths:
   note.status: 120
   note.rating: 80
 limit: 50
-filters: "#book"
+filters: 'file.hasTag("book")'
 ---
 ```
 
@@ -349,7 +349,7 @@ order: [file.name, note.price]
 type: base
 source:
   kind: notes
-  where: "#book"
+  where: 'file.hasTag("book")'
 properties:
   note.isbn:
     hidden: true

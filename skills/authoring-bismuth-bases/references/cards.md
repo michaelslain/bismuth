@@ -7,7 +7,7 @@ A visual card grid. Three sub-modes via `cardContent`: `properties` (book-cover 
 ```yaml
 ---
 type: base
-source: notes where "#book"
+source: notes where file.hasTag("book")
 view: cards
 cardContent: properties
 image: cover

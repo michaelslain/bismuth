@@ -25,8 +25,19 @@ import {
 const repoRoot = resolve(import.meta.dir, '..', '..')
 const docsRoot = process.env.BISMUTH_DOCS_DIR ?? repoRoot + '/docs'
 // Same pattern as docsRoot: a later machine-wide install stages skills/ alongside docs/ and sets
-// BISMUTH_SKILLS_DIR (→ core/src/bismuthInstall.ts, a parallel task) to point at the staged copy.
+// BISMUTH_SKILLS_DIR (→ core/src/bismuthInstall.ts) to point at the staged copy.
 const skillsRoot = process.env.BISMUTH_SKILLS_DIR ?? repoRoot + '/skills'
+
+/** The `bismuth_skill` tool description, built at startup from what is actually on disk so a new
+ *  skill directory is advertised with no edit here. */
+function skillToolDescription(): string {
+    const names = listSkills(skillsRoot).map(s => s.name)
+    const available =
+        names.length > 0
+            ? names.join(', ')
+            : `none found at ${skillsRoot}`
+    return `Read a Bismuth skill (a how-to guide) by name — the same guidance Claude Code auto-loads from ~/.claude/skills, exposed here so every other agent backend (opencode, codex, cline, gemini, goose, openclaw, and the ACP backends) can reach it too, since none of them read that directory. Available: ${available}. Omit name to list all available skills with descriptions.`
+}
 
 // `instructions` reaches the client BEFORE any tool call — see mcp/src/instructions.ts's header
 // comment for why the tagging guidance lives there specifically.
@@ -83,7 +94,7 @@ const tools = [
     {
         name: 'bismuth_skill',
         description:
-            'Read a Bismuth skill (a how-to guide) by name — the same guidance Claude Code auto-loads from ~/.claude/skills, exposed here so every other agent backend (opencode, codex, cline, gemini, goose, openclaw, and the ACP backends) can reach it too, since none of them read that directory. Available: authoring-bismuth-bases (how to create a `type: base` note and choose among the 12 view kinds — read this BEFORE writing any base). Omit name to list all available skills with descriptions.',
+            skillToolDescription(),
         inputSchema: {
             type: 'object',
             properties: {

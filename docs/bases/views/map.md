@@ -136,7 +136,7 @@ The map respects these theme CSS variables for colors:
 ```yaml
 ---
 type: base
-source: notes where #location
+source: notes where file.hasTag("location")
 view: map
 ---
 ```

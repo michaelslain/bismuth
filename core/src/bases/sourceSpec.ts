@@ -72,7 +72,9 @@ function prune<T extends Record<string, unknown>>(o: T): T {
     return o
 }
 
-/** Convert a wikilink ref to a file path. Handles both [[Base]] and [[Base.md]] formats. */
+/** Convert a wikilink ref to a file path. Handles both [[Base]] and [[Base.md]] formats.
+ *  Root-only and pure: it does NOT find a nested file by basename — use `resolveRefPath`
+ *  (source.ts) for that. */
 export function refToPath(ref?: string): string {
     if (!ref) return ''
     const r = ref.replace(/^\[\[/, '').replace(/\]\]$/, '')

@@ -7,7 +7,7 @@ A Trello-style drag-drop board, one column per distinct `groupBy` value.
 ```yaml
 ---
 type: base
-source: notes where "#book"
+source: notes where file.hasTag("book")
 view: kanban
 groupBy:
   property: note.status

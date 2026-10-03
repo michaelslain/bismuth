@@ -87,28 +87,39 @@ export const commands: CommandMap = {
 
     daily: {
         summary: "Open (creating if needed) today's daily note",
-        usage: '[--id <n>]',
+        usage: '[--id <id|n>]',
         async run(args) {
             const vault = requireVault(args)
             const configs = await readDailyNotes(vault)
             const idFlag = flag(args, 'id')
-            const index = idFlag !== undefined ? Number(idFlag) : 0
-            if (!Number.isInteger(index)) fail(`daily: invalid --id: ${idFlag}`)
+            // An integer is the index into the configured list; anything else is a config `id`.
+            const isIndex = idFlag === undefined || /^-?\d+$/.test(idFlag.trim())
+            const index = idFlag === undefined ? 0 : Number(idFlag)
+
+            const fallback: DailyNoteConfig = {
+                id: 'daily',
+                label: 'Daily',
+                icon: 'CalendarDays',
+                folder: '',
+                fileName: '{{date}}',
+                template: '',
+            }
 
             let config: DailyNoteConfig
-            if (configs.length === 0) {
+            if (!isIndex) {
+                const known = configs.length ? configs : [fallback]
+                const match = known.find(c => c.id === idFlag)
+                if (!match)
+                    fail(
+                        `daily: no daily-note type with id "${idFlag}" — configured ids: ${known.map(c => c.id).join(', ')}`,
+                    )
+                config = match
+            } else if (configs.length === 0) {
                 if (index !== 0)
                     fail(
                         `daily: --id ${index} out of range — this vault configures 0 daily-note types`,
                     )
-                config = {
-                    id: 'daily',
-                    label: 'Daily',
-                    icon: 'CalendarDays',
-                    folder: '',
-                    fileName: '{{date}}',
-                    template: '',
-                }
+                config = fallback
             } else {
                 if (index < 0 || index >= configs.length) {
                     fail(

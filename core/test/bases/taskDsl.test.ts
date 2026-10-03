@@ -415,3 +415,11 @@ test("the user's real query translates to an equivalent bases filter", () => {
     const passed = rows.filter(r => passesFilter(where!, toContext(r)))
     expect(passed.map(r => r.note.description)).toEqual(['overdue-high'])
 })
+
+test('ignored instruction lines are reported, and where/sort are unchanged', () => {
+    const out = translateTaskDsl('not done\ngroup by filename\nlimit 5\nsort by due', TODAY)
+    expect(out.ignored).toEqual(['group by filename', 'limit 5'])
+    expect(out.where).toBe('!note.resolved')
+    expect(out.sort).toEqual([{ property: 'note.due', direction: 'ASC' }])
+    expect(translateTaskDsl('not done', TODAY).ignored).toBeUndefined()
+})

@@ -15,7 +15,7 @@ Make a `type: base` file a flashcards deck by setting `view: flashcards`; the vi
 ```yaml
 ---
 type: base
-source: notes where #vocab
+source: notes where file.hasTag("vocab")
 view: flashcards
 frontField: front
 backField: back

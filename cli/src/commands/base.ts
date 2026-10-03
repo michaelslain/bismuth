@@ -25,8 +25,11 @@ import {
     parseFrontmatter,
 } from '../../../core/src/frontmatter'
 import { parseBaseFile, FRONTMATTER_RE } from '../../../core/src/bases/parse'
-import { resolveSource, resolveBaseRows } from '../../../core/src/bases/source'
-import { refToPath } from '../../../core/src/bases/sourceSpec'
+import {
+    resolveSource,
+    resolveBaseRows,
+    resolveRefPath,
+} from '../../../core/src/bases/source'
 import {
     findCommentTruncations,
     type TruncatedScalar,
@@ -191,7 +194,12 @@ function findTasksLineRange(
 function migrateQueryBody(
     body: string,
     todayIso: string,
-): { body: string; changed: boolean; unrecognized?: string[] } | null {
+): {
+    body: string
+    changed: boolean
+    unrecognized?: string[]
+    ignored?: string[]
+} | null {
     const qb = parseQueryBlock(body)
     if (qb.source?.kind !== 'tasks' || !qb.source.where)
         return { body, changed: false }
@@ -220,7 +228,12 @@ function migrateQueryBody(
         ...replacement,
         ...lines.slice(range.to),
     ].join('\n')
-    return { body: next, changed: true, unrecognized: translated.unrecognized }
+    return {
+        body: next,
+        changed: true,
+        unrecognized: translated.unrecognized,
+        ignored: translated.ignored,
+    }
 }
 
 const CHART_KINDS = new Set(['bar', 'line', 'stat', 'heatmap'])
@@ -539,7 +552,7 @@ export const commands: CommandMap = {
             if (spec) {
                 const ref = sourceRefTarget(spec)
                 if (ref) {
-                    const refPath = refToPath(ref)
+                    const refPath = await resolveRefPath(vault, ref)
                     try {
                         await readNote(vault, refPath)
                     } catch {
@@ -571,8 +584,8 @@ export const commands: CommandMap = {
                 spec.from &&
                 config.view.taskFile
             ) {
-                const dest = refToPath(config.view.taskFile)
-                const scoped = await resolveBaseRows(refToPath(spec.from), {
+                const dest = await resolveRefPath(vault, config.view.taskFile)
+                const scoped = await resolveBaseRows(await resolveRefPath(vault, spec.from), {
                     root: vault,
                     today: today(),
                 })
@@ -810,12 +823,12 @@ export const commands: CommandMap = {
                             segments.push(fence.body)
                         } else {
                             changedHere++
-                            if (result.unrecognized?.length)
-                                degraded.push({
-                                    file: rel,
-                                    block,
-                                    leaves: result.unrecognized,
-                                })
+                            const leaves = [
+                                ...(result.unrecognized ?? []),
+                                ...(result.ignored ?? []),
+                            ]
+                            if (leaves.length)
+                                degraded.push({ file: rel, block, leaves })
                             segments.push(result.body)
                         }
                         cursor = fence.bodyTo

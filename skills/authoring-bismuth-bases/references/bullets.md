@@ -7,7 +7,7 @@ A plain `<ul>` list in editor prose style — no table chrome, no icons, no bord
 ```yaml
 ---
 type: base
-source: notes where "#quote"
+source: notes where file.hasTag("quote")
 view: bullets
 groupBy:
   property: note.author

@@ -235,7 +235,7 @@ The settings panel (opened via the gear icon on the view toolbar) for cards is t
 type: base
 source:
   kind: notes
-  where: "#book"
+  where: 'file.hasTag("book")'
 view: cards
 cardContent: properties
 image: cover
@@ -271,7 +271,7 @@ With this config:
 type: base
 source:
   kind: notes
-  where: "#todo"
+  where: 'file.hasTag("todo")'
 view: cards
 cardContent: body
 order:

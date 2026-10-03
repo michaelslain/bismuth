@@ -276,7 +276,7 @@ properties:
 
 ### `source` (`SourceSpec`)
 
-Coerced by `normalizeSource(raw, fm)` (`core/src/bases/sourceSpec.ts`), which accepts both a string and an object form. Resolution order: `BaseConfig.source` → own body rows (`{ kind: "base" }`) → `{ kind: "notes" }`.
+Coerced by `normalizeSource(raw, fm)` (`core/src/bases/sourceSpec.ts`), which accepts both a string and an object form. Resolution order: `BaseConfig.source` → own body rows (`{ kind: "base" }`) → `{ kind: "notes" }`. A bare `#tag` is not a filter: unquoted it is a YAML comment (`source: notes where #book` silently becomes the whole vault); inside the string form (`notes where "#book"`) it is a non-empty string, true for every note; as `where: "#book"` it is a parse error (zero rows). Write `file.hasTag("book")` — no `#`, exact tag only (not `book/x`).
 
 `SourceSpec` is one of:
 
@@ -294,7 +294,7 @@ Accepted frontmatter forms (`normalizeSource` + its tests):
 | `source: notes where folder == "Keep"` | `{ kind: "notes", where: 'folder == "Keep"' }` |
 | `source: tasks` (+ `from: [[Keep]]`, `where: not done`) | `{ kind: "tasks", from: "[[Keep]]", where: "not done" }` |
 | `source: base` (+ `ref: [[X]]`) | `{ kind: "base", ref: "[[X]]" }` |
-| `source: { kind: notes, where: '#book' }` | `{ kind: "notes", where: "#book" }` |
+| `source: { kind: notes, where: 'file.hasTag("book")' }` | `{ kind: "notes", where: 'file.hasTag("book")' }` |
 | `source: { kind: tasks, from: "[[Keep]]" }` | `{ kind: "tasks", from: "[[Keep]]" }` |
 
 Notes:
@@ -482,7 +482,7 @@ Worked example: a kanban board of tasks, and a table of the same tasks.
 ```markdown
 ---
 type: base
-source: notes where #task
+source: notes where file.hasTag("task")
 filters: 'note.status != "archived"'
 view: kanban
 groupBy: status
@@ -509,13 +509,13 @@ sort:
 
 The referencing base receives the referenced base's **rows only**:
 
-- If the referenced base declares no `source`, its rows are its own inline body rows.
+- If the referenced base declares no `source`, its rows are its own inline body rows, or every vault note when it has none.
 - Otherwise its rows are the rows of its own `source`, resolved recursively.
 - Its `filters`, `formulas`, `properties`, `sort`, `groupBy`, `limit`, `columns` and every other view key are **not** applied. Those are applied by the referenced base's own view only, when you open it.
 - The referencing base must therefore restate any filter it wants (`Task table` repeats the `archived` filter above), declare its own `formulas` and `properties`, and choose its own sort and grouping.
 - A cycle (A refs B refs A) resolves to zero rows.
 
-`Task table` above reads the rows of `notes where #task`, exactly what `Board` reads, and then applies its own filter and view. See [sources & composition](./sources.md) for the resolver, scoped tasks and `from: [[Base]]`.
+`Task table` above reads the rows of `notes where file.hasTag("task")`, exactly what `Board` reads, and then applies its own filter and view. See [sources & composition](./sources.md) for the resolver, scoped tasks and `from: [[Base]]`.
 
 ---
 
@@ -595,7 +595,7 @@ A "Books" base that queries vault notes tagged `#book`, shows a filtered/sorted 
 ```markdown
 ---
 type: base
-source: notes where #book
+source: notes where file.hasTag("book")
 filters:
   not:
     - file.hasTag("archived")
@@ -613,7 +613,7 @@ summaries:
 ---
 ```
 
-This base has one Table view, a notes source scoped to `#book`, a `not archived` filter, a `ppu` formula displayed as `$/yr`, and a footer average. When opened it routes through `FileView` → `BaseView`, resolves rows via `POST /rows {kind:"notes", where:"#book"}`, and renders the table.
+This base has one Table view, a notes source scoped to `#book`, a `not archived` filter, a `ppu` formula displayed as `$/yr`, and a footer average. When opened it routes through `FileView` → `BaseView`, resolves rows via `POST /rows {kind:"notes", where:'file.hasTag("book")'}`, and renders the table.
 
 A cover-grid view of the same books is a second base file: `source: base`, `ref: "[[Books]]"`, `view: cards`, `cardContent: properties`, `image: cover`, plus the `not archived` filter restated. See [One view per base: composing](#one-view-per-base-composing).
 

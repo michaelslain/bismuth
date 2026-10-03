@@ -7,7 +7,7 @@ An offline, self-contained vector world map plotting rows as pins by lat/lng. No
 ```yaml
 ---
 type: base
-source: notes where "#location"
+source: notes where file.hasTag("location")
 view: map
 ---
 ```

@@ -111,7 +111,7 @@ Solid.js + TypeScript, CSS Modules.
 
 The `bismuth` binary (a thin wrapper over `@bismuth/core`) controls the vault from the shell. File-based commands run **headlessly** (no server); the app's watcher picks up writes live. JSON out (`--pretty`); vault via `--vault`/`BISMUTH_VAULT`.
 
-- `src/index.ts` — one merged registry, longest-match dispatch (two-word phrase, then one-word). `src/commands/<group>.ts` — each exports `commands: CommandMap`, calls core directly. 24 groups: `api app backends base calendar card chat checkpoint daemon draw export file gcal graph install note page prop relay search serve settings task update` (`app`+`page` drive a RUNNING app via `/ui/*`; `backup` is a command inside `serve.ts`, not a group). Every command + flag: `docs/cli/reference.md`.
+- `src/registry.ts` — one merged registry (+ `resolveCommand`), dispatched by `src/index.ts` (longest-match: three-word, then two-word, then one-word). `src/commands/<group>.ts` — each exports `commands: CommandMap`, calls core directly. 24 groups: `api app backends base calendar card chat checkpoint daemon draw export file gcal graph install note page prop relay search serve settings task update` (`app`+`page` drive a RUNNING app via `/ui/*`; `backup` is a command inside `serve.ts`, not a group). Every command + flag: `docs/cli/reference.md`.
 
 **Owner-token reach** (`cli/src/http.ts`): `call()` attaches `X-Bismuth-Token` from the vault's `0600` run record, **loopback only**. The agent boundary is `BISMUTH_AGENT_CHANNEL` — an env var, **not** a cryptographic one.
 

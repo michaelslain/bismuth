@@ -28,7 +28,7 @@ The file tree (`listTree`) surfaces the following extensions to the UI; all othe
 | `.draw` | Vector drawing documents (JSON `DrawingDoc`); shown with a `PenTool` icon marker |
 | `.sheet` | Univer workbook snapshots (JSON) |
 | `.yaml` / `.yml` | User-authored YAML files |
-| `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.avif`, `.bmp`, `.ico`, `.svg`, `.heic`/`.heif`, `.tif`/`.tiff` | Images — carry tags via a companion note `<file>.md` and are inked IN PLACE on their own preview tab into a `<file>.draw` sidecar (no separate markup surface) |
+| `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.avif`, `.bmp`, `.ico`, `.svg`, `.heic`/`.heif`, `.tif`/`.tiff` | Images — carry tags via a companion note `<file>.md` (`x.png` → `x.png.md`) and are inked IN PLACE on their own preview tab into a `<file>.draw` sidecar (no separate markup surface) |
 | `.pdf` | PDFs — same companion + in-place ink model as images |
 
 Image/PDF extensions are matched case-insensitively via `isTreeListedName`/`IMAGE_EXTS` (`core/src/fileKinds.ts`), shared by `listTree` (`core/src/files.ts`), the mobile mirror, and the preview surface. Generated sidecars `.draw.png` and `.draw.pdf` are explicitly **excluded** from the tree even though they live in the vault, so a drawing's export artifact never masquerades as an openable image/PDF — and a companion note or `.draw` sidecar is itself hidden whenever its binary sibling still exists (`docs/vault/frontmatter.md`).

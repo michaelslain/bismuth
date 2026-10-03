@@ -8,6 +8,7 @@ import { translateTaskDsl, looksLikeTaskDsl, applyTaskSort } from './taskDsl'
 import { getFileAccess } from '../fileAccess'
 import { fileBasename } from '../pathUtils'
 import { refToPath } from './sourceSpec'
+import { pickByBase } from '../linkTarget'
 import { todayISO } from '../dates'
 
 export interface SourceCtx {
@@ -33,6 +34,26 @@ const baseParseCache = new Map<
     string,
     { raw: string; config: BaseConfig; rows: Row[] }
 >()
+
+/**
+ * Resolve a `ref`/`from` wikilink to a vault-relative file path the way a wikilink
+ * resolves: an exact vault path wins, otherwise the target is found by basename
+ * (`pickByBase`: fewest path segments, then code-unit order). Nothing matching returns
+ * `refToPath(ref)` unchanged so "looked for X" errors still name a path.
+ */
+export async function resolveRefPath(
+    root: string,
+    ref: string,
+): Promise<string> {
+    const exact = refToPath(ref)
+    if (!exact) return exact
+    const fa = await getFileAccess()
+    if (await fa.statNote(root, exact).catch(() => null)) return exact
+    const bare = exact.replace(/\.md$/, '')
+    const ids = (await fa.listMarkdown(root)).map(p => p.replace(/\.md$/, ''))
+    const hit = pickByBase(bare, ids)
+    return hit === undefined ? exact : `${hit}.md`
+}
 
 /**
  * Resolve a base FILE to its rows, following its OWN declared source (composition).
@@ -90,8 +111,12 @@ export async function resolveBaseRows(
             rows: parsed.rows,
         })
     const { config, rows } = parsed
-    // No declared source => inline (own-rows) base: return its table rows.
-    if (!config.source) return rows
+    // No declared source => its own table rows when it has any, else every vault note
+    // (mirrors BaseView's activeSpec).
+    if (!config.source)
+        return rows.length
+            ? rows
+            : resolveSource({ kind: 'notes' }, { ...ctx, seen })
     return resolveSource(config.source, { ...ctx, seen })
 }
 
@@ -104,13 +129,13 @@ export async function resolveSource(
 
     if (spec.kind === 'base') {
         if (!spec.ref) return []
-        return resolveBaseRows(refToPath(spec.ref), ctx)
+        return resolveBaseRows(await resolveRefPath(ctx.root, spec.ref), ctx)
     }
 
     if (spec.kind === 'notes') {
         let rows = await (ctx.vaultRows?.() ?? buildVaultRows(ctx.root))
         if (spec.from) {
-            const scoped = await resolveBaseRows(refToPath(spec.from), ctx)
+            const scoped = await resolveBaseRows(await resolveRefPath(ctx.root, spec.from), ctx)
             const paths = new Set(scoped.map(r => r.file.path))
             rows = rows.filter(r => paths.has(r.file.path))
         }
@@ -121,7 +146,7 @@ export async function resolveSource(
     // tasks — optionally scoped to the notes a referenced base selects.
     let paths: string[] | undefined
     if (spec.from) {
-        const scoped = await resolveBaseRows(refToPath(spec.from), ctx)
+        const scoped = await resolveBaseRows(await resolveRefPath(ctx.root, spec.from), ctx)
         paths = [...new Set(scoped.map(r => r.file.path))].filter(Boolean)
     }
     // Unscoped (no `from`) is the global case the provider may cache; scoped extraction

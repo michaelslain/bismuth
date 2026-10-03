@@ -77,7 +77,7 @@ export interface EvalContext {
 | `basename` | alias of `name` (Obsidian parity) |
 | `path` | vault-relative path, e.g. `"reading/housing.md"` |
 | `folder` | folder path, `""` at vault root |
-| `ext` | `"md"`, `"base"`, … |
+| `ext` | always `"md"` — rows are built from `.md` files only (a base is itself a `.md` note) |
 | `size` | bytes (number) |
 | `ctime` / `mtime` | epoch ms (numbers) |
 | `tags` | `string[]` without the leading `#` |

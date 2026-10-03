@@ -18,7 +18,8 @@ import { RowCache } from './rowCache'
 import { BaseSkeleton } from './BaseSkeleton'
 import { parseBase, parseBaseFile } from '../../../core/src/bases/parse'
 import { runView } from '../../../core/src/bases/query'
-import { refToPath } from '../../../core/src/bases/sourceSpec'
+import { resolveQueryBasePath } from './queryBasePath'
+import { vaultTree } from '../treeStore'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
 import type {
     BaseConfig,
@@ -185,7 +186,10 @@ export function BaseView(props: {
                 rows: [],
                 basePath:
                     v.source?.kind === 'base'
-                        ? refToPath(v.source.ref)
+                        ? resolveQueryBasePath(
+                              v.source.ref,
+                              vaultTree().map(e => e.path),
+                          )
                         : undefined,
             }
         }

@@ -7,7 +7,7 @@ Spreadsheet-style grid. The default/fallback view — used when no `type:` is se
 ```yaml
 ---
 type: base
-source: notes where "#book"
+source: notes where file.hasTag("book")
 view: table
 order: [file.name, note.status, note.rating, note.pages]
 sort:

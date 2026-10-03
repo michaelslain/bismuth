@@ -17,7 +17,7 @@ This is the **default view type for `tasks:` query blocks** in embedded `\`\`\`q
 ```yaml
 ---
 type: base
-source: notes where #book
+source: notes where file.hasTag("book")
 view: list
 groupBy:
   property: note.status
@@ -197,7 +197,7 @@ This produces four sections (Overdue in red-ish accent, This week and Later in a
 ```yaml
 ---
 type: base
-source: notes where #quote
+source: notes where file.hasTag("quote")
 view: bullets
 groupBy:
   property: note.author

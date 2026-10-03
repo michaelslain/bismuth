@@ -311,3 +311,100 @@ describe('resolveBaseRows realPath rooting (FileAccess seam)', () => {
         expect(asked).toEqual(['/vault-one/A.md', '/vault-two/A.md'])
     })
 })
+
+// ── refs resolve like wikilinks: exact vault path first, then basename ─────────────────
+const NESTED_LIST = '---\ntype: base\nview: list\n---\n'
+
+test("resolveSource('base') finds a nested base by basename and a sourceless one resolves to all notes", async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(dir, 'reading/List.md', NESTED_LIST)
+    await writeNote(
+        dir,
+        'Table.md',
+        '---\ntype: base\nview: table\nsource: { kind: base, ref: "[[List]]" }\n---\n',
+    )
+    await writeNote(dir, 'x/n1.md', 'one')
+    const rows = await resolveBaseRows('Table.md', { root: dir })
+    expect(rows.map(r => r.file.path).sort()).toEqual([
+        'reading/List.md',
+        'Table.md',
+        'x/n1.md',
+    ].sort())
+})
+
+test('a from: [[Base]] resolves by basename too', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        'sub/Keep.md',
+        '---\ntype: base\nsource: notes\nwhere: file.hasTag("keep")\n---\n',
+    )
+    await writeNote(dir, 'keep/x.md', '---\ntags: [keep]\n---\n- [ ] scoped')
+    await writeNote(dir, 'other/y.md', '- [ ] unscoped')
+    const rows = await resolveSource(
+        { kind: 'tasks', from: '[[Keep]]' },
+        { root: dir },
+    )
+    expect(rows.map(r => r.note.description)).toEqual(['scoped'])
+})
+
+test('fewest-segments tiebreak prefers the root file', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        'Pick.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| root |',
+    )
+    await writeNote(
+        dir,
+        'deep/Pick.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| nested |',
+    )
+    const rows = await resolveSource(
+        { kind: 'base', ref: '[[Pick]]' },
+        { root: dir },
+    )
+    expect(rows.map(r => r.note.title)).toEqual(['root'])
+})
+
+test('a sourceless base with body rows still returns only its own rows', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        'Own.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| Hi |',
+    )
+    await writeNote(dir, 'other.md', 'x')
+    const rows = await resolveBaseRows('Own.md', { root: dir })
+    expect(rows.map(r => r.note.title)).toEqual(['Hi'])
+})
+
+test('a path-qualified ref reads the file at that path, not a same-named decoy deeper in the vault', async () => {
+    const dir = tempDir('bismuth-src-')
+    const base = (t: string) =>
+        `---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| ${t} |`
+    await writeNote(dir, 'reading/List.md', base('exact'))
+    await writeNote(dir, 'other/reading/List.md', base('decoy'))
+    const rows = await resolveSource(
+        { kind: 'base', ref: '[[reading/List]]' },
+        { root: dir },
+    )
+    expect(rows.map(r => r.note.title)).toEqual(['exact'])
+})
+
+// A `.base` file is not in listMarkdown, so only the exact-path branch can find it; without
+// it the basename search lands on the `.md` decoy whose id is `Legacy.base`.
+test('an exact root [[Legacy.base]] hit wins over a nested Legacy.base.md decoy', async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(dir, 'Legacy.base', 'views:\n  - type: table\n    name: L')
+    await writeNote(
+        dir,
+        'sub/Legacy.base.md',
+        '---\ntype: base\nview: table\n---\n\n| title |\n| --- |\n| decoy |',
+    )
+    const rows = await resolveSource(
+        { kind: 'base', ref: '[[Legacy.base]]' },
+        { root: dir },
+    )
+    expect(rows.map(r => r.note.title)).not.toContain('decoy')
+})

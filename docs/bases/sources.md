@@ -199,6 +199,23 @@ the canonical model — but a legacy `.base` ref is resolved to that file, **not
 a `.md` sibling (verified in `source.test.ts`: a `[[Legacy.base]]` ref resolves
 the `.base` file, not `Legacy.base.md`).
 
+### `resolveRefPath(root, ref)` — how `ref`/`from` find a file
+
+`refToPath` is pure and root-only. `resolveSource` resolves every `ref` and `from`
+through `resolveRefPath` (`source.ts`), which follows the same order a wikilink does:
+
+1. **An exact vault path wins.** `[[reading/List]]` or a root-level `List` that exists
+   as `<ref>.md` (or a `.base` file) is used as written.
+2. **Otherwise the basename is searched** across the vault's markdown with `pickByBase`
+   (`linkTarget.ts`): the fewest path segments wins, then the smaller path. So
+   `ref: "[[List]]"` finds `reading/List.md`.
+3. **Nothing matches** returns `refToPath(ref)` unchanged, so errors still name a path
+   ("looked for `List.md`"). `base validate` uses the same resolution for `source:`,
+   `from` and `taskFile`.
+
+A base with **no `source:`** returns its own body rows when it has any, and otherwise
+every note in the vault (the same fallback `BaseView`'s `activeSpec` applies).
+
 ## Resolving a `SourceSpec` to `Row[]`
 
 `core/src/bases/source.ts` exports the two resolver functions.

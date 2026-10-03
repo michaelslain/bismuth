@@ -288,7 +288,7 @@ Parser behavior worth knowing (from `parse.ts`):
 - **`view: <kind>`** names the one view, and every other top-level key that is not a base key (`type`, `view`, `views`, `name`, `filters`, `source`, `from`, `where`, `ref`, `formulas`, `properties`, `schema`, `categories`) is a view key, all normalized by `normalizeView`. With no `view:` the view is a table.
 - An **invalid `view:` kind** falls back to `"table"`.
 - A legacy **`views:`** list still reads, first entry only (its `type` is the kind); further entries are ignored. A base file is flattened on its first write; a query block has no such write path, so rewrite it flat by hand.
-- **`source:`** accepts a string (`source: notes where #book`) OR an object (`source: { kind: tasks, from: "[[X]]" }`) — both coerced by `normalizeSource` (see [sources & composition](./sources.md)). An unrecognized value yields `undefined`.
+- **`source:`** accepts a string (`source: notes where file.hasTag("book")`) OR an object (`source: { kind: tasks, from: "[[X]]" }`) — both coerced by `normalizeSource` (see [sources & composition](./sources.md)). An unrecognized value yields `undefined`. A bare `#tag` is not a filter: unquoted it is a YAML comment (`source: notes where #book` silently becomes the whole vault); inside the string form (`notes where "#book"`) it is a non-empty string, true for every note; as `where: "#book"` it is a parse error (zero rows). Write `file.hasTag("book")` — no `#`, exact tag only (not `book/x`).
 - **`formulas:`** — each value is stringified.
 - **`properties:`** — per-property `{ displayName?, hidden? }`; `hidden: true` drops the property from auto-derived columns.
 - A top-level **`columnWidths:`** map configures the table's column widths.

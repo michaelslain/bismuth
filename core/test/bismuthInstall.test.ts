@@ -16,10 +16,12 @@ import {
     getBismuthStatus,
     stageSkills,
     linkSkillToClaudeCode,
+    linkAllSkillsToClaudeCode,
     isSkillLinkedToClaudeCode,
+    areSkillsLinkedToClaudeCode,
     claudeMcpAddArgs,
     BISMUTH_HOME,
-    SKILL_ID,
+    SKILL_IDS,
     type InstallIO,
 } from '../src/bismuthInstall'
 
@@ -59,7 +61,7 @@ function fakeIO(
         },
         linkClaudeSkill: () => {
             calls.push('linkClaudeSkill')
-            return { ok: true }
+            return { ok: true, warnings: [] }
         },
         registerMcp:
             opts.registerMcp ??
@@ -168,6 +170,28 @@ test('installs but warns when claude/mcp registration is unavailable', async () 
     expect(r.warnings).toContain('claude not found')
 })
 
+test('a status with only the bases link present is not up-to-date and re-runs linkClaudeSkill', async () => {
+    // The fake's skillLinked() is the all-linked boolean; a machine upgraded from the one-skill
+    // build has the bases link only, so it reads false and the ensure must relink everything.
+    const { io, calls } = fakeIO({
+        hash: 'H',
+        marker: 'H',
+        cli: true,
+        mcp: true,
+        skill: false,
+    })
+    const r = await ensureBismuthInstalled('/src', io)
+    expect(r.action).toBe('updated')
+    expect(calls).toContain('linkClaudeSkill')
+})
+
+test('every warning from linkClaudeSkill is surfaced on the result', async () => {
+    const { io } = fakeIO({ hash: 'H', marker: null })
+    io.linkClaudeSkill = () => ({ ok: false, warnings: ['w-one', 'w-two'] })
+    const r = await ensureBismuthInstalled('/src', io)
+    expect(r.warnings).toEqual(expect.arrayContaining(['w-one', 'w-two']))
+})
+
 test('getBismuthStatus reflects marker + link + skill + mcp', async () => {
     const s = await getBismuthStatus(
         fakeIO({ marker: 'H', cli: true, mcp: true, skill: true }).io,
@@ -207,35 +231,41 @@ function withTempDirs<T>(
 }
 
 function writeFixtureSkill(src: string): void {
-    const skillDir = join(src, 'skills', SKILL_ID)
-    mkdirSync(skillDir, { recursive: true })
-    writeFileSync(join(skillDir, 'SKILL.md'), '# Authoring Bismuth Bases\n')
-    mkdirSync(join(skillDir, 'references'), { recursive: true })
-    writeFileSync(join(skillDir, 'references', 'table.md'), '# table view\n')
+    for (const id of SKILL_IDS) {
+        const skillDir = join(src, 'skills', id)
+        mkdirSync(skillDir, { recursive: true })
+        writeFileSync(join(skillDir, 'SKILL.md'), `# ${id}\n`)
+        mkdirSync(join(skillDir, 'references'), { recursive: true })
+        writeFileSync(join(skillDir, 'references', 'table.md'), '# table view\n')
+    }
 }
 
 // Used by tests that exercise linkSkillToClaudeCode/isSkillLinkedToClaudeCode in isolation —
-// writes directly into `<bismuthHome>/skills/<SKILL_ID>` WITHOUT going through stageSkills(), so
+// writes directly into `<bismuthHome>/skills/<id>` for every id WITHOUT going through stageSkills(), so
 // those tests stay independent of stageSkills()'s own correctness (sabotaging stageSkills alone
 // must fail only the "skills are staged" test, not this one too).
 function seedStagedSkill(bismuthHome: string): void {
-    const skillDir = join(bismuthHome, 'skills', SKILL_ID)
-    mkdirSync(skillDir, { recursive: true })
-    writeFileSync(join(skillDir, 'SKILL.md'), '# Authoring Bismuth Bases\n')
+    for (const id of SKILL_IDS) {
+        const skillDir = join(bismuthHome, 'skills', id)
+        mkdirSync(skillDir, { recursive: true })
+        writeFileSync(join(skillDir, 'SKILL.md'), `# ${id}\n`)
+    }
 }
 
 test('skills are staged alongside docs (real fs, temp home)', () => {
     withTempDirs((bismuthHome, _claudeSkillsDir, src) => {
         writeFixtureSkill(src)
         stageSkills(src, bismuthHome)
-        expect(
-            existsSync(join(bismuthHome, 'skills', SKILL_ID, 'SKILL.md')),
-        ).toBe(true)
-        expect(
-            existsSync(
-                join(bismuthHome, 'skills', SKILL_ID, 'references', 'table.md'),
-            ),
-        ).toBe(true)
+        for (const id of SKILL_IDS) {
+            expect(
+                existsSync(join(bismuthHome, 'skills', id, 'SKILL.md')),
+            ).toBe(true)
+            expect(
+                existsSync(
+                    join(bismuthHome, 'skills', id, 'references', 'table.md'),
+                ),
+            ).toBe(true)
+        }
     })
 })
 
@@ -243,23 +273,28 @@ test('the Claude Code skill entry is created as a symlink into the staged skill'
     withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
         seedStagedSkill(bismuthHome)
 
-        expect(isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
+        expect(areSkillsLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
             false,
         ) // not linked yet
 
-        const r = linkSkillToClaudeCode(bismuthHome, claudeSkillsDir)
-        expect(r.ok).toBe(true)
-        expect(r.warning).toBeUndefined()
+        const all = linkAllSkillsToClaudeCode(bismuthHome, claudeSkillsDir)
+        expect(all).toEqual({ ok: true, warnings: [] })
 
-        const linkPath = join(claudeSkillsDir, SKILL_ID)
-        const st = lstatSync(linkPath)
-        expect(st.isSymbolicLink()).toBe(true)
-        expect(readlinkSync(linkPath)).toBe(
-            join(bismuthHome, 'skills', SKILL_ID),
-        )
-        // Followed through the symlink, the real content is there.
-        expect(existsSync(join(linkPath, 'SKILL.md'))).toBe(true)
-        expect(isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
+        for (const id of SKILL_IDS) {
+            const linkPath = join(claudeSkillsDir, id)
+            expect(lstatSync(linkPath).isSymbolicLink()).toBe(true)
+            expect(readlinkSync(linkPath)).toBe(join(bismuthHome, 'skills', id))
+            // Followed through the symlink, the real content is there.
+            expect(existsSync(join(linkPath, 'SKILL.md'))).toBe(true)
+            expect(
+                isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir, id),
+            ).toBe(true)
+            // Relinking our own link is clean and idempotent.
+            expect(
+                linkSkillToClaudeCode(bismuthHome, claudeSkillsDir, id),
+            ).toEqual({ ok: true })
+        }
+        expect(areSkillsLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
             true,
         )
     })
@@ -295,11 +330,12 @@ test('a pre-existing non-Bismuth Claude Code skill entry is not overwritten and 
 
         // Simulate a foreign entry: a REAL directory (not our symlink) already at the target path.
         mkdirSync(claudeSkillsDir, { recursive: true })
-        const foreignPath = join(claudeSkillsDir, SKILL_ID)
+        const foreignId = SKILL_IDS[1]
+        const foreignPath = join(claudeSkillsDir, foreignId)
         mkdirSync(foreignPath, { recursive: true })
         writeFileSync(join(foreignPath, 'SKILL.md'), "# Someone else's skill\n")
 
-        const r = linkSkillToClaudeCode(bismuthHome, claudeSkillsDir)
+        const r = linkSkillToClaudeCode(bismuthHome, claudeSkillsDir, foreignId)
         expect(r.ok).toBe(false)
         expect(r.warning).toBeDefined()
         expect(r.warning).toContain('already exists')
@@ -312,9 +348,43 @@ test('a pre-existing non-Bismuth Claude Code skill entry is not overwritten and 
         expect(readFileSync(join(foreignPath, 'SKILL.md'), 'utf8')).toBe(
             "# Someone else's skill\n",
         )
-        expect(isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
+        expect(
+            isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir, foreignId),
+        ).toBe(false)
+    })
+})
+
+test('one foreign entry leaves the other skills linked, warns once naming that id, and the set reads as not linked', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
+        seedStagedSkill(bismuthHome)
+        const foreignId = 'converting-bismuth-to-obsidian'
+        mkdirSync(join(claudeSkillsDir, foreignId), { recursive: true })
+
+        const r = linkAllSkillsToClaudeCode(bismuthHome, claudeSkillsDir)
+        expect(r.ok).toBe(false)
+        expect(r.warnings).toHaveLength(1)
+        expect(r.warnings[0]).toContain(foreignId)
+        for (const id of SKILL_IDS) {
+            expect(
+                isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir, id),
+            ).toBe(id !== foreignId)
+        }
+        expect(areSkillsLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
             false,
         )
+    })
+})
+
+test('an uncreatable skills dir is one deduped warning, never a throw', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
+        seedStagedSkill(bismuthHome)
+        // A FILE where the skills dir should be makes mkdirSync fail for every id.
+        mkdirSync(join(claudeSkillsDir, '..'), { recursive: true })
+        writeFileSync(claudeSkillsDir, 'not a dir')
+        const r = linkAllSkillsToClaudeCode(bismuthHome, claudeSkillsDir)
+        expect(r.ok).toBe(false)
+        expect(r.warnings).toHaveLength(1)
+        expect(r.warnings[0]).toContain('could not create')
     })
 })
 
@@ -326,15 +396,31 @@ test('a foreign symlink pointing elsewhere is also treated as not ours and left 
         mkdirSync(claudeSkillsDir, { recursive: true })
         const elsewhere = tempDir('bismuth-install-elsewhere-')
         try {
-            symlinkSync(elsewhere, join(claudeSkillsDir, SKILL_ID))
-            const r = linkSkillToClaudeCode(bismuthHome, claudeSkillsDir)
+            const id = SKILL_IDS[2]
+            symlinkSync(elsewhere, join(claudeSkillsDir, id))
+            const r = linkSkillToClaudeCode(bismuthHome, claudeSkillsDir, id)
             expect(r.ok).toBe(false)
             expect(r.warning).toContain("wasn't created by Bismuth")
-            expect(readlinkSync(join(claudeSkillsDir, SKILL_ID))).toBe(
+            expect(readlinkSync(join(claudeSkillsDir, id))).toBe(
                 elsewhere,
             )
         } finally {
             rmSync(elsewhere, { recursive: true, force: true })
         }
+    })
+})
+
+test('linking only one skill leaves areSkillsLinkedToClaudeCode false (real fs, temp home)', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
+        seedStagedSkill(bismuthHome)
+        const r = linkSkillToClaudeCode(
+            bismuthHome,
+            claudeSkillsDir,
+            'authoring-bismuth-bases',
+        )
+        expect(r.ok).toBe(true)
+        expect(areSkillsLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
+            false,
+        )
     })
 })

@@ -27,6 +27,10 @@ export interface TaskDslTranslation {
      *  query while writing the rest to disk as if it were complete. Contains the raw
      *  leaf text(s) that blocked translation, for the caller's report. */
     blocked?: string[]
+    /** Trimmed text of each DSL line that is recognised but not translated (`group by`,
+     *  `limit`, `hide`, `show`, `short mode`, `full mode`, `explain`). Read-time callers
+     *  ignore it; `base migrate-queries` reports it. Also set on the `blocked` path. */
+    ignored?: string[]
 }
 
 /** Options for `translateTaskDsl`. Only `bismuth base migrate-queries` sets `liveDates` —
@@ -294,6 +298,7 @@ export function translateTaskDsl(
     const sort: SortSpec[] = []
     const unrecognized: string[] = []
     const blocked: string[] = []
+    const ignored: string[] = []
 
     for (const line of dsl.split(/\r?\n/)) {
         const trimmed = line.trim()
@@ -307,14 +312,18 @@ export function translateTaskDsl(
             })
             continue
         }
-        if (IGNORED_INSTRUCTION.test(trimmed)) continue
+        if (IGNORED_INSTRUCTION.test(trimmed)) {
+            ignored.push(trimmed)
+            continue
+        }
 
         filters.push(
             translateBool(tokenize(trimmed), today, unrecognized, opts, blocked),
         )
     }
 
-    if (blocked.length) return { blocked }
+    const ignoredOut = ignored.length ? ignored : undefined
+    if (blocked.length) return { blocked, ignored: ignoredOut }
 
     const where =
         filters.length === 0
@@ -327,6 +336,7 @@ export function translateTaskDsl(
         where,
         sort: sort.length ? sort : undefined,
         unrecognized: unrecognized.length ? unrecognized : undefined,
+        ignored: ignoredOut,
     }
 }
 

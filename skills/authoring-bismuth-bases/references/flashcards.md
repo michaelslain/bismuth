@@ -7,7 +7,7 @@ A spaced-repetition (SM-2) review UI over a base's rows. Each row is one card.
 ```yaml
 ---
 type: base
-source: notes where "#vocab"
+source: notes where file.hasTag("vocab")
 view: flashcards
 frontField: front
 backField: back

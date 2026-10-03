@@ -492,7 +492,7 @@ the feature:
    block right there, pinned to `(page, logical x, logical y)`. A page can carry any number of
    blocks; each one scales with zoom so it stays beside the passage it annotates.
 2. **Storage: the binary's companion note**, not the `.draw` sidecar. Images/PDFs already carry
-   their tags in a companion note (`<file>.md`, `core/src/fileKinds.ts`'s `companionPathFor` —
+   their tags in a companion note (`<file>.md`, e.g. `x.png` → `x.png.md`; `core/src/fileKinds.ts`'s `companionPathFor` —
    `docs/vault/frontmatter.md`); scratch-note blocks live in that same file's BODY, below the
    frontmatter fence. This makes block text **searchable** and its `[[wikilinks]]`/`#tags` reach the
    vault graph, the same as any other note — something a `.draw` sidecar (opaque strokes) cannot

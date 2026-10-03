@@ -30,7 +30,7 @@ Minimal valid config in a `type: base` file:
 ```yaml
 ---
 type: base
-source: notes where #book
+source: notes where file.hasTag("book")
 view: kanban
 groupBy:
   property: note.status
@@ -418,7 +418,7 @@ A `type: base` note for a reading tracker with a full kanban config:
 ```yaml
 ---
 type: base
-source: notes where #book
+source: notes where file.hasTag("book")
 properties:
   - name: description
     type: markdown

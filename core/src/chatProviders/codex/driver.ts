@@ -223,7 +223,8 @@ export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
  * The content Codex's AGENTS.md-managed block carries (see ../../agentBackends/agentsMd.ts) —
  * exported so core/test/agentBackends/agentsMd.test.ts can assert on it directly rather than
  * re-deriving it. Codex has no skills mechanism of its own, so this managed block is the channel
- * it actually reads; the pointer below is how it learns about skills/authoring-bismuth-bases/.
+ * it actually reads; the pointer below is how it learns about the skills under skills/ (bases authoring + the two
+ * Obsidian conversions).
  */
 export const CODEX_AGENTS_MD_CONTENT = [
     'This is a Bismuth-managed vault: a personal knowledge base of markdown notes linked with',
@@ -232,6 +233,8 @@ export const CODEX_AGENTS_MD_CONTENT = [
     '',
     '**Authoring a Bismuth base?** Read the skill first: call the `bismuth_skill` MCP tool with',
     '`{name: "authoring-bismuth-bases"}`, then `{name: "authoring-bismuth-bases", reference: "<view kind>"}`.',
+    '',
+    '**Converting a vault between Obsidian and Bismuth?** Read `{name: "converting-obsidian-to-bismuth"}` or `{name: "converting-bismuth-to-obsidian"}` via `bismuth_skill` first.',
 ].join('\n')
 
 /**

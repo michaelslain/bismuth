@@ -7,7 +7,7 @@ A compact, clickable horizontal-strip list — title, optional dimmed secondary 
 ```yaml
 ---
 type: base
-source: notes where "#book"
+source: notes where file.hasTag("book")
 view: list
 groupBy:
   property: note.status
