@@ -1,22 +1,27 @@
 // app/src/chat/ChatAuthPanel.tsx
-// The opencode auth popover BODY — moved out of ChatView.tsx's inline `AuthPanel()` (~2762-2851).
-// Lists stored credentials (`opencode auth list`) and gives the in-app login path: opencode's login
-// wizard (`opencode auth login`) is CLI-interactive, so the affordance here is honest — open a
-// Bismuth terminal tab (the wizard runs right there) or copy the command. The ANCHOR + toggle pill
-// stay in ChatControls.tsx, which owns "where does this attach"; this file owns only the body.
+// The opencode providers popover BODY. Fetches the running opencode's provider catalog on mount
+// (`api.opencodeProviders()`): a Connected block, a filter, and the not-yet-connected providers as
+// `OpencodeProviderRow`s that connect / sign in in place. Anything the rows cannot do (opencode's
+// wizard is CLI-interactive) stays one footer line away: open a Bismuth terminal tab or copy the
+// command. If opencode is not installed the route's message replaces the lists and the footer still
+// works. The ANCHOR + toggle pill stay in ChatControls.tsx, which owns "where does this attach";
+// this file owns only the body.
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import styles from './ChatAuthPanel.module.css'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
+import TextInput from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
 import InlineCode from '../ui/InlineCode'
+import OpencodeProviderRow from './OpencodeProviderRow'
+import { filterAvailable } from './opencodeProviderFilter'
+import { api, type OpencodeProviderList } from '../api'
 import { OPENCODE_LOGIN_COMMAND } from '../chatProvider'
 import { pushToast } from '../Toast'
 import { placeBelowOrAbove } from '../ui/popover/placeAnchored'
 import { isDismissKey } from '../ui/widgetKeys'
 
 export type ChatAuthPanelProps = {
-    providers: { name: string; kind: string }[] | null
     onClose: () => void
     class?: string
 }
@@ -43,10 +48,38 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
         })
         setTop(placed - r.top)
     }
-    // Re-measure whenever the body's own content changes shape (providers list, checking
-    // state) — the fit test depends on the panel's own height, and only then reposition.
+    // The catalog: `null` while checking, an error message in place of the lists when the route
+    // refused (opencode not installed), else the connected/available split. `loadId` drops a stale
+    // answer when a refetch overtakes it.
+    const [list, setList] = createSignal<OpencodeProviderList | null>(null)
+    const [loadError, setLoadError] = createSignal<string | null>(null)
+    const [query, setQuery] = createSignal('')
+    let loadId = 0
+    const load = async () => {
+        const mine = ++loadId
+        try {
+            const next = await api.opencodeProviders()
+            if (mine !== loadId) return
+            setLoadError(null)
+            setList(next)
+        } catch (e) {
+            if (mine !== loadId) return
+            setLoadError(e instanceof Error ? e.message : String(e))
+        }
+    }
+    onMount(() => void load())
+    const onConnected = (name: string) => {
+        pushToast(`Connected ${name}`)
+        void load()
+    }
+    const filtered = () => filterAvailable(list()?.available ?? [], query())
+
+    // Re-measure whenever the body's own content changes shape (the catalog, the load error, the
+    // filter) — the fit test depends on the panel's own height, and only then reposition.
     createEffect(() => {
-        props.providers // track
+        list() // track
+        loadError() // track
+        filtered() // track
         setPanelH(panel?.getBoundingClientRect().height ?? 0)
     })
     createEffect(() => {
@@ -102,49 +135,97 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
             class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}
             style={{ top: `${top()}px` }}
         >
-            <div class={styles.title}>opencode credentials</div>
+            <div class={styles.title}>opencode providers</div>
             <Show
-                when={(props.providers ?? []).length > 0}
+                when={loadError() === null}
                 fallback={
-                    <div class={styles.state}>
-                        {props.providers === null
-                            ? 'Checking credentials…'
-                            : 'No providers signed in yet.'}
-                    </div>
+                    <Text as="div" tone="muted" class={styles.state} role="alert">
+                        {loadError()}
+                    </Text>
                 }
             >
-                <For each={props.providers ?? []}>
-                    {p => (
-                        <div class={styles.row}>
-                            <Icon value="KeyRound" />
-                            <Text
-                                as="span"
-                                inherit
-                                class={styles.name}
+                <Show
+                    when={list()}
+                    fallback={
+                        <Text as="div" tone="muted" class={styles.state}>
+                            checking providers…
+                        </Text>
+                    }
+                >
+                    {l => (
+                        <>
+                            <Show
+                                when={l().connected.length > 0}
+                                fallback={
+                                    <Text as="div" tone="muted" class={styles.state}>
+                                        no providers connected yet
+                                    </Text>
+                                }
                             >
-                                {p.name}
-                            </Text>
-                            <Show when={p.kind}>
-                                <Text
-                                    as="span"
-                                    inherit
-                                    class={styles.kind}
-                                >
-                                    {p.kind}
+                                <For each={l().connected}>
+                                    {p => (
+                                        <div class={styles.row}>
+                                            <Icon value="KeyRound" />
+                                            <Text
+                                                as="span"
+                                                inherit
+                                                tone="default"
+                                                class={styles.name}
+                                            >
+                                                {p.name}
+                                            </Text>
+                                            <Text as="span" inherit class={styles.kind}>
+                                                {p.kind === 'api' ? 'api key' : p.kind}
+                                            </Text>
+                                        </div>
+                                    )}
+                                </For>
+                            </Show>
+                            <div class={styles.filter}>
+                                <TextInput
+                                    value={query()}
+                                    onInput={setQuery}
+                                    placeholder="add a provider…"
+                                    aria-label="add a provider"
+                                    autocomplete="off"
+                                    spellcheck={false}
+                                />
+                            </div>
+                            <For each={filtered().shown}>
+                                {p => (
+                                    <OpencodeProviderRow
+                                        provider={p}
+                                        {...{ onConnected }}
+                                    />
+                                )}
+                            </For>
+                            <Show when={filtered().more > 0}>
+                                <Text as="div" inherit tone="muted" class={styles.note}>
+                                    +{filtered().more} more // keep typing
                                 </Text>
                             </Show>
-                        </div>
+                            <Show
+                                when={
+                                    filtered().shown.length === 0 &&
+                                    l().available.length > 0
+                                }
+                            >
+                                <Text as="div" inherit tone="muted" class={styles.note}>
+                                    no provider matches "{query().trim()}"
+                                </Text>
+                            </Show>
+                        </>
                     )}
-                </For>
+                </Show>
             </Show>
             <div class={styles.help}>
-                Add or change providers (including opencode Zen) with{' '}
-                <InlineCode>{OPENCODE_LOGIN_COMMAND}</InlineCode> — it's an interactive
-                wizard, so it runs in a terminal.
-            </div>
-            <div class={styles.actions}>
-                <TextButton onClick={openTerminal}>open terminal</TextButton>
-                <TextButton onClick={copyCommand}>copy command</TextButton>
+                <Text as="div" inherit tone="muted">
+                    anything else // <InlineCode>{OPENCODE_LOGIN_COMMAND}</InlineCode>
+                </Text>
+                <div class={styles.actions}>
+                    <TextButton onClick={openTerminal}>open terminal</TextButton>
+                    <TextButton onClick={copyCommand}>copy command</TextButton>
+                </div>
             </div>
         </div>
     )

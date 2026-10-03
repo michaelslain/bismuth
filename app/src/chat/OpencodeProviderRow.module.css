@@ -1,0 +1,45 @@
+/* app/src/chat/OpencodeProviderRow.module.css — one unconnected provider in the credentials
+   popover. Horizontal padding matches ChatAuthPanel's connected rows so the right-hand controls
+   (`[ connect ]`, `[ save ]`, the kind badges above) all end on the same right edge. */
+.root {
+    display: flex;
+    flex-direction: column;
+}
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-5);
+    font-size: var(--fs-body);
+    min-height: calc(var(--h-control) + var(--sp-4));
+}
+.name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.field {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+}
+.input {
+    flex: 1;
+    min-width: 0;
+}
+/* Sibling bracket buttons: --bar-icon-gap is the ink-to-ink distance the button family is built
+   around (a plain `gap: var(--sp-3)` left the brackets touching — see Button.module.css). */
+.buttons {
+    display: flex;
+    align-items: center;
+    gap: var(--bar-icon-gap);
+}
+/* Inline failure — the same danger tone chat's per-turn error uses (ChatTranscript.module.css). */
+.error {
+    padding: 0 var(--sp-5) var(--sp-3);
+    font-size: var(--fs-ui);
+    line-height: 1.45;
+    color: var(--danger);
+}
