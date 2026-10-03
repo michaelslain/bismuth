@@ -14,6 +14,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import VaultIntro from './VaultIntro'
+import { SLIDES } from './introSlides'
 
 const meta = {
     title: 'Intro/VaultIntro',
@@ -101,37 +102,75 @@ export const NarrowTitle: Story = {
     },
 }
 
-const SLIDE_COUNT = 7
+const SLIDE_COUNT = SLIDES.length
 
 /** Every slide's hero box, headline and nav sit at the same y, and the hero box is the same size.
  *  Walks all seven slides with the real Next button (stopping before the last Next, which enters
- *  the vault) and compares each slide's numbers to slide 1's. */
+ *  the vault) and compares each slide's numbers to slide 1's. It also pins the box to its spec
+ *  (16 rows x 1.5 glyph scale, so a frame that is uniformly wrong cannot pass) and checks each
+ *  slide's copy ends above the nav. */
 export const Geometry: Story = {
     args: { startAt: 'welcome' },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        const h1 = () => canvasElement.querySelector('h1') as HTMLElement
+        const slot = (name: string) =>
+            canvasElement.querySelector(`[data-intro-slot="${name}"]`) as HTMLElement
         const measure = () => {
-            const slot = (name: string) =>
-                canvasElement
-                    .querySelector(`[data-intro-slot="${name}"]`)!
-                    .getBoundingClientRect()
-            const hero = slot('hero')
+            const hero = slot('hero').getBoundingClientRect()
             return {
                 heroTop: hero.top,
-                textTop: slot('text').top,
-                navTop: slot('nav').top,
+                h1Top: h1().getBoundingClientRect().top,
+                textTop: slot('text').getBoundingClientRect().top,
+                navTop: slot('nav').getBoundingClientRect().top,
                 heroW: hero.width,
                 heroH: hero.height,
             }
         }
+        // The copy's last element must end above the nav: a 3-line body must not run into it.
+        const expectClearOfNav = async (i: number, navTop: number) => {
+            const last = slot('text').lastElementChild as HTMLElement
+            await expect(
+                last.getBoundingClientRect().bottom,
+                `slide ${i + 1} copy bottom vs nav top`,
+            ).toBeLessThanOrEqual(navTop)
+        }
+        await waitFor(() => expect(h1().textContent).toBe(SLIDES[0].title))
         const first = measure()
+        const rowH = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
+        )
+        await expect(first.heroH).toBeCloseTo(16 * rowH * 1.5, 0)
+        await expectClearOfNav(0, first.navTop)
         for (let i = 1; i < SLIDE_COUNT; i++) {
             await userEvent.click(canvas.getByRole('button', { name: 'Next' }))
-            // Let the keyed hero + copy remount and lay out.
-            await new Promise(r => requestAnimationFrame(() => r(null)))
+            // The keyed hero + copy remount: wait for this slide's headline, then measure.
+            await waitFor(() => expect(h1().textContent).toBe(SLIDES[i].title))
             const m = measure()
             for (const k of Object.keys(first) as (keyof typeof first)[])
                 await expect(m[k], `slide ${i + 1} ${k}`).toBeCloseTo(first[k], 0)
+            await expectClearOfNav(i, m.navTop)
         }
     },
+}
+
+/** The glyph heroes on the light themes (paper, riso): glyphs are dark on light, which the token
+ *  mapping gives for free. These exist so a hero that vanishes on a light background is visible. */
+export const WelcomePaper: Story = {
+    args: { startAt: 'welcome', initialTheme: 'paper' },
+}
+export const DaemonPaper: Story = {
+    args: { startAt: 'daemon', initialTheme: 'paper' },
+}
+export const AgentsPaper: Story = {
+    args: { startAt: 'agents', initialTheme: 'paper' },
+}
+export const BeginPaper: Story = {
+    args: { startAt: 'begin', initialTheme: 'paper' },
+}
+export const WelcomeRiso: Story = {
+    args: { startAt: 'welcome', initialTheme: 'riso' },
+}
+export const DaemonRiso: Story = {
+    args: { startAt: 'daemon', initialTheme: 'riso' },
 }

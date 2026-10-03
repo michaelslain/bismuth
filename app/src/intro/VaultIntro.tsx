@@ -92,6 +92,26 @@ const enterWithRealDeps = (choice: EnterVaultChoice) => {
     })
 }
 
+/** The design window: the 1280x912 the big graph's fit was tuned in, with its 432px hero box. */
+const DESIGN_H = 912
+const DESIGN_HERO_H = 432
+const FIT_DEFAULT = { offsetY: -0.133, fitMargin: 1.96 }
+
+/** Where the big graph must sit to land on the hero box: the box centre relative to the root centre
+ *  (as a fraction of the root height) plus the cloud's own asymmetry, and a margin that keeps the
+ *  glyph cloud's height in proportion to the box. Both are the graph renderer's host-height
+ *  fractions, so they are re-derived from the live rects rather than hardcoded. */
+const fitToHero = (root: Element, hero: Element) => {
+    const r = root.getBoundingClientRect()
+    const h = hero.getBoundingClientRect()
+    if (r.height <= 0 || h.height <= 0) return FIT_DEFAULT
+    const centreY = h.top + h.height / 2 - r.top
+    return {
+        offsetY: (centreY - r.height / 2) / r.height + 0.011,
+        fitMargin: 1.96 * (r.height / DESIGN_H) * (DESIGN_HERO_H / h.height),
+    }
+}
+
 const VaultIntro: Component<VaultIntroProps> = props => {
     const [index, setIndex] = createSignal(startIndex(SLIDES, props.startAt))
     const [theme, setTheme] = createSignal<ThemeName>(
@@ -100,6 +120,8 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     const [busy, setBusy] = createSignal(false)
     const [powerups, setPowerups] = createSignal(DEFAULT_POWERUPS)
     const slide = () => SLIDES[index()]
+    let root!: HTMLDivElement
+    const [fit, setFit] = createSignal(FIT_DEFAULT)
 
     // The intro mounts and unmounts inside a running page (Storybook, replay): record :root's
     // theme vars before the first paint below and put them back on the way out.
@@ -136,11 +158,21 @@ const VaultIntro: Component<VaultIntroProps> = props => {
         e.preventDefault()
         move(action)
     }
+    onMount(() => {
+        const hero = root.querySelector('[data-intro-slot="hero"]')
+        if (!hero) return
+        const measure = () => setFit(fitToHero(root, hero))
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(root)
+        ro.observe(hero)
+        onCleanup(() => ro.disconnect())
+    })
     onMount(() => window.addEventListener('keydown', onKey))
     onCleanup(() => window.removeEventListener('keydown', onKey))
 
     return (
-        <div class={styles['vi-root']}>
+        <div class={styles['vi-root']} ref={root}>
             {/* Two independent graphs that cross-fade (opacity) between the theme + graph
                 slides: a small full-bleed starter cloud, and a big condensed "three brains"
                 cloud. Separate instances → no shared renderer, no re-render on slide change. */}
@@ -149,25 +181,20 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 active={slide().graph === 'small'}
                 theme={theme()}
             />
-            {/* offsetY / fitMargin put the big cloud's centre on the hero box's centre. In the
-                1280x912 design window the frame (hero box 432px tall = 16 rows x 1.5 glyph scale)
-                puts the hero box at y 109..541, centre 325; the window centre is 456, so the cloud
-                centre has to sit (325 - 456) / 912 = -0.144 of the host height up. Read off the
-                Graph story's screenshot, the glyphs' centre landed 17px low at -0.115 (the cloud
-                is not symmetric about its origin), hence -0.133, which puts the glyph centre
-                within 1px of the box centre.
-                fitMargin 1.8 (was 1.9 for the old 288px box, 1.6 first try for this one): at 1.6
-                the glyphs were ~435px tall, past the 432px box and into the headline; at 1.8 they
-                are ~405px, so the cloud (glyphs, not the bloom) sits inside the box with the top
-                ~13px under the box top and the bottom ~12px clear of the headline. Both are
-                fractions of the host height, so they track a taller or shorter window only
-                approximately; the frame itself is fixed-size. */}
+            {/* offsetY / fitMargin anchor the big cloud to the hero box, not to the window: they are
+                fractions of the host (= root) height H, while the box is fixed px, so they are
+                derived from the box's measured rect (see fitToHero) and follow a resize.
+                offsetY: the box centre's distance from the window centre, as a fraction of H, +0.011
+                for the cloud not being symmetric about its origin (measured at 1280x912: the glyph
+                centre landed 0.011 H low). fitMargin: the glyph cloud's height is proportional to H
+                / fitMargin, so the margin scales with H and inversely with the box height; 1.96 is
+                the value that fits the 432px box at H = 912 with ~60px clear above the headline. */}
             <IntroGraph
                 graph={BIG_GRAPH}
                 active={slide().graph === 'big'}
                 theme={theme()}
-                offsetY={-0.133}
-                fitMargin={1.8}
+                offsetY={fit().offsetY}
+                fitMargin={fit().fitMargin}
             />
 
             <IntroHeader
