@@ -16,8 +16,8 @@
 // Writing into the user's vault is opt-in (see core/src/settings.ts readCodexOptIns /
 // settings.codex.writeAgentsMd) — the same precedent as mcp.registerWith: naming a CLI/turning on a
 // flag IS the consent, default off.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 /** The file Bismuth writes into, at the vault root. */
 export const AGENTS_MD_FILENAME = 'AGENTS.md'
@@ -66,8 +66,8 @@ export function upsertAgentsMdBlock(
 /**
  * Best-effort: read `<vaultRoot>/AGENTS.md` (if present), upsert Bismuth's managed block with
  * `content`, and write it back. Never throws — a filesystem hiccup here must never fail the chat
- * turn or daemon send that triggered it; it just skips this refresh. Returns whether the write
- * actually happened.
+ * turn or daemon send that triggered it; it just skips this refresh. Skips the write when the file
+ * already holds the block. Returns false only on a filesystem failure.
  */
 export function writeAgentsMdBlock(
     vaultRoot: string,
@@ -77,8 +77,10 @@ export function writeAgentsMdBlock(
         const path = join(vaultRoot, AGENTS_MD_FILENAME)
         const existing = existsSync(path) ? readFileSync(path, 'utf8') : null
         const next = upsertAgentsMdBlock(existing, content)
-        mkdirSync(dirname(path), { recursive: true })
-        writeFileSync(path, next)
+        // Idempotent upsert: an unchanged block must not touch the file, or every session open
+        // bumps its mtime and re-triggers the vault watcher. The path is directly under the vault
+        // root, so the root already exists and no mkdir is needed.
+        if (next !== existing) writeFileSync(path, next)
         return true
     } catch {
         return false

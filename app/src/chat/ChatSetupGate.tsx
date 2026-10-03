@@ -5,7 +5,7 @@
 // (the backend is installed, it just can't be trusted with this vault's hidden notes), the active
 // provider's CLI missing, or opencode's CLI missing while it's the active provider — or `children`
 // when the session has neither problem.
-import { Match, Show, Switch, type JSX } from 'solid-js'
+import { Match, Show, Switch, type Component, type JSX } from 'solid-js'
 import type { ChatSession } from './chatSession'
 import ChatSetup from '../ChatSetup'
 import Text from '../ui/Text'
@@ -23,7 +23,7 @@ export type ChatSetupGateProps = {
     children: JSX.Element
 }
 
-export default function ChatSetupGate(props: ChatSetupGateProps): JSX.Element {
+const ChatSetupGate: Component<ChatSetupGateProps> = props => {
     const gateRefusal = () => props.session.gateRefusal()
     const setupError = () => props.session.setupError()
     const blocked = () => !!gateRefusal() || !!setupError()
@@ -107,3 +107,5 @@ export default function ChatSetupGate(props: ChatSetupGateProps): JSX.Element {
         </Show>
     )
 }
+
+export default ChatSetupGate

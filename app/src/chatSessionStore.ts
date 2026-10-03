@@ -34,35 +34,15 @@ function isSessionEntry(x: unknown): x is ChatSessionEntry {
 
 const store = createChatKeyedStore<ChatSessionEntry>(KEY, CAP, isSessionEntry)
 
-/** Pure upsert: drop any existing entry for `chatId`, append it (most-recent last), cap the list
- *  (oldest dropped). Exported for unit testing. */
-export function upsertSession(
-    list: ChatSessionEntry[],
-    chatId: string,
-    sessionId: string,
-    cap = CAP,
-): ChatSessionEntry[] {
-    return store.upsert(list, chatId, { chatId, sessionId }, cap)
-}
-
-/** Pure lookup: the remembered session_id for `chatId`, or null. Reads newest-first so a duplicate
- *  (shouldn't happen after upsert, but be defensive) resolves to the most recent. Exported for tests. */
-export function lookupSession(
-    list: ChatSessionEntry[],
-    chatId: string,
-): string | null {
-    return store.lookup(list, chatId)?.sessionId ?? null
-}
-
 /** Remember the session_id a chat tab is currently on. No-op on empty args. */
 export function rememberChatSession(chatId: string, sessionId: string): void {
     if (!chatId || !sessionId) return
-    store.write(upsertSession(store.read(), chatId, sessionId))
+    store.write(store.upsert(store.read(), chatId, { chatId, sessionId }))
 }
 
 /** The remembered session_id for a chat tab, or null if it was never seen (a brand-new chat). */
 export function recallChatSession(chatId: string): string | null {
-    return lookupSession(store.read(), chatId)
+    return store.lookup(store.read(), chatId)?.sessionId ?? null
 }
 
 /** Drop a tab's remembered session (a provider switch orphans the old conversation — resuming a

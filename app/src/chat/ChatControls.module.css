@@ -1,10 +1,8 @@
 /* app/src/chat/ChatControls.module.css — owns the readout/picker/action classes ChatControls.tsx
-   renders. As of final-findings Group 2 #5, ChatHeader spreads only `readouts` from
-   `chatControlSlots()` — Config/Actions no longer render inside a ViewBar bar at all, so there is
-   now exactly ONE live rendering context for them: `<ChatControls session/>`'s own `.row`, the quiet
-   line under the composer shared by the chat tab and the daemon page. `chatControlSlots()` still
-   packages `config`/`actions` for interface compatibility, but nothing currently spreads them
-   anywhere — every rule below can assume it is inside `.row`.
+   renders. ChatHeader renders only the readouts (`ChatReadouts`) — Config/Actions never render inside
+   a ViewBar bar, so there is exactly ONE live rendering context for them: `<ChatControls
+   session/>`'s own `.row`, the quiet line under the composer shared by the chat tab and the daemon
+   page. Every rule below can assume it is inside `.row`.
 
    `.mode-select`/`.mode-select--armed` are now plain local classes handed to Select via its own
    `class` prop (ChatControls.tsx's `<Select class={styles['mode-select'] + …}>`) rather than

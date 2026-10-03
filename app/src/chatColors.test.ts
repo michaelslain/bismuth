@@ -1,12 +1,9 @@
 import { test, expect, beforeEach, describe } from 'bun:test'
 import {
-    upsertColor,
-    lookupColor,
     setChatColor,
     chatColor,
     resolveChatColorArg,
     CHAT_COLOR_SWATCHES,
-    type ChatColorEntry,
 } from './chatColors'
 
 /** Minimal in-memory Storage stub (Bun test env has no localStorage). */
@@ -25,47 +22,6 @@ function installMemoryStorage(): Map<string, string> {
 }
 beforeEach(() => {
     installMemoryStorage()
-})
-
-const e = (chatId: string, color: string): ChatColorEntry => ({ chatId, color })
-
-test('upsertColor appends a new entry most-recent last', () => {
-    expect(upsertColor([e('a', '#f00')], 'b', '#0f0')).toEqual([
-        e('a', '#f00'),
-        e('b', '#0f0'),
-    ])
-})
-
-test("upsertColor replaces an existing chatId's color and moves it to the end", () => {
-    const start = [e('a', '#f00'), e('b', '#0f0'), e('c', '#00f')]
-    expect(upsertColor(start, 'a', '#abc')).toEqual([
-        e('b', '#0f0'),
-        e('c', '#00f'),
-        e('a', '#abc'),
-    ])
-})
-
-test('upsertColor with a null color CLEARS (removes) the entry', () => {
-    const start = [e('a', '#f00'), e('b', '#0f0')]
-    expect(upsertColor(start, 'a', null)).toEqual([e('b', '#0f0')])
-    // Clearing an absent id is a no-op.
-    expect(upsertColor(start, 'z', null)).toEqual(start)
-})
-
-test('upsertColor caps the list, dropping the oldest', () => {
-    let list: ChatColorEntry[] = Array.from({ length: 200 }, (_, i) =>
-        e(`c${i}`, `#${i}`),
-    )
-    list = upsertColor(list, 'new', '#fff') // cap is 200
-    expect(list.length).toBe(200)
-    expect(list[0].chatId).toBe('c1') // c0 dropped
-    expect(list[199]).toEqual(e('new', '#fff'))
-})
-
-test('lookupColor returns the remembered color, or null', () => {
-    const list = [e('a', '#f00'), e('b', '#0f0')]
-    expect(lookupColor(list, 'b')).toBe('#0f0')
-    expect(lookupColor(list, 'missing')).toBeNull()
 })
 
 test('setChatColor then chatColor round-trips (survives via the reactive store)', () => {
@@ -94,6 +50,17 @@ test('setChatColor persists the JSON to localStorage so it survives reload', () 
     expect(JSON.parse(raw)).toEqual(
         expect.arrayContaining([{ chatId: id, color: '#a855f7' }]),
     )
+})
+
+test('setChatColor caps the stored list at 200, dropping the oldest', () => {
+    const tag = crypto.randomUUID()
+    for (let i = 0; i < 201; i++) setChatColor(`${tag}-${i}`, '#fff')
+    const raw = JSON.parse(
+        (globalThis as any).localStorage.getItem('bismuth-chat-colors-v1'),
+    )
+    expect(raw.length).toBe(200)
+    expect(raw[199].chatId).toBe(`${tag}-200`)
+    expect(chatColor(`${tag}-0`)).toBeUndefined()
 })
 
 test('setChatColor ignores an empty chat id', () => {

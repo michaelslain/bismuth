@@ -1,7 +1,7 @@
 // app/src/chat/ChatThinkingBlock.tsx — ChatThinkingBlock.module.css is the ONLY importer.
 // A dim, collapsible one-liner for a turn's extended-thinking text. Collapsed by default.
 // Extracted verbatim (markup + behaviour) from ChatView.tsx's local `ThinkingBlock` closure.
-import { createSignal, Show } from 'solid-js'
+import { createSignal, Show, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
@@ -14,7 +14,7 @@ export type ChatThinkingBlockProps = {
     class?: string
 }
 
-export default function ChatThinkingBlock(props: ChatThinkingBlockProps) {
+const ChatThinkingBlock: Component<ChatThinkingBlockProps> = props => {
     const [open, setOpen] = createSignal(false)
     return (
         <div class={`${styles['chat-thinking']} ${props.class ?? ''}`}>
@@ -36,3 +36,5 @@ export default function ChatThinkingBlock(props: ChatThinkingBlockProps) {
         </div>
     )
 }
+
+export default ChatThinkingBlock

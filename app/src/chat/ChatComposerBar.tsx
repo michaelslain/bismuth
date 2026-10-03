@@ -17,6 +17,7 @@ import {
     createSignal,
     For,
     Show,
+    type Component,
     type JSX,
 } from 'solid-js'
 import styles from './ChatComposerBar.module.css'
@@ -54,9 +55,7 @@ export type ChatComposerBarProps = {
     class?: string
 }
 
-export default function ChatComposerBar(
-    props: ChatComposerBarProps,
-): JSX.Element {
+const ChatComposerBar: Component<ChatComposerBarProps> = props => {
     // `children()` resolves the getter ONCE into a memo — a bare `<Show when={props.below}>
     // {props.below}</Show>` re-reads the `below` prop getter on every render (Show evaluates
     // `when` in its own memo), which instantiates whatever JSX it holds a SECOND time. T6 passes
@@ -356,3 +355,5 @@ export default function ChatComposerBar(
         </div>
     )
 }
+
+export default ChatComposerBar

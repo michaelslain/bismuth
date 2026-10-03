@@ -11,7 +11,6 @@ import {
     newOpencodeTurnState,
     opencodeErrorMessage,
     opencodePermissionResponse,
-    opencodeTitleFromPrompt,
     OPENCODE_BUILTIN_COMMANDS,
     parseOpencodeAuthList,
     parseOpencodeDebugConfigCommands,
@@ -30,7 +29,8 @@ import {
     zenFreeModelIds,
     ZEN_FREE_ROTATE_ID,
 } from '../../src/chatProviders/opencode/opencodeTranslate'
-import { resolveChatProvider } from '../../src/chatProviders'
+import { resolveBackendId } from '../../src/agentBackends/catalog'
+import { titleFromPrompt } from '../../src/chatProviders/titleFromPrompt'
 
 const SID = 'ses_0ab633e24ffe05oTxes0rP0MZh'
 
@@ -470,29 +470,29 @@ describe('parseOpencodeModelsVerbose', () => {
     })
 })
 
-describe('opencodeTitleFromPrompt', () => {
+describe('titleFromPrompt', () => {
     test('strips the editor-context preamble, collapses whitespace, truncates with an ellipsis', () => {
         expect(
-            opencodeTitleFromPrompt(
+            titleFromPrompt(
                 '<editor-context>\nActive file: a.md\n</editor-context>\n\nhello   world',
             ),
         ).toBe('hello world')
-        expect(opencodeTitleFromPrompt('x'.repeat(100)).length).toBe(48)
-        expect(opencodeTitleFromPrompt('x'.repeat(100)).endsWith('…')).toBe(
+        expect(titleFromPrompt('x'.repeat(100)).length).toBe(48)
+        expect(titleFromPrompt('x'.repeat(100)).endsWith('…')).toBe(
             true,
         )
-        expect(opencodeTitleFromPrompt('   ')).toBe('')
+        expect(titleFromPrompt('   ')).toBe('')
     })
 })
 
-describe('resolveChatProvider', () => {
+describe('resolveBackendId', () => {
     test('requested wins when valid; falls back to the setting; bottoms out at claude', () => {
-        expect(resolveChatProvider('opencode', 'claude')).toBe('opencode')
-        expect(resolveChatProvider('claude', 'opencode')).toBe('claude')
-        expect(resolveChatProvider(undefined, 'opencode')).toBe('opencode')
-        expect(resolveChatProvider('gpt-cli', 'opencode')).toBe('opencode')
-        expect(resolveChatProvider(undefined, undefined)).toBe('claude')
-        expect(resolveChatProvider(42, 'banana')).toBe('claude')
+        expect(resolveBackendId('opencode', 'claude')).toBe('opencode')
+        expect(resolveBackendId('claude', 'opencode')).toBe('claude')
+        expect(resolveBackendId(undefined, 'opencode')).toBe('opencode')
+        expect(resolveBackendId('gpt-cli', 'opencode')).toBe('opencode')
+        expect(resolveBackendId(undefined, undefined)).toBe('claude')
+        expect(resolveBackendId(42, 'banana')).toBe('claude')
     })
 })
 

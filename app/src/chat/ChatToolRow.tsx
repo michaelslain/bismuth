@@ -5,7 +5,7 @@
 // Acceptance ("a tool row's status mark sits immediately after its argument text, not at the far
 // column edge; name and argument are separated by one normal gap, not a fixed wide column") — see
 // ChatToolRow.module.css's header for what changed.
-import { createSignal, Show } from 'solid-js'
+import { createSignal, Show, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
@@ -20,7 +20,7 @@ export type ChatToolRowProps = {
     class?: string
 }
 
-export default function ChatToolRow(props: ChatToolRowProps) {
+const ChatToolRow: Component<ChatToolRowProps> = props => {
     const [open, setOpen] = createSignal(false)
     // chipSummary, not clamp: an argument-less ACP tool call's only input field is its title, which
     // is also this chip's label — see chatToolIcon.ts for why the dedup has to precede the clamp.
@@ -123,3 +123,5 @@ export default function ChatToolRow(props: ChatToolRowProps) {
         </div>
     )
 }
+
+export default ChatToolRow

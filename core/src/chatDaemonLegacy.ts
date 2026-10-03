@@ -48,15 +48,15 @@ import { vaultDaemonDir, vaultLegacySessionIdsFile } from './daemon'
 /** The prompt the pre-fix daemon sent on EVERY startup, minting a session per boot/relaunch.
  *  Frozen: the daemon no longer sends this (that boot session is what this card removed), but 129
  *  transcripts on the reporting machine still open with it. */
-export const DAEMON_BOOT_PROMPT =
+const DAEMON_BOOT_PROMPT =
     'You are now running as a background daemon for this vault. Check memory for prior context.'
 
 /** The prefix fireJob puts on every cron prompt: `[Cron: <job.name>] `. */
-export const CRON_PROMPT_PREFIX = '[Cron: '
+const CRON_PROMPT_PREFIX = '[Cron: '
 
 /** The instruction fireJob appends to EVERY cron prompt, unconditionally. Paired with the prefix
  *  above so that a user typing either one alone is never mistaken for the daemon. Frozen. */
-export const CRON_RESULT_INSTRUCTION =
+const CRON_RESULT_INSTRUCTION =
     'IMPORTANT: When you are done, print exactly [CRON_RESULT:SUCCESS] if the task completed successfully, or [CRON_RESULT:FAILURE] if it failed. This must be the last thing you print.'
 
 /**
@@ -94,7 +94,7 @@ export function firstUserMessageText(
 /** Hard ceiling on transcripts inspected in one backfill, so an enormous store can't turn the
  *  first History open into an unbounded read. The reporting machine holds ~1000; this is headroom,
  *  not a target. Sessions past it stay listed and age out — a miss, never a false positive. */
-export const LEGACY_SCAN_CAP = 5000
+const LEGACY_SCAN_CAP = 5000
 
 /** Sessions per listSessions page while scanning. */
 const SCAN_PAGE = 200

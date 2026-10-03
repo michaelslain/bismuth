@@ -17,6 +17,7 @@ import {
     type BackendDescriptor,
 } from './catalog'
 import { whichBinary } from '../claudeWhich'
+import { spawnWithTimeout } from './spawnWithTimeout'
 import { ACP_AGENTS } from '../chatProviders/acp/agents'
 
 /** How long any one `--version` probe may take before we call it unresponsive. */
@@ -84,22 +85,9 @@ export function adapterPackageFor(id: string): string | null {
     return spec.args.find(a => !a.startsWith('-')) ?? null
 }
 
-/**
- * Pure: the argv that asks a CLI for its version.
- *
- * `--version` is near-universal, but not quite: a few CLIs only implement a `version` subcommand.
- * Kept as data so a wrong guess is a one-line fix rather than a code change, and so the choice is
- * visible and testable instead of buried in a spawn call.
- */
-export function versionArgs(binary: string): string[] {
-    switch (binary) {
-        // openclaw's own help documents `--version`; it also has no `version` subcommand.
-        case 'openclaw':
-            return ['--version']
-        default:
-            return ['--version']
-    }
-}
+/** The argv that asks a CLI for its version. `--version` is what every catalog backend answers to
+ *  (openclaw's own help documents it and it has no `version` subcommand). */
+export const VERSION_ARGS = ['--version']
 
 /** Pure: reduce a probe's raw result to the report's `version`/`problem` pair. Separated from the
  *  spawn so every branch — clean output, empty output, non-zero exit, timeout — is unit-testable. */
@@ -134,42 +122,18 @@ export function interpretProbe(r: {
 }
 
 /** Run one `<binary> --version`, bounded and side-effect-free. Never throws. */
-async function probeVersion(
+export async function probeVersion(
     path: string,
-    binary: string,
+    args: string[] = VERSION_ARGS,
 ): Promise<{ version: string | null; problem?: string }> {
-    try {
-        const proc = Bun.spawn([path, ...versionArgs(binary)], {
-            // Never inherit stdin: a CLI that decides to prompt would otherwise hang the probe forever.
-            stdin: 'ignore',
-            stdout: 'pipe',
-            stderr: 'pipe',
-        })
-        const timer = setTimeout(() => {
-            try {
-                proc.kill()
-            } catch {
-                /* already gone */
-            }
-        }, PROBE_TIMEOUT_MS)
-        try {
-            const [stdout, stderr, exitCode] = await Promise.all([
-                new Response(proc.stdout).text(),
-                new Response(proc.stderr).text(),
-                proc.exited,
-            ])
-            // A killed child reports a signal exit; treat "nothing printed and non-zero" as the timeout.
-            const timedOut = !stdout.trim() && !stderr.trim() && exitCode !== 0
-            return interpretProbe({ timedOut, exitCode, stdout, stderr })
-        } finally {
-            clearTimeout(timer)
-        }
-    } catch (e) {
-        return {
-            version: null,
-            problem: e instanceof Error ? e.message : String(e),
-        }
-    }
+    const r = await spawnWithTimeout([path, ...args], PROBE_TIMEOUT_MS)
+    if (r.error) return { version: null, problem: r.error }
+    return interpretProbe({
+        timedOut: r.timedOut,
+        exitCode: r.code ?? undefined,
+        stdout: r.stdout,
+        stderr: r.stderr,
+    })
 }
 
 /**
@@ -201,7 +165,7 @@ export async function checkBackends(): Promise<BackendReport[]> {
                 }
             }
             if (!path) return { ...base, installHint: d.installHint }
-            const { version, problem } = await probeVersion(path, d.binary)
+            const { version, problem } = await probeVersion(path)
             return { ...base, version, ...(problem ? { problem } : {}) }
         }),
     )

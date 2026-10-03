@@ -294,7 +294,7 @@
   "count": 1
  },
  {
-  "file": "ChatView.module.css",
+  "file": "chat/ChatSessionBody.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-3) 40px 18px",
   "count": 1
