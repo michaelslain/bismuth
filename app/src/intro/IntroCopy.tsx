@@ -5,7 +5,13 @@
 // first, then the paragraph — see introTyping.ts); the persistent graph behind it never remounts.
 // The FULL text is in the DOM from the first frame — the not-yet-typed remainder is only
 // `visibility: hidden` — so layout never reflows and the accessibility tree never changes.
-import { createMemo, createSignal, onCleanup, onMount, type Component } from 'solid-js'
+import {
+    createMemo,
+    createSignal,
+    onCleanup,
+    onMount,
+    type Component,
+} from 'solid-js'
 import Heading from '../ui/Heading'
 import Text from '../ui/Text'
 import { typedCounts, typingDuration } from './introTyping'
@@ -67,7 +73,7 @@ const IntroCopy: Component<IntroCopyProps> = props => {
                 <Text as="span" inherit>
                     {props.title.slice(0, counts().title)}
                 </Text>
-                <Text as="span" inherit class={styles.untyped}>
+                <Text as="span" inherit class={styles.untyped} data-untyped>
                     {props.title.slice(counts().title)}
                 </Text>
             </Heading>
@@ -75,7 +81,7 @@ const IntroCopy: Component<IntroCopyProps> = props => {
                 <Text as="span" inherit>
                     {props.body.slice(0, counts().body)}
                 </Text>
-                <Text as="span" inherit class={styles.untyped}>
+                <Text as="span" inherit class={styles.untyped} data-untyped>
                     {props.body.slice(counts().body)}
                 </Text>
             </Text>

@@ -340,7 +340,7 @@ slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. Whe
 controls drop in a single shared ladder that a control opts into with `data-bar-drop`.
 
 ### The intro frame
-The first-run intro lays every slide out in one frame, identical on all of them: a hero box `96 x --cell-w` wide by `16 x --row-h` tall, a text slot under it, and the nav pinned to the bottom, so the headline, the body and the nav sit at the same y on every slide. The `hero` variant holds glyph art (`GlyphArt`), or nothing over the graph; the `setup` variant holds the slide's own control.
+The first-run intro lays every slide out in one frame, identical on all of them: a hero box 96 cells wide by 16 rows tall on the graph's cell grid, scaled up 1.5x (`--intro-glyph-scale`, three quarters of that on windows 800px tall or less), a text slot under it, and the nav pinned to the bottom, so the headline, the body and the nav sit at the same y on every slide. The `hero` variant holds glyph art (`GlyphArt`), or nothing over the graph; the `setup` variant holds the slide's own control.
 
 ### Named Rules
 **The Row Unit Rule.** Every repeated row is `--row-h`; every taller band is a whole multiple of it.

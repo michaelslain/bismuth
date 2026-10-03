@@ -54,6 +54,9 @@ describe('loop helpers', () => {
     it('quantizes and paces', () => {
         expect(quantizeAlpha(0xff)).toBe(255)
         expect(quantizeAlpha(0xf7)).toBe(0xf0)
+        expect(quantizeAlpha(248)).toBe(255)
+        expect(quantizeAlpha(247)).toBe(240)
+        expect(quantizeAlpha(15)).toBe(0)
         expect(frameInterval(12)).toBeCloseTo(83.333, 2)
     })
 })
@@ -61,6 +64,9 @@ describe('loop helpers', () => {
 describe('fitScale', () => {
     it('is 1 for the hero box at the graph cell grid', () => {
         expect(fitScale(604.8, 288, 96, 16, 6.3, 18)).toBe(1)
+    })
+    it('shrinks when the box is slightly too small', () => {
+        expect(fitScale(598.75, 285.12, 96, 16, 6.3, 18)).toBeLessThan(1)
     })
     it('grows to fill a 1.5x box', () => {
         expect(fitScale(907.2, 432, 96, 16, 6.3, 18)).toBeCloseTo(1.5, 5)

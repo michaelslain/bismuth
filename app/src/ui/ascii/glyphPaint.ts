@@ -94,6 +94,6 @@ export function fitScale(
     cellH: number,
 ): number {
     const s = Math.min(boxW / (sceneCols * cellW), boxH / (sceneRows * cellH))
-    if (Math.abs(s - 1) <= 0.01) return 1
+    if (s >= 1 && s - 1 <= 0.01) return 1
     return Math.min(MAX_SCALE, Math.max(COMPACT_FLOOR_SCALE, s))
 }
