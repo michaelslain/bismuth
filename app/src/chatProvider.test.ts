@@ -97,6 +97,7 @@ describe('header gating + options', () => {
             'gemini',
             'goose',
             'openclaw',
+            'hermes',
         ])
         expect(CHAT_PROVIDER_OPTIONS[0]?.label).toBe('Claude Code')
     })
@@ -115,6 +116,10 @@ describe('header gating + options', () => {
         expect(
             CHAT_PROVIDER_OPTIONS.find(o => o.value === 'codex')?.label,
         ).toBe('OpenAI Codex')
+    })
+    test('Hermes Agent is offered with its catalog label', () => {
+        expect(providerLabel('hermes')).toBe('Hermes Agent')
+        expect(providerInstallHint('hermes')).toContain('hermes')
     })
     test('labels + install hints come from the catalog', () => {
         expect(providerLabel('opencode')).toBe('opencode')

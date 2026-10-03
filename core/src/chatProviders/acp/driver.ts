@@ -51,6 +51,11 @@ import {
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import type { ChatBackend, ChatTurnContext } from '../backends'
 import type { BackendId } from '../../agentBackends/catalog'
+import {
+    localUnreachableMessage,
+    resolveLocalSpawn,
+    type ResolvedLocal,
+} from '../../agentBackends/localModelProbe'
 import { ACP_AGENTS, type AcpAgentSpec } from './agents'
 import type { FileSink } from 'bun'
 import { titleFromPrompt } from '../titleFromPrompt'
@@ -230,6 +235,16 @@ function killWithEscalation(
         .catch(() => {})
 }
 
+/** The env an ACP agent is spawned with: the base, with the vault's local-model env (goose's
+ *  `GOOSE_PROVIDER`/`OPENAI_HOST`/… from `localSpawnFor`) laid over it when the setting resolved
+ *  for this agent. Pure — `null` (setting off, or an agent with no local mechanism) is `base`. */
+export function acpSpawnEnv(
+    base: Record<string, string>,
+    local: ResolvedLocal | null,
+): Record<string, string> {
+    return local ? { ...base, ...local.env } : base
+}
+
 // ── Session state ───────────────────────────────────────────────────────────────────────────────
 
 interface AcpPendingCall {
@@ -269,6 +284,9 @@ interface AcpSession {
     stdoutPending: string
     /** True once the fallbackArgs respawn has been tried (retried ONCE, never looped). */
     usedFallbackArgs: boolean
+    /** The local-model resolution this session was created under (null = the setting is off for it),
+     *  kept so the fallbackArgs respawn gets the same env as the first spawn. */
+    local: ResolvedLocal | null
 }
 
 function blankManifest(
@@ -308,6 +326,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         bin: string,
         args: string[],
         cwd: string,
+        local: ResolvedLocal | null,
     ): ReturnType<typeof Bun.spawn> | null {
         try {
             return Bun.spawn([bin, ...args], {
@@ -318,10 +337,13 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
                 // "chat": every ACP agent here is a chat backend. Stamps BISMUTH_AGENT_CHANNEL so a
                 // `bismuth` invocation from THIS process's own shell/tool-use (not just through the MCP
                 // server above) is gated by core/src/visibilityCliGate.ts.
-                env: claudeSpawnEnv(process.env, 'chat') as Record<
-                    string,
-                    string
-                >,
+                env: acpSpawnEnv(
+                    claudeSpawnEnv(process.env, 'chat') as Record<
+                        string,
+                        string
+                    >,
+                    local,
+                ),
             })
         } catch {
             return null
@@ -541,7 +563,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             ...agent.fallbackArgs,
             ...(agent.sessionKeyArgs?.(s.id) ?? []),
         ]
-        const proc = spawnAcpProcess(bin, fallbackSpawnArgs, s.cwd)
+        const proc = spawnAcpProcess(bin, fallbackSpawnArgs, s.cwd, s.local)
         if (!proc) return false
         attachProc(s, proc)
         const second = await raceExit(
@@ -575,11 +597,25 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         // into another's upstream request (the openclaw isolation test in openclawMocked.test.ts proves
         // this stays closed). Every other agent leaves this undefined and gets byte-identical argv to
         // before this field existed.
+        // The vault's localModel setting (goose only — every other agent resolves 'off'). Resolved
+        // after the binary check and before any spawn: an enabled-but-down server is surfaced as an
+        // error frame here rather than letting goose fail mid-turn with a connection error that never
+        // names the setting, or fall back to its configured cloud provider.
+        const resolution = await resolveLocalSpawn(agentId, cwd)
+        if (resolution.kind === 'unreachable') {
+            sink({
+                type: 'error',
+                code: 'local-model-unreachable',
+                message: localUnreachableMessage(resolution.url),
+            })
+            return null
+        }
+        const local = resolution.kind === 'ready' ? resolution.local : null
         const spawnArgs = [
             ...agent.args,
             ...(agent.sessionKeyArgs?.(chatId) ?? []),
         ]
-        const proc = spawnAcpProcess(bin, spawnArgs, cwd)
+        const proc = spawnAcpProcess(bin, spawnArgs, cwd, local)
         if (!proc) {
             sink({
                 type: 'error',
@@ -629,6 +665,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             lastActivityAt: Date.now(),
             stdoutPending: '',
             usedFallbackArgs: false,
+            local,
         }
         sessions.set(chatId, s)
         attachProc(s, proc)
@@ -990,6 +1027,7 @@ export const clineBackend: ChatBackend = createAcpBackend('cline')
 export const geminiBackend: ChatBackend = createAcpBackend('gemini')
 export const gooseBackend: ChatBackend = createAcpBackend('goose')
 export const openclawBackend: ChatBackend = createAcpBackend('openclaw')
+export const hermesBackend: ChatBackend = createAcpBackend('hermes')
 export const claudeCodeAcpBackend: ChatBackend =
     createAcpBackend('claude-code-acp')
 export const codexAcpBackend: ChatBackend = createAcpBackend('codex-acp')
@@ -1001,6 +1039,7 @@ export const ACP_BACKEND_LIST: readonly ChatBackend[] = [
     geminiBackend,
     gooseBackend,
     openclawBackend,
+    hermesBackend,
     claudeCodeAcpBackend,
     codexAcpBackend,
 ]
