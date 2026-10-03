@@ -716,5 +716,17 @@ export const ModelPickerSwitchToClaude: Story = {
             if (d.textContent.includes('kimi-k2'))
                 throw new Error('opencode models still listed')
         })
+        // picking a model applies it and keeps the dialog open
+        const sonnet = [
+            ...(page
+                .querySelector('[role="dialog"]')
+                ?.querySelectorAll('button') ?? []),
+        ].find(b => b.textContent?.includes('Sonnet 4.5'))
+        await expect(sonnet).toBeTruthy()
+        sonnet!.click()
+        await waitFor(() => {
+            if (!page.querySelector('[role="dialog"]'))
+                throw new Error('picking a model closed the dialog')
+        })
     },
 }

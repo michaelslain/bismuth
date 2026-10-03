@@ -2,8 +2,8 @@
 // The ONE model dialog (replaces the provider ▸ / model ▸ / effort ▸ context-menu submenus AND the
 // separate `[N providers]` pill): a left column of connectors (claude code, codex, opencode, …) and
 // a right column holding the current connector's models, its effort levels, and — for opencode
-// only — the provider manager (OpencodeProviderManager). Picking a connector keeps the dialog open
-// so its models show up beside it; picking a model closes it.
+// only — the provider manager (OpencodeProviderManager). Every pick — connector, model, effort —
+// applies at once and keeps the dialog open; only `[x]`, Esc or the backdrop close it.
 //
 // A FormModal: it portals itself over the scrim, owns Esc / backdrop dismiss, the focus trap and
 // the `model // <connector>` header. There is no footer — nothing to confirm, a pick applies at once.
@@ -41,10 +41,7 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
         groupModels(props.session.models(), props.session.provider())
     const currentModel = () => props.session.displayModelValue()
 
-    const pickModel = (m: ChatModelOption) => {
-        props.session.switchModel(m.value)
-        props.onClose()
-    }
+    const pickModel = (m: ChatModelOption) => props.session.switchModel(m.value)
 
     return (
         <FormModal
