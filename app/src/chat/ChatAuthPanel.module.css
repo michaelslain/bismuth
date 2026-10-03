@@ -5,10 +5,10 @@
    here so every right-hand control ends on one column. */
 
 .panel {
-    /* `top` is set inline from a measured position (ChatAuthPanel.tsx) — the panel flips above
-       its anchor only when it would clip past the bottom of the viewport, never unconditionally. */
-    position: absolute;
-    right: 0;
+    /* `top` and `right` are set inline from the anchor's measured viewport rect (ChatAuthPanel.tsx) —
+       the panel flips above its anchor only when it would clip past the bottom of the viewport.
+       Fixed, not absolute: the chat controls row clips its overflow, which hid an absolute panel. */
+    position: fixed;
     z-index: 50;
     width: 320px;
     max-width: min(340px, 80vw);

@@ -26,7 +26,11 @@ import { IconTextButton } from '../ui/IconTextButton'
 import Text from '../ui/Text'
 import { Icon } from '../icons/Icon'
 import ChatModelMenu from './ChatModelMenu'
-import { opencodeAuthSummary, providerCan, sanitizeChatProvider } from '../chatProvider'
+import {
+    opencodeAuthSummary,
+    providerCan,
+    sanitizeChatProvider,
+} from '../chatProvider'
 import { PERMISSION_MODE_OPTIONS } from '../chatPermissionMode'
 import {
     browserStorage,
@@ -36,6 +40,7 @@ import {
     readProviderChoice,
 } from './chatSessionPrefs'
 import { settings } from '../settings'
+import { Portal } from 'solid-js/web'
 import ChatAuthPanel from './ChatAuthPanel'
 
 /** The members the controls row reads off a session — ChatModelMenu, Config and Actions take this
@@ -130,7 +135,8 @@ export const ChatReadouts: Component<ChatReadoutsProps> = props => {
                             title={`${props.session.mcpConnected()}/${m().mcpServers.length} MCP servers connected`}
                         >
                             <Icon value="Server" />{' '}
-                            {props.session.mcpConnected()}/{m().mcpServers.length}
+                            {props.session.mcpConnected()}/
+                            {m().mcpServers.length}
                         </Text>
                     </Show>
                     <Show when={props.session.context()}>
@@ -208,6 +214,7 @@ const Config: Component<{ session: ChatControlsView }> = props => {
  *  none inside the actions cluster itself). */
 const Actions: Component<{ session: ChatControlsView }> = props => {
     const [authOpen, setAuthOpen] = createSignal(false)
+    let authAnchor!: HTMLDivElement
     return (
         <div class={styles.actions}>
             {/* Text-only, like every other control in the row (Acceptance: "every control a
@@ -217,7 +224,11 @@ const Actions: Component<{ session: ChatControlsView }> = props => {
                 class) carries the signed-out tone — the same orthogonal prop every other danger
                 control in the app uses. */}
             <Show when={props.session.provider() === 'opencode'}>
-                <div class={styles['auth-anchor']} data-chat-auth-anchor>
+                <div
+                    ref={authAnchor}
+                    class={styles['auth-anchor']}
+                    data-chat-auth-anchor
+                >
                     <TextButton
                         variant={authOpen() ? 'selected' : 'unselected'}
                         danger={
@@ -228,10 +239,19 @@ const Actions: Component<{ session: ChatControlsView }> = props => {
                         title="opencode credentials"
                         onClick={() => setAuthOpen(v => !v)}
                     >
-                        {opencodeAuthSummary(props.session.authProviders()).label}
+                        {
+                            opencodeAuthSummary(props.session.authProviders())
+                                .label
+                        }
                     </TextButton>
+                    {/* Portalled: `.row` clips its overflow, so an in-row panel never shows. */}
                     <Show when={authOpen()}>
-                        <ChatAuthPanel onClose={() => setAuthOpen(false)} />
+                        <Portal>
+                            <ChatAuthPanel
+                                anchor={authAnchor}
+                                onClose={() => setAuthOpen(false)}
+                            />
+                        </Portal>
                     </Show>
                 </div>
             </Show>

@@ -32,6 +32,11 @@ import { isDismissKey } from '../ui/widgetKeys'
 
 export type ChatAuthPanelProps = {
     onClose: () => void
+    /** The element the panel is placed against — the auth pill's wrapper. The panel is `position:
+     *  fixed` and normally portalled to <body>, because the chat controls row clips its overflow
+     *  (ChatControls.module.css `.row`), which hid an absolutely-placed panel entirely. Defaults to the
+     *  panel's own parent, for the isolated stories that render it un-portalled. */
+    anchor?: HTMLElement
     class?: string
 }
 
@@ -44,18 +49,23 @@ const ChatAuthPanel: Component<ChatAuthPanelProps> = props => {
     // anchor, which is `.panel`'s own `position: relative` positioning context.
     const [panelH, setPanelH] = createSignal(0)
     const [top, setTop] = createSignal(0)
+    const [right, setRight] = createSignal(0)
 
+    // Viewport coordinates (the panel is `position: fixed`): right-aligned to the anchor, below it
+    // unless that would clip past the bottom of the viewport, then above.
     const reposition = () => {
-        const anchor = panel?.parentElement
+        const anchor = props.anchor ?? panel?.parentElement
         if (!anchor) return
         const r = anchor.getBoundingClientRect()
-        const placed = placeBelowOrAbove({
-            y: r.bottom + 6,
-            h: panelH(),
-            viewportH: window.innerHeight,
-            flipFrom: r.top,
-        })
-        setTop(placed - r.top)
+        setTop(
+            placeBelowOrAbove({
+                y: r.bottom + 6,
+                h: panelH(),
+                viewportH: window.innerHeight,
+                flipFrom: r.top,
+            }),
+        )
+        setRight(Math.max(0, window.innerWidth - r.right))
     }
     // The catalog: `null` while checking, an error message in place of the lists when the route
     // refused (opencode not installed), else the connected/available split. `loadId` drops a stale
@@ -138,13 +148,18 @@ const ChatAuthPanel: Component<ChatAuthPanelProps> = props => {
         <div
             ref={panel!}
             class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}
-            style={{ top: `${top()}px` }}
+            style={{ top: `${top()}px`, right: `${right()}px` }}
         >
             <div class={styles.title}>opencode providers</div>
             <Show
                 when={loadError() === null}
                 fallback={
-                    <Text as="div" tone="muted" class={styles.state} role="alert">
+                    <Text
+                        as="div"
+                        tone="muted"
+                        class={styles.state}
+                        role="alert"
+                    >
                         {loadError()}
                     </Text>
                 }
@@ -162,7 +177,11 @@ const ChatAuthPanel: Component<ChatAuthPanelProps> = props => {
                             <Show
                                 when={l().connected.length > 0}
                                 fallback={
-                                    <Text as="div" tone="muted" class={styles.state}>
+                                    <Text
+                                        as="div"
+                                        tone="muted"
+                                        class={styles.state}
+                                    >
                                         no providers connected yet
                                     </Text>
                                 }
@@ -179,8 +198,14 @@ const ChatAuthPanel: Component<ChatAuthPanelProps> = props => {
                                             >
                                                 {p.name}
                                             </Text>
-                                            <Text as="span" inherit class={styles.kind}>
-                                                {p.kind === 'api' ? 'api key' : p.kind}
+                                            <Text
+                                                as="span"
+                                                inherit
+                                                class={styles.kind}
+                                            >
+                                                {p.kind === 'api'
+                                                    ? 'api key'
+                                                    : p.kind}
                                             </Text>
                                         </div>
                                     )}
@@ -205,7 +230,12 @@ const ChatAuthPanel: Component<ChatAuthPanelProps> = props => {
                                 )}
                             </For>
                             <Show when={filtered().more > 0}>
-                                <Text as="div" inherit tone="muted" class={styles.note}>
+                                <Text
+                                    as="div"
+                                    inherit
+                                    tone="muted"
+                                    class={styles.note}
+                                >
                                     +{filtered().more} more // keep typing
                                 </Text>
                             </Show>
@@ -215,7 +245,12 @@ const ChatAuthPanel: Component<ChatAuthPanelProps> = props => {
                                     l().available.length > 0
                                 }
                             >
-                                <Text as="div" inherit tone="muted" class={styles.note}>
+                                <Text
+                                    as="div"
+                                    inherit
+                                    tone="muted"
+                                    class={styles.note}
+                                >
                                     no provider matches "{query().trim()}"
                                 </Text>
                             </Show>
@@ -225,10 +260,13 @@ const ChatAuthPanel: Component<ChatAuthPanelProps> = props => {
             </Show>
             <div class={styles.help}>
                 <Text as="div" inherit tone="muted">
-                    anything else // <InlineCode>{OPENCODE_LOGIN_COMMAND}</InlineCode>
+                    anything else //{' '}
+                    <InlineCode>{OPENCODE_LOGIN_COMMAND}</InlineCode>
                 </Text>
                 <div class={styles.actions}>
-                    <TextButton onClick={openTerminal}>open terminal</TextButton>
+                    <TextButton onClick={openTerminal}>
+                        open terminal
+                    </TextButton>
                     <TextButton onClick={copyCommand}>copy command</TextButton>
                 </div>
             </div>

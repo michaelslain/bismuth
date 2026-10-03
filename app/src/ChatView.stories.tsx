@@ -22,13 +22,23 @@
 // story loaded afterwards in the same Storybook session.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
+import { onCleanup } from 'solid-js'
 import { ChatView } from './ChatView'
 import { retainFakeChat } from './chat/_fakeChatSocket'
-import { expectProseFace, expectUiFace, expectCodeSize, expectBoundToUiFont } from './ui/_fontFace'
+import { providerStorageKey } from './chatProvider'
+import {
+    expectProseFace,
+    expectUiFace,
+    expectCodeSize,
+    expectBoundToUiFont,
+} from './ui/_fontFace'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 
 /** Wraps <ChatView> with the fake socket + session lifecycle, scoped to exactly this story instance. */
-function FakeSocketChat(props: { chatId: string; frames: readonly ChatFrame[] }) {
+function FakeSocketChat(props: {
+    chatId: string
+    frames: readonly ChatFrame[]
+}) {
     retainFakeChat(props.chatId, props.frames)
     return (
         <ChatView
@@ -400,19 +410,24 @@ export const Empty: Story = {
             '[data-testid="ui-empty-block"]',
         )!
         const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
-        const composer = canvasElement.querySelector<HTMLElement>('.cm-content')!
+        const composer =
+            canvasElement.querySelector<HTMLElement>('.cm-content')!
         const g = greeting.getBoundingClientRect()
         const top = bar.getBoundingClientRect().bottom
         const bottom = composer.getBoundingClientRect().top
         const mid = (g.top + g.bottom) / 2
-        await expect(Math.abs(mid - (top + bottom) / 2)).toBeLessThan((bottom - top) * 0.15)
+        await expect(Math.abs(mid - (top + bottom) / 2)).toBeLessThan(
+            (bottom - top) * 0.15,
+        )
         // Capped to the 680px reading column (ChatTurnColumn), not the full pane width — the
         // greeting's own paragraph wraps at that width instead of stretching edge to edge.
         await expect(g.width).toBeLessThanOrEqual(680)
         const body = canvasElement.querySelector<HTMLElement>(
             '[data-testid="ui-empty"]',
         )!
-        await expect(body.getBoundingClientRect().width).toBeLessThanOrEqual(680)
+        await expect(body.getBoundingClientRect().width).toBeLessThanOrEqual(
+            680,
+        )
     },
 }
 
@@ -503,7 +518,11 @@ export const TagTypography: Story = {
     ),
     play: async ({ canvasElement }) => {
         await waitFor(() => {
-            if (!canvasElement.querySelector('[class*="chat-bubble"] .bismuth-tag')) {
+            if (
+                !canvasElement.querySelector(
+                    '[class*="chat-bubble"] .bismuth-tag',
+                )
+            ) {
                 throw new Error('tag not rendered in a chat bubble yet')
             }
             return true
@@ -517,5 +536,77 @@ export const TagTypography: Story = {
             expectCodeSize(el)
             expectBoundToUiFont(el)
         }
+    },
+}
+
+/** <FakeSocketChat> as an opencode tab: writes the per-tab provider key a real tab persists BEFORE the
+ *  session is retained (the session reads it once, at creation), and removes it on cleanup. */
+function OpencodeChat(props: { chatId: string; frames: readonly ChatFrame[] }) {
+    try {
+        localStorage.setItem(providerStorageKey(props.chatId), 'opencode')
+    } catch {}
+    onCleanup(() => {
+        try {
+            localStorage.removeItem(providerStorageKey(props.chatId))
+        } catch {}
+    })
+    return <FakeSocketChat chatId={props.chatId} frames={props.frames} />
+}
+
+/** The opencode provider manager in the context it actually appears in: an opencode chat with the
+ *  credentials pill clicked open over its transcript. The popover's lists come from the preview's
+ *  global fakeTransport (`GET /opencode/providers`); the pill's own label comes from the `auth` frame. */
+export const OpencodeProviders: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <OpencodeChat
+                chatId="story-chat-opencode-providers"
+                frames={[
+                    {
+                        type: 'manifest',
+                        manifest: {
+                            ...MANIFEST,
+                            model: 'anthropic/claude-sonnet-4-5',
+                        },
+                    },
+                    {
+                        type: 'auth',
+                        providers: [
+                            { name: 'anthropic', kind: 'oauth' },
+                            { name: 'opencode zen', kind: 'api' },
+                        ],
+                    },
+                    {
+                        type: 'user-message',
+                        text: 'Which notes link to [[Reading List]]?',
+                    },
+                    {
+                        type: 'assistant-text',
+                        text: 'Three notes link to [[Reading List]]: [[2026-09-30]], [[Books]] and [[Queue]].',
+                    },
+                    { type: 'result', isError: false, numTurns: 1, costUsd: 0 },
+                    { type: 'done' },
+                ]}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const pill = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                '[data-testid="chat-auth"]',
+            )
+            if (!el) throw new Error('opencode auth pill not rendered yet')
+            return el
+        })
+        pill.click()
+        // the panel is portalled to <body> (the controls row clips its overflow), so look there
+        const page = canvasElement.ownerDocument.body
+        await findText(page, 'opencode providers')
+        // the filter input renders once the provider list has loaded
+        await waitFor(() => {
+            if (!page.querySelector('input[placeholder="add a provider…"]'))
+                throw new Error('provider filter not rendered yet')
+        })
+        await findText(page, 'opencode zen')
     },
 }
