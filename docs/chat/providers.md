@@ -24,7 +24,7 @@ Both speak the **same `ChatFrame` wire protocol** over the `/chat` WebSocket, so
 - **Per chat**: the header's provider `Select` (next to the model picker). Switching acts like **"New chat" on the other provider** — a conversation can't hop drivers mid-stream, so the transcript clears and a fresh session spawns. The choice is persisted per tab (`bismuth.chat.provider.<tabId>`, a transient localStorage key like the per-chat model) and latched the moment a session spawns, so a later settings edit can't flip a live tab's header away from its backend.
 - **Default for new tabs**: the `chat.provider` key in `.settings` (`"claude" | "opencode"`, schema-validated — `core/src/schema/settingsSchema.ts`).
 
-On the wire, the client's `open` / `user` / `resume` frames carry `provider`; the server resolves it with `resolveChatProvider(requested, settingsDefault)` and routes through the router. **Routing rule**: a chatId with a live session anywhere stays on that backend (conversation continuity beats a stale field); only session-creating verbs honor the requested provider.
+On the wire, the client's `open` / `user` / `resume` frames carry `provider`; the server resolves it with `resolveBackendId(requested, settingsDefault)` and routes through the router. **Routing rule**: a chatId with a live session anywhere stays on that backend (conversation continuity beats a stale field); only session-creating verbs honor the requested provider.
 
 ## How the opencode driver works
 
