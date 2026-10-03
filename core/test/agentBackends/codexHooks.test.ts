@@ -3,7 +3,7 @@ import { tempDir } from '../helpers'
 // Never spawns `codex` (or anything else) — pure JSON-shape + string-content assertions, plus
 // tmp-dir file-write smoke tests. No real Codex CLI is installed in this sandbox (or CI).
 import { describe, expect, test, afterEach } from 'bun:test'
-import { rmSync, readFileSync, existsSync } from 'node:fs'
+import { rmSync, readFileSync, existsSync, statSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     buildCodexHooksJson,
@@ -47,6 +47,31 @@ describe('buildCodexHooksJson (pure)', () => {
                 'SubagentStart',
                 'SubagentStop',
             ].sort(),
+        )
+    })
+
+    test('serializes byte-identically to the table-free shape (key order included)', () => {
+        const cmd = (arg: string) =>
+            `bun run "/vault/.codex/bismuth-relay-hook.ts" ${arg}`
+        const hook = (arg: string) => ({
+            hooks: [{ type: 'command', command: cmd(arg), timeout_sec: 3 }],
+        })
+        expect(JSON.stringify(json)).toBe(
+            JSON.stringify({
+                description:
+                    "Bismuth relay lifecycle hooks — reports this Codex session to Bismuth's relay registry.",
+                hooks: {
+                    SessionStart: [
+                        {
+                            matcher: 'startup|resume|clear|compact',
+                            ...hook('session-start'),
+                        },
+                    ],
+                    SubagentStart: [hook('subagent-start')],
+                    SubagentStop: [hook('subagent-stop')],
+                    SessionEnd: [hook('session-end')],
+                },
+            }),
         )
     })
 
@@ -188,6 +213,19 @@ describe('writeCodexHooksFiles (effectful, tmp dir)', () => {
         expect(hooksJson.hooks.SessionStart[0].hooks[0].command).toContain(
             scriptPath,
         )
+    })
+
+    test('a second call with unchanged content rewrites neither file', () => {
+        dir = tempDir('bismuth-codexhooks-')
+        writeCodexHooksFiles(dir)
+        const files = [
+            join(dir, '.codex', CODEX_HOOK_SCRIPT_NAME),
+            join(dir, '.codex', 'hooks.json'),
+        ]
+        const old = new Date('2020-01-01T00:00:00Z')
+        for (const f of files) utimesSync(f, old, old)
+        expect(writeCodexHooksFiles(dir)).toBe(true)
+        for (const f of files) expect(statSync(f).mtimeMs).toBe(old.getTime())
     })
 
     test('never throws even against an unwritable path', () => {

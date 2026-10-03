@@ -88,13 +88,6 @@ export function checkSandboxWrapperAvailability(
     return { available: true }
 }
 
-/** Convenience boolean form of {@link checkSandboxWrapperAvailability}. */
-export function sandboxWrapperAvailable(
-    opts: SandboxWrapperCheckOpts = {},
-): boolean {
-    return checkSandboxWrapperAvailability(opts).available
-}
-
 /** A short, user-facing explanation of why the wrapper can't run — for a refusal message. Never
  *  claims a mechanism that wasn't checked. */
 export function describeSandboxWrapperUnavailable(
@@ -185,6 +178,8 @@ export async function materializeSandboxProfile(
     const hash = createHash('sha256').update(profile).digest('hex').slice(0, 16)
     const dir = profileDir(vaultRoot)
     const path = join(dir, `visibility-${hash}.sb`)
+    // Content-addressed: the name IS the hash of the content, so an existing file is already right.
+    if (existsSync(path)) return path
     await mkdir(dir, { recursive: true })
     await writeFile(path, profile, { mode: 0o600 })
     return path
