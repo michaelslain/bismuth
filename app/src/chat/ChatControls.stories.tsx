@@ -1,6 +1,6 @@
 // Visual spec for <ChatControls> — the quiet inline controls row for a host with no ViewBar (the
-// daemon page). `chatControlSlots()` (ChatHeader's ViewBar-region shape) is exercised indirectly by
-// ChatHeader.stories.tsx, which renders through the real bar.
+// daemon page). The readouts (`ChatReadouts`) are exercised by ChatHeader.stories.tsx, which renders
+// through the real bar.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import ChatControls from './ChatControls'
