@@ -2,7 +2,7 @@
    IntroCopy.tsx). The headline's face/size/weight/leading come from <Heading size="hero-xl"
    register="prose">, the paragraph's face/size from <Text size="title" register="prose">; this
    file owns only the block's layout, the legibility backdrop, the measure/colour of the
-   paragraph, and the enter animation. */
+   paragraph, and the hidden remainder while the text types in (IntroCopy.tsx). */
 
 .intro-copy {
   display: flex;
@@ -57,21 +57,9 @@
   text-wrap: pretty;
 }
 
-/* ---- motion (enhancement only; the resting state above is fully visible) ---- */
-/* Slide-in (horizontal) — reads as a slide, not a fade. The parent remounts this block per
-   slide, which replays it. */
-@keyframes vi-slidein {
-  from {
-    opacity: 0;
-    transform: translateX(56px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .intro-copy {
-    animation: vi-slidein 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  }
+/* ---- type-in ----
+   The not-yet-typed remainder keeps its full layout (so nothing reflows while typing and the
+   accessibility tree never changes) — it is only hidden. */
+.untyped {
+  visibility: hidden;
 }
