@@ -1,0 +1,54 @@
+/* app/src/intro/TermLine.module.css — one line of the intro's terminal panels. Split out of
+   TermPanel.module.css: the six derived-ANSI `.t-*` colours collapse into one `tone` mapping
+   (same vocabulary as Terminal.tsx's real palette: prompt = accent, success = green, the reply
+   arrow = violet). Colours unchanged from the old `.t-*` rules. */
+
+.tone-prompt {
+  color: var(--accent);
+}
+.tone-command {
+  color: var(--term-fg, var(--fg));
+}
+.tone-reply {
+  color: var(--violet);
+}
+.tone-accent {
+  color: var(--accent);
+}
+.tone-ok {
+  color: var(--green);
+}
+.tone-live {
+  color: var(--green);
+}
+
+/* A detail line that carries an `ok` value: [d][accent][dd] ...leader... [ok]. A flex row so the
+   leader can grow; the left group ellipsizes before the leader/ok column ever moves. */
+.term-row {
+  display: flex;
+  align-items: baseline;
+}
+.term-left {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The leader is drawn, not typed: an empty flex-grow box whose bottom edge IS the text baseline
+   (an item with no baseline synthesizes one from its bottom border edge), so the dotted
+   border-bottom sits on the baseline of the neighbouring text. Replaces a run of 14 middle-dots
+   that left the `ok` values ragged by however long each left half happened to be. */
+.term-leader {
+  flex: 1 1 auto;
+  align-self: baseline;
+  min-width: var(--sp-5);
+  margin: 0 var(--sp-4);
+  border-bottom: 1px dotted var(--faint);
+}
+/* Every `ok` value gets the same minimum width, so the values start at one column AND end at one
+   edge. 10ch is the longest shipped value (`+12 edges`, 9ch) plus one of slack; monospace, so
+   ch is exact. */
+.term-ok {
+  flex: 0 0 auto;
+  min-width: 10ch;
+}
