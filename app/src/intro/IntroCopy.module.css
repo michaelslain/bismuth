@@ -63,3 +63,16 @@
 .untyped {
   opacity: 0;
 }
+
+/* ---- cursor ----
+   A zero-width box: its `_` overhangs into the next letter's (transparent) cell, so the cursor sits
+   exactly where the next keystroke lands and never pushes the text sideways. */
+.cursor {
+  display: inline-block;
+  width: 0;
+  white-space: nowrap;
+}
+/* Two classes: outrank global.css's `.asc-caret` blink regardless of stylesheet order. */
+.caret.caret--typing {
+  animation: none;
+}

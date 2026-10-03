@@ -66,21 +66,43 @@ const TYPING_TITLE = 'Notes that think.'
 const TYPING_BODY =
     'Write notes and connect them with [[wikilinks]]. Bismuth links them into a graph you can explore and search.'
 
-/** The default: the text types in on mount, headline first. The full text is in the DOM from the
- *  first frame (the untyped remainder is only `opacity: 0`), so nothing reflows. The
- *  screenshot of this story is a mid-type frame — the stable looks are the stories above. */
+/** The default: the text types in on mount, headline first, at an irregular per-letter rhythm,
+ *  behind a cursor that rests blinking at the end of the body. The full text is in the DOM from the
+ *  first frame (the untyped remainder is only `opacity: 0`, the cursor a zero-width aria-hidden
+ *  box), so nothing reflows. The screenshot of this story is the finished frame. */
 export const Typing: Story = {
     args: { title: TYPING_TITLE, body: TYPING_BODY },
     play: async ({ canvasElement }) => {
         const heading = canvasElement.querySelector('h1')!
+        // The words a reader gets: everything but the aria-hidden cursor.
+        const words = (el: Element) => {
+            const copy = el.cloneNode(true) as Element
+            copy.querySelectorAll('[data-cursor]').forEach(c => c.remove())
+            return copy.textContent
+        }
         // Whole from the first frame, whatever has been typed so far.
-        await expect(heading.textContent).toBe(TYPING_TITLE)
+        await expect(words(heading)).toBe(TYPING_TITLE)
         const untyped = () =>
             [...canvasElement.querySelectorAll('[data-untyped]')].filter(
                 el => (el.textContent ?? '') !== '',
             )
+        const cursor = () => canvasElement.querySelector('[data-cursor]')
         await expect(untyped().length).toBeGreaterThan(0)
-        await waitFor(() => expect(untyped().length).toBe(0), { timeout: 3000 })
-        await expect(heading.textContent).toBe(TYPING_TITLE)
+        // Typing: one cursor, holding still (no blink mid-keystroke), zero width.
+        await expect(cursor()).not.toBeNull()
+        await expect(
+            getComputedStyle(cursor()!.firstElementChild!).animationName,
+        ).toBe('none')
+        await expect(cursor()!.getBoundingClientRect().width).toBe(0)
+        await waitFor(() => expect(untyped().length).toBe(0), { timeout: 4000 })
+        await expect(words(heading)).toBe(TYPING_TITLE)
+        // Done: the cursor rests at the end of the body and blinks.
+        const body = heading.nextElementSibling!
+        await expect(body.contains(cursor())).toBe(true)
+        await waitFor(() =>
+            expect(
+                getComputedStyle(cursor()!.firstElementChild!).animationName,
+            ).not.toBe('none'),
+        )
     },
 }

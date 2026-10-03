@@ -135,7 +135,14 @@ export const Geometry: Story = {
                 `slide ${i + 1} copy bottom vs nav top`,
             ).toBeLessThanOrEqual(navTop)
         }
-        await waitFor(() => expect(h1().textContent).toBe(SLIDES[0].title))
+        // The headline's words without the typing cursor (an aria-hidden `_` that rides the title
+        // while it types). The full title is in the DOM from the first frame.
+        const words = () => {
+            const copy = h1().cloneNode(true) as Element
+            copy.querySelectorAll('[data-cursor]').forEach(c => c.remove())
+            return copy.textContent
+        }
+        await waitFor(() => expect(words()).toBe(SLIDES[0].title))
         const first = measure()
         const rowH = parseFloat(
             getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
@@ -145,7 +152,7 @@ export const Geometry: Story = {
         for (let i = 1; i < SLIDE_COUNT; i++) {
             await userEvent.click(canvas.getByRole('button', { name: 'Next' }))
             // The keyed hero + copy remount: wait for this slide's headline, then measure.
-            await waitFor(() => expect(h1().textContent).toBe(SLIDES[i].title))
+            await waitFor(() => expect(words()).toBe(SLIDES[i].title))
             const m = measure()
             for (const k of Object.keys(first) as (keyof typeof first)[])
                 await expect(m[k], `slide ${i + 1} ${k}`).toBeCloseTo(first[k], 0)
