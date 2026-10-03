@@ -40,6 +40,7 @@ import {
     resolveLocalSpawn,
     type ResolvedLocal,
 } from './agentBackends/localModelProbe'
+import { todayISO } from './dates'
 import { backfillLegacyDaemonSessions } from './chatDaemonLegacy'
 import {
     detachSessionSink,
@@ -177,7 +178,7 @@ export type ChatFrame =
      *  backend+channel (docs/vault/visibility.md's per-backend table) — `binary` names the refused
      *  backend, `restrictedCount` is how many notes/folders are restricted (a COUNT only — never their
      *  names or paths, since naming a hidden note in an error message would defeat the point of hiding
-     *  it), and `message` is the full user-facing explanation built by {@link visibilityRefusalMessage}.
+     *  it), and `message` is the full user-facing explanation built by `visibilityRefusalMessage` (visibility.ts).
      *  Emitted INSTEAD OF opening the session, with one exception: a mid-session re-read of the
      *  vault's visibility that cannot be resolved (respawnSession) emits it and ends the session,
      *  rather than continue a conversation whose deny list no longer describes the vault.
@@ -868,33 +869,6 @@ export function formatMcpStatus(servers: ChatMcpServerSummary[]): string {
         return `- **${s.name}** — ${s.status}${tools}`
     })
     return `**MCP Servers** (${servers.length})\n\n${lines.join('\n')}`
-}
-
-/**
- * Pure: the body text for a `"visibility-refused"` error frame — pushed INSTEAD of opening a
- * session, when this vault restricts one or more notes and Bismuth has no VERIFIED mechanism to
- * enforce that on the chosen backend+channel (the per-backend table in docs/vault/visibility.md).
- *
- * Takes only a COUNT of restricted notes/folders, never their names or paths: naming a hidden note
- * in an error message would defeat the entire point of hiding it. `backendLabel` is the backend's
- * already-resolved display name (e.g. "Cline", "Codex") — this module has no dependency on the
- * backend catalog, so the caller (whichever chokepoint resolves the per-channel capability — see
- * docs/vault/visibility.md) is responsible for resolving the id to a label before calling this.
- *
- * The two ways out are stated explicitly, matching the non-negotiable that a refusal must never be
- * a dead end: switch to a backend that DOES enforce the gate (Claude Code, today), or unhide the
- * restricted notes.
- */
-export function visibilityRefusalMessage(
-    backendLabel: string,
-    restrictedCount: number,
-): string {
-    const notes = restrictedCount === 1 ? '1 note' : `${restrictedCount} notes`
-    return (
-        `This vault marks ${notes} off-limits to AI sessions, and Bismuth has no verified way to enforce ` +
-        `that on ${backendLabel}. Rather than run unprotected, this chat won't start — switch to Claude ` +
-        `Code (which does enforce it), or unhide the restricted notes.`
-    )
 }
 
 /**
@@ -1610,18 +1584,6 @@ export function resolveChatOrigin(
     return daemonIds.has(sessionId) ? 'daemon' : 'user'
 }
 
-/** Pure: drop the sessions the vault's daemon minted. Empty `daemonIds` (no daemon, or a daemon
- *  that has never run) → everything is the user's, which is the pre-daemon behavior. Kept as the
- *  simple two-way filter (the `user`-scope case of filterSessionsByScope below); still exported and
- *  tested standalone since it is the historical, minimal membership test. */
-export function excludeDaemonSessions<T extends { sessionId: string }>(
-    sessions: readonly T[],
-    daemonIds: ReadonlySet<string>,
-): T[] {
-    if (daemonIds.size === 0) return [...sessions]
-    return sessions.filter(s => !daemonIds.has(s.sessionId))
-}
-
 /**
  * Pure: keep the sessions `scope` asks for.
  *
@@ -1639,7 +1601,8 @@ export function filterSessionsByScope<T extends { sessionId: string }>(
     if (scope === 'all') return [...sessions]
     if (scope === 'daemon')
         return sessions.filter(s => daemonIds.has(s.sessionId))
-    return excludeDaemonSessions(sessions, daemonIds)
+    // `user`: drop the sessions the vault's daemon minted. Empty `daemonIds` keeps everything.
+    return sessions.filter(s => !daemonIds.has(s.sessionId))
 }
 
 /** How many sessions one page of the store scan pulls. */
@@ -1831,22 +1794,24 @@ export function matchChatSession(
     // never straddle the "\n" join boundary — a token that passes therefore lives within one field.
     const combined = [doc.summary, ...doc.texts].join('\n').toLowerCase()
     if (!tokens.every(t => combined.includes(t))) return null
-    const meta = {
+    const first = tokens[0]!
+    const title = chatSnippet(doc.summary, first)
+    let snippet = title
+    if (!snippet)
+        for (const text of doc.texts) {
+            snippet = chatSnippet(text, first)
+            if (snippet) break
+        }
+    // The AND test above guarantees `first` is in the title or a message, so a snippet exists.
+    if (!snippet) return null
+    return {
         sessionId: doc.sessionId,
         summary: doc.summary,
         lastModified: doc.lastModified,
         origin: doc.origin,
+        snippet,
+        inTitle: !!title,
     }
-    const first = tokens[0]!
-    const titleSnip = chatSnippet(doc.summary, first)
-    if (titleSnip) return { ...meta, snippet: titleSnip, inTitle: true }
-    for (const text of doc.texts) {
-        const snip = chatSnippet(text, first)
-        if (snip) return { ...meta, snippet: snip, inTitle: false }
-    }
-    // Unreachable given the AND test guarantees `first` is in the title or a message, but fall back
-    // to the title rather than assert.
-    return { ...meta, snippet: doc.summary, inTitle: true }
 }
 
 /** Build a session's searchable doc from its SDK transcript: the title plus each user/assistant
@@ -1854,12 +1819,10 @@ export function matchChatSession(
  *  by stripInjectedBlocks, so search matches what the human actually wrote/read). Tolerant — an
  *  unreadable session yields an empty text list (title-only search still works). */
 async function buildSearchDoc(
-    session: {
-        sessionId: string
-        summary: string
-        lastModified: number
-        origin: ChatOrigin
-    },
+    session: Pick<
+        ScopedSession,
+        'sessionId' | 'summary' | 'lastModified' | 'origin'
+    >,
     cwd: string,
 ): Promise<ChatSearchDoc> {
     let messages: SessionMessage[] = []
@@ -1919,15 +1882,7 @@ export async function searchChatSessions(
     // Read each session's transcript on demand and filter — the SDK's own data, no index.
     await Promise.all(
         sessionList.map(async s => {
-            const doc = await buildSearchDoc(
-                {
-                    sessionId: s.sessionId,
-                    summary: s.summary,
-                    lastModified: s.lastModified,
-                    origin: s.origin,
-                },
-                cwd,
-            )
+            const doc = await buildSearchDoc(s, cwd)
             const hit = matchChatSession(doc, q)
             if (hit) hits.push(hit)
         }),
@@ -2389,6 +2344,20 @@ export function respondQuestion(
     pending.resolve(buildAskUserQuestionAnswer(pending.toolInput, answers))
 }
 
+/** Release every parked permission as a deny, then settle any parked AskUserQuestion dialog, so no
+ *  canUseTool promise dangles and a stale still-clickable card can't resolve a moot one. */
+function denyAllPending(s: ChatSession): void {
+    for (const resolve of s.pending.values()) {
+        try {
+            resolve({ behavior: 'deny' })
+        } catch {
+            /* */
+        }
+    }
+    s.pending.clear()
+    cancelPendingDialogs(s)
+}
+
 /** Cancel every parked AskUserQuestion tool call (deny them so no canUseTool promise dangles) —
  *  shared by teardown (drain end / closeChat) and a deliberate Stop (abortTurn), mirroring how pending
  *  permissions are auto-denied. The turn is ending here, so a deny is right (unlike a user SKIP, which
@@ -2503,17 +2472,7 @@ export function abortTurn(chatId: string): void {
     // session.pending populated, so the parked canUseTool promise would keep the turn blocked,
     // a stale still-clickable card could later resolve a moot promise, and "always allow" could
     // even get poisoned by a tool the user never really approved on an aborted turn.
-    for (const resolve of s.pending.values()) {
-        try {
-            resolve({ behavior: 'deny' })
-        } catch {
-            /* */
-        }
-    }
-    s.pending.clear()
-    // Any parked AskUserQuestion tool call is moot once we interrupt — cancel it so its canUseTool
-    // promise resolves (same belt-and-suspenders as the pending-permission deny above).
-    cancelPendingDialogs(s)
+    denyAllPending(s)
     // Mark this turn as a deliberate Stop BEFORE interrupting — the drain loop's `result` handler
     // reads this to keep the SDK's error-shaped interrupt result from surfacing as a chat error.
     s.aborting = true
@@ -2636,7 +2595,7 @@ function captureToMemory(s: ChatSession): void {
             const now = new Date()
             const pad = (n: number) => String(n).padStart(2, '0')
             const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
-            const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+            const date = todayISO(now)
             await writeMemoryNote(
                 `auto-${ts}-${sessionId.slice(0, 8)}`,
                 {
@@ -2662,15 +2621,7 @@ export function closeChat(chatId: string): void {
     if (s.closeTimer) clearTimeout(s.closeTimer)
     sessions.delete(chatId)
     // Reject every pending permission as a deny so canUseTool promises don't dangle.
-    for (const resolve of s.pending.values()) {
-        try {
-            resolve({ behavior: 'deny' })
-        } catch {
-            /* */
-        }
-    }
-    s.pending.clear()
-    cancelPendingDialogs(s) // and settle any parked AskUserQuestion dialog
+    denyAllPending(s)
     // Close the input queue first so the multi-turn stream ends gracefully, then tear the query down.
     // Swallow the control-request rejection close()/interrupt() can raise when a turn is mid-flight
     // ("Query closed before response received") — this is teardown, the error is expected.

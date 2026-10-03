@@ -97,8 +97,8 @@ import {
     resumeSession as chatResume,
     openSession as chatOpen,
     sessionHistoryFrames,
-    resolveChatProvider,
 } from './chatProviders'
+import { resolveBackendId } from './agentBackends/catalog'
 import {
     opencodeClient,
     refreshOpencodeFrames,
@@ -1214,7 +1214,7 @@ export function createServer(cfg: CoreConfig) {
         'GET /chat/session-messages': async (req, url) => {
             if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const id = url.searchParams.get('id')
-            const provider = resolveChatProvider(
+            const provider = resolveBackendId(
                 url.searchParams.get('provider') ?? undefined,
                 (appConfig.chat as Record<string, unknown> | undefined)
                     ?.provider,
@@ -3612,7 +3612,7 @@ export function createServer(cfg: CoreConfig) {
                     // stays stable for the whole socket's lifetime (see ChatWsData's comment + `close` below).
                     // Always defined: `open` fires before any `message` for a given socket.
                     const chatSink = ws.data.sink!
-                    const provider = resolveChatProvider(
+                    const provider = resolveBackendId(
                         parsed.provider,
                         (appConfig.chat as Record<string, unknown> | undefined)
                             ?.provider,

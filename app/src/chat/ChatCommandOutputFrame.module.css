@@ -1,0 +1,22 @@
+/* ChatCommandOutputFrame.module.css — ChatCommandOutputFrame.tsx is the ONLY importer. */
+
+/* ── Slash-command output (#28): a boxed "command output" panel — reads like the Claude Code TUI,
+   not loose prose. The body (ChatTextBubble) carries `.chat-bubble`, so its content renders as real markdown. ── */
+.chat-command-output {
+    margin: var(--sp-1) 0;
+    border: 1px solid var(--chat-border-soft, var(--border-soft));
+    border-radius: var(--r-0);
+    background: var(--chat-surface-1, var(--surface-1));
+    overflow: hidden;
+}
+.chat-command-output-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-5);
+    border-bottom: 1px solid var(--chat-border-soft, var(--border-soft));
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+}

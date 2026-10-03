@@ -133,7 +133,7 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         // other candidate and is actively CONTRAINDICATED, not merely cautious-by-default: agentBackends/
         // catalog.ts declares `resume: true` for this whole ACP backend group (openclaw included, see its
         // own catalog entry below), and core/src/server.ts's WS `resume` message dispatches to ANY
-        // backend via `resolveChatProvider` — so a real resumeSession call against a closed openclaw chat
+        // backend via `resolveBackendId` — so a real resumeSession call against a closed openclaw chat
         // is a supported, reachable code path, not dead code, and it depends on openclaw's OWN on-disk
         // session (the exact files this follow-up would delete) still existing. Bismuth has no reliable
         // signal that a user is "done" with a chat merely because its tab closed — deleting the backing

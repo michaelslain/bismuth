@@ -6,7 +6,15 @@
 // command. If opencode is not installed the route's message replaces the lists and the footer still
 // works. The ANCHOR + toggle pill stay in ChatControls.tsx, which owns "where does this attach";
 // this file owns only the body.
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
+import {
+    For,
+    Show,
+    createEffect,
+    createSignal,
+    onCleanup,
+    onMount,
+    type Component,
+} from 'solid-js'
 import styles from './ChatAuthPanel.module.css'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
@@ -17,7 +25,8 @@ import OpencodeProviderRow from './OpencodeProviderRow'
 import { filterAvailable } from './opencodeProviderFilter'
 import { api, type OpencodeProviderList } from '../api'
 import { OPENCODE_LOGIN_COMMAND } from '../chatProvider'
-import { pushToast } from '../Toast'
+import { pushToast } from '../toastStore'
+import { copyChatText } from './copyChatText'
 import { placeBelowOrAbove } from '../ui/popover/placeAnchored'
 import { isDismissKey } from '../ui/widgetKeys'
 
@@ -26,7 +35,7 @@ export type ChatAuthPanelProps = {
     class?: string
 }
 
-export default function ChatAuthPanel(props: ChatAuthPanelProps) {
+const ChatAuthPanel: Component<ChatAuthPanelProps> = props => {
     let panel!: HTMLDivElement
 
     // Vertical placement is measured, not a fixed CSS `top`/`bottom` — the panel flips above
@@ -119,15 +128,11 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
             `Run ${OPENCODE_LOGIN_COMMAND} in the terminal, then start a new chat.`,
         )
     }
-    const copyCommand = () => {
-        void navigator.clipboard?.writeText(OPENCODE_LOGIN_COMMAND).then(
-            () => pushToast(`Copied "${OPENCODE_LOGIN_COMMAND}"`),
-            () =>
-                pushToast(
-                    `Couldn't copy — type ${OPENCODE_LOGIN_COMMAND} in a terminal.`,
-                ),
-        )
-    }
+    const copyCommand = () =>
+        copyChatText(OPENCODE_LOGIN_COMMAND, {
+            ok: `Copied "${OPENCODE_LOGIN_COMMAND}"`,
+            fail: `Couldn't copy — type ${OPENCODE_LOGIN_COMMAND} in a terminal.`,
+        })
 
     return (
         <div
@@ -230,3 +235,5 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
         </div>
     )
 }
+
+export default ChatAuthPanel

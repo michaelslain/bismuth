@@ -4518,10 +4518,12 @@ async function spawnCli(
     args: string[],
     env: Record<string, string | undefined> = process.env,
 ): Promise<{ code: number | null; out: string; err: string }> {
+    // FORCE_COLOR in the parent's env makes Bun wrap console.error in ANSI codes, so an exact
+    // stderr assertion would fail on output that prints identically
     const proc = Bun.spawn(['bun', 'run', 'cli/src/index.ts', ...args], {
         stdout: 'pipe',
         stderr: 'pipe',
-        env,
+        env: { ...env, FORCE_COLOR: undefined },
     })
     const [out, err, code] = await Promise.all([
         new Response(proc.stdout).text(),

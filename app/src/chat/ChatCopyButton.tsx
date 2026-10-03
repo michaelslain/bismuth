@@ -2,6 +2,7 @@
 // Hover-revealed copy control on every prose bubble (ChatTextBubble) — copies the RAW markdown
 // source (what you'd paste into a note), never the rendered HTML. Extracted verbatim from
 // ChatView.tsx's local `CopyButton` closure.
+import type { Component } from 'solid-js'
 import { IconButton } from '../ui/IconButton'
 import { copyChatText } from './copyChatText'
 import styles from './ChatCopyButton.module.css'
@@ -12,7 +13,7 @@ export type ChatCopyButtonProps = {
     class?: string
 }
 
-export default function ChatCopyButton(props: ChatCopyButtonProps) {
+const ChatCopyButton: Component<ChatCopyButtonProps> = props => {
     return (
         <IconButton
             icon="Copy"
@@ -23,3 +24,5 @@ export default function ChatCopyButton(props: ChatCopyButtonProps) {
         />
     )
 }
+
+export default ChatCopyButton

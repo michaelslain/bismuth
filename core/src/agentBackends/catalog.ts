@@ -6,7 +6,8 @@
 // (chat header pickers, capability gating), and by the runtime registry alike, so it must stay
 // safe for the browser/iPad bundle where nothing may statically pull in Bun or node:fs (see the
 // Mobile / iPad seam in CLAUDE.md). Anything effectful — resolving a binary on PATH, spawning,
-// registering MCP — lives in ./registry.ts and the per-surface modules.
+// registering MCP — lives in chatProviders/index.ts, mcpRegistrars.ts, doctor.ts and the other
+// per-surface modules.
 //
 // Adding a backend = one entry in BACKEND_IDS + one descriptor in BACKENDS here, then wiring
 // whichever surfaces it supports. The settings enum, the frontend picker, and the capability
@@ -201,7 +202,7 @@ export interface BackendCapabilities {
     localModel: boolean
 }
 
-/** A backend's static identity + capabilities. Effectful wiring lives in ./registry.ts. */
+/** A backend's static identity + capabilities. Effectful wiring lives in chatProviders/index.ts, mcpRegistrars.ts and doctor.ts. */
 export interface BackendDescriptor {
     id: BackendId
     /** Display name in the header picker / settings docs. */

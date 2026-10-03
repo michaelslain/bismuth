@@ -82,6 +82,10 @@ export const injectedVaultPath = (): string | undefined =>
  *  can build "new window" / "open folder" URLs that pin the right backend via `?api=`. */
 export const apiBase = (): string => transport.base()
 
+/** The WebSocket base for the same backend (`http`→`ws`, `https`→`wss`). Read at connect time:
+ *  `__BISMUTH_API__` and `?api=` are only known at runtime. */
+export const wsBase = (): string => apiBase().replace(/^http/, 'ws')
+
 // Owner token (see core/src/ownerToken.ts): identifies THIS window as the vault's own app/editor
 // — not an agent process — so core's content routes (GET /file, POST /search, …) keep serving
 // everything unfiltered, exactly as before that gate existed. Resolved the same way as `BASE`

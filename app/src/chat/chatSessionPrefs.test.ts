@@ -12,6 +12,7 @@ import {
     rememberProvider,
     type StorageLike,
 } from './chatSessionPrefs'
+import { BACKEND_IDS } from '../../../core/src/agentBackends/catalog'
 import { DEFAULT_PERMISSION_MODE } from '../chatPermissionMode'
 import { modelStorageKeys, providerStorageKey } from '../chatProvider'
 
@@ -131,9 +132,17 @@ describe('provider choice', () => {
         expect(readProviderChoice(storage, 'c2')).toBe('claude')
     })
 
-    test('any other stored value reads null', () => {
+    test('every backend id round-trips, codex and an ACP id included', () => {
+        const { storage } = memoryStorage()
+        for (const id of BACKEND_IDS) {
+            rememberProvider(storage, 'c1', id)
+            expect(readProviderChoice(storage, 'c1')).toBe(id)
+        }
+    })
+
+    test('an unknown stored value reads null', () => {
         const { storage } = memoryStorage({
-            [providerStorageKey('c1')]: 'codex',
+            [providerStorageKey('c1')]: 'not-a-backend',
         })
         expect(readProviderChoice(storage, 'c1')).toBeNull()
     })

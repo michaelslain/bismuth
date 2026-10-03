@@ -3,9 +3,9 @@
 // browser/--chrome toggle is deleted), the tools/MCP/context readouts, and the
 // auth/history/new-chat actions — moved out of the old inline ChatHeader.tsx so they can render TWO
 // ways from the SAME session-driven markup:
-//   chatControlSlots(session) — split into ViewBar regions for ChatHeader (the chat tab's bar).
-//   <ChatControls session/>   — the same controls as ONE quiet inline row for a host with no bar
-//     (the daemon page): faint ui-size mono text, no boxes, readouts omitted (Acceptance: "the chat
+//   <ChatReadouts session/>   — the tools/MCP/context readouts, placed by ChatHeader into its bar.
+//   <ChatControls session/>   — the model/permission/actions controls as ONE quiet inline row under
+//     the composer (chat tab and daemon page): faint ui-size mono text, no boxes, readouts omitted (Acceptance: "the chat
 //     controls … are ONE quiet row of faint ui-size mono text directly under the composer — no
 //     boxes, no amber fill or border"). There is no separate "quiet" prop or register on Config/
 //     Actions themselves — the daemon's borderless-at-rest look comes entirely from `.row`'s own
@@ -17,10 +17,9 @@
 // (ChatHistoryPanel) is no longer anchored here at all: Task 4 has it render as a full-region pane
 // in the HOST (ChatView.tsx / DaemonChat.tsx), in place of the transcript + composer, so this file
 // keeps only the "history" toggle button.
-import { createSignal, Show, type JSX } from 'solid-js'
+import { createSignal, Show, type Component } from 'solid-js'
 import styles from './ChatControls.module.css'
 import type { ChatSession } from './chatSession'
-import type { ViewBarSlots } from '../ui/ViewBar'
 import Select from '../ui/Select'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
@@ -39,7 +38,24 @@ import {
 import { settings } from '../settings'
 import ChatAuthPanel from './ChatAuthPanel'
 
-export type ChatControlSlots = ViewBarSlots
+/** The members the controls row reads off a session — ChatModelMenu, Config and Actions take this
+ *  rather than the whole `ChatSession`, so the no-session row builds only what it renders. */
+export type ChatControlsView = Pick<
+    ChatSession,
+    | 'provider'
+    | 'models'
+    | 'displayModel'
+    | 'displayModelValue'
+    | 'effortOptions'
+    | 'effortValue'
+    | 'permMode'
+    | 'authProviders'
+    | 'switchProvider'
+    | 'switchModel'
+    | 'switchEffort'
+    | 'setPermissionMode'
+    | 'startNewChat'
+> & { history: Pick<ChatSession['history'], 'open' | 'toggle'> }
 
 /** A bracket control for the row's actions (history/new chat) — `IconTextButton`, the app's
  *  standard command control (button-family migration: every clickable command renders as
@@ -52,14 +68,16 @@ export type ChatControlSlots = ViewBarSlots
  *  (ChatControls.module.css's `@container chatrow` tier) — below that width the label disappears
  *  and the bracket keeps only its icon (`[⟲]`/`[+]`), which is what frees the room the row's
  *  floored model word (ChatModelMenu.module.css) needs to keep its own 3-character minimum. */
-function RowAction(props: {
+type RowActionProps = {
     icon: string
     label: string
     active?: boolean
     testId?: string
     onClick: () => void
     title?: string
-}) {
+}
+
+const RowAction: Component<RowActionProps> = props => {
     const variant = () =>
         props.active === undefined
             ? 'normal'
@@ -81,9 +99,11 @@ function RowAction(props: {
     )
 }
 
+export type ChatReadoutsProps = { session: ChatSession }
+
 /** The readouts region — tool/MCP counts + the context-window percentage. Gated on the manifest:
- *  nothing sensible to show before the first turn. */
-function Readouts(props: { session: ChatSession }) {
+ *  nothing sensible to show before the first turn. ChatHeader places it in its bar's readouts slot. */
+export const ChatReadouts: Component<ChatReadoutsProps> = props => {
     return (
         <Show when={props.session.manifest()}>
             {m => (
@@ -142,7 +162,7 @@ function Readouts(props: { session: ChatSession }) {
  *  rather than binding it to a local — this is a Solid component, and a `const session =
  *  props.session` alias reads the prop ONCE at setup and keeps that value forever even if a later
  *  render hands the component a different session (switching the active chat). */
-function Config(props: { session: ChatSession }) {
+const Config: Component<{ session: ChatControlsView }> = props => {
     return (
         <Show when={providerCan(props.session.provider(), 'permissionModes')}>
             {/* Permission mode: rendered from the START (not gated on the manifest) so the
@@ -186,7 +206,7 @@ function Config(props: { session: ChatSession }) {
  *  between them: brackets already separate adjacent commands, and `//` is reserved for separating
  *  readout GROUPS (Acceptance 7: "opus 4.8 // bypass // [history] [new chat]" — exactly two `//`,
  *  none inside the actions cluster itself). */
-function Actions(props: { session: ChatSession }) {
+const Actions: Component<{ session: ChatControlsView }> = props => {
     const [authOpen, setAuthOpen] = createSignal(false)
     return (
         <div class={styles.actions}>
@@ -241,16 +261,6 @@ function Actions(props: { session: ChatSession }) {
     )
 }
 
-/** The permission-mode select, the tools/MCP/context readouts, and the
- *  auth/history/new-chat actions, split into ViewBar regions — ChatHeader spreads this. */
-export function chatControlSlots(session: ChatSession): ChatControlSlots {
-    return {
-        readouts: <Readouts session={session} />,
-        config: <Config session={session} />,
-        actions: <Actions session={session} />,
-    }
-}
-
 export type ChatControlsProps = {
     session: ChatSession | undefined
     /** The chat id the disabled fallback should seed its provider/model from — the SAME id the real
@@ -261,7 +271,7 @@ export type ChatControlsProps = {
     class?: string
 }
 
-/** A session-shaped object with no live wiring — every accessor a constant, every action a no-op —
+/** A controls-view object with no live wiring — every accessor a constant, every action a no-op —
  *  used ONLY to render ChatModelMenu/Config/Actions before a real session exists. This is what
  *  "render the real controls disabled" means: the SAME components, the SAME classes, the SAME
  *  control set as the armed row (so the row is the same height and shape at every width — there is
@@ -287,80 +297,34 @@ export type ChatControlsProps = {
  *  to make the row's text change the instant it armed). With no `chatId`, both reads only have a
  *  GLOBAL key to check, which is the exact value a genuinely brand-new chat (no existing per-chat key
  *  yet) would also fall back to. */
-function buildDisabledSession(chatId?: string): ChatSession {
+function buildDisabledSession(chatId?: string): ChatControlsView {
     const storage = browserStorage()
     const provider =
         (chatId ? readProviderChoice(storage, chatId) : null) ??
         sanitizeChatProvider(settings.chat.provider)
     const model = readLastModel(storage, provider, chatId)
     return {
-        chatId: '',
-        transcript: [],
-        draft: () => '',
-        setDraft: () => {},
-        attachments: () => [],
-        removeAttachment: () => {},
-        addImageFiles: async () => {},
-        addDroppedFiles: async () => {},
-        addDroppedPaths: async () => {},
-        addDroppedText: () => {},
-        addMention: () => {},
-        streaming: () => false,
-        awaitingReply: () => false,
-        manifest: () => null,
-        setupError: () => null,
-        gateRefusal: () => null,
-        turnError: () => null,
-        models: () => [],
-        authProviders: () => null,
         provider: () => provider,
-        permMode: () => readLastMode(storage),
+        models: () => [],
         displayModel: () => model,
         displayModelValue: () => model,
         effortOptions: () => [],
         effortValue: () => readLastEffort(storage),
-        context: () => null,
-        mcpConnected: () => 0,
-        fileCandidates: () => [],
-        slashCommands: () => [],
-        slashCommandDetail: () => undefined,
-        historyEntries: () => [],
-        persona: () => '',
-        send: () => {},
-        stop: () => {},
-        answerPermission: () => {},
-        answerQuestion: () => {},
-        cancelQueued: () => {},
-        setPermissionMode: () => {},
+        permMode: () => readLastMode(storage),
+        authProviders: () => null,
+        switchProvider: () => {},
         switchModel: () => {},
         switchEffort: () => {},
-        switchProvider: () => {},
+        setPermissionMode: () => {},
         startNewChat: () => {},
-        quoteReply: () => {},
-        history: {
-            open: () => false,
-            loading: () => false,
-            sessions: () => [],
-            scope: () => 'user',
-            query: () => '',
-            searchHits: () => [],
-            searchLoading: () => false,
-            toggle: () => {},
-            close: () => {},
-            setScope: () => {},
-            setQuery: () => {},
-            resume: async () => {},
-        },
-        onAppend: () => () => {},
-        onFocusRequest: () => () => {},
-        dispose: () => {},
+        history: { open: () => false, toggle: () => {} },
     }
 }
 
 /** The same controls as ONE quiet inline row for a host with no bar (the daemon page). Readouts
  *  omitted. With no session: renders the row disabled at the SAME height as the armed row at the
  *  same width, so arming the daemon chat doesn't shift the composer above it. */
-export default function ChatControls(props: ChatControlsProps): JSX.Element {
+const ChatControls: Component<ChatControlsProps> = props => {
     return (
         <div
             class={`${styles.row} ${props.class ?? ''}`}
@@ -396,3 +360,5 @@ export default function ChatControls(props: ChatControlsProps): JSX.Element {
         </div>
     )
 }
+
+export default ChatControls

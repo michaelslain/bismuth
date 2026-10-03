@@ -9,6 +9,7 @@ import {
     DEFAULT_PERMISSION_MODE,
     sanitizePermissionMode,
 } from '../chatPermissionMode'
+import { isBackendId } from '../../../core/src/agentBackends/catalog'
 import {
     modelStorageKeys,
     providerStorageKey,
@@ -91,7 +92,7 @@ export function readProviderChoice(
 ): ChatProviderChoice | null {
     try {
         const raw = storage?.getItem(providerStorageKey(chatId)) ?? null
-        return raw === 'claude' || raw === 'opencode' ? raw : null
+        return isBackendId(raw) ? raw : null
     } catch {
         return null
     }

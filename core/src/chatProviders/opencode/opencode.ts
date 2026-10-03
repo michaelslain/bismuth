@@ -65,6 +65,7 @@ import {
     scheduleSessionClose,
 } from '../sessionSink'
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
+import { titleFromPrompt } from '../titleFromPrompt'
 import {
     ensureOpencodeServer,
     registerOpencodeServerListener,
@@ -99,7 +100,6 @@ import {
     newOpencodeTurnState,
     opencodeErrorMessage,
     opencodePermissionResponse,
-    opencodeTitleFromPrompt,
     parseOpencodeAuthList,
     parseOpencodeDebugConfigCommands,
     parseOpencodeModels,
@@ -411,7 +411,7 @@ export async function refreshOpencodeFrames(): Promise<void> {
  *  server-mode guard). `why` names the SPECIFIC unmet precondition — never a vague "can't protect
  *  this" — so the message never claims a mechanism that wasn't actually checked.
  *
- *  DISTINCT from core/src/chat.ts's `visibilityRefusalMessage`, and deliberately not merged with it:
+ *  DISTINCT from core/src/visibility.ts's `visibilityRefusalMessage`, and deliberately not merged with it:
  *  that one answers "this backend has no verified mechanism at all" (decided up-front by the router's
  *  chokepoint, agentBackends/visibilityGate.ts), whereas this one answers "opencode normally CAN
  *  enforce, but a specific precondition failed right here" — wrong platform, no sandbox-exec, or a
@@ -732,7 +732,7 @@ async function runTurnServer(
     emit(s, { type: 'result', isError, numTurns: 1, costUsd })
     emit(s, { type: 'done' })
     if (!s.titleSent) {
-        const title = opencodeTitleFromPrompt(text)
+        const title = titleFromPrompt(text)
         if (title) {
             s.titleSent = true
             emit(s, { type: 'title', title })
@@ -948,7 +948,7 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
     // Name the tab off the first prompt (opencode's own session titling is async + truncated-prompt
     // based anyway) — latched once, like chat.ts maybeEmitTitle.
     if (!s.titleSent) {
-        const title = opencodeTitleFromPrompt(text)
+        const title = titleFromPrompt(text)
         if (title) {
             s.titleSent = true
             emit(s, { type: 'title', title })

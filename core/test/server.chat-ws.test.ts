@@ -60,17 +60,13 @@ import {
     expect,
     test,
 } from 'bun:test'
-import {
-    chmodSync,
-    readFileSync,
-    rmSync,
-    writeFileSync,
-} from 'node:fs'
+import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
 import { CHAT_BACKENDS } from '../src/chatProviders/backends'
 import { makeSampleVault, tempDir } from './helpers'
 import { shouldRunSlowTests } from './slowGate'
+import { createFrameWaiter } from './support/frameWaiter'
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, 'support', 'fakeAcpAgent.ts')
 /** Must match fakeAcpAgent.ts's own FAKE_TURN_TEXT constant. */
@@ -123,11 +119,7 @@ async function openChatWs(
     const q = new URLSearchParams({ chatId })
     if (opts.rebind) q.set('rebind', '1')
     const ws = new WebSocket(`${base}/chat?${q.toString()}`)
-    const frames: Frame[] = []
-    const waiters: {
-        pred: (f: Frame) => boolean
-        resolve: (f: Frame) => void
-    }[] = []
+    const { frames, push, waitFor } = createFrameWaiter<Frame>()
     let closeCode: number | undefined
     let onClosed: ((code: number) => void) | undefined
     const closed = new Promise<number>(res => {
@@ -142,13 +134,7 @@ async function openChatWs(
         } catch {
             return // the chat protocol is text JSON only; a non-JSON frame is not ours
         }
-        frames.push(f)
-        for (let i = waiters.length - 1; i >= 0; i--) {
-            if (waiters[i].pred(f)) {
-                waiters[i].resolve(f)
-                waiters.splice(i, 1)
-            }
-        }
+        push(f)
     }
     ws.onclose = ev => {
         closeCode = ev.code
@@ -165,27 +151,7 @@ async function openChatWs(
         ws,
         frames,
         send: (obj: unknown) => ws.send(JSON.stringify(obj)),
-        waitFor: (pred, what, timeoutMs = 15_000) =>
-            new Promise<Frame>((resolve, reject) => {
-                const hit = frames.find(pred)
-                if (hit) return resolve(hit)
-                const t = setTimeout(
-                    () =>
-                        reject(
-                            new Error(
-                                `timeout waiting for ${what}; frames seen: ${JSON.stringify(frames.map(f => f.type))}`,
-                            ),
-                        ),
-                    timeoutMs,
-                )
-                waiters.push({
-                    pred,
-                    resolve: f => {
-                        clearTimeout(t)
-                        resolve(f)
-                    },
-                })
-            }),
+        waitFor,
         closed,
         close: (code: number, reason: string) => {
             ws.close(code, reason)

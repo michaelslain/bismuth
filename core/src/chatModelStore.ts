@@ -55,16 +55,12 @@ export function upsertSessionModel(
     return next.length > cap ? next.slice(next.length - cap) : next
 }
 
-/** Pure lookup: the remembered model for `sessionId`, or null. Newest-first so a duplicate
- *  (shouldn't exist after upsert, but be defensive) resolves to the most recent. */
+/** Pure lookup: the remembered model for `sessionId`, or null. */
 export function lookupSessionModel(
     list: ChatModelEntry[],
     sessionId: string,
 ): string | null {
-    for (let i = list.length - 1; i >= 0; i--) {
-        if (list[i]!.sessionId === sessionId) return list[i]!.model
-    }
-    return null
+    return list.find(e => e.sessionId === sessionId)?.model ?? null
 }
 
 function readAll(): ChatModelEntry[] {

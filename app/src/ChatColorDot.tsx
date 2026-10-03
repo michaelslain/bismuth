@@ -36,4 +36,3 @@ const ChatColorDot: Component<ChatColorDotProps> = props => (
 )
 
 export default ChatColorDot
-export { ChatColorDot }

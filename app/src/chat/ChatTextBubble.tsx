@@ -4,11 +4,9 @@
 // ChatAssistantTurn's text parts. `command` renders a boxed monospace "Command output" panel
 // (like the Claude Code TUI's `/context` view) instead of loose prose (#28); the body still goes
 // through the same pipeline, so headings/bold/code fences/tables still render formatted.
-// Extracted verbatim (markup + behaviour) from ChatView.tsx's local `TextBubble` closure, plus the
-// user-bubble markup inlined in its transcript list render.
-import { Show } from 'solid-js'
-import { Icon } from '../icons/Icon'
+import { Show, type Component } from 'solid-js'
 import { renderNoteBody } from '../bases/markdown'
+import ChatCommandOutputFrame from './ChatCommandOutputFrame'
 import ChatCopyButton from './ChatCopyButton'
 import styles from './ChatTextBubble.module.css'
 
@@ -23,7 +21,17 @@ export type ChatTextBubbleProps = {
     class?: string
 }
 
-export default function ChatTextBubble(props: ChatTextBubbleProps) {
+const ChatTextBubble: Component<ChatTextBubbleProps> = props => {
+    const bubble = (
+        <div
+            class={`${styles['chat-bubble']} ${styles[props.role]}`}
+            classList={{
+                [styles['chat-command-output-body']]: props.command,
+            }}
+            data-chat-bubble
+            innerHTML={renderNoteBody(props.text)}
+        />
+    )
     return (
         <Show when={props.text.trim()}>
             <div
@@ -31,29 +39,13 @@ export default function ChatTextBubble(props: ChatTextBubbleProps) {
                 data-chat-bubble-wrap
                 onContextMenu={e => props.onContextMenu?.(e)}
             >
-                <Show
-                    when={props.command}
-                    fallback={
-                        <div
-                            class={`${styles['chat-bubble']} ${styles[props.role]}`}
-                            data-chat-bubble
-                            innerHTML={renderNoteBody(props.text)}
-                        />
-                    }
-                >
-                    <div class={styles['chat-command-output']}>
-                        <div class={styles['chat-command-output-head']}>
-                            <Icon value="SquareTerminal" /> Command output
-                        </div>
-                        <div
-                            class={`${styles['chat-bubble']} ${styles[props.role]} ${styles['chat-command-output-body']}`}
-                            data-chat-bubble
-                            innerHTML={renderNoteBody(props.text)}
-                        />
-                    </div>
+                <Show when={props.command} fallback={bubble}>
+                    <ChatCommandOutputFrame>{bubble}</ChatCommandOutputFrame>
                 </Show>
                 <ChatCopyButton text={props.text} />
             </div>
         </Show>
     )
 }
+
+export default ChatTextBubble

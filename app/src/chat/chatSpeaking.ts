@@ -30,5 +30,3 @@ export function isSpeaking(
     const lastPart = item.parts[item.parts.length - 1]
     return lastPart?.kind === 'text'
 }
-
-export default isSpeaking

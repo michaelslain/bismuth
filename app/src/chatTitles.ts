@@ -4,24 +4,20 @@
 // tabIds. Same tiny reactive-singleton pattern as chatContext.ts, but signal-backed so tab labels
 // update live. Keyed by the TAB's chat id (props.chatId — the ::chat: suffix), which names the
 // tab regardless of the view-internal id swaps a "New chat" performs.
-import { createSignal } from 'solid-js'
+import { createKeyedSignal } from './createKeyedSignal'
 
-const [titles, setTitles] = createSignal<Map<string, string>>(new Map())
+const titles = createKeyedSignal<string>()
 
 /** The conversation title for a chat tab id, or undefined before one exists. Reactive. */
 export function chatTitle(chatId: string): string | undefined {
-    return titles().get(chatId)
+    return titles.get(chatId)
 }
 
 /** Publish (or, with an empty title, clear) a chat tab's conversation title. */
 export function publishChatTitle(chatId: string, title: string): void {
-    setTitles(m => {
-        const next = new Map(m)
-        const t = title.trim()
-        if (t) next.set(chatId, t)
-        else next.delete(chatId)
-        return next
-    })
+    const t = title.trim()
+    if (t) titles.set(chatId, t)
+    else titles.clear(chatId)
 }
 
 /** The title to show for a chat, matching the TAB's precedence exactly (see tabIds.contentLabel +
