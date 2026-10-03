@@ -1,0 +1,53 @@
+/* The intro's one geometry. Both outer rows are 1fr and the hero box + text slot are fixed-height
+   tracks, so the block's position never depends on what is inside it: swap a slide's content and
+   nothing here moves. The nav row is `auto` but its content is the same IntroNav on every slide. */
+.intro-frame {
+  --intro-hero-w: calc(96 * var(--cell-w));
+  --intro-hero-h: calc(16 * var(--row-h));
+  --intro-text-h: calc(11 * var(--row-h));
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr var(--intro-hero-h) var(--intro-text-h) 1fr auto;
+  justify-items: center;
+  padding: 0 var(--sp-7);
+  text-align: center;
+}
+/* Short windows: the same grid, three quarters the size. 43.75rem = 700px at the default root. */
+@media (max-height: 43.75rem) {
+  .intro-frame {
+    --intro-hero-h: calc(16 * var(--row-h) * 0.75);
+    --intro-text-h: calc(11 * var(--row-h) * 0.75);
+  }
+}
+.hero {
+  grid-row: 2;
+  position: relative;
+  width: min(var(--intro-hero-w), 100%);
+  height: var(--intro-hero-h);
+  min-height: 0;
+}
+/* Setup slides put a control (theme cards, the power-up list) in the box: centred, never growing it. */
+.intro-frame[data-intro-frame='setup'] .hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.text {
+  grid-row: 3;
+  width: 100%;
+  min-height: 0;
+  padding-top: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-6);
+}
+.nav {
+  grid-row: 5;
+  padding-bottom: var(--sp-7);
+}
