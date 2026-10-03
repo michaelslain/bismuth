@@ -139,6 +139,16 @@ export interface CodexHooksJson {
     hooks: Record<string, CodexHookMatcher[]>
 }
 
+const HOOK_TIMEOUT_SEC = 3
+
+/** [event, script argv, optional matcher] — one row per hook Bismuth installs. */
+const HOOK_TABLE: ReadonlyArray<readonly [string, string, string?]> = [
+    ['SessionStart', 'session-start', 'startup|resume|clear|compact'],
+    ['SubagentStart', 'subagent-start'],
+    ['SubagentStop', 'subagent-stop'],
+    ['SessionEnd', 'session-end'],
+]
+
 function commandFor(scriptPath: string, event: string): string {
     // JSON.stringify quotes+escapes the path for embedding in a shell-parsed command string — safe
     // for ordinary filesystem paths (spaces included); a path containing `$`/backticks is out of
@@ -152,56 +162,20 @@ function commandFor(scriptPath: string, event: string): string {
  *  (startup/resume/clear/compact) so a resumed or `codex exec resume` session re-registers too,
  *  mirroring the Claude relay's SessionStart hook. */
 export function buildCodexHooksJson(scriptPath: string): CodexHooksJson {
-    return {
-        description: HOOKS_JSON_DESCRIPTION,
-        hooks: {
-            SessionStart: [
-                {
-                    matcher: 'startup|resume|clear|compact',
-                    hooks: [
-                        {
-                            type: 'command',
-                            command: commandFor(scriptPath, 'session-start'),
-                            timeout_sec: 3,
-                        },
-                    ],
-                },
-            ],
-            SubagentStart: [
-                {
-                    hooks: [
-                        {
-                            type: 'command',
-                            command: commandFor(scriptPath, 'subagent-start'),
-                            timeout_sec: 3,
-                        },
-                    ],
-                },
-            ],
-            SubagentStop: [
-                {
-                    hooks: [
-                        {
-                            type: 'command',
-                            command: commandFor(scriptPath, 'subagent-stop'),
-                            timeout_sec: 3,
-                        },
-                    ],
-                },
-            ],
-            SessionEnd: [
-                {
-                    hooks: [
-                        {
-                            type: 'command',
-                            command: commandFor(scriptPath, 'session-end'),
-                            timeout_sec: 3,
-                        },
-                    ],
-                },
-            ],
-        },
-    }
+    const entry = (arg: string, matcher?: string): CodexHookMatcher => ({
+        ...(matcher ? { matcher } : {}),
+        hooks: [
+            {
+                type: 'command',
+                command: commandFor(scriptPath, arg),
+                timeout_sec: HOOK_TIMEOUT_SEC,
+            },
+        ],
+    })
+    const hooks: Record<string, CodexHookMatcher[]> = {}
+    for (const [event, arg, matcher] of HOOK_TABLE)
+        hooks[event] = [entry(arg, matcher)]
+    return { description: HOOKS_JSON_DESCRIPTION, hooks }
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -280,6 +254,13 @@ export function upsertCodexHooksJson(
     return { text: `${JSON.stringify(next, null, 2)}\n` }
 }
 
+/** Write `text` to `path` unless the file already holds exactly it — keeps mtime stable so the
+ *  vault watcher is not re-triggered by an idempotent regen. */
+function writeIfChanged(path: string, text: string): void {
+    if (existsSync(path) && readFileSync(path, 'utf8') === text) return
+    writeFileSync(path, text)
+}
+
 /**
  * Best-effort: write `<vaultRoot>/.codex/bismuth-relay-hook.ts` and merge Bismuth's four hooks into
  * `<vaultRoot>/.codex/hooks.json`. Never throws — a filesystem hiccup here must not fail whatever
@@ -290,14 +271,14 @@ export function writeCodexHooksFiles(vaultRoot: string): boolean {
         const codexDir = join(vaultRoot, CODEX_DIR_NAME)
         mkdirSync(codexDir, { recursive: true })
         const scriptPath = join(codexDir, CODEX_HOOK_SCRIPT_NAME)
-        writeFileSync(scriptPath, codexHookScriptSource())
+        writeIfChanged(scriptPath, codexHookScriptSource())
 
         const hooksPath = join(codexDir, HOOKS_FILE_NAME)
         const existing = existsSync(hooksPath)
             ? readFileSync(hooksPath, 'utf8')
             : null
         const { text } = upsertCodexHooksJson(existing, scriptPath)
-        writeFileSync(hooksPath, text)
+        writeIfChanged(hooksPath, text)
         return true
     } catch {
         return false

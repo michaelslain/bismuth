@@ -1,13 +1,12 @@
 import { tempDir } from '../helpers'
 import { test, expect, describe } from 'bun:test'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     buildSeatbeltProfile,
     wrapArgv,
     materializeSandboxProfile,
     checkSandboxWrapperAvailability,
-    sandboxWrapperAvailable,
     describeSandboxWrapperUnavailable,
     isSandboxApplyFailure,
     SANDBOX_APPLY_FAILURE_EXIT_CODE,
@@ -102,19 +101,13 @@ describe('wrapArgv', () => {
     })
 })
 
-describe('checkSandboxWrapperAvailability / sandboxWrapperAvailable', () => {
+describe('checkSandboxWrapperAvailability', () => {
     test('P1: unavailable on a non-darwin platform, even with sandbox-exec present', () => {
         const r = checkSandboxWrapperAvailability({
             platform: 'linux',
             sandboxExecPath: __filename,
         })
         expect(r).toEqual({ available: false, reason: 'unsupported-platform' })
-        expect(
-            sandboxWrapperAvailable({
-                platform: 'linux',
-                sandboxExecPath: __filename,
-            }),
-        ).toBe(false)
     })
 
     test('P2: unavailable when the backend self-sandboxes, even on darwin with sandbox-exec present', () => {
@@ -144,12 +137,6 @@ describe('checkSandboxWrapperAvailability / sandboxWrapperAvailable', () => {
             selfSandboxes: false,
         })
         expect(r).toEqual({ available: true })
-        expect(
-            sandboxWrapperAvailable({
-                platform: 'darwin',
-                sandboxExecPath: __filename,
-            }),
-        ).toBe(true)
     })
 
     test('defaults consult the real process.platform / SANDBOX_EXEC_PATH when opts are omitted', () => {
@@ -222,6 +209,18 @@ describe('materializeSandboxProfile', () => {
             '/vault/secret.md',
         ]) // different order
         expect(a).toBe(b)
+    })
+
+    test('an unchanged deny set does not rewrite the existing profile file', async () => {
+        const vault = tempDir('bismuth-sandboxwrapper-')
+        const a = (await materializeSandboxProfile(vault, [
+            '/vault/secret.md',
+        ])) as string
+        const old = new Date('2020-01-01T00:00:00Z')
+        utimesSync(a, old, old)
+        const b = await materializeSandboxProfile(vault, ['/vault/secret.md'])
+        expect(b).toBe(a)
+        expect(statSync(a).mtimeMs).toBe(old.getTime())
     })
 
     test('a different deny set produces a different file', async () => {

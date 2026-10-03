@@ -6,6 +6,8 @@ import {
     readFileSync,
     writeFileSync,
     existsSync,
+    statSync,
+    utimesSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -136,6 +138,16 @@ describe('writeAgentsMdBlock (effectful, tmp dir)', () => {
         expect(text).toContain('Written by a human.')
         expect(text).toContain('second digest')
         expect(text).not.toContain('first digest')
+    })
+
+    test('a second call with unchanged content does not rewrite the file', () => {
+        dir = tempDir('bismuth-agentsmd-')
+        const path = join(dir, 'AGENTS.md')
+        writeAgentsMdBlock(dir, 'same digest')
+        const old = new Date('2020-01-01T00:00:00Z')
+        utimesSync(path, old, old)
+        expect(writeAgentsMdBlock(dir, 'same digest')).toBe(true)
+        expect(statSync(path).mtimeMs).toBe(old.getTime())
     })
 
     test('never throws even against an unwritable path', () => {
