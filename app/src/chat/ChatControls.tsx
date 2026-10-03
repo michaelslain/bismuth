@@ -1,11 +1,9 @@
 // app/src/chat/ChatControls.tsx
 // The permission-mode control (provider/model/effort are ChatModelMenu.tsx's now, and the old
-// browser/--chrome toggle is deleted), the tools/MCP/context readouts, and the
-// auth/history/new-chat actions — moved out of the old inline ChatHeader.tsx so they can render TWO
-// ways from the SAME session-driven markup:
-//   <ChatReadouts session/>   — the tools/MCP/context readouts, placed by ChatHeader into its bar.
+// browser/--chrome toggle is deleted) and the auth/history/new-chat actions — moved out of the old
+// inline ChatHeader.tsx. The header's readouts are their own component now (ChatReadouts.tsx).
 //   <ChatControls session/>   — the model/permission/actions controls as ONE quiet inline row under
-//     the composer (chat tab and daemon page): faint ui-size mono text, no boxes, readouts omitted (Acceptance: "the chat
+//     the composer (chat tab and daemon page): faint ui-size mono text, no boxes (Acceptance: "the chat
 //     controls … are ONE quiet row of faint ui-size mono text directly under the composer — no
 //     boxes, no amber fill or border"). There is no separate "quiet" prop or register on Config/
 //     Actions themselves — the daemon's borderless-at-rest look comes entirely from `.row`'s own
@@ -24,7 +22,6 @@ import Select from '../ui/Select'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import Text from '../ui/Text'
-import { Icon } from '../icons/Icon'
 import ChatModelMenu from './ChatModelMenu'
 import { opencodeAuthSummary, providerCan, sanitizeChatProvider } from '../chatProvider'
 import { PERMISSION_MODE_OPTIONS } from '../chatPermissionMode'
@@ -96,63 +93,6 @@ const RowAction: Component<RowActionProps> = props => {
                 {props.label}
             </Text>
         </IconTextButton>
-    )
-}
-
-export type ChatReadoutsProps = { session: ChatSession }
-
-/** The readouts region — tool/MCP counts + the context-window percentage. Gated on the manifest:
- *  nothing sensible to show before the first turn. ChatHeader places it in its bar's readouts slot. */
-export const ChatReadouts: Component<ChatReadoutsProps> = props => {
-    return (
-        <Show when={props.session.manifest()}>
-            {m => (
-                <>
-                    <Show when={m().tools.length > 0}>
-                        <Text
-                            as="span"
-                            inherit
-                            class={styles.stat}
-                            data-bar-drop="4"
-                            data-testid="chat-tools"
-                            title={`${m().tools.length} tools available`}
-                        >
-                            <Icon value="Wrench" /> {m().tools.length}
-                        </Text>
-                    </Show>
-                    <Show when={m().mcpServers.length > 0}>
-                        <Text
-                            as="span"
-                            inherit
-                            class={styles.stat}
-                            data-bar-drop="4"
-                            data-testid="chat-mcp"
-                            title={`${props.session.mcpConnected()}/${m().mcpServers.length} MCP servers connected`}
-                        >
-                            <Icon value="Server" />{' '}
-                            {props.session.mcpConnected()}/{m().mcpServers.length}
-                        </Text>
-                    </Show>
-                    <Show when={props.session.context()}>
-                        {c => (
-                            <Text
-                                as="span"
-                                inherit
-                                class={styles.stat}
-                                classList={{
-                                    [styles.warn]: c().percentage >= 80,
-                                }}
-                                data-testid="chat-context"
-                                title={`Context window: ${c().totalTokens.toLocaleString()} / ${c().maxTokens.toLocaleString()} tokens`}
-                            >
-                                <Icon value="Gauge" />{' '}
-                                {Math.round(c().percentage)}%
-                            </Text>
-                        )}
-                    </Show>
-                </>
-            )}
-        </Show>
     )
 }
 

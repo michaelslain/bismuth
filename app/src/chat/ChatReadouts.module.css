@@ -1,0 +1,16 @@
+/* ChatReadouts.module.css — chat/ChatReadouts.tsx is the ONLY importer.
+   One inline run: `[N mcp servers down //] context [###.......] 34%`. The meter's own look (the
+   `#`/`.` cells, the mono face, the muted brackets) is AsciiMeter's and lives with it; this file
+   only lays the run out and tones the MCP warning. */
+
+.readouts {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    white-space: nowrap;
+}
+
+/* A server that should be connected and is not: the one readout here that asks for attention. */
+.down {
+    color: var(--danger);
+}

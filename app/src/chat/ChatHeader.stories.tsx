@@ -46,7 +46,7 @@ const MODELS = [
 
 const LONG_TITLE = 'Refactoring the collapse ladder across every view bar'
 
-function InPane(props: { width: number; permMode?: string }) {
+function InPane(props: { width: number; permMode?: string; mcpConnected?: number }) {
     const session = makeStubChatSession({
         manifest: MANIFEST,
         models: MODELS,
@@ -59,7 +59,7 @@ function InPane(props: { width: number; permMode?: string }) {
         ],
         effortValue: 'high',
         context: { percentage: 42, totalTokens: 84_000, maxTokens: 200_000 },
-        mcpConnected: 2,
+        mcpConnected: props.mcpConnected ?? 2,
         permMode: props.permMode ?? 'default',
     })
     return (
@@ -73,8 +73,8 @@ function InPane(props: { width: number; permMode?: string }) {
     )
 }
 
-/** The shipping shape: the crumb holds a real slice of the bar, and the readouts (tools/MCP/
- *  context) are the ONLY trailing content — Config (provider/model/effort/permission) and Actions
+/** The shipping shape: the crumb holds a real slice of the bar, and the readouts (the context
+ *  meter, plus an MCP warning only when a server is down) are the ONLY trailing content — Config (provider/model/effort/permission) and Actions
  *  (auth/history/new chat) are GONE from the header (final-findings Group 2 #5: they used to make
  *  this a dense strip of 8+ controls with an amber `Bypass` picker as the loudest thing on the
  *  surface). Those controls still exist, just one level down — ChatControls.stories.tsx exercises
@@ -85,11 +85,12 @@ export const Default: Story = {
         const title = canvasElement.querySelector<HTMLElement>('[data-testid="crumb-title"]')!
         expect(title.clientWidth).toBeGreaterThan(0)
         expect(
-            canvasElement.querySelector('[data-testid="chat-tools"]'),
-        ).not.toBeNull()
-        expect(
             canvasElement.querySelector('[data-testid="chat-context"]'),
         ).not.toBeNull()
+        // Every server connected → no MCP warning in the corner.
+        expect(
+            canvasElement.querySelector('[data-testid="chat-mcp"]'),
+        ).toBeNull()
         // THE REGRESSION THIS STORY GUARDS: none of Config/Actions' testids may reappear in the
         // header — if one does, something started spreading `config`/`actions` back onto the bar.
         for (const testid of [
@@ -131,6 +132,23 @@ export const Narrow460: Story = {
             '[data-testid="chat-context"]',
         )!
         expect(readouts.getBoundingClientRect().right).toBeLessThanOrEqual(
+            bar.getBoundingClientRect().right + 1,
+        )
+    },
+}
+
+/** The narrow floor WITH a server down: the warning joins the meter in the corner, and the run
+ *  still has to fit beside the capped title without overflowing the bar. */
+export const Narrow460McpDown: Story = {
+    render: () => <InPane width={460} mcpConnected={1} />,
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        const mcp = canvasElement.querySelector<HTMLElement>('[data-testid="chat-mcp"]')!
+        expect(mcp.textContent).toBe('1 mcp server down')
+        const context = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="chat-context"]',
+        )!
+        expect(context.getBoundingClientRect().right).toBeLessThanOrEqual(
             bar.getBoundingClientRect().right + 1,
         )
     },
