@@ -32,6 +32,7 @@ const GraphView = lazy(() =>
 )
 import { CommandPalette } from './palette/CommandPalette'
 import { SwitcherBar } from './palette/SwitcherBar'
+import { afterClose, afterToggle, type AppModal } from './appModal'
 import { switcherMatchNodeIds } from './palette/switcherMatches'
 import { TemplatePalette } from './palette/TemplatePalette'
 import { bindCommands, resolveButtonCommands, type GraphMode } from './commands'
@@ -651,25 +652,34 @@ export default function App() {
     const toggleTabRail = () => setTabRailPinned(v => !v)
     const equalizePanes = () =>
         updateActiveTab(t => ({ ...t, root: equalize(t.root) }))
-    // Which centered palette overlay is open (Cmd+P command / Alt+T template), or null. The
-    // Cmd+O quick switcher is NOT here anymore — it's the non-modal in-window switcher below.
-    const [palette, setPalette] = createSignal<'command' | 'template' | null>(
-        null,
-    )
     // Cmd+O "switcher mode": instead of a centered modal, the knowledge graph expands to fill
     // the window (the home/new-tab view) and a big search bar (SwitcherBar) sits at the top
     // where the tab strip was. Esc leaves it and restores the prior view. `switcherResultPaths`
     // are the current search results' file paths, mirrored onto the backdrop graph so EVERY
     // matching note lights up (not just the active row).
-    const [switcherOpen, setSwitcherOpen] = createSignal(false)
     const [switcherResultPaths, setSwitcherResultPaths] = createSignal<
         string[]
     >([])
-    const openSwitcher = () => setSwitcherOpen(true)
-    const closeSwitcher = () => {
-        setSwitcherOpen(false)
-        setSwitcherResultPaths([])
+    // ONE app-level modal at a time (appModal.ts) — the switcher, the Cmd+P/Alt+T palettes and
+    // every command-opened dialog. Opening one replaces whatever is showing, never stacks on it.
+    const [modal, setModal] = createSignal<AppModal | null>(null)
+    const setModalTo = (next: AppModal | null) => {
+        const prev = modal()
+        if (prev === next) return
+        if (prev === 'switcher') setSwitcherResultPaths([])
+        // Unmount the old one BEFORE mounting the new: ui/Modal's cleanup restores focus to its
+        // opener, which would otherwise land after — and steal from — the new one's autofocus.
+        if (prev && next) setModal(null)
+        setModal(next)
     }
+    const openModal = (which: AppModal) => setModalTo(which)
+    const closeModal = (which: AppModal) =>
+        setModalTo(afterClose(modal(), which))
+    const toggleModal = (which: AppModal) =>
+        setModalTo(afterToggle(modal(), which))
+    const switcherOpen = () => modal() === 'switcher'
+    const openSwitcher = () => openModal('switcher')
+    const closeSwitcher = () => closeModal('switcher')
     // Graph-node ids (note paths minus ".md") for the current result set; only .md notes are
     // graph nodes, so non-note files (settings/sheet/draw) highlight nothing (switcherMatches.ts).
     const switcherMatchIds = createMemo<string[]>(() =>
@@ -1127,7 +1137,7 @@ export default function App() {
     // whose frontend talks to it via ?api=. Browser uses a typed-path modal; a native OS
     // picker is a desktop-build enhancement. The modal stays open on failure so the path
     // can be retried.
-    const [folderPromptOpen, setFolderPromptOpen] = createSignal(false)
+    const folderPromptOpen = () => modal() === 'folder'
     const openFolder = async () => {
         // Desktop: native OS folder picker. Browser: typed-path modal (no picker can yield
         // a server-accessible path there).
@@ -1142,7 +1152,7 @@ export default function App() {
             if (picked.status === 'picked') await doOpenFolder(picked.path)
             return
         }
-        setFolderPromptOpen(true)
+        openModal('folder')
     }
     const doOpenFolder = async (folder: string) => {
         try {
@@ -1156,19 +1166,19 @@ export default function App() {
             }
             // Remember this as the last-opened vault so the next cold launch reopens it.
             void rememberLastVault(folder)
-            setFolderPromptOpen(false)
+            closeModal('folder')
         } catch (e) {
             pushToast(`Open folder failed: ${(e as Error).message}`)
         }
     }
     // Daemon owner picker. A small modal that lists heartbeating devices and
     // writes owner.json via POST /daemon/owner (owner.json is the single source of truth).
-    const [daemonOwnerOpen, setDaemonOwnerOpen] = createSignal(false)
-    const openDaemonOwner = () => setDaemonOwnerOpen(true)
+    const daemonOwnerOpen = () => modal() === 'daemon-owner'
+    const openDaemonOwner = () => openModal('daemon-owner')
     // Daemon install/repair panel. Idempotent, adopt-only setup: shows
     // installed/running/owner and runs POST /daemon/setup (does nothing if already installed).
-    const [daemonSetupOpen, setDaemonSetupOpen] = createSignal(false)
-    const openDaemonSetup = () => setDaemonSetupOpen(true)
+    const daemonSetupOpen = () => modal() === 'daemon-setup'
+    const openDaemonSetup = () => openModal('daemon-setup')
     // "Update daemon" command — POST /daemon/update (re-registers the launchd/systemd service;
     // idempotent, no git pull — the daemon binary updates WITH the app). Reports via a toast.
     const updateDaemon = async () => {
@@ -1187,8 +1197,8 @@ export default function App() {
         }
     }
     // Machine-wide bismuth CLI + MCP install panel (idempotent, version-gated ensure).
-    const [bismuthInstallOpen, setBismuthInstallOpen] = createSignal(false)
-    const openBismuthInstall = () => setBismuthInstallOpen(true)
+    const bismuthInstallOpen = () => modal() === 'bismuth-install'
+    const openBismuthInstall = () => openModal('bismuth-install')
     // Manual "Update Bismuth" command — for when the UpdateBanner was dismissed/missed. Checks
     // fresh, then runs the same apply→build→relaunch pipeline as the banner, reporting progress
     // in a persistent toast. Cleanly says "up to date" when there's nothing to pull (incl. dev).
@@ -1242,11 +1252,11 @@ export default function App() {
         )
     }
     // Custom spellcheck dictionary editor — view/remove the user's added words.
-    const [editDictionaryOpen, setEditDictionaryOpen] = createSignal(false)
-    const openEditDictionary = () => setEditDictionaryOpen(true)
+    const editDictionaryOpen = () => modal() === 'edit-dictionary'
+    const openEditDictionary = () => openModal('edit-dictionary')
     // "Connect Google Calendar" panel — OAuth connect/disconnect/status for two-way sync.
-    const [gcalConnectOpen, setGcalConnectOpen] = createSignal(false)
-    const openGcalConnect = () => setGcalConnectOpen(true)
+    const gcalConnectOpen = () => modal() === 'gcal-connect'
+    const openGcalConnect = () => openModal('gcal-connect')
     // "Sync Google Calendar" command — two-way sync with the configured base.
     const gcalSync = async () => {
         const id = pushToast('Syncing Google Calendar…', undefined, 0)
@@ -2445,9 +2455,7 @@ export default function App() {
         // (palette search, calendar title, etc.). The note editor is contentEditable,
         // not an INPUT/TEXTAREA, so insertion from a focused note still works.
         if (matchesKeybinding(e, kb['insert-template'])) {
-            runUnlessEditableTarget(e, () =>
-                setPalette(p => (p === 'template' ? null : 'template')),
-            )
+            runUnlessEditableTarget(e, () => toggleModal('template'))
             return
         }
         // Toggle sidebar (default Alt+S): don't hijack while typing in a form field.
@@ -2463,15 +2471,14 @@ export default function App() {
         // Command palette (default Mod+P).
         if (matchesKeybinding(e, kb['command-palette'])) {
             e.preventDefault()
-            setPalette(p => (p === 'command' ? null : 'command'))
+            toggleModal('command')
             return
         }
         // Quick switcher (default Mod+O): toggle the in-window switcher mode (graph backdrop +
         // big top search), NOT a centered modal. Esc (above) leaves it.
         if (matchesKeybinding(e, kb['quick-switcher'])) {
             e.preventDefault()
-            if (switcherOpen()) closeSwitcher()
-            else openSwitcher()
+            toggleModal('switcher')
             return
         }
         // Terminal (default Mod+` or Mod+J).
@@ -3292,47 +3299,47 @@ export default function App() {
             }
             modals={
                 <>
-                    <Show when={palette() === 'command'}>
+                    <Show when={modal() === 'command'}>
                         <CommandPalette
-                            onClose={() => setPalette(null)}
+                            onClose={() => closeModal('command')}
                             commands={commands()}
                         />
                     </Show>
-                    <Show when={palette() === 'template'}>
+                    <Show when={modal() === 'template'}>
                         <TemplatePalette
-                            onClose={() => setPalette(null)}
+                            onClose={() => closeModal('template')}
                             title={activeNoteTitle()}
                         />
                     </Show>
                     <Show when={folderPromptOpen()}>
                         <FolderPrompt
-                            onClose={() => setFolderPromptOpen(false)}
+                            onClose={() => closeModal('folder')}
                             onOpen={doOpenFolder}
                         />
                     </Show>
                     <Show when={daemonOwnerOpen()}>
                         <DaemonOwnerModal
-                            onClose={() => setDaemonOwnerOpen(false)}
+                            onClose={() => closeModal('daemon-owner')}
                         />
                     </Show>
                     <Show when={daemonSetupOpen()}>
                         <DaemonSetupModal
-                            onClose={() => setDaemonSetupOpen(false)}
+                            onClose={() => closeModal('daemon-setup')}
                         />
                     </Show>
                     <Show when={bismuthInstallOpen()}>
                         <BismuthInstallModal
-                            onClose={() => setBismuthInstallOpen(false)}
+                            onClose={() => closeModal('bismuth-install')}
                         />
                     </Show>
                     <Show when={editDictionaryOpen()}>
                         <EditDictionaryModal
-                            onClose={() => setEditDictionaryOpen(false)}
+                            onClose={() => closeModal('edit-dictionary')}
                         />
                     </Show>
                     <Show when={gcalConnectOpen()}>
                         <GcalConnectModal
-                            onClose={() => setGcalConnectOpen(false)}
+                            onClose={() => closeModal('gcal-connect')}
                         />
                     </Show>
                     <Show when={paneMenu()}>
