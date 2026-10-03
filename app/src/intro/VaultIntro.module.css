@@ -1,9 +1,9 @@
 /* app/src/intro/VaultIntro.module.css — the first-run intro takeover's root + stage.
    Themed through the app's CSS vars (--bg/--fg/--accent/…), which the theme picker rewrites on
    :root, so the whole surface re-themes live. Everything else the takeover draws lives with the
-   component that draws it (IntroGraph, IntroHeader, IntroHero, IntroCopy, ThemePicker,
-   PowerUpList, IntroCta, IntroNav); this file owns only the full-window root and the centred
-   stage those pieces are laid out in. */
+   component that draws it (IntroGraph, IntroHeader, IntroFrame, IntroHero, IntroCopy, ThemePicker,
+   PowerUpList, IntroCta, IntroNav); this file owns only the full-window root and the stage the
+   frame fills. */
 
 .vi-root {
   position: fixed;
@@ -25,29 +25,14 @@
   box-sizing: border-box;
 }
 
-/* ---- centered stage ---- */
-/* Fills the whole .vi-root and centers its content with the WINDOW (IntroHeader is an absolute
-   overlay, so it doesn't push the content down). Sits above the graph layers. */
-.vi-center {
+/* ---- stage ---- */
+/* Fills the whole .vi-root and hosts the slide's IntroFrame (IntroHeader is an absolute overlay, so
+   it doesn't push the stage down). Sits above the graph layers. All of the layout is the frame's. */
+.vi-stage {
   position: relative;
   z-index: 2;
   flex: 1;
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  /* The stage is a vertical rhythm, not a list: the copy needs to sit closer to the visual it
-     belongs to than the nav sits to either. */
-  gap: var(--sp-6);
-  padding: 0 40px;
-  text-align: center;
   min-height: 0;
-}
-/* 'low' layout (the graph slide): the graph is a foreground hero up top, so drop the copy and
-   nav to the lower half. */
-.vi-center[data-layout="low"] {
-  justify-content: flex-end;
-  padding-bottom: 7vh;
 }

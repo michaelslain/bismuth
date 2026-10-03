@@ -1,6 +1,6 @@
 // The agents slide's hero: six agent names whose typed lines converge on `[ mcp ]`, then down to
 // `( vault )`, with coloured packets travelling the lines. Plain ASCII, pure (no DOM, no
-// framework). Content replaces the boxed terminal in TermPanel's AGENT_LINES.
+// framework). Content replaces the old boxed terminal panel.
 import {
     clearFrame,
     putChar,

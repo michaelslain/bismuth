@@ -10,7 +10,7 @@ export type SlideKey =
     | 'agents'
     | 'powerups'
     | 'begin'
-export type SlideHero = 'wordmark' | 'daemon' | 'agents'
+export type SlideHero = 'wordmark' | 'daemon' | 'agents' | 'begin'
 export type SlideGraph = 'small' | 'big'
 export type SlideExtra = 'themes' | 'powerups' | 'cta'
 
@@ -25,8 +25,6 @@ export type Slide = {
     /** Corner LogoMark shown (false where the big wordmark hero already is). */
     corner: boolean
     extra?: SlideExtra
-    /** 'low' drops copy + nav to the lower half under a foreground graph. */
-    layout: 'center' | 'low'
 }
 
 export const SLIDES: Slide[] = [
@@ -36,7 +34,6 @@ export const SLIDES: Slide[] = [
         body: 'Write notes and connect them with [[wikilinks]]. Bismuth links them into a graph you can explore and search.',
         hero: 'wordmark',
         corner: false,
-        layout: 'center',
     },
     {
         key: 'theme',
@@ -45,7 +42,6 @@ export const SLIDES: Slide[] = [
         graph: 'small',
         extra: 'themes',
         corner: true,
-        layout: 'center',
     },
     {
         key: 'graph',
@@ -53,7 +49,6 @@ export const SLIDES: Slide[] = [
         body: "Your notes and Bismuth's memory connect into one graph, so what you know and what it learns stay woven together.",
         graph: 'big',
         corner: true,
-        layout: 'low',
     },
     {
         key: 'daemon',
@@ -61,7 +56,6 @@ export const SLIDES: Slide[] = [
         body: "A background daemon runs on a schedule: folding new memory into your graph, re-linking notes, and surfacing what you'd forgotten.",
         hero: 'daemon',
         corner: true,
-        layout: 'center',
     },
     {
         key: 'agents',
@@ -69,7 +63,6 @@ export const SLIDES: Slide[] = [
         body: 'Chat runs on whichever coding agent you already use — Claude Code, Codex, Gemini, opencode, Cline, Goose. Bismuth speaks MCP, so any of them can search the docs and write your bases, queries and notes.',
         hero: 'agents',
         corner: true,
-        layout: 'center',
     },
     {
         key: 'powerups',
@@ -77,16 +70,14 @@ export const SLIDES: Slide[] = [
         body: 'Pick what to set up. Bismuth turns them on once you open your vault, or you can do it anytime from the command palette.',
         extra: 'powerups',
         corner: true,
-        layout: 'center',
     },
     {
         key: 'begin',
         title: 'Open your vault.',
         body: 'Pick a folder and Bismuth makes it a vault. Start writing, and the graph fills itself in.',
-        hero: 'wordmark',
+        hero: 'begin',
         extra: 'cta',
         corner: false,
-        layout: 'center',
     },
 ]
 

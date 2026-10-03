@@ -1,43 +1,54 @@
-// The first-run intro's per-slide non-graph visual: the wordmark on the welcome/begin slides, a
-// terminal panel on the daemon/agents slides. The persistent graph stays mounted behind the
-// intro, so this only shows on slides that are not graph slides. The parent remounts it per
-// slide, which is what replays the enter animation.
-import { Match, Switch, type Component } from 'solid-js'
-import TermPanel, { AGENT_LINES, DAEMON_LINES } from './TermPanel'
-import WordmarkHero from './WordmarkHero'
+// The first-run intro's per-slide hero: glyph art that fills the hero box (IntroFrame's hero slot)
+// — the wordmark on the welcome slide, the daemon's status + cron table + log on the daemon slide,
+// the agents-to-MCP-to-vault diagram on the agents slide, and the formed wordmark over the
+// `> open vault_` prompt on the begin slide. The scenes are pure (./glyphScenes/*); GlyphArt paints
+// them. The parent remounts it per slide, which restarts the scene's reveal.
+import type { Component } from 'solid-js'
+import GlyphArt from '../ui/ascii/GlyphArt'
+import type { GlyphScene } from '../ui/ascii/glyphScene'
+import { agentsScene } from './glyphScenes/agents'
+import { beginScene } from './glyphScenes/begin'
+import { daemonScene } from './glyphScenes/daemon'
+import { wordmarkScene } from './glyphScenes/wordmark'
+import type { SlideHero } from './introSlides'
 import styles from './IntroHero.module.css'
 
 /** The same union as the slide table's `SlideHero`, so a slide's hero can be passed straight in. */
-export type IntroHeroKind = 'wordmark' | 'daemon' | 'agents'
+export type IntroHeroKind = SlideHero
 
 export type IntroHeroProps = {
     hero: IntroHeroKind
-    /** The logo mark for the wordmark hero (`/logos/<icon>.svg`). */
-    icon: string
-    class?: string
+    /** Loop runs only while true. Default true. */
+    active?: boolean
+    /** Pin time (ms): draw one frame, no loop. For stories and baselines. */
+    at?: number
+    className?: string
+}
+
+const SCENES: Record<IntroHeroKind, { scene: GlyphScene; label: string }> = {
+    wordmark: { scene: wordmarkScene, label: 'bismuth' },
+    daemon: {
+        scene: daemonScene,
+        label: 'the daemon running scheduled jobs',
+    },
+    agents: {
+        scene: agentsScene,
+        label: 'coding agents connected to your vault over MCP',
+    },
+    begin: { scene: beginScene, label: 'bismuth // open vault' },
 }
 
 const IntroHero: Component<IntroHeroProps> = props => {
     return (
-        <div class={`${styles['vi-hero']}${props.class ? ` ${props.class}` : ''}`}>
-            <div class={styles['vi-hero-overlay']}>
-                <Switch>
-                    <Match when={props.hero === 'wordmark'}>
-                        <WordmarkHero icon={props.icon} size={96} />
-                    </Match>
-                    <Match when={props.hero === 'daemon'}>
-                        <TermPanel name="daemon // live" lines={DAEMON_LINES} />
-                    </Match>
-                    <Match when={props.hero === 'agents'}>
-                        {/* The transcript is a real Claude Code session because `claude` is
-                            DEFAULT_BACKEND (core/src/agentBackends/catalog.ts) — a session has to be
-                            SOME agent, and that is the one most people land on. The panel is labelled
-                            "chat" rather than "claude code" so the frame does not contradict the
-                            headline; the copy names the rest. */}
-                        <TermPanel name="chat" lines={AGENT_LINES} />
-                    </Match>
-                </Switch>
-            </div>
+        <div
+            class={`${styles['intro-hero']}${props.className ? ` ${props.className}` : ''}`}
+        >
+            <GlyphArt
+                scene={SCENES[props.hero].scene}
+                label={SCENES[props.hero].label}
+                active={props.active}
+                at={props.at}
+            />
         </div>
     )
 }

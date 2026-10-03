@@ -1,46 +1,6 @@
-/* app/src/intro/IntroHero.module.css — the first-run intro's per-slide non-graph visual box.
-   Moved out of VaultIntro.module.css (one stylesheet, one importer): `.vi-hero` + `.vi-hero-overlay`
-   and the `vi-slidein` enter animation on the overlay were only ever written for this block. The
-   parent remounts IntroHero per slide, so the animation replays on each slide change. */
-
-/* Height was a fixed 360px with the visual centred inside it, so on the wordmark slides the
-   mark floated in the middle of a tall empty box and the headline landed ~180px below it —
-   two disconnected clusters with a void between, which is what read as "unfinished" more
-   than any single style choice did. Sized to its content now, with a ceiling so the terminal
-   panels still cannot run away with the stage. */
-.vi-hero {
-  position: relative;
-  width: 620px;
-  max-width: 86vw;
-  max-height: 42vh;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  /* On the wordmark slides the mark and the headline are different voices and need to read
-     as two groups, not one four-line stack. */
-  margin-bottom: var(--sp-6);
-}
-.vi-hero-overlay {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-}
-
-/* ---- motion (enhancement only; resting state above is fully visible) ---- */
-/* Slide-in (horizontal) for the per-slide content — reads as a slide, not a fade. */
-@keyframes vi-slidein {
-  from {
-    opacity: 0;
-    transform: translateX(56px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .vi-hero-overlay {
-    animation: vi-slidein 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  }
+/* app/src/intro/IntroHero.module.css — the hero is glyph art that fills IntroFrame's hero box. The
+   box's size is the frame's business (96 x 16 cells); this only passes it down. */
+.intro-hero {
+  width: 100%;
+  height: 100%;
 }

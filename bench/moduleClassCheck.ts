@@ -126,10 +126,6 @@ const ALLOW = new Set<string>([
  *  runs its own bundler against the story graph, not `vite build`. Mirrors tokenLint.ts's
  *  SKIP_FILES: relative to app/src, one entry per file, each carrying its own justification. */
 const SKIP_MODULES = new Set<string>([
-    // intro-redesign wave 1 (2026-10-03): built before VaultIntro composes them in wave 2.
-    // Task 7 of .claude/plans/2026-10-03-intro-redesign.md removes both lines.
-    'ui/ascii/GlyphArt.module.css',
-    'intro/IntroFrame.module.css',
     // FontSpecimen.tsx's own header + FontSpecimen.module.css's own header: a Storybook-only
     // font/type specimen page with no call site in app/ (only ui/gallery/FontSpecimen.stories.tsx
     // renders it). Confirmed via `grep -rl FontSpecimen app/src` — the only hits are the component,

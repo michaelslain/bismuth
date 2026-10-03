@@ -1,6 +1,6 @@
 // The daemon slide's hero: a prompt, three cron rows with a filling bar, and a scrolling activity
 // log — all plain ASCII, written by time. Pure (no DOM, no framework); GlyphCanvas paints it.
-// Content replaces the boxed terminal in TermPanel's DAEMON_LINES.
+// Content replaces the old boxed terminal panel.
 import {
     clearFrame,
     putChar,
