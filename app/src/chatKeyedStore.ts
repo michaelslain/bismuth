@@ -1,14 +1,12 @@
 // app/src/chatKeyedStore.ts
-// The shared shape behind chatColors.ts / chatSessionStore.ts / chatComputerUse.ts: a chatId-keyed,
-// capped, localStorage-persisted list. All three hand-rolled the SAME filter-then-push upsert, the
-// SAME reversed-loop newest-wins lookup, the SAME try/catch JSON.parse with an array-of-plain-objects
-// type guard, and the SAME try/catch write — this factors that mechanics out so a future change to it
-// (e.g. corruption recovery) lands once instead of three times.
+// The shared shape behind chatColors.ts / chatSessionStore.ts: a chatId-keyed, capped,
+// localStorage-persisted list — the filter-then-push upsert, the newest-wins lookup, and a
+// read/write that never throws (blocked site data, malformed JSON, a non-array payload all read as
+// an empty list).
 //
-// Each module keeps its OWN storage key, cap, entry shape and validator strictness, and wraps these
-// primitives in its own exported function names/signatures — callers of chatColors/chatSessionStore/
-// chatComputerUse see no change at all. That preservation is load-bearing: these keys are real data
-// already sitting in users' browsers, so a changed key or shape would silently lose their state.
+// Each module keeps its OWN storage key, cap, entry shape and validator strictness. That is
+// load-bearing: these keys are real data already sitting in users' browsers, so a changed key or
+// shape would silently lose their state.
 
 /** Every store entry is keyed by the chat TAB id (the ::chat:<uuid> content id's suffix). */
 export interface ChatKeyedEntry {
@@ -36,16 +34,12 @@ export function removeEntry<T extends ChatKeyedEntry>(
     return list.filter(e => e.chatId !== chatId)
 }
 
-/** Pure lookup: the entry for `chatId`, or undefined. Reads newest-first so a duplicate (shouldn't
- *  happen after upsert, but be defensive) resolves to the most recent. */
+/** Pure lookup: the entry for `chatId`, or undefined. */
 export function lookupEntry<T extends ChatKeyedEntry>(
     list: T[],
     chatId: string,
 ): T | undefined {
-    for (let i = list.length - 1; i >= 0; i--) {
-        if (list[i].chatId === chatId) return list[i]
-    }
-    return undefined
+    return list.find(e => e.chatId === chatId)
 }
 
 /** One chatId-keyed, capped, localStorage-persisted list: read/write/upsert/lookup over `storageKey`,
@@ -57,15 +51,13 @@ export function createChatKeyedStore<T extends ChatKeyedEntry>(
     isEntry: (x: unknown) => x is T,
 ) {
     function read(): T[] {
-        const raw =
-            typeof localStorage !== 'undefined'
-                ? localStorage.getItem(storageKey)
-                : null
-        if (!raw) return []
         try {
+            const raw = localStorage.getItem(storageKey)
+            if (!raw) return []
             const arr = JSON.parse(raw)
             return Array.isArray(arr) ? arr.filter(isEntry) : []
         } catch {
+            // storage blocked/unavailable or malformed JSON — start empty
             return []
         }
     }

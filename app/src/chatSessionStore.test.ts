@@ -1,11 +1,5 @@
 import { test, expect, beforeEach } from 'bun:test'
-import {
-    upsertSession,
-    lookupSession,
-    rememberChatSession,
-    recallChatSession,
-    type ChatSessionEntry,
-} from './chatSessionStore'
+import { rememberChatSession, recallChatSession } from './chatSessionStore'
 
 /** Minimal in-memory Storage stub (Bun test env has no localStorage). */
 function installMemoryStorage(): Map<string, string> {
@@ -23,41 +17,6 @@ function installMemoryStorage(): Map<string, string> {
 }
 beforeEach(() => {
     installMemoryStorage()
-})
-
-const e = (chatId: string, sessionId: string): ChatSessionEntry => ({
-    chatId,
-    sessionId,
-})
-
-test('upsertSession appends a new entry most-recent last', () => {
-    expect(upsertSession([e('a', 's1')], 'b', 's2')).toEqual([
-        e('a', 's1'),
-        e('b', 's2'),
-    ])
-})
-
-test("upsertSession replaces an existing chatId's session and moves it to the end", () => {
-    const start = [e('a', 's1'), e('b', 's2'), e('c', 's3')]
-    const out = upsertSession(start, 'a', 's1-new')
-    // 'a' is de-duped and re-appended with the new session id.
-    expect(out).toEqual([e('b', 's2'), e('c', 's3'), e('a', 's1-new')])
-})
-
-test('upsertSession caps the list, dropping the oldest', () => {
-    let list: ChatSessionEntry[] = Array.from({ length: 50 }, (_, i) =>
-        e(`c${i}`, `s${i}`),
-    )
-    list = upsertSession(list, 'new', 'snew') // cap is 50
-    expect(list.length).toBe(50)
-    expect(list[0].chatId).toBe('c1') // c0 dropped
-    expect(list[49]).toEqual(e('new', 'snew'))
-})
-
-test('lookupSession returns the remembered session id, or null', () => {
-    const list = [e('a', 's1'), e('b', 's2')]
-    expect(lookupSession(list, 'b')).toBe('s2')
-    expect(lookupSession(list, 'missing')).toBeNull()
 })
 
 test('remember then recall round-trips through localStorage', () => {
@@ -109,4 +68,11 @@ test('filters out malformed entries in the stored array', () => {
         ]),
     )
     expect(recallChatSession('ok')).toBe('s')
+})
+
+test('remember caps the stored list at 50, dropping the oldest', () => {
+    for (let i = 0; i < 51; i++) rememberChatSession(`c${i}`, `s${i}`)
+    expect(recallChatSession('c0')).toBeNull()
+    expect(recallChatSession('c1')).toBe('s1')
+    expect(recallChatSession('c50')).toBe('s50')
 })

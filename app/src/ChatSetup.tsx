@@ -39,4 +39,3 @@ const ChatSetup: Component<ChatSetupProps> = props => (
 )
 
 export default ChatSetup
-export { ChatSetup }

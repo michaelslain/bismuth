@@ -1,5 +1,5 @@
 // app/src/chatProvider.ts
-// Pure provider-choice helpers for the visual chat (ChatView.tsx), split out like
+// Pure provider-choice helpers for the visual chat (chat/chatSession.ts), split out like
 // chatModelResolution.ts / chatEffort.ts so the rules are unit-testable without Solid/DOM.
 //
 // Each chat TAB picks its backend in the header, persisted per tab (a transient localStorage key,

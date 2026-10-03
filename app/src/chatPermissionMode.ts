@@ -1,5 +1,5 @@
 // app/src/chatPermissionMode.ts
-// Pure permission-mode helpers for the visual chat (ChatView.tsx), split out so the rules that
+// Pure permission-mode helpers for the visual chat (chat/chatSession.ts), split out so the rules that
 // make the user's chosen mode STICK (FEATURE #35) are unit-testable without importing the Solid
 // component (which pulls in CSS + the DOM). No Solid / DOM / localStorage here — just data.
 
@@ -14,7 +14,7 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number]
 
 /** What the header's mode picker calls each of them. Kept beside the protocol values, and DERIVED
  *  from them below rather than written out a second time: the option list used to be a parallel
- *  literal array in ChatView.tsx, free to drift from this one and invisible to the tests that cover
+ *  literal array in the chat view, free to drift from this one and invisible to the tests that cover
  *  this module. A `Record<PermissionMode, …>` cannot go stale — adding a mode above stops compiling
  *  until it is named here. */
 export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
