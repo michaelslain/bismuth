@@ -13,7 +13,6 @@ import {
 import {
     EditorView,
     keymap,
-    drawSelection,
     lineNumbers,
 } from '@codemirror/view'
 import { EditorState, Compartment, type Line } from '@codemirror/state'
@@ -149,6 +148,7 @@ import {
 import { decideSseReconcile } from './editor/sseReconcile'
 import { keepaliveSaveInit } from './editor/keepaliveSave'
 import { openNote } from './ui/openNote'
+import { cursor } from './editor/cursorTheme'
 
 // ExternalReload + externalReconcileSpec live in editor/reconcileDispatch.ts (shared,
 // unit-tested): the annotation lets the autosave listener skip disk-pulled reloads, and
@@ -209,16 +209,10 @@ const editorTheme = EditorView.theme({
     // which is also where the reasoning for padding-vs-anything-else lives). Outside draw mode
     // nothing sets the property, so this resolves to exactly the 80px it always was.
     '.cm-content': {
-        caretColor: 'var(--fg)',
         padding: `8px 0 var(${SCROLL_PAD_VAR}, ${CONTENT_PAD_BOTTOM}px)`,
         maxWidth: 'var(--note-column)',
         width: '100%',
         boxSizing: 'border-box',
-    },
-    '.cm-cursor, .cm-dropCursor': {
-        borderLeftColor: 'var(--fg)',
-        borderLeftWidth: '2px',
-        transition: 'left 70ms ease-out, top 70ms ease-out', // smooth glide
     },
     '.cm-content ::selection': {
         backgroundColor: 'var(--selection)',
@@ -1488,7 +1482,7 @@ export function Editor(props: {
             // active drawing session.
             drawSpaceCompartment.of(untrack(drawMode) ? drawScrollSpace : []),
             history(),
-            drawSelection(),
+            cursor,
             // Indent unit is set per-buffer below (4 spaces for markdown notes, 2 for YAML
             // config) — not here in the shared base. Markdown wants a 4-space Tab so a single
             // indent clears any list marker (`1. ` is 3 cols wide) and nests uniformly; YAML

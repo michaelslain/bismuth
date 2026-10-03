@@ -23,9 +23,10 @@ import {
     type Accessor,
     type JSX,
 } from 'solid-js'
-import { EditorView, keymap, drawSelection } from '@codemirror/view'
+import { EditorView, keymap } from '@codemirror/view'
 import { EditorState, type Extension } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { cursor } from '../editor/cursorTheme'
 
 // Bare-bones legibility against the app's real theme tokens (injected by `.storybook/preview.ts`)
 // — no note-editor chrome (no gutter, no prose column, no autocomplete popup styling).
@@ -40,11 +41,7 @@ const harnessTheme = EditorView.theme({
         fontSize: 'var(--editor-font-size, 15px)',
         overflow: 'auto',
     },
-    '.cm-content': { caretColor: 'var(--fg)', padding: '8px 0' },
-    '.cm-cursor, .cm-dropCursor': {
-        borderLeftColor: 'var(--fg)',
-        borderLeftWidth: '2px',
-    },
+    '.cm-content': { padding: '8px 0' },
     '.cm-content ::selection': {
         backgroundColor: 'var(--selection)',
     },
@@ -91,7 +88,7 @@ export function CmHarness(props: CmHarnessProps): JSX.Element {
                 doc: props.doc ?? '',
                 extensions: [
                     history(),
-                    drawSelection(),
+                    cursor,
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     EditorView.lineWrapping,
                     harnessTheme,

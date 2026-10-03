@@ -2,7 +2,6 @@ import { createEffect, onCleanup, onMount } from 'solid-js'
 import {
     EditorView,
     keymap,
-    drawSelection,
     placeholder,
 } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
@@ -20,6 +19,7 @@ import { settingsKeymapCompartment } from '../editor/settingsKeymap'
 import type { NoteCandidate } from '../editor/wikilink'
 import { settings } from '../settings'
 import { api } from '../api'
+import { cursor } from '../editor/cursorTheme'
 
 // Theme: transparent, gutterless, prose-flow — so the field reads as rendered-yet-editable
 // markdown (like the note editor's live-preview), not a boxed code editor. The host element owns
@@ -35,12 +35,7 @@ const fieldTheme = EditorView.theme({
         lineHeight: '1.55',
         overflow: 'visible',
     },
-    '.cm-content': { caretColor: 'var(--fg)' },
     '.cm-line': { padding: '0' },
-    '.cm-cursor, .cm-dropCursor': {
-        borderLeftColor: 'var(--fg)',
-        borderLeftWidth: '2px',
-    },
     // The UI font stack (not the prose font the typed value uses) so the hint reads distinctly from real content.
     '.cm-placeholder': {
         color: 'var(--faint)',
@@ -118,7 +113,7 @@ function MarkdownField(props: MarkdownFieldProps) {
                 doc: props.value,
                 extensions: [
                     history(),
-                    drawSelection(),
+                    cursor,
                     indentUnit.of('  '),
                     EditorState.tabSize.of(2),
                     // See fieldKeymap above. The rest is the standard editing + history keymap.

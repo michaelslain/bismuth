@@ -8,6 +8,27 @@
     "max": null,
     "required": false
   },
+  "appearance.cursorBlinkSeconds": {
+    "type": "number",
+    "default": 1.2,
+    "min": 0.6,
+    "max": 2,
+    "required": false
+  },
+  "appearance.cursorGlideMs": {
+    "type": "number",
+    "default": 70,
+    "min": 20,
+    "max": 200,
+    "required": false
+  },
+  "appearance.cursorWidth": {
+    "type": "number",
+    "default": 2,
+    "min": 1,
+    "max": 4,
+    "required": false
+  },
   "appearance.editorFontSize": {
     "type": "number",
     "default": 13.5,
@@ -1143,27 +1164,6 @@
     "default": null,
     "min": null,
     "max": null,
-    "required": false
-  },
-  "terminal.cursorBlinkSeconds": {
-    "type": "number",
-    "default": 1.2,
-    "min": 0.6,
-    "max": 2,
-    "required": false
-  },
-  "terminal.cursorGlideMs": {
-    "type": "number",
-    "default": 70,
-    "min": 20,
-    "max": 200,
-    "required": false
-  },
-  "terminal.cursorWidth": {
-    "type": "number",
-    "default": 2,
-    "min": 1,
-    "max": 4,
     "required": false
   },
   "terminal.fontSize": {

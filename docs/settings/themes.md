@@ -351,6 +351,9 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 | `appearance.uiFontSize` | `--ui-font-size` | `11.5px` |
 | `appearance.monoScale` | `--mono-scale` | `1` |
 | `appearance.tabFontSize` | `--tab-font-size` | `11.5px` |
+| `appearance.cursorWidth` | `--cursor-width` | `2px` |
+| `appearance.cursorGlideMs` | `--cursor-glide` | `70ms` |
+| `appearance.cursorBlinkSeconds` | `--cursor-blink` | `1.2s` |
 
 Two of these defaults deliberately break from the app's `--fs-ui` chrome size (`11.5px`), each for a
 documented reason (`settingsSchema.ts`'s own `doc` string on the key):
@@ -408,13 +411,11 @@ exists to protect survives — now as a 4:5 relationship instead of 1:1, rather 
 | `calendar.monthCellMinHeight` | `--month-cell-min-h` | `80px` |
 | `calendar.timeGutterWidth` | `--time-gutter-width` | `50px` |
 
-### From `terminal.*`
-
-| Setting | CSS var | Default |
-|---|---|---|
-| `terminal.cursorWidth` | `--term-cursor-width` | `2px` |
-| `terminal.cursorGlideMs` | `--term-cursor-glide` | `70ms` |
-| `terminal.cursorBlinkSeconds` | `--term-cursor-blink` | `1.2s` |
+The three `--cursor-*` vars drive THE text cursor — one accent bar in every text-entry surface:
+every CodeMirror surface (`app/src/editor/cursorTheme.ts`) and the terminal's `.xterm-custom-cursor`
+overlay. Native `<input>`/`<textarea>` carets take the accent colour from `global.css`'s element
+reset. The brand's decorative `_` mark (`ui/Caret` — wordmark, status bar, switcher, chat, intro) is
+deliberately a different shape but blinks on the same `--cursor-blink`.
 
 ---
 

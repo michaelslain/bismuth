@@ -41,15 +41,8 @@ export const cardTheme = EditorView.theme({
         lineHeight: '1.55',
         overflow: 'visible',
     },
-    '.cm-content': { padding: '0', caretColor: 'var(--fg)' },
+    '.cm-content': { padding: '0' },
     '.cm-line': { padding: '0' },
-    // Smooth-glide caret — same 70ms ease as Editor.tsx so the card preview animates the
-    // cursor between positions instead of jumping.
-    '.cm-cursor, .cm-dropCursor': {
-        borderLeftColor: 'var(--fg)',
-        borderLeftWidth: '2px',
-        transition: 'left 70ms ease-out, top 70ms ease-out',
-    },
     '.cm-selectionBackground, .cm-content ::selection': {
         backgroundColor: 'var(--selection)',
     },

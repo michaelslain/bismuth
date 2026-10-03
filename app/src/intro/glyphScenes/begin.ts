@@ -1,5 +1,8 @@
 // app/src/intro/glyphScenes/begin.ts
-// The begin hero: the wordmark already formed, with a typed `> open vault_` prompt under it.
+// The begin hero: the wordmark already formed, with a typed `> open vault_` prompt under it. The
+// prompt's `_` is the brand's cursor mark (ui/Caret's glyph) in the accent, blinking on the period
+// the caller passes — appearance.cursorBlinkSeconds, the timing every cursor shares (IntroHero
+// reads it).
 import {
     clearFrame,
     putChar,
@@ -9,21 +12,22 @@ import {
 import { drawNoiseField, drawWordmark } from './wordmark'
 import { WORDMARK } from './wordmarkBitmap'
 
-export const CARET_PERIOD_MS = 1100
-
 const COLS = 96
 const ROWS = 16
 const REVEAL_MS = 700
 const WORDMARK_TOP = 3
 const PROMPT_ROW = 13
-const PROMPT = '> open vault_'
+/** The cursor mark glyph — the same `_` as ui/Caret. */
+export const CARET = '_'
+const PROMPT = `> open vault${CARET}`
 const PROMPT_COL = Math.floor((COLS - PROMPT.length) / 2)
 const WORDMARK_COL = Math.floor((COLS - WORDMARK[0].length) / 2)
 
 const promptColor = (i: number): GlyphColor =>
     i === 0 || i === PROMPT.length - 1 ? 'accent' : 'fg'
 
-export const beginScene: GlyphScene = {
+/** The begin scene with its cursor blinking every `caretPeriodMs` (one on + off cycle). */
+export const createBeginScene = (caretPeriodMs: number): GlyphScene => ({
     cols: COLS,
     rows: ROWS,
     revealMs: REVEAL_MS,
@@ -45,10 +49,10 @@ export const beginScene: GlyphScene = {
             : PROMPT.length
         const caretOn =
             typing ||
-            Math.floor((t - REVEAL_MS) / (CARET_PERIOD_MS / 2)) % 2 === 0
+            Math.floor((t - REVEAL_MS) / (caretPeriodMs / 2)) % 2 === 0
         for (let i = 0; i < typed; i++) {
             if (i === PROMPT.length - 1 && !caretOn) continue
             putChar(out, PROMPT_COL + i, PROMPT_ROW, PROMPT[i], promptColor(i))
         }
     },
-}
+})

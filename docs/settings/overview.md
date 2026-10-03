@@ -182,6 +182,9 @@ interface SchemaEntry {
 | `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | 11–14 | Editor tab label font size in px. |
 | `iconSize` | number | `12` | 11–20 | Icon size in px for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides (only a few oversized illustration marks opt out, each marked `icon-size-exempt:`). Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
+| `cursorWidth` | number | `2` | 1–4 | Text cursor bar width in px — the ONE cursor every editor, field and terminal draws. Moved from `terminal.*` (migrated on reconcile). |
+| `cursorGlideMs` | number | `70` | 20–200 | Text cursor glide between positions in ms, in every editor, field and terminal. Moved from `terminal.*`. |
+| `cursorBlinkSeconds` | number | `1.2` | 0.6–2.0 | Text cursor blink cycle in seconds, shared by every cursor in the app. Moved from `terminal.*`. |
 
 There are **no per-color override keys** in `appearance` — the theme is the single source of color. Flat keys like `background`, `foreground`, `accent`, or `accentPalette` do not exist in the schema and are stripped by the type check in `serializeSettingsForFrontend`.
 
@@ -308,9 +311,6 @@ The daemon is **one machine process** (the in-repo `@bismuth/daemon` workspace, 
 |---|---|---|---|---|
 | `fontSize` | number | `13` | 9–20 | Terminal font size in px. |
 | `lineHeight` | number | `1.5` | 1.2–2.0 | Terminal line height multiplier. |
-| `cursorWidth` | number | `2` | 1–4 | Terminal cursor bar width in px. |
-| `cursorGlideMs` | number | `70` | 20–200 | Cursor glide animation duration in ms. |
-| `cursorBlinkSeconds` | number | `1.2` | 0.6–2.0 | Cursor blink cycle duration in seconds. |
 
 ### `chat`
 
@@ -577,6 +577,9 @@ The function is called reactively in `App.tsx` whenever `settings` changes. The 
 | `appearance.uiFontSize` | `--ui-font-size` |
 | `appearance.monoScale` | `--mono-scale` |
 | `appearance.tabFontSize` | `--tab-font-size` |
+| `appearance.cursorWidth` | `--cursor-width` |
+| `appearance.cursorGlideMs` | `--cursor-glide` |
+| `appearance.cursorBlinkSeconds` | `--cursor-blink` |
 | `ui.paletteTopOffset` | `--palette-top-offset` |
 | `ui.paneDividerWidth` | `--pane-divider-width` |
 | `ui.cardGridMinWidth` | `--card-grid-min` |
@@ -586,9 +589,6 @@ The function is called reactively in `App.tsx` whenever `settings` changes. The 
 | `editor.lineHeight` | `--prose-line-height` |
 | `calendar.monthCellMinHeight` | `--month-cell-min-h` |
 | `calendar.timeGutterWidth` | `--time-gutter-width` |
-| `terminal.cursorWidth` | `--term-cursor-width` |
-| `terminal.cursorGlideMs` | `--term-cursor-glide` |
-| `terminal.cursorBlinkSeconds` | `--term-cursor-blink` |
 
 Additionally, all color/theme tokens are projected from the selected Bismuth theme via `resolveAppearance(s.appearance)` (see `app/src/themes.ts`). These include `--bg`, `--fg`, `--accent`, `--border`, `--panel`, `--surface-1/2/3`, `--rail`, `--editor`, `--hover-bg`, and the full graph ramp (`--graph-0` through `--graph-4`), plus derived accents (`--teal`, `--blue`, `--violet`, `--grad`), category colors (`--green`, `--gold`, `--rose`), and terminal colors (`--term-bg`, `--term-fg`).
 
