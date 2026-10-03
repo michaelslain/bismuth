@@ -67,8 +67,8 @@
 //     (`color: var(--danger, #c00)`) is still deliberately excused, on the reasoning that the
 //     fallback only fires when the token itself is missing. tokenLint's regex has no var()-
 //     awareness and flags a fallback literal regardless, so it remains the only one of the two
-//     catching those (4 live cases as of 2026-09-18: SheetView.module.css:6, Terminal.css:13,
-//     TermPanel.module.css:19, GraphAtmosphere.module.css:22).
+//     catching those (3 live cases as of 2026-09-18: SheetView.module.css:6, Terminal.css:13,
+//     GraphAtmosphere.module.css:22).
 //   - checks border-radius plus all four border-(top|bottom)-(left|right)-radius longhand
 //     corners, matching tokenLint's RADIUS_PROP exactly — this axis is now a real, not
 //     coincidental, equivalence between the two tools.
