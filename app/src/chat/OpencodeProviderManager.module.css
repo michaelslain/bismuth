@@ -1,0 +1,63 @@
+/* app/src/chat/OpencodeProviderManager.module.css — the opencode provider manager BODY (ONE
+   importer: OpencodeProviderManager.tsx). Moved out of the retired ChatAuthPanel.module.css; the
+   frame, title and placement now belong to ChatModelPicker. The not-yet-connected rows are
+   OpencodeProviderRow's own (OpencodeProviderRow.module.css), padded to the same edges as `.row`
+   here so every right-hand control ends on one column. */
+
+.manager {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.head {
+    padding: var(--sp-3) var(--sp-5) var(--sp-2);
+}
+.state {
+    padding: var(--sp-5) var(--sp-5);
+    font-size: var(--fs-ui);
+    color: var(--text-muted);
+    text-align: center;
+}
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-5);
+    font-size: var(--fs-ui);
+}
+.name {
+    flex: 1;
+}
+.kind {
+    /* Plain lowercase text, no box — the req/opt badge idiom (DESIGN.md › Forms). */
+    font-size: var(--fs-ui);
+    color: var(--faint);
+}
+.filter {
+    padding: var(--sp-3) var(--sp-5);
+}
+.note {
+    padding: var(--sp-3) var(--sp-5);
+    font-size: var(--fs-ui);
+}
+.help {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5) var(--sp-5);
+    font-size: var(--fs-ui);
+    line-height: 1.45;
+    border-top: 1px solid var(--border-soft);
+}
+.help code {
+    font-size: var(--fs-ui);
+    background: var(--border-soft);
+    border-radius: var(--r-0);
+    padding: 0 var(--sp-2);
+}
+/* `--bar-icon-gap` is the button family's ink-to-ink sibling distance; a plain `--sp-3` gap left
+   `[open terminal][copy command]` touching, because each bracket pulls its outer bearing in. */
+.actions {
+    display: flex;
+    gap: var(--bar-icon-gap);
+}

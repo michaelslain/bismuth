@@ -122,26 +122,7 @@ export function modelPriceBadge(free: boolean | undefined): string | undefined {
     return free ? 'Free' : 'Paid'
 }
 
-/** The header auth pill's state (RE-FIX #90: "i dont see a way to do auth"), off the `auth` frame
- *  (`opencode auth list`). Tri-state input: null = the frame hasn't landed (unknown — show a
- *  neutral label, never a false "not signed in" flash), [] = no stored credentials, else the
- *  count. Pure so the wording is unit-testable. */
-export function opencodeAuthSummary(providers: { name: string }[] | null): {
-    label: string
-    signedIn: boolean | null
-} {
-    if (providers === null) return { label: 'Auth', signedIn: null }
-    if (!providers.length) return { label: 'Not signed in', signedIn: false }
-    return {
-        label:
-            providers.length === 1
-                ? '1 provider'
-                : `${providers.length} providers`,
-        signedIn: true,
-    }
-}
-
-/** The shell command the auth popover tells the user to run (and copies) — opencode's own
+/** The shell command the provider manager tells the user to run (and copies) — opencode's own
  *  interactive login wizard (providers, API keys, opencode Zen). Kept in one place so the popover
  *  text, the copy button, and the tests can never drift apart. */
 export const OPENCODE_LOGIN_COMMAND = 'opencode auth login'

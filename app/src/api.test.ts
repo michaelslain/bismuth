@@ -8,6 +8,7 @@ import {
     httpTransport,
     setTransport,
     apiBase,
+    opencodeErrorMessage,
     eventsUrl,
     type Transport,
 } from './api'
@@ -190,5 +191,17 @@ describe('resolveCacheScope (stable per-vault cache namespacing)', () => {
         expect(resolveCacheScope('%', 'http://localhost:1', '/vault/a')).toBe(
             '/vault/a',
         )
+    })
+})
+
+
+describe('opencodeErrorMessage', () => {
+    test('reads the route message out of the error JSON the transport throws', () => {
+        const e = new Error(JSON.stringify({ error: 'bad-request', message: 'opencode rejected that key' }))
+        expect(opencodeErrorMessage(e)).toBe('opencode rejected that key')
+    })
+    test('falls back to the error code, then to the raw text', () => {
+        expect(opencodeErrorMessage(new Error('{"error":"forbidden"}'))).toBe('forbidden')
+        expect(opencodeErrorMessage(new Error('socket hang up'))).toBe('socket hang up')
     })
 })

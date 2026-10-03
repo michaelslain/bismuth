@@ -12,9 +12,9 @@ For lifecycle, frontend-store, and CSS-projection details, see the [Settings Ove
 
 The schema is a nested object. Top-level keys, in canonical alphabetical-set membership (the test asserts exactly this set):
 
-`appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `keybindings`, `mcp`, `properties`, `server`, `srs`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
+`appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `keybindings`, `localModel`, `mcp`, `properties`, `server`, `srs`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
 
-The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `mcp`, `codex`, `srs`, `templates`, `properties`, `folderIcons`, `folderVisibility`, `toolbar`, `tabBar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
+The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `localModel`, `mcp`, `codex`, `srs`, `templates`, `properties`, `folderIcons`, `folderVisibility`, `toolbar`, `tabBar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
 
 ### Property types
 
@@ -364,7 +364,7 @@ Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior.
 
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
-| `provider` | enum | `claude` | Which agent backend a chat runs on by default: `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `claude-code-acp`, `codex-acp`. This is the default for a chat tab that hasn't chosen for itself — the header's backend picker overrides it per tab, and that choice persists (localStorage, keyed by the chat tab id). Each backend's controls render per declared capability, so a backend without permission modes or effort simply hides them. See [agent backends](../chat/backends.md). |
+| `provider` | enum | `claude` | Which agent backend a chat runs on by default: `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `hermes`, `claude-code-acp`, `codex-acp`. This is the default for a chat tab that hasn't chosen for itself — the header's backend picker overrides it per tab, and that choice persists (localStorage, keyed by the chat tab id). Each backend's controls render per declared capability, so a backend without permission modes or effort simply hides them. See [agent backends](../chat/backends.md). |
 | `computerUse` | boolean | `false` | Enable Claude's browser/computer-use capability (`--chrome`) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). This is the **default for a chat that hasn't chosen for itself** — a chat overrides it with `/chrome` / `/chrome off` or the header Globe pill, and that per-chat choice persists (localStorage, keyed by the chat tab id). |
 
 Example:
@@ -376,6 +376,26 @@ chat:
 ```
 
 ---
+
+## `localModel`
+
+Run chats on an open model served locally — LM Studio, Ollama, llama.cpp, vLLM, anything OpenAI/Anthropic-compatible — through the **existing** chat connectors. Applied at spawn time through env/argv only: Bismuth never edits Claude Code's, Codex's, opencode's or Goose's own config, so only Bismuth's chats go local. Which backends honor it is the catalog's `localModel` capability (`bismuth backends` shows `local` for those); the rest run as normal. Full guide: [local models](../chat/local-models.md).
+
+| Key | Type | Default | Doc |
+|-----|------|---------|-----|
+| `enabled` | boolean | `false` | Run chats on the local server instead of each CLI's own account. Applies to Claude Code, Codex, opencode and Goose chats from the next chat or turn. When on and the server lists no models (down, or nothing loaded), the chat shows an error instead of falling back to the cloud account. |
+| `url` | string | `http://localhost:1234` | Base URL without `/v1` — LM Studio `http://localhost:1234`, Ollama `http://localhost:11434`. Claude Code needs the server's Anthropic `/v1/messages` (LM Studio 0.4.1+, Ollama 0.14+); Codex needs `/v1/responses` (LM Studio 0.3.29+, Ollama 0.13.3+); opencode and Goose use `/v1/chat/completions`. |
+| `model` | string | `""` | Model id as the server lists it at `/v1/models`. Empty = the first listed model. A model picked in the chat header wins when the server lists it. Pick one with tool calling and a 25k+ context window. |
+| `apiKey` | string | `""` | Sent as a bearer token when set; most local servers ignore it. |
+
+Example:
+
+```yaml
+localModel:
+  enabled: true
+  url: http://localhost:11434
+  model: gpt-oss:20b
+```
 
 ## `mcp`
 

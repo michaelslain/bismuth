@@ -588,6 +588,32 @@ export const SETTINGS_SCHEMA: Schema = {
             doc: CHAT_PROVIDER_DOC,
         },
     }),
+    // Open models through the EXISTING chat connectors (core/src/agentBackends/localModel.ts): any
+    // OpenAI/Anthropic-compatible local server — LM Studio, Ollama, llama.cpp, vLLM. Applied at spawn
+    // time through env/argv only, so the user's own CLI configs are never edited and only Bismuth's
+    // chats go local. Which backends honor it is the catalog's `localModel` capability.
+    localModel: object({
+        enabled: {
+            type: 'boolean',
+            default: false,
+            doc: "Run chats on a local model server instead of each CLI's own account. Applies to Claude Code, Codex, opencode and Goose chats (other backends run as normal) from the next chat or turn. Never edits those CLIs' own config files.",
+        },
+        url: {
+            type: 'string',
+            default: 'http://localhost:1234',
+            doc: "Base URL of the local model server, without /v1 — LM Studio is http://localhost:1234, Ollama is http://localhost:11434. Claude Code needs the server's Anthropic /v1/messages (LM Studio 0.4.1+, Ollama 0.14+); Codex needs /v1/responses (LM Studio 0.3.29+, Ollama 0.13.3+); opencode and Goose use /v1/chat/completions.",
+        },
+        model: {
+            type: 'string',
+            default: '',
+            doc: 'Model id to run, as the server lists it at /v1/models (e.g. "qwen/qwen3-coder-30b" or "gpt-oss:20b"). Empty = the first model the server lists. Pick a model that supports tool calling, with a 25k+ context window.',
+        },
+        apiKey: {
+            type: 'string',
+            default: '',
+            doc: 'Sent as a bearer token when set. Most local servers ignore it; LM Studio needs it only when its server authentication is on.',
+        },
+    }),
     // Multi-CLI MCP registration (core/src/agentBackends/mcpRegistrars.ts): which OTHER agent CLIs,
     // besides Claude Code (which always auto-registers on boot via bismuthInstall.ts), also get
     // Bismuth's stdio MCP server (docs + bismuth CLI + memory tools) written into their own global

@@ -101,12 +101,17 @@ describe('surfaceSummary', () => {
             daemon: true,
             mcp: 'cli',
             memory: 'hooks',
+            localModel: true,
         })
     })
     test('reports a backend that cannot run a daemon as such', () => {
         // Only Claude can enforce the vault visibility gate, so only Claude runs a vault brain today.
         expect(surfaceSummary(BACKENDS.opencode).daemon).toBe(false)
         expect(surfaceSummary(BACKENDS.cline).daemon).toBe(false)
+    })
+    test('carries the localModel capability through', () => {
+        expect(surfaceSummary(BACKENDS.claude).localModel).toBe(true)
+        expect(surfaceSummary(BACKENDS.cline).localModel).toBe(false)
     })
 })
 

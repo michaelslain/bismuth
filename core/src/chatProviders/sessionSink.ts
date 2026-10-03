@@ -1,7 +1,7 @@
 // core/src/chatProviders/sessionSink.ts
 // Transport-agnostic session-frame buffering, shared by every chat backend: core/src/chat.ts's
 // Claude sessions, chatProviders/opencode/opencode.ts's opencode sessions, chatProviders/acp/driver.ts's six
-// ACP-based sessions (cline/gemini/goose/openclaw/claude-code-acp/codex-acp), and
+// ACP-based sessions (cline/gemini/goose/openclaw/hermes/claude-code-acp/codex-acp), and
 // chatProviders/codex/driver.ts's codex sessions — nine backends total, each session type
 // satisfying SessionSink structurally. Every provider registers sessions keyed by a client chat id
 // and, on an abnormal WS drop, BUFFERS outgoing ChatFrames (capped) instead of firing them into the

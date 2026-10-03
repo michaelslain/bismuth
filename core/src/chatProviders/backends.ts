@@ -18,6 +18,7 @@ import {
     geminiBackend,
     gooseBackend,
     openclawBackend,
+    hermesBackend,
 } from './acp/driver'
 import type { ChatFrame, ChatImage, ChatSink } from '../chat'
 import type { BackendId } from '../agentBackends/catalog'
@@ -206,6 +207,7 @@ export const CHAT_BACKENDS: Record<BackendId, ChatBackend> = {
     gemini: geminiBackend,
     goose: gooseBackend,
     openclaw: openclawBackend,
+    hermes: hermesBackend,
     'claude-code-acp': claudeCodeAcpBackend,
     'codex-acp': codexAcpBackend,
 }

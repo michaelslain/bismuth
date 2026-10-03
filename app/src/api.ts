@@ -151,6 +151,36 @@ import type {
 } from '../../core/src/chat'
 export type { ChatSearchHit, ChatOrigin, ChatScope }
 
+/** Wire shapes of the owner-only `/opencode/*` provider routes (core/src/chatProviders/opencode/
+ *  opencodeProviders.ts). Copied, not imported — the app does not import core's server types. */
+export type OpencodeAuthMethod = { type: 'api' | 'oauth'; label: string }
+export type OpencodeProviderList = {
+    connected: { id: string; name: string; kind: 'api' | 'oauth' | 'env' }[]
+    /** NOT connected; sorted by name; `methods` is never empty. */
+    available: { id: string; name: string; methods: OpencodeAuthMethod[] }[]
+}
+
+/** The message a failed `/opencode/*` route carries. The transport throws `Error(<response
+ *  text>)` and the routes answer `{ error, message }` JSON, so pull `message` out; anything
+ *  that is not that shape (a network error, a 403 `{ error: 'forbidden' }`) falls back to the
+ *  raw text. Pure so it is unit-testable. */
+export function opencodeErrorMessage(e: unknown): string {
+    const raw = e instanceof Error ? e.message : String(e)
+    try {
+        const body = JSON.parse(raw) as { message?: unknown; error?: unknown }
+        if (typeof body.message === 'string' && body.message) return body.message
+        if (typeof body.error === 'string' && body.error) return body.error
+    } catch {
+        // not JSON — the raw text is the message
+    }
+    return raw
+}
+
+const opencodeCall = <T>(run: () => Promise<T>): Promise<T> =>
+    run().catch(e => {
+        throw new Error(opencodeErrorMessage(e))
+    })
+
 /** One row in the chat history picker — a past Claude Code session (terminal OR in-app) for the
  *  vault. Mirrors the `GET /chat/sessions` shape; newest first (the SDK store sorts it). */
 export interface ChatSessionInfo {
@@ -746,6 +776,26 @@ export const api = {
             query,
             scope,
         }).then(r => r.hits),
+
+    // opencode provider manager (the chat credentials popover). Owner-only routes over the running
+    // `opencode serve`; each throws an Error carrying the route's `message` on a non-2xx (409 =
+    // opencode missing, 400 = rejected). A key goes core -> opencode and is never echoed back.
+    opencodeProviders: () =>
+        opencodeCall(() => getJson<OpencodeProviderList>('/opencode/providers')),
+    opencodeSetKey: (id: string, key: string) =>
+        opencodeCall(() => postJson('/opencode/auth', { id, key })).then(() => {}),
+    opencodeOauthAuthorize: (id: string, method: number) =>
+        opencodeCall(() =>
+            postJson<{
+                url: string
+                method: 'auto' | 'code'
+                instructions: string
+            }>('/opencode/oauth/authorize', { id, method }),
+        ),
+    opencodeOauthCallback: (id: string, method: number, code?: string) =>
+        opencodeCall(() =>
+            postJson('/opencode/oauth/callback', { id, method, code }),
+        ).then(() => {}),
 }
 
 /** Concise one-line summary of a sync result for a toast. */

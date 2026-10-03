@@ -246,6 +246,7 @@
         "codex-acp",
         "gemini",
         "goose",
+        "hermes",
         "openclaw",
         "opencode"
       ]
@@ -967,6 +968,43 @@
   "keybindings.zoom-reset": {
     "type": "keybind",
     "default": "Mod+0",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "localModel": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "localModel.apiKey": {
+    "type": "string",
+    "default": "",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "localModel.enabled": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "localModel.model": {
+    "type": "string",
+    "default": "",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "localModel.url": {
+    "type": "string",
+    "default": "http://localhost:1234",
     "min": null,
     "max": null,
     "required": false

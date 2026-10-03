@@ -38,6 +38,7 @@ function formatTable(reports: BackendReport[]): string {
             r.surfaces.daemon ? 'daemon' : null,
             r.surfaces.mcp !== 'none' ? `mcp:${r.surfaces.mcp}` : null,
             `memory:${r.surfaces.memory}`,
+            r.surfaces.localModel ? 'local' : null,
         ]
             .filter(Boolean)
             .join(' ')

@@ -348,6 +348,20 @@ These are POSTs (or could be), but they are **not** vault mutations — they liv
 - **Visibility:** blanket owner-only — `403 "forbidden"` for any non-owner request, same reasoning as `GET /chat/sessions` below: a hit's snippet can quote any past turn's text, hidden-note-derived or not, with no single path to filter against. See [Visibility gating](#visibility-gating).
 - **Cache/SSE:** none.
 
+### opencode provider manager (`/opencode/*`)
+Four routes over the running `opencode serve` (the shared server in `core/src/chatProviders/opencode/opencodeServer.ts`), behind the opencode chat's credentials popover. Guide: [opencode providers](../chat/opencode-providers.md). All four are **blanket owner-only** (a connect writes a credential into the user's own opencode store) and live in the read table (no vault cache invalidation). Shared error shapes, every route:
+
+| Status | Body | When |
+|---|---|---|
+| `403` | `{ error: "forbidden" }` | non-owner request |
+| `409` | `{ error: "opencode-missing", message }` | the `opencode` binary is absent, or its server did not start |
+| `400` | `{ error: "bad-request", message }` | malformed body, or opencode rejected the request — `message` never contains the API key |
+
+- **`GET /opencode/providers`** → `{ connected: { id, name, kind: "api" | "oauth" | "env" }[], available: { id, name, methods: { type: "api" | "oauth", label }[] }[] }`. `available` is every provider NOT connected, sorted by name; `methods` is never empty (`[{type:"api",label:"API key"}]` when opencode reports none). `kind` is `env` when one of the provider's env vars is set in the server's environment, `oauth` when its only sign-in is OAuth, else `api`. The injected `local` provider (the [`localModel`](../settings/reference.md) setting) is in neither list.
+- **`POST /opencode/auth`** — body `{ id: string, key: string }` → `{ ok: true }`. Stores an API key through opencode's `auth.set`; Bismuth keeps nothing. Re-emits the `models` + `auth` chat frames to every live opencode chat.
+- **`POST /opencode/oauth/authorize`** — body `{ id: string, method: number }` (`method` = index into the provider's `methods`) → `{ url: string, method: "auto" | "code", instructions: string }`. The client opens `url`.
+- **`POST /opencode/oauth/callback`** — body `{ id: string, method: number, code?: string }` → `{ ok: true }`. `code` is the pasted code for a `code` method; an `auto` method omits it and the call resolves when the browser sign-in completes. Re-emits the `models` + `auth` frames on success.
+
 ### `POST /list-dir`
 - **Body:** `{ path?: string, only?: "dir" | "file" }`. `path` is the partial filesystem path the user is typing (absolute or `~`-relative); `only` narrows to dirs or files.
 - **Action:** `listFsPaths(path, only)` (`core/src/fsPaths.ts`) — `readdir`s the parent of `path` and returns matching children, display paths preserving the `~`/`/` form. Backs `scope: "fs"` settings autocomplete (filesystem-path settings).
@@ -765,6 +779,10 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/chat/sessions` | read | no |
 | GET | `/chat/session-messages` | read | no |
 | POST | `/chat/search` | read | no |
+| GET | `/opencode/providers` | read | no |
+| POST | `/opencode/auth` | read | no |
+| POST | `/opencode/oauth/authorize` | read | no |
+| POST | `/opencode/oauth/callback` | read | no |
 | GET | `/gcal/status` | read | no |
 | GET | `/gcal/callback` | read | no |
 | POST | `/gcal/credentials` | read | no |
