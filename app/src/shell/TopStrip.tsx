@@ -1,5 +1,5 @@
 import type { JSX } from 'solid-js'
-import Text from '../ui/Text'
+import Wordmark from '../ui/Wordmark'
 import styles from './TopStrip.module.css'
 
 // The wordmark + platform titlebar strip, lifted out of App.tsx verbatim (bismuth-design/ascii/README.md
@@ -21,13 +21,12 @@ import styles from './TopStrip.module.css'
 // covered by `core:window:default`) — do NOT add a manual dblclick handler here, it would race
 // the native one.
 //
-// `.top-strip`, `.top-strip-spacer` and `.top-strip-mark` are reached through the imported `styles` object; the
+// `.top-strip` and `.top-strip-spacer` are reached through the imported `styles` object; the
 // `top-strip--mac` modifier hashes too, so it goes into `classList` as `[styles["top-strip--mac"]]`
 // rather than a bare string (a literal would compile and match nothing). Bracket access, not
 // `styles.topStrip`: Vite only exposes camelCase aliases under css.modules.localsConvention, which
-// app/vite.config.ts does not set. `.asc-wordmark` stays a bare global permanently: it is an
-// `asc-*` design-system class living in global.css's `App.css` section's ASCII register alongside its `@keyframes
-// asc-sheen` and its reduced-motion `@media`, not chrome owned by this component.
+// app/vite.config.ts does not set. The wordmark and its caret are ui/Wordmark's: it writes the bare
+// global `.asc-wordmark` / `.asc-caret` classes (global.css), so nothing here does.
 export function TopStrip(props: {
     mac: boolean
     dragRegion: boolean
@@ -39,23 +38,11 @@ export function TopStrip(props: {
             classList={{ [styles['top-strip--mac']]: props.mac }}
             data-tauri-drag-region={props.dragRegion ? 'deep' : undefined}
         >
-            {/* THE WORD, not the ASCII crystal. This strip used to render `,;']--]';,` — the
-                hopper-crystal silhouette the -0.22em tracking on `.asc-wordmark` exists for. At the
-                12px it sits at here it never resolved into a crystal; it read as a run of stray
-                punctuation, which is what got it replaced. The intro's fade-in already paints the
-                real wordmark (intro/WordmarkHero.tsx: `bismuth` in the same gradient sheen), so
-                this is now the same mark in the same treatment, closed by the blinking caret the
-                status bar's daemon readout already uses. `--wordmark-tracking` is overridden per
-                instance in TopStrip.module.css: the ASCII art needed glyphs to overlap, a real word
-                must not. */}
-            <Text as="span" inherit class={styles['top-strip-mark']}>
-                <Text as="span" inherit class="asc-wordmark">
-                    bismuth
-                </Text>
-                <Text as="span" inherit class="asc-caret">
-                    _
-                </Text>
-            </Text>
+            {/* THE WORD, not the ASCII crystal: ui/Wordmark (`bismuth` in the gradient sheen) closed by
+                the blinking caret the status bar's daemon readout also uses. The same mark, in the
+                same treatment and tracking, as the intro splash's hero (intro/WordmarkHero.tsx),
+                because both render this one component. */}
+            <Wordmark size="body" caret />
             <div class={styles['top-strip-spacer']} />
             {props.children}
         </div>

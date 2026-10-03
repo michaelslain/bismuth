@@ -17,6 +17,7 @@
 // its own gradient is grading a fabrication, not the product.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Label } from './_storyKit'
+import Wordmark from './Wordmark'
 import { settingsToCssVars } from '../settingsCssVars'
 import { THEME_NAMES, THEME_LABELS } from '../themes'
 import { DEFAULTS } from '../../../core/src/schema/settingsSchema'
@@ -98,8 +99,8 @@ export const BothEmitters: Story = {
 export const AgainstTheWordmark: Story = {
     render: () => (
         <Panel>
-            <Label>top strip — .asc-wordmark</Label>
-            <span class="asc-wordmark">{",;']--]';,"}</span>
+            <Label>top strip — Wordmark</Label>
+            <Wordmark size="body" />
             <Label>prose easter egg — .bismuth-word</Label>
             <Prose>
                 <span class="bismuth-word">bismuth</span>
@@ -184,7 +185,7 @@ export const AcrossThemes: Story = {
                         <span style={{ 'min-width': '90px' }}>
                             <Label>{THEME_LABELS[name] ?? name}</Label>
                         </span>
-                        <span class="asc-wordmark">{",;']--]';,"}</span>
+                        <Wordmark size="body" />
                         <span
                             class="bismuth-word"
                             style={{
