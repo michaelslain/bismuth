@@ -114,23 +114,27 @@
    reads it) sidesteps the collision without touching BarLabel, which is out of this task. */
 .textLabel { display: inline-flex; align-items: center; gap: var(--sp-2); }
 
-/* ── icon buttons: borderless; state changes opacity / fill ─────────────────
-   Bracketed the same way `.btn--text` is: the icon sits between `::before`/`::after` glyphs
-   (`content: '[' / ''` — the `/ ''` empty alt text keeps the glyph out of the accessible name,
-   same technique as the text register above). Brackets read `--faint` at rest, pick up `--accent`
-   on hover/focus-visible, and go accent (via `currentColor`, following the icon) when selected —
-   Acceptance 9. `gap: 0` keeps the glyphs snug against the icon (`[▣]`, not `[ ▣ ]`). */
+/* ── icon buttons: brackets mean "on" ────────────────────────────────────────
+   BRACKETS = SELECTED (icon-brackets-on, 2026-10-02). An icon-only button draws `[▣]` ONLY when it
+   is the selected member of a toggle/series; a standalone (`normal`, incl. `danger`) icon button is
+   the bare glyph, and an `unselected` member keeps its brackets' SPACE (`visibility: hidden`) so a
+   group never changes width as its selection moves. This reverses 2026-09-27's always-drawn
+   brackets: bracketed icon actions sat directly above the tab rail's bare tab icons — two idioms in
+   one column — and the brackets now carry one meaning app-wide, the same one the tab rail's active
+   tab and BracketToggle's `[x]` carry. Text buttons (`[label]`) and IconTextButton (`[▣ label]`)
+   are unaffected: they are a worded command, and keep their brackets in every state.
+   The glyphs are `::before`/`::after` (`content: '[' / ''` — the `/ ''` empty alt text keeps them
+   out of the accessible name, same technique as the text register above). `gap: 0` keeps them
+   snug against the icon (`[▣]`, not `[ ▣ ]`). */
 .btn--icon {
   gap: 0;
   border: none;
   background: transparent;
   color: var(--fg);
-  /* No collar, in any size (icon-brackets, 2026-09-27): the brackets are the edge, exactly as on a
-     text button. A collar sat OUTSIDE the brackets, so the visible distance between two icon
-     buttons was the container's gap plus two collars, and the collar differed by size (4px here,
-     2px at sm) — three distances in one app where there should be one: siblings sit
-     --bar-icon-gap apart, bracket ink to bracket ink, whatever the button kind or size. The hit
-     height is --h-control (or the bar's box) regardless; the width is the brackets' own. */
+  /* No collar on a toggle member (icon-brackets, 2026-09-27): its brackets — drawn or reserved —
+     are the edge, exactly as on a text button, so siblings sit --bar-icon-gap apart bracket ink to
+     bracket ink. A bare standalone button gets --sp-1 of side room instead (`.btn--normal` below),
+     so its hit area does not shrink to the glyph's own width. */
   padding: 0;
   border-radius: var(--r-0);
   /* ONE BRACKET SIZE (icon-brackets, 2026-09-27): the brackets draw at the icon size — the app's one
@@ -142,6 +146,13 @@
 }
 .btn--icon::before { content: '[' / ''; color: var(--faint); }
 .btn--icon::after { content: ']' / ''; color: var(--faint); }
+/* standalone: bare glyph, a hair of side room for the hit area */
+.btn--icon.btn--normal { padding: 0 var(--sp-1); }
+.btn--icon.btn--normal::before,
+.btn--icon.btn--normal::after { content: none; }
+/* off toggle member: brackets laid out but not painted — selecting a sibling moves no one */
+.btn--icon.btn--unselected::before,
+.btn--icon.btn--unselected::after { visibility: hidden; }
 /* Optical centring + a tight gap (icon-brackets). Two separate defects, both measured from pixels:
    - CENTRING. Flex-centring the brackets' LINE BOX put the icon 1.6px low in every toolbar and dead
      centre at 13.5px, because Chrome rounds Monaspace's ascent/descent to whole pixels (12px ->
@@ -160,21 +171,14 @@
 .btn--icon::after { text-box: trim-both cap alphabetic; translate: 0 -0.055em; }
 .btn--icon::before { margin-right: -0.1em; }
 .btn--icon::after { margin-left: -0.1em; }
-/* hover (normal/unselected) raises the brackets to --accent; selected/danger below go
-   `currentColor` instead, so the brackets track whatever tone the icon itself already carries.
+/* selected — the only state whose brackets paint; they follow the icon's own tone (--accent).
    No focus-visible treatment — see .btn:focus/.btn:focus-visible above: no button paints a focus
    indicator, on any kind, mouse or keyboard. */
-.btn--icon.btn--normal:hover:not(:disabled)::before,
-.btn--icon.btn--normal:hover:not(:disabled)::after,
-.btn--icon.btn--unselected:hover:not(:disabled)::before,
-.btn--icon.btn--unselected:hover:not(:disabled)::after { color: var(--accent); }
-/* selected/danger — brackets follow the icon's own tone rather than staying pinned to --faint */
 .btn--icon.btn--selected::before,
-.btn--icon.btn--selected::after,
-.btn--icon.btn--danger::before,
-.btn--icon.btn--danger::after { color: currentColor; }
-/* normal — standalone, full opacity */
+.btn--icon.btn--selected::after { color: currentColor; }
+/* normal — standalone, full opacity; hover lifts the bare glyph to --accent (no brackets to light) */
 .btn--icon.btn--normal { opacity: 1; }
+.btn--icon.btn--normal:hover:not(:disabled) { color: var(--accent); }
 /* disabled must outrank .btn--normal's opacity:1 above — placed after it so this wins the cascade */
 .btn--icon:disabled { color: var(--faint); cursor: not-allowed; }
 .btn--icon:disabled::before,
@@ -189,8 +193,9 @@
 /* Icon toggles get the same treatment — no fill, so a selected icon button doesn't read as a
    lighter tile against its container. */
 .btn--icon.btn--selected { opacity: 1; background: transparent; color: var(--accent); }
-/* danger tone */
-.btn--icon.btn--danger { color: var(--danger); }
+/* danger tone — also under the pointer, where the normal-hover accent above would otherwise win */
+.btn--icon.btn--danger,
+.btn--icon.btn--danger:hover:not(:disabled) { color: var(--danger); }
 
 /* ── icon buttons: the "toolzone" size ──────────────────────────────────────
    .btn--icon.btn--sm is the fixed square box around a toolbar icon — the sidebar header bar,
@@ -257,22 +262,19 @@
 /* `danger` rides alongside `state="normal"` (buttonClass.ts joins them), so the muted rule above
    also matches a danger sm icon button and, at equal three-class specificity, wins by source order
    — a delete icon rendered muted instead of --danger. Same specificity, declared after: wins back.
-   Brackets stay --faint like every other sm icon button's at rest, not currentColor (which would
-   otherwise now resolve to --danger too) — a lone red glyph reads, red brackets around it read as
-   an error box. */
+   (A danger button is `normal` underneath, so it draws no brackets — a lone red glyph.) */
 .btn--icon.btn--sm.btn--danger:not(:disabled) { color: var(--danger); }
-.btn--icon.btn--sm.btn--danger:not(:disabled)::before,
-.btn--icon.btn--sm.btn--danger:not(:disabled)::after { color: var(--faint); }
-.btn--icon.btn--sm:hover:not(:disabled) { color: var(--fg); }
+/* sm hover: a bare standalone glyph lifts to --accent, same as the plain size; an off toggle member
+   lifts to --fg. Danger stays danger. Four-plus classes, so these outrank the muted rule above. */
+.btn--icon.btn--sm.btn--normal:hover:not(:disabled) { color: var(--accent); }
+.btn--icon.btn--sm.btn--unselected:hover:not(:disabled) { color: var(--fg); }
+.btn--icon.btn--sm.btn--danger:hover:not(:disabled) { color: var(--danger); }
 
 /* danger held back until hover (`danger: 'hover'`, RemoveRowButton): --faint at rest, --danger under
    the pointer. The sm pair repeats the plain pair at one more class so it outranks the three-class
-   sm muted/hover rules above regardless of source order; brackets stay --faint on hover, the same
-   call the sm danger rule makes — a red glyph reads, red brackets read as an error box. */
+   sm muted/hover rules above regardless of source order. (It is `normal` underneath, so bare.) */
 .btn--icon.btn--danger-hover:not(:disabled),
 .btn--icon.btn--sm.btn--danger-hover:not(:disabled) { color: var(--faint); }
 .btn--icon.btn--danger-hover:hover:not(:disabled),
 .btn--icon.btn--sm.btn--danger-hover:hover:not(:disabled) { color: var(--danger); }
-.btn--icon.btn--danger-hover:hover:not(:disabled)::before,
-.btn--icon.btn--danger-hover:hover:not(:disabled)::after { color: var(--faint); }
 .btn--text.btn--danger-hover:hover:not(:disabled) { color: var(--danger); }
