@@ -8,6 +8,7 @@
 // works.
 import { For, Show, createSignal, onMount, type Component } from 'solid-js'
 import styles from './OpencodeProviderManager.module.css'
+import SectionLabel from '../ui/SectionLabel'
 import Text from '../ui/Text'
 import TextInput from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
@@ -69,9 +70,7 @@ const OpencodeProviderManager: Component<
 
     return (
         <div class={`${styles.manager} ${props.class ?? ''}`}>
-            <Text as="div" inherit class={styles.head}>
-                providers
-            </Text>
+            <SectionLabel class={styles.head}>providers</SectionLabel>
             <Show
                 when={loadError() === null}
                 fallback={

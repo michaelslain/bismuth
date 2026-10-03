@@ -67,7 +67,6 @@
 }
 .group-head {
     padding: var(--sp-3) var(--sp-5) var(--sp-2);
-    color: var(--faint);
 }
 /* Three columns on every row: the check slot, the name, the price badge — so check icons sit in
    one column, names align, and `free` right-aligns. */
@@ -107,9 +106,6 @@
     padding: var(--sp-3) var(--sp-5);
     margin-top: var(--sp-2);
     border-top: var(--rule-soft);
-}
-.effort-head {
-    color: var(--faint);
 }
 .manager {
     margin-top: var(--sp-2);

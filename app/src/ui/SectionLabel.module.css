@@ -1,0 +1,7 @@
+/* app/src/ui/SectionLabel.module.css — SectionLabel.tsx is the sole importer. Size and colour come
+   from Text's own props; this only pins the register, so an ancestor's eyebrow styling (uppercase,
+   tracking) can never leak into a section head. */
+.section-label {
+    text-transform: none;
+    letter-spacing: normal;
+}

@@ -19,6 +19,7 @@ import ModalBody from '../ui/ModalBody'
 import ModalHeader from '../ui/ModalHeader'
 import PlainButton from '../ui/PlainButton'
 import SegmentedToggle from '../ui/SegmentedToggle'
+import SectionLabel from '../ui/SectionLabel'
 import Text from '../ui/Text'
 import OpencodeProviderManager from './OpencodeProviderManager'
 import { CHAT_PROVIDER_OPTIONS, modelPriceBadge } from '../chatProvider'
@@ -91,13 +92,11 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
                             {g => (
                                 <div class={styles.group}>
                                     <Show when={g.name}>
-                                        <Text
-                                            as="div"
-                                            inherit
+                                        <SectionLabel
                                             class={styles['group-head']}
                                         >
                                             {g.name}
-                                        </Text>
+                                        </SectionLabel>
                                     </Show>
                                     <For each={g.models}>
                                         {m => (
@@ -149,13 +148,7 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
                     </Show>
                     <Show when={props.session.effortOptions().length > 1}>
                         <div class={styles.effort}>
-                            <Text
-                                as="div"
-                                inherit
-                                class={styles['effort-head']}
-                            >
-                                effort
-                            </Text>
+                            <SectionLabel as="span">effort</SectionLabel>
                             <SegmentedToggle
                                 options={props.session
                                     .effortOptions()
