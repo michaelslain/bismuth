@@ -184,6 +184,7 @@ import './global.css'
 import ChatColorDot from './ChatColorDot'
 import { migrationPollDelays } from './migrationPoll'
 import { isMacPlatform } from './platform'
+import { THEME_VARS_KEY, FIRST_RUN_POWERUPS_KEY } from './storageKeys'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
@@ -206,9 +207,6 @@ const TAB_RAIL_PINNED_STORAGE_KEY = 'bismuth-tab-rail-pinned-v1'
 // launch. Bumping this key forces one cold boot (no instant-paint) that repaints with the
 // new positions immediately instead of self-healing a launch late.
 const GRAPH_CACHE_KEY = 'bismuth-graph-cache-v2'
-// Mirrors the key the inline <head> script in index.html reads to apply the theme before
-// the bundle loads. Bump both together if the var map shape changes.
-const THEME_VARS_KEY = 'bismuth-theme-vars-v1'
 // Max width of the floating drag-ghost. A pane header spans the whole pane, which
 // looked oversized as a ghost; cap it to a tab-like chip.
 const GHOST_MAX_W = 200
@@ -2324,9 +2322,9 @@ export default function App() {
     onMount(() => {
         // Only a post-intro launch carries this key. A normal launch has none — and an ABSENT
         // key must not be read as "deselected everything", or we'd PATCH settings on every boot.
-        const raw = localStorage.getItem('bismuth-first-run-powerups')
+        const raw = localStorage.getItem(FIRST_RUN_POWERUPS_KEY)
         if (raw === null) return
-        localStorage.removeItem('bismuth-first-run-powerups')
+        localStorage.removeItem(FIRST_RUN_POWERUPS_KEY)
         let chosen: string[]
         try {
             chosen = JSON.parse(raw)

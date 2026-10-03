@@ -8,12 +8,9 @@
    `classList={{ [styles["top-strip--mac"]]: props.mac }}` — a bare "top-strip--mac" literal in
    classList would still compile and match nothing.
 
-   `.asc-wordmark` and `.asc-caret` do NOT live here and never will. They are `asc-*` design-system
-   classes in global.css's `App.css` / `ui/ui.css` sections' ASCII register, alongside their own
-   `@keyframes asc-sheen` /
-   `asc-blink` and reduced-motion `@media` — TopStrip.tsx keeps rendering them as bare global string
-   literals on purpose. `.top-strip-mark` below is this module's own wrapper around the pair, and is
-   where the per-instance tracking override lives.
+   The wordmark and its caret are NOT styled here: ui/Wordmark owns them (the bare global
+   `.asc-wordmark` / `.asc-caret` classes plus its own tracking and size tokens), so the corner mark
+   is one component and cannot drift.
 
    ONE RULE IN THIS FILE IS OUTSIDE THE COMPUTED-STYLE BASELINE'S REACH FOR A DIFFERENT REASON THAN
    USUAL: none of `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` has a `:hover` state, so all
@@ -36,27 +33,3 @@
    src-tauri/src/lib.rs build_main_window) — reserve room for them instead of the wordmark. */
 .top-strip--mac { padding-left: 78px; }
 .top-strip-spacer { flex: 1; }
-/* The wordmark + its caret, as one prompt.
-   `--wordmark-tracking` IS THE WHOLE POINT OF THIS RULE. `.asc-wordmark` defaults to -0.22em,
-   which is correct for the ASCII crystal it was written for — those glyphs have to overlap into one
-   silhouette. Applied to a real word it laminates the letters into an unreadable blob. The token
-   exists precisely so an instance can say what it is; the crystal keeps the default, the word
-   overrides it.
-
-   BOTH VALUES ARE SET TO MATCH THE SPLASH SCREEN, and that is the point of them.
-   `intro/VaultIntro.module.css`'s `.vi-wordmark-text` — the same word, on the startup screen —
-   sets `letter-spacing: 0.04em`. This rule had shipped -0.01em, so the app's two renderings of
-   its own name were 0.05em apart: the corner read tighter and heavier than the splash the user
-   had just seen. They are one mark and must be set identically; if the splash's tracking ever
-   changes, change it here in the same commit.
-   Size is deliberately NOT matched: the splash is `--fs-hero` because it is the whole screen,
-   while the corner sits in a 36px band beside 11.5px chrome. --fs-body (13px) is one step down
-   from the old --fs-lead (15px) — small enough to stop competing with the tab rail, still a step
-   above the strip's own --fs-ui so it reads as the mark and not as a label. */
-.top-strip-mark {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 1px;
-  --wordmark-tracking: 0.04em;
-  --wordmark-size: var(--fs-body);
-}

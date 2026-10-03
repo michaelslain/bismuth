@@ -788,7 +788,7 @@ Derives dynamic theme-aware color values (e.g. ANSI terminal palette from theme)
 ### Graph
 
 #### `graph/graphRenderer.ts`
-The renderer seam every consumer talks to, and the owner of the types that flow across it (`GraphConfig`, `HoverNode`, `NodeForUI`, `CommunityCentroid`, the `GraphRenderer` interface itself). Three consumers — `GraphView.tsx`, `intro/VaultIntro.tsx`, `graph/EmbeddedGraph.tsx` — all hold their renderer as a `GraphRenderer`, never a concrete class. There is exactly one implementation, `AsciiGraphRenderer`. The file's header carries an EPITAPH for the second implementation this seam used to arbitrate between, `CanvasGraphRenderer.ts` (a 1885-line, zero-test dot-and-line Canvas2D renderer, chosen via a since-removed `graph.renderer` setting) — now deleted — including the four capabilities that did **not** carry over to `AsciiGraphRenderer`: the animated 2D↔3D morph, depth-ordered cell arbitration in 3D, filled degree-sized dots + a hover ring, and rounded label pills.
+The renderer seam every consumer talks to, and the owner of the types that flow across it (`GraphConfig`, `HoverNode`, `NodeForUI`, `CommunityCentroid`, the `GraphRenderer` interface itself). Three consumers — `GraphView.tsx`, `intro/IntroGraph.tsx`, `graph/EmbeddedGraph.tsx` — all hold their renderer as a `GraphRenderer`, never a concrete class. There is exactly one implementation, `AsciiGraphRenderer`. The file's header carries an EPITAPH for the second implementation this seam used to arbitrate between, `CanvasGraphRenderer.ts` (a 1885-line, zero-test dot-and-line Canvas2D renderer, chosen via a since-removed `graph.renderer` setting) — now deleted — including the four capabilities that did **not** carry over to `AsciiGraphRenderer`: the animated 2D↔3D morph, depth-ordered cell arbitration in 3D, filled degree-sized dots + a hover ring, and rounded label pills.
 
 #### `graph/AsciiGraphRenderer.ts`
 The knowledge-graph renderer — the sole implementation of `GraphRenderer`, mounted by every graph host (the full-pane graph, the sidebar mini-graph, the first-run Vault Intro, and the embedded ` ```graph ` note block). Draws the graph as a fixed-size CHARACTER GRID on a plain Canvas-2D context (`canvas.getContext("2d")` — NOT WebGL/GPU, NOT DOM nodes): nodes and labels rasterize as monospace glyphs snapped to grid cells (a degree/depth ramp `.`/`o`/`@`, see `asciiGrid.ts`'s `nodeGlyph()`); edges are the one exception, drawn as real anti-aliased vector strokes (`strokeEdges()`) beneath the glyphs, not as characters. THE LAW: zoom changes RESOLUTION (world-units-per-cell), never a glyph's on-screen size. Handles 2D and 3D (a hard camera reset on mode switch, not an animated morph); hit-testing (`pick()`, a grid cell lookup rather than a per-node distance search), hover, orbit-drag/pan, wheel/keyboard zoom, and the render loop all live here. Positions come off the backend's precomputed layout and are rescaled (not re-simulated) via `respace.ts`. Delegates its other pure arithmetic to sibling modules below (`asciiGrid.ts`, `backbone.ts`, `clusterVisual.ts`, `cameraModel.ts`, `lod.ts`, `graphFit.ts`, `graphStability.ts`, `densityField.ts`, `labelSelection.ts`, `flatField.ts`). Exercised headlessly under happy-dom with a recording 2D canvas context in `AsciiGraphRenderer.test.ts` (119 tests).
@@ -1486,6 +1486,39 @@ Dialog for picking a vault folder (used by "Open folder" flow).
 
 #### `commands.ts`
 `bindCommands(handlers, dailyNotes?)` — maps each catalog command id to a `BoundCommand { id, label, icon, action }`. Tested.
+
+### First-run intro (`app/src/intro/`)
+
+`VaultIntro.tsx` is state plus composition only; what a slide says and shows is data, and every effect is a pure module with its own `*.test.ts`. Each component has a colocated `.module.css` (one importer) and a story under `Intro/<Name>`.
+
+#### `VaultIntro.tsx`
+The takeover (`position: fixed`, mounted by `index.tsx` on first run). Owns four signals (slide index, theme, busy, selected power-ups), snapshots `:root`'s theme vars on mount and restores them on unmount, and composes the pieces below. Props: `startAt` (which slide opens first), `initialTheme`, and `onEnter` (the CTA seam; default `introEnterVault.enterVault` with the real Tauri/localStorage deps). No component asks which slide is showing — a slide's row in `introSlides.ts` says which pieces it wants.
+
+#### `introSlides.ts`
+`SLIDES` (key, title, body, `graph`, `hero`, `extra`, `corner` per slide), `POWER_UPS` + `DEFAULT_POWERUPS`, `powerUpCommands()` (selected ids → command-palette ids) and `togglePowerUp()`. Tested.
+
+#### `introPager.ts` / `introKeys.ts`
+`step(index, count, move, target)` is the pager arithmetic (`next` on the last slide asks the caller to enter the vault; `skip` jumps to the last slide); `startIndex()` resolves `startAt`. `introKeyAction(e)` maps ArrowRight/ArrowLeft/the shared dismiss key to `next`/`prev`/`skip` (the arrow keys are the pager's recorded keybinding exception). Both tested.
+
+#### `introTheme.ts`
+`introThemeVars()`, `applyIntroTheme()` (paints a theme's vars + `color-scheme` live, persists nothing) and `snapshotRootTheme()` (returns the `restore()` that puts `:root` back). Tested.
+
+#### `introEnterVault.ts`
+`enterVault(choice, deps)` — the CTA with every effect injected: browser preview logs, Tauri opens `choose_first_vault`, production persists the chosen power-ups and theme vars first (`storageKeys.ts`), dev navigates into the app. Returns `opened | cancelled | failed | browser`. Tested.
+
+#### `vaultIntroGraph.ts`
+`SMALL_GRAPH` / `BIG_GRAPH` (baked-layout dummy clouds) and `applyGraphConfig()`. Tested by `VaultIntro.test.ts`.
+
+#### Components
+- `IntroGraph.tsx` — one renderer + canvas + `GraphAtmosphere`; `VaultIntro` mounts two and cross-fades them.
+- `IntroHeader.tsx` — the floating top overlay: corner `LogoMark` (`showMark`) and the skip button.
+- `IntroFrame.tsx` — the one grid every slide is laid out on (`variant` `hero`/`setup`; slots `data-intro-slot="hero|text|nav"`), so the hero box, headline and nav never move between slides.
+- `IntroHero.tsx` — a slide's non-graph visual: `GlyphArt` (`ui/ascii/`) painting a scene from `glyphScenes/` (`wordmark`, `daemon`, `agents`, `begin`).
+- `IntroCopy.tsx` — headline over paragraph in the prose face; `backdrop` adds the text halo over a graph.
+- `ThemePicker.tsx` + `ThemeSwatchCard.tsx` — the four-card theme group (`role="group"`, `aria-pressed`).
+- `PowerUpList.tsx` — one `Card` per power-up holding a `ToggleRow`.
+- `IntroCta.tsx` — the one primary `[enter your vault]` / `[opening…]` button.
+- `IntroNav.tsx` — back / `PagerDots` / next, dots centred on every slide.
 
 ---
 

@@ -204,7 +204,7 @@ headings, note tables and chat bodies are set in a serif on lined paper. Everyth
 mechanism (code, frontmatter, tags, math) goes back to mono. The system is dense and quiet: three
 ink steps, one accent per view, hairline rules instead of shadows, square corners. The one
 decorative flourish is the iridescent bismuth sheen, which appears only on the wordmark and a few
-chrome accents.
+chrome accents. On the intro's glyph wordmark the sheen is drawn as a band of `@` glyphs in the graph ramp.
 
 The system ships as four themes over one set of token names: **Ink** (the default, dark: warm
 paper ink on charcoal), **Paper** (its light counterpart), **Cathode** (hot phosphor terminal, the
@@ -275,7 +275,7 @@ stays selectable.
 Plex, drawn beside a mono — for the part a person actually wrote. The two never mix within one register.
 
 ### Hierarchy
-- **Hero** (40px `--fs-hero`, 48px `--fs-intro-title`): the vault intro and the wordmark only; never in app chrome.
+- **Hero** (40px `--fs-hero`, 48px `--fs-hero-xl`, via `Heading size`): the vault intro and the wordmark only; never in app chrome.
 - **Display** (600, 24px `--fs-display`): note titles; the one big size in chrome.
 - **Title** (600, 19px `--fs-title`): panel titles.
 - **Lead** (15px `--fs-lead`): section heads in chrome; also the editor's first-paint size.
@@ -338,6 +338,9 @@ vertical tab rail overlays leftward on hover rather than reflowing the editor.
 **`ViewBar` is the one view header** (graph, Bases, calendar, flashcards, chat), with six named
 slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. When it narrows,
 controls drop in a single shared ladder that a control opts into with `data-bar-drop`.
+
+### The intro frame
+The first-run intro lays every slide out in one frame, identical on all of them: a hero box 96 cells wide by 16 rows tall on the graph's cell grid, scaled up 1.5x (`--intro-glyph-scale`, three quarters of that on windows 800px tall or less), a text slot under it, and the nav pinned to the bottom, so the headline, the body and the nav sit at the same y on every slide. The `hero` variant holds glyph art (`GlyphArt`), or nothing over the graph; the `setup` variant holds the slide's own control.
 
 ### Named Rules
 **The Row Unit Rule.** Every repeated row is `--row-h`; every taller band is a whole multiple of it.
@@ -547,10 +550,12 @@ the accent. An outline appears only when it means something.
   a faint `or`. Keys are the glyphs `⌘ ⌥ ↵ ↑ ↓` or lowercase words (`shift`, `ctrl`, `esc`, `tab`).
 
 ### ASCII primitives (signature)
-`Glyph`, `AsciiTree`, `AsciiMeter`, `AsciiCellEdges` and `GraphField` (in `app/src/ui/ascii/`) draw
+`Glyph`, `AsciiTree`, `AsciiMeter`, `AsciiCellEdges`, `GraphField` and `GlyphArt` (in `app/src/ui/ascii/`) draw
 structure as text on the cell grid (`--cell-h` = the row unit). Graph node weight *is* degree: `.` leaf, `o`
 linked, `@` hub, coloured by cluster from the ramp, over a noise field at 45% opacity that clears
 under every edge and label.
+
+`GlyphArt` paints an animated glyph scene on the graph's own cell grid (`--cell-w` x `--cell-h`, the UI mono face, the graph's colour vars) from a pure `GlyphScene` — the scene says which character, colour name and alpha each cell holds at time t.
 
 `AsciiCellEdges` types one cell's edges (`+` at every corner where two drawn edges meet, `-`
 or `=` along top and bottom, `|` down left and right) as ONE absolutely positioned,
@@ -571,7 +576,7 @@ the last row adds `bottom`, a header types `bottom` as `=` and the first body ro
 - **Do** give every component a colocated `.module.css` imported only by that component, and a sibling story.
 - **Do** use the `//` separator in chrome, not `·`.
 - **Do** move with `--dur-fast` (80ms) / `--dur` (120ms) on `--ease`; the only loops are the 1.1s
-  caret blink and the 8s wordmark sheen.
+  caret blink, the 8s wordmark sheen, and the first-run intro's glyph-hero ambient loops (intro only, 12fps, paused when hidden or inactive, off under reduced motion).
 
 ### Don't:
 - **Don't** write a hex, `rgb()` or named colour in a component stylesheet.

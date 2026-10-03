@@ -25,8 +25,7 @@ export type ChipToggleProps = {
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
- * A selectable `[label]` bracket toggle — export options, search toggles, the vault-intro
- * power-up toggles. Composes `ui/Button` (`kind="text"`, the default) instead of rendering its
+ * A selectable `[label]` bracket toggle — export options, search toggles. Composes `ui/Button` (`kind="text"`, the default) instead of rendering its
  * own `<button>` (one-button Task 8): the bracket glyphs, `--faint` unselected / accent selected
  * colouring and hover all come from Button.module.css now, none of it from a rule of ChipToggle's
  * own. `selected` maps to Button's `state` — always `"selected"` or `"unselected"`, never

@@ -30,7 +30,7 @@ import { expect } from 'storybook/test'
 import { TopStrip } from './TopStrip'
 import { WindowControls } from './WindowControls'
 
-/** The splash screen's tracking, from `intro/VaultIntro.module.css`'s `.vi-wordmark-text`.
+/** The splash screen's tracking: both marks render `ui/Wordmark`, whose module sets 0.04em.
  *  Duplicated as a number here ON PURPOSE: a story cannot read a CSS module's declared value, and
  *  the whole point of the assertion is to fail loudly if the two ever diverge again. If you change
  *  the splash, this constant is the thing that will tell you the corner needs changing too. */
@@ -62,7 +62,7 @@ export const Default: Story = {
         </Wrap>
     ),
     /** THE CORNER MARK AND THE SPLASH SCREEN ARE ONE MARK, AND THEY SILENTLY DRIFTED APART.
-     *  `intro/VaultIntro.module.css`'s `.vi-wordmark-text` sets `letter-spacing: 0.04em`; this
+     *  The splash's wordmark sets `letter-spacing: 0.04em`; this
      *  strip had shipped `-0.01em`, so the app rendered its own name 0.05em tighter in the corner
      *  than on the startup screen the user had just looked at. A human spotted it; nothing in the
      *  repo could, because every TopStrip story was render-only and asserted nothing.

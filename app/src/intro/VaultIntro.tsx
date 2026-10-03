@@ -1,599 +1,278 @@
 /* app/src/intro/VaultIntro.tsx — first-run "open your vault" intro.
-   A full-window takeover shown only on first launch (gated in index.tsx). A short
-   slideshow: welcome -> choose your theme -> three brains -> daemon -> claude -> begin.
-   The theme step shows a real 3D knowledge graph (dummy unlabeled nodes, the app's own
-   graph renderer — AsciiGraphRenderer, through the GraphRenderer seam, the SAME instance
-   type the knowledge-graph pane mounts); clicking a theme option recolors it live to that
-   palette, and the SAME graph carries into the "Three brains, one mind" slide. The picked theme also re-themes
-   the whole takeover and seeds the new vault's appearance.theme (written by the Tauri
-   `choose_first_vault` command on the CTA — unchanged contract). Reuses the standard ui/
-   buttons + theme system.
+   A full-window takeover shown only on first launch (gated in index.tsx): a short slideshow
+   (welcome -> theme -> three brains -> daemon -> agents -> power-ups -> begin).
 
-   Re-expressed in the ASCII redesign's own language (bismuth-design/ascii-extended, item 5 —
-   self-designed, no specimen exists for this surface): --bg ground, the wordmark
-   (.asc-wordmark sheen, intro/WordmarkHero.tsx) as the hero instead of a bespoke glow/spin
-   crystal, a four swatch-card theme picker (not a dropdown),
-   power-ups as <Card> rows (ui/Card.tsx) with a ChipToggle, and the CTA as the one bracket
-   btn--primary in the takeover. A face picker (5 Monaspace variants, plus the serifs for the
-   prose face) was considered but deliberately left out: PORTING's own "if trivially wired to
-   appearance.uiFont/proseFont SEEDS" is conditional, and it isn't trivial here — persisting a
-   chosen face into the NEW vault would need either a new choose_first_vault argument (a Tauri
-   command-contract change, explicitly out of scope) or a post-restart apply step wired in
-   App.tsx (out of this lane's file boundary). A picker that only live-previewed the intro's own
+   This file is state plus composition and nothing else. What each slide says and shows is the
+   table in ./introSlides; the pager arithmetic, key mapping, theme painting and the CTA's
+   effects are the pure modules ./introPager, ./introKeys, ./introTheme and ./introEnterVault;
+   everything it draws is a component (IntroGraph, IntroHeader, IntroFrame, IntroHero, IntroCopy,
+   ThemePicker, PowerUpList, IntroCta, IntroNav). Nothing here asks which slide is showing — a
+   slide's table row says which pieces it wants.
+
+   The theme step shows a real 3D knowledge graph (dummy unlabeled nodes, the app's own graph
+   renderer), and picking a theme recolors it live; the SAME graph carries into the "Three
+   brains, one mind" slide. The picked theme also re-themes the whole takeover and seeds the new
+   vault's appearance.theme (written by the Tauri `choose_first_vault` command on the CTA).
+
+   A face picker (5 Monaspace variants, plus the serifs for the prose face) was considered but
+   deliberately left out: persisting a chosen face into the NEW vault would need either a new
+   choose_first_vault argument (a Tauri command-contract change, explicitly out of scope) or a
+   post-restart apply step wired in App.tsx. A picker that only live-previewed the intro's own
    text without actually seeding the vault would be misleading, so it's omitted rather than
    half-built. */
 import {
-    For,
     Show,
-    createSignal,
     createEffect,
-    onMount,
+    createSignal,
     onCleanup,
+    onMount,
     type Component,
 } from 'solid-js'
-import { TextButton } from '../ui/TextButton'
-import { IconButton } from '../ui/IconButton'
-import ChipToggle from '../ui/ChipToggle'
-import Card from '../ui/Card'
-import Heading from '../ui/Heading'
-import Text from '../ui/Text'
-import PlainButton from '../ui/PlainButton'
-import { Icon } from '../icons/Icon'
-import { AsciiGraphRenderer } from '../graph/AsciiGraphRenderer'
-import type { GraphRenderer } from '../graph/graphRenderer'
-import { GraphAtmosphere, type BloomSink } from '../graph/GraphAtmosphere'
-import type { GraphData } from '../../../core/src/graph'
-import {
-    THEME_NAMES,
-    THEMES,
-    THEME_LABELS,
-    DEFAULT_THEME,
-    resolveAppearance,
-    type ThemeName,
-} from '../themes'
-import { settingsToCssVars, setCssVars } from '../settingsCssVars'
 import { DEFAULTS } from '../settings'
+import { DEFAULT_THEME, type ThemeName } from '../themes'
 import { isTauri } from '../nativeMenu'
-import { isDismissKey } from '../ui/widgetKeys'
-import WordmarkHero from './WordmarkHero'
-import Lockup from './Lockup'
-import TermPanel, { DAEMON_LINES, AGENT_LINES } from './TermPanel'
-import { SMALL_GRAPH, BIG_GRAPH, applyGraphConfig } from './vaultIntroGraph'
+import IntroCopy from './IntroCopy'
+import IntroCta from './IntroCta'
+import IntroGraph from './IntroGraph'
+import IntroHeader from './IntroHeader'
+import IntroFrame from './IntroFrame'
+import IntroHero from './IntroHero'
+import IntroNav from './IntroNav'
+import PowerUpList from './PowerUpList'
+import ThemePicker from './ThemePicker'
+import {
+    enterVault,
+    type EnterVaultChoice,
+    type EnterVaultResult,
+} from './introEnterVault'
+import { introKeyAction } from './introKeys'
+import { step, startIndex, type PagerMove } from './introPager'
+import {
+    DEFAULT_POWERUPS,
+    POWER_UPS,
+    SLIDES,
+    togglePowerUp,
+    type SlideKey,
+} from './introSlides'
+import { applyIntroTheme, snapshotRootTheme } from './introTheme'
+import { SMALL_GRAPH, BIG_GRAPH } from './vaultIntroGraph'
 import styles from './VaultIntro.module.css'
 
-type SlideKey =
-    | 'welcome'
-    | 'theme'
-    | 'graph'
-    | 'daemon'
-    | 'agents'
-    | 'powerups'
-    | 'begin'
-type Slide = {
-    key: SlideKey
-    title: string
-    body: string
-    cta?: string
-}
-
-// Optional power-ups offered on the power-ups slide. `cmd` matches a command-palette id; the
-// chosen ones run via the SAME api the command palette uses, right after the vault opens (the
-// intro itself has no backend). `relay` auto-loads in terminal tabs, so it's on-by-default info.
-const POWER_UPS: {
-    id: string
-    cmd?: string
-    icon: string
-    name: string
-    desc: string
-}[] = [
-    {
-        id: 'daemon',
-        cmd: 'daemon-setup',
-        icon: 'Bot',
-        name: 'DAEMON',
-        desc: "A background agent that runs crons and weaves memory while you're away.",
-    },
-    {
-        id: 'cli',
-        cmd: 'bismuth-install',
-        icon: 'SquareTerminal',
-        name: 'CLI + MCP',
-        desc: 'Drive your vault from the shell, and let your coding agent read the docs + write bases.',
-    },
-]
-
-const SLIDES: Slide[] = [
-    {
-        key: 'welcome',
-        title: 'Notes that think.',
-        body: 'Write notes and connect them with [[wikilinks]]. Bismuth links them into a graph you can explore and search.',
-    },
-    {
-        key: 'theme',
-        title: 'Pick your palette.',
-        body: 'Choose a theme for your vault. You can change it anytime from settings.',
-    },
-    {
-        key: 'graph',
-        title: 'Three brains, one mind.',
-        body: "Your notes and Bismuth's memory connect into one graph, so what you know and what it learns stay woven together.",
-    },
-    {
-        key: 'daemon',
-        title: 'An agent that never sleeps.',
-        body: "A background daemon runs on a schedule: folding new memory into your graph, re-linking notes, and surfacing what you'd forgotten.",
-    },
-    {
-        key: 'agents',
-        title: 'Bring your own agent.',
-        body: 'Chat runs on whichever coding agent you already use — Claude Code, Codex, Gemini, opencode, Cline, Goose. Bismuth speaks MCP, so any of them can search the docs and write your bases, queries and notes.',
-    },
-    {
-        key: 'powerups',
-        title: 'Optional power-ups.',
-        body: 'Pick what to set up. Bismuth turns them on once you open your vault, or you can do it anytime from the command palette.',
-    },
-    {
-        key: 'begin',
-        title: 'Open your vault.',
-        body: 'Pick a folder and Bismuth makes it a vault. Start writing, and the graph fills itself in.',
-        cta: 'Enter your vault',
-    },
-]
-
-// localStorage key the post-restart app reads to run the chosen power-ups against the real backend.
-const POWERUPS_KEY = 'bismuth-first-run-powerups'
-
-// SMALL_GRAPH, BIG_GRAPH, and applyGraphConfig live in ./vaultIntroGraph (a plain .ts module,
-// no JSX) — see that file's header comment for why. It's the same defect + same fix shape as
-// Task 26's `app/src/graph/embeddedGraphRender.ts`: `bun test` cannot load ANY .tsx file's JSX
-// transform in this repo (Solid, not React), so anything a test imports must live outside one.
-
-// (A localStorage settled-position cache used to be wiped here on enter+exit. Neither renderer has
-// persisted layout to localStorage for some time — `bismuth-graphpos:v5:*` had no reader and no
-// writer left in the tree — and these graphs bake their own positions anyway, so the wipe was
-// clearing keys nothing wrote. Removed with the renderer migration rather than left as a comment
-// asserting something untrue about first-run behaviour.)
-
-// One self-contained 3D graph instance (its own renderer + canvas + atmosphere). Renders its
-// baked-layout graph ONCE (framed instantly, no settle/auto-fit motion), recolors on theme
-// change, and pauses when not `active`. The intro mounts two — a small full-bleed cloud for the
-// theme slide and a big condensed one for "three brains" — and cross-fades between them via the
-// `.active` opacity transition, so there's no shared instance and no re-render on slide change.
-function IntroGraph(props: {
-    graph: GraphData
-    pose: 'full' | 'condensed'
-    active: boolean
-    theme: ThemeName
-    offsetY?: number
-    fitMargin?: number
-}) {
-    let host!: HTMLDivElement
-    const renderer: GraphRenderer = new AsciiGraphRenderer()
-    // This renderer instance never gets swapped — one IntroGraph drives one renderer for its whole
-    // life — so wiring it straight to a sink here has none of the staleness risk a `renderer` prop
-    // has on GraphAtmosphere. Still
-    // going through the same BloomSink shape as GraphView.tsx rather than a one-off, so there is
-    // exactly one way <GraphAtmosphere> is ever fed a field. See GraphAtmosphere.tsx's file-level
-    // comment for why it takes a sink instead of the renderer itself.
-    const bloomSink: BloomSink = {}
-    let mounted = false
-    onMount(() => {
-        renderer.mount(host, () => {})
-        renderer.setBloomCallback?.(field => bloomSink.current?.(field))
-        renderer.render(props.graph)
-        mounted = true
-        applyGraphConfig(renderer, props.theme)
-        if (props.fitMargin) renderer.setFitMargin(props.fitMargin) // zoom the cloud out a touch
-        // Shift the graph itself (not the canvas) so it can sit in the upper area while the canvas
-        // stays full-bleed (seamless with the page). 0 = centered.
-        renderer.setFrameOffsetY(props.offsetY ?? 0)
-        renderer.setVisible(props.active)
-    })
-    onCleanup(() => renderer.destroy())
-    createEffect(() => mounted && applyGraphConfig(renderer, props.theme))
-    createEffect(() => mounted && renderer.setVisible(props.active))
-    return (
-        <div
-            class={styles['vi-graph3d']}
-            data-pose={props.pose}
-            classList={{ [styles['active']]: props.active }}
-        >
-            <div class={styles['vi-graph3d-canvas']} ref={host} />
-            <GraphAtmosphere sink={bloomSink} />
-        </div>
-    )
-}
-
-/** `startAt` seeds which slide opens first. The real first run always starts at
- *  'welcome' (the default); it exists so each slide can be rendered in isolation —
- *  the slideshow is otherwise driven entirely by private state, which would leave six
- *  of the seven slides unreachable from a story. */
 export type VaultIntroProps = {
+    /** Seeds which slide opens first. The real first run always starts at 'welcome' (the
+     *  default); it exists so each slide can be rendered in isolation. */
     startAt?: SlideKey
+    /** Seeds the picked theme (real first run: DEFAULT_THEME). Lets a story show a non-ink pick. */
+    initialTheme?: ThemeName
+    /** Seam for the CTA. Default: introEnterVault.enterVault with the real Tauri/env deps. A
+     *  story passes a never-resolving promise to hold the busy state. */
+    onEnter?: (choice: EnterVaultChoice) => Promise<EnterVaultResult>
+}
+
+/** The CTA with the real effects: the Tauri command, localStorage, and a hard navigation. */
+const enterWithRealDeps = (choice: EnterVaultChoice) => {
+    let storage: Storage | undefined
+    try {
+        storage = localStorage
+    } catch {
+        /* private mode — the persisted choices are best-effort */
+    }
+    return enterVault(choice, {
+        dev: import.meta.env.DEV,
+        tauri: isTauri(),
+        invoke: async (cmd, args) => {
+            const { invoke } = await import('@tauri-apps/api/core')
+            return invoke<boolean>(cmd, args)
+        },
+        storage,
+        navigate: href => {
+            location.href = href
+        },
+        log: console,
+    })
+}
+
+/** The design window: the 1280x912 the big graph's fit was tuned in, with its 432px hero box. */
+const DESIGN_H = 912
+const DESIGN_HERO_H = 432
+const FIT_DEFAULT = { offsetY: -0.133, fitMargin: 1.96 }
+
+/** Where the big graph must sit to land on the hero box: the box centre relative to the root centre
+ *  (as a fraction of the root height) plus the cloud's own asymmetry, and a margin that keeps the
+ *  glyph cloud's height in proportion to the box. Both are the graph renderer's host-height
+ *  fractions, so they are re-derived from the live rects rather than hardcoded. */
+const fitToHero = (root: Element, hero: Element) => {
+    const r = root.getBoundingClientRect()
+    const h = hero.getBoundingClientRect()
+    if (r.height <= 0 || h.height <= 0) return FIT_DEFAULT
+    const centreY = h.top + h.height / 2 - r.top
+    return {
+        offsetY: (centreY - r.height / 2) / r.height + 0.011,
+        fitMargin: 1.96 * (r.height / DESIGN_H) * (DESIGN_HERO_H / h.height),
+    }
 }
 
 const VaultIntro: Component<VaultIntroProps> = props => {
-    const startIndex = Math.max(
-        0,
-        SLIDES.findIndex(s => s.key === (props.startAt ?? 'welcome')),
+    const [index, setIndex] = createSignal(startIndex(SLIDES, props.startAt))
+    const [theme, setTheme] = createSignal<ThemeName>(
+        props.initialTheme ?? DEFAULT_THEME,
     )
-    const [i, setI] = createSignal(startIndex)
-    const [themeName, setThemeName] = createSignal<ThemeName>(DEFAULT_THEME)
     const [busy, setBusy] = createSignal(false)
-    // Selected power-up ids — both default on. Re-running their setup is idempotent, so it's
-    // safe to leave checked even when already installed (CLI+MCP re-syncs on boot, daemon
-    // auto-updates on launch).
-    const [powerups, setPowerups] = createSignal<string[]>(['daemon', 'cli'])
-    const togglePowerup = (id: string) =>
-        setPowerups(p =>
-            p.includes(id) ? p.filter(x => x !== id) : [...p, id],
-        )
+    const [powerups, setPowerups] = createSignal(DEFAULT_POWERUPS)
+    const slide = () => SLIDES[index()]
+    let root!: HTMLDivElement
+    const [fit, setFit] = createSignal(FIT_DEFAULT)
 
-    const last = SLIDES.length - 1
-    const slide = () => SLIDES[i()]
-    const theme = themeName // a single theme name (dark + light are just entries in the list)
-    // The theme step and the knowledge-graph step both show the SAME persistent 3D graph.
-    const isGraphSlide = () =>
-        slide().key === 'theme' || slide().key === 'graph'
+    // The intro mounts and unmounts inside a running page (Storybook, replay): record :root's
+    // theme vars before the first paint below and put them back on the way out.
+    onCleanup(snapshotRootTheme())
+    // Live re-theme the whole takeover. Persisted only on commit (the CTA), so browsing the
+    // picker never pollutes the shared theme cache.
+    createEffect(() => applyIntroTheme(theme()))
 
-    const go = (k: number) => setI(Math.max(0, Math.min(last, k)))
-    const next = () => (i() === last ? enterVault() : go(i() + 1))
-    const prev = () => go(i() - 1)
-    const skip = () => go(last) // jump to the CTA rather than bailing — there's no vault yet
-
-    const varsFor = (name: ThemeName) =>
-        settingsToCssVars({
-            ...DEFAULTS,
-            appearance: { ...DEFAULTS.appearance, theme: name },
-        })
-
-    // Live re-theme: paint the chosen theme onto the whole takeover. Each IntroGraph recolors its
-    // own renderer separately (see the component below). No persistence here — only on commit
-    // (enterVault) — so browsing the picker never pollutes the shared theme cache.
-    createEffect(() => {
-        const name = theme()
-        setCssVars(varsFor(name))
-        document.documentElement.style.colorScheme = resolveAppearance({
-            theme: name,
-        }).isLight
-            ? 'light'
-            : 'dark'
-    })
-
-    const onKey = (e: KeyboardEvent) => {
-        // ArrowLeft/ArrowRight stay hardcoded — paging through a slideshow is spatial
-        // navigation, not a rebindable command. Escape IS the intro's skip, so it reads
-        // through the shared dismiss key.
-        if (e.key === 'ArrowRight') {
-            e.preventDefault()
-            next()
-        } else if (e.key === 'ArrowLeft') {
-            e.preventDefault()
-            prev()
-        } else if (isDismissKey(e)) {
-            e.preventDefault()
-            skip()
+    const enter = async () => {
+        if (busy()) return
+        setBusy(true)
+        let result: EnterVaultResult = 'failed'
+        try {
+            result = await (props.onEnter ?? enterWithRealDeps)({
+                theme: theme(),
+                icon: DEFAULTS.appearance.icon,
+                powerups: powerups(),
+            })
+        } finally {
+            // 'opened' leaves the intro busy: the app is relaunching (or navigating) away.
+            if (result !== 'opened') setBusy(false)
         }
     }
+
+    const move = (m: PagerMove, target?: number) => {
+        const next = step(index(), SLIDES.length, m, target)
+        setIndex(next.index)
+        if (next.enter) void enter()
+    }
+
+    const onKey = (e: KeyboardEvent) => {
+        const action = introKeyAction(e)
+        if (!action) return
+        e.preventDefault()
+        move(action)
+    }
+    onMount(() => {
+        const hero = root.querySelector('[data-intro-slot="hero"]')
+        if (!hero) return
+        const measure = () => setFit(fitToHero(root, hero))
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(root)
+        ro.observe(hero)
+        onCleanup(() => ro.disconnect())
+    })
     onMount(() => window.addEventListener('keydown', onKey))
     onCleanup(() => window.removeEventListener('keydown', onKey))
 
-    // The CTA: open the native folder picker, write the vault (with the chosen theme),
-    // and relaunch into it. The Rust command does the work + app.restart().
-    // Replay (secret keybind) launches the intro with a vault ALREADY configured — the CTA then
-    // continues into it instead of forcing a re-pick.
-    const enterVault = async () => {
-        if (busy()) return
-        // Dev: still open the native picker to test it, but choose_first_vault skips app.restart() in
-        // debug (it would kill the tauri-dev backend → white screen). After it returns, navigate into
-        // the app ourselves (the dev vault comes from BISMUTH_VAULT env regardless of what's picked).
-        if (import.meta.env.DEV && isTauri()) {
-            setBusy(true)
-            try {
-                const { invoke } = await import('@tauri-apps/api/core')
-                const ok = await invoke<boolean>('choose_first_vault', {
-                    theme: theme(),
-                    icon: DEFAULTS.appearance.icon,
-                })
-                if (ok) location.href = '/'
-                else setBusy(false)
-            } catch (e) {
-                console.error('enter vault failed', e)
-                setBusy(false)
-            }
-            return
-        }
-        if (isTauri()) {
-            setBusy(true)
-            try {
-                // Persist the chosen power-ups (command-palette ids) for the post-restart app to run
-                // against the real backend — the intro itself has none. Idempotent, so safe on replay.
-                const cmds = powerups()
-                    .map(id => POWER_UPS.find(p => p.id === id)?.cmd)
-                    .filter((c): c is string => !!c)
-                localStorage.setItem(POWERUPS_KEY, JSON.stringify(cmds))
-                // Cache the chosen theme vars for the post-restart first paint.
-                localStorage.setItem(
-                    'bismuth-theme-vars-v1',
-                    JSON.stringify(varsFor(theme())),
-                )
-            } catch {
-                /* private mode — non-fatal */
-            }
-            try {
-                const { invoke } = await import('@tauri-apps/api/core')
-                // Always open the folder picker — lets the user open an existing vault or create a new one.
-                const ok = await invoke<boolean>('choose_first_vault', {
-                    theme: theme(),
-                    icon: DEFAULTS.appearance.icon,
-                })
-                if (!ok) setBusy(false) // picker cancelled — stay on the intro
-                // on success the app restarts; nothing more to do here
-            } catch (e) {
-                console.error('enter vault failed', e)
-                setBusy(false)
-            }
-        } else {
-            // Browser preview (?intro=1): no native picker / backend. The desktop app does the real thing.
-            console.info(
-                '[intro] Enter your vault — native folder picker is available in the desktop app.',
-            )
-        }
-    }
-
-    // Per-slide hero visual when it's NOT a graph slide (the graph stays mounted underneath).
-    const nonGraphVisual = () => {
-        switch (slide().key) {
-            case 'welcome':
-            case 'begin':
-                return (
-                    <WordmarkHero icon={DEFAULTS.appearance.icon} size={96} />
-                )
-            case 'daemon':
-                return <TermPanel name="daemon // live" lines={DAEMON_LINES} />
-            case 'agents':
-                /* The transcript is a real Claude Code session because `claude` is
-                   DEFAULT_BACKEND (core/src/agentBackends/catalog.ts) — a session has to be
-                   SOME agent, and that is the one most people land on. The panel is labelled
-                   "chat" rather than "claude code" so the frame does not contradict the
-                   headline; the copy names the rest. */
-                return <TermPanel name="chat" lines={AGENT_LINES} />
-            default:
-                return null
-        }
-    }
-
     return (
-        <div class={`${styles['vi-root']} v-A`}>
-            {/* Two independent 3D graphs that cross-fade (opacity) between the theme + graph slides:
-          a small full-bleed starter cloud, and a big condensed "three brains" cloud. Separate
-          instances → no shared renderer, no re-render/auto-fit motion on slide change. */}
+        <div class={styles['vi-root']} ref={root}>
+            {/* Two independent graphs that cross-fade (opacity) between the theme + graph
+                slides: a small full-bleed starter cloud, and a big condensed "three brains"
+                cloud. Separate instances → no shared renderer, no re-render on slide change. */}
             <IntroGraph
                 graph={SMALL_GRAPH}
-                pose="full"
-                active={slide().key === 'theme'}
+                active={slide().graph === 'small'}
                 theme={theme()}
             />
+            {/* offsetY / fitMargin anchor the big cloud to the hero box, not to the window: they are
+                fractions of the host (= root) height H, while the box is fixed px, so they are
+                derived from the box's measured rect (see fitToHero) and follow a resize.
+                offsetY: the box centre's distance from the window centre, as a fraction of H, +0.011
+                for the cloud not being symmetric about its origin (measured at 1280x912: the glyph
+                centre landed 0.011 H low). fitMargin: the glyph cloud's height is proportional to H
+                / fitMargin, so the margin scales with H and inversely with the box height; 1.96 is
+                the value that fits the 432px box at H = 912 with ~60px clear above the headline. */}
             <IntroGraph
                 graph={BIG_GRAPH}
-                pose="condensed"
-                active={slide().key === 'graph'}
+                active={slide().graph === 'big'}
                 theme={theme()}
-                offsetY={0.12}
-                fitMargin={1.55}
+                offsetY={fit().offsetY}
+                fitMargin={fit().fitMargin}
             />
 
-            {/* floating header overlay — logo top-left, skip top-right, above the content */}
-            <header class={styles['vi-top']}>
-                {/* hide the corner mark on slides that already show the big centered logo */}
-                <Show
-                    when={slide().key !== 'welcome' && slide().key !== 'begin'}
-                    fallback={<div />}
-                >
-                    <Lockup icon={DEFAULTS.appearance.icon} />
-                </Show>
-                <IconButton icon="X" label="Skip intro" onClick={skip} />
-            </header>
+            <IntroHeader
+                icon={DEFAULTS.appearance.icon}
+                showMark={slide().corner}
+                onSkip={() => move('skip')}
+            />
 
-            <div class={styles['vi-center']} data-slide={slide().key}>
-                {/* per-slide non-graph hero (crystal / terminal) — the persistent graph stays
-            mounted behind everything, so this only shows on non-graph slides. Keyed on
-            the slide key so the block remounts (and its enter animation replays) on each
-            slide change. */}
-                <Show
-                    when={
-                        !isGraphSlide() &&
-                        slide().key !== 'powerups' &&
-                        slide().key
+            <div class={styles['vi-stage']}>
+                {/* One frame for every slide: the same grid, so the hero box, the headline and the
+                    nav never move between slides. The hero and the copy are keyed on the slide so
+                    they remount each change and their enter animation replays; the frame, the nav
+                    (and the keyboard focus on it) and the persistent graphs never remount. */}
+                <IntroFrame
+                    variant={
+                        slide().extra === 'themes' ||
+                        slide().extra === 'powerups'
+                            ? 'setup'
+                            : 'hero'
                     }
-                    keyed
-                >
-                    {_key => (
-                        <div class={styles['vi-hero']}>
-                            <div class={styles['vi-hero-overlay']}>
-                                {nonGraphVisual()}
-                            </div>
-                        </div>
-                    )}
-                </Show>
-
-                {/* copy block — keyed on the slide key so it remounts each slide change and the
-            fade-up enter animation replays (the persistent graph behind it never remounts) */}
-                <Show when={slide()} keyed>
-                    {s => (
-                        <div class={styles['vi-copy']}>
-                            <Heading level={1} class={styles['vi-title']}>
-                                {s.title}
-                            </Heading>
-                            <Text class={styles['vi-body']}>{s.body}</Text>
-                        </div>
-                    )}
-                </Show>
-
-                {/* The one bracket btn--primary CTA in the takeover — invokes the EXISTING
-            choose_first_vault flow unchanged (bismuth-design/ascii-extended item 5). It used to sit
-            INSIDE the pagination row, where the single most important action of the whole
-            first run was the same weight as a page dot and pushed the row off-centre. It
-            gets its own block under the copy instead. */}
-                <Show when={i() === last}>
-                    <div class={styles['vi-cta']}>
-                        <TextButton
-                            primary
-                            onClick={next}
-                            disabled={busy()}
-                        >
-                            {busy() ? 'opening…' : 'enter your vault'}
-                        </TextButton>
-                    </div>
-                </Show>
-
-                {/* Theme picker: four swatch cards (not a dropdown) — each live-previews its OWN
-            scope's bg/fg/accent simultaneously (bismuth-design/ascii-extended's item 5: "theme
-            picker = four swatch cards ... live-preview via the scope's own bg/fg/accent").
-            Baked from the core token literals (THEMES[name]) rather than var(), the same
-            technique the drawing toolbar's ink swatches use — the running app has no
-            per-subtree scope-class mechanism (that only exists in the static design-system
-            demo CSS), so all four previews can only render at once as literal colors. */}
-                <Show when={slide().key === 'theme'}>
-                    <div class={styles['vi-themes']}>
-                        <For each={THEME_NAMES}>
-                            {name => {
-                                const t = THEMES[name]
-                                return (
-                                    <PlainButton
-                                        class={styles['vi-theme-card']}
-                                        classList={{
-                                            [styles['selected']]: themeName() === name,
-                                        }}
-                                        aria-pressed={themeName() === name}
-                                        onClick={() => setThemeName(name)}
-                                    >
-                                        <Text
-                                            as="span"
-                                            inherit
-                                            class={styles['vi-theme-swatch']}
-                                            style={{ background: t.background }}
-                                        >
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles['vi-theme-swatch-fg']}
-                                                style={{
-                                                    background: t.foreground,
-                                                }}
-                                            />
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles['vi-theme-swatch-accent']}
-                                                style={{ background: t.accent }}
-                                            />
-                                        </Text>
-                                        <Text
-                                            as="span"
-                                            size="inherit"
-                                            tone="muted"
-                                            weight="inherit"
-                                            class={styles['vi-theme-name']}
-                                        >
-                                            {THEME_LABELS[name]}
-                                        </Text>
-                                    </PlainButton>
-                                )
-                            }}
-                        </For>
-                    </div>
-                </Show>
-
-                {/* Power-ups: <Card> rows with a ChipToggle (not a bespoke selectable-card grid) —
-            the system's own vocabulary for "a labeled option you can flip" (ui/ChipToggle.tsx,
-            already the ExportView/search-toggle primitive). */}
-                <Show when={slide().key === 'powerups'}>
-                    <div class={styles['vi-powerups']}>
-                        <For each={POWER_UPS}>
-                            {p => {
-                                const selectable = !!p.cmd
-                                const on = () =>
-                                    !selectable || powerups().includes(p.id)
-                                return (
-                                    <Card
-                                        class={`${styles['vi-powerup']} ${!selectable ? styles['locked'] : ''}`}
-                                    >
-                                        <div class={styles['vi-powerup-top']}>
-                                            <Icon value={p.icon} />
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles['vi-powerup-name']}
-                                            >
-                                                {p.name}
-                                            </Text>
-                                            <ChipToggle
-                                                selected={on()}
-                                                title={
-                                                    selectable
-                                                        ? undefined
-                                                        : 'Always on'
-                                                }
-                                                onToggle={() =>
-                                                    selectable &&
-                                                    togglePowerup(p.id)
-                                                }
-                                            >
-                                                {on() ? 'ON' : 'OFF'}
-                                            </ChipToggle>
-                                        </div>
-                                        <Text
-                                            as="span"
-                                            inherit
-                                            class={styles['vi-powerup-desc']}
-                                        >
-                                            {p.desc}
-                                        </Text>
-                                    </Card>
-                                )
-                            }}
-                        </For>
-                    </div>
-                </Show>
-
-                <div class={styles['vi-nav']}>
-                    <IconButton
-                        icon="ArrowLeft"
-                        label="Back"
-                        size="md"
-                        onClick={prev}
-                        disabled={i() === 0}
-                    />
-                    <div class={styles['vi-dots']}>
-                        <For each={SLIDES}>
-                            {(_, k) => (
-                                <PlainButton
-                                    class={styles['vi-dot']}
-                                    classList={{ [styles['on']]: k() === i() }}
-                                    aria-label={`Go to slide ${k() + 1}`}
-                                    onClick={() => go(k())}
-                                />
+                    hero={
+                        <Show when={slide()} keyed>
+                            {s => (
+                                <>
+                                    <Show when={s.hero}>
+                                        {hero => <IntroHero hero={hero()} />}
+                                    </Show>
+                                    <Show when={s.extra === 'themes'}>
+                                        <ThemePicker
+                                            value={theme()}
+                                            onChange={setTheme}
+                                        />
+                                    </Show>
+                                    <Show when={s.extra === 'powerups'}>
+                                        <PowerUpList
+                                            items={POWER_UPS}
+                                            selected={powerups()}
+                                            onToggle={id =>
+                                                setPowerups(p =>
+                                                    togglePowerUp(p, id),
+                                                )
+                                            }
+                                        />
+                                    </Show>
+                                </>
                             )}
-                        </For>
-                    </div>
-                    {/* The forward slot stays occupied on the last slide (by an inert
-                spacer) so the dots keep their true centre — the CTA has moved out of
-                this row entirely, see .vi-cta below. */}
-                    <Show
-                        when={i() !== last}
-                        fallback={<div class={styles['vi-nav-slot']} />}
-                    >
-                        <IconButton
-                            icon="ArrowRight"
-                            label="Next"
-                            variant="selected"
-                            size="md"
-                            onClick={next}
+                        </Show>
+                    }
+                    text={
+                        <Show when={slide()} keyed>
+                            {s => (
+                                <>
+                                    <IntroCopy
+                                        title={s.title}
+                                        body={s.body}
+                                        backdrop={!!s.graph}
+                                    />
+                                    <Show when={s.extra === 'cta'}>
+                                        <IntroCta
+                                            busy={busy()}
+                                            onEnter={() => move('next')}
+                                        />
+                                    </Show>
+                                </>
+                            )}
+                        </Show>
+                    }
+                    nav={
+                        <IntroNav
+                            index={index()}
+                            count={SLIDES.length}
+                            onPrev={() => move('prev')}
+                            onNext={() => move('next')}
+                            onSelect={k => move('go', k)}
+                            backdrop={!!slide().graph}
                         />
-                    </Show>
-                </div>
+                    }
+                />
             </div>
         </div>
     )

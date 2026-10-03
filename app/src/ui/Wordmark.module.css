@@ -1,0 +1,28 @@
+/* ui/Wordmark.module.css — scoped chrome for ui/Wordmark.tsx.
+
+   `.asc-wordmark` does NOT live here: it is the global gradient-sheen class in global.css
+   (with its `@keyframes asc-sheen` and reduced-motion rule), written bare by Wordmark.tsx.
+   This module only sets the two tokens `.asc-wordmark` reads, per instance.
+
+   `--wordmark-tracking` IS THE WHOLE POINT. `.asc-wordmark` defaults to -0.22em, which was
+   right for the old ASCII crystal (glyphs had to overlap into one silhouette) and laminates a
+   real word into a blob. The word sets 0.04em, the same on the top strip and on the splash:
+   they are one mark and must be set identically, which is why both sizes share this one rule.
+
+   Size is the only thing that differs: --fs-body (13px) in the 36px top-strip band, one step
+   under the old --fs-lead and a step above the strip's own --fs-ui so it reads as the mark and
+   not a label; --fs-hero where it is the whole screen.
+
+   The wrapper lays the word and its optional <Caret /> out as one prompt. */
+.wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(var(--sp-1) / 2);
+  --wordmark-tracking: 0.04em;
+}
+.wordmark--body {
+  --wordmark-size: var(--fs-body);
+}
+.wordmark--hero {
+  --wordmark-size: var(--fs-hero);
+}

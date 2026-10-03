@@ -343,12 +343,12 @@ const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App
 
 **The `intro-seen` marker (separate from the vault config):** A *global*, app-level flag at `<app-config-dir>/intro-seen` — written by `mark_intro_seen`, checked by `has_seen_intro`. It is deliberately kept **separate from `config.json`**: it is one flag across all vaults (the intro is not re-shown per vault), and replaying it never touches the saved vault paths.
 
-**The slideshow** (`app/src/intro/VaultIntro.tsx`) is an arrow-key/dot-navigable sequence of slides (`SlideKey`):
+**The slideshow** (`app/src/intro/VaultIntro.tsx`, driven by the slide table in `app/src/intro/introSlides.ts`) is an arrow-key/dot-navigable sequence of slides (`SlideKey`):
 
 | Slide | What it shows |
 |---|---|
-| `welcome` | "Notes that think." — wikilinks pitch, centered crystal mark |
-| `theme` | "Pick your palette." — a `Select` dropdown over all themes; choosing one **live-recolors a real 3D knowledge graph** (the app's own `AsciiGraphRenderer` drawing a baked-layout dummy point-cloud, `SMALL_GRAPH`) and re-themes the whole takeover |
+| `welcome` | "Notes that think." — wikilinks pitch, the glyph-art `bismuth` wordmark |
+| `theme` | "Pick your palette." — four swatch cards (`ThemePicker`); choosing one **live-recolors a real 3D knowledge graph** (the app's own `AsciiGraphRenderer` drawing a baked-layout dummy point-cloud, `SMALL_GRAPH`) and re-themes the whole takeover |
 | `graph` | "Three brains, one mind." — the same 3D graph carries over, cross-fading to a bigger condensed cloud (`BIG_GRAPH`) |
 | `daemon` | "An agent that never sleeps." — the background Bismuth daemon |
 | `agents` | "Bring your own agent." — chat runs on whichever coding agent you already use (Claude Code, Codex, Gemini, opencode, Cline, Goose); Bismuth speaks MCP, so any of them can search the docs and write bases, queries and notes |
@@ -357,14 +357,14 @@ const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App
 
 The theme picker only recolors live; it commits **nothing** until the CTA. On commit, the chosen theme name is passed to the Tauri command (below) which **seeds the new vault's `appearance.theme`** so the app paints in that theme on first boot.
 
-**The CTA → `choose_first_vault`:** "Enter your vault" (`enterVault`) invokes the Tauri command `choose_first_vault(theme, icon)`, which:
+**The CTA → `choose_first_vault`:** "Enter your vault" (`enterVault` in `app/src/intro/introEnterVault.ts`) invokes the Tauri command `choose_first_vault(theme, icon)`, which:
 1. opens the **native folder picker** ("Open or create your Bismuth vault");
 2. on cancel returns `Ok(false)` → the intro stays put (`busy` cleared);
 3. on a pick: `create_dir_all` the folder, derive memory as `<vault>/.daemon/memory` (also created), `seed_vault_settings` writes a minimal legacy-path `settings.yaml` (`appearance: { theme, icon }`) **only if none exists** (Rust still targets the old root filename here — the sidecar's `reconcileSettings`/`migrateSettingsLocation` (`core/src/settings.ts:29`) renames it into the real `.settings` file on first boot and fills in the rest of the schema, preserving those seeded keys), persists `config.json`, calls `mark_intro_seen`, and `app.restart()`s into the new vault.
 
 In dev (`tauri dev`), `choose_first_vault` **skips** `app.restart()` (a restart would tear down the `beforeDevCommand` backend → white screen, and the dev vault comes from `BISMUTH_VAULT` regardless) — the frontend just navigates to `/` itself.
 
-**Power-ups (queued for after the vault opens):** The `powerups` slide offers optional setups (`POWER_UPS` in `VaultIntro.tsx`), both default-on: **DAEMON** (command `daemon-setup`) and **CLI + MCP** (command `bismuth-install`). The intro has no backend, so it can't run them itself — `enterVault` writes the chosen command-palette ids to `localStorage["bismuth-first-run-powerups"]` (and caches the theme CSS vars under `bismuth-theme-vars-v1` for the post-restart first paint). The restarted app reads that key and runs the chosen commands against the real backend. Re-running either is idempotent (CLI+MCP re-syncs on boot, the daemon re-installs from the bundle version-gated on launch), so leaving them checked is safe even when already installed.
+**Power-ups (queued for after the vault opens):** The `powerups` slide offers optional setups (`POWER_UPS` in `introSlides.ts`), both default-on: **DAEMON** (command `daemon-setup`) and **CLI + MCP** (command `bismuth-install`). The intro has no backend, so it can't run them itself — `enterVault` writes the chosen command-palette ids to `localStorage["bismuth-first-run-powerups"]` (and caches the theme CSS vars under `bismuth-theme-vars-v1` for the post-restart first paint). The restarted app reads that key and runs the chosen commands against the real backend. Re-running either is idempotent (CLI+MCP re-syncs on boot, the daemon re-installs from the bundle version-gated on launch), so leaving them checked is safe even when already installed.
 
 **Replay (secret keybind):** The frontend can replay the onboarding via two Tauri commands:
 - `reset_first_run` — removes **only** the `intro-seen` marker (leaving `config.json` intact) and relaunches; with a vault still configured this re-shows the intro and then drops the user back into their current vault. Bound to a secret keybind.
