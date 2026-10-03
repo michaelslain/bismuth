@@ -129,6 +129,19 @@ const ALLOW = new Set<string>([
  *  runs its own bundler against the story graph, not `vite build`. Mirrors tokenLint.ts's
  *  SKIP_FILES: relative to app/src, one entry per file, each carrying its own justification. */
 const SKIP_MODULES = new Set<string>([
+    // TEMPORARY — intro-conformance plan (.claude/plans/2026-10-02-intro-conformance.md): wave 1
+    // builds these intro pieces before wave 2's Task 10 composes them into VaultIntro, so until
+    // then nothing in the real app imports them. Task 10 deletes this whole block.
+    'intro/IntroCopy.module.css',
+    'intro/IntroHeader.module.css',
+    'intro/IntroNav.module.css',
+    'ui/PagerDots.module.css',
+    'intro/PowerUpList.module.css',
+    'intro/ThemePicker.module.css',
+    'intro/ThemeSwatchCard.module.css',
+    'intro/IntroHero.module.css',
+    'intro/IntroGraph.module.css',
+    // END TEMPORARY intro-conformance
     // FontSpecimen.tsx's own header + FontSpecimen.module.css's own header: a Storybook-only
     // font/type specimen page with no call site in app/ (only ui/gallery/FontSpecimen.stories.tsx
     // renders it). Confirmed via `grep -rl FontSpecimen app/src` — the only hits are the component,
