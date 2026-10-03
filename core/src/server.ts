@@ -100,6 +100,17 @@ import {
     resolveChatProvider,
 } from './chatProviders'
 import {
+    opencodeClient,
+    refreshOpencodeFrames,
+} from './chatProviders/opencode/opencode'
+import {
+    listProviders,
+    oauthAuthorize,
+    oauthCallback,
+    OpencodeBadRequest,
+    setProviderKey,
+} from './chatProviders/opencode/opencodeProviders'
+import {
     listChatSessions,
     searchChatSessions,
     parseChatScope,
@@ -917,6 +928,60 @@ export function createServer(cfg: CoreConfig) {
         return resolveRequestChannel(req.headers, ownerToken)
     }
 
+    /** Shared shell of the four /opencode/* provider-connect routes. Owner-only (a connect writes a
+     *  credential into the user's opencode store), then the shared opencode server's client — 409
+     *  `opencode-missing` when opencode is not installed or its server will not start — then `run`.
+     *  An OpencodeBadRequest (bad body, or opencode refused it) is a 400 `bad-request` whose message
+     *  never carries the key. `connected` re-emits the models/auth frames to every live opencode
+     *  session once `run` succeeded. */
+    async function opencodeRoute(
+        req: Request,
+        run: (
+            client: NonNullable<Awaited<ReturnType<typeof opencodeClient>>>,
+            body: Record<string, unknown>,
+        ) => Promise<unknown>,
+        opts: { connected?: boolean; body?: boolean } = {},
+    ): Promise<Response> {
+        if (requestChannel(req) !== 'owner')
+            return Response.json({ error: 'forbidden' }, { status: 403 })
+        const client = await opencodeClient()
+        if (!client)
+            return Response.json(
+                {
+                    error: 'opencode-missing',
+                    message:
+                        'opencode is not installed, or its server did not start. Install opencode (opencode.ai) to manage providers.',
+                },
+                { status: 409 },
+            )
+        let body: Record<string, unknown> = {}
+        if (opts.body) {
+            try {
+                const parsed = await req.json()
+                if (!parsed || typeof parsed !== 'object')
+                    throw new Error('not an object')
+                body = parsed as Record<string, unknown>
+            } catch {
+                return Response.json(
+                    { error: 'bad-request', message: 'Expected a JSON body.' },
+                    { status: 400 },
+                )
+            }
+        }
+        try {
+            const result = await run(client, body)
+            if (opts.connected) void refreshOpencodeFrames().catch(() => {})
+            return Response.json(result)
+        } catch (e) {
+            if (e instanceof OpencodeBadRequest)
+                return Response.json(
+                    { error: 'bad-request', message: e.message },
+                    { status: 400 },
+                )
+            throw e
+        }
+    }
+
     // The restricted-path list for a request's channel — [] for the owner (never filtered) or for
     // an unrestricted vault (buildDenyPaths itself returns [] when nothing is marked). Memoized
     // PER VAULT VERSION (see `version`, bumped by the file watcher below): on the audited real
@@ -1181,6 +1246,47 @@ export function createServer(cfg: CoreConfig) {
                 ),
             })
         },
+
+        // opencode provider manager (docs/chat/opencode-providers.md): list what is connected /
+        // connectable, store an API key, drive an OAuth sign-in — all over the running `opencode
+        // serve`. Owner-only; keys go straight to opencode's own store and are never logged or
+        // echoed. Reads + credential writes, no vault change, so they sit in the read table.
+        'GET /opencode/providers': req =>
+            opencodeRoute(req, client => listProviders(client)),
+        'POST /opencode/auth': req =>
+            opencodeRoute(
+                req,
+                async (client, b) => {
+                    await setProviderKey(
+                        client,
+                        b.id as string,
+                        b.key as string,
+                    )
+                    return { ok: true }
+                },
+                { connected: true, body: true },
+            ),
+        'POST /opencode/oauth/authorize': req =>
+            opencodeRoute(
+                req,
+                (client, b) =>
+                    oauthAuthorize(client, b.id as string, b.method as number),
+                { body: true },
+            ),
+        'POST /opencode/oauth/callback': req =>
+            opencodeRoute(
+                req,
+                async (client, b) => {
+                    await oauthCallback(
+                        client,
+                        b.id as string,
+                        b.method as number,
+                        typeof b.code === 'string' ? b.code : undefined,
+                    )
+                    return { ok: true }
+                },
+                { connected: true, body: true },
+            ),
 
         'GET /events': (_, __) => {
             let subscriber: ReadableStreamDefaultController<Uint8Array>
