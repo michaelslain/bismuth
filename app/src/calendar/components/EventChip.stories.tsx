@@ -246,7 +246,8 @@ const at = (id: string, title: string, startTime: string, endTime: string, extra
 })
 
 /** Every block height a week column actually draws, at a narrow column width: 30-min blocks
- *  (which drop their time — padded ~34px, back-to-back ~22px, uncategorised), a 45-min block
+ *  (which drop their time and fill exactly one half-hour row, ~22px — a 15-min block grows to the
+ *  same row; uncategorised; four categories), a 45-min block
  *  (time over one title line), and 1h+ blocks carrying four categories (three dots + "+1")
  *  beside their time range. */
 export const GridSizes: Story = {
@@ -254,7 +255,7 @@ export const GridSizes: Story = {
         <Row gap="10px" column>
             <GridSlot event={at('g1', 'Veritus - NOTES review', '10:30', '11:00')} />
             <GridSlot
-                event={at('g2', 'Veritus - NOTES review', '10:30', '11:00')}
+                event={at('g2', 'Veritus - NOTES review', '10:30', '10:45')}
                 next={at('g2n', 'Next', '11:00', '12:00')}
             />
             <GridSlot event={at('g3', 'Unfiled quick call', '10:30', '11:00', { category: undefined })} />
