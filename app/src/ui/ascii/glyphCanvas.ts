@@ -7,7 +7,7 @@
 // Colour names in a scene resolve to the theme's CSS vars (GLYPH_COLOR_VARS), re-read whenever
 // documentElement's `style` attribute changes (App re-applies the theme vars there) — the same
 // watch GraphAtmosphere uses.
-import { CELL_H, CELL_W, FONT_PX, compactScale } from '../../graph/asciiGrid'
+import { CELL_H, CELL_W, FONT_PX } from '../../graph/asciiGrid'
 import { clampDprToCanvasArea, isUsableBox } from '../../graph/graphFit'
 import {
     AMBIENT_FPS,
@@ -17,7 +17,13 @@ import {
     type GlyphFrame,
     type GlyphScene,
 } from './glyphScene'
-import { fitScene, frameInterval, rowRuns, shouldRun } from './glyphPaint'
+import {
+    fitScale,
+    fitScene,
+    frameInterval,
+    rowRuns,
+    shouldRun,
+} from './glyphPaint'
 
 type SpacedContext = CanvasRenderingContext2D & { letterSpacing?: string }
 
@@ -52,6 +58,7 @@ export default class GlyphCanvas {
     private dpr = 1
     private cellW = CELL_W
     private cellH = CELL_H
+    private scale = 1
     private cols = 0
     private rows = 0
 
@@ -218,7 +225,7 @@ export default class GlyphCanvas {
         if (stack) this.fontStack = stack
         const rowH = parseFloat(cs.getPropertyValue('--cell-h'))
         if (Number.isFinite(rowH) && rowH > 0) this.baseCellH = rowH
-        this.applyFont(compactScale(this.W, this.H))
+        this.applyFont(this.scale)
     }
 
     /** Pin the character advance to the cell width (also disables ligatures, which would fuse
@@ -241,7 +248,7 @@ export default class GlyphCanvas {
     }
 
     /** Reconcile canvas + grid with the host's current box. False when the box is unusable. */
-    private syncSize(): boolean {
+    private syncSize(scene: GlyphScene): boolean {
         const host = this.host
         const canvas = this.canvas
         if (!host || !canvas) return false
@@ -249,7 +256,15 @@ export default class GlyphCanvas {
         if (!this.ctx) return false
         const r = host.getBoundingClientRect()
         if (!isUsableBox(r.width, r.height)) return false
-        const scale = compactScale(r.width, r.height)
+        const scale = fitScale(
+            r.width,
+            r.height,
+            scene.cols,
+            scene.rows,
+            CELL_W,
+            this.baseCellH,
+        )
+        this.scale = scale
         this.W = r.width
         this.H = r.height
         this.cellH = this.baseCellH * scale
@@ -267,8 +282,9 @@ export default class GlyphCanvas {
             canvas.height = bh
         }
         this.applyFont(scale)
-        this.cols = Math.floor(this.W / this.cellW)
-        this.rows = Math.floor(this.H / this.cellH)
+        // +0.05: calc(96 * 6.3px) lays out ~604.797 after 1/64px snapping, which floors to 95.
+        this.cols = Math.floor(this.W / this.cellW + 0.05)
+        this.rows = Math.floor(this.H / this.cellH + 0.05)
         return true
     }
 
@@ -278,7 +294,7 @@ export default class GlyphCanvas {
         const scene = this.scene
         const buf = this.buf
         if (!scene || !buf) return
-        if (!this.syncSize()) return
+        if (!this.syncSize(scene)) return
         const ctx = this.ctx
         if (!ctx) return
         try {
