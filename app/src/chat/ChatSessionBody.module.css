@@ -1,0 +1,31 @@
+/* app/src/chat/ChatSessionBody.module.css — ChatSessionBody.tsx is the ONLY importer.
+   ChatSessionBody renders a fragment, so every rule here describes a flex child of the HOST's column
+   (ChatView's tab host, DaemonChat's column). */
+
+/* The body before the session is retained (pane variant): holds the transcript's place so the
+   composer already sits at the bottom edge. */
+.pending {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The column variant's transcript grows to fill the host above the pinned composer. */
+.transcript {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The pane variant's composer bar inset: the transcript's 40px side gutter, a small lead above and
+   a slightly larger breath below. No hairline — the outlined box is the only edge. A wrapper, not a
+   class on the bar itself, so the bar's slash popover still anchors to the bar's own edge. */
+.paneComposer {
+  flex: 0 0 auto;
+  padding: var(--sp-3) 40px 18px;
+}
+
+/* The column variant's composer wrapper: mirrors ChatComposerBar's own `.bar { flex: 0 0 auto }` so
+   wrapping it changes nothing about the column's layout. */
+.columnComposer {
+  flex: 0 0 auto;
+  width: 100%;
+}

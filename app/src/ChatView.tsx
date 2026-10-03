@@ -7,33 +7,21 @@
 // its draft carry on in the registry. Nothing here opens a socket or holds conversation state.
 //
 // Composition, top to bottom: the tinted drop-target host → `ChatHeader` (title crumb + readouts
-// only) → a setup/refusal dead end via `chat/ChatSetupGate` when the chat cannot run → otherwise
-// `ChatTranscript` (the greeting centred and capped to the 680px reading column when empty) and the
-// shared `ChatComposerBar`, with `ChatControls` as its quiet `below` row.
-//
-// The one frame before App's effect has retained this chat's session renders the header-less shell:
-// an empty body and the composer bar in its `session={undefined}` mode, which hands anything typed
-// to the session the moment it arrives.
-//
-// FOCUS IS THE VIEW'S JOB, not the session's (chat/chatSession.ts never touches the DOM) — answered
-// by chat/createComposerFocus.ts, shared with DaemonChat.
-import { createSignal, Show, type JSX } from 'solid-js'
+// only) → `chat/ChatSessionBody` (variant "pane": the setup/refusal gate, the transcript with its
+// greeting centred in the 680px reading column when empty, the history panel, and the shared composer
+// bar with `ChatControls` as its quiet `below` row). The one frame before App's effect has retained
+// this chat's session renders the header-less shell: the body with `session={undefined}`, which
+// hands anything typed to the session the moment it arrives. Composer focus is the body's job.
+import { Show, type JSX } from 'solid-js'
 import styles from './ChatView.module.css'
 import EmptyState from './ui/EmptyState'
 import DropCue from './ui/DropCue'
 import InlineCode from './ui/InlineCode'
 import ChatHeader from './chat/ChatHeader'
-import ChatTranscript from './chat/ChatTranscript'
 import ChatTurnColumn from './chat/ChatTurnColumn'
-import ChatComposerBar from './chat/ChatComposerBar'
-import ChatControls from './chat/ChatControls'
-import ChatHistoryPanel from './chat/ChatHistoryPanel'
-import ChatSetupGate from './chat/ChatSetupGate'
-import { createComposerFocus } from './chat/createComposerFocus'
+import ChatSessionBody from './chat/ChatSessionBody'
 import { createChatDropTarget } from './chat/createChatDropTarget'
 import { chatSession } from './chat/chatSessions'
-import type { ChatSession } from './chat/chatSession'
-import type { ComposerHandle } from './ChatComposer'
 import { chatColor } from './chatColors'
 import { chatTitle, resolveChatHeaderTitle } from './chatTitles'
 import { chatPersonaName } from './daemonIdentity'
@@ -53,35 +41,8 @@ export type ChatViewProps = {
     tagNames: () => string[]
 }
 
-/** The composer bar + its quiet controls row — identical whether or not a session exists yet, so
- *  ChatView can render it both in the pre-session frame and once a session (blocked or not) is
- *  live, without two copies of the same JSX drifting apart. */
-function ChatComposerSection(props: {
-    session: ChatSession | undefined
-    placeholder: string
-    noteNames: () => NoteCandidate[]
-    memoryNames: () => MemoryCandidate[]
-    tagNames: () => string[]
-    onReady: (handle: ComposerHandle) => void
-}) {
-    return (
-        <div class={styles.composer}>
-            <ChatComposerBar
-                session={props.session}
-                placeholder={props.placeholder}
-                noteNames={props.noteNames}
-                memoryNames={props.memoryNames}
-                tagNames={props.tagNames}
-                onReady={props.onReady}
-                below={<ChatControls session={props.session} />}
-            />
-        </div>
-    )
-}
-
 export function ChatView(props: ChatViewProps): JSX.Element {
     let host: HTMLDivElement | undefined
-    const [composer, setComposer] = createSignal<ComposerHandle>()
     const session = () => chatSession(props.chatId)
     // The bot's face on the transcript's lowest assistant row animates by this chat's liveness.
     const avatarMood = () =>
@@ -105,13 +66,9 @@ export function ChatView(props: ChatViewProps): JSX.Element {
             chatPersonaName() ?? 'Chat',
         )
 
-    createComposerFocus(session, composer)
-
-    const reply = (text: string) => session()?.quoteReply(text)
-
     return (
         <div
-            class={styles.host}
+            class={styles.chatTab}
             ref={host}
             // Per-chat pane tint: wash the chosen colour into the host background so the whole
             // surface reads as that colour, and expose it as --chat-tint so the transcript's
@@ -139,75 +96,25 @@ export function ChatView(props: ChatViewProps): JSX.Element {
                     />
                 )}
             </Show>
-            <Show
-                when={session()}
-                fallback={
-                    <>
-                        <div class={styles.pending} />
-                        <ChatComposerSection
-                            session={undefined}
-                            placeholder={`Message ${persona()}`}
-                            noteNames={props.noteNames}
-                            memoryNames={props.memoryNames}
-                            tagNames={props.tagNames}
-                            onReady={setComposer}
-                        />
-                    </>
+            <ChatSessionBody
+                variant="pane"
+                session={session()}
+                placeholder={`Message ${persona()}`}
+                persona={persona()}
+                avatarMood={avatarMood()}
+                empty={
+                    <ChatTurnColumn>
+                        <EmptyState>
+                            Ask {persona()} anything about your vault. Run any{' '}
+                            <InlineCode>/command</InlineCode>, watch tool calls
+                            and thinking, and approve tool use inline.
+                        </EmptyState>
+                    </ChatTurnColumn>
                 }
-            >
-                {s => (
-                    <ChatSetupGate session={s()}>
-                        <Show
-                            when={s().history.open()}
-                            fallback={
-                                <>
-                                    <ChatTranscript
-                                        items={s().transcript}
-                                        persona={s().persona()}
-                                        avatarMood={avatarMood()}
-                                        awaitingReply={s().awaitingReply()}
-                                        turnError={s().turnError()}
-                                        empty={
-                                            <ChatTurnColumn>
-                                                <EmptyState>
-                                                    Ask {persona()} anything
-                                                    about your vault. Run any{' '}
-                                                    <InlineCode>
-                                                        /command
-                                                    </InlineCode>
-                                                    , watch tool calls and
-                                                    thinking, and approve tool
-                                                    use inline.
-                                                </EmptyState>
-                                            </ChatTurnColumn>
-                                        }
-                                        onAnswerPermission={
-                                            s().answerPermission
-                                        }
-                                        onAnswerQuestion={s().answerQuestion}
-                                        onCancelQueued={s().cancelQueued}
-                                        onReply={reply}
-                                        subscribeAppend={s().onAppend}
-                                    />
-                                    <ChatComposerSection
-                                        session={session()}
-                                        placeholder={`Message ${persona()}`}
-                                        noteNames={props.noteNames}
-                                        memoryNames={props.memoryNames}
-                                        tagNames={props.tagNames}
-                                        onReady={setComposer}
-                                    />
-                                </>
-                            }
-                        >
-                            <ChatHistoryPanel
-                                history={s().history}
-                                onNewChat={s().startNewChat}
-                            />
-                        </Show>
-                    </ChatSetupGate>
-                )}
-            </Show>
+                noteNames={props.noteNames}
+                memoryNames={props.memoryNames}
+                tagNames={props.tagNames}
+            />
         </div>
     )
 }
