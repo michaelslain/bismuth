@@ -78,8 +78,18 @@ const LETTERS = {
 export const WORDMARK_ROWS = 9
 
 /** Lowercase 'bismuth', one string per row, '#' = filled, '.' = empty; every row the same length. */
-export const WORDMARK: readonly string[] = Array.from({ length: WORDMARK_ROWS }, (_, r) =>
-    [LETTERS.b, LETTERS.i, LETTERS.s, LETTERS.m, LETTERS.u, LETTERS.t, LETTERS.h]
-        .map(letter => letter[r])
-        .join('.'),
+export const WORDMARK: readonly string[] = Array.from(
+    { length: WORDMARK_ROWS },
+    (_, r) =>
+        [
+            LETTERS.b,
+            LETTERS.i,
+            LETTERS.s,
+            LETTERS.m,
+            LETTERS.u,
+            LETTERS.t,
+            LETTERS.h,
+        ]
+            .map(letter => letter[r])
+            .join('.'),
 )

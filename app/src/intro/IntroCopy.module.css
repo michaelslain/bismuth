@@ -58,8 +58,8 @@
 }
 
 /* ---- type-in ----
-   The not-yet-typed remainder keeps its full layout (so nothing reflows while typing and the
-   accessibility tree never changes) — it is only hidden. */
+   The not-yet-typed remainder keeps its full layout (so nothing reflows while typing) and stays
+   in the accessibility tree; it is only made transparent. */
 .untyped {
-  visibility: hidden;
+  opacity: 0;
 }

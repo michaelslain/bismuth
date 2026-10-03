@@ -13,9 +13,13 @@ describe('beginScene', () => {
         expect(text(0)[13].trim()).toBe('')
         expect(text(beginScene.revealMs)[13].trim()).toBe('> open vault_')
         expect(text(beginScene.revealMs + 550)[13].trim()).toBe('> open vault')
-        expect(text(beginScene.revealMs + 1100)[13].trim()).toBe('> open vault_')
+        expect(text(beginScene.revealMs + 1100)[13].trim()).toBe(
+            '> open vault_',
+        )
     })
     it('the wordmark is formed from t = 0', () => {
-        expect(text(0).slice(1, 10).join('').replace(/[^#@]/g, '').length).toBeGreaterThan(150)
+        expect(
+            text(0).slice(1, 10).join('').replace(/[^#@]/g, '').length,
+        ).toBeGreaterThan(150)
     })
 })
