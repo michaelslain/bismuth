@@ -1,4 +1,4 @@
 .picker {
   display: flex;
-  gap: var(--sp-5);
+  gap: var(--sp-6);
 }

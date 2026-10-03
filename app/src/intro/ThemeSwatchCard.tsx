@@ -38,7 +38,7 @@ const ThemeSwatchCard: Component<ThemeSwatchCardProps> = props => (
                 class={`${styles['chip']} ${styles['chip-accent']}`}
             />
         </Text>
-        <Text as="span" size="micro" eyebrow tone="muted" class={styles['name']}>
+        <Text as="span" size="ui" eyebrow tone="muted" class={styles['name']}>
             {THEME_LABELS[props.name]}
         </Text>
     </PlainButton>
