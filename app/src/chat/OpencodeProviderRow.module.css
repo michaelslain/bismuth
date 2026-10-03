@@ -1,5 +1,5 @@
 /* app/src/chat/OpencodeProviderRow.module.css — one unconnected provider in the credentials
-   popover. Horizontal padding matches ChatAuthPanel's connected rows so the right-hand controls
+   popover. Horizontal padding matches OpencodeProviderManager's connected rows so the right-hand controls
    (`[ connect ]`, `[ save ]`, the kind badges above) all end on the same right edge. */
 .root {
     display: flex;
@@ -10,15 +10,14 @@
     align-items: center;
     gap: var(--sp-4);
     padding: var(--sp-3) var(--sp-5);
-    font-size: var(--fs-body);
+    font-size: var(--fs-ui);
     min-height: calc(var(--h-control) + var(--sp-3) * 2);
 }
 .name {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Wraps rather than clipping, so a long name stays readable in the narrow panel. */
+    overflow-wrap: anywhere;
 }
 .field {
     flex: 1;

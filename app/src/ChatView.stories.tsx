@@ -553,10 +553,13 @@ function OpencodeChat(props: { chatId: string; frames: readonly ChatFrame[] }) {
     return <FakeSocketChat chatId={props.chatId} frames={props.frames} />
 }
 
-/** The opencode provider manager in the context it actually appears in: an opencode chat with the
- *  credentials pill clicked open over its transcript. The popover's lists come from the preview's
- *  global fakeTransport (`GET /opencode/providers`); the pill's own label comes from the `auth` frame. */
-export const OpencodeProviders: Story = {
+/** The unified model picker in the context it actually appears in: an opencode chat with the model
+ *  word clicked open over its transcript — connectors on the left, grouped models and the provider
+ *  manager on the right. The manager's lists come from the preview's global fakeTransport
+ *  (`GET /opencode/providers`). The fake socket replays the SAME frames for every connector, so
+ *  switching connector here shows the same model list; per-connector states live in
+ *  Chat/ChatModelPicker. */
+export const ModelPicker: Story = {
     render: () => (
         <div style={{ height: STORY_H, width: '100%' }}>
             <OpencodeChat
@@ -570,10 +573,27 @@ export const OpencodeProviders: Story = {
                         },
                     },
                     {
-                        type: 'auth',
-                        providers: [
-                            { name: 'anthropic', kind: 'oauth' },
-                            { name: 'opencode zen', kind: 'api' },
+                        type: 'models',
+                        models: [
+                            {
+                                value: 'anthropic/claude-sonnet-4-5',
+                                label: 'anthropic/claude-sonnet-4-5',
+                                description: '',
+                                effortLevels: [],
+                            },
+                            {
+                                value: 'anthropic/claude-opus-4-8',
+                                label: 'anthropic/claude-opus-4-8',
+                                description: '',
+                                effortLevels: [],
+                            },
+                            {
+                                value: 'opencode/kimi-k2',
+                                label: 'opencode/kimi-k2',
+                                description: '',
+                                effortLevels: [],
+                                free: true,
+                            },
                         ],
                     },
                     {
@@ -591,22 +611,25 @@ export const OpencodeProviders: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const pill = await waitFor(() => {
+        const word = await waitFor(() => {
             const el = canvasElement.querySelector<HTMLElement>(
-                '[data-testid="chat-auth"]',
+                '[data-testid="chat-model"] button',
             )
-            if (!el) throw new Error('opencode auth pill not rendered yet')
+            if (!el) throw new Error('model word not rendered yet')
             return el
         })
-        pill.click()
-        // the panel is portalled to <body> (the controls row clips its overflow), so look there
+        word.click()
+        // the picker is portalled to <body> (the controls row clips its overflow), so look there
         const page = canvasElement.ownerDocument.body
-        await findText(page, 'opencode providers')
-        // the filter input renders once the provider list has loaded
+        await waitFor(() => {
+            if (!page.querySelector('[data-chat-model-picker]'))
+                throw new Error('model picker not rendered yet')
+        })
+        await findText(page, 'kimi-k2')
+        // the provider manager's filter renders once the provider list has loaded
         await waitFor(() => {
             if (!page.querySelector('input[placeholder="add a provider…"]'))
                 throw new Error('provider filter not rendered yet')
         })
-        await findText(page, 'opencode zen')
     },
 }

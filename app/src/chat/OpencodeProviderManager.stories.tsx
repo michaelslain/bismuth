@@ -1,10 +1,10 @@
-// Visual spec for <ChatAuthPanel> — the opencode providers popover body. Every story reaches its
+// Visual spec for <OpencodeProviderManager> — the opencode provider manager body. Every story reaches its
 // state through the fake transport's seed (ui/_fakeTransport.ts: `opencodeProviders`,
 // `opencodeMode`) and, for the filter, a play() that types — no timers.
 import type { JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
-import ChatAuthPanel from './ChatAuthPanel'
+import OpencodeProviderManager from './OpencodeProviderManager'
 import { setTransport } from '../api'
 import {
     fakeTransport,
@@ -13,33 +13,23 @@ import {
 } from '../ui/_fakeTransport'
 
 const meta = {
-    title: 'Chat/ChatAuthPanel',
-    component: ChatAuthPanel,
+    title: 'Chat/OpencodeProviderManager',
+    component: OpencodeProviderManager,
     parameters: { layout: 'padded' },
-} satisfies Meta<typeof ChatAuthPanel>
+} satisfies Meta<typeof OpencodeProviderManager>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** The panel hangs off an anchor (its own parent element) at the top-right of the story, the way it
- *  hangs off the credentials pill — so it opens downward and has room for a full list. */
+/** The manager is a body with no frame of its own — hosted here in a popover-width box, the way
+ *  ChatModelPicker's right column holds it. */
 const hosted =
     (seed: FakeTransportSeed): (() => JSX.Element) =>
     () => {
         setTransport(fakeTransport(seed))
         return (
-            <div style={{ height: '700px' }}>
-                <div
-                    style={{
-                        position: 'relative',
-                        width: '320px',
-                        height: '1px',
-                        'margin-left': 'auto',
-                        top: '8px',
-                    }}
-                >
-                    <ChatAuthPanel onClose={() => {}} />
-                </div>
+            <div class="bismuth-popover" style={{ width: '360px' }}>
+                <OpencodeProviderManager />
             </div>
         )
     }
@@ -64,7 +54,9 @@ export const NoneConnected: Story = {
     }),
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await expect(await c.findByText('no providers connected yet')).not.toBeNull()
+        await expect(
+            await c.findByText('no providers connected yet'),
+        ).not.toBeNull()
         await expect(c.getByPlaceholderText('add a provider…')).not.toBeNull()
     },
 }
@@ -83,8 +75,12 @@ export const SomeConnected: Story = {
         await expect(c.getByText('oauth')).not.toBeNull()
         await expect(c.getByText('api key')).not.toBeNull()
         // 4 API-key providers get `[ connect ]`, the one OAuth provider (github copilot) `[ sign in ]`
-        await expect(c.getAllByRole('button', { name: 'connect' }).length).toBe(4)
-        await expect(c.getAllByRole('button', { name: 'sign in' }).length).toBe(1)
+        await expect(c.getAllByRole('button', { name: 'connect' }).length).toBe(
+            4,
+        )
+        await expect(c.getAllByRole('button', { name: 'sign in' }).length).toBe(
+            1,
+        )
     },
 }
 
@@ -129,7 +125,11 @@ export const OpencodeMissing: Story = {
         await expect(await c.findByRole('alert')).not.toBeNull()
         await expect(c.getByText(/opencode is not installed/)).not.toBeNull()
         // the terminal path stays usable
-        await expect(c.getByRole('button', { name: 'open terminal' })).not.toBeNull()
-        await expect(c.getByRole('button', { name: 'copy command' })).not.toBeNull()
+        await expect(
+            c.getByRole('button', { name: 'open terminal' }),
+        ).not.toBeNull()
+        await expect(
+            c.getByRole('button', { name: 'copy command' }),
+        ).not.toBeNull()
     },
 }

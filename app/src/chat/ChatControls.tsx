@@ -1,7 +1,7 @@
 // app/src/chat/ChatControls.tsx
 // The permission-mode control (provider/model/effort are ChatModelMenu.tsx's now, and the old
 // browser/--chrome toggle is deleted), the tools/MCP/context readouts, and the
-// auth/history/new-chat actions — moved out of the old inline ChatHeader.tsx so they can render TWO
+// history/new-chat actions — moved out of the old inline ChatHeader.tsx so they can render TWO
 // ways from the SAME session-driven markup:
 //   <ChatReadouts session/>   — the tools/MCP/context readouts, placed by ChatHeader into its bar.
 //   <ChatControls session/>   — the model/permission/actions controls as ONE quiet inline row under
@@ -12,25 +12,20 @@
 //     ancestor selectors in ChatControls.module.css overriding the shared picker chrome; Config and
 //     Actions render identically either way.
 //
-// The auth popover (ChatAuthPanel) is anchored inside `actions` in both shapes — this file owns
-// only the ANCHOR + the toggle pill/button, never the popover body. History's own popover
+// opencode credentials are managed inside ChatModelPicker (opened from the model word), so the
+// row carries no auth pill. History's own popover
 // (ChatHistoryPanel) is no longer anchored here at all: Task 4 has it render as a full-region pane
 // in the HOST (ChatView.tsx / DaemonChat.tsx), in place of the transcript + composer, so this file
 // keeps only the "history" toggle button.
-import { createSignal, Show, type Component } from 'solid-js'
+import { Show, type Component } from 'solid-js'
 import styles from './ChatControls.module.css'
 import type { ChatSession } from './chatSession'
 import Select from '../ui/Select'
-import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import Text from '../ui/Text'
 import { Icon } from '../icons/Icon'
 import ChatModelMenu from './ChatModelMenu'
-import {
-    opencodeAuthSummary,
-    providerCan,
-    sanitizeChatProvider,
-} from '../chatProvider'
+import { providerCan, sanitizeChatProvider } from '../chatProvider'
 import { PERMISSION_MODE_OPTIONS } from '../chatPermissionMode'
 import {
     browserStorage,
@@ -40,8 +35,6 @@ import {
     readProviderChoice,
 } from './chatSessionPrefs'
 import { settings } from '../settings'
-import { Portal } from 'solid-js/web'
-import ChatAuthPanel from './ChatAuthPanel'
 
 /** The members the controls row reads off a session — ChatModelMenu, Config and Actions take this
  *  rather than the whole `ChatSession`, so the no-session row builds only what it renders. */
@@ -54,7 +47,6 @@ export type ChatControlsView = Pick<
     | 'effortOptions'
     | 'effortValue'
     | 'permMode'
-    | 'authProviders'
     | 'switchProvider'
     | 'switchModel'
     | 'switchEffort'
@@ -207,54 +199,14 @@ const Config: Component<{ session: ChatControlsView }> = props => {
     )
 }
 
-/** The auth pill + history + new-chat actions, with their two popovers anchored here. Wrapped in
- *  ONE `.actions` cluster — a single child of `.row` — so the three sit `--sp-4` apart with NO `//`
+/** The history + new-chat actions. Wrapped in
+ *  ONE `.actions` cluster — a single child of `.row` — so they sit `--sp-4` apart with NO `//`
  *  between them: brackets already separate adjacent commands, and `//` is reserved for separating
  *  readout GROUPS (Acceptance 7: "opus 4.8 // bypass // [history] [new chat]" — exactly two `//`,
  *  none inside the actions cluster itself). */
 const Actions: Component<{ session: ChatControlsView }> = props => {
-    const [authOpen, setAuthOpen] = createSignal(false)
-    let authAnchor!: HTMLDivElement
     return (
         <div class={styles.actions}>
-            {/* Text-only, like every other control in the row (Acceptance: "every control a
-                lowercase text label") — the KeyRound glyph that used to sit in front of the summary
-                is dropped; the summary text itself is the app's own copy (e.g. "signed out"), left
-                as returned rather than force-lowercased. `danger` (not a hand-rolled `.auth-out`
-                class) carries the signed-out tone — the same orthogonal prop every other danger
-                control in the app uses. */}
-            <Show when={props.session.provider() === 'opencode'}>
-                <div
-                    ref={authAnchor}
-                    class={styles['auth-anchor']}
-                    data-chat-auth-anchor
-                >
-                    <TextButton
-                        variant={authOpen() ? 'selected' : 'unselected'}
-                        danger={
-                            opencodeAuthSummary(props.session.authProviders())
-                                .signedIn === false
-                        }
-                        data-testid="chat-auth"
-                        title="opencode credentials"
-                        onClick={() => setAuthOpen(v => !v)}
-                    >
-                        {
-                            opencodeAuthSummary(props.session.authProviders())
-                                .label
-                        }
-                    </TextButton>
-                    {/* Portalled: `.row` clips its overflow, so an in-row panel never shows. */}
-                    <Show when={authOpen()}>
-                        <Portal>
-                            <ChatAuthPanel
-                                anchor={authAnchor}
-                                onClose={() => setAuthOpen(false)}
-                            />
-                        </Portal>
-                    </Show>
-                </div>
-            </Show>
             {/* NEVER DROPPED — a row with no way to reach past chats or start a new one is a
                 broken one, same reasoning as "New chat" below. The popover itself is no longer
                 anchored here: Task 4 has the host (ChatView/DaemonChat) render ChatHistoryPanel as
@@ -331,7 +283,6 @@ function buildDisabledSession(chatId?: string): ChatControlsView {
         effortOptions: () => [],
         effortValue: () => readLastEffort(storage),
         permMode: () => readLastMode(storage),
-        authProviders: () => null,
         switchProvider: () => {},
         switchModel: () => {},
         switchEffort: () => {},
