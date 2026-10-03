@@ -9,16 +9,19 @@ import { clamp, minutesToStr, snap } from './timeGridDrag'
 export const MINUTES_PER_DAY = 24 * 60
 export const GRID_PX = 1200
 
-/** A block shorter than this many px lays out on one line (time + title side by side). Only a
- *  back-to-back 30-min block (~22px) is that short; a padded one (~34px) has room for the time
- *  over a full-width title line, which reads far better than a title squeezed beside the time. */
+/** A block shorter than this many px lays out on one line (time + title side by side). A 30-min
+ *  block (~22px, one half-hour row) is that short; an hour block (~47px) has room for the time
+ *  over a full-width title line. */
 const COMPACT_BELOW_PX = 30
 /** Every chip trims this much so neighbours keep a hairline gap. */
 const CHIP_TRIM_PX = 3
 const MIN_HEIGHT_PX = 8
-/** A block at most this many minutes long gets `SHORT_PAD_MIN` of visual height. */
+/** A block at most this many minutes long drops its time. It is also the visual FLOOR: anything
+ *  shorter grows to one half-hour row, so every block fills whole grid rows and a 30-min event
+ *  sits exactly between two lines instead of spilling past the next one. */
 const SHORT_MIN = 30
-const SHORT_PAD_MIN = 15
+/** A zero-length drag span floors to this many minutes. */
+const ZERO_SPAN_MIN = 15
 
 export type MinuteSpan = { startMin: number; endMin: number }
 
@@ -56,13 +59,11 @@ export function yToMinutes(y: number, colHeight: number): number {
     return clamp(snap((y / colHeight) * MINUTES_PER_DAY))
 }
 
-/** The height of a block spanning `duration` minutes: short blocks get padding, up to `room`
- *  minutes (the gap before whatever starts next), so the title stays readable. */
-function blockHeight(duration: number, room: number): number {
-    const visual =
-        duration <= SHORT_MIN
-            ? Math.min(duration + SHORT_PAD_MIN, Math.max(duration, room))
-            : duration
+/** The height of a block spanning `duration` minutes: true to its duration, except that a block
+ *  shorter than `SHORT_MIN` grows to it — never past `room` minutes (the gap before whatever
+ *  starts next) — so the title stays readable. */
+function blockHeight(duration: number, room = Infinity): number {
+    const visual = Math.max(duration, Math.min(SHORT_MIN, room))
     return Math.max(minutesToPx(visual) - CHIP_TRIM_PX, MIN_HEIGHT_PX)
 }
 
@@ -155,18 +156,16 @@ export function layoutDay(dayEvents: CalendarEvent[]): DayLayoutItem[] {
     })
 }
 
-/** Box of the drag preview: matches the rendered chip's height exactly (short events get +15min
- *  of visual padding and every chip trims 3px). A zero span floors to 15 minutes. */
+/** Box of the drag preview: matches the rendered chip's height exactly (short events grow to a
+ *  half-hour row and every chip trims 3px). A zero span floors to 15 minutes. */
 export function ghostBox(
     startMin: number,
     endMin: number,
 ): { top: number; height: number; endMin: number } {
-    const end = endMin <= startMin ? startMin + SHORT_PAD_MIN : endMin
-    const dur = end - startMin
-    const visual = dur <= SHORT_MIN ? dur + SHORT_PAD_MIN : dur
+    const end = endMin <= startMin ? startMin + ZERO_SPAN_MIN : endMin
     return {
         top: minutesToPx(startMin),
-        height: Math.max(minutesToPx(visual) - CHIP_TRIM_PX, MIN_HEIGHT_PX),
+        height: blockHeight(end - startMin),
         endMin: end,
     }
 }

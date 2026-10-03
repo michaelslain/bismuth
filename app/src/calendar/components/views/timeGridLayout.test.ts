@@ -12,7 +12,12 @@ import {
     yToMinutes,
 } from './timeGridLayout'
 
-const ev = (id: string, date: string, startTime?: string, endTime?: string) => ({
+const ev = (
+    id: string,
+    date: string,
+    startTime?: string,
+    endTime?: string,
+) => ({
     id,
     title: id,
     date,
@@ -33,8 +38,14 @@ test('timedOn / allDayOn split a day by startTime', () => {
 })
 
 test('eventMinutes defaults the end to +1h and never runs backwards near midnight', () => {
-    expect(eventMinutes(ev('a', 'd', '09:00'))).toEqual({ startMin: 540, endMin: 600 })
-    expect(eventMinutes(ev('a', 'd', '09:00', '09:30'))).toEqual({ startMin: 540, endMin: 570 })
+    expect(eventMinutes(ev('a', 'd', '09:00'))).toEqual({
+        startMin: 540,
+        endMin: 600,
+    })
+    expect(eventMinutes(ev('a', 'd', '09:00', '09:30'))).toEqual({
+        startMin: 540,
+        endMin: 570,
+    })
     const late = eventMinutes(ev('a', 'd', '23:30'))
     expect(late.endMin).toBeGreaterThan(late.startMin)
 })
@@ -45,7 +56,7 @@ test('yToMinutes snaps to the interval and clamps', () => {
     expect(yToMinutes(GRID_PX * 2, GRID_PX)).toBe(23 * 60 + 45)
 })
 
-test('layoutDay puts overlapping events in lanes and pads short ones', () => {
+test('layoutDay puts overlapping events in lanes and fits a 30-min block in one row', () => {
     const a = ev('a', 'd', '09:00', '10:00')
     const b = ev('b', 'd', '09:30', '10:30')
     const c = ev('c', 'd', '13:00', '13:30')
@@ -55,10 +66,10 @@ test('layoutDay puts overlapping events in lanes and pads short ones', () => {
     expect(byId.b.lane).toBe(1)
     expect(byId.a.lanes).toBe(2)
     expect(byId.c.lanes).toBe(1)
-    // 30 min event gets +15min of height, minus the 3px trim
-    expect(byId.c.height).toBeCloseTo(minutesToPx(45) - 3)
-    // ...which leaves room for time over title, so it is not the one-line compact layout
-    expect(byId.c.compact).toBe(false)
+    // a 30 min event is exactly one half-hour row, minus the 3px trim — it never crosses a line
+    expect(byId.c.height).toBeCloseTo(minutesToPx(30) - 3)
+    // ...which is one line tall: the compact layout
+    expect(byId.c.compact).toBe(true)
     // 30 min or less drops its time; a 1h block keeps it
     expect(byId.c.short).toBe(true)
     expect(byId.a.short).toBe(false)
@@ -66,11 +77,24 @@ test('layoutDay puts overlapping events in lanes and pads short ones', () => {
     expect(byId.a.compact).toBe(false)
 })
 
-test('padding never spills into a back-to-back event', () => {
-    const out = layoutDay([ev('a', 'd', '08:00', '08:30'), ev('b', 'd', '08:30', '10:00')])
+test('a block shorter than 30 min grows to a half-hour row, never into the next event', () => {
+    const out = layoutDay([
+        ev('a', 'd', '08:00', '08:15'),
+        ev('b', 'd', '09:00', '09:10'),
+        ev('c', 'd', '09:20', '10:00'),
+    ])
+    const byId = Object.fromEntries(out.map(l => [l.event.id, l]))
+    expect(byId.a.height).toBeCloseTo(minutesToPx(30) - 3)
+    expect(byId.b.height).toBeCloseTo(minutesToPx(20) - 3)
+})
+
+test('a back-to-back 30-min block keeps its own row', () => {
+    const out = layoutDay([
+        ev('a', 'd', '08:00', '08:30'),
+        ev('b', 'd', '08:30', '10:00'),
+    ])
     const a = out.find(l => l.event.id === 'a')!
     expect(a.height).toBeCloseTo(minutesToPx(30) - 3)
-    // an unpadded 30-min block is too short for two lines: one-line compact
     expect(a.compact).toBe(true)
 })
 
@@ -79,14 +103,19 @@ test('an untimed-end event is capped at the next start so back-to-backs stack', 
     expect(out.every(l => l.lanes === 1)).toBe(true)
 })
 
-test('ghostBox floors a zero span to 15 minutes and pads like the chip', () => {
+test('ghostBox floors a zero span to 15 minutes and sizes like the chip', () => {
     const g = ghostBox(600, 600)
     expect(g.endMin).toBe(615)
     expect(g.top).toBe(minutesToPx(600))
     expect(g.height).toBeCloseTo(minutesToPx(30) - 3)
+    expect(ghostBox(600, 630).height).toBeCloseTo(minutesToPx(30) - 3)
+    expect(ghostBox(600, 660).height).toBeCloseTo(minutesToPx(60) - 3)
 })
 
 test('the CSS custom property and the TS constant are one number', () => {
-    const css = readFileSync(new URL('./TimeGrid.module.css', import.meta.url), 'utf8')
+    const css = readFileSync(
+        new URL('./TimeGrid.module.css', import.meta.url),
+        'utf8',
+    )
     expect(css).toContain(`--time-grid-height: ${GRID_PX}px`)
 })
