@@ -11,7 +11,7 @@
     gap: var(--sp-4);
     padding: var(--sp-3) var(--sp-5);
     font-size: var(--fs-body);
-    min-height: calc(var(--h-control) + var(--sp-4));
+    min-height: calc(var(--h-control) + var(--sp-3) * 2);
 }
 .name {
     flex: 1;
