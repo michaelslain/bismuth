@@ -161,6 +161,27 @@ export const SETTINGS_SCHEMA: Schema = {
             max: 20,
             doc: 'Icon size (px) for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides. Default 12: an icon needs a little more room than the 11.5px --fs-ui label text beside it.',
         },
+        cursorWidth: {
+            type: 'number',
+            default: 2,
+            min: 1,
+            max: 4,
+            doc: 'Text cursor bar width (px) — the ONE cursor every editor, field and terminal draws.',
+        },
+        cursorGlideMs: {
+            type: 'number',
+            default: 70,
+            min: 20,
+            max: 200,
+            doc: 'Text cursor glide between positions (ms), in every editor, field and terminal.',
+        },
+        cursorBlinkSeconds: {
+            type: 'number',
+            default: 1.2,
+            min: 0.6,
+            max: 2,
+            doc: 'Text cursor blink cycle (seconds), shared by every cursor in the app.',
+        },
     }),
     graph: object({
         spin: {
@@ -557,27 +578,6 @@ export const SETTINGS_SCHEMA: Schema = {
             min: 1.2,
             max: 2,
             doc: 'Terminal line height (multiplier).',
-        },
-        cursorWidth: {
-            type: 'number',
-            default: 2,
-            min: 1,
-            max: 4,
-            doc: 'Terminal cursor bar width (px).',
-        },
-        cursorGlideMs: {
-            type: 'number',
-            default: 70,
-            min: 20,
-            max: 200,
-            doc: 'Cursor glide animation duration (ms).',
-        },
-        cursorBlinkSeconds: {
-            type: 'number',
-            default: 1.2,
-            min: 0.6,
-            max: 2,
-            doc: 'Cursor blink cycle duration (seconds).',
         },
     }),
     chat: object({

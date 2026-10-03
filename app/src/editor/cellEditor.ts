@@ -17,7 +17,7 @@
 //
 // Loaded DYNAMICALLY by tableWidget.ts (it imports `livePreview`'s Solid `.tsx`, which bun's headless
 // test transform can't compile) so the widget's unit tests never pull it into their static graph.
-import { EditorView, keymap, drawSelection, tooltips } from '@codemirror/view'
+import { EditorView, keymap, tooltips } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
@@ -35,6 +35,7 @@ import { settings } from '../settings'
 import { api } from '../api'
 import { cellSourceToBlockMarkdown } from './cellBlockRender'
 import type { NoteCandidate } from './wikilink'
+import { cursor } from './cursorTheme'
 
 /** Callbacks the table widget wires the in-cell editor to. The editor owns text + live preview +
  *  autocomplete; the widget owns everything structural (commit, cell-to-cell navigation, blur). */
@@ -99,13 +100,8 @@ const cellEditorTheme = EditorView.theme({
         maxWidth: 'none',
         width: '100%',
         boxSizing: 'border-box',
-        caretColor: 'var(--fg)',
     },
     '.cm-line': { padding: '0' },
-    '.cm-cursor, .cm-dropCursor': {
-        borderLeftColor: 'var(--fg)',
-        borderLeftWidth: '2px',
-    },
     '.cm-selectionBackground, .cm-content ::selection': {
         backgroundColor: 'var(--selection)',
     },
@@ -125,7 +121,7 @@ export function mountCellEditor(h: CellEditorHooks): EditorView {
             doc: cellSourceToBlockMarkdown(h.source),
             extensions: [
                 history(),
-                drawSelection(),
+                cursor,
                 // Match the note editor: a 4-space Tab so list nesting clears the `1. ` marker uniformly.
                 indentUnit.of('    '),
                 EditorState.tabSize.of(4),

@@ -373,6 +373,72 @@ describe('sidebarIconFontSize renamed to iconSize', () => {
     })
 })
 
+describe('terminal cursor settings moved to appearance', () => {
+    test('a saved terminal.cursorBlinkSeconds moves to appearance with its value and comment', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            [
+                'appearance:',
+                '  theme: ink',
+                'terminal:',
+                '  fontSize: 14',
+                '  # slow blink please',
+                '  cursorBlinkSeconds: 1.8',
+                '  cursorGlideMs: 120 # floaty',
+                '',
+            ].join('\n'),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+        const settings = (await readSettings(vault))!.data as Record<
+            string,
+            Record<string, unknown>
+        >
+
+        expect(settings.appearance.cursorBlinkSeconds).toBe(1.8)
+        expect(settings.appearance.cursorGlideMs).toBe(120)
+        expect(settings.appearance.cursorWidth).toBe(2)
+        expect(settings.terminal.cursorBlinkSeconds).toBeUndefined()
+        expect(text).toContain('# slow blink please')
+        expect(text).toContain('# floaty')
+        const lines = text.split('\n')
+        const idx = lines.findIndex(l => /^\s*cursorBlinkSeconds:/.test(l))
+        expect(lines.filter(l => /^\s*cursorBlinkSeconds:/.test(l)).length).toBe(1)
+        expect(lines[idx - 1]).toContain('# slow blink please')
+        // it landed under appearance, not terminal
+        const appearanceAt = lines.indexOf('appearance:')
+        const terminalAt = lines.indexOf('terminal:')
+        expect(idx > appearanceAt && (idx < terminalAt || terminalAt < appearanceAt)).toBe(true)
+        rmSync(vault, { recursive: true, force: true })
+    })
+
+    test('an appearance value already present wins over the stale terminal one', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            [
+                'appearance:',
+                '  cursorWidth: 3',
+                'terminal:',
+                '  cursorWidth: 1',
+                '',
+            ].join('\n'),
+        )
+
+        await reconcileSettings(vault)
+        const settings = (await readSettings(vault))!.data as Record<
+            string,
+            Record<string, unknown>
+        >
+
+        expect(settings.appearance.cursorWidth).toBe(3)
+        expect(settings.terminal.cursorWidth).toBeUndefined()
+        rmSync(vault, { recursive: true, force: true })
+    })
+})
+
 describe('upgrade resilience — a damaged or hostile old file must not make things worse', () => {
     test('a corrupt settings file is left untouched for the user to fix, not overwritten', async () => {
         const vault = emptyVault()

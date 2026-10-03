@@ -44,6 +44,9 @@ export interface Settings {
         monoScale: number // optical-size multiplier for Monaspace (mono UI/code)
         tabFontSize: number // px
         iconSize: number // px
+        cursorWidth: number // px — the one text cursor, everywhere
+        cursorGlideMs: number // ms
+        cursorBlinkSeconds: number // s
     }
     graph: {
         spin: boolean
@@ -131,9 +134,6 @@ export interface Settings {
     terminal: {
         fontSize: number // px
         lineHeight: number // multiplier
-        cursorWidth: number // px
-        cursorGlideMs: number // ms
-        cursorBlinkSeconds: number // s
     }
     chat: {
         provider: string // default provider for NEW chats: "claude" | "opencode"

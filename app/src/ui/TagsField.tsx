@@ -62,6 +62,7 @@ import {
     withTrailingSeparator,
 } from './tagsFieldText'
 import styles from './TagsField.module.css'
+import { cursor } from '../editor/cursorTheme'
 
 export type TagsFieldProps = {
     /** The current values (bare — no `#`). */
@@ -97,7 +98,7 @@ const fieldTheme = EditorView.theme({
         overflow: 'hidden',
         alignItems: 'center',
     },
-    '.cm-content': { padding: '0', caretColor: 'var(--fg)' },
+    '.cm-content': { padding: '0' },
     '.cm-line': { padding: '0' },
     '.cm-placeholder': { color: 'var(--faint)' },
 })
@@ -387,6 +388,7 @@ const TagsField: Component<TagsFieldProps> = props => {
                         },
                     }),
                     fieldTheme,
+                    cursor,
                     ...(tags() ? [tagTokenHighlight] : []),
                     ...(props.placeholder ? [cmPlaceholder(props.placeholder)] : []),
                 ],

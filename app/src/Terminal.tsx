@@ -185,10 +185,6 @@ function resolvedFontFamily(): string {
 // Fix 3: Hoist TextEncoder to module scope — avoids a per-keystroke allocation.
 const enc = new TextEncoder()
 
-// Caret thickness (px) for the custom cursor overlay — a blinking underline matching
-// .asc-caret, not a solid block. See .xterm-custom-cursor in global.css's `Terminal.css` section.
-const CARET_H = 2
-
 // --- Drag-and-drop file paths into the terminal -----------------------------------
 // The absolute vault path is the terminal's cwd; we fetch it once (cached across all
 // terminal tabs) to turn an OS/browser-dropped file's uploaded vault-relative path (B20,
@@ -603,12 +599,12 @@ export function TerminalTab(props: {
         if (disposed) return
 
         term = new Xterm({
-            // The visible caret is our own .xterm-custom-cursor overlay (a blinking
-            // underline matching .asc-caret) — see buildTerminalTheme's cursor comment.
+            // The visible caret is our own .xterm-custom-cursor overlay (THE cursor: the same
+            // accent bar as every editor) — see buildTerminalTheme's cursor comment.
             // These native options are set for correctness/parity but the native cursor
             // itself is fully transparent, so they have no visible effect.
             cursorBlink: true,
-            cursorStyle: 'underline',
+            cursorStyle: 'bar',
             letterSpacing: 0,
             allowTransparency: false,
             fontFamily,
@@ -625,9 +621,9 @@ export function TerminalTab(props: {
 
         // Custom cursor overlay that glides smoothly between positions — xterm's native
         // cursor is a class transferred between inline spans, so CSS transitions don't
-        // apply. We render our own absolutely-positioned div and animate transform. Shaped
-        // as a blinking underline (CARET_H, global.css's `Terminal.css` section) to match .asc-caret everywhere
-        // else in the system, not a solid block.
+        // apply. We render our own absolutely-positioned div and animate transform. It is THE
+        // cursor — a --cursor-width accent bar on the cell's left edge, full cell height (global.css's
+        // `Terminal.css` section), the same bar every editor draws.
         cursorEl = document.createElement('div')
         cursorEl.className = 'xterm-custom-cursor'
         container.appendChild(cursorEl)
@@ -639,7 +635,7 @@ export function TerminalTab(props: {
         const updateCursor = () => {
             if (!term || !cursorEl) return
             // Hide the overlay while the user is scrolled up into the scrollback — the real
-            // cursor sits on the (now off-screen) prompt line, so a floating underline would
+            // cursor sits on the (now off-screen) prompt line, so a floating bar would
             // be misleading. onRender fires on scroll, so this toggles promptly.
             const buf = term.buffer.active
             if (buf.viewportY !== buf.baseY) {
@@ -650,12 +646,13 @@ export function TerminalTab(props: {
             // First paint (or after an xterm reflow that left the metrics at 0): measure once.
             if (cellH === 0) recomputeCursorMetrics()
             // cursorX/Y are in cell units relative to the visible viewport; offset by the
-            // padded rows element's position within the container. The underline sits at the
-            // BOTTOM of the cell (full cell width, CARET_H thick) rather than filling it.
+            // padded rows element's position within the container. The bar stands on the
+            // cell's LEFT edge, full cell height — where the next character lands; its width is
+            // --cursor-width from CSS, not set here.
             const x = rowOffX + buf.cursorX * cellW
-            const y = rowOffY + buf.cursorY * cellH + cellH - CARET_H
+            const y = rowOffY + buf.cursorY * cellH
             cursorEl.style.transform = `translate(${x}px, ${y}px)`
-            cursorEl.style.width = `${cellW}px`
+            cursorEl.style.height = `${cellH}px`
         }
 
         recomputeCursorMetrics()

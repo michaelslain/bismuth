@@ -6,7 +6,7 @@ import {
     runWithOwner,
     Show,
 } from 'solid-js'
-import { EditorView, keymap, drawSelection } from '@codemirror/view'
+import { EditorView, keymap } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import {
     defaultKeymap,
@@ -41,6 +41,7 @@ import {
 } from '../editor/cardEditorExtensions'
 import { Loading } from '../ui/EmptyState'
 import styles from './CardEditor.module.css'
+import { cursor } from '../editor/cursorTheme'
 
 /**
  * A seamless, always-live inline editor for a card. A click places the cursor, a drag selects, and
@@ -144,7 +145,7 @@ export function CardEditor(props: {
                 doc: initialBody,
                 extensions: [
                     history(),
-                    drawSelection(),
+                    cursor,
                     // Match the note editor: a 4-space Tab so list nesting clears the `1. ` marker
                     // (ordered renumbering survives) and indents uniformly across bullets/numbers/text.
                     indentUnit.of('    '),

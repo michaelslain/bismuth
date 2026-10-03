@@ -57,6 +57,9 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 | `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | min `11`, max `14` | Editor tab label font size (px). |
 | `iconSize` | number | `12` | min `11`, max `20` | Icon size in px for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides (only a few oversized illustration marks opt out, each marked `icon-size-exempt:`). Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
+| `cursorWidth` | number | `2` | min `1`, max `4` | Text cursor bar width (px) — the ONE cursor every editor, field and terminal draws. |
+| `cursorGlideMs` | number | `70` | min `20`, max `200` | Text cursor glide between positions (ms), in every editor, field and terminal. |
+| `cursorBlinkSeconds` | number | `1.2` | min `0.6`, max `2` | Text cursor blink cycle (seconds), shared by every cursor in the app. |
 
 Example:
 
@@ -343,9 +346,6 @@ In-app terminal tab appearance (xterm.js), wired through CSS vars.
 |-----|------|---------|--------|-----|
 | `fontSize` | number | `13` | min `9`, max `20` | Terminal font size (px). |
 | `lineHeight` | number | `1.5` | min `1.2`, max `2` | Terminal line height (multiplier). |
-| `cursorWidth` | number | `2` | min `1`, max `4` | Terminal cursor bar width (px). |
-| `cursorGlideMs` | number | `70` | min `20`, max `200` | Cursor glide animation duration (ms). |
-| `cursorBlinkSeconds` | number | `1.2` | min `0.6`, max `2` | Cursor blink cycle duration (seconds). |
 
 Example:
 
