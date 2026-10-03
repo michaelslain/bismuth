@@ -1201,8 +1201,21 @@ export function respondPermission(
 export function setModel(chatId: string, model: string): void {
     const s = sessions.get(chatId)
     if (!s) return
-    if (!/^[\w.-]+\/[\w.:-]+$/.test(model)) return
+    if (!acceptsModelPick(s.localEnv, model)) return
     s.model = model
+}
+
+/** Whether `setModel` takes `model`. The id is `provider/model`, and the model part may itself hold
+ *  `/` (LM Studio's `local/qwen/qwen3-coder-30b`) — the first `/` is the provider split. While the
+ *  vault's local model is on (`localEnv` set) the chat is PINNED to the local server: the app re-applies
+ *  the last pick on a fresh chat, and a remembered cloud id would otherwise run it on the cloud account. */
+export function acceptsModelPick(
+    localEnv: Record<string, string> | null,
+    model: string,
+): boolean {
+    if (!/^[\w.-]+\/[\w.:/@-]+$/.test(model)) return false
+    if (localEnv && !model.startsWith(`${LOCAL_PROVIDER_ID}/`)) return false
+    return true
 }
 
 export function closeChat(chatId: string): void {
