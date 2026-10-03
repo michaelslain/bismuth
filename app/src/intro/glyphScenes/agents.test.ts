@@ -15,14 +15,16 @@ describe('agentsScene', () => {
         expect(r[10].trim()).toBe('[ mcp ]')
         expect(r[13].trim()).toBe('( vault )')
     })
-    it('lines only use \\ | / and connect each name to mcp', () => {
+    it('lines only use \\ | / _ and connect each name to mcp', () => {
         const r = rows(agentsScene.revealMs)
-        for (let i = 2; i <= 9; i++) expect(/^[ \\|/]*$/.test(r[i])).toBe(true)
+        for (let i = 2; i <= 9; i++) expect(/^[ \\|/_]*$/.test(r[i])).toBe(true)
         expect(r[9].replace(/ /g, '').length).toBeGreaterThanOrEqual(1)
-        expect(r[2].replace(/ /g, '').length).toBe(AGENTS.length)
+        expect(r[2].replace(/[ _]/g, '').length).toBe(AGENTS.length)
         for (const a of AGENTS) {
             const s = r[1].indexOf(`[${a}]`)
-            expect(r[2].slice(s, s + a.length + 2).trim().length).toBe(1)
+            expect(
+                r[2].slice(s, s + a.length + 2).replace(/[ _]/g, '').length,
+            ).toBe(1)
         }
         const first = [...r[9]].findIndex(ch => ch !== ' ')
         expect(first).toBeGreaterThanOrEqual(r[10].indexOf('['))

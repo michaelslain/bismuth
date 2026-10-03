@@ -93,6 +93,14 @@ function drawLines(f: GlyphFrame, t: number): void {
         (LINE_STEPS + 1) * clamp01((t - REVEAL_MS * 0.5) / (REVEAL_MS * 0.4)),
     )
     for (let r = LINE_TOP; r < LINE_TOP + rowsDrawn; r++) {
+        // Bridges first, so the slashes win any shared cell: each horizontal step to the next row
+        // is `_`-filled, which turns the fan into connected staircases.
+        for (let i = 0; r < LINE_BOTTOM && i < AGENTS.length; i++) {
+            const a = lineCol(i, r)
+            const b = r + 1 === LINE_BOTTOM ? MCP_COL : lineCol(i, r + 1)
+            for (let c = Math.min(a, b) + 1; c < Math.max(a, b); c++)
+                putChar(f, c, r, '_', 'faint')
+        }
         // Every line has reached MCP_COL by the bottom row: one `|`, not a last-writer-wins glyph.
         if (r === LINE_BOTTOM) putChar(f, MCP_COL, r, '|', 'faint')
         else
