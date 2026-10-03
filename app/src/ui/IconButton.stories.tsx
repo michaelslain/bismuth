@@ -40,7 +40,9 @@ type Story = StoryObj<typeof meta>
 /** Fully controllable single icon button. */
 export const Playground: Story = {}
 
-/** The three selection states, plus danger + disabled. */
+/** The three selection states, plus danger + disabled. Brackets mean "on": only `selected` draws
+ *  `[▣]`; `normal`/danger are bare glyphs (accent on hover); `unselected` reserves its brackets'
+ *  space without painting them. */
 export const States: Story = {
     render: () => (
         <Row wrap={false} gap="var(--bar-icon-gap)">
@@ -122,7 +124,11 @@ export const NoFocusRing: Story = {
 /** A row of icon buttons as used in a view-bar / toolbar (e.g. BaseView's Source toggle). */
 export const ToolbarGroup: Story = {
     render: () => (
-        <Row label="typical toolbar group" wrap={false} gap="var(--bar-icon-gap)">
+        <Row
+            label="typical toolbar group"
+            wrap={false}
+            gap="var(--bar-icon-gap)"
+        >
             <IconButton icon="Code" label="Source" />
             <IconButton icon="Settings" label="Settings" variant="selected" />
             <IconButton icon="X" label="Close" />
@@ -160,5 +166,45 @@ export const ToolbarAndStandalone: Story = {
                 </Row>
             </Row>
         )
+    },
+}
+
+const TOOLS = ['Pencil', 'Eraser', 'Square', 'Box']
+
+/** A toggle group (the drawing dock's shape) with the selection in two different places. Only the
+ *  on member draws `[▣]`; the off members hold their brackets' space, so both rows are the SAME
+ *  width — moving the selection never shifts a sibling. `play` measures it. */
+export const ToggleGroupWidth: Story = {
+    render: () => (
+        <Row column gap="10px">
+            {[0, 2].map(on => (
+                <div
+                    data-testid="group"
+                    style={{
+                        display: 'inline-flex',
+                        gap: 'var(--bar-icon-gap)',
+                        'align-self': 'flex-start',
+                    }}
+                >
+                    {TOOLS.map((icon, i) => (
+                        <IconButton
+                            {...{ icon }}
+                            label={icon}
+                            variant={i === on ? 'selected' : 'unselected'}
+                        />
+                    ))}
+                </div>
+            ))}
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const groups = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="group"]',
+            ),
+        ]
+        expect(groups.length).toBe(2)
+        const [a, b] = groups.map(g => g.getBoundingClientRect().width)
+        expect(Math.abs(a! - b!)).toBeLessThan(0.5)
     },
 }
