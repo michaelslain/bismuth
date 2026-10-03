@@ -22,15 +22,16 @@ import fpsColor from './graph/fpsColor'
 import {
     graphClusters,
     graphGradient,
+    graphViewMode,
     setGraphClusters,
     setGraphGradient,
+    setGraphViewMode,
 } from './graph/graphLayers'
 import { computeLayout } from '../../core/src/layout'
 import { localLayoutInput } from './graph/localLayoutInput'
 import { settings, DEFAULT_ACCENT_PALETTE } from './settings'
 import { paletteToInts, hexToInt as hexToIntT } from './themeColors'
 import { resolveAppearance } from './themes'
-import { readCache, writeCache } from './viewCache'
 import { GraphSearch, type SearchItem } from './GraphSearch'
 import { SegmentedToggle } from './ui/SegmentedToggle'
 import { IconButton } from './ui/IconButton'
@@ -59,27 +60,6 @@ function hoverLabel(node: HoverNode): string {
     return node.kind === 'note' ? `${node.id}.md` : node.label
 }
 
-
-// Graph dimension (2D birdseye vs 3D orbit) is a *transient* per-window UI choice,
-// NOT a persisted setting. Toggling it must never write settings.yaml (doing so
-// rewrote the file canonically, which reloaded an open settings buffer and scrolled
-// it to the top). It's a module-level signal so every GraphView instance (the home
-// tab + the sidebar mini-graph) shares one value, seeded from localStorage so the
-// preference survives reload without touching the vault.
-const VIEW_MODE_KEY = 'bismuth:graph:viewMode'
-const readStoredViewMode = (): '2d' | '3d' => {
-    const v = readCache<'2d' | '3d'>(VIEW_MODE_KEY)
-    // Default is 2D — the LOD redesign (aggregate cluster entities, cursor-anchored zoom) ships for
-    // the 2D field; 3D keeps its non-LOD orbit behaviour and stays one toggle away.
-    return v === '2d' || v === '3d' ? v : '2d'
-}
-const [graphViewMode, setGraphViewMode] = createSignal<'2d' | '3d'>(
-    readStoredViewMode(),
-)
-const setViewModePersisted = (m: '2d' | '3d') => {
-    setGraphViewMode(m)
-    writeCache(VIEW_MODE_KEY, m)
-}
 
 // Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
 // full-pane graph): text-only, lowercase, no glyph prefix — same string in both so the little
@@ -450,7 +430,7 @@ export function GraphView(props: {
 
     onCleanup(() => renderer.destroy())
 
-    const setViewMode = (m: '2d' | '3d') => setViewModePersisted(m)
+    const setViewMode = (m: '2d' | '3d') => setGraphViewMode(m)
     // The 3rd-brain graph mode only exists while the daemon is on (see the effect above that
     // falls back to "2nd" when it's off), so with it off there is only ONE brain-mode option — "2nd".
     // A single-option switcher is a permanently-selected, does-nothing control, so it's hidden

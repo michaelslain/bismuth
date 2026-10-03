@@ -22,7 +22,7 @@ import {
     safeDepthBand,
     trimSegmentForClearance,
 } from './AsciiGraphRenderer'
-import { CELL_W, LAYER_EDGE, resFromT } from './asciiGrid'
+import { CELL_W, LAYER_EDGE, maxResFor, resFromT } from './asciiGrid'
 import { CLUSTER_LABEL_MAX_CHARS, clusterLevelAlphas } from './labelSelection'
 import {
     DEFAULT_LEVEL_REVEAL_T,
@@ -838,7 +838,7 @@ describe('semantic zoom — cluster names own the field zoomed out, file names c
         )
         frame()
         expect(hovers.filter(Boolean).length).toBeGreaterThan(1)
-        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(true) // forced past the reveal gate
+        expect(ctx.fills.some(f => f.text.startsWith('note '))).toBe(true) // forced past the reveal gate (no [[ ]] on the knowledge graph)
         r.destroy()
     })
 })
@@ -3550,8 +3550,8 @@ describe('THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
         parkAtT(r, MID_T)
         // The unforced crossfade has not started here (fileLabelAlpha(0.48) === 0), so this label is on
         // the field only because it is forced — which is exactly the path the gate would have killed.
-        expect(ctx.fills.some(f => f.text === '[[note 5-0]]')).toBe(true)
-        expect(ctx.fills.filter(f => f.text.startsWith('[[note ')).length).toBe(
+        expect(ctx.fills.some(f => f.text === 'note 5-0')).toBe(true)
+        expect(ctx.fills.filter(f => f.text.startsWith('note ')).length).toBe(
             1,
         )
         r.destroy()
@@ -4751,7 +4751,7 @@ describe("a label never erases the field behind it (Task 21 — 'it splits')", (
         // frame with no edges in it.
         expect(priv.memberEdgeAlpha).toBeGreaterThan(0.99)
         const hubLabel = priv.labels.find(
-            l => l.text === '[[Violent Acts and Urban Space]]',
+            l => l.text === 'Violent Acts and Urban Space',
         )
         expect(hubLabel).toBeDefined()
         expect(hubLabel!.alpha).toBe(1)
@@ -8261,5 +8261,143 @@ describe('a cancelled pointer releases the graph drag (Task 8)', () => {
         document.dispatchEvent(after)
         expect(after.defaultPrevented).toBe(false)
         r.destroy()
+    })
+})
+
+
+describe('3D shrinks its cells in a small pane, like 2D (compactScale)', () => {
+    type CellPriv = {
+        cellW: number
+        cellH: number
+        fontPx: number
+        sizeScale: number
+        pxPerWorld: number
+        maxRes: number
+    }
+    const at = (vm: '2d' | '3d', box: { width: number; height: number }) => {
+        const was = { ...BOX }
+        Object.assign(BOX, box)
+        try {
+            const { r } = mountRenderer(vm)
+            const p = r as unknown as CellPriv
+            const out = {
+                cellW: p.cellW,
+                cellH: p.cellH,
+                fontPx: p.fontPx,
+                sizeScale: p.sizeScale,
+                pxPerWorld: p.pxPerWorld,
+                maxRes: p.maxRes,
+            }
+            r.destroy()
+            return out
+        } finally {
+            Object.assign(BOX, was)
+        }
+    }
+
+    it('a small 3D pane draws the same shrunk cell a small 2D pane does', () => {
+        const small = { width: 240, height: 240 }
+        const s3 = at('3d', small)
+        const s2 = at('2d', small)
+        const big3 = at('3d', { width: 800, height: 600 })
+        expect(s3.sizeScale).toBeLessThan(1)
+        expect(s3.sizeScale).toBe(s2.sizeScale)
+        expect(s3.cellH).toBeCloseTo(s2.cellH, 6)
+        expect(s3.cellW).toBeCloseTo(s2.cellW, 6)
+        expect(s3.fontPx).toBeLessThan(big3.fontPx)
+        expect(big3.sizeScale).toBe(1)
+    })
+
+    it('the 3D zoom ladder is measured in the UNSCALED cell, so the camera ceiling ignores the shrink', () => {
+        const s3 = at('3d', { width: 240, height: 240 })
+        expect(s3.maxRes).toBeCloseTo(
+            maxResFor(s3.pxPerWorld, s3.cellW / s3.sizeScale),
+            6,
+        )
+        // 2D keeps its fixed world-per-cell deepest stop: measured in the live (shrunk) cell.
+        const s2 = at('2d', { width: 240, height: 240 })
+        expect(s2.maxRes).toBeCloseTo(maxResFor(s2.pxPerWorld, s2.cellW), 6)
+    })
+})
+
+describe('the FLAT field ([clusters] off) is quieted by rank, density and fan', () => {
+    /** A vault-shaped graph past RANK_CUTS_MIN_NODES: 300 notes on a ring, a chain of links, and two
+     *  tag hubs fanning to every third / fifth note. */
+    function vaultGraph() {
+        const nodes = []
+        const edges = []
+        const N = 300
+        for (let i = 0; i < N; i++) {
+            const a = (i / N) * Math.PI * 2
+            const r = 300 * RING_SCALE * (0.4 + 0.6 * ((i * 37) % 100) / 100)
+            nodes.push({
+                id: `v${i}`,
+                label: `A rather long note title number ${i} that runs on`,
+                kind: 'note' as const,
+                position: [Math.cos(a) * r, Math.sin(a) * r, 0] as [number, number, number],
+                position2d: [Math.cos(a) * r, Math.sin(a) * r] as [number, number],
+                community: i % 6,
+                communityLabel: `Cluster ${i % 6}`,
+            })
+        }
+        for (const t of ['t0', 't1'])
+            nodes.push({
+                id: t,
+                label: `#${t}`,
+                kind: 'tag' as const,
+                position: [t === 't0' ? 20 : -20, 0, 0] as [number, number, number],
+                position2d: [t === 't0' ? 20 : -20, 0] as [number, number],
+                community: 0,
+                communityLabel: 'Cluster 0',
+            })
+        for (let i = 0; i + 1 < N; i++)
+            edges.push({ from: `v${i}`, to: `v${i + 1}`, kind: 'link' as const })
+        for (let i = 0; i < N; i += 3) edges.push({ from: 't0', to: `v${i}`, kind: 'tag' as const })
+        for (let i = 0; i < N; i += 5) edges.push({ from: 't1', to: `v${i}`, kind: 'tag' as const })
+        return { nodes, edges }
+    }
+    type FlatPriv = {
+        charBuf: Uint16Array | Uint8Array | Uint32Array
+        layerBuf: Uint8Array
+        edgeFan: unknown[]
+        edgeMain: unknown[]
+        labels: { text: string }[]
+    }
+    const glyphCounts = (p: FlatPriv) => {
+        const n: Record<string, number> = { '.': 0, o: 0, '@': 0 }
+        for (let i = 0; i < p.layerBuf.length; i++)
+            if (p.layerBuf[i] === 3) {
+                const ch = String.fromCharCode(p.charBuf[i])
+                if (ch in n) n[ch]++
+            }
+        return n
+    }
+
+    it('with [clusters] off, "@" is rare, leaves read ".", and hub fans split from ordinary links', () => {
+        const g = vaultGraph() as unknown as ReturnType<typeof sampleGraph>
+        const { r } = mountRenderer('2d', g, { showLodMasses: false })
+        const p = r as unknown as FlatPriv
+        const c = glyphCounts(p)
+        const total = c['.'] + c.o + c['@']
+        expect(total).toBeGreaterThan(50)
+        expect(c['@'] / total).toBeLessThan(0.05)
+        expect(c['.']).toBeGreaterThan(c.o)
+        expect(p.edgeFan.length).toBeGreaterThan(0)
+        expect(p.edgeMain.length).toBeGreaterThan(0)
+        r.destroy()
+    })
+
+    it('the knowledge graph drops [[ ]] and clips long titles; clustered keeps its fixed ramp', () => {
+        const g = vaultGraph() as unknown as ReturnType<typeof sampleGraph>
+        const off = mountRenderer('2d', g, { showLodMasses: false })
+        const labels = (off.r as unknown as FlatPriv).labels
+        expect(labels.length).toBeGreaterThan(0)
+        expect(labels.some(l => l.text.includes('[['))).toBe(false)
+        expect(labels.every(l => l.text.length <= 28)).toBe(true)
+        off.r.destroy()
+        // [clusters] on: no rank cuts, no fan split.
+        const on = mountRenderer('2d', g, { showLodMasses: true })
+        expect((on.r as unknown as FlatPriv).edgeFan.length).toBe(0)
+        on.r.destroy()
     })
 })

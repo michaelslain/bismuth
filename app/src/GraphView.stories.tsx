@@ -29,7 +29,7 @@ import { getOwner, onCleanup } from 'solid-js'
 import { GraphView } from './GraphView'
 import { SAMPLE_HUB_ID, sampleGraphData, sampleClusteredGraphData } from './ui/_graphFixtures'
 import { settings, setSettings } from './settings'
-import { setGraphClusters, setGraphGradient } from './graph/graphLayers'
+import { setGraphClusters, setGraphGradient, setGraphViewMode } from './graph/graphLayers'
 
 const meta = {
     title: 'Graph/GraphView',
@@ -49,6 +49,7 @@ const noop = () => {}
 const resetLayers = () => {
     setGraphClusters(true)
     setGraphGradient(true)
+    setGraphViewMode('2d')
 }
 
 // Fixed px, not vh: the Storybook preview iframe is short with the Controls panel open (see
@@ -435,9 +436,10 @@ export const StatusLine: Story = {
  * stories in one Storybook iframe (see `resetLayers` above), so a story cannot rely on whichever
  * state a previous one left the signals in.
  */
-const clustered = (clusters: boolean, gradient: boolean) => () => {
+const clustered = (clusters: boolean, gradient: boolean, viewMode: '2d' | '3d' = '2d') => () => {
     setGraphClusters(clusters)
     setGraphGradient(gradient)
+    setGraphViewMode(viewMode)
     const graph = sampleClusteredGraphData()
     return (
         <div style={{ height: STORY_H, width: '100%' }}>
@@ -452,11 +454,16 @@ export const Clustered: Story = { render: clustered(true, true) }
 /** Same graph, [clusters] off: every note glyph, no masses — names thinned to the biggest hubs at fit. */
 export const ClustersOff: Story = { render: clustered(false, true) }
 
+/** [clusters] off in 3D: the same flat field orbiting. A graph past flatField.ts's
+ *  RANK_CUTS_MIN_NODES also ranks its glyphs and quiets its hub fans; depth only DEMOTES a glyph. */
+export const ClustersOff3d: Story = { render: clustered(false, true, '3d') }
+
 /** The sidebar mini graph over the same hierarchy — its [clusters] toggle sits bottom-right beside
  *  [local], driving the same shared signal as the full pane's layer toggles. */
-const miniClustered = (clusters: boolean) => () => {
+const miniClustered = (clusters: boolean, viewMode: '2d' | '3d' = '2d') => () => {
     setGraphClusters(clusters)
     setGraphGradient(true)
+    setGraphViewMode(viewMode)
     const graph = sampleClusteredGraphData()
     return (
         <div style={{ height: '305px', width: '266px' }}>
@@ -466,6 +473,10 @@ const miniClustered = (clusters: boolean) => () => {
 }
 
 export const MiniClustered: Story = { render: miniClustered(true) }
+
+/** The sidebar mini graph in 3D: a pane this small shrinks the cell exactly like 2D does
+ *  (asciiGrid.ts compactScale), while the orbit camera's zoom ceiling stays put. */
+export const Mini3d: Story = { render: miniClustered(false, '3d') }
 
 /** [clusters] off in the mini graph: note names at fit are thinned to the pane's row budget
  *  (biggest hubs first), not one on every glyph. */
