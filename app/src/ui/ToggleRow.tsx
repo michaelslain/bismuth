@@ -1,4 +1,7 @@
 import type { Component, JSX } from 'solid-js'
+import { Show } from 'solid-js'
+import { Icon } from '../icons/Icon'
+import Text from './Text'
 import BracketToggle from './BracketToggle'
 import { isConfirmKey } from './widgetKeys'
 import styles from './ToggleRow.module.css'
@@ -15,14 +18,27 @@ export type ToggleRowProps = {
     wrap?: boolean
     /** Native tooltip on the row, e.g. explaining why a locked row cannot change. */
     title?: string
+    /** Lucide icon name rendered before the label (icons/Icon `value`). */
+    icon?: string
+    /** Secondary text under the label row; wraps. The switch row (label + toggle) stays one line. */
+    description?: JSX.Element
     class?: string
 }
 
-/** One on/off row in a settings form. A real switch: focusable, Enter/Space toggle it. */
+/** One on/off row in a settings form. A real switch: focusable, Enter/Space toggle it. With a
+ *  `description` the root becomes a column — the label row on top (still one line), the wrapping
+ *  description below — and the whole root stays the click/keyboard target. */
 const ToggleRow: Component<ToggleRowProps> = props => {
     const toggle = () => {
         if (!props.locked) props.onToggle?.()
     }
+    const line = () => (
+        <>
+            <Show when={props.icon}>{i => <Icon value={i()} />}</Show>
+            <span class={styles.name}>{props.label}</span>
+            <BracketToggle checked={props.checked} class={styles.toggle} />
+        </>
+    )
     return (
         <div
             role="switch"
@@ -35,6 +51,7 @@ const ToggleRow: Component<ToggleRowProps> = props => {
                 props.muted ? styles.off : '',
                 props.locked ? styles.locked : '',
                 props.wrap ? styles.wrap : '',
+                props.description ? styles.described : '',
                 props.class ?? '',
             ].filter(Boolean).join(' ')}
             title={props.title}
@@ -48,8 +65,16 @@ const ToggleRow: Component<ToggleRowProps> = props => {
                 toggle()
             }}
         >
-            <span class={styles.name}>{props.label}</span>
-            <BracketToggle checked={props.checked} class={styles.toggle} />
+            <Show when={props.description} fallback={line()}>
+                {d => (
+                    <>
+                        <div class={styles.top}>{line()}</div>
+                        <Text size="body" tone="muted" class={styles.description}>
+                            {d()}
+                        </Text>
+                    </>
+                )}
+            </Show>
         </div>
     )
 }

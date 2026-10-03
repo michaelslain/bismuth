@@ -12,3 +12,8 @@
 .row.wrap { align-items: flex-start; height: auto; padding: var(--sp-2) 0; }
 .row.wrap .name { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
 .row.wrap .toggle { margin-top: var(--sp-1); }
+/* A described row stacks the label row over the description. The label row keeps the one-line
+   --row-h; the whole root stays the click target. */
+.row.described { flex-direction: column; align-items: stretch; gap: 0; height: auto; text-align: left; }
+.top { display: flex; align-items: center; gap: var(--sp-3); height: calc(var(--row-h) + 2 * var(--sp-1)); min-width: 0; }
+.description { padding-bottom: var(--sp-2); line-height: 1.45; }

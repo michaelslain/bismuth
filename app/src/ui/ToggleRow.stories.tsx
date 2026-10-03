@@ -2,7 +2,7 @@
 // modifiers). A real switch: focusable, Enter/Space toggle it, `role="switch"` + `aria-checked`
 // carry the semantics BracketToggle (its presentational child) does not.
 //
-// Props: label, checked, onToggle, muted?, locked?, wrap?, title?, class.
+// Props: label, checked, onToggle, muted?, locked?, wrap?, title?, icon?, description?, class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'
@@ -57,6 +57,45 @@ export const Wrap: Story = {
             'Bidirectional — also generate the reverse card, front and back swapped',
         checked: true,
         wrap: true,
+    },
+}
+
+const DESC =
+    "A background agent that runs crons and weaves memory while you're away."
+
+/** `icon`: a lucide icon before the label. */
+export const WithIcon: Story = {
+    args: { label: 'DAEMON', checked: true, icon: 'Bot' },
+}
+
+/** `description`: wrapping secondary text under the label row, which stays one line. */
+export const WithDescription: Story = {
+    args: { label: 'DAEMON', checked: true, description: DESC },
+    decorators: [Story => <div style={{ width: '226px' }}><Story /></div>],
+}
+
+export const WithIconAndDescription: Story = {
+    args: { label: 'DAEMON', checked: true, icon: 'Bot', description: DESC },
+    decorators: [Story => <div style={{ width: '226px' }}><Story /></div>],
+}
+
+/** `locked` + `description`: the whole root still ignores click and keyboard. */
+export const LockedWithDescription: Story = {
+    args: {
+        label: 'DAEMON',
+        checked: true,
+        icon: 'Bot',
+        description: DESC,
+        locked: true,
+        title: 'Always on',
+    },
+    decorators: [Story => <div style={{ width: '226px' }}><Story /></div>],
+    play: async ({ canvasElement }) => {
+        const row = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="toggle-row"]',
+        )!
+        expect(row.getAttribute('aria-disabled')).toBe('true')
+        expect(row.getAttribute('aria-checked')).toBe('true')
     },
 }
 
