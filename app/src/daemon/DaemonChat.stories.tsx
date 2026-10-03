@@ -351,17 +351,15 @@ export const Narrow: Story = {
             '[data-testid="daemon-chat-composer"]',
         )!
         const frame = canvasElement.querySelector<HTMLElement>('div')!
-        await expect(composer.getBoundingClientRect().width).toBeLessThanOrEqual(
-            frame.getBoundingClientRect().width + 1,
-        )
+        await expect(
+            composer.getBoundingClientRect().width,
+        ).toBeLessThanOrEqual(frame.getBoundingClientRect().width + 1)
     },
 }
 
-/** The transition Task 4 exists for: history takes over the region, and closing it hands the region
- *  back with the draft untouched. The draft lives on the SESSION (chatSession.ts's `draft`), not on
- *  the composer, so unmounting/remounting ChatComposerBar across the swap must not lose it — this is
- *  the proof. Waits on `data-testid="daemon-chat-composer"` disappearing/reappearing rather than a
- *  `setTimeout`, since that testid IS the signal the swap already exposes. */
+/** History opens as a dialog OVER the daemon chat and closes back to it untouched: the composer
+ *  never unmounts, so the draft is still there. The dialog portals to <body>, so its input is read
+ *  from `document`, not the canvas. */
 export const HistoryOpenThenClose: Story = {
     render: () => {
         const session = makeStubChatSession({ persona: 'daemon' })
@@ -396,20 +394,16 @@ export const HistoryOpenThenClose: Story = {
         )!
         await userEvent.click(historyButton)
 
-        // The composer (and everything wrapped inside it, including ChatControls' own history
-        // button) is gone — the pane, not the composer, now fills the region.
-        await waitFor(() => expect(composer()).toBeNull())
-        await expect(
-            canvasElement.querySelector(
-                'input[placeholder="conversations"]',
-            ),
-        ).not.toBeNull()
+        const historyInput = () =>
+            document.querySelector('input[placeholder="conversations"]')
+        await waitFor(() => expect(historyInput()).not.toBeNull())
+        // Over the chat, not instead of it: the composer is still mounted underneath.
+        await expect(composer()).not.toBeNull()
 
         await userEvent.keyboard('{Escape}')
 
-        // The composer is back, with the same draft — proving the draft survived on the session,
-        // not on the (unmounted-then-remounted) composer instance.
-        await waitFor(() => expect(composer()).not.toBeNull())
+        await waitFor(() => expect(historyInput()).toBeNull())
+        await expect(composer()).not.toBeNull()
         await waitFor(() => expect(cmContent().textContent).toBe(draftText))
     },
 }

@@ -8,9 +8,9 @@
 // blurb + `[ edit ]` card stays hidden until hovered or focused (see DaemonIdentity.tsx). Once a
 // conversation has messages the face region goes entirely: the face lives IN the transcript then,
 // as the avatar on its lowest assistant row beside the name (ChatTranscript), and one face on
-// screen is the point. A full-height pane with no conversation (chat history — see `chatFills`)
-// still collapses the face to DaemonFace's `compact` one-line-header form with a bare name beside
-// it — there is no transcript to carry the face there.
+// screen is the point. `chatFills` with no conversation still collapses the face to DaemonFace's
+// `compact` one-line-header form with a bare name beside it — though no host passes that pair any
+// more: chat history, the pane that used to, is now a dialog over the page (ChatHistoryModal).
 //
 // Off (`enabled === false`): no identity, no chat — DaemonFace stays asleep and the caller
 // (DaemonPage) is the one that decides what replaces this column's usual content.

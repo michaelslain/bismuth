@@ -24,11 +24,22 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { ChatView } from './ChatView'
 import { retainFakeChat } from './chat/_fakeChatSocket'
-import { expectProseFace, expectUiFace, expectCodeSize, expectBoundToUiFont } from './ui/_fontFace'
+import { setTransport } from './api'
+import { fakeTransport } from './ui/_fakeTransport'
+import { chatHistoryFixture } from './chat/_chatHistoryFixtures'
+import {
+    expectProseFace,
+    expectUiFace,
+    expectCodeSize,
+    expectBoundToUiFont,
+} from './ui/_fontFace'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 
 /** Wraps <ChatView> with the fake socket + session lifecycle, scoped to exactly this story instance. */
-function FakeSocketChat(props: { chatId: string; frames: readonly ChatFrame[] }) {
+function FakeSocketChat(props: {
+    chatId: string
+    frames: readonly ChatFrame[]
+}) {
     retainFakeChat(props.chatId, props.frames)
     return (
         <ChatView
@@ -400,19 +411,24 @@ export const Empty: Story = {
             '[data-testid="ui-empty-block"]',
         )!
         const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
-        const composer = canvasElement.querySelector<HTMLElement>('.cm-content')!
+        const composer =
+            canvasElement.querySelector<HTMLElement>('.cm-content')!
         const g = greeting.getBoundingClientRect()
         const top = bar.getBoundingClientRect().bottom
         const bottom = composer.getBoundingClientRect().top
         const mid = (g.top + g.bottom) / 2
-        await expect(Math.abs(mid - (top + bottom) / 2)).toBeLessThan((bottom - top) * 0.15)
+        await expect(Math.abs(mid - (top + bottom) / 2)).toBeLessThan(
+            (bottom - top) * 0.15,
+        )
         // Capped to the 680px reading column (ChatTurnColumn), not the full pane width — the
         // greeting's own paragraph wraps at that width instead of stretching edge to edge.
         await expect(g.width).toBeLessThanOrEqual(680)
         const body = canvasElement.querySelector<HTMLElement>(
             '[data-testid="ui-empty"]',
         )!
-        await expect(body.getBoundingClientRect().width).toBeLessThanOrEqual(680)
+        await expect(body.getBoundingClientRect().width).toBeLessThanOrEqual(
+            680,
+        )
     },
 }
 
@@ -503,7 +519,11 @@ export const TagTypography: Story = {
     ),
     play: async ({ canvasElement }) => {
         await waitFor(() => {
-            if (!canvasElement.querySelector('[class*="chat-bubble"] .bismuth-tag')) {
+            if (
+                !canvasElement.querySelector(
+                    '[class*="chat-bubble"] .bismuth-tag',
+                )
+            ) {
                 throw new Error('tag not rendered in a chat bubble yet')
             }
             return true
@@ -517,5 +537,37 @@ export const TagTypography: Story = {
             expectCodeSize(el)
             expectBoundToUiFont(el)
         }
+    },
+}
+
+/** The history dialog IN the chat: `[history]` in the controls row opens it over the transcript,
+ *  against the REAL ChatSession — the transport is seeded with past sessions, so searching,
+ *  switching scope and clicking a row all work: a row resumes that conversation and its transcript
+ *  loads in place. `×`, the scrim or Escape closes it back to the chat, which never unmounted.
+ *  The dialog portals to <body>, so play() reads it from `document.body`, not the canvas. */
+export const HistoryOpen: Story = {
+    // Starts from a fresh chat (session frames only): the fake socket replays its frames on every
+    // reconnect, and a resume reconnects — a seeded current conversation would be replayed in
+    // front of the resumed one, which the real backend never does.
+    render: () => {
+        setTransport(fakeTransport({ chatHistory: chatHistoryFixture() }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <FakeSocketChat
+                    chatId="story-chat-history"
+                    frames={SESSION_OPEN}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await findText(canvasElement, 'anything about your vault')
+        canvasElement
+            .querySelector<HTMLElement>('[data-testid="chat-history"]')!
+            .click()
+        await findText(document.body, 'Restyle the daemon page')
+        await findText(document.body, 'yesterday')
+        // The chat stays mounted underneath the dialog.
+        await expect(canvasElement.querySelector('.cm-content')).not.toBeNull()
     },
 }
