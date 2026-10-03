@@ -1,0 +1,8 @@
+/* app/src/ui/ascii/GlyphArt.module.css — the host box for GlyphCanvas. It only fills its parent and
+   clips; the canvas inside is sized and painted by GlyphCanvas, which reads the cell grid tokens. */
+.glyph-art {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
