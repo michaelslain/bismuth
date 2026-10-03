@@ -9,7 +9,9 @@ export const BODY_MAX_MS = 900
 const BODY_MAX_MS_PER_CHAR = 14
 
 function bodyMsPerChar(bodyLen: number): number {
-    return bodyLen > 0 ? Math.min(BODY_MAX_MS_PER_CHAR, BODY_MAX_MS / bodyLen) : BODY_MAX_MS_PER_CHAR
+    return bodyLen > 0
+        ? Math.min(BODY_MAX_MS_PER_CHAR, BODY_MAX_MS / bodyLen)
+        : BODY_MAX_MS_PER_CHAR
 }
 
 /** How many chars of title and body are typed at elapsed ms: title first, then body.
@@ -19,9 +21,15 @@ export function typedCounts(
     titleLen: number,
     bodyLen: number,
 ): { title: number; body: number } {
-    const title = Math.min(titleLen, Math.max(0, Math.floor(elapsed / TITLE_MS_PER_CHAR)))
+    const title = Math.min(
+        titleLen,
+        Math.max(0, Math.floor(elapsed / TITLE_MS_PER_CHAR)),
+    )
     const bodyElapsed = elapsed - TITLE_MS_PER_CHAR * titleLen
-    const body = Math.min(bodyLen, Math.max(0, Math.floor(bodyElapsed / bodyMsPerChar(bodyLen))))
+    const body = Math.min(
+        bodyLen,
+        Math.max(0, Math.floor(bodyElapsed / bodyMsPerChar(bodyLen))),
+    )
     return { title, body }
 }
 

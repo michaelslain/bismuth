@@ -67,7 +67,7 @@ const TYPING_BODY =
     'Write notes and connect them with [[wikilinks]]. Bismuth links them into a graph you can explore and search.'
 
 /** The default: the text types in on mount, headline first. The full text is in the DOM from the
- *  first frame (the untyped remainder is only `visibility: hidden`), so nothing reflows. The
+ *  first frame (the untyped remainder is only `opacity: 0`), so nothing reflows. The
  *  screenshot of this story is a mid-type frame — the stable looks are the stories above. */
 export const Typing: Story = {
     args: { title: TYPING_TITLE, body: TYPING_BODY },
@@ -75,11 +75,11 @@ export const Typing: Story = {
         const heading = canvasElement.querySelector('h1')!
         // Whole from the first frame, whatever has been typed so far.
         await expect(heading.textContent).toBe(TYPING_TITLE)
-        // The CSS-module class is hashed, so match on the local name it keeps.
         const untyped = () =>
-            [...canvasElement.querySelectorAll('[class*="untyped"]')].filter(
+            [...canvasElement.querySelectorAll('[data-untyped]')].filter(
                 el => (el.textContent ?? '') !== '',
             )
+        await expect(untyped().length).toBeGreaterThan(0)
         await waitFor(() => expect(untyped().length).toBe(0), { timeout: 3000 })
         await expect(heading.textContent).toBe(TYPING_TITLE)
     },

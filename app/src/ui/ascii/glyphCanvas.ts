@@ -1,6 +1,6 @@
 // app/src/ui/ascii/glyphCanvas.ts
 // Paints a GlyphScene (pure: time -> characters) onto one transparent <canvas> filling a host, on
-// the SAME cell grid the ASCII graph uses (CELL_W/CELL_H/FONT_PX, compact shrink, letter-spacing
+// the SAME cell grid the ASCII graph uses (CELL_W/CELL_H/FONT_PX scaled by fitScale to fit the box, floored at COMPACT_FLOOR_SCALE and capped at MAX_SCALE, letter-spacing
 // pinned to the cell advance). Re-implemented to match AsciiGraphRenderer, not imported from it.
 // The ground is never painted: the page behind the canvas is the ground, so every theme just works.
 //
@@ -95,6 +95,12 @@ export default class GlyphCanvas {
                 attributeFilter: ['style'],
             })
         }
+        document.fonts?.ready.then(() => {
+            if (this.host) {
+                this.readTokens()
+                this.refresh()
+            }
+        })
         this.refresh()
     }
 
