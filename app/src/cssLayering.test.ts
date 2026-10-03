@@ -20,7 +20,8 @@
 // former-App.css rule can never precede the tokens/reset/content sections, since that ordering is
 // exactly what used to be invisible (the imports hoisted regardless of where they sat in the file).
 import { describe, it, expect } from 'bun:test'
-import { readFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const SRC = import.meta.dir
@@ -212,5 +213,25 @@ describe('css layering — global.css keeps the hoisted order', () => {
             `App.css declares ${rules.length} class rules (ceiling ${MAX_APP_CSS_CLASS_RULES}); ` +
                 `moving rules out should LOWER MAX_APP_CSS_CLASS_RULES, never raise it`,
         ).toBeLessThanOrEqual(MAX_APP_CSS_CLASS_RULES)
+    })
+})
+
+// A pasted block once left an unclosed at-rule in global.css. Chrome dropped every rule after it;
+// Vite's lenient CSS pipeline let it through, so the gate stayed green. `Bun.build` parses CSS
+// strictly and rejects such a file, so building the one global stylesheet is the guard.
+describe('global.css', () => {
+    it('global.css parses under a strict CSS parser', async () => {
+        const outdir = mkdtempSync(join(tmpdir(), 'global-css-'))
+        try {
+            const result = await Bun.build({
+                entrypoints: [join(SRC, 'global.css')],
+                outdir,
+            })
+            const errors = result.logs.filter(l => l.level === 'error')
+            expect(errors.map(String)).toEqual([])
+            expect(result.success).toBe(true)
+        } finally {
+            rmSync(outdir, { recursive: true, force: true })
+        }
     })
 })
