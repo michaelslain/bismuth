@@ -177,6 +177,8 @@
      three hero literals (48/40/38px) are the only sanctioned consumer, and that reassignment is
      a later wave's edit, not this one's. Nothing reads this token yet. */
   --fs-hero: 40px;
+  /* display step above --fs-hero; Heading size='hero-xl' */
+  --fs-hero-xl: 48px;
   /* VaultIntro's hero headline (.vi-title), fixed — not fluid. bench/invariants.ts's
      font-size-off-scale check only accepts a flat SCALE/SCALE_EXEMPT membership (48 is in
      SCALE_EXEMPT) or a live-resolved prose size, and a vw-derived clamp only lands on a scale

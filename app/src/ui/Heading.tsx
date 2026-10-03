@@ -13,18 +13,34 @@ const TAG: Record<HeadingLevel, 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'> = {
     6: 'h6',
 }
 
+export type HeadingSize = 'hero' | 'hero-xl'
+export type HeadingRegister = 'chrome' | 'prose'
+
 export type HeadingProps = {
     /** h1..h6 — picks both the rendered tag and the size/weight step off the app's one
      *  canonical heading ramp (editor/livePreview.ts's .cm-h1..h6 — see Heading.module.css).
      *  level={2} is the default, the common panel/section-title size. */
     level?: HeadingLevel
+    /** Display step overriding the level's size: 'hero' = --fs-hero (40px), 'hero-xl' =
+     *  --fs-hero-xl (48px, steps down to --fs-hero below 980px). Both: --fw-regular, line-height
+     *  1.02, letter-spacing 0, text-wrap: balance. Omit for the level's own ramp step. */
+    size?: HeadingSize
+    /** 'chrome' (default) emits nothing; 'prose' adds font-family: var(--prose-font). Mirrors
+     *  Text. */
+    register?: HeadingRegister
     class?: string
     children?: JSX.Element
 } & Omit<JSX.HTMLAttributes<HTMLHeadingElement>, 'class' | 'children'>
 
 function headingClass(props: HeadingProps): string {
     const level = props.level ?? 2
-    return [styles.heading, styles[`heading--${TAG[level]}`], props.class]
+    return [
+        styles.heading,
+        styles[`heading--${TAG[level]}`],
+        props.size ? styles[`heading--${props.size}`] : '',
+        props.register === 'prose' ? styles['heading--prose'] : '',
+        props.class,
+    ]
         .filter(Boolean)
         .join(' ')
 }
@@ -36,7 +52,13 @@ function headingClass(props: HeadingProps): string {
  * through untouched onto the rendered element.
  */
 const Heading: Component<HeadingProps> = props => {
-    const [local, rest] = splitProps(props, ['level', 'class', 'children'])
+    const [local, rest] = splitProps(props, [
+        'level',
+        'size',
+        'register',
+        'class',
+        'children',
+    ])
     return (
         <Dynamic component={TAG[local.level ?? 2]} class={headingClass(props)} {...rest}>
             {local.children}

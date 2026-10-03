@@ -3,7 +3,7 @@ import { Dynamic } from 'solid-js/web'
 import styles from './Text.module.css'
 
 export type TextTag = 'p' | 'span' | 'div'
-export type TextSize = 'micro' | 'ui' | 'body' | 'body-lg' | 'lead' | 'inherit'
+export type TextSize = 'micro' | 'ui' | 'body' | 'body-lg' | 'lead' | 'title' | 'inherit'
 export type TextTone = 'default' | 'muted' | 'faint' | 'inherit'
 export type TextWeight = 'regular' | 'medium' | 'bold' | 'inherit'
 /** Which typeface family a Text renders in — see DESIGN.md's register rule: prose is what a

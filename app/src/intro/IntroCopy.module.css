@@ -1,0 +1,77 @@
+/* app/src/intro/IntroCopy.module.css — the intro's headline + paragraph block (see
+   IntroCopy.tsx). The headline's face/size/weight/leading come from <Heading size="hero-xl"
+   register="prose">, the paragraph's face/size from <Text size="title" register="prose">; this
+   file owns only the block's layout, the legibility backdrop, the measure/colour of the
+   paragraph, and the enter animation. */
+
+.intro-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Centred copy: the slide's parent used to supply this by inheritance, so the block owns it now. */
+  text-align: center;
+  /* Tight inside the group: the headline and its own paragraph are one unit. */
+  gap: var(--sp-4);
+  max-width: 640px;
+}
+
+/* ---- backdrop — the graph is painted directly behind the copy ----
+   Give the text a soft --bg halo for legibility. Copy that sits clear of the graph gets neither
+   rule below. */
+.intro-copy--backdrop {
+  text-shadow: 0 1px 2px var(--bg), 0 0 18px color-mix(in srgb, var(--bg) 78%, transparent);
+  /* The halo alone isn't enough once a dense glyph cluster sits directly behind a letter — a
+     soft radial scrim from --bg gives the text an actual backing instead of just a rim-light.
+     Positioned via a ::before (not this rule's own background/padding) because a
+     percentage-sized radial-gradient is a percentage of THIS BOX, so `transparent 100%` always
+     lands exactly at the box edge — the paint never actually fades, it's cut off still ~94%
+     opaque, reading as a hard rectangle around the copy. The ::before is oversized past the
+     copy's own bounds so the gradient's fade happens entirely INSIDE the painted area, with
+     nothing left to clip. color-mix keeps this on the real --bg token per theme, never a
+     hardcoded stand-in. */
+  position: relative;
+  isolation: isolate;
+}
+.intro-copy--backdrop::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: calc(-1 * var(--sp-7)) calc(-3 * var(--sp-7));
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--bg) 94%, transparent) 55%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* ---- paragraph ----
+   Two classes (.intro-copy .body) so the measure, colour and leading outrank Text's own
+   single-class .text--default / .text--title regardless of stylesheet load order. */
+.intro-copy .body {
+  /* The intro's own leading, kept at the value it always had (Text's title step is 1.6). */
+  line-height: 1.55;
+  /* ~62ch of the prose face — inside the 65-75ch measure band. */
+  max-width: 34em;
+  color: color-mix(in srgb, var(--fg) 72%, var(--text-muted));
+  text-wrap: pretty;
+}
+
+/* ---- motion (enhancement only; the resting state above is fully visible) ---- */
+/* Slide-in (horizontal) — reads as a slide, not a fade. The parent remounts this block per
+   slide, which replays it. */
+@keyframes vi-slidein {
+  from {
+    opacity: 0;
+    transform: translateX(56px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .intro-copy {
+    animation: vi-slidein 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+}

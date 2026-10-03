@@ -28,6 +28,7 @@
 .text--body { font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; }
 .text--body-lg { font-size: var(--fs-body-lg); line-height: var(--lh-prose); overflow-wrap: anywhere; }
 .text--lead { font-size: var(--fs-lead); line-height: var(--lh-tight); overflow-wrap: anywhere; }
+.text--title { font-size: var(--fs-title); line-height: var(--lh-prose); overflow-wrap: anywhere; }
 
 /* ── tone — 'inherit' emits none of these ── */
 .text--default { color: var(--fg); }
