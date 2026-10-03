@@ -5,7 +5,7 @@ import { Terminal as Xterm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { settings } from './settings'
-import { api, apiBase } from './api'
+import { api, wsBase } from './api'
 import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 
 // --- ANSI palette, DERIVED from the live theme tokens (never hand-authored) -------------
@@ -181,12 +181,6 @@ function resolvedFontFamily(): string {
     const primary = stack.split(',')[0]?.trim() || "'Monaspace Xenon'"
     return `${primary}, 'FiraCode Nerd Font', 'Symbols Nerd Font', 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace`
 }
-
-// Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses.
-// apiBase() honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled
-// app's free-port sidecar (injected as __BISMUTH_API__) is reached too — not just :4321.
-// Computed at connect time, since __BISMUTH_API__/?api= are only known at runtime.
-const wsBase = () => apiBase().replace(/^http/, 'ws') // http→ws, https→wss
 
 // Fix 3: Hoist TextEncoder to module scope — avoids a per-keystroke allocation.
 const enc = new TextEncoder()

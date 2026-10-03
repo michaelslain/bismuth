@@ -7,7 +7,7 @@
 // This is the browser end of `bismuth app …` / MCP app control. It enforces the same guards as the
 // server (defense in depth): opening a `::chat:` tab is refused, and a blocklisted run-command id is
 // refused — a live recursive Agent-SDK chat is a deliberately different trust boundary.
-import { apiBase } from './api'
+import { wsBase } from './api'
 import { UI_CONTROL_BLOCKLIST } from '../../core/src/commands'
 import { CHAT_PREFIX } from './tabIds'
 import type { UiTabsSnapshot, RunCommandResult } from '../../core/src/uiControl'
@@ -55,8 +55,7 @@ export interface UiControlHandle {
 }
 
 function wsUrl(windowId: string): string {
-    const base = apiBase().replace(/^http/, 'ws')
-    return `${base}/ui?w=${encodeURIComponent(windowId)}`
+    return `${wsBase()}/ui?w=${encodeURIComponent(windowId)}`
 }
 
 const RECONNECT_MS = 2000

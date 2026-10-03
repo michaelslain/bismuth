@@ -27,7 +27,7 @@ import {
 } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import type { ChatFrame } from '../../../core/src/chat'
-import { apiBase, api } from '../api'
+import { api, wsBase } from '../api'
 import {
     applyChatFrame,
     type PermissionPart,
@@ -200,7 +200,6 @@ export type ChatSession = {
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses (?api= >
 // window.__BISMUTH_API__ > VITE_API_BASE > :4321) — never hardcode a host.
-const wsBase = () => apiBase().replace(/^http/, 'ws') // http→ws, https→wss
 
 // Descriptions for slash commands with no description on the wire: "/mcp" is answered by chat.ts
 // locally (BUG #39), and the CLIENT_SLASH_COMMANDS are intercepted here before a turn is sent.
@@ -246,7 +245,7 @@ type QueuedTurn = {
 export function createChatSession(chatId: string): ChatSession {
     const storage = browserStorage()
     const [transcript, setTranscript] = createStore<TurnItem[]>([])
-    const [draft, setDraftSignal] = createSignal('')
+    const [draft, setDraft] = createSignal('')
     const [attachments, setAttachments] = createSignal<ChatAttachment[]>([])
     const [streaming, setStreaming] = createSignal(false)
     const [manifest, setManifest] = createSignal<ChatManifest | null>(null)
@@ -683,7 +682,13 @@ export function createChatSession(chatId: string): ChatSession {
     }
 
     // ── Draft + attachments ───────────────────────────────────────────────────────────────────
-    const setDraft = (value: string) => setDraftSignal(value)
+    /** Append `token` to the draft, first adding `sep` when the draft ends in a non-space. */
+    const appendToDraft = (token: string, sep: string) =>
+        setDraft(cur =>
+            cur.length && !/\s$/.test(cur)
+                ? `${cur}${sep}${token}`
+                : `${cur}${token}`,
+        )
 
     /** Stage each accepted image File as a base64 attachment, in order; refusals set an inline notice. */
     const addImageFiles = async (files: File[]) => {
@@ -702,12 +707,7 @@ export function createChatSession(chatId: string): ChatSession {
     /** Append absolute paths to the draft, one per line (whitespace-safe). */
     const appendPathsToDraft = (paths: string[]) => {
         if (!paths.length) return
-        const block = paths.join('\n')
-        setDraftSignal(cur =>
-            cur.length && !/\s$/.test(cur)
-                ? `${cur}\n${block}\n`
-                : `${cur}${block}\n`,
-        )
+        appendToDraft(`${paths.join('\n')}\n`, '\n')
     }
 
     /** HEIC/HEIF → a JPEG File via the backend (POST /convert/heic); null when undecodable. */
@@ -864,7 +864,7 @@ export function createChatSession(chatId: string): ChatSession {
         if (text.startsWith('/')) {
             const cmd = parseChatSlashCommand(text)
             if (cmd) {
-                if (applyLocalCommand(cmd)) setDraftSignal('')
+                if (applyLocalCommand(cmd)) setDraft('')
                 return
             }
         }
@@ -908,7 +908,7 @@ export function createChatSession(chatId: string): ChatSession {
                         }),
                 ),
             )
-            setDraftSignal('')
+            setDraft('')
             setAttachments([])
             clearChatReferences(chatId)
             emitAppend(true)
@@ -943,7 +943,7 @@ export function createChatSession(chatId: string): ChatSession {
                     }),
             ),
         )
-        setDraftSignal('')
+        setDraft('')
         setAttachments([])
         clearChatReferences(chatId)
         setStreaming(true)
@@ -967,7 +967,7 @@ export function createChatSession(chatId: string): ChatSession {
                 text: draft(),
                 images: attachments(),
             })
-            setDraftSignal(restored.text)
+            setDraft(restored.text)
             setAttachments(restored.images)
             emitFocusRequest()
         }
@@ -983,13 +983,8 @@ export function createChatSession(chatId: string): ChatSession {
                     if (item.role !== 'assistant') continue
                     for (const part of item.parts) {
                         if (
-                            part.kind === 'permission' &&
-                            !part.answered &&
-                            !part.cancelled
-                        )
-                            part.cancelled = true
-                        if (
-                            part.kind === 'question' &&
+                            (part.kind === 'permission' ||
+                                part.kind === 'question') &&
                             !part.answered &&
                             !part.cancelled
                         )
@@ -1090,6 +1085,19 @@ export function createChatSession(chatId: string): ChatSession {
         publishChatOrigin(chatId, null)
     }
 
+    /** Detach a socket's handlers, then close it — its async close must not schedule a reconnect. */
+    const closeSocket = (sock: WebSocket | undefined, reason: string) => {
+        if (!sock) return
+        sock.onclose = null
+        sock.onmessage = null
+        sock.onerror = null
+        try {
+            sock.close(1000, reason)
+        } catch {
+            /* ignore */
+        }
+    }
+
     /** Tear the current WS down cleanly and reconnect on `id`. */
     const reconnectOn = (id: string) => {
         bindGen++
@@ -1102,17 +1110,7 @@ export function createChatSession(chatId: string): ChatSession {
         pendingQuestionResponses = []
         // Detach the OLD socket's handlers before closing, or its async close would schedule a stray
         // reconnect that opens a second socket on the new id.
-        const old = ws
-        if (old) {
-            old.onclose = null
-            old.onmessage = null
-            old.onerror = null
-            try {
-                old.close(1000, 'switch')
-            } catch {
-                /* ignore */
-            }
-        }
+        closeSocket(ws, 'switch')
         setActiveChatId(id)
         connect()
     }
@@ -1202,17 +1200,13 @@ export function createChatSession(chatId: string): ChatSession {
             .split('\n')
             .map(line => `> ${line}`)
             .join('\n')
-        setDraftSignal(d => `${quote}\n\n${d}`)
+        setDraft(d => `${quote}\n\n${d}`)
         emitFocusRequest()
     }
 
     const addMention = (path: string, noteIds: string[]) => {
         const ref = wikilinkFor(path, noteIds)
-        setDraftSignal(cur =>
-            cur && !cur.endsWith(' ') && cur.length
-                ? `${cur} ${ref} `
-                : `${cur}${ref} `,
-        )
+        appendToDraft(`${ref} `, ' ')
         addChatReference(chatId, path)
         emitFocusRequest()
     }
@@ -1220,9 +1214,7 @@ export function createChatSession(chatId: string): ChatSession {
     const addDroppedText = (text: string) => {
         const t = text.trim()
         if (!t) return
-        setDraftSignal(cur =>
-            cur.length && !/\s$/.test(cur) ? `${cur} ${t} ` : `${cur}${t} `,
-        )
+        appendToDraft(`${t} `, ' ')
         emitFocusRequest()
     }
 
@@ -1305,17 +1297,7 @@ export function createChatSession(chatId: string): ChatSession {
         window.removeEventListener('bismuth-chat-mention', onMention)
         appendListeners.clear()
         focusListeners.clear()
-        const sock = ws
-        if (sock) {
-            sock.onclose = null
-            sock.onmessage = null
-            sock.onerror = null
-            try {
-                sock.close(1000, 'dispose')
-            } catch {
-                /* ignore */
-            }
-        }
+        closeSocket(ws, 'dispose')
         clearChatActivity(chatId)
     }
     if (getOwner()) onCleanup(dispose)
