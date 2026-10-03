@@ -1,6 +1,7 @@
 // app/src/ui/ascii/glyphPaint.ts
 // The pure half of GlyphCanvas: batching a frame row into same-colour text runs, placing a scene
 // in the box grid, and the loop's gating arithmetic. No DOM, so it is unit-tested (glyphPaint.test.ts).
+import { COMPACT_FLOOR_SCALE } from '../../graph/asciiGrid'
 import type { GlyphFrame } from './glyphScene'
 
 export type GlyphRun = {
@@ -13,9 +14,10 @@ export type GlyphRun = {
     alpha: number
 }
 
-/** Alpha snaps to 16 levels, so a fade does not break every run into one-cell fillText calls. */
+/** Alpha snaps to 16 levels, so a fade does not break every run into one-cell fillText calls.
+ *  Full alpha stays 255 (a plain mask would paint it at 240/255). */
 export function quantizeAlpha(a: number): number {
-    return a & 0xf0
+    return a >= 248 ? 255 : a & 0xf0
 }
 
 /** One row as runs: consecutive non-space cells sharing a colour index and a quantized alpha
@@ -75,4 +77,23 @@ export function shouldRun(
 /** Milliseconds between ambient paints at `fps`. */
 export function frameInterval(fps: number): number {
     return 1000 / fps
+}
+
+/** Largest cell scale fitScale will grow a scene to. */
+export const MAX_SCALE = 2
+
+/** Cell scale that fits the scene in the box: 1 when it fits the graph's own cell grid within 1%,
+ *  otherwise shrunk to fit (floored at the graph's COMPACT_FLOOR_SCALE) or grown to fill (capped
+ *  at MAX_SCALE). */
+export function fitScale(
+    boxW: number,
+    boxH: number,
+    sceneCols: number,
+    sceneRows: number,
+    cellW: number,
+    cellH: number,
+): number {
+    const s = Math.min(boxW / (sceneCols * cellW), boxH / (sceneRows * cellH))
+    if (Math.abs(s - 1) <= 0.01) return 1
+    return Math.min(MAX_SCALE, Math.max(COMPACT_FLOOR_SCALE, s))
 }

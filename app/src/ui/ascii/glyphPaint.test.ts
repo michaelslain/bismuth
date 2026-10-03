@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { createFrame, putText } from './glyphScene'
 import {
+    fitScale,
     fitScene,
     frameInterval,
     quantizeAlpha,
@@ -15,15 +16,15 @@ describe('rowRuns', () => {
         putText(f, 2, 0, 'cd', 'accent')
         putText(f, 5, 0, 'ef', 'accent')
         expect(rowRuns(f, 0)).toEqual([
-            { row: 0, col: 0, text: 'ab', color: 0, alpha: 240 },
-            { row: 0, col: 2, text: 'cd', color: 3, alpha: 240 },
-            { row: 0, col: 5, text: 'ef', color: 3, alpha: 240 },
+            { row: 0, col: 0, text: 'ab', color: 0, alpha: 255 },
+            { row: 0, col: 2, text: 'cd', color: 3, alpha: 255 },
+            { row: 0, col: 5, text: 'ef', color: 3, alpha: 255 },
         ])
     })
     it('alpha within one quantum merges, alpha 0 is skipped', () => {
         const f = createFrame(4, 1)
-        putText(f, 0, 0, 'a', 'fg', 0xf3)
-        putText(f, 1, 0, 'b', 'fg', 0xf9)
+        putText(f, 0, 0, 'a', 'fg', 0xf1)
+        putText(f, 1, 0, 'b', 'fg', 0xf6)
         putText(f, 2, 0, 'c', 'fg', 0)
         expect(rowRuns(f, 0)).toEqual([
             { row: 0, col: 0, text: 'ab', color: 0, alpha: 240 },
@@ -51,7 +52,24 @@ describe('loop helpers', () => {
         expect(shouldRun(true, false, true)).toBe(false)
     })
     it('quantizes and paces', () => {
-        expect(quantizeAlpha(0xff)).toBe(0xf0)
+        expect(quantizeAlpha(0xff)).toBe(255)
+        expect(quantizeAlpha(0xf7)).toBe(0xf0)
         expect(frameInterval(12)).toBeCloseTo(83.333, 2)
+    })
+})
+
+describe('fitScale', () => {
+    it('is 1 for the hero box at the graph cell grid', () => {
+        expect(fitScale(604.8, 288, 96, 16, 6.3, 18)).toBe(1)
+    })
+    it('grows to fill a 1.5x box', () => {
+        expect(fitScale(907.2, 432, 96, 16, 6.3, 18)).toBeCloseTo(1.5, 5)
+    })
+    it('shrinks to the limiting axis', () => {
+        expect(fitScale(604.8, 216, 96, 16, 6.3, 18)).toBeCloseTo(0.75, 5)
+    })
+    it('floors at 0.5 and caps at 2', () => {
+        expect(fitScale(100, 40, 96, 16, 6.3, 18)).toBe(0.5)
+        expect(fitScale(5000, 5000, 24, 5, 6.3, 18)).toBe(2)
     })
 })
