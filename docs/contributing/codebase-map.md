@@ -565,7 +565,7 @@ The six ACP (Agent Client Protocol)-based backends — cline, gemini, goose, ope
 The Codex backend: `protocol.ts` is Codex's own wire types, `driver.ts` runs a Codex session and translates it to `ChatFrame`s. Also owns `CODEX_AGENTS_MD_CONTENT` — the managed `AGENTS.md` block (written via `agentBackends/agentsMd.ts`) that points Codex at the `bismuth_skill` MCP tool, since Codex has no native skills mechanism.
 
 #### `chatProviders/opencode/` (`opencode.ts`, `opencodeServer.ts`, `opencodeTranslate.ts`)
-The opencode backend: `opencodeServer.ts` manages the local `opencode` server process, `opencode.ts` is the per-turn `opencode run --format json` driver, `opencodeTranslate.ts` converts opencode's message shape to `ChatFrame`s (and re-exports `titleFromPrompt.ts`'s helper as `opencodeTitleFromPrompt` for existing call sites).
+The opencode backend: `opencodeServer.ts` manages the local `opencode` server process, `opencode.ts` is the per-turn `opencode run --format json` driver, `opencodeTranslate.ts` converts opencode's message shape to `ChatFrame`s.
 
 #### `agentBackends/catalog.ts`
 The PURE catalog of agent backends Bismuth can drive — deliberately zero imports (no Bun APIs, no `node:fs`, no driver modules), because it's imported by the settings schema (`.settings` autocomplete/lint, bundled for the app), the frontend (chat header pickers, capability gating), and the runtime registry alike, so it must stay safe for the browser/iPad bundle. Declares what each CLI *can* do; anything effectful (resolving a binary, spawning) lives elsewhere.

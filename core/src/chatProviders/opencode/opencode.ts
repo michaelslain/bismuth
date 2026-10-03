@@ -65,6 +65,7 @@ import {
     scheduleSessionClose,
 } from '../sessionSink'
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
+import { titleFromPrompt } from '../titleFromPrompt'
 import {
     ensureOpencodeServer,
     registerOpencodeServerListener,
@@ -92,7 +93,6 @@ import {
     newOpencodeTurnState,
     opencodeErrorMessage,
     opencodePermissionResponse,
-    opencodeTitleFromPrompt,
     parseOpencodeAuthList,
     parseOpencodeDebugConfigCommands,
     parseOpencodeModels,
@@ -634,7 +634,7 @@ async function runTurnServer(
     emit(s, { type: 'result', isError, numTurns: 1, costUsd })
     emit(s, { type: 'done' })
     if (!s.titleSent) {
-        const title = opencodeTitleFromPrompt(text)
+        const title = titleFromPrompt(text)
         if (title) {
             s.titleSent = true
             emit(s, { type: 'title', title })
@@ -850,7 +850,7 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
     // Name the tab off the first prompt (opencode's own session titling is async + truncated-prompt
     // based anyway) — latched once, like chat.ts maybeEmitTitle.
     if (!s.titleSent) {
-        const title = opencodeTitleFromPrompt(text)
+        const title = titleFromPrompt(text)
         if (title) {
             s.titleSent = true
             emit(s, { type: 'title', title })
