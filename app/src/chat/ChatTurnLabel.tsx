@@ -6,7 +6,7 @@
 // the same head style as the daemon panels." An optional trailing slot carries a queued-turn note
 // + cancel button (ChatUserTurn) — kept generic here rather than hardcoded, so the label stays a
 // pure "text + optional trailing content" row.
-import { children, type JSX } from 'solid-js'
+import { children, type Component, type JSX } from 'solid-js'
 import Text from '../ui/Text'
 import styles from './ChatTurnLabel.module.css'
 
@@ -23,7 +23,7 @@ export type ChatTurnLabelProps = {
     class?: string
 }
 
-export default function ChatTurnLabel(props: ChatTurnLabelProps) {
+const ChatTurnLabel: Component<ChatTurnLabelProps> = props => {
     // Resolved ONCE: the avatar is read twice (the class toggle + the slot), and reading a JSX
     // getter twice would mount the face twice.
     const avatar = children(() => props.avatar)
@@ -40,3 +40,5 @@ export default function ChatTurnLabel(props: ChatTurnLabelProps) {
         </div>
     )
 }
+
+export default ChatTurnLabel
