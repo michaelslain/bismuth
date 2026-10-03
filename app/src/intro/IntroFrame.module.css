@@ -2,8 +2,11 @@
    tracks, so the block's position never depends on what is inside it: swap a slide's content and
    nothing here moves. The nav row is `auto` but its content is the same IntroNav on every slide. */
 .intro-frame {
-  --intro-hero-w: calc(96 * var(--cell-w));
-  --intro-hero-h: calc(16 * var(--row-h));
+  /* The intro's heroes draw the graph's own cell grid one zoom step coarser, so the 96 x 16 cell box
+     is scaled up by this factor. GlyphArt fills its box (GlyphCanvas scales the scene to fill, up to 2x). */
+  --intro-glyph-scale: 1.5;
+  --intro-hero-w: calc(96 * var(--cell-w) * var(--intro-glyph-scale));
+  --intro-hero-h: calc(16 * var(--row-h) * var(--intro-glyph-scale));
   --intro-text-h: calc(11 * var(--row-h));
   position: relative;
   z-index: 2;
@@ -20,7 +23,7 @@
 /* Short windows: the same grid, three quarters the size. 43.75rem = 700px at the default root. */
 @media (max-height: 43.75rem) {
   .intro-frame {
-    --intro-hero-h: calc(16 * var(--row-h) * 0.75);
+    --intro-hero-h: calc(16 * var(--row-h) * var(--intro-glyph-scale) * 0.75);
     --intro-text-h: calc(11 * var(--row-h) * 0.75);
   }
 }
