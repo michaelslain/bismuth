@@ -75,16 +75,39 @@
    Toggled by the
    `toggle-tab-rail` command (Alt+Shift+S), which persists in localStorage exactly the way the left
    sidebar's own toggle does. */
-.tab-rail:hover .tab-rail-inner,
+.tab-rail:not(.hover-off):hover .tab-rail-inner,
 .tab-rail:focus-within .tab-rail-inner,
 .tab-rail.rail-pinned .tab-rail-inner {
-  width: 232px;                      /* expanded: icon + full name + close/pin */
+  width: var(--tab-rail-width, 232px); /* expanded: icon + full name + close/pin — appearance.tabRailWidth, set by dragging the edge */
   box-shadow: var(--lift);
 }
 /* Pinned, the rail is part of the layout rather than something floating over the editor, so it
    drops the lift that says "this is temporarily covering your content". */
 .tab-rail.rail-pinned .tab-rail-inner { box-shadow: none; }
-@media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .tab-rail-inner, .rail-edge { transition: none; } }
+
+/* THE EDGE HANDLE'S SLOT. A 6px band standing just OUTSIDE the surface's left border (on the editor
+   side), riding that border as it moves: `right` tracks `.tab-rail-inner`'s width — 46px collapsed,
+   the open width hovered/focused/pinned — on the same 0.22s curve, so the line you grab is always
+   the line you see. It is a child of `.tab-rail`, so hovering it IS hovering the rail: reaching for
+   the collapsed rail's line opens the rail, and the handle slides out with the edge. Outside
+   `.tab-rail-inner` on purpose — that clips, and the handle's chevron pops out leftward over the editor.
+   `.resizing` (a live width drag) drops every transition so the edge follows the pointer 1:1. */
+.rail-edge {
+  position: absolute; top: 0; bottom: 0;
+  right: 46px; width: 6px;
+  transition: right 0.22s var(--ease);
+}
+.tab-rail:not(.hover-off):hover .rail-edge,
+.tab-rail:focus-within .rail-edge,
+.tab-rail.rail-pinned .rail-edge { right: var(--tab-rail-width, 232px); }
+/* `.hover-off`: the rail was just UNPINNED under the pointer (its edge line or chevron clicked).
+   Without it, the pointer still resting on the rail would hold it open by `:hover` and the unpin
+   would look like it did nothing. TabRail sets it at that moment and clears it on pointerleave,
+   so the very next hover opens the rail as usual. Every rail `:hover` rule — here and in
+   TabRailRow.module.css as `[data-hover-off]` — carries the guard. */
+.tab-rail.resizing .rail-edge,
+.tab-rail.resizing .tab-rail-inner { transition: none; }
 
 /* Top action toolbar. Renders through `ui/IconBar` now (`band layout="wrap"`, toolbar-iconbar
    plan Task 3) — IconBar owns the box model entirely: the 36px band, the 0/var(--sp-5) side
@@ -100,7 +123,7 @@
    `layout="wrap"` centres + wraps for the 46px collapsed strip; once the rail widens to 232px
    there is room for one row, and a left-packed row matches the tab rows' own left-aligned icons
    below it — centring the same icons in five times the width would float them mid-rail instead. */
-.tab-rail:hover .tab-rail-actions,
+.tab-rail:not(.hover-off):hover .tab-rail-actions,
 .tab-rail:focus-within .tab-rail-actions,
 .tab-rail.rail-pinned .tab-rail-actions {
   justify-content: flex-start;

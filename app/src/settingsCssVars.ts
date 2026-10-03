@@ -213,6 +213,7 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         '--icon': s.appearance.iconSize + 'px',
         '--sidebar-width': s.appearance.sidebarWidth + 'px',
         '--sidebar-graph-height': s.appearance.sidebarGraphHeight + 'px',
+        '--tab-rail-width': s.appearance.tabRailWidth + 'px',
         '--ui-font-size': s.appearance.uiFontSize + 'px',
         '--mono-scale': String(s.appearance.monoScale),
         '--tab-font-size': s.appearance.tabFontSize + 'px',

@@ -53,6 +53,7 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 | `editorFontSize` | number | `13.5` | min `11`, max `28` | Note prose font size (px) — the design system's own prose size (`--fs-body-lg`), the one thing NOT at the 11.5px `--fs-ui` chrome size, because chrome is scanned and prose is read. |
 | `sidebarWidth` | number | `266` | min `200`, max `600` | Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css). |
 | `sidebarGraphHeight` | number | `305` | min `200`, max `500` | Height of the mini graph panel in the sidebar (px). |
+| `tabRailWidth` | number | `232` | min `160`, max `480` | Right tab rail's open width (px) — hovered or pinned; collapsed it is always the 46px icon column. Set by dragging the rail's left edge. |
 | `uiFontSize` | number | `11.5` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px) (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | min `11`, max `14` | Editor tab label font size (px). |

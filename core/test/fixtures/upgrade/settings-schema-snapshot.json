@@ -114,6 +114,13 @@
     "max": 14,
     "required": false
   },
+  "appearance.tabRailWidth": {
+    "type": "number",
+    "default": 232,
+    "min": 160,
+    "max": 480,
+    "required": false
+  },
   "appearance.theme": {
     "type": {
       "kind": "enum",

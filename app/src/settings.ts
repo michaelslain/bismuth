@@ -40,6 +40,7 @@ export interface Settings {
         editorFontSize: number // px
         sidebarWidth: number // px
         sidebarGraphHeight: number // px
+        tabRailWidth: number // px
         uiFontSize: number // px
         monoScale: number // optical-size multiplier for Monaspace (mono UI/code)
         tabFontSize: number // px

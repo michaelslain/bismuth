@@ -37,8 +37,8 @@
    the `shell-tabrail--expanded` story's `play` calls `.focus()` on a close button to reach it —
    covering five of the eight hover/focus rules below. The remaining three rest on
    `bench/moduleClassCheck.ts` alone (proves the class name still reaches the DOM, not the hovered
-   appearance): `.tab-rail-row:hover`, `[data-tab-rail]:hover .tab-rail-row:hover .tab-x`,
-   `[data-tab-rail]:hover .tab-rail-row:hover .tab-pin`. */
+   appearance): `.tab-rail-row:hover`, `[data-tab-rail]:not([data-hover-off]):hover .tab-rail-row:hover .tab-x`,
+   `[data-tab-rail]:not([data-hover-off]):hover .tab-rail-row:hover .tab-pin`. */
 
 /* A tab row: icon + (revealed) label + close/pin.
    THE 5px/10px ARE LOAD-BEARING AND MUST NOT BE ROUNDED ONTO --sp-*. The rail is 46px with a 1px
@@ -119,17 +119,17 @@
    reveal selector below therefore carries a `[data-rail-pinned]` twin.
    ANCESTOR REACHED VIA `[data-tab-rail]` (see this file's header) — was `.tab-rail` before the
    module split. */
-[data-tab-rail]:hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
+[data-tab-rail]:not([data-hover-off]):hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
 [data-tab-rail][data-rail-pinned] .tab-rail-label { flex-grow: 1; visibility: visible; opacity: 1; transition: opacity 0.16s ease, visibility 0s; }
 /* Revealed labels sit 0.6em off their icon on EVERY row, so the active icon's `]` (drawn outside the
    icon, see above) never touches its name and all names keep one column. Only when revealed: a
    collapsed label is 0 wide, and a margin there would overflow the 46px rail. */
-[data-tab-rail]:hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
+[data-tab-rail]:not([data-hover-off]):hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
 [data-tab-rail][data-rail-pinned] .tab-rail-label { margin-left: 0.6em; }
 /* Restores the row's real gap the moment the rail is expanded — every row gets this, not just a
    hovered one, exactly like the label reveal above (an expanded rail is never short on width, so
    there is nothing left to protect by keeping this at 0). */
-[data-tab-rail]:hover .tab-rail-row, [data-tab-rail]:focus-within .tab-rail-row,
+[data-tab-rail]:not([data-hover-off]):hover .tab-rail-row, [data-tab-rail]:focus-within .tab-rail-row,
 [data-tab-rail][data-rail-pinned] .tab-rail-row { gap: var(--sp-5); }
 
 /* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows
@@ -153,17 +153,17 @@
    `variant="selected"` instead of a hardcoded `--accent` here, so its accent tone comes from the
    button's own state prop rather than a class fighting it. */
 /* ANCESTOR REACHED VIA `[data-tab-rail]`/`[data-rail-pinned]` — see this file's header. */
-[data-tab-rail]:hover .tab-rail-row.pinned .tab-pin,
+[data-tab-rail]:not([data-hover-off]):hover .tab-rail-row.pinned .tab-pin,
 [data-tab-rail][data-rail-pinned] .tab-rail-row.pinned .tab-pin { opacity: 0.85; }
-[data-tab-rail]:hover .tab-rail-row:hover .tab-x,
-[data-tab-rail]:hover .tab-rail-row:hover .tab-pin,
+[data-tab-rail]:not([data-hover-off]):hover .tab-rail-row:hover .tab-x,
+[data-tab-rail]:not([data-hover-off]):hover .tab-rail-row:hover .tab-pin,
 [data-tab-rail][data-rail-pinned] .tab-rail-row:hover .tab-x,
 [data-tab-rail][data-rail-pinned] .tab-rail-row:hover .tab-pin,
 [data-tab-rail]:focus-within .tab-rail-row.pinned .tab-pin { opacity: 1; }
 /* Rejoins the row's flex flow the moment the rail is expanded, the same "every row, not just the
    hovered one" rule as the gap restore above — an expanded rail has the room, whether or not this
    particular row is being hovered. */
-[data-tab-rail]:hover .tab-x, [data-tab-rail]:hover .tab-pin,
+[data-tab-rail]:not([data-hover-off]):hover .tab-x, [data-tab-rail]:not([data-hover-off]):hover .tab-pin,
 [data-tab-rail]:focus-within .tab-x, [data-tab-rail]:focus-within .tab-pin,
 [data-tab-rail][data-rail-pinned] .tab-x, [data-tab-rail][data-rail-pinned] .tab-pin { position: static; transform: none; flex: 0 0 auto; }
 /* The inline rename input sits in place of the label; give it room within the expanded row. */

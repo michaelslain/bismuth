@@ -261,6 +261,12 @@
   --dur-fast: 80ms;
   --dur: 120ms;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* --ease-spring / --dur-pop: the ONE overshooting curve (≈10% past the target, then back), for a
+     control that springs out under the pointer on purpose — the panel edge chevron
+     (shell/EdgeHandle). Entrances only; every exit stays on --ease. Not a general-purpose curve:
+     a bounce on ordinary chrome reads as noise. */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-pop: 260ms;
 
   /* ── Spacing — NEW (§2.2, §7 wave 0). A 2/4/6/8 grid, not 4/8: the existing radius ladder
      (2/3/4/5) and row unit (18px) already say this app is denser than an 8-grid product. No
@@ -842,7 +848,7 @@ details.callout > summary::-webkit-details-marker {
    (0,3,0), so an equal-specificity tie would be settled by POSITION IN THIS FILE. CSS `@import`
    hoists and rules get relocated, so an order-dependent tie is exactly the fragility that has bitten
    this stylesheet before — the guard is written into the selector instead. */
-.layout.has-rail.rail-pinned:not(.switcher-active) { --rail-w: 232px; }
+.layout.has-rail.rail-pinned:not(.switcher-active) { --rail-w: var(--tab-rail-width, 232px); }
 /* BUG #40: the Cmd+O quick switcher takeover already collapses the LEFT sidebar via
    `.sidebar-hidden` below (`!sidebarVisible() || switcherOpen()`) — the right-edge vertical tab
    rail never followed the same rule, so it kept floating over the switcher's full-window graph

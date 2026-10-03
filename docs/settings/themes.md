@@ -348,6 +348,7 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 | `appearance.editorFontSize` | `--editor-font-size` | `13.5px` |
 | `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
+| `appearance.tabRailWidth` | `--tab-rail-width` | `232px` |
 | `appearance.uiFontSize` | `--ui-font-size` | `11.5px` |
 | `appearance.monoScale` | `--mono-scale` | `1` |
 | `appearance.tabFontSize` | `--tab-font-size` | `11.5px` |

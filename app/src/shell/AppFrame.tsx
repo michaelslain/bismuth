@@ -46,6 +46,8 @@ export function AppFrame(props: {
     switcherActive: boolean
     hasRail: boolean
     railPinned: boolean
+    /** An edge drag is live — the grid's column transitions switch off. */
+    resizing?: boolean
 }) {
     return (
         <div class="app-shell">
@@ -58,6 +60,10 @@ export function AppFrame(props: {
                     'has-rail': props.hasRail,
                     'rail-pinned': props.railPinned,
                 }}
+                // A live edge drag (shell/EdgeHandle): the columns must follow the pointer, not
+                // ease 0.26s behind it. Inline rather than a `.layout.resizing` rule because
+                // global.css's App.css class-rule pile may only shrink (cssLayering.test.ts).
+                style={props.resizing ? { transition: 'none' } : undefined}
             >
                 {props.sidebar}
                 {props.main}

@@ -37,7 +37,7 @@ import { switcherMatchNodeIds } from './palette/switcherMatches'
 import { TemplatePalette } from './palette/TemplatePalette'
 import { bindCommands, resolveButtonCommands, type GraphMode } from './commands'
 import { BASE_VIEW_KINDS } from './baseViews'
-import { settings, settingsHydrated } from './settings'
+import { settings, setSettings, settingsHydrated } from './settings'
 import { settingsToCssVars, setCssVars } from './settingsCssVars'
 import { resolveAppearance } from './themes'
 import { matchesKeybinding, toMenuAccelerator } from './keybindings'
@@ -160,6 +160,8 @@ import { TabRail } from './shell/TabRail'
 import { TabRailRow } from './shell/TabRailRow'
 import { AppFrame } from './shell/AppFrame'
 import { EditorPane } from './shell/EditorPane'
+import EdgeHandle from './shell/EdgeHandle'
+import { dragWidth, type EdgeWidthKey } from './edgeResize'
 import {
     createViewDrag,
     type DragDescriptor,
@@ -650,6 +652,19 @@ export default function App() {
         ),
     )
     const toggleTabRail = () => setTabRailPinned(v => !v)
+    // Panel edge drags (shell/EdgeHandle on the sidebar's and the rail's lines). The width is the
+    // `.settings` value itself (appearance.sidebarWidth / tabRailWidth), written live as the pointer
+    // moves — the settings store debounces the PATCH, so one drag is one write. `edgeResizing` turns
+    // the columns' width transitions off so the line tracks the pointer instead of easing after it.
+    const [edgeResizing, setEdgeResizing] = createSignal(false)
+    let edgeStartWidth = 0
+    const startEdgeResize = (key: EdgeWidthKey) => {
+        edgeStartWidth = settings.appearance[key]
+        setEdgeResizing(true)
+    }
+    const resizeEdge = (key: EdgeWidthKey, dx: number, grow: 1 | -1) =>
+        setSettings('appearance', key, dragWidth(key, edgeStartWidth, dx, grow))
+    const endEdgeResize = () => setEdgeResizing(false)
     const equalizePanes = () =>
         updateActiveTab(t => ({ ...t, root: equalize(t.root) }))
     // Cmd+O "switcher mode": instead of a centered modal, the knowledge graph expands to fill
@@ -2734,6 +2749,7 @@ export default function App() {
         activeTab() // re-place on active-tab change AND on its pane tree mutating (split / divider drag)
         tabs().length // …or when tabs open/close
         sidebarVisible() // …or when the sidebar is shown/hidden
+        settings.appearance.sidebarWidth // …or dragged wider/narrower by its edge
         activeTabShowsGraph() // …or when the graph moves between the sidebar slot and a pane host
         switcherOpen() // …or when Cmd+O expands the graph to fill the window (and back)
         requestAnimationFrame(placeFloaterSettled)
@@ -2961,6 +2977,7 @@ export default function App() {
             switcherActive={switcherOpen()}
             hasRail={true}
             railPinned={tabRailPinned()}
+            resizing={edgeResizing()}
             topStrip={
                 <TopStrip
                     mac={isTauri() && IS_MAC_PLATFORM}
@@ -2999,6 +3016,23 @@ export default function App() {
             }
             main={
                 <EditorPane
+                    edge={
+                        <Show when={!switcherOpen()}>
+                            <EdgeHandle
+                                buttonSide="right"
+                                label="sidebar edge"
+                                action={sidebarVisible() ? 'hide sidebar' : 'show sidebar'}
+                                direction={sidebarVisible() ? 'left' : 'right'}
+                                combo={settings.keybindings['toggle-sidebar']}
+                                resizable={sidebarVisible()}
+                                reveal={!sidebarVisible()}
+                                onResizeStart={() => startEdgeResize('sidebarWidth')}
+                                onResize={dx => resizeEdge('sidebarWidth', dx, 1)}
+                                onResizeEnd={endEdgeResize}
+                                onActivate={toggleSidebar}
+                            />
+                        </Show>
+                    }
                     banner={<UpdateBanner />}
                     switcher={
                         <Show when={switcherOpen()}>
@@ -3156,6 +3190,20 @@ export default function App() {
                 <Show when={tabRailVisible({ switcherOpen: switcherOpen() })}>
                     <TabRail
                         pinned={tabRailPinned()}
+                        resizing={edgeResizing()}
+                        edge={
+                            <EdgeHandle
+                                buttonSide="left"
+                                label="tab rail edge"
+                                action={tabRailPinned() ? 'unpin tab rail' : 'pin tab rail'}
+                                direction={tabRailPinned() ? 'right' : 'left'}
+                                combo={settings.keybindings['toggle-tab-rail']}
+                                onResizeStart={() => startEdgeResize('tabRailWidth')}
+                                onResize={dx => resizeEdge('tabRailWidth', dx, -1)}
+                                onResizeEnd={endEdgeResize}
+                                onActivate={toggleTabRail}
+                            />
+                        }
                         actions={
                             /* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */
                             <For each={settings.tabBar}>

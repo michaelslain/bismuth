@@ -1,0 +1,119 @@
+/* EdgeHandle.module.css — the grab strip on a panel's edge line (shell/EdgeHandle.tsx ONLY).
+   Class names hash at build time; reach them through `styles`, never a literal.
+
+   The strip is a 6px band standing on the EDITOR side of the panel's 1px border, never on top of
+   it: the sidebar's strip is clipped by EditorPane's `overflow: hidden` at the border, and the
+   rail's sits outside `.tab-rail-inner`'s own clip. So the highlight `.line` is drawn on the
+   strip's PANEL-side edge — flush against the border it stands for — and the chevron button pops
+   out off the far edge, over the editor. `.button-left` mirrors both for the rail.
+
+   WHERE the strip sits is the caller's positioned slot; this module only says how it looks and
+   behaves once placed.
+
+   THE POP. The button springs out of the line at its vertical centre: it starts tucked against
+   the border (shifted toward the panel, at half scale, transparent) and lands on `--ease-spring`,
+   the app's one overshooting curve, so it settles with a small bounce — the only bouncy motion in
+   the chrome, reserved for a control that appears under the pointer on purpose. Leaving is plain
+   `--ease` at `--dur`, no overshoot: a bounce on the way out reads as a stumble. It waits a beat
+   before springing (`transition-delay`) so a pointer crossing the line on its way somewhere else
+   does not fire it. Posed by `:focus` as well as `:hover` — a click never focuses the strip
+   (EdgeHandle cancels mousedown), so `:focus` is keyboard or programmatic only, and it is how the
+   story shows it, since CSS `:hover` follows the physical pointer. While a drag is live
+   (`data-dragging`) the button stays tucked away and the line stays lit. */
+
+.edge {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
+    outline: none;
+}
+.edge.fixed { cursor: pointer; }
+/* A FULLY hidden panel's strip is the window's edge — widen it to a reveal zone so moving toward
+   that side of the screen is enough to bring the button out (a 6px sliver had to be hunted for).
+   Wider than the 6px slot it sits in on purpose: the slot does not clip. */
+.edge.reveal { width: var(--sp-7); }
+
+.line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--sp-1);
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease);
+    pointer-events: none;
+}
+.button-left .line { left: auto; right: 0; }
+.edge:hover .line,
+.edge:focus .line,
+.edge[data-dragging] .line {
+    opacity: 1;
+    transition-delay: 0.08s;
+}
+
+/* ANCHORED TO THE LINE, NOT TO THE STRIP'S FAR EDGE. The strip's width varies — 6px on a visible
+   panel, 24px as a hidden sidebar's reveal zone — and hanging the button off `left: 100%` put the
+   glyph 10px from the line in one state and 28px in the other. Starting at the line's own outer
+   edge (`--sp-1`, the line's 2px width) makes the gap one number in every state — and no padding
+   on top: the button's own side room is the whole gap, so the glyph reads as the line's handle
+   rather than a separate control floating beside it. The pop overlaps
+   the strip, which is fine: it is the strip's child, so the pointer on it is still the strip's
+   hover, and its own `gestureStops` keep a press on it from starting a drag. */
+.pop {
+    position: absolute;
+    top: 50%;
+    left: var(--sp-1);
+    display: flex;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translate(calc(-1 * var(--sp-4)), -50%) scale(0.5);
+    transform-origin: left center;
+    transition:
+        transform var(--dur) var(--ease),
+        opacity var(--dur) var(--ease),
+        visibility 0s linear var(--dur);
+}
+.button-left .pop {
+    left: auto;
+    right: var(--sp-1);
+    transform: translate(var(--sp-4), -50%) scale(0.5);
+    transform-origin: right center;
+}
+.edge:hover .pop,
+.edge:focus .pop {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translate(0, -50%) scale(1);
+    transition:
+        transform var(--dur-pop) var(--ease-spring) 0.12s,
+        opacity var(--dur) var(--ease) 0.12s,
+        visibility 0s linear 0.12s;
+}
+.edge[data-dragging] .pop {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+/* NATIVE, NOT A CHIP. The control is a plain `IconButton` exactly as every other icon action in
+   the chrome draws it: a bare glyph, muted at rest and `--fg` on hover (ui/Button), no box, no
+   border, no brackets — brackets mean "selected" app-wide, and this is an action, not a state. The
+   one thing it gets here is `--bg` behind it, borderless, so a line of note text running under the
+   editor's edge never shows through the glyph. An earlier boxed tab (`--surface-2` + `--rule`)
+   read as a widget from another app; nothing else in the chrome is a raised square. */
+.chip {
+    display: flex;
+    background: var(--bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .line,
+    .pop,
+    .edge:hover .pop,
+    .edge:focus .pop { transition: none; }
+}

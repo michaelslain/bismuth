@@ -575,7 +575,7 @@ the last row adds `bottom`, a header types `bottom` as `=` and the first body ro
 - **Do** type structure (`|--`, `[####....]`, `- | / \ +`) rather than drawing it.
 - **Do** give every component a colocated `.module.css` imported only by that component, and a sibling story.
 - **Do** use the `//` separator in chrome, not `·`.
-- **Do** move with `--dur-fast` (80ms) / `--dur` (120ms) on `--ease`; the only loops are the 1.1s
+- **Do** move with `--dur-fast` (80ms) / `--dur` (120ms) on `--ease` — the one exception is `--ease-spring` at `--dur-pop` (260ms), an overshooting entrance reserved for a control that springs out under the pointer (the panel edge chevron, `shell/EdgeHandle`), never an exit; the only loops are the 1.1s
   caret blink, the 8s wordmark sheen, and the first-run intro's glyph-hero ambient loops (intro only, 12fps, paused when hidden or inactive, off under reduced motion).
 
 ### Don't:

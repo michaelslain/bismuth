@@ -133,6 +133,13 @@ export const SETTINGS_SCHEMA: Schema = {
             max: 500,
             doc: 'Height of the mini graph panel in the sidebar (px).',
         },
+        tabRailWidth: {
+            type: 'number',
+            default: 232,
+            min: 160,
+            max: 480,
+            doc: "Right tab rail's open width (px) — hovered or pinned; collapsed it is always the 46px icon column. Set by dragging the rail's left edge.",
+        },
         uiFontSize: {
             type: 'number',
             default: 11.5,

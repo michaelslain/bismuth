@@ -178,6 +178,7 @@ interface SchemaEntry {
 | `editorFontSize` | number | `13.5` | 11–28 | Note prose font size in px — the design system's own prose size (`--fs-body-lg`), the one thing NOT at the 11.5px `--fs-ui` chrome size. |
 | `sidebarWidth` | number | `266` | 200–600 | Left sidebar width in px (the ASCII design's 266px vault rail). |
 | `sidebarGraphHeight` | number | `305` | 200–500 | Mini graph panel height in the sidebar in px. |
+| `tabRailWidth` | number | `232` | 160–480 | Right tab rail's open width in px (hovered or pinned). Set by dragging the rail's left edge. |
 | `uiFontSize` | number | `11.5` | 11–16 | Base UI font size (sidebar, tabs, menus) in px (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | 11–14 | Editor tab label font size in px. |
@@ -574,6 +575,7 @@ The function is called reactively in `App.tsx` whenever `settings` changes. The 
 | `appearance.editorFontSize` | `--editor-font-size` |
 | `appearance.sidebarWidth` | `--sidebar-width` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` |
+| `appearance.tabRailWidth` | `--tab-rail-width` |
 | `appearance.uiFontSize` | `--ui-font-size` |
 | `appearance.monoScale` | `--mono-scale` |
 | `appearance.tabFontSize` | `--tab-font-size` |

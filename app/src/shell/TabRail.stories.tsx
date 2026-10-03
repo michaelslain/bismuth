@@ -53,6 +53,9 @@ import { expect, waitFor } from 'storybook/test'
 import { TabRail } from './TabRail'
 import { TabRailRow } from './TabRailRow'
 import { CommandButton } from './CommandButton'
+import EdgeHandle from './EdgeHandle'
+import { dragWidth } from '../edgeResize'
+import { createSignal } from 'solid-js'
 import styles from './TabRail.module.css'
 import rowStyles from './TabRailRow.module.css'
 
@@ -280,4 +283,79 @@ export const PinnedThreeActions: Story = {
             </TabRail>
         </Wrap>
     ),
+}
+
+/** The rail with its EDGE HANDLE wired the way App.tsx wires it, on REAL state: drag the left line
+ *  to set the open width (`--tab-rail-width`, the schema's 160–480 range), click it — or the `‹`
+ *  chevron that springs out at its middle — to pin, and again (`›`) to unpin. Unpinned, the rail
+ *  still opens on hover, and the handle rides its edge out. The `play` focuses the handle (CSS
+ *  `:hover` cannot be posed) and proves the strip stands flush against the surface's left border,
+ *  where the line you grab is the line you see. */
+export const WithEdge: Story = {
+    render: () => {
+        const [pinned, setPinned] = createSignal(true)
+        const [width, setWidth] = createSignal(232)
+        let start = 0
+        // The APP'S grid, not `Wrap`: an editor column plus the rail's own column, 46px collapsed or
+        // the open width pinned (global.css's `.layout.has-rail`). In `Wrap` the rail's root fills
+        // the whole frame, so the pointer anywhere in the story is "on the rail" and an unpin can
+        // never be seen to close it.
+        return (
+            <div
+                style={{
+                    '--tab-rail-width': `${width()}px`,
+                    display: 'grid',
+                    'grid-template-columns': `1fr ${pinned() ? width() : 46}px`,
+                    height: '500px',
+                    border: '1px solid var(--border-soft)',
+                    background: 'var(--bg)',
+                }}
+            >
+                <div />
+                <TabRail
+                    actions={actions()}
+                    pinned={pinned()}
+                    edge={
+                        <EdgeHandle
+                            buttonSide="left"
+                            label="tab rail edge"
+                            action={
+                                pinned() ? 'unpin tab rail' : 'pin tab rail'
+                            }
+                            direction={pinned() ? 'right' : 'left'}
+                            combo="Alt+Shift+S"
+                            onResizeStart={() => (start = width())}
+                            onResize={dx =>
+                                setWidth(
+                                    dragWidth('tabRailWidth', start, dx, -1),
+                                )
+                            }
+                            onActivate={() => setPinned(v => !v)}
+                        />
+                    }
+                >
+                    {rows}
+                </TabRail>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const inner = canvasElement.querySelector(
+            `.${styles['tab-rail-inner']}`,
+        )
+        const edge = canvasElement.querySelector('[data-edge-handle]')
+        if (!(inner instanceof HTMLElement) || !(edge instanceof HTMLElement))
+            throw new Error('rail surface or edge handle not found')
+        await expect(getComputedStyle(inner).width).toBe('232px')
+        await waitFor(() =>
+            expect(Math.round(edge.getBoundingClientRect().right)).toBe(
+                Math.round(inner.getBoundingClientRect().left),
+            ),
+        )
+        edge.focus()
+        const chevron = canvasElement.querySelector('[data-edge-button]')!
+        await waitFor(() =>
+            expect(getComputedStyle(chevron).visibility).toBe('visible'),
+        )
+    },
 }
