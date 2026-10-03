@@ -62,14 +62,11 @@ function lineCol(i: number, r: number): number {
     return Math.round(x0 + ((MCP_COL - x0) * (r - LINE_TOP)) / LINE_STEPS)
 }
 
-/** `\` when the line moves right on its step, `/` left, `|` straight. The last row has no step
- *  below it, so it takes the step that arrived there. */
-function lineGlyph(i: number, r: number): string {
-    const [a, b] =
-        r < LINE_BOTTOM
-            ? [lineCol(i, r), lineCol(i, r + 1)]
-            : [lineCol(i, r - 1), lineCol(i, r)]
-    return b > a ? '\\' : b < a ? '/' : '|'
+/** ONE glyph per line, from its overall direction: `\` when it runs right (mcp is right of the
+ *  agent), `/` when left, `|` when straight. Mixing glyphs row to row reads as jitter. */
+function lineGlyph(i: number): string {
+    const x0 = originCols[i]
+    return MCP_COL > x0 ? '\\' : MCP_COL < x0 ? '/' : '|'
 }
 
 function drawNames(f: GlyphFrame, t: number): void {
@@ -97,7 +94,7 @@ function drawLines(f: GlyphFrame, t: number): void {
     )
     for (let r = LINE_TOP; r < LINE_TOP + rowsDrawn; r++)
         for (let i = 0; i < AGENTS.length; i++)
-            putChar(f, lineCol(i, r), r, lineGlyph(i, r), 'faint')
+            putChar(f, lineCol(i, r), r, lineGlyph(i), 'faint')
 }
 
 function drawPackets(f: GlyphFrame, a: number): void {

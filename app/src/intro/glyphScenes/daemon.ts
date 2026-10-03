@@ -31,6 +31,8 @@ const ROWS = 16
 const REVEAL_MS = 1200
 const LEFT = 12
 const PROMPT = '> bismuth daemon status'
+// the widest bracketed expression: 14 cells, the every-15-minutes one
+const EXPR_WIDTH = Math.max(...DAEMON_CRONS.map(cr => cr.expr.length)) + 2
 const JOB_WIDTH = 14
 const VERB_WIDTH = 16
 const BAR_CELLS = 10
@@ -65,7 +67,8 @@ function drawCron(f: GlyphFrame, row: number, i: number, fill: number): void {
     putText(f, c, row, expr, 'accent')
     c += expr.length
     putChar(f, c++, row, ']', 'faint')
-    c += 2
+    // Pad the bracketed expression to the widest one so job names and bars share columns.
+    c = LEFT + EXPR_WIDTH + 2
     putText(f, c, row, job.padEnd(JOB_WIDTH), 'fg')
     c += JOB_WIDTH + 2
     putChar(f, c++, row, '[', 'faint')
