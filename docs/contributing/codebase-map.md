@@ -1509,13 +1509,13 @@ The takeover (`position: fixed`, mounted by `index.tsx` on first run). Owns four
 #### Components
 - `IntroGraph.tsx` — one renderer + canvas + `GraphAtmosphere`; `VaultIntro` mounts two and cross-fades them.
 - `IntroHeader.tsx` — the floating top overlay: corner `LogoMark` (`showMark`) and the skip button.
-- `IntroHero.tsx` — a slide's non-graph visual: `WordmarkHero` or a `TermPanel` (daemon / chat).
+- `IntroFrame.tsx` — the one grid every slide is laid out on (`variant` `hero`/`setup`; slots `data-intro-slot="hero|text|nav"`), so the hero box, headline and nav never move between slides.
+- `IntroHero.tsx` — a slide's non-graph visual: `GlyphArt` (`ui/ascii/`) painting a scene from `glyphScenes/` (`wordmark`, `daemon`, `agents`, `begin`).
 - `IntroCopy.tsx` — headline over paragraph in the prose face; `backdrop` adds the text halo over a graph.
 - `ThemePicker.tsx` + `ThemeSwatchCard.tsx` — the four-card theme group (`role="group"`, `aria-pressed`).
 - `PowerUpList.tsx` — one `Card` per power-up holding a `ToggleRow`.
 - `IntroCta.tsx` — the one primary `[enter your vault]` / `[opening…]` button.
 - `IntroNav.tsx` — back / `PagerDots` / next, dots centred on every slide.
-- `WordmarkHero.tsx`, `TermPanel.tsx`, `TermLine.tsx` — the logo-over-wordmark hero and the terminal panel + its lines.
 
 ---
 

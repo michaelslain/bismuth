@@ -39,9 +39,7 @@ export function TopStrip(props: {
             data-tauri-drag-region={props.dragRegion ? 'deep' : undefined}
         >
             {/* THE WORD, not the ASCII crystal: ui/Wordmark (`bismuth` in the gradient sheen) closed by
-                the blinking caret the status bar's daemon readout also uses. The same mark, in the
-                same treatment and tracking, as the intro splash's hero (intro/WordmarkHero.tsx),
-                because both render this one component. */}
+                the blinking caret the status bar's daemon readout also uses. */}
             <Wordmark size="body" caret />
             <div class={styles['top-strip-spacer']} />
             {props.children}

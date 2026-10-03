@@ -5,7 +5,7 @@
    This file is state plus composition and nothing else. What each slide says and shows is the
    table in ./introSlides; the pager arithmetic, key mapping, theme painting and the CTA's
    effects are the pure modules ./introPager, ./introKeys, ./introTheme and ./introEnterVault;
-   everything it draws is a component (IntroGraph, IntroHeader, IntroHero, IntroCopy,
+   everything it draws is a component (IntroGraph, IntroHeader, IntroFrame, IntroHero, IntroCopy,
    ThemePicker, PowerUpList, IntroCta, IntroNav). Nothing here asks which slide is showing — a
    slide's table row says which pieces it wants.
 
@@ -35,6 +35,7 @@ import IntroCopy from './IntroCopy'
 import IntroCta from './IntroCta'
 import IntroGraph from './IntroGraph'
 import IntroHeader from './IntroHeader'
+import IntroFrame from './IntroFrame'
 import IntroHero from './IntroHero'
 import IntroNav from './IntroNav'
 import PowerUpList from './PowerUpList'
@@ -148,12 +149,21 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 active={slide().graph === 'small'}
                 theme={theme()}
             />
+            {/* offsetY / fitMargin put the big cloud's centre on the hero box's centre. In the
+                1280x912 design window the frame puts the hero box at y 181..469 (centre 325), the
+                window centre is 456, so the cloud centre has to sit (325 - 456) / 912 = -0.144 of
+                the host height up; measured on the Graph story the cloud's centre then landed 37px
+                (0.04) too high, hence -0.103 (the cloud is not symmetric about its origin).
+                fitMargin 1.9 (was 1.55): at 1.55 the cloud was 410px tall in a 288px box and ran
+                two rows past the headline top; at 1.9 it is ~330px, the headline's scrim covers
+                the rest. Both are fractions of the host height, so they track a taller or shorter
+                window only approximately; the frame itself is fixed-size. */}
             <IntroGraph
                 graph={BIG_GRAPH}
                 active={slide().graph === 'big'}
                 theme={theme()}
-                offsetY={0.12}
-                fitMargin={1.55}
+                offsetY={-0.103}
+                fitMargin={1.9}
             />
 
             <IntroHeader
@@ -162,52 +172,75 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 onSkip={() => move('skip')}
             />
 
-            <div class={styles['vi-center']} data-layout={slide().layout}>
-                {/* Keyed on the slide so the hero and the copy remount each slide change and
-                    their enter animation replays; the persistent graphs never remount. */}
-                <Show when={slide()} keyed>
-                    {s => (
-                        <>
-                            <Show when={s.hero}>
-                                {hero => (
-                                    <IntroHero
-                                        hero={hero()}
-                                        icon={DEFAULTS.appearance.icon}
+            <div class={styles['vi-stage']}>
+                {/* One frame for every slide: the same grid, so the hero box, the headline and the
+                    nav never move between slides. The hero and the copy are keyed on the slide so
+                    they remount each change and their enter animation replays; the frame, the nav
+                    (and the keyboard focus on it) and the persistent graphs never remount. */}
+                <IntroFrame
+                    variant={
+                        slide().extra === 'themes' ||
+                        slide().extra === 'powerups'
+                            ? 'setup'
+                            : 'hero'
+                    }
+                    hero={
+                        <Show when={slide()} keyed>
+                            {s => (
+                                <>
+                                    <Show when={s.hero}>
+                                        {hero => <IntroHero hero={hero()} />}
+                                    </Show>
+                                    <Show when={s.extra === 'themes'}>
+                                        <ThemePicker
+                                            value={theme()}
+                                            onChange={setTheme}
+                                        />
+                                    </Show>
+                                    <Show when={s.extra === 'powerups'}>
+                                        <PowerUpList
+                                            items={POWER_UPS}
+                                            selected={powerups()}
+                                            onToggle={id =>
+                                                setPowerups(p =>
+                                                    togglePowerUp(p, id),
+                                                )
+                                            }
+                                        />
+                                    </Show>
+                                </>
+                            )}
+                        </Show>
+                    }
+                    text={
+                        <Show when={slide()} keyed>
+                            {s => (
+                                <>
+                                    <IntroCopy
+                                        title={s.title}
+                                        body={s.body}
+                                        backdrop={!!s.graph}
                                     />
-                                )}
-                            </Show>
-                            <IntroCopy
-                                title={s.title}
-                                body={s.body}
-                                backdrop={!!s.graph}
-                            />
-                        </>
-                    )}
-                </Show>
-
-                <Show when={slide().extra === 'cta'}>
-                    <IntroCta busy={busy()} onEnter={() => move('next')} />
-                </Show>
-                <Show when={slide().extra === 'themes'}>
-                    <ThemePicker value={theme()} onChange={setTheme} />
-                </Show>
-                <Show when={slide().extra === 'powerups'}>
-                    <PowerUpList
-                        items={POWER_UPS}
-                        selected={powerups()}
-                        onToggle={id =>
-                            setPowerups(p => togglePowerUp(p, id))
-                        }
-                    />
-                </Show>
-
-                <IntroNav
-                    index={index()}
-                    count={SLIDES.length}
-                    onPrev={() => move('prev')}
-                    onNext={() => move('next')}
-                    onSelect={k => move('go', k)}
-                    backdrop={!!slide().graph}
+                                    <Show when={s.extra === 'cta'}>
+                                        <IntroCta
+                                            busy={busy()}
+                                            onEnter={() => move('next')}
+                                        />
+                                    </Show>
+                                </>
+                            )}
+                        </Show>
+                    }
+                    nav={
+                        <IntroNav
+                            index={index()}
+                            count={SLIDES.length}
+                            onPrev={() => move('prev')}
+                            onNext={() => move('next')}
+                            onSelect={k => move('go', k)}
+                            backdrop={!!slide().graph}
+                        />
+                    }
                 />
             </div>
         </div>
