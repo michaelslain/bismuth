@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { gateDone, gateStop } from './chatTurnGate'
+import { gateDone, gateError, gateStop } from './chatTurnGate'
 
 describe('chatTurnGate', () => {
     test('a done with no stop outstanding finishes the turn', () => {
@@ -19,5 +19,11 @@ describe('chatTurnGate', () => {
         const first = gateDone(stale)
         expect(first).toEqual({ stale: 0, finished: false })
         expect(gateDone(first.stale)).toEqual({ stale: 0, finished: true })
+    })
+
+    test('a stopped turn that ends in an error leaves nothing stale', () => {
+        expect(gateStop(0, true)).toBe(1)
+        const stale = gateError()
+        expect(gateDone(stale)).toEqual({ stale: 0, finished: true })
     })
 })
