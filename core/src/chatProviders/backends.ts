@@ -1,14 +1,12 @@
 // core/src/chatProviders/backends.ts
-// The chat-backend REGISTRY: one uniform `ChatBackend` per driver, so ./index.ts can route by
-// lookup instead of the hand-written two-arm if/else chain it used to be (which repeated
-// `if (target === "opencode") … else …` in eleven verbs and could not absorb a third backend).
+// The chat-backend REGISTRY: one uniform `ChatBackend` per driver, so ./index.ts routes by lookup
+// instead of per-backend branching.
 //
-// The two drivers keep their own module-level signatures untouched — chat.ts still takes
-// (chatId, text, cwd, sink, images, memoryDir) and opencode.ts still takes the subset it
-// understands. The adapters below are the only place that difference is expressed: each receives
-// the SAME context object and picks what it needs. That keeps this refactor provably
-// behaviour-preserving (no edits inside either driver) while giving every future backend one
-// interface to implement.
+// Each driver keeps its own module-level signature — chat.ts takes (chatId, text, cwd, sink,
+// images, memoryDir), opencode takes the subset it understands. The adapters below are the only
+// place that difference is expressed: each receives the SAME context object and picks what it
+// needs. claude and opencode share one positional shape, built by `moduleBackend`; codex and the
+// ACP backends supply their own ChatBackend from their drivers.
 import * as claude from '../chat'
 import * as opencode from './opencode/opencode'
 import { codexBackend } from './codex/driver'
@@ -95,14 +93,58 @@ export interface ChatBackend {
     setEffort?(chatId: string, effort: string): void
 }
 
-/** Claude Code — core/src/chat.ts (one long-lived Agent-SDK `query()` per chat). */
-const claudeBackend: ChatBackend = {
-    id: 'claude',
-    hasSession: claude.hasSession,
+/** The module-level surface claude (chat.ts) and opencode (opencode/opencode.ts) both export. */
+type BackendModule = {
+    hasSession: ChatBackend['hasSession']
+    openSession(
+        chatId: string,
+        cwd: string,
+        sink: ChatSink,
+        memoryDir?: string,
+    ): unknown
+    sendMessage(
+        chatId: string,
+        text: string,
+        cwd: string,
+        sink: ChatSink,
+        images?: ChatImage[],
+        memoryDir?: string,
+    ): unknown
+    resumeSession(
+        chatId: string,
+        sessionId: string,
+        cwd: string,
+        sink: ChatSink,
+        memoryDir?: string,
+    ): unknown
+    sessionHistoryFrames: ChatBackend['sessionHistoryFrames']
+    abortTurn: ChatBackend['abortTurn']
+    setModel: ChatBackend['setModel']
+    closeChat: ChatBackend['closeChat']
+    scheduleClose: ChatBackend['scheduleClose']
+    rebindSink: ChatBackend['rebindSink']
+    detachSink: ChatBackend['detachSink']
+}
+
+type BackendExtras = Pick<
+    ChatBackend,
+    'respondPermission' | 'respondQuestion' | 'setPermissionMode' | 'setEffort'
+>
+
+/** Build a ChatBackend from a module exposing the shared positional signatures: the open, send and
+ *  resume adapters unpack the context object into those arguments, and `extras` carries whichever
+ *  optional interactive verbs the backend supports. */
+const moduleBackend = (
+    id: BackendId,
+    mod: BackendModule,
+    extras: Partial<BackendExtras>,
+): ChatBackend => ({
+    id,
+    hasSession: mod.hasSession,
     openSession: c =>
-        void claude.openSession(c.chatId, c.cwd, c.sink, c.memoryDir),
+        void mod.openSession(c.chatId, c.cwd, c.sink, c.memoryDir),
     sendMessage: c =>
-        void claude.sendMessage(
+        void mod.sendMessage(
             c.chatId,
             c.text,
             c.cwd,
@@ -111,69 +153,46 @@ const claudeBackend: ChatBackend = {
             c.memoryDir,
         ),
     resumeSession: c =>
-        void claude.resumeSession(
+        void mod.resumeSession(
             c.chatId,
             c.sessionId,
             c.cwd,
             c.sink,
             c.memoryDir,
         ),
-    sessionHistoryFrames: claude.sessionHistoryFrames,
-    abortTurn: claude.abortTurn,
-    setModel: claude.setModel,
-    closeChat: claude.closeChat,
-    scheduleClose: claude.scheduleClose,
-    rebindSink: claude.rebindSink,
-    detachSink: claude.detachSink,
+    sessionHistoryFrames: mod.sessionHistoryFrames,
+    abortTurn: mod.abortTurn,
+    setModel: mod.setModel,
+    closeChat: mod.closeChat,
+    scheduleClose: mod.scheduleClose,
+    rebindSink: mod.rebindSink,
+    detachSink: mod.detachSink,
+    ...extras,
+})
+
+/** Claude Code — core/src/chat.ts (one long-lived Agent-SDK `query()` per chat). */
+const claudeBackend = moduleBackend('claude', claude, {
     respondPermission: claude.respondPermission,
     respondQuestion: claude.respondQuestion,
     setPermissionMode: claude.setPermissionMode,
     setEffort: claude.setEffort,
-}
+})
 
-/** opencode — core/src/chatProviders/opencode.ts. Server mode (preferred: one persistent
+/** opencode — core/src/chatProviders/opencode/opencode.ts. Server mode (preferred: one persistent
  *  `opencode serve` shared across every opencode chat) falls back to the original one
- *  `opencode run --format json` subprocess per turn when the installed opencode can't serve. */
-const opencodeBackend: ChatBackend = {
-    id: 'opencode',
-    hasSession: opencode.hasSession,
-    openSession: c =>
-        opencode.openSession(c.chatId, c.cwd, c.sink, c.memoryDir),
-    sendMessage: c =>
-        opencode.sendMessage(
-            c.chatId,
-            c.text,
-            c.cwd,
-            c.sink,
-            c.images,
-            c.memoryDir,
-        ),
-    resumeSession: c =>
-        opencode.resumeSession(
-            c.chatId,
-            c.sessionId,
-            c.cwd,
-            c.sink,
-            c.memoryDir,
-        ),
-    sessionHistoryFrames: opencode.sessionHistoryFrames,
-    abortTurn: opencode.abortTurn,
-    setModel: opencode.setModel,
-    closeChat: opencode.closeChat,
-    scheduleClose: opencode.scheduleClose,
-    rebindSink: opencode.rebindSink,
-    detachSink: opencode.detachSink,
-    // respondPermission is a real, live-verified server-mode surface (permissionPrompts:true) — see
-    // catalog.ts. No setPermissionMode/respondQuestion/setEffort: opencode has no drivable permission
-    // MODE switch (permissionModes stays false), no AskUserQuestion equivalent, and no per-turn effort
-    // control (opencode models report no effort levels either way).
+ *  `opencode run --format json` subprocess per turn when the installed opencode can't serve.
+ *  respondPermission is a real, live-verified server-mode surface (permissionPrompts:true) — see
+ *  catalog.ts. No setPermissionMode/respondQuestion/setEffort: opencode has no drivable permission
+ *  MODE switch (permissionModes stays false), no AskUserQuestion equivalent, and no per-turn effort
+ *  control (opencode models report no effort levels either way). */
+const opencodeBackend = moduleBackend('opencode', opencode, {
     respondPermission: opencode.respondPermission,
-}
+})
 
 /**
  * Every chat backend, keyed by id.
  *
- * ORDER MATTERS for ownership resolution (see ./index.ts `owner()`): the old code asked opencode
+ * ORDER MATTERS for ownership resolution (see ./index.ts `owningBackend()`): the old code asked opencode
  * first and Claude second, and that order is preserved so a chat id somehow live in both registries
  * resolves the same way it always did. "codex" and the six ACP backends (chatProviders/acp/driver.ts)
  * are new ids nothing pre-dates, so where they land in the resolution order can't disturb that
