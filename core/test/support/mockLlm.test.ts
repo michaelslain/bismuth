@@ -230,6 +230,11 @@ describe('backendMockEnv', () => {
                 case 'codex-acp':
                     expect(() => backendMockEnv(id, MOCK_URL)).toThrow()
                     break
+                // hermes: not installed here and its model/provider config lives in ~/.hermes/config.yaml,
+                // which no test may write — so no mock mapping exists, and backendEnv.ts's default throws.
+                case 'hermes':
+                    expect(() => backendMockEnv(id, MOCK_URL)).toThrow()
+                    break
                 default:
                     // A NEW id landed in BACKEND_IDS that this switch has no case for — this is the guard
                     // actually firing. Add a case above (and a real row or an explicit throw in

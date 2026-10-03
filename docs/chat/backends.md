@@ -71,17 +71,23 @@ Run **`bismuth backends`** for the live version of this table, including which b
 installed on your machine and their versions. The catalog is a claim about each CLI; that command
 tells you what is true here.
 
-| Backend | Chat | Terminal | Relay | Daemon | MCP | Memory |
-| --- | --- | --- | --- | --- | --- | --- |
-| `claude` | ✓ delta | ✓ | hooks (+ subagents) | ✓ | `mcp add` | hooks |
-| `codex` | ✓ part | ✓ | hooks (+ subagents) | ✓ | `mcp add` | AGENTS.md block |
-| `opencode` | ✓ delta | ✓ | — | — | config merge | per-turn system prompt |
-| `cline` | ✓ ACP | ✓ | — | — | per-session | MCP tools |
-| `gemini` | ✓ ACP | ✓ | — | — | per-session | MCP tools |
-| `goose` | ✓ ACP | ✓ | — | — | per-session | MCP tools |
-| `openclaw` | ✓ ACP | ✓ | — | — | none † | MCP tools † |
-| `claude-code-acp` * | ✓ ACP | ✓ | — | — | per-session | MCP tools |
-| `codex-acp` * | ✓ ACP | ✓ | — | — | per-session | MCP tools |
+| Backend | Chat | Terminal | Relay | Daemon | MCP | Memory | Local |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `claude` | ✓ delta | ✓ | hooks (+ subagents) | ✓ | `mcp add` | hooks | ✓ |
+| `codex` | ✓ part | ✓ | hooks (+ subagents) | ✓ | `mcp add` | AGENTS.md block | ✓ |
+| `opencode` | ✓ delta | ✓ | — | — | config merge | per-turn system prompt | ✓ |
+| `cline` | ✓ ACP | ✓ | — | — | per-session | MCP tools | — |
+| `gemini` | ✓ ACP | ✓ | — | — | per-session | MCP tools | — |
+| `goose` | ✓ ACP | ✓ | — | — | per-session | MCP tools | ✓ |
+| `openclaw` | ✓ ACP | ✓ | — | — | none † | MCP tools † | — |
+| `hermes` | ✓ ACP | ✓ | — | — | per-session | MCP tools | — |
+| `claude-code-acp` * | ✓ ACP | ✓ | — | — | per-session | MCP tools | — |
+| `codex-acp` * | ✓ ACP | ✓ | — | — | per-session | MCP tools | — |
+
+**Local** is the `localModel` capability: with `localModel.enabled` in `.settings`, that
+backend's chats run against a local OpenAI/Anthropic-compatible server (LM Studio, Ollama, …)
+through spawn-time env or flags alone, never by editing the CLI's own config. Backends with `—`
+run as normal. Settings, per-backend wiring and server requirements: [local-models.md](local-models.md).
 
 \* **Hidden from the provider picker** (`hidden: true` in the catalog), still selectable by id. Both
 bridge an agent that already has a native driver here, so offering them as peers is a trap: an
@@ -162,7 +168,7 @@ Ranked by fidelity. Prefer the highest tier a backend supports:
 1. **Native hooks** — full fidelity including subagent depth. Claude Code (the `relay/` plugin) and
    Codex (whose hook set is nearly isomorphic, right down to `SubagentStart`/`SubagentStop`) are the
    only two backends in the catalog with `relayReporting: "hooks"`. Every ACP-driven backend — Cline,
-   Gemini, Goose, OpenClaw, and the two ACP adapters — reports `"none"` instead: ACP has no
+   Gemini, Goose, OpenClaw, Hermes, and the two ACP adapters — reports `"none"` instead: ACP has no
    session-lifecycle notification of its own and a subagent invocation is indistinguishable from a
    slow tool call (see "Two industry standards" above), so there is nothing yet for a listener to
    hook into for any of them.

@@ -18,7 +18,7 @@
  *  "codex" drives OpenAI's own `codex` binary directly (chatProviders/codex/, a Bun.spawn subprocess
  *  driver, deliberately not the `@openai/codex-sdk` npm package — see that driver's header) —
  *  distinct from "codex-acp" below, which bridges the SAME CLI through a third-party ACP adapter.
- *  The last six are ACP (Agent Client Protocol) agents — one hand-rolled JSON-RPC driver
+ *  The last seven are ACP (Agent Client Protocol) agents — one hand-rolled JSON-RPC driver
  *  (chatProviders/acp/driver.ts) covers all of them; see chatProviders/acp/agents.ts for exactly
  *  what's verified vs guessed per CLI. */
 export const BACKEND_IDS = [
@@ -29,6 +29,7 @@ export const BACKEND_IDS = [
     'gemini',
     'goose',
     'openclaw',
+    'hermes',
     'claude-code-acp',
     'codex-acp',
 ] as const
@@ -635,6 +636,22 @@ const OPENCLAW: BackendDescriptor = {
     capabilities: { ...ACP_SHARED_CAPABILITIES, mcp: 'none' },
 }
 
+/** Hermes Agent (Nous Research) — native ACP via `hermes acp` (docs:
+ *  hermes-agent.nousresearch.com/docs/user-guide/features/acp). Per those docs it reuses the user's
+ *  `~/.hermes/config.yaml` (model, provider, credentials), accepts `session/new.mcpServers`, and its
+ *  sessions are resumable — the shared ACP profile below. NOT verified against a live binary: hermes
+ *  is not installed on the machine this entry was authored on, so it rests on the docs alone.
+ *  `localModel` stays false (shared default): a spawn-time env override for a custom base URL that
+ *  leaves `~/.hermes` untouched is unconfirmed. */
+const HERMES: BackendDescriptor = {
+    id: 'hermes',
+    label: 'Hermes Agent',
+    binary: 'hermes',
+    installHint:
+        'Install Hermes Agent (hermes-agent.nousresearch.com) with its ACP extra — Bismuth spawns `hermes acp` automatically when you pick this provider.',
+    capabilities: { ...ACP_SHARED_CAPABILITIES },
+}
+
 /** Claude Code via Zed's `@zed-industries/claude-code-acp` adapter — an ADAPTER, not native ACP
  *  support (built on the Claude Agent SDK). Spawned on demand via `npx`; pinned to
  *  `@agentclientprotocol/sdk@0.14.1`, the OLD model-selection shape (driver.ts branches on this via
@@ -680,6 +697,7 @@ export const BACKENDS: Record<BackendId, BackendDescriptor> = {
     gemini: GEMINI,
     goose: GOOSE,
     openclaw: OPENCLAW,
+    hermes: HERMES,
     'claude-code-acp': CLAUDE_CODE_ACP,
     'codex-acp': CODEX_ACP,
 }

@@ -364,7 +364,7 @@ Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior.
 
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
-| `provider` | enum | `claude` | Which agent backend a chat runs on by default: `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `claude-code-acp`, `codex-acp`. This is the default for a chat tab that hasn't chosen for itself — the header's backend picker overrides it per tab, and that choice persists (localStorage, keyed by the chat tab id). Each backend's controls render per declared capability, so a backend without permission modes or effort simply hides them. See [agent backends](../chat/backends.md). |
+| `provider` | enum | `claude` | Which agent backend a chat runs on by default: `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `hermes`, `claude-code-acp`, `codex-acp`. This is the default for a chat tab that hasn't chosen for itself — the header's backend picker overrides it per tab, and that choice persists (localStorage, keyed by the chat tab id). Each backend's controls render per declared capability, so a backend without permission modes or effort simply hides them. See [agent backends](../chat/backends.md). |
 | `computerUse` | boolean | `false` | Enable Claude's browser/computer-use capability (`--chrome`) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). This is the **default for a chat that hasn't chosen for itself** — a chat overrides it with `/chrome` / `/chrome off` or the header Globe pill, and that per-chat choice persists (localStorage, keyed by the chat tab id). |
 
 Example:

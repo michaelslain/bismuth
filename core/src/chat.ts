@@ -175,6 +175,9 @@ export type ChatFrame =
      *  Emitted INSTEAD OF opening the session, with one exception: a mid-session re-read of the
      *  vault's visibility that cannot be resolved (respawnSession) emits it and ends the session,
      *  rather than continue a conversation whose deny list no longer describes the vault.
+     *  `local-model-unreachable` = the vault's `localModel` setting is on but its server answered
+     *  nothing (or lists no models) — emitted INSTEAD OF spawning, never a silent fall back to the
+     *  CLI's own cloud account (agentBackends/localModelProbe.ts's `localUnreachableMessage`).
      *  `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
     | {
           type: 'error'
@@ -183,6 +186,7 @@ export type ChatFrame =
               | 'no-opencode'
               | 'no-binary'
               | 'visibility-refused'
+              | 'local-model-unreachable'
               | 'spawn'
               | 'exit'
               | 'error'
