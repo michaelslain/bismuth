@@ -56,6 +56,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parseDocument } from 'yaml'
 import { whichBinary } from '../claudeWhich'
+import { spawnWithTimeout } from './spawnWithTimeout'
 
 /** What the caller wants registered: our compiled MCP binary + the env it needs to find the docs
  *  tree / cli binary / (optionally) a specific vault. Mirrors the env vars bismuthInstall.ts's
@@ -102,30 +103,13 @@ async function spawnBestEffort(
     args: string[],
     timeoutMs: number,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-    try {
-        const proc = Bun.spawn([bin, ...args], {
-            env: process.env,
-            stdin: 'ignore',
-            stdout: 'pipe',
-            stderr: 'pipe',
-        })
-        const timer = setTimeout(() => proc.kill(), timeoutMs)
-        try {
-            const [stdout, stderr, code] = await Promise.all([
-                new Response(proc.stdout).text(),
-                new Response(proc.stderr).text(),
-                proc.exited,
-            ])
-            return { code, stdout, stderr }
-        } finally {
-            clearTimeout(timer)
-        }
-    } catch (e) {
-        return {
-            code: -1,
-            stdout: '',
-            stderr: e instanceof Error ? e.message : String(e),
-        }
+    const r = await spawnWithTimeout([bin, ...args], timeoutMs, {
+        env: process.env,
+    })
+    return {
+        code: r.code ?? -1,
+        stdout: r.stdout,
+        stderr: r.error ?? r.stderr,
     }
 }
 
@@ -184,6 +168,32 @@ function getPath(obj: Record<string, unknown>, path: string[]): unknown {
     return cur
 }
 
+/** Parse `text` and walk to `keyPath[name]`. `parsed` is null when the text is not valid JSON;
+ *  `container` is the object at `keyPath` (undefined when absent or not an object); `entry` is
+ *  `container[name]`. The one parse-then-walk every JSON registrar helper shares. */
+function readEntry(
+    text: string | null,
+    keyPath: string[],
+    name: string,
+): {
+    parsed: Record<string, unknown> | null
+    container?: Record<string, unknown>
+    entry?: unknown
+} {
+    const parsed = parseJsonLenient(text)
+    if (parsed === null) return { parsed }
+    const c = getPath(parsed, keyPath)
+    if (!c || typeof c !== 'object') return { parsed }
+    const container = c as Record<string, unknown>
+    return { parsed, container, entry: container[name] }
+}
+
+/** `--env K=V` (or `-e K=V`) once per variable — the flag form Codex, Copilot, Amp, Droid and
+ *  Gemini all take on `mcp add`. */
+function envFlagArgs(env: Record<string, string>, flag: string): string[] {
+    return Object.entries(env).flatMap(([k, v]) => [flag, `${k}=${v}`])
+}
+
 /** Best-effort indent detection so a rewritten file doesn't reformat the user's whole config;
  *  defaults to 2 spaces for a brand-new file. */
 function detectIndent(text: string | null): string {
@@ -206,12 +216,8 @@ export function patchJsonMcpServerEnv(
     name: string,
     env: Record<string, string>,
 ): { text: string | null } {
-    const parsed = parseJsonLenient(existingText)
-    if (parsed === null) return { text: null }
-    const container = getPath(parsed, keyPath)
-    if (!container || typeof container !== 'object') return { text: null }
-    const entry = (container as Record<string, unknown>)[name]
-    if (!entry || typeof entry !== 'object') return { text: null }
+    const { parsed, entry } = readEntry(existingText, keyPath, name)
+    if (!parsed || !entry || typeof entry !== 'object') return { text: null }
     ;(entry as Record<string, unknown>).env = env
     return {
         text: JSON.stringify(parsed, null, detectIndent(existingText)) + '\n',
@@ -231,16 +237,10 @@ export function removeJsonMcpServer(
     isOurs: (existing: unknown) => boolean,
 ): { text: string | null; removed: boolean } {
     if (existingText == null) return { text: existingText, removed: false }
-    const parsed = parseJsonLenient(existingText)
-    if (parsed === null) return { text: existingText, removed: false }
-    const container = getPath(parsed, keyPath)
-    if (!container || typeof container !== 'object')
+    const { parsed, container, entry } = readEntry(existingText, keyPath, name)
+    if (!parsed || !container || entry === undefined || !isOurs(entry))
         return { text: existingText, removed: false }
-    const c = container as Record<string, unknown>
-    const existing = c[name]
-    if (existing === undefined || !isOurs(existing))
-        return { text: existingText, removed: false }
-    delete c[name]
+    delete container[name]
     return {
         text: JSON.stringify(parsed, null, detectIndent(existingText)) + '\n',
         removed: true,
@@ -326,6 +326,30 @@ function extensionsSeq(doc: ReturnType<typeof parseDocument>): any {
     return seq
 }
 
+/** Parse a YAML config and find its `extensions:` list. Null when the text isn't valid YAML;
+ *  `seq` is undefined when there is no list yet. */
+function loadYamlExtensions(
+    text: string,
+): { doc: ReturnType<typeof parseDocument>; seq?: any } | null {
+    let doc: ReturnType<typeof parseDocument>
+    try {
+        doc = parseDocument(text)
+    } catch {
+        return null
+    }
+    if (doc.errors.length > 0) return null
+    const seq = doc.get('extensions') as any
+    return {
+        doc,
+        seq: seq && typeof seq.items !== 'undefined' ? seq : undefined,
+    }
+}
+
+/** Index of the list item whose `name` field is `name`, or -1. */
+function findExtensionIndex(seq: any, name: string): number {
+    return seq.items.findIndex((it: any) => it?.get && it.get('name') === name)
+}
+
 function stringifyYamlDoc(doc: ReturnType<typeof parseDocument>): string {
     let out = doc.toString({ flowCollectionPadding: false })
     if (!out.endsWith('\n')) out += '\n'
@@ -346,24 +370,15 @@ export function upsertYamlExtension(
     entry: Record<string, unknown>,
     isOurs: (existing: unknown) => boolean,
 ): { text: string | null; warning?: string } {
-    let doc: ReturnType<typeof parseDocument>
-    try {
-        doc = parseDocument(existingText ?? '')
-    } catch {
+    const loaded = loadYamlExtensions(existingText ?? '')
+    if (!loaded)
         return {
             text: null,
             warning: "existing config isn't valid YAML — skipped",
         }
-    }
-    if (doc.errors.length > 0)
-        return {
-            text: null,
-            warning: "existing config isn't valid YAML — skipped",
-        }
+    const { doc } = loaded
     const seq = extensionsSeq(doc)
-    const idx = seq.items.findIndex(
-        (it: any) => it?.get && it.get('name') === name,
-    )
+    const idx = findExtensionIndex(seq, name)
     if (idx >= 0) {
         // NOTE: seq.get(idx) returns the raw Map NODE for a non-scalar item (only scalars get
         // unwrapped) — .toJSON() is what actually converts it to a plain JS object isOurs() can
@@ -394,19 +409,10 @@ export function removeYamlExtension(
     isOurs: (existing: unknown) => boolean,
 ): { text: string | null; removed: boolean } {
     if (existingText == null) return { text: existingText, removed: false }
-    let doc: ReturnType<typeof parseDocument>
-    try {
-        doc = parseDocument(existingText)
-    } catch {
-        return { text: existingText, removed: false }
-    }
-    if (doc.errors.length > 0) return { text: existingText, removed: false }
-    const seq = doc.get('extensions') as any
-    if (!seq || typeof seq.items === 'undefined')
-        return { text: existingText, removed: false }
-    const idx = seq.items.findIndex(
-        (it: any) => it?.get && it.get('name') === name,
-    )
+    const loaded = loadYamlExtensions(existingText)
+    if (!loaded?.seq) return { text: existingText, removed: false }
+    const { doc, seq } = loaded
+    const idx = findExtensionIndex(seq, name)
     if (idx < 0) return { text: existingText, removed: false }
     const existingJson = seq.items[idx].toJSON()
     if (!isOurs(existingJson)) return { text: existingText, removed: false }
@@ -481,7 +487,14 @@ export function createCodexRegistrar(
             const codex = bin()
             if (!codex) return false
             const r = await io.run(codex, ['mcp', 'list'])
-            return r.code === 0 && r.stdout.includes('bismuth')
+            // Match a server NAMED bismuth: the first column of a row, never a substring (a
+            // `bismuth-notes` server, or any path under ~/.bismuth, must not read as registered).
+            return (
+                r.code === 0 &&
+                r.stdout
+                    .split('\n')
+                    .some(line => line.trim().split(/\s+/)[0] === 'bismuth')
+            )
         },
         async register(spec) {
             const codex = bin()
@@ -490,10 +503,14 @@ export function createCodexRegistrar(
                     ok: false,
                     warning: `${label} not found on PATH — skipped`,
                 }
-            const args = ['mcp', 'add', 'bismuth']
-            for (const [k, v] of Object.entries(buildEnv(spec)))
-                args.push('--env', `${k}=${v}`)
-            args.push('--', spec.mcpBin)
+            const args = [
+                'mcp',
+                'add',
+                'bismuth',
+                ...envFlagArgs(buildEnv(spec), '--env'),
+                '--',
+                spec.mcpBin,
+            ]
             const r = await io.run(codex, args)
             if (r.code !== 0) {
                 return {
@@ -520,210 +537,80 @@ export function createCodexRegistrar(
     }
 }
 
-/** Cline. No --env on `cline mcp add` (verified from the compiled binary's own option table) — a
- *  two-step register: CLI add, then patch the env block into the file ourselves. No verified
- *  remove subcommand either, so unregister() edits the file directly. */
-export function createClineRegistrar(
-    io: RegistrarIO = defaultRegistrarIO,
-): McpRegistrar {
-    const id = 'cline'
-    const label = 'Cline'
-    const bin = () => io.which('cline')
-    const configPath = () =>
-        join(
-            io.homedir(),
-            '.cline',
-            'data',
-            'settings',
-            'cline_mcp_settings.json',
-        )
-    const isOurs = () => ownsCommand(io.homedir())
-    return {
-        id,
-        label,
-        detect: bin,
-        async isRegistered() {
-            const parsed = parseJsonLenient(io.readFile(configPath()))
-            if (!parsed) return false
-            return getPath(parsed, ['mcpServers', 'bismuth']) !== undefined
-        },
-        async register(spec) {
-            const cline = bin()
-            if (!cline)
-                return {
-                    ok: false,
-                    warning: `${label} not found on PATH — skipped`,
-                }
-            const existingText = io.readFile(configPath())
-            const parsedCheck = parseJsonLenient(existingText)
-            if (parsedCheck === null) {
-                return {
-                    ok: false,
-                    warning: `${label}: existing MCP config isn't valid JSON — skipped`,
-                }
-            }
-            const existingEntry = getPath(parsedCheck, [
-                'mcpServers',
-                'bismuth',
-            ])
-            if (existingEntry !== undefined && !isOurs()(existingEntry)) {
-                return {
-                    ok: false,
-                    warning: `${label} already has a "bismuth" MCP entry Bismuth didn't create — skipped`,
-                }
-            }
-            const r = await io.run(cline, [
-                'mcp',
-                'add',
-                'bismuth',
-                '--transport',
-                'stdio',
-                '--yes',
-                '--',
-                spec.mcpBin,
-            ])
-            if (r.code !== 0) {
-                return {
-                    ok: false,
-                    warning: `cline mcp add failed: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`,
-                }
-            }
-            const afterAdd = io.readFile(configPath())
-            const patched = patchJsonMcpServerEnv(
-                afterAdd,
-                ['mcpServers'],
-                'bismuth',
-                buildEnv(spec),
-            )
-            if (patched.text != null) io.writeFile(configPath(), patched.text)
-            writeLedgerEntry(io, id, {
-                at: io.now(),
-                method: 'cli',
-                path: configPath(),
-            })
-            return patched.text == null
-                ? {
-                      ok: true,
-                      warning: `cline mcp add succeeded but its env block could not be patched in`,
-                  }
-                : { ok: true }
-        },
-        async unregister() {
-            if (!hasLedgerEntry(io, id)) return
-            const existingText = io.readFile(configPath())
-            const result = removeJsonMcpServer(
-                existingText,
-                ['mcpServers'],
-                'bismuth',
-                isOurs(),
-            )
-            if (result.removed && result.text != null)
-                io.writeFile(configPath(), result.text)
-            clearLedgerEntry(io, id)
-        },
-    }
+/** Everything the `mcp add`-style registrars (Cline, OpenClaw, Gemini, Qwen, Copilot, Amp, Droid)
+ *  share: resolve the binary, read + leniently parse the config, refuse a foreign `bismuth` entry,
+ *  run the add argv, optionally post-process (`postAdd`), write the ledger — and, to unregister,
+ *  either the CLI's remove verb or a direct edit of the config file. What differs per CLI is
+ *  passed in rather than hardcoded. */
+type McpAddConfig = {
+    id: string
+    label: string
+    binaryName: string
+    configPathParts: string[]
+    /** Where the name-keyed server entries live (Amp's is one literal dotted segment, not two). */
+    mcpServersPath: string[]
+    /** Noun in the "isn't valid JSON" warning ("MCP config", "config"). */
+    configNoun: string
+    /** The CLI verb that adds, used only in the failure warning (`mcp add` / OpenClaw's `mcp set`). */
+    addVerb?: string
+    buildAddArgs: (
+        spec: BismuthMcpSpec,
+        env: Record<string, string>,
+    ) => string[]
+    /** Runs after a successful add; a returned string becomes the register() warning. */
+    postAdd?: (ctx: {
+        io: RegistrarIO
+        env: Record<string, string>
+        configPath: string
+        keyPath: string[]
+        binaryName: string
+    }) => string | undefined
+    /** How unregister() removes the entry: the CLI's verb (default `remove`) or by editing the
+     *  config file, for a CLI with no scriptable removal. */
+    removal?: 'edit-file' | { verb: string }
 }
 
-/** OpenClaw. `mcp set` is a single-shot JSON payload (command+args+env all at once) — the
- *  cleanest of the five — stored under `mcp.servers.<name>`, NOT top-level `mcpServers`. */
-export function createOpenClawRegistrar(
-    io: RegistrarIO = defaultRegistrarIO,
-): McpRegistrar {
-    const id = 'openclaw'
-    const label = 'OpenClaw'
-    const bin = () => io.which('openclaw')
-    const configPath = () => join(io.homedir(), '.openclaw', 'openclaw.json')
-    const isOurs = () => ownsCommand(io.homedir())
-    return {
-        id,
-        label,
-        detect: bin,
-        async isRegistered() {
-            const parsed = parseJsonLenient(io.readFile(configPath()))
-            if (!parsed) return false
-            return getPath(parsed, ['mcp', 'servers', 'bismuth']) !== undefined
-        },
-        async register(spec) {
-            const openclaw = bin()
-            if (!openclaw)
-                return {
-                    ok: false,
-                    warning: `${label} not found on PATH — skipped`,
-                }
-            const existingText = io.readFile(configPath())
-            const parsedCheck = parseJsonLenient(existingText)
-            if (parsedCheck === null) {
-                return {
-                    ok: false,
-                    warning: `${label}: existing config isn't valid JSON — skipped`,
-                }
-            }
-            const existingEntry = getPath(parsedCheck, [
-                'mcp',
-                'servers',
-                'bismuth',
-            ])
-            if (existingEntry !== undefined && !isOurs()(existingEntry)) {
-                return {
-                    ok: false,
-                    warning: `${label} already has a "bismuth" MCP entry Bismuth didn't create — skipped`,
-                }
-            }
-            const payload = JSON.stringify({
-                command: spec.mcpBin,
-                args: [],
-                env: buildEnv(spec),
-            })
-            const r = await io.run(openclaw, ['mcp', 'set', 'bismuth', payload])
-            if (r.code !== 0) {
-                return {
-                    ok: false,
-                    warning: `openclaw mcp set failed: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`,
-                }
-            }
-            writeLedgerEntry(io, id, {
-                at: io.now(),
-                method: 'cli',
-                path: configPath(),
-            })
-            return { ok: true }
-        },
-        async unregister() {
-            // Gate on our own ledger before calling the CLI's remove verb — `openclaw mcp unset` (like
-            // `gemini`/`qwen mcp remove` below) removes by name unconditionally, with no ownership
-            // check of its own, so we must not call it for an entry we never created ourselves.
-            if (!hasLedgerEntry(io, id)) return
-            const openclaw = bin()
-            if (openclaw) await io.run(openclaw, ['mcp', 'unset', 'bismuth'])
-            clearLedgerEntry(io, id)
-        },
+/** `postAdd` for a CLI whose `mcp add` has no env flag: patch just the env block onto the entry
+ *  the CLI wrote. */
+const patchEnvAfterAdd: NonNullable<McpAddConfig['postAdd']> = ({
+    io,
+    env,
+    configPath,
+    keyPath,
+    binaryName,
+}) => {
+    const patched = patchJsonMcpServerEnv(
+        io.readFile(configPath),
+        keyPath,
+        'bismuth',
+        env,
+    )
+    if (patched.text != null) {
+        io.writeFile(configPath, patched.text)
+        return undefined
     }
+    return `${binaryName} mcp add succeeded but its env block could not be patched in`
 }
 
-/** Shared factory for the Gemini-CLI family (Gemini CLI + its Qwen Code fork): same `mcpServers`
- *  shape, config at `~/.<dotDir>/settings.json`, `mcp add/remove` CLI verbs. `supportsEnvFlag`
- *  distinguishes Gemini (verified `-e K=V` on `mcp add`) from Qwen (not shown in its own `mcp add`
- *  flag list, despite an otherwise-identical config shape) — Qwen gets the same two-step
- *  add-then-patch treatment as Cline rather than an assumed flag. */
-function createGeminiFamilyRegistrar(
-    id: string,
-    label: string,
-    binaryName: string,
-    dotDir: string,
-    supportsEnvFlag: boolean,
+function createMcpAddRegistrar(
+    cfg: McpAddConfig,
     io: RegistrarIO,
 ): McpRegistrar {
+    const { id, label, binaryName, mcpServersPath } = cfg
     const bin = () => io.which(binaryName)
-    const configPath = () => join(io.homedir(), dotDir, 'settings.json')
+    const configPath = () => join(io.homedir(), ...cfg.configPathParts)
     const isOurs = () => ownsCommand(io.homedir())
     return {
         id,
         label,
         detect: bin,
         async isRegistered() {
-            const parsed = parseJsonLenient(io.readFile(configPath()))
-            if (!parsed) return false
-            return getPath(parsed, ['mcpServers', 'bismuth']) !== undefined
+            const { entry } = readEntry(
+                io.readFile(configPath()),
+                mcpServersPath,
+                'bismuth',
+            )
+            return entry !== undefined
         },
         async register(spec) {
             const cli = bin()
@@ -732,64 +619,169 @@ function createGeminiFamilyRegistrar(
                     ok: false,
                     warning: `${label} not found on PATH — skipped`,
                 }
-            const existingText = io.readFile(configPath())
-            const parsedCheck = parseJsonLenient(existingText)
-            if (parsedCheck === null) {
+            const { parsed, entry } = readEntry(
+                io.readFile(configPath()),
+                mcpServersPath,
+                'bismuth',
+            )
+            if (parsed === null) {
                 return {
                     ok: false,
-                    warning: `${label}: existing config isn't valid JSON — skipped`,
+                    warning: `${label}: existing ${cfg.configNoun} isn't valid JSON — skipped`,
                 }
             }
-            const existingEntry = getPath(parsedCheck, [
-                'mcpServers',
-                'bismuth',
-            ])
-            if (existingEntry !== undefined && !isOurs()(existingEntry)) {
+            if (entry !== undefined && !isOurs()(entry)) {
                 return {
                     ok: false,
                     warning: `${label} already has a "bismuth" MCP entry Bismuth didn't create — skipped`,
                 }
             }
             const env = buildEnv(spec)
-            const args = ['mcp', 'add', 'bismuth', spec.mcpBin]
-            if (supportsEnvFlag)
-                for (const [k, v] of Object.entries(env))
-                    args.push('-e', `${k}=${v}`)
-            args.push('--scope', 'user')
-            const r = await io.run(cli, args)
+            const r = await io.run(cli, cfg.buildAddArgs(spec, env))
             if (r.code !== 0) {
                 return {
                     ok: false,
-                    warning: `${binaryName} mcp add failed: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`,
+                    warning: `${binaryName} mcp ${cfg.addVerb ?? 'add'} failed: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`,
                 }
             }
-            if (!supportsEnvFlag) {
-                const afterAdd = io.readFile(configPath())
-                const patched = patchJsonMcpServerEnv(
-                    afterAdd,
-                    ['mcpServers'],
-                    'bismuth',
-                    env,
-                )
-                if (patched.text != null)
-                    io.writeFile(configPath(), patched.text)
-            }
+            const warning = cfg.postAdd?.({
+                io,
+                env,
+                configPath: configPath(),
+                keyPath: mcpServersPath,
+                binaryName,
+            })
             writeLedgerEntry(io, id, {
                 at: io.now(),
                 method: 'cli',
                 path: configPath(),
             })
-            return { ok: true }
+            return warning ? { ok: true, warning } : { ok: true }
         },
         async unregister() {
-            // Same ledger-gate rationale as OpenClaw above — `mcp remove <name>` has no ownership
-            // concept of its own on either Gemini CLI or Qwen Code.
+            // Gate on our own ledger: neither the CLIs' remove verbs nor a blind file edit know whether
+            // a "bismuth" entry is ours, so never touch one we did not register.
             if (!hasLedgerEntry(io, id)) return
-            const cli = bin()
-            if (cli) await io.run(cli, ['mcp', 'remove', 'bismuth'])
+            if (cfg.removal === 'edit-file') {
+                const result = removeJsonMcpServer(
+                    io.readFile(configPath()),
+                    mcpServersPath,
+                    'bismuth',
+                    isOurs(),
+                )
+                if (result.removed && result.text != null)
+                    io.writeFile(configPath(), result.text)
+            } else {
+                const cli = bin()
+                if (cli)
+                    await io.run(cli, [
+                        'mcp',
+                        cfg.removal?.verb ?? 'remove',
+                        'bismuth',
+                    ])
+            }
             clearLedgerEntry(io, id)
         },
     }
+}
+
+/** Cline. No --env on `cline mcp add` (verified from the compiled binary's own option table) — a
+ *  two-step register: CLI add, then patch the env block into the file ourselves. No verified
+ *  remove subcommand either, so unregister() edits the file directly. */
+export function createClineRegistrar(
+    io: RegistrarIO = defaultRegistrarIO,
+): McpRegistrar {
+    return createMcpAddRegistrar(
+        {
+            id: 'cline',
+            label: 'Cline',
+            binaryName: 'cline',
+            configPathParts: [
+                '.cline',
+                'data',
+                'settings',
+                'cline_mcp_settings.json',
+            ],
+            mcpServersPath: ['mcpServers'],
+            configNoun: 'MCP config',
+            buildAddArgs: spec => [
+                'mcp',
+                'add',
+                'bismuth',
+                '--transport',
+                'stdio',
+                '--yes',
+                '--',
+                spec.mcpBin,
+            ],
+            postAdd: patchEnvAfterAdd,
+            removal: 'edit-file',
+        },
+        io,
+    )
+}
+
+/** OpenClaw. `mcp set` is a single-shot JSON payload (command+args+env all at once) — the
+ *  cleanest of the five — stored under `mcp.servers.<name>`, NOT top-level `mcpServers`.
+ *  `openclaw mcp unset` is its removal verb. */
+export function createOpenClawRegistrar(
+    io: RegistrarIO = defaultRegistrarIO,
+): McpRegistrar {
+    return createMcpAddRegistrar(
+        {
+            id: 'openclaw',
+            label: 'OpenClaw',
+            binaryName: 'openclaw',
+            configPathParts: ['.openclaw', 'openclaw.json'],
+            mcpServersPath: ['mcp', 'servers'],
+            configNoun: 'config',
+            addVerb: 'set',
+            buildAddArgs: (spec, env) => [
+                'mcp',
+                'set',
+                'bismuth',
+                JSON.stringify({ command: spec.mcpBin, args: [], env }),
+            ],
+            removal: { verb: 'unset' },
+        },
+        io,
+    )
+}
+
+/** The Gemini-CLI family (Gemini CLI + its Qwen Code fork): same `mcpServers` shape, config at
+ *  `~/.<dotDir>/settings.json`, `mcp add/remove` CLI verbs. `supportsEnvFlag` distinguishes Gemini
+ *  (verified `-e K=V` on `mcp add`) from Qwen (not shown in its own `mcp add` flag list, despite an
+ *  otherwise-identical config shape) — Qwen gets the same two-step add-then-patch treatment as
+ *  Cline rather than an assumed flag. */
+function createGeminiFamilyRegistrar(
+    id: string,
+    label: string,
+    binaryName: string,
+    dotDir: string,
+    supportsEnvFlag: boolean,
+    io: RegistrarIO,
+): McpRegistrar {
+    return createMcpAddRegistrar(
+        {
+            id,
+            label,
+            binaryName,
+            configPathParts: [dotDir, 'settings.json'],
+            mcpServersPath: ['mcpServers'],
+            configNoun: 'config',
+            buildAddArgs: (spec, env) => [
+                'mcp',
+                'add',
+                'bismuth',
+                spec.mcpBin,
+                ...(supportsEnvFlag ? envFlagArgs(env, '-e') : []),
+                '--scope',
+                'user',
+            ],
+            postAdd: supportsEnvFlag ? undefined : patchEnvAfterAdd,
+        },
+        io,
+    )
 }
 
 export function createGeminiRegistrar(
@@ -818,105 +810,27 @@ export function createQwenRegistrar(
     )
 }
 
-/** Shared factory for the three simplest `mcp add`/`mcp remove` CLIs (Copilot, Amp, Droid): same
- *  isRegistered/register/unregister shape — resolve the binary, read+parseJsonLenient the config,
- *  check `mcpServersPath.bismuth` via getPath/ownsCommand, run an `mcp add bismuth` argv built by
- *  `buildAddArgs`, writeLedgerEntry on success, and `mcp remove bismuth` + clearLedgerEntry to
- *  unregister. What genuinely differs between the three — binary name, config path, the
- *  mcpServers key path (Amp's is one literal dotted segment, not two), the exact "isn't valid
- *  JSON" wording, and the argv shape (where `--` lands, or whether it's used at all) — is passed
- *  in rather than hardcoded. */
-function createMcpAddRegistrar(
-    id: string,
-    label: string,
-    binaryName: string,
-    configPathParts: string[],
-    mcpServersPath: string[],
-    configNoun: string,
-    buildAddArgs: (spec: BismuthMcpSpec, env: Record<string, string>) => string[],
-    io: RegistrarIO,
-): McpRegistrar {
-    const bin = () => io.which(binaryName)
-    const configPath = () => join(io.homedir(), ...configPathParts)
-    const isOurs = () => ownsCommand(io.homedir())
-    return {
-        id,
-        label,
-        detect: bin,
-        async isRegistered() {
-            const parsed = parseJsonLenient(io.readFile(configPath()))
-            if (!parsed) return false
-            return (
-                getPath(parsed, [...mcpServersPath, 'bismuth']) !== undefined
-            )
-        },
-        async register(spec) {
-            const cli = bin()
-            if (!cli)
-                return {
-                    ok: false,
-                    warning: `${label} not found on PATH — skipped`,
-                }
-            const existingText = io.readFile(configPath())
-            const parsedCheck = parseJsonLenient(existingText)
-            if (parsedCheck === null) {
-                return {
-                    ok: false,
-                    warning: `${label}: existing ${configNoun} isn't valid JSON — skipped`,
-                }
-            }
-            const existingEntry = getPath(parsedCheck, [
-                ...mcpServersPath,
-                'bismuth',
-            ])
-            if (existingEntry !== undefined && !isOurs()(existingEntry)) {
-                return {
-                    ok: false,
-                    warning: `${label} already has a "bismuth" MCP entry Bismuth didn't create — skipped`,
-                }
-            }
-            const args = buildAddArgs(spec, buildEnv(spec))
-            const r = await io.run(cli, args)
-            if (r.code !== 0) {
-                return {
-                    ok: false,
-                    warning: `${binaryName} mcp add failed: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`,
-                }
-            }
-            writeLedgerEntry(io, id, {
-                at: io.now(),
-                method: 'cli',
-                path: configPath(),
-            })
-            return { ok: true }
-        },
-        async unregister() {
-            if (!hasLedgerEntry(io, id)) return
-            const cli = bin()
-            if (cli) await io.run(cli, ['mcp', 'remove', 'bismuth'])
-            clearLedgerEntry(io, id)
-        },
-    }
-}
-
 /** GitHub Copilot CLI. Verified `copilot mcp add <name> --env K=V -- <cmd>` (+ list/get/remove) —
  *  the cleanest of the batch-3 additions, config at ~/.copilot/mcp-config.json `mcpServers`. */
 export function createCopilotRegistrar(
     io: RegistrarIO = defaultRegistrarIO,
 ): McpRegistrar {
     return createMcpAddRegistrar(
-        'copilot',
-        'GitHub Copilot CLI',
-        'copilot',
-        ['.copilot', 'mcp-config.json'],
-        ['mcpServers'],
-        'MCP config',
-        (spec, env) => {
-            const args = ['mcp', 'add', 'bismuth']
-            for (const [k, v] of Object.entries(env))
-                args.push('--env', `${k}=${v}`)
-            args.push('--', spec.mcpBin)
-            return args
+        {
+            id: 'copilot',
+            label: 'GitHub Copilot CLI',
+            binaryName: 'copilot',
+            configPathParts: ['.copilot', 'mcp-config.json'],
+            mcpServersPath: ['mcpServers'],
+            configNoun: 'MCP config',
+            buildAddArgs: (spec, env) => [
+                'mcp',
+                'add',
+                'bismuth',
+                ...envFlagArgs(env, '--env'),
+                '--',
+                spec.mcpBin,
+            ],
         },
         io,
     )
@@ -930,18 +844,21 @@ export function createAmpRegistrar(
     io: RegistrarIO = defaultRegistrarIO,
 ): McpRegistrar {
     return createMcpAddRegistrar(
-        'amp',
-        'Amp',
-        'amp',
-        ['.config', 'amp', 'settings.json'],
-        ['amp.mcpServers'], // one literal key, not ["amp", "mcpServers"]
-        'config',
-        (spec, env) => {
-            const args = ['mcp', 'add', 'bismuth']
-            for (const [k, v] of Object.entries(env))
-                args.push('--env', `${k}=${v}`)
-            args.push('--', spec.mcpBin)
-            return args
+        {
+            id: 'amp',
+            label: 'Amp',
+            binaryName: 'amp',
+            configPathParts: ['.config', 'amp', 'settings.json'],
+            mcpServersPath: ['amp.mcpServers'], // one literal key, not ["amp", "mcpServers"]
+            configNoun: 'config',
+            buildAddArgs: (spec, env) => [
+                'mcp',
+                'add',
+                'bismuth',
+                ...envFlagArgs(env, '--env'),
+                '--',
+                spec.mcpBin,
+            ],
         },
         io,
     )
@@ -954,17 +871,20 @@ export function createDroidRegistrar(
     io: RegistrarIO = defaultRegistrarIO,
 ): McpRegistrar {
     return createMcpAddRegistrar(
-        'droid',
-        'Droid',
-        'droid',
-        ['.factory', 'mcp.json'],
-        ['mcpServers'],
-        'MCP config',
-        (spec, env) => {
-            const args = ['mcp', 'add', 'bismuth', spec.mcpBin]
-            for (const [k, v] of Object.entries(env))
-                args.push('--env', `${k}=${v}`)
-            return args
+        {
+            id: 'droid',
+            label: 'Droid',
+            binaryName: 'droid',
+            configPathParts: ['.factory', 'mcp.json'],
+            mcpServersPath: ['mcpServers'],
+            configNoun: 'MCP config',
+            buildAddArgs: (spec, env) => [
+                'mcp',
+                'add',
+                'bismuth',
+                spec.mcpBin,
+                ...envFlagArgs(env, '--env'),
+            ],
         },
         io,
     )
@@ -989,9 +909,10 @@ export function createCrushRegistrar(
         label,
         detect: bin,
         async isRegistered() {
-            const parsed = parseJsonLenient(io.readFile(configPath()))
-            if (!parsed) return false
-            return getPath(parsed, ['mcp', 'bismuth']) !== undefined
+            return (
+                readEntry(io.readFile(configPath()), ['mcp'], 'bismuth')
+                    .entry !== undefined
+            )
         },
         async register(spec) {
             if (!bin())
@@ -1068,17 +989,10 @@ export function createGooseRegistrar(
         async isRegistered() {
             const text = io.readFile(configPath())
             if (!text) return false
-            try {
-                const doc = parseDocument(text)
-                if (doc.errors.length > 0) return false
-                const seq = doc.get('extensions') as any
-                if (!seq || typeof seq.items === 'undefined') return false
-                return seq.items.some(
-                    (it: any) => it?.get && it.get('name') === 'bismuth',
-                )
-            } catch {
-                return false
-            }
+            const loaded = loadYamlExtensions(text)
+            return (
+                !!loaded?.seq && findExtensionIndex(loaded.seq, 'bismuth') >= 0
+            )
         },
         async register(spec) {
             if (!bin())

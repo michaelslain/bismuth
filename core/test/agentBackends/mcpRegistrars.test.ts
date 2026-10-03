@@ -696,3 +696,35 @@ test("Droid's add call: the command is a single positional string, not a `-- cmd
     ])
     expect(runCalls[0].args).not.toContain('--')
 })
+
+// --- Codex isRegistered matches a server NAMED bismuth, not a substring of the list -------------
+
+test('Codex isRegistered: bismuth-notes or a ~/.bismuth path alone is not a registration', async () => {
+    const list = (stdout: string) =>
+        createCodexRegistrar(
+            makeIO({ run: async () => ({ code: 0, stdout, stderr: '' }) }),
+        ).isRegistered()
+    expect(
+        await list(
+            'Name           Command\nbismuth-notes  /home/x/.bismuth/bin/notes\n',
+        ),
+    ).toBe(false)
+    expect(
+        await list('Name   Command\nother  /home/x/.bismuth/bin/bismuth-mcp\n'),
+    ).toBe(false)
+    expect(
+        await list(
+            'Name     Command\nbismuth  /home/x/.bismuth/bin/bismuth-mcp\n',
+        ),
+    ).toBe(true)
+})
+
+test('Qwen: an env block that cannot be patched in comes back as a warning', async () => {
+    const registrar = createQwenRegistrar(makeIO()) // add succeeds, writes no config
+    const result = await registrar.register(specFor(home))
+    expect(result).toEqual({
+        ok: true,
+        warning:
+            'qwen mcp add succeeded but its env block could not be patched in',
+    })
+})
