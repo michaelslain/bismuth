@@ -13,6 +13,14 @@ const ascii = (s: string) =>
         ch => ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) <= 126,
     )
 
+const sheenCols = (t: number) => {
+    const f = render(t)
+    const out: number[] = []
+    for (let i = 0; i < f.chars.length; i++)
+        if (f.chars[i] === 64) out.push(i % 96)
+    return out
+}
+
 describe('wordmark bitmap', () => {
     it('is 9 equal-length rows of # and .', () => {
         expect(WORDMARK.length).toBe(WORDMARK_ROWS)
@@ -59,5 +67,16 @@ describe('wordmarkScene', () => {
             frameToText(render(3000 + SHEEN_PERIOD_MS / 4)),
         )
         expect(frameToText(render(3000))).toContain('@')
+    })
+    it('sheen is a 3-wide band that sweeps right with an 8s period', () => {
+        const a = new Set(sheenCols(wordmarkScene.revealMs + 2000))
+        const b = new Set(sheenCols(wordmarkScene.revealMs + 4000))
+        expect(a.size).toBeGreaterThan(0)
+        expect(Math.max(...a) - Math.min(...a)).toBeLessThanOrEqual(2)
+        expect(Math.min(...b)).toBeGreaterThan(Math.min(...a))
+        expect(sheenCols(wordmarkScene.revealMs + 2000)).toEqual(
+            sheenCols(wordmarkScene.revealMs + 10000),
+        )
+        expect(SHEEN_PERIOD_MS).toBe(8000)
     })
 })

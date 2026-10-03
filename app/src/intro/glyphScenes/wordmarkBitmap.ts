@@ -1,6 +1,6 @@
 // app/src/intro/glyphScenes/wordmarkBitmap.ts
 // The lowercase `bismuth` wordmark, hand-drawn as a bitmap. '#' = filled, '.' = empty.
-// Nine rows: rows 0-2 are the ascender band (b, h, t's stem, i's dot), rows 3-8 the x-height.
+// Nine rows: rows 0-2 are the ascender band (b, h, i's dot; t's stem starts a row lower), rows 3-8 the x-height.
 // Strokes are 2 cells wide (a cell is about twice as tall as wide, so a 1-row bar reads as the
 // same weight as a 2-column stem); one empty column between letters. m is wider than the rest
 // (three stems cannot be drawn legibly in 8 cells at this stroke weight).
@@ -52,10 +52,10 @@ const LETTERS = {
         '.#######',
     ],
     t: [
+        '.......',
         '..##...',
         '..##...',
-        '..##...',
-        '#######',
+        '.#####.',
         '..##...',
         '..##...',
         '..##...',
