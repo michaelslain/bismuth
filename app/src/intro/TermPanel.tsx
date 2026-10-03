@@ -1,5 +1,5 @@
-// The intro's static terminal panels — plain ASCII terminal chrome (a bracketed session tab and an
-// .asc-caret blinking underline) rather than macOS traffic-light dots and a glow cursor, so the
+// The intro's static terminal panels — plain ASCII terminal chrome (a bracketed session tab and a
+// blinking <Caret /> underline) rather than macOS traffic-light dots and a glow cursor, so the
 // first-run screen speaks the same visual language as the app behind it. Every colour comes from
 // the theme CSS vars, so the intro's own theme picker re-themes all of it live.
 //
@@ -11,24 +11,27 @@
 // expressed as two components, which the house rules call out ("variants as props, not new files").
 // The lines are exported as data instead, and the call site passes them. That also makes the panel
 // storyable with arbitrary content rather than only in its two shipped configurations.
-import { For, type Component, type JSX } from 'solid-js'
+import { For, type Component } from 'solid-js'
+import Caret from '../ui/Caret'
 import Text from '../ui/Text'
+import TermLine from './TermLine'
 import styles from './TermPanel.module.css'
 
-export type TermLine =
+// Renamed from `TermLine`: that name is now the component that draws one of these (TermLine.tsx).
+export type TermLineSpec =
     | { p: string; c: string }
     | { user: string }
     | { status: string }
     | { d: string; accent?: string; dd?: string; ok?: string }
 
-export const DAEMON_LINES: TermLine[] = [
+export const DAEMON_LINES: TermLineSpec[] = [
     { p: '~/vault', c: '❯ bismuth daemon status' },
     { d: '∴ crons', dd: '// 4 scheduled', ok: 'running' },
     { d: '∴ weaving memory into graph', ok: '+12 edges' },
     { d: '∴ surfaced', accent: '3 forgotten notes', dd: 'from “last spring”' },
     { status: 'daemon online // tending the vault' },
 ]
-export const AGENT_LINES: TermLine[] = [
+export const AGENT_LINES: TermLineSpec[] = [
     { p: '~/vault', c: '❯ claude' },
     { user: 'make a base of my unread books, by rating' },
     { d: '∴ bismuth_docs_search', accent: '“bases // query syntax”' },
@@ -36,84 +39,20 @@ export const AGENT_LINES: TermLine[] = [
     { status: 'created base // table view // 23 rows' },
 ]
 
-function Line(props: { ln: TermLine }): JSX.Element {
-    const ln = props.ln
-    if ('p' in ln)
-        return (
-            <Text as="span" inherit>
-                <Text as="span" inherit class={styles['t-pmt']}>
-                    {ln.p}{' '}
-                </Text>
-                <Text as="span" inherit class={styles['t-cmd']}>
-                    {ln.c}
-                </Text>
-            </Text>
-        )
-    if ('user' in ln)
-        return (
-            <Text as="span" inherit>
-                <Text as="span" inherit class={styles['t-prompt']}>
-                    ›{' '}
-                </Text>
-                <Text as="span" inherit class={styles['t-cmd']}>
-                    {ln.user}
-                </Text>
-            </Text>
-        )
-    if ('status' in ln)
-        return (
-            <Text as="span" inherit>
-                <Text as="span" inherit class={styles['t-on']}>
-                    ●
-                </Text>{' '}
-                <Text as="span" size="inherit" tone="muted" weight="inherit">
-                    {ln.status}
-                </Text>
-            </Text>
-        )
-    return (
-        <Text as="span" inherit>
-            <Text as="span" size="inherit" tone="faint" weight="inherit">
-                {ln.d}
-            </Text>
-            {ln.accent && (
-                <Text as="span" inherit>
-                    {' '}
-                    <Text as="span" inherit class={styles['t-accent']}>
-                        {ln.accent}
-                    </Text>
-                </Text>
-            )}
-            {ln.dd && (
-                <Text as="span" size="inherit" tone="faint" weight="inherit">
-                    {' '}
-                    {ln.dd}
-                </Text>
-            )}
-            {ln.ok && (
-                <Text as="span" size="inherit" tone="faint" weight="inherit">
-                    {' '}
-                    {'·'.repeat(14)}{' '}
-                </Text>
-            )}
-            {ln.ok && (
-                <Text as="span" inherit class={styles['t-ok']}>
-                    {ln.ok}
-                </Text>
-            )}
-        </Text>
-    )
-}
-
 export type TermPanelProps = {
     /** Text in the bracketed session tab. */
     name: string
-    lines: TermLine[]
+    lines: TermLineSpec[]
+    class?: string
 }
+
+/** The trailing prompt, drawn by the same component as every other line so its colours stay one
+ *  mapping. Hoisted: it never changes. */
+const PROMPT: TermLineSpec = { p: '~/vault ❯', c: '' }
 
 const TermPanel: Component<TermPanelProps> = props => {
     return (
-        <div class={styles['vi-term']}>
+        <div class={`${styles['vi-term']}${props.class ? ` ${props.class}` : ''}`}>
             {/* Bracket session tab — the terminal chrome's own vocabulary (Terminal.tsx /
           bismuth-design/ascii-extended's view-terminal.card.html: "[ 1 zsh ]"), not tab shapes
           or macOS traffic-light dots. */}
@@ -131,7 +70,7 @@ const TermPanel: Component<TermPanelProps> = props => {
                                 'animation-delay': `${0.15 + i() * 0.28}s`,
                             }}
                         >
-                            <Line ln={ln} />
+                            <TermLine line={ln} />
                         </div>
                     )}
                 </For>
@@ -141,12 +80,8 @@ const TermPanel: Component<TermPanelProps> = props => {
                         'animation-delay': `${0.15 + props.lines.length * 0.28}s`,
                     }}
                 >
-                    <Text as="span" inherit class={styles['t-pmt']}>
-                        ~/vault ❯{' '}
-                    </Text>
-                    <Text as="span" inherit class="asc-caret">
-                        _
-                    </Text>
+                    <TermLine line={PROMPT} />
+                    <Caret />
                 </div>
             </div>
         </div>

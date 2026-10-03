@@ -5,6 +5,7 @@
 // exported only two of its four components — so the panel a new user sees on their very first run
 // of the app was the one piece of UI nobody could look at without reinstalling.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import TermPanel, { DAEMON_LINES, AGENT_LINES } from './TermPanel'
 
 const meta = {
@@ -16,8 +17,14 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const Frame = (props: { children: any }) => (
-    <div style={{ background: 'var(--bg)', padding: 'var(--sp-7)', width: '520px' }}>
+const Frame = (props: { children: any; width?: string }) => (
+    <div
+        style={{
+            background: 'var(--bg)',
+            padding: 'var(--sp-7)',
+            width: props.width ?? '520px',
+        }}
+    >
         {props.children}
     </div>
 )
@@ -29,6 +36,17 @@ export const Daemon: Story = {
             <TermPanel name="daemon // live" lines={DAEMON_LINES} />
         </Frame>
     ),
+    // The leader is drawn by CSS and every ok value shares one minimum width, so the values form
+    // one column: `running` and `+12 edges` end at the same x (and, being left-aligned in equal
+    // boxes, start at the same x too).
+    play: async ({ canvasElement }) => {
+        const oks = [...canvasElement.querySelectorAll('[data-term-ok]')]
+        expect(oks.length).toBe(2)
+        const rights = oks.map(el => el.getBoundingClientRect().right)
+        const lefts = oks.map(el => el.getBoundingClientRect().left)
+        expect(Math.abs(rights[0] - rights[1])).toBeLessThanOrEqual(1)
+        expect(Math.abs(lefts[0] - lefts[1])).toBeLessThanOrEqual(1)
+    },
 }
 
 /** The chat panel, exactly as the intro ships it. The transcript is a Claude Code session
@@ -60,7 +78,7 @@ export const AllLineKinds: Story = {
                     { d: 'a detail line with an ok mark', ok: 'done' },
                     {
                         d: 'accented, with both',
-                        accent: 'var(--accent)',
+                        accent: '3 forgotten notes',
                         dd: '// note',
                         ok: 'ok',
                     },
@@ -68,6 +86,33 @@ export const AllLineKinds: Story = {
             />
         </Frame>
     ),
+}
+
+/** A command line far longer than the panel (90 chars). Policy: the panel stays 510px. The body
+ *  clips (`overflow: hidden`) and the line ends in an ellipsis, rather than wrapping or growing
+ *  the panel. */
+export const Overflow: Story = {
+    render: () => (
+        <Frame width="570px">
+            <TermPanel
+                name="overflow"
+                lines={[
+                    {
+                        p: '~/vault',
+                        c: '❯ bismuth base create "unread books" --source notes --filter "tag = book and x = 1 and y"',
+                    },
+                ]}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const tab = [...canvasElement.querySelectorAll('span')].find(el =>
+            el.textContent?.includes('[ overflow ]'),
+        )
+        const panel = tab?.parentElement?.parentElement
+        expect(panel).toBeTruthy()
+        expect(Math.round(panel!.getBoundingClientRect().width)).toBe(510)
+    },
 }
 
 /** Empty — the degenerate case. The chrome (session tab, caret) must still render on its own. */
