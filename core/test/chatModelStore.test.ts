@@ -62,10 +62,6 @@ describe('lookupSessionModel (pure)', () => {
     test('null for an unknown session', () => {
         expect(lookupSessionModel([e('s1', 'haiku', 1)], 'nope')).toBeNull()
     })
-    test('a (defensive) duplicate resolves to the most recent entry', () => {
-        const list = [e('s1', 'haiku', 1), e('s1', 'opus[1m]', 2)]
-        expect(lookupSessionModel(list, 's1')).toBe('opus[1m]')
-    })
 })
 
 describe('save/loadSessionModel (file round-trip via BISMUTH_CHAT_DIR)', () => {

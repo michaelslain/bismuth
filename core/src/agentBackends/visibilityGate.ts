@@ -11,8 +11,11 @@
 // The rule it encodes, from docs/vault/visibility.md: a backend may serve a restricted vault only
 // if its catalog capability says it has a VERIFIED enforcement mechanism for that channel. Anything
 // else refuses — loudly, with both ways out named — rather than running unprotected.
-import { resolveDenyPlan, type VisibilityChannel } from '../visibility'
-import { visibilityRefusalMessage } from '../chat'
+import {
+    resolveDenyPlan,
+    visibilityRefusalMessage,
+    type VisibilityChannel,
+} from '../visibility'
 import { BACKENDS, isBackendId, type BackendDescriptor } from './catalog'
 
 export type GateVerdict =

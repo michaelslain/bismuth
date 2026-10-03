@@ -34,7 +34,6 @@ import { join } from 'node:path'
 import {
     listChatSessions,
     searchChatSessions,
-    excludeDaemonSessions,
     filterSessionsByScope,
     resolveChatOrigin,
     parseChatScope,
@@ -744,7 +743,7 @@ describe('firstUserMessageText (the pure opener extractor)', () => {
     })
 })
 
-describe('excludeDaemonSessions (the pure membership filter)', () => {
+describe("filterSessionsByScope 'user' (the pure membership filter)", () => {
     const sessions = [
         { sessionId: 'a' },
         { sessionId: 'b' },
@@ -752,31 +751,32 @@ describe('excludeDaemonSessions (the pure membership filter)', () => {
     ]
 
     test('drops exactly the members of the daemon set', () => {
-        expect(excludeDaemonSessions(sessions, new Set(['b']))).toEqual([
-            { sessionId: 'a' },
-            { sessionId: 'c' },
-        ])
+        expect(filterSessionsByScope(sessions, new Set(['b']), 'user')).toEqual(
+            [{ sessionId: 'a' }, { sessionId: 'c' }],
+        )
     })
 
     test('an empty daemon set keeps everything (the no-daemon vault)', () => {
-        expect(excludeDaemonSessions(sessions, new Set())).toEqual(sessions)
+        expect(filterSessionsByScope(sessions, new Set(), 'user')).toEqual(
+            sessions,
+        )
     })
 
     test('all-daemon → empty', () => {
         expect(
-            excludeDaemonSessions(sessions, new Set(['a', 'b', 'c'])),
+            filterSessionsByScope(sessions, new Set(['a', 'b', 'c']), 'user'),
         ).toEqual([])
     })
 
     test("ids in the set that aren't in the store are simply irrelevant", () => {
-        expect(excludeDaemonSessions(sessions, new Set(['z']))).toEqual(
+        expect(filterSessionsByScope(sessions, new Set(['z']), 'user')).toEqual(
             sessions,
         )
     })
 
     test('does not mutate its input', () => {
         const input = [{ sessionId: 'a' }, { sessionId: 'b' }]
-        excludeDaemonSessions(input, new Set(['a']))
+        filterSessionsByScope(input, new Set(['a']), 'user')
         expect(input).toEqual([{ sessionId: 'a' }, { sessionId: 'b' }])
     })
 })
@@ -803,7 +803,7 @@ describe("filterSessionsByScope (the pure scope filter powering the History pick
     ]
     const daemonIds = new Set(['b'])
 
-    test('"user" keeps everything but the daemon\'s, exactly like excludeDaemonSessions', () => {
+    test('"user" keeps everything but the daemon\'s, the plain membership filter', () => {
         expect(filterSessionsByScope(sessions, daemonIds, 'user')).toEqual([
             { sessionId: 'a' },
             { sessionId: 'c' },
