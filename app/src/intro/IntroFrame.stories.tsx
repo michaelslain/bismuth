@@ -77,9 +77,10 @@ const ProbeFill = () => (
     </div>
 )
 
-/** Slot tops measured once in the 1280x912 wrapper below (outer rows 1fr, hero 16 rows, text 11 rows, nav row auto at 64px).
+/** Slot tops measured once in the 1280x912 wrapper below (outer rows 1fr, hero 16 rows x 1.5 glyph scale = 432px,
+ *  text 11 rows = 198px, nav row auto at 64px: the two 1fr rows split 912 - 432 - 198 - 64 = 218, so 109 each).
  *  Every 1280x912 story must land on these, whatever it puts in the slots. Relative to the stage. */
-const EXPECTED = { hero: 181, text: 469, nav: 848 }
+const EXPECTED = { hero: 109, text: 541, nav: 848 }
 
 const slotTops = (canvasElement: HTMLElement) => {
     const stage = canvasElement.querySelector(
@@ -118,7 +119,7 @@ export const HeroFilled: Story = {
             <IntroFrame {...args} />
         </Stage>
     ),
-    /** The box is 16 rows tall and 96 cells wide at full scale, centred on the stage. */
+    /** The box is 16 rows tall and 96 cells wide at full scale, times the intro's 1.5 glyph scale, centred on the stage. */
     play: async ({ canvasElement }) => {
         const stage = canvasElement.querySelector(
             '[data-intro-stage]',
@@ -139,8 +140,8 @@ export const HeroFilled: Story = {
             ),
         )
         await expect(cs.position).toBe('relative')
-        await expect(box.height).toBeCloseTo(16 * row, 0)
-        await expect(box.width).toBeCloseTo(96 * cell, 0)
+        await expect(box.height).toBeCloseTo(16 * row * 1.5, 0)
+        await expect(box.width).toBeCloseTo(96 * cell * 1.5, 0)
         await expect(box.left + box.width / 2).toBeCloseTo(
             s.left + s.width / 2,
             0,
@@ -175,12 +176,13 @@ export const LongText: Story = {
     play: async ({ canvasElement }) => expectGeometry(canvasElement),
 }
 
-/** A short window. The 0.75 scale comes from a viewport media query, so it only bites when the
+/** A short window. The full-scale grid needs 694px (432 hero + 198 text + 64 nav), so this stage is the
+ *  smallest that holds it. The 0.75 scale comes from a viewport media query, so it only bites when the
  *  Storybook viewport itself is under 700px tall. */
 export const Compact: Story = {
     args: { variant: 'hero', hero: <ProbeFill />, text: copy(SHORT), nav },
     render: args => (
-        <Stage w={900} h={640}>
+        <Stage w={900} h={700}>
             <IntroFrame {...args} />
         </Stage>
     ),

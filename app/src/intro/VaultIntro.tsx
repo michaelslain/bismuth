@@ -150,20 +150,24 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 theme={theme()}
             />
             {/* offsetY / fitMargin put the big cloud's centre on the hero box's centre. In the
-                1280x912 design window the frame puts the hero box at y 181..469 (centre 325), the
-                window centre is 456, so the cloud centre has to sit (325 - 456) / 912 = -0.144 of
-                the host height up; measured on the Graph story the cloud's centre then landed 37px
-                (0.04) too high, hence -0.103 (the cloud is not symmetric about its origin).
-                fitMargin 1.9 (was 1.55): at 1.55 the cloud was 410px tall in a 288px box and ran
-                two rows past the headline top; at 1.9 it is ~330px, the headline's scrim covers
-                the rest. Both are fractions of the host height, so they track a taller or shorter
-                window only approximately; the frame itself is fixed-size. */}
+                1280x912 design window the frame (hero box 432px tall = 16 rows x 1.5 glyph scale)
+                puts the hero box at y 109..541, centre 325; the window centre is 456, so the cloud
+                centre has to sit (325 - 456) / 912 = -0.144 of the host height up. Read off the
+                Graph story's screenshot, the glyphs' centre landed 17px low at -0.115 (the cloud
+                is not symmetric about its origin), hence -0.133, which puts the glyph centre
+                within 1px of the box centre.
+                fitMargin 1.8 (was 1.9 for the old 288px box, 1.6 first try for this one): at 1.6
+                the glyphs were ~435px tall, past the 432px box and into the headline; at 1.8 they
+                are ~405px, so the cloud (glyphs, not the bloom) sits inside the box with the top
+                ~13px under the box top and the bottom ~12px clear of the headline. Both are
+                fractions of the host height, so they track a taller or shorter window only
+                approximately; the frame itself is fixed-size. */}
             <IntroGraph
                 graph={BIG_GRAPH}
                 active={slide().graph === 'big'}
                 theme={theme()}
-                offsetY={-0.103}
-                fitMargin={1.9}
+                offsetY={-0.133}
+                fitMargin={1.8}
             />
 
             <IntroHeader
