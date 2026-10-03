@@ -95,6 +95,7 @@
    the left-packed, single-line, non-wrapping layout the rail switches to once it is no longer
    collapsed. */
 .tab-rail-actions { flex: 0 0 auto; }
+.tab-rail-inner > .tab-rail-actions { padding-block: var(--sp-4); }   /* breathing room above + below the stacked icons — the band itself only pads the sides */
 /* LEFT-ALIGNED, NOWRAP ONLY WHILE EXPANDED (hover/focus-within) OR PINNED. IconBar's own
    `layout="wrap"` centres + wraps for the 46px collapsed strip; once the rail widens to 232px
    there is room for one row, and a left-packed row matches the tab rows' own left-aligned icons
@@ -107,4 +108,4 @@
 }
 
 /* The scrollable row list fills the middle. */
-.tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-3) 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-4) 0; display: flex; flex-direction: column; gap: var(--sp-1); }
