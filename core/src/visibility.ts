@@ -453,6 +453,33 @@ export type DenyPlan =
 const READ_CONCURRENCY = 64
 
 /**
+ * Pure: the body text for a `"visibility-refused"` error frame — pushed INSTEAD of opening a
+ * session, when this vault restricts one or more notes and Bismuth has no VERIFIED mechanism to
+ * enforce that on the chosen backend+channel (the per-backend table in docs/vault/visibility.md).
+ *
+ * Takes only a COUNT of restricted notes/folders, never their names or paths: naming a hidden note
+ * in an error message would defeat the entire point of hiding it. `backendLabel` is the backend's
+ * already-resolved display name (e.g. "Cline", "Codex") — this module has no dependency on the
+ * backend catalog, so the caller (whichever chokepoint resolves the per-channel capability — see
+ * docs/vault/visibility.md) is responsible for resolving the id to a label before calling this.
+ *
+ * The two ways out are stated explicitly, matching the non-negotiable that a refusal must never be
+ * a dead end: switch to a backend that DOES enforce the gate (Claude Code, today), or unhide the
+ * restricted notes.
+ */
+export function visibilityRefusalMessage(
+    backendLabel: string,
+    restrictedCount: number,
+): string {
+    const notes = restrictedCount === 1 ? '1 note' : `${restrictedCount} notes`
+    return (
+        `This vault marks ${notes} off-limits to AI sessions, and Bismuth has no verified way to enforce ` +
+        `that on ${backendLabel}. Rather than run unprotected, this chat won't start — switch to Claude ` +
+        `Code (which does enforce it), or unhide the restricted notes.`
+    )
+}
+
+/**
  * Resolve every file's effective visibility and return the RESTRICTED subset for `channel` —
  * per-file entries, not folder globs, so an explicit file-level override inside a restricted
  * folder is honored by simply not appearing here. Recomputed fresh on every call (no cache):

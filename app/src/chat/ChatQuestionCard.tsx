@@ -4,7 +4,7 @@
 // stage picks and submit together. Every question also offers a free-text "Other". Skipping sends
 // a cancel. Extracted verbatim in behaviour from ChatView.tsx's local `QuestionCard` closure.
 import { createStore } from 'solid-js/store'
-import { For, Show } from 'solid-js'
+import { For, Show, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
@@ -19,7 +19,7 @@ export type ChatQuestionCardProps = {
     class?: string
 }
 
-export default function ChatQuestionCard(props: ChatQuestionCardProps) {
+const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
     const questions = props.part.questions
     // Per-question selected option labels + free-text "Other" input, by question index.
     const [sel, setSel] = createStore<{ picks: string[][]; other: string[] }>({
@@ -261,3 +261,5 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
         </div>
     )
 }
+
+export default ChatQuestionCard

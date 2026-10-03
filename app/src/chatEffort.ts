@@ -1,5 +1,5 @@
 // app/src/chatEffort.ts
-// Pure reasoning-effort helpers for the visual chat (ChatView.tsx), split out so the rules that
+// Pure reasoning-effort helpers for the visual chat (chat/chatSession.ts), split out so the rules that
 // drive the header's Effort picker (FEATURE #63: "can't select effort in chat") are unit-testable
 // without importing the Solid component (which pulls in CSS + the DOM). No Solid / DOM / localStorage
 // here — just data. The effort LEVELS themselves are never hardcoded: they come off the live `models`

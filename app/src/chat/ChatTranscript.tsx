@@ -3,9 +3,8 @@
 // "Latest" jump pill, wikilink click → the global `bismuth-open` navigation event, the floating
 // selection "Reply" button, and the bubble right-click menu (Reply/Copy). Renders each TurnItem via
 // ChatUserTurn/ChatAssistantTurn/ChatSystemNote, plus the transient "awaiting reply" and per-turn
-// error rows. Extracted from ChatView.tsx's transcript list render (~2345-2590) and its
-// selection/context-menu wiring (~1951-2059); T5/T6 render this in the chat tab and the daemon page
-// respectively, driven by a `ChatSession` (subscribeAppend = session.onAppend).
+// error rows. Rendered in the chat tab and the daemon page, driven by a `ChatSession`
+// (subscribeAppend = session.onAppend).
 import {
     children,
     createMemo,
@@ -14,6 +13,7 @@ import {
     onCleanup,
     onMount,
     Show,
+    type Component,
     type JSX,
 } from 'solid-js'
 import { Icon } from '../icons/Icon'
@@ -81,7 +81,7 @@ function selectionWithin(container: HTMLElement | null): string {
     return text
 }
 
-export default function ChatTranscript(props: ChatTranscriptProps) {
+const ChatTranscript: Component<ChatTranscriptProps> = props => {
     let list!: HTMLDivElement
 
     // `children()` resolves the `empty` JSX prop ONCE and memoizes it — reading `props.empty`
@@ -307,3 +307,5 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
         </div>
     )
 }
+
+export default ChatTranscript

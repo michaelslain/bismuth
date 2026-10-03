@@ -1,6 +1,6 @@
 // app/src/chatSlashCommands.ts
 // Pure parser for the chat composer's CLIENT-SIDE slash commands (Row 75): `/rename <name>` and
-// `/color <swatch|hex|clear>`. These are intercepted in ChatView BEFORE the turn is sent to Claude —
+// `/color <swatch|hex|clear>`. These are intercepted in chat/chatSession.ts BEFORE the turn is sent to Claude —
 // they act on the chat TAB (rename / pane tint), never reach the model as a prompt. Kept pure + DOM-
 // free so it's unit-testable headlessly.
 
@@ -28,13 +28,13 @@ export function parseChatSlashCommand(input: string): ChatSlashCommand | null {
     return null
 }
 
-/** BUG #87 ("/chrome command missing"): the composer's "/" autocomplete (ChatView's `slashMatches`)
+/** BUG #87 ("/chrome command missing"): the composer's "/" autocomplete (ChatComposerBar's `slashMatches`)
  *  used to be built ONLY from the backend session's own `manifest.slashCommands` — which never
  *  includes these client-side commands, so they never showed up in the picker even though typing
  *  one out by hand worked. These are pure CLIENT concepts (tab rename / pane tint) intercepted
  *  before a turn ever reaches the backend, so they're spliced in HERE rather than polluting
  *  core/chat.ts's LOCAL_SLASH_COMMANDS (which is for commands the backend itself answers, like
- *  `/mcp`). `detail` powers the popover row's description text (mirrors ChatView's
+ *  `/mcp`). `detail` powers the popover row's description text (mirrors chat/chatSession.ts's
  *  SLASH_COMMAND_DETAILS for synthesized commands). */
 export const CLIENT_SLASH_COMMANDS: { name: string; detail: string }[] = [
     { name: 'rename', detail: 'Rename this chat tab' },
@@ -48,7 +48,7 @@ export const CLIENT_SLASH_COMMANDS: { name: string; detail: string }[] = [
  *  (BUG #87). Client commands are APPENDED after the backend's own list, deduped by name (a same-
  *  named backend command — unlikely — isn't shadowed). Works even before any manifest exists (an
  *  empty `commands` in) so `/rename`/`/color` are offered from the moment the chat opens, not just
- *  after the session's first manifest lands. Pure — unit-tested without ChatView / Solid. */
+ *  after the session's first manifest lands. Pure — unit-tested without Solid. */
 export function withClientSlashCommands(commands: string[]): string[] {
     const out = [...commands]
     for (const c of CLIENT_SLASH_COMMANDS)

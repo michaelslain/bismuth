@@ -42,9 +42,7 @@ import type { CommandMap } from '../types'
 import { flag, positionals, fail, out } from '../args'
 import { call, needsServer, resolveCore } from '../http'
 
-const unreachable = needsServer(
-    'chat history needs a running server',
-)
+const unreachable = needsServer('chat history needs a running server')
 
 /** Build a "?a=..&b=.." query string, dropping undefined values. */
 function qs(params: Record<string, string | undefined>): string {
@@ -55,48 +53,43 @@ function qs(params: Record<string, string | undefined>): string {
     return s ? `?${s}` : ''
 }
 
+const OWNER_ONLY = 'owner-only (requires a running server + the owner token)'
+
+/** One owner-gated server call, printed. */
+async function ownerCall(
+    args: string[],
+    method: string,
+    path: string,
+    body?: unknown,
+): Promise<void> {
+    out(await call(resolveCore(args), method, path, body, unreachable), args)
+}
+
 export const commands: CommandMap = {
     'chat list': {
-        summary:
-            'List past chat sessions (terminal + in-app), owner-only (requires a running server + the owner token)',
+        summary: `List past chat sessions (terminal + in-app), ${OWNER_ONLY}`,
         usage: '[--scope user|daemon|all] [--api <url>]',
         run: async args => {
             const scope = flag(args, 'scope')
-            out(
-                await call(
-                    resolveCore(args),
-                    'GET',
-                    `/chat/sessions${qs({ scope })}`,
-                    undefined,
-                    unreachable,
-                ),
-                args,
-            )
+            await ownerCall(args, 'GET', `/chat/sessions${qs({ scope })}`)
         },
     },
     'chat read': {
-        summary:
-            "Replay one past session's messages by id, owner-only (requires a running server + the owner token)",
+        summary: `Replay one past session's messages by id, ${OWNER_ONLY}`,
         usage: '<id> [--provider <p>] [--api <url>]',
         run: async args => {
             const [id] = positionals(args)
             if (!id) fail('usage: bismuth chat read <id> [--provider <p>]')
             const provider = flag(args, 'provider')
-            out(
-                await call(
-                    resolveCore(args),
-                    'GET',
-                    `/chat/session-messages${qs({ id, provider })}`,
-                    undefined,
-                    unreachable,
-                ),
+            await ownerCall(
                 args,
+                'GET',
+                `/chat/session-messages${qs({ id, provider })}`,
             )
         },
     },
     'chat search': {
-        summary:
-            'Search past chat sessions by content, owner-only (requires a running server + the owner token)',
+        summary: `Search past chat sessions by content, ${OWNER_ONLY}`,
         usage: '<query> [--scope user|daemon|all] [--api <url>]',
         run: async args => {
             const [query] = positionals(args)
@@ -105,16 +98,7 @@ export const commands: CommandMap = {
                     'usage: bismuth chat search <query> [--scope user|daemon|all]',
                 )
             const scope = flag(args, 'scope')
-            out(
-                await call(
-                    resolveCore(args),
-                    'POST',
-                    '/chat/search',
-                    { query, scope },
-                    unreachable,
-                ),
-                args,
-            )
+            await ownerCall(args, 'POST', '/chat/search', { query, scope })
         },
     },
 }

@@ -1,7 +1,7 @@
 // app/src/chat/ChatPermissionCard.tsx — ChatPermissionCard.module.css is the ONLY importer.
 // An inline permission prompt: allow / allow always / deny, or (once answered/cancelled) a muted
 // outcome line. Extracted verbatim in behaviour from ChatView.tsx's local `PermissionCard` closure.
-import { Show } from 'solid-js'
+import { Show, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
@@ -17,7 +17,7 @@ export type ChatPermissionCardProps = {
     class?: string
 }
 
-export default function ChatPermissionCard(props: ChatPermissionCardProps) {
+const ChatPermissionCard: Component<ChatPermissionCardProps> = props => {
     // Same echo as the tool chip, but PRE-EXISTING here rather than introduced by the naming fix:
     // the driver already names the permission by `title`, so "Allow Write foo.txt?" has always been
     // followed by a "Write foo.txt" summary. One rule, both surfaces.
@@ -101,3 +101,5 @@ export default function ChatPermissionCard(props: ChatPermissionCardProps) {
         </div>
     )
 }
+
+export default ChatPermissionCard

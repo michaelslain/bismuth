@@ -23,7 +23,6 @@
 //     mode" section below and opencodeServer.ts's top-of-file note for exactly what was checked.
 import type { ChatFrame, ChatImage } from '../../chat'
 import { stripEditorContext } from '../../chat'
-import { titleFromPrompt } from '../titleFromPrompt'
 
 /** Mutable per-TURN accounting for translateOpencodeEvent: which part ids have emitted how much
  *  text (suffix-only re-emission), which tool callIDs already produced a tool-use frame, the
@@ -447,14 +446,6 @@ export function modelEntriesFromProviders(
         }
     }
     return finalizeModelEntries(entries)
-}
-
-/** Session tab title from the user's first prompt: preamble stripped, whitespace collapsed,
- *  truncated with an ellipsis — mirrors opencode's own truncated-prompt titling. Thin wrapper over
- *  the shared ./titleFromPrompt helper (also used by the ACP driver) — kept under its original
- *  name so existing imports/tests are untouched. */
-export function opencodeTitleFromPrompt(text: string, max = 48): string {
-    return titleFromPrompt(text, max)
 }
 
 // ── opencode commands (RE-FIX #90: "i dont see any opencode commands autocompleting") ────────────

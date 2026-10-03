@@ -3,7 +3,8 @@ import {
     adapterPackageFor,
     interpretProbe,
     surfaceSummary,
-    versionArgs,
+    VERSION_ARGS,
+    probeVersion,
 } from '../../src/agentBackends/doctor'
 import { BACKENDS } from '../../src/agentBackends/catalog'
 
@@ -78,17 +79,14 @@ describe('interpretProbe', () => {
     })
 })
 
-describe('versionArgs', () => {
+describe('VERSION_ARGS', () => {
     test('asks every known backend for its version without running a turn', () => {
-        for (const d of Object.values(BACKENDS)) {
-            const args = versionArgs(d.binary)
-            expect(args.length).toBeGreaterThan(0)
-            // The probe must never be capable of starting an agent, a daemon, or a login flow.
-            for (const a of args) {
-                expect(a).not.toMatch(
-                    /^(run|exec|serve|gateway|hub|auth|login|acp|onboard|configure)$/,
-                )
-            }
+        expect(VERSION_ARGS.length).toBeGreaterThan(0)
+        // The probe must never be capable of starting an agent, a daemon, or a login flow.
+        for (const a of VERSION_ARGS) {
+            expect(a).not.toMatch(
+                /^(run|exec|serve|gateway|hub|auth|login|acp|onboard|configure)$/,
+            )
         }
     })
 })
@@ -109,5 +107,13 @@ describe('surfaceSummary', () => {
         // Only Claude can enforce the vault visibility gate, so only Claude runs a vault brain today.
         expect(surfaceSummary(BACKENDS.opencode).daemon).toBe(false)
         expect(surfaceSummary(BACKENDS.cline).daemon).toBe(false)
+    })
+})
+
+describe('probeVersion timeout attribution', () => {
+    test('a fast empty non-zero exit is not reported as a timeout', async () => {
+        const r = await probeVersion('/bin/sh', ['-c', 'exit 2'])
+        expect(r.problem).not.toContain('no response')
+        expect(r.problem).toContain('exited 2')
     })
 })

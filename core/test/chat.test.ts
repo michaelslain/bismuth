@@ -1,6 +1,5 @@
 import { test, expect, describe, afterEach, mock } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     sendMessage,
@@ -24,7 +23,6 @@ import {
     unstreamedAssistantFrames,
     isMcpCommand,
     formatMcpStatus,
-    visibilityRefusalMessage,
     withLocalSlashCommands,
     LOCAL_SLASH_COMMANDS,
     extractAskUserQuestions,
@@ -35,9 +33,14 @@ import {
     type ChatSearchDoc,
 } from '../src/chat'
 import { whichClaude } from '../src/claudeWhich'
-import { sandboxFailIfUnavailable } from '../src/visibility'
+import {
+    sandboxFailIfUnavailable,
+    visibilityRefusalMessage,
+} from '../src/visibility'
 import { ownerTokenDenyPath } from '../src/ownerToken'
 import { shouldRunLiveTests } from './liveGate'
+import { tempDir } from './helpers'
+import { createFrameWaiter } from './support/frameWaiter'
 
 // extractEditorContextPaths backs captureToMemory's visibility gate (skip capturing a session
 // that touched a chat-only/hidden file) — it parses the SAME preamble format app/src/
@@ -551,7 +554,7 @@ describe("spawnChatQuery wiring (does the real call site actually use buildChatS
             },
         }))
 
-        const vault = await mkdtemp(join(tmpdir(), 'bismuth-chat-wiring-'))
+        const vault = tempDir('bismuth-chat-wiring-')
         const chatId = newChatId()
         try {
             // A REAL hidden note — the same shape the reviewer's probe used — so buildDenyPaths(cwd,
@@ -600,49 +603,17 @@ if (!LIVE) {
 function makeCollector(
     onPermission?: (f: Extract<ChatFrame, { type: 'permission' }>) => void,
 ) {
-    const frames: ChatFrame[] = []
-    const waiters: {
-        match: (f: ChatFrame) => boolean
-        resolve: (f: ChatFrame) => void
-    }[] = []
+    const w = createFrameWaiter<ChatFrame>(120_000)
 
     const sink = (frame: ChatFrame) => {
-        frames.push(frame)
+        w.push(frame)
         if (frame.type === 'permission') onPermission?.(frame)
-        for (let i = waiters.length - 1; i >= 0; i--) {
-            if (waiters[i].match(frame)) {
-                waiters[i].resolve(frame)
-                waiters.splice(i, 1)
-            }
-        }
     }
 
-    function waitFor(
-        match: (f: ChatFrame) => boolean,
-        timeoutMs = 120_000,
-    ): Promise<ChatFrame> {
-        const already = frames.find(match)
-        if (already) return Promise.resolve(already)
-        return new Promise<ChatFrame>((resolve, reject) => {
-            const timer = setTimeout(() => {
-                const idx = waiters.findIndex(w => w.resolve === wrapped)
-                if (idx >= 0) waiters.splice(idx, 1)
-                reject(
-                    new Error(
-                        'timeout waiting for frame; saw: ' +
-                            JSON.stringify(frames.map(f => f.type)),
-                    ),
-                )
-            }, timeoutMs)
-            const wrapped = (f: ChatFrame) => {
-                clearTimeout(timer)
-                resolve(f)
-            }
-            waiters.push({ match, resolve: wrapped })
-        })
-    }
+    const waitFor = (pred: (f: ChatFrame) => boolean, timeoutMs?: number) =>
+        w.waitFor(pred, 'frame', timeoutMs)
 
-    return { sink, frames, waitFor }
+    return { sink, frames: w.frames, waitFor }
 }
 
 describeOrSkip('visual Claude Code chat driver (live)', () => {
@@ -657,7 +628,7 @@ describeOrSkip('visual Claude Code chat driver (live)', () => {
     })
 
     async function newTempDir(): Promise<string> {
-        const dir = await mkdtemp(join(tmpdir(), 'bismuth-chat-test-'))
+        const dir = tempDir('bismuth-chat-test-')
         tempDirs.push(dir)
         return dir
     }
@@ -975,7 +946,7 @@ describeOrSkip('visual Claude Code chat driver (live)', () => {
 // store is a valid result (a fresh temp dir has none), so we only assert shapes.
 describeOrSkip('session history API (resume picker)', () => {
     test('listChatSessions returns an array; sessionHistoryFrames replays a real session', async () => {
-        const dir = await mkdtemp(join(tmpdir(), 'bismuth-chat-hist-'))
+        const dir = tempDir('bismuth-chat-hist-')
         try {
             const sessions = await listChatSessions(dir)
             expect(Array.isArray(sessions)).toBe(true)
@@ -1109,7 +1080,7 @@ describe('searchChatSessions (tolerance)', () => {
     })
 
     test('a real query against an empty/unknown dir degrades to [] (never throws)', async () => {
-        const dir = await mkdtemp(join(tmpdir(), 'bismuth-chat-search-'))
+        const dir = tempDir('bismuth-chat-search-')
         try {
             const hits = await searchChatSessions(dir, 'anything')
             expect(Array.isArray(hits)).toBe(true)

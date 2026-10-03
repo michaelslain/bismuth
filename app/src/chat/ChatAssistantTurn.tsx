@@ -3,7 +3,7 @@
 // tool call / permission / question) in arrival order, and a muted footer once the turn's `result`
 // frame lands. Extracted verbatim in markup/behaviour from ChatView.tsx's local `AssistantTurn`
 // closure + part-kind switch.
-import { For, Show, type JSX } from 'solid-js'
+import { For, Show, type Component, type JSX } from 'solid-js'
 import { plural } from '../plural'
 import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
@@ -34,7 +34,7 @@ export type ChatAssistantTurnProps = {
     class?: string
 }
 
-export default function ChatAssistantTurn(props: ChatAssistantTurnProps) {
+const ChatAssistantTurn: Component<ChatAssistantTurnProps> = props => {
     return (
         <ChatTurnColumn class={`${styles['chat-msg']} ${props.class ?? ''}`}>
             <ChatTurnLabel label={props.persona} avatar={props.avatar} />
@@ -94,3 +94,5 @@ export default function ChatAssistantTurn(props: ChatAssistantTurnProps) {
         </ChatTurnColumn>
     )
 }
+
+export default ChatAssistantTurn

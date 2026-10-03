@@ -2,7 +2,7 @@
 // One user turn: the "you" label (+ a queued note/cancel while staged), the prose bubble, and any
 // sent images. Extracted verbatim in markup/behaviour from ChatView.tsx's transcript list render
 // (the fallback branch of its role Show chain).
-import { For, Show } from 'solid-js'
+import { For, Show, type Component } from 'solid-js'
 import { IconButton } from '../ui/IconButton'
 import Text from '../ui/Text'
 import ChatTurnColumn from './ChatTurnColumn'
@@ -19,7 +19,7 @@ export type ChatUserTurnProps = {
     class?: string
 }
 
-export default function ChatUserTurn(props: ChatUserTurnProps) {
+const ChatUserTurn: Component<ChatUserTurnProps> = props => {
     return (
         <ChatTurnColumn
             class={`${styles['chat-msg']} ${props.class ?? ''}`}
@@ -71,3 +71,5 @@ export default function ChatUserTurn(props: ChatUserTurnProps) {
         </ChatTurnColumn>
     )
 }
+
+export default ChatUserTurn

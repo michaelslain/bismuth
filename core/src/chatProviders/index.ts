@@ -1,8 +1,8 @@
 // core/src/chatProviders/index.ts
-// The chat PROVIDER router: one seam that lets each chat session run on any backend in the
-// registry (./backends.ts) — Claude Code (core/src/chat.ts, the Agent-SDK driver), opencode
-// (./opencode.ts, the per-turn `opencode run --format json` driver), and whatever is added next —
-// all speaking the same ChatFrame wire protocol so ChatView renders any of them unchanged.
+// The chat PROVIDER router: one seam that lets each chat session run on any backend in the nine-backend
+// registry (./backends.ts: claude, opencode, codex and six ACP agents), all speaking the same
+// ChatFrame wire protocol so ChatView renders any of them unchanged. The drivers live in
+// core/src/chat.ts (Claude), ./opencode/, ./codex/ and ./acp/.
 //
 // Routing rule: a chatId that already has a live session anywhere routes to THAT backend
 // (conversation continuity beats a stale provider field); otherwise the creation verbs
@@ -10,10 +10,8 @@
 //
 // Interactive verbs (permissions, questions, permission mode, effort) dispatch to the owning
 // backend and are simply DROPPED when that backend doesn't implement them — the graceful
-// degradation a non-interactive CLI needs, now declared as data (`capabilities.permissionModes` /
-// `.effort` in agentBackends/catalog.ts) instead of implied by a `provider === "claude"` check.
-//
-// Public signatures are unchanged from the two-backend era, so core/src/server.ts needs no edits.
+// degradation a non-interactive CLI needs, declared as data (`capabilities.permissionModes` /
+// `.effort` in agentBackends/catalog.ts).
 import type { ChatFrame, ChatImage, ChatSink } from '../chat'
 import { CHAT_BACKENDS, CHAT_BACKEND_LIST, type ChatBackend } from './backends'
 import {
@@ -23,19 +21,6 @@ import {
 } from '../agentBackends/catalog'
 import { resolveVisibilityGate } from '../agentBackends/visibilityGate'
 
-/** The ids come from the backend catalog, which is also what the `chat.provider` settings enum
- *  derives from. */
-type ChatProviderId = BackendId
-const DEFAULT_CHAT_PROVIDER: ChatProviderId = DEFAULT_BACKEND
-
-/**
- * Pure: resolve which provider a chat should run on. `requested` is what the client sent on the
- * wire (open/user/resume frames); `fallback` is the vault's `chat.provider` setting. Anything
- * unrecognized (absent, a typo, a future provider this build doesn't know) degrades to the next
- * tier, bottoming out at Claude — never throws, never spawns the wrong binary on garbage input.
- */
-export const resolveChatProvider = resolveBackendId
-
 /** The backend holding a live session for this chat id, or null. Iterates CHAT_BACKEND_LIST, whose
  *  order preserves the original opencode-then-claude ownership resolution. */
 function owningBackend(chatId: string): ChatBackend | null {
@@ -43,22 +28,20 @@ function owningBackend(chatId: string): ChatBackend | null {
     return null
 }
 
-/** Which backend currently owns this chatId, if any. */
-function owner(chatId: string): ChatProviderId | null {
-    return owningBackend(chatId)?.id ?? null
-}
-
 /** The backend a chat should run on: whoever already owns a live session for it, else the
  *  requested/default one. One lookup, replacing the per-verb if/else chain. */
-function target(chatId: string, provider: ChatProviderId): ChatBackend {
-    return owningBackend(chatId) ?? CHAT_BACKENDS[resolveChatProvider(provider)]
+function target(chatId: string, provider: BackendId): ChatBackend {
+    return owningBackend(chatId) ?? CHAT_BACKENDS[resolveBackendId(provider)]
 }
 
 /** The backend for a chatId with no live session — where an unowned verb lands. Matches the old
  *  behaviour, where an unowned id fell through to Claude's own no-op-on-unknown-id handling. */
 function fallbackBackend(chatId: string): ChatBackend {
-    return owningBackend(chatId) ?? CHAT_BACKENDS[DEFAULT_CHAT_PROVIDER]
+    return owningBackend(chatId) ?? CHAT_BACKENDS[DEFAULT_BACKEND]
 }
+
+/** Test seam: the gate the router consults. Swapped only by dispatchGate.test.ts. */
+export const gate = { resolve: resolveVisibilityGate }
 
 /**
  * THE visibility chokepoint for chat. Every session-CREATING verb passes through here before a
@@ -74,16 +57,20 @@ function fallbackBackend(chatId: string): ChatBackend {
  * it resolves first and dispatches in the continuation: on refusal nothing is ever spawned, and the
  * caller's synchronous contract is unchanged.
  *
+ * The id passed in is the backend that will actually RUN (the chat's live owner when it has one),
+ * never the raw requested provider: judging one backend and spawning another would let a restricted
+ * backend run ungated.
+ *
  * The channel is always "chat" here — the daemon's equivalent gate is resolveDaemonBackend
  * (daemon/src/daemon/session.ts), which refuses on the stricter daemon tier.
  */
 function withVisibilityGate(
-    provider: ChatProviderId,
+    backendId: BackendId,
     cwd: string,
     sink: ChatSink,
     dispatch: () => void,
 ): void {
-    void resolveVisibilityGate(provider, 'chat', cwd).then(verdict => {
+    void gate.resolve(backendId, 'chat', cwd).then(verdict => {
         if (verdict.allowed) {
             dispatch()
             return
@@ -91,7 +78,7 @@ function withVisibilityGate(
         sink({
             type: 'error',
             code: 'visibility-refused',
-            binary: provider,
+            binary: backendId,
             message: verdict.message,
         })
     })
@@ -102,10 +89,11 @@ export function openSession(
     cwd: string,
     sink: ChatSink,
     memoryDir: string | undefined,
-    provider: ChatProviderId,
+    provider: BackendId,
 ): void {
-    withVisibilityGate(provider, cwd, sink, () =>
-        target(chatId, provider).openSession({
+    const b = target(chatId, provider)
+    withVisibilityGate(b.id, cwd, sink, () =>
+        b.openSession({
             chatId,
             cwd,
             sink,
@@ -121,10 +109,11 @@ export function sendMessage(
     sink: ChatSink,
     images: ChatImage[] | undefined,
     memoryDir: string | undefined,
-    provider: ChatProviderId,
+    provider: BackendId,
 ): void {
-    withVisibilityGate(provider, cwd, sink, () =>
-        target(chatId, provider).sendMessage({
+    const b = target(chatId, provider)
+    withVisibilityGate(b.id, cwd, sink, () =>
+        b.sendMessage({
             chatId,
             text,
             cwd,
@@ -141,23 +130,24 @@ export function resumeSession(
     cwd: string,
     sink: ChatSink,
     memoryDir: string | undefined,
-    provider: ChatProviderId,
+    provider: BackendId,
 ): void {
     // A resume is a deliberate re-bind — the REQUESTED provider wins (the session id belongs to that
-    // provider's store). Tear down any OTHER backend's session for this chat id first; the chosen
-    // backend tears down its own (each driver's resumeSession is idempotent).
-    const chosen = CHAT_BACKENDS[resolveChatProvider(provider)]
-    for (const b of CHAT_BACKEND_LIST)
-        if (b !== chosen && b.hasSession(chatId)) b.closeChat(chatId)
-    withVisibilityGate(provider, cwd, sink, () =>
+    // provider's store). Tear down any OTHER backend's session for this chat id, but only once the
+    // gate allows: a refused resume must leave the user's live session untouched. The chosen backend
+    // tears down its own (each driver's resumeSession is idempotent).
+    const chosen = CHAT_BACKENDS[resolveBackendId(provider)]
+    withVisibilityGate(chosen.id, cwd, sink, () => {
+        for (const b of CHAT_BACKEND_LIST)
+            if (b !== chosen && b.hasSession(chatId)) b.closeChat(chatId)
         chosen.resumeSession({
             chatId,
             sessionId,
             cwd,
             sink,
             memoryDir,
-        }),
-    )
+        })
+    })
 }
 
 /** Replay a past session as ChatFrames — dispatched by the id's PROVIDER (each backend's store is
@@ -165,9 +155,9 @@ export function resumeSession(
 export async function sessionHistoryFrames(
     sessionId: string,
     cwd: string,
-    provider: ChatProviderId,
+    provider: BackendId,
 ): Promise<ChatFrame[]> {
-    return CHAT_BACKENDS[resolveChatProvider(provider)].sessionHistoryFrames(
+    return CHAT_BACKENDS[resolveBackendId(provider)].sessionHistoryFrames(
         sessionId,
         cwd,
     )
@@ -227,5 +217,4 @@ export function detachSink(chatId: string, sink: ChatSink): boolean {
     return fallbackBackend(chatId).detachSink(chatId, sink)
 }
 
-export { owner }
 export { newChatId } from '../chat'

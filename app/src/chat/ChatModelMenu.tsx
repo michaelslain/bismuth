@@ -10,10 +10,10 @@
 // upward flip when it would fall off the bottom of the viewport, so this component does not write a
 // second placement path; it only computes the trigger's `getBoundingClientRect()` and hands the
 // menu x/y.
-import { createSignal, Show } from 'solid-js'
+import { createSignal, Show, type Component } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import styles from './ChatModelMenu.module.css'
-import type { ChatSession } from './chatSession'
+import type { ChatControlsView } from './ChatControls'
 import PlainButton from '../ui/PlainButton'
 import Text from '../ui/Text'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
@@ -21,12 +21,12 @@ import { modelLabelFor } from '../chatModelResolution'
 import { modelWord } from './modelWord'
 import { modelPriceBadge, CHAT_PROVIDER_OPTIONS } from '../chatProvider'
 
-export type ChatModelMenuProps = { session: ChatSession }
+export type ChatModelMenuProps = { session: ChatControlsView }
 
 /** The provider/model/effort submenu rows this menu builds, one per capability that actually has a
  *  choice — a session with only one provider, one model, or one effort level omits that row
  *  entirely rather than showing a dead submenu with a single, unpickable option. */
-function buildItems(session: ChatSession): MenuItem[] {
+function buildItems(session: ChatControlsView): MenuItem[] {
     const items: MenuItem[] = []
 
     if (CHAT_PROVIDER_OPTIONS.length > 1) {
@@ -81,7 +81,7 @@ function buildItems(session: ChatSession): MenuItem[] {
  *  three separate always-visible pickers. Reads `props.session` at each use rather than binding it
  *  to a local: a `const session = props.session` alias would read the prop once at setup and keep
  *  that value forever even if a later render hands the component a different session. */
-export default function ChatModelMenu(props: ChatModelMenuProps) {
+const ChatModelMenu: Component<ChatModelMenuProps> = props => {
     const [menu, setMenu] = createSignal<{
         x: number
         y: number
@@ -139,3 +139,5 @@ export default function ChatModelMenu(props: ChatModelMenuProps) {
         </div>
     )
 }
+
+export default ChatModelMenu
