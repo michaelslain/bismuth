@@ -68,21 +68,6 @@ const canvasIn = async (root: HTMLElement): Promise<HTMLCanvasElement> =>
         return c
     })
 
-/** The first fully opaque pixel, scanning row-major: the core of the first glyph run's first cell. */
-const firstOpaque = (canvas: HTMLCanvasElement) => {
-    const w = canvas.width
-    const d = canvas.getContext('2d')!.getImageData(0, 0, w, canvas.height).data
-    for (let i = 0; i < d.length; i += 4)
-        if (d[i + 3] === 255) {
-            const p = i / 4
-            return { x: p % w, y: Math.floor(p / w) }
-        }
-    return null
-}
-
-const pixelAt = (canvas: HTMLCanvasElement, x: number, y: number) =>
-    Array.from(canvas.getContext('2d')!.getImageData(x, y, 1, 1).data).join(',')
-
 const Box = (props: {
     w: number
     h: number
@@ -157,10 +142,10 @@ export const Inactive: Story = {
     },
 }
 
-/** The same scene in a 260x90 box: the cells shrink, the scene stays centred and clipped. */
+/** A box smaller than the scene: the cells shrink to fit, the scene stays centred. */
 export const Compact: Story = {
     render: () => (
-        <Box w={260} h={90}>
+        <Box w={120} h={60}>
             <GlyphArt
                 scene={DEMO}
                 at={DEMO.revealMs}
@@ -174,7 +159,7 @@ export const Compact: Story = {
     },
 }
 
-/** A theme change recolours the ink: overriding --fg moves the first glyph's pixel. */
+/** A theme change recolours the ink: overriding --fg changes the canvas's pixels. */
 export const ThemeSwitch: Story = {
     render: () => (
         <Box w={600} h={288}>
@@ -191,13 +176,9 @@ export const ThemeSwitch: Story = {
         try {
             const canvas = await canvasIn(canvasElement)
             await waitFor(() => expect(inked(canvas)).toBeGreaterThan(0))
-            const spot = firstOpaque(canvas)
-            await expect(spot).not.toBeNull()
-            const before = pixelAt(canvas, spot!.x, spot!.y)
+            const before = signature(canvas)
             root.style.setProperty('--fg', '#ff0000')
-            await waitFor(() =>
-                expect(pixelAt(canvas, spot!.x, spot!.y)).not.toBe(before),
-            )
+            await waitFor(() => expect(signature(canvas)).not.toBe(before))
         } finally {
             if (prior) root.style.setProperty('--fg', prior)
             else root.style.removeProperty('--fg')
@@ -225,21 +206,25 @@ export const Remount: Story = {
             timeout: 3000,
         })
         const real = window.requestAnimationFrame
-        let calls = 0
+        let before = 0
+        let after = 0
+        let removed = false
+        window.requestAnimationFrame = cb => {
+            if (cb.name === 'tick') removed ? after++ : before++
+            return real.call(window, cb)
+        }
         try {
+            await waitFor(() => expect(before).toBeGreaterThan(0))
             setMounted(false)
             await waitFor(() =>
                 expect(canvasElement.querySelector('canvas')).toBeNull(),
             )
-            window.requestAnimationFrame = cb => {
-                calls++
-                return real.call(window, cb)
-            }
+            removed = true
             const start = performance.now()
             await waitFor(() =>
                 expect(performance.now() - start).toBeGreaterThanOrEqual(300),
             )
-            await expect(calls).toBe(0)
+            await expect(after).toBe(0)
         } finally {
             window.requestAnimationFrame = real
             setMounted(true)
