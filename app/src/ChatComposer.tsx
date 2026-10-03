@@ -17,7 +17,6 @@ import styles from './ChatComposer.module.css'
 import {
     EditorView,
     keymap,
-    drawSelection,
     placeholder as cmPlaceholder,
 } from '@codemirror/view'
 import { EditorState, Prec, Compartment } from '@codemirror/state'
@@ -37,6 +36,7 @@ import { api } from './api'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import type { FileCandidate } from './editor/atMention'
+import { cursor } from './editor/cursorTheme'
 
 /** Imperative handle ChatView drives the composer through — mirrors the old `ta?.focus()` /
  *  `ta?.scrollIntoView()` calls it made against the raw textarea. */
@@ -78,13 +78,6 @@ const composerTheme = EditorView.theme({
         maxWidth: 'none',
     },
     '.cm-line': { padding: '0' },
-    // The one blinking caret in the composer — accent-colored to read as the same mark as
-    // .asc-caret elsewhere, even though CodeMirror's own cursor-blink timer (not a CSS
-    // @keyframes) drives the actual blink, so there's no bespoke animation to declare here.
-    '.cm-cursor, .cm-dropCursor': {
-        borderLeftColor: 'var(--accent)',
-        borderLeftWidth: '2px',
-    },
     '.cm-placeholder': { color: 'var(--text-muted)', fontStyle: 'normal' },
     '.cm-selectionBackground, .cm-content ::selection': {
         backgroundColor: 'var(--selection)',
@@ -152,7 +145,7 @@ export function ChatComposer(props: ChatComposerProps) {
                 doc: props.value(),
                 extensions: [
                     history(),
-                    drawSelection(),
+                    cursor,
                     // 4-space Tab so list nesting clears the `1. ` marker uniformly — matches the note editor.
                     indentUnit.of('    '),
                     EditorState.tabSize.of(4),

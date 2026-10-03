@@ -6,7 +6,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import type { JSX } from 'solid-js'
 import { agentsScene } from './glyphScenes/agents'
-import { beginScene } from './glyphScenes/begin'
+import { createBeginScene } from './glyphScenes/begin'
 import { daemonScene } from './glyphScenes/daemon'
 import { wordmarkScene } from './glyphScenes/wordmark'
 import IntroHero from './IntroHero'
@@ -69,9 +69,10 @@ export const Agents: Story = {
     play: ({ canvasElement }) => expectInked(canvasElement),
 }
 
-/** The begin slide: the formed wordmark over the `> open vault_` prompt. */
+/** The begin slide: the formed wordmark over the `> open vault_` prompt. Pinned two whole blink
+ *  cycles past the reveal (at the default 1.2s cursor blink), so the cursor is in its ON half. */
 export const Begin: Story = {
-    args: { hero: 'begin', at: beginScene.revealMs + 3000 },
+    args: { hero: 'begin', at: createBeginScene(1200).revealMs + 2400 },
     play: ({ canvasElement }) => expectInked(canvasElement),
 }
 

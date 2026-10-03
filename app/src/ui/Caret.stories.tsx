@@ -1,5 +1,5 @@
 // Visual spec for <Caret> — the one blinking cursor glyph (terminal/chat/status/tree). It is an
-// animated glyph driven by `@keyframes asc-blink` (var(--blink) step-end infinite), so a single
+// animated glyph driven by `@keyframes asc-blink` (var(--cursor-blink) step-end infinite), so a single
 // still screenshot of it is ambiguous by nature: at any one sampled instant it may legitimately
 // be in its "off" (opacity 0) half of the cycle, which would read identically to "didn't render
 // at all". The `Sized` story below gives a DOM-probe-friendly way to prove it exists and is

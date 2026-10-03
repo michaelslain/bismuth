@@ -459,7 +459,13 @@
 
   --accent-edge: 2px solid var(--accent);   /* frontmatter + callout left border */
 
-  --blink: 1.1s;        /* caret step-end blink */
+  /* THE text cursor — one 2px accent bar in every text-entry surface (CodeMirror via
+     editor/cursorTheme.ts, the terminal overlay, native inputs' colour); ui/Caret's decorative `_`
+     mark shares its colour and blink. These are the first-paint defaults; settingsCssVars.ts
+     overwrites them from appearance.cursorWidth / cursorGlideMs / cursorBlinkSeconds. */
+  --cursor-width: 2px;
+  --cursor-glide: 70ms;
+  --cursor-blink: 1.2s;
   --sheen: 8s;          /* wordmark gradient traverse */
 
   /* Field noise opacity (bismuth-design/ascii/design-system/tokens/ascii.css): the noise
@@ -572,6 +578,9 @@
    global.css's `ui/ui.css` section beside `.btn` (and in each surface's own module for non-.btn controls); this rule is
    font-only, which is all it ever claimed to be. DO NOT re-add `outline: none` here. */
 button { font: inherit; }
+/* Native text fields draw the browser's own caret (its width can't be styled); colour it like the
+   one drawn cursor so a plain input doesn't read as a second kind. */
+input, textarea { caret-color: var(--accent); }
 body, html, #root { margin: 0; height: 100%; }
 /* Monaspace ships coding ligatures (e.g. "->", "!="); they break the character grid
    the whole ASCII design leans on, so they're off everywhere, app-wide. */
@@ -980,8 +989,8 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
       graph/GraphView.tsx) until wave 2 converts those call sites to compose the new components.
       `.asc-caret` (+ its `@keyframes asc-blink`) took the same trip and came back (regression
       fix, 2026-09-20, see the rule's own comment below): it stays here, as a bare global,
-      written only by ui/Caret (and ui/Wordmark's `caret`, via Caret). Terminal.tsx's xterm cursor and
-      ChatComposer's CodeMirror cursor imitate its look but do not reference the class. `.row-kbd`/`.asc-key`'s shared compound was later
+      written only by ui/Caret (and ui/Wordmark's `caret`, via Caret) — a decorative `_` mark, while
+      the terminal overlay and every CodeMirror surface draw a bar from the --cursor-* vars. `.row-kbd`/`.asc-key`'s shared compound was later
       dissolved (2026-09-30) — Kbd's `muted` prop replaced it.
    2. DESIGN TOKENS moved to `app/src/styles/tokens.css` (`--ui-font-stack`, `--row-h`,
       `--accent-edge`, `--blink`, `--sheen`, `--field-noise-op`, `--cell-h`, `--cell-h-dense`,
@@ -1171,11 +1180,14 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    (one-global-stylesheet Task 7), then moved BACK here (regression fix, 2026-09-20): a module's
    CSS only reaches the production bundle if something imports it, and the bare class was then
    being written with no owning import, so every caret shipped invisible. It lives here as a bare
-   global, written only by ui/Caret (and ui/Wordmark's `caret`, via Caret). Terminal.tsx's xterm
-   cursor and ChatComposer's CodeMirror cursor imitate its look (an accent underline) but do NOT
-   reference the class. */
+   global, written only by ui/Caret (and ui/Wordmark's `caret`, via Caret).
+   It is the brand's DECORATIVE cursor mark — a `_` glyph, deliberately not the bar the text-entry
+   cursors draw (every CodeMirror surface via editor/cursorTheme.ts, the terminal's
+   .xterm-custom-cursor below). It shares their accent and their --cursor-blink; `asc-blink` is the
+   one blink keyframe the mark and the terminal share (CodeMirror's own cm-blink is retimed to
+   --cursor-blink instead). */
 @keyframes asc-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
-.asc-caret { color: var(--accent); animation: asc-blink var(--blink) step-end infinite; }
+.asc-caret { color: var(--accent); animation: asc-blink var(--cursor-blink) step-end infinite; }
 
 /* ── Overlay / modal / popover ─────────────────────────────────────────────
    .ui-overlay is ui/Modal.module.css's scrim. .asc-modal MOVED there too (one-global-stylesheet
@@ -1742,33 +1754,24 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   text-rendering: geometricPrecision;
 }
 
-/* Custom gliding cursor overlay — a blinking underline, matching .asc-caret
-   everywhere else in the system (the `ui/ui.css` section), not a solid block. xterm's native cursor
-   is a class transferred between inline spans, so CSS transitions don't apply — we
-   render our own absolutely-positioned bar and animate transform. Terminal.tsx sets
-   width to the live cell width (font/zoom-dependent) and height stays CARET_H (2px,
-   see Terminal.tsx); the 8px width below is only the pre-measurement fallback for the
-   very first paint. Glide/blink speed still come from the user's terminal.* settings
-   (--term-cursor-glide/--term-cursor-blink) — unlike .asc-caret's fixed --blink, this
-   one stays user-configurable. */
+/* Custom gliding cursor overlay — THE text cursor (the same --cursor-width accent bar and
+   --cursor-glide as every CodeMirror surface, blinking asc-blink on --cursor-blink like .asc-caret). xterm's native cursor
+   is a class transferred between inline spans, so CSS transitions don't apply — we render our own
+   absolutely-positioned bar and animate transform. Terminal.tsx sets the height to the live cell
+   height (font/zoom-dependent) and parks the bar on the cell's left edge; the 16px height below is
+   only the pre-measurement fallback for the very first paint. */
 .xterm-custom-cursor {
   position: absolute;
   top: 0;
   left: 0;
-  width: 8px;
-  height: 2px;
+  width: var(--cursor-width);
+  height: 16px;
   background: var(--accent);
   pointer-events: none;
-  transition: transform var(--term-cursor-glide, 70ms) ease-out;
-  animation: xterm-caret-blink var(--term-cursor-blink, 1.2s) steps(1) infinite;
+  transition: transform var(--cursor-glide) ease-out;
+  animation: asc-blink var(--cursor-blink) step-end infinite;
   will-change: transform;
   z-index: 5;
-}
-
-@keyframes xterm-caret-blink {
-  50% {
-    opacity: 0;
-  }
 }
 
 /* Hide the custom cursor while the terminal is unfocused (xterm toggles `.focus` on

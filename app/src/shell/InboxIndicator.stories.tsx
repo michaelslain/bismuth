@@ -22,6 +22,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
 import { InboxIndicator } from './InboxIndicator'
+import Caret from '../ui/Caret'
 
 const noop = () => {}
 
@@ -87,10 +88,7 @@ export const InRow: Story = {
             <>
                 <InboxIndicator count={3} onOpen={noop} />
                 <span style={{ color: 'var(--green)' }}>
-                    daemon: working
-                    <span class="asc-caret" style={{ 'margin-left': '2px' }}>
-                        _
-                    </span>
+                    daemon: working <Caret />
                 </span>
             </>,
         ),

@@ -474,6 +474,70 @@ function renameKeys(doc: Document): boolean {
     return mutated
 }
 
+// Schema keys that moved to a DIFFERENT section since an older Bismuth (renameKeys handles moves
+// within one section). Each entry is the OLD and NEW full path. moveKeys runs before fillMissing for
+// the same reason renameKeys does. The cursor trio was terminal-only until the app's cursors were
+// unified onto one definition, when it became app-wide under `appearance`.
+const MOVED_KEYS: readonly { from: readonly string[]; to: readonly string[] }[] = [
+    { from: ['terminal', 'cursorWidth'], to: ['appearance', 'cursorWidth'] },
+    { from: ['terminal', 'cursorGlideMs'], to: ['appearance', 'cursorGlideMs'] },
+    {
+        from: ['terminal', 'cursorBlinkSeconds'],
+        to: ['appearance', 'cursorBlinkSeconds'],
+    },
+]
+
+/**
+ * Move any MOVED_KEYS pair still at its old path to its new one. The value node travels as-is
+ * (inline comment included) and the key's `commentBefore` rides along onto the new key. When the
+ * new path already holds a value, that value wins and the old pair is just deleted, its comment
+ * carried onto whatever shifts into its slot — the same rule renameKeys follows. Returns true if
+ * anything moved or was removed.
+ */
+function moveKeys(doc: Document): boolean {
+    let mutated = false
+    for (const { from, to } of MOVED_KEYS) {
+        const fromSection = from.slice(0, -1)
+        const oldKey = from[from.length - 1]
+        const parent = fromSection.length
+            ? doc.getIn(fromSection, true)
+            : doc.contents
+        if (!isMap(parent)) continue
+        const oldPair = findPair(parent as YAMLMap, oldKey)
+        if (!oldPair) continue
+        const index = (parent as YAMLMap).items.indexOf(oldPair)
+        const keyComment = isScalar(oldPair.key)
+            ? oldPair.key.commentBefore
+            : undefined
+        ;(parent as YAMLMap).delete(oldKey)
+        mutated = true
+        if (doc.hasIn(to)) {
+            const comment = [
+                keyComment,
+                isScalar(oldPair.value) ? oldPair.value.comment : undefined,
+            ]
+                .filter(Boolean)
+                .join('\n')
+            if (comment)
+                carryComment(doc, parent as YAMLMap, fromSection, index, comment)
+            continue
+        }
+        const toSection = to.slice(0, -1)
+        const target = doc.getIn(toSection, true)
+        if (isMap(target)) {
+            const pair = doc.createPair(to[to.length - 1], oldPair.value)
+            if (keyComment && isScalar(pair.key))
+                pair.key.commentBefore = keyComment
+            ;(target as YAMLMap).items.push(pair)
+        } else {
+            doc.setIn(to, oldPair.value)
+            if (keyComment)
+                carryComment(doc, parent as YAMLMap, fromSection, index, keyComment)
+        }
+    }
+    return mutated
+}
+
 /**
  * Delete any RETIRED_KEYS pair still present in `doc`. A hand-written comment sitting directly
  * above a removed key is not dropped with it: it is carried onto the key that now takes its place
@@ -548,11 +612,12 @@ export async function reconcileSettings(vault: string): Promise<boolean> {
     }
     if (!isMap(doc.contents)) return false // empty/scalar/corrupt — leave alone
     const renamed = renameKeys(doc) // must run BEFORE fillMissing, or it seeds the new key's default
+    const moved = moveKeys(doc) // same ordering constraint as renameKeys
     const filled = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA)
     const migrated = migrateDaemonConfig(doc)
     const migratedAppearance = migrateLegacyAppearance(doc)
     const pruned = pruneRetiredKeys(doc)
-    if (renamed || filled || migrated || migratedAppearance || pruned) {
+    if (renamed || moved || filled || migrated || migratedAppearance || pruned) {
         await writeNote(
             vault,
             SETTINGS_FILE,
