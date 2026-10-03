@@ -1,0 +1,15 @@
+/* PowerUpList.module.css — the power-ups slide body: Cards side by side, wrapping and centred.
+   Was `.vi-powerups` / `.vi-powerup` in VaultIntro.module.css. */
+.list {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--sp-5);
+  max-width: 760px;
+}
+.powerup {
+  width: 226px;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
