@@ -241,6 +241,12 @@
      its spacing exception instead: siblings are --bar-icon-gap apart, so 24px circles centred on
      ~21px-wide targets never meet. The height keeps the floor. */
   height: var(--iconbar-box, max(var(--h-control), calc(var(--icon) + 10px)));
+  /* SQUARE inside an IconBar (rail-axis, 2026-10-03): a bare glyph is only icon + 2*--sp-1 wide
+     (16px) against an 18px --iconbar-box height, so a bar's icons repeated every 18px across but
+     every 20px down. A min-width equal to the box squares the bare button; a bracketed one is
+     wider than 18px anyway, so this only ever adds slack to a bracket-less glyph. Outside a bar
+     the fallback is 0 — no floor, as above. */
+  min-width: var(--iconbar-box, 0);
   border-radius: var(--r-0);
 }
 /* Muted tone for the toolzone — scoped to normal/unselected ONLY (toolbar-iconbar Task 1), not a

@@ -81,7 +81,11 @@
    The brackets are absolutely positioned OUTSIDE the icon's own box (the icon is their containing
    block), so the active icon stays on the exact axis the inactive icons share — inline brackets
    would widen the row's content and shove the glyph right. Same face, size, cap-height trim and
-   0.055em lift as Button.module.css's icon brackets, so the two read as one mark. */
+   0.055em lift as Button.module.css's icon brackets, so the two read as one mark — and the same
+   -0.1em pull-in (rail-axis, 2026-10-03): the `[`/`]` side bearing left ~3px of air at `100% + 1px`,
+   so `[▣]` read much wider than the bare icons above it; at `100% - 0.1em` the air is ~1px, as on
+   a selected IconButton. The brackets HANG: they sit in the row's 10px padding, outside the icon
+   axis every rail icon shares, so nothing moves when the active tab changes. */
 .tab-rail-row.active { color: var(--accent); }
 .tab-rail-row.active .tab-rail-icon { position: relative; }
 .tab-rail-row.active .tab-rail-icon::before,
@@ -91,8 +95,8 @@
   text-box: trim-both cap alphabetic; translate: 0 calc(-50% - 0.055em);
   color: var(--accent);
 }
-.tab-rail-row.active .tab-rail-icon::before { content: '[' / ''; right: calc(100% + 1px); }
-.tab-rail-row.active .tab-rail-icon::after { content: ']' / ''; left: calc(100% + 1px); }
+.tab-rail-row.active .tab-rail-icon::before { content: '[' / ''; right: calc(100% - 0.1em); }
+.tab-rail-row.active .tab-rail-icon::after { content: ']' / ''; left: calc(100% - 0.1em); }
 .tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
 .tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
 .tab-rail-row.active .tab-rail-icon { color: var(--accent); }

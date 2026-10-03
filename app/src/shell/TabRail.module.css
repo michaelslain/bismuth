@@ -112,13 +112,19 @@
 /* Top action toolbar. Renders through `ui/IconBar` now (`band layout="wrap"`, toolbar-iconbar
    plan Task 3) — IconBar owns the box model entirely: the 36px band, the 0/var(--sp-5) side
    padding, the 1px border-soft bottom hairline, the button box and glyph size, and (via
-   `layout="wrap"`) the collapsed centred stack with zero row gap. `.tab-rail-actions` (the class
+   `layout="wrap"`) the collapsed centred stack (same --sp-1 gap both ways, matching the tab rows). `.tab-rail-actions` (the class
    passed to IconBar via its `class` prop, landing on IconBar's root div) now carries only what is
    genuinely THIS container's concern: not shrinking inside `.tab-rail-inner`'s column layout, and
    the left-packed, single-line, non-wrapping layout the rail switches to once it is no longer
    collapsed. */
 .tab-rail-actions { flex: 0 0 auto; }
-.tab-rail-inner > .tab-rail-actions { padding-block: var(--sp-4); }   /* breathing room above + below the stacked icons — the band itself only pads the sides */
+.tab-rail-inner > .tab-rail-actions { padding-block: var(--sp-4); }
+/* ONE ICON AXIS (rail-axis, 2026-10-03): the actions pack LEFT in both states instead of centring
+   while collapsed. Band padding (--sp-5, 12px) + an 18px square button puts each glyph's left edge
+   at 15px — exactly where TabRailRow puts every tab icon (5px margin + 10px padding). Centred, the
+   stack sat 1.5px right of the tab icons in the 45px collapsed column. The active tab's brackets
+   hang outside this axis into the row padding (TabRailRow.module.css). */
+.tab-rail-inner > .tab-rail-actions { justify-content: flex-start; }   /* breathing room above + below the stacked icons — the band itself only pads the sides */
 /* LEFT-ALIGNED, NOWRAP ONLY WHILE EXPANDED (hover/focus-within) OR PINNED. IconBar's own
    `layout="wrap"` centres + wraps for the 46px collapsed strip; once the rail widens to 232px
    there is room for one row, and a left-packed row matches the tab rows' own left-aligned icons

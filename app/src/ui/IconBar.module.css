@@ -11,7 +11,8 @@
 .bar {
     display: flex;
     align-items: center;
-    gap: var(--bar-icon-gap);
+    /* 18px box + --sp-1 = a 20px pitch, the tab rail's row pitch (--row-h + its list gap), both directions */
+    gap: var(--sp-1);
     --iconbar-box: var(--bar-icon-size);
     --iconbar-width: auto;
     --iconbar-unselected-opacity: 1;
@@ -23,5 +24,4 @@
 .wrap {
     flex-flow: row wrap;
     justify-content: center;
-    row-gap: 0;
 }
