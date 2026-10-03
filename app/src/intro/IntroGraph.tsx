@@ -17,9 +17,9 @@ export type IntroGraphProps = {
     /** Visible + rendering; inactive instances fade to 0 and pause. */
     active: boolean
     theme: ThemeName
-    /** Vertical frame offset (fraction), 0 = centred. */
+    /** Vertical frame offset (fraction of the host height), 0 = centred. Reactive. */
     offsetY?: number
-    /** Zoom-out margin passed to setFitMargin. */
+    /** Zoom-out margin passed to setFitMargin. Reactive. */
     fitMargin?: number
     class?: string
 }
@@ -50,6 +50,16 @@ const IntroGraph: Component<IntroGraphProps> = props => {
     onCleanup(() => renderer.destroy())
     createEffect(() => mounted && applyGraphConfig(renderer, props.theme))
     createEffect(() => mounted && renderer.setVisible(props.active))
+    // The frame offset and fit margin follow their props (VaultIntro derives them from the hero box
+    // and re-derives them when the window resizes); onMount only applies the first values.
+    createEffect(() => {
+        const margin = props.fitMargin
+        if (mounted && margin) renderer.setFitMargin(margin)
+    })
+    createEffect(() => {
+        const offset = props.offsetY ?? 0
+        if (mounted) renderer.setFrameOffsetY(offset)
+    })
     return (
         <div
             class={`${styles['root']}${props.class ? ` ${props.class}` : ''}`}

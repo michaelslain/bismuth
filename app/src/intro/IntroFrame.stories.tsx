@@ -176,13 +176,13 @@ export const LongText: Story = {
     play: async ({ canvasElement }) => expectGeometry(canvasElement),
 }
 
-/** A short window. The full-scale grid needs 694px (432 hero + 198 text + 64 nav), so this stage is the
- *  smallest that holds it. The 0.75 scale comes from a viewport media query, so it only bites when the
- *  Storybook viewport itself is under 700px tall. */
+/** A short window. The full-scale grid needs 726px (432 hero + 198 text + 64 nav + the two outer rows'
+ *  16px minimums), so this stage is the smallest that holds it. The hero box's 0.75 scale comes from a viewport media query (max-height 50rem),
+ *  so it only bites when the Storybook viewport itself is under 800px tall. */
 export const Compact: Story = {
     args: { variant: 'hero', hero: <ProbeFill />, text: copy(SHORT), nav },
     render: args => (
-        <Stage w={900} h={700}>
+        <Stage w={900} h={726}>
             <IntroFrame {...args} />
         </Stage>
     ),

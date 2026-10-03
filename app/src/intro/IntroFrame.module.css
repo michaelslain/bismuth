@@ -15,16 +15,17 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 1fr var(--intro-hero-h) var(--intro-text-h) 1fr auto;
+  grid-template-rows: minmax(var(--sp-6), 1fr) var(--intro-hero-h) var(--intro-text-h) minmax(var(--sp-6), 1fr) auto;
   justify-items: center;
   padding: 0 var(--sp-7);
   text-align: center;
 }
-/* Short windows: the same grid, three quarters the size. 43.75rem = 700px at the default root. */
-@media (max-height: 43.75rem) {
+/* Short windows: the hero box shrinks to three quarters, the text slot keeps its size (the type does
+   not shrink, so a 3-line body needs all 11 rows). 50rem = 800px at the default root: the full-scale
+   grid needs ~694px plus the two outer rows' minimum, so below 800px there is no slack left. */
+@media (max-height: 50rem) {
   .intro-frame {
     --intro-hero-h: calc(16 * var(--row-h) * var(--intro-glyph-scale) * 0.75);
-    --intro-text-h: calc(11 * var(--row-h) * 0.75);
   }
 }
 .hero {
