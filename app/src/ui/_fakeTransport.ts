@@ -19,7 +19,7 @@
 // An unmapped GET throws
 // instead of guessing a shape, since a silently-wrong response is worse than a loud "add a case
 // here" error.
-import type { Transport } from '../api'
+import type { Transport, OpencodeProviderList } from '../api'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
 import {
@@ -38,7 +38,44 @@ import {
     sampleActivity,
 } from './_daemonFixtures'
 
+/** The default opencode provider catalog a story gets: 2 connected, 12 available (api-key and
+ *  OAuth methods mixed; one OAuth provider uses a paste-the-code method, the rest sign in
+ *  automatically). Sorted by name, like the real `GET /opencode/providers`. */
+export function sampleOpencodeProviders(): OpencodeProviderList {
+    const api = [{ type: 'api' as const, label: 'API key' }]
+    const auto = [{ type: 'oauth' as const, label: 'Browser sign-in' }]
+    const code = [{ type: 'oauth' as const, label: 'Paste the code' }]
+    return {
+        connected: [
+            { id: 'anthropic', name: 'anthropic', kind: 'oauth' },
+            { id: 'opencode', name: 'opencode zen', kind: 'api' },
+        ],
+        available: [
+            { id: 'azure', name: 'azure', methods: api },
+            { id: 'cerebras', name: 'cerebras', methods: api },
+            { id: 'deepseek', name: 'deepseek', methods: api },
+            { id: 'fireworks', name: 'fireworks ai', methods: api },
+            { id: 'github-copilot', name: 'github copilot', methods: auto },
+            { id: 'google', name: 'google', methods: api },
+            { id: 'groq', name: 'groq', methods: api },
+            { id: 'huggingface', name: 'hugging face', methods: api },
+            { id: 'mistral', name: 'mistral', methods: api },
+            { id: 'openai', name: 'openai', methods: [...auto, ...api] },
+            { id: 'openrouter', name: 'openrouter', methods: code },
+            { id: 'xai', name: 'xai', methods: api },
+        ],
+    }
+}
+
 export interface FakeTransportSeed {
+    /** GET /opencode/providers (and the state the three `/opencode/*` writes mutate — a
+     *  successful connect moves the provider from `available` to `connected`, so a refetch
+     *  shows it). Defaults to `sampleOpencodeProviders()`. */
+    opencodeProviders?: OpencodeProviderList
+    /** `'loading'`: GET /opencode/providers never resolves (the popover's checking state).
+     *  `'missing'`: every `/opencode/*` route answers 409 `opencode-missing`, like a machine
+     *  with no opencode binary. */
+    opencodeMode?: 'loading' | 'missing'
     /** Vault-relative path -> file contents. Drives GET/PUT /file and the default /tree. */
     files?: Record<string, string>
     /** GET /daemon/status — components that gate on the daemon being enabled read this on mount. */
@@ -261,6 +298,27 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         return seed.versioned ? (JSON.parse(JSON.stringify(rows)) as Row[]) : rows
     }
     if (seed.versioned) armFakeServerVersion()
+    // The opencode provider catalog, copied so a connect in one story never leaks into the next.
+    const opencode = structuredClone(
+        seed.opencodeProviders ?? sampleOpencodeProviders(),
+    )
+    const opencodeFail = (error: string, message: string): never => {
+        throw new Error(JSON.stringify({ error, message }))
+    }
+    const opencodeGuard = (): void => {
+        if (seed.opencodeMode === 'missing')
+            opencodeFail(
+                'opencode-missing',
+                'opencode is not installed — install it, then reopen this panel.',
+            )
+    }
+    /** Mirrors a successful connect: the provider leaves `available` for `connected`. */
+    const opencodeConnect = (id: string, kind: 'api' | 'oauth'): void => {
+        const i = opencode.available.findIndex(p => p.id === id)
+        if (i === -1) return opencodeFail('bad-request', `unknown provider ${id}`)
+        const [p] = opencode.available.splice(i, 1)
+        opencode.connected.push({ id: p.id, name: p.name, kind })
+    }
     const bump = async (pathname: string) => {
         if (seed.versioned && pathname !== '/rows') await bumpFakeServerVersion()
     }
@@ -420,6 +478,13 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     behind: 0,
                 }) as unknown as T
             }
+            if (pathname === '/opencode/providers') {
+                // Never settles: the popover's "checking providers…" state, with no timer.
+                if (seed.opencodeMode === 'loading')
+                    return new Promise<T>(() => {})
+                opencodeGuard()
+                return structuredClone(opencode) as unknown as T
+            }
             // An embedded ```query block (BaseView's hostMeta resource) fetches the HOST note's
             // own frontmatter to expose it as `this.*` in filters — real GET /meta parses it off
             // the note's own text (core/src/server.ts), so this mirrors that off the seeded file
@@ -488,6 +553,42 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 const { path: p } = body as { path: string }
                 await bump(pathname)
                 return { trashPath: `.trash/${p}` } as unknown as T
+            }
+            if (pathname.startsWith('/opencode/')) {
+                opencodeGuard()
+                const b = body as {
+                    id: string
+                    key?: string
+                    method?: number
+                    code?: string
+                }
+                const provider = opencode.available.find(p => p.id === b.id)
+                // A key spelled `bad…` is the story's rejected key; the message never echoes it.
+                if (pathname === '/opencode/auth') {
+                    if (b.key?.startsWith('bad'))
+                        opencodeFail('bad-request', 'opencode rejected that key')
+                    opencodeConnect(b.id, 'api')
+                    return { ok: true } as unknown as T
+                }
+                const method = provider?.methods[b.method ?? 0]
+                if (pathname === '/opencode/oauth/authorize') {
+                    if (!method)
+                        opencodeFail('bad-request', `unknown provider ${b.id}`)
+                    const paste = /code/i.test(method?.label ?? '')
+                    return {
+                        url: `https://example.test/oauth/${b.id}`,
+                        method: paste ? 'code' : 'auto',
+                        instructions: paste
+                            ? 'Sign in, then paste the code shown on the final page.'
+                            : 'Finish signing in in your browser.',
+                    } as unknown as T
+                }
+                if (pathname === '/opencode/oauth/callback') {
+                    if (b.code?.startsWith('bad'))
+                        opencodeFail('bad-request', 'that code was not accepted')
+                    opencodeConnect(b.id, 'oauth')
+                    return { ok: true } as unknown as T
+                }
             }
             throw new Error(`fakeTransport: unhandled POST(json) ${path}`)
         },

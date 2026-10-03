@@ -211,10 +211,7 @@ function Actions(props: { session: ChatSession }) {
                         {opencodeAuthSummary(props.session.authProviders()).label}
                     </TextButton>
                     <Show when={authOpen()}>
-                        <ChatAuthPanel
-                            providers={props.session.authProviders()}
-                            onClose={() => setAuthOpen(false)}
-                        />
+                        <ChatAuthPanel onClose={() => setAuthOpen(false)} />
                     </Show>
                 </div>
             </Show>
