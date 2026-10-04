@@ -272,6 +272,31 @@ test('serializeSettingsForFrontend accepts a well-formed list leaf, rejects a ma
     ]) // malformed → default
 })
 
+test('serializeSettingsForFrontend reads a list of objects (chat.presets) instead of resetting it', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        [
+            'chat:',
+            '  presets:',
+            '    - name: quick',
+            '      provider: claude',
+            '      model: haiku',
+            '      effort: low',
+            '    - name: bare',
+            '      provider: codex',
+            '    - not an object',
+            '',
+        ].join('\n'),
+    )
+    const data = await serializeSettingsForFrontend(vault)
+    expect((data.chat as any).presets).toEqual([
+        { name: 'quick', provider: 'claude', model: 'haiku', effort: 'low' },
+        { name: 'bare', provider: 'codex', model: '', effort: '' }, // missing fields read as ""
+    ]) // the non-object item is dropped
+})
+
 test('serializeSettingsForFrontend omits the properties registry section', async () => {
     const vault = await emptyVault()
     await writeNote(vault, '.settings', 'properties:\n  due: date\n')

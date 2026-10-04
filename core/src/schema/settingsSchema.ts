@@ -605,6 +605,37 @@ export const SETTINGS_SCHEMA: Schema = {
             default: DEFAULT_BACKEND,
             doc: CHAT_PROVIDER_DOC,
         },
+        // Saved provider + model + effort combinations, picked from the chat's model dialog
+        // (app/src/chat/ChatPresetList.tsx, above the connectors) — the dialog's `+ save` appends one, its `[x]`
+        // removes one. Pure list rules: app/src/chat/chatPresets.ts.
+        presets: {
+            type: {
+                kind: 'list',
+                item: {
+                    kind: 'object',
+                    fields: {
+                        name: {
+                            type: 'string',
+                            doc: 'What the preset is called in the model dialog.',
+                        },
+                        provider: {
+                            type: enumType(CHAT_PROVIDER_IDS),
+                            doc: 'Which chat connector the preset runs on.',
+                        },
+                        model: {
+                            type: 'string',
+                            doc: "The model id as the connector reports it. Empty = the connector's own default.",
+                        },
+                        effort: {
+                            type: 'string',
+                            doc: "Reasoning effort (low, medium, high, xhigh, max — whatever the model supports). Empty = the model's own default.",
+                        },
+                    },
+                },
+            },
+            default: [],
+            doc: 'Saved provider + model + effort combinations for chat and the daemon chat, applied from the model dialog. Picking one on another connector starts a new conversation, as switching connector always does.',
+        },
     }),
     // Open models through the EXISTING chat connectors (core/src/agentBackends/localModel.ts): any
     // OpenAI/Anthropic-compatible local server — LM Studio, Ollama, llama.cpp, vLLM. Applied at spawn

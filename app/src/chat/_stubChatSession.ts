@@ -213,6 +213,7 @@ export function makeStubChatSession(
         setPermissionMode: mode => log('setPermissionMode')(mode),
         switchModel: model => log('switchModel')(model),
         switchEffort: level => log('switchEffort')(level),
+        applyPreset: preset => log('applyPreset')(preset),
         switchProvider: p => log('switchProvider')(p),
         startNewChat: () => log('startNewChat')(),
         quoteReply: text => log('quoteReply')(text),

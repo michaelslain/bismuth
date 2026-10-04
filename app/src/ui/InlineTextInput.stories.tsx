@@ -125,6 +125,36 @@ export const EscapeCancels: Story = {
     },
 }
 
+/** `blurCancels`: focus leaving cancels instead of committing (an input that CREATES something —
+ *  the chat dialog's preset name), so a stray click never saves; Enter still commits. */
+export const BlurCancels: Story = {
+    render: () => {
+        commits = []
+        cancels = 0
+        return (
+            <div style={{ width: '220px' }}>
+                <Text size="ui" tone="muted">
+                    Name
+                </Text>
+                <InlineTextInput
+                    value="deep work"
+                    blurCancels
+                    onCommit={v => commits.push(v)}
+                    onCancel={() => cancels++}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const el = input(canvasElement)
+        el.value = 'typed'
+        el.dispatchEvent(new FocusEvent('blur'))
+        key(el, 'Enter')
+        await expect(cancels).toBe(1)
+        await expect(commits).toEqual([])
+    },
+}
+
 /** `ui-confirm`/`ui-dismiss` (settings.keybindings) are rebindable — proves the input reads
  *  through widgetKeys.ts's isConfirmKey/isDismissKey rather than a hardcoded `e.key` check.
  *  Once rebound, the plain Enter/Escape this component used to hardcode no longer fire, and

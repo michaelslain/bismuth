@@ -312,6 +312,7 @@ Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior.
 |---|---|---|---|---|
 | `computerUse` | boolean | `false` | — | Enable Claude's browser/computer-use capability (`--chrome`) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser (Chrome/Edge/Brave). Claude Code provider only. |
 | `provider` | enum | `claude` | 10 values | Default chat provider for NEW chat tabs: `claude` runs Claude Code, `opencode` runs opencode, `codex` runs OpenAI Codex, `cline` runs Cline, `gemini` runs Gemini CLI, `goose` runs Goose, `openclaw` runs OpenClaw, `hermes` runs Hermes Agent, `claude-code-acp` runs Claude Code (ACP), `codex-acp` runs Codex (ACP). Each chat can still pick its own provider in the header. |
+| `presets` | list (object) | `[]` | — | Saved provider + model + effort combinations, picked from the chat's model dialog (chat tab and daemon chat). Each item is `{name, provider, model, effort}` — `provider` is a chat connector id, `model` the connector's model id (empty = its default), `effort` a level the model supports (empty = its default). Usually written by the dialog's `[+ save]`; see [chat presets](../chat/overview.md). |
 
 The enum is sourced from `BACKEND_IDS` (`core/src/agentBackends/catalog.ts`), so adding a backend never needs a schema edit.
 

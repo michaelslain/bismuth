@@ -799,6 +799,36 @@ export async function serializeSettingsForFrontend(
                 // List-typed leaf (e.g. editor.wrapSelectionChars): typeof "object" matches both
                 // arrays and plain objects, so a bare typeof check can't reject a malformed value —
                 // validate structurally instead and fall back to the default otherwise.
+                const listType = fields?.[key]?.type
+                const item =
+                    listType && typeof listType === 'object' && listType.kind === 'list'
+                        ? listType.item
+                        : undefined
+                if (
+                    item &&
+                    typeof item === 'object' &&
+                    item.kind === 'object' &&
+                    Array.isArray(v)
+                ) {
+                    // A list of objects (chat.presets): keep each object item, reduced to its
+                    // schema's string-valued fields — a missing or non-string field reads as "",
+                    // a non-object item is dropped. A string-only check here silently reset
+                    // every such list to its default on read.
+                    target[key] = v
+                        .filter(
+                            (el): el is Record<string, unknown> =>
+                                !!el && typeof el === 'object' && !Array.isArray(el),
+                        )
+                        .map(el =>
+                            Object.fromEntries(
+                                Object.keys(item.fields).map(f => [
+                                    f,
+                                    typeof el[f] === 'string' ? el[f] : '',
+                                ]),
+                            ),
+                        )
+                    continue
+                }
                 if (Array.isArray(v) && v.every(el => typeof el === 'string'))
                     target[key] = v
                 continue

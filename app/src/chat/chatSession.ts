@@ -83,6 +83,7 @@ import {
 import { wikilinkFor, noteNameFromPath } from '../dnd/noteRef'
 import { buildHistoryEntries } from '../chatHistory'
 import { settings } from '../settings'
+import type { ChatPreset } from './chatPresets'
 import {
     CHAT_IMAGE_MIME,
     MAX_IMAGE_BYTES,
@@ -190,6 +191,9 @@ export type ChatSession = {
     switchModel: (model: string) => void
     switchEffort: (level: string) => void
     switchProvider: (provider: string) => void
+    /** Switch to a saved preset's provider + model + effort (chatPresets.ts). Another connector
+     *  starts a new conversation, exactly as switchProvider does; the same one keeps it. */
+    applyPreset: (preset: ChatPreset) => void
     startNewChat: () => void
     quoteReply: (text: string) => void
     history: ChatHistoryState
@@ -1133,6 +1137,32 @@ export function createChatSession(chatId: string): ChatSession {
         emitFocusRequest()
     }
 
+    const applyPreset = (preset: ChatPreset) => {
+        const next = sanitizeChatProvider(preset.provider, provider())
+        if (next !== provider()) {
+            // Seed the new connector's model + effort where a fresh session reads them, then switch:
+            // the first manifest enforces both (onFrame's `modeEnforced` branch), so no frame is
+            // sent to a socket that is about to close.
+            if (preset.model)
+                persistModel(storage, next, chatId, preset.model)
+            if (preset.effort) persistEffort(storage, preset.effort)
+            switchProvider(next)
+            return
+        }
+        if (preset.model && preset.model !== displayModelValue())
+            switchModel(preset.model)
+        // effortOptions() already tracks the model just switched to (displayModelValue reads the
+        // optimistic manifest), so a level that model does not offer is skipped, not sent.
+        const levels = effortOptions()
+        if (
+            preset.effort &&
+            providerCan(next, 'effort') &&
+            preset.effort !== effort() &&
+            (levels.length === 0 || levels.some(o => o.value === preset.effort))
+        )
+            switchEffort(preset.effort)
+    }
+
     const startNewChat = () => {
         setHistoryOpen(false)
         resetTranscript()
@@ -1351,6 +1381,7 @@ export function createChatSession(chatId: string): ChatSession {
         switchModel,
         switchEffort,
         switchProvider,
+        applyPreset,
         startNewChat,
         quoteReply,
         history: {

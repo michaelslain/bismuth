@@ -22,6 +22,7 @@ import {
 import type { KeybindingId } from '../../core/src/keybindings'
 import { isSettingsPath } from '../../core/src/changeClassifier'
 import { THEMES, DEFAULT_THEME } from './themes'
+import type { ChatPreset } from './chat/chatPresets'
 
 // The structural shape the frontend store consumes. Mirrors the spine's
 // SETTINGS_SCHEMA leaf-by-leaf (the spine's derived AppSettings is loosely typed
@@ -139,6 +140,7 @@ export interface Settings {
     }
     chat: {
         provider: string // default provider for NEW chats: "claude" | "opencode"
+        presets: ChatPreset[] // saved provider + model + effort combos (chat/chatPresets.ts)
     }
     localModel: {
         // Run chats on a local OpenAI/Anthropic-compatible server (LM Studio, Ollama…) through the

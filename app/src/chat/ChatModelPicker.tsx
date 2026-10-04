@@ -1,8 +1,10 @@
 // app/src/chat/ChatModelPicker.tsx
 // The ONE model dialog (replaces the provider ▸ / model ▸ / effort ▸ context-menu submenus AND the
-// separate `[N providers]` pill): a left column of connectors (claude code, codex, opencode, …) and
-// a right column holding the current connector's models, its effort levels, and — for opencode
-// only — the provider manager (OpencodeProviderManager). Every pick — connector, model, effort —
+// separate `[N providers]` pill): a left column of the saved presets (ChatPresetList — `chat.presets`
+// in .settings, each a connector + model + effort) above the connectors (claude code, codex,
+// opencode, …), and a right column holding the current connector's models, its effort levels, and
+// — for opencode only — the provider manager (OpencodeProviderManager). Picking a preset moves the
+// connector ▸ too, and the right column then shows the model and effort it set. Every pick — connector, model, effort —
 // applies at once and keeps the dialog open; only `[x]`, Esc or the backdrop close it.
 //
 // A FormModal: it portals itself over the scrim, owns Esc / backdrop dismiss, the focus trap and
@@ -13,7 +15,6 @@ import { For, Show, type Component } from 'solid-js'
 import styles from './ChatModelPicker.module.css'
 import type { ChatControlsView } from './ChatControls'
 import type { ChatModelOption } from './chatSession'
-import { Icon } from '../icons/Icon'
 import FormModal from '../ui/FormModal'
 import ModalBody from '../ui/ModalBody'
 import ModalHeader from '../ui/ModalHeader'
@@ -22,8 +23,18 @@ import SegmentedToggle from '../ui/SegmentedToggle'
 import SectionLabel from '../ui/SectionLabel'
 import Text from '../ui/Text'
 import OpencodeProviderManager from './OpencodeProviderManager'
+import ChatPresetList from './ChatPresetList'
 import { CHAT_PROVIDER_OPTIONS, modelPriceBadge } from '../chatProvider'
 import { groupModels } from './modelPickerGroups'
+import { modelLabelFor } from '../chatModelResolution'
+import { modelWord } from './modelWord'
+import {
+    deletePreset,
+    savePreset,
+    suggestPresetName,
+    type ChatPreset,
+} from './chatPresets'
+import { settings, setSettings } from '../settings'
 
 export type ChatModelPickerProps = {
     session: ChatControlsView
@@ -44,6 +55,41 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
 
     const pickModel = (m: ChatModelOption) => props.session.switchModel(m.value)
 
+    // ── presets (`chat.presets` in .settings) ──
+    const providerLabel = (id: string) =>
+        CHAT_PROVIDER_OPTIONS.find(o => o.value === id)?.label.toLowerCase() ??
+        id
+    // A preset on the current connector can use its reported label; another connector's models are
+    // not loaded, so its raw id is shown as-is (modelWord only lowercases an id).
+    const presetModelWord = (provider: string, model: string) =>
+        model
+            ? modelWord(
+                  provider === props.session.provider()
+                      ? modelLabelFor(model, props.session.models())
+                      : model,
+              )
+            : 'default model'
+    const describe = (p: ChatPreset) =>
+        [providerLabel(p.provider), presetModelWord(p.provider, p.model), p.effort]
+            .filter(Boolean)
+            .join(' // ')
+    // Effort only counts when the model offers a choice — the same rule that shows the effort row.
+    const currentEffort = () =>
+        props.session.effortOptions().length > 1
+            ? props.session.effortValue()
+            : ''
+    const current = () => ({
+        provider: props.session.provider(),
+        model: currentModel(),
+        effort: currentEffort(),
+    })
+    const savePresetNamed = (name: string) =>
+        setSettings(
+            'chat',
+            'presets',
+            savePreset(settings.chat.presets, { name, ...current() }),
+        )
+
     return (
         <FormModal
             onClose={props.onClose}
@@ -58,6 +104,30 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
             />
             <ModalBody class={styles.body}>
                 <div class={styles.connectors}>
+                    <ChatPresetList
+                        presets={settings.chat.presets}
+                        current={current()}
+                        suggestedName={suggestPresetName(
+                            presetModelWord(
+                                props.session.provider(),
+                                currentModel(),
+                            ),
+                            currentEffort(),
+                        )}
+                        {...{ describe }}
+                        onApply={props.session.applyPreset}
+                        onSave={savePresetNamed}
+                        onDelete={i =>
+                            setSettings(
+                                'chat',
+                                'presets',
+                                deletePreset(settings.chat.presets, i),
+                            )
+                        }
+                    />
+                    <SectionLabel class={styles['connectors-head']}>
+                        connectors
+                    </SectionLabel>
                     <For each={CHAT_PROVIDER_OPTIONS}>
                         {o => {
                             const current = () =>
@@ -112,16 +182,11 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
                                                 <Text
                                                     as="span"
                                                     inherit
-                                                    class={styles.check}
+                                                    class={styles.mark}
                                                 >
-                                                    <Show
-                                                        when={
-                                                            m.value ===
-                                                            currentModel()
-                                                        }
-                                                    >
-                                                        <Icon value="Check" />
-                                                    </Show>
+                                                    {m.value === currentModel()
+                                                        ? '▸'
+                                                        : ''}
                                                 </Text>
                                                 <Text
                                                     as="span"

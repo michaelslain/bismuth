@@ -369,12 +369,23 @@ Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior.
 | `provider` | enum | `claude` | Which agent backend a chat runs on by default: `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `hermes`, `claude-code-acp`, `codex-acp`. This is the default for a chat tab that hasn't chosen for itself — the header's backend picker overrides it per tab, and that choice persists (localStorage, keyed by the chat tab id). Each backend's controls render per declared capability, so a backend without permission modes or effort simply hides them. See [agent backends](../chat/backends.md). |
 | `computerUse` | boolean | `false` | Enable Claude's browser/computer-use capability (`--chrome`) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). This is the **default for a chat that hasn't chosen for itself** — a chat overrides it with `/chrome` / `/chrome off` or the header Globe pill, and that per-chat choice persists (localStorage, keyed by the chat tab id). |
 
+| `presets` | list | `[]` | Saved provider + model + effort combinations — `{name, provider, model, effort}` each — applied from the chat's model dialog in the chat tab and the daemon chat. `[+ save]` in that dialog writes one; `[x]` removes one. Empty `model`/`effort` = that connector's/model's default. Picking a preset on another connector starts a new conversation, as any connector switch does. |
+
 Example:
 
 ```yaml
 chat:
   provider: opencode
   computerUse: true
+  presets:
+    - name: quick
+      provider: claude
+      model: haiku
+      effort: low
+    - name: deep work
+      provider: claude
+      model: opus
+      effort: max
 ```
 
 ---

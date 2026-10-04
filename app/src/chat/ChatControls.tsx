@@ -43,6 +43,7 @@ export type ChatControlsView = Pick<
     | 'effortValue'
     | 'permMode'
     | 'switchProvider'
+    | 'applyPreset'
     | 'switchModel'
     | 'switchEffort'
     | 'setPermissionMode'
@@ -222,6 +223,7 @@ function buildDisabledSession(chatId?: string): ChatControlsView {
         switchProvider: () => {},
         switchModel: () => {},
         switchEffort: () => {},
+        applyPreset: () => {},
         setPermissionMode: () => {},
         startNewChat: () => {},
         history: { open: () => false, toggle: () => {} },

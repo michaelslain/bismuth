@@ -15,7 +15,10 @@
     height: min(440px, calc(80vh - var(--row-h)));
 }
 
-/* ── left: connectors ── */
+/* ── left: presets (ChatPresetList, its own stylesheet), then connectors ── */
+.connectors-head {
+    padding: var(--sp-3) var(--sp-5) var(--sp-2);
+}
 .connectors {
     display: flex;
     flex-direction: column;
@@ -68,13 +71,15 @@
 .group-head {
     padding: var(--sp-3) var(--sp-5) var(--sp-2);
 }
-/* Three columns on every row: the check slot, the name, the price badge — so check icons sit in
-   one column, names align, and `free` right-aligns. */
+/* Three columns on every row: the marker slot, the name, the price badge — so the current model's
+   `▸` sits in one column (the same marker the connector and preset rows use for "current"), names
+   align, and `free` right-aligns. */
 .model {
     display: grid;
-    grid-template-columns: var(--sp-6) minmax(0, 1fr) auto;
+    /* 2ch then no gap: the marker slot of the connector rows' hanging indent, so `▸ name` reads
+       the same in both columns. */
+    grid-template-columns: 2ch minmax(0, 1fr) auto;
     align-items: center;
-    column-gap: var(--sp-2);
     padding: var(--sp-2) var(--sp-5);
     text-align: left;
     color: var(--text-muted);
@@ -83,11 +88,6 @@
 .model--current {
     color: var(--fg);
 }
-.check {
-    display: inline-flex;
-    align-items: center;
-    color: var(--accent);
-}
 .label {
     min-width: 0;
     overflow: hidden;
@@ -95,6 +95,7 @@
     white-space: nowrap;
 }
 .badge {
+    padding-left: var(--sp-2);
     color: var(--faint);
     text-align: right;
 }

@@ -1,0 +1,78 @@
+/* app/src/chat/ChatPresetList.module.css — the model dialog's presets section (ONE importer:
+   ChatPresetList.tsx), at the top of ChatModelPicker's left column. A preset row copies the
+   connector rows below it — the same `▸` slot, hanging indent, muted → fg tones — so presets and
+   connectors read as one list of things to pick, split by a soft rule. Lowercase text only. */
+
+.root {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: var(--sp-3);
+    margin-bottom: var(--sp-2);
+    border-bottom: var(--rule-soft);
+}
+.head {
+    padding: var(--sp-3) var(--sp-5) var(--sp-2);
+}
+
+/* The preset button and its `[x]` side by side; the `[x]` sits on the name's first line. */
+.row {
+    display: flex;
+    /* baseline, not flex-start: the [x] reads on the name's FIRST line even when the name wraps. */
+    align-items: baseline;
+    min-width: 0;
+    padding-right: var(--sp-3);
+}
+.preset {
+    flex: 1;
+    min-width: 0;
+    display: block;
+    /* Hanging indent, as the connector rows: a wrapped name aligns under itself, not the ▸. */
+    padding: var(--sp-3) var(--sp-2) var(--sp-3) calc(var(--sp-5) + 2ch);
+    text-indent: -2ch;
+    text-align: left;
+    overflow-wrap: anywhere;
+    color: var(--text-muted);
+}
+.preset:hover,
+.preset--current {
+    color: var(--fg);
+}
+.mark {
+    display: inline-block;
+    width: 2ch;
+    text-indent: 0;
+    color: var(--accent);
+}
+.delete {
+    flex: none;
+}
+/* The [x] shows only while its row is hovered — ui/ListRow's trailing-slot reveal, rule for rule.
+   Opacity, never display/visibility: the name never reflows on hover, and a tabbed-to [x] stays in
+   tab order. Revealed by focus on the [x] ITSELF, not the row's focus-within — the dialog focuses
+   its first control on open (the first preset), which would show that row's [x] at rest. */
+.delete {
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+.row:hover .delete,
+.delete:focus-within,
+.delete:focus-visible {
+    opacity: 1;
+}
+/* No hover on a touch screen: always shown there, or a preset could never be deleted. */
+@media (hover: none) {
+    .delete {
+        opacity: 1;
+    }
+}
+
+/* `+ save` starts on the names' left edge (past the ▸ slot). */
+.save {
+    display: flex;
+    min-width: 0;
+    padding: var(--sp-2) var(--sp-3) var(--sp-2) calc(var(--sp-5) + 2ch);
+}
+.input {
+    flex: 1;
+    min-width: 0;
+}

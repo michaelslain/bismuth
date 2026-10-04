@@ -18,6 +18,10 @@ export type InlineTextInputProps = {
     onCancel: () => void
     /** Accessible name, when no visible label names the input. */
     label?: string
+    /** Blur CANCELS instead of committing — for an input that creates something (the chat model
+     *  dialog's preset name), where a stray click elsewhere must not save. Default false: a rename
+     *  keeps what was typed when focus leaves. */
+    blurCancels?: boolean
     class?: string
 }
 
@@ -65,7 +69,7 @@ function InlineTextInput(props: InlineTextInputProps) {
                     cancel()
                 }
             }}
-            onBlur={commit}
+            onBlur={() => (props.blurCancels ? cancel() : commit())}
         />
     )
 }
