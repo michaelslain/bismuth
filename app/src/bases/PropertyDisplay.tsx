@@ -56,6 +56,9 @@ const PropertyDisplay: Component<PropertyDisplayProps> = props => {
                 </Text>
             )
         }
+        // A declared multiselect `tags` column is still tags: `#tag`, not bracket chips.
+        if (kind === 'multiselect' && isTagColumn(props.id))
+            return renderTags(v, props.dense)
         if (kind === 'multiselect') {
             const vals = multiselectValues(v)
             if (vals.length === 0) return <EmptyValue />

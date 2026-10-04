@@ -11,6 +11,7 @@ const config = {
         genres: { type: { kind: 'multiselect', options: ['sci-fi', 'classic'] } },
         owned: { type: { kind: 'boolean' } },
         notes: { type: { kind: 'markdown' } },
+        tag: { type: { kind: 'multiselect', options: ['a', 'b'] } },
     },
 } as unknown as BaseConfig
 
@@ -29,6 +30,8 @@ const KINDS: [label: string, id: string, note: Record<string, unknown>][] = [
     ['boolean yes', 'owned', { owned: true }],
     ['boolean no', 'owned', { owned: false }],
     ['markdown', 'notes', { notes: 'a **desert** planet\n\n- spice\n- worms' }],
+    // A declared multiselect `tags` still reads as `#tag`, not bracket chips.
+    ['multiselect tags', 'tag', { tag: ['a', 'b'] }],
     // Undeclared: keeps its heuristic look.
     ['undeclared tags', 'tags', { tags: ['a', 'b'] }],
     ['undeclared boolean', 'read', { read: true }],
@@ -81,6 +84,7 @@ export const Block: Story = {
         await expect(c.getByTestId('boolean yes')).toHaveTextContent('Yes')
         await expect(c.getByTestId('boolean no')).toHaveTextContent('No')
         await expect(c.getByTestId('multiselect')).toHaveTextContent('sci-fi')
+        await expect(c.getByTestId('multiselect tags')).toHaveTextContent('#a, #b')
         await expect(c.getByTestId('undeclared tags')).toHaveTextContent(
             '#a, #b',
         )

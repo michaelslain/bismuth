@@ -310,6 +310,41 @@ export const NumberFormat: Story = {
     },
 }
 
+/** A `tags` property declared as a `multiselect` still reads as `#tag`, not bracket chips. */
+export const DeclaredMultiselectTags: Story = {
+    render: () => {
+        const tagConfig = sampleBaseConfig({
+            properties: {
+                tags: { type: { kind: 'multiselect', options: ['reading', 'urgent', 'ideas'] } },
+            },
+            declaredProperties: ['status', 'tags'],
+        })
+        const row: Row = {
+            ...SAMPLE_ROWS[0],
+            note: { ...SAMPLE_ROWS[0].note, tags: ['reading', 'urgent'] },
+        }
+        return (
+            <Card
+                row={row}
+                titleCol="file.name"
+                metaCols={['tags']}
+                config={tagConfig}
+                editable={false}
+                onEditingChange={noop}
+                onRename={noopRename}
+                onSetMeta={noop}
+                onDelete={noop}
+                siblingValues={() => []}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            expect(canvasElement.textContent).toContain('#reading, #urgent')
+        })
+    },
+}
+
 /** A declared `multiselect` shows one bracket chip per selected value. */
 export const Multiselect: Story = {
     render: () => {
