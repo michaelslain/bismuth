@@ -203,8 +203,21 @@ export function startMockLlm(
             const bin = resolveLlmockBin()
             // Spawned via `node <resolved cli.js>` rather than relying on the file's own shebang +
             // execute bit (portable across filesystems/platforms where that bit might not survive).
+            // Loaded through a parent-watch shim (PARENT_WATCH) so the server exits on its own
+            // once this host dies — afterAll never runs when the runner is SIGTERMed/SIGKILLed.
             proc = Bun.spawn(
-                ['node', bin, '-p', '0', '-f', fixtureDir, ...extraArgs],
+                [
+                    'node',
+                    '--input-type=module',
+                    '-e',
+                    parentWatchShim(bin),
+                    '--',
+                    '-p',
+                    '0',
+                    '-f',
+                    fixtureDir,
+                    ...extraArgs,
+                ],
                 {
                     stdout: 'pipe',
                     stderr: 'pipe',
@@ -281,6 +294,21 @@ export function startMockLlm(
             )
             .catch(() => {})
     })
+}
+
+/**
+ * PARENT_WATCH: `node -e` source that polls its own parent pid and exits the moment it changes
+ * (the spawning `bun test` died and the child was reparented), then imports llmock's cli.js in
+ * the SAME process — so the pid, banner and argv parsing are exactly llmock's own. Under `-e`,
+ * node needs `--` before llmock args (else it eats `-p`) and parseArgs then reads `process.argv.slice(1)`. The bin path
+ * is inlined so `pgrep -f aimock` still finds the process.
+ */
+function parentWatchShim(bin: string): string {
+    return [
+        'const parent = process.ppid',
+        'setInterval(() => { if (process.ppid !== parent) process.exit(0) }, 500)',
+        `await import(${JSON.stringify(bin)})`,
+    ].join('\n')
 }
 
 /** Kill the child and wait for it to fully exit, so the port is released before this resolves. */

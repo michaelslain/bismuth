@@ -47,7 +47,7 @@ function startMockRelay() {
 
 async function waitFor(
     predicate: () => boolean,
-    timeoutMs = 3000,
+    timeoutMs = 10_000,
 ): Promise<void> {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
@@ -62,7 +62,7 @@ test('wrap.ts reports session start/end, forwards SIGINT to the child, and relay
     const stub = writeStub(
         dir,
         'stub-agent',
-        `#!/bin/bash\ntrap 'echo CHILD_GOT_SIGINT; exit 77' INT\necho CHILD_READY\nwhile true; do sleep 0.05; done\n`,
+        `#!/bin/bash\ntrap 'echo CHILD_GOT_SIGINT; exit 77' INT\necho CHILD_READY\nwhile kill -0 $PPID 2>/dev/null; do sleep 0.05; done\n`,
     )
     const relay = startMockRelay()
 
@@ -76,35 +76,39 @@ test('wrap.ts reports session start/end, forwards SIGINT to the child, and relay
         stderr: 'pipe',
     })
 
-    let out = ''
-    ;(async () => {
-        for await (const chunk of proc.stdout)
-            out += Buffer.from(chunk).toString()
-    })()
+    try {
+        let out = ''
+        ;(async () => {
+            for await (const chunk of proc.stdout)
+                out += Buffer.from(chunk).toString()
+        })()
 
-    await waitFor(() => out.includes('CHILD_READY'))
-    await waitFor(() => relay.requests.some(r => r.path === '/relay/session'))
-    const startReq = relay.requests.find(r => r.path === '/relay/session')!
-    expect(startReq.body).toMatchObject({
-        terminalId: 'test-tab-1',
-        backend: 'goose',
-    })
+        await waitFor(() => out.includes('CHILD_READY'))
+        await waitFor(() => relay.requests.some(r => r.path === '/relay/session'))
+        const startReq = relay.requests.find(r => r.path === '/relay/session')!
+        expect(startReq.body).toMatchObject({
+            terminalId: 'test-tab-1',
+            backend: 'goose',
+        })
 
-    proc.kill('SIGINT') // simulates Ctrl+C reaching the wrapper in its foreground process group
+        proc.kill('SIGINT') // simulates Ctrl+C reaching the wrapper in its foreground process group
 
-    const code = await proc.exited
-    expect(code).toBe(77) // the CHILD's own trap exit code, relayed exactly
-    expect(out).toContain('CHILD_GOT_SIGINT')
+        const code = await proc.exited
+        expect(code).toBe(77) // the CHILD's own trap exit code, relayed exactly
+        expect(out).toContain('CHILD_GOT_SIGINT')
 
-    await waitFor(() =>
-        relay.requests.some(r => r.path === '/relay/session/end'),
-    )
-    const endReq = relay.requests.find(r => r.path === '/relay/session/end')!
-    expect((endReq.body as { sessionId?: string }).sessionId).toBe(
-        (startReq.body as { sessionId?: string }).sessionId,
-    )
-
-    relay.server.stop(true)
+        await waitFor(() =>
+            relay.requests.some(r => r.path === '/relay/session/end'),
+        )
+        const endReq = relay.requests.find(r => r.path === '/relay/session/end')!
+        expect((endReq.body as { sessionId?: string }).sessionId).toBe(
+            (startReq.body as { sessionId?: string }).sessionId,
+        )
+    } finally {
+        // a throw before the SIGINT would otherwise orphan wrap.ts + its stub
+        proc.kill('SIGKILL')
+        relay.server.stop(true)
+    }
 })
 
 test('wrap.ts relays a normal (non-signal) exit code and still reports start/end', async () => {

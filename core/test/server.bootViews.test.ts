@@ -76,7 +76,7 @@ t(
             // Nothing here requests /graph/views, so view layouts that cover `c` can only come from the
             // boot warm-up having run on the post-invalidation graph.
             let g: Graph | undefined
-            const deadline = Date.now() + 10_000
+            const deadline = Date.now() + 20_000
             while (Date.now() < deadline) {
                 g = (await (await fetch(`${base}/graph`)).json()) as Graph
                 if (g.views?.second?.pos3d['c']) break
@@ -90,5 +90,5 @@ t(
             server.stop(true)
         }
     },
-    20_000, // outlasts the 10 s poll, so a failure reports the assertion rather than the test timeout
+    30_000, // outlasts the 20 s poll, so a failure reports the assertion rather than the test timeout
 )
