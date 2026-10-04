@@ -50,9 +50,9 @@ lng: formula.computed_lng
 
 ## Failure modes
 
-- **`lat`/`lng` default to the bare frontmatter keys `"lat"`/`"lng"`.** A row without those exact keys (and no `lat:`/`lng:` config pointing elsewhere) is silently skipped as a marker — no error, no warning.
+- **`lat`/`lng` default to the bare frontmatter keys `"lat"`/`"lng"`.** A row without those exact keys (and no `lat:`/`lng:` config pointing elsewhere) draws no marker — no error, no warning. It is not dropped: the map's right-click menu offers `place <title> here` for each such row and writes its lat/lng.
 - **Both `zoom` AND `center` must be set together** for fixed initial framing; setting only one is ignored and the view falls back to auto-fit.
-- **Latitude is clamped to ±85, not ±90** (Web Mercator can't represent the poles) — rows outside `[-85, 85]` lat or `[-180, 180]` lng never render, again with no error.
+- **Latitude is clamped to ±85, not ±90** (Web Mercator can't represent the poles) — rows outside `[-85, 85]` lat or `[-180, 180]` lng draw no marker (also unplaced, same right-click menu), again with no error.
 - **An empty-string lat/lng value coerces to `0`, not "missing."** Coordinates are read with `Number(v)`, and `Number('')` is `0` — a row with `lat: ""` passes the `NaN` check and plots at the equator/prime-meridian instead of being skipped like a genuinely absent value.
 - **No basemap/pin-styling config exists** — no clustering, no per-category pin color/icon, no tile source. The renderer is a hardcoded offline vector landmass outline; `lat`/`lng`/`zoom`/`center` are the only keys it reads.
 

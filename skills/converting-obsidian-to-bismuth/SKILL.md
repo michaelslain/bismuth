@@ -101,5 +101,5 @@ cd "$OUT" && find . -name '*.md' -print0 | xargs -0 perl -0ne 's/^[ \t]*(`{3,}|~
 - One view per base. Extra Obsidian views become separate `source: base` + `ref` bases with their filters restated (rows only carry over).
 - A ` ```base ` fence becomes a ` ```query ` fence; `.base` files become `<Name>.md` with `type: base`. There is no `.base` extension and no ` ```tasks ` fence.
 - A binary's tags live in its companion note `<file>.<ext>.md` (`photo.png.md`), never a `<file>.md` that embeds it.
-- Always write `source: notes` in converted bases and `query` fences. The app treats a source-less base as all notes, but the CLI (`base render`, `rows --of`) and any base that `ref`s it see only its body rows (none), and a ```query fence with no source is empty.
+- Always write `source: notes` in converted bases and `query` fences. It is good practice: it makes the scope explicit. A source-less base file with no body rows already resolves to every vault note (in the app, in `base render`, and through a `ref`), but a ```query fence with no source is empty, so the fence always needs it.
 - Unknown filter functions pass `base validate` and evaluate to nothing. Check them against `docs/bases/functions.md`.

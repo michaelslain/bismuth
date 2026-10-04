@@ -109,7 +109,13 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
    if (existsSync(join(src, '.settings'))) settings = Bun.YAML.parse(readFileSync(join(src, '.settings'), 'utf8')) ?? {}
    const LIT = ['all', 'chat-only', 'hidden']
    const lit = (v?: string) => (v && LIT.includes(v.toLowerCase()) ? v.toLowerCase() : undefined)
-   const folderVis: Record<string, string> = settings.folderVisibility ?? {}
+   // folderVisibility exactly as core reads it (core/src/settings.ts readFolderVisibilityFrom):
+   // only 'chat-only' | 'hidden' count, and each key is normalised (trailing slashes stripped,
+   // repeated slashes collapsed), so a key written `Private/` still enforces as `Private`
+   const normKey = (k: string) => k.replace(/\/+$/, '').replace(/\/{2,}/g, '/')
+   const folderVis: Record<string, string> = {}
+   for (const [k, v] of Object.entries(settings.folderVisibility ?? {}))
+       if (v === 'chat-only' || v === 'hidden') folderVis[normKey(k)] = v
    const fmVis = (t: string) => lit(t.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].match(/^visibility:\s*['"]?([\w-]+)/m)?.[1])
    const norm = (t: string) => t.replace(/\.md$/i, '').replace(/\\$/, '').toLowerCase()
    const files = (dir: string, acc: string[] = []) => {
@@ -133,7 +139,7 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
        let v = fmVis(readFileSync(p, 'utf8'))
        if (!v) {
            const parts = dirname(rel) === '.' ? [] : dirname(rel).split('/')
-           for (let i = parts.length; i > 0 && !v; i--) v = lit(folderVis[parts.slice(0, i).join('/')])
+           for (let i = parts.length; i > 0 && !v; i--) v = folderVis[parts.slice(0, i).join('/')]
        }
        visOf.set(rel, v ?? 'all')
    }
@@ -155,7 +161,7 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
    console.log(`memory copied=${copied} skipped=${skipped.length}`)
    for (const s of skipped) console.log('skipped (restricted):', s)
    ```
-   It skips a memory note when the note's own `visibility` is `hidden`/`chat-only`, **or** when it links to a vault note whose resolved visibility is `hidden`/`chat-only` (file value, else nearest `folderVisibility` rule). That is deliberately over-cautious: memory has no provenance field, so a link is the only evidence of derivation. Report the skipped list.
+   It skips a memory note when the note's own `visibility` is `hidden`/`chat-only`, **or** when it links to a vault note whose resolved visibility is `hidden`/`chat-only` (file value, else nearest `folderVisibility` rule; folder keys are normalised like core's, so `Private/` matches `Private`, and a folder rule other than `chat-only`/`hidden` is ignored, as core ignores it). That is deliberately over-cautious: memory has no provenance field, so a link is the only evidence of derivation. Report the skipped list.
 
 ## Lossy
 

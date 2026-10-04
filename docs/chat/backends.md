@@ -9,6 +9,10 @@ and [../mcp/overview.md](../mcp/overview.md).
 
 ## The catalog is the single source of truth
 
+There are **ten** backends: `claude`, `opencode`, `codex`, and seven ACP agents (`cline`, `gemini`,
+`goose`, `openclaw`, `hermes`, `claude-code-acp`, `codex-acp`). Eight are shown in the connector
+picker; `claude-code-acp` and `codex-acp` are `hidden: true`.
+
 `core/src/agentBackends/catalog.ts` holds one `BackendDescriptor` per backend: its id, display
 label, the binary to resolve on PATH, an install hint, an optional login command, and a
 `BackendCapabilities` object.
@@ -43,8 +47,12 @@ third: it would have handed every new backend Claude's exact degradation profile
 applied — hiding thinking-level controls from Cline, which has them, and approval modes from Codex,
 which has them too.
 
-The chat header's gated controls each now ask for what they actually need: `computerUse` for the
-`--chrome` toggle, `permissionModes` for the mode picker, `sessionPicker` for the history panel.
+The chat controls each ask for what they actually need: `permissionModes` for the permission-mode
+`Select`, `sessionPicker` for the `history` button (both in the controls row under the composer —
+[overview.md](overview.md#the-controls-row-and-model-dialog)), and the model list and effort toggle
+in the model dialog from the `models` frame. `computerUse` no longer gates any control: the
+`--chrome` toggle was deleted, and `core/src/chat.ts` reads the flag only to pass
+`extraArgs: { chrome: null }` when it spawns a Claude session.
 
 `sessionPicker` and `resume` are deliberately separate. opencode resumes a conversation per tab but
 exposes no cross-session list, so it gets resume without the picker — a distinction the old boolean
@@ -117,7 +125,9 @@ Note that Codex is driven by spawning the user's own `codex` binary, **not** via
 That package vendors a platform binary measured at 310MB in `node_modules`, and since it spawns a
 fresh subprocess per turn anyway it was only buying typed events — which the driver's own translator
 provides. Shipping a second copy of a coding agent the user already has, capable of drifting from the
-version they actually run, is the wrong shape for this app.
+version they actually run, is the wrong shape for this app. The driver is described in
+[providers.md](providers.md#how-the-codex-driver-works); the shared ACP driver is in
+[providers.md](providers.md#how-the-acp-driver-works).
 
 Beyond the chat backends above, Bismuth can register its MCP server with **ten** CLIs, including ones
 it never drives as a chat backend: Codex, Cline, OpenClaw, Gemini, Qwen, Copilot, Amp, Droid, Crush
@@ -255,7 +265,7 @@ platform + a `selfSandboxes` precondition (a backend that already applies its ow
 wrapped in a second one — Seatbelt profiles don't nest). `"none"` means a restricted vault MUST refuse
 that backend on that channel rather than run it unprotected.
 
-The full per-backend/per-channel table — which nine backends land where, on which platform, by which
+The full per-backend/per-channel table — which ten backends land where, on which platform, by which
 mechanism, and **verified or not** — lives in
 [../vault/visibility.md](../vault/visibility.md#per-backendper-channel-enforcement), not here, so
 there is exactly one place it can go stale. That page also documents a gap it used to have and no
@@ -277,8 +287,15 @@ closed it as a single chokepoint the chat router calls before any backend is spa
 4. Tests: the event translator must be pure and unit-tested against captured real output. Never
    write a test that spawns a real agent binary — CI has none of them installed.
 
-A missing binary must produce the setup screen, never a crash and never a silent fallback to a
-different backend: a user who picked Codex and silently got Claude has been lied to about what ran.
+A missing binary must never crash and never silently fall back to a different backend: a user who
+picked Codex and silently got Claude has been lied to about what ran. What actually happens today
+differs by driver. `claude` (`no-claude`) and `opencode` (`no-opencode`) produce the **setup
+screen** (`ChatSetupGate`). The Codex driver and the shared ACP driver instead emit
+`{type:"error", code:"no-binary", binary}` with the install hint, and nothing in `app/src` reads
+`no-binary`: `chatSession.ts`'s `case 'error'` sends it down the generic `setTurnError(message)`
+path, so the user gets an **inline turn error** carrying the install hint, not the setup screen. It
+is still a clear, non-silent failure on the backend they picked — but giving those backends the
+setup screen is not done, so do not write a new driver on the assumption that it is.
 
 ## Verifying a backend, and the failure mode to watch for
 

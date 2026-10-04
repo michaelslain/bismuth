@@ -98,7 +98,7 @@ Four design points, all called out in the source comments:
 
 **`PUT /file` marks its own write too.** It bypasses `mutatingHandler` (it's a read-table route, not a `mutatingRoutes` entry — see §11), so it used to never mark its write at all: every save produced two SSE events, the handler's direct `invalidate()` and the watcher's unsuppressed echo of the same write. It now follows the identical mark → write → (unmark on throw | rearm on success) → `invalidate()` sequence inline.
 
-**The BOOT-TIME `.settings` reconcile is marked too**, for the same reason — `reconcileSettings(cfg.vault)` (fired once, near the top of `createServer`, before the self-write-marks object even existed) writes `.settings` outside of any handler, and an unmarked write there leaked a spurious version bump the moment the watcher noticed it. The self-write-marks object is now constructed *before* this call specifically so it can be marked.
+**The BOOT-TIME `.settings` reconcile is marked too**, for the same reason — `reconcileSettings(cfg.vault)` (fired once, near the top of `createServer`, before the self-write-marks object even existed) writes `.settings` outside of any handler, and an unmarked write there leaked a spurious version bump the moment the watcher noticed it. The self-write-marks object is now constructed *before* this call specifically so it can be marked. The mark is rearmed only when `reconcileSettings` reports it actually wrote (`rearmSelfWritten([SETTINGS_FILE])`); on a no-op run (most boots) or a throw it is taken back off (`unmarkSelfWritten([SETTINGS_FILE])`) — otherwise `.settings` would sit armed for the full 2s grace window with nothing on disk to consume the mark, and a real external `.settings` edit landing in that window would be swallowed as a phantom echo (`core/test/server.bootConfig.test.ts` pins this).
 
 **Exactly which write paths mark, named precisely (Wave 3 review I3 — a prior draft of this doc overstated this as "every write path"):**
 
@@ -610,4 +610,4 @@ POST /create { path, kind }
 
 ---
 
-Source: `core/src/server.ts`, `core/src/sse.ts`, `core/src/changeClassifier.ts`, `app/src/serverVersion.ts`, `core/src/layout-cache.ts`, `core/src/asyncCache.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/daemon.ts`, `core/src/selfWriteMarks.ts`
+Source: `core/src/server.ts`, `core/src/sse.ts`, `core/src/changeClassifier.ts`, `app/src/serverVersion.ts`, `core/src/layout-cache.ts`, `core/src/asyncCache.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/daemon.ts`, `core/src/selfWriteMarks.ts`, `core/test/server.bootConfig.test.ts`

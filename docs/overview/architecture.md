@@ -15,7 +15,7 @@ in-process core registry. It no longer provides a graph mode (the "agents" graph
 `terminal.ts` tab-close pruning. The mcp workspace is a stdio MCP server that auto-attaches to
 those sessions to serve the docs and CLI.
 
-**What's in this doc:** monorepo layout and workspace roles → the three-brain model → graph composition and types → graph modes (2nd/3rd/both/daemon/local) → vault-change data flow → HTTP API summary → settings architecture → caching strategy.
+**What's in this doc:** monorepo layout and workspace roles → the three-brain model → graph composition and types → graph modes (2nd/3rd/both/local) → vault-change data flow → HTTP API summary → settings architecture → caching strategy.
 
 ---
 
@@ -32,8 +32,8 @@ The root `package.json` declares seven Bun workspaces:
 | Workspace | Package name | Role |
 |-----------|--------------|------|
 | `core/` | `@bismuth/core` | Backend HTTP server, graph builders, all business logic |
-| `app/` | `app` | Tauri + Solid.js desktop frontend; imports `@bismuth/core` for shared types |
-| `cli/` | `@bismuth/cli` | `bismuth` binary; imports `@bismuth/core` and calls core functions headlessly |
+| `app/` | `app` | Tauri + Solid.js desktop frontend; imports core's shared types and pure helpers by relative path (`../../core/src/...`) |
+| `cli/` | `@bismuth/cli` | `bismuth` binary; depends on `@bismuth/core` (the only workspace that declares it) and calls core functions headlessly |
 | `relay/` | `@bismuth/relay` | Claude Code hooks-only plugin; feeds core's in-process relay registry |
 | `mcp/` | `@bismuth/mcp` | stdio MCP server; auto-attaches to app-terminal Claude sessions, serves `docs/` + the `bismuth` CLI token-frugally |
 | `memory/` | `@bismuth/memory` | The pure 3rd-brain memory graph (note CRUD + frontmatter + backlinks, keyword search, query DSL), used by the daemon, relay hooks, and MCP memory tools |
@@ -49,7 +49,7 @@ Install all workspaces at once with `bun install` from the repo root. To add a p
 - Exposes a REST API consumed by both the app and the CLI.
 - Watches the vault (including its in-vault `.daemon/memory`) for file changes, debounces them at 250 ms, selectively invalidates caches, bumps a version counter, and pushes SSE events to connected frontend clients.
 
-`core` exports `@bismuth/core` (via `"module": "src/index.ts"`) so app and cli can import its pure functions and types.
+`@bismuth/core` has no package entry point: `core/package.json` declares no `module`, `main` or `exports` field and there is no `core/src/index.ts`, so nothing can import the bare specifier. Consumers reach core's pure functions and types by relative path into `core/src/` (`../../core/src/...`), and only `cli/package.json` lists `@bismuth/core` as a dependency (`app` imports by relative path without declaring it). `mcp` deliberately does not import core at all (`mcp/src/memory.ts` and `mcp/src/daemon.ts` say so) — vault features ride the `bismuth_cli` tool, which shells out to the `bismuth` binary.
 
 ### `app/` — the desktop frontend
 
@@ -75,6 +75,7 @@ Hook wiring (declared in `relay/hooks/hooks.json`):
 | `UserPromptSubmit` | `bin/recall-hook.ts` | `POST /relay/session` | Heartbeat / self-register on resumed sessions |
 | `SubagentStart` | `bin/subagent-start-hook.ts` | `POST /relay/subagent/start` | Add child node under spawning session |
 | `SubagentStop` | `bin/subagent-stop-hook.ts` | `POST /relay/subagent/stop` | Mark child finished |
+| `SessionEnd` | `bin/session-end-hook.ts` | `POST /relay/session/end` | Drop the session on a real `exit`/`logout` (not `clear`/`compact`, which keep Claude running in the tab); when the daemon is enabled it also collects the transcript into memory on `exit`/`logout`/`clear` (not `compact`) |
 
 All hooks are **best-effort**: they exit 0 within a 2-second budget and swallow all errors so they never block the user's Claude session. The hooks no-op if `CLAUDE_TERMINAL_ID` is absent (i.e., outside Bismuth terminals). The relay registry lives entirely in-process inside core (`core/src/relay.ts`); it does not persist across server restarts. Nothing renders this registry as a graph any more — its two consumers are `chat.ts` (which imports `DONE_SUBAGENT_TTL_MS`/`RUNNING_SUBAGENT_MAX_MS` to mirror the same finished/abandoned-subagent lifetimes for its own agent-session view) and `terminal.ts` (which calls `relay.prune()` against the live pty set on tab close).
 
@@ -86,7 +87,7 @@ A stdio [MCP](https://modelcontextprotocol.io) server (`@bismuth/mcp`) that ride
 
 A plain top-level directory — no `package.json`, nothing to `bun install` — of markdown guides written in the Claude Code skill shape (a `SKILL.md` with YAML `name`/`description` frontmatter, plus optional `references/*.md`). Three skills ship today: `skills/converting-obsidian-to-bismuth/` and `skills/converting-bismuth-to-obsidian/` walk an agent through converting a vault between the two apps, and `skills/authoring-bismuth-bases/` teaches an agent how to write a `type: base` note: a lookup table from "what you want to show" to one of the 12 view kinds, a read-the-matching-reference-first workflow, and cross-cutting gotchas (`source:` string-vs-object coercion and its silent-fallback footgun, `from:` composing an upstream base's own source recursively, and that the only embedded block is ` ```query `). `references/` holds one file per view kind: `bar.md`, `bullets.md`, `calendar.md`, `cards.md`, `flashcards.md`, `heatmap.md`, `kanban.md`, `line.md`, `list.md`, `map.md`, `stat.md`, `table.md`.
 
-Only Claude Code has a native skills mechanism (`~/.claude/skills/`, auto-discovered); the other eight of Bismuth's nine agent backends do not. Three adapters make the same guides reachable from all of them: the `bismuth_skill` MCP tool above (`mcp/src/skills.ts`) — the one surface every MCP-speaking backend shares; one `~/.claude/skills/<id>` symlink per shipped skill (`SKILL_IDS`) into `~/.bismuth/skills/` written at install time (`core/src/bismuthInstall.ts`'s `stageSkills()` + `linkSkillToClaudeCode()`, never clobbering a foreign entry at that path), which is how Claude Code itself gets them; and, for Codex (which has no skills mechanism and instead reads a project-root `AGENTS.md` as its persistent-context channel), a pointer to the `bismuth_skill` tool written into Codex's managed `AGENTS.md` block (`core/src/chatProviders/codex/driver.ts`'s `CODEX_AGENTS_MD_CONTENT`, via `core/src/agentBackends/agentsMd.ts`'s `writeAgentsMdBlock`, opt-in via `settings.codex.writeAgentsMd`). Full file-by-file breakdown: [Codebase map](../contributing/codebase-map.md).
+Only Claude Code has a native skills mechanism (`~/.claude/skills/`, auto-discovered); the other nine of Bismuth's ten agent backends do not. Three adapters make the same guides reachable from all of them: the `bismuth_skill` MCP tool above (`mcp/src/skills.ts`) — the one surface every MCP-speaking backend shares; one `~/.claude/skills/<id>` symlink per shipped skill (`SKILL_IDS`) into `~/.bismuth/skills/` written at install time (`core/src/bismuthInstall.ts`'s `stageSkills()` + `linkSkillToClaudeCode()`, never clobbering a foreign entry at that path), which is how Claude Code itself gets them; and, for Codex (which has no skills mechanism and instead reads a project-root `AGENTS.md` as its persistent-context channel), a pointer to the `bismuth_skill` tool written into Codex's managed `AGENTS.md` block (`core/src/chatProviders/codex/driver.ts`'s `CODEX_AGENTS_MD_CONTENT`, via `core/src/agentBackends/agentsMd.ts`'s `writeAgentsMdBlock`, opt-in via `settings.codex.writeAgentsMd`). Full file-by-file breakdown: [Codebase map](../contributing/codebase-map.md).
 
 ### Storybook — the `app/` component catalog
 
@@ -163,7 +164,7 @@ interface GraphData {
 }
 ```
 
-Layout positions (`position3d`, `position2d`) are attached by `attachLayout()` in `core/src/layout-cache.ts` before the graph is stored in the server's `graphCache`. The frontend receives nodes already stamped with positions and morphs between them in `app/src/graph/AsciiGraphRenderer.ts` — a Canvas2D (not WebGL/Three.js) renderer that draws the graph as a monospace character field (glyphs for nodes, real vector strokes for edges) — it does not run any force simulation for "2nd"/"3rd"/"both"/"daemon" mode. ("local" mode is the one exception — see Graph Modes below.)
+Layout positions (`position3d`, `position2d`) are attached by `attachLayout()` in `core/src/layout-cache.ts` before the graph is stored in the server's `graphCache`. The frontend receives nodes already stamped with positions and morphs between them in `app/src/graph/AsciiGraphRenderer.ts` — a Canvas2D (not WebGL/Three.js) renderer that draws the graph as a monospace character field (glyphs for nodes, real vector strokes for edges) — it does not run any force simulation for "2nd"/"3rd"/"both" mode. ("local" mode is the one exception — see Graph Modes below.)
 
 Over the renderer's canvas sits a shared **`GraphAtmosphere`** overlay (`app/src/graph/GraphAtmosphere.tsx`): the iridescent cluster-glow lobes (driven by the renderer's per-frame `setBloomCallback`, which projects the biggest clusters to screen space as a density field) plus a depth vignette. It is rendered as a sibling after the canvas by both `GraphView` and the first-run intro graph, so the two share one source instead of duplicating the glow-wiring.
 
@@ -437,4 +438,4 @@ The `asyncCache` abstraction (`core/src/asyncCache.ts`) ensures concurrent first
 - [Settings schema](../settings/reference.md)
 - [HTTP API reference](../api/http-reference.md)
 
-Source: `CLAUDE.md`, `package.json`, `core/src/engine.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/selfUpdate.ts`, `core/src/uiControl.ts`, `core/src/gcal/`, `core/src/graph.ts`, `core/src/community.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/terminal.ts`, `core/src/agentBackends/catalog.ts`, `core/src/bases/types.ts`, `relay/package.json`, `relay/hooks/hooks.json`, `relay/lib/report.ts`, `core/package.json`, `cli/package.json`, `cli/src/commands/graph.ts`, `cli/src/commands/api.ts`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`, `app/src/intro/vaultIntroGraph.ts`, `app/src/commands.ts`, `app/src/graph/displayGraph.ts`, `app/src/graph/localLayoutInput.ts`, `app/src/GraphView.tsx`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src-tauri/src/lib.rs`, `mcp/src/server.ts`, `mcp/src/skills.ts`, `skills/authoring-bismuth-bases/SKILL.md`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/settings.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/package.json`
+Source: `CLAUDE.md`, `package.json`, `core/src/engine.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/selfUpdate.ts`, `core/src/uiControl.ts`, `core/src/gcal/`, `core/src/graph.ts`, `core/src/community.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/terminal.ts`, `core/src/agentBackends/catalog.ts`, `core/src/bases/types.ts`, `relay/package.json`, `relay/hooks/hooks.json`, `relay/bin/session-end-hook.ts`, `relay/lib/report.ts`, `core/package.json`, `cli/package.json`, `cli/src/commands/graph.ts`, `cli/src/commands/api.ts`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`, `app/src/intro/vaultIntroGraph.ts`, `app/src/commands.ts`, `app/src/graph/displayGraph.ts`, `app/src/graph/localLayoutInput.ts`, `app/src/GraphView.tsx`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src-tauri/src/lib.rs`, `mcp/src/server.ts`, `mcp/src/skills.ts`, `skills/authoring-bismuth-bases/SKILL.md`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/settings.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/package.json`

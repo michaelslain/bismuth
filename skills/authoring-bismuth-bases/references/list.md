@@ -21,10 +21,14 @@ Task-query variant (embedded block):
 
 ````markdown
 ```query
-tasks: not done
+tasks:
+where: !note.resolved && note.priority == "high"
+sort: note.due
 view: list
 ```
 ````
+
+Bare `tasks:` says "task query"; the filter goes in `where:` (a Bases expression) and ordering in `sort:`. Add `from: [[Base]]` to scope the tasks to that base's notes. A legacy `tasks: not done` (Obsidian-Tasks DSL text after the colon) still reads through a translation shim, but do not author it; `bismuth base migrate-queries` rewrites old blocks into the form above.
 
 ## Config keys
 
@@ -34,7 +38,7 @@ view: list
 | `groupBy` | `{ property, direction? }` | none | Section headers with a colored dot + count. |
 | `columns` (→ `groupOrder`) | `string[]` | value-sorted | Controls **group order only**, not which data columns display. |
 | `mode` | `"normal"` \| `"tasks"` | `"normal"` | General mode axis. In `tasks` mode every row renders as a task line regardless of shape; in `normal` mode a row still renders as a task line if it merely has the shape a task query produces (`isTaskRow`) — `list` is the one view that checks shape as well as the declared mode. |
-| `sort`, `limit`, `filters`, `source` | — | — | Standard fields. |
+| `sort`, `limit` | — | — | Standard fields. (`filters` and `source` are base-level keys, not view fields.) |
 
 ## Failure modes
 

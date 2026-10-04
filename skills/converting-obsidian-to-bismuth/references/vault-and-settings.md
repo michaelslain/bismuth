@@ -10,7 +10,7 @@
 
 Snapshot as of 2026-10-03 — verify against the sources above before relying on it.
 
-A Bismuth vault is any existing folder. `.settings` (hidden YAML at the vault root) is created on first open and only ever gains missing keys.
+A Bismuth vault is any existing folder. `.settings` (hidden YAML at the vault root) is created on first open as a two-line comment seed with no keys. It is sparse: reconcile never adds missing keys (absent keys read as schema defaults), and the file only gains keys that the user, or `bismuth settings set`, writes.
 
 | Obsidian file and key (as read from `.obsidian/`) | Bismuth `.settings` key |
 |---|---|

@@ -29,7 +29,8 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
 | `dailyNotes[0]` `{folder, fileName, template}` | `daily-notes.json` `folder`, `format`, `template` | key names unverified; Obsidian has ONE daily-note config. `fileName` is a Bismuth token string (e.g. `{{date}} journal`); `format` is a Moment string, so map the date token to its Moment form and bracket literal text (`YYYY-MM-DD [journal]`) — **unverified**, check the live Daily notes page. If the `folder` or `template` it names does not exist in the vault, report that instead of writing it |
 | `editor.mathMacros` | a `preamble.sty` file in the config folder | unverified |
 | `folderIcons`, `icon:` | no core equivalent (an icon plugin) | drop |
-| `keybindings`, `appearance.*`, `toolbar`, `tabBar`, `templates.newNote`, `graph`, `calendar`, `googleCalendar`, `chat`, `daemon`, `srs`, `localModel`, `mcp`, `codex`, `ui`, `server`, `update`, `terminal`, `folderVisibility` | none | drop, list in the report |
+| `keybindings`, `appearance.*`, `toolbar`, `tabBar`, `templates.newNote`, `graph`, `calendar`, `googleCalendar`, `chat`, `daemon`, `srs`, `localModel`, `mcp`, `codex`, `ui`, `server`, `update`, `terminal`, `folderVisibility`, `statusBar`, `homePage`, `vault` (`backupOnSave`), `attachments.onDrop`, `attachments.naming`, the other `editor.*` keys (`lineWrapping`, `autoSaveDelay`, `lineHeight`, `grammarCheck`, `wrapSelection`, `wrapSelectionChars`) | none | drop, list in the report |
+| `properties` (the vault's property-type registry: name → type/default) | Obsidian keeps property types in `.obsidian/types.json` | key layout **unverified**; drop and list every declared property in the report unless a reference `types.json` shows the format |
 
 ## Convert
 
@@ -43,7 +44,9 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
 ## Lossy
 
 - Every `.settings` section with no Obsidian counterpart (last table row).
-- `attachments.folder` values Obsidian cannot express, and `attachments.naming` (Obsidian's pasted-image naming is its own setting).
+- `attachments.folder` values Obsidian cannot express, and `attachments.onDrop` / `attachments.naming` (Obsidian's pasted-image naming is its own setting).
+- `dailyNotes` entries beyond `[0]`, and every entry's `id`, `label` and `icon`: Obsidian has one daily-note config, so list each dropped entry (id, folder, fileName, template) in the report.
+- `statusBar`, `homePage`, `vault.backupOnSave` and the `properties` registry (see the table): no Obsidian counterpart, reported as dropped.
 - Hotkeys, themes, fonts, CSS snippets — Bismuth's `appearance.theme` (`ink`, `paper`, `cathode`, `riso`) has no Obsidian theme equivalent.
 - All Bismuth state outside the notes: `.trash/` contents, git history, daemon runtime.
 

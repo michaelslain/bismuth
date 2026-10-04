@@ -101,7 +101,7 @@ The pipeline (`runPipeline`), all deps (`git`, `proc`, `signingIdentity`, `spawn
 
 Every step's command line + full stdout/stderr/exit code is appended to a **persistent log**, `join(tmpdir(), "bismuth-update-build.log")`, truncated at the start of each `runPipeline` run (writing to it never throws into the pipeline). On any step's failure the `message` names that path, so a build failure survives past the in-memory banner's short tail.
 
-`buildPath()` augments `PATH` with `/opt/homebrew/bin`, `/usr/local/bin`, `~/.cargo/bin`, `~/.bun/bin`, `~/.local/bin` — a Finder-launched sidecar inherits only the minimal launchd `PATH`, so git/bun/cargo wouldn't otherwise resolve for a from-source rebuild.
+`buildPath()` is `claudeLookupPath()` (`core/src/claudeWhich.ts`) plus `~/.cargo/bin`. That is the inherited `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, the installed nvm node `bin` dirs (newest first), and the system dirs `/usr/bin:/bin:/usr/sbin:/sbin`, with `~/.cargo/bin` appended last — a Finder-launched sidecar inherits only the minimal launchd `PATH`, so git/bun/cargo wouldn't otherwise resolve for a from-source rebuild.
 
 ### `getUpdateProgress()` → `UpdateProgress` (`GET /update/progress`)
 
@@ -116,9 +116,12 @@ interface UpdateProgress { phase: UpdatePhase; message?: string; log?: string }
 
 ### The detached relauncher
 
-`spawnRelauncher()` writes a one-shot bash script to `tmpdir()` and launches it with `nohup … &` so it **reparents to launchd and outlives the sidecar** (which dies when the app quits). The script:
+`spawnRelauncher()` writes a one-shot bash script (`bismuth-update-<pid>-<n>.sh`) to `tmpdir()` and launches it with `nohup … &` so it **reparents to launchd and outlives the sidecar** (which dies when the app quits). The script:
 
 ```bash
+#!/bin/bash
+set -e
+trap 'rm -f "$0"' EXIT          # the script deletes itself on exit
 NEW="<repoRoot>/app/src-tauri/target/release/bundle/macos/Bismuth.app"
 DEST="<BISMUTH_APP_PATH>"          # the running /Applications/Bismuth.app
 APP_PID="<BISMUTH_APP_PID>"
@@ -140,7 +143,7 @@ fi
 /usr/bin/open "$DEST"
 ```
 
-It waits on the app's pid, then swaps the bundle **atomically with a backup**: it moves the existing `DEST` aside to `$DEST.bak-$$` first, `ditto`-copies the freshly built `.app` into place, and only deletes the backup once `ditto` succeeds. If `ditto` fails, it removes the partial copy and restores the backup from `$DEST.bak-$$`, so a failed swap can never leave the user with no app at all. Its log goes to `/tmp/bismuth-update.log`.
+It waits on the app's pid, then swaps the bundle **atomically with a backup**: it moves the existing `DEST` aside to `$DEST.bak-$$` first, `ditto`-copies the freshly built `.app` into place, and only deletes the backup once `ditto` succeeds. If `ditto` fails, it removes the partial copy and restores the backup from `$DEST.bak-$$`, so a failed swap can never leave the user with no app at all. Its log goes to `join(tmpdir(), "bismuth-update.log")` — the per-user `TMPDIR` on macOS (under `/var/folders/…`), not `/tmp`.
 
 ---
 
@@ -244,4 +247,4 @@ The frontend invokes it once `phase:"ready"`; the app exits, the detached relaun
 - [HTTP API reference](../api/http-reference.md) — exact shapes of `/update/status`, `/update/apply`, `/update/progress`, `/bismuth/install`.
 - [Install & run](install.md) — building the bundled app from source.
 
-Source: `core/src/selfUpdate.ts`, `app/src/updateCheck.ts`, `app/src/UpdateBanner.tsx`, `app/src-tauri/src/lib.rs`, `app/scripts/build-bismuth-tools.ts`, `core/src/server.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `app/src/api.ts`
+Source: `core/src/selfUpdate.ts`, `core/src/claudeWhich.ts`, `app/src/updateCheck.ts`, `app/src/UpdateBanner.tsx`, `app/src-tauri/src/lib.rs`, `app/scripts/build-bismuth-tools.ts`, `core/src/server.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `app/src/api.ts`

@@ -8,7 +8,7 @@ Some keys deliberately remain local to their UI: list and grid arrow navigation,
 
 ## The `keybindings:` section
 
-In `.settings`, `keybindings:` is a nested object: one `keybind` combo string for each app-level action. A generated file places it last. It stays an object, not a list, so per-key merge, autocomplete, lint, the schema↔interface parity test, and `POST /set-setting` work without special handling.
+In `.settings`, `keybindings:` is a nested object: one `keybind` combo string for each app-level action. The schema declares it last (a test enforces this), but a fresh `.settings` is sparse and contains no `keybindings:` block at all: an id is written only when you rebind it. It stays an object, not a list, so per-key merge, autocomplete, lint, the schema↔interface parity test, and `POST /set-setting` work without special handling.
 
 ```yaml
 keybindings:
@@ -208,7 +208,7 @@ matchesKeybinding(<k, meta>, "Mod+`, Mod+J")   // false
 
 `matchesKeybinding(event, setting)` splits the setting on `,`, trims each combo, and returns `true` if any non-empty combo matches via `matchesCombo`. An empty/whitespace-only/undefined/null setting returns `false`.
 
-> Note: combos are split on `,` at the **setting** level. A literal comma key still works because `parseCombo` splits a single combo on `+` (not `,`). To bind the comma key, just use `,` as the final token in one combo, e.g. `Mod+,` — only top-level commas separate alternatives.
+> Note: combos are split on `,` at the **setting** level. **The comma key therefore cannot be bound:** `matchesKeybinding` splits the whole setting on every `,` before `parseCombo` runs, so `Mod+,` becomes the combos `Mod+` and an empty string, and neither matches a comma press.
 
 ## The spelling trap: a bare shifted character is not `Shift+<key>`
 
@@ -252,7 +252,7 @@ Every action id, its human label, default combo, and what it does. Ids are the Y
 | `split-down` | `Mod+Shift+D` | Split pane down — split the focused pane into a new (empty) pane below. |
 | `equalize-panes` | `Mod+Alt+=` | Equalize panes — reset all split panes to equal sizes. |
 | `close-pane` | `Mod+W` | Close pane — close the focused pane (closes the whole tab when it's the last pane). |
-| `new-tab` | `Mod+T` | New tab — open a new tab (the Knowledge Graph home). |
+| `new-tab` | `Mod+T` | New tab — open a new tab (`homeContent(settings.homePage)`; `homePage` never reaches the app today, so always the Knowledge Graph). |
 | `reopen-tab` | `Mod+Shift+T` | Reopen closed tab — reopen the most recently closed tab. |
 | `new-window` | `Mod+N` | New window — open the current vault in a new window (File > New window). |
 | `open-folder` | `Mod+Shift+O` | Open folder — open another folder as its own vault in a new window (File > Open folder…). `Shift+O` because `Mod+O` is the quick switcher. |
@@ -276,12 +276,12 @@ Every action id, its human label, default combo, and what it does. Ids are the Y
 | `outdent` | `Shift+Tab` | Outdent — outdent the current line or selection one level. |
 | `toggle-bold` | `Mod+B` | Toggle bold — toggle bold on the current selection. |
 | `toggle-italic` | `Mod+I` | Toggle italic — toggle italic on the current selection. |
-| `chat-send` | `Enter` | Send chat message — send the current chat message. |
+| `chat-send` | `Enter, Mod+Enter` | Send chat message — send the current chat message. `Mod+Enter` is included because it sent before this became rebindable. |
 | `chat-stop` | `Escape` | Stop chat response — stop the chat reply currently streaming. |
 | `chat-history-prev` | `ArrowUp` | Recall previous chat message — recall the previously sent message into the composer, from the first visual line of the draft. |
 | `chat-history-next` | `ArrowDown` | Recall next chat message — step forward through recalled chat messages, from the last visual line of the draft. |
 | `undo-delete` | `Mod+Z` | Undo file-tree delete — undo the most recent file-tree delete, restoring the file or folder from trash. |
-| `delete-selection` | `Delete, Backspace` | Delete selected file — delete the selected file or folder in the file tree (moves it to trash; undoable). |
+| `delete-selection` | `Delete, Backspace, Mod+Delete, Mod+Backspace` | Delete selected file — delete the selected file or folder in the file tree (moves it to trash; undoable). `Mod+Delete`/`Mod+Backspace` are included because that is the platform "move to trash" gesture. |
 | `flashcard-flip` | `Space` | Flip flashcard — flip the current flashcard between its front and back. |
 | `flashcard-hard` | `1` | Grade flashcard hard — grade the current flashcard Hard and advance to the next one. |
 | `flashcard-good` | `2` | Grade flashcard good — grade the current flashcard Good and advance to the next one. |
@@ -409,7 +409,7 @@ Because both the catalog (ids + defaults) and the matcher are pure, both are uni
 - **`insert-template`/`toggle-sidebar`/`toggle-tab-rail` are suppressed in `INPUT`/`TEXTAREA`** but still work from a focused note (the note editor is `contentEditable`, not an input).
 - **Auto-repeat is ignored** (`e.repeat` short-circuits the handler), so holding a combo fires once, not repeatedly.
 - **An empty string disables a binding** (`matchesKeybinding` returns false for empty/nullish) — except `ui-dismiss`, which falls back to `Escape` on empty. See [Shared widget ids](#shared-widget-ids-ui-dismiss-and-ui-confirm).
-- **Comma is the alternative separator** at the setting level; `+` is the combo separator. Bind the comma key as `Mod+,` (one combo) — only top-level commas split alternatives.
+- **Comma is the alternative separator** at the setting level; `+` is the combo separator. Every comma splits alternatives, so the comma key itself cannot be bound (`Mod+,` matches nothing).
 - **Arrow-key list/menu/gallery navigation and the table-cell grid's Tab/Enter/Escape stay hardcoded on purpose** — they're a spatial contract of the surface, not a named command. `app/src/keybindingCoverage.test.ts` is the guard; see [What stays hardcoded on purpose](#what-stays-hardcoded-on-purpose).
 
 ## See also

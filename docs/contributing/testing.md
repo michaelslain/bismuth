@@ -19,7 +19,7 @@ Bismuth uses **Bun's built-in test runner** (`bun:test`) for all tests — both 
 import { test, expect, describe, it, beforeEach, afterEach } from "bun:test";
 ```
 
-The full suite — every workspace, run with plain `bun test` from the repo root — was 6,238 tests across 408 files in 143.9s when last measured (2026-09-03), on a machine missing several of the mocked-CLI binaries (see the skip mechanism below; a machine with all of them installed runs more). This number moves every time a test file is added, so re-measure with `bun test` rather than trusting it long-term.
+The full suite — every workspace, run with plain `bun test` from the repo root — spans 629 `*.test.ts(x)` files as of 2026-10-03 (counted with `find . \( -name node_modules -o -name target -o -name .git -o -name .claude -o -name .dev-vault \) -prune -o \( -name '*.test.ts' -o -name '*.test.tsx' \) -type f -print | wc -l`: 202 under `core/test/`, 6 under `core/src/`, 373 under `app/`, 23 in `daemon/`, 8 in `cli/`, 7 in `mcp/`, 5 in `memory/`, 3 in `scripts/`, and one each in `relay/` and `bench/`). The last measured TEST count (6,238 tests across 408 files in 143.9s on 2026-09-03, on a machine missing several of the mocked-CLI binaries — see the skip mechanism below; a machine with all of them installed runs more) is stale and has not been re-measured: the file count grew by more than half since, and the test count moves every time a test file is added, so run `bun test` and read its summary line rather than trusting any number written here.
 
 This is roughly 6-7x an earlier ~930-tests/~10s figure this file used to quote, and has kept growing past the ~2031 this file quoted after that. The growth is mostly the offline-testing branch's own mocked agent-CLI integration tests (below): several of them spawn a REAL CLI subprocess and wait for a real turn to complete, rather than exercising pure in-process logic, which costs real wall-clock seconds per test even though it costs zero API calls/dollars. A machine missing some of those CLI binaries runs fewer tests, faster, via the missing-binary skip described below.
 
@@ -129,20 +129,21 @@ bun test core
 This discovers nearly every `*.test.ts` file in the repo. Not because `core` names a "workspace" —
 Bun has no such concept for `bun test`'s own argument — but because `core` is a plain substring
 match against every file's relative path (see "Filter by filename pattern" below for the full
-mechanism), and it happens to match every file under `core/test/` (the path prefix) plus one
-`app/src/` file whose own name contains it (`app/src/icons/registryCore.test.ts`) — 159 files
-total, confirmed by exact count. Output (counts are illustrative and grow per commit — expect a
-green `0 fail`; measured 2026-09-03):
+mechanism), and it happens to match every file under `core/test/` (the path prefix) plus the six
+`core/src/` test files whose paths also contain it (`core/src/assetFetch.test.ts` and the five
+`core/src/statusBar*.test.ts`) — 208 files total as of 2026-10-03, confirmed by exact count. Output (the shape to expect — test and `expect()` counts grow per
+commit and were last measured on 2026-09-03, so they are left as placeholders rather than quoted;
+expect a green `0 fail`):
 
 ```
- 2292 pass
- 27 skip
+ <n> pass
+ <n> skip
  0 fail
- 14422 expect() calls
-Ran 2319 tests across 159 files. [81.94s]
+ <n> expect() calls
+Ran <n> tests across 208 files. [<seconds>]
 ```
 
-The 27 skips are the mocked agent-CLI tests whose real binary (`opencode`/`gemini`/`openclaw`/
+The skips are the mocked agent-CLI tests whose real binary (`opencode`/`gemini`/`openclaw`/
 `goose`/`cline`) isn't installed on this machine — see "Offline agent-CLI integration tests" below.
 
 ### `bun test core` vs `bun test app`
@@ -153,10 +154,10 @@ bun test app    # the mirror image, from the other direction
 ```
 
 These are NOT identical sets, and neither is scoped to a "workspace": `bun test core` matches
-every file under `core/test/` plus one `app/src/` coincidental match (as above) — 159 files.
-`bun test app` matches every file under `app/src/` plus one `core/test/` file that matches "app" by
-coincidence (`core/test/agentBackends/sandboxWrapper.test.ts`, matching inside
-"sandboxWr**app**er") — 220 files. `bun test core` is the conventional way to run "the full suite"
+every file under `core/test/` plus the six `core/src/` matches (as above) — 208 files.
+`bun test app` matches every file under `app/` (`app/src/`, `app/test/`, `app/scripts/`) plus one
+`core/test/` file that matches "app" by coincidence (`core/test/agentBackends/sandboxWrapper.test.ts`,
+matching inside "sandboxWr**app**er") — 374 files (file counts re-measured with `find`, 2026-10-03). `bun test core` is the conventional way to run "the full suite"
 only because `core/` happens to hold vastly more test files today, not because it is scoped to
 anything. (Neither is actually the full suite — see "Test runner" above for that number; several
 other workspaces, `cli/`/`daemon/`/`mcp/`/`memory`/`relay/`, carry their own test files too, and
@@ -178,12 +179,14 @@ set, and sometimes more.** Bun's own positional arguments are OR'd substring mat
 relative file path (`bun test foo bar` runs every file matching `foo` OR `bar`), and `core` is
 itself one of those arguments here. Since every file under `core/test/` (plus the one `app/src/`
 coincidental match above) already has `core` as a substring of its own path, keeping `core` in the
-pattern list matches at minimum that same 159-file set no matter what you append after it —
-confirmed live: `bun test core -- wikilinks` still ran all 159 files, because `wikilinks.test.ts`
-lives under `core/test/` and was already in the set. **It can also run MORE than 159**: appending a
+pattern list matches at minimum that same 208-file set no matter what you append after it —
+`bun test core -- wikilinks` still runs every `core`-matched file, because `wikilinks.test.ts`
+lives under `core/test/` and was already in the set. **It can also run MORE than that set**: appending a
 pattern that matches something outside `core/test/` widens the run rather than narrowing it —
-`bun test core -- bases/query` ran 160 files, one more than `bun test core` alone, because
-`app/src/bases/queryGen.test.ts` matches "bases/query" but not "core", so the OR adds it in. Either
+`bun test core -- bases/query` matches 210 files, two more than `bun test core` alone, because
+`app/src/bases/queryGen.test.ts` and `app/src/bases/queryBasePath.test.ts` match "bases/query" but not
+"core", so the OR adds them in (file counts from a 2026-10-03 `find`; the 2026-09-03 live run of the
+same command was 160 against 159). Either
 way, this has already cost one agent a full-suite-or-larger run it believed was scoped to one file.
 
 To actually filter, drop the `core`/`app` argument and pass either an exact path or a bare pattern:
@@ -191,12 +194,13 @@ To actually filter, drop the `core`/`app` argument and pass either an exact path
 ```bash
 bun test core/test/vault.test.ts   # exact path — the only unambiguous way to run ONE file
 bun test vault                     # a pattern with NO "core"/"app" argument alongside it — matches
-                                    # every path containing "vault": vault.test.ts, vaultPath.test.ts,
-                                    # vaultFileItems.test.ts (3 files; case-sensitive, so the fourth
-                                    # vault-named file, VaultIntro.test.ts, is NOT included)
+                                    # every path containing "vault": vault.test.ts and
+                                    # vaultFileItems.test.ts (2 files as of 2026-10-03; case-sensitive,
+                                    # so `app/src/intro/VaultIntro.test.ts` is NOT included)
 bun test daemonViz                 # matches exactly core/test/daemonViz.test.ts (1 file)
 bun test bases/query                # matches every path containing "bases/query": query.test.ts,
-                                    # queryBlock.test.ts, queryGen.test.ts (3 files, not 1 — the
+                                    # queryBlock.test.ts, queryGen.test.ts, queryBasePath.test.ts
+                                    # (4 files as of 2026-10-03, not 1 — the
                                     # substring match doesn't stop at the first path segment)
 bun test flashcards                 # matches every flashcard-related test file
 ```
@@ -204,8 +208,8 @@ bun test flashcards                 # matches every flashcard-related test file
 The pattern is a substring match against the relative file path (not the test name), and it is
 easy to assume it is narrower than it is — check the file count in the summary line, don't assume
 one pattern means one file. Use an exact path when you genuinely want exactly one file. Verified
-live (2026-09-03): `bun test bases/query` alone runs 3 files; `bun test core -- bases/query` runs
-160.
+by file count (2026-10-03): `bun test bases/query` alone matches 4 files; `bun test core -- bases/query`
+matches 210.
 
 ### Watch mode
 
@@ -860,7 +864,11 @@ this section exists to prevent.
 (`setVisible(props.visible !== false && !docHidden())`). A browser-automation tab that is not
 foregrounded reports exactly that hidden state — Chrome itself also throttles timers/rAF in
 occluded windows — so the canvas never paints and samples as 0% inked, indistinguishable from a
-genuinely broken renderer. `bench/chromeSession.ts` is the one place that launches headless Chrome
+genuinely broken renderer. `bench/chromeSession.ts` is a one-line re-export
+(`export * from '../core/src/render/chromeSession'`) of `core/src/render/chromeSession.ts` — one
+launcher, two import paths: `bench/` tools import it as `./chromeSession`, the export pipeline as
+`core/src/render/chromeSession`, and the code (`launchChrome`, `newPage()`, the flags below) lives only
+in the `core/` file. It is the one place that launches headless Chrome
 and tears it down for every other tool in the directory; it passes three `--disable-*background*`
 flags specifically to keep rAF running with no foreground window. It also centralizes what three
 earlier, independent Chrome-launching tools (`cssBaseline.ts`, `probeStory.ts`, `visual.ts`) each
@@ -1095,10 +1103,10 @@ isn't the foregrounded one — `document.visibilityState` reports `"hidden"` for
 — so a story that paints to canvas on a rAF loop (`InkOverlay`, `GraphView`, `DrawingCanvas`) would
 measure a permanently blank surface on any of the other targets, indistinguishable from a broken
 renderer, and in `InkOverlay`'s case would also latch its own `rafPending` flag so no later repaint
-fires either. This is the exact trap `bench/chromeSession.ts`'s header already documents for every
+fires either. This is the exact trap the `chromeSession` header (`core/src/render/chromeSession.ts`, re-exported by `bench/chromeSession.ts`) already documents for every
 other tool in this directory — `playCheck.ts` inherited the browser but, initially, not the lesson.
 
-The fix lives in `bench/chromeSession.ts`'s `newPage()`, not in `playCheck.ts` itself, so every
+The fix lives in `newPage()` in `core/src/render/chromeSession.ts` (reached from `bench/` through the `bench/chromeSession.ts` re-export), not in `playCheck.ts` itself, so every
 canvas story gets it for free: `Emulation.setFocusEmulationEnabled({enabled: true})` on every
 concurrent target. Measured directly — 6 concurrent targets navigated to the same canvas story —
 this takes `visibilityState` from "visible" on 1 of 6 to "visible" on 6 of 6, and a
@@ -1344,6 +1352,63 @@ tables, so it only imports long-stable public entry points.
 bun bench/bench.ts --vault-size 2000 --label current
 ```
 
+### `bench/basesPerfBench.ts` + `bench/basesPerfVault.ts` — Bases/tasks timing harness (`bun run bench:bases-perf`)
+
+Like `bench/bench.ts`, a **backend** timing tool, not a Storybook one — no Chrome, no server. It calls
+straight into `core/src/bases/` (`buildTaskRows`, `resolveBaseRows`, `runView`, `parseBaseFile`, and
+`patchTaskRows` when `tasksData.ts` exports it — loaded by dynamic import so the bench still runs
+against an older checkout, printing that row as `skipped`) against a synthetic vault from
+`basesPerfVault.ts`'s `buildPerfVault()`: 1200 notes by default (`noteCount`), about 40% carrying one to
+three checkbox tasks with due/scheduled dates spread across a year, plus a tasks-mode calendar base
+(a regex filter and a declared formula) and a second base composing over it (`source: { kind: base }`).
+The vault lives in a fresh directory under `os.tmpdir()` and `cleanup()` removes it. It prints one
+`console.table` of `label`, `ms` and `ms/call` rows: cold `buildTaskRows`, a full rebuild simulating one
+note edited, `patchTaskRows` on one changed path, `runView` ×20 on the calendar base, and
+`resolveBaseRows` ×20 on the composed base both with bare context and with the cached
+`vaultRows`/`vaultTasks` providers `core/src/server.ts` always passes. The row labels are the contract
+for before/after diffs — run it before and after a change and compare the tables — so rename one
+deliberately or not at all. (Its header cites `.claude/plans/2026-09-17-bases-perf.md`, a local scratch
+plan that is not in the repo.)
+
+```bash
+bun run bench:bases-perf     # = bun bench/basesPerfBench.ts
+```
+
+### `bench/pdfScroll.ts` — does a PDF page paint before the reader scrolls to it?
+
+Measures continuous scrolling of the `PdfPages` story (default id `preview-pdfpages--many-pages`) in its
+own Chrome: an in-page `requestAnimationFrame` sampler records frame gaps and, per frame, whether any
+`.pdf-page` box (found by its `data-pdf-page` attribute, never a class name) intersecting the scrollport
+is *blank* — no `<canvas>` child, a canvas whose four interior sample points are all transparent, or
+four pixel-identical points. The scroll is driven by CDP `Input.dispatchMouseEvent` wheel events, not a
+synthetic DOM `WheelEvent`, because the scroller has no wheel handler of its own and the browser ignores
+untrusted wheel events for native scrolling. Two passes run: continuous (120Δ per step) and fast-fling
+(400Δ), 3s each. Acceptance targets are checked against the continuous pass: longest sustained blank
+stretch ≤250ms, blank share <10% and max frame gap ≤100ms; the fling pass is held only to the
+≤100ms frame-gap check. Flags: positional story id, `--base <url>`
+(default `http://localhost:6006`), `--duration <ms>` (default 3000). It holds no baseline and no
+history — "before" and "after" are two runs a human compares — and it measures `PdfPages` in isolation,
+not `PreviewView.tsx`'s own wheel listener.
+
+```bash
+bun bench/pdfScroll.ts preview-pdfpages--many-pages --base http://localhost:6006
+```
+
+### `bench/tableRenderPerf.ts` — the Bases table's render and scroll gate
+
+A perf gate for the typed cell grid, on the `bases-tableview--large-table` story (2000 rows × 8
+columns). It reports **render** — the median of 5 cold loads of milliseconds from `Page.navigate` until
+the last row is in the DOM, the glyph tiles are installed (`--ascii-tile-w` set, overlay mask = the
+sprite) and one painted frame has passed (a double `requestAnimationFrame`) — and **fps**, frames per
+second over a 2s programmatic scroll of the table's scroller, top to bottom and back (headless Chrome
+caps at 60). Like `verify.ts`, `--port` is REQUIRED and the tool exits 2 without it, since defaulting to
+:6006 would silently measure the main checkout's Storybook from a worktree. It prints one line:
+`tableRenderPerf render=<ms> fps=<n>`.
+
+```bash
+bun bench/tableRenderPerf.ts --port 6312
+```
+
 ### `bench/watch.sh`
 
 A live progress view for a running `cssBaseline.ts`/`storyAudit.ts` sweep, run in a second terminal
@@ -1365,4 +1430,4 @@ directly, so what it shows is always current.
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/bench.ts`, `bench/watch.sh`, `DESIGN.md`, `design/baseline.json`, `scripts/designSystem/gate.mjs`, `scripts/designSystem/checks.mjs`, `scripts/designSystem.test.ts`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `core/src/render/chromeSession.ts`, `bench/basesPerfBench.ts`, `bench/basesPerfVault.ts`, `bench/pdfScroll.ts`, `bench/tableRenderPerf.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/bench.ts`, `bench/watch.sh`, `DESIGN.md`, `design/baseline.json`, `scripts/designSystem/gate.mjs`, `scripts/designSystem/checks.mjs`, `scripts/designSystem.test.ts`

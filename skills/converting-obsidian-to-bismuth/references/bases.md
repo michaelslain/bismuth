@@ -19,7 +19,7 @@ An Obsidian base is a `.base` file of pure YAML: top-level `filters`, `formulas`
 | top-level `summaries` (custom formulas) | not read; drop and report |
 | `views[0].type` | `view: <kind>`: `table`, `cards`, `list`, `kanban`, `map` all exist |
 | `views[0].name` | dropped |
-| `views[0].order`, `sort`, `groupBy`, `limit`, `summaries` | same key names, flattened to top level |
+| `views[0].order`, `sort`, `groupBy`, `limit`, `summaries` | same key names, flattened to top level; but `summaries` values are limited to Bismuth's eight names (see Lossy) |
 | `views[0].filters` | AND them with the global `filters` |
 | `views[1..]` | one new base each (see Convert) |
 | map: a `coordinates` property holding `"lat, lng"` or `[lat, lng]` | `lat` and `lng` need two separate properties; add `zoom`/`center` if present |
@@ -59,8 +59,8 @@ Obsidian-only at the snapshot date (names in the Obsidian Functions page that `d
      - file.name
    ---
    ```
-   Always write `source: notes`: the app treats a source-less base as all notes, but the CLI (`base render`, `rows --of`) and any base that `ref`s it see only body rows (none). An Obsidian base with no filter shows every file; omit `filters` then. Quote any filter value containing `#` or `:`.
-2. For each extra view `V` create `P/Name - V.md`: `type: base`, `source: base`, `ref: "[[P/Name]]"` (vault-relative path, no `.md`; drop `P/` only when the base is at the vault root), `filters:` restated (global AND this view's own), `view: <kind>`, that view's keys flattened. Only the referenced base's ROWS carry over, so the restated filters are required. A `ref` resolves as a path from the vault root, not by file name like a wikilink.
+   Always write `source: notes` to make the scope explicit. A source-less base file with no body rows resolves to every vault note anyway (app, `base render`, and a base that `ref`s it); only a source-less ```query fence is empty, so the fence always needs it. An Obsidian base with no filter shows every file; omit `filters` then. Quote any filter value containing `#` or `:`.
+2. For each extra view `V` create `P/Name - V.md`: `type: base`, `source: base`, `ref: "[[P/Name]]"` (vault-relative path, no `.md`; the plain `[[Name]]` also works), `filters:` restated (global AND this view's own), `view: <kind>`, that view's keys flattened. Only the referenced base's ROWS carry over, so the restated filters are required. A `ref` resolves like a wikilink: an exact vault path wins, otherwise the target is found by file name (fewest path segments first), so the full path is the unambiguous spelling when two bases share a name in different folders.
 3. Delete `P/Name.base` from `$OUT`. A `.base` file is invisible in the Bismuth tree and never read. Then fix every plain link to it: `[[Name.base]]`, `[[P/Name.base]]`, `[[Name.base|text]]` (not only `![[...]]` embeds) now dangle. Rewrite each to `[[Name]]` (keep the path and alias), which opens the converted base note:
    ```bash
    grep -rnE --include='*.md' '(^|[^!])\[\[[^]|#]+\.base[]|#]' "$OUT"   # plain links to find
@@ -76,7 +76,8 @@ Obsidian-only at the snapshot date (names in the Obsidian Functions page that `d
 
 - Views beyond the first become separate files; their relationship is only the `ref`.
 - Every view `name` is dropped, including the first view's (there is no place to keep it). List each dropped name and its base path in the report.
-- Custom `summaries`, `columnSize`/card sizing and image settings that Bismuth does not read.
+- Summary names: Bismuth computes only `Sum`, `Average`, `Min`, `Max`, `Count`, `Empty`, `Filled` and `Unique` (`core/src/bases/query.ts` `summarize`). Any other name (for example Median, Range, Stddev, Earliest, Latest, Checked, Unchecked) renders an empty string with no validation error. List each unsupported summary name per base in the report.
+- Custom `summaries` and card sizing, which Bismuth does not read. Cards image settings are partly read: the top-level view keys `image` (a property id), `imageFit` (`cover` or `contain`) and `imageAspectRatio` (a number) work (`docs/bases/views/cards.md`); the Obsidian-side key names are unverified here, so read them from the real `.base` and map them by hand.
 - Obsidian-only functions: `bismuth base validate` still passes, and the function evaluates to nothing at render time. Inside `filters`, an unknown function makes the base match zero rows (checked with `bismuth base render`: 0 rows for `nosuchfn(file.name)`, 1 for a valid filter on the same vault).
 - Nested tags: Obsidian's `file.hasTag("a")` also matches `a/b`; Bismuth's does not, so step 7 lists each subtag explicitly and a subtag created later is not matched.
 - Embedded `![[X.base]]` becomes an inline query fence, so it no longer follows later edits to the base file.
@@ -86,5 +87,5 @@ Obsidian-only at the snapshot date (names in the Obsidian Functions page that `d
 
 - `bismuth base validate "P/Name.md" --vault "$OUT"` prints `"ok":true` for every converted base (it also reports multi-`views:` and unresolvable `ref`).
 - `bismuth base render "P/Name.md" --vault "$OUT" --pretty | grep -c '"basename"'` is the row count; compare it with the row count Obsidian shows for that view.
-- After a merge (step 0), run both commands on `Name.md` and each `Name - V.md`. `Name.md` rows exclude itself unless its filter matches it.
+- After a merge (step 0), run both commands on `Name.md` and each `Name - V.md`. With `source: notes` and no filter, `Name.md`'s own rows include the base note itself (and every other base note); it drops out only if a filter rejects it, so expect a row count one higher than a prose-notes-only count and report it.
 - For a converted ` ```base ` fence, copy its YAML between `---` lines into a scratch note under `$OUT` (with `type: base` and `source: notes` added, so the scope is explicit), run the two commands above, then delete the scratch note.

@@ -310,6 +310,10 @@ space — via the same `POST /asset` upload described above, so it inherits de-c
   Tauri intercepts the webview's own HTML5 `drop` for external OS files, so this is the *only*
   signal for an OS drop on desktop. It carries real absolute on-disk paths, read via
   `@tauri-apps/plugin-fs`'s `readFile` (the same route `Editor.tsx`'s native-drop handling uses).
+  The tree claims the drop like every other surface (`nativeDropRouting.ts`'s `claimNativeDrop`),
+  so a drop another surface already took — an overlay above the sidebar, a chat — is never *also*
+  uploaded into the vault. `d.x`/`d.y` are already page CSS px (the bridge scales them once via
+  `nativeDragScale`), so the folder lookup below uses them directly.
 
 Only file types the tree already lists (`isTreeListedName`, `core/src/fileKinds.ts` — images,
 PDFs, `.md`/`.draw`/`.sheet`/`.yaml`/`.yml`) are accepted; anything else is skipped, named in one
@@ -390,4 +394,4 @@ Name collisions after template expansion are resolved by `uniqueAssetPath` with 
 - **`listTree` does NOT exclude binary assets**: images and PDFs appear in the file tree as first-class entries, same as `.md`/`.draw`/`.sheet`/`.yaml`/`.yml`, via `isTreeListedName` (`core/src/fileKinds.ts`) — they carry tags through a companion note and ink through a `.draw` sidecar (`docs/vault/frontmatter.md`, `docs/drawing/overview.md`). What stays hidden is only the generated export sidecars `*.draw.png`/`*.draw.pdf`, plus a companion/`.draw` sidecar whose binary sibling still exists. The knowledge graph is unaffected either way, since it's built from `listMarkdown` (`.md` only), not `listTree`.
 - **`private, max-age=60` cache**: the browser caches asset bytes for 60 seconds. If a file is replaced (same name), the old version may serve for up to 60 seconds. Hard-reload clears this.
 
-`Source: app/src/editor/embedBlock.ts, core/src/files.ts, core/src/server.ts, core/src/schema/settingsSchema.ts, core/src/settings.ts, app/src/api.ts`
+`Source: app/src/editor/embedBlock.ts, app/src/nativeDropRouting.ts, core/src/files.ts, core/src/server.ts, core/src/schema/settingsSchema.ts, core/src/settings.ts, app/src/api.ts`

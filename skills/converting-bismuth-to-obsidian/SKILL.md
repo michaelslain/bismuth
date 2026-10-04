@@ -77,10 +77,12 @@ Find out which features this vault actually uses, so you read only the reference
 grep -rlE '^type:[[:space:]]*base[[:space:]]*$' --include='*.md' "$OUT"
 grep -rhE '^view:' --include='*.md' "$OUT" | sort | uniq -c | sort -rn
 grep -rlE '^views:' --include='*.md' "$OUT"   # legacy multi-view bases: `base read` shows only the first
+grep -rlE '^type:[[:space:]]*base[[:space:]]*$' --include='*.md' "$SRC" | while read -r f; do echo "== $f"; bismuth base validate "${f#"$SRC"/}" --vault "$SRC"; done   # silent hazards: bad view kind, extra views, #-truncated filters, dangling ref; exit 1 per problem base
+grep -rlE '^mode:[[:space:]]*tasks' --include='*.md' "$OUT"   # task bases (a `mode: tasks` base with no source stores its tasks as body rows: `bases` B7)
 grep -rlE '^type:[[:space:]]*base' --include='*.md' "$OUT" | while read -r f; do grep -lE '^```query' "$f"; done   # "bases" that are notes holding a query
 
 # fenced blocks Obsidian cannot render: query, draw, graph (count per file)
-grep -rcE '^```(query|draw|graph)' --include='*.md' "$OUT" | grep -v ':0$'
+grep -rcE '^[[:space:]]*```[[:space:]]*(query|draw|graph)' --include='*.md' "$OUT" | grep -v ':0$'
 
 # bracket-field lines (the grep misses plain checkboxes), then the authoritative count: every checkbox, fenced ones too
 grep -rnE '^[[:space:]]*[-*+] \[.\] .*\[((due|scheduled|start|done|created|cancelled) [0-9]{4}-[0-9]{2}-[0-9]{2}|highest|high|medium|low|lowest|every [^]]+)\]' --include='*.md' "$OUT"
@@ -135,7 +137,7 @@ Every check has an expected result. A failure is a bug in your conversion — fi
 # (a) nothing Bismuth-only left, each expected 0. The last one may hit a line whose date is not a
 # real day (`[due 2026-02-30]`, text to Bismuth); the `tasks` reference has a filter that drops those.
 grep -rlE '^type:[[:space:]]*base[[:space:]]*$' --include='*.md' "$OUT" | wc -l
-grep -rcE '^```(draw|query)' --include='*.md' "$OUT" | grep -v ':0$' | wc -l
+grep -rcE '^[[:space:]]*```[[:space:]]*(draw|query)' --include='*.md' "$OUT" | grep -v ':0$' | wc -l
 grep -rnE '^[[:space:]]*[-*+] \[.\] .*\[((due|scheduled|start|done|created|cancelled) [0-9]{4}-[0-9]{2}-[0-9]{2}|highest|high|medium|low|lowest|every [^]]+)\]' --include='*.md' "$OUT" | wc -l
 
 # (b) every .base file is valid YAML with no frontmatter fence
@@ -147,7 +149,7 @@ done
 
 (c) **Every `[[link]]` target exists in the output.** Run the `check-links.ts` script in `vault-and-settings` (section Validate) as `bun run check-links.ts "$OUT"`; expected `missing=0`. `case-only` hits are warnings to report.
 
-(d) **Task count.** The emoji task count must equal the source's: the `tasks=` figure printed by the rewrite script in `tasks` must equal `bismuth task list --vault "$SRC" | jq length`.
+(d) **Task count.** The emoji task count must equal the source's: the `tasks=` figure printed by the rewrite script in `tasks` must equal `bismuth task list --vault "$SRC" | jq length`. The one exception is a `mode: tasks` base that stored its tasks as body rows (`bases`, B7): `task list` counts vault checkboxes only, so `tasks=` exceeds the source count by exactly the number of stored rows converted. Say so in the report.
 
 (e) **Open the result in Obsidian** if the user can: a `.base` file or a Tasks query that parses as YAML can still be a query Obsidian rejects, and nothing headless checks that. Say so in the report when you could not.
 
@@ -173,6 +175,6 @@ Write `$OUT.conversion-report.md` (beside the vault, **not** inside it) and summ
 - **Tags: Bismuth's are case-sensitive, Obsidian's are not.** `#Book` and `#book` are two tags in Bismuth and one in Obsidian, so two Bismuth tags can merge silently. List every case-variant pair in the report; do not rewrite them.
 - **A Bismuth base has one view (a legacy `views:` list has several); an Obsidian `.base` holds many.** A legacy list converts entry by entry (`bases`, B4). Bases that compose another (`source: base` + `ref`) over the same rows may be folded back into one `.base` with several views — optional, see `bases`. The default is one `.base` per Bismuth base, which is always correct.
 - **Ink in ` ```draw ` fences cannot become an Obsidian equivalent.** Obsidian has no stroke format; the fence is stripped (or flattened to a picture of the whole note) and reported.
-- **A `ref` that names no file resolves to zero rows.** Report such a base.
+- **A `ref` that names no file resolves to zero rows.** Report such a base (`bismuth base validate` flags it). The other zero-row trap is a base that spells `source: base` with **no** `ref:`: `base render` and `rows --of` return nothing for it, though it has body rows. Read a body-row base's rows with `base read` (`bases`).
 - **The daemon memory may hold content derived from `hidden` notes.** Visibility is applied when memory is read, not when it is written. Copy memory only on request, and honour every `visibility` rule (`other-features`).
 - **Anything private stays private only if you check.** `visibility: hidden` notes are ordinary notes to Obsidian. The report lists every `hidden` and `chat-only` note, so the user can delete them from `$OUT` before handing the vault to anyone.

@@ -18,14 +18,19 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
 | cloze | `==x==` by default; `**x**` and `{{x}}` are optional settings | `==x==`, `**x**` and `{{x}}` are ALL always on |
 | decks | the configured tags (default `#flashcards`, nested `#flashcards/deck/sub`), or the folder structure | the tag must be exactly `flashcards` or `flashcards/<deck>` (frontmatter or inline); no folder decks |
 | several deck tags in one note | each tag applies to the cards after it | the first deck path is used for every card in the note |
-| scheduling | `<!--SR:!2024-08-16,51,230-->` on the line after the card (or the same line, by setting) | the same comment, same fields: `!date,interval,ease` (ease 250 = 2.5x) |
+| scheduling | `<!--SR:!2024-08-16,51,230-->` on the line after the card (or the same line, by setting) | the same comment and fields (`!date,interval,ease`, ease 250 = 2.5x), but placement is fixed by card kind: a single-line card (`::`, `:::`, cloze) reads it ONLY on the card's own line; a multi-line `?`/`??` card reads it only as a standalone trailing line. A comment on the line after a single-line card is ignored and the card loads as new (`due` null, interval 0, ease 250) |
 | note reviews | `sr-due`, `sr-interval`, `sr-ease` in frontmatter | not read; harmless, keep or drop |
 
 A note is collected ONLY if its tags include `flashcards` or `flashcards/<deck>`; an untagged note with perfect card syntax yields nothing.
 
 ## Convert
 
-1. Card text and SR comments copy unchanged. Nothing to do when the vault already uses `#flashcards` or `#flashcards/<deck>`.
+1. Card text copies unchanged, and so do SR comments on multi-line (`?`/`??`) cards and on single-line cards whose comment is already on the card line. Nothing to do for tags when the vault already uses `#flashcards` or `#flashcards/<deck>`.
+   **Single-line cards (`q::a`, `q:::a`, cloze) whose SR comment sits on its own next line must have it moved onto the card line**, or the review history is silently dropped. This joins a single-line card to a standalone comment that follows it (the card line must start a paragraph, so a multi-line card's last line is left alone), including the comment right after frontmatter:
+   ```bash
+   find "$OUT" -name '*.md' -print0 | xargs -0 perl -0777 -pi -e 's/((?:\A|\n\n|\n---\n)[^\n]*(?:\S:::?\S|==[^=\n]+==)[^\n]*?)[ \t]*\n(<!--SR:(?:![0-9-]+,[0-9]+,[0-9]+)+-->)[ \t]*(?=\n|\z)/$1 $2/g'
+   ```
+   It only recognises `==x==` clozes; a `**x**` or `{{x}}` single-line cloze with a next-line comment is not moved, so find those by the validation below and move them by hand.
 2. Custom flashcard tag (read the plugin's `data.json` in `$SRC/.obsidian/plugins/obsidian-spaced-repetition/` for the configured tags): rewrite it in frontmatter `tags:` and inline, keeping nested suffixes. The example turns `review` into `flashcards`. It matches `#review`, `#review/deck` and `review` in `tags:` lines and `- review` list items inside the frontmatter, and leaves `#review-later` alone:
    ```bash
    find "$OUT" -name '*.md' -print0 | xargs -0 perl -pi -e 'if($ARGV ne $p){$p=$ARGV;$n=0;$fm=0} $n++; if($n==1&&/^---\s*$/){$fm=1} elsif($fm&&/^---\s*$/){$fm=0} if($fm){s/^(tags:.*?[\[\s,"])review(?=$|[\s\],"])/$1flashcards/; s/^(\s*-\s+)#?review[ \t]*$/$1flashcards/} s/(^|[\s\[,"])#review(?=$|[\s\],"\/])/$1#flashcards/g'
@@ -40,8 +45,10 @@ A note is collected ONLY if its tags include `flashcards` or `flashcards/<deck>`
 - Folder-based decks, per-section deck tags, and per-question tags.
 - Cloze-marker settings that were turned off.
 - Plugin options (new-card limits, burying siblings): the SM-2 parameters live in the `srs` section of `.settings`.
+- Review history on any single-line card whose SR comment is not on the card line after step 1 (for example a card not at the start of a paragraph): it loads as new.
 
 ## Validate
 
 - `bismuth card decks --vault "$OUT" --pretty` lists one deck per flashcard tag with `total` and `due` (the bare `flashcards` tag is the deck with `name` `""`, not a failure); a missing deck means a tag mismatch.
 - `bismuth card all --vault "$OUT" --pretty | grep -c '"question"'` roughly matches the cards you expect (a reversed card counts twice, a cloze counts once per marker).
+- Review history survived: count the cards that had an SR comment in the source (`grep -rc '<!--SR:' "$SRC" --include='*.md'` per note) and compare with `bismuth card all --vault "$OUT" --pretty | grep -c '"due": "'`; cards with `"due": null` have no schedule. A single-line card that had a comment in the source but shows `"due": null`, `"interval": 0`, `"ease": 250` still has its comment on a separate line; move it onto the card line. (A reversed card or multi-marker cloze has one schedule entry per sub-card, so one comment can account for several `due` values.)

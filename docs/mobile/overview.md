@@ -30,6 +30,7 @@ Because nothing in the logic pipeline may statically import Bun/`node:fs` (or th
 | `GET /vault-data` | `buildVaultRows(vault)` (the Bases feed) |
 | `GET /config` | `{ vault, memory }` |
 | `GET /settings` | schema `DEFAULTS` (no `.settings` reconcile yet — see below) |
+| `GET /status-bar` | parses `.settings` itself (the `readSettings` helper is bound to Bun fs) and returns `{ segments }` from `evaluateStatusBar(normalizeStatusBar(statusBar), …)`. `run:` shell segments never execute — each comes back with the error `shell segments are desktop-only` — and `isTrusted` is always `true`, so no trust prompt is raised |
 | `GET /schema` | `{ properties: {} }` |
 | `GET /templates` | `[]` (needs a dir walk — follow-up) |
 | `GET /file` | note text (or `""` if absent — parity with `GET /file` never 404ing) |
@@ -48,19 +49,25 @@ Because nothing in the logic pipeline may statically import Bun/`node:fs` (or th
 | `POST /set-property`, `POST /delete-property` | `flattenBaseViews` (a legacy `views:` list becomes flat; a multi-entry list throws `BASE_VIEWS_FORMAT_ERROR`) then `setFrontmatterKey` / `deleteFrontmatterKey` then write — every view key is a plain top-level key (how the kanban view persists column order/colors) |
 | `POST /set-properties` | batched `POST /set-property` — groups writes by `path`, one read-modify-write per path via `flattenBaseViews` + `setFrontmatterKey`, skips a path that no longer exists rather than failing the whole batch (mirrors `server.ts`; the kanban drag-drop's write path) |
 | `POST /row/update`, `POST /row/delete`, `POST /row/reorder`, `POST /rows/update` | `upsertRow` / `deleteRow` / `reorderRow` / `upsertRows` (`bases/rowOps.ts`) |
-| `POST /tasks/toggle` | `toggleTaskLine` on the target line, then `reorderTaskBlocks` |
+| `POST /tasks/toggle` | `applyTaskToggle(content, line, status, today)` (`tasks.ts`, shared with the HTTP server): range-checks `line` (`EINVAL` `line out of range`), then `setTaskLineStatus` when the body carries a `status` (the status menu) or a plain `toggleTaskLine` otherwise, then `reorderTaskBlocks`; CRLF files keep CRLF |
 | `POST /cards/review` | dual-mode — row review (`applyReviewToRow` + `upsertRow`) when `{file,index}`, else markdown-card review (`applyReview`) by `{id}` |
 | `POST /replace` | `replaceInVault(vault, query, replacement, opts, scope)` |
 
 ### What it does NOT cover yet
 
-These routes throw `NOT_SUPPORTED` (an `AppError` with status **501** — the in-process backend has no HTTP, so this surfaces as a thrown error, not a network response):
+These routes throw through `notSupported(route)`: an `AppError` with code **`EINVAL`**, status **501** and the message `<METHOD /path> is not supported by the in-process backend yet`. ("NOT_SUPPORTED" is only the label used in the source comments and tests, not the error code.) The in-process backend has no HTTP, so this surfaces as a thrown error, not a network response:
 
 - **Structural filesystem ops** — `POST /create`, `POST /move`, `POST /delete`, `POST /restore` (need `FileAccess` extended with create/move/delete).
 - **`POST /set-setting`** and **`POST /folder-icon`** — need a `.settings` (settings.yaml) writer; `GET /settings` currently returns bare schema defaults, so `.settings` reconcile/merge is a paired follow-up.
 - **`POST /daily-note`** — daily-note materialization.
-- **Binary asset upload** — `uploadAsset` (below) throws; asset bytes need `tauri-plugin-fs` + `convertFileSrc`.
+- **Binary asset upload** — `uploadAsset` (below) throws, as do `fetchAsset`, `convertHeic` and `stageTmpFile`; asset bytes need `tauri-plugin-fs` + `convertFileSrc`.
 - **`POST /backup`** (git snapshot) and **`POST /open-folder`** (spawning a sibling backend) — no git, no second process on device.
+- **`POST /status-bar/trust`** — writes the machine trust store for approved `run:` status-bar segments. Mobile never runs those segments (see `GET /status-bar` above), and the write is refused outright.
+- **Every `/daemon/*` write** — `POST /daemon/cron/toggle`, `/daemon/cron/run`, `/daemon/cron/delete`, `/daemon/process/toggle`, `/daemon/process/delete`. The HTTP server owner-gates these (they mutate the shared daemon machine dir, not the vault, and CORS is `*`); the in-process transport has no owner channel at all, so it refuses them with the same 501 rather than running them unauthenticated.
+
+### Routes with no handler at all
+
+A route that has no `case` in `dispatch` falls to the `default` branch and throws `AppError('ENOENT', 'no in-process handler for <METHOD /path>', 404)` — a different error from the 501 above: the 501 list is routes mobile *knows* it cannot do yet, this is everything it never heard of. Routes the HTTP server serves that land here include `POST /folder-visibility`, `POST /tasks/reschedule`, `/tasks/update`, `/tasks/delete`, `/tasks/move`, `/tasks/archive`, `/tasks/create`, `POST /search-prompt`, `GET /daemon/pages` and `POST /daemon/pages/*`, `GET /update/status`, `POST /update/apply`, `GET /update/progress`, and the `/chat/*` routes.
 
 ## The `FileAccess` seam — `core/src/fileAccess.ts`
 
@@ -100,6 +107,9 @@ interface Transport {
   postJson<T>(path, body): Promise<T>;
   writeFileChecked(path, contents, baseText): Promise<{conflict:false} | {conflict:true; current}>;
   uploadAsset(targetPath, bytes): Promise<string>;
+  fetchAsset(url, targetPath): Promise<string>;       // download a remote image into the vault
+  convertHeic(bytes): Promise<ArrayBuffer>;           // HEIC/HEIF -> JPEG
+  stageTmpFile(name, bytes): Promise<string>;         // bytes -> a real path outside the vault
   assetUrl(target): string;
   eventsUrl(): string;
   base(): string;
@@ -115,7 +125,7 @@ The default is `httpTransport(BASE)` (fetch against the runtime-resolved core po
 - `getJson`/`getText`/`postJson` return the dispatch result directly.
 - `post`/`put` wrap the result as a `Response` via `asResponse` (a string → `new Response(str)`, else a JSON `Response`) so callers that read `.json()`/`.text()` keep working.
 - **`writeFileChecked`** implements the same optimistic-concurrency contract as HTTP (#46) **client-side**, since there are no HTTP status codes to 409 with: it `dispatch("GET", "/file")`, compares to `baseText`, and only `dispatch("PUT", "/file")` if they still match — else returns `{ conflict: true, current }`. There's a small read-then-write TOCTOU window (not atomic against `writeNote` the way the server's check is), acceptable for this single-process, single-tab mobile backend — there's no concurrent external writer racing the same vault.
-- **`uploadAsset`** throws (binary IO not wired yet); **`assetUrl`** returns the target path unchanged; **`eventsUrl`** returns `""` on purpose — EventSource is not used on mobile.
+- **`uploadAsset`**, **`fetchAsset`**, **`convertHeic`** and **`stageTmpFile`** all throw `<verb> is not supported by the in-process backend yet` (binary IO not wired yet); **`assetUrl`** returns the target path unchanged; **`eventsUrl`** returns `""` on purpose — EventSource is not used on mobile.
 - **`base()`** returns `"inprocess://local"`.
 
 ## Boot — `app/src/mobile/bootMobile.ts`
@@ -149,4 +159,4 @@ There is no `/events` stream on mobile. `httpTransport.eventsUrl()` returns `/ev
 
 ---
 
-Source: `core/src/localBackend.ts`, `core/src/fileAccess.ts`, `app/src/api.ts`, `app/src/mobile/bootMobile.ts`, `app/src/mobile/inProcessTransport.ts`, `app/src/mobile/tauriFileAccess.ts`, `core/src/taskMigrateRun.ts`
+Source: `core/src/localBackend.ts`, `core/src/fileAccess.ts`, `app/src/api.ts`, `app/src/mobile/bootMobile.ts`, `app/src/mobile/inProcessTransport.ts`, `app/src/mobile/tauriFileAccess.ts`, `core/src/taskMigrateRun.ts`, `core/src/tasks.ts`

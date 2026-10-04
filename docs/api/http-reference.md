@@ -99,7 +99,7 @@ Three enforcement shapes appear across the route tables:
 |---|---|---|
 | **A — list-filtering** | A restricted item is silently dropped from the response array — `200`, with no indication anything was hidden, indistinguishable from "there were none" (`GET /graph`'s `filterGraph` drops the node AND every edge touching it) | `GET /graph`, `GET /vault-data`, `GET /tasks`, `GET /tasks/migration`, `POST /rows`, `POST /search`, `POST /search-prompt`, `GET /cards/decks`, `GET /cards/all`, `GET /cards/due` |
 | **B — single-path refusal** | The whole request is refused with `403 "forbidden"` when the requested path (or, for filename-first routes, its resolved path) is restricted | `GET /base` (`?file=`), `GET /file` (`?path=`), `GET /meta` (`?path=`), `GET /cards/note` (`?path=`), `GET /abs-path` (`?path=`, checked against the resolved path — see below), `GET /asset` (`?path=`, checked against BOTH the resolved absolute path and the raw query, only once `resolveAsset` has found a match) |
-| **C — blanket owner-only** | No per-path filtering is possible (a past chat transcript can quote any number of notes, hidden or not, across its whole history), so the ENTIRE route refuses any non-owner request outright, regardless of query params | `GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search` |
+| **C — blanket owner-only** | No per-path filtering is possible (a past chat transcript can quote any number of notes, hidden or not, across its whole history), so the ENTIRE route refuses any non-owner request outright, regardless of query params | `GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`, `GET /status-bar`, `POST /status-bar/trust`, `GET /opencode/providers`, `POST /opencode/auth`, `POST /opencode/oauth/authorize`, `POST /opencode/oauth/callback`, `POST /asset/fetch`, `POST /daemon/cron/toggle`, `POST /daemon/cron/run`, `POST /daemon/process/toggle`, `POST /daemon/cron/delete`, `POST /daemon/process/delete`, `POST /daemon/pages/archive` (the non-chat rows refuse for different reasons — run output, credential writes, SSRF, destructive daemon actions — each stated in its own section) |
 | **D — field redaction** | Unlike B/C, the route does NOT refuse a non-owner request — it returns `200` with the response's content field(s) omitted, while every bookkeeping field is returned to every channel unchanged. Possible here because, unlike a chat transcript, the only sensitive part of the response is one specific field, not the existence of any row | `GET /relay/snapshot` (a `RelaySubagent`'s `lastMessage` — its `SubagentStop` final output, free-text that can quote vault content the same way a chat transcript snippet can — is omitted for non-owner requests via `redactSnapshot()` in `core/src/relay.ts`; `sessionId`/`terminalId`/`cwd`/`backend`/`lastSeen`/`agentId`/`parentSessionId`/`agentType`/`workflowId`/`startedAt`/`done`/`doneAt` are all bookkeeping and returned to every channel) |
 | **Not gated at all** | `GET /tree` resolves and annotates each entry's effective `visibility` (feeding the sidebar's hidden/chat-only badge) but does **not** filter or hide any entry for a non-owner request — every path and filename is returned to any caller, by design (existence/naming isn't treated as secret; see `docs/vault/visibility.md`) | `GET /tree` |
 
@@ -129,10 +129,10 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /events`
 - **Params:** none.
-- **Response:** an SSE stream (`Content-Type: text/event-stream`, `Cache-Control: no-store`, `Connection: keep-alive`). On subscribe, if `version > 0` it immediately enqueues a snapshot frame `data: {"version":<n>,"paths":[]}\n\n` so a fresh client learns the current version without waiting. A `: keepalive\n\n` comment is sent every `server.sseHeartbeatMs` to keep the TCP connection past Bun's idle timeout.
+- **Response:** an SSE stream (`Content-Type: text/event-stream`, `Cache-Control: no-store`, `Connection: keep-alive`). On subscribe it first unconditionally enqueues a `: connected\n\n` comment frame (flushes the response immediately, even at `version === 0`), then, if `version > 0`, a snapshot frame `data: {"version":<n>,"paths":[]}\n\n` so a fresh client learns the current version without waiting. A `: keepalive\n\n` comment is sent every `server.sseHeartbeatMs` to keep the TCP connection past Bun's idle timeout.
 - **Event frame shape** (published by `applyDirty`): `data: {"version":<n>,"paths":[<changed paths>],"dirty":{"graph":<bool>,"tree":<bool>}}\n\n`. (The boot snapshot frame omits `dirty`.) Graph/tree consumers skip refetching when their `dirty` flag is `false`; the editor always reconciles on a version bump.
 - **Cache/SSE:** this IS the SSE stream. Cleans up the heartbeat interval + unsubscribes on cancel.
-- **Gotcha:** Bun does not flush response headers until the first `enqueue`, so on a brand-new server (`version === 0`, no snapshot sent) `await fetch('/events')` can hang until the first real event — tests "prime" with a mutation first.
+- **Gotcha:** Bun does not flush response headers until the first `enqueue`. The unconditional `: connected` comment (enqueued before the optional snapshot) exists for exactly this: without it a client connecting at `version === 0` (no snapshot, no real event) received nothing until the next heartbeat tick (up to `sseHeartbeatMs`, 5s default). With it, `await fetch('/events')` resolves immediately on a brand-new server; clients must ignore comment lines (a line starting with `:`).
 
 ### `GET /graph`
 - **Params:** none.
@@ -231,8 +231,8 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Cache/SSE:** none.
 
 ### `GET /chat/session-messages`
-- **Params:** `?id=<sessionId>` (optional; absent/empty → empty replay).
-- **Action:** `sessionHistoryFrames(id, cfg.vault)` when `id` is present, else `[]`.
+- **Params:** `?id=<sessionId>` (optional; absent/empty → empty replay); `?provider=<backend id>` (optional; resolved with `resolveBackendId` against the vault's `chat.provider` default, selecting which backend's session store to read — `bismuth chat read --provider` passes it).
+- **Action:** `sessionHistoryFrames(id, cfg.vault, provider)` when `id` is present, else `[]`.
 - **Response:** `{ frames: ChatFrame[] }` — one past session replayed **in order** as the same `ChatFrame`s the live `/chat` WS streams, so the client can rehydrate the transcript before binding/resuming it.
 - **Visibility:** blanket owner-only — `403 "forbidden"` for any non-owner request, same reasoning as `GET /chat/sessions` above. See [Visibility gating](#visibility-gating).
 - **Cache/SSE:** none.
@@ -392,21 +392,21 @@ Four routes over the running `opencode serve` (the shared server in `core/src/ch
 - **Body:** `{ command: string }`.
 - **Action:** `trustCommand(cfg.vault, command)` (per-machine approval file, `BISMUTH_TRUST_FILE` or `~/.bismuth/trusted-commands.json`, keyed by vault realpath + sha256 of the command). `400` unless `command` equals some `run` in the vault's current normalized `statusBar`, so an approval can only cover what `.settings` holds right now. `400` if the command contains `\n`, `\r`, U+202A–U+202E or U+2066–U+2069 (`hasHiddenChars`).
 - **Response:** `{ ok: true }`.
-- **Visibility:** blanket owner-only — `403` for any non-owner request (an agent must not be able to approve its own shell command). `NOT_SUPPORTED` on the in-process backend.
+- **Visibility:** blanket owner-only — `403` for any non-owner request (an agent must not be able to approve its own shell command). `NOT_SUPPORTED` on the in-process backend. The CLI enforces the same boundary one step earlier: `bismuth api` refuses any path starting `status-bar/trust` unless `BISMUTH_AGENT_CHANNEL` is `owner` ("refused: approving a status bar command is the user decision; ask them to click [ allow ] in the bar" — `cli/src/commands/api.ts`).
 - **Cache/SSE:** none.
 
 ### Relay ingest (`POST /relay/*`)
 Posted by the relay plugin's hooks loaded per-session inside app terminals. They update the in-process agent registry — **not** the vault — so they live in the read table (no cache invalidation). All are best-effort; a `400` is silently swallowed client-side. All return `{ ok: true }` on success.
 
-- **`POST /relay/session`** — body `{ sessionId?, terminalId?, cwd? }`. `registerSession(...)`. `400 "missing sessionId/terminalId"` if either is absent. (`cwd` defaults to `""`.)
+- **`POST /relay/session`** — body `{ sessionId?, terminalId?, cwd?, backend? }`. `registerSession(...)`. `400 "missing sessionId/terminalId"` if either is absent. (`cwd` defaults to `""`; `backend` — the id of the agent CLI reporting, e.g. `"claude"`, `"codex"` — is stored on the session, and the registry defaults it to `claude` when omitted, as the original Claude-only hooks do.)
 - **`POST /relay/session/end`** — body `{ sessionId? }`. `endSession(sessionId)`. `400 "missing sessionId"` if absent.
-- **`POST /relay/subagent/start`** — body `{ parentSessionId?, agentId?, agentType? }`. `startSubagent(...)`; `agentType` defaults to `"agent"`. `400 "missing parentSessionId/agentId"` if either is absent.
+- **`POST /relay/subagent/start`** — body `{ parentSessionId?, agentId?, agentType?, workflowId? }`. `startSubagent(...)`; `agentType` defaults to `"agent"`; an empty/absent `workflowId` is stored as undefined. `400 "missing parentSessionId/agentId"` if either is absent.
 - **`POST /relay/subagent/stop`** — body `{ agentId?, lastMessage? }`. `stopSubagent(...)`. `400 "missing agentId"` if absent.
 
 ### `GET /relay/snapshot`
 The read side of the registry above, powering the `bismuth relay list` CLI command. Also lives in the read table (no cache invalidation).
 - **Response:** `{ sessions: RelaySession[], subagents: RelaySubagent[] }` — `snapshot()` from `core/src/relay.ts`, for the owner. For any non-owner request, `redactSnapshot(snapshot())` instead: the same shape with each `RelaySubagent`'s `lastMessage` omitted.
-- **Visibility:** field redaction (shape D), not a blanket refusal — `200` for every channel. A `RelaySubagent`'s `lastMessage` (its `SubagentStop` final output) is free-text that can quote vault content, so it's dropped entirely for non-owner requests; every bookkeeping field (`sessionId`, `terminalId`, `cwd`, `backend`, `lastSeen`, `agentId`, `parentSessionId`, `agentType`, `workflowId`, `startedAt`, `done`, `doneAt`) is returned unchanged to every channel. This route deliberately does NOT follow `GET /chat/sessions`'s blanket-owner-only precedent: a chat transcript has no non-sensitive field to fall back to, but here only `lastMessage` is sensitive, and `bismuth relay list` (its only real caller) never carries an owner token — a blanket refusal would make the route permanently unreachable from the CLI. See [Visibility gating](#visibility-gating).
+- **Visibility:** field redaction (shape D), not a blanket refusal — `200` for every channel. A `RelaySubagent`'s `lastMessage` (its `SubagentStop` final output) is free-text that can quote vault content, so it's dropped entirely for non-owner requests; every bookkeeping field (`sessionId`, `terminalId`, `cwd`, `backend`, `lastSeen`, `agentId`, `parentSessionId`, `agentType`, `workflowId`, `startedAt`, `done`, `doneAt`) is returned unchanged to every channel. This route deliberately does NOT follow `GET /chat/sessions`'s blanket-owner-only precedent: a chat transcript has no non-sensitive field to fall back to, but here only `lastMessage` is sensitive, and `bismuth relay list` (its main caller; the relay plugin's hooks only POST) must stay reachable with no token. The CLI's `call()` attaches `X-Bismuth-Token` on a loopback core with a run-registry token (`cli/src/http.ts`), so `relay list` from an owner shell gets the un-redacted snapshot with `lastMessage`; with no token available (non-loopback `--api`, no run record) it gets the redacted one — see the [CLI reference](../cli/reference.md#owner-identity-for-server-talking-commands-clisrchttpts). See [Visibility gating](#visibility-gating).
 
 ### App control (`/ui/*`, read table)
 The core→frontend command channel (`core/src/uiControl.ts`). Both live in the read table (no vault-cache invalidation): `/ui/command` relays a request over the target window's `/ui` WebSocket and returns its reply; any vault mutation the window then performs runs its own invalidation. See [../mcp/app-control.md](../mcp/app-control.md).
@@ -685,24 +685,27 @@ Separately from the manual route, `createServer` installs an **unref'd 60s `setI
 
 ## WebSocket: `GET /chat`
 
-A special-cased upgrade handled before the route tables (alongside `GET /terminal`). Drives the **headless Claude Code chat driver** (`core/src/chat.ts`) — the in-app visual Claude chat — over a text-JSON protocol.
+A special-cased upgrade handled before the route tables (alongside `GET /terminal`). Drives the **headless chat driver** (`core/src/chat.ts`) — the in-app visual chat — over a text-JSON protocol. It is multi-backend: `open`/`user`/`resume` carry an optional `provider`, routed through `core/src/chatProviders` (Claude Code by default; see [chat backends](../chat/backends.md)).
 
 ### Upgrade request
 - **Method/path:** `GET /chat`.
-- **Query params:** optional `?chatId=<stable id>`. A client passes a stable `chatId` to resume conversation continuity across reconnects; absent → one is generated (`newChatId()`).
+- **Query params:** optional `?chatId=<stable id>`. A client passes a stable `chatId` to resume conversation continuity across reconnects; absent → one is generated (`newChatId()`). Optional `?rebind=1` marks the upgrade as a RECONNECT (the client had this chat open and lost the socket) rather than a first open, so the `open` handler can tell the client when the session it expects is already gone (grace window expired) instead of silently starting fresh.
 - **Origin policy:** the SAME allow-list as `/terminal` — allowed with no `Origin` header (same-origin / Tauri webview), or an origin matching `http(s)://localhost|127.0.0.1[:port]`, `tauri://...`, or `http(s)://10.x.x.x[:port]`; otherwise `403 "forbidden origin"`.
-- This is a read-path upgrade (not a vault mutation). On a failed `server.upgrade`, returns `400 "upgrade failed"`; success returns the Bun-managed `101`. The socket carries `{ kind: "chat", chatId }`.
+- This is a read-path upgrade (not a vault mutation). On a failed `server.upgrade`, returns `400 "upgrade failed"`; success returns the Bun-managed `101`. The socket carries `{ kind: "chat", chatId, rebind }`.
 
 ### Message protocol (client → server)
 Text JSON frames (`ChatFrame` inputs), discriminated by `type`:
-- **`{type:"user",text}`** — run a turn (slash commands are just text). On a brand-new chat this binds the session's sink via `chatSend(chatId, text, vault, sink)`.
-- **`{type:"resume",sessionId}`** — bind this chat socket to an existing Claude Code session (`chatResume`); its init manifest streams back and the next `{type:"user"}` continues the resumed conversation. (Sessions come from `GET /chat/sessions`; transcript from `GET /chat/session-messages`.)
+- **`{type:"open",provider?}`** — spawn the session eagerly (`chatOpen`, no turn) so the header's `init` manifest, `models` frame and permission mode stream back before the first message. A no-op if a session already exists for this `chatId` (never spawns a duplicate).
+- **`{type:"user",text,images?,provider?}`** — run a turn (slash commands are just text). On a brand-new chat this binds the session's sink via `chatSend(chatId, text, vault, sink, images, memoryDir, provider)`. `images` is an optional array of base64 `{media_type,data}` attachments; only well-formed entries whose `media_type` is `image/png`, `image/jpeg`, `image/gif` or `image/webp` and whose `data` is a non-empty string are kept — the rest are silently dropped.
+- **`{type:"resume",sessionId,provider?}`** — bind this chat socket to an existing session of that backend (`chatResume`); its init manifest streams back and the next `{type:"user"}` continues the resumed conversation. (Sessions come from `GET /chat/sessions`; transcript from `GET /chat/session-messages`.)
 - **`{type:"permission_response",id,behavior,always?}`** — answer a "permission" frame; `behavior` must be `"allow"` or `"deny"`, `always` defaults `false` (`chatRespondPermission`).
 - **`{type:"set_permission_mode",mode}`** — switch permission mode live (`chatSetPermissionMode`).
 - **`{type:"set_model",model}`** — switch model live (`chatSetModel`).
+- **`{type:"question_response",id,answers?,cancelled?}`** — answer an `AskUserQuestion` "question" frame (`chatRespondQuestion`). `cancelled: true` (or no usable `answers`) skips the question; otherwise `answers` maps each question's TEXT to the chosen answer string, and only string→string entries are forwarded.
+- **`{type:"set_effort",effort}`** — switch the reasoning-effort level live (`chatSetEffort`), mirroring `set_model`.
 - **`{type:"stop"}`** — interrupt the in-flight turn (`chatAbort`).
 
-Frames may arrive as text or binary (decoded UTF-8); a frame that doesn't parse as JSON, or whose `type`/fields don't match one of the above, is silently ignored.
+Frames may arrive as text or binary (decoded UTF-8); a frame that doesn't parse as JSON, or whose `type`/fields don't match one of the above, is silently ignored. `provider` is resolved with `resolveBackendId(parsed.provider, chat.provider)`; a `chatId` with a live session stays on its backend.
 
 ### Server → client
 `ChatFrame`s stream back via the session's sink — `ws.send(JSON.stringify(frame))` (each frame is the same shape `GET /chat/session-messages` replays). On `open`, the server **rebinds the sink** (`chatRebindSink`) to THIS socket: a reconnect (same `chatId`) mid-turn re-points the live session's sink here so in-flight drain frames (the turn's tail + `done`) flow to the new socket instead of the dead one. A brand-new chat has no session yet, so rebind is a no-op until the first `{type:"user"}`.
@@ -783,6 +786,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | PUT | `/file` | read | **yes** (calls `invalidate(path)`) |
 | GET | `/asset` | read | no |
 | POST | `/asset` | read | no |
+| POST | `/asset/fetch` | read | no |
 | POST | `/convert/heic` | read | no |
 | POST | `/tmp-file` | read | no |
 | GET | `/abs-path` | read | no |
@@ -834,6 +838,8 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/daemon/cron/toggle` | read | no |
 | POST | `/daemon/cron/run` | read | no |
 | POST | `/daemon/process/toggle` | read | no |
+| POST | `/daemon/cron/delete` | read | no |
+| POST | `/daemon/process/delete` | read | no |
 | GET | `/daemon/pages` | read | no |
 | POST | `/daemon/pages/resolve` | read | no |
 | POST | `/daemon/pages/mark-failed` | read | no |
@@ -873,4 +879,4 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/chat` | (WS upgrade) | n/a |
 | GET | `/ui` | (WS upgrade) | n/a |
 
-Source: `core/src/server.ts`, `core/src/sse.ts`, `core/test/server.test.ts`, `core/src/graph.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/search.ts`, `core/src/searchPrompt.ts`, `core/src/files.ts`, `core/src/tasks.ts`, `core/src/taskFields.ts`, `core/src/taskCreate.ts`, `core/src/linkTarget.ts`, `core/src/taskMigrateRun.ts`, `core/src/fsPaths.ts`, `core/src/selfUpdate.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/chat.ts`, `core/src/gcal/index.ts`, `core/src/gcal/sync.ts`, `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/settings.ts`
+Source: `core/src/server.ts`, `core/src/sse.ts`, `core/test/server.test.ts`, `core/src/graph.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/search.ts`, `core/src/searchPrompt.ts`, `core/src/files.ts`, `core/src/tasks.ts`, `core/src/taskFields.ts`, `core/src/taskCreate.ts`, `core/src/linkTarget.ts`, `core/src/taskMigrateRun.ts`, `core/src/fsPaths.ts`, `core/src/selfUpdate.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/chat.ts`, `core/src/gcal/index.ts`, `core/src/gcal/sync.ts`, `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/settings.ts`, `cli/src/http.ts`, `cli/src/commands/api.ts`

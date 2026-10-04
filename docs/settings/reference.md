@@ -2,7 +2,7 @@
 
 This is the complete reference for a vault's `.settings` file: the hidden, extensionless YAML file at the vault root (`SETTINGS_FILE` in `core/src/settings.ts`). It lists every schema section and key, including type, default, bounds or enum values, and in-app documentation.
 
-The schema in `core/src/schema/settingsSchema.ts` is the source of truth. It drives first-launch output, editor autocomplete and lint, and the derived `DEFAULTS` that seed the frontend. Defaults preserve the behavior of an unconfigured install.
+The schema in `core/src/schema/settingsSchema.ts` is the source of truth. It drives editor autocomplete and lint, and the derived `DEFAULTS` that seed the frontend. Defaults preserve the behavior of an unconfigured install.
 
 Open `.settings` in the editor to change a value. The backend updates one key at a time through `POST /set-setting`, preserving comments and order; it re-reads the file per request, so no server restart is required. On first open, `migrateSettingsLocation` moves a legacy vault-root `settings.yaml` or interim `.settings/settings.yaml` layout into `.settings`.
 
@@ -14,7 +14,7 @@ The schema is a nested object. Top-level keys, in canonical alphabetical-set mem
 
 `appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `homePage`, `keybindings`, `localModel`, `mcp`, `properties`, `server`, `srs`, `statusBar`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
 
-The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `localModel`, `mcp`, `codex`, `srs`, `templates`, `properties`, `folderIcons`, `folderVisibility`, `toolbar`, `tabBar`, `statusBar`, `homePage`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
+The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `localModel`, `mcp`, `codex`, `srs`, `templates`, `properties`, `folderIcons`, `folderVisibility`, `toolbar`, `tabBar`, `statusBar`, `homePage`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this), which fixes its position in the schema and in autocomplete. It does not show up in a fresh `.settings`: that file is sparse (a new vault gets a two-line comment and no keys), and a key is written only when you change it.
 
 ### Property types
 
@@ -342,7 +342,7 @@ update:
 
 ## `terminal`
 
-In-app terminal tab appearance (xterm.js), wired through CSS vars.
+In-app terminal tab appearance (xterm.js). `Terminal.tsx` reads `fontSize` and `lineHeight` straight from the settings store; `settingsToCssVars` emits no terminal variables. The text cursor (width, glide, blink) is no longer a terminal setting: it is app-wide under [`appearance`](#appearance) (`cursorWidth`, `cursorGlideMs`, `cursorBlinkSeconds`), and a legacy `terminal.cursor*` key still in a file is moved there by `reconcileSettings`.
 
 | Key | Type | Default | Bounds | Doc |
 |-----|------|---------|--------|-----|
@@ -355,20 +355,17 @@ Example:
 terminal:
   fontSize: 14
   lineHeight: 1.6
-  cursorWidth: 3
 ```
 
 ---
 
 ## `chat`
 
-Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior.
+Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior. The section has exactly two keys, `provider` and `presets`. There is no `chat.computerUse` setting: Claude Code's `--chrome` flag comes from the backend catalog's `computerUse` capability alone (see [chat overview](../chat/overview.md)).
 
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
 | `provider` | enum | `claude` | Which agent backend a chat runs on by default: `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `hermes`, `claude-code-acp`, `codex-acp`. This is the default for a chat tab that hasn't chosen for itself — the header's backend picker overrides it per tab, and that choice persists (localStorage, keyed by the chat tab id). Each backend's controls render per declared capability, so a backend without permission modes or effort simply hides them. See [agent backends](../chat/backends.md). |
-| `computerUse` | boolean | `false` | Enable Claude's browser/computer-use capability (`--chrome`) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). This is the **default for a chat that hasn't chosen for itself** — a chat overrides it with `/chrome` / `/chrome off` or the header Globe pill, and that per-chat choice persists (localStorage, keyed by the chat tab id). |
-
 | `presets` | list | `[]` | Saved provider + model + effort combinations — `{name, provider, model, effort}` each — applied from the chat's model dialog in the chat tab and the daemon chat. `[+ save]` in that dialog writes one; `[x]` removes one. Empty `model`/`effort` = that connector's/model's default. Picking a preset on another connector starts a new conversation, as any connector switch does. |
 
 Example:
@@ -376,7 +373,6 @@ Example:
 ```yaml
 chat:
   provider: opencode
-  computerUse: true
   presets:
     - name: quick
       provider: claude
@@ -520,7 +516,7 @@ properties:
 
 ## `folderIcons`
 
-Per-folder icons — a free-form map `{folderPath: iconName}` (folders have no frontmatter to hang an icon on). Seeded **empty**; normally written via `POST /folder-icon` rather than hand-edited.
+Per-folder icons — a free-form map `{folderPath: iconName}` (folders have no frontmatter to hang an icon on). Defaults to **empty**; normally written via `POST /folder-icon` rather than hand-edited.
 
 - **Type:** `{ kind: "object", fields: {} }` (a test asserts exactly this).
 - **Default:** `{}`.
@@ -542,7 +538,7 @@ folderIcons:
 
 ## `folderVisibility`
 
-Per-folder AI visibility — a free-form map `{folderPath: "chat-only"|"hidden"}` (folders have no frontmatter to hang a `visibility:` key on, unlike notes). Seeded **empty**; normally written via `POST /folder-visibility` rather than hand-edited. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — an HONESTY boundary, not a security boundary — and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Nearest-ancestor-wins resolution and the full threat model live in `core/src/visibility.ts` / `docs/vault/visibility.md`. A note's OWN visibility is set via its `visibility:` frontmatter key, not here.
+Per-folder AI visibility — a free-form map `{folderPath: "chat-only"|"hidden"}` (folders have no frontmatter to hang a `visibility:` key on, unlike notes). Defaults to **empty**; normally written via `POST /folder-visibility` rather than hand-edited. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — an HONESTY boundary, not a security boundary — and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Nearest-ancestor-wins resolution and the full threat model live in `core/src/visibility.ts` / `docs/vault/visibility.md`. A note's OWN visibility is set via its `visibility:` frontmatter key, not here.
 
 - **Type:** `{ kind: "object", fields: {} }` (a test asserts exactly this).
 - **Default:** `{}`.
@@ -712,7 +708,7 @@ The bottom status bar, in order. Each item is a built-in readout, a `{token}` te
 | `every` | number (min 5) | Seconds between re-runs of `run` (default 60). |
 | `align` | enum `left` `right` | Which end of the bar. |
 | `tone` | enum | Text colour token. |
-| `command` | command id | Command run when the segment is clicked. |
+| `command` | command id | Command run when the segment is clicked. Accepts the same ids as `toolbar` (`COMMAND_IDS` plus the `daily-note:` prefix, lint-validated); see [toolbar commands](toolbar-commands.md). Clicking runs the bound command directly, without the app-control blocklist. |
 | `tooltip` | string | Hover text. |
 | `icon` | icon | Lucide icon name or emoji shown before the text. |
 
@@ -720,7 +716,7 @@ The bottom status bar, in order. Each item is a built-in readout, a `{token}` te
 
 ## `homePage`
 
-What a new tab (Cmd+T), first launch and closing the last tab open. Empty (the default) = the knowledge graph. Point it at a note to make your own home page. See [status-bar.md](status-bar.md).
+What a new tab (Cmd+T), first launch and closing the last tab should open. Empty (the default) = the knowledge graph. **Currently not applied:** `GET /settings` drops top-level non-object values, so the app always receives `""` and opens the graph. See [status-bar.md](status-bar.md#home-page).
 
 - **Type:** `{ kind: "path", only: "file" }`
 - **Default:** `""`
@@ -782,7 +778,7 @@ To surface a daily-note type as a button, add a `toolbar` entry with `command: d
 
 ## `keybindings`
 
-Global keyboard shortcuts. One key per app-level action; the value is a `keybind` combo string. Placed **last** in the schema (a test enforces this) so it sits at the end of a fresh `.settings` file. The section is a nested object (not a list), derived from `KEYBINDING_CATALOG` (`core/src/keybindings.ts`) — the single source of truth for ids + default combos. `App.tsx` reads `settings.keybindings.<id>`; nothing is hardcoded.
+Global keyboard shortcuts. One key per app-level action; the value is a `keybind` combo string. Placed **last** in the schema (a test enforces this). It is not written into a fresh `.settings`, which is sparse; an id appears in the file only once you rebind it. The section is a nested object (not a list), derived from `KEYBINDING_CATALOG` (`core/src/keybindings.ts`) — the single source of truth for ids + default combos. `App.tsx` reads `settings.keybindings.<id>`; nothing is hardcoded.
 
 ### Combo syntax
 
@@ -796,7 +792,7 @@ The `keybind` type drives the smart, order-free shortcut autocomplete + a "Recor
 
 ### Keybinding keys
 
-Each key's value is a `keybind`; the default equals the previously hardcoded combo.
+The schema derives one key per `KEYBINDING_CATALOG` entry: **52** ids, each a `keybind` whose default equals the previously hardcoded combo. The table below lists only the app-level window, pane, tab and navigation ids (24 of the 52); it is **not** the complete key set. The remaining ids (`new-window`, `open-folder`, `export`, and the editor, chat, file-tree, flashcard, graph, ink and shared widget ids such as `open-completion`, `ui-dismiss` and `ui-confirm`) are all listed with their defaults in the [full `KEYBINDING_CATALOG`](keybindings.md#the-full-keybinding_catalog) table.
 
 | id | Default combo | Doc |
 |----|---------------|-----|
@@ -809,7 +805,7 @@ Each key's value is a `keybind`; the default equals the previously hardcoded com
 | `split-down` | `Mod+Shift+D` | Split the focused pane into a new pane below. |
 | `equalize-panes` | `Mod+Alt+=` | Reset all split panes to equal sizes. |
 | `close-pane` | `Mod+W` | Close the focused pane (closes the whole tab when it's the last pane). |
-| `new-tab` | `Mod+T` | Open a new tab (the Knowledge Graph home). |
+| `new-tab` | `Mod+T` | Open a new tab — `homeContent(settings.homePage)`; since `homePage` never reaches the app today, always the Knowledge Graph. |
 | `reopen-tab` | `Mod+Shift+T` | Reopen the most recently closed tab. |
 | `history-back` | `Mod+[` | Go back in the focused pane's navigation history. |
 | `history-forward` | `Mod+]` | Go forward in the focused pane's navigation history. |
@@ -854,4 +850,4 @@ The schema is the single source of truth and defaults must equal the current har
 
 See also: [bases overview](../bases/overview.md), [commands & toolbar](../settings/toolbar-commands.md), [keybindings](../settings/keybindings.md).
 
-Source: `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/theme/tokens.ts`, `core/src/keybindings.ts`, `core/src/commands.ts`, `core/src/agentBackends/catalog.ts`, `core/src/visibility.ts`, `core/src/settings.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/fixtures/upgrade/settings-schema-snapshot.json`
+Source: `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/theme/tokens.ts`, `core/src/keybindings.ts`, `core/src/commands.ts`, `core/src/agentBackends/catalog.ts`, `core/src/visibility.ts`, `core/src/settings.ts`, `app/src/Terminal.tsx`, `app/src/settingsCssVars.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/fixtures/upgrade/settings-schema-snapshot.json`

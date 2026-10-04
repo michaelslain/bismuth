@@ -337,7 +337,7 @@ This is the **one ramp** that used to be hand-copied — and had drifted — int
 
 ## Appearance Settings → CSS Vars (Font & Layout)
 
-Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`, `ui.*`, `calendar.*`, and `terminal.*` settings to CSS vars. A complete listing:
+Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`, `ui.*`, and `calendar.*` settings to CSS vars (it emits no `terminal.*` vars: `Terminal.tsx` reads `terminal.fontSize` and `terminal.lineHeight` straight from the settings store, and the terminal's colors are the fixed `--term-bg`/`--term-fg` palette below). A complete listing:
 
 ### From `appearance.*`
 

@@ -25,7 +25,7 @@ sort:
 | `groupBy` | `{ property, direction? }` | none | Plain bold heading per group, no color/dot/count (contrast with `list`). |
 | `columns` (→ `groupOrder`) | `string[]` | value-sorted | Group order only, same rules as `list`. |
 | `mode` | `"normal"` \| `"tasks"` | `"normal"` | With `mode: tasks`, every `<li>` renders the shared `<TaskRow>` (checkbox, description, field chips) instead of the plain first-column text. Gates on the **declared mode only**, never on row shape — unlike `list`, an un-migrated `source: tasks` bullets base with no `mode:` key keeps rendering plain `renderValue` text. |
-| `sort`, `limit`, `filters` | — | — | Standard fields. |
+| `sort`, `limit` | — | — | Standard fields. (`filters` and `source` are base-level keys, not view fields.) |
 
 ## Failure modes
 

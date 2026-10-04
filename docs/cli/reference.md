@@ -30,7 +30,7 @@ Once installed/linked, it is the `bismuth` binary:
 bismuth <command> [args] [--vault <dir>] [--memory <dir>] [--pretty]
 ```
 
-> Note on naming: the `package.json` `bin` name is **`bismuth`**, matching the `@bismuth/` workspace namespace (the `BISMUTH_*` env vars are a legacy prefix, not the binary name). The lone CLI test (`cli/test/cli.test.ts`) describes `bismuth graph` while actually spawning `bun run cli/src/index.ts`. Examples below use `bismuth`.
+> Note on naming: the `package.json` `bin` name is **`bismuth`**, matching the `@bismuth/` workspace namespace (the `BISMUTH_*` env vars are a legacy prefix, not the binary name). `cli/test/` holds several test files (`cli.test.ts`, `args.test.ts`, `apiTrustRefusal.test.ts`, `baseRefResolve.test.ts`, `dailyId.test.ts`, `notePageInk.test.ts`, `settingsStatusBar.test.ts`, `skillCommands.test.ts`); `cli.test.ts` describes `bismuth graph` while actually spawning `bun run cli/src/index.ts`, and `skillCommands.test.ts` checks every `bismuth ...` phrase in `skills/` against the real registry via `resolveCommand`. Examples below use `bismuth`.
 
 ### Help
 
@@ -45,9 +45,10 @@ Any of these prints the usage banner plus an alphabetically sorted table of ever
 
 ### Dispatch model (longest-match)
 
-`cli/src/index.ts` merges all command groups into one registry keyed by the **full command string** ("task toggle", "row add", "graph", …). Dispatch is **longest-match**: it first tries the two-word phrase `argv[0] argv[1]`; if that key exists it consumes both words, otherwise it falls back to the single word `argv[0]`. Everything after the matched command word(s) is passed to the command's `run(args)`.
+`cli/src/index.ts` merges all command groups into one registry keyed by the **full command string** ("task toggle", "row add", "graph", …). Dispatch is **longest-match** (`resolveCommand` in `cli/src/registry.ts`, shared with the skill drift test): it first tries the three-word phrase `argv[0] argv[1] argv[2]` (e.g. `daemon cron toggle`, `daemon process create`); if that key exists it consumes all three words, otherwise it tries the two-word phrase, and finally the single word `argv[0]`. Everything after the matched command word(s) is passed to the command's `run(args)`.
 
-- Unknown command → prints `unknown command: <first two words>`, the help banner, exits `1`.
+- Unknown command → prints `unknown command: <first three words>`, the help banner, exits `1`.
+- `bismuth help <group>` and `bismuth <group> --help|-h` (e.g. `bismuth task --help`) print a group-scoped listing — only the registered commands equal to `<group>` or starting with `<group> ` — headed `bismuth <group> — matching commands`. A word that prefixes no command falls back to the full listing (`help`) or the unknown-command error (`<group> --help`).
 - A thrown error inside a command → prints `error: <message>` to stderr, exits `1`.
 
 ## Global Flags & Environment
@@ -90,7 +91,7 @@ Every command prints through the shared `out(data, args)`:
 
 | Return type | Output |
 |---|---|
-| `undefined` / `null` | Prints nothing (e.g. `read`, `move`, `mkdir`, `write` print nothing on success — they return void from core). |
+| `undefined` / `null` | Prints nothing. |
 | `string` | Printed as-is (e.g. `task toggle` → `ok`; `daemon cron toggle` → `ok`). |
 | objects / arrays | `JSON.stringify`, single-line by default, **2-space indented when `--pretty` is passed** (the helper checks `bool(args, "pretty")`). |
 
@@ -109,14 +110,14 @@ bismuth read "Projects/Internship.md" --vault ~/vault
 ```
 
 ### `write <path> [--content <text>]`
-Write a vault note. Content comes from `--content`, or **stdin** if `--content` is omitted (`await Bun.stdin.text()`). Prints nothing on success.
+Write a vault note. Content comes from `--content`, or **stdin** if `--content` is omitted (`await Bun.stdin.text()`). Prints `{"ok":true}` on success.
 ```bash
 bismuth write "Notes/Idea.md" --content "# Idea\n\nbody" --vault ~/vault
 echo "# From stdin" | bismuth write "Notes/Piped.md" --vault ~/vault
 ```
 
 ### `move <from> <to>`
-Move/rename a vault entry (`moveEntry`). Both positionals required (`move: <from> <to> required`). Prints nothing.
+Move/rename a vault entry (`moveEntry`). Both positionals required (`move: <from> <to> required`). Prints `{"ok":true}`.
 ```bash
 bismuth move "Inbox/Draft.md" "Notes/Draft.md" --vault ~/vault
 ```
@@ -129,13 +130,13 @@ bismuth delete "Notes/Old.md" --vault ~/vault --pretty
 ```
 
 ### `restore <trashPath> <to>`
-Restore a trashed entry to a destination path. Implemented as a `moveEntry(vault, trashPath, to)`. Both positionals required.
+Restore a trashed entry to a destination path. Implemented as a `moveEntry(vault, trashPath, to)`. Both positionals required. Prints `{"ok":true}`.
 ```bash
 bismuth restore ".trash/Old.md" "Notes/Old.md" --vault ~/vault
 ```
 
 ### `mkdir <path>`
-Create a directory in the vault (`createEntry(..., "dir")`). Prints nothing. Required: `<path>`.
+Create a directory in the vault (`createEntry(..., "dir")`). Prints `{"ok":true}`. Required: `<path>`.
 ```bash
 bismuth mkdir "Projects/2026" --vault ~/vault
 ```
@@ -210,7 +211,7 @@ Build the full knowledge graph (vault + optional memory) via `core/src/engine.ts
 bismuth graph --vault ~/vault --memory ~/.claude/memories --pretty
 bismuth graph --vault ~/vault   # vault only (empty 3rd brain)
 ```
-(This is the command exercised by `cli/test/cli.test.ts`, which asserts the printed JSON's `nodes` contain the sample vault's note ids.)
+(This is a command exercised by `cli/test/cli.test.ts`, which asserts the printed JSON's `nodes` contain the sample vault's note ids.)
 
 ---
 
@@ -256,10 +257,10 @@ bismuth task migrate --vault ~/vault
 
 Mirrors core's `POST /rows` and `/row/*` handlers — see the [bases overview](../bases/overview.md). A base is a `type: base` markdown note; its rows live in a GFM table. All require a vault. The `today()` value is threaded into source resolution. Reads use `parseBaseFile` / `resolveSource`; row mutations use `rowOps` (`upsertRow`/`deleteRow`/`reorderRow`).
 
-### `base create <path> --view <kind> [--source <spec>] [--title <t>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]`
+### `base create <path> --view <kind> [--source <spec>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]`
 Create a new `type: base` note with a single view — the only path to a new base that isn't hand-authoring nested YAML through `file write`. `.md` is appended to `<path>` if missing; the path is reserved via `createEntry` first, so this **fails (EEXIST) rather than clobbering** an existing file.
 
-`--view` is required and validated against `VIEW_TYPES` (`core/src/bases/types.ts`) — the single source of truth for the 12 valid kinds (`table`, `cards`, `list`, `bullets`, `kanban`, `map`, `calendar`, `flashcards`, `bar`, `line`, `stat`, `heatmap`). An invalid kind fails with a message enumerating every valid kind. `--source` defaults to `notes`; `--title` defaults to the file's basename.
+`--view` is required and validated against `VIEW_TYPES` (`core/src/bases/types.ts`) — the single source of truth for the 12 valid kinds (`table`, `cards`, `list`, `bullets`, `kanban`, `map`, `calendar`, `flashcards`, `bar`, `line`, `stat`, `heatmap`). An invalid kind fails with a message enumerating every valid kind. `--source` defaults to `notes`. There is no `--title` flag — `base create` reads only `--view`, `--source`, `--group-by`, `--lat`, `--lng` and `--x`, and writes only `type`, `view`, `source` plus the view-kind keys below into the frontmatter, so a stray `--title` is silently ignored.
 
 Three view kinds render nothing (or a hint message) without extra config — rather than silently produce an empty view, `base create` always writes the key (blank if not supplied) **and** reports it under `missing` in the result, so a caller knows exactly what still needs filling in:
 
@@ -271,7 +272,7 @@ Three view kinds render nothing (or a hint message) without extra config — rat
 
 ```bash
 bismuth base create "Bases/Board.md" --view kanban --group-by note.status --vault ~/vault --pretty
-# { "ok": true, "path": "Bases/Board.md", "view": "kanban", "source": "notes", "title": "Board" }
+# { "ok": true, "path": "Bases/Board.md", "view": "kanban", "source": "notes" }
 
 bismuth base create "Bases/Board.md" --view kanban --vault ~/vault --pretty
 # { "ok": true, ..., "missing": ["groupBy"], "note": "This kanban view needs groupBy set before it renders anything — edit Bases/Board.md or run `bismuth prop set`." }
@@ -279,6 +280,8 @@ bismuth base create "Bases/Board.md" --view kanban --vault ~/vault --pretty
 bismuth base create "Bases/Atlas.md" --view map --lat latitude --lng longitude --vault ~/vault
 bismuth base create "Bases/Reading.md" --view table --vault ~/vault   # no required config for table
 ```
+
+The result is `{ ok, path, view, source }`, plus two fields only when a required key was left blank: `missing` (the list of unset keys, named as written to the frontmatter — `groupBy`, `lat`, `lng`, `x`) and `note` (a sentence naming the view and the keys, pointing at `bismuth prop set`).
 
 ### `base read <path>`
 Parse a `type: base` note and print `{ config, rows }` (`parseBaseFile(text, { name, path })`, name from `fileBasename`).
@@ -484,7 +487,7 @@ Report this vault's [visibility](../vault/visibility.md) deny plan for a channel
 | **Owner** (`BISMUTH_AGENT_CHANNEL` unset) | `{ channel, determined: true, count, entries: [<rel path>, …] }` — the full list, since the owner already knows what they hid. |
 | **Agent channel** (`chat`/`daemon`) | `{ channel, determined: true, count }` — **no `entries` key at all.** A count, never a path. |
 
-`settings` is Tier A (`ALWAYS_SAFE_COMMANDS`) in `core/src/visibilityCliGate.ts`'s command classification (by its `settings`-prefixed group, unchanged by this command), so the outer CLI gate never refuses `settings deny-list` wholesale even in a restricted vault — the count-only branch above is what actually protects it. See [visibility docs § CLI preflight](../vault/visibility.md#the-deny-list-preflight-settings-deny-list) for the full reasoning and the enumeration-oracle threat this closes.
+`settings` is Tier A (`ALWAYS_SAFE_COMMANDS`) in `core/src/visibilityCliGate.ts`'s command classification (by its `settings`-prefixed group, unchanged by this command; the one exception is `settings status-bar`, see below), so the outer CLI gate never refuses `settings deny-list` wholesale even in a restricted vault — the count-only branch above is what actually protects it. See [visibility docs § CLI preflight](../vault/visibility.md#the-deny-list-preflight-settings-deny-list) for the full reasoning and the enumeration-oracle threat this closes.
 ```bash
 bismuth settings deny-list --vault ~/vault --pretty                  # owner, default (daemon) channel
 bismuth settings deny-list --channel chat --vault ~/vault --pretty   # owner, chat channel
@@ -492,7 +495,7 @@ BISMUTH_AGENT_CHANNEL=daemon bismuth settings deny-list --vault ~/vault   # agen
 ```
 
 ### `settings status-bar`
-Preview the bottom [status bar](../settings/status-bar.md): reads `statusBar:` from `.settings`, evaluates every item and prints `{ segments: StatusSegment[] }` as JSON (`--pretty` supported). Headless — no server needed. Text/query segments render their final `text`; builtins carry placement only (`text: ""`). A `run:` segment executes **only if the owner already approved that exact command** on this machine (the trust file, `~/.bismuth/trusted-commands.json` or `BISMUTH_TRUST_FILE`); otherwise it is reported as `untrusted: { command }` with empty `text`. This command never approves anything — the owner clicks `[ allow ]` in the app. A failing item has `error` set and never blocks the others.
+Preview the bottom [status bar](../settings/status-bar.md): reads `statusBar:` from `.settings`, evaluates every item and prints `{ segments: StatusSegment[] }` as JSON (`--pretty` supported). Headless — no server needed. Text/query segments render their final `text`; builtins carry placement only (`text: ""`). A `run:` segment executes **only if the owner already approved that exact command** on this machine (the trust file, `~/.bismuth/trusted-commands.json` or `BISMUTH_TRUST_FILE`); otherwise it is reported as `untrusted: { command }` with empty `text`. This command never approves anything — the owner clicks `[ allow ]` in the app. **Gate tier:** unlike the rest of the `settings` group, `settings status-bar` is `refuse-when-restricted` (`COMPOUND_OVERRIDES` in `core/src/visibilityCliGate.ts`, checked before the group's `ALWAYS_SAFE_COMMANDS` lookup): a `query` segment can count notes by a filter, which would leak counts of hidden notes, so an agent channel is refused on it whenever the vault restricts anything. A failing item has `error` set and never blocks the others.
 ```bash
 bismuth settings status-bar --vault ~/vault --pretty
 ```
@@ -732,10 +735,14 @@ Call any server route directly. `<method>` is upper-cased; `<path>` is appended 
 bismuth api GET /graph --pretty
 bismuth api GET /tasks
 bismuth api POST /set-property --json '{"path":"Books/Dune.md","key":"rating","value":5}'
-bismuth api PUT /file --json '{"path":"Notes/X.md","content":"# X"}'
+bismuth api PUT /file --json '{"path":"Notes/X.md","contents":"# X"}'
 bismuth api GET /version --api http://localhost:4322
 ```
+`PUT /file` takes `{ path, contents, baseText? }` — the key is `contents`, not `content`; see the [HTTP reference](../api/http-reference.md).
+
 This is the escape hatch for any endpoint without a dedicated CLI command (see the full route list in the project's server documentation).
+
+**One deliberate carve-out: `status-bar/trust`.** When `BISMUTH_AGENT_CHANNEL` is anything other than the owner (`chat` or `daemon`), `api` refuses any path that starts with `status-bar/trust` (leading slashes are stripped first, so `/status-bar/trust`, `status-bar/trust` and `//status-bar/trust` are all caught) with `refused: approving a status bar command is the user decision; ask them to click [ allow ] in the bar`, before any request is made. Approving a `run:` command is the owner's decision, not an agent's; the owner (channel unset) is not refused. Pinned by `cli/test/apiTrustRefusal.test.ts`; the route itself is documented at [`POST /status-bar/trust`](../api/http-reference.md#post-status-bartrust).
 
 **Owner-gated routes are reachable, not blocked by construction.** `api` shares `cli/src/http.ts`'s `call()` with every other server-talking group, so it now carries the same owner-token attach described in [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) above: `bismuth api GET /chat/sessions` (or any other owner-only route) succeeds exactly when a matching local run record's token is available — the same condition that gates the dedicated [`chat` group](#chat-commands-commandschatts). It is not the case that an owner-gated route is structurally unreachable from this command; it 403s only when no token can be attached (no running core discovered at `base`, or a run record with no `token` field). Prefer the dedicated `chat`/`app`/`gcal`/`relay` commands where one exists — `api` remains the fallback for routes without one.
 
@@ -1068,7 +1075,7 @@ bismuth chat search "vault schema" --pretty
 
 | Command | Group file | Needs vault? | Output |
 |---|---|---|---|
-| `read` `write` `move` `delete` `restore` `mkdir` `tree` | file.ts | yes | mixed (delete/tree JSON; others none) |
+| `read` `write` `move` `delete` `restore` `mkdir` `tree` | file.ts | yes | JSON (`read` prints the raw note string; `write`/`move`/`restore`/`mkdir` print `{ok:true}`) |
 | `note new` `templates` `daily` | note.ts | yes | JSON |
 | `search` `replace` | search.ts | yes | JSON |
 | `graph` | graph.ts | yes (+optional memory) | JSON |
@@ -1095,4 +1102,4 @@ bismuth chat search "vault schema" --pretty
 | `relay list` | relay.ts | **no** (needs a running server; full snapshot for the owner, `lastMessage`-redacted otherwise — see the section above) | JSON |
 | `chat list` `chat read` `chat search` | chat.ts | **no** (needs a running server + the owner token; refuse-when-restricted under an agent channel — see the section above) | JSON |
 
-Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/taskReorder.ts`, `core/src/taskMigrate.ts`, `core/src/taskLegacy.ts`, `core/src/bases/taskDsl.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`
+Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `cli/test/apiTrustRefusal.test.ts`, `cli/test/skillCommands.test.ts`, `cli/src/registry.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/taskReorder.ts`, `core/src/taskMigrate.ts`, `core/src/taskLegacy.ts`, `core/src/bases/taskDsl.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`

@@ -1,28 +1,33 @@
 # Chat providers (Claude Code / opencode)
 
-> **Scope.** This page covers the two **natively driven** providers below. The backend model that
-> governs all of them — the catalog, the capability flags that decide which header controls render,
-> the other five integration surfaces, and the shared ACP driver that covers additional CLIs — is in
-> [backends.md](backends.md). Read that first if you are adding a backend.
+> **Scope.** This page covers the three **natively driven** providers (Claude Code, opencode,
+> Codex) and the one **shared ACP driver** that runs the other seven backends — ten in all, eight of
+> them shown in the connector picker. The backend model that governs all of them — the catalog, the
+> capability flags that decide which controls render, and the other five integration surfaces — is in
+> [backends.md](backends.md). Read that first if you are adding a backend. Where each control lives
+> (the controls row and the model dialog) is in [overview.md](overview.md#the-controls-row-and-model-dialog).
 >
 > Where this page says a control is hidden "for opencode", the mechanism is now a capability flag on
 > the backend descriptor, not a provider comparison: `providerCan(provider, "permissionModes")` and
 > friends. The *behaviour* described here is unchanged; only what decides it moved.
 
-Each chat tab runs on a **provider** — the CLI that actually drives the conversation. Two are driven
-by a bespoke native driver:
+Each chat tab runs on a **provider** — the CLI that actually drives the conversation. Three are driven
+by a bespoke native driver (Claude Code and opencode in the table below; Codex in
+[its own section](#how-the-codex-driver-works)), and the other seven share one ACP driver (see
+[How the ACP driver works](#how-the-acp-driver-works)):
 
 | Provider | Binary | Driver | Session model |
 | --- | --- | --- | --- |
 | `claude` (default) | the user's `claude` | `core/src/chat.ts` — one long-lived Agent-SDK `query()` per chat | SDK session store (unified with terminal sessions) |
 | `opencode` | the user's `opencode` (resolved like `claude`, via the augmented `claudeLookupPath`) | `core/src/chatProviders/opencode/opencode.ts` — **server mode** (preferred): one persistent `opencode serve` process shared by every opencode chat this core process hosts, owned by `core/src/chatProviders/opencode/opencodeServer.ts`; **run mode** (fallback, for an opencode too old to serve): the original `opencode run --format json` subprocess **per turn**, continued with `-s <sessionID>` | opencode's own store (`ses_…` ids; history via the server's typed `GET /session/{id}/message`, or `opencode export` in run mode) |
+| `codex` | the user's `codex` (resolved with the same augmented-PATH `whichBinary()`) | `core/src/chatProviders/codex/driver.ts` — a `codex exec --json` subprocess **per turn** (not `@openai/codex-sdk`) | Codex's own thread ids, continued with `codex exec … resume <threadId>`; no history replay |
 
-Both speak the **same `ChatFrame` wire protocol** over the `/chat` WebSocket, so `ChatView` renders either without provider-specific rendering code. The seam is `core/src/chatProviders/index.ts` (the router) + `core/src/chatProviders/opencode/opencodeTranslate.ts` (the pure event translation, unit-tested in `core/test/chatProviders/`).
+Every provider speaks the **same `ChatFrame` wire protocol** over the `/chat` WebSocket, so `ChatView` renders any of them without provider-specific rendering code. The seam is `core/src/chatProviders/index.ts` (the router) + `core/src/chatProviders/opencode/opencodeTranslate.ts` (the pure event translation, unit-tested in `core/test/chatProviders/`).
 
 ## Picking a provider
 
-- **Per chat**: the header's provider `Select` (next to the model picker). Switching acts like **"New chat" on the other provider** — a conversation can't hop drivers mid-stream, so the transcript clears and a fresh session spawns. The choice is persisted per tab (`bismuth.chat.provider.<tabId>`, a transient localStorage key like the per-chat model) and latched the moment a session spawns, so a later settings edit can't flip a live tab's header away from its backend.
-- **Default for new tabs**: the `chat.provider` key in `.settings` (`"claude" | "opencode"`, schema-validated — `core/src/schema/settingsSchema.ts`).
+- **Per chat**: the **connectors** column of the model dialog (opened from the model word in the controls row under the composer — see [overview.md](overview.md#the-controls-row-and-model-dialog)). Switching acts like **"New chat" on the other provider** — a conversation can't hop drivers mid-stream, so the transcript clears and a fresh session spawns. The choice is persisted per tab (`bismuth.chat.provider.<tabId>`, a transient localStorage key like the per-chat model) and latched the moment a session spawns, so a later settings edit can't flip a live tab's header away from its backend.
+- **Default for new tabs**: the `chat.provider` key in `.settings`, schema-validated against `core/src/schema/settingsSchema.ts`. Its enum is generated from `BACKEND_IDS` (`CHAT_PROVIDER_IDS = [...BACKEND_IDS]`), so it accepts all ten ids — `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `hermes`, `claude-code-acp`, `codex-acp` — even though the two ACP adapters are hidden from the picker.
 
 On the wire, the client's `open` / `user` / `resume` frames carry `provider`; the server resolves it with `resolveBackendId(requested, settingsDefault)` and routes through the router. **Routing rule**: a chatId with a live session anywhere stays on that backend (conversation continuity beats a stale field); only session-creating verbs honor the requested provider.
 
@@ -57,18 +62,61 @@ Verified live against opencode **1.18.4** + `@opencode-ai/sdk` **1.18.9**:
 Three opencode-specific affordances (all pure parts unit-tested in `core/test/chatProviders/opencodeTranslate.test.ts` + `app/src/chatProvider.test.ts`), working in either mode:
 
 - **Command autocomplete** — opencode's command registry rides the manifest, so typing `/` in the composer autocompletes opencode commands exactly like Claude's. Server mode reads it off the typed `GET /command`; run mode parses `opencode debug config`'s resolved `command` key (config-dir commands + `opencode.json(c)` `command` entries + **plugin-registered** commands) — both merged with the built-ins `/init` and `/review` (`withOpencodeBuiltinCommands`). Descriptions ride the manifest's `commandDetails` and show in the "/" popover. A sent turn whose text leads with a **known** `/command` runs as the server's `session.command()` (or `opencode run --command <name> <args>` in run mode); an unknown `/word` flows through as prose.
-- **Auth pill** — the header shows the opencode credential state (`opencode auth list`, parsed by `parseOpencodeAuthList`, emitted as an `auth` frame per session open) — a plain CLI spawn, unaffected by which mode a session is running in (verified live it doesn't contend with a running server's sqlite). The popover lists stored providers (name + kind) and gives the login path: `opencode auth login` is an interactive CLI wizard (providers, API keys, **opencode Zen**), so the popover offers **Open terminal** (opens a Bismuth terminal tab via the `bismuth-open-terminal` event) and **Copy command**. After logging in, a new chat / reopen refreshes the pill. Not signed in renders in the danger tint.
-- **Zen Free (rotating)** — opencode Zen's free roster is promotional and rotates over time. When Zen currently offers free models (`cost.input === 0 && cost.output === 0` on `opencode/…` ids), the model picker gains a virtual **"Zen Free (rotating)"** entry (`withZenFreeRotate`, id `bismuth/zen-free-rotate`) pinned to the top with a Free badge. Selecting it makes each turn round-robin a REAL free Zen model (`pickZenFreeModel` — turn N runs free model N mod roster size); the virtual id is resolved in the turn dispatcher and never reaches the CLI/server as-is. An empty roster hides the entry (and, if somehow selected, falls back to opencode's own default model).
+- **Provider credentials** — the opencode credential state (`opencode auth list`, parsed by `parseOpencodeAuthList`) is emitted as an `auth` frame per session open — a plain CLI spawn, unaffected by which mode a session is running in (verified live it doesn't contend with a running server's sqlite). The client stores it as `authProviders`, but there is **no header auth pill** and no component renders that list: credentials are managed in `OpencodeProviderManager`, hosted in the right column of the model dialog when the opencode connector is selected ([opencode providers](opencode-providers.md)). `opencode auth login` is an interactive CLI wizard (providers, API keys, **opencode Zen**), so the manager's footer offers **open terminal** (opens a Bismuth terminal tab via the `bismuth-open-terminal` event) and **copy command** for what its connect rows do not cover.
+- **Zen Free (rotating)** — opencode Zen's free roster is promotional and rotates over time. When Zen currently offers free models (`cost.input === 0 && cost.output === 0` on `opencode/…` ids), the model dialog's list gains a virtual **"Zen Free (rotating)"** entry (`withZenFreeRotate`, id `bismuth/zen-free-rotate`) pinned to the top with a Free badge. Selecting it makes each turn round-robin a REAL free Zen model (`pickZenFreeModel` — turn N runs free model N mod roster size); the virtual id is resolved in the turn dispatcher and never reaches the CLI/server as-is. An empty roster hides the entry (and, if somehow selected, falls back to opencode's own default model).
 
 ## Graceful degradation (what opencode sessions still don't have)
 
 Claude-specific surfaces are **hidden, not broken**, for opencode sessions (`providerCan`, `app/src/chatProvider.ts` — see [backends.md](backends.md)):
 
-- **Permission MODE picker** — server mode CAN raise and answer a live permission ask (`permissionPrompts: true`), but there is no verified way to switch a session's permission MODE (no Default/Plan/AcceptEdits/Bypass vocabulary in the server API), so `permissionModes` stays false and the mode-picker Select stays hidden either way.
-- **Effort picker** — hides itself: opencode models carry `effortLevels: []` on the `models` frame in either mode.
-- **`--chrome` (browser/computer-use) toggle** and the `/chrome` slash suggestion.
-- **Session history picker** — it lists the Claude Code SDK store; opencode conversations still resume per tab (see above), they just don't appear in the cross-session picker.
+- **Permission MODE select** (in the controls row) — server mode CAN raise and answer a live permission ask (`permissionPrompts: true`), but there is no verified way to switch a session's permission MODE (no Default/Plan/AcceptEdits/Bypass vocabulary in the server API), so `permissionModes` stays false and the mode `Select` stays hidden either way.
+- **Effort toggle** (in the model dialog) — hides itself: opencode models carry `effortLevels: []` on the `models` frame in either mode.
+- **`--chrome` (browser/computer-use)** — there is no control to hide on any backend: the toggle and the `/chrome` slash command were deleted, and `--chrome` is passed to `claude` unconditionally when `can('claude', 'computerUse')`. `computerUse` is `false` for opencode, so it never gets the flag (see [overview.md](overview.md#browser--computer-use---chrome)).
+- **Session history (`history` button)** — it lists the Claude Code SDK store; opencode conversations still resume per tab (see above), they just don't appear in the cross-session picker.
 - **Claude's own slash commands** — the manifest instead carries **opencode's** command registry (see above); the provider-agnostic client-side commands (`/rename`, `/color`) are offered on both.
 - **Context-window usage pill** — not surfaced; the server does report per-message token counts and each model's context limit, but turning that into an honest occupancy percentage (prompt caching skews raw input-token counts) wasn't done here to avoid shipping a misleading number.
 
 Everything else — streamed markdown prose, tool chips with results, thinking sections, editor-context preambles (`<editor-context>`), queued mid-turn messages, Stop, reconnect buffering with the 30s grace window, per-tab titles, and now image attachments and per-turn memory recall — works identically on both providers when opencode is running in server mode.
+
+## How the Codex driver works
+
+`core/src/chatProviders/codex/driver.ts` spawns the user's own `codex` binary directly (`Bun.spawn`), once per turn, and pumps its NDJSON stdout through the pure translator in `core/src/chatProviders/codex/protocol.ts`. It follows the same lifecycle conventions as opencode's run mode — a session `Map` keyed by chat id, sink buffering and rebind through `chatProviders/sessionSink.ts`, a serialized turn queue, tolerant NDJSON parsing (a bad line is skipped, never fails the turn), and teardown on process exit. Why it is not the SDK is in [backends.md](backends.md#what-each-backend-supports-today).
+
+- **The command.** `buildCodexExecArgs` builds `codex exec --json [--model <id>] --sandbox workspace-write --cd <vault> --skip-git-repo-check [local-model --config overrides] [--config model_reasoning_effort="<level>"] --config approval_policy="never" [resume <threadId>] [--image <path>]…`. The prompt is written to the child's **stdin**, never passed as an argv element. If a turn produces zero parseable JSON lines and exits non-zero (the signature of a rejected flag), the same turn is retried **once** with `--experimental-json`, and whichever spelling worked is remembered for the rest of the session.
+- **Session continuity.** The CLI's thread id is learned from the first `thread.started` event and emitted as a `session` frame (`origin: "user"`, always). The next turn passes `resume <threadId>`. A `resume` from the client seeds the thread id with no initial turn. `historyReplay` and `sessionPicker` are `false`, so a resumed Codex chat continues but shows no past transcript and does not appear in the `history` list.
+- **Streaming.** `streaming: "part"` in the catalog — prose arrives in whole-item chunks, not token deltas. A `result` frame carries `costUsd: null`. The tab title comes from the first prompt (`titleFromPrompt`), since Codex has no summary to read.
+- **Images.** Each attachment's base64 payload is written to a temp file under `os.tmpdir()/bismuth-codex-<uuid>/image-<n>.<ext>` because `--image` takes a path; the directory is deleted when the turn settles.
+- **Effort and model.** `set_effort` accepts Codex's five levels (`minimal | low | medium | high | xhigh`) and sends them as `model_reasoning_effort`; anything else clears it. Codex has no model-list capability (`models: false`), so the driver emits **no `models` frame** — the model dialog shows `no models reported` and, because the effort toggle is derived from the `models` frame, no effort row either. `set_model` takes a free-form id and passes `--model`.
+- **Permissions.** None. `codex exec` has no approval-request channel, so the driver runs `--sandbox workspace-write` with `approval_policy="never"`, implements no `respondPermission`/`respondQuestion`/`setPermissionMode`, and the catalog sets `permissionPrompts` and `permissionModes` to `false` (the mode `Select` is hidden). The manifest is one static, empty frame (no tools, slash commands or MCP servers).
+- **Stop** kills the in-flight `codex exec` process and clears the queue; the non-zero exit is reported as a deliberate Stop, not a turn error.
+- **Missing binary** emits `{type:"error", code:"no-binary", binary:"codex"}` with the message ``The `codex` CLI was not found. Install OpenAI Codex (`npm i -g @openai/codex`) and run `codex` once to log in.`` The app does not read `no-binary`, so this shows as an inline turn error, not the setup screen ([overview.md](overview.md#no-api-key-by-design)).
+- **Local model.** With `localModel.enabled`, `resolveLocalSpawn('codex', …)` runs at the start of **every** turn (so a settings change applies next turn) and adds the custom-provider `--config` overrides plus `BISMUTH_LOCAL_MODEL_KEY`; an unreachable server ends the turn with `local-model-unreachable` rather than falling back to the cloud account. See [local-models.md](local-models.md).
+- **Opt-ins on session open.** `settings.codex.writeAgentsMd` writes the managed AGENTS.md block (`CODEX_AGENTS_MD_CONTENT`) and `settings.codex.installRelayHooks` writes the project-scoped Codex hook files; both are read fresh per new session and never block it.
+
+## How the ACP driver works
+
+The seven ACP backends — `cline`, `gemini`, `goose`, `openclaw`, `hermes`, and the two adapters `claude-code-acp` and `codex-acp` — share **one** hand-rolled [Agent Client Protocol](https://agentclientprotocol.com) driver, `core/src/chatProviders/acp/driver.ts` (`createAcpBackend` is instantiated once per agent). The pure half — JSON-RPC envelopes, the `session/update` to `ChatFrame` translator, model-shape detection, permission-option mapping — is `core/src/chatProviders/acp/protocol.ts`, unit-tested in `core/test/chatProviders/acpProtocol.test.ts`. Unlike opencode run mode and Codex, the agent is **one long-lived subprocess per chat**, speaking newline-delimited JSON-RPC 2.0 over stdio.
+
+- **Spawn table.** `core/src/chatProviders/acp/agents.ts` (`ACP_AGENTS`) is pure data: which binary and args put each CLI into ACP mode.
+
+  | Backend | Spawns | Notes |
+  | --- | --- | --- |
+  | `cline` | `cline --acp` | verified from the compiled binary |
+  | `gemini` | `gemini --experimental-acp` | `fallbackArgs: ['--acp']` — retried once if the process exits before `initialize` answers |
+  | `goose` | `goose acp` | merges Bismuth's `mcpServers` with its own configured extensions; the only ACP agent with a [local-model](local-models.md) mechanism |
+  | `openclaw` | `openclaw acp --session agent:main:bismuth-<chatId>` | the per-chat `--session` (`sessionKeyArgs`) is required — the bridge's default `acp:<uuid>` key collides with an unrelated OpenClaw feature, and a fixed key would leak content between chats; `supportsSessionMcpServers: false` |
+  | `hermes` | `hermes acp` | documentation-confirmed only, not yet verified against a live binary |
+  | `claude-code-acp` | `npx -y @zed-industries/claude-code-acp` | an **adapter** (`adapter: true`), hidden from the picker |
+  | `codex-acp` | `npx -y @agentclientprotocol/codex-acp` | an **adapter**, hidden from the picker |
+
+- **Handshake and session.** `initialize` (`protocolVersion: 1`, client capabilities declare **no** `fs` and **no** `terminal` support), then `session/new {cwd, mcpServers}`. A resume calls `session/load`, falling back to `session/resume` on a method-not-found error. The session id is emitted as a `session` frame (`origin: "user"`). If the handshake never completes the chat gets `"<label> did not complete the ACP handshake."`.
+- **A turn** is one `session/prompt` whose `prompt` is a `text` block plus one `{type:"image", data, mimeType}` block per attachment (so images ride inline, with no temp files). `session/update` notifications stream as frames; the `stopReason` response ends the turn. `cancelled` is a clean Stop, `refusal` is reported as `isError`, and `max_tokens` still counts as a completed turn. Stop sends a `session/cancel` notification and, if the agent never settles the prompt, kills the process after a grace period.
+- **Model and effort.** `detectModelShape` branches on the two shapes agents return: the **new** `configOptions` + `session/set_config_option`, and the **old** `models` + `session/set_model` (the 0.14.x adapters). The agent's model list is emitted as a `models` frame when it reports one. The effort levels come from the agent's `configOptions` entry with category `thought_level` and are switched with `session/set_config_option`; an agent without one gets `effortLevels: []`, which hides the effort toggle.
+- **Permissions.** `session/request_permission` is parked as a `permission` frame and answered by the same `ChatPermissionCard` flow. Every other client-side request (`fs/*`, `terminal/*`, elicitation) gets method-not-found. There is no permission-mode picker (`permissionModes: false`) and no AskUserQuestion equivalent.
+- **MCP and memory.** `mcpServers` carries Bismuth's own `bismuth-mcp` binary from `~/.bismuth/bin/bismuth-mcp` (with `BISMUTH_VAULT`, `BISMUTH_MCP_CHANNEL=chat` and `BISMUTH_AGENT_CHANNEL=chat`, plus `BISMUTH_MEMORY_DIR` when the daemon is enabled). It is `[]` when that binary is not installed and for any agent with `supportsSessionMcpServers: false` (OpenClaw), so OpenClaw chats get no Bismuth MCP tools. Memory reaches these agents only through those MCP tools (`memory: "mcpOnly"`).
+- **Capabilities** are one shared profile (`ACP_SHARED_CAPABILITIES`): token-level `delta` streaming, resume, images, slash commands and permission prompts, but no history replay or picker, no cost or context readout, no computer use, and no relay, daemon or visibility enforcement.
+- **Missing binary** emits `{type:"error", code:"no-binary", binary}` with ``The `<binary>` CLI was not found. Install <label> to use this provider.`` For the two adapters the "binary" is `npx`. As with Codex, the app does not read `no-binary`, so the user sees an inline turn error, not the setup screen.
+
+---
+
+Source: `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/chatProviders/opencode/opencodeTranslate.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/chatProviders/codex/protocol.ts`, `core/src/chatProviders/acp/driver.ts`, `core/src/chatProviders/acp/agents.ts`, `core/src/chatProviders/acp/protocol.ts`, `core/src/agentBackends/catalog.ts`, `core/src/schema/settingsSchema.ts`, `app/src/chatProvider.ts`, `app/src/chat/ChatModelPicker.tsx`, `app/src/chat/ChatControls.tsx`, `app/src/chat/OpencodeProviderManager.tsx`.

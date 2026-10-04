@@ -12,8 +12,12 @@ Every draggable arrives one of two ways, and a surface must handle both:
 - **From outside the app** (Finder, a browser, Photos, Messages, another editor). In the packaged
   app Tauri's native drag-drop handler intercepts these and `app/src/nativeDrop.ts` re-broadcasts
   them as a `bismuth-native-drag` window event carrying real absolute paths and the cursor
-  position. Each surface hit-tests that position against its own rect and claims the drop once
-  (`nativeDropRouting.ts`'s `claimNativeDrop`). A drop with **no paths** (a browser image, a link,
+  position (`x`/`y` in **page CSS px**: the bridge multiplies Tauri's raw coordinates once by a
+  measured `nativeDragScale`, because the raw units differ per engine — WKWebView and WebKitGTK
+  report logical points, WebView2 physical px — so consumers hit-test `d.x`/`d.y` as-is and must
+  not re-correct; see [Tables](../editor/tables.md)'s coordinate note). Each surface hit-tests that position against its own rect and claims the drop once
+  (`nativeDropRouting.ts`'s `claimNativeDrop`) — including the sidebar file tree, so a drop another
+  surface already took is never also uploaded into the vault. A drop with **no paths** (a browser image, a link,
   dragged text, a Photos/Messages file promise) is read off the OS drag pasteboard via the
   `read_drag_pasteboard` Tauri command and planned by `dropIntake.ts`'s `planDrop`. In a browser
   (dev) build the same drags arrive as HTML5 `drop` events and go through the same planner via

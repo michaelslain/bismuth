@@ -122,14 +122,15 @@ console.log(`tasks=${seen} rewritten=${changed}`)
 Run `bun run rewrite-tasks.ts "$OUT"`. Then:
 
 1. **Check the order and emoji against the live Tasks docs** (Sources above) — the script encodes the 2026-10-03 snapshot. If the plugin added or reordered a field, edit `DATE_ORDER`/`DATE`/`PRIORITY` before running.
-2. **Compare counts**: `tasks=` must equal `bismuth task list --vault "$SRC" | jq length` (SKILL step 5d). A difference means a note you generated or a file the walk skipped (dot-folders); fenced checkboxes are counted on both sides — find it before going on.
+2. **Compare counts**: `tasks=` must equal `bismuth task list --vault "$SRC" | jq length` (SKILL step 5d). A difference means a note you generated or a file the walk skipped (dot-folders); fenced checkboxes are counted on both sides — find it before going on. Expected extra: tasks converted from a `mode: tasks` base's stored body rows (`bases`, item B7) are new checkbox lines the source's `task list` never counted.
 3. **A recurring task** keeps Bismuth's rule text: `[every week]` → `🔁 every week`. Rules Bismuth rolls over (`every day|N days|week|N weeks|month|N months|year|N years|weekday`) are also Tasks rules; others (`every other day`, `every week on Sunday`, `when done`) pass through verbatim and the plugin may read them differently — list every non-standard rule in the report.
 4. **Statuses**: `[/]` and `[-]` are copied as-is. If they do not render as in-progress / cancelled in Obsidian, follow the Statuses page.
-5. **` ```query ` blocks with `tasks:`** → a ` ```tasks ` block. Legacy bodies are already Tasks-plugin lines: copy the `tasks:` value (a single line, or a `|-` block scalar) as the block body, one query line each. The modern form translates leaf by leaf:
+5. **` ```query ` blocks with `tasks:`** → a ` ```tasks ` block. Legacy bodies are Tasks-plugin lines: copy the `tasks:` value (a single line, or a `|-` block scalar) as the block body, one query line each — **except the `done` / `not done` lines**, which Bismuth reads as `note.resolved` / `!note.resolved` (done OR cancelled, `core/src/bases/taskDsl.ts`), so they translate as in the table below, not verbatim. Every other legacy line copies as is. The modern form translates leaf by leaf:
 
    | Bismuth | ` ```tasks ` line |
    |---|---|
-   | `tasks: not done` | `not done` |
+   | `tasks: not done` (a legacy line) | `not done` + `is not cancelled` (two lines; Bismuth reads it as `!note.resolved`, which also hides cancelled tasks) |
+| `tasks: done` (a legacy line) | `(done) OR (is cancelled)` (Bismuth reads it as `note.resolved`) |
    | `where: !note.resolved` | `not done` + `is not cancelled` (two lines; `resolved` means done OR cancelled — verify on the Filters page) |
    | `where: note.resolved` | `(done) OR (is cancelled)` (verify on the Filters page) |
    | `where: note.priority == "high"` | `priority is high` |
@@ -147,7 +148,7 @@ Run `bun run rewrite-tasks.ts "$OUT"`. Then:
 - The Tasks plugin's global filter, on-completion (`🏁`), dependencies (`🆔`, `⛔`) and Dataview-style `[due:: D]` fields: nothing in Bismuth maps to them.
 - Unusual recurrence rules (see Convert 3).
 - A task's field position: Bismuth lets fields sit mid-sentence; the output always puts the emoji last, so words that followed a field on the same line now come before it (nothing is deleted, the order of prose and metadata changes).
-- Task bases: kanban/calendar presentation of tasks, `mode: tasks`, scoped `from:`. A ` ```tasks ` block lists tasks; it does not draw boards or grids.
+- Task bases: kanban/calendar presentation of tasks, `mode: tasks`, scoped `from:`. A ` ```tasks ` block lists tasks; it does not draw boards or grids. Tasks **stored as rows in a `mode: tasks` base's own body** are not vault checkbox lines: they convert to checkbox lines per `bases` (item B7), not to a query.
 - Impossible or malformed dates (`[due 2026-02-30]`): left as literal text, the same as Bismuth does.
 
 ## Validate

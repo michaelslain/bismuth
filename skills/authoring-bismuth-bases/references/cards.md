@@ -29,7 +29,7 @@ groupBy:
 | `image` | `string` (property id) | none | Property whose value is the cover image (properties mode only). |
 | `imageFit` | `"cover"` \| `"contain"` | `"cover"` | CSS `object-fit` on the cover `<img>`. |
 | `imageAspectRatio` | `number` | `0.667` | Width÷height for the cover container. |
-| `order`, `sort`, `groupBy`, `limit`, `filters` | — | — | Standard fields; `order`'s first two columns drive the generated text-cover title/author. |
+| `order`, `sort`, `groupBy`, `limit` | — | — | Standard fields (`filters` is a base-level key, not a view field); `order`'s first two columns drive the generated text-cover title/author. |
 
 ## Failure modes
 

@@ -1,6 +1,6 @@
 # table
 
-Spreadsheet-style grid. The default/fallback view — used when no `type:` is set or an unknown `type:` is given.
+Spreadsheet-style grid. The default/fallback view — used when no `view:` is set or an unknown `view:` is given (`type:` is the base marker, `type: base`, never the view kind).
 
 ## Working example
 
@@ -33,11 +33,11 @@ limit: 200
 | `summaries` | `Record<propertyId, string>` | none | Footer aggregate per column: `Sum`\|`Average`\|`Min`\|`Max`\|`Count`\|`Empty`\|`Filled`\|`Unique`. |
 | `columnWidths` | `Record<propertyId, number>` | none | Per-column pixel widths; normally written by drag-resize, safe to set by hand. |
 | `limit` | `number` | none | Max rows per group. |
-| `filters` | `FilterNode` | none | Per-view filter, ANDed with the base-level `filters`. |
 | `mode` | `"normal"` \| `"tasks"` | `"normal"` | `table` is the one row view that does NOT fold a task row into a `<TaskRow>` line — a checkbox, description and chips don't fit a cell. In `mode: tasks` the `status` column becomes a live checkbox cell and the `due` column paints overdue; every other column stays an ordinary cell. |
 
 ## Failure modes
 
+- **There is no per-view `filters`.** `filters` is a base-level key (one filter for the base's one view); a legacy `views[0].filters` is only ANDed in when reading an old file. Write `filters:` at the top level beside `view:`.
 - **`order: []` (present but empty) means "show all," not "show nothing."** Only an *absent* `order` and an *empty* `order` behave identically — both auto-derive columns. There is no way to declare zero columns.
 - **Formula columns must be explicitly listed in `order`** — `formula.*` ids are never auto-derived, so a formula you don't reference in `order` never appears even though it computed successfully.
 - **Fixed-width layout requires every visible column to have a width in `columnWidths`.** Miss one (e.g. after adding a column post-save) and the whole table silently falls back to fluid 100% layout until the next drag-resize reseeds every width.

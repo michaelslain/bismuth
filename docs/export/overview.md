@@ -231,6 +231,7 @@ colours `resolvePalette` already resolved:
 |---|---|---|
 | face | `--prose-font` (the proportional note face, IBM Plex Serif by default) | `:root`, `global.css` (tokens section) |
 | leading | the app's own `calc(var(--row-h) * var(--prose-line-height))`, read back as a **ratio of the type** | `--prose-line-height` = `editor.lineHeight` |
+| code size | `calc(100px * var(--code-scale) * var(--mono-scale, 1))`, read back as a **ratio** (`ThemePalette.codeScale`) | `--code-scale` (0.89) in `global.css`; `--mono-scale` = `appearance.monoScale` |
 | colours | `--bg`/`--fg`/`--accent`/the category tokens | probed — see "html2canvas and modern CSS colors" |
 
 The UI face (`ThemePalette.font`, used by every NON-prose export) comes from `--ui-font-stack`.
@@ -247,8 +248,20 @@ drift when the app's expression changes.
 
 There is deliberately no `--prose-scale` in the palette. In the app that scale exists so a serif reads
 at the same *optical* size as the mono chrome beside it; an export document has no mono chrome, and
-the pt picker is already the intended reading size — applying the scale would silently render a chosen
-12pt at 15.36pt.
+the pt picker is already the intended reading size — the chosen size is used literally, and
+applying the scale would silently render it at a different size than picked (at the old CMU Serif
+scale of 1.28, a chosen 12pt would have landed at 15.36pt; the default face's scale is now `1`).
+
+Code is the one thing that *is* scaled against the prose size. `ThemePalette.codeScale` is the app's
+`--code-scale` (0.89) × `--mono-scale`: `resolvePalette.ts` reads it back through a real property
+(`calc(100px * var(--code-scale) * var(--mono-scale, 1))`, since a custom property reads back as
+its specified text), and the headless CLI computes `CODE_SCALE * appearance.monoScale`. In
+`htmlTemplate.ts`, `pre`, `pre code`, block `code`, frontmatter (`.fmatter`) and `#tag` runs are
+sized at `bodyPx * codeScale`, and **inline** code (`:not(pre) > code`) uses the same ratio in `em`,
+so it scales correctly inside headings and table cells. Code at the full prose size read visibly
+bigger than the editor shows it (Monaspace runs ~24% wider than the serif at equal size). A non-prose
+export (a base's visual view, already set in the mono UI face) keeps code at the body size — the
+ratio is `1`.
 
 Only note prose switches. A base's visual export (calendar grid, cards, kanban), a sheet table and a
 raw markdown dump keep `ThemePalette.font` (the UI face) on the fixed `RULE_PX` rule, because that is
@@ -258,25 +271,32 @@ what those surfaces use in the app too. The flag is `prose` on `bodyHtml` / `wra
 Headless (CLI) exports have no DOM to probe, so colour still falls back to `DEFAULT_PALETTE`'s
 values — but typography does not. `cli/src/commands/export.ts`'s `buildPaletteOverride(vault, theme)`
 reads the vault's own `.settings` (via `readSettings`) and builds a `ThemePalette` override —
-`options.palette`, passed into `renderExport`/`renderPreview` — that replaces three fields on top of
+`options.palette`, passed into `renderExport`/`renderPreview` — that replaces five fields on top of
 `DEFAULT_PALETTE[theme]`:
 
 - **`proseLeading`** — recomputed from `editor.lineHeight` (falling back to the schema default `1.5`
   when the vault has no `.settings` or leaves the key unset) and `appearance.editorFontSize`
   (falling back to `13.5`), using the **same ratio the live app's DOM probe computes**:
-  `proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * PROSE_SCALE)`, where `ROW_H_PX = 18`
-  (the app's `--row-h` row unit) and `PROSE_SCALE = 1.04` (`global.css`'s `--prose-scale` (tokens section))
-  are read from `exportTheme.ts`'s exported `PROSE_SCALE` and a local `ROW_H_PX`, so a change to
+  `proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * proseScale)`, where `ROW_H_PX = 18`
+  (the app's `--row-h` row unit) and `proseScale` is the vault's prose face's own optical scale:
+  `PROSE_SCALES[appearance.proseFont]` (falling back to `DEFAULT_PROSE_SCALE`) when the vault sets
+  `proseFont`, else `exportTheme.ts`'s exported `PROSE_SCALE` (`1`, the default IBM Plex Serif's
+  scale; it was 1.04 while Lora was the default). `ROW_H_PX` is a local constant, so a change to
   either token in the app is the only place this can drift from.
+- **`codeScale`** — `CODE_SCALE * (appearance.monoScale ?? 1)`, with `CODE_SCALE = 0.89`
+  (`global.css`'s `--code-scale`), the same product the app's DOM probe reads back.
 - **`monoFont`** — `appearance.uiFont` resolved through `FONT_STACKS` (the same setting and map
   `settingsCssVars.ts` uses for the app's `--ui-font-stack`; `uiFont` is now the sole source for both the
   in-note mono face and the chrome face), or the raw string when the vault names a face the map
   doesn't carry, falling back to `DEFAULT_PALETTE[theme].monoFont` when the setting is unset.
 - **`font`** — `appearance.uiFont` resolved the same way, falling back to
   `DEFAULT_PALETTE[theme].font`.
+- **`proseFont`** — `appearance.proseFont` resolved through `FONT_STACKS` (or the raw string),
+  falling back to `DEFAULT_PALETTE[theme].proseFont`.
 
-So a headless PDF/PNG/HTML export's prose leading and both faces track the vault's own settings; only
-colour (and the prose scale itself, per the note above) stay fixed at `DEFAULT_PALETTE`'s values.
+So a headless PDF/PNG/HTML export's prose leading, code size and faces (UI, mono and prose) track the
+vault's own settings, including its prose face's scale and `monoScale`; only colour stays fixed at
+`DEFAULT_PALETTE`'s values.
 
 ## Font embedding
 
@@ -502,4 +522,4 @@ The Tauri surface is injectable (`TauriDelivery`), so the routing + verify-after
 
 The `ExportDeps` the pane wires up include `read`/`resolveRows` (HTTP via `api`), `htmlToPdf` (`pdfPrint.ts`'s `htmlToPdfBytes` — webkit/canvas chooser + fallback, itself dynamic-importing whichever engine it needs), the deferred `htmlToPng` (dynamic-imported only when actually exporting a PNG, to keep `html2canvas` out of the preview path), `drawingToPng` (browser raster), and `katexCss` (the Vite `?inline` module, lazy-loaded only when an export contains math).
 
-Source: `app/src/ExportView.tsx`, `app/src/export/exporters.ts`, `app/src/export/types.ts`, `app/src/export/formats.ts`, `app/src/export/options.ts`, `app/src/export/pageBreaks.ts`, `app/src/export/pageGeometry.ts`, `app/src/export/cssColor.ts`, `app/src/export/resolvePalette.ts`, `app/src/export/baseView.ts`, `app/src/export/baseTable.ts`, `app/src/export/rowsHtml.ts`, `app/src/export/mdTable.ts`, `app/src/export/sheetHtml.ts`, `app/src/export/viewHtml.ts`, `app/src/export/calendarHtml.ts`, `app/src/export/csvTable.ts`, `app/src/export/htmlToPdf.ts`, `app/src/export/pdfPrint.ts`, `app/src/export/printCss.ts`, `app/src/export/htmlTemplate.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/download.ts`, `app/src/export/docFontCss.ts`, `app/src/export/fontFaceCss.ts`, `app/src/preview/PdfPages.tsx`, `app/src-tauri/src/print_pdf.rs`, `app/src/bases/cardBodySplit.ts`, `app/src/bases/markdown.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/export.ts`, `cli/src/docFontCss.ts`, `core/src/render/htmlRaster.ts`, `core/src/render/chromeSession.ts`.
+Source: `app/src/ExportView.tsx`, `app/src/export/exporters.ts`, `app/src/export/types.ts`, `app/src/export/formats.ts`, `app/src/export/options.ts`, `app/src/export/pageBreaks.ts`, `app/src/export/pageGeometry.ts`, `app/src/export/cssColor.ts`, `app/src/export/resolvePalette.ts`, `app/src/export/exportTheme.ts`, `app/src/export/baseView.ts`, `app/src/export/baseTable.ts`, `app/src/export/rowsHtml.ts`, `app/src/export/mdTable.ts`, `app/src/export/sheetHtml.ts`, `app/src/export/viewHtml.ts`, `app/src/export/calendarHtml.ts`, `app/src/export/csvTable.ts`, `app/src/export/htmlToPdf.ts`, `app/src/export/pdfPrint.ts`, `app/src/export/printCss.ts`, `app/src/export/htmlTemplate.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/download.ts`, `app/src/export/docFontCss.ts`, `app/src/export/fontFaceCss.ts`, `app/src/preview/PdfPages.tsx`, `app/src-tauri/src/print_pdf.rs`, `app/src/bases/cardBodySplit.ts`, `app/src/bases/markdown.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/export.ts`, `cli/src/docFontCss.ts`, `core/src/render/htmlRaster.ts`, `core/src/render/chromeSession.ts`.

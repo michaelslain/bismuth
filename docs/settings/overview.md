@@ -19,7 +19,7 @@ SETTINGS_SCHEMA (core)      ← single source of truth
     ├── serializeSettings    ← file merged over defaults → GET /settings
     ├── settingsComplete.ts  ← Ctrl-Space autocomplete inside the editor
     ├── yamlSchema.ts        ← inline lint
-    └── settingsCssVars.ts   ← projects appearance/ui/terminal/calendar → CSS :root vars
+    └── settingsCssVars.ts   ← projects appearance/ui/editor/calendar → CSS :root vars (terminal font size + line height are read directly by `Terminal.tsx`, not via CSS vars)
 ```
 
 The 2D/3D graph dimension is intentionally **not** a setting — it is a transient per-window localStorage toggle in `GraphView.tsx` and never rewrites `.settings`.
@@ -111,9 +111,12 @@ await setSettingInFile(vault, ["graph", "nodeSize"], 12);
 2. Reads and parses `.settings` (tolerates malformed YAML → `data = {}`).
 3. For each known section:
    - `folderIcons` — passed through as a free-form string map via `readFolderIconsFrom`.
-   - `toolbar` — parsed via `readToolbarFrom` (validates item structure, drops malformed items).
+   - `folderVisibility` — passed through as a free-form string map via `readFolderVisibilityFrom`.
+   - `toolbar` and `tabBar` — parsed via `readButtonListFrom` (validates item structure, drops malformed items — including any item whose `icon` is not a non-empty string). The user's array is read as-is, never overlaid index-by-index on the default.
    - `dailyNotes` — parsed via `readDailyNotesFrom` (validates item structure, drops malformed items).
-   - All other sections: per-key `typeof` check; wrong-type values are silently dropped back to defaults. Numeric keys with out-of-range values (below `min` or above `max`) are dropped. Enum keys with unknown values are dropped.
+   - Top-level **scalar** sections (`homePage`) — skipped by the `typeof stored !== 'object'` guard, so the default (`""`) is always returned, whatever the file says.
+   - `statusBar` (a top-level list) — NOT special-cased, so it takes the generic overlay below **per index onto the default list**: a longer user list is truncated to the default's 4 items, and a shorter one is padded with the default's remaining items. The rendered bar is unaffected (`GET /status-bar` re-reads the raw file via `normalizeStatusBar`), but `GET /settings` and `bismuth settings get --key statusBar` report the overlaid list.
+   - All other sections: per-key `typeof` check; wrong-type values are silently dropped back to defaults. Numeric keys with out-of-range values (below `min` or above `max`) are dropped. Enum keys with unknown values are dropped. A list-typed key is accepted only if it is structurally valid: a list of strings must contain only strings; a list of objects (`chat.presets`) keeps each object item reduced to the item schema's fields, a field that is missing or not a string reads as `""`, and a non-object item is dropped.
 4. Strips the `properties` section (delivered separately by `GET /schema`).
 
 This means a corrupt or partial `.settings` degrades gracefully to defaults — nothing explodes.
@@ -148,7 +151,7 @@ interface SchemaEntry {
 | `"file"` | Vault file path |
 | `"icon"` | Icon name (any Phosphor icon) or emoji |
 | `"keybind"` | Shortcut combo string (e.g. `"Mod+P"`); drives the "Record shortcut" autocomplete |
-| `{ kind: "path", only?: "dir"\|"file", scope?: "templates" }` | Vault path; completion narrows to dirs/files/templates |
+| `{ kind: "path", only?: "dir"\|"file", scope?: "templates"\|"fs" }` | Path; completion narrows to dirs/files/templates, or (`"fs"`) the real filesystem |
 | `{ kind: "enum", values: string[], caseInsensitive?: boolean, allowPrefixes?: string[] }` | One of a fixed set of strings |
 | `{ kind: "list", item?: PropertyType }` | YAML sequence |
 | `{ kind: "object", fields: Schema }` | Nested YAML map |
@@ -306,11 +309,10 @@ The daemon is **one machine process** (the in-repo `@bismuth/daemon` workspace, 
 
 ### `chat`
 
-Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior.
+Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior. There is no `chat.computerUse` setting: the Claude Code backend's `--chrome` flag is derived from the backend catalog's `computerUse` capability alone (see [chat overview](../chat/overview.md)).
 
 | Key | Type | Default | Range | Description |
 |---|---|---|---|---|
-| `computerUse` | boolean | `false` | — | Enable Claude's browser/computer-use capability (`--chrome`) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser (Chrome/Edge/Brave). Claude Code provider only. |
 | `provider` | enum | `claude` | 10 values | Default chat provider for NEW chat tabs: `claude` runs Claude Code, `opencode` runs opencode, `codex` runs OpenAI Codex, `cline` runs Cline, `gemini` runs Gemini CLI, `goose` runs Goose, `openclaw` runs OpenClaw, `hermes` runs Hermes Agent, `claude-code-acp` runs Claude Code (ACP), `codex-acp` runs Codex (ACP). Each chat can still pick its own provider in the header. |
 | `presets` | list (object) | `[]` | — | Saved provider + model + effort combinations, picked from the chat's model dialog (chat tab and daemon chat). Each item is `{name, provider, model, effort}` — `provider` is a chat connector id, `model` the connector's model id (empty = its default), `effort` a level the model supports (empty = its default). Usually written by the dialog's `[+ save]`; see [chat presets](../chat/overview.md). |
 
@@ -354,7 +356,7 @@ OpenAI Codex-specific opt-ins (`core/src/agentBackends/agentsMd.ts` + `codexHook
 
 ### `properties`
 
-A free-form `{name: typeString}` map for the vault-wide property registry. Seeded empty on first launch. Edited directly in the YAML. Parsed separately via `GET /schema` (not included in `GET /settings`). Valid type strings: `string`, `number`, `boolean`, `date`, `datetime`, `file`, `list`, or an object with an `enum` sub-key.
+A free-form `{name: typeString}` map for the vault-wide property registry. Defaults to empty (absent from a fresh `.settings`, which is sparse). Edited directly in the YAML. Parsed separately via `GET /schema` (not included in `GET /settings`). Valid type strings: `string`, `number`, `boolean`, `date`, `datetime`, `file`, `list`, or an object with an `enum` sub-key.
 
 ```yaml
 properties:
@@ -367,7 +369,7 @@ properties:
 
 ### `folderIcons`
 
-A free-form `{folderPath: iconName}` string map. Seeded empty. Written by right-clicking a folder → "Set icon" (calls `POST /folder-icon` which calls `setFolderIcon`). Not intended for manual editing but valid YAML.
+A free-form `{folderPath: iconName}` string map. Defaults to empty. Written by right-clicking a folder → "Set icon" (calls `POST /folder-icon` which calls `setFolderIcon`). Not intended for manual editing but valid YAML.
 
 ```yaml
 folderIcons:
@@ -380,7 +382,7 @@ Empty or non-string values are dropped by `readFolderIconsFrom`.
 
 ### `folderVisibility`
 
-A free-form `{folderPath: "chat-only"|"hidden"}` string map (folders have no frontmatter of their own to carry a `visibility` key). Seeded empty. Written via `POST /folder-visibility`; nearest-ancestor-wins resolution lives in `core/src/visibility.ts`. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — it is an honesty boundary, not a security boundary, and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Per-file visibility is a note's own `visibility:` frontmatter key, not this section.
+A free-form `{folderPath: "chat-only"|"hidden"}` string map (folders have no frontmatter of their own to carry a `visibility` key). Defaults to empty. Written via `POST /folder-visibility`; nearest-ancestor-wins resolution lives in `core/src/visibility.ts`. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — it is an honesty boundary, not a security boundary, and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Per-file visibility is a note's own `visibility:` frontmatter key, not this section.
 
 ```yaml
 folderVisibility:
@@ -435,7 +437,7 @@ tabBar:
 
 ### `statusBar` and `homePage`
 
-The bottom bar is a list of segments (`statusBar:`), and `homePage:` picks the note a new tab opens. Both are documented in [Status bar & home page](status-bar.md).
+The bottom bar is a list of segments (`statusBar:`), and `homePage:` names the note a new tab should open (currently not applied — the app never receives it). Both are documented in [Status bar & home page](status-bar.md).
 
 ### `dailyNotes`
 
@@ -494,7 +496,7 @@ keybindings:
   toggle-sidebar: Alt+S
 ```
 
-The `keybindings` section is placed **last** in the schema so it appears at the bottom of a freshly generated `.settings`.
+The `keybindings` section is placed **last** in the schema (a test enforces this), which fixes its position in the schema, autocomplete and `DEFAULTS`. It does not appear in a fresh `.settings`: that file is sparse and a keybinding is written only when you rebind it.
 
 ---
 
@@ -502,7 +504,7 @@ The `keybindings` section is placed **last** in the schema so it appears at the 
 
 `DEFAULTS` (exported from `core/src/schema/settingsSchema.ts`) is a plain nested object derived by `deriveDefaults(SETTINGS_SCHEMA)` — it recursively materializes the `default` field of every leaf into a nested plain object. It is the synchronous seed for both the backend's `AppConfig` type and the frontend's `Settings` store.
 
-`DEFAULTS` includes the `properties` and `folderIcons` keys (both `{}`). The `properties` key is stripped by `serializeSettingsForFrontend` before sending to the frontend.
+`DEFAULTS` includes the `properties` and `folderIcons` keys (both `{}`; neither is written into a fresh `.settings`). The `properties` key is stripped by `serializeSettingsForFrontend` before sending to the frontend.
 
 The frontend re-exports `DEFAULTS` from the schema spine — there is one copy, not two.
 
@@ -522,7 +524,7 @@ The Solid.js store is initialized **synchronously** from `mergeServerSettings(re
 
 ### `mergeServerSettings(parsed)`
 
-A pure function used both for the `localStorage` seed and the server JSON. It clones `DEFAULTS`, then for each known section key, copies over stored values that pass a `typeof` check — missing or wrong-type values fall back to defaults. Array-typed top-level sections (like `toolbar`, `dailyNotes`) are replaced wholesale when the server sends an array; otherwise the default is kept.
+A pure function used both for the `localStorage` seed and the server JSON. It clones `DEFAULTS`, then for each known section key, copies over stored values that pass a `typeof` check — missing or wrong-type values fall back to defaults. Array-typed top-level sections (like `toolbar`, `tabBar`, `dailyNotes`, `statusBar`) are replaced wholesale when the server sends an array; otherwise the default is kept.
 
 ### `diffLeaves(prev, next)`
 

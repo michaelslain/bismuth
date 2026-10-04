@@ -14,6 +14,8 @@ Commands separate metadata from behavior so the command palette and sidebar tool
 - **`app/src/commands.ts`** — `bindCommands(handlers, dailyNotes)` produces a live `Map<string, BoundCommand>` where each catalog id is mapped to a runnable `{ id, label, icon, action }`. The catalog says *what* each command is; the binding says *what it does*. `App.tsx` passes its handlers in once.
 - **`core/src/schema/settingsSchema.ts`** — defines the `toolbar:` settings key (a list of button objects) and the `dailyNotes:` key (which registers extra `daily-note:<id>` commands).
 
+Command ids are also used outside the two button bars: a [`statusBar:`](status-bar.md) segment takes a `command:` field with the same id set (`COMMAND_IDS` plus the `daily-note:` prefix, lint-validated by the same schema enum). Clicking such a segment runs the bound command from the same `bindCommands` map (`App.tsx`: `onRunCommand={id => void commands().get(id)?.action()}`), without the app-control blocklist.
+
 The sidebar header bar (the `<IconBar band>` row in `app/src/shell/Sidebar.tsx`, filled by `App.tsx`) is configured entirely by `toolbar:` in `.settings`. There is no GUI for it — you edit `.settings` directly (see [settings overview](./overview.md)).
 
 ## The Command Catalog
@@ -110,7 +112,7 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 
 Notes on individual commands:
 
-- **`new-tab` vs `open-graph`**: `new-tab` always spawns a fresh graph home tab; `open-graph` focuses an existing graph tab if one is open (else opens one). (Comment in `app/src/commands.ts`.)
+- **`new-tab` vs `open-graph`**: `new-tab` always spawns a fresh home tab (it opens `homeContent(settings.homePage)`: meant to be your configured `homePage` note, but `homePage` never reaches the app today, so it is always the graph — it never focuses an existing tab); `open-graph` focuses an existing graph tab if one is open (else opens one). (Comment in `app/src/commands.ts`.)
 - **`open-daemon`**: opens the daemon page (`::daemon` — the living face, crons + services, inbox + log, and a docked chat; see `docs/daemon/overview.md`) as its own tab, focusing the existing one if open (`h.openDaemon`).
 - **`open-inbox`**: the inbox lives on the daemon page, so this is bound to the same `h.openDaemon` — it opens the daemon page. It keeps its own id and label because it ships in the **default sidebar toolbar** (see ["The `toolbar:` Setting"](#the-toolbar-setting) below), where it is hidden while the daemon is off and carries the due-count badge.
 - **`create-menu`** is the **`+Create` chooser** — a single button that opens a context menu of all the "create" commands instead of running one. See ["The `create-menu` chooser"](#the-create-menu-chooser) below.
@@ -386,7 +388,7 @@ toolbar: {
 |---|---|---|---|
 | `command` | enum of `COMMAND_IDS`, plus the `daily-note:` prefix | no* | The single command id this button runs. |
 | `commands` | list of those same enum values | no* | An ordered **fallback** list of command ids — the button runs the first one that resolves; the rest never run (alternative to `command`). |
-| `icon` | `icon` (Lucide name or emoji) | no | The glyph drawn on the button. Falls back to `CircleHelp` when the command is unknown. |
+| `icon` | `icon` (Lucide name or emoji) | **yes** | The glyph drawn on the button. An item whose `icon` is not a non-empty string is dropped by the server reader (`readButtonListFrom`), so a button with only `command:` silently disappears. (The `CircleHelp` fallback in the renderer applies only to the glyph of a disabled button whose command is unknown, and never to a missing `icon`.) |
 | `tooltip` | string | no | Hover text. Defaults to the resolved command's `label`. |
 
 \* Use **`command:` OR `commands:`, not both**. If both are present, `commands` (when non-empty) wins (see precedence below).
@@ -527,4 +529,4 @@ toolbar:
 - [Keybindings](./keybindings.md) — the parallel split-data system for keyboard shortcuts (`KEYBINDING_CATALOG` + `matchesKeybinding`).
 - [App control](../mcp/app-control.md) — the `bismuth app run`/`POST /ui/command` surface that runs commands from outside the UI, including the `interactive` reply shape and the `UI_CONTROL_BLOCKLIST`.
 
-Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`, `app/src/shell/CommandButton.tsx`, `app/src/daemonInbox.ts`
+Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`, `app/src/shell/CommandButton.tsx`, `app/src/daemonInbox.ts`, `core/src/settings.ts`, `app/src/homePage.ts`

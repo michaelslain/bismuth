@@ -24,7 +24,7 @@ same structure.
 - **Bases** — a `type: base` note is a query over your vault, rendered through any of 12 view kinds (table, cards, kanban, calendar, map, charts, flashcards, …)
 - **Tasks** (Obsidian-Tasks compatible) and **flashcards** (SM-2 spaced repetition) that read straight out of your notes
 - **Calendar** with two-way Google Calendar sync · **drawing** (`.draw`) · **spreadsheets** (`.sheet`) · **export** to md/html/png/pdf
-- **AI** — in-app terminals, visual chat through **nine** agent backends (Claude Code, opencode, Codex, and six more), a **skill** (`skills/`) for authoring Bases views, and per-file/folder **visibility controls** for restricting agent access
+- **AI** — in-app terminals, visual chat through **ten** agent backends (Claude Code, opencode, Codex, and seven more over ACP), three **skills** (`skills/`: `authoring-bismuth-bases` for writing Bases views, plus `converting-obsidian-to-bismuth` and `converting-bismuth-to-obsidian` for moving a vault between the two apps), and per-file/folder **visibility controls** for restricting agent access
 - **A daemon** — an optional background brain per vault: crons, processes, a memory graph, and an inbox of work awaiting your approval
 - **Drive it from anywhere** — the `bismuth` CLI, an MCP server, and an iPad build that runs the whole backend in-process
 
@@ -35,11 +35,12 @@ Everything is local-first and file-based: no account, sync service, or database.
 ## About this documentation
 
 Bismuth is a Bun monorepo with **seven workspaces**: `core` (backend), `app` (Solid + Tauri),
-`cli`, `relay`, `mcp`, `memory`, and `daemon`. Three top-level directories are not workspaces:
-`skills/` (agent-facing skill guides), `app/.storybook/` (the Storybook 9 component catalog for
-`app/src/`, `bun run storybook`, port `6006`), and `bench/` (visual verification that drives its
-own Chrome over that catalog — `bun run visual`; see [Testing](contributing/testing.md)). This
-reference is code-anchored and its examples come from the implementation.
+`cli`, `relay`, `mcp`, `memory`, and `daemon`. Four top-level directories are not workspaces:
+`skills/` (agent-facing skill guides), `bench/` (visual verification that drives its own Chrome
+over the Storybook catalog — `bun run visual`; see [Testing](contributing/testing.md)), `scripts/`
+(the commit/push gate and the docs check) and `design/` (the design-system gate's baseline). The
+Storybook 9 component catalog for `app/src/` (`bun run storybook`, port `6006`) lives in
+`app/.storybook/`, inside the `app` workspace. This reference is code-anchored and its examples come from the implementation.
 
 ## Get started (macOS)
 
@@ -116,7 +117,8 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Calendar](calendar/overview.md) — events, recurrence, categories
 - [Google Calendar sync](gcal/overview.md) — OAuth/PKCE two-way sync, conflict policies, recurrence, manifest
 - [Visual Claude chat](chat/overview.md) — in-app Claude Code chat (`/chat` WS, Agent-SDK sessions, unified with terminals)
-- [Chat providers](chat/providers.md) — the provider seam behind all nine backends: routing, the opencode/codex drivers, per-capability graceful degradation
+- [Chat providers](chat/providers.md) — the provider seam behind all ten backends: routing, the opencode/codex drivers, per-capability graceful degradation
+- [opencode providers](chat/opencode-providers.md) — the credentials popover that connects a model provider to opencode chats (API key or OAuth) without leaving the app
 - [Agent backends](chat/backends.md) — the backend catalog + capability model, the six integration surfaces, ACP, the MCP-registration policy, the daemon's visibility constraint
 - [Local models](chat/local-models.md) — run chats on LM Studio / Ollama through the existing connectors with one `localModel` setting: what it does, per-backend endpoints + versions, snippets, the tool-calling caveat
 - [Export](export/overview.md) — note/base/sheet/drawing → md|html|png|pdf, visual/data modes
@@ -131,7 +133,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Keybindings](settings/keybindings.md) — shortcut syntax + catalog
 - [Toolbar & commands](settings/toolbar-commands.md) — toolbar config + command catalog
 - [Themes](settings/themes.md) — theme/palette/fonts
-- [Status bar & home page](settings/status-bar.md) — the configurable bottom bar (token text, query counts, approved shell commands) and the `homePage` a new tab opens
+- [Status bar & home page](settings/status-bar.md) — the configurable bottom bar (token text, query counts, approved shell commands) and the `homePage` setting (not yet applied by the app)
 
 ## Graph & terminal
 

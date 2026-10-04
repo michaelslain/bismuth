@@ -103,7 +103,7 @@ Like frontmatter, the whole block ALWAYS renders as one homogeneous container �
 - **Opening fence line** (`codeBlock.open`): gets `cm-block-top` (same fill + accent edge, its own padding and top margin), and its text is replaced by a `CodeHeaderWidget`. The widget mounts the `<CodeHeader>` Solid component, which renders the fence text ```` ```lang ```` on the left (`cm-code-lang` — the same size and dim `FENCE_TONE` as a frontmatter `---`, so the two blocks open with one row style) and a copy-to-clipboard icon button on the right (`cm-code-copy`) — riding the band (it inherits `cm-block-top`'s padding).
 - **Closing fence line** (`codeBlock.close`): gets `cm-block-bottom`, with its raw ` ``` ` always visible in very dim mono (`cm-fence-syntax` — same rationale as the frontmatter dashes: always-visible per the #10 ask, and a hidden line would collapse and erase the container's bottom rounded corners).
 - **Body lines**: each gets `cm-codeblock cm-block-mid` (Monaspace Xenon at `--code-font-size`, on the scroller's own row rhythm; fill from `cm-block-mid`) and a 1-based in-block line number via `numberedLine("cm-codeblock cm-block-mid", lineNumber - openLine)`.
-- **Syntax highlighting**: `codeHighlightStyle` (see [Code Syntax Highlighting](#code-syntax-highlighting)) applies One Dark colors to the body lines via CodeMirror's `HighlightStyle`.
+- **Syntax highlighting**: `codeHighlightStyle` (see [Code Syntax Highlighting](#code-syntax-highlighting)) colors the body lines via CodeMirror's `HighlightStyle`, using theme CSS vars so code re-tints per theme.
 
 ### Edit mode (cursor inside the block)
 
@@ -118,23 +118,29 @@ Like frontmatter, the whole block ALWAYS renders as one homogeneous container �
 
 ## Code Syntax Highlighting
 
-`codeHighlightStyle` in `codeHighlight.ts` defines a `HighlightStyle` for fenced code blocks using the **One Dark palette**:
+`codeHighlightStyle` in `codeHighlight.ts` defines a `HighlightStyle` for fenced code blocks. It uses **no fixed hex colours** — every entry is a theme CSS var (projected by `settingsCssVars.ts`), so code blocks re-tint with the active theme instead of a fixed One Dark palette:
 
 | Token category | Color |
 |---|---|
-| Comments | `#7f848e`, italic |
-| Keywords, control, module, operator keywords | `#c678dd` |
-| Strings, characters | `#98c379` |
-| Numbers, integers, floats, booleans, atoms | `#d19a66` |
-| Function names (variable/property), label names | `#61afef` |
-| Type names, class names, namespaces | `#e5c07b` |
+| Comments (`comment`, `lineComment`, `blockComment`) | `var(--text-muted)`, italic |
+| Keywords, control, module, operator, definition keywords | `var(--accent-purple)` |
+| Strings, `special(string)`, characters | `var(--green)` |
+| Numbers, integers, floats, booleans, atoms | `var(--gold)` |
+| Function names (`function(variableName)`, `function(propertyName)`), label names, and `standard(variableName)` | `var(--blue)` |
+| Type names, class names, namespaces | `var(--gold)` |
 | Property names, attribute names | `var(--accent)` — matches the frontmatter key accent |
-| Tag names (HTML/XML) | `#e06c75` |
-| Self, null, constant variables | `#d19a66` |
-| Operators, punctuation, separators, brackets | `#abb2bf` |
-| Regexps, escape sequences | `#56b6c2` |
-| Meta, annotations, processing instructions | `#7f848e` |
-| Invalid | `#e06c75` |
+| Tag names (HTML/XML) | `var(--rose)` |
+| Self, null, constant variables | `var(--gold)` |
+| Operators, punctuation, separators, brackets, braces, angle/square brackets, parens, deref operators | `var(--text-muted)` |
+| Regexps, escape sequences, `special(character)` | `var(--teal)` |
+| Meta, annotations, processing instructions | `var(--text-muted)` |
+| Invalid | `var(--danger)` |
+
+The `standard(variableName)` entry is what a legacy (stream) mode's `builtin` token maps to — MATLAB's `sum`, a shell's `echo` — so a builtin call reads like a call, the way Python's `len(` already does in a Lezer language. Plain `variableName` is left unstyled and inherits the editor foreground.
+
+### Fence languages (`codeLanguages.ts`)
+
+`codeLanguages` in `app/src/editor/codeLanguages.ts` is the list a fence's info string is matched against: the full `@codemirror/language-data` list plus extra aliases (`EXTRA_ALIASES`) for spellings the stock list lacks: ```` ```matlab ```` resolves to the stock Octave mode (the stock list only knows it as "Octave"), plus `py` (Python), `jl` (Julia) and `hs` (Haskell). Matching is by name/alias through `LanguageDescription.matchLanguageName`, **never by file extension**, so an alias is the only way a spelling resolves. The Octave loader re-tags the legacy-mode `function` builtin as `keyword`, so the word that opens every MATLAB/Octave function is coloured. The same list is used by all three markdown editors: the note body and table cells (via `markdownEditingExtensions`, which passes it to `markdown({ codeLanguages })`) and `CardEditor`.
 
 **Note**: Markdown structural tokens (heading, emphasis, strong, link, list, quote) are explicitly NOT styled by `codeHighlightStyle`. Those are handled entirely by the `livePreview` decorations.
 
@@ -439,16 +445,16 @@ When a math token **is** revealed (the caret/selection touches it), the raw LaTe
 
 `tokenizeLatex` recognizes a small lexical grammar (offsets relative to `src`):
 
-| Token | Match | Class | Color (One Dark) |
+| Token | Match | Class | Color (theme var) |
 |---|---|---|---|
-| Control sequence | `\` + letters (`\frac`, `\alpha`) **or** `\` + one non-letter (`\{`, `\\`, `\,`, `\%`) | `cm-tex-command` | `#c678dd` (keyword purple) |
-| Grouping / optional-arg brackets | `{` `}` `[` `]` | `cm-tex-bracket` | `#abb2bf` (punctuation grey) |
-| Sub/superscript markers | `^` `_` | `cm-tex-script` | `#56b6c2` (escape cyan) |
-| Numbers | digit run with interior dots (`3`, `3.14`) | `cm-tex-number` | `#d19a66` (number orange) |
-| `%` line comment | `%` to end of line | `cm-tex-comment` | `#7f848e` italic |
-| `$` / `$$` delimiters | (via `texDelim`) | `cm-tex-delim` | `#7f848e` (dim, recedes) |
+| Control sequence | `\` + letters (`\frac`, `\alpha`) **or** `\` + one non-letter (`\{`, `\\`, `\,`, `\%`) | `cm-tex-command` | `var(--accent-purple)` (keyword purple) |
+| Grouping / optional-arg brackets | `{` `}` `[` `]` | `cm-tex-bracket` | `var(--text-muted)` (punctuation grey) |
+| Sub/superscript markers | `^` `_` | `cm-tex-script` | `var(--teal)` (escape teal) |
+| Numbers | digit run with interior dots (`3`, `3.14`) | `cm-tex-number` | `var(--gold)` (number gold) |
+| `%` line comment | `%` to end of line | `cm-tex-comment` | `var(--text-muted)` italic |
+| `$` / `$$` delimiters | (via `texDelim`) | `cm-tex-delim` | `color-mix(in srgb, var(--fg) 45%, transparent)` (dim, recedes) |
 
-Everything else (letters, operators) inherits the editor foreground. Colors live in `latexHighlightTheme`, matching `codeHighlight.ts`'s One Dark palette so math source and fenced code read consistently. `tokenizeLatex` is unit-tested in `latexHighlight.test.ts`.
+Everything else (letters, operators) inherits the editor foreground. Colors live in `latexHighlightTheme`, using the same theme-var scheme as `codeHighlight.ts` so math source and fenced code read consistently. `tokenizeLatex` is unit-tested in `latexHighlight.test.ts`.
 
 ### Math Macros & mhchem (preamble)
 
@@ -599,7 +605,7 @@ export const livePreview = [
 ];
 ```
 
-`mathBlock()` (from `mathBlock.ts`) is a separate export combined elsewhere in `Editor.tsx`. `codeHighlightStyle` is consumed via CodeMirror's `syntaxHighlighting()`. The `Mod-b`/`Mod-i` keymap (`markdownFormat.ts`) and the `datePropertyPicker` extension are added directly in `Editor.tsx`'s note branch, not inside the `livePreview` array.
+`mathBlock()` (from `mathBlock.ts`) is a separate export, not part of the `livePreview` array. It is combined with `livePreview` and `latexHighlightTheme` inside `markdownEditingExtensions` (`cellEditorExtensions.ts`), the shared markdown stack that `Editor.tsx` spreads into its note branch and that the table-cell editor and the chat/card editors reuse. That same factory also builds the `Mod-b`/`Mod-i` toggle-bold/toggle-italic keymap (`markdownFormat.ts`, via `buildSettingsKeymap`), the markdown language with `codeLanguages`, the Enter list/blockquote continuation, and `syntaxHighlighting(codeHighlightStyle)`. Only the `datePropertyPicker(propertyRegistry)` extension is still added directly in `Editor.tsx`'s note branch.
 
 ---
 
@@ -616,4 +622,4 @@ It is a `showTooltip` tooltip, **not** a CodeMirror autocomplete source, on purp
 
 ---
 
-Source: `app/src/editor/livePreview.ts`, `app/src/editor/markdownFormat.ts`, `app/src/editor/listLayout.ts`, `app/src/editor/datePickerExtension.tsx`, `app/src/editor/datePickerCore.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/latexHighlight.ts`, `app/src/editor/mathMacros.ts`, `app/src/editor/findPanel.ts`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/sanitizeHtml.ts`, `app/src/editor/katexLoader.ts`, `app/src/editor/urls.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/frontmatterUtils.ts`, `app/src/editor/TaskCheckbox.tsx`, `app/src/editor/CodeHeader.tsx`, `app/src/editor/tableModel.ts`, `app/src/Editor.tsx`
+Source: `app/src/editor/livePreview.ts`, `app/src/editor/markdownFormat.ts`, `app/src/editor/listLayout.ts`, `app/src/editor/datePickerExtension.tsx`, `app/src/editor/datePickerCore.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/latexHighlight.ts`, `app/src/editor/mathMacros.ts`, `app/src/editor/findPanel.ts`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLanguages.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/sanitizeHtml.ts`, `app/src/editor/katexLoader.ts`, `app/src/editor/urls.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/frontmatterUtils.ts`, `app/src/editor/TaskCheckbox.tsx`, `app/src/editor/CodeHeader.tsx`, `app/src/editor/tableModel.ts`, `app/src/Editor.tsx`

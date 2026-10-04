@@ -87,7 +87,7 @@ and why it's the full absolute path, not just the vault's folder name.
 
 ## What the status bar shows
 
-Left to right (`app/src/shell/StatusBar.tsx`):
+The bar is configurable: it renders the `statusBar:` list in `.settings`, and the four readouts below are its **default** list (`DEFAULT_STATUS_BAR` in `core/src/statusBarItems.ts` — the builtins `location`, `connection`, `inbox`, `daemon`), what you see when no `statusBar:` key is set. Left to right (`app/src/shell/StatusBar.tsx`):
 
 | Item | Meaning |
 | --- | --- |
@@ -96,7 +96,9 @@ Left to right (`app/src/shell/StatusBar.tsx`):
 | `inbox: N` | Daemon-inbox pages awaiting review. Always present while the daemon is on, **including at zero**, so it is a findable place rather than a control that only exists when it has something to say. Quiet at zero; a `--gold` dot appears and the count brightens when something is waiting. Click it to open the inbox. Hidden entirely when the daemon is off, since the whole inbox surface is gated behind `daemon.enabled`. |
 | `daemon: off / idle / working` | Whether this machine's daemon is running for this vault, and whether it is currently doing something. Only the state word is coloured — `--faint` for `off`, `--gold` for `idle`, `--green` for `working` — and the blinking `_` caret sits directly after it, marking it as the live value on the line. |
 
-The graph mode (`2ND` / `3RD` / `BOTH` / `DAEMON` / `LOCAL`) used to appear here and **no longer
+Beyond these built-ins, a `statusBar:` list can also hold templated `text` segments, `query` counts, and `run:` shell segments. A `run:` command a vault asks for is not executed until you approve it on this machine: until then the bar shows the (truncated) command as an `[ allow ]` prompt, and clicking it opens the trust dialog. How to add, order, tone and approve segments is covered in [Status Bar & Home Page](../settings/status-bar.md).
+
+The graph mode (`2ND` / `3RD` / `BOTH` / `LOCAL`) used to appear here and **no longer
 does**. It lives on the graph pane's own header toolbar instead — it is a per-pane setting, and the
 status bar is app-scoped.
 
@@ -105,4 +107,5 @@ status bar is app-scoped.
 Source: `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/shell/StatusBar.tsx`,
 `app/src/shell/InboxIndicator.tsx`, `app/src/ExportView.tsx`,
 `app/src/pickResult.ts`, `app/src/Toast.tsx`, `core/src/server.ts`,
-`core/src/schema/settingsSchema.ts`, `core/src/openFolder.ts`.
+`core/src/schema/settingsSchema.ts`, `core/src/openFolder.ts`,
+`core/src/statusBarItems.ts`, `app/src/shell/StatusSegment.tsx`.

@@ -34,8 +34,8 @@ categories:
 | `categoryField` | `string` | `"category"` | Column driving chip color; must match a name in top-level frontmatter `categories:`. |
 | `googleCalendarSync` | `boolean` | `false` | Per-calendar two-way Google Calendar sync toggle. |
 | `googleCalendarId` | `string` | `"primary"` | Which Google calendar this base syncs with. |
-| `mode` | `'events' \| 'tasks'` | `'events'` | `mode: tasks` swaps the calendar into a tasks register: day cells get an inline composer instead of an event-create flow. |
-| `taskFile` | `string` (note path) | — | **Tasks-register only, when the base does NOT own its rows** (it has a `source:`) — the note the inline composer appends a checkbox line to. No `taskFile` set → the composer is a no-op that opens settings instead of writing anything. |
+| `mode` | `'normal' \| 'tasks'` | `'normal'` | `mode: tasks` swaps the calendar into a tasks register: day cells get an inline composer instead of an event-create flow. |
+| `taskFile` | `string` (note path) | — | **Tasks-register only, when the base does NOT own its rows** (it has a `source:`) — the note the inline composer appends a checkbox line to. The composer's destination picker offers one target per distinct source note already on the grid, plus `taskFile` when set; it is a no-op only when there is nothing to pick (no `taskFile` and no task rows yet). |
 | `defaultCategory` | `string` | — | **Tasks-register only, when the base DOES own its rows** (no `source:`) — category stamped on rows the composer creates. |
 
 ### Tasks register (`mode: tasks`)
@@ -43,12 +43,14 @@ categories:
 Clicking a day cell opens an inline composer with no separate create button. What it writes depends on whether the base **owns its rows** (no `source:` — it's a plain row-backed base) or **queries them** (has a `source:`):
 
 - **Owns its rows**: commit calls `rowCreate` with a new row (`description`, `status: todo`, `scheduled: <date>`, plus the configured `categoryField` set to `defaultCategory` if one is set).
-- **Has a `source:`**: commit appends a checkbox line — `- [ ] <text> [scheduled <date>]` — to `taskFile` via the task-create endpoint. With no `taskFile` configured this silently does nothing but open settings.
+- **Has a `source:`**: commit appends a checkbox line — `- [ ] <text> [scheduled <date>]` — to the note picked in the composer's destination picker (one entry per distinct source note on the grid, plus `taskFile` if set) via the task-create endpoint. Only when there is no `taskFile` and no task rows yet is there nothing to pick, and the composer does nothing but open settings.
+- **Own-rows bases** get a per-category picker; `defaultCategory` is only the preselected one.
 
 ## Failure modes
 
 - **Events live in the file BODY as rows (a YAML list of row objects), not in frontmatter.** A calendar base with an empty body has zero events even if the frontmatter looks complete — you must write the event rows below the `---` closing fence.
-- **`recurrence` is a JSON *string* in one field, not nested YAML** — e.g. `recurrence: '{"type":"weekly","daysOfWeek":[1],"startDate":"2026-05-25","seriesId":"s1"}'`. Hand-editing it as a YAML object breaks parsing.
+- **`recurrence` is written as a JSON *string* in one field** — e.g. `recurrence: '{"type":"weekly","daysOfWeek":[1],"startDate":"2026-05-25","seriesId":"s1"}'`. Both readers also accept an already-parsed YAML object, but the app re-serialises it as a JSON string on its next write, so author the string form.
+- **`bismuth base create --view calendar` writes `source: notes`**, which makes the base read vault notes instead of its own body rows. For an own-rows calendar (events in the body), delete the `source:` line after scaffolding, before adding event rows.
 - **An event's `category` must exactly match a `name` in the top-level `categories:` list.** A typo'd or undeclared category doesn't error — the event just renders as a "ghost" (outline-only, no fill color) chip.
 
 Full reference: `docs/bases/views/calendar.md`
