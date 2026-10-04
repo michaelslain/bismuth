@@ -800,7 +800,7 @@ keybindings:
 
 The schema is the single source of truth and defaults must equal the current hardcoded value so upgrades are a behavioral no-op:
 
-1. Add an entry (type, `default`, `min`/`max` or enum, `doc`) to `core/src/schema/settingsSchema.ts` — autocomplete, the linter, and `reconcileSettings` (which adds the key to existing files while preserving comments) pick it up automatically.
+1. Add an entry (type, `default`, `min`/`max` or enum, `doc`) to `core/src/schema/settingsSchema.ts` — autocomplete, the linter, pick it up automatically; existing `.settings` files are not rewritten, so the key reads as its default until set.
 2. Add the matching field to the `Settings` interface in `app/src/settings.ts` (`settings.parity.test.ts` enforces schema ↔ interface match).
 3. Wire the consumer: **CSS-driven** → a `--var` in `settingsCssVars.ts` + `var(--name, <fallback>)` in CSS; **frontend logic** → read `settings.<section>.<key>` (reactive); **backend** → read `appConfig.<section>.<key>` in `server.ts`.
 

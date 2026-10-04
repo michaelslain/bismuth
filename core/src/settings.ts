@@ -12,7 +12,17 @@ import {
     rmSync,
     readFileSync,
 } from 'node:fs'
-import { parse, parseDocument, Document, YAMLMap, isMap, isScalar } from 'yaml'
+import {
+    parse,
+    parseDocument,
+    Document,
+    YAMLMap,
+    isMap,
+    isNode,
+    isPair,
+    isScalar,
+    isSeq,
+} from 'yaml'
 import { readNote, writeNote } from './files'
 import { loadRegistry, BUILTIN_PROPERTIES } from './schema/registry'
 import { SETTINGS_SCHEMA, DEFAULTS } from './schema/settingsSchema'
@@ -234,74 +244,135 @@ export async function getVaultSchema(vault: string): Promise<Schema> {
     return { ...BUILTIN_PROPERTIES, ...loadRegistry(res.data.properties) }
 }
 
-/** Build a YAMLMap from a Schema, materializing defaults. No comments — settings
- *  are discovered via the editor's Ctrl-Space autocomplete, not inline docs. */
-function schemaToMap(doc: Document, schema: Schema): YAMLMap {
-    const map = new YAMLMap()
-    for (const [key, entry] of Object.entries(schema) as [
-        string,
-        SchemaEntry,
-    ][]) {
-        let valueNode
-        if (typeof entry.type === 'object' && entry.type.kind === 'object') {
-            valueNode = schemaToMap(doc, entry.type.fields)
-        } else {
-            valueNode = doc.createNode(entry.default ?? null)
-        }
-        map.items.push(doc.createPair(key, valueNode))
-    }
-    return map
-}
+/** What a brand-new vault's `.settings` holds: no keys at all. `.settings` is SPARSE — it carries
+ *  only what the user changed, and every absent key reads as its schema default (every reader
+ *  merges over DEFAULTS: serializeSettingsForFrontend, readDaemonEnabledSync, the daemon's
+ *  vaultSettings.ts, …). A value equal to its default is still allowed and is never pruned once
+ *  written by hand — only a whole materialized dump is, see stripMaterializedDefaults. */
+export const SETTINGS_SEED = `# Only the settings you change live here; every key left out uses its default.
+# Ctrl-Space lists every key with its doc and default value.
+`
 
-/** On first launch, write a clean (comment-free) settings.yaml from SETTINGS_SCHEMA. No-op if present. */
+/** On first launch, write the sparse seed file. No-op if present. */
 export async function initializeSettings(vault: string): Promise<void> {
     const full = join(vault, SETTINGS_FILE)
     if (await Bun.file(full).exists()) return
-    const doc = new Document()
-    doc.contents = schemaToMap(doc, SETTINGS_SCHEMA)
-    await writeNote(
-        vault,
-        SETTINGS_FILE,
-        doc.toString({ flowCollectionPadding: false }),
-    )
+    await writeNote(vault, SETTINGS_FILE, SETTINGS_SEED)
 }
 
-/** Insert default nodes for any schema path missing from `map`. Returns true if mutated.
- *  Recurses into object-typed entries; preserves existing values, comments, and any
- *  keys not present in the schema (unknown keys are never touched). */
-function fillMissing(doc: Document, map: YAMLMap, schema: Schema): boolean {
-    let mutated = false
+function objectFields(entry: SchemaEntry): Schema | undefined {
+    return typeof entry.type === 'object' && entry.type.kind === 'object'
+        ? entry.type.fields
+        : undefined
+}
+
+function schemaLeafCount(schema: Schema): number {
+    let n = 0
+    for (const entry of Object.values(schema) as SchemaEntry[]) {
+        const fields = objectFields(entry)
+        n += fields ? schemaLeafCount(fields) : 1
+    }
+    return n
+}
+
+/** True if `node` or anything inside it carries a comment — such a pair is the user's, not a seed. */
+function hasComment(node: unknown): boolean {
+    if (!isNode(node)) return false
+    if (node.commentBefore || node.comment) return true
+    if (isMap(node) || isSeq(node))
+        return node.items.some(item =>
+            isPair(item)
+                ? hasComment(item.key) || hasComment(item.value)
+                : hasComment(item),
+        )
+    return false
+}
+
+/** Paths of every schema leaf present in `map` whose value deep-equals its schema default. */
+function defaultLeafPaths(
+    map: YAMLMap,
+    schema: Schema,
+    path: string[],
+    out: string[][],
+): string[][] {
     for (const [key, entry] of Object.entries(schema) as [
         string,
         SchemaEntry,
     ][]) {
-        const isObj =
-            typeof entry.type === 'object' && entry.type.kind === 'object'
-        if (!map.has(key)) {
-            if (isObj) {
-                const child = new YAMLMap()
-                fillMissing(
-                    doc,
-                    child,
-                    (entry.type as { kind: 'object'; fields: Schema }).fields,
+        const pair = findPair(map, key)
+        if (!pair) continue
+        const fields = objectFields(entry)
+        if (fields) {
+            if (isMap(pair.value))
+                defaultLeafPaths(
+                    pair.value as YAMLMap,
+                    fields,
+                    [...path, key],
+                    out,
                 )
-                map.set(key, child)
-            } else {
-                map.set(key, doc.createNode(entry.default ?? null))
-            }
-            mutated = true
-        } else if (isObj) {
-            const child = map.get(key, true)
-            if (isMap(child)) {
-                mutated =
-                    fillMissing(
-                        doc,
-                        child as YAMLMap,
-                        (entry.type as { kind: 'object'; fields: Schema })
-                            .fields,
-                    ) || mutated
-            }
+            continue
         }
+        const value = isNode(pair.value) ? pair.value.toJSON() : pair.value
+        if (Bun.deepEquals(value, entry.default ?? null))
+            out.push([...path, key])
+    }
+    return out
+}
+
+/** Drop every comment-free empty map left under `map` once its leaves were stripped. */
+function dropEmptySections(map: YAMLMap): void {
+    for (const pair of [...map.items]) {
+        if (!isMap(pair.value)) continue
+        dropEmptySections(pair.value as YAMLMap)
+        if (
+            (pair.value as YAMLMap).items.length === 0 &&
+            !hasComment(pair.key) &&
+            !hasComment(pair.value)
+        )
+            map.items.splice(map.items.indexOf(pair), 1)
+    }
+}
+
+// A file is a MATERIALIZED dump — the full-defaults file every vault was seeded with before
+// `.settings` went sparse, then kept topped up by the old fillMissing — when at least this share of
+// all schema leaves sit in it at exactly their default. A hand-written override file never comes
+// close, so this fires once per vault: after the strip the file holds only real overrides.
+const MATERIALIZED_DUMP_RATIO = 0.5
+
+/**
+ * One-time cleanup for a pre-sparse `.settings`: when the file is a materialized dump, delete every
+ * leaf still at its schema default, then every section left empty. A pair carrying a comment is
+ * kept (the comment is the user's), as are unknown keys and every non-default value. Returns true
+ * if anything was removed. A sparse file is never touched, so a default value the user writes by
+ * hand stays put.
+ */
+function stripMaterializedDefaults(doc: Document): boolean {
+    const root = doc.contents as YAMLMap
+    const paths = defaultLeafPaths(root, SETTINGS_SCHEMA, [], [])
+    if (
+        paths.length <
+        schemaLeafCount(SETTINGS_SCHEMA) * MATERIALIZED_DUMP_RATIO
+    )
+        return false
+    let mutated = false
+    for (const path of paths) {
+        const parent =
+            path.length > 1 ? doc.getIn(path.slice(0, -1), true) : root
+        if (!isMap(parent)) continue
+        const pair = findPair(parent as YAMLMap, path[path.length - 1])
+        if (!pair || hasComment(pair.key) || hasComment(pair.value)) continue
+        ;(parent as YAMLMap).items.splice(
+            (parent as YAMLMap).items.indexOf(pair),
+            1,
+        )
+        mutated = true
+    }
+    if (mutated) {
+        dropEmptySections(root)
+        // the blank line that separated a stripped first section rides on the new first key
+        const first = root.items[0]
+        if (first && isScalar(first.key) && !first.key.commentBefore)
+            first.key.spaceBefore = false
     }
     return mutated
 }
@@ -363,14 +434,14 @@ function migrateLegacyAppearance(doc: Document): boolean {
         ['appearance', 'sidebarWidth'],
         ['editor', 'lineHeight'],
     ]
-    const defaults = DEFAULTS as Record<
-        string,
-        Record<string, unknown> | undefined
-    >
+    // `.settings` is sparse, so "reset to default" is "remove the key".
     for (const [section, key] of RESET_PATHS) {
-        const def = defaults[section]?.[key]
-        if (def !== undefined) doc.setIn([section, key], def)
+        const parent = doc.getIn([section], true)
+        if (isMap(parent)) (parent as YAMLMap).delete(key)
     }
+    const editor = doc.getIn(['editor'], true)
+    if (isMap(editor) && !editor.items.length && !hasComment(editor))
+        doc.deleteIn(['editor']) // lineHeight was its only key — leave no `editor: {}` behind
     return true
 }
 
@@ -428,8 +499,8 @@ function carryComment(
 
 // Schema keys renamed since an older Bismuth. Each entry names the OLD full path (section, ...,
 // leaf key) and the new leaf key (renames are always within the same section). renameKeys below
-// runs FIRST in reconcileSettings — before fillMissing — because fillMissing would otherwise see
-// the new key missing and seed it from the schema default, discarding the user's old value.
+// runs FIRST in reconcileSettings, so the strip and the migrations after it see the key under its
+// current name.
 const RENAMED_KEYS: readonly { from: readonly string[]; to: string }[] = [
     { from: ['appearance', 'sidebarIconFontSize'], to: 'iconSize' },
     { from: ['appearance', 'toolbarIconSize'], to: 'iconSize' },
@@ -475,8 +546,8 @@ function renameKeys(doc: Document): boolean {
 }
 
 // Schema keys that moved to a DIFFERENT section since an older Bismuth (renameKeys handles moves
-// within one section). Each entry is the OLD and NEW full path. moveKeys runs before fillMissing for
-// the same reason renameKeys does. The cursor trio was terminal-only until the app's cursors were
+// within one section). Each entry is the OLD and NEW full path. moveKeys runs early for the same
+// reason renameKeys does. The cursor trio was terminal-only until the app's cursors were
 // unified onto one definition, when it became app-wide under `appearance`.
 const MOVED_KEYS: readonly { from: readonly string[]; to: readonly string[] }[] = [
     { from: ['terminal', 'cursorWidth'], to: ['appearance', 'cursorWidth'] },
@@ -542,7 +613,7 @@ function moveKeys(doc: Document): boolean {
  * Delete any RETIRED_KEYS pair still present in `doc`. A hand-written comment sitting directly
  * above a removed key is not dropped with it: it is carried onto the key that now takes its place
  * in the section, or — if the removed key was the section's last — onto the section itself, so it
- * still survives the rewrite (`fillMissing`'s "unknown keys are never touched" doesn't apply here,
+ * still survives the rewrite (reconcile's "unknown keys are never touched" doesn't apply here,
  * since a retired key is a KNOWN key this era's schema deliberately no longer has). Returns true if
  * anything was removed.
  */
@@ -585,11 +656,11 @@ function migrateDaemonConfig(_doc: Document): boolean {
 }
 
 /**
- * On open: add any missing schema defaults to settings.yaml, preserving comments,
- * key order, user values, and unknown keys. Absent file → write full defaults.
- * Corrupt/empty file → left untouched. Writes only when something actually changed,
- * so an already-complete file produces no spurious write / SSE churn. Driven entirely
- * by SETTINGS_SCHEMA, so adding or removing a schema entry self-reconciles next open.
+ * On open: migrate renamed/moved/retired keys and, once, strip a pre-sparse materialized dump down
+ * to its real overrides — preserving comments, key order, user values and unknown keys. Missing
+ * keys are NEVER filled in: `.settings` is sparse and every absent key reads as its schema default.
+ * Absent file → write the sparse seed. Corrupt/empty file → left untouched. Writes only when
+ * something actually changed, so a settled file produces no spurious write / SSE churn.
  *
  * Returns whether it actually wrote `.settings` — callers that self-write-mark this path
  * (server.ts's boot call) use it to unmark/not-rearm the mark on a no-op run, so a real external
@@ -611,13 +682,20 @@ export async function reconcileSettings(vault: string): Promise<boolean> {
         return false
     }
     if (!isMap(doc.contents)) return false // empty/scalar/corrupt — leave alone
-    const renamed = renameKeys(doc) // must run BEFORE fillMissing, or it seeds the new key's default
+    const renamed = renameKeys(doc) // first, so everything after sees current key names
     const moved = moveKeys(doc) // same ordering constraint as renameKeys
-    const filled = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA)
     const migrated = migrateDaemonConfig(doc)
     const migratedAppearance = migrateLegacyAppearance(doc)
     const pruned = pruneRetiredKeys(doc)
-    if (renamed || moved || filled || migrated || migratedAppearance || pruned) {
+    const stripped = stripMaterializedDefaults(doc) // last: counts the migrated values as they now are
+    if (
+        renamed ||
+        moved ||
+        migrated ||
+        migratedAppearance ||
+        pruned ||
+        stripped
+    ) {
         await writeNote(
             vault,
             SETTINGS_FILE,
@@ -631,7 +709,7 @@ export async function reconcileSettings(vault: string): Promise<boolean> {
 /**
  * Merge a single value at `path` into settings.yaml in place, preserving every
  * other key, all comments, and key order. Reconciles first so the file exists and
- * is fully shaped. This is the backend's single write path for settings, so a
+ * its keys are current. This is the backend's single write path for settings, so a
  * frontend toggle can never clobber comments or the `properties:` registry.
  *
  * Guarded by a per-vault mutex to prevent concurrent requests from clobbering
@@ -644,7 +722,7 @@ export async function setSettingInFile(
 ): Promise<void> {
     if (!path.length) return
     await withSettingsMutex(vault, async () => {
-        await reconcileSettings(vault) // ensure the file exists + is shaped
+        await reconcileSettings(vault) // ensure the file exists + its keys are current
         const raw = await readNote(vault, SETTINGS_FILE)
         const doc = parseDocument(raw)
         if (doc.errors.length) return // corrupt — never clobber existing content
@@ -980,6 +1058,9 @@ async function mutateSettingsStringMap(
             ;(map as YAMLMap).set(entryKey, nextValue)
         } else {
             ;(map as YAMLMap).delete(entryKey)
+            // sparse: an emptied map is its default ({}), so the key goes too
+            if (!(map as YAMLMap).items.length && !hasComment(map))
+                doc.deleteIn([mapKey])
         }
         await writeNote(
             vault,

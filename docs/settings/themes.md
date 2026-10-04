@@ -10,7 +10,7 @@ The ASCII redesign defines four themes in `bismuth-design/ascii/design-system/to
 
 ## Theme Names
 
-The setting is `appearance.theme` in `.settings` (the vault's hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:17`). The schema enum lists 4 names; the first is the default.
+The setting is `appearance.theme` in `.settings` (the vault's hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:34`). The schema enum lists 4 names; the first is the default.
 
 ```yaml
 appearance:

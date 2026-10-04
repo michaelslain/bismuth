@@ -40,6 +40,28 @@ describe('docInfo', () => {
     it('returns empty string when no doc', () => {
         expect(docInfo({ type: 'number' } as SchemaEntry)).toBe('')
     })
+    it('appends the default on its own line', () => {
+        expect(
+            docInfo({
+                type: 'number',
+                default: 15,
+                doc: 'Editor font size (px).',
+            } as SchemaEntry),
+        ).toBe('Editor font size (px).\ndefault: 15')
+    })
+    it('shows the default even with no doc, quoted for strings', () => {
+        expect(docInfo({ type: 'string', default: 'ink' } as SchemaEntry)).toBe(
+            'default: "ink"',
+        )
+    })
+    it('shows no default for an object section', () => {
+        expect(
+            docInfo({
+                type: { kind: 'object', fields: {} },
+                doc: 'Editor.',
+            } as SchemaEntry),
+        ).toBe('Editor.')
+    })
 })
 
 import { EditorState } from '@codemirror/state'
@@ -311,7 +333,9 @@ describe('settings key + enum completion (schema-driven discovery)', () => {
         const opt = complete('editor:\n  li', false)?.options.find(
             o => o.label === 'livePreview',
         )
-        expect(opt?.info).toBe('Render markdown inline as you type.') // docInfo from the schema
+        expect(opt?.info).toBe(
+            'Render markdown inline as you type.\ndefault: true',
+        ) // docInfo from the schema
     })
 
     it('scopes nested keys to the section the cursor is in (ui.*)', () => {

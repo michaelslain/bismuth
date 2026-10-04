@@ -228,7 +228,7 @@ The `??slug` MEMORY REFERENCE syntax — what `[[Wikilink]]` is for a vault note
 #### `settings.ts`
 Lifecycle for the vault's single hidden settings file. Key exports:
 - `readSettings(vault)` — reads and parses `.settings`; tolerant of malformed YAML.
-- `reconcileSettings(vault)` — called on boot; writes a fresh defaults file if absent, or merges in any new keys since the file was written (preserving user values, comments, unknown keys).
+- `reconcileSettings(vault)` — called on boot; writes the comment-only `SETTINGS_SEED` if absent; otherwise runs the in-place migrations (`renameKeys`, `moveKeys`, `migrateLegacyAppearance`, `pruneRetiredKeys`) and the one-time `stripMaterializedDefaults`, never adding keys (`.settings` is sparse; readers merge over `DEFAULTS`), preserving user values, comments, unknown keys.
 - `setSettingInFile(vault, path: string[], value)` — per-vault mutex-guarded atomic write of one key, addressed by a dot-path **array** (e.g. `["appearance", "theme"]`), not separate section/key args; called by `POST /set-setting`. The mutex (a promise chain keyed by vault path) prevents TOCTOU races.
 - `getVaultSchema(vault)` — parses `properties:` section into a `Schema`, merged over built-in properties.
 - `serializeSettingsForFrontend(vault)` — returns the settings data as a nested plain object for `GET /settings`.

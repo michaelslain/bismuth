@@ -190,7 +190,7 @@ t(
     async () => {
         // Wave 3 review (M1): the boot-time reconcileSettings call marks `.settings` self-
         // written BEFORE it runs, since most boots it writes nothing (this vault's .settings is
-        // ALREADY fully reconciled — nothing for fillMissing to add). The old code re-armed that
+        // ALREADY reconciled — nothing to migrate or strip). The old code re-armed that
         // mark for a full 2s grace window regardless of whether reconcileSettings actually wrote
         // anything, so a genuine external edit to `.settings` — a user hand-editing it, an
         // agent, a sync client — landing inside that window was silently swallowed as if it

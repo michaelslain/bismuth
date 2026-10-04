@@ -171,7 +171,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /file`
 - **Params:** `?path=<vault-relative path>` (required).
-- **Response:** the raw file text (`200`, plain body). A missing file returns an empty string with `200` (not 404). Special case: requesting `path === .settings` (`SETTINGS_FILE`) first runs `reconcileSettings(vault)` so a never-initialized settings file is materialized from schema defaults before the read (so the editor never shows a blank settings page).
+- **Response:** the raw file text (`200`, plain body). A missing file returns an empty string with `200` (not 404). Special case: requesting `path === .settings` (`SETTINGS_FILE`) first runs `reconcileSettings(vault)` so a never-initialized settings file is created as the comment-only `SETTINGS_SEED` (no keys; absent keys read as defaults) before the read, so the editor never shows a blank settings page.
 - **Errors:** `400` if `path` is missing.
 - **Visibility:** gated — `403 "forbidden"` if `path` is restricted for the requester's channel, checked before the read (the file is never served empty-or-partial as a fallback). This is the route the owner-token gate exists to close (`curl 'localhost:4321/file?path=Private/secret.md'`). See [Visibility gating](#visibility-gating).
 

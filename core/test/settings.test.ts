@@ -92,22 +92,21 @@ test('an icon frontmatter value (emoji OR arbitrary string) validates with zero 
     ).toEqual([])
 })
 
-import { initializeSettings } from '../src/settings'
-import { parse as parseYaml } from 'yaml'
+import { initializeSettings, SETTINGS_SEED } from '../src/settings'
 
-test('initializeSettings writes a clean (comment-free) defaults file when missing', async () => {
+test('initializeSettings writes a sparse file — no keys, every setting reads as its default', async () => {
     const vault = await emptyVault()
     await initializeSettings(vault)
     const res = await readSettings(vault)
     expect(res).not.toBeNull()
-    // No comment LINES — discovery is via the editor's Ctrl-Space autocomplete.
-    // (The accent value "#6496ff" contains '#' but isn't a comment, so match line-start.)
-    expect(res!.raw).not.toMatch(/^\s*#/m)
-    // The materialized defaults parse back to the DEFAULTS object shape.
-    const parsed = parseYaml(res!.raw) as Record<string, any>
-    expect(parsed.appearance.theme).toBe('ink')
-    expect(parsed.graph.nodeSize).toBe(6)
-    expect(parsed.calendar.defaultView).toBe('week')
+    expect(res!.raw).toBe(SETTINGS_SEED)
+    expect(res!.data).toEqual({}) // comment-only: no key is materialized
+    const merged = await serializeSettingsForFrontend(vault)
+    expect((merged.appearance as Record<string, unknown>).theme).toBe('ink')
+    expect((merged.graph as Record<string, unknown>).nodeSize).toBe(6)
+    expect((merged.calendar as Record<string, unknown>).defaultView).toBe(
+        'week',
+    )
 })
 
 test('initializeSettings does not clobber an existing file', async () => {
@@ -140,16 +139,14 @@ test('setFolderIcon with an empty icon deletes the entry', async () => {
     await setFolderIcon(vault, 'projects', 'Folder')
     await setFolderIcon(vault, 'projects', '')
     expect(await readFolderIcons(vault)).toEqual({})
+    // sparse: the emptied map is its default, so the key leaves the file too
+    expect((await readSettings(vault))!.data.folderIcons).toBeUndefined()
 })
 
-test('initializeSettings seeds folderIcons as an empty map', async () => {
+test('a fresh vault reads folderIcons as an empty map', async () => {
     const vault = await emptyVault()
     await initializeSettings(vault)
-    const parsed = parseYaml((await readSettings(vault))!.raw) as Record<
-        string,
-        any
-    >
-    expect(parsed.folderIcons).toEqual({})
+    expect((await serializeSettingsForFrontend(vault)).folderIcons).toEqual({})
 })
 
 test('serializeSettingsForFrontend includes the folderIcons map', async () => {
@@ -191,14 +188,12 @@ test('setFolderVisibility ignores a value outside the two-literal union', async 
     expect(await readFolderVisibility(vault)).toEqual({})
 })
 
-test('initializeSettings seeds folderVisibility as an empty map', async () => {
+test('a fresh vault reads folderVisibility as an empty map', async () => {
     const vault = await emptyVault()
     await initializeSettings(vault)
-    const parsed = parseYaml((await readSettings(vault))!.raw) as Record<
-        string,
-        any
-    >
-    expect(parsed.folderVisibility).toEqual({})
+    expect(
+        (await serializeSettingsForFrontend(vault)).folderVisibility,
+    ).toEqual({})
 })
 
 test('serializeSettingsForFrontend includes the folderVisibility map', async () => {
@@ -286,18 +281,30 @@ test('serializeSettingsForFrontend omits the properties registry section', async
 
 import { readFileSync } from 'node:fs'
 
-test('reconcile fills a missing top-level section with its defaults', async () => {
+test('reconcile never fills missing keys — they read as their defaults instead', async () => {
     const vault = await emptyVault()
     await writeNote(
         vault,
         '.settings',
         'appearance:\n  uiFont: Monaspace Radon\n',
     )
-    await reconcileSettings(vault)
+    const wrote = await reconcileSettings(vault)
+    expect(wrote).toBe(false)
     const { data } = (await readSettings(vault))!
-    expect((data.appearance as any).uiFont).toBe('Monaspace Radon') // user value kept
-    expect((data.appearance as any).theme).toBe('ink') // missing default added
-    expect((data.graph as any).spin).toBe(true) // missing section added
+    expect(data).toEqual({ appearance: { uiFont: 'Monaspace Radon' } })
+    const merged = await serializeSettingsForFrontend(vault)
+    expect((merged.appearance as any).uiFont).toBe('Monaspace Radon') // user value wins
+    expect((merged.appearance as any).theme).toBe('ink') // absent → default
+    expect((merged.graph as any).spin).toBe(true) // absent section → defaults
+})
+
+test('a value written equal to its default stays in a sparse file', async () => {
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', 'appearance:\n  theme: ink\n')
+    expect(await reconcileSettings(vault)).toBe(false)
+    expect((await readSettings(vault))!.data).toEqual({
+        appearance: { theme: 'ink' },
+    })
 })
 
 test('reconcile preserves unknown keys', async () => {
@@ -327,7 +334,7 @@ test('reconcile preserves comments', async () => {
 
 test('reconcile is a no-op write when nothing is missing', async () => {
     const vault = await emptyVault()
-    await reconcileSettings(vault) // absent -> writes full defaults
+    await reconcileSettings(vault) // absent -> writes the sparse seed
     const before = readFileSync(join(vault, '.settings'), 'utf8')
     await reconcileSettings(vault) // second run must not rewrite
     const after = readFileSync(join(vault, '.settings'), 'utf8')
@@ -343,6 +350,7 @@ test('reconcile leaves a corrupt file untouched', async () => {
 })
 
 import { DEFAULTS } from '../src/schema/settingsSchema'
+import { parseDocument, stringify } from 'yaml'
 const DEFAULT_APPEARANCE = DEFAULTS.appearance as Record<string, unknown>
 const DEFAULT_EDITOR = DEFAULTS.editor as Record<string, unknown>
 
@@ -377,19 +385,23 @@ test('reconcile migrates a legacy-theme .settings file exactly once, resetting t
     // editorFont is deleted outright, never translated — "Lora" does NOT end up forced onto
     // uiFont (a Monaspace-only key) or copied onto proseFont (which just resolves its own default).
     expect(appearance.editorFont).toBeUndefined()
-    expect(appearance.uiFont).toBe(DEFAULT_APPEARANCE.uiFont)
-    expect(appearance.proseFont).toBe(DEFAULT_APPEARANCE.proseFont)
-    expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize)
-    expect(appearance.uiFontSize).toBe(DEFAULT_APPEARANCE.uiFontSize)
-    expect(appearance.tabFontSize).toBe(DEFAULT_APPEARANCE.tabFontSize)
-    expect(appearance.iconSize).toBe(
-        DEFAULT_APPEARANCE.iconSize,
-    )
+    expect(appearance.uiFont).toBeUndefined()
+    expect(appearance.proseFont).toBeUndefined()
+    // The type scale is reset by REMOVING the keys: absent reads as the current default.
+    expect(appearance.editorFontSize).toBeUndefined()
+    expect(appearance.uiFontSize).toBeUndefined()
+    expect(appearance.tabFontSize).toBeUndefined()
+    expect(appearance.iconSize).toBeUndefined()
     // paletteInputFontSize is a retired key: pruned, not reset to a default it no longer has.
     expect(appearance.paletteInputFontSize).toBeUndefined()
-    expect(appearance.monoScale).toBe(DEFAULT_APPEARANCE.monoScale)
-    expect(appearance.sidebarWidth).toBe(DEFAULT_APPEARANCE.sidebarWidth)
-    expect((data.editor as any).lineHeight).toBe(DEFAULT_EDITOR.lineHeight)
+    expect(appearance.monoScale).toBeUndefined()
+    expect(appearance.sidebarWidth).toBeUndefined()
+    expect(data.editor).toBeUndefined() // lineHeight was the section's only key — no `editor: {}` left
+    const merged = await serializeSettingsForFrontend(vault)
+    expect((merged.appearance as any).editorFontSize).toBe(
+        DEFAULT_APPEARANCE.editorFontSize,
+    )
+    expect((merged.editor as any).lineHeight).toBe(DEFAULT_EDITOR.lineHeight)
     // Untouched: comments + unknown keys survive the rewrite.
     expect(appearance.myCustomKey).toBe(42)
     expect(raw1).toContain('# my notes')
@@ -433,19 +445,19 @@ test('reconcile prunes a legacy editorFont key outright, without triggering the 
     // and unlike the old font migration, pruning alone never resets the type scale.
     expect(appearance.editorFont).toBeUndefined()
     expect(appearance.editorFontSize).toBe(20) // no legacy-theme trigger fired — NOT reset
-    expect(appearance.uiFont).toBe(DEFAULT_APPEARANCE.uiFont) // never inherits the deleted value
+    expect(appearance.uiFont).toBeUndefined() // never inherits the deleted value
 })
 
 test('reconcile leaves a new-scheme .settings file untouched', async () => {
     const vault = await emptyVault()
-    await reconcileSettings(vault) // absent -> writes a full, current-era defaults file
+    await reconcileSettings(vault) // absent -> writes the sparse seed
     const before = readFileSync(join(vault, '.settings'), 'utf8')
-    const { data: before1 } = (await readSettings(vault))!
-    expect((before1.appearance as any).theme).toBe('ink')
-    expect((before1.appearance as any).uiFont).toBe('Monaspace Xenon')
-    expect((before1.appearance as any).proseFont).toBe('IBM Plex Serif')
+    const merged = await serializeSettingsForFrontend(vault)
+    expect((merged.appearance as any).theme).toBe('ink')
+    expect((merged.appearance as any).uiFont).toBe('Monaspace Xenon')
+    expect((merged.appearance as any).proseFont).toBe('IBM Plex Serif')
 
-    await reconcileSettings(vault) // already fully current-era → no legacy trigger, no missing keys
+    await reconcileSettings(vault) // nothing to migrate, nothing to strip
     const after = readFileSync(join(vault, '.settings'), 'utf8')
     expect(after).toBe(before) // byte-identical
 })
@@ -482,6 +494,56 @@ test('reconcile leaves customized NEW-era appearance values untouched', async ()
     expect((data.editor as any).lineHeight).toBe(1.4)
 })
 
+describe('reconcile strips a pre-sparse materialized defaults dump, once', () => {
+    // What every vault was seeded with before `.settings` went sparse: the whole schema, at defaults.
+    const dumpDoc = () => parseDocument(stringify(DEFAULTS))
+
+    test('every default leaf goes; overrides, unknown keys and commented lines stay', async () => {
+        const vault = await emptyVault()
+        const doc = dumpDoc()
+        doc.setIn(['appearance', 'theme'], 'paper') // a real override
+        doc.setIn(['graph', 'myCustomKey'], 42) // unknown key
+        const spin = doc.getIn(['graph', 'spin'], true) as { comment?: string }
+        spin.comment = ' keep spinning' // a commented default — the comment is the user's
+        await writeNote(vault, '.settings', doc.toString())
+
+        expect(await reconcileSettings(vault)).toBe(true)
+        const { data, raw } = (await readSettings(vault))!
+        expect(data).toEqual({
+            appearance: { theme: 'paper' },
+            graph: { spin: true, myCustomKey: 42 },
+        })
+        expect(raw).toContain('# keep spinning')
+
+        // Fires once: what is left is a sparse file, which is never stripped again.
+        expect(await reconcileSettings(vault)).toBe(false)
+    })
+
+    test('an older dump missing keys added since still strips', async () => {
+        const vault = await emptyVault()
+        const doc = dumpDoc()
+        for (const section of ['calendar', 'terminal', 'chat', 'daemon'])
+            doc.deleteIn([section]) // sections a long-ago dump never had
+        doc.setIn(['editor', 'lineHeight'], 1.4)
+        await writeNote(vault, '.settings', doc.toString())
+
+        await reconcileSettings(vault)
+        expect((await readSettings(vault))!.data).toEqual({
+            editor: { lineHeight: 1.4 },
+        })
+    })
+
+    test('a stripped file reads exactly as the dump did', async () => {
+        const vault = await emptyVault()
+        const doc = dumpDoc()
+        doc.setIn(['graph', 'nodeSize'], 9)
+        await writeNote(vault, '.settings', doc.toString())
+        const before = await serializeSettingsForFrontend(vault)
+        await reconcileSettings(vault)
+        expect(await serializeSettingsForFrontend(vault)).toEqual(before)
+    })
+})
+
 describe('reconcile prunes retired schema keys', () => {
     test('editor.defaultMode is removed on reconcile and the file is rewritten', async () => {
         const vault = await emptyVault()
@@ -514,7 +576,7 @@ describe('reconcile prunes retired schema keys', () => {
 
     test('a file that never had defaultMode is not rewritten by the prune step', async () => {
         const vault = await emptyVault()
-        await reconcileSettings(vault) // absent -> writes full current-era defaults (no defaultMode)
+        await reconcileSettings(vault) // absent -> writes the sparse seed (no defaultMode)
         const before = readFileSync(join(vault, '.settings'), 'utf8')
         const wrote = await reconcileSettings(vault)
         expect(wrote).toBe(false)
@@ -557,8 +619,9 @@ test('setSettingInFile creates the file (via reconcile) when absent, then sets t
     const vault = await emptyVault()
     await setSettingInFile(vault, ['graph', 'nodeSize'], 12)
     const { data } = (await readSettings(vault))!
-    expect((data.graph as any).nodeSize).toBe(12)
-    expect((data.appearance as any).theme).toBe('ink') // reconcile seeded the rest
+    expect(data).toEqual({ graph: { nodeSize: 12 } }) // only the change is written
+    const raw = readFileSync(join(vault, '.settings'), 'utf8')
+    expect(raw.startsWith(SETTINGS_SEED)).toBe(true) // the seed's header survives the write
 })
 
 test('setSettingInFile ignores an empty path', async () => {
@@ -876,7 +939,7 @@ describe('concurrent setSettingInFile', () => {
 
         // All 100 mutations must have persisted successfully
         expect(successCount).toBe(100)
-        expect(graphData.nodeSize).toBe(6) // Original field from reconcile must be preserved (schema default)
+        expect(graphData.nodeSize).toBeUndefined() // sparse: reconcile never materializes defaults
     })
 
     it('should not bottleneck under 100+ concurrent mutations with different key paths', async () => {

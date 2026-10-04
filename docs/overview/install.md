@@ -216,7 +216,7 @@ if (import.meta.main) {
 So `BISMUTH_VAULT`/`BISMUTH_MEMORY` work as a substitute for `--vault`/`--memory` here too — a flag always wins if both are given.
 
 On boot the server:
-1. Reconciles `.settings` (the vault's single hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:17`; migrates any legacy `settings.yaml` or interim `.settings/settings.yaml` into it first via `migrateSettingsLocation()`, then writes defaults if absent, fills missing keys; fire-and-forget).
+1. Reconciles `.settings` (the vault's single hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:34`; migrates any legacy `settings.yaml` or interim `.settings/settings.yaml` into it first via `migrateSettingsLocation()`, then writes the comment-only `SETTINGS_SEED` if absent and strips a pre-sparse full-defaults dump via `stripMaterializedDefaults`; never adds keys; fire-and-forget).
 2. Loads runtime config (`AppConfig`) from `.settings` merged over defaults.
 3. Starts a file watcher on the vault (and memory directory if provided) with a debounce of `appConfig.server.fileWatchDebounceMs` (default 250 ms).
 4. Binds `Bun.serve` on the configured port with WebSocket upgrade support for `/terminal`.
@@ -360,7 +360,7 @@ The theme picker only recolors live; it commits **nothing** until the CTA. On co
 **The CTA → `choose_first_vault`:** "Enter your vault" (`enterVault` in `app/src/intro/introEnterVault.ts`) invokes the Tauri command `choose_first_vault(theme, icon)`, which:
 1. opens the **native folder picker** ("Open or create your Bismuth vault");
 2. on cancel returns `Ok(false)` → the intro stays put (`busy` cleared);
-3. on a pick: `create_dir_all` the folder, derive memory as `<vault>/.daemon/memory` (also created), `seed_vault_settings` writes a minimal legacy-path `settings.yaml` (`appearance: { theme, icon }`) **only if none exists** (Rust still targets the old root filename here — the sidecar's `reconcileSettings`/`migrateSettingsLocation` (`core/src/settings.ts:29`) renames it into the real `.settings` file on first boot and fills in the rest of the schema, preserving those seeded keys), persists `config.json`, calls `mark_intro_seen`, and `app.restart()`s into the new vault.
+3. on a pick: `create_dir_all` the folder, derive memory as `<vault>/.daemon/memory` (also created), `seed_vault_settings` writes a minimal legacy-path `settings.yaml` (`appearance: { theme, icon }`) **only if none exists** (Rust still targets the old root filename here — the sidecar's `reconcileSettings`/`migrateSettingsLocation` (`core/src/settings.ts:59`) renames it into the real `.settings` file on first boot, preserving those seeded keys; the rest of the schema is not written, it reads as defaults), persists `config.json`, calls `mark_intro_seen`, and `app.restart()`s into the new vault.
 
 In dev (`tauri dev`), `choose_first_vault` **skips** `app.restart()` (a restart would tear down the `beforeDevCommand` backend → white screen, and the dev vault comes from `BISMUTH_VAULT` regardless) — the frontend just navigates to `/` itself.
 

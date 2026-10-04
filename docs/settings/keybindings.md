@@ -326,7 +326,7 @@ keybindings: object(keybindingFields),
 
 Because the schema is the single source of truth, the catalog drives:
 - **`DEFAULTS`** — `deriveDefaults` materializes each field's `default`, so `settings.keybindings.<id>` is seeded synchronously on boot.
-- **`reconcileSettings`** — adds any missing key to an existing `.settings`, preserving comments.
+- **`reconcileSettings`** — does not add keys: a keybinding you never rebound is absent from `.settings` and reads as its catalog default via `DEFAULTS`.
 - **The `keybind`-typed autocomplete + linter** (next section).
 - **The schema↔`Settings`-interface parity test** (`app/src/settings.ts` must mirror the schema).
 

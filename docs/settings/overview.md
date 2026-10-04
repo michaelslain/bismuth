@@ -14,7 +14,7 @@ There is no settings GUI. Each vault has one hidden, extensionless YAML file at 
 SETTINGS_SCHEMA (core)      ← single source of truth
     │
     ├── DEFAULTS (derived)  ← plain nested object seeded synchronously into the frontend store
-    ├── reconcileSettings   ← fills missing keys on vault open, preserving comments
+    ├── reconcileSettings   ← migrates/prunes on vault open; never adds keys (the file is sparse)
     ├── setSettingInFile     ← per-key in-place merge (POST /set-setting)
     ├── serializeSettings    ← file merged over defaults → GET /settings
     ├── settingsComplete.ts  ← Ctrl-Space autocomplete inside the editor
@@ -30,11 +30,11 @@ The 2D/3D graph dimension is intentionally **not** a setting — it is a transie
 
 ### Location
 
-Always at `<vault-root>/.settings` (the constant `SETTINGS_FILE = ".settings"`, `core/src/settings.ts:17`). There is no global settings file; every vault has its own. It's a single hidden, extensionless file — still plain YAML underneath, just without a `.yaml` extension or a visible name, so it doesn't clutter the file tree as an ordinary note.
+Always at `<vault-root>/.settings` (the constant `SETTINGS_FILE = ".settings"`, `core/src/settings.ts:34`). There is no global settings file; every vault has its own. It's a single hidden, extensionless file — still plain YAML underneath, just without a `.yaml` extension or a visible name, so it doesn't clutter the file tree as an ordinary note.
 
 ### Filename History and Migration
 
-The settings file was originally named `settings.yaml` at the vault root (constant `LEGACY_SETTINGS_FILE = "settings.yaml"`, `core/src/settings.ts:19`). It was later renamed to the current hidden `.settings` file. `migrateSettingsLocation(vault)` (`core/src/settings.ts:29-60`) runs at the top of every `reconcileSettings` call and does a one-time, idempotent, best-effort relocation in three stages:
+The settings file was originally named `settings.yaml` at the vault root (constant `LEGACY_SETTINGS_FILE = "settings.yaml"`, `core/src/settings.ts:36`). It was later renamed to the current hidden `.settings` file. `migrateSettingsLocation(vault)` (`core/src/settings.ts:59`) runs at the top of every `reconcileSettings` call and does a one-time, idempotent, best-effort relocation in three stages:
 
 1. **Already migrated**: if `.settings` exists AND is a regular file, it's a no-op — return immediately.
 2. **Interim half-migration**: if a `.settings/settings.yaml` *directory* exists (an earlier build of this feature briefly used `.settings/` as a folder containing `settings.yaml`), collapse it into the `.settings` *file* — rename the inner file out to a temp name (`.settings.migrating`), remove the now-empty `.settings/` directory, then rename the temp file to `.settings`. (A file and a directory can't share the same name mid-move, hence the temp hop.)
@@ -44,43 +44,33 @@ All of this is best-effort and silent — a vault that has never used `settings.
 
 ### First Launch
 
-On first open of a vault `initializeSettings` is called. If `.settings` is absent, a clean, **comment-free** file is written from the schema's materialized defaults. The file ships without comments by design — discoverability is via the editor's Ctrl-Space autocomplete, which shows each key's `doc` string and valid range. Example of the generated file:
+The file is **sparse**: only settings you change live in it, and every key left out reads as its schema default. On first open of a vault `initializeSettings` is called. If `.settings` is absent, it writes `SETTINGS_SEED`, a two-line comment header with no keys. Discoverability is via the editor's Ctrl-Space autocomplete, which lists every key with its `doc` string, valid range and `default: <value>`. The generated file:
 
 ```yaml
-appearance:
-  theme: ink
-  icon: hopper-crystal
-  uiFont: Monaspace Xenon
-  proseFont: IBM Plex Serif
-  editorFontSize: 13.5
-  ...
-graph:
-  spin: true
-  nodeSize: 6
-  repulsion: -10
-  ...
-keybindings:
-  command-palette: Mod+P
-  terminal: "Mod+`, Mod+J"
-  ...
+# Only the settings you change live here; every key left out uses its default.
+# Ctrl-Space lists every key with its doc and default value.
 ```
+
+Every reader merges over `DEFAULTS` (`serializeSettingsForFrontend`, `loadAppConfig`, `bismuth settings get`, `readDaemonEnabledSync`, the daemon's `vaultSettings.ts`, `mcp/src/memory.ts`), so an absent key behaves exactly like a key written at its default. Writing a value equal to its default is still allowed and is never pruned.
 
 ### On Every Vault Open: `reconcileSettings`
 
 `reconcileSettings(vault)` runs on vault open. It:
 1. First calls `migrateSettingsLocation` (see [Filename History and Migration](#filename-history-and-migration) above) to relocate any legacy `settings.yaml`/interim `.settings/` layout into the `.settings` file.
-2. If `.settings` is absent, calls `initializeSettings` to write full defaults.
+2. If `.settings` is absent, calls `initializeSettings` to write `SETTINGS_SEED` (no keys).
 3. If the file exists, parses it via the YAML CST (`parseDocument`).
 4. If the file has YAML parse errors, leaves it **completely untouched** (avoids clobbering a half-edited file).
-5. If the top-level value is not a YAML map (empty/scalar/corrupt), leaves it untouched.
-6. Otherwise calls `fillMissing` recursively: for every schema key absent from the file, inserts the default. **Does not remove unknown keys.**
+5. If the top-level value is not a YAML map (empty/scalar/corrupt/comment-only), leaves it untouched.
+6. Otherwise runs the in-place migrations in order: `renameKeys`, `moveKeys`, `migrateDaemonConfig` (a no-op), `migrateLegacyAppearance`, `pruneRetiredKeys`, then `stripMaterializedDefaults`. **It never adds missing keys and does not remove unknown keys.**
 7. Writes back only if something actually changed (no spurious writes/SSE churn).
+
+`stripMaterializedDefaults` is a one-time cleanup of files written before `.settings` went sparse. When at least half of all schema leaves (`MATERIALIZED_DUMP_RATIO`, `0.5`) sit in the file at exactly their schema default, the file is treated as the old full-defaults dump: every leaf still at its default is deleted, then every section left empty. A leaf carrying a comment, an unknown key and any non-default value are kept. A sparse hand-written file never reaches the threshold, so a value you write equal to its default survives. `migrateLegacyAppearance` resets the legacy type scale by deleting those keys (absent = current default) rather than writing default values, and removes an emptied `editor:` section.
 
 Key properties of `reconcileSettings`:
 - Preserves all user-written comments (including inline `# ...` after values).
 - Preserves existing user values; never overwrites them.
 - Preserves any keys not present in the schema (unknown keys survive).
-- Adding a new schema entry self-reconciles on next vault open — no migration code needed.
+- Adding a new schema entry needs no migration code: it reads as its default until you set it.
 - A corrupt file is never written to; the user must fix it manually.
 
 ```typescript
@@ -89,13 +79,13 @@ await writeNote(vault, SETTINGS_FILE, // ".settings"
   "# my notes\nappearance:\n  theme: ink # inline\n");
 await reconcileSettings(vault);
 // Raw file still contains "# my notes" and "# inline"
-// Missing keys (graph, editor, …) are added with defaults
+// No keys are added: graph, editor, … stay absent and read as defaults
 ```
 
 ### The Per-Key Merge: `setSettingInFile`
 
 `setSettingInFile(vault, path, value)` is the **only** backend write path for individual settings. It:
-1. Runs `reconcileSettings` first (ensures the file exists and is fully shaped).
+1. Runs `reconcileSettings` first (ensures the file exists, at minimum as the seed, and is migrated).
 2. Reads the current raw file.
 3. Uses `doc.setIn(path, value)` on the YAML CST — surgical in-place update.
 4. Writes the result back, preserving all other keys, comments, and key order.
@@ -641,7 +631,7 @@ editor: object({
 }),
 ```
 
-After this change, `DEFAULTS` is automatically updated (derived from the schema). `reconcileSettings` will add the key to existing `.settings` files on next vault open. The autocomplete and lint pick it up automatically. The `settings.parity.test.ts` parity tests enforce that the default and doc are present.
+After this change, `DEFAULTS` is automatically updated (derived from the schema). Existing `.settings` files are not touched: the key reads as its default until the user sets it. The autocomplete and lint pick it up automatically. The `settings.parity.test.ts` parity tests enforce that the default and doc are present.
 
 ### 2. Add to the Frontend `Settings` Interface (`app/src/settings.ts`)
 
@@ -680,12 +670,12 @@ editor: {
 ## Edge Cases and Gotchas
 
 - **Corrupt `.settings`**: if the file has YAML parse errors or the top-level value is not a map, `reconcileSettings` leaves it untouched. The user must fix it manually. Reading a corrupt file via `readSettings` returns `{ raw, data: {} }` — callers fall back to defaults.
-- **Migration is best-effort and silent**: `migrateSettingsLocation` (run at the top of every `reconcileSettings`) never throws; a failed rename falls back to a copy, and total failure just means the vault reconciles fresh defaults into a new `.settings` file (the legacy `settings.yaml` is left on disk untouched in every failure case).
+- **Migration is best-effort and silent**: `migrateSettingsLocation` (run at the top of every `reconcileSettings`) never throws; a failed rename falls back to a copy, and total failure just means the vault starts from a fresh seed `.settings` file (all defaults) (the legacy `settings.yaml` is left on disk untouched in every failure case).
 - **`properties:` is stripped from `GET /settings`**: the property registry is delivered by `GET /schema`, not `GET /settings`. A `properties` key in the parsed server data is never forwarded to the frontend settings store.
 - **Unknown keys survive reconcile AND `setSettingInFile`**: custom YAML keys not in the schema are never removed by any of the backend write operations. The parity-test and `serializeSettingsForFrontend` simply ignore them.
 - **`toolbar` and `dailyNotes` are list sections**: they are validated item-by-item; malformed items are silently dropped (not errored). In `mergeServerSettings` on the frontend, array-typed top-level sections are replaced wholesale — the default is only used if the server sends a non-array.
 - **Empty-path `setSettingInFile` call is a no-op**: `if (!path.length) return;` at the top of the function.
 - **Per-vault mutex scope**: the mutex is keyed by vault path, so concurrent requests against different vaults run in parallel.
-- **`folderIcons` written by `POST /folder-icon`**: folder icons are not set via `POST /set-setting`; they go through the dedicated `setFolderIcon(vault, path, icon)` helper which also acquires the per-vault mutex. An empty/null/undefined icon deletes the entry.
+- **`folderIcons` written by `POST /folder-icon`**: folder icons are not set via `POST /set-setting`; they go through the dedicated `setFolderIcon(vault, path, icon)` helper which also acquires the per-vault mutex. An empty/null/undefined icon deletes the entry, and deleting the last entry removes the emptied `folderIcons:` key (`setFolderVisibility` does the same for `folderVisibility:`).
 
 Source: `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/theme/tokens.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/visibility.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/settingsDiff.ts`, `core/test/settings.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/fixtures/upgrade/settings-schema-snapshot.json`, `app/src/settings.parity.test.ts`

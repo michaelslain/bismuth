@@ -80,7 +80,7 @@ The folder is created automatically (`mkdirSync(..., { recursive: true })`) on f
 
 ### 2.2 Legacy Migration
 
-`migrateSettingsLocation(vault)` (`core/src/settings.ts` ~lines 29–60), run at the top of every `reconcileSettings` call, is a one-time, idempotent relocation of two older on-disk layouts into the single `.settings` file:
+`migrateSettingsLocation(vault)` (`core/src/settings.ts`), run at the top of every `reconcileSettings` call, is a one-time, idempotent relocation of two older on-disk layouts into the single `.settings` file:
 
 - **Legacy vault-root file** — an older `settings.yaml` at the vault root (`LEGACY_SETTINGS_FILE = "settings.yaml"`) is renamed to `.settings`. If the rename fails (a lock, an odd filesystem state), it falls back to a plain copy so `.settings` exists with the user's real values; the legacy file is left in place as a backup either way.
 - **Interim `.settings/` directory** — an earlier build of this branch stored settings at `.settings/settings.yaml` (a *directory* named `.settings` containing a `settings.yaml` file). Since a file and a directory can't share the name `.settings`, migration renames the interim file to a temp name (`.settings.migrating`), removes the now-empty `.settings/` directory, then renames the temp file to `.settings`.
@@ -91,8 +91,8 @@ The function is a no-op once a `.settings` **file** already exists — it explic
 
 | Event | Behaviour |
 |-------|-----------|
-| Vault opened, file absent | `initializeSettings` writes a clean comment-free defaults file from `SETTINGS_SCHEMA` |
-| Vault opened, file present | `reconcileSettings` first runs `migrateSettingsLocation`, then fills any missing schema keys while preserving existing values, comments, key order, and unknown keys; skips if the file is corrupt |
+| Vault opened, file absent | `initializeSettings` writes `SETTINGS_SEED`, a two-line comment header with no keys (the file is sparse; absent keys read as schema defaults) |
+| Vault opened, file present | `reconcileSettings` first runs `migrateSettingsLocation`, then runs the in-place migrations (`renameKeys`, `moveKeys`, `migrateLegacyAppearance`, `pruneRetiredKeys`) and `stripMaterializedDefaults` (one-time removal of a pre-sparse full-defaults dump), preserving existing values, comments, key order, and unknown keys; never adds keys; skips if the file is corrupt |
 | Corrupt YAML | File left untouched; backend degrades to `DEFAULTS` for runtime config |
 | `POST /set-setting` | `setSettingInFile` runs `reconcileSettings` first, then edits the YAML document in place via `doc.setIn(path, value)` — one key at a time, preserving everything else |
 | Frontend toggle | Sends `POST /set-setting` with a `path: string[]` and `value`; backend is the only writer |

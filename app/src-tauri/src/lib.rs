@@ -199,8 +199,9 @@ fn safe_token(s: &str) -> bool {
 }
 
 // Seed a brand-new vault's settings.yaml with the theme/icon picked in the intro, so the
-// app paints in that theme immediately. We write only the two keys; the sidecar's
-// reconcileSettings fills the rest on boot while preserving these. No-op if a settings
+// app paints in that theme immediately. We write only the two keys — `.settings` is sparse, so
+// every other key reads as its default (the sidecar's reconcileSettings moves this file into
+// `.settings` on boot and never fills it). No-op if a settings
 // file already exists, or if either token looks unexpected.
 fn seed_vault_settings(vault: &str, theme: &str, icon: &str) {
     if !safe_token(theme) || !safe_token(icon) {

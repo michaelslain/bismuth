@@ -94,8 +94,10 @@ and pins the invariants that matter across a version jump:
 - keys the current schema no longer knows are **preserved, never dropped** (they may belong to a
   newer build, or a feature that is coming back) — silent data loss is the one unforgivable
   upgrade outcome;
-- keys added to the schema since that version are seeded with their defaults, so nothing reads
-  `undefined`;
+- keys added to the schema since that version are not written; they read as their defaults
+  (every reader merges over `DEFAULTS`), so nothing reads `undefined`;
+- a pre-sparse full-defaults dump is stripped back to its non-default values
+  (`stripMaterializedDefaults`), while a sparse file's explicit default value is kept;
 - retired themes and fonts migrate to current-era values;
 - reconcile is idempotent, and a corrupt or hostile file is left alone for the user to repair
   rather than silently replaced with defaults.

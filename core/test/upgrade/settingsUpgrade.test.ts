@@ -175,18 +175,21 @@ describe('upgrading an old-era settings file through reconcile', () => {
         rmSync(vault, { recursive: true, force: true })
     })
 
-    test('keys added to the schema SINCE the old version are seeded with their defaults', async () => {
+    test('keys added to the schema SINCE the old version read as their defaults, without being written', async () => {
         const { vault } = await upgradeOldVault()
         const data = (await readSettings(vault))!.data as Record<
             string,
             unknown
         >
-        // The old file had four sections; today's schema has many more. Every schema top-level key
-        // must be present after reconcile, or the app reads undefined for a setting it relies on.
+        const merged = await serializeSettingsForFrontend(vault)
+        // `.settings` is sparse: a section the old file never had is NOT written into it, yet every
+        // schema top-level key still reads through the merged feed, so the app never sees undefined.
         const { SETTINGS_SCHEMA } =
             await import('../../src/schema/settingsSchema')
+        expect(data).not.toHaveProperty('terminal')
         for (const key of Object.keys(SETTINGS_SCHEMA)) {
-            expect(data).toHaveProperty(key)
+            if (key === 'properties') continue // delivered via GET /schema, never in the feed
+            expect(merged).toHaveProperty(key)
         }
         rmSync(vault, { recursive: true, force: true })
     })
@@ -331,7 +334,7 @@ describe('sidebarIconFontSize renamed to iconSize', () => {
         rmSync(vault, { recursive: true, force: true })
     })
 
-    test('a comment above the old key survives when the old key is the section\'s last item', async () => {
+    test("a comment above the old key survives when the old key is the section's last item", async () => {
         const vault = emptyVault()
         writeFileSync(
             join(vault, SETTINGS_FILE),
@@ -399,7 +402,7 @@ describe('terminal cursor settings moved to appearance', () => {
 
         expect(settings.appearance.cursorBlinkSeconds).toBe(1.8)
         expect(settings.appearance.cursorGlideMs).toBe(120)
-        expect(settings.appearance.cursorWidth).toBe(2)
+        expect(settings.appearance.cursorWidth).toBeUndefined() // never set → stays absent (default)
         expect(settings.terminal.cursorBlinkSeconds).toBeUndefined()
         expect(text).toContain('# slow blink please')
         expect(text).toContain('# floaty')

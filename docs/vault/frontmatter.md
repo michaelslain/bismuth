@@ -453,12 +453,12 @@ Merges a single value at a JSON-pointer-style path (e.g. `["appearance", "theme"
 
 ### Reconciliation: `reconcileSettings`
 
-On every vault open, `reconcileSettings` adds any schema keys missing from the file, using their schema defaults. It:
-- Does nothing if the file doesn't exist (calls `initializeSettings` to write a fresh file instead).
-- Skips corrupt/empty files (any YAML parse error → leave for the user to fix).
-- Never removes unknown keys (only adds missing ones).
+On every vault open, `reconcileSettings` migrates the file in place. It never adds keys: `.settings` is sparse, and any key left out reads as its schema default. It:
+- Does nothing but write `SETTINGS_SEED` (a two-line comment header, no keys) if the file doesn't exist (via `initializeSettings`).
+- Skips corrupt/empty/comment-only files (any YAML parse error or non-map top level → leave for the user to fix).
+- Runs `renameKeys`, `moveKeys`, `migrateLegacyAppearance` and `pruneRetiredKeys`, then `stripMaterializedDefaults`: a one-time cleanup that deletes every leaf still at its default (then any emptied section) when at least 50% of schema leaves are present at their defaults, i.e. the old full-defaults dump. Commented pairs, unknown keys and non-default values are kept.
+- Never removes unknown keys.
 - Writes the file only if something actually changed (no spurious SSE churn).
-- Recurses into object-typed entries (fills nested missing keys too).
 
 ### Frontend serialization: `serializeSettingsForFrontend`
 

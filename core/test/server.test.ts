@@ -1688,7 +1688,7 @@ test('GET /events frame includes the changed path on mutation', async () => {
     }
 })
 
-import { initializeSettings } from '../src/settings'
+import { initializeSettings, SETTINGS_SEED } from '../src/settings'
 import { rmSync, existsSync } from 'node:fs'
 
 test('GET /settings returns parsed app settings with defaults', async () => {
@@ -1736,7 +1736,7 @@ test('createServer writes a settings.yaml on boot when missing', async () => {
     }
 })
 
-test('GET /file materializes settings.yaml from defaults when missing at read time', async () => {
+test('GET /file writes the sparse settings seed when missing at read time', async () => {
     const { vault, memory } = await makeSampleVault()
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -1748,8 +1748,7 @@ test('GET /file materializes settings.yaml from defaults when missing at read ti
         const res = await fetch(`${base}/file?path=.settings`)
         const text = await res.text()
         expect(res.status).toBe(200)
-        expect(text).toContain('appearance:') // default content, not a blank editor
-        expect(text).toContain('theme: ink')
+        expect(text).toBe(SETTINGS_SEED) // the seed's header, not a blank editor — and no keys
         expect(existsSync(join(vault, '.settings'))).toBe(true) // recreated on disk
     } finally {
         server.stop(true)

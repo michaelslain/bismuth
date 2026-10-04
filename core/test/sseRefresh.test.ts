@@ -75,8 +75,8 @@ test(
         const { vault, memory } = await makeSampleVault()
         // A brand-new vault has no `.settings` yet, so server boot fires an async reconcileSettings()
         // that bootstraps a default one (core/src/server.ts ~line 226). Materialize it BEFORE
-        // createServer so that boot-time write never happens at all — reconcileSettings's
-        // fillMissing() then finds nothing missing and performs no write. Without this, the bootstrap
+        // createServer so that boot-time write never happens at all — reconcileSettings then
+        // finds nothing to migrate or strip and performs no write. Without this, the bootstrap
         // write could land on the same debounced watcher flush as our trigger below, and because
         // `.settings` changes unconditionally force dirty.tree=true (classifyVault's isSettingsPath
         // branch), it would make this test pass even if the real folder-creation code path were broken.

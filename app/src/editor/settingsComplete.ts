@@ -132,9 +132,17 @@ export function rangeLabel(entry: SchemaEntry): string {
     return ''
 }
 
-/** The setting's documentation string (shown as the completion's info tooltip). */
+/** The setting's documentation string plus its default (shown as the completion's info tooltip).
+ *  `.settings` is sparse — an absent key reads as its default — so this tooltip is where a user
+ *  learns what they are overriding. Object sections have no single default and show the doc alone. */
 export function docInfo(entry: SchemaEntry): string {
-    return entry.doc ?? ''
+    const isObject =
+        typeof entry.type === 'object' && entry.type.kind === 'object'
+    const def =
+        isObject || entry.default === undefined
+            ? ''
+            : `default: ${JSON.stringify(entry.default)}`
+    return [entry.doc ?? '', def].filter(Boolean).join('\n')
 }
 
 /** The nested fields available under an entry: object fields directly, or a

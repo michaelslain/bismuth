@@ -470,7 +470,7 @@ For `- key: value` list-item lines, `enclosingListItemType` resolves the enclosi
 **Behavior:**
 - Finds the schema in scope at the current indent.
 - Does NOT fire inside the `properties:` section (user-defined property names are free-form).
-- Each option shows `type rangeLabel` as `detail` (e.g. `number 11–28`, `enum dark | light`) and the `doc` string as `info` tooltip.
+- Each option shows `type rangeLabel` as `detail` (e.g. `number 11–28`, `enum dark | light`) and the `doc` string as `info` tooltip, followed on its own line by `default: <JSON value>` for leaf keys (object sections show the doc only).
 - `validFor: /^[\w-]*$/`.
 
 **Example:** In the `appearance:` block, typing `ui` suggests `uiFont` (detail: `enum Monaspace Xenon | Monaspace Neon | Monaspace Argon | Monaspace Krypton | Monaspace Radon`) and `uiFontSize` (detail: `number 11–16`).
