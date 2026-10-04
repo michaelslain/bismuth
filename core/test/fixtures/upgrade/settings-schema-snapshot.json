@@ -557,6 +557,13 @@
     "max": 0.5,
     "required": false
   },
+  "graph.gradient": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "graph.graphLabelHubCount": {
     "type": "number",
     "default": 10,

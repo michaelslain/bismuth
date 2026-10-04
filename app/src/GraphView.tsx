@@ -21,10 +21,8 @@ import GraphStatusLine from './graph/GraphStatusLine'
 import fpsColor from './graph/fpsColor'
 import {
     graphClusters,
-    graphGradient,
     graphViewMode,
     setGraphClusters,
-    setGraphGradient,
     setGraphViewMode,
 } from './graph/graphLayers'
 import { computeLayout } from '../../core/src/layout'
@@ -555,9 +553,7 @@ export function GraphView(props: {
                         <Show when={!props.mini}>
                             <GraphLayerToggles
                                 clusters={graphClusters()}
-                                gradient={graphGradient()}
                                 onClusters={setGraphClusters}
-                                onGradient={setGraphGradient}
                             />
                         </Show>
                         <SegmentedToggle
@@ -593,9 +589,8 @@ export function GraphView(props: {
             >
                 <div class={styles['graph-canvas-host']} ref={host} />
                 {/* Atmosphere (phosphor bloom emitted by the node field + depth vignette). Mounts while
-            the [gradient] toggle (graph/graphLayers.ts) is on. The old rule ("the ASCII field's
-            ground is deliberately flat, no glow or vignette") is deliberately reversed: the
-            redesign's phosphor bloom IS the atmosphere.
+            the `graph.gradient` setting is on — off by default, so the field's ground is flat unless
+            the vault opts in (.settings, not a ViewBar button).
             No `renderer` prop, on purpose — see GraphAtmosphere.tsx's file-level comment and
             bloomSink above. No DOM label overlay: the renderer draws its labels on its own
             canvas. Unmounting clears `bloomSink.current` (GraphAtmosphere's own onCleanup) so the
@@ -603,7 +598,7 @@ export function GraphView(props: {
             REST (no dirty frame since) still paints immediately: `bloomSink.last` holds the most
             recent field mountRenderer's callback stashed, and GraphAtmosphere replays it on mount
             instead of waiting for the next emitBloom(). */}
-                <Show when={graphGradient()}>
+                <Show when={settings.graph.gradient}>
                     <GraphAtmosphere sink={bloomSink} mode={props.mode} />
                 </Show>
                 {/* No floating cluster-legend card — cluster names are drawn IN the field itself

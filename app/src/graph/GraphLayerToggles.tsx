@@ -1,7 +1,7 @@
-// The graph's two display layers as on/off bracket buttons: [clusters] (notes read as named
+// The graph's display layer as an on/off bracket button: [clusters] (notes read as named
 // community groups — zoomed-out masses in 2D, group names in 3D — vs every note drawn and named at
-// every zoom) and [gradient] (the phosphor glow + vignette vs a flat
-// ground). Presentational — GraphView owns the state (graph/graphLayers.ts) and passes it in.
+// every zoom). Presentational — GraphView owns the state (graph/graphLayers.ts) and passes it in.
+// The gradient (bloom + vignette) is no longer a button here; it is the `graph.gradient` setting.
 import type { Component } from 'solid-js'
 import TextButton from '../ui/TextButton'
 import Text from '../ui/Text'
@@ -9,9 +9,7 @@ import styles from './GraphLayerToggles.module.css'
 
 export type GraphLayerTogglesProps = {
     clusters: boolean
-    gradient: boolean
     onClusters: (on: boolean) => void
-    onGradient: (on: boolean) => void
     class?: string
 }
 
@@ -32,18 +30,6 @@ const GraphLayerToggles: Component<GraphLayerTogglesProps> = props => (
             onClick={() => props.onClusters(!props.clusters)}
         >
             clusters
-        </TextButton>
-        <TextButton
-            variant={props.gradient ? 'selected' : 'unselected'}
-            aria-pressed={props.gradient}
-            title={
-                props.gradient
-                    ? 'Gradient — the glow behind dense regions and the darkened edges. Click for a flat background'
-                    : 'Flat background. Click to bring back the gradient'
-            }
-            onClick={() => props.onGradient(!props.gradient)}
-        >
-            gradient
         </TextButton>
     </Text>
 )

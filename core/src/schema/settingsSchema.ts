@@ -292,6 +292,11 @@ export const SETTINGS_SCHEMA: Schema = {
             default: false,
             doc: 'The faint ASCII noise texture under the graph field. Off by default.',
         },
+        gradient: {
+            type: 'boolean',
+            default: false,
+            doc: 'The phosphor glow behind dense regions of the graph and the darkened vignette at its edges. Off by default (a flat ground).',
+        },
     }),
     editor: object({
         livePreview: {

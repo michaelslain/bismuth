@@ -67,6 +67,7 @@ export interface Settings {
         mapDefaultZoom: number // default zoom for the Bases map view
         refreshDebounceMs: number // ms before rebuilding the graph after edits
         backgroundNoise: boolean // faint ASCII noise texture under the graph field; off by default
+        gradient: boolean // phosphor glow + edge vignette behind the graph field; off by default
     }
     editor: {
         livePreview: boolean

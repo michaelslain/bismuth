@@ -15,8 +15,9 @@
 //
 // GraphAtmosphere (the phosphor-bloom layer) is NOT storied standalone — it paints from a live
 // per-frame BloomSink the renderer feeds it, so alone it would show only a static vignette. It
-// mounts inside GraphView while the [gradient] toggle (graph/graphLayers.ts) is on — the default —
-// so every story below exercises it as a real layer for free unless the story turns it off.
+// mounts inside GraphView while the `graph.gradient` setting is on. That setting is OFF by default,
+// so most stories below render the flat ground the product ships; the Clustered/Gradient stories
+// turn it on to exercise the atmosphere as a real layer.
 //
 // `visible` pauses the renderer's rAF loop (in the app it stops a hidden sidebar slot from
 // burning frames while the main pane shows the graph). Storybook only ever mounts one story's
@@ -24,12 +25,12 @@
 // on every story below, called out explicitly so a future story that stacks more than one
 // <GraphView> in a single render knows to set it false on whichever isn't the one being shown.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import { getOwner, onCleanup } from 'solid-js'
 import { GraphView } from './GraphView'
 import { SAMPLE_HUB_ID, sampleGraphData, sampleClusteredGraphData } from './ui/_graphFixtures'
 import { settings, setSettings } from './settings'
-import { setGraphClusters, setGraphGradient, setGraphViewMode } from './graph/graphLayers'
+import { setGraphClusters, setGraphViewMode } from './graph/graphLayers'
 
 const meta = {
     title: 'Graph/GraphView',
@@ -42,13 +43,14 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
-// Both layer signals are MODULE-LEVEL (graph/graphLayers.ts) and shared by every GraphView instance
-// in this iframe — Storybook navigates between stories without reloading, so a story that leaves
-// them flipped leaks into whichever story renders next. Every story below calls this at the top of
-// its `render`, before mounting anything, so each one is deterministic regardless of click order.
+// The layer signals are MODULE-LEVEL (graph/graphLayers.ts) and shared by every GraphView instance
+// in this iframe, and so is the `settings` store holding `graph.gradient` — Storybook navigates
+// between stories without reloading, so a story that leaves them flipped leaks into whichever story
+// renders next. Every story below calls this at the top of its `render`, before mounting anything,
+// so each one is deterministic regardless of click order.
 const resetLayers = () => {
     setGraphClusters(true)
-    setGraphGradient(true)
+    setSettings('graph', 'gradient', false)
     setGraphViewMode('2d')
 }
 
@@ -430,15 +432,15 @@ export const StatusLine: Story = {
 }
 
 /**
- * THE [clusters]/[gradient] TOGGLES — three stories over a real community hierarchy
+ * THE [clusters] TOGGLE + THE `graph.gradient` SETTING — stories over a real community hierarchy
  * (`sampleClusteredGraphData`, six rings of twelve notes each), which `sampleGraphData` never has.
- * Each sets BOTH layer signals in `render`, before returning JSX — module state leaks across
+ * Each sets BOTH layers in `render`, before returning JSX — module state leaks across
  * stories in one Storybook iframe (see `resetLayers` above), so a story cannot rely on whichever
  * state a previous one left the signals in.
  */
 const clustered = (clusters: boolean, gradient: boolean, viewMode: '2d' | '3d' = '2d') => () => {
     setGraphClusters(clusters)
-    setGraphGradient(gradient)
+    setSettings('graph', 'gradient', gradient)
     setGraphViewMode(viewMode)
     const graph = sampleClusteredGraphData()
     return (
@@ -462,7 +464,7 @@ export const ClustersOff3d: Story = { render: clustered(false, true, '3d') }
  *  [local], driving the same shared signal as the full pane's layer toggles. */
 const miniClustered = (clusters: boolean, viewMode: '2d' | '3d' = '2d') => () => {
     setGraphClusters(clusters)
-    setGraphGradient(true)
+    setSettings('graph', 'gradient', false)
     setGraphViewMode(viewMode)
     const graph = sampleClusteredGraphData()
     return (
@@ -488,14 +490,15 @@ export const MiniClustersOff: Story = {
     },
 }
 
-/** [gradient] off: no bloom canvas, no vignette, flat ground. play() turns it back on and the
- *  atmosphere remounts (Review Focus 1). */
+/** `graph.gradient` off (the default): no bloom canvas, no vignette, flat ground — and no
+ *  [gradient] button in the ViewBar. play() flips the setting on and the atmosphere mounts and
+ *  inks, then off again and it unmounts (Review Focus 1). */
 export const GradientOff: Story = {
     render: clustered(true, false),
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        const btn = await c.findByRole('button', { name: /gradient/ })
-        await expect(btn.getAttribute('aria-pressed')).toBe('false')
+        await c.findByRole('button', { name: /clusters/ })
+        await expect(c.queryByRole('button', { name: /gradient/ })).toBeNull()
         const before = canvasElement.querySelectorAll('canvas').length
         // The bloom canvas's alpha channel is the ink signal: a field that
         // never reached it (Finding 1's bug) leaves every pixel transparent.
@@ -510,7 +513,7 @@ export const GradientOff: Story = {
             for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++
             return n
         }
-        await userEvent.click(btn)
+        setSettings('graph', 'gradient', true)
         await waitFor(() =>
             expect(canvasElement.querySelectorAll('canvas').length).toBe(
                 before + 1,
@@ -520,7 +523,7 @@ export const GradientOff: Story = {
         // The at-rest replay is pinned renderer-free by GraphAtmosphere's
         // ReplaysLastFieldOnMount story: live dirty frames make it
         // unisolatable here.
-        await userEvent.click(btn)
+        setSettings('graph', 'gradient', false)
         await waitFor(() =>
             expect(canvasElement.querySelectorAll('canvas').length).toBe(
                 before,

@@ -12,43 +12,28 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
-/** Both on — a fresh window's state (today's graph look). */
+/** On — a fresh window's state. */
 export const AllOn: Story = {
-    render: () => (
-        <GraphLayerToggles clusters gradient onClusters={noop} onGradient={noop} />
-    ),
+    render: () => <GraphLayerToggles clusters onClusters={noop} />,
 }
 
-/** Both off — every note, flat ground. */
+/** Off — every note. */
 export const AllOff: Story = {
-    render: () => (
-        <GraphLayerToggles clusters={false} gradient={false} onClusters={noop} onGradient={noop} />
-    ),
+    render: () => <GraphLayerToggles clusters={false} onClusters={noop} />,
 }
 
-/** Live state: clicking flips aria-pressed on each button independently. */
+/** Live state: clicking flips aria-pressed. There is no [gradient] button — that is .settings now. */
 export const Interactive: Story = {
     render: () => {
         const [clusters, setClusters] = createSignal(true)
-        const [gradient, setGradient] = createSignal(true)
-        return (
-            <GraphLayerToggles
-                clusters={clusters()}
-                gradient={gradient()}
-                onClusters={setClusters}
-                onGradient={setGradient}
-            />
-        )
+        return <GraphLayerToggles clusters={clusters()} onClusters={setClusters} />
     },
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
         const cl = c.getByRole('button', { name: /clusters/ })
-        const gr = c.getByRole('button', { name: /gradient/ })
         await expect(cl.getAttribute('aria-pressed')).toBe('true')
         await userEvent.click(cl)
         await expect(cl.getAttribute('aria-pressed')).toBe('false')
-        await expect(gr.getAttribute('aria-pressed')).toBe('true')
-        await userEvent.click(gr)
-        await expect(gr.getAttribute('aria-pressed')).toBe('false')
+        await expect(c.queryByRole('button', { name: /gradient/ })).toBeNull()
     },
 }

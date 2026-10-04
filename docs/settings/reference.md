@@ -100,6 +100,7 @@ Knowledge-graph rendering and force-layout behavior.
 | `mapDefaultZoom` | number | `2` | min `1`, max `18` | Default zoom for the Bases map view when it can't fit markers. |
 | `refreshDebounceMs` | number | `300` | min `100`, max `1000` | Delay before rebuilding the graph after an edit burst (ms). |
 | `backgroundNoise` | boolean | `false` | — | The faint ASCII noise texture under the graph field. Off by default. |
+| `gradient` | boolean | `false` | — | The phosphor glow behind dense regions of the graph and the darkened vignette at its edges. Off by default (a flat ground). |
 
 Example:
 

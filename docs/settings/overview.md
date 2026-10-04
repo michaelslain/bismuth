@@ -208,6 +208,7 @@ There are **no per-color override keys** in `appearance` — the theme is the si
 | `mapDefaultZoom` | number | `2` | 1–18 | Default zoom for the Bases map view when it can't fit all markers. |
 | `refreshDebounceMs` | number | `300` | 100–1000 | Delay before rebuilding the graph after an edit burst in ms. |
 | `backgroundNoise` | boolean | `false` | — | The faint ASCII noise texture under the graph field. Off by default. |
+| `gradient` | boolean | `false` | — | The phosphor glow behind dense regions of the graph and the darkened vignette at its edges. Off by default (a flat ground). |
 
 The graph's 2D/3D view mode is **intentionally absent** from this section. It is a transient `localStorage` toggle in `GraphView.tsx` and never writes `.settings`.
 

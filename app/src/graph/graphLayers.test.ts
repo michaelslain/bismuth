@@ -1,29 +1,17 @@
 import { describe, expect, test } from 'bun:test'
-import {
-    readStoredFlag,
-    graphClusters,
-    graphGradient,
-    setGraphClusters,
-    setGraphGradient,
-} from './graphLayers'
+import { readStoredFlag, graphClusters, setGraphClusters } from './graphLayers'
 
 describe('graphLayers', () => {
     test('defaults to on with no localStorage (test env / private mode)', () => {
         expect(readStoredFlag('bismuth:graph:nope')).toBe(true)
         expect(graphClusters()).toBe(true)
-        expect(graphGradient()).toBe(true)
     })
 
-    test('setters flip the signals independently', () => {
+    test('the setter flips the signal', () => {
         setGraphClusters(false)
         expect(graphClusters()).toBe(false)
-        expect(graphGradient()).toBe(true)
-        setGraphGradient(false)
-        expect(graphGradient()).toBe(false)
         setGraphClusters(true)
-        setGraphGradient(true)
         expect(graphClusters()).toBe(true)
-        expect(graphGradient()).toBe(true)
     })
 
     test('only a stored literal false turns a layer off', () => {
