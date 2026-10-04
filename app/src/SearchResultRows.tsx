@@ -1,16 +1,18 @@
 // app/src/SearchResultRows.tsx
-// Result-card rendering for the unified search surface (#8: "the search tab and the cmd+o
+// Result rendering for the unified search surface (#8: "the search tab and the cmd+o
 // should be the same thing"): keyword CONTENT matches and Bismuth AI results, both rendered
-// by the Cmd+O switcher (palette/SwitcherBar.tsx) as identical `.sresult` cards — file header
-// + optional AI rationale + matched snippets. Extracted (originally out of the since-removed
+// by the Cmd+O switcher (palette/SwitcherBar.tsx) as identical `.sresult` groups — a
+// PaletteRow-shaped file line + optional AI rationale + matched snippet lines. Flat rows, not
+// cards, so they read as the same list as the switcher's file-name rows above them. Extracted (originally out of the since-removed
 // SearchView tab) so no surface ever forks a lookalike of the result card.
 import { For, Show } from 'solid-js'
 import { Icon } from './icons/Icon'
 import { recordUse, fileKey } from './frecency'
 import type { SearchResult } from './searchOpts'
-import Badge from './ui/Badge'
+import Label from './ui/Label'
 import PlainButton from './ui/PlainButton'
 import Text from './ui/Text'
+import { snippetLead } from './snippetLead'
 import styles from './SearchResultRows.module.css'
 
 /** Split a vault path into its filename (sans extension) and parent folder so each result card
@@ -25,7 +27,7 @@ export function splitPath(path: string): { name: string; folder: string } {
 }
 
 /**
- * Renders a list of search/AI-prompt results (`.sresult` cards). `onOpen` is called with the
+ * Renders a list of search/AI-prompt results (`.sresult` groups). `onOpen` is called with the
  * bare path AFTER frecency has already been recorded — callers should not double-record.
  *
  * Keyboard-nav integration (the switcher walks these rows with Up/Down like palette rows):
@@ -37,6 +39,7 @@ export function SearchResultRows(props: {
     onOpen: (path: string) => void
     selected?: number
     onRowPointerMove?: (index: number, e: MouseEvent) => void
+    class?: string
 }) {
     return (
         <For each={props.results}>
@@ -48,7 +51,8 @@ export function SearchResultRows(props: {
                 }
                 return (
                     <div
-                        class={styles['sresult']}
+                        class={`${styles['sresult']} ${props.class ?? ''}`}
+                        data-testid="search-result"
                         data-selected={props.selected === i() ? '' : undefined}
                         onMouseMove={e => props.onRowPointerMove?.(i(), e)}
                     >
@@ -59,32 +63,28 @@ export function SearchResultRows(props: {
                             class={`${styles['sresult-head']} ${styles['sresult-head-open']}`}
                             onClick={open}
                         >
-                            <Icon
-                                value="FileText"
-                                class={styles['sresult-icon']}
-                            />
-                            {/* weight="inherit": .sresult-title's own font-weight:500 already governs
-                    this (it overrode the bare <b>'s native 700 before this swap) — weight="bold"
-                    here would re-add a 700 class fighting that 500, not reproduce it. */}
                             <Text
                                 as="span"
                                 inherit
-                                class={styles['sresult-title']}
+                                class={styles['sresult-icon']}
                             >
-                                {parts.name}
+                                <Icon value="FileText" />
                             </Text>
+                            <Label class={styles['sresult-title']}>
+                                {parts.name}
+                            </Label>
                             <Show when={parts.folder}>
-                                <Text
-                                    as="span"
-                                    inherit
+                                <Label
+                                    tone="faint"
+                                    fill
                                     class={styles['sresult-path']}
                                 >
                                     // {parts.folder}/
-                                </Text>
+                                </Label>
                             </Show>
-                            <Badge tone="muted" class={styles['sresult-count']}>
+                            <Label tone="faint" class={styles['sresult-count']}>
                                 {r.matchCount}
-                            </Badge>
+                            </Label>
                         </PlainButton>
                         <Show when={r.reason}>
                             <Text
@@ -108,15 +108,14 @@ export function SearchResultRows(props: {
                                     >
                                         {s.line}
                                     </Text>
-                                    <Text
-                                        as="span"
-                                        inherit
+                                    <Label
+                                        lines={2}
                                         class={styles['sresult-text']}
                                     >
-                                        {s.before}
+                                        {snippetLead(s.before)}
                                         <mark>{s.match}</mark>
                                         {s.after}
-                                    </Text>
+                                    </Label>
                                 </PlainButton>
                             )}
                         </For>

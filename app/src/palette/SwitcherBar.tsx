@@ -412,7 +412,7 @@ export function SwitcherBar(props: Props) {
                             inherit
                             class={switcherStyles['switcher-section']}
                         >
-                            {`In note text // ${plural(contentAll().length, 'note')}`}
+                            {`in note text // ${plural(contentAll().length, 'note')}`}
                         </Text>
                         <SearchResultRows
                             results={contentRows()}

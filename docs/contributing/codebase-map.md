@@ -1461,7 +1461,7 @@ Editable note title bar above the editor. Handles rename (writes frontmatter `ti
 Pure helpers for note title operations (derive title from path, detect custom title, etc.). Tested.
 
 #### `SearchResultRows.tsx`
-Shared `.sresult` result-card renderer (`SearchResultRows` + `splitPath`) for the switcher's keyword content matches and Bismuth AI results — file header + optional AI rationale + matched snippets, with keyboard-selection support. Styles in the colocated `SearchResultRows.module.css`. (The former standalone `SearchView.tsx` Search tab was removed when search unified into the Cmd+O switcher; vault-wide find-and-replace remains via the CLI / `POST /replace`.)
+Shared `.sresult` result-row renderer (`SearchResultRows` + `splitPath`) for the switcher's keyword content matches and Bismuth AI results — a PaletteRow-shaped file line + optional AI rationale + two-line-clamped snippet lines (lead-in shortened by `snippetLead.ts`), with keyboard-selection support. Styles in the colocated `SearchResultRows.module.css`. (The former standalone `SearchView.tsx` Search tab was removed when search unified into the Cmd+O switcher; vault-wide find-and-replace remains via the CLI / `POST /replace`.)
 
 #### `searchOpts.ts`
 `SearchOpts` flags for `POST /search` and the `SearchResult`/`MatchSnippet` shapes shared by `/search` and `/search-prompt`.

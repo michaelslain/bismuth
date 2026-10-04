@@ -1,4 +1,4 @@
-// Visual spec for <SearchResultRows> — the `.sresult` cards shared by the Cmd+O switcher's
+// Visual spec for <SearchResultRows> — the `.sresult` result rows shared by the Cmd+O switcher's
 // keyword-content and Bismuth-AI result lists (palette/SwitcherBar.tsx). Pure props in
 // (SearchResult[], app/src/searchOpts.ts) + callbacks out; no IO.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
@@ -57,6 +57,37 @@ const AI_RESULTS: SearchResult[] = [
     },
 ]
 
+/** A long paragraph match (the lead-in is shortened so the match lands on line one, the tail is
+ *  clamped to two lines), a deep folder path that must ellipsize before the count, and a
+ *  three-digit line number spilling into the inset rather than shoving the text. */
+const LONG_RESULTS: SearchResult[] = [
+    {
+        path: 'dreams/2024-11-16 dream.md',
+        matchCount: 1,
+        snippets: [
+            {
+                line: 7,
+                before:
+                    'uff. Overall just very odd structure of the dorm. We also lived very close to a ',
+                match: 'chicken',
+                after: ' place for some reason and met some people that I have no idea who they are. I am still with Cole when this is happening.',
+            },
+        ],
+    },
+    {
+        path: 'archive/school 2025/classes/CYPLAN 115/notes/2025-10-16 Reading Response.md',
+        matchCount: 12,
+        snippets: [
+            {
+                line: 124,
+                before: 'factories → Japan bans Chinese ',
+                match: 'chicken',
+                after: ' → Buys from Thai CP factories → CP profits',
+            },
+        ],
+    },
+]
+
 const meta = {
     title: 'App/SearchResultRows',
     component: SearchResultRows,
@@ -99,6 +130,15 @@ export const SelectedRow: Story = {
             </div>
         )
     },
+}
+
+/** Long snippet + deep folder: the two-line clamp, the shortened lead-in and the path ellipsis. */
+export const LongSnippetAndPath: Story = {
+    render: () => (
+        <div style={{ width: '420px' }}>
+            <SearchResultRows results={LONG_RESULTS} onOpen={() => {}} />
+        </div>
+    ),
 }
 
 /** No results — the switcher renders nothing (an empty <For>); shown here as the same empty

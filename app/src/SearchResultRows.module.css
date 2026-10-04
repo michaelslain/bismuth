@@ -1,122 +1,109 @@
-/* app/src/SearchResultRows.module.css — result-card styles for the unified search surface (#8).
-   Result cards only (.sresult and its descendants). Moved out of the global searchResults.css
-   verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented below. All
-   colors use the app's canonical theme tokens.
+/* app/src/SearchResultRows.module.css — result-row styles for the unified search surface (#8):
+   the Cmd+O switcher's keyword-content and Bismuth-AI results (palette/SwitcherBar.tsx renders
+   SearchResultRows inline in its results list, under its file-name PaletteRow rows).
 
-   The AI affordances (.search-ask-ai, .search-kbd) and the zero-results CTA (.search-empty) that
-   used to live here MOVED to palette/SwitcherBar.module.css (ds-conformance Task 8 follow-up):
-   SwitcherBar.tsx was their only reader anywhere in the app, so importing this module just for
-   that markup was a second importer of a stylesheet nothing else here needs. See
-   SwitcherBar.module.css's own header for where they live now.
+   `.sresult[data-selected]` — the keyboard-highlighted group is a `data-selected` RUNTIME HOOK,
+   not a class: SwitcherBar.tsx's `scrollSelectedIntoView(..., '[data-selected]')` queries it
+   generically across PaletteRow file rows AND these groups in the SAME list, and a hashed
+   per-file class can't cross that boundary — see PaletteRow.module.css's header for the matching
+   convention on `.palette-row`.
 
-   SHARED BY TWO COMPONENTS ON PURPOSE, same reason as PaneTree.module.css. `SearchResultRows.tsx`
-   renders `.sresult` cards; palette/SwitcherBar.tsx renders those same cards inline in its results
-   list. Both files import THIS module for `.sresult` — CSS Modules hash per file, so a second copy
-   of the module would hash to a different name than the first and any selector or call site
-   expecting one name would silently stop matching the other.
+   `[data-switcher-list] .sresult + .sresult` — keyed on the `data-switcher-list` attribute
+   SwitcherBar.tsx sets on its results column, a `data-*` context hook rather than a reach into
+   SwitcherBar.module.css's own class. */
 
-   `.sresult[data-selected]` — keyboard-highlighted card, now a `data-selected` RUNTIME HOOK
-   rather than a bare `.selected` class (one-global-followups Task 4): SwitcherBar.tsx's
-   `scrollSelectedIntoView(..., '[data-selected]')` queries it generically across `.palette-row`
-   file rows AND `.sresult` AI-result cards in the SAME list, and a hashed per-file class can't
-   cross that boundary, so `data-selected` (set directly in SearchResultRows.tsx) is the correct
-   escape hatch — see PaletteRow.module.css's header for the matching convention on `.palette-row`.
-
-   `[data-switcher-list] .sresult` (was `:global(.switcher-list) .sresult`) — FOLDED IN from
-   palette/switcher.css, which no longer defines this selector; the margin-top override belongs
-   beside the class it adjusts, not in the file reaching in from outside. Retargeted onto the
-   `data-switcher-list` attribute SwitcherBar.tsx sets on its results column (one-global-followups
-   Task 2) instead of reaching SwitcherBar.module.css's `.switcher-list` class by name — a
-   `data-*` context hook, not a foreign class. */
-
-/* .sresult — one card per file: header (icon + title + folder) over serif snippets. */
+/* .sresult — one group per file: a PaletteRow-shaped file line over compact snippet lines. No
+   border, no surface, no card padding — the switcher's file-name rows (palette/PaletteRow) and
+   these content rows are ONE list, so they share its row height, inset, type size and selection
+   treatment, and groups separate by a little vertical rhythm instead of boxes. */
 .sresult {
-  padding: var(--sp-5) var(--sp-6);
-  border: 1px solid var(--border);
-  border-radius: var(--r-0);
-  background: var(--surface-1);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  padding: var(--sp-1) 0 var(--sp-2);
+  cursor: pointer;
 }
-/* Keyboard-highlighted card (the switcher's menu nav walks content/AI rows too). */
+/* Keyboard-highlighted group — the same treatment as `.palette-row[data-selected]`. */
 .sresult[data-selected] {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  background: var(--popover-selected-bg, var(--hover-bg));
+  background: var(--state-selected-bg);
 }
-/* Reused inside the switcher's results column, which isn't a flex/gap container — give the
-   card its own stacking margin there instead of duplicating layout. Folded in from
-   palette/switcher.css; see this file's header. */
-[data-switcher-list] .sresult { margin-top: var(--sp-4); }
+.sresult[data-selected] .sresult-icon,
+.sresult[data-selected] .sresult-title { color: var(--accent); }
+/* The switcher's results column is not a gap container; a hairline of air between groups. */
+[data-switcher-list] .sresult + .sresult { margin-top: var(--sp-1); }
 
+/* File line — the same anatomy and metrics as PaletteRow's `.palette-row`: --h-row tall,
+   --sp-5 inset and gap, --fs-ui, a 1.2em muted icon column. */
 .sresult-head {
   display: flex;
   align-items: center;
-  gap: var(--sp-4);
-  font-size: var(--fs-body);
+  gap: var(--sp-5);
+  min-height: var(--h-row);
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-ui);
+  line-height: var(--h-row);
   color: var(--fg);
-}
-/* The header is itself a hit target (opens the file) — used for every result so an AI row with a
-   single snippet, or any future snippet-less row, is still openable from the title line. */
-.sresult-head-open { cursor: pointer; border-radius: var(--r-0); padding: 1px var(--sp-2); margin: -1px -4px; }
-.sresult-head-open:hover { background: var(--hover-bg); }
-.sresult-icon { flex: none; color: var(--accent); }
-.sresult-title {
-  font-family: var(--ui-font-stack);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis; min-width: 0;
   white-space: nowrap;
 }
-.sresult-path {
-  font-size: var(--fs-micro);
-  color: var(--faint);
-  overflow: hidden;
-  text-overflow: ellipsis; min-width: 0;
-  white-space: nowrap;
-}
-/* color(--text-muted) moved to ui/Badge.tsx (`<Badge tone="muted">`); margin-left/font-size (11px,
-   not on the fixed --fs-* scale) stay here. */
-.sresult-count {
-  margin-left: auto;
-  font-size: var(--fs-ui);
-}
-
-/* .sresult-reason — the AI's one-line rationale for why this note answers the question. */
-.sresult-reason {
-  font-size: var(--fs-ui);
+/* The file line is itself a hit target (opens the file) — used for every result so an AI row
+   with a single snippet, or any future snippet-less row, is still openable from the title. */
+.sresult-head-open { cursor: pointer; }
+.sresult-head-open:hover,
+.sresult-snip:hover { background: var(--state-hover-bg); }
+.sresult-icon {
+  flex: none;
+  width: 1.2em;
+  height: 1.2em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  font-style: italic;
-  padding-left: 23px;
+}
+.sresult-title { flex: 0 1 auto; font-family: var(--popover-font); }
+.sresult-path { font-size: var(--fs-micro); }
+.sresult-count {
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--sp-5);
+  font-size: var(--fs-micro);
 }
 
-/* Serif snippet line; the matched span is a teal-tinted <mark>. */
+/* .sresult-reason — the AI's one-line rationale, on the snippet text's left edge. */
+.sresult-reason {
+  padding: 0 var(--sp-5) 0 calc(var(--sp-5) * 2 + var(--fs-ui) * 1.2);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+/* Snippet line — the line number sits in the file line's icon column (right-aligned, so a
+   three-digit number spills left into the inset rather than shoving the text), and the text
+   starts on the title's left edge. Two lines at most; snippetLead() shortens the lead-in so the
+   match lands on the first. */
 .sresult-snip {
   display: flex;
+  align-items: baseline;
   gap: var(--sp-5);
+  padding: 0 var(--sp-5);
   cursor: pointer;
   font-family: var(--ui-font-stack);
-  font-size: var(--fs-body);
-  line-height: 1.6;
+  font-size: var(--fs-ui);
+  line-height: 1.5;
   color: var(--text-muted);
-  border-radius: var(--r-0);
-  padding: 1px var(--sp-2);
+  text-align: left;
 }
-.sresult-snip:hover { background: var(--hover-bg); }
 .sresult-line {
   flex: none;
-  min-width: 28px;
-  text-align: right;
+  width: calc(var(--fs-ui) * 1.2);
+  display: inline-flex;
+  justify-content: flex-end;
+  font-size: var(--fs-micro);
   color: var(--faint);
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-ui);
-  align-self: center;
+  font-variant-numeric: tabular-nums;
 }
-.sresult-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sresult-text { flex: 1; overflow-wrap: anywhere; }
+/* The match: colour carries the emphasis, like PaletteRow's `.palette-match` — no filled block,
+   no halo. */
 .sresult-text mark {
-  background: color-mix(in srgb, var(--teal) 22%, transparent);
-  color: var(--teal);
-  border-radius: var(--r-0);
-  padding: 0;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 22%, transparent);
+  background: none;
+  color: var(--accent);
 }

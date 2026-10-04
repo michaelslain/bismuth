@@ -22,7 +22,6 @@ import { setTransport, type Transport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { SearchResult } from '../searchOpts'
-import sresultStyles from '../SearchResultRows.module.css'
 
 const meta = {
     title: 'Palette/SwitcherBar',
@@ -113,7 +112,7 @@ export const FilteredFileMatches: Story = {
     },
 }
 
-/** Keyword content matches under the "In note text // 1 note" divider — a note whose BODY
+/** Keyword content matches under the "in note text // 1 note" divider — a note whose BODY
  *  matches but whose NAME doesn't. Debounced (150ms), so `play` waits for the section to
  *  actually appear. */
 export const ContentMatches: Story = {
@@ -143,7 +142,7 @@ export const ContentMatches: Story = {
         await waitFor(
             () =>
                 expect(
-                    within(canvasElement).getByText('In note text // 1 note'),
+                    within(canvasElement).getByText('in note text // 1 note'),
                 ).toBeInTheDocument(),
             { timeout: 2000 },
         )
@@ -196,13 +195,13 @@ export const ManyContentMatches: Story = {
             () =>
                 expect(
                     within(canvasElement).getByText(
-                        'In note text // 120 notes',
+                        'in note text // 120 notes',
                     ),
                 ).toBeInTheDocument(),
             { timeout: 2000 },
         )
         const cardCount = () =>
-            canvasElement.querySelectorAll(`.${sresultStyles['sresult']}`)
+            canvasElement.querySelectorAll('[data-testid="search-result"]')
                 .length
         await waitFor(() => expect(cardCount()).toBe(50), { timeout: 2000 })
         // Walk the keyboard highlight down to the 50th (last-rendered) row.
