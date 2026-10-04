@@ -11,3 +11,11 @@ export function isMacPlatform(): boolean {
         )
     )
 }
+
+/** True on Windows — the one engine (WebView2) whose native drag positions are physical px. */
+export function isWindowsPlatform(): boolean {
+    return (
+        typeof navigator !== 'undefined' &&
+        /Win/.test(navigator.platform || navigator.userAgent || '')
+    )
+}

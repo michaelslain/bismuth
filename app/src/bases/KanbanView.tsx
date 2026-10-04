@@ -33,7 +33,6 @@ import KanbanColumn from './KanbanColumn'
 import { markdownDropTarget, isImagePath } from './kanbanImageDrop'
 import {
     isFileDrag,
-    nativeDropPoint,
     uploadsFromFiles,
     uploadsFromNativePaths,
     type ImageUpload,
@@ -553,8 +552,8 @@ export function KanbanView(props: {
     }
 
     /** Native (Tauri) OS image drop — resolve the card under the cursor, read each file's real bytes
-     *  (fs plugin), upload, and embed. Coordinates are corrected for a WebKit page-zoom / DPR mismatch
-     *  (nativeDropPoint), same as the editor's native-drop handler. Desktop-only (the event never
+     *  (fs plugin), upload, and embed. Coordinates arrive in page CSS px (the bridge scales them).
+     *  Desktop-only (the event never
      *  fires in a browser); `claimNativeDrop` ensures exactly one surface/board processes the drop. */
     async function handleNativeCardDrop(d: NativeDragDetail): Promise<void> {
         if (!editable()) return
@@ -562,8 +561,7 @@ export function KanbanView(props: {
             setDropCardId(null)
             return
         }
-        const pt = await nativeDropPoint(d)
-        const hit = cardAtPoint(pt.x, pt.y)
+        const hit = cardAtPoint(d.x, d.y)
         setDropCardId(null)
         if (!hit) return // not dropped on a card of this board — let another surface handle it
         if (!claimNativeDrop(d)) return // a duplicated listener already owns this drop

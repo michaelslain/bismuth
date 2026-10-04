@@ -44,7 +44,6 @@ import { isImagePath } from './kanbanImageDrop'
 import { embedUploadsIntoValue } from './imageEmbedWrite'
 import {
     isFileDrag,
-    nativeDropPoint,
     uploadsFromFiles,
     uploadsFromNativePaths,
     type ImageUpload,
@@ -259,18 +258,14 @@ export function CardEditModal(props: {
                 return
             }
             if (d.type !== 'drop') {
-                // enter/over — raw coords, deliberately NOT zoom-corrected: the correction costs an async
-                // Tauri IPC round-trip and `over` fires continuously through a drag. It only shifts the
-                // point by a zoom residual, which can't cross a whole field, so the highlight is right and
-                // the DROP (below) still gets the exact correction. Mirrors KanbanView's card highlight.
+                // enter/over — highlight the field under the cursor. Mirrors KanbanView's card highlight.
                 setDropField(fieldAt(d.x, d.y))
                 return
             }
             void (async () => {
                 setDropField(null)
                 if (!d.paths.some(isImagePath)) return
-                const pt = await nativeDropPoint(d)
-                const id = fieldAt(pt.x, pt.y)
+                const id = fieldAt(d.x, d.y)
                 if (!id) return // not dropped on a description — let another surface handle it
                 if (!claimNativeDrop(d)) return // another surface already owns this drop
                 await insertImages(id, await uploadsFromNativePaths(d.paths))

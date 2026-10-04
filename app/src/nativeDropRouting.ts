@@ -1,56 +1,65 @@
 // app/src/nativeDropRouting.ts
-// Pure helpers for CONSUMING a forwarded native (Tauri) file drop — the coordinate
-// correction and the single-claim guard. Kept separate from nativeDrop.ts (the event
-// bridge, owned elsewhere) so consumers can be fixed/tested without touching the bridge.
+// Pure helpers for a forwarded native (Tauri) file drop — the raw→CSS coordinate scale the
+// bridge (nativeDrop.ts) applies, and the single-claim guard every consumer uses.
 //
-// ── The physical→CSS correction (#30 "wrong cell") ──────────────────────────────────
-// nativeDrop.ts converts Tauri's PhysicalPosition to CSS px by dividing by
-// `window.devicePixelRatio`. That is correct ONLY when the DPR really is the full
-// physical→CSS ratio. Bismuth applies a persisted WHOLE-APP ZOOM via the native
-// webview page-zoom (zoom.ts → WKWebView.pageZoom / WebView2 ZoomFactor), and the two
-// engines disagree about what that does to devicePixelRatio:
+// ── The raw→CSS scale ─────────────────────────────────────────────────────────────────
+// Tauri types every drag position as a PhysicalPosition, but the UNITS depend on the engine
+// (read from wry 0.55's source, `src/*/drag_drop.rs`):
 //
-//   • Chromium (WebView2 / dev-in-Chrome): page zoom IS folded into devicePixelRatio
-//     (dpr = deviceScale × zoom) — dividing by dpr yields true CSS px. Correct.
-//   • WebKit (the packaged Tauri WKWebView = Safari): page zoom is NOT folded in —
-//     devicePixelRatio stays the backing scale. Dividing by dpr yields WINDOW POINTS,
-//     which differ from page CSS px by the zoom factor.
+//   • WKWebView (macOS/iOS): NSDraggingInfo.draggingLocation — window POINTS (logical px).
+//   • WebKitGTK (Linux): the GTK widget's coordinates — logical px.
+//   • WebView2 (Windows): ScreenToClient — PHYSICAL px.
 //
-// So in the packaged app at (say) 125% zoom, every forwarded coordinate is 25% too
-// large. A pane-sized rect hit-test (chat) tolerates that; a ~30px table cell does
-// not — the drop resolves to a cell BELOW/RIGHT of the one under the cursor (the
-// "puts it in the wrong cell" bounce). Rather than sniff engines, we MEASURE the true
-// ratio end-to-end: the window's inner width in physical px (from Tauri) over the CSS
-// viewport width gives the real physical→CSS scale; comparing it with dpr yields the
-// residual factor the forwarded coordinates must be multiplied by:
+// The bridge used to divide every position by devicePixelRatio. On a Retina Mac that HALVED
+// already-logical coordinates, so a drop resolved to the point at half the cursor's x and y:
+// a drop on the left half of a chat landed in the sidebar file tree (which uploaded the file
+// into the vault), and only the far bottom-right of a pane accepted a drop at all.
 //
-//     factor = dpr × cssInnerWidth / physicalInnerWidth
+// So the scale is MEASURED end to end instead of assumed: the window's content width in the
+// position's own units, against the CSS viewport width:
 //
-//   • no zoom, any DPR:            dpr = phys/css            → factor 1 (no-op)
-//   • Chromium-style zoom-in-DPR:  dpr = base×z, css = W/z   → factor 1 (no-op)
-//   • WebKit zoom-not-in-DPR:      dpr = base,   css = W/z   → factor 1/z (corrects)
+//     scale = cssInnerWidth / rawInnerWidth
+//     rawInnerWidth = physicalInnerWidth                  (physical units)
+//                   = physicalInnerWidth / scaleFactor    (logical units)
 //
-// The measurement (Tauri innerSize + window.innerWidth) happens in the consumer; this
-// function is the pinned, unit-tested transform.
+// Page zoom (zoom.ts → WKWebView.pageZoom / WebView2 ZoomFactor) shows up in cssInnerWidth on
+// every engine, so the same formula covers it with no engine sniffing about zoom:
+//
+//   • macOS, no zoom:        css = points            → scale 1
+//   • macOS, zoom z:         css = points / z        → scale 1/z
+//   • Windows, DPR d:        css = physical / d      → scale 1/d (zoom folded in likewise)
 
-/** Multiplier to apply to a forwarded native-drop coordinate (already divided by DPR by the
- *  bridge) to get true page CSS px. `cssInnerWidth` = window.innerWidth; `physicalInnerWidth`
- *  = the window's inner width in physical pixels (Tauri PhysicalSize). Snaps to exactly 1
- *  within a small epsilon so scrollbar/rounding noise never drifts coordinates; returns 1 on
- *  degenerate inputs (a wrong correction is worse than none). */
-export function nativeDropScale(
-    dpr: number,
-    cssInnerWidth: number,
-    physicalInnerWidth: number,
-): number {
-    if (!Number.isFinite(dpr) || dpr <= 0) return 1
-    if (!Number.isFinite(cssInnerWidth) || cssInnerWidth <= 0) return 1
-    if (!Number.isFinite(physicalInnerWidth) || physicalInnerWidth <= 0)
-        return 1
-    const factor = (dpr * cssInnerWidth) / physicalInnerWidth
-    // Real zooms are ≥10% steps (zoom.ts STEPS); anything within 2% of 1 is measurement noise
-    // (overlay scrollbars, fractional device scale), not a zoom mismatch.
-    return Math.abs(factor - 1) < 0.02 ? 1 : factor
+/** The units a native drag position arrives in. Windows (WebView2) is the only physical one. */
+export type NativeDragUnits = 'logical' | 'physical'
+
+export function nativeDragUnits(isWindows: boolean): NativeDragUnits {
+    return isWindows ? 'physical' : 'logical'
+}
+
+/** Multiplier from a raw Tauri drag coordinate to page CSS px. `cssInnerWidth` =
+ *  window.innerWidth; `physicalInnerWidth` / `scaleFactor` = the window's Tauri innerSize()
+ *  width and scaleFactor(). Snaps to the no-zoom value within 2% so rounding noise never drifts
+ *  coordinates; on degenerate inputs falls back to that no-zoom value (logical → 1, physical →
+ *  1/dpr) — a wrong correction is worse than none. */
+export function nativeDragScale(m: {
+    units: NativeDragUnits
+    cssInnerWidth: number
+    physicalInnerWidth: number
+    scaleFactor: number
+    dpr: number
+}): number {
+    const ok = (n: number) => Number.isFinite(n) && n > 0
+    const dpr = ok(m.dpr) ? m.dpr : 1
+    if (!ok(m.cssInnerWidth) || !ok(m.physicalInnerWidth) || !ok(m.scaleFactor))
+        return m.units === 'logical' ? 1 : 1 / dpr
+    const nominal = m.units === 'logical' ? 1 : 1 / m.scaleFactor
+    const rawInnerWidth =
+        m.units === 'logical'
+            ? m.physicalInnerWidth / m.scaleFactor
+            : m.physicalInnerWidth
+    const scale = m.cssInnerWidth / rawInnerWidth
+    // Real zooms are ≥10% steps (zoom.ts STEPS); within 2% of nominal is measurement noise.
+    return Math.abs(scale / nominal - 1) < 0.02 ? nominal : scale
 }
 
 // ── The single-claim guard (#30 "double insert") ────────────────────────────────────

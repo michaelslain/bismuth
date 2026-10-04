@@ -594,8 +594,8 @@ export function tableCellDropTarget(
  *  PACKAGED Tauri app an OS file drag never fires a DOM `drop` — Tauri intercepts it and
  *  `nativeDrop.ts` re-broadcasts it as `bismuth-native-drag` with client-pixel coords, so the
  *  widget's own capture-phase DOM `drop` listeners (which only help dev-in-Chrome) never see it.
- *  Editor.tsx's native-drop consumer calls this (with COORDS ALREADY CORRECTED to page CSS px —
- *  see nativeDropRouting.nativeDropScale) to hit-test the drop point against this view's rendered
+ *  Editor.tsx's native-drop consumer calls this (with coords already in page CSS px — the bridge
+ *  scales them, see nativeDropRouting.nativeDragScale) to hit-test the drop point against this view's rendered
  *  tables and route a hit through the SAME upload+embed-into-cell flow the DOM drop uses.
  *
  *  Resolution is GEOMETRIC — rect containment over the wrap + its cells' client rects, the same

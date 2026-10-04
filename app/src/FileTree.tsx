@@ -43,6 +43,7 @@ import VisibilityBadge from './VisibilityBadge'
 import { EditableLabel } from './EditableLabel'
 import { planTreeUploads, dropFolderFromAttrs } from './fileTreeDrop'
 import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
+import { claimNativeDrop } from './nativeDropRouting'
 // Scoped chrome. Bracket access, not `styles.ftRow`: vite.config.ts sets no
 // `css.modules.localsConvention`, so only the literal names exist on this object.
 import styles from './FileTree.module.css'
@@ -228,15 +229,18 @@ export function FileTree(props: {
     // decideTreeRefresh).
     let pendingStructural = false
     createEffect(() => {
-        const { refetch: doFetch, nextLastSeen, nextPendingStructural } =
-            decideTreeRefresh({
-                change: lastChange(),
-                lastSeen,
-                editing: editing() !== null,
-                dragging: false,
-                pendingOps: pendingOps(),
-                pendingStructural,
-            })
+        const {
+            refetch: doFetch,
+            nextLastSeen,
+            nextPendingStructural,
+        } = decideTreeRefresh({
+            change: lastChange(),
+            lastSeen,
+            editing: editing() !== null,
+            dragging: false,
+            pendingOps: pendingOps(),
+            pendingStructural,
+        })
         lastSeen = nextLastSeen
         pendingStructural = nextPendingStructural
         if (doFetch) refetch()
@@ -1073,7 +1077,9 @@ export function FileTree(props: {
             setOsDropFolder(null)
             if (!inside || d.paths.length === 0) return
             const folder = folderAt(d.x, d.y)
-            if (folder === null) return
+            // Claim like every other surface, so a drop another surface already took (an overlay
+            // above the sidebar, a chat) is never ALSO uploaded into the vault.
+            if (folder === null || !claimNativeDrop(d)) return
             void uploadNativePaths(folder, d.paths)
             return
         }
@@ -1295,11 +1301,7 @@ function Level(props: {
                             }}
                             onContextMenu={e => props.onMenu(child, e)}
                         >
-                            <Text
-                                as="span"
-                                inherit
-                                class={styles['ft-prefix']}
-                            >
+                            <Text as="span" inherit class={styles['ft-prefix']}>
                                 {prefixFor(i()).trimEnd()}
                             </Text>
                             {/* One glyph, not two: the folder icon's own shape IS the disclosure state (Folder "▸" /
@@ -1393,11 +1395,7 @@ function Level(props: {
                         }}
                         onContextMenu={e => props.onMenu(child, e)}
                     >
-                        <Text
-                            as="span"
-                            inherit
-                            class={styles['ft-prefix']}
-                        >
+                        <Text as="span" inherit class={styles['ft-prefix']}>
                             {prefixFor(i()).trimEnd()}
                         </Text>
                         <Icon

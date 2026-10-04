@@ -18,9 +18,6 @@
 import { api } from '../api'
 import { settings } from '../settings'
 import { pushToast } from '../Toast'
-import { isTauri } from '../nativeMenu'
-import { nativeDropScale } from '../nativeDropRouting'
-import type { NativeDragDetail } from '../nativeDrop'
 import { attachmentTarget } from '../attachmentPath'
 import { basename } from '../fileIntake'
 import { imageEmbed, isImageFile, isImagePath } from './kanbanImageDrop'
@@ -79,30 +76,6 @@ export async function uploadsFromNativePaths(
         }
     }
     return out
-}
-
-/** A forwarded native drop's cursor position in true page CSS px. The bridge already divided by
- *  DPR, but WebKit doesn't fold page zoom into devicePixelRatio — nativeDropScale measures the
- *  residual so the point lands on the element actually under the cursor (see nativeDropRouting).
- *  Same correction the editor's native-drop handler applies. */
-export async function nativeDropPoint(
-    d: NativeDragDetail,
-): Promise<{ x: number; y: number }> {
-    let f = 1
-    try {
-        if (isTauri()) {
-            const { getCurrentWindow } = await import('@tauri-apps/api/window')
-            const size = await getCurrentWindow().innerSize()
-            f = nativeDropScale(
-                window.devicePixelRatio || 1,
-                window.innerWidth,
-                size.width,
-            )
-        }
-    } catch {
-        f = 1
-    }
-    return { x: d.x * f, y: d.y * f }
 }
 
 /** Copy each image into the vault's attachment folder (honoring `settings.attachments.folder`,

@@ -10,11 +10,7 @@ import {
     Show,
     untrack,
 } from 'solid-js'
-import {
-    EditorView,
-    keymap,
-    lineNumbers,
-} from '@codemirror/view'
+import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { EditorState, Compartment, type Line } from '@codemirror/state'
 import {
     defaultKeymap,
@@ -97,8 +93,7 @@ import {
     isHeicName,
     jpegNameFor,
 } from './fileIntake'
-import { nativeDropScale, claimNativeDrop } from './nativeDropRouting'
-import { isTauri } from './nativeMenu'
+import { claimNativeDrop } from './nativeDropRouting'
 import {
     planDrop,
     pasteboardFromTransfer,
@@ -231,8 +226,7 @@ const editorTheme = EditorView.theme({
     },
     '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':
         {
-            backgroundColor:
-                'var(--selection)',
+            backgroundColor: 'var(--selection)',
         },
     '.cm-gutters': {
         backgroundColor: 'transparent',
@@ -1096,41 +1090,17 @@ export function Editor(props: {
     // we embed from the REAL path nativeDrop.ts forwards — handled only when the cursor is over THIS
     // editor's scroller. No-op in the browser (the event never fires; the CM `drop` handler serves it).
     //
-    // #30 (re-bounced twice — both fixes live HERE):
-    //  • WRONG CELL — the bridge divides Tauri's PhysicalPosition by devicePixelRatio, but the
-    //    packaged app applies a persisted webview PAGE ZOOM (zoom.ts → WKWebView.pageZoom) and
-    //    WebKit — unlike Chromium — does NOT fold page zoom into devicePixelRatio. So at ≠100% zoom
-    //    the forwarded coords are window POINTS, off from page CSS px by the zoom factor: a
-    //    pane-sized rect (chat) tolerates it, a ~30px table cell resolves one-or-more cells off.
-    //    We MEASURE the true physical→CSS ratio (Tauri innerSize vs window.innerWidth — engine
-    //    sniffing not required) and multiply by the residual factor (nativeDropScale, unit-tested).
-    //  • DOUBLE INSERT — one drop event fans out to every live listener; if a duplicated
-    //    subscription ever exists (an editor rebuild / stacked panes), each inserted once.
-    //    claimNativeDrop marks the shared detail object so exactly ONE handler processes a drop.
+    // Coordinates arrive already in page CSS px — the bridge measures the raw→CSS scale once for
+    // every surface (nativeDropRouting.ts's nativeDragScale explains the per-engine units).
+    // DOUBLE INSERT (#30) — one drop event fans out to every live listener; if a duplicated
+    // subscription ever exists (an editor rebuild / stacked panes), each would insert once.
+    // claimNativeDrop marks the shared detail object so exactly ONE handler processes a drop.
     onMount(() => {
         const handleNativeDrop = async (d: NativeDragDetail): Promise<void> => {
             const v = view
             if (!v) return
-            // Correct the forwarded coords to true page CSS px (factor 1 whenever bridge division was
-            // already right — no zoom, Chromium-style zoom-in-DPR, or any measurement failure).
-            let f = 1
-            try {
-                if (isTauri()) {
-                    const { getCurrentWindow } =
-                        await import('@tauri-apps/api/window')
-                    const size = await getCurrentWindow().innerSize() // PhysicalSize of the content area
-                    f = nativeDropScale(
-                        window.devicePixelRatio || 1,
-                        window.innerWidth,
-                        size.width,
-                    )
-                }
-            } catch {
-                f = 1 // measurement unavailable → use the bridge's coords as-is
-            }
-            const x = d.x * f
-            const y = d.y * f
-            // Pane routing: the SAME shared predicate the (working) chat hit-test uses — incl. its
+            const { x, y } = d
+            // Pane routing: the SAME shared predicate the chat hit-test uses — incl. its
             // 0×0-rect guard for hidden panes.
             if (!pointInDropRect(v.scrollDOM.getBoundingClientRect(), x, y))
                 return
@@ -1181,9 +1151,7 @@ export function Editor(props: {
                 let pb: DragPasteboard
                 try {
                     const { invoke } = await import('@tauri-apps/api/core')
-                    pb = await invoke<DragPasteboard>(
-                        'read_drag_pasteboard',
-                    )
+                    pb = await invoke<DragPasteboard>('read_drag_pasteboard')
                 } catch (e) {
                     pushToast("Couldn't read that drop")
                     console.error('read_drag_pasteboard failed', e)
@@ -1467,7 +1435,8 @@ export function Editor(props: {
         // compartment per rebuild (one per EditorView). `attach(view)` is called once below,
         // after the view exists, so a later rebind reconfigures this compartment IN PLACE
         // instead of re-running this whole effect and rebuilding the view.
-        const keybindingsCompartment = settingsKeymapCompartment(EDITOR_KEYBINDINGS)
+        const keybindingsCompartment =
+            settingsKeymapCompartment(EDITOR_KEYBINDINGS)
 
         // Shared base for every buffer: editing, theme, gutters, autosave.
         const base = [
@@ -2230,7 +2199,13 @@ export function Editor(props: {
     createEffect(() => {
         const a = settings.appearance
         const e = settings.editor
-        void [a.proseFont, a.uiFont, a.editorFontSize, a.monoScale, e.lineHeight] // tracked deps (CSS-reflow leaves)
+        void [
+            a.proseFont,
+            a.uiFont,
+            a.editorFontSize,
+            a.monoScale,
+            e.lineHeight,
+        ] // tracked deps (CSS-reflow leaves)
         const v = view
         if (!v) return
         const keep = v.scrollDOM.scrollTop

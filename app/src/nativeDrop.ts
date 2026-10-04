@@ -9,15 +9,19 @@
 // drags, never OS file drops, so they keep working untouched.
 //
 // We forward every native drag event as a `bismuth-native-drag` CustomEvent carrying the dropped
-// paths + the cursor position in CSS client pixels. Each surface (Terminal, Editor) listens and
+// paths + the cursor position in page CSS px — converted HERE, once, by nativeDragScale (see
+// nativeDropRouting.ts for why the raw position's units differ per engine), so consumers hit-test
+// `d.x`/`d.y` directly and never correct it again. Each surface (Terminal, Editor) listens and
 // handles the drop only when the cursor is over its own element — so the terminal inserts the real
 // path at the prompt, and the editor copies+embeds the real file, without round-tripping bytes
 // through the vault. In a plain browser build (no Tauri) this is a no-op and the existing HTML5
 // drop handlers remain the path.
 
 import { isTauri } from './nativeMenu'
+import { isWindowsPlatform } from './platform'
+import { nativeDragScale, nativeDragUnits } from './nativeDropRouting'
 
-/** A forwarded native drag event. `x`/`y` are CSS client pixels (already divided by DPR), so
+/** A forwarded native drag event. `x`/`y` are page CSS px (already scaled by the bridge), so
  *  `elementFromPoint` / `getBoundingClientRect` containment tests work directly. `paths` is
  *  populated only on `enter`/`drop`. */
 export type NativeDragDetail = {
@@ -71,12 +75,41 @@ export function pointInDropRect(rect: DropRect, x: number, y: number): boolean {
 
 let installed = false
 let unlisten: (() => void) | undefined
+let unlistenResize: (() => void) | undefined
+// The raw→CSS multiplier, measured at install and re-measured on every drag `enter`, window
+// resize and `drop` (an IPC round-trip, so `over` — which fires continuously — reads the cache).
+let scale = 1
+
+async function measureScale(): Promise<number> {
+    try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window')
+        const w = getCurrentWindow()
+        const [size, scaleFactor] = await Promise.all([
+            w.innerSize(),
+            w.scaleFactor(),
+        ])
+        scale = nativeDragScale({
+            units: nativeDragUnits(isWindowsPlatform()),
+            cssInnerWidth: window.innerWidth,
+            physicalInnerWidth: size.width,
+            scaleFactor,
+            dpr: window.devicePixelRatio || 1,
+        })
+    } catch {
+        // Keep the last good scale — a failed measurement mustn't move every drop.
+    }
+    return scale
+}
 
 /** Subscribe to Tauri's native drag-drop and re-broadcast as `bismuth-native-drag`. Idempotent;
  *  a no-op outside Tauri. Safe to call once at app startup. */
 export async function installNativeDrop(): Promise<void> {
     if (installed || !isTauri()) return
     installed = true
+    const onResize = () => void measureScale()
+    window.addEventListener('resize', onResize)
+    unlistenResize = () => window.removeEventListener('resize', onResize)
+    void measureScale()
     try {
         const { getCurrentWebview } = await import('@tauri-apps/api/webview')
         unlisten = await getCurrentWebview().onDragDropEvent(event => {
@@ -98,21 +131,30 @@ export async function installNativeDrop(): Promise<void> {
             // array AND a valid position — if a future version changes the shape, degrade to "no native
             // drop" rather than dispatching a drop routed to the viewport corner (0,0).
             if (type === 'drop' && (!Array.isArray(p.paths) || !hasPos)) return
-            // position is a PhysicalPosition (physical px); convert to CSS px so client-rect hit-tests
-            // line up with the DOM. devicePixelRatio is 1 on non-HiDPI displays (division is a no-op).
-            const dpr = window.devicePixelRatio || 1
-            const x = hasPos ? p.position!.x / dpr : 0
-            const y = hasPos ? p.position!.y / dpr : 0
-            const paths = type === 'drop' ? p.paths! : []
-            window.dispatchEvent(
-                new CustomEvent<NativeDragDetail>('bismuth-native-drag', {
-                    detail: { type, paths, x, y },
-                }),
-            )
+            const dispatch = (f: number) =>
+                window.dispatchEvent(
+                    new CustomEvent<NativeDragDetail>('bismuth-native-drag', {
+                        detail: {
+                            type,
+                            paths: type === 'drop' ? p.paths! : [],
+                            x: hasPos ? p.position!.x * f : 0,
+                            y: hasPos ? p.position!.y * f : 0,
+                        },
+                    }),
+                )
+            // A drop is where a wrong point costs a file in the wrong place, so it waits for a fresh
+            // measurement; the hover events use the cached one.
+            if (type === 'drop') {
+                void measureScale().then(dispatch)
+                return
+            }
+            if (type === 'enter') void measureScale()
+            dispatch(scale)
         })
     } catch (e) {
         // A missing capability / API surface mustn't crash startup — the HTML5 fallback still works.
         installed = false
+        unlistenResize?.()
         console.error('native drag-drop wiring failed', e)
     }
 }
@@ -122,5 +164,7 @@ export async function installNativeDrop(): Promise<void> {
 export function uninstallNativeDrop(): void {
     unlisten?.()
     unlisten = undefined
+    unlistenResize?.()
+    unlistenResize = undefined
     installed = false
 }

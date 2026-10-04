@@ -1,45 +1,108 @@
-// Pins the native-drop coordinate transform + the single-claim guard (#30 re-bounce).
 import { test, expect, describe } from 'bun:test'
-import { nativeDropScale, claimNativeDrop } from './nativeDropRouting'
+import {
+    nativeDragScale,
+    nativeDragUnits,
+    claimNativeDrop,
+} from './nativeDropRouting'
 
-// The transform: nativeDrop.ts forwards physical/devicePixelRatio. nativeDropScale is the
-// residual factor that turns that into true page CSS px, measured end-to-end from the
-// window's physical inner width vs the CSS viewport width. The three worlds it must pin:
-describe('#30 nativeDropScale — the physical→CSS correction', () => {
-    test('no zoom (any DPR): forwarded coords are already CSS px → factor 1', () => {
-        // Retina: 1200 CSS px viewport, 2400 physical, dpr 2. phys/dpr = css already.
-        expect(nativeDropScale(2, 1200, 2400)).toBe(1)
-        // Non-HiDPI: dpr 1, css == phys.
-        expect(nativeDropScale(1, 1200, 1200)).toBe(1)
+// The bridge multiplies Tauri's raw drag position by nativeDragScale. The units differ per
+// engine (wry: macOS/Linux logical points, Windows physical px), so the scale is measured from
+// the window's own width in those units against the CSS viewport width.
+describe('nativeDragScale — raw drag position → page CSS px', () => {
+    test('units: only Windows reports physical px', () => {
+        expect(nativeDragUnits(true)).toBe('physical')
+        expect(nativeDragUnits(false)).toBe('logical')
     })
 
-    test('Chromium-style zoom (folded into DPR): still a no-op', () => {
-        // 125% zoom on a 2x display: dpr = 2.5, window points 600 → css 480, phys 1200.
-        // phys/dpr = 1200/2.5 = 480 = css — the bridge division was already right.
-        expect(nativeDropScale(2.5, 480, 1200)).toBe(1)
+    test('Retina Mac, no zoom: points ARE CSS px → 1 (the halving bug)', () => {
+        // 1500pt window at 2× backing: innerSize 3000 physical, innerWidth 1500 CSS. The old
+        // bridge divided by devicePixelRatio (2) here, putting every drop at half its x and y.
+        const s = nativeDragScale({
+            units: 'logical',
+            cssInnerWidth: 1500,
+            physicalInnerWidth: 3000,
+            scaleFactor: 2,
+            dpr: 2,
+        })
+        expect(s).toBe(1)
+        // A drop on a chat pane at x=500 must stay at 500, not land in a 0–300 sidebar at 250.
+        expect(500 * s).toBe(500)
     })
 
-    test('WebKit page zoom (NOT folded into DPR): factor = 1/zoom — the wrong-cell fix', () => {
-        // The packaged Tauri WKWebView at 125%: dpr stays 2, window points 600 → css 480,
-        // phys 1200. The bridge forwards phys/2 = points (600-space), but the page's CSS
-        // space is 480 — every coordinate is 25% too large. factor = 2*480/1200 = 0.8 = 1/1.25.
-        expect(nativeDropScale(2, 480, 1200)).toBeCloseTo(1 / 1.25, 10)
-        // Zoomed OUT to 80%: css = 600/0.8 = 750 → factor = 2*750/1200 = 1.25 = 1/0.8.
-        expect(nativeDropScale(2, 750, 1200)).toBeCloseTo(1.25, 10)
+    test('Mac at page zoom z: scale = 1/z', () => {
+        // 125% zoom: the 1500pt viewport is 1200 CSS px wide.
+        expect(
+            nativeDragScale({
+                units: 'logical',
+                cssInnerWidth: 1200,
+                physicalInnerWidth: 3000,
+                scaleFactor: 2,
+                dpr: 2,
+            }),
+        ).toBeCloseTo(1 / 1.25, 10)
+        // 80% zoom: 1875 CSS px.
+        expect(
+            nativeDragScale({
+                units: 'logical',
+                cssInnerWidth: 1875,
+                physicalInnerWidth: 3000,
+                scaleFactor: 2,
+                dpr: 2,
+            }),
+        ).toBeCloseTo(1.25, 10)
     })
 
-    test('measurement noise within 2% snaps to exactly 1 (scrollbars, fractional scales)', () => {
-        // 1198 vs 1200: a 2px overlay-scrollbar difference must not drift coordinates.
-        expect(nativeDropScale(2, 599, 1200)).toBe(1)
+    test('Windows physical px: scale = 1/DPR, and zoom folds in', () => {
+        expect(
+            nativeDragScale({
+                units: 'physical',
+                cssInnerWidth: 1200,
+                physicalInnerWidth: 1800,
+                scaleFactor: 1.5,
+                dpr: 1.5,
+            }),
+        ).toBe(1 / 1.5)
+        // 125% zoom on a 1.5× display: 1800 physical → 960 CSS.
+        expect(
+            nativeDragScale({
+                units: 'physical',
+                cssInnerWidth: 960,
+                physicalInnerWidth: 1800,
+                scaleFactor: 1.5,
+                dpr: 1.875,
+            }),
+        ).toBeCloseTo(960 / 1800, 10)
     })
 
-    test('degenerate inputs → 1 (a wrong correction is worse than none)', () => {
-        expect(nativeDropScale(0, 1200, 2400)).toBe(1)
-        expect(nativeDropScale(NaN, 1200, 2400)).toBe(1)
-        expect(nativeDropScale(2, 0, 2400)).toBe(1)
-        expect(nativeDropScale(2, 1200, 0)).toBe(1)
-        expect(nativeDropScale(2, 1200, -5)).toBe(1)
-        expect(nativeDropScale(2, Infinity, 2400)).toBe(1)
+    test('measurement noise within 2% snaps to the no-zoom value', () => {
+        const base = {
+            units: 'logical' as const,
+            physicalInnerWidth: 3000,
+            scaleFactor: 2,
+            dpr: 2,
+        }
+        expect(nativeDragScale({ ...base, cssInnerWidth: 1499 })).toBe(1)
+        expect(nativeDragScale({ ...base, cssInnerWidth: 1510 })).toBe(1)
+    })
+
+    test('degenerate inputs fall back to the no-zoom value', () => {
+        const logical = {
+            units: 'logical' as const,
+            cssInnerWidth: 1500,
+            physicalInnerWidth: 3000,
+            scaleFactor: 2,
+            dpr: 2,
+        }
+        expect(nativeDragScale({ ...logical, physicalInnerWidth: 0 })).toBe(1)
+        expect(nativeDragScale({ ...logical, cssInnerWidth: NaN })).toBe(1)
+        expect(nativeDragScale({ ...logical, scaleFactor: -1 })).toBe(1)
+        const physical = { ...logical, units: 'physical' as const }
+        expect(nativeDragScale({ ...physical, physicalInnerWidth: 0 })).toBe(
+            0.5,
+        )
+        expect(nativeDragScale({ ...physical, cssInnerWidth: 0, dpr: 0 })).toBe(
+            1,
+        )
     })
 })
 
