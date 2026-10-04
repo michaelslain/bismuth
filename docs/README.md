@@ -24,7 +24,7 @@ same structure.
 - **Bases** — a `type: base` note is a query over your vault, rendered through any of 12 view kinds (table, cards, kanban, calendar, map, charts, flashcards, …)
 - **Tasks** (Obsidian-Tasks compatible) and **flashcards** (SM-2 spaced repetition) that read straight out of your notes
 - **Calendar** with two-way Google Calendar sync · **drawing** (`.draw`) · **spreadsheets** (`.sheet`) · **export** to md/html/png/pdf
-- **AI** — in-app terminals, visual chat through **ten** agent backends (Claude Code, opencode, Codex, and seven more over ACP), three **skills** (`skills/`: `authoring-bismuth-bases` for writing Bases views, plus `converting-obsidian-to-bismuth` and `converting-bismuth-to-obsidian` for moving a vault between the two apps), and per-file/folder **visibility controls** for restricting agent access
+- **AI** — in-app terminals, visual chat through **ten** agent backends (Claude Code, opencode, Codex, and seven more over ACP), three agent **guides** served through the MCP server (a [bases authoring guide](bases/authoring.md) for writing Bases views, plus [Obsidian → Bismuth](guides/converting-obsidian-to-bismuth.md) and [Bismuth → Obsidian](guides/converting-bismuth-to-obsidian.md) for moving a vault between the two apps), and per-file/folder **visibility controls** for restricting agent access
 - **A daemon** — an optional background brain per vault: crons, processes, a memory graph, and an inbox of work awaiting your approval
 - **Drive it from anywhere** — the `bismuth` CLI, an MCP server, and an iPad build that runs the whole backend in-process
 
@@ -35,8 +35,8 @@ Everything is local-first and file-based: no account, sync service, or database.
 ## About this documentation
 
 Bismuth is a Bun monorepo with **seven workspaces**: `core` (backend), `app` (Solid + Tauri),
-`cli`, `relay`, `mcp`, `memory`, and `daemon`. Four top-level directories are not workspaces:
-`skills/` (agent-facing skill guides), `bench/` (visual verification that drives its own Chrome
+`cli`, `relay`, `mcp`, `memory`, and `daemon`. Three top-level directories are not workspaces:
+`bench/` (visual verification that drives its own Chrome
 over the Storybook catalog — `bun run visual`; see [Testing](contributing/testing.md)), `scripts/`
 (the commit/push gate and the docs check) and `design/` (the design-system gate's baseline). The
 Storybook 9 component catalog for `app/src/` (`bun run storybook`, port `6006`) lives in
@@ -152,11 +152,19 @@ The in-repo background runtime — **one machine process that multiplexes per-va
 - [Communication & hooks](daemon/communication.md) — the relay recall/collect hooks + single-owner device gating (no cross-machine messaging)
 - [Storage](daemon/storage.md) — the two-tier on-disk layout (`~/.bismuth/daemon` + `<vault>/.daemon`) and the legacy-state migration
 
+## Agent guides
+
+- [Authoring bases](bases/authoring.md) — read before creating, editing or debugging a `type: base` note or a ` ```query ` block; one page per view kind under `bases/authoring/`
+- [Obsidian → Bismuth](guides/converting-obsidian-to-bismuth.md) — turning an Obsidian vault into a Bismuth vault in a new folder, with topic pages under `guides/converting-obsidian-to-bismuth/`
+- [Bismuth → Obsidian](guides/converting-bismuth-to-obsidian.md) — the reverse, with topic pages under `guides/converting-bismuth-to-obsidian/`
+
+These are plain docs pages, not Claude Code skills: the MCP server's instructions name them and agents open them with `bismuth_docs_read` ([MCP server](mcp/overview.md)).
+
 ## Interfaces
 
 - [CLI reference](cli/reference.md) — every `bismuth` command
 - [HTTP API reference](api/http-reference.md) — every core server route
-- [MCP server](mcp/overview.md) — auto-attaches to app-terminal Claude sessions; serves docs + CLI + (daemon-gated) memory tools
+- [MCP server](mcp/overview.md) — auto-attaches to app-terminal Claude sessions; serves docs (incl. the agent guides) + CLI + (daemon-gated) memory tools
 - [Daemon MCP tools](mcp/daemon-tools.md) — the ten daemon-gated tools: crons, background processes, the inbox, status + device ownership
 - [App control](mcp/app-control.md) — driving a running window's tabs from a Claude session / the shell (`bismuth app …`), via the CLI (zero new MCP tools)
 - [Mobile (iPad/iOS)](mobile/overview.md) — the no-HTTP in-process backend + `FileAccess`/`Transport` seams that run the vault on-device

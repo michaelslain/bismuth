@@ -14,14 +14,9 @@ import { join } from 'node:path'
 import {
     ensureBismuthInstalled,
     getBismuthStatus,
-    stageSkills,
-    linkSkillToClaudeCode,
-    linkAllSkillsToClaudeCode,
-    isSkillLinkedToClaudeCode,
-    areSkillsLinkedToClaudeCode,
+    removeLegacySkills,
     claudeMcpAddArgs,
-    BISMUTH_HOME,
-    SKILL_IDS,
+    LEGACY_SKILL_IDS,
     type InstallIO,
 } from '../src/bismuthInstall'
 
@@ -33,7 +28,7 @@ function fakeIO(
         marker?: string | null
         cli?: boolean
         mcp?: boolean
-        skill?: boolean
+        legacyWarnings?: string[]
         registerMcp?: () => Promise<{ ok: boolean; warning?: string }>
     } = {},
 ): { io: InstallIO; calls: string[] } {
@@ -50,7 +45,6 @@ function fakeIO(
             linked: opts.cli ?? false,
             path: opts.cli ? '/usr/local/bin/bismuth' : null,
         }),
-        skillLinked: () => opts.skill ?? false,
         mcpRegistered: async () => opts.mcp ?? false,
         installFiles: () => {
             calls.push('installFiles')
@@ -59,9 +53,9 @@ function fakeIO(
             calls.push('linkCli')
             return { ok: true, path: '/usr/local/bin/bismuth' }
         },
-        linkClaudeSkill: () => {
-            calls.push('linkClaudeSkill')
-            return { ok: true, warnings: [] }
+        removeLegacySkills: () => {
+            calls.push('removeLegacySkills')
+            return opts.legacyWarnings ?? []
         },
         registerMcp:
             opts.registerMcp ??
@@ -79,11 +73,11 @@ test('no-ops when already installed and up to date', async () => {
         marker: 'H',
         cli: true,
         mcp: true,
-        skill: true,
     })
     const r = await ensureBismuthInstalled('/src', io)
     expect(r.action).toBe('up-to-date')
-    expect(calls).toEqual([]) // zero side effects
+    // No install work — only the idempotent legacy-skill cleanup runs.
+    expect(calls).toEqual(['removeLegacySkills'])
 })
 
 test('reinstalls when the source hash changed', async () => {
@@ -92,14 +86,13 @@ test('reinstalls when the source hash changed', async () => {
         marker: 'H1',
         cli: true,
         mcp: true,
-        skill: true,
     })
     const r = await ensureBismuthInstalled('/src', io)
     expect(r.action).toBe('updated')
     expect(calls).toEqual([
         'installFiles',
         'linkCli',
-        'linkClaudeSkill',
+        'removeLegacySkills',
         'registerMcp',
         'writeMarker',
     ])
@@ -116,24 +109,10 @@ test('reinstalls when marker matches but the cli symlink is missing', async () =
         marker: 'H',
         cli: false,
         mcp: true,
-        skill: true,
     })
     const r = await ensureBismuthInstalled('/src', io)
     expect(r.action).toBe('updated')
     expect(calls).toContain('linkCli')
-})
-
-test('reinstalls when marker matches but the Claude Code skill link is missing', async () => {
-    const { io, calls } = fakeIO({
-        hash: 'H',
-        marker: 'H',
-        cli: true,
-        mcp: true,
-        skill: false,
-    })
-    const r = await ensureBismuthInstalled('/src', io)
-    expect(r.action).toBe('updated')
-    expect(calls).toContain('linkClaudeSkill')
 })
 
 test('skipped when no src or no compiled binaries', async () => {
@@ -152,7 +131,6 @@ test('dry-run performs no side effects', async () => {
         marker: 'H1',
         cli: true,
         mcp: true,
-        skill: true,
     })
     const r = await ensureBismuthInstalled('/src', io, { dryRun: true })
     expect(r.action).toBe('would-update')
@@ -170,257 +148,167 @@ test('installs but warns when claude/mcp registration is unavailable', async () 
     expect(r.warnings).toContain('claude not found')
 })
 
-test('a status with only the bases link present is not up-to-date and re-runs linkClaudeSkill', async () => {
-    // The fake's skillLinked() is the all-linked boolean; a machine upgraded from the one-skill
-    // build has the bases link only, so it reads false and the ensure must relink everything.
+test('legacy-skill cleanup runs even when the install is otherwise up to date', async () => {
     const { io, calls } = fakeIO({
         hash: 'H',
         marker: 'H',
         cli: true,
         mcp: true,
-        skill: false,
+        legacyWarnings: ['w-legacy'],
     })
     const r = await ensureBismuthInstalled('/src', io)
-    expect(r.action).toBe('updated')
-    expect(calls).toContain('linkClaudeSkill')
+    expect(r.action).toBe('up-to-date')
+    expect(calls).toEqual(['removeLegacySkills'])
+    expect(r.warnings).toEqual(['w-legacy'])
 })
 
-test('every warning from linkClaudeSkill is surfaced on the result', async () => {
-    const { io } = fakeIO({ hash: 'H', marker: null })
-    io.linkClaudeSkill = () => ({ ok: false, warnings: ['w-one', 'w-two'] })
+test('dry-run does not run the legacy-skill cleanup, even when up to date', async () => {
+    const { io, calls } = fakeIO({
+        hash: 'H',
+        marker: 'H',
+        cli: true,
+        mcp: true,
+    })
+    const r = await ensureBismuthInstalled('/src', io, { dryRun: true })
+    expect(r.action).toBe('up-to-date')
+    expect(calls).toEqual([])
+})
+
+test('every warning from removeLegacySkills is surfaced on the result', async () => {
+    const { io } = fakeIO({
+        hash: 'H',
+        marker: null,
+        legacyWarnings: ['w-one', 'w-two'],
+    })
     const r = await ensureBismuthInstalled('/src', io)
     expect(r.warnings).toEqual(expect.arrayContaining(['w-one', 'w-two']))
 })
 
-test('getBismuthStatus reflects marker + link + skill + mcp', async () => {
+test('getBismuthStatus reflects marker + link + mcp', async () => {
     const s = await getBismuthStatus(
-        fakeIO({ marker: 'H', cli: true, mcp: true, skill: true }).io,
+        fakeIO({ marker: 'H', cli: true, mcp: true }).io,
     )
     expect(s).toMatchObject({
         installed: true,
         version: 'H',
         cliLinked: true,
-        skillLinked: true,
         mcpRegistered: true,
     })
 })
 
-// --- Real-fs coverage for the skills-staging + Claude Code exposure behavior ---------------
+// --- Real-fs coverage for the legacy-skill cleanup ---------------------------------------
 //
-// The InstallIO fakes above never touch a filesystem at all — they just record which methods
-// were called. To prove the ACTUAL copy/symlink logic works (not just that ensureBismuthInstalled
-// calls the right methods in the right order), the tests below exercise the real, exported
-// home-parameterized helpers (stageSkills / linkSkillToClaudeCode / isSkillLinkedToClaudeCode)
-// against throwaway mkdtemp directories standing in for ~/.bismuth and ~/.claude — never the
-// developer's real home directory. Every temp dir is removed after each test.
+// The InstallIO fakes above only record which methods were called. To prove the ACTUAL removal
+// logic, these exercise the real, exported home-parameterized removeLegacySkills() against
+// throwaway temp dirs standing in for ~/.bismuth and ~/.claude/skills — never the developer's
+// real home. Every temp dir is removed after each test.
 
 function withTempDirs<T>(
-    fn: (bismuthHome: string, claudeSkillsDir: string, src: string) => T,
+    fn: (bismuthHome: string, claudeSkillsDir: string) => T,
 ): T {
     const bismuthHome = tempDir('bismuth-install-home-')
     const claudeHome = tempDir('bismuth-install-claude-')
     const claudeSkillsDir = join(claudeHome, 'skills')
-    const src = tempDir('bismuth-install-src-')
     try {
-        return fn(bismuthHome, claudeSkillsDir, src)
+        return fn(bismuthHome, claudeSkillsDir)
     } finally {
         rmSync(bismuthHome, { recursive: true, force: true })
         rmSync(claudeHome, { recursive: true, force: true })
-        rmSync(src, { recursive: true, force: true })
     }
 }
 
-function writeFixtureSkill(src: string): void {
-    for (const id of SKILL_IDS) {
-        const skillDir = join(src, 'skills', id)
-        mkdirSync(skillDir, { recursive: true })
-        writeFileSync(join(skillDir, 'SKILL.md'), `# ${id}\n`)
-        mkdirSync(join(skillDir, 'references'), { recursive: true })
-        writeFileSync(join(skillDir, 'references', 'table.md'), '# table view\n')
+// What an older build left behind: ~/.bismuth/skills/<id> + a ~/.claude/skills/<id> symlink to it.
+function seedLegacyInstall(bismuthHome: string, claudeSkillsDir: string): void {
+    mkdirSync(claudeSkillsDir, { recursive: true })
+    for (const id of LEGACY_SKILL_IDS) {
+        const staged = join(bismuthHome, 'skills', id)
+        mkdirSync(staged, { recursive: true })
+        writeFileSync(join(staged, 'SKILL.md'), `# ${id}\n`)
+        symlinkSync(staged, join(claudeSkillsDir, id), 'dir')
     }
 }
 
-// Used by tests that exercise linkSkillToClaudeCode/isSkillLinkedToClaudeCode in isolation —
-// writes directly into `<bismuthHome>/skills/<id>` for every id WITHOUT going through stageSkills(), so
-// those tests stay independent of stageSkills()'s own correctness (sabotaging stageSkills alone
-// must fail only the "skills are staged" test, not this one too).
-function seedStagedSkill(bismuthHome: string): void {
-    for (const id of SKILL_IDS) {
-        const skillDir = join(bismuthHome, 'skills', id)
-        mkdirSync(skillDir, { recursive: true })
-        writeFileSync(join(skillDir, 'SKILL.md'), `# ${id}\n`)
-    }
-}
-
-test('skills are staged alongside docs (real fs, temp home)', () => {
-    withTempDirs((bismuthHome, _claudeSkillsDir, src) => {
-        writeFixtureSkill(src)
-        stageSkills(src, bismuthHome)
-        for (const id of SKILL_IDS) {
+test('removeLegacySkills removes our symlinks and ~/.bismuth/skills', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir) => {
+        seedLegacyInstall(bismuthHome, claudeSkillsDir)
+        expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
+        for (const id of LEGACY_SKILL_IDS)
             expect(
-                existsSync(join(bismuthHome, 'skills', id, 'SKILL.md')),
-            ).toBe(true)
-            expect(
-                existsSync(
-                    join(bismuthHome, 'skills', id, 'references', 'table.md'),
-                ),
-            ).toBe(true)
-        }
-    })
-})
-
-test('the Claude Code skill entry is created as a symlink into the staged skill', () => {
-    withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
-        seedStagedSkill(bismuthHome)
-
-        expect(areSkillsLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
-            false,
-        ) // not linked yet
-
-        const all = linkAllSkillsToClaudeCode(bismuthHome, claudeSkillsDir)
-        expect(all).toEqual({ ok: true, warnings: [] })
-
-        for (const id of SKILL_IDS) {
-            const linkPath = join(claudeSkillsDir, id)
-            expect(lstatSync(linkPath).isSymbolicLink()).toBe(true)
-            expect(readlinkSync(linkPath)).toBe(join(bismuthHome, 'skills', id))
-            // Followed through the symlink, the real content is there.
-            expect(existsSync(join(linkPath, 'SKILL.md'))).toBe(true)
-            expect(
-                isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir, id),
-            ).toBe(true)
-            // Relinking our own link is clean and idempotent.
-            expect(
-                linkSkillToClaudeCode(bismuthHome, claudeSkillsDir, id),
-            ).toEqual({ ok: true })
-        }
-        expect(areSkillsLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
-            true,
-        )
-    })
-})
-
-test('stageSkills against a source tree WITHOUT skills/ warns instead of silently no-opping', () => {
-    withTempDirs((bismuthHome, _claudeSkillsDir, src) => {
-        // Deliberately do NOT call writeFixtureSkill(src) — src has no skills/ dir at all, the
-        // shape of a build (e.g. a forgotten staging step in app/scripts/build-bismuth-tools.ts)
-        // that never staged skills into its output.
-        const r = stageSkills(src, bismuthHome)
-        expect(r.warning).toBeDefined()
-        expect(r.warning).toContain('no skills/ found')
-        // Non-fatal: no skills dir gets created, but nothing throws and the dest is left clean.
+                lstatSync(join(claudeSkillsDir, id), { throwIfNoEntry: false }),
+            ).toBeUndefined()
         expect(existsSync(join(bismuthHome, 'skills'))).toBe(false)
     })
 })
 
-test('BISMUTH_SKILLS_DIR is set on the registered MCP server spec, pointing at the installed skills path', () => {
-    const args = claudeMcpAddArgs()
-    const valueIdx = args.findIndex(a => a.startsWith('BISMUTH_SKILLS_DIR='))
-    expect(valueIdx).toBeGreaterThan(-1)
-    expect(args[valueIdx - 1]).toBe('-e') // it's passed as an `-e KEY=VALUE` flag, like the others
-    const value = args[valueIdx].slice('BISMUTH_SKILLS_DIR='.length)
-    // Points at the INSTALLED path (~/.bismuth/skills), not a repo-relative one — a machine-wide
-    // install has no repo root, which is exactly why this env var exists.
-    expect(value).toBe(join(BISMUTH_HOME, 'skills'))
-})
-
-test('a pre-existing non-Bismuth Claude Code skill entry is not overwritten and produces a warning', () => {
-    withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
-        seedStagedSkill(bismuthHome)
-
-        // Simulate a foreign entry: a REAL directory (not our symlink) already at the target path.
-        mkdirSync(claudeSkillsDir, { recursive: true })
-        const foreignId = SKILL_IDS[1]
-        const foreignPath = join(claudeSkillsDir, foreignId)
-        mkdirSync(foreignPath, { recursive: true })
-        writeFileSync(join(foreignPath, 'SKILL.md'), "# Someone else's skill\n")
-
-        const r = linkSkillToClaudeCode(bismuthHome, claudeSkillsDir, foreignId)
-        expect(r.ok).toBe(false)
-        expect(r.warning).toBeDefined()
-        expect(r.warning).toContain('already exists')
-        expect(r.warning).toContain("wasn't created by Bismuth")
-
-        // Untouched — still the foreign directory with its own content, not our symlink.
-        const st = lstatSync(foreignPath)
-        expect(st.isSymbolicLink()).toBe(false)
-        expect(existsSync(join(foreignPath, 'SKILL.md'))).toBe(true)
-        expect(readFileSync(join(foreignPath, 'SKILL.md'), 'utf8')).toBe(
-            "# Someone else's skill\n",
-        )
-        expect(
-            isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir, foreignId),
-        ).toBe(false)
-    })
-})
-
-test('one foreign entry leaves the other skills linked, warns once naming that id, and the set reads as not linked', () => {
-    withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
-        seedStagedSkill(bismuthHome)
-        const foreignId = 'converting-bismuth-to-obsidian'
-        mkdirSync(join(claudeSkillsDir, foreignId), { recursive: true })
-
-        const r = linkAllSkillsToClaudeCode(bismuthHome, claudeSkillsDir)
-        expect(r.ok).toBe(false)
-        expect(r.warnings).toHaveLength(1)
-        expect(r.warnings[0]).toContain(foreignId)
-        for (const id of SKILL_IDS) {
+test('removeLegacySkills removes our dangling symlinks too (target already gone)', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir) => {
+        seedLegacyInstall(bismuthHome, claudeSkillsDir)
+        rmSync(join(bismuthHome, 'skills'), { recursive: true, force: true })
+        expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
+        for (const id of LEGACY_SKILL_IDS)
             expect(
-                isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir, id),
-            ).toBe(id !== foreignId)
-        }
-        expect(areSkillsLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
-            false,
-        )
+                lstatSync(join(claudeSkillsDir, id), { throwIfNoEntry: false }),
+            ).toBeUndefined()
     })
 })
 
-test('an uncreatable skills dir is one deduped warning, never a throw', () => {
-    withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
-        seedStagedSkill(bismuthHome)
-        // A FILE where the skills dir should be makes mkdirSync fail for every id.
-        mkdirSync(join(claudeSkillsDir, '..'), { recursive: true })
-        writeFileSync(claudeSkillsDir, 'not a dir')
-        const r = linkAllSkillsToClaudeCode(bismuthHome, claudeSkillsDir)
-        expect(r.ok).toBe(false)
-        expect(r.warnings).toHaveLength(1)
-        expect(r.warnings[0]).toContain('could not create')
-    })
-})
-
-test('a foreign symlink pointing elsewhere is also treated as not ours and left alone', () => {
-    withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
-        seedStagedSkill(bismuthHome)
-
-        // A symlink that exists but points OUTSIDE bismuthHome — not ours, even though it's a symlink.
-        mkdirSync(claudeSkillsDir, { recursive: true })
+test('removeLegacySkills leaves a foreign directory, a foreign symlink and unrelated skills alone', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir) => {
+        seedLegacyInstall(bismuthHome, claudeSkillsDir)
+        // Replace two of ours with foreign entries: a real directory, and a symlink pointing elsewhere.
+        const [dirId, linkId, ourId] = LEGACY_SKILL_IDS
+        const dirPath = join(claudeSkillsDir, dirId)
+        rmSync(dirPath)
+        mkdirSync(dirPath)
+        writeFileSync(join(dirPath, 'SKILL.md'), "# Someone else's skill\n")
         const elsewhere = tempDir('bismuth-install-elsewhere-')
+        const linkPath = join(claudeSkillsDir, linkId)
+        rmSync(linkPath)
+        symlinkSync(elsewhere, linkPath)
+        // And a skill that was never ours.
+        const otherPath = join(claudeSkillsDir, 'my-own-skill')
+        mkdirSync(otherPath)
         try {
-            const id = SKILL_IDS[2]
-            symlinkSync(elsewhere, join(claudeSkillsDir, id))
-            const r = linkSkillToClaudeCode(bismuthHome, claudeSkillsDir, id)
-            expect(r.ok).toBe(false)
-            expect(r.warning).toContain("wasn't created by Bismuth")
-            expect(readlinkSync(join(claudeSkillsDir, id))).toBe(
-                elsewhere,
+            expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
+            expect(lstatSync(dirPath).isDirectory()).toBe(true)
+            expect(readFileSync(join(dirPath, 'SKILL.md'), 'utf8')).toBe(
+                "# Someone else's skill\n",
             )
+            expect(readlinkSync(linkPath)).toBe(elsewhere)
+            expect(existsSync(otherPath)).toBe(true)
+            // The one that WAS ours is gone.
+            expect(
+                lstatSync(join(claudeSkillsDir, ourId), {
+                    throwIfNoEntry: false,
+                }),
+            ).toBeUndefined()
         } finally {
             rmSync(elsewhere, { recursive: true, force: true })
         }
     })
 })
 
-test('linking only one skill leaves areSkillsLinkedToClaudeCode false (real fs, temp home)', () => {
-    withTempDirs((bismuthHome, claudeSkillsDir, _src) => {
-        seedStagedSkill(bismuthHome)
-        const r = linkSkillToClaudeCode(
-            bismuthHome,
-            claudeSkillsDir,
-            'authoring-bismuth-bases',
-        )
-        expect(r.ok).toBe(true)
-        expect(areSkillsLinkedToClaudeCode(bismuthHome, claudeSkillsDir)).toBe(
-            false,
-        )
+test('removeLegacySkills is a no-op when nothing is there, and idempotent', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir) => {
+        // Neither ~/.claude/skills nor ~/.bismuth/skills exists.
+        expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
+        expect(existsSync(claudeSkillsDir)).toBe(false) // never creates the skills dir
+        seedLegacyInstall(bismuthHome, claudeSkillsDir)
+        expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
+        expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
     })
+})
+
+test('removeLegacySkills removes ~/.bismuth/skills even when no link exists', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir) => {
+        mkdirSync(join(bismuthHome, 'skills', 'whatever'), { recursive: true })
+        expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
+        expect(existsSync(join(bismuthHome, 'skills'))).toBe(false)
+    })
+})
+
+test('the registered MCP server spec no longer carries BISMUTH_SKILLS_DIR', () => {
+    const args = claudeMcpAddArgs()
+    expect(args.some(a => a.startsWith('BISMUTH_SKILLS_DIR='))).toBe(false)
+    expect(args.some(a => a.startsWith('BISMUTH_DOCS_DIR='))).toBe(true)
 })

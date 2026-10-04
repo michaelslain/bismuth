@@ -251,8 +251,7 @@ export function readDoc(
     // Strip a trailing #anchor from the relative path before resolving.
     const cleanRel = relPath.replace(/#.*$/, '')
 
-    // Reject path traversal: the target must stay within docsRoot. Shared with
-    // skills.ts's readSkill — same check, same repo.
+    // Reject path traversal: the target must stay within docsRoot.
     const target = resolveWithin(root, cleanRel)
 
     if (!existsSync(target) || !statSync(target).isFile()) {

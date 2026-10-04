@@ -1,9 +1,6 @@
----
-name: converting-obsidian-to-bismuth
-description: Use when turning an Obsidian vault into a Bismuth vault — importing, migrating, or opening an existing Obsidian vault in Bismuth. Walks through inventorying which features the vault uses, looking up the CURRENT Obsidian and Bismuth formats for each, converting .base files, Tasks-plugin emoji, flashcards, links and .obsidian settings into a new folder, validating with the bismuth CLI, and reporting what was lossy.
----
-
 # Converting an Obsidian vault to Bismuth
+
+> **When to read this:** Use when turning an Obsidian vault into a Bismuth vault — importing, migrating, or opening an existing Obsidian vault in Bismuth. Walks through inventorying which features the vault uses, looking up the CURRENT Obsidian and Bismuth formats for each, converting .base files, Tasks-plugin emoji, flashcards, links and .obsidian settings into a new folder, validating with the bismuth CLI, and reporting what was lossy.
 
 ## The model
 
@@ -12,7 +9,7 @@ A Bismuth vault is any folder of markdown, so an Obsidian vault already opens as
 ## Ground rules
 
 - **Never modify the source vault.** Write to `<source>-bismuth`. If that folder exists and is not empty, ask the user before touching it.
-- **Both formats change, so look things up before converting.** The tables in `references/` are dated snapshots, hints only. The live source wins.
+- **Both formats change, so look things up before converting.** The tables in the topic pages under `guides/converting-obsidian-to-bismuth/` are dated snapshots, hints only. The live source wins.
 - **Only the rewrites the references specify.** Never edit a note's own content to make a check pass. A validation failure caused by the note itself (a typo, a stray `[[`) goes in the report's Lossy section as a known item, and the check is left failing for that item.
 - **Reaching Bismuth docs** (cited below as `docs/<path>.md`), in order:
   1. the `bismuth_docs_read` MCP tool with `path` set to the page without the `docs/` prefix, e.g. `{path: "bases/overview.md"}` (optional `section` heading returns one section);
@@ -20,7 +17,7 @@ A Bismuth vault is any folder of markdown, so an Obsidian vault already opens as
   3. `docs/<path>.md` in a Bismuth checkout.
 
   `bismuth_docs_search {query}` finds a page by keyword; `bismuth --help` lists every CLI command.
-- **Reaching a reference:** Claude Code opens `references/<name>.md` beside this file. Any other agent calls `bismuth_skill {name: "converting-obsidian-to-bismuth", reference: "tasks"}`, or reads the file `~/.bismuth/skills/converting-obsidian-to-bismuth/references/<name>.md`.
+- **Reaching a topic page:** each `<name>.md` cited below is `guides/converting-obsidian-to-bismuth/<name>.md` — `bismuth_docs_read {path: "guides/converting-obsidian-to-bismuth/tasks.md"}`, or the file under `~/.bismuth/docs/` or a checkout's `docs/`.
 - Every command below takes `--vault "$OUT"`; add `--pretty` to read the JSON. `bismuth` is the CLI (from a checkout: `bun run cli/src/index.ts`). On an installed machine `bismuth` may not be on PATH; the binary is at `~/.bismuth/bin/bismuth`.
 
 ## Workflow
@@ -58,14 +55,14 @@ EOF
 ```
 3. **Look up current formats.** For each feature present, open that reference's `## Sources`: the Bismuth doc plus the Obsidian or plugin page. Plugin syntax is converted only if the plugin is in `community-plugins.json`. If a live source disagrees with the snapshot, the live source wins; write it down for the report.
 4. **Convert**, in this order (the reference holds the exact steps). No `.obsidian/` in `$SRC` means no settings or plugins: skip every step that reads it and every plugin-gated reference, and say so in the report. Never stop to ask when nobody is there to answer: take the stated default and record it in the report.
-   1. settings: `references/vault-and-settings.md`
-   2. bases: `references/bases.md`
-   3. tasks: `bismuth task migrate --dry-run --vault "$OUT" --pretty`, review, then without `--dry-run`: `references/tasks.md`
-   4. query blocks: grep the ` ```tasks ` blocks for lines `migrate-queries` drops, then ` ```tasks ` becomes ` ```query `, then `bismuth base migrate-queries --vault "$OUT"`: `references/tasks.md`
-   5. flashcards: `references/flashcards.md`
-   6. links, aliases, embeds, tags, frontmatter: `references/links-and-embeds.md`, `references/tags-and-properties.md`
-   7. drawings and canvas: `references/drawings-and-canvas.md`
-   8. everything else (callouts, math, templates, daily notes, Dataview): `references/other-syntax.md`
+   1. settings: [`vault-and-settings.md`](converting-obsidian-to-bismuth/vault-and-settings.md)
+   2. bases: [`bases.md`](converting-obsidian-to-bismuth/bases.md)
+   3. tasks: `bismuth task migrate --dry-run --vault "$OUT" --pretty`, review, then without `--dry-run`: [`tasks.md`](converting-obsidian-to-bismuth/tasks.md)
+   4. query blocks: grep the ` ```tasks ` blocks for lines `migrate-queries` drops, then ` ```tasks ` becomes ` ```query `, then `bismuth base migrate-queries --vault "$OUT"`: [`tasks.md`](converting-obsidian-to-bismuth/tasks.md)
+   5. flashcards: [`flashcards.md`](converting-obsidian-to-bismuth/flashcards.md)
+   6. links, aliases, embeds, tags, frontmatter: [`links-and-embeds.md`](converting-obsidian-to-bismuth/links-and-embeds.md), [`tags-and-properties.md`](converting-obsidian-to-bismuth/tags-and-properties.md)
+   7. drawings and canvas: [`drawings-and-canvas.md`](converting-obsidian-to-bismuth/drawings-and-canvas.md)
+   8. everything else (callouts, math, templates, daily notes, Dataview): [`other-syntax.md`](converting-obsidian-to-bismuth/other-syntax.md)
 5. **Validate.** Every check must pass; fix and rerun otherwise.
 ```bash
 cd "$OUT" && grep -rlx --include='*.md' 'type: base' . | while IFS= read -r f; do

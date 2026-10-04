@@ -34,4 +34,4 @@ Bismuth's own drawing formats (`.draw` files and ` ```draw ` fences) have no Obs
 ## Validate
 
 - `bismuth tree --vault "$OUT" --pretty | grep -ci canvas` prints `0` (canvas files are not in the tree), and every canvas path is in the report.
-- Any image you added resolves: the unresolved-link check in SKILL.md prints nothing.
+- Any image you added resolves: the unresolved-link check in the guide (`guides/converting-obsidian-to-bismuth.md`) prints nothing.

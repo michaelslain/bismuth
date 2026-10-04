@@ -9,7 +9,6 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { listDocs, searchDocs, readDoc } from './docs'
 import { SERVER_INSTRUCTIONS } from './instructions'
-import { listSkills, readSkill } from './skills'
 import { runCli, cliHelp, cliToolResult } from './cli'
 import { memoryDir, remember, recall, forget } from './memory'
 import {
@@ -24,21 +23,6 @@ import {
 // docs) and BISMUTH_CLI (→ the compiled cli binary, consumed in cli.ts).
 const repoRoot = resolve(import.meta.dir, '..', '..')
 const docsRoot = process.env.BISMUTH_DOCS_DIR ?? repoRoot + '/docs'
-// Same pattern as docsRoot: a later machine-wide install stages skills/ alongside docs/ and sets
-// BISMUTH_SKILLS_DIR (→ core/src/bismuthInstall.ts) to point at the staged copy.
-const skillsRoot = process.env.BISMUTH_SKILLS_DIR ?? repoRoot + '/skills'
-
-/** The `bismuth_skill` tool description, built at startup from what is actually on disk so a new
- *  skill directory is advertised with no edit here. */
-function skillToolDescription(): string {
-    const names = listSkills(skillsRoot).map(s => s.name)
-    const available =
-        names.length > 0
-            ? names.join(', ')
-            : `none found at ${skillsRoot}`
-    return `Read a Bismuth skill (a how-to guide) by name — the same guidance Claude Code auto-loads from ~/.claude/skills, exposed here so every other agent backend (opencode, codex, cline, gemini, goose, openclaw, and the ACP backends) can reach it too, since none of them read that directory. Available: ${available}. Omit name to list all available skills with descriptions.`
-}
-
 // `instructions` reaches the client BEFORE any tool call — see mcp/src/instructions.ts's header
 // comment for why the tagging guidance lives there specifically.
 export const server = new Server(
@@ -89,26 +73,6 @@ const tools = [
                 },
             },
             required: ['path'],
-        },
-    },
-    {
-        name: 'bismuth_skill',
-        description:
-            skillToolDescription(),
-        inputSchema: {
-            type: 'object',
-            properties: {
-                name: {
-                    type: 'string',
-                    description:
-                        "Skill name, e.g. 'authoring-bismuth-bases'. Omit to list all skills.",
-                },
-                reference: {
-                    type: 'string',
-                    description:
-                        "Optional reference file within the skill's references/ dir (no path, no extension), e.g. 'kanban' for the kanban view-kind reference.",
-                },
-            },
         },
     },
     {
@@ -227,7 +191,7 @@ const memoryTools = [
 
 // The memory tools AND the daemon-management tools share ONE gate — the daemon being enabled
 // for this vault (memoryDir()/daemonEnabled(), i.e. BISMUTH_MEMORY_DIR is injected). Outside a
-// daemon-enabled session the server exposes only the always-on six; a machine-wide session
+// daemon-enabled session the server exposes only the always-on five; a machine-wide session
 // with no daemon never sees remember/recall/forget nor the crons/processes/pages tools.
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools,
@@ -293,19 +257,6 @@ export async function handleCallTool(
                 return textResult(
                     asText(await readDoc(docsRoot, path, section)),
                 )
-            }
-            case 'bismuth_skill': {
-                const skillName =
-                    typeof args.name === 'string' ? args.name : undefined
-                const reference =
-                    typeof args.reference === 'string'
-                        ? args.reference
-                        : undefined
-                const text =
-                    skillName === undefined
-                        ? asText(listSkills(skillsRoot))
-                        : readSkill(skillsRoot, skillName, reference)
-                return textResult(text)
             }
             case 'bismuth_cli': {
                 const cliArgs = Array.isArray(args.args)

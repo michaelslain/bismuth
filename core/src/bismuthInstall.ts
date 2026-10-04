@@ -40,23 +40,20 @@ const HOME = homedir()
 export const BISMUTH_HOME = join(HOME, '.bismuth')
 const BIN_DIR = join(BISMUTH_HOME, 'bin')
 const DOCS_DIR = join(BISMUTH_HOME, 'docs')
-const SKILLS_DIR = join(BISMUTH_HOME, 'skills')
 const MARKER = join(BISMUTH_HOME, '.version')
 const CLI_DEST = join(BIN_DIR, 'bismuth')
 const MCP_DEST = join(BIN_DIR, 'bismuth-mcp')
 // Candidate PATH dirs for the CLI symlink, preferred first (machine-wide before per-user).
 const LINK_DIRS = ['/usr/local/bin', join(HOME, '.local', 'bin')]
-// The skills this build ships (skills/<id>/ in the repo; core/test/skills.test.ts pins this list
-// to the directory set). Staged into ~/.bismuth/skills/ alongside docs, then each is exposed to
-// Claude Code's native skills surface — the third of three delivery adapters (MCP bismuth_skill
-// tool + AGENTS.md pointer are the other two) so every backend that speaks MCP, reads AGENTS.md,
-// or auto-loads Claude skills finds the same references. Sorted.
-export const SKILL_IDS = [
+const CLAUDE_SKILLS_DIR = join(HOME, '.claude', 'skills')
+// The three skills older builds installed (staged into ~/.bismuth/skills + symlinked into
+// ~/.claude/skills/<id>). Their content now ships as docs/ guides, so nothing installs them any
+// more — the ids survive only so removeLegacySkills() can clean up machines that still have them.
+export const LEGACY_SKILL_IDS = [
     'authoring-bismuth-bases',
     'converting-bismuth-to-obsidian',
     'converting-obsidian-to-bismuth',
 ] as const
-const CLAUDE_SKILLS_DIR = join(HOME, '.claude', 'skills')
 
 /** Per-registrar detect/register status for the "other CLIs" surface (core/src/agentBackends/
  *  mcpRegistrars.ts) — every non-Claude agent CLI Bismuth knows how to register its MCP with. */
@@ -74,9 +71,6 @@ export interface BismuthStatus {
     /** Our CLI symlink on PATH, or null. */
     cliPath: string | null
     cliLinked: boolean
-    /** Our symlink present at ~/.claude/skills/<id> for EVERY shipped skill, pointing into
-     *  ~/.bismuth? False if any is missing OR if something else (not created by Bismuth) is there. */
-    skillLinked: boolean
     mcpRegistered: boolean
     /** Detected/registered status for every OTHER agent CLI (opt-in — see `mcp.registerWith` in
      *  settingsSchema.ts and `bismuth install --mcp`). Undefined only if the injected IO doesn't
@@ -106,18 +100,14 @@ export interface InstallIO {
     writeMarker(hash: string): void
     /** Our CLI symlink present on PATH (pointing into ~/.bismuth)? */
     cliLinked(): { linked: boolean; path: string | null }
-    /** Is every shipped skill linked at ~/.claude/skills/<id> (pointing into ~/.bismuth)? False if
-     *  any is missing or is a foreign entry we must not touch. */
-    skillLinked(): boolean
     mcpRegistered(): Promise<boolean>
-    /** Copy bin/ + docs/ + skills/ from src into ~/.bismuth and chmod the binaries. */
+    /** Copy bin/ + docs/ from src into ~/.bismuth and chmod the binaries. */
     installFiles(src: string): void
     /** Symlink ~/.bismuth/bin/bismuth onto PATH (never clobbering a foreign file). */
     linkCli(): { ok: boolean; path: string | null; warning?: string }
-    /** Symlink every staged skill into Claude Code's native ~/.claude/skills/ (never clobbering a
-     *  pre-existing entry Bismuth didn't create — same discipline as linkCli() above). `ok` is true
-     *  only when every id linked; one warning per id that did not. */
-    linkClaudeSkill(): { ok: boolean; warnings: string[] }
+    /** Remove what older builds installed as skills: our ~/.claude/skills/<id> symlinks and
+     *  ~/.bismuth/skills (never a foreign entry). Idempotent + cheap; returns warnings. */
+    removeLegacySkills(): string[]
     /** Register the MCP in the user's global Claude config (idempotent remove+add). */
     registerMcp(): Promise<{ ok: boolean; warning?: string }>
     /**
@@ -206,144 +196,49 @@ function findOurLink(): string | null {
 }
 
 /**
- * Where `<claudeSkillsDir>/<id>` stands: absent, ours (a symlink pointing into
- * `bismuthHome`), or foreign (something else — a real dir/file, or a symlink elsewhere — that
- * Bismuth must never touch). Parameterized on both home dirs (rather than reading the module-level
- * BISMUTH_HOME/CLAUDE_SKILLS_DIR constants) so tests can exercise the real fs check against
- * throwaway temp dirs, never the developer's actual ~/.claude.
+ * Retire the skill install path of older builds: remove `<claudeSkillsDir>/<id>` for each
+ * LEGACY_SKILL_IDS entry ONLY when it is a symlink pointing into `bismuthHome` (ours — same
+ * "never touch a foreign file/dir/link" discipline as linkCli() and the mcpRegistrars.ts
+ * isOurs() checks), then remove `<bismuthHome>/skills`. Runs on every ensure pass and from
+ * uninstall; a no-op once nothing is left. Parameterized on both dirs so tests can exercise the
+ * real fs against throwaway temp dirs, never the developer's actual ~/.claude. Never throws —
+ * returns one warning per entry it could not remove.
  */
-function statSkillLink(
-    claudeSkillsDir: string,
-    bismuthHome: string,
-    id: string,
-): { exists: boolean; ours: boolean; path: string } {
-    const path = join(claudeSkillsDir, id)
-    try {
-        const st = lstatSync(path, { throwIfNoEntry: false })
-        if (!st) return { exists: false, ours: false, path }
-        const ours =
-            st.isSymbolicLink() &&
-            resolve(readlinkSync(path)).startsWith(bismuthHome)
-        return { exists: true, ours, path }
-    } catch {
-        return { exists: false, ours: false, path }
-    }
-}
-
-/** Is our Claude Code symlink for skill `id` present? For status reporting (mirrors findOurLink() above). */
-export function isSkillLinkedToClaudeCode(
+export function removeLegacySkills(
     bismuthHome: string,
     claudeSkillsDir: string,
-    id: string,
-): boolean {
-    return statSkillLink(claudeSkillsDir, bismuthHome, id).ours
-}
-
-/** True when every `SKILL_IDS` entry is linked and ours. */
-export function areSkillsLinkedToClaudeCode(
-    bismuthHome: string,
-    claudeSkillsDir: string,
-): boolean {
-    return SKILL_IDS.every(id =>
-        isSkillLinkedToClaudeCode(bismuthHome, claudeSkillsDir, id),
-    )
-}
-
-/**
- * Stage `src/skills` into `<bismuthHome>/skills`, mirroring installFiles()'s docs handling
- * (wipe the dest, then copy-if-present) — with ONE deliberate difference: unlike a missing
- * `src/docs`, a missing `src/skills` is NOT a silent no-op. A build that forgot to stage
- * skills/ (see app/scripts/build-bismuth-tools.ts) would otherwise install "successfully"
- * while leaving the MCP `bismuth_skill` tool and the Claude Code skill symlink with nothing to
- * serve — exactly the silent-success-on-nothing shape this exists to avoid. Still non-fatal:
- * we console.warn AND return the warning so a caller that surfaces InstallResult.warnings can
- * show it too. Parameterized on `bismuthHome` (not the module-level BISMUTH_HOME) so tests can
- * exercise the real copy against a throwaway temp dir.
- */
-export function stageSkills(
-    src: string,
-    bismuthHome: string,
-): { warning?: string } {
-    const dest = join(bismuthHome, 'skills')
-    rmSync(dest, { recursive: true, force: true })
-    const skillsSrc = join(src, 'skills')
-    if (!existsSync(skillsSrc)) {
-        const warning = `no skills/ found at ${src} — this build didn't stage it, so the bismuth_skill MCP tool and the Claude Code skill have nothing to serve`
-        console.warn(`[bismuthInstall] ${warning}`)
-        return { warning }
-    }
-    cpSync(skillsSrc, dest, { recursive: true })
-    return {}
-}
-
-/**
- * Expose the staged skill (`<bismuthHome>/skills/<id>`) to Claude Code's native
- * `~/.claude/skills/` surface via a symlink. Same "never clobber a foreign entry" discipline as
- * linkCli() above and the mcpRegistrars.ts registrars' isOurs() checks (core/src/agentBackends/
- * mcpRegistrars.ts): a pre-existing entry named `id` that ISN'T our own symlink is
- * left completely untouched and reported as a warning, never overwritten. Parameterized on both
- * home dirs so tests can exercise the real symlink against throwaway temp dirs, never the
- * developer's actual ~/.claude.
- */
-export function linkSkillToClaudeCode(
-    bismuthHome: string,
-    claudeSkillsDir: string,
-    id: string,
-): { ok: boolean; warning?: string } {
-    try {
-        mkdirSync(claudeSkillsDir, { recursive: true })
-    } catch (e) {
-        return {
-            ok: false,
-            warning: `could not create ${claudeSkillsDir}: ${e instanceof Error ? e.message : String(e)}`,
-        }
-    }
-    const { exists, ours, path } = statSkillLink(
-        claudeSkillsDir,
-        bismuthHome,
-        id,
-    )
-    if (exists && !ours) {
-        return {
-            ok: false,
-            warning: `~/.claude/skills/${id} already exists and wasn't created by Bismuth — skipped`,
-        }
-    }
-    try {
-        if (exists) unlinkSync(path) // ours — relink cleanly (also handles a stale/broken symlink)
-        symlinkSync(join(bismuthHome, 'skills', id), path, 'dir')
-        return { ok: true }
-    } catch (e) {
-        return {
-            ok: false,
-            warning: `failed to link the ${id} skill into Claude Code: ${e instanceof Error ? e.message : String(e)}`,
-        }
-    }
-}
-
-/**
- * Link every shipped skill. `ok` only when all linked; one warning per id that did not (a
- * claudeSkillsDir that cannot be created fails every id the same way, so that warning is deduped).
- * Never throws.
- */
-export function linkAllSkillsToClaudeCode(
-    bismuthHome: string,
-    claudeSkillsDir: string,
-): { ok: boolean; warnings: string[] } {
+): string[] {
     const warnings: string[] = []
-    const results = SKILL_IDS.map(id =>
-        linkSkillToClaudeCode(bismuthHome, claudeSkillsDir, id),
-    )
-    for (const r of results)
-        if (r.warning && !warnings.includes(r.warning)) warnings.push(r.warning)
-    return { ok: results.every(r => r.ok), warnings }
+    for (const id of LEGACY_SKILL_IDS) {
+        const path = join(claudeSkillsDir, id)
+        try {
+            const st = lstatSync(path, { throwIfNoEntry: false })
+            if (
+                st?.isSymbolicLink() &&
+                resolve(readlinkSync(path)).startsWith(bismuthHome)
+            )
+                unlinkSync(path)
+        } catch (e) {
+            warnings.push(
+                `failed to remove legacy Claude Code skill link ${id}: ${e instanceof Error ? e.message : String(e)}`,
+            )
+        }
+    }
+    try {
+        rmSync(join(bismuthHome, 'skills'), { recursive: true, force: true })
+    } catch (e) {
+        warnings.push(
+            `failed to remove legacy ${join(bismuthHome, 'skills')}: ${e instanceof Error ? e.message : String(e)}`,
+        )
+    }
+    return warnings
 }
 
 /**
  * Args for `claude mcp add -s user bismuth …`, extracted as a pure function so registerMcp()'s
- * env wiring — in particular BISMUTH_SKILLS_DIR, pointing at the INSTALLED skills path
- * (~/.bismuth/skills) rather than a repo-relative one, since a machine-wide install has no repo
- * root — is unit-testable without spawning the real `claude` binary.
+ * env wiring — BISMUTH_DOCS_DIR points at the INSTALLED docs path rather than a repo-relative
+ * one, since a machine-wide install has no repo root — is unit-testable without spawning the
+ * real `claude` binary.
  */
 export function claudeMcpAddArgs(): string[] {
     return [
@@ -356,8 +251,6 @@ export function claudeMcpAddArgs(): string[] {
         `BISMUTH_DOCS_DIR=${DOCS_DIR}`,
         '-e',
         `BISMUTH_CLI=${CLI_DEST}`,
-        '-e',
-        `BISMUTH_SKILLS_DIR=${SKILLS_DIR}`,
         '--',
         MCP_DEST,
     ]
@@ -388,9 +281,6 @@ export const defaultIO: InstallIO = {
         const path = findOurLink()
         return { linked: path != null && existsSync(CLI_DEST), path }
     },
-    skillLinked() {
-        return areSkillsLinkedToClaudeCode(BISMUTH_HOME, CLAUDE_SKILLS_DIR)
-    },
     async mcpRegistered() {
         const claude = whichClaude()
         if (!claude) return false
@@ -405,7 +295,6 @@ export const defaultIO: InstallIO = {
         rmSync(DOCS_DIR, { recursive: true, force: true })
         const docsSrc = join(src, 'docs')
         if (existsSync(docsSrc)) cpSync(docsSrc, DOCS_DIR, { recursive: true })
-        stageSkills(src, BISMUTH_HOME)
     },
     linkCli() {
         for (const dir of LINK_DIRS) {
@@ -432,8 +321,8 @@ export const defaultIO: InstallIO = {
             warning: 'no writable PATH dir for the bismuth CLI symlink',
         }
     },
-    linkClaudeSkill() {
-        return linkAllSkillsToClaudeCode(BISMUTH_HOME, CLAUDE_SKILLS_DIR)
+    removeLegacySkills() {
+        return removeLegacySkills(BISMUTH_HOME, CLAUDE_SKILLS_DIR)
     },
     async registerMcp() {
         const claude = whichClaude()
@@ -485,7 +374,6 @@ export async function getBismuthStatus(
 ): Promise<BismuthStatus> {
     const version = io.readMarker()
     const { linked, path } = io.cliLinked()
-    const skillLinked = io.skillLinked()
     let mcpRegistered = false
     try {
         mcpRegistered = await io.mcpRegistered()
@@ -500,7 +388,6 @@ export async function getBismuthStatus(
         version,
         cliPath: path,
         cliLinked: linked,
-        skillLinked,
         mcpRegistered,
         additionalMcp,
     }
@@ -525,7 +412,9 @@ export async function registerAdditionalMcp(
 /**
  * Version-gated, idempotent ensure. `src` = the install source dir (bin/ + docs/), normally
  * BISMUTH_INSTALL_SRC. No-op when the bundled-binary hash matches the stored marker AND
- * the CLI symlink + MCP registration are present. Never throws — failures surface as warnings.
+ * the CLI symlink + MCP registration are present — apart from the legacy-skill cleanup, which
+ * runs on every non-dry pass (a machine already at the current hash still gets cleaned).
+ * Never throws — failures surface as warnings.
  */
 export async function ensureBismuthInstalled(
     src: string | undefined,
@@ -543,10 +432,10 @@ export async function ensureBismuthInstalled(
     if (
         status0.version === hash &&
         status0.cliLinked &&
-        status0.mcpRegistered &&
-        status0.skillLinked
+        status0.mcpRegistered
     ) {
-        return { action: 'up-to-date', status: status0, warnings: [] }
+        const warnings = opts.dryRun ? [] : io.removeLegacySkills()
+        return { action: 'up-to-date', status: status0, warnings }
     }
     if (opts.dryRun) {
         return {
@@ -560,8 +449,7 @@ export async function ensureBismuthInstalled(
     io.installFiles(src)
     const link = io.linkCli()
     if (link.warning) warnings.push(link.warning)
-    const skillLink = io.linkClaudeSkill()
-    warnings.push(...skillLink.warnings)
+    warnings.push(...io.removeLegacySkills())
     const mcp = await io.registerMcp()
     if (mcp.warning) warnings.push(mcp.warning)
     // Other CLIs the user LISTED in `mcp.registerWith`. Naming a CLI there is the explicit opt-in —
@@ -595,23 +483,9 @@ export async function uninstallBismuth(): Promise<{
         )
     }
     // Same reasoning as the "other CLI" registrars below: don't leave dangling
-    // ~/.claude/skills/<id> symlinks pointing at a ~/.bismuth/skills dir that's about to be
-    // deleted. Only removes OUR symlinks — a foreign entry was never touched on install, and
-    // stays untouched here too.
-    for (const id of SKILL_IDS) {
-        try {
-            const { exists, ours, path } = statSkillLink(
-                CLAUDE_SKILLS_DIR,
-                BISMUTH_HOME,
-                id,
-            )
-            if (exists && ours) unlinkSync(path)
-        } catch (e) {
-            warnings.push(
-                `failed to remove Claude Code skill link ${id}: ${e instanceof Error ? e.message : String(e)}`,
-            )
-        }
-    }
+    // ~/.claude/skills/<id> symlinks (from older builds) pointing into ~/.bismuth/skills, which is
+    // about to be deleted. Only removes OUR symlinks — a foreign entry stays untouched.
+    warnings.push(...removeLegacySkills(BISMUTH_HOME, CLAUDE_SKILLS_DIR))
     try {
         const claude = whichClaude()
         if (claude)

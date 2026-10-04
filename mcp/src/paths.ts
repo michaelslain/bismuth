@@ -1,4 +1,4 @@
-// Path-traversal guard shared by docs.ts (readDoc) and skills.ts (readSkill). No external
+// Path-traversal guard for docs.ts (readDoc). No external
 // deps — node:path only.
 
 import { resolve, sep } from 'node:path'

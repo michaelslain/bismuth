@@ -121,7 +121,7 @@ Headless tools: `bismuth render <file.draw> [--pdf] [--out FILE] [--theme dark|l
 
 ## Validate
 
-- `grep -rcE '^[[:space:]]*```[[:space:]]*draw([[:space:]]+block)?[[:space:]]*$' --include='*.md' "$OUT" | grep -v ':0$'` prints nothing (SKILL step 5 a). The pattern allows indentation (a fence inside a list item) and extra whitespace in the info string, as Bismuth's scanner does; a hit inside a longer outer fence (a quoted example) is documentation, judge it by eye. Any `UNTERMINATED` line the script printed is a fence it left in place: report the file.
+- `grep -rcE '^[[:space:]]*```[[:space:]]*draw([[:space:]]+block)?[[:space:]]*$' --include='*.md' "$OUT" | grep -v ':0$'` prints nothing (guide step 5 a). The pattern allows indentation (a fence inside a list item) and extra whitespace in the info string, as Bismuth's scanner does; a hit inside a longer outer fence (a quoted example) is documentation, judge it by eye. Any `UNTERMINATED` line the script printed is a fence it left in place: report the file.
 - Every `.draw` in `$OUT` has a non-empty `.draw.png` beside it: `find "$OUT" -name '*.draw' | while read -r f; do [ -s "$f.png" ] || echo "MISSING $f.png"; done`.
 - No `[[...draw]]` link still points at a bare `.draw` (grep from step 1 returns nothing).
 - The report lists every file with stripped fences and every drawing that failed to render.

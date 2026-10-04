@@ -75,16 +75,17 @@ describe('upsertAgentsMdBlock (pure)', () => {
     })
 })
 
-describe("Codex's composed AGENTS.md content points at the shipped skills", () => {
-    test('contains every skill name and the bismuth_skill tool', () => {
-        expect(CODEX_AGENTS_MD_CONTENT).toContain('authoring-bismuth-bases')
+describe("Codex's composed AGENTS.md content points at the docs guides", () => {
+    test('names every guide page and the bismuth_docs_read tool', () => {
+        expect(CODEX_AGENTS_MD_CONTENT).toContain('bases/authoring.md')
         expect(CODEX_AGENTS_MD_CONTENT).toContain(
-            'converting-obsidian-to-bismuth',
+            'guides/converting-obsidian-to-bismuth.md',
         )
         expect(CODEX_AGENTS_MD_CONTENT).toContain(
-            'converting-bismuth-to-obsidian',
+            'guides/converting-bismuth-to-obsidian.md',
         )
-        expect(CODEX_AGENTS_MD_CONTENT).toContain('bismuth_skill')
+        expect(CODEX_AGENTS_MD_CONTENT).toContain('bismuth_docs_read')
+        expect(CODEX_AGENTS_MD_CONTENT).not.toContain('bismuth_skill')
     })
 
     test("upsertAgentsMdBlock is idempotent on this real content, and the user's own prose survives both applications", () => {
@@ -94,7 +95,7 @@ describe("Codex's composed AGENTS.md content points at the shipped skills", () =
         expect(twice).toBe(once)
         expect(twice).toContain('# My Vault')
         expect(twice).toContain('Hand-written notes I care about.')
-        expect(twice).toContain('authoring-bismuth-bases')
+        expect(twice).toContain('bases/authoring.md')
     })
 
     test('a file with no markers gets the block appended without destroying existing content', () => {
@@ -103,7 +104,7 @@ describe("Codex's composed AGENTS.md content points at the shipped skills", () =
         expect(out).toContain('# My Vault')
         expect(out).toContain('Hand-written notes I care about.')
         expect(out).toContain('bismuth:managed:start')
-        expect(out).toContain('authoring-bismuth-bases')
+        expect(out).toContain('bases/authoring.md')
     })
 })
 

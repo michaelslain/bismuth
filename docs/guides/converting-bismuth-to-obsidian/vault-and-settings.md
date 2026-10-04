@@ -39,7 +39,7 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
 3. **Write JSON** — e.g. `mkdir -p "$OUT/.obsidian"` then `printf '{"attachmentFolderPath":"attachments"}\n' > "$OUT/.obsidian/app.json"`. Never copy `.settings` itself into the output.
 4. **Templates**: the folder named by `templates.folder` copies with the vault. Its `{{cursor}}` and offset tokens (`{{date+1w}}`) are Bismuth-only — see `other-features`.
 5. **Do not write** `.obsidian/plugins/*`, `workspace.json`, `hotkeys.json`, `community-plugins.json`. The user installs the plugins the report names; Obsidian creates the rest.
-6. **Skipped on copy** (SKILL step 1): `.settings`, `.daemon/`, `.trash/`, `.git/`. Keep `.git/` only if the user asks for history — a Bismuth backup `git add -A` would then also commit `.obsidian/`.
+6. **Skipped on copy** (guide step 1): `.settings`, `.daemon/`, `.trash/`, `.git/`. Keep `.git/` only if the user asks for history — a Bismuth backup `git add -A` would then also commit `.obsidian/`.
 
 ## Lossy
 

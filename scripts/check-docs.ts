@@ -30,9 +30,13 @@ function walk(dir: string): string[] {
     return out
 }
 
-// Pull relative .md link targets out of a markdown file (skips http(s), strips #anchors).
-function mdLinks(file: string): string[] {
-    const text = readFileSync(file, 'utf8')
+// Pull relative .md link targets out of markdown text (skips http(s), strips #anchors). Fenced
+// blocks and inline code spans are dropped first: a link shown AS AN EXAMPLE (the conversion
+// guides quote Obsidian's `[t](Other%20Note.md)`) is text, not a link, and must not be checked.
+function mdLinks(md: string): string[] {
+    const text = md
+        .replace(/^(\s*)(```+|~~~+)[^\n]*\n[\s\S]*?^\1\2[^\n]*$/gm, '')
+        .replace(/`[^`\n]+`/g, '')
     const out: string[] = []
     for (const m of text.matchAll(/\]\(([^)]+?\.md)(#[^)]*)?\)/g)) {
         const target = m[1]
@@ -48,7 +52,7 @@ function checkLinks(): string[] {
     // CLAUDE.md may link into docs/ too — include it.
     if (existsSync(join(ROOT, 'CLAUDE.md'))) files.push(join(ROOT, 'CLAUDE.md'))
     for (const f of files) {
-        for (const link of mdLinks(f)) {
+        for (const link of mdLinks(readFileSync(f, 'utf8'))) {
             const targetPath = resolve(dirname(f), link)
             if (!existsSync(targetPath))
                 broken.push(`${relative(ROOT, f)} → ${link}`)
@@ -172,6 +176,7 @@ function staleness(): string | null {
 
 export {
     checkLinks,
+    mdLinks,
     citedScripts,
     workspaceDirs,
     definedScripts,

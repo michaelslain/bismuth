@@ -33,8 +33,8 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
 ## Lossy
 
 - Case-insensitivity, numeric-tag exclusion, and Unicode inline tags.
-- Parent-tag matching: `file.hasTag("a")` stops matching `a/b`. `references/bases.md` Convert step 7 rewrites each filter to list the subtags (`file.hasTag("a", "a/b", …)`), so a subtag created later is not matched.
-- `aliases` stop doing anything for links (see `references/links-and-embeds.md`, which rewrites them).
+- Parent-tag matching: `file.hasTag("a")` stops matching `a/b`. `bases.md` Convert step 7 rewrites each filter to list the subtags (`file.hasTag("a", "a/b", …)`), so a subtag created later is not matched.
+- `aliases` stop doing anything for links (see `links-and-embeds.md`, which rewrites them).
 
 ## Validate
 

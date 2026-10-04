@@ -23,8 +23,8 @@ Bismuth resolves `[[Target]]` by exact vault path first, then by file name, case
 | `![[Note]]` | embeds the whole note body | none |
 | `![[Note#Heading]]`, `![[Note#^id]]` | still embeds the WHOLE note (fragment dropped) | report; inline the section if it matters |
 | `![[x.png]]`, `![[x.png\|300]]`, `![[x.png\|300x200]]`, `![[x.pdf#page=3]]`, audio, video | works; embeds resolve by file name anywhere in the vault | none |
-| `![[X.base]]`, `![[X.canvas]]`, `![[x.excalidraw]]` | shows a "note not found" widget | see `references/bases.md` and `references/drawings-and-canvas.md` |
-| plain link `[[X.base]]` (no `!`) | dangles once the `.base` is converted and deleted | strip `.base`: `[[X]]`, see `references/bases.md` step 3 |
+| `![[X.base]]`, `![[X.canvas]]`, `![[x.excalidraw]]` | shows a "note not found" widget | see `bases.md` and `drawings-and-canvas.md` |
+| plain link `[[X.base]]` (no `!`) | dangles once the `.base` is converted and deleted | strip `.base`: `[[X]]`, see `bases.md` step 3 |
 | `[[Note\|Alias]]` inside a markdown table | the escaped pipe `\|` yields target `Note\` and breaks the link | unverified fix; leave and report each one |
 
 ## Convert
@@ -45,7 +45,7 @@ Run each rewrite over `$OUT` only. All use perl (in-place, no backup files):
    ```bash
    find "$OUT" -name '*.md' -print0 | xargs -0 perl -pi -e 's{(?<!!)\[([^\]]+)\]\(((?!https?:)[^)#]+?)\.md(#[^)]*)?\)}{my($t,$p)=($1,$2); $p=~s/%20/ /g; "[[$p|$t]]"}ge'
    ```
-4. Re-run the unresolved-link check from SKILL.md step 5; for each remaining line fix case, add a path, or report it as lost.
+4. Re-run the unresolved-link check from the guide (`guides/converting-obsidian-to-bismuth.md`) step 5; for each remaining line fix case, add a path, or report it as lost.
 
 ## Lossy
 
@@ -55,5 +55,5 @@ Run each rewrite over `$OUT` only. All use perl (in-place, no backup files):
 
 ## Validate
 
-- The unresolved-link check in SKILL.md prints nothing. It skips code spans and fences, so a `[[x]]` example inside code is correctly not reported.
+- the unresolved-link check in the guide (`guides/converting-obsidian-to-bismuth.md`) prints nothing. It skips code spans and fences, so a `[[x]]` example inside code is correctly not reported.
 - Spot check: `bismuth graph --vault "$OUT"` lists the notes as nodes and the rewritten links as edges (`--pretty` for reading).

@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+    mdLinks,
     citedScripts,
     workspaceDirs,
     definedScripts,
@@ -129,4 +130,24 @@ test('workspace parity passes when the whole word is present', () => {
     expect(unmentionedWorkspaces('the app workspace lives at app/', ['app'])).toEqual(
         [],
     )
+})
+
+// --- mdLinks ----------------------------------------------------------------------------------
+
+test('a real relative link is extracted, anchor stripped', () => {
+    expect(mdLinks('see [x](../bases/overview.md#sources) here')).toEqual([
+        '../bases/overview.md',
+    ])
+})
+
+test('a link inside an inline code span is an example, not a link', () => {
+    expect(mdLinks('| `[t](Other%20Note.md)` | no graph edge |')).toEqual([])
+})
+
+test('a link inside a fenced block is skipped, one after the fence is not', () => {
+    expect(mdLinks('```md\n[a](a.md)\n```\n[b](b.md)\n')).toEqual(['b.md'])
+})
+
+test('backticked link TEXT does not hide the link target', () => {
+    expect(mdLinks('[`tasks.md`](guide/tasks.md)')).toEqual(['guide/tasks.md'])
 })

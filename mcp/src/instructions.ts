@@ -1,10 +1,18 @@
 // Server-level `instructions` (mcp/src/server.ts's `new Server(_, { instructions })`) — text the
-// client reads BEFORE ever calling a tool, so it's the highest-leverage spot to head off the one
-// tagging mistake agents keep making: writing a brand-new note that just embeds an image/PDF
-// (`![[paper.pdf]]`) to hold its tags, instead of using the binary's real, hidden companion note.
-// A plain exported string (not inlined in server.ts) so it's unit-testable and its size stays
-// pinned — every session on the machine loads this, so it stays terse on purpose.
+// client reads BEFORE ever calling a tool, so it's the highest-leverage spot for guidance an agent
+// must act on without being asked: the one tagging mistake agents keep making (writing a brand-new
+// note that just embeds an image/PDF, `![[paper.pdf]]`, to hold its tags, instead of using the
+// binary's real, hidden companion note), and the GUIDES to read before a task — this is the
+// trigger that replaced shipping them as Claude Code skills, and unlike a skill it reaches every
+// backend that reads MCP instructions. A plain exported string (not inlined in server.ts) so it's
+// unit-testable and its size stays pinned — every session on the machine loads this, so it stays
+// terse on purpose.
 export const SERVER_INSTRUCTIONS =
+    'EVERY time you create, edit or debug a Bismuth base (a `type: base` note, or a ```query ' +
+    'block), first read bases/authoring.md with bismuth_docs_read, then bases/authoring/<view ' +
+    'kind>.md for the kind you are writing. Converting a vault between Obsidian and Bismuth: ' +
+    'first read guides/converting-obsidian-to-bismuth.md or ' +
+    'guides/converting-bismuth-to-obsidian.md. ' +
     "An image or PDF has no frontmatter of its own — its tags/properties live in its companion " +
     'note <file>.<ext>.md (e.g. paper.pdf.md), a hidden file the app opens as the binary itself. ' +
     "To tag or set a property on a binary, run `bismuth prop set <file.pdf> tags '[\"a\",\"b\"]'` " +

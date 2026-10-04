@@ -1,14 +1,38 @@
 import { test, expect } from 'bun:test'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { SERVER_INSTRUCTIONS } from './instructions'
 import { server } from './server'
 
 // This MCP is machine-wide (mcp/server.ts loads into every session on the machine, per
 // docs/mcp/overview.md), so `instructions` — read by the client BEFORE any tool call — has to
 // stay cheap. Pinning a ceiling here means a future edit that grows it has to consciously raise
-// the number rather than drifting past "terse" one clause at a time.
+// the number rather than drifting past "terse" one clause at a time. Raised 120 → 150 when the
+// guide triggers moved here from the retired Claude Code skills (whose three descriptions cost
+// every session about as much).
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(120)
+    expect(words).toBeLessThan(150)
+})
+
+test('SERVER_INSTRUCTIONS tells an agent to read the bases guide every time it touches a base', () => {
+    expect(SERVER_INSTRUCTIONS).toMatch(/EVERY time/)
+    expect(SERVER_INSTRUCTIONS).toContain('type: base')
+    expect(SERVER_INSTRUCTIONS).toContain('bases/authoring.md')
+    expect(SERVER_INSTRUCTIONS).toContain('bases/authoring/<view kind>.md')
+})
+
+test('SERVER_INSTRUCTIONS points vault conversions at both guides', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('guides/converting-obsidian-to-bismuth.md')
+    expect(SERVER_INSTRUCTIONS).toContain('guides/converting-bismuth-to-obsidian.md')
+})
+
+// Every docs path the instructions name must exist, or the trigger sends agents to a 404.
+test('every docs page SERVER_INSTRUCTIONS names exists', () => {
+    const docs = join(import.meta.dir, '..', '..', 'docs')
+    const named = [...SERVER_INSTRUCTIONS.matchAll(/\b([a-z]+(?:\/[a-z-]+)+\.md)\b/g)].map(m => m[1])
+    expect(named.length).toBeGreaterThan(3)
+    for (const p of named) expect(existsSync(join(docs, p)), p).toBe(true)
 })
 
 test('SERVER_INSTRUCTIONS points an agent at the companion note instead of a new .md that embeds the file', () => {

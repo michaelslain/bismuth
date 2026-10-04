@@ -59,5 +59,5 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
 
 - Every note from `bismuth card all --vault "$SRC" | jq -r '.[].notePath' | sort -u` exists in `$OUT` with a `flashcards` tag still present: `grep -lE 'flashcards' "$OUT/<path>"` for each.
 - For each generated cards note: `grep -cE '^.+:::?.+' "<note>"` equals the number of rows in the source base.
-- No `view: flashcards` base remains (SKILL step 5 a).
+- No `view: flashcards` base remains (guide step 5 a).
 - The report names the **Spaced Repetition** plugin and lists the settings to apply by hand (steps 2, 3, 6).

@@ -222,19 +222,20 @@ export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
 /**
  * The content Codex's AGENTS.md-managed block carries (see ../../agentBackends/agentsMd.ts) —
  * exported so core/test/agentBackends/agentsMd.test.ts can assert on it directly rather than
- * re-deriving it. Codex has no skills mechanism of its own, so this managed block is the channel
- * it actually reads; the pointer below is how it learns about the skills under skills/ (bases authoring + the two
- * Obsidian conversions).
+ * re-deriving it. This managed block is a channel Codex reliably reads, so it repeats the MCP
+ * server instructions' guide triggers (mcp/src/instructions.ts): the bases authoring guide and the
+ * two Obsidian conversion guides, all served by `bismuth_docs_read`.
  */
 export const CODEX_AGENTS_MD_CONTENT = [
     'This is a Bismuth-managed vault: a personal knowledge base of markdown notes linked with',
     "[[wikilinks]] and #tags. Treat it as the user's second brain — read existing notes before",
     'creating new ones, and prefer linking to an existing note over duplicating its content.',
     '',
-    '**Authoring a Bismuth base?** Read the skill first: call the `bismuth_skill` MCP tool with',
-    '`{name: "authoring-bismuth-bases"}`, then `{name: "authoring-bismuth-bases", reference: "<view kind>"}`.',
+    '**Every time you create, edit or debug a Bismuth base** (a `type: base` note or a ```query block),',
+    'first call the `bismuth_docs_read` MCP tool with `{path: "bases/authoring.md"}`, then',
+    '`{path: "bases/authoring/<view kind>.md"}` for the kind you are writing.',
     '',
-    '**Converting a vault between Obsidian and Bismuth?** Read `{name: "converting-obsidian-to-bismuth"}` or `{name: "converting-bismuth-to-obsidian"}` via `bismuth_skill` first.',
+    '**Converting a vault between Obsidian and Bismuth?** First read `{path: "guides/converting-obsidian-to-bismuth.md"}` or `{path: "guides/converting-bismuth-to-obsidian.md"}` via `bismuth_docs_read`.',
 ].join('\n')
 
 /**

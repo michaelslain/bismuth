@@ -1,20 +1,25 @@
 import { describe, test, expect } from 'bun:test'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { resolveCommand } from '../src/registry'
 
-// A skill that tells an agent to run `bismuth <phrase>` for a command that does not exist (or was
-// renamed) fails at the worst moment: the agent trusts the skill. This walks every skill markdown
-// file, pulls every `bismuth ...` phrase out of code (inline spans + fenced lines) and demands the
+// A guide that tells an agent to run `bismuth <phrase>` for a command that does not exist (or was
+// renamed) fails at the worst moment: the agent was told to trust the guide (mcp/src/instructions.ts).
+// This walks every guide markdown file, pulls every `bismuth ...` phrase out of code (inline spans + fenced lines) and demands the
 // real dispatcher resolves it — resolveCommand is the SAME matcher the binary uses.
 
 const REPO_ROOT = join(import.meta.dir, '..', '..')
-const SKILLS_ROOT = join(REPO_ROOT, 'skills')
+const GUIDE_ROOTS = [
+    join(REPO_ROOT, 'docs', 'bases', 'authoring.md'),
+    join(REPO_ROOT, 'docs', 'bases', 'authoring'),
+    join(REPO_ROOT, 'docs', 'guides'),
+]
 
-function markdownFilesUnder(dir: string): string[] {
+function markdownFilesUnder(path: string): string[] {
+    if (!statSync(path).isDirectory()) return [path]
     const out: string[] = []
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-        const full = join(dir, e.name)
+    for (const e of readdirSync(path, { withFileTypes: true })) {
+        const full = join(path, e.name)
         if (e.isDirectory()) out.push(...markdownFilesUnder(full))
         else if (e.name.endsWith('.md')) out.push(full)
     }
@@ -66,10 +71,10 @@ describe('codeFragments + the phrase matcher', () => {
     })
 })
 
-describe('every `bismuth ...` command a skill shows resolves in the registry', () => {
-    test('no skill cites an unknown command', () => {
+describe('every `bismuth ...` command a guide shows resolves in the registry', () => {
+    test('no guide cites an unknown command', () => {
         const bad: string[] = []
-        for (const file of markdownFilesUnder(SKILLS_ROOT)) {
+        for (const file of GUIDE_ROOTS.flatMap(markdownFilesUnder)) {
             for (const frag of codeFragments(readFileSync(file, 'utf-8'))) {
                 for (const m of frag.matchAll(PHRASE)) {
                     const words = m[1].split(' ')

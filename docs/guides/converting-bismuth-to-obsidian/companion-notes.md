@@ -76,7 +76,7 @@ walk(root)
 console.log(`companions=${done}`)
 ```
 
-For option (a): `find "$OUT" -name '*.*.md' | while read -r f; do [ -e "${f%.md}" ] && rm "$f"; done` (the inventory loop from SKILL step 2 lists exactly these). For (c): for each companion, `grep -rl '!\[\[<binary>\]\]'` finds the notes that embed the binary; add the companion's tags to each one's `tags:` and delete the companion — only when the user asked for it.
+For option (a): `find "$OUT" -name '*.*.md' | while read -r f; do [ -e "${f%.md}" ] && rm "$f"; done` (the inventory loop from guide step 2 lists exactly these). For (c): for each companion, `grep -rl '!\[\[<binary>\]\]'` finds the notes that embed the binary; add the companion's tags to each one's `tags:` and delete the companion — only when the user asked for it.
 
 **`<file>.draw` sidecars** (ink on the binary) are handled in `drawings`: if you appended a picture, it goes into the same companion note.
 
@@ -92,4 +92,4 @@ For option (a): `find "$OUT" -name '*.*.md' | while read -r f; do [ -e "${f%.md}
 - Every binary with a companion in the inventory still has it (b) or has none (a): `find "$OUT" -name '*.*.md'` against the inventory list.
 - No scratch comment markers remain: `grep -rn '<!-- /\?scratch' --include='*.md' "$OUT"` prints nothing.
 - Under (b) each companion starts with its embed after the frontmatter, and `tags:` is unchanged (diff against `$SRC`).
-- Every `![[binary]]` resolves (SKILL step 5 c).
+- Every `![[binary]]` resolves (guide step 5 c).

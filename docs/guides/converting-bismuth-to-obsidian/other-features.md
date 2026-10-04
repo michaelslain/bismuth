@@ -169,7 +169,7 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
 - ` ```graph ` blocks are text, not pictures; `folderIcons` and tab/pane icons are gone.
 - `visibility` is only an inert property in the output; the notes are not hidden from anyone, and any the user chose to exclude are simply absent.
 - `{{cursor}}` and offset tokens (Bismuth-only).
-- Daemon memory: omitted by default; when copied, `type`, `created`, `updated` become plain properties, `[[links]]` still resolve by file name to vault notes, name clashes with vault notes are possible (the copy goes under `Memory/`, so a clash means two notes with the same basename — check SKILL step 5c). Crons, processes, identity, pages, logs and session state are **never** copied.
+- Daemon memory: omitted by default; when copied, `type`, `created`, `updated` become plain properties, `[[links]]` still resolve by file name to vault notes, name clashes with vault notes are possible (the copy goes under `Memory/`, so a clash means two notes with the same basename — check guide step 5c). Crons, processes, identity, pages, logs and session state are **never** copied.
 - A memory note can embed facts derived from a hidden note even with no link to it; the copy cannot detect that. Say so when the user opts in.
 
 ## Validate

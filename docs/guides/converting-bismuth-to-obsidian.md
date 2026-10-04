@@ -1,9 +1,6 @@
----
-name: converting-bismuth-to-obsidian
-description: Use when turning a Bismuth vault into an Obsidian vault — exporting, migrating, or handing a Bismuth vault to someone who uses Obsidian. Walks through inventorying which Bismuth features the vault uses, looking up the CURRENT Bismuth and Obsidian formats for each, converting type-base notes, bracket task fields, query blocks, drawings, companion notes and .settings into a new folder, validating the result, and reporting what was lossy.
----
-
 # Converting a Bismuth vault to Obsidian
+
+> **When to read this:** Use when turning a Bismuth vault into an Obsidian vault — exporting, migrating, or handing a Bismuth vault to someone who uses Obsidian. Walks through inventorying which Bismuth features the vault uses, looking up the CURRENT Bismuth and Obsidian formats for each, converting type-base notes, bracket task fields, query blocks, drawings, companion notes and .settings into a new folder, validating the result, and reporting what was lossy.
 
 ## The model
 
@@ -21,7 +18,7 @@ A Bismuth vault and an Obsidian vault are both just a folder of markdown. Wikili
 
 The conversion is **lossy by design** — Bismuth has more kinds of thing than Obsidian does. The goal is never to lose a thing silently: every loss goes in the report (step 6).
 
-This skill is a **procedure plus pointers**, not a copy of either format. Both Bismuth and Obsidian (and its plugins) change. Each reference carries a short snapshot dated 2026-10-03 to orient you; step 3 sends you to the live docs, and **when a snapshot and a live source disagree, the live source wins**.
+This guide is a **procedure plus pointers**, not a copy of either format. Both Bismuth and Obsidian (and its plugins) change. Each reference carries a short snapshot dated 2026-10-03 to orient you; step 3 sends you to the live docs, and **when a snapshot and a live source disagree, the live source wins**.
 
 ## Ground rules
 
@@ -38,8 +35,8 @@ This skill is a **procedure plus pointers**, not a copy of either format. Both B
 - **Needs:** `bun` (>=1.2.21), `jq`, `rsync`, `perl`, and `bismuth` (else `~/.bismuth/bin/bismuth`). Check with `bun -e 'console.log(Bun.version, Bun.YAML.parse("a: 1"))' && jq --version` (it must print a version and `{ a: 1 }`). Without bun, port the scripts to `node`.
 - **The Bismuth CLI is headless** (no server needed): `bismuth <command> --vault "$SRC"`. Output is JSON; `jq` is handy. If `bismuth` refuses with a visibility message, run it from the owner's own shell.
 
-Each reference is `references/<topic>.md`. Read one through the `bismuth_skill` tool as `bismuth_skill {name: "converting-bismuth-to-obsidian", reference: "<topic>"}`, or open the file directly:
-[vault-and-settings](references/vault-and-settings.md) · [bases](references/bases.md) · [tasks](references/tasks.md) · [flashcards](references/flashcards.md) · [drawings](references/drawings.md) · [companion-notes](references/companion-notes.md) · [other-features](references/other-features.md)
+Each reference is `guides/converting-bismuth-to-obsidian/<topic>.md`. Read one with `bismuth_docs_read {path: "guides/converting-bismuth-to-obsidian/<topic>.md"}`, or open the file directly:
+[vault-and-settings](converting-bismuth-to-obsidian/vault-and-settings.md) · [bases](converting-bismuth-to-obsidian/bases.md) · [tasks](converting-bismuth-to-obsidian/tasks.md) · [flashcards](converting-bismuth-to-obsidian/flashcards.md) · [drawings](converting-bismuth-to-obsidian/drawings.md) · [companion-notes](converting-bismuth-to-obsidian/companion-notes.md) · [other-features](converting-bismuth-to-obsidian/other-features.md)
 
 ## Workflow
 
@@ -49,9 +46,10 @@ Each reference is `references/<topic>.md`. Read one through the `bismuth_skill` 
 SRC=/path/to/bismuth-vault          # never written to
 OUT="${SRC%/}-obsidian"             # the new Obsidian vault
 command -v bismuth >/dev/null || bismuth() { if [ -x ~/.bismuth/bin/bismuth ]; then ~/.bismuth/bin/bismuth "$@"; else bun run /path/to/checkout/cli/src/index.ts "$@"; fi; }
+GUIDE=~/.bismuth/docs/guides/converting-bismuth-to-obsidian   # or <checkout>/docs/guides/converting-bismuth-to-obsidian
 
 # scripts are fences labelled "// name.ts" on their first line; pull one out (indent removed) into a file:
-awk -v n=check-links.ts '/^ *```/{if(on)exit;inf=!inf;if(inf){ind=match($0,/[^ ]/)-1;getline l;t=l;sub(/^ */,"",t);if(t=="// " n){on=1;print t}}next} on{print substr($0,ind+1)}' references/vault-and-settings.md > check-links.ts
+awk -v n=check-links.ts '/^ *```/{if(on)exit;inf=!inf;if(inf){ind=match($0,/[^ ]/)-1;getline l;t=l;sub(/^ */,"",t);if(t=="// " n){on=1;print t}}next} on{print substr($0,ind+1)}' "$GUIDE/vault-and-settings.md" > check-links.ts
 ```
 
 ### 1. Copy

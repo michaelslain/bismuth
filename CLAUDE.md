@@ -125,7 +125,7 @@ A base can also be **queried inside a note** via a ` ```query ` block — the on
 
 **Sources** (`sourceSpec.ts`, `source.ts`): every base/view resolves a `SourceSpec` to a uniform `Row[]` — `base` (recursive), `notes`, or `tasks`. Cycle-guarded + **server-side** via `POST /rows {spec}` (`rowsCache`/`tasksCache`, in-flight dedup), client SWR in `bases/rowCache.ts`. No `source:` = the base's own body rows, else every note; `source: base` with no `ref:` resolves to 0 rows on the CLI. Detail: `docs/bases/sources.md`.
 
-**Authoring**: `bismuth base create|validate|render` + the `skills/authoring-bismuth-bases` skill. `parseBaseFile` silently downgrades an invalid `view:` kind to `table`, so `base validate` reads raw frontmatter instead.
+**Authoring**: `bismuth base create|validate|render` + the agent guide `docs/bases/authoring.md` (+ `docs/bases/authoring/<kind>.md`), which the MCP server instructions tell every agent to read before touching a base. `parseBaseFile` silently downgrades an invalid `view:` kind to `table`, so `base validate` reads raw frontmatter instead.
 
 ### Calendar (`app/src/calendar/` + `app/src/bases/CalendarView.tsx`)
 
@@ -183,7 +183,7 @@ Project-wide, and they **override framework habits**. Every agent working in `ap
 
 ## Module Organization
 
-Bun `workspaces` in the root `package.json`: `core` is named `@bismuth/core` but has no package entry point — `app`/`cli`/`daemon` import it by relative path (`../../core/src/…`); `mcp` deliberately never imports it. Add a dep with `cd <workspace> && bun add <package>`; `bun install` at root syncs all. Purposes are in **Architecture** above. **Per-file map: `docs/contributing/codebase-map.md`** (not exhaustive — newer `app/src/bases`/`editor`/`chat` files may be missing). Non-workspace top-level dirs: `bench/` (the visual gate), `skills/` (three agent skills shipped to all 10 backends), `scripts/` (gate + docs check).
+Bun `workspaces` in the root `package.json`: `core` is named `@bismuth/core` but has no package entry point — `app`/`cli`/`daemon` import it by relative path (`../../core/src/…`); `mcp` deliberately never imports it. Add a dep with `cd <workspace> && bun add <package>`; `bun install` at root syncs all. Purposes are in **Architecture** above. **Per-file map: `docs/contributing/codebase-map.md`** (not exhaustive — newer `app/src/bases`/`editor`/`chat` files may be missing). Non-workspace top-level dirs: `bench/` (the visual gate), `scripts/` (gate + docs check).
 
 ## Development Workflow
 
@@ -224,7 +224,7 @@ On iPad/iOS the Bun HTTP server can't run, so the app runs the **same core logic
 
 ### MCP Integration (`mcp/` workspace)
 
-A stdio MCP server serving the `docs/` reference + `bismuth` CLI **token-frugally**: 6 always-on tools (`bismuth_docs_{list,search,read}`, `bismuth_cli`, `bismuth_cli_help`, `bismuth_skill`) + 3 daemon-gated memory tools (`remember`/`recall`/`forget`). **Dev**: auto-attaches per-tab via relay's `.mcp.json`. **Bundled app**: installed machine-wide on boot (`core/src/bismuthInstall.ts`). **App control** adds **ZERO new MCP tools** — it rides `bismuth_cli` via the `app` group → core's `/ui/*` WS (plus the headless `page` group for inbox pages). Detail: `docs/mcp/{overview,app-control}.md`.
+A stdio MCP server serving the `docs/` reference + `bismuth` CLI **token-frugally**: 5 always-on tools (`bismuth_docs_{list,search,read}`, `bismuth_cli`, `bismuth_cli_help`) + 3 daemon-gated memory tools (`remember`/`recall`/`forget`). **Dev**: auto-attaches per-tab via relay's `.mcp.json`. **Bundled app**: installed machine-wide on boot (`core/src/bismuthInstall.ts`). **App control** adds **ZERO new MCP tools** — it rides `bismuth_cli` via the `app` group → core's `/ui/*` WS (plus the headless `page` group for inbox pages). **No skills, no slash commands**: agent guides (`docs/bases/authoring.md`, `docs/guides/converting-*.md`) are plain docs pages, and the trigger to read one is `mcp/src/instructions.ts`'s `SERVER_INSTRUCTIONS` ("EVERY time you … a base, first read bases/authoring.md"), which every client receives before its first tool call — a new guide = a docs page + one instructions line. Detail: `docs/mcp/{overview,app-control}.md`.
 
 ### Relay Integration (`relay/` workspace + `core/src/relay.ts`)
 

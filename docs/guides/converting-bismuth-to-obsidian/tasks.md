@@ -122,7 +122,7 @@ console.log(`tasks=${seen} rewritten=${changed}`)
 Run `bun run rewrite-tasks.ts "$OUT"`. Then:
 
 1. **Check the order and emoji against the live Tasks docs** (Sources above) — the script encodes the 2026-10-03 snapshot. If the plugin added or reordered a field, edit `DATE_ORDER`/`DATE`/`PRIORITY` before running.
-2. **Compare counts**: `tasks=` must equal `bismuth task list --vault "$SRC" | jq length` (SKILL step 5d). A difference means a note you generated or a file the walk skipped (dot-folders); fenced checkboxes are counted on both sides — find it before going on. Expected extra: tasks converted from a `mode: tasks` base's stored body rows (`bases`, item B7) are new checkbox lines the source's `task list` never counted.
+2. **Compare counts**: `tasks=` must equal `bismuth task list --vault "$SRC" | jq length` (guide step 5d). A difference means a note you generated or a file the walk skipped (dot-folders); fenced checkboxes are counted on both sides — find it before going on. Expected extra: tasks converted from a `mode: tasks` base's stored body rows (`bases`, item B7) are new checkbox lines the source's `task list` never counted.
 3. **A recurring task** keeps Bismuth's rule text: `[every week]` → `🔁 every week`. Rules Bismuth rolls over (`every day|N days|week|N weeks|month|N months|year|N years|weekday`) are also Tasks rules; others (`every other day`, `every week on Sunday`, `when done`) pass through verbatim and the plugin may read them differently — list every non-standard rule in the report.
 4. **Statuses**: `[/]` and `[-]` are copied as-is. If they do not render as in-progress / cancelled in Obsidian, follow the Statuses page.
 5. **` ```query ` blocks with `tasks:`** → a ` ```tasks ` block. Legacy bodies are Tasks-plugin lines: copy the `tasks:` value (a single line, or a `|-` block scalar) as the block body, one query line each — **except the `done` / `not done` lines**, which Bismuth reads as `note.resolved` / `!note.resolved` (done OR cancelled, `core/src/bases/taskDsl.ts`), so they translate as in the table below, not verbatim. Every other legacy line copies as is. The modern form translates leaf by leaf:
@@ -153,11 +153,11 @@ Run `bun run rewrite-tasks.ts "$OUT"`. Then:
 
 ## Validate
 
-- `grep` for bracket fields on checkbox lines returns 0 (SKILL step 5 a). Hits whose date is not a real calendar day (`[due 2026-02-30]`) are legitimate text; to separate them, pipe the grep through this filter, which prints only the lines that are still real fields (expected: nothing):
+- `grep` for bracket fields on checkbox lines returns 0 (guide step 5 a). Hits whose date is not a real calendar day (`[due 2026-02-30]`) are legitimate text; to separate them, pipe the grep through this filter, which prints only the lines that are still real fields (expected: nothing):
   ```bash
   <the step 5 a task grep> | bun -e 'for (const l of (await Bun.stdin.text()).split("\n")) { const bad = [...l.matchAll(/\[(?:due|scheduled|start|done|created|cancelled) (\d{4})-(\d{2})-(\d{2})\]/g)].some(m => new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDate() !== +m[3]); if (l && !bad) console.log(l) }'
   ```
   A line it prints is a missed conversion. A line with an impossible date it hides goes in the report as "left as text".
-- `tasks=` equals the source's `bismuth task list` count (SKILL step 5 d).
+- `tasks=` equals the source's `bismuth task list` count (guide step 5 d).
 - Spot-check three converted lines against the Emoji Format page: emoji order, one space between fields, date `YYYY-MM-DD`.
 - The report names the **Tasks** plugin as required.

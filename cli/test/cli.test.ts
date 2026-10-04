@@ -5054,9 +5054,9 @@ test('`bismuth backends --json --installed` only includes installed backends', a
 //
 // Both write MACHINE-WIDE state with NO env-var seam to redirect them into a temp dir the way
 // every other command group in this file is sandboxed: core/src/bismuthInstall.ts hardcodes
-// BISMUTH_HOME = join(homedir(), ".bismuth") and CLAUDE_SKILLS_DIR = join(homedir(), ".claude",
-// "skills") at module scope. A real `install` (with --src, or --mcp) writes there and calls the
-// real `claude mcp add`; `uninstall` unconditionally rmSync()s ~/.bismuth. Per the task's hard
+// BISMUTH_HOME = join(homedir(), ".bismuth") at module scope (and the legacy-skill cleanup it
+// runs on every install touches ~/.claude/skills/ too). A real `install` (with --src, or --mcp)
+// writes there and calls the real `claude mcp add`; `uninstall` unconditionally rmSync()s ~/.bismuth. Per the task's hard
 // constraint, neither may be run for real against this developer's machine — skipped.
 //
 // Mocking core/src/bismuthInstall.ts (the pattern used above for `daemon stop`/`daemon restart`
