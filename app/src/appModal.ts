@@ -12,6 +12,7 @@ export type AppModal =
     | 'bismuth-install'
     | 'edit-dictionary'
     | 'gcal-connect'
+    | 'status-trust'
 
 /** What is left open after `which` asks to close. Only the modal actually showing can close
  *  itself: the command palette runs a command and THEN calls its onClose, so when that command

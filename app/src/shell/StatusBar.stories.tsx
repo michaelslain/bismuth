@@ -186,3 +186,69 @@ export const NarrowBar: Story = {
         </div>
     ),
 }
+
+const customSegments = [
+    { id: 'location', builtin: 'location' as const, align: 'left' as const, text: '' },
+    { id: 'files', align: 'right' as const, text: 'files: 412' },
+    { id: 'due', align: 'right' as const, text: '3 due', tone: 'gold' as const },
+    { id: 'daemon', builtin: 'daemon' as const, align: 'right' as const, text: '' },
+]
+
+/** Configured segments: location left; `files: 412`, a gold `3 due` and the daemon readout right.
+ *  Custom segments read as more `label: value` readouts — faint unless toned, bar gap only. */
+export const CustomSegments: Story = {
+    render: () => <StatusBar {...base} segments={customSegments} />,
+}
+
+/** A `run:` segment the owner has not approved yet — command truncated at 24 characters, then
+ *  `[ allow ]` in the accent; the tooltip names the full command. */
+export const UntrustedRun: Story = {
+    render: () => (
+        <StatusBar
+            {...base}
+            onTrust={noop}
+            segments={[
+                { id: 'location', builtin: 'location', align: 'left', text: '' },
+                {
+                    id: 'branch',
+                    align: 'left',
+                    text: '',
+                    untrusted: { command: 'git branch --show-current --verbose' },
+                },
+                { id: 'daemon', builtin: 'daemon', align: 'right', text: '' },
+            ]}
+        />
+    ),
+}
+
+/** 360px with a long location, two custom right-side segments and the daemon readout: the
+ *  location yields first; the daemon readout and caret stay whole. */
+export const NarrowCustom: Story = {
+    render: () => (
+        <div style={{ width: '360px', border: '1px solid var(--border-soft)' }}>
+            <StatusBar
+                {...base}
+                location={longLocation}
+                segments={[
+                    { id: 'location', builtin: 'location', align: 'left', text: '' },
+                    { id: 'files', align: 'right', text: 'files: 412' },
+                    { id: 'due', align: 'right', text: '3 due', tone: 'gold' },
+                    { id: 'daemon', builtin: 'daemon', align: 'right', text: '' },
+                ]}
+            />
+        </div>
+    ),
+}
+
+/** Segments with no daemon builtin: no `daemon:` readout and so no caret either. */
+export const NoDaemonBuiltin: Story = {
+    render: () => (
+        <StatusBar
+            {...base}
+            segments={[
+                { id: 'location', builtin: 'location', align: 'left', text: '' },
+                { id: 'files', align: 'right', text: 'files: 412' },
+            ]}
+        />
+    ),
+}

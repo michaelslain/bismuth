@@ -149,7 +149,7 @@ Each is routed by `PaneContent.tsx` and has its own docs page.
 
 ### Panes / Tabs
 
-A tab's content is a `panes.ts` Leaf/Split tree; each Leaf holds a note path or a `tabIds.ts` sentinel, per-window layout keyed by `windowId.ts`. **The Knowledge Graph is the home tab.** `::graph` (`GRAPH_TAB`) is first-class content routed to `GraphView` via `App`'s `renderGraph()`; `App` seeds one when nothing is restored and reopens one if all tabs close (tabs never empty). **Tab renaming**: double/right-click → Rename sets a custom `name` on the `Leaf`, overriding `contentLabel()`.
+A tab's content is a `panes.ts` Leaf/Split tree; each Leaf holds a note path or a `tabIds.ts` sentinel, per-window layout keyed by `windowId.ts`. **The Knowledge Graph is the default home tab** (`homePage:` overrides it). `::graph` (`GRAPH_TAB`) is first-class content routed to `GraphView` via `App`'s `renderGraph()`; `App` seeds one when nothing is restored and reopens one if all tabs close (tabs never empty). **Tab renaming**: double/right-click → Rename sets a custom `name` on the `Leaf`, overriding `contentLabel()`.
 
 ### Commands & Sidebar Toolbar
 
@@ -157,6 +157,8 @@ Commands and keybindings are both **pure data in `core/` + a binding in `app/`**
 
 - **Commands**: `core/src/commands.ts` (`COMMAND_CATALOG`, 51 entries → the `toolbar.command` enum) + `app/src/commands.ts` (`bindCommands` → a live `{id,label,icon,action}` map); the bar above the file tree is `toolbar:` in `.settings`, where an item's `commands:` list is a **fallback** (first resolvable id runs). `interactive: true` = the action only OPENS a modal; `UI_CONTROL_BLOCKLIST` bars a few from app control. **Adding one:** `COMMAND_CATALOG` + an `action` in `bindCommands`. Ref: `docs/settings/toolbar-commands.md`.
 - **Keybindings**: `core/src/keybindings.ts` (`KEYBINDING_CATALOG`, 52 entries) + `app/src/keybindings.ts` (`matchesKeybinding`). App.tsx's global handler is catalog-driven bar two deliberate literals (`keybindingCoverage.test.ts`). `"Mod"` = Cmd/Ctrl; `"Ctrl"`/`"Cmd"`/`"Meta"` are separate EXACT tokens; matching is exact, on the produced key OR `event.code`. Transient widgets share `ui-dismiss`/`ui-confirm` via `ui/widgetKeys.ts`. Ref: `docs/settings/keybindings.md`.
+
+**Status bar**: `statusBar:` in `.settings` — ordered segments (builtin / `{token}` text / query count / approved shell `run:`), served by owner-only `GET /status-bar`; `homePage:` picks what a new tab opens (empty = graph). Ref: `docs/settings/status-bar.md`.
 
 **Runtime backend base** (`app/src/api.ts`): `resolveBase` picks `?api=<url>` > `window.__BISMUTH_API__` > `VITE_API_BASE` > `:4321`, so one build serves many windows.
 

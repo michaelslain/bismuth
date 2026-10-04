@@ -12,9 +12,9 @@ For lifecycle, frontend-store, and CSS-projection details, see the [Settings Ove
 
 The schema is a nested object. Top-level keys, in canonical alphabetical-set membership (the test asserts exactly this set):
 
-`appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `keybindings`, `localModel`, `mcp`, `properties`, `server`, `srs`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
+`appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `homePage`, `keybindings`, `localModel`, `mcp`, `properties`, `server`, `srs`, `statusBar`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
 
-The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `localModel`, `mcp`, `codex`, `srs`, `templates`, `properties`, `folderIcons`, `folderVisibility`, `toolbar`, `tabBar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
+The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `localModel`, `mcp`, `codex`, `srs`, `templates`, `properties`, `folderIcons`, `folderVisibility`, `toolbar`, `tabBar`, `statusBar`, `homePage`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
 
 ### Property types
 
@@ -681,6 +681,41 @@ tabBar:
     icon: Share2
   - command: new-claude-chat
     icon: MessageSquare
+```
+
+---
+
+## `statusBar`
+
+The bottom status bar, in order. Each item is a built-in readout, a `{token}` template, a query count, or a shell command. Full guide: [status-bar.md](status-bar.md).
+
+- **Type:** a list of objects. Use ONE of `builtin`, `text`, `query`, `run` per item.
+- **Default:** the built-in layout (`location`, `connection`, `inbox`, `daemon`); with no `statusBar` key the bar is unchanged.
+
+| Field | Type | Description |
+|---|---|---|
+| `builtin` | enum `location` `connection` `inbox` `daemon` | A built-in readout. |
+| `text` | string | Text with `{tokens}`: `{files}` `{notes}` `{folders}` `{tags}` `{tasks.open}` `{tasks.done}` `{tasks.due}` `{tasks.overdue}` `{date}`, plus `{count}` with `query` and `{output}` with `run`. |
+| `query` | object `{source, ref, where}` | Count rows; `source` is `notes`, `tasks` or `base`; `ref` is a base as `"[[Name]]"`; `where` is a Bases filter expression. |
+| `run` | string | A shell command run in the vault folder; first output line is `{output}`. Runs only after `[ allow ]` is clicked, once per command per machine. |
+| `every` | number (min 5) | Seconds between re-runs of `run` (default 60). |
+| `align` | enum `left` `right` | Which end of the bar. |
+| `tone` | enum | Text colour token. |
+| `command` | command id | Command run when the segment is clicked. |
+| `tooltip` | string | Hover text. |
+| `icon` | icon | Lucide icon name or emoji shown before the text. |
+
+---
+
+## `homePage`
+
+What a new tab (Cmd+T), first launch and closing the last tab open. Empty (the default) = the knowledge graph. Point it at a note to make your own home page. See [status-bar.md](status-bar.md).
+
+- **Type:** `{ kind: "path", only: "file" }`
+- **Default:** `""`
+
+```yaml
+homePage: Home.md
 ```
 
 ---

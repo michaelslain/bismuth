@@ -14,7 +14,7 @@
 // open-folder — these need FileAccess extended with create/move/delete + a
 // settings writer, tracked as the next increment. Also NOT_SUPPORTED: every
 // /daemon/* write (cron/process toggle, cron run, cron/process create, cron/process
-// delete) — the HTTP server owner-gates these (they mutate the shared daemon
+// delete) and POST /status-bar/trust (it writes the machine trust store) — the HTTP server owner-gates these (they mutate the shared daemon
 // machine dir, not the vault, and CORS is `*`), and the in-process transport has no
 // notion of an owner channel at all, so it refuses them outright rather than
 // silently running unauthenticated.
@@ -45,7 +45,10 @@ import { searchVault } from './search'
 import { replaceInVault } from './replace'
 import { todayISO } from './dates'
 import { fileBasename } from './pathUtils'
+import { parse as parseYaml } from 'yaml'
 import { AppError } from './error'
+import { normalizeStatusBar } from './statusBarItems'
+import { evaluateStatusBar, countTree } from './statusBarEval'
 import { DEFAULTS as SETTINGS_DEFAULTS } from './schema/settingsSchema'
 import type { SourceSpec } from './bases/types'
 import type { ReviewResponse } from './srs/types'
@@ -136,6 +139,27 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 // First cut: schema defaults (no settings.yaml reconcile/merge yet — a
                 // documented follow-up). The app store seeds from these and stays usable.
                 return SETTINGS_DEFAULTS
+            case 'GET /status-bar': {
+                // parses .settings itself: readSettings is bound to Bun fs, which mobile lacks
+                const raw = await readOrNull('.settings')
+                let statusBar: unknown
+                if (raw !== null) {
+                    try {
+                        statusBar = (parseYaml(raw) as Record<string, unknown> | null)
+                            ?.statusBar
+                    } catch {
+                        statusBar = undefined
+                    }
+                }
+                return {
+                    segments: await evaluateStatusBar(normalizeStatusBar(statusBar), {
+                        root: vault,
+                        countFiles: async () => countTree(await access.listTree(vault)),
+                        run: async () => ({ error: 'shell segments are desktop-only' }),
+                        isTrusted: () => true,
+                    }),
+                }
+            }
             case 'GET /schema':
                 return { properties: {} }
             case 'GET /templates':
@@ -435,6 +459,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
             case 'POST /daily-note':
             case 'POST /backup':
             case 'POST /open-folder':
+            case 'POST /status-bar/trust':
             // ---- daemon writes: owner-gated on the HTTP server; this transport has no
             // owner-channel concept at all, so refuse rather than run unauthenticated ----
             case 'POST /daemon/cron/toggle':

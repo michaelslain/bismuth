@@ -161,7 +161,12 @@ import {
     setFolderIcon,
     setFolderVisibility,
     readDailyNotes,
+    readSettings,
 } from './settings'
+import { normalizeStatusBar } from './statusBarItems'
+import { evaluateStatusBar, countTree } from './statusBarEval'
+import { createStatusRunner } from './statusBarRun'
+import { hasHiddenChars, isCommandTrusted, trustCommand } from './statusBarTrust'
 import {
     resolveVisibility,
     resolveFolderVisibility,
@@ -564,6 +569,10 @@ export function createServer(cfg: CoreConfig) {
     const tasksCache = createAsyncCache<Row[]>(() =>
         buildTaskRows(cfg.vault, undefined),
     )
+    // ONE runner for the server's life so a `run:` item's `every` cache spans requests.
+    const statusRunner = createStatusRunner({ vault: cfg.vault })
+    const statusItems = async () =>
+        normalizeStatusBar((await readSettings(cfg.vault))?.data.statusBar)
     let version = 0
     const sse = createSseRegistry()
 
@@ -1701,6 +1710,40 @@ export function createServer(cfg: CoreConfig) {
         'GET /settings': async (_, __) => {
             // Parsed app settings (file merged over defaults) for frontend hydration.
             return ok(await serializeSettingsForFrontend(cfg.vault))
+        },
+
+        // Owner-only: a `run:` segment's output is arbitrary shell output and a query segment's count
+        // is derived from the whole vault (hidden notes included), neither filterable per path.
+        'GET /status-bar': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const segments = await evaluateStatusBar(await statusItems(), {
+                root: cfg.vault,
+                vaultRows: () => rowsCache.get(),
+                vaultTasks: () => tasksCache.get(),
+                countFiles: async () => countTree(await treeCache.get()),
+                run: statusRunner,
+                isTrusted: command => isCommandTrusted(cfg.vault, command),
+            })
+            return ok({ segments })
+        },
+
+        // Owner-only approval of a `run:` command. The command must equal a `run` in the vault's
+        // CURRENT statusBar, so an owner click can only ever approve what .settings actually holds.
+        'POST /status-bar/trust': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const body = (await req.json().catch(() => ({}))) as { command?: unknown }
+            const command = body.command
+            if (typeof command !== 'string' || !command)
+                return error('missing command', 400)
+            if (!(await statusItems()).some(i => i.run === command))
+                return error('command is not in the vault statusBar', 400)
+            if (hasHiddenChars(command))
+                return error(
+                    'command contains newlines or bidi control characters and cannot be approved',
+                    400,
+                )
+            trustCommand(cfg.vault, command)
+            return ok({ ok: true })
         },
 
         'GET /schema': async (_, __) => {

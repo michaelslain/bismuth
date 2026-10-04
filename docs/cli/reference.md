@@ -491,6 +491,12 @@ bismuth settings deny-list --channel chat --vault ~/vault --pretty   # owner, ch
 BISMUTH_AGENT_CHANNEL=daemon bismuth settings deny-list --vault ~/vault   # agent → count only
 ```
 
+### `settings status-bar`
+Preview the bottom [status bar](../settings/status-bar.md): reads `statusBar:` from `.settings`, evaluates every item and prints `{ segments: StatusSegment[] }` as JSON (`--pretty` supported). Headless — no server needed. Text/query segments render their final `text`; builtins carry placement only (`text: ""`). A `run:` segment executes **only if the owner already approved that exact command** on this machine (the trust file, `~/.bismuth/trusted-commands.json` or `BISMUTH_TRUST_FILE`); otherwise it is reported as `untrusted: { command }` with empty `text`. This command never approves anything — the owner clicks `[ allow ]` in the app. A failing item has `error` set and never blocks the others.
+```bash
+bismuth settings status-bar --vault ~/vault --pretty
+```
+
 ### `folder-icon <folder> <icon> [--clear]`
 Set (or, with `--clear`, clear) a folder's icon in `.settings` (`setFolderIcon(vault, folder, clear ? null : icon)`). Prints `{ ok: true }`. The args are validated: a missing `<folder>` always fails (`usage: folder-icon <folder> <icon> [--clear]`), and a missing `<icon>` fails the same way **unless** `--clear` is passed (clearing needs no icon).
 ```bash
@@ -1070,7 +1076,7 @@ bismuth chat search "vault schema" --pretty
 | `base create` `base read` `base validate` `base render` `rows` `row add` `row update` `row delete` `row reorder` `base migrate-queries` | base.ts | yes | JSON / `{ok:true}` |
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true,path}` |
-| `settings get` `settings set` `settings schema` `settings deny-list` `folder-icon` `folder-visibility` | settings.ts | yes | JSON / `{ok:true}` |
+| `settings get` `settings set` `settings schema` `settings deny-list` `settings status-bar` `folder-icon` `folder-visibility` | settings.ts | yes | JSON / `{ok:true}` |
 | `calendar bases/create/list/range/day/get/search/overlaps/add/move/delete/override/delete-occurrence` + `calendar categories` + `calendar category add/update/remove` | calendar.ts | yes | JSON / `{ok:true}` |
 | `daemon status/devices/owner/install/setup/update/stop/restart` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
 | `daemon graph` `daemon cron toggle/run/create/delete` `daemon process toggle/create/delete` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |

@@ -18,12 +18,18 @@ import {
     getVaultSchema,
     setFolderIcon,
     setFolderVisibility,
+    readSettings,
 } from '../../../core/src/settings'
 import {
     resolveDenyPlan,
     type VisibilityChannel,
 } from '../../../core/src/visibility'
 import { cliAgentChannel } from '../../../core/src/visibilityCliGate'
+import { listTree } from '../../../core/src/files'
+import { normalizeStatusBar } from '../../../core/src/statusBarItems'
+import { evaluateStatusBar, countTree } from '../../../core/src/statusBarEval'
+import { createStatusRunner } from '../../../core/src/statusBarRun'
+import { isCommandTrusted } from '../../../core/src/statusBarTrust'
 
 /** Walk a dotted path into a value; returns undefined if any segment is missing. */
 function walkPath(obj: unknown, path: string): unknown {
@@ -105,6 +111,22 @@ export const commands: CommandMap = {
                     : { channel, determined: true, count: plan.entries.length },
                 args,
             )
+        },
+    },
+    'settings status-bar': {
+        summary:
+            'Preview the bottom status bar: the evaluated segments of `statusBar:` as JSON. Runs only shell commands the owner already approved; never approves one',
+        run: async args => {
+            const vault = requireVault(args)
+            const settings = await readSettings(vault)
+            const items = normalizeStatusBar(settings?.data.statusBar)
+            const segments = await evaluateStatusBar(items, {
+                root: vault,
+                countFiles: async () => countTree(await listTree(vault)),
+                run: createStatusRunner({ vault }),
+                isTrusted: command => isCommandTrusted(vault, command),
+            })
+            out({ segments }, args)
         },
     },
     'folder-icon': {

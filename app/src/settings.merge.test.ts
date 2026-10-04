@@ -54,4 +54,14 @@ describe('mergeServerSettings', () => {
             DEFAULTS.toolbar,
         )
     })
+
+    it('hydrates the top-level scalar homePage; a wrong type keeps the default', () => {
+        expect(mergeServerSettings({ homePage: 'Home.md' }).homePage).toBe('Home.md')
+        expect(mergeServerSettings({ homePage: 3 }).homePage).toBe('')
+        expect(mergeServerSettings({}).homePage).toBe('')
+    })
+
+    it('replaces statusBar wholesale (no index-overlay against the 4-item default)', () => {
+        expect(mergeServerSettings({ statusBar: [{ text: 'x' }] }).statusBar).toEqual([{ text: 'x' }])
+    })
 })

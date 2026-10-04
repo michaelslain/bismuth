@@ -7,6 +7,7 @@
 import type { CommandMap } from '../types'
 import { flag, positionals, fail, out } from '../args'
 import { call, resolveCore } from '../http'
+import { cliAgentChannel } from '../../../core/src/visibilityCliGate'
 
 export const commands: CommandMap = {
     api: {
@@ -18,6 +19,13 @@ export const commands: CommandMap = {
             if (!method || !path)
                 fail(
                     "usage: bismuth api <GET|POST|PUT> <path> [--json '<body>']",
+                )
+            if (
+                cliAgentChannel() !== 'owner' &&
+                path.replace(/^\/+/, '').startsWith('status-bar/trust')
+            )
+                fail(
+                    'refused: approving a status bar command is the user decision; ask them to click [ allow ] in the bar',
                 )
             const raw = flag(args, 'json')
             let body: unknown

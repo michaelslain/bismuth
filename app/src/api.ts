@@ -133,6 +133,7 @@ import type { ActivityEvent } from '../../core/src/daemonActivity'
 import type { DaemonPage, ResolveResult } from '../../core/src/daemonPages'
 import type { MigrationReport } from '../../core/src/taskMigrateRun'
 import type { TaskPatch } from '../../core/src/taskEdit'
+import type { StatusSegment } from '../../core/src/statusBarEval'
 import type { InstallStatus, SetupResult } from '../../core/src/daemonInstall'
 import type {
     BismuthStatus,
@@ -438,6 +439,13 @@ const rowsInflight = new Map<
 >()
 
 export const api = {
+    /** The bottom bar's evaluated segments (GET /status-bar). */
+    statusBar: async (): Promise<StatusSegment[]> =>
+        (await getJson<{ segments: StatusSegment[] }>('/status-bar')).segments,
+    /** Approve a `run:` status command on this machine (owner only). */
+    trustStatusCommand: async (command: string): Promise<void> => {
+        await post('/status-bar/trust', { command })
+    },
     graph: () => getJson<GraphData>('/graph'),
     // The daemon page's crons + background services + liveness for this vault.
     daemonSnapshot: () => getJson<DaemonSnapshot>('/daemon/snapshot'),

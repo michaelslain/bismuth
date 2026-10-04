@@ -216,6 +216,13 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Params:** none.
 - **Response:** the property registry parsed from `.settings`'s `properties:` block (`getVaultSchema`), for note validation + autocomplete. Read fresh on demand — editing `.settings` (via `PUT /file`) refreshes this without a restart. Example: `{ due: { type: "date" }, rating: { type: "number" } }`.
 
+### `GET /status-bar`
+- **Params:** none.
+- **Action:** `evaluateStatusBar(normalizeStatusBar(settings.statusBar), ...)` over the vault's `.settings` `statusBar:` list (absent/invalid → the four builtin segments). Query segments read the shared `rowsCache`/`tasksCache`; `{files}`/`{folders}`/`{notes}` come from `listTree`. `run:` items go through ONE server-lifetime `createStatusRunner`, so a command's `every` cache spans requests; an unapproved command is reported as `untrusted` and never spawned.
+- **Response:** `{ segments: StatusSegment[] }` (`core/src/statusBarEval.ts`). Per-item failures become `error` on that segment, never a failed request.
+- **Visibility:** blanket owner-only — `403 "forbidden"` for any non-owner request (run output and vault-wide counts cannot be filtered per path). See [Visibility gating](#visibility-gating).
+- **Cache/SSE:** none. The in-process (iPad) backend answers the same route with `run` segments reporting `shell segments are desktop-only`.
+
 ### `GET /chat/sessions`
 - **Params:** `?scope=<user|daemon|all>` (optional; absent/unknown → `user`, via `parseChatScope`).
 - **Action:** `listChatSessions(cfg.vault, undefined, scope)`. The SDK's session store unifies the user's **terminal Claude Code sessions AND in-app chat sessions** for the vault cwd — so this picker surfaces both. `scope` filters out (or, for `daemon`, filters IN) the sessions the vault's daemon minted — the dedicated place to access daemon chats.
@@ -380,6 +387,13 @@ Four routes over the running `opencode serve` (the shared server in `core/src/ch
 - **Response:** `{ url: <new server URL>, vault: <resolved folder> }`. The frontend opens a window with `?api=<url>`.
 - **Errors:** `AppError("EINVAL", "no memory dir configured", 400)` if neither a body `memory` nor `cfg.memory` is set.
 - **Cache/SSE:** none (read-only w.r.t. THIS vault — only launches a new process).
+
+### `POST /status-bar/trust`
+- **Body:** `{ command: string }`.
+- **Action:** `trustCommand(cfg.vault, command)` (per-machine approval file, `BISMUTH_TRUST_FILE` or `~/.bismuth/trusted-commands.json`, keyed by vault realpath + sha256 of the command). `400` unless `command` equals some `run` in the vault's current normalized `statusBar`, so an approval can only cover what `.settings` holds right now. `400` if the command contains `\n`, `\r`, U+202A–U+202E or U+2066–U+2069 (`hasHiddenChars`).
+- **Response:** `{ ok: true }`.
+- **Visibility:** blanket owner-only — `403` for any non-owner request (an agent must not be able to approve its own shell command). `NOT_SUPPORTED` on the in-process backend.
+- **Cache/SSE:** none.
 
 ### Relay ingest (`POST /relay/*`)
 Posted by the relay plugin's hooks loaded per-session inside app terminals. They update the in-process agent registry — **not** the vault — so they live in the read table (no cache invalidation). All are best-effort; a `400` is silently swallowed client-side. All return `{ ok: true }` on success.
@@ -776,6 +790,8 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/config` | read | no |
 | GET | `/settings` | read | no |
 | GET | `/schema` | read | no |
+| GET | `/status-bar` | read | no |
+| POST | `/status-bar/trust` | read | no |
 | GET | `/chat/sessions` | read | no |
 | GET | `/chat/session-messages` | read | no |
 | POST | `/chat/search` | read | no |

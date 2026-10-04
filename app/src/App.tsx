@@ -7,6 +7,7 @@ import {
     Index,
     createMemo,
     createEffect,
+    on,
     Show,
     Suspense,
     lazy,
@@ -42,7 +43,8 @@ import { settingsToCssVars, setCssVars } from './settingsCssVars'
 import { resolveAppearance } from './themes'
 import { matchesKeybinding, toMenuAccelerator } from './keybindings'
 import { initZoom, zoomIn, zoomOut, zoomReset } from './zoom'
-import { lastChange, currentConnectionState } from './serverVersion'
+import { lastChange, currentConnectionState, serverVersion } from './serverVersion'
+import { serverErrorText } from './serverError'
 import { debounce } from './debounce'
 import { ToastHost, pushToast, dismissToast, updateToast } from './Toast'
 import { applyUpdateAndRelaunch } from './updateCheck'
@@ -52,6 +54,7 @@ import { DaemonOwnerModal } from './DaemonOwnerModal'
 import { DaemonSetupModal } from './DaemonSetupModal'
 import { BismuthInstallModal } from './BismuthInstallModal'
 import { GcalConnectModal } from './GcalConnectModal'
+import StatusTrustDialog from './shell/StatusTrustDialog'
 import { EditDictionaryModal } from './EditDictionaryModal'
 import { UpdateBanner } from './UpdateBanner'
 import { refreshDaemonPages, anyWorking, dueCount } from './daemonInbox'
@@ -97,6 +100,8 @@ import { chatTitle } from './chatTitles'
 import { chatOrigin, chatOriginIcon } from './chatOrigin'
 import { isExportable } from './export/formats'
 import { createBootGate } from './bootGate'
+import { homeContent, retargetSeed } from './homePage'
+import { createStatusBarFeed } from './shell/statusBarFeed'
 import { publishEditorTabs } from './chatContext'
 import {
     connectUiControl,
@@ -377,15 +382,39 @@ export default function App() {
         }
         restored = restore
     }
-    // The Knowledge Graph is the home tab: there's no separate floating "default view" anymore, so
-    // when nothing is restored we open with the graph AS a tab. The no-empty-state effect keeps this
+    // The home tab (`homeContent(settings.homePage)`, the graph by default) is a real tab: there's no
+    // separate floating "default view", so when nothing is restored we open with it. The no-empty-state effect keeps this
     // invariant (a graph tab always exists) at runtime.
     const initialTabs =
-        restored.tabs.length > 0 ? restored.tabs : [makeTab(GRAPH_TAB)]
+        restored.tabs.length > 0 ? restored.tabs : [makeTab(homeContent(settings.homePage))]
     const [tabs, setTabs] = createSignal<Tab[]>(initialTabs)
     const [activeTabId, setActiveTabId] = createSignal<string | null>(
         restored.activeTabId ?? initialTabs[0]?.id ?? null,
     )
+    // The seed above read settings.homePage from the cross-vault localStorage seed, before GET
+    // /settings landed. Once the real settings hydrate, retarget the seeded home tab, but only
+    // while it is still exactly as seeded (the user has not navigated it).
+    if (restored.tabs.length === 0) {
+        const seedId = initialTabs[0].id
+        const seedContent = homeContent(settings.homePage)
+        createEffect(
+            on(
+                settingsHydrated,
+                hydrated => {
+                    if (!hydrated) return
+                    const want = homeContent(settings.homePage)
+                    setTabs(ts =>
+                        ts.map(t => {
+                            if (t.id !== seedId || t.root.kind !== 'leaf') return t
+                            const next = retargetSeed(t.root.content, seedContent, want)
+                            return next === undefined ? t : { ...t, root: { ...t.root, content: next } }
+                        }),
+                    )
+                },
+                { defer: true },
+            ),
+        )
+    }
 
     const activeTab = createMemo(
         () => tabs().find(t => t.id === activeTabId()) ?? null,
@@ -1006,12 +1035,13 @@ export default function App() {
         setActiveTabId(tab.id)
         recordNav(tab.root.id, content)
     }
-    // New Tab (Cmd+T): ALWAYS a fresh graph home tab — never focuses an existing graph tab.
+    // New Tab (Cmd+T): ALWAYS a fresh home tab (settings.homePage, else the graph) — never focuses an existing one.
     const newTab = () => {
-        const tab = makeTab(GRAPH_TAB)
+        const content = homeContent(settings.homePage)
+        const tab = makeTab(content)
         setTabs(ts => [...ts, tab])
         setActiveTabId(tab.id)
-        recordNav(tab.root.id, GRAPH_TAB)
+        recordNav(tab.root.id, content)
     }
     const openSettings = () => openTool(SETTINGS_FILE)
     const openTerminal = () =>
@@ -1270,6 +1300,17 @@ export default function App() {
     const editDictionaryOpen = () => modal() === 'edit-dictionary'
     const openEditDictionary = () => openModal('edit-dictionary')
     // "Connect Google Calendar" panel — OAuth connect/disconnect/status for two-way sync.
+    // The `run:` command awaiting approval in the status-trust dialog (shell/StatusTrustDialog).
+    const [pendingTrust, setPendingTrust] = createSignal('')
+    const confirmTrust = () => {
+        const command = pendingTrust()
+        closeModal('status-trust')
+        api.trustStatusCommand(command)
+            .then(() => statusFeed.refresh())
+            .catch(e =>
+                pushToast(`couldn't approve command: ${serverErrorText(e)}`),
+            )
+    }
     const gcalConnectOpen = () => modal() === 'gcal-connect'
     const openGcalConnect = () => openModal('gcal-connect')
     // "Sync Google Calendar" command — two-way sync with the configured base.
@@ -1591,11 +1632,12 @@ export default function App() {
             const i = ts.findIndex(t => t.id === id)
             if (i === -1) return ts
             const next = ts.filter(t => t.id !== id)
-            // Never fall back to an empty state: closing the last tab reopens the graph home tab in its
+            // Never fall back to an empty state: closing the last tab reopens the home tab (`homeContent(settings.homePage)`, the graph by default) in its
             // place (atomic, so there's no flash of the old main-pane default view).
             if (next.length === 0) {
-                const home = makeTab(GRAPH_TAB)
-                recordNav(home.root.id, GRAPH_TAB)
+                const content = homeContent(settings.homePage)
+                const home = makeTab(content)
+                recordNav(home.root.id, content)
                 setActiveTabId(home.id)
                 return [home]
             }
@@ -2173,6 +2215,12 @@ export default function App() {
                 : { ...node, a: walk(node.a), b: walk(node.b) }
         setTabs(ts => ts.map(t => ({ ...t, root: walk(t.root) })))
     }
+
+    const statusFeed = createStatusBarFeed({
+        fetch: () => api.statusBar(),
+        version: serverVersion,
+        config: () => JSON.stringify(settings.statusBar),
+    })
 
     onMount(() => {
         // Dismiss the boot splash (index.html) on the app SHELL's own first painted frame — not the
@@ -3390,6 +3438,13 @@ export default function App() {
                             onClose={() => closeModal('gcal-connect')}
                         />
                     </Show>
+                    <Show when={modal() === 'status-trust'}>
+                        <StatusTrustDialog
+                            command={pendingTrust()}
+                            onConfirm={confirmTrust}
+                            onCancel={() => closeModal('status-trust')}
+                        />
+                    </Show>
                     <Show when={paneMenu()}>
                         {m => (
                             <ContextMenu
@@ -3468,6 +3523,12 @@ export default function App() {
                     inboxCount={dueCount()}
                     onCopyLocation={copyStatusLocation}
                     onOpenInbox={openDaemon}
+                    segments={statusFeed.segments()}
+                    onRunCommand={id => void commands().get(id)?.action()}
+                    onTrust={command => {
+                        setPendingTrust(command)
+                        openModal('status-trust')
+                    }}
                 />
             }
         />

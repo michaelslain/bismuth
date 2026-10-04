@@ -166,6 +166,8 @@ const PATH_SCOPED_COMMANDS = new Set([
 const COMPOUND_OVERRIDES: Record<string, CommandTier> = {
     'checkpoint advance': 'always-safe',
     'checkpoint ref': 'always-safe',
+    // The status bar preview can count notes by a `query` filter, which leaks counts of hidden notes.
+    'settings status-bar': 'refuse-when-restricted',
 }
 
 /**

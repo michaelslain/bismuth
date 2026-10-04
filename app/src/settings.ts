@@ -197,6 +197,8 @@ export interface Settings {
         icon: string
         tooltip?: string
     }>
+    statusBar: Array<Record<string, unknown>> // the bottom bar's items (core/src/statusBarItems.ts)
+    homePage: string // note a new tab / first launch opens; '' = the knowledge graph
     dailyNotes: Array<{
         id: string
         label: string
@@ -284,6 +286,11 @@ export function mergeServerSettings(parsed: unknown): Settings {
 
     for (const section of Object.keys(out)) {
         const stored = p[section]
+        // Top-level scalar settings (e.g. `homePage`): take the stored value when its type matches.
+        if (typeof out[section] !== 'object') {
+            if (typeof stored === typeof out[section]) out[section] = stored
+            continue
+        }
         if (!stored || typeof stored !== 'object') continue
         // Top-level list settings (e.g. `toolbar`) are whole-leaf values, not nested
         // sections: replace wholesale when the server sends an array (honoring an

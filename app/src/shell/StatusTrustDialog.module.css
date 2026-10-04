@@ -1,0 +1,36 @@
+.panel {
+    width: min(520px, 92vw);
+}
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
+}
+
+.command {
+    margin: 0;
+    padding: var(--sp-6);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    font-family: var(--ui-font-stack);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 40vh;
+    overflow-y: auto;
+}
+
+.command[data-suspicious] {
+    border-color: var(--warning);
+}
+
+.mark {
+    color: var(--warning);
+    padding: 0 0.35ch;
+    font-weight: bold;
+    background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.refuse {
+    color: var(--warning);
+}

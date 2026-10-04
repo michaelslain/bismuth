@@ -655,6 +655,17 @@
     "max": 0.01,
     "required": false
   },
+  "homePage": {
+    "type": {
+      "kind": "path",
+      "only": "file",
+      "scope": null
+    },
+    "default": "",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings": {
     "type": {
       "kind": "object"
@@ -1172,6 +1183,33 @@
     "default": 130,
     "min": 50,
     "max": 250,
+    "required": false
+  },
+  "statusBar": {
+    "type": {
+      "kind": "list",
+      "item": {
+        "kind": "object"
+      }
+    },
+    "default": [
+      {
+        "builtin": "location"
+      },
+      {
+        "builtin": "connection"
+      },
+      {
+        "builtin": "inbox",
+        "align": "right"
+      },
+      {
+        "builtin": "daemon",
+        "align": "right"
+      }
+    ],
+    "min": null,
+    "max": null,
     "required": false
   },
   "tabBar": {

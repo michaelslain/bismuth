@@ -162,6 +162,10 @@ describe('decideCliGate', () => {
             expect(decideCliGate([cmd, 'x'], RESTRICTED).allowed).toBe(false)
         }
     })
+    test('`settings status-bar` refuses when restricted; other settings commands stay safe', () => {
+        expect(commandTier(['settings', 'status-bar'])).toBe('refuse-when-restricted')
+        expect(commandTier(['settings', 'get'])).toBe('always-safe')
+    })
     test('an UNKNOWN command refuses — a future CLI command must not fail open', () => {
         // The whole point of inverting the denylist: this build cannot know what the CLI grows next.
         expect(

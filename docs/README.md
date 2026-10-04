@@ -131,6 +131,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Keybindings](settings/keybindings.md) — shortcut syntax + catalog
 - [Toolbar & commands](settings/toolbar-commands.md) — toolbar config + command catalog
 - [Themes](settings/themes.md) — theme/palette/fonts
+- [Status bar & home page](settings/status-bar.md) — the configurable bottom bar (token text, query counts, approved shell commands) and the `homePage` a new tab opens
 
 ## Graph & terminal
 

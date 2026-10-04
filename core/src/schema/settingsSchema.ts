@@ -8,6 +8,12 @@ import type { Schema, SchemaEntry, PropertyType } from './types'
 import { COMMAND_IDS } from '../commands'
 import { KEYBINDING_CATALOG } from '../keybindings'
 import {
+    DEFAULT_STATUS_BAR,
+    STATUS_BUILTINS,
+    STATUS_QUERY_SOURCES,
+    STATUS_TONES,
+} from '../statusBarItems'
+import {
     CATEGORY_SWATCHES,
     THEME_NAMES as THEME_NAME_TUPLE,
 } from '../theme/tokens'
@@ -836,6 +842,81 @@ export const SETTINGS_SCHEMA: Schema = {
             { command: 'new-claude-chat', icon: 'MessageSquare' },
         ],
         doc: 'Buttons in the tab bar (right of the tab strip), in order. Same shape as `toolbar`.',
+    },
+    statusBar: {
+        type: {
+            kind: 'list',
+            item: {
+                kind: 'object',
+                fields: {
+                    builtin: {
+                        type: enumType([...STATUS_BUILTINS]),
+                        doc: 'A built-in readout: location (focused file path), connection (shown only while disconnected), inbox, daemon. Use ONE of builtin:, text:, query:, run:.',
+                    },
+                    text: {
+                        type: 'string',
+                        doc: 'Text with {tokens}: {files} {notes} {folders} {tags} {tasks.open} {tasks.done} {tasks.due} {tasks.overdue} {date}, plus {count} with query: and {output} with run:. e.g. "files: {files}".',
+                    },
+                    query: {
+                        type: {
+                            kind: 'object',
+                            fields: {
+                                source: {
+                                    type: enumType([...STATUS_QUERY_SOURCES]),
+                                    doc: 'notes, tasks, or base.',
+                                },
+                                ref: {
+                                    type: 'string',
+                                    doc: 'A base as "[[Name]]" — the base to count (source: base), or the base whose notes to scope to (notes/tasks).',
+                                },
+                                where: {
+                                    type: 'string',
+                                    doc: 'A Bases filter expression, e.g. status == "reading" or date(due) <= today().',
+                                },
+                            },
+                        },
+                        doc: 'Count rows from the vault; the number is {count} (shown alone when text: is omitted).',
+                    },
+                    run: {
+                        type: 'string',
+                        doc: 'A shell command, run in the vault folder; its first output line is {output}. Runs only after you click [ allow ] in the bar, once per command per machine.',
+                    },
+                    every: {
+                        type: 'number',
+                        min: 5,
+                        doc: 'Seconds between re-runs of run: (default 60).',
+                    },
+                    align: {
+                        type: enumType(['left', 'right']),
+                        doc: 'Which end of the bar (default right; location/connection default left).',
+                    },
+                    tone: {
+                        type: enumType([...STATUS_TONES]),
+                        doc: 'Text colour.',
+                    },
+                    command: {
+                        type: {
+                            kind: 'enum',
+                            values: COMMAND_IDS,
+                            allowPrefixes: ['daily-note:'],
+                        },
+                        doc: 'A command to run when the segment is clicked.',
+                    },
+                    tooltip: { type: 'string', doc: 'Hover text.' },
+                    icon: {
+                        type: 'icon',
+                        doc: 'Lucide icon name or emoji shown before the text.',
+                    },
+                },
+            },
+        },
+        default: DEFAULT_STATUS_BAR,
+        doc: 'The bottom status bar, in order. Each item is a built-in readout, a {token} template, a query count, or a shell command. See docs/settings/status-bar.md.',
+    },
+    homePage: {
+        type: { kind: 'path', only: 'file' },
+        default: '',
+        doc: 'What a new tab (Cmd+T), first launch and closing the last tab open. Empty = the knowledge graph. Point it at a note to make your own home page.',
     },
     // Daily-note types. Each registers a `daily-note:<id>` command (see core/commands)
     // that you reference from `toolbar` to get a button. Pressing it opens today's note

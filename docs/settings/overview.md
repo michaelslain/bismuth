@@ -432,6 +432,10 @@ tabBar:
     icon: MessageSquare
 ```
 
+### `statusBar` and `homePage`
+
+The bottom bar is a list of segments (`statusBar:`), and `homePage:` picks the note a new tab opens. Both are documented in [Status bar & home page](status-bar.md).
+
 ### `dailyNotes`
 
 A YAML sequence of daily-note type configurations. Each entry must have `id` (non-empty) and `fileName` (non-empty); other fields have defaults. Malformed items are dropped; an explicit empty list is honored.
