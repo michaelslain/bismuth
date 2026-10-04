@@ -17,8 +17,8 @@ import {
 } from '@codemirror/commands'
 import { startCompletion, acceptCompletion } from '@codemirror/autocomplete'
 import { markdown } from '@codemirror/lang-markdown'
-import { languages } from '@codemirror/language-data'
 import { syntaxHighlighting, indentUnit } from '@codemirror/language'
+import { codeLanguages } from '../editor/codeLanguages'
 import { taskCompletion } from '../editor/autocomplete'
 import { api } from '../api'
 import { onServerChange } from '../serverVersion'
@@ -158,7 +158,7 @@ export function CardEditor(props: {
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     // remove IndentedCode so a 4-space-indented line stays prose, not a code block.
                     markdown({
-                        codeLanguages: languages,
+                        codeLanguages,
                         extensions: [{ remove: ['IndentedCode'] }],
                     }),
                     syntaxHighlighting(codeHighlightStyle),

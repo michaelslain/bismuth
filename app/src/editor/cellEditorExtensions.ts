@@ -18,7 +18,6 @@
 // headless-tested `.ts`.
 import type { Extension } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
-import { languages } from '@codemirror/language-data'
 import { syntaxHighlighting } from '@codemirror/language'
 import type { CompletionContext } from '@codemirror/autocomplete'
 import { toggleBold, toggleItalic } from './markdownFormat'
@@ -29,6 +28,7 @@ import { latexHighlightTheme } from './latexHighlight'
 import { vaultCompletion } from './autocomplete'
 import { completionTheme } from './completionDisplay'
 import { codeHighlightStyle } from './codeHighlight'
+import { codeLanguages } from './codeLanguages'
 import { buildSettingsKeymap } from './settingsKeymap'
 import type { NoteCandidate } from './wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
@@ -100,7 +100,7 @@ export function markdownEditingExtensions(
         ]),
         // `remove: ["IndentedCode"]` keeps a 4-space-indented line prose, not a code block.
         markdown({
-            codeLanguages: languages,
+            codeLanguages,
             extensions: [{ remove: ['IndentedCode'] }],
         }),
         // Enter continues list/blockquote markup, else a plain newline (no stray auto-indent).

@@ -36,6 +36,9 @@ export const codeHighlightStyle = HighlightStyle.define([
         tag: [
             t.function(t.variableName),
             t.function(t.propertyName),
+            // A legacy (stream) mode's `builtin` token — MATLAB's `sum`, a shell's `echo` — so a
+            // builtin call reads like a call in a lezer language (Python's `len(` is a function).
+            t.standard(t.variableName),
             t.labelName,
         ],
         color: 'var(--blue)',

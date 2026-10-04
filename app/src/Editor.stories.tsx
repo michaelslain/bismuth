@@ -164,6 +164,46 @@ export const NewNote: Story = {
     ),
 }
 
+const CODE_LANGUAGES_TEXT = [
+    '```python',
+    'def mean(xs: list[float]) -> float:',
+    '    # average of a list',
+    '    return sum(xs) / len(xs)',
+    '```',
+    '',
+    '```matlab',
+    'function y = mean_of(x)',
+    '    % average of a vector',
+    "    y = sum(x) / numel(x);",
+    "    disp('done')",
+    'end',
+    '```',
+    '',
+].join('\n')
+
+/** Fence info strings resolve through `editor/codeLanguages.ts`: ```python is a stock name, and
+ *  ```matlab is an alias added there for the stock Octave mode (without it the block rendered as
+ *  plain text). Both blocks should show keyword / string / comment colours. */
+export const CodeLanguages: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Code Languages.md': CODE_LANGUAGES_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Code Languages.md"
+                    initialText={CODE_LANGUAGES_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+}
+
 // `.settings` (SETTINGS_FILE, app/src/tabIds.ts) is the ONE path `isSettingsBuffer()` matches —
 // the only vault-root file that opens through the schema-validated app-settings branch rather
 // than a plain `.yaml` note. A handful of real top-level keys so settingsCompletion/yamlSchema
