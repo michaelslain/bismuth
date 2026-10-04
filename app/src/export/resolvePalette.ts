@@ -139,6 +139,13 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
             lsDisplay: text('--ls-display', dt.lsDisplay),
             lsLabel: text('--ls-label', dt.lsLabel),
         }
+        // Code size / prose size, read back against a known 100px through a real property for
+        // the same reason the type steps are: a custom property reads back as its specified text.
+        const codeScale =
+            px(
+                'calc(100px * var(--code-scale) * var(--mono-scale, 1))',
+                dp.codeScale * 100,
+            ) / 100
 
         const chrome =
             scheme === 'dark'
@@ -169,6 +176,7 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
             proseFont,
             monoFont,
             proseLeading,
+            codeScale,
             type,
         }
     } catch {

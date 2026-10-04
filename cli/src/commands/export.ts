@@ -24,7 +24,11 @@ import { katexInlineCss } from '../katexCss'
 import { docFontInlineCss } from '../docFontCss'
 import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
-import { DEFAULT_PALETTE, PROSE_SCALE } from '../../../app/src/export/exportTheme'
+import {
+    DEFAULT_PALETTE,
+    PROSE_SCALE,
+    CODE_SCALE,
+} from '../../../app/src/export/exportTheme'
 import { readSettings } from '../../../core/src/settings'
 import {
     FONT_STACKS,
@@ -70,6 +74,7 @@ async function buildPaletteOverride(
             editorFontSize?: number
             uiFont?: string
             proseFont?: string
+            monoScale?: number
         }
     }
     const lineHeight = data.editor?.lineHeight ?? DEFAULT_LINE_HEIGHT
@@ -94,6 +99,8 @@ async function buildPaletteOverride(
     return {
         ...DEFAULT_PALETTE[theme],
         proseLeading,
+        // global.css's --code-scale times appearance.monoScale, as settingsCssVars.ts projects it.
+        codeScale: CODE_SCALE * (data.appearance?.monoScale ?? 1),
         monoFont: stack(
             data.appearance?.uiFont,
             DEFAULT_PALETTE[theme].monoFont,

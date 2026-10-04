@@ -1,6 +1,6 @@
 // app/src/export/htmlTemplate.ts
 import { escapeHtml } from '../htmlEscape'
-import { DEFAULT_PALETTE, PROSE_SCALE } from './exportTheme'
+import { DEFAULT_PALETTE } from './exportTheme'
 import { headingSizes } from './types'
 import type { ThemePalette } from './types'
 import { CALLOUT_TYPES } from '../editor/callout'
@@ -88,11 +88,12 @@ function styles(
     // Half a rule of SEPARATION between two stacked formulas, split across the two margins,
     // which do not collapse on an inline-block. Whole px so every line box stays an integer.
     const katexGap = Math.round(rule / 4)
-    // The MONO size. Prose renders at --prose-scale (see exportTheme.ts's PROSE_SCALE, measured
-    // 1.04) times the editor size for optical parity with the mono beside it, so anything pulled
-    // back to mono divides that out rather than inheriting the scaled size — which is the app's
-    // rule, not an approximation.
-    const editorPx = prose ? Math.round(bodySizePx / PROSE_SCALE) : bodySizePx
+    // The MONO size — the app's --code-font-size, prose size x --code-scale x --mono-scale
+    // (p.codeScale). Code at the FULL prose size read visibly bigger than the editor shows it:
+    // at equal size Monaspace runs ~24% wider than the serif. A non-prose document (a base's
+    // visual export) is already set in the mono UI face, so there is nothing to step down from.
+    const codeRatio = prose ? p.codeScale : 1
+    const codePx = Math.round(bodySizePx * codeRatio * 100) / 100
     const bodyFont = prose ? p.proseFont : p.font
     // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
     // via the export UI). Left off, the document keeps its intrinsic browser sizing so the html
@@ -229,8 +230,10 @@ ${headingRules}
      scoping global.css's Editor.css section applies in the app, not a guess at what looks code-ish. Its list is
      cm-codeblock, cm-inline-code, cm-code-header, cm-code-lang, cm-code-numbered, cm-frontmatter,
      cm-fm-key, cm-math, cm-math-src, cm-inline-math, cm-list-marker, cm-syntax-mark, cm-tag and
-     cm-task-field — and BOTH the family and the SIZE reset, because prose is set at --prose-scale
-     times the editor size and mono does not want that optical compensation.
+     cm-task-field — and BOTH the family and the SIZE reset, to --code-font-size: a step below
+     the prose, because at equal size the mono reads bigger and heavier than the serif.
+     INLINE code is the exception, as it is in the app (--fs-rel-code): the same ratio in em, so
+     code inside a heading or a table cell scales with the text around it.
      (Those names are written without their leading dots on purpose: a CSS comment ends at the
      first star-slash, and an earlier draft wrote the math classes as one glob, which closed this
      comment early and made the browser silently drop the entire rule below. The emitted file still
@@ -244,8 +247,9 @@ ${headingRules}
   .bismuth-tag,
   .bismuth-cell-list .bismuth-tag {
     font-family: ${p.monoFont};
-    font-size: ${editorPx}px;
+    font-size: ${codePx}px;
   }
+  :not(pre) > code { font-size: ${codeRatio}em; }
   code { background: ${p.head}; padding: 0.1em 0.35em; border-radius: 4px; }
   pre code { background: none; padding: 0; }
   /* Matches the app's .cm-quote (editor/livePreview.ts): a 2px rule, 8px of padding and a

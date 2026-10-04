@@ -5,7 +5,12 @@ import {
     FONT_STACKS,
     PROSE_SCALES,
 } from '../src/settings'
-import { DEFAULT_PROSE_FONT, PROSE_SCALE } from '../src/export/exportTheme'
+import { readFileSync } from 'node:fs'
+import {
+    DEFAULT_PROSE_FONT,
+    PROSE_SCALE,
+    CODE_SCALE,
+} from '../src/export/exportTheme'
 
 test('loadSettings returns defaults for null / malformed / non-object input', () => {
     expect(loadSettings(null)).toEqual(DEFAULTS)
@@ -50,4 +55,11 @@ test("the headless export's prose mirrors match the default prose face", () => {
     const face = DEFAULTS.appearance.proseFont
     expect(DEFAULT_PROSE_FONT).toBe(FONT_STACKS[face]!)
     expect(PROSE_SCALE).toBe(PROSE_SCALES[face]!)
+})
+
+test("the headless export's code scale mirrors global.css's --code-scale", () => {
+    const css = readFileSync(new URL('../src/global.css', import.meta.url), 'utf8')
+    const m = /--code-scale:\s*([\d.]+)\s*;/.exec(css)
+    expect(m).not.toBeNull()
+    expect(CODE_SCALE).toBe(Number(m![1]))
 })

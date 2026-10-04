@@ -542,9 +542,44 @@ describe('mono scoping and embedded faces', () => {
         expect(rule).toContain('.fmatter')
         expect(rule).toContain('.bismuth-tag')
         expect(rule).toMatch(/font-family:\s*'Monaspace Xenon'/)
-        // The mono SIZE too: prose is --prose-scale x the editor size and mono does not take that
-        // optical compensation, so inheriting the scaled size would render code too large.
-        expect(rule).toMatch(/font-size:\s*\d+px/)
+        // The mono SIZE too: --code-font-size, a step below the prose (10pt body here).
+        const body = (10 * 96) / 72
+        const size = Number(/font-size:\s*([\d.]+)px/.exec(rule)?.[1])
+        expect(size).toBeCloseTo(body * DEFAULT_PALETTE.dark.codeScale, 1)
+    })
+
+    test('code steps below the prose by the palette code scale, and follows monoScale', () => {
+        // Code at the full prose size read far bigger than the editor shows it: at equal size the
+        // mono runs ~24% wider than the serif. The app sets it at prose x --code-scale x
+        // --mono-scale, and so must the export.
+        const sized = (codeScale: number) => {
+            const css = wrapHtmlDocument(
+                '<p>x</p>',
+                'N',
+                { ...DEFAULT_PALETTE.dark, proseLeading: 1.25, codeScale },
+                '',
+                12,
+                false,
+                true,
+            )
+            const rule = /pre, pre code, code,[\s\S]*?\{[^}]*\}/.exec(css)?.[0] ?? ''
+            return {
+                px: Number(/font-size:\s*([\d.]+)px/.exec(rule)?.[1]),
+                inline: /:not\(pre\) > code \{ font-size: ([\d.]+)em; \}/.exec(css)?.[1],
+            }
+        }
+        const body = 16 // 12pt
+        expect(sized(0.89).px).toBeCloseTo(body * 0.89, 1)
+        expect(sized(0.89).px).toBeLessThan(body)
+        expect(sized(0.89 * 0.8).px).toBeCloseTo(body * 0.89 * 0.8, 1)
+        // Inline code is RELATIVE, like --fs-rel-code, so it scales inside a heading.
+        expect(sized(0.89).inline).toBe('0.89')
+    })
+
+    test('a non-prose export (a base view, already mono) keeps code at the body size', () => {
+        const css = wrapHtmlDocument('<p>x</p>', 'N', DEFAULT_PALETTE.dark, '', 12)
+        const rule = /pre, pre code, code,[\s\S]*?\{[^}]*\}/.exec(css)?.[0] ?? ''
+        expect(rule).toMatch(/font-size:\s*16px/)
     })
 
     test('no CSS comment closes itself early, which silently drops the rule after it', () => {

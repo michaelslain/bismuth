@@ -43,6 +43,10 @@ export const PROSE_SCALE = 1
 // for serif body text" that editor.lineHeight's own schema doc cites, at PROSE_SCALE's measured
 // value above.
 const DEFAULT_PROSE_LEADING = 22.5 / (13.5 * PROSE_SCALE)
+// Mirrors global.css's --code-scale (code size / prose size) at appearance.monoScale's default of
+// 1. A literal for the same reason as the mirrors above; app/test/settings.test.ts pins it to the
+// stylesheet.
+export const CODE_SCALE = 0.89
 
 // The app's note type scale: the fixed design STEPS from global.css's `styles/tokens.css` section,
 // not six resolved
@@ -84,6 +88,7 @@ function paletteFromScope(theme: ExportTheme): ThemePalette {
         monoFont: DEFAULT_MONO_FONT,
         proseFont: DEFAULT_PROSE_FONT,
         proseLeading: DEFAULT_PROSE_LEADING,
+        codeScale: CODE_SCALE,
         type: DEFAULT_TYPE_SCALE,
     }
 }
