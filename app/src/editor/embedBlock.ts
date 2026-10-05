@@ -24,6 +24,8 @@ import { api } from '../api'
 import { renderMarkdown } from '../bases/markdown'
 import { stripFrontmatter } from '../bases/cardBodySplit'
 import { MONO_FONT } from './livePreview'
+import { mountSolid, disposeSolid } from './solidWidget'
+import PdfEmbed from './PdfEmbed'
 import {
     type EmbedKind,
     type EmbedSpec,
@@ -107,21 +109,28 @@ class EmbedWidget extends WidgetType {
                     img.style.maxHeight = '1.4em'
             }
         } else if (s.kind === 'pdf' && s.src) {
-            const frame = document.createElement('iframe')
-            frame.className = 'cm-embed-pdf'
-            // PDF open-parameters: hide the browser viewer's toolbar + nav/thumbnail sidebar
-            // (otherwise the thumbnail pane dominates a small inline embed). Keep #page if set.
-            const params = [
-                s.page,
-                'toolbar=0',
-                'navpanes=0',
-                'view=FitH',
-            ].filter(Boolean)
-            frame.src = `${s.src}#${params.join('&')}`
-            wrap.appendChild(frame)
+            // The app's own pdf.js page stack (editor/PdfEmbed.tsx), never an `<iframe>`: the
+            // webview's native viewer ignores `#toolbar=0` and floats its own grey toolbar.
+            const src = s.src
+            mountSolid(wrap, () =>
+                PdfEmbed({
+                    load: () =>
+                        fetch(src).then(r => {
+                            if (!r.ok) throw new Error(`HTTP ${r.status}`)
+                            return r.arrayBuffer()
+                        }),
+                    name: s.target ?? '',
+                    page: s.page,
+                    cacheKey: src,
+                }),
+            )
             if (this.resizable) {
                 this.makeResizable(wrap) // a PDF viewport isn't tied to a fixed aspect
                 wrap.style.width = s.width ? `${s.width}px` : '100%'
+                wrap.style.height = `${s.height ?? 520}px`
+            } else {
+                // Inline (mid-sentence) PDF: no resize grip, but still a fixed-height block box.
+                wrap.style.display = 'block'
                 wrap.style.height = `${s.height ?? 520}px`
             }
         } else if (s.kind === 'html' && s.src) {
@@ -286,6 +295,11 @@ class EmbedWidget extends WidgetType {
         wrap.textContent = `⚠ ${msg}`
     }
 
+    /** Dispose a mounted Solid face (the PDF embed); a no-op for every plain-DOM kind. */
+    destroy(dom: HTMLElement): void {
+        disposeSolid(dom)
+    }
+
     // Keep media interactive (PDF scroll, audio/video controls).
     ignoreEvent(): boolean {
         return true
@@ -439,8 +453,10 @@ function commitEmbedSize(
 }
 
 // Elements that keep their OWN click instead of revealing the source: native audio/video
-// controls, a PDF's iframe, an in-body link (note transclusion), and the resize handle.
-const EMBED_KEEP_OWN_CLICK = 'audio, video, iframe, a, .cm-embed-handle'
+// controls, a PDF's page stack + page readout (`data-embed-own-click`, PdfEmbed.tsx), an html
+// embed's iframe, an in-body link (note transclusion), and the resize handle.
+const EMBED_KEEP_OWN_CLICK =
+    'audio, video, iframe, a, .cm-embed-handle, [data-embed-own-click]'
 
 /** A plain click on an embed's rendered chrome (the image itself, a note transclusion's title,
  *  etc.) drops the cursor onto its source so decorationsFor's cursor check reveals the raw
@@ -497,14 +513,7 @@ const embedTheme = EditorView.theme({
         'max-width': '100%',
         'border-radius': '4px',
     },
-    '.cm-embed-pdf': {
-        width: '100%',
-        height: '520px',
-        border: '1px solid var(--border)',
-        'border-radius': '8px',
-        background: 'var(--surface-2)',
-    },
-    // HTML artifact iframe — same chrome as the PDF iframe (border + rounded + surface bg).
+    // HTML artifact iframe — border + rounded + surface bg.
     '.cm-embed-html': {
         width: '100%',
         height: '520px',
@@ -546,11 +555,6 @@ const embedTheme = EditorView.theme({
         overflow: 'hidden',
         'max-width': '100%',
         'box-sizing': 'border-box',
-    },
-    '.cm-embed-resizable .cm-embed-pdf': {
-        width: '100%',
-        height: '100%',
-        display: 'block',
     },
     '.cm-embed-resizable .cm-embed-html': {
         width: '100%',

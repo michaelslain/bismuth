@@ -67,6 +67,14 @@ export function altSize(alt: string): { alt: string; width?: number } {
     return m ? { alt: alt.slice(0, pipe), width: +m[1] } : { alt }
 }
 
+/** A PDF embed's `page=3` fragment → 2 (0-based); no `page=N`, or N < 1 → undefined. */
+export function pageIndexFromFragment(frag?: string): number | undefined {
+    const m = /(?:^|&)page=(\d+)/.exec(frag ?? '')
+    if (!m) return undefined
+    const n = Number.parseInt(m[1], 10)
+    return n >= 1 ? n - 1 : undefined
+}
+
 /** Build an EmbedSpec from a `![[target#frag|alias]]` inner string, or null to skip. */
 export function specForWikiEmbed(
     inner: string,
@@ -79,7 +87,7 @@ export function specForWikiEmbed(
     if (kind === 'note') return { kind, target }
     const src = assetUrl(target) // backend resolves filename-first
     if (kind === 'image') return { kind, src, alt: target, ...parseSize(alias) }
-    if (kind === 'pdf') return { kind, src, page: heading }
+    if (kind === 'pdf') return { kind, src, target, page: heading }
     // html reuses the wikilink `#heading` slot as the iframe URL fragment (deep-link, mirrors pdf).
     if (kind === 'html') return { kind, src, page: heading }
     return { kind, src }
@@ -103,7 +111,7 @@ export function specForMarkdownImage(
     const kind = kindForTarget(target)
     if (kind === null) return null // .draw — not embeddable (scanEmbeds drops a null spec)
     const src = assetUrl(target)
-    if (kind === 'pdf') return { kind, src, page: frag }
+    if (kind === 'pdf') return { kind, src, target, page: frag }
     if (kind === 'html') return { kind, src, page: frag } // `![](viz.html#region=form)` deep-links too
     if (kind === 'audio' || kind === 'video') return { kind, src }
     return { kind: 'image', src, alt, width } // image, or a non-media ext we can only try as an image

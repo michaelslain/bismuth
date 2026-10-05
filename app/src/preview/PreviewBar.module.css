@@ -38,18 +38,6 @@
   transform: scaleX(-1);
 }
 
-/* The zoom percentage between − and +: tabular digits in a fixed-ish width so the cluster does not
-   jitter as the digit count changes, and a little air so `−`/`+` do not read as touching the
-   number (the air is the label's own box, so the control-to-control gap stays --bar-icon-gap).
-   `Label` renders a plain (inline) span, so `text-align: center` is what centres the digits —
-   `justify-content` only affects a flex/grid box and would be a no-op here. */
-.zoom {
-  min-width: 5ch;
-  padding: 0 var(--sp-2);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
 /* ── Narrow panes: the filename never disappears ───────────────────────────────────────────────
    ViewBar's trail is `flex: 0 0 auto`, so a trail wider than the bar pushes the lead (the
    filename) to zero width. Two overrides, scoped to THIS bar:

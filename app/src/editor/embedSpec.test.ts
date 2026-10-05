@@ -6,6 +6,7 @@ import {
     specForWikiEmbed,
     specForMarkdownImage,
     computeSizeEdit,
+    pageIndexFromFragment,
 } from './embedSpec'
 
 // A stand-in for api.assetUrl so these pure helpers stay DOM/network-free.
@@ -72,8 +73,16 @@ describe('specForWikiEmbed', () => {
     test('pdf embed keeps the heading fragment as its page', () => {
         expect(specForWikiEmbed('doc.pdf#page=3', asset)).toMatchObject({
             kind: 'pdf',
+            target: 'doc.pdf',
             page: 'page=3',
         })
+    })
+    test('a pdf page fragment becomes a 0-based start page', () => {
+        expect(pageIndexFromFragment('page=3')).toBe(2)
+        expect(pageIndexFromFragment('zoom=50&page=1')).toBe(0)
+        expect(pageIndexFromFragment('page=0')).toBeUndefined()
+        expect(pageIndexFromFragment('region=form')).toBeUndefined()
+        expect(pageIndexFromFragment(undefined)).toBeUndefined()
     })
     test('html embed carries src and passes the fragment through as its page (deep-link via location.hash)', () => {
         expect(specForWikiEmbed('viz.html#region=form', asset)).toMatchObject({

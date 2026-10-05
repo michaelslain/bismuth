@@ -27,9 +27,9 @@
 import { type JSX, Show } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
 import IconButton from '../ui/IconButton'
-import TextButton from '../ui/TextButton'
 import Label from '../ui/Label'
 import PageReadout from './PageReadout'
+import PdfZoom from './PdfZoom'
 import styles from './PreviewBar.module.css'
 
 export type PreviewBarProps = {
@@ -112,38 +112,11 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
             config={
                 <Show when={inkable()}>
                     <Show when={pdf()}>
-                        <div class={styles.group} data-testid="pdf-zoom-cluster">
-                            {/* Only the steps drop — ctrl/cmd+wheel still zooms there, and FIT stays
-                                as the one-click way back to fit width. */}
-                            <div
-                                class={styles.group}
-                                data-bar-drop="4"
-                                data-testid="pdf-zoom-steps"
-                            >
-                                <IconButton
-                                    icon="Minus"
-                                    label="Zoom out"
-                                    title="Zoom out"
-                                    onClick={() => props.onZoomBy?.(1 / 1.2)}
-                                />
-                                <Label tone="muted" class={styles.zoom}>
-                                    {`${Math.round((props.zoom?.() ?? 1) * 100)}%`}
-                                </Label>
-                                <IconButton
-                                    icon="Plus"
-                                    label="Zoom in"
-                                    title="Zoom in"
-                                    onClick={() => props.onZoomBy?.(1.2)}
-                                />
-                            </div>
-                            <TextButton
-                                title="Fit width"
-                                aria-label="Fit width"
-                                onClick={() => props.onFit?.()}
-                            >
-                                fit
-                            </TextButton>
-                        </div>
+                        <PdfZoom
+                            zoom={() => props.zoom?.() ?? 1}
+                            onZoomBy={f => props.onZoomBy?.(f)}
+                            onFit={() => props.onFit?.()}
+                        />
                     </Show>
                     <div class={styles.group} data-testid="preview-annotate">
                         <Show when={pdf()}>

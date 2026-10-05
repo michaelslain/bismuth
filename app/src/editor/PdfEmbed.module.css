@@ -1,0 +1,46 @@
+/* app/src/editor/PdfEmbed.module.css — the in-note PDF embed card (editor/PdfEmbed.tsx ONLY).
+   Same card chrome as the ```graph block (EmbeddedGraph.module.css): hairline, square, panel
+   ground. The card fills the widget's resizable wrap, so the header keeps its height and the page
+   stack takes the rest. */
+
+.pdf-embed {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-0);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.pdf-embed-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  border-bottom: 1px solid var(--border-soft);
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+}
+
+/* Zoom group + page readout, trailing the name. */
+.pdf-embed-controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+/* The file name is the card's reveal-the-source handle (see PdfEmbed.tsx's header). */
+.pdf-embed-name {
+  cursor: text;
+}
+
+.pdf-embed-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
