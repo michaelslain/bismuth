@@ -382,7 +382,7 @@ Empty or non-string values are dropped by `readFolderIconsFrom`.
 
 ### `folderVisibility`
 
-A free-form `{folderPath: "chat-only"|"hidden"}` string map (folders have no frontmatter of their own to carry a `visibility` key). Defaults to empty. Written via `POST /folder-visibility`; nearest-ancestor-wins resolution lives in `core/src/visibility.ts`. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — it is an honesty boundary, not a security boundary, and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Per-file visibility is a note's own `visibility:` frontmatter key, not this section.
+A free-form `{folderPath: "chat-only"|"hidden"}` string map (folders have no frontmatter of their own to carry a `visibility` key). Defaults to empty. Written via `POST /folder-visibility`; nearest-ancestor-wins resolution lives in `core/src/visibility.ts`. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — it is an honesty boundary, not a security boundary, and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Per-file visibility is a note's own `visibility:` frontmatter key, not this section. `all` is also accepted (restricts nothing). Any other value, or a non-map, makes the vault unavailable to agents (see [visibility](../vault/visibility.md)).
 
 ```yaml
 folderVisibility:

@@ -3,7 +3,7 @@ import { test, expect, describe } from 'bun:test'
 import { join, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 import { realpath } from 'node:fs/promises'
-import { symlinkSync, chmodSync, appendFileSync } from 'node:fs'
+import { symlinkSync, chmodSync, appendFileSync, rmSync } from 'node:fs'
 import {
     resolveVisibility,
     resolveFolderVisibility,
@@ -500,14 +500,13 @@ test('buildDenyPaths: frontmatter whose closing fence lies PAST the 512-byte hea
     expect(denied).toEqual(['big.md'])
 })
 
-test('buildDenyPaths: frontmatter whose closing fence lies past even the 64 KiB escalation ceiling is NOT parsed (fails toward the cascade, never toward a crash)', async () => {
+test('buildDenyPaths: frontmatter whose closing fence lies past the 64 KiB ceiling fails CLOSED (hidden), never open', async () => {
     const filler = 'notes: |\n' + 'x'.repeat(70 * 1024) + '\n'
     const body = `---\n${filler}visibility: hidden\n---\n# Huge frontmatter\n`
     const vault = makeVault({ 'huge.md': body })
-    // No folder rule and no successfully-parsed override → falls back to "all" (cascade default),
-    // not to a thrown error and not to a false "hidden".
+    // An uncapped parser would see `visibility: hidden`; the bounded walk cannot, so it denies.
     const denied = (await buildDenyPaths(vault, 'chat')).map(e => e.rel)
-    expect(denied).toEqual([])
+    expect(denied).toEqual(['huge.md'])
 })
 
 test("stem inheritance (T-D2): a hidden drawing's export sidecars inherit its restriction even with NO folder rule involved", async () => {
@@ -880,4 +879,149 @@ test('isDeniedPath: a path whose restricted segment is cancelled by `..` is allo
     expect(await readNote(vault, 'Private/sub/../secret.md')).toContain(
         'nuclear codes',
     )
+})
+
+describe('malformed visibility fails closed', () => {
+    const rels = async (vault: string, ch: 'chat' | 'daemon') =>
+        (await buildDenyPaths(vault, ch)).map(e => e.rel).sort()
+
+    test('a closed fence whose YAML does not parse is hidden on both channels', async () => {
+        const vault = makeVault({
+            'broken.md': '---\nvisibility: [hidden\n---\n# Broken\n',
+            'open.md': '# Open\n',
+        })
+        expect(await rels(vault, 'chat')).toEqual(['broken.md'])
+        expect(await rels(vault, 'daemon')).toEqual(['broken.md'])
+    })
+
+    test('a visibility value that is not a literal is hidden', async () => {
+        const vault = makeVault({
+            'cased.md': '---\nvisibility: Hidden\n---\n# C\n',
+            'list.md': '---\nvisibility: [hidden]\n---\n# L\n',
+            'num.md': '---\nvisibility: 3\n---\n# N\n',
+            'open.md': '# Open\n',
+        })
+        expect(await rels(vault, 'chat')).toEqual([
+            'cased.md',
+            'list.md',
+            'num.md',
+        ])
+    })
+
+    test('an empty visibility key inherits (not denied in a visible folder)', async () => {
+        const vault = makeVault({
+            'empty.md': '---\nvisibility:\ntitle: x\n---\n# E\n',
+            'quoted.md': "---\nvisibility: ''\n---\n# Q\n",
+        })
+        expect(await rels(vault, 'daemon')).toEqual([])
+    })
+
+    test('an unclosed opening fence is not frontmatter', async () => {
+        const vault = makeVault({
+            'unclosed.md': '---\nvisibility: hidden\n# never closed\n',
+        })
+        expect(await rels(vault, 'daemon')).toEqual([])
+    })
+
+    test('visibility: all inside a hidden folder still opens the file', async () => {
+        const vault = makeVault({
+            'priv/shown.md': '---\nvisibility: all\n---\n# S\n',
+            'priv/other.md': '# O\n',
+        })
+        await setFolderVisibility(vault, 'priv', 'hidden')
+        expect(await rels(vault, 'chat')).toEqual(['priv/other.md'])
+    })
+})
+
+describe('.trash in a restricted vault', () => {
+    test('trash files are denied on both channels when anything else is restricted', async () => {
+        const vault = makeVault({
+            'secret.md': '---\nvisibility: hidden\n---\n# S\n',
+            '.trash/123-x/inner.md': '# Inner\n',
+        })
+        for (const ch of ['chat', 'daemon'] as const)
+            expect((await buildDenyPaths(vault, ch)).map(e => e.rel)).toContain(
+                '.trash/123-x/inner.md',
+            )
+    })
+
+    test('a vault with no restrictions keeps an empty deny list despite a trash file', async () => {
+        const vault = makeVault({
+            'a.md': '# A\n',
+            '.trash/123-x/inner.md': '# Inner\n',
+        })
+        expect(await buildDenyPaths(vault, 'chat')).toEqual([])
+        expect(await buildDenyPaths(vault, 'daemon')).toEqual([])
+    })
+
+    test('a chat-only rule hides the trash from daemon only', async () => {
+        const vault = makeVault({
+            'draft.md': '---\nvisibility: chat-only\n---\n# D\n',
+            '.trash/1-x.md': '# T\n',
+        })
+        // chat: nothing restricted outside trash, so the trash adds nothing
+        expect(await buildDenyPaths(vault, 'chat')).toEqual([])
+        expect((await buildDenyPaths(vault, 'daemon')).map(e => e.rel)).toContain(
+            '.trash/1-x.md',
+        )
+    })
+})
+
+describe('trash when a folder rule restricts but the folder is gone', () => {
+    test('the trash is denied on every channel the rule restricts', async () => {
+        const vault = makeVault({
+            'Private/a.md': '# A\n',
+            '.trash/1-Private/a.md': '# A\n',
+        })
+        await setFolderVisibility(vault, 'Private', 'hidden')
+        rmSync(join(vault, 'Private'), { recursive: true })
+        for (const ch of ['chat', 'daemon'] as const)
+            expect((await buildDenyPaths(vault, ch)).map(e => e.rel)).toContain(
+                '.trash/1-Private/a.md',
+            )
+    })
+
+    test('a chat-only folder rule restricts the trash for daemon only', async () => {
+        const vault = makeVault({
+            'Draft/a.md': '# A\n',
+            '.trash/1-Draft/a.md': '# A\n',
+        })
+        await setFolderVisibility(vault, 'Draft', 'chat-only')
+        rmSync(join(vault, 'Draft'), { recursive: true })
+        expect((await buildDenyPaths(vault, 'chat')).map(e => e.rel)).toEqual([])
+        expect((await buildDenyPaths(vault, 'daemon')).map(e => e.rel)).toContain(
+            '.trash/1-Draft/a.md',
+        )
+    })
+
+    test('an all-valued folder rule restricts nothing, so the trash stays empty', async () => {
+        const vault = makeVault({
+            '.settings': 'folderVisibility: {Open: all}\n',
+            'Open/a.md': '# A\n',
+            '.trash/1-x/a.md': '# A\n',
+        })
+        expect(await buildDenyPaths(vault, 'chat')).toEqual([])
+        expect(await buildDenyPaths(vault, 'daemon')).toEqual([])
+    })
+})
+
+describe('frontmatter longer than 64 KiB', () => {
+    const big = (closing: boolean) =>
+        '---\nvisibility: hidden\nnote: ' +
+        'a'.repeat(64 * 1024 + 1) +
+        (closing ? '\n---\n# Big\n' : '\n')
+
+    test('with no closing fence in the first 64 KiB it counts as hidden', async () => {
+        const vault = makeVault({ 'big.md': big(true), 'open.md': '# Open\n' })
+        expect((await buildDenyPaths(vault, 'daemon')).map(e => e.rel)).toEqual([
+            'big.md',
+        ])
+    })
+
+    test('a normal closed frontmatter is unaffected', async () => {
+        const vault = makeVault({
+            'ok.md': '---\ntitle: hi\n---\n# ok\n' + 'x'.repeat(70000),
+        })
+        expect(await buildDenyPaths(vault, 'daemon')).toEqual([])
+    })
 })

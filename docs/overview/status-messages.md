@@ -62,6 +62,27 @@ least once, because the backend takes a second or two to start after launch. A "
 flash on every launch would be noise, not information — see the comment above
 `everConnected` in `app/src/serverVersion.ts`.
 
+## The doctor toast
+
+### "doctor // 2 repairs need your ok: …"
+
+A toast like **`doctor // 2 repairs need your ok: <title 1>, <title 2>`** appears once at launch, with
+a **fix** button. With more than two it ends `<title 1>, <title 2> +<n> more`.
+
+**What happened:** at boot Bismuth ran [the doctor](doctor.md), found leftovers from an older build
+(an old service registration, a retired folder), and applied every repair that is provably safe. The
+ones listed here delete something you might still want, so they were left alone.
+
+**What Bismuth does about it:** nothing further. The toast disappears after 20 seconds, and the same
+findings appear again next launch until they are dealt with.
+
+**What you should do:** click **fix** to apply exactly the listed repairs; the toast becomes
+`doctor // fixed <k> of <n>`. To look first, run `bismuth doctor` in a terminal: each line says what
+the repair removes. To leave things as they are, ignore the toast.
+
+**Not shown when:** nothing is pending, or the backend has no doctor (the iPad/iOS in-process backend,
+or an older core). Source: `app/src/doctorToast.ts`.
+
 ## Folders and windows
 
 | Message | Meaning | What to do |

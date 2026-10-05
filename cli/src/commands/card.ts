@@ -6,11 +6,11 @@
 import type { CommandMap } from '../types'
 import { flag, fail, out, positionals, requireVault, today } from '../args'
 import {
-    collectDecks,
     collectCards,
-    dueCards,
+    decksFromCards,
     noteCards,
     applyReview,
+    isDue,
 } from '../../../core/src/srs/cards'
 import { applyReviewToRow } from '../../../core/src/srs/reviewRow'
 import type { ReviewResponse } from '../../../core/src/srs/types'
@@ -19,6 +19,12 @@ import { upsertRow } from '../../../core/src/bases/rowOps'
 import { fileBasename } from '../../../core/src/pathUtils'
 import { readNote, writeNote } from '../../../core/src/files'
 import { loadAppConfig } from '../../../core/src/settings'
+import type { Card } from '../../../core/src/srs/types'
+import {
+    agentDenyEntries,
+    filterByPath,
+    isDeniedPath,
+} from '../../../core/src/visibilityFilter'
 
 const RESPONSES: ReviewResponse[] = ['hard', 'good', 'easy']
 
@@ -30,12 +36,26 @@ function asResponse(raw: string | undefined): ReviewResponse {
     return raw as ReviewResponse
 }
 
+/** Every card the caller may see. Filtered BEFORE any aggregation (deck totals, due lists).
+ *  agentDenyEntries throws when visibility cannot be determined: let it propagate. */
+async function visibleCards(vault: string): Promise<Card[]> {
+    return filterByPath(
+        await collectCards(vault),
+        await agentDenyEntries(vault),
+        c => c.notePath,
+    )
+}
+
 export const commands: CommandMap = {
     'card decks': {
         summary: 'List flashcard decks with total + due counts',
         usage: '[--vault <dir>] [--pretty]',
         run: async args => {
-            out(await collectDecks(requireVault(args), today()), args)
+            // Never collectDecks: it re-collects every note, hidden ones included.
+            out(
+                decksFromCards(await visibleCards(requireVault(args)), today()),
+                args,
+            )
         },
     },
 
@@ -43,7 +63,7 @@ export const commands: CommandMap = {
         summary: 'List every flashcard parsed from the vault',
         usage: '[--vault <dir>] [--pretty]',
         run: async args => {
-            out(await collectCards(requireVault(args)), args)
+            out(await visibleCards(requireVault(args)), args)
         },
     },
 
@@ -51,8 +71,12 @@ export const commands: CommandMap = {
         summary: 'List flashcards due today (optionally filtered to one deck)',
         usage: '[--deck <name>] [--vault <dir>] [--pretty]',
         run: async args => {
+            const deck = flag(args, 'deck')
+            const day = today()
             out(
-                await dueCards(requireVault(args), today(), flag(args, 'deck')),
+                (await visibleCards(requireVault(args))).filter(
+                    c => (deck === undefined || c.deck === deck) && isDue(c, day),
+                ),
                 args,
             )
         },
@@ -84,6 +108,8 @@ export const commands: CommandMap = {
                 const index = Number(indexRaw)
                 if (!Number.isInteger(index)) fail('--index must be an integer')
                 const response = asResponse(flag(args, 'response'))
+                if (isDeniedPath(await agentDenyEntries(vault), file))
+                    fail(`not available: ${file}`)
                 const text = await readNote(vault, file)
                 const name = fileBasename(file)
                 const { rows } = parseBaseFile(text, { name, path: file })
@@ -120,6 +146,14 @@ export const commands: CommandMap = {
                     'usage: card review <id> <response> | --file <base> --index <n> --response <r>',
                 )
             const response = asResponse(responseRaw)
+            // The id is `notePath::i::j`; refuse a hidden note's card even when the argv path
+            // scan did not recognise the spelling. The note path parses from the RIGHT, since
+            // it may itself contain "::" (see applyReview).
+            const subSep = id.lastIndexOf('::')
+            const cardSep = subSep < 0 ? -1 : id.lastIndexOf('::', subSep - 1)
+            const notePath = cardSep < 0 ? id : id.slice(0, cardSep)
+            if (isDeniedPath(await agentDenyEntries(vault), notePath))
+                fail(`not available: ${notePath}`)
             await applyReview(vault, id, response, today(), undefined, srs)
             out({ ok: true }, args)
         },

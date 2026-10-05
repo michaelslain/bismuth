@@ -18,6 +18,11 @@ import {
 
 const SETTINGS_FILE = '.settings'
 
+/** The refusal text for the memory tools when the daemon is not enabled for the vault — shared by the
+ *  MCP server and the `bismuth memory` CLI so both say the same thing. */
+export const MEMORY_UNAVAILABLE =
+    'Memory is unavailable — the daemon is not enabled for this vault.'
+
 /** Walk up from `start` looking for a vault root, marked by a `.settings` file (the vault's
  *  single settings file — see core/src/settings.ts). Stops at the filesystem root. */
 function findVaultRoot(start: string): string | null {
@@ -83,9 +88,41 @@ export function resolveVaultRoot(): string | null {
 export function memoryDir(): string | null {
     if (process.env.BISMUTH_MEMORY_DIR) return process.env.BISMUTH_MEMORY_DIR
     const vault = resolveVaultRoot()
-    return vault && daemonEnabledForVault(vault)
-        ? join(vault, '.daemon', 'memory')
-        : null
+    return vault ? memoryDirFor(vault) : null
+}
+
+/**
+ * A given vault's memory dir — `<vault>/.daemon/memory` when THAT vault's `.settings` has
+ * `daemon.enabled: true`, else null. The vault-explicit half of memoryDir(), shared with the
+ * `bismuth memory` CLI group so a `--vault` flag and the MCP gate agree on what "enabled" means.
+ */
+export function memoryDirFor(vault: string): string | null {
+    return daemonEnabledForVault(vault) ? join(vault, '.daemon', 'memory') : null
+}
+
+/** Which agent channel an MCP-served call runs as. A literal mirror of core's `mcpChannel()` (this
+ *  workspace can't import @bismuth/core): `chat` stays `chat`; unset or anything else is `daemon`, the
+ *  stricter default. */
+export function mcpAgentChannel(
+    env: Record<string, string | undefined> = process.env,
+): 'chat' | 'daemon' {
+    return env.BISMUTH_MCP_CHANNEL === 'chat' ? 'chat' : 'daemon'
+}
+
+/** Who is calling a memory write. `null`/`undefined` = the owner (no restriction). */
+export type MemoryCallOpts = { channel?: 'chat' | 'daemon' | null }
+
+export const MEMORY_NOTE_REFUSED =
+    'refused: that memory note is not visible to this agent'
+
+/** Throw when `channel` may not see a note whose frontmatter carries `visibility`. */
+function assertNoteVisible(
+    visibility: 'chat-only' | 'hidden' | undefined,
+    channel: MemoryCallOpts['channel'],
+): void {
+    if (!channel || !visibility) return
+    if (visibility === 'hidden' || channel === 'daemon')
+        throw new Error(MEMORY_NOTE_REFUSED)
 }
 
 export async function remember(
@@ -97,11 +134,14 @@ export async function remember(
         folder?: string
     },
     dir: string,
+    opts?: MemoryCallOpts,
 ): Promise<{ ok: true; name: string }> {
     const folder = args.folder || undefined
     const date = todayISO()
-    // Preserve an existing note's type/created when overwriting (matches the old behavior).
+    // Preserve an existing note's type/created/visibility when overwriting. Dropping `visibility`
+    // here silently un-hid a hidden note; an agent may not overwrite a note it cannot see at all.
     const existing = await readNote(args.name, dir, folder)
+    assertNoteVisible(existing?.frontmatter.visibility, opts?.channel)
     await writeNote(
         args.name,
         {
@@ -110,6 +150,9 @@ export async function remember(
             tags: args.tags ?? existing?.frontmatter.tags ?? [],
             created: existing?.frontmatter.created ?? date,
             updated: date,
+            ...(existing?.frontmatter.visibility
+                ? { visibility: existing.frontmatter.visibility }
+                : {}),
         },
         args.content,
         dir,
@@ -129,8 +172,11 @@ export async function recall(
 export async function forget(
     args: { name: string },
     dir: string,
+    opts?: MemoryCallOpts,
 ): Promise<{ ok: boolean; name: string }> {
     const ref = parseNoteRef(args.name)
+    const existing = await readNote(ref.name, dir, ref.folder)
+    assertNoteVisible(existing?.frontmatter.visibility, opts?.channel)
     const deleted = await deleteNote(ref.name, dir, ref.folder)
     return { ok: deleted, name: args.name }
 }

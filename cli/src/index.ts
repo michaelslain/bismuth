@@ -89,10 +89,11 @@ if (!cmdKey) {
 
 // The visibility gate (core/src/visibilityCliGate.ts), checked HERE — the one place every
 // invocation of this binary passes through, no matter which command was matched or how it was
-// invoked (a script, a subprocess, an agent's Bash tool). Keyed on BISMUTH_AGENT_CHANNEL, which is
-// unset for the vault OWNER's own hand (their shell, a dev script, CI) — so this is a no-op for
-// every interactive/headless use of the CLI today, and only refuses when Bismuth itself spawned the
-// process that's running this command (see that file's header for the full design).
+// invoked (a script, a subprocess, an agent's Bash tool). Keyed on BISMUTH_AGENT_CHANNEL, else
+// BISMUTH_MCP_CHANNEL (an MCP-spawned CLI gates and filters as an agent). With NEITHER set it is the
+// vault OWNER's own hand (their shell, a dev script, CI) and ungated — a no-op for every
+// interactive/headless use of the CLI, refusing only when Bismuth itself spawned the process
+// running this command (see that file's header for the full design).
 const gate = await gateCliInvocation(argv)
 if (!gate.allowed) {
     console.error(gate.reason ?? "Refused by the vault's visibility settings.")

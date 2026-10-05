@@ -412,6 +412,26 @@ for (const { make, configRelPath, keyPath } of jsonForeignCases) {
     })
 }
 
+test('a bismuth entry under a .bismuth-dev sibling of the home is foreign — never taken over', async () => {
+    const configPath = join(home, '.gemini', 'settings.json')
+    const before = JSON.stringify(
+        {
+            mcpServers: {
+                bismuth: {
+                    command: join(home, '.bismuth-dev', 'bin', 'bismuth-mcp'),
+                },
+            },
+        },
+        null,
+        2,
+    )
+    defaultRegistrarIO.writeFile(configPath, before)
+    const result = await createGeminiRegistrar(makeIO()).register(specFor(home))
+    expect(result.ok).toBe(false)
+    expect(result.warning).toMatch(/didn't create/)
+    expect(readFileSync(configPath, 'utf8')).toBe(before)
+})
+
 // --- Crush + Goose: file-only fallback (no `mcp add` subcommand exists for either) --------------
 
 test('Crush: registers by writing mcp.bismuth directly (no CLI add subcommand exists), idempotently', async () => {
@@ -487,6 +507,70 @@ test('Goose: a foreign bismuth extension entry survives register() untouched', a
     const result = await registrar.register(specFor(home))
     expect(result.ok).toBe(false)
     expect(readFileSync(configPath, 'utf8')).toBe(before)
+})
+
+// --- Ownership by shape: a command written under an OLD home is still ours ----------------------
+
+const OLD_HOME_MCP = '/Users/old/.bismuth/bin/bismuth-mcp'
+
+test('Crush: an old-home bismuth-mcp command is ours (register replaces it, unregister removes it)', async () => {
+    const configPath = join(home, '.config', 'crush', 'crush.json')
+    const seed = () =>
+        defaultRegistrarIO.writeFile(
+            configPath,
+            JSON.stringify({
+                mcp: {
+                    bismuth: { command: OLD_HOME_MCP },
+                    other: { command: 'npx' },
+                },
+            }),
+        )
+    seed()
+    const registrar = createCrushRegistrar(makeIO())
+    const result = await registrar.register(specFor(home))
+    expect(result.ok).toBe(true)
+    const after = JSON.parse(readFileSync(configPath, 'utf8'))
+    expect(after.mcp.bismuth.command).toBe(specFor(home).mcpBin)
+    expect(after.mcp.other).toEqual({ command: 'npx' })
+
+    seed()
+    await registrar.unregister()
+    const removed = JSON.parse(readFileSync(configPath, 'utf8'))
+    expect(removed.mcp.bismuth).toBeUndefined()
+    expect(removed.mcp.other).toEqual({ command: 'npx' })
+})
+
+test('Crush: /opt/other/bismuth-mcp stays foreign (a lookalike basename is not ours)', async () => {
+    const configPath = join(home, '.config', 'crush', 'crush.json')
+    const before = JSON.stringify({
+        mcp: { bismuth: { command: '/opt/other/bismuth-mcp' } },
+    })
+    defaultRegistrarIO.writeFile(configPath, before)
+    const registrar = createCrushRegistrar(makeIO())
+    expect((await registrar.register(specFor(home))).ok).toBe(false)
+    await registrar.unregister()
+    expect(readFileSync(configPath, 'utf8')).toBe(before)
+})
+
+test('Goose: an old-home bismuth-mcp transport command is ours (register replaces it, unregister removes it, sibling survives)', async () => {
+    const configPath = join(home, '.config', 'goose', 'config.yaml')
+    const seed = () =>
+        defaultRegistrarIO.writeFile(
+            configPath,
+            `extensions:\n  - name: other\n    enabled: true\n  - name: bismuth\n    transport:\n      type: stdio\n      command: ${OLD_HOME_MCP}\n`,
+        )
+    seed()
+    const registrar = createGooseRegistrar(makeIO())
+    expect((await registrar.register(specFor(home))).ok).toBe(true)
+    const replaced = readFileSync(configPath, 'utf8')
+    expect(replaced).toContain(specFor(home).mcpBin)
+    expect(replaced).not.toContain(OLD_HOME_MCP)
+
+    seed() // unregister is ledger-gated, and register just wrote the ledger
+    await registrar.unregister()
+    const text = readFileSync(configPath, 'utf8')
+    expect(text).toContain('name: other')
+    expect(text).not.toContain('bismuth')
 })
 
 // --- Unregister is gated on OUR OWN ledger, never a blind CLI-remove call -----------------------

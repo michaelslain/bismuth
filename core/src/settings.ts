@@ -457,6 +457,12 @@ const RETIRED_KEYS: readonly (readonly string[])[] = [
     ['editor', 'defaultMode'],
     ['appearance', 'editorFont'],
     ['appearance', 'paletteInputFontSize'],
+    // `daemon.home` and `daemon.autoUpdate` left the schema in 4270a076 (the daemon's machine home is
+    // fixed at ~/.bismuth/daemon, and updates moved to `update.autoUpdate`) but were never listed
+    // here, so they survived in every old `.settings` as unknown keys. NOT `update.autoUpdate`,
+    // which is live.
+    ['daemon', 'home'],
+    ['daemon', 'autoUpdate'],
 ]
 
 /** The pair for `key` in `map`, or undefined. */
@@ -641,6 +647,25 @@ function pruneRetiredKeys(doc: Document): boolean {
         mutated = true
     }
     return mutated
+}
+
+/**
+ * The dotted paths of RETIRED_KEYS still present in `<vault>/.settings` — what the next
+ * `reconcileSettings` would delete. Read-only and never throws: a missing, directory-shaped or
+ * unparseable file reports nothing, the same files reconcile itself leaves alone.
+ */
+export function retiredKeysPresent(vault: string): string[] {
+    let doc: Document
+    try {
+        doc = parseDocument(readFileSync(join(vault, SETTINGS_FILE), 'utf8'))
+    } catch {
+        return []
+    }
+    if (doc.errors.length || !isMap(doc.contents)) return []
+    return RETIRED_KEYS.filter(path => {
+        const parent = path.length > 1 ? doc.getIn(path.slice(0, -1), true) : doc.contents
+        return isMap(parent) && !!findPair(parent as YAMLMap, path[path.length - 1])
+    }).map(path => path.join('.'))
 }
 
 /**
@@ -1029,6 +1054,10 @@ export type FolderVisibilityResult =
  * its `folderVisibility:` block may well have named the folder the user is relying on, and
  * {@link readFolderVisibility}'s `{}` is byte-identical to the answer for a vault that hides
  * nothing. An unreadable-but-present file propagates its read error to the caller, as before.
+ *
+ * Also fails closed on a `folderVisibility` that is present but malformed: a non-map, or any value
+ * other than `chat-only`/`hidden`/`all` (a typo like `hiden` used to be dropped, leaving the folder
+ * visible). `all` is valid and restricts nothing, so it is dropped from the map.
  */
 export async function readFolderVisibilityResult(
     vault: string,
@@ -1039,6 +1068,23 @@ export async function readFolderVisibilityResult(
         return {
             ok: false,
             reason: `${SETTINGS_FILE} is not valid YAML (${res.parseError})`,
+        }
+    }
+    const raw = res.data.folderVisibility
+    if (raw === undefined || raw === null) return { ok: true, map: {} }
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        return {
+            ok: false,
+            reason: `${SETTINGS_FILE} folderVisibility must be a map of folder → chat-only|hidden`,
+        }
+    }
+    for (const v of Object.values(raw as Record<string, unknown>)) {
+        if (v !== 'chat-only' && v !== 'hidden' && v !== 'all') {
+            return {
+                ok: false,
+                // Never quote the key: it is a hidden folder's name, and this reason reaches agents.
+                reason: `${SETTINGS_FILE} a folderVisibility entry is not chat-only, hidden or all`,
+            }
         }
     }
     return { ok: true, map: readFolderVisibilityFrom(res.data) }

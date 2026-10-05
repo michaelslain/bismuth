@@ -22,11 +22,14 @@ import { commands as appCmds } from './commands/app'
 import { commands as pageCmds } from './commands/page'
 import { commands as installCmds } from './commands/install'
 import { commands as backendsCmds } from './commands/backends'
+import { commands as doctorCmds } from './commands/doctor'
 import { commands as checkpointCmds } from './commands/checkpoint'
 import { commands as updateCmds } from './commands/update'
 import { commands as gcalCmds } from './commands/gcal'
 import { commands as relayCmds } from './commands/relay'
 import { commands as chatCmds } from './commands/chat'
+import { commands as docsCmds } from './commands/docs'
+import { commands as memoryCmds } from './commands/memory'
 export const registry: CommandMap = {
     ...fileCmds,
     ...noteCmds,
@@ -47,11 +50,14 @@ export const registry: CommandMap = {
     ...pageCmds,
     ...installCmds,
     ...backendsCmds,
+    ...doctorCmds,
     ...checkpointCmds,
     ...updateCmds,
     ...gcalCmds,
     ...relayCmds,
     ...chatCmds,
+    ...docsCmds,
+    ...memoryCmds,
 }
 
 /** Longest-match a command phrase against the registry. Returns the matching registry key (three

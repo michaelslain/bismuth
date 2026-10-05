@@ -24,6 +24,11 @@ import { taskToRow } from '../../../core/src/bases/taskRow'
 import type { Task } from '../../../core/src/tasks'
 import { migrateContent } from '../../../core/src/taskMigrate'
 import { readNote, writeNote, listMarkdown } from '../../../core/src/files'
+import {
+    agentDenyEntries,
+    filterByPath,
+    isDeniedPath,
+} from '../../../core/src/visibilityFilter'
 
 // Sorting shares taskDsl.ts's applyTaskSort with source.ts — see its own doc comment
 // for why that matters (priority ranks by urgency, not alphabetically; an undated task
@@ -43,7 +48,15 @@ export const commands: CommandMap = {
         usage: '[--query <expr>]',
         run: async args => {
             const vault = requireVault(args)
-            const tasks = await collectVaultTasks(vault)
+            // Filter by note path BEFORE the query, sort and errors list, so a hidden note's
+            // tasks cannot reach any of them. agentDenyEntries throws when visibility cannot
+            // be determined: let it propagate (fail closed).
+            const deny = await agentDenyEntries(vault)
+            const tasks = filterByPath(
+                await collectVaultTasks(vault),
+                deny,
+                t => t.path,
+            )
             const query = flag(args, 'query')
             if (query === undefined) {
                 out(tasks, args)
@@ -118,7 +131,9 @@ export const commands: CommandMap = {
         run: async args => {
             const vault = requireVault(args)
             const [file] = positionals(args)
+            const deny = await agentDenyEntries(vault)
             if (file) {
+                if (isDeniedPath(deny, file)) fail(`not available: ${file}`)
                 const { content, removed } = archiveResolvedTasks(
                     await readNote(vault, file),
                 )
@@ -126,7 +141,7 @@ export const commands: CommandMap = {
                 out({ removed, files: removed > 0 ? 1 : 0 }, args)
                 return
             }
-            const rels = await listMarkdown(vault)
+            const rels = filterByPath(await listMarkdown(vault), deny, r => r)
             let removed = 0
             let files = 0
             for (const rel of rels) {
@@ -147,7 +162,12 @@ export const commands: CommandMap = {
         run: async args => {
             const vault = requireVault(args)
             const dryRun = bool(args, 'dry-run')
-            const rels = await listMarkdown(vault)
+            // An agent skips restricted notes entirely, so the report never names one.
+            const rels = filterByPath(
+                await listMarkdown(vault),
+                await agentDenyEntries(vault),
+                r => r,
+            )
             const files: Array<{ file: string; changed: number }> = []
             const skipped: Array<{ file: string; error: string }> = []
             // Lines the rewrite could not round-trip — in practice a calendar-impossible

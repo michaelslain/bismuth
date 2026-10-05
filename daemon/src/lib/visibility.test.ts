@@ -3,7 +3,7 @@
 // dependency on @bismuth/core — see visibility.ts's header comment) — same resolution semantics,
 // same dual-form deny-list fix (see buildManagedSettingsDeny's doc comment for the empirical bug
 // this closes: a model's Read tool call may report either a relative or an absolute file_path).
-import { test, expect } from 'bun:test'
+import { test, expect, describe } from 'bun:test'
 import {
     mkdtempSync,
     mkdirSync,
@@ -405,4 +405,166 @@ test("buildDenyPaths: the caller's own root spelling is an alias when it differs
     expect(entries).toHaveLength(1)
     expect(entries[0]!.aliases).toContain(join(vault, 'secret.md'))
     expect(absDenyPaths(entries)).toContain(join(vault, 'secret.md'))
+})
+
+// --- fail-closed ports of core's malformed-visibility / .trash / folderVisibility rules ---
+
+describe('malformed visibility fails closed', () => {
+    const rels = async (vault: string) =>
+        (await buildDenyPaths(vault)).map(e => e.rel).sort()
+
+    test('a closed fence whose YAML does not parse is hidden', async () => {
+        const vault = makeVault({
+            'broken.md': '---\nvisibility: [hidden\n---\n# Broken\n',
+            'open.md': '# Open\n',
+        })
+        expect(await rels(vault)).toEqual(['broken.md'])
+    })
+
+    test('a closed fence whose YAML is not a map is hidden', async () => {
+        const vault = makeVault({
+            'scalar.md': '---\njust a string\n---\n# S\n',
+            'list.md': '---\n- a\n- b\n---\n# L\n',
+            'open.md': '# Open\n',
+        })
+        expect(await rels(vault)).toEqual(['list.md', 'scalar.md'])
+    })
+
+    test('a visibility value that is not a literal is hidden', async () => {
+        const vault = makeVault({
+            'cased.md': '---\nvisibility: Hidden\n---\n# C\n',
+            'list.md': '---\nvisibility: [hidden]\n---\n# L\n',
+            'num.md': '---\nvisibility: 3\n---\n# N\n',
+            'open.md': '# Open\n',
+        })
+        expect(await rels(vault)).toEqual(['cased.md', 'list.md', 'num.md'])
+    })
+
+    test('an empty or null visibility key inherits', async () => {
+        const vault = makeVault({
+            'empty.md': '---\nvisibility:\ntitle: x\n---\n# E\n',
+            'quoted.md': "---\nvisibility: ''\n---\n# Q\n",
+            'nokey.md': '---\ntitle: x\n---\n# N\n',
+            'emptyblock.md': '---\n\n---\n# B\n',
+        })
+        expect(await rels(vault)).toEqual([])
+    })
+
+    test('an unclosed opening fence is not frontmatter', async () => {
+        const vault = makeVault({
+            'unclosed.md': '---\nvisibility: hidden\n# never closed\n',
+        })
+        expect(await rels(vault)).toEqual([])
+    })
+
+    test('a head still unclosed at the 64 KiB re-read is hidden', async () => {
+        const vault = makeVault({
+            'huge.md': `---\ntitle: x\n${'a: b\n'.repeat(20_000)}`,
+            'short-unclosed.md': '---\ntitle: x\n# never closed\n',
+        })
+        expect(await rels(vault)).toEqual(['huge.md'])
+    })
+
+    test('visibility: all inside a hidden folder still opens the file', async () => {
+        const vault = makeVault({
+            'priv/shown.md': '---\nvisibility: all\n---\n# S\n',
+            'priv/other.md': '# O\n',
+        })
+        setFolderVisibility(vault, 'priv', 'hidden')
+        expect(await rels(vault)).toEqual(['priv/other.md'])
+    })
+})
+
+describe('.trash in a restricted vault', () => {
+    test('trash files are denied when a file outside the trash is restricted', async () => {
+        const vault = makeVault({
+            'secret.md': '---\nvisibility: hidden\n---\n# S\n',
+            '.trash/123-x/inner.md': '# Inner\n',
+        })
+        expect((await buildDenyPaths(vault)).map(e => e.rel)).toContain(
+            '.trash/123-x/inner.md',
+        )
+    })
+
+    test('a chat-only file outside the trash restricts the trash for the daemon', async () => {
+        const vault = makeVault({
+            'draft.md': '---\nvisibility: chat-only\n---\n# D\n',
+            '.trash/1-x.md': '# T\n',
+        })
+        expect((await buildDenyPaths(vault)).map(e => e.rel)).toContain(
+            '.trash/1-x.md',
+        )
+    })
+
+    test('a vault with no restrictions keeps an empty deny list despite a trash file', async () => {
+        const vault = makeVault({
+            'a.md': '# A\n',
+            '.trash/123-x/inner.md': '# Inner\n',
+        })
+        expect(await buildDenyPaths(vault)).toEqual([])
+    })
+
+    test('a folderVisibility rule restricts the trash even when its folder is absent', async () => {
+        const vault = makeVault({
+            'a.md': '# A\n',
+            '.trash/1-x.md': '# T\n',
+        })
+        setFolderVisibility(vault, 'gone', 'hidden')
+        expect((await buildDenyPaths(vault)).map(e => e.rel)).toEqual([
+            '.trash/1-x.md',
+        ])
+    })
+
+    test('an all-only folderVisibility rule restricts nothing, trash included', async () => {
+        const vault = makeVault({
+            'a.md': '# A\n',
+            '.trash/1-x.md': '# T\n',
+        })
+        writeFileSync(
+            join(vault, '.settings'),
+            'folderVisibility:\n  gone: all\n',
+        )
+        expect(await buildDenyPaths(vault)).toEqual([])
+    })
+})
+
+describe('folderVisibility fails closed', () => {
+    const plan = async (settings: string) => {
+        const vault = makeVault({ 'a.md': '# A\n' })
+        writeFileSync(join(vault, '.settings'), settings)
+        return resolveDenyPlan(vault)
+    }
+
+    test('an unknown value is undetermined and names the key', async () => {
+        expect(await plan('folderVisibility:\n  priv: hiden\n')).toEqual({
+            determined: false,
+            reason: '.settings a folderVisibility entry is not chat-only, hidden or all',
+        })
+    })
+
+    test('a non-map folderVisibility is undetermined', async () => {
+        for (const s of [
+            'folderVisibility: hidden\n',
+            'folderVisibility:\n  - priv\n',
+        ])
+            expect((await plan(s)).determined).toBe(false)
+    })
+
+    test('an absent or null folderVisibility is determined and empty', async () => {
+        expect(await plan('other: 1\n')).toEqual({
+            determined: true,
+            entries: [],
+        })
+        expect(await plan('folderVisibility:\n')).toEqual({
+            determined: true,
+            entries: [],
+        })
+    })
+
+    test('all entries are accepted and restrict nothing', async () => {
+        expect(await plan('folderVisibility:\n  priv: all\n')).toEqual({
+            determined: true,
+            entries: [],
+        })
+    })
 })

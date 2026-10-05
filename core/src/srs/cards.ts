@@ -120,7 +120,8 @@ export async function noteCards(
     return out
 }
 
-function isDue(card: Card, today: string): boolean {
+/** A card is due when it was never scheduled or its due date has arrived. */
+export function isDue(card: Card, today: string): boolean {
     return card.due === null || card.due <= today
 }
 

@@ -43,6 +43,12 @@ import {
 } from '../../../core/src/bases/rowOps'
 import { fileBasename } from '../../../core/src/pathUtils'
 import {
+    agentDenyEntries,
+    filterByPath,
+    isDeniedPath,
+    type DenyEntry,
+} from '../../../core/src/visibilityFilter'
+import {
     VIEW_TYPES,
     isValidType,
     type SourceSpec,
@@ -366,6 +372,42 @@ function sourceRefTarget(spec: SourceSpec): string | undefined {
     return spec.kind === 'base' ? spec.ref : spec.from
 }
 
+/** What an agent sees in place of a path it may not know exists. */
+const NOT_VISIBLE = '<not visible>'
+
+/**
+ * True when `spec` (or any base it composes, however deep) reads a base the agent may not see.
+ * `resolveBaseRows` follows `ref:`/`from:` with no visibility check, and a base's filters and
+ * formulas shape which rows it yields, so a hidden base cannot be allowed to steer a visible one
+ * even when every row it ends up returning is itself visible. Cycle-guarded by resolved path.
+ * `entries` empty (the owner) never reads a file.
+ */
+async function readsDeniedBase(
+    vault: string,
+    spec: SourceSpec | undefined,
+    entries: DenyEntry[],
+    seen: Set<string> = new Set(),
+): Promise<boolean> {
+    if (entries.length === 0 || !spec) return false
+    const ref = sourceRefTarget(spec)
+    if (!ref) return false
+    const refPath = await resolveRefPath(vault, ref)
+    if (isDeniedPath(entries, refPath)) return true
+    if (seen.has(refPath)) return false
+    seen.add(refPath)
+    let text: string
+    try {
+        text = await readNote(vault, refPath)
+    } catch {
+        return false
+    }
+    const { config } = parseBaseFile(text, {
+        name: fileBasename(refPath),
+        path: refPath,
+    })
+    return readsDeniedBase(vault, config.source, entries, seen)
+}
+
 export const commands: CommandMap = {
     'base create': {
         summary: 'Create a new type:base note (a base has exactly one view)',
@@ -460,6 +502,8 @@ export const commands: CommandMap = {
             const vault = requireVault(args)
             const [path] = positionals(args)
             if (!path) fail('<path> required')
+            // Throws when visibility cannot be determined: fail closed, never caught.
+            const entries = await agentDenyEntries(vault)
             const { text, name } = await readBase(vault, path)
             const errors: string[] = []
 
@@ -553,11 +597,20 @@ export const commands: CommandMap = {
                 const ref = sourceRefTarget(spec)
                 if (ref) {
                     const refPath = await resolveRefPath(vault, ref)
+                    // For an agent a hidden target and a missing one read IDENTICALLY, and
+                    // neither names the ref or the path: any difference is an existence oracle.
+                    const hiddenFromAgent =
+                        entries.length > 0 &&
+                        (isDeniedPath(entries, refPath) ||
+                            (await readsDeniedBase(vault, spec, entries)))
                     try {
+                        if (hiddenFromAgent) throw new Error('not visible')
                         await readNote(vault, refPath)
                     } catch {
                         errors.push(
-                            `source: "${ref}" does not resolve to a file in the vault (looked for ${refPath})`,
+                            entries.length > 0
+                                ? `source: "${NOT_VISIBLE}" does not resolve to a file in the vault (looked for ${NOT_VISIBLE})`
+                                : `source: "${ref}" does not resolve to a file in the vault (looked for ${refPath})`,
                         )
                     }
                 }
@@ -585,15 +638,24 @@ export const commands: CommandMap = {
                 config.view.taskFile
             ) {
                 const dest = await resolveRefPath(vault, config.view.taskFile)
-                const scoped = await resolveBaseRows(await resolveRefPath(vault, spec.from), {
-                    root: vault,
-                    today: today(),
-                })
-                const paths = new Set(scoped.map(r => r.file.path))
-                if (!paths.has(dest))
-                    errors.push(
-                        `taskFile: "${config.view.taskFile}" is outside this base's source scope (from: "${spec.from}") — a task created here is written to ${dest}, which "from" does not select, so it never appears in the view. Point taskFile at a note inside that scope, or drop "from" if new tasks should reach every file the base can see.`,
+                // A `from` that reads a hidden base was already reported (as not visible) in
+                // step 3; resolving it here would hand its rows to the scope check.
+                if (!(await readsDeniedBase(vault, spec, entries))) {
+                    const scoped = filterByPath(
+                        await resolveBaseRows(
+                            await resolveRefPath(vault, spec.from),
+                            { root: vault, today: today() },
+                        ),
+                        entries,
+                        r => r.file.path,
                     )
+                    const paths = new Set(scoped.map(r => r.file.path))
+                    const destHidden = isDeniedPath(entries, dest)
+                    if (!paths.has(dest))
+                        errors.push(
+                            `taskFile: "${destHidden ? NOT_VISIBLE : config.view.taskFile}" is outside this base's source scope (from: "${spec.from}") — a task created here is written to ${destHidden ? NOT_VISIBLE : dest}, which "from" does not select, so it never appears in the view. Point taskFile at a note inside that scope, or drop "from" if new tasks should reach every file the base can see.`,
+                        )
+                }
             }
 
             // Bonus: the filters, and every formula (including a declared
@@ -644,17 +706,34 @@ export const commands: CommandMap = {
             const [path] = positionals(args)
             if (!path) fail('<path> required')
 
+            const entries = await agentDenyEntries(vault)
             const { text, name } = await readBase(vault, path)
-            
+            const parsedBase = parseBaseFile(text, { name, path })
+            // A hidden ref answers EXACTLY like a missing one (no rows), never a refusal: a distinct
+            // answer would be an existence oracle for hidden base names.
+            const hiddenRef = await readsDeniedBase(
+                vault,
+                parsedBase.config.source,
+                entries,
+            )
+
             // Same resolution the app uses to open THIS base file: its own inline table when it
             // declares no source, otherwise the source it declares (following composition) —
             // resolveBaseRows, not a spec built from `bismuth rows`' generic --of/--where/--tasks
             // flags, since we already have this one base's own parsed config to resolve from.
-            const rows = await resolveBaseRows(path, {
-                root: vault,
-                today: today(),
-            })
-            const result = runView(parseBaseFile(text, { name, path }).config, rows)
+            // Filtered HERE, before runView: grouping, summaries, charts and metrics all
+            // aggregate, so a hidden row dropped afterwards would still be inside every total.
+            const rows = hiddenRef
+                ? []
+                : filterByPath(
+                      await resolveBaseRows(path, {
+                          root: vault,
+                          today: today(),
+                      }),
+                      entries,
+                      r => r.file.path,
+                  )
+            const result = runView(parsedBase.config, rows)
 
             if (CHART_KINDS.has(result.view.type)) {
                 // Chart kinds (bar/line/stat/heatmap) compute an aggregated series over the view's
@@ -703,10 +782,20 @@ export const commands: CommandMap = {
             else if (where !== undefined) spec = { kind: 'notes', where }
             else spec = { kind: 'notes' }
 
-            const resolved = await resolveSource(spec, {
-                root: vault,
-                today: today(),
-            })
+            const entries = await agentDenyEntries(vault)
+            // Same as `base render`: a hidden ref looks exactly like a missing one.
+            if (await readsDeniedBase(vault, spec, entries)) {
+                out([], args)
+                return
+            }
+            const resolved = filterByPath(
+                await resolveSource(spec, {
+                    root: vault,
+                    today: today(),
+                }),
+                entries,
+                r => r.file.path,
+            )
             out(resolved, args)
         },
     },
@@ -781,7 +870,12 @@ export const commands: CommandMap = {
         run: async args => {
             const vault = requireVault(args)
             const dryRun = bool(args, 'dry-run')
-            const rels = await listMarkdown(vault)
+            // Skip restricted notes at the source, so neither a write nor the report names one.
+            const rels = filterByPath(
+                await listMarkdown(vault),
+                await agentDenyEntries(vault),
+                rel => rel,
+            )
             const files: Array<{ file: string; changed: number }> = []
             const unconvertible: Array<{ file: string; block: number }> = []
             const degraded: Array<{ file: string; block: number; leaves: string[] }> =

@@ -35,6 +35,14 @@ export function replaceInText(
     return { text: out, count }
 }
 
+/** Extra, optional controls over a `replaceInVault` call. */
+export interface ReplaceVaultOptions {
+    /** A note this returns true for is never read, rewritten or reported — in vault scope AND in a
+     *  single-path scope. The CLI passes `isDeniedPath` for an agent so a restricted note's bytes
+     *  stay untouched and its path never appears in `files`. Absent = every note is eligible. */
+    skip?: (rel: string) => boolean
+}
+
 /** Apply replaceInText across the vault (scope "vault") or a single note (scope = path).
  *  Writes only files whose content changed; returns the change summary. */
 export async function replaceInVault(
@@ -43,12 +51,14 @@ export async function replaceInVault(
     replacement: string,
     opts: SearchOpts,
     scope: string,
+    extra?: ReplaceVaultOptions,
 ): Promise<ReplaceResult> {
     const { listMarkdown, readNote, writeNote } = await getFileAccess()
     const paths = scope === 'vault' ? await listMarkdown(root) : [scope]
     let replaced = 0
     const files: string[] = []
     for (const p of paths) {
+        if (extra?.skip?.(p)) continue
         const before = await readNote(root, p)
         const { text, count } = replaceInText(before, query, replacement, opts)
         if (count > 0 && text !== before) {

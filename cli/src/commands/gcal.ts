@@ -39,6 +39,12 @@ import {
     type BaseSync,
 } from '../../../core/src/gcal/manifest'
 import { loadAppConfig } from '../../../core/src/settings'
+import {
+    agentChannel,
+    agentDenyEntries,
+    filterByPath,
+    isDeniedPath,
+} from '../../../core/src/visibilityFilter'
 import type { LegacyGcalConfig } from '../../../core/src/gcal/config'
 
 const unreachable = needsServer(
@@ -123,6 +129,13 @@ export const commands: CommandMap = {
         run: async args => {
             const [basePath] = positionals(args)
             if (!basePath) fail('usage: gcal sync <basePath>')
+            // `sync` needs no vault of its own, so the argv gate cannot tell which vault's deny
+            // list applies without one: an agent MUST name it, and a hidden base is refused.
+            if (agentChannel()) {
+                const vault = requireVault(args)
+                if (isDeniedPath(await agentDenyEntries(vault), basePath))
+                    fail('refused: that base is not visible to this agent')
+            }
             out(
                 await call(
                     resolveCore(args),
@@ -159,8 +172,17 @@ export const commands: CommandMap = {
         usage: '',
         run: async args => {
             const vault = requireVault(args)
+            // Agents: restricted bases are dropped from the list. Throws when undeterminable.
+            const deny = await agentDenyEntries(vault)
             const legacy = await legacyConfig(vault)
-            out(await listGcalSyncTargets(vault, legacy), args)
+            out(
+                filterByPath(
+                    await listGcalSyncTargets(vault, legacy),
+                    deny,
+                    t => t.basePath,
+                ),
+                args,
+            )
         },
     },
 
@@ -175,6 +197,9 @@ export const commands: CommandMap = {
             const vault = requireVault(args)
             const [basePath] = positionals(args)
             const manifest = readManifest()
+            // Agents: the "list all" enumeration skips restricted bases. An explicit
+            // <basePath> that is restricted never gets here (the argv path scan refuses it).
+            const deny = await agentDenyEntries(vault)
 
             // Namespaced lookup first; only when ABSENT does a legacy (pre-namespacing) bare
             // entry get read. Never writes, moves or creates anything — that's `baseSyncFor`'s
@@ -212,6 +237,7 @@ export const commands: CommandMap = {
             const nsPaths = Object.keys(manifest.bases)
                 .filter(k => k.startsWith(prefix))
                 .map(k => k.slice(prefix.length))
+                .filter(path => !isDeniedPath(deny, path))
             out(nsPaths.map(summarize), args)
         },
     },

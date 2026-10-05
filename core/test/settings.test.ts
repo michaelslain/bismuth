@@ -134,6 +134,18 @@ test('setFolderIcon persists a folder icon into settings.yaml', async () => {
     )
 })
 
+test('setFolderIcon cannot inject a folderVisibility line through its key or icon', async () => {
+    const vault = await emptyVault()
+    const key = 'x:\nfolderVisibility:\n  Secret: all\n#'
+    await setFolderIcon(vault, key, 'Folder\nfolderVisibility: {}')
+    const res = await readSettings(vault)
+    expect(res!.parseError).toBeUndefined()
+    expect(res!.data.folderVisibility).toBeUndefined()
+    expect(await readFolderIcons(vault)).toEqual({
+        [key]: 'Folder\nfolderVisibility: {}',
+    })
+})
+
 test('setFolderIcon with an empty icon deletes the entry', async () => {
     const vault = await emptyVault()
     await setFolderIcon(vault, 'projects', 'Folder')
@@ -1095,5 +1107,52 @@ describe('readDaemonEnabledSync', () => {
         expect(readDaemonEnabledSync(vault)).toBe(
             (cfg.daemon as { enabled: boolean }).enabled,
         )
+    })
+})
+
+import { readFolderVisibilityResult } from '../src/settings'
+
+describe('readFolderVisibilityResult fails closed on malformed rules', () => {
+    test('an unknown value is not ok and names neither the key nor the value', async () => {
+        const vault = await emptyVault()
+        writeFileSync(
+            join(vault, '.settings'),
+            'folderVisibility:\n  Vault Hidden: hiden\n',
+        )
+        const r = await readFolderVisibilityResult(vault)
+        expect(r.ok).toBe(false)
+        if (!r.ok) {
+            // The key is a hidden folder's name, and this reason reaches agents.
+            expect(r.reason).toContain('a folderVisibility entry is not')
+            expect(r.reason).not.toContain('Vault Hidden')
+            expect(r.reason).not.toContain('hiden')
+        }
+    })
+
+    test('a non-map folderVisibility is not ok', async () => {
+        const vault = await emptyVault()
+        writeFileSync(join(vault, '.settings'), 'folderVisibility: [a]\n')
+        expect((await readFolderVisibilityResult(vault)).ok).toBe(false)
+    })
+
+    test('all is accepted and dropped from the map', async () => {
+        const vault = await emptyVault()
+        writeFileSync(
+            join(vault, '.settings'),
+            'folderVisibility:\n  Open: all\n  Priv: hidden\n',
+        )
+        expect(await readFolderVisibilityResult(vault)).toEqual({
+            ok: true,
+            map: { Priv: 'hidden' },
+        })
+    })
+
+    test('absent folderVisibility is ok and empty', async () => {
+        const vault = await emptyVault()
+        writeFileSync(join(vault, '.settings'), 'theme: ink\n')
+        expect(await readFolderVisibilityResult(vault)).toEqual({
+            ok: true,
+            map: {},
+        })
     })
 })

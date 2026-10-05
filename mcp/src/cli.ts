@@ -47,7 +47,13 @@ export async function runCli(
     try {
         const proc = Bun.spawn(cmd, {
             cwd: opts?.cwd ?? repoRoot,
-            env: process.env,
+            // Anything this server spawns is an agent's hand: stamp BISMUTH_MCP_CHANNEL so the CLI
+            // (doctor's isAgent) never mistakes it for the owner. Unset means some agent, the
+            // same default as mcpChannel(); a spawner that declared a channel keeps it.
+            env: {
+                ...process.env,
+                BISMUTH_MCP_CHANNEL: process.env.BISMUTH_MCP_CHANNEL || 'daemon',
+            },
             stdin: 'ignore',
             stdout: 'pipe',
             stderr: 'pipe',

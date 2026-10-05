@@ -8,7 +8,7 @@
 //
 // Storage: a file's frontmatter `visibility: "chat-only" | "hidden"` (absent = INHERIT, not
 // "visible"); a folder's entry in the vault's `.settings` `folderVisibility: {folderPath:
-// "chat-only"|"hidden"}` map. Settings are read with the same tolerant fallback chain
+// "chat-only"|"hidden"|"all"}` map (`all` restricts nothing). Settings are read with the same tolerant fallback chain
 // vaultSettings.ts provides (`.settings`, the interim `.settings/settings.yaml`, and the legacy
 // root `settings.yaml` — first readable wins), since the daemon may see a vault before core has
 // migrated it.
@@ -16,6 +16,13 @@
 // The discovery walk (listVisibilityFiles + buildDenyPaths) is the whole enforcement surface —
 // a file it misses is unprotected. Keep this file's walk logic byte-for-byte in step with
 // core/src/visibility.ts's; see that file's comments for the reasoning behind each fix.
+//
+// FAIL-CLOSED rules ported from core: a closed frontmatter fence that does not parse, parses to a
+// non-map, or carries a `visibility` that is not all/chat-only/hidden is `hidden` (a head still
+// unclosed after the 64 KiB re-read is `hidden` too); a malformed `folderVisibility` (non-map or an
+// unknown value) makes the walk undetermined; and the `.trash` is restricted whenever any
+// folderVisibility rule or any non-trash file restricts. YAML is parsed with the same `yaml`
+// package core uses, so no hand-parsing or looser fallback exists here.
 import { open, readdir, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
@@ -88,13 +95,25 @@ function normalizeFolderKey(k: string): string {
     return k.replace(/\/+$/, '').replace(/\/{2,}/g, '/')
 }
 
+/** Validate and normalize a `folderVisibility` value. Mirrors core/src/settings.ts's
+ *  readFolderVisibilityResult: absent / null → empty; a non-map, or any value other than
+ *  chat-only/hidden/all, throws {@link VisibilityUndeterminedError} (a typo like `hiden` used to be
+ *  dropped, leaving the folder visible). `all` is valid and restricts nothing, so it is dropped. */
 function normalizeFolderVisibility(raw: unknown): Record<string, Visibility> {
     const out: Record<string, Visibility> = {}
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-        for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-            if (v === 'chat-only' || v === 'hidden')
-                out[normalizeFolderKey(k)] = v
+    if (raw === undefined || raw === null) return out
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new VisibilityUndeterminedError(
+            '.settings folderVisibility must be a map of folder → chat-only|hidden',
+        )
+    }
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (v !== 'chat-only' && v !== 'hidden' && v !== 'all') {
+            throw new VisibilityUndeterminedError(
+                '.settings a folderVisibility entry is not chat-only, hidden or all',
+            )
         }
+        if (v !== 'all') out[normalizeFolderKey(k)] = v
     }
     return out
 }
@@ -108,22 +127,24 @@ function normalizeFolderVisibility(raw: unknown): Record<string, Visibility> {
  * means "no folder is restricted" — so appending one stray character to a settings file whose
  * `folderVisibility:` block hid a folder silently un-hid every note in it, with no error anywhere.
  * A file that is PRESENT but unparseable throws {@link VisibilityUndeterminedError}; a file that is
- * simply not there is an answer, and yields `{}`.
+ * simply not there is an answer, and yields `{}`. A `folderVisibility` that is present but not a
+ * plain map, or holds any value other than chat-only/hidden/all, throws the same way.
  */
 async function readFolderVisibility(
     root: string,
 ): Promise<Record<string, Visibility>> {
-    let doc: { folderVisibility?: unknown } | null
+    let doc: unknown
     try {
-        doc = (await readVaultSettingsDoc(root, { strict: true })) as {
-            folderVisibility?: unknown
-        } | null
+        doc = await readVaultSettingsDoc(root, { strict: true })
     } catch (e) {
         if (e instanceof VaultSettingsParseError)
             throw new VisibilityUndeterminedError(e.message)
         throw e
     }
-    return doc === null ? {} : normalizeFolderVisibility(doc.folderVisibility)
+    if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) return {}
+    return normalizeFolderVisibility(
+        (doc as { folderVisibility?: unknown }).folderVisibility,
+    )
 }
 
 /**
@@ -254,21 +275,6 @@ const FRONTMATTER_OPEN_RE = /^---\r?\n/
  *  whether a closing fence already lies within whatever slice we've read so far. */
 const FRONTMATTER_CLOSED_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/
 
-/** A note's frontmatter, parsed with the `yaml` package exactly as core/src/frontmatter.ts does —
- *  so `visibility: hidden # private` reads `hidden`. Malformed YAML → {} (tolerated, as in core). */
-function parseNoteFrontmatter(md: string): Record<string, unknown> {
-    const m = md.match(FRONTMATTER_CLOSED_RE)
-    if (!m) return {}
-    try {
-        const data = parseYaml(m[1] ?? '') as unknown
-        return data && typeof data === 'object' && !Array.isArray(data)
-            ? (data as Record<string, unknown>)
-            : {}
-    } catch {
-        return {}
-    }
-}
-
 function stripBOM(s: string): string {
     return s.length > 0 && s.charCodeAt(0) === 0xfeff ? s.slice(1) : s
 }
@@ -318,15 +324,29 @@ async function readOwnVisibility(absPath: string): Promise<FileVisibility> {
     if (!FRONTMATTER_OPEN_RE.test(text)) return undefined // not frontmatter-shaped — no more I/O
     if (head.truncated && !FRONTMATTER_CLOSED_RE.test(text)) {
         try {
-            text = stripBOM(
-                (await readHeadBytes(absPath, MAX_FRONTMATTER_BYTES)).text,
-            )
+            const big = await readHeadBytes(absPath, MAX_FRONTMATTER_BYTES)
+            text = stripBOM(big.text)
+            // Still no closing fence after the full 64 KiB: the block may close further down and
+            // carry a restriction we never saw. Fail closed.
+            if (big.truncated && !FRONTMATTER_CLOSED_RE.test(text))
+                return 'hidden'
         } catch {
             return undefined
         }
     }
-    const data = parseNoteFrontmatter(text)
-    return isVisibilityLiteral(data.visibility) ? data.visibility : undefined
+    const m = text.match(FRONTMATTER_CLOSED_RE)
+    if (!m) return undefined // unclosed fence — not frontmatter
+    let data: unknown
+    try {
+        data = parseYaml(m[1] ?? '')
+    } catch {
+        return 'hidden'
+    }
+    if (data === null || data === undefined) return undefined // empty block
+    if (typeof data !== 'object' || Array.isArray(data)) return 'hidden'
+    const v = (data as Record<string, unknown>).visibility
+    if (v === undefined || v === null || v === '') return undefined
+    return isVisibilityLiteral(v) ? v : 'hidden'
 }
 
 /** Memoized per-directory folder-cascade lookup: many files share a directory, and
@@ -579,6 +599,17 @@ async function walkDenyEntries(
     )
 
     applyStemInheritance(resolved)
+
+    // Deleting a note moves it to `.trash/<ms>-<name>`, which drops its folder cascade — a trashed
+    // copy of a hidden note would resolve visible. So the trash is restricted when EITHER some
+    // folderVisibility rule restricts (even if its folder is absent or empty) OR any file outside
+    // the trash is restricted. A vault with no rules stays at zero entries. Mirrors core.
+    const inTrash = (rel: string) => rel === '.trash' || rel.startsWith('.trash/')
+    if (
+        Object.keys(folderVisibility).length > 0 ||
+        resolved.some(f => !inTrash(f.rel) && !isVisibleToDaemon(f.visibility))
+    )
+        for (const f of resolved) if (inTrash(f.rel)) f.visibility = 'hidden'
 
     // The absolute spellings one restricted file is readable at, deduped, minus `abs` itself: a
     // symlinked DIRECTORY on the way to it, and the CALLER's own spelling of the vault root when it

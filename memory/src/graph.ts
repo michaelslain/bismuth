@@ -133,21 +133,55 @@ function parseFrontmatterValue(value: string): string | string[] {
     return trimmed
 }
 
+type ParsedVisibility = 'all' | 'chat-only' | 'hidden'
+
+const VISIBILITY_STRICTNESS: Record<ParsedVisibility, number> = {
+    all: 0,
+    'chat-only': 1,
+    hidden: 2,
+}
+
+/**
+ * Read one `visibility:` value, FAILING CLOSED. This parser is hand-rolled (the memory package takes
+ * no YAML dependency) while core reads the same files with real YAML, so every spelling YAML would
+ * accept has to land on the same side of the line or an agent sees a note core would hide. Strips a
+ * trailing ` # comment` and one pair of surrounding quotes, then matches `all|chat-only|hidden`
+ * case-insensitively. ANYTHING else (an empty value whose real value sits on the next line, a flow
+ * `[hidden]` / `{...}` form, a typo) is `hidden`.
+ */
+function parseVisibilityValue(raw: string): ParsedVisibility {
+    let v = raw.replace(/\s+#.*$/, '').trim()
+    const quoted = v.match(/^(['"])(.*)\1$/)
+    if (quoted) v = (quoted[2] ?? '').trim()
+    v = v.toLowerCase()
+    return v === 'all' || v === 'chat-only' || v === 'hidden' ? v : 'hidden'
+}
+
 function parseFrontmatter(raw: string): NoteFrontmatter {
     const lines = raw.split('\n')
     const data: Record<string, string | string[]> = {}
+    // The strictest `visibility` seen on ANY line wins, so a duplicate key (or an indented one inside
+    // a block) can only ever tighten the note, never relax it.
+    let visibility: ParsedVisibility = 'all'
 
     for (const line of lines) {
         const colonIdx = line.indexOf(':')
         if (colonIdx === -1) continue
-        const key = line.slice(0, colonIdx).trim()
+        const key = line
+            .slice(0, colonIdx)
+            .trim()
+            .replace(/^(['"])(.*)\1$/, '$2')
         const value = line.slice(colonIdx + 1).trim()
+        if (key === 'visibility') {
+            const v = parseVisibilityValue(value)
+            if (VISIBILITY_STRICTNESS[v] > VISIBILITY_STRICTNESS[visibility])
+                visibility = v
+            continue
+        }
         if (key) {
             data[key] = parseFrontmatterValue(value)
         }
     }
-
-    const visibility = data['visibility']
 
     return {
         type: (data['type'] as NoteType) ?? 'fact',
@@ -158,9 +192,7 @@ function parseFrontmatter(raw: string): NoteFrontmatter {
               : [],
         created: (data['created'] as string) ?? todayISO(),
         updated: (data['updated'] as string) ?? todayISO(),
-        ...(visibility === 'chat-only' || visibility === 'hidden'
-            ? { visibility }
-            : {}),
+        ...(visibility !== 'all' ? { visibility } : {}),
     }
 }
 
@@ -189,6 +221,17 @@ function parseNoteFile(name: string, raw: string): MemoryNote {
     if (parts.length >= 3 && parts[0] !== undefined && parts[0].trim() === '') {
         frontmatter = parseFrontmatter(parts[1] ?? '')
         content = parts.slice(2).join('---').trim()
+    } else if (parts.length === 2 && parts[0] !== undefined && parts[0].trim() === '') {
+        // A `---` fence opened and never closed: the head is malformed, so what it would have said
+        // about visibility is unknowable. Fail closed.
+        frontmatter = {
+            type: 'fact',
+            tags: [],
+            created: todayISO(),
+            updated: todayISO(),
+            visibility: 'hidden',
+        }
+        content = (parts[1] ?? '').trim()
     } else {
         // No frontmatter block found
         frontmatter = {
@@ -272,6 +315,17 @@ export async function listNotes(
         names.push(noExt)
     }
     return names
+}
+
+/** The on-disk path read/write/delete resolve `name` (+ `folder`) to, sanitisation included, for
+ *  callers that must check that exact path against a deny list. Throws on an invalid name. */
+export function memoryNotePath(
+    name: string,
+    dir: string,
+    folder?: string,
+): string {
+    const ref = resolveRef(name, folder)
+    return notePath(dir, ref.name, ref.folder)
 }
 
 /**

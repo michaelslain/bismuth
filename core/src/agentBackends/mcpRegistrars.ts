@@ -56,6 +56,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parseDocument } from 'yaml'
 import { whichBinary } from '../claudeWhich'
+import { isBismuthOwnedPath } from '../ownership'
 import { spawnWithTimeout } from './spawnWithTimeout'
 
 /** What the caller wants registered: our compiled MCP binary + the env it needs to find the docs
@@ -288,10 +289,22 @@ export function upsertJsonMcpServer(
     }
 }
 
+/** A registered command is ours when it points into the CURRENT `<home>/.bismuth` OR, by shape, is
+ *  `…/.bismuth/bin/bismuth-mcp` under ANY home — an entry written before the account's home was
+ *  renamed. A lookalike (`/opt/other/bismuth-mcp`) stays foreign. */
+function isOurCommand(cmd: string, currentPrefix: string): boolean {
+    return (
+        cmd === currentPrefix ||
+        cmd.startsWith(currentPrefix + '/') ||
+        isBismuthOwnedPath(cmd, 'bin/bismuth-mcp')
+    )
+}
+
 /** Ownership check generalized over where in an entry the `command` field lives — every JSON
  *  registrar keeps it at the top level (`entry.command`), but Goose nests it under
- *  `entry.transport.command`. True when it points into `<home>/.bismuth` — i.e. something we
- *  (a past run of this installer) wrote, not the user's own unrelated config. */
+ *  `entry.transport.command`. True when it points into `<home>/.bismuth` or is `…/.bismuth/bin/
+ *  bismuth-mcp` under any older home — i.e. something we (a past run of this installer) wrote, not
+ *  the user's own unrelated config. */
 function ownsEntryCommand(
     home: string,
     extractCommand: (existing: unknown) => unknown,
@@ -300,11 +313,11 @@ function ownsEntryCommand(
     return existing => {
         if (!existing || typeof existing !== 'object') return false
         const command = extractCommand(existing)
-        return typeof command === 'string' && command.startsWith(prefix)
+        return typeof command === 'string' && isOurCommand(command, prefix)
     }
 }
 
-/** True when an existing MCP-server JSON entry's `command` points into `<home>/.bismuth` — i.e.
+/** True when an existing MCP-server JSON entry's `command` is ours (see isOurCommand) — i.e.
  *  something we (a past run of this installer) wrote, not the user's own unrelated config. */
 function ownsCommand(home: string): (existing: unknown) => boolean {
     return ownsEntryCommand(

@@ -15,6 +15,8 @@ import {
     ensureBismuthInstalled,
     getBismuthStatus,
     removeLegacySkills,
+    isOurCliLink,
+    findOurLinks,
     claudeMcpAddArgs,
     LEGACY_SKILL_IDS,
     type InstallIO,
@@ -299,6 +301,34 @@ test('removeLegacySkills is a no-op when nothing is there, and idempotent', () =
     })
 })
 
+test('removeLegacySkills removes an old-home link by shape, keeps lookalikes + real dirs, and is idempotent', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir) => {
+        const [oldId, lookalikeId, dirId] = LEGACY_SKILL_IDS
+        mkdirSync(claudeSkillsDir, { recursive: true })
+        // Dangling link into a home that no longer exists: ours by shape.
+        const oldLink = join(claudeSkillsDir, oldId)
+        symlinkSync(`/Users/old/.bismuth/skills/${oldId}`, oldLink)
+        // A lookalike path (.bismuth-notes) is foreign.
+        const lookalike = join(claudeSkillsDir, lookalikeId)
+        const lookalikeTarget = `/Users/x/proj/.bismuth-notes/skills/${lookalikeId}`
+        symlinkSync(lookalikeTarget, lookalike)
+        // A real directory with a legacy name is foreign.
+        const realDir = join(claudeSkillsDir, dirId)
+        mkdirSync(realDir)
+        writeFileSync(join(realDir, 'SKILL.md'), 'mine\n')
+
+        expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
+        expect(lstatSync(oldLink, { throwIfNoEntry: false })).toBeUndefined()
+        expect(readlinkSync(lookalike)).toBe(lookalikeTarget)
+        expect(readFileSync(join(realDir, 'SKILL.md'), 'utf8')).toBe('mine\n')
+
+        // Second run: nothing to do, nothing changes.
+        expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
+        expect(readlinkSync(lookalike)).toBe(lookalikeTarget)
+        expect(lstatSync(realDir).isDirectory()).toBe(true)
+    })
+})
+
 test('removeLegacySkills removes ~/.bismuth/skills even when no link exists', () => {
     withTempDirs((bismuthHome, claudeSkillsDir) => {
         mkdirSync(join(bismuthHome, 'skills', 'whatever'), { recursive: true })
@@ -311,4 +341,66 @@ test('the registered MCP server spec no longer carries BISMUTH_SKILLS_DIR', () =
     const args = claudeMcpAddArgs()
     expect(args.some(a => a.startsWith('BISMUTH_SKILLS_DIR='))).toBe(false)
     expect(args.some(a => a.startsWith('BISMUTH_DOCS_DIR='))).toBe(true)
+})
+
+test('removeLegacySkills keeps a link into a .bismuth-dev sibling of the home (segment-aligned)', () => {
+    withTempDirs((bismuthHome, claudeSkillsDir) => {
+        const [id] = LEGACY_SKILL_IDS
+        mkdirSync(claudeSkillsDir, { recursive: true })
+        const sibling = `${bismuthHome}-dev/skills/${id}`
+        const link = join(claudeSkillsDir, id)
+        symlinkSync(sibling, link)
+        expect(removeLegacySkills(bismuthHome, claudeSkillsDir)).toEqual([])
+        expect(readlinkSync(link)).toBe(sibling)
+    })
+})
+
+// --- isOurCliLink / findOurLinks: parameterised on the home, real fs under temp dirs ---------
+
+test('isOurCliLink: current-home and old-home links are ours; a .bismuth-dev sibling, a file and a missing path are not', () => {
+    const root = tempDir('bismuth-cli-link-')
+    try {
+        const home = join(root, '.bismuth')
+        mkdirSync(join(root, 'bin'), { recursive: true })
+        const mk = (name: string, target: string) => {
+            const p = join(root, 'bin', name)
+            symlinkSync(target, p)
+            return p
+        }
+        expect(
+            isOurCliLink(mk('cur', join(home, 'bin', 'bismuth')), home),
+        ).toBe(true)
+        expect(
+            isOurCliLink(mk('old', '/Users/old/.bismuth/bin/bismuth'), home),
+        ).toBe(true)
+        expect(isOurCliLink(mk('dev', `${home}-dev/bin/bismuth`), home)).toBe(
+            false,
+        )
+        const file = join(root, 'bin', 'file')
+        writeFileSync(file, 'x')
+        expect(isOurCliLink(file, home)).toBe(false)
+        expect(isOurCliLink(join(root, 'bin', 'nope'), home)).toBe(false)
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+test('findOurLinks finds our links across dirs and skips a .bismuth-dev one', () => {
+    const root = tempDir('bismuth-find-links-')
+    try {
+        const home = join(root, '.bismuth')
+        const a = join(root, 'a')
+        const b = join(root, 'b')
+        const c = join(root, 'c')
+        for (const d of [a, b, c]) mkdirSync(d, { recursive: true })
+        symlinkSync(join(home, 'bin', 'bismuth'), join(a, 'bismuth'))
+        symlinkSync('/Users/old/.bismuth/bin/bismuth', join(b, 'bismuth'))
+        symlinkSync(`${home}-dev/bin/bismuth`, join(c, 'bismuth'))
+        expect(findOurLinks([a, b, c], home).sort()).toEqual([
+            join(a, 'bismuth'),
+            join(b, 'bismuth'),
+        ])
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
 })

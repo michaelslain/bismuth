@@ -267,6 +267,51 @@ test("GET /graph drops a hidden note's node (and every edge touching it) without
     }
 })
 
+test("GET /graph carries no hidden note's title in any community label, for a tokenless caller", async () => {
+    // >= 30 notes so communities are stamped at all, with the hidden note the highest-degree member
+    // of its cluster — the exemplar a community label is taken from.
+    const HIDDEN_TITLE = 'Quarterly Layoff Plan'
+    const files: Record<string, string> = {}
+    const spokes = Array.from({ length: 12 }, (_, i) => `spoke${i}`)
+    files[`${HIDDEN_TITLE}.md`] =
+        `---\nvisibility: hidden\n---\n${spokes.map(s => `[[${s}]]`).join(' ')}\n`
+    for (const s of spokes) files[`${s}.md`] = `# ${s}\n`
+    for (const prefix of ['b', 'c']) {
+        for (let i = 0; i < 12; i++)
+            files[`${prefix}${i}.md`] =
+                `[[${prefix}${(i + 1) % 12}]] [[${prefix}${(i + 2) % 12}]]\n`
+    }
+    const vault = makeVault(files)
+    const server = createServer({ vault, port: 0 })
+    const base = `http://localhost:${server.port}`
+    type Labelled = {
+        nodes: Array<{
+            communityLabel?: string
+            communityPathLabels?: string[]
+        }>
+    }
+    const labels = (g: Labelled) =>
+        g.nodes.flatMap(n => [n.communityLabel, ...(n.communityPathLabels ?? [])])
+    try {
+        const token = tokenFor(vault)
+        const owner = (await (
+            await fetch(`${base}/graph`, {
+                headers: { 'X-Bismuth-Token': token },
+            })
+        ).json()) as Labelled
+        // Sanity: the owner's graph DOES label a community with the hidden title, so the next
+        // assertion can fail.
+        expect(labels(owner)).toContain(HIDDEN_TITLE)
+
+        const daemon = (await (await fetch(`${base}/graph`)).json()) as Labelled
+        expect(daemon.nodes.length).toBeGreaterThan(0)
+        for (const l of labels(daemon))
+            expect(l ?? '').not.toContain(HIDDEN_TITLE)
+    } finally {
+        server.stop(true)
+    }
+})
+
 test("GET /tasks omits a hidden note's task line without the token", async () => {
     const vault = makeVault({
         'secret.md': '---\nvisibility: hidden\n---\n- [ ] secret todo\n',

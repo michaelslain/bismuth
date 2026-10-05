@@ -39,6 +39,7 @@ import { TemplatePalette } from './palette/TemplatePalette'
 import { bindCommands, resolveButtonCommands, type GraphMode } from './commands'
 import { BASE_VIEW_KINDS } from './baseViews'
 import { settings, setSettings, settingsHydrated } from './settings'
+import { showDoctorToast } from './doctorToast'
 import { settingsToCssVars, setCssVars } from './settingsCssVars'
 import { resolveAppearance } from './themes'
 import { matchesKeybinding, toMenuAccelerator } from './keybindings'
@@ -2264,6 +2265,20 @@ export default function App() {
         // setup when the daemon is enabled, so a separate mount-time call would just be a second
         // request for the same data.
         void refreshGraph().catch(() => {})
+    })
+
+    // Doctor consent toast: ONCE per window, after GET /settings has landed (the first proof the
+    // backend answers). The latch makes the effect inert after its single firing. Safe repairs already
+    // ran at core boot; this only asks about the destructive ones, and says nothing when /doctor
+    // errors (mobile, an old core) or nothing is waiting.
+    let doctorAsked = false
+    createEffect(() => {
+        if (!settingsHydrated() || doctorAsked) return
+        doctorAsked = true
+        void showDoctorToast({
+            getDoctor: api.getDoctor,
+            fixDoctor: api.fixDoctor,
+        })
     })
 
     // Refresh the graph on every real server change. decideGraphRefresh (graphRefreshGate.ts) is

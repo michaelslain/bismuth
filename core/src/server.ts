@@ -44,7 +44,7 @@ import { parseBaseFile } from './bases/parse'
 import { flattenBaseViews } from './bases/flattenViews'
 import { resolveSource } from './bases/source'
 import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
-import type { GraphData, GraphNode, TreeEntry } from './graph'
+import type { GraphData, TreeEntry } from './graph'
 import {
     collectVaultTasks,
     applyTaskToggle,
@@ -176,6 +176,7 @@ import {
     type DenyEntry,
     type VisibilityChannel,
 } from './visibility'
+import { filterByPath, filterGraph } from './visibilityFilter'
 import { dailyNotePath, dailyNoteContent } from './dailyNote'
 import { DEFAULTS as SETTINGS_DEFAULTS } from './schema/settingsSchema'
 import { searchVault, invalidateSearchIndex, updateSearchIndex } from './search'
@@ -215,6 +216,12 @@ import {
     installDaemonFromBundle,
 } from './daemonInstall'
 import { getBismuthStatus, ensureBismuthInstalled } from './bismuthInstall'
+import {
+    doctorApply,
+    doctorDryRun,
+    doctorFixOptions,
+    bootDoctor,
+} from './doctor/routes'
 import { getUpdateStatus, startUpdate, getUpdateProgress } from './selfUpdate'
 import {
     status as gcalStatus,
@@ -1040,51 +1047,6 @@ export function createServer(cfg: CoreConfig) {
         })
         denyPathsMemo.set(channel, walk)
         return walk
-    }
-
-    // The vault-relative path a graph node's content lives at, for the two node kinds that carry
-    // note bodies (note ids are the path minus ".md" — see vault.ts's noteId; memory ids are
-    // "mem:<path-under-.daemon/memory-minus-.md>" — see memory.ts). Every other kind (tag/agent/
-    // self/daemon/cron/process) carries no note content, so it's never subject to this filter.
-    function graphContentPath(node: GraphNode): string | null {
-        if (node.kind === 'note') return `${node.id}.md`
-        if (node.kind === 'memory')
-            return `.daemon/memory/${node.id.slice('mem:'.length)}.md`
-        return null
-    }
-
-    // Drop nodes (and any edge touching one) whose backing note/memory path is restricted for this
-    // request's channel. Never mutates the cached graph in place — graphCache.get() returns the
-    // SAME object across every request (and GET /graph/views mutates its `.views` in place), so an
-    // in-place filter here would permanently corrupt the OWNER's next /graph too.
-    function filterGraph(graph: GraphData, entries: DenyEntry[]): GraphData {
-        if (entries.length === 0) return graph
-        const dropped = new Set<string>()
-        for (const n of graph.nodes) {
-            const rel = graphContentPath(n)
-            if (rel && isDeniedPath(entries, rel)) dropped.add(n.id)
-        }
-        if (dropped.size === 0) return graph
-        return {
-            ...graph,
-            nodes: graph.nodes.filter(n => !dropped.has(n.id)),
-            edges: graph.edges.filter(
-                e => !dropped.has(e.from) && !dropped.has(e.to),
-            ),
-        }
-    }
-
-    // Omit items whose note path is restricted for this request's channel — the "a legitimately
-    // searching agent gets the visible subset, not an error" half of the design, as opposed to a
-    // single directly-requested path (GET /file et al.), which 403s instead.
-    function filterByPath<T>(
-        items: T[],
-        entries: DenyEntry[],
-        pathOf: (item: T) => string,
-    ): T[] {
-        return entries.length === 0
-            ? items
-            : items.filter(item => !isDeniedPath(entries, pathOf(item)))
     }
 
     // Retained so stop() can close them: like gcalTicker below, a watcher outlives the server that
@@ -2164,6 +2126,21 @@ export function createServer(cfg: CoreConfig) {
             return ok(
                 await ensureBismuthInstalled(process.env.BISMUTH_INSTALL_SRC),
             )
+        },
+
+        // The doctor (core/src/doctor/). Owner-only: findings carry paths and a fix deletes files,
+        // so an agent channel must never reach it. GET is a dry run over this server's vault; POST
+        // applies `{ only?: string[] }` (both risks), the same call the launch toast's `fix` makes.
+        'GET /doctor': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            return ok(await doctorDryRun(cfg.vault))
+        },
+
+        'POST /doctor/fix': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const opts = doctorFixOptions(await req.json().catch(() => ({})))
+            if (!opts) return error('only must be an array of strings', 400)
+            return ok(await doctorApply(cfg.vault, opts))
         },
 
         // Git-based self-update (core/src/selfUpdate.ts). Auto-detects when the source build is
@@ -4060,5 +4037,12 @@ if (import.meta.main) {
                     `bismuth tools install failed: ${e?.message ?? e}`,
                 ),
             )
+            // Then the doctor's SAFE repairs (stale links, old-home service units, orphan files).
+            // Destructive ones stay pending for the launch toast. Runs after the ensure settles so
+            // it sees the freshly installed state; bootDoctor never throws.
+            .then(async () => {
+                if (process.env.BISMUTH_NO_BOOT_DOCTOR === '1') return
+                for (const line of await bootDoctor(vault)) console.log(line)
+            })
     }
 }

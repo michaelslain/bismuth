@@ -17,6 +17,10 @@ import {
     writeNote,
 } from '../../../core/src/files'
 import { noteStem } from '../../../core/src/pathUtils'
+import {
+    agentDenyEntries,
+    isDeniedPath,
+} from '../../../core/src/visibilityFilter'
 import { parseFrontmatter } from '../../../core/src/frontmatter'
 import {
     parseCalendarFile,
@@ -108,7 +112,11 @@ export const commands: CommandMap = {
                 events: number
                 categories: string[]
             }[] = []
+            // Agents: a restricted base is dropped at the enumeration, before it is read, so
+            // neither its path, title nor counts reach the output. Throws when undeterminable.
+            const deny = await agentDenyEntries(vault)
             for (const path of (await listMarkdown(vault)).sort()) {
+                if (isDeniedPath(deny, path)) continue
                 let text: string
                 try {
                     text = await readNote(vault, path)

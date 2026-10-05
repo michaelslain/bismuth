@@ -19,7 +19,7 @@ import { detectCommunityHierarchy } from './community'
  */
 const MIN_NODES_FOR_CLUSTERING = 30
 
-function stampCommunities(g: GraphData): GraphData {
+export function stampCommunities(g: GraphData): GraphData {
     if (g.nodes.length < MIN_NODES_FOR_CLUSTERING) return g
     const present = new Set(g.nodes.map(n => n.id))
     const structural = g.edges.filter(

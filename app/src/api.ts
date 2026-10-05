@@ -127,6 +127,7 @@ import type { Task } from '../../core/src/tasks'
 import type { Card } from '../../core/src/srs/types'
 import type { Row, ParsedBase, SourceSpec } from '../../core/src/bases/types'
 import type { Schema } from '../../core/src/schema/types'
+import type { DoctorReport } from '../../core/src/doctor/types'
 import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
 import type { DaemonSnapshot } from '../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../core/src/daemonActivity'
@@ -743,6 +744,10 @@ export const api = {
     // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.
     bismuthInstallStatus: () => getJson<BismuthStatus>('/bismuth/install'),
     bismuthInstall: () => postJson<InstallResult>('/bismuth/install', {}),
+    // The doctor (core/src/doctor/): owner-only dry run, and apply the named repairs (both risks).
+    getDoctor: () => getJson<DoctorReport>('/doctor'),
+    fixDoctor: (only: string[]) =>
+        postJson<DoctorReport>('/doctor/fix', { only }),
     // Git-based self-update: auto-check status + start (background) + poll progress.
     updateStatus: () => getJson<UpdateStatus>('/update/status'),
     applyUpdate: () => postJson<UpdateProgress>('/update/apply', {}),

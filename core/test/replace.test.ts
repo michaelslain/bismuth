@@ -77,4 +77,37 @@ describe('replaceInVault', () => {
         expect(res.files).toEqual(['a.md'])
         expect(readFileSync(join(root, 'b.md'), 'utf8')).toBe('brown')
     })
+
+    test('skip leaves matching files unread, unwritten and unreported', async () => {
+        const root = makeVault({
+            'a.md': 'brown',
+            'sub/b.md': 'brown',
+            'c.md': 'brown',
+        })
+        const res = await replaceInVault(
+            root,
+            'brown',
+            'red',
+            { caseSensitive: false, wholeWord: false, regex: false },
+            'vault',
+            { skip: rel => rel.startsWith('sub/') || rel === 'c.md' },
+        )
+        expect(res).toEqual({ replaced: 1, files: ['a.md'] })
+        expect(readFileSync(join(root, 'sub/b.md'), 'utf8')).toBe('brown')
+        expect(readFileSync(join(root, 'c.md'), 'utf8')).toBe('brown')
+    })
+
+    test('skip applies to a path scope too', async () => {
+        const root = makeVault({ 'a.md': 'brown' })
+        const res = await replaceInVault(
+            root,
+            'brown',
+            'red',
+            { caseSensitive: false, wholeWord: false, regex: false },
+            'a.md',
+            { skip: () => true },
+        )
+        expect(res).toEqual({ replaced: 0, files: [] })
+        expect(readFileSync(join(root, 'a.md'), 'utf8')).toBe('brown')
+    })
 })

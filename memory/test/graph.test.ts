@@ -114,6 +114,51 @@ describe('MemoryGraph', () => {
         ).toBe(false)
     })
 
+    // The parser here is hand-rolled while core reads the same files with real YAML, so every
+    // spelling YAML accepts must resolve on the same side of the line, and a head that cannot be
+    // read must fail closed. Each case is a note core would treat as hidden.
+    const head = (vis: string) =>
+        `---\ntype: fact\ntags: [a]\ncreated: 2026-01-01\nupdated: 2026-01-01\n${vis}\n---\n\nSECRET\n`
+    const FAIL_CLOSED: Array<[string, string]> = [
+        ['quoted value', head('visibility: "hidden"')],
+        ['single-quoted value', head("visibility: 'hidden'")],
+        ['trailing comment', head('visibility: hidden # because')],
+        ['quoted chat-only with comment', head('visibility: "chat-only" # c')],
+        ['value on the next line', head('visibility:\n  hidden')],
+        ['quoted key', head('"visibility": hidden')],
+        ['mixed case', head('visibility: Hidden')],
+        ['flow form', head('visibility: [hidden]')],
+        ['unrecognised value', head('visibility: secret')],
+        ['empty value', head('visibility:')],
+        ['duplicate key, the stricter one wins', head('visibility: all\nvisibility: hidden')],
+        [
+            'fence that never closes',
+            '---\ntype: fact\nvisibility: hidden\ntags: [a]\n\nSECRET\n',
+        ],
+        ['unclosed fence with no visibility line', '---\ntype: fact\n\nSECRET\n'],
+    ]
+    for (const [label, raw] of FAIL_CLOSED) {
+        test(`isMemoryNoteVisibleToDaemon: ${label} is not visible`, async () => {
+            await Bun.write(join(tempDir, 'N.md'), raw)
+            const note = (await readNote('N', tempDir))!
+            expect(isMemoryNoteVisibleToDaemon(note)).toBe(false)
+        })
+    }
+
+    test('visibility spelled `all` (quoted, with a comment) stays visible', async () => {
+        await Bun.write(join(tempDir, 'N.md'), head('visibility: "all" # open'))
+        expect(
+            isMemoryNoteVisibleToDaemon((await readNote('N', tempDir))!),
+        ).toBe(true)
+    })
+
+    test('a note with no frontmatter at all stays visible', async () => {
+        await Bun.write(join(tempDir, 'N.md'), 'just text\n')
+        expect(
+            isMemoryNoteVisibleToDaemon((await readNote('N', tempDir))!),
+        ).toBe(true)
+    })
+
     test('listNotes returns all written notes', async () => {
         const fm: NoteFrontmatter = {
             type: 'fact',

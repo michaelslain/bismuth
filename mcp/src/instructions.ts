@@ -19,4 +19,5 @@ export const SERVER_INSTRUCTIONS =
     '(creates the companion if needed) — NEVER create a separate <name>.md that just embeds the ' +
     'file (e.g. `![[paper.pdf]]`) to hold tags; that makes a duplicate note, not a companion. ' +
     'Ink/annotations live separately, in <file>.<ext>.draw. See bismuth_docs_read on ' +
-    'vault/frontmatter.md for more.'
+    'vault/frontmatter.md for more. If Bismuth misbehaves after an update (missing CLI, stale MCP, ' +
+    'daemon not running), run bismuth_doctor first.'

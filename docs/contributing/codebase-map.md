@@ -1813,7 +1813,7 @@ The `bismuth` binary (entry: `cli/src/index.ts`). The merged registry and the ma
 `page list`, `page create`, `page resolve`, `page mark-failed` — the daemon inbox (`core/src/daemonPages.ts`), run HEADLESSLY against `<vault>/.daemon/pages` like the other file-based groups. `create` goes through the validated `createDaemonPage` helper rather than a raw `file write`, since the nested `actions[]` frontmatter `resolvePage` depends on is easy to get subtly wrong by hand.
 
 ### `commands/install.ts`
-`install` (machine-wide CLI + MCP install, idempotent + version-gated), `uninstall` — remove the symlink, global MCP registration, and `~/.bismuth`.
+`install` (machine-wide CLI + MCP install, idempotent + version-gated), `uninstall` — first unload and remove the daemon's launchd/systemd service, then remove the symlink, global MCP registration, and `~/.bismuth`.
 
 ### `commands/checkpoint.ts`
 `checkpoint diff`, `checkpoint advance`, `checkpoint ref` — per-consumer git bookmarks (`refs/bismuth/<name>`) over any git dir via `--dir`, for "what changed since I last ran" jobs.

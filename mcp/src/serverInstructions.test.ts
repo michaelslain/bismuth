@@ -9,10 +9,14 @@ import { server } from './server'
 // stay cheap. Pinning a ceiling here means a future edit that grows it has to consciously raise
 // the number rather than drifting past "terse" one clause at a time. Raised 120 → 150 when the
 // guide triggers moved here from the retired Claude Code skills (whose three descriptions cost
-// every session about as much).
+// every session about as much). Raised 150 → 160 for the one-sentence bismuth_doctor pointer.
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(150)
+    expect(words).toBeLessThan(160)
+})
+
+test('SERVER_INSTRUCTIONS sends a misbehaving install to bismuth_doctor first', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('run bismuth_doctor first')
 })
 
 test('SERVER_INSTRUCTIONS tells an agent to read the bases guide every time it touches a base', () => {

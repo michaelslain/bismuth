@@ -131,7 +131,63 @@ const EXCLUDE_LINES = [
 //
 // `.ink/.daemon/` was excluded for the note-ink sidecar's own `.daemon` shadow; the sidecar is
 // retired (ink now lives in fenced blocks inside notes), so the rule is pruned too.
-const STALE_EXCLUDE_LINES = ['.settings', '.daemon', '.ink/.daemon/']
+//
+// `settings.yaml` was written from d845af9c to ac3b0ca4, while that file lived at the vault root.
+const STALE_EXCLUDE_LINES = [
+    '.settings',
+    '.daemon',
+    '.ink/.daemon/',
+    'settings.yaml',
+]
+
+function excludePathOf(dir: string): string {
+    return join(dir, '.git', 'info', 'exclude')
+}
+
+function readExclude(dir: string): string {
+    try {
+        return readFileSync(excludePathOf(dir), 'utf8')
+    } catch {
+        return '' // file may not exist yet
+    }
+}
+
+/** The rules a previous version wrote that `.git/info/exclude` in `dir` still carries (pure read;
+ *  empty when the file or repo is absent). What {@link pruneExclude} would remove. */
+export function staleExcludeLines(dir: string): string[] {
+    const stale = new Set(STALE_EXCLUDE_LINES)
+    return readExclude(dir)
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => stale.has(line))
+}
+
+/** Rewrite `.git/info/exclude`: drop this module's stale lines, and when `add` is set append any
+ *  EXCLUDE_LINES that are missing. Writes only when something changed. */
+function rewriteExclude(dir: string, add: boolean): void {
+    const excludePath = excludePathOf(dir)
+    const lines = readExclude(dir).split('\n')
+    const stale = new Set(STALE_EXCLUDE_LINES)
+    const kept = lines.filter(line => !stale.has(line.trim()))
+    const pruned = kept.length !== lines.length
+    const have = new Set(kept.map(line => line.trim()))
+    const missing = add ? EXCLUDE_LINES.filter(line => !have.has(line)) : []
+    if (!pruned && missing.length === 0) return
+    try {
+        mkdirSync(dirname(excludePath), { recursive: true })
+        const body = kept.join('\n').replace(/\n+$/, '')
+        const tail = missing.length > 0 ? `${missing.join('\n')}\n` : ''
+        writeFileSync(excludePath, `${body}\n${tail}`)
+    } catch {
+        /* non-standard .git layout (worktree, partial clone) — degrade gracefully */
+    }
+}
+
+/** Remove only the stale rules (see {@link staleExcludeLines}) from `.git/info/exclude`, adding
+ *  nothing. Idempotent; what `bismuth doctor --fix` runs. */
+export function pruneExclude(dir: string): void {
+    rewriteExclude(dir, false)
+}
 
 /** Ensure .git/info/exclude carries exactly the rules above (idempotent).
  *
@@ -143,28 +199,7 @@ const STALE_EXCLUDE_LINES = ['.settings', '.daemon', '.ink/.daemon/']
  *
  *  Only lines this module owns are touched — anything the user added by hand is preserved. */
 function ensureExclude(dir: string): void {
-    const excludePath = join(dir, '.git', 'info', 'exclude')
-    let current = ''
-    try {
-        current = readFileSync(excludePath, 'utf8')
-    } catch {
-        /* file may not exist yet */
-    }
-    const lines = current.split('\n')
-    const stale = new Set(STALE_EXCLUDE_LINES)
-    const kept = lines.filter(line => !stale.has(line.trim()))
-    const pruned = kept.length !== lines.length
-    const have = new Set(kept.map(line => line.trim()))
-    const missing = EXCLUDE_LINES.filter(line => !have.has(line))
-    if (!pruned && missing.length === 0) return
-    try {
-        mkdirSync(dirname(excludePath), { recursive: true })
-        const body = kept.join('\n').replace(/\n+$/, '')
-        const tail = missing.length > 0 ? `${missing.join('\n')}\n` : ''
-        writeFileSync(excludePath, `${body}\n${tail}`)
-    } catch {
-        /* non-standard .git layout (worktree, partial clone) — degrade gracefully */
-    }
+    rewriteExclude(dir, true)
 }
 
 /** git init if needed + set a local identity so commits never block. Never adds a remote. */

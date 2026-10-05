@@ -17,6 +17,8 @@
 import type { CommandMap } from '../types'
 import { out } from '../args'
 import { call, needsServer, resolveCore } from '../http'
+import { agentChannel } from '../../../core/src/visibilityFilter'
+import { redactSnapshot, type RelaySnapshot } from '../../../core/src/relay'
 
 const unreachable = needsServer(
     'relay list needs a running server',
@@ -28,16 +30,18 @@ export const commands: CommandMap = {
             "List Claude Code sessions + subagents live in this vault's own terminal tabs (requires a running server — " +
             "see this file's header comment for why this cannot be read from a separate CLI process)",
         usage: '[--api <url>]',
-        run: async args =>
-            out(
-                await call(
-                    resolveCore(args),
-                    'GET',
-                    '/relay/snapshot',
-                    undefined,
-                    unreachable,
-                ),
-                args,
-            ),
+        run: async args => {
+            const snap = (await call(
+                resolveCore(args),
+                'GET',
+                '/relay/snapshot',
+                undefined,
+                unreachable,
+            )) as RelaySnapshot
+            // This CLI always carries the owner token (call() attaches it), so the server hands
+            // it the raw snapshot, whose subagent `lastMessage` is free text that can quote
+            // hidden notes. An agent gets the same bookkeeping-only projection a non-owner gets.
+            out(agentChannel() ? redactSnapshot(snap) : snap, args)
+        },
     },
 }

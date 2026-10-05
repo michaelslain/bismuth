@@ -538,7 +538,7 @@ folderIcons:
 
 ## `folderVisibility`
 
-Per-folder AI visibility — a free-form map `{folderPath: "chat-only"|"hidden"}` (folders have no frontmatter to hang a `visibility:` key on, unlike notes). Defaults to **empty**; normally written via `POST /folder-visibility` rather than hand-edited. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — an HONESTY boundary, not a security boundary — and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Nearest-ancestor-wins resolution and the full threat model live in `core/src/visibility.ts` / `docs/vault/visibility.md`. A note's OWN visibility is set via its `visibility:` frontmatter key, not here.
+Per-folder AI visibility — a free-form map `{folderPath: "chat-only"|"hidden"}` (folders have no frontmatter to hang a `visibility:` key on, unlike notes). Defaults to **empty**; normally written via `POST /folder-visibility` rather than hand-edited. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — an HONESTY boundary, not a security boundary — and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Nearest-ancestor-wins resolution and the full threat model live in `core/src/visibility.ts` / `docs/vault/visibility.md`. A note's OWN visibility is set via its `visibility:` frontmatter key, not here. `all` is also accepted (restricts nothing). Any other value, or a non-map, makes the vault unavailable to agents (see [visibility](../vault/visibility.md)).
 
 - **Type:** `{ kind: "object", fields: {} }` (a test asserts exactly this).
 - **Default:** `{}`.

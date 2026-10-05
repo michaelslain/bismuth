@@ -24,7 +24,7 @@ import {
     resolveDenyPlan,
     type VisibilityChannel,
 } from '../../../core/src/visibility'
-import { cliAgentChannel } from '../../../core/src/visibilityCliGate'
+import { cliIsAgentHand } from '../../../core/src/visibilityCliGate'
 import { listTree } from '../../../core/src/files'
 import { normalizeStatusBar } from '../../../core/src/statusBarItems'
 import { evaluateStatusBar, countTree } from '../../../core/src/statusBarEval'
@@ -99,7 +99,7 @@ export const commands: CommandMap = {
                 out({ channel, determined: false, reason: plan.reason }, args)
                 return
             }
-            const isOwner = cliAgentChannel() === 'owner'
+            const isOwner = !cliIsAgentHand()
             out(
                 isOwner
                     ? {

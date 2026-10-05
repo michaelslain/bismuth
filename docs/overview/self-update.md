@@ -204,6 +204,10 @@ There is **no `BISMUTH_APP_PATH` gate and no git pull** — it's a bundle-copy +
 
 The daemon is the in-repo `@bismuth/daemon` workspace (`daemon/src/**`) — one machine process that multiplexes per-vault brains. Machine identity (device-id, devices.json, owner.json, daemon.pid, logs, vaults.json) lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session-id, `identity.md`) lives under `<vault>/.daemon`. There is **no `daemon.autoUpdate`/`daemon.home` setting** (the schema `daemon` object has four keys — `enabled`, `inboxRetentionDays`, `backend`, `inheritUserMcp` — none of them a home directory or an update toggle) and **no git-pull self-update path** for it. The manual equivalent of the boot install is `POST /daemon/update`, which also just calls `runSetup()` (re-registers the service); it does not pull source.
 
+### Doctor repairs after an update
+
+Once the machine-wide install settles on boot, core runs the [doctor](doctor.md)'s **safe** repairs (stale links, a service unit written under an old home, orphaned files) and logs `bismuth doctor: fixed <n>, <d> waiting for consent`. Destructive repairs are never applied automatically: they wait for the launch toast's **fix** button (or `bismuth doctor --fix`). Dev runs and `BISMUTH_NO_BOOT_DOCTOR=1` skip the boot pass.
+
 ### 2. The Bismuth app itself — `update.autoUpdate`
 
 The app's own background self-update lives on the **frontend**, driven by `maybeAutoUpdate()` in `app/src/updateCheck.ts` (detailed above). It is **opt-in via `update.autoUpdate`** (default `false`): when on and a status check reports an available update, it auto-applies the same `POST /update/apply` → poll-progress → `quit_app` pipeline and relaunches when the rebuild is ready; when off (the default), nothing happens automatically and the manual `UpdateBanner` is the only path. It's a no-op in dev / non-source builds because the backend reports `available:false`.

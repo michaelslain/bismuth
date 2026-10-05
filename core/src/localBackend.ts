@@ -12,7 +12,8 @@
 // (throw NOT_SUPPORTED): structural fs ops (create/move/delete/restore),
 // folder-icon + set-setting (settings.yaml writer), asset upload, backup/git,
 // open-folder — these need FileAccess extended with create/move/delete + a
-// settings writer, tracked as the next increment. Also NOT_SUPPORTED: every
+// settings writer, tracked as the next increment. Also NOT_SUPPORTED: the doctor
+// (GET /doctor, POST /doctor/fix — it works on the machine home) and every
 // /daemon/* write (cron/process toggle, cron run, cron/process create, cron/process
 // delete) and POST /status-bar/trust (it writes the machine trust store) — the HTTP server owner-gates these (they mutate the shared daemon
 // machine dir, not the vault, and CORS is `*`), and the in-process transport has no
@@ -460,6 +461,9 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
             case 'POST /backup':
             case 'POST /open-folder':
             case 'POST /status-bar/trust':
+            // ---- the doctor inspects (and deletes under) the machine home, which iOS has no view of ----
+            case 'GET /doctor':
+            case 'POST /doctor/fix':
             // ---- daemon writes: owner-gated on the HTTP server; this transport has no
             // owner-channel concept at all, so refuse rather than run unauthenticated ----
             case 'POST /daemon/cron/toggle':

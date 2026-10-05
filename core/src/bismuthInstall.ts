@@ -12,7 +12,7 @@
 // ensure is a no-op. Any change to the bundled binaries (a new build) flips the hash and
 // triggers a reinstall. Side effects + detection are injectable (InstallIO) for tests.
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import {
     existsSync,
     mkdirSync,
@@ -35,6 +35,12 @@ import {
     MCP_REGISTRARS,
     type BismuthMcpSpec,
 } from './agentBackends/mcpRegistrars'
+import { isBismuthOwnedPath } from './ownership'
+import {
+    BISMUTH_DAEMON_UNIT,
+    defaultExec,
+    removeServiceUnit,
+} from './serviceUnit'
 
 const HOME = homedir()
 export const BISMUTH_HOME = join(HOME, '.bismuth')
@@ -44,7 +50,10 @@ const MARKER = join(BISMUTH_HOME, '.version')
 const CLI_DEST = join(BIN_DIR, 'bismuth')
 const MCP_DEST = join(BIN_DIR, 'bismuth-mcp')
 // Candidate PATH dirs for the CLI symlink, preferred first (machine-wide before per-user).
-const LINK_DIRS = ['/usr/local/bin', join(HOME, '.local', 'bin')]
+export const LINK_DIRS: string[] = [
+    '/usr/local/bin',
+    join(HOME, '.local', 'bin'),
+]
 const CLAUDE_SKILLS_DIR = join(HOME, '.claude', 'skills')
 // The three skills older builds installed (staged into ~/.bismuth/skills + symlinked into
 // ~/.claude/skills/<id>). Their content now ships as docs/ guides, so nothing installs them any
@@ -176,18 +185,45 @@ function isWritableDir(dir: string): boolean {
     }
 }
 
-/** Resolve our CLI symlink among the candidate dirs: a symlink pointing into ~/.bismuth. */
-function findOurLink(): string | null {
-    for (const dir of LINK_DIRS) {
-        const target = join(dir, 'bismuth')
+/** Segment-aligned containment: `dest` IS `home` or lives under `home + '/'` — never a sibling that
+ *  merely shares the prefix (`~/.bismuth-dev` is not under `~/.bismuth`). */
+function underHome(dest: string, home: string): boolean {
+    return dest === home || dest.startsWith(home + '/')
+}
+
+/** Is the symlink at `target` ours? By prefix (points into the current ~/.bismuth) OR by shape
+ *  (`…/.bismuth/bin/bismuth` under ANY home — a link written before the account's home was
+ *  renamed). Never true for a regular file, a directory or a lookalike path. */
+export function isOurCliLink(target: string, bismuthHome: string): boolean {
+    try {
+        const st = lstatSync(target, { throwIfNoEntry: false })
+        if (!st?.isSymbolicLink()) return false
+        const dest = resolve(dirname(target), readlinkSync(target))
+        return (
+            underHome(dest, bismuthHome) ||
+            isBismuthOwnedPath(dest, 'bin/bismuth')
+        )
+    } catch {
+        return false // unreadable — skip
+    }
+}
+
+/** Every CLI symlink among the candidate dirs that is ours (current OR old-home). */
+export function findOurLinks(
+    linkDirs: readonly string[],
+    bismuthHome: string,
+): string[] {
+    return linkDirs
+        .map(dir => join(dir, 'bismuth'))
+        .filter(link => isOurCliLink(link, bismuthHome))
+}
+
+/** The ours-link that resolves to the CURRENT install's binary, or null. */
+function findCurrentLink(): string | null {
+    for (const link of findOurLinks(LINK_DIRS, BISMUTH_HOME)) {
         try {
-            const st = lstatSync(target, { throwIfNoEntry: false })
-            if (
-                st?.isSymbolicLink() &&
-                resolve(readlinkSync(target)).startsWith(BISMUTH_HOME)
-            ) {
-                return target
-            }
+            if (resolve(dirname(link), readlinkSync(link)) === CLI_DEST)
+                return link
         } catch {
             // unreadable — skip
         }
@@ -197,7 +233,8 @@ function findOurLink(): string | null {
 
 /**
  * Retire the skill install path of older builds: remove `<claudeSkillsDir>/<id>` for each
- * LEGACY_SKILL_IDS entry ONLY when it is a symlink pointing into `bismuthHome` (ours — same
+ * LEGACY_SKILL_IDS entry ONLY when it is a symlink pointing into `bismuthHome` or, by shape, at
+ * `…/.bismuth/skills/<id>` under any (older) home (ours — same
  * "never touch a foreign file/dir/link" discipline as linkCli() and the mcpRegistrars.ts
  * isOurs() checks), then remove `<bismuthHome>/skills`. Runs on every ensure pass and from
  * uninstall; a no-op once nothing is left. Parameterized on both dirs so tests can exercise the
@@ -213,11 +250,14 @@ export function removeLegacySkills(
         const path = join(claudeSkillsDir, id)
         try {
             const st = lstatSync(path, { throwIfNoEntry: false })
-            if (
-                st?.isSymbolicLink() &&
-                resolve(readlinkSync(path)).startsWith(bismuthHome)
-            )
-                unlinkSync(path)
+            if (st?.isSymbolicLink()) {
+                const dest = resolve(dirname(path), readlinkSync(path))
+                if (
+                    underHome(dest, bismuthHome) ||
+                    isBismuthOwnedPath(dest, `skills/${id}`)
+                )
+                    unlinkSync(path)
+            }
         } catch (e) {
             warnings.push(
                 `failed to remove legacy Claude Code skill link ${id}: ${e instanceof Error ? e.message : String(e)}`,
@@ -278,7 +318,7 @@ export const defaultIO: InstallIO = {
         writeFileSync(MARKER, hash)
     },
     cliLinked() {
-        const path = findOurLink()
+        const path = findCurrentLink()
         return { linked: path != null && existsSync(CLI_DEST), path }
     },
     async mcpRegistered() {
@@ -303,10 +343,9 @@ export const defaultIO: InstallIO = {
             try {
                 const st = lstatSync(target, { throwIfNoEntry: false })
                 if (st) {
-                    const ours =
-                        st.isSymbolicLink() &&
-                        resolve(readlinkSync(target)).startsWith(BISMUTH_HOME)
-                    if (!ours) continue // foreign file/symlink — never clobber; try next dir
+                    // Ours by prefix or by shape (an old-home link) is replaced in place; a
+                    // foreign file/symlink is never clobbered — try the next dir.
+                    if (!isOurCliLink(target, BISMUTH_HOME)) continue
                     unlinkSync(target)
                 }
                 symlinkSync(CLI_DEST, target)
@@ -468,19 +507,28 @@ export async function ensureBismuthInstalled(
     return { action: wasInstalled ? 'updated' : 'installed', status, warnings }
 }
 
-/** Remove the symlink (if ours), the global MCP registration, and ~/.bismuth. Never throws. */
+/** Remove the daemon service, every CLI symlink that is ours, the global MCP registration, and ~/.bismuth. Never throws. */
 export async function uninstallBismuth(): Promise<{
     removed: boolean
     warnings: string[]
 }> {
     const warnings: string[] = []
-    try {
-        const link = findOurLink()
-        if (link) unlinkSync(link)
-    } catch (e) {
-        warnings.push(
-            `failed to remove CLI symlink: ${e instanceof Error ? e.message : String(e)}`,
-        )
+    // First, unload the daemon service: it is KeepAlive, so deleting ~/.bismuth/bin/bismuth-daemon
+    // out from under it would leave it crash-looping on a missing binary.
+    warnings.push(
+        ...(await removeServiceUnit(
+            { platform: process.platform, home: homedir(), exec: defaultExec },
+            BISMUTH_DAEMON_UNIT,
+        )),
+    )
+    for (const link of findOurLinks(LINK_DIRS, BISMUTH_HOME)) {
+        try {
+            unlinkSync(link)
+        } catch (e) {
+            warnings.push(
+                `failed to remove CLI symlink ${link}: ${e instanceof Error ? e.message : String(e)}`,
+            )
+        }
     }
     // Same reasoning as the "other CLI" registrars below: don't leave dangling
     // ~/.claude/skills/<id> symlinks (from older builds) pointing into ~/.bismuth/skills, which is

@@ -10,7 +10,14 @@ import {
 import { listDocs, searchDocs, readDoc } from './docs'
 import { SERVER_INSTRUCTIONS } from './instructions'
 import { runCli, cliHelp, cliToolResult } from './cli'
-import { memoryDir, remember, recall, forget } from './memory'
+import {
+    memoryDir,
+    remember,
+    recall,
+    forget,
+    mcpAgentChannel,
+    MEMORY_UNAVAILABLE,
+} from './memory'
 import {
     daemonTools,
     daemonEnabled,
@@ -73,6 +80,40 @@ const tools = [
                 },
             },
             required: ['path'],
+        },
+    },
+    {
+        name: 'bismuth_doctor',
+        description:
+            'Check this machine (and a vault) for leftovers from older Bismuth builds, version skew and pending migrations; fix:true repairs. (bismuth doctor)',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                fix: {
+                    type: 'boolean',
+                    description: 'Apply the repairs. Omit to only report.',
+                },
+                safeOnly: {
+                    type: 'boolean',
+                    description:
+                        'With fix: apply only repairs that cannot lose data.',
+                },
+                only: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Only these finding ids, e.g. legacy.claude-bot-service.',
+                },
+                section: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description:
+                        'Only these sections: legacy, install, daemon, runtime, vault, backends.',
+                },
+                vault: {
+                    type: 'string',
+                    description: 'Vault path to include the vault checks.',
+                },
+            },
         },
     },
     {
@@ -191,8 +232,37 @@ const memoryTools = [
 
 // The memory tools AND the daemon-management tools share ONE gate — the daemon being enabled
 // for this vault (memoryDir()/daemonEnabled(), i.e. BISMUTH_MEMORY_DIR is injected). Outside a
-// daemon-enabled session the server exposes only the always-on five; a machine-wide session
+// daemon-enabled session the server exposes only the always-on six; a machine-wide session
 // with no daemon never sees remember/recall/forget nor the crons/processes/pages tools.
+/** Every tool this server can ever list — the always-on set plus the daemon-gated memory and
+ *  daemon tools. `cli/test/mcpParity.test.ts` checks each against CLI_TWINS (./cliTwins.ts). */
+export const ALL_TOOL_NAMES: string[] = [
+    ...tools,
+    ...memoryTools,
+    ...daemonTools,
+].map(t => t.name)
+
+/** PURE: the CLI argv a bismuth_doctor call runs. Always `--json`, so the agent gets the full
+ *  report (findings, fixed, failed, pending) rather than the terminal table. */
+export function doctorCliArgs(a: Record<string, unknown>): string[] {
+    const argv = ['doctor', '--json']
+    if (a.fix === true) argv.push('--fix')
+    if (a.safeOnly === true) argv.push('--safe-only')
+    const list = (v: unknown): string | undefined => {
+        const items = Array.isArray(v)
+            ? v.map(String).filter(x => x.length > 0)
+            : []
+        return items.length > 0 ? items.join(',') : undefined
+    }
+    const only = list(a.only)
+    if (only) argv.push('--only', only)
+    const section = list(a.section)
+    if (section) argv.push('--section', section)
+    if (typeof a.vault === 'string' && a.vault.length > 0)
+        argv.push('--vault', a.vault)
+    return argv
+}
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools,
 }))
@@ -224,10 +294,12 @@ const memoryHandlers: Record<
                 folder?: string
             },
             dir,
+            { channel: mcpAgentChannel() },
         ),
     recall: (args, dir) =>
         recall(args as { query: string; folder?: string }, dir),
-    forget: (args, dir) => forget(args as { name: string }, dir),
+    forget: (args, dir) =>
+        forget(args as { name: string }, dir, { channel: mcpAgentChannel() }),
 }
 
 // Exported (rather than left as an inline callback) so tests can dispatch a fabricated
@@ -258,6 +330,8 @@ export async function handleCallTool(
                     asText(await readDoc(docsRoot, path, section)),
                 )
             }
+            case 'bismuth_doctor':
+                return cliToolResult(await runCli(repoRoot, doctorCliArgs(args)))
             case 'bismuth_cli': {
                 const cliArgs = Array.isArray(args.args)
                     ? (args.args as unknown[]).map(String)
@@ -275,10 +349,7 @@ export async function handleCallTool(
             case 'forget': {
                 const dir = memoryDir()
                 if (!dir) {
-                    return textResult(
-                        'Memory is unavailable — the daemon is not enabled for this vault.',
-                        true,
-                    )
+                    return textResult(MEMORY_UNAVAILABLE, true)
                 }
                 return textResult(asText(await memoryHandlers[name](args, dir)))
             }

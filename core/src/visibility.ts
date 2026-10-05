@@ -22,7 +22,8 @@
 // and buildDenyPaths' doc comments for the extension/frontmatter/stem-inheritance fixes.
 import { open, readdir, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { parseFrontmatter } from './frontmatter'
+import { parse as parseYaml } from 'yaml'
+import { FRONTMATTER_REGEX } from './frontmatter'
 import { readFolderVisibilityResult } from './settings'
 import { ownerTokenDenyPaths } from './ownerToken'
 import { mapWithConcurrency } from './concurrency'
@@ -275,9 +276,15 @@ async function readHeadBytes(
  * A file's OWN explicit `visibility:` value, read as cheaply as possible: a 512-byte head
  * covers essentially every real note's frontmatter block; only when that head is BOTH truncated
  * (there is more file beyond it) AND doesn't already contain a closing fence do we re-read up to
- * 64 KiB. Never throws — an unreadable or non-frontmatter-shaped file costs one small read and
- * returns undefined ("no explicit value", the folder cascade decides), so a transient read error
- * can only make a file MORE restricted, never less.
+ * 64 KiB; if the fence is STILL not closed within 64 KiB the file reads as `hidden` (an uncapped
+ * parser elsewhere could see a rule this bounded read cannot). Never throws — an unreadable or non-frontmatter-shaped file costs one small read and
+ * returns undefined ("no explicit value", the folder cascade decides).
+ *
+ * Fails CLOSED on what the author plausibly meant as a rule: a CLOSED frontmatter fence whose YAML
+ * does not parse, or a `visibility:` value present but not `all`/`chat-only`/`hidden` (wrong case,
+ * a list, a number), reads as `hidden`. A tolerant read (`parseFrontmatter` swallows YAML errors as
+ * `{}`) would turn a typo into "visible", un-hiding the note. An empty/null value is an ordinary
+ * draft and inherits; an unclosed opening fence is not frontmatter at all.
  *
  * Checked on EVERY file the walk finds, regardless of extension — NOT gated on `.md`. The old
  * "only `.md` carries frontmatter" assumption was itself a deny-list hole: a hidden note copied,
@@ -296,15 +303,28 @@ async function readOwnVisibility(absPath: string): Promise<FileVisibility> {
     if (!FRONTMATTER_OPEN_RE.test(text)) return undefined // not frontmatter-shaped — no more I/O
     if (head.truncated && !FRONTMATTER_CLOSED_RE.test(text)) {
         try {
-            text = stripBOM(
-                (await readHeadBytes(absPath, MAX_FRONTMATTER_BYTES)).text,
-            )
+            const big = await readHeadBytes(absPath, MAX_FRONTMATTER_BYTES)
+            text = stripBOM(big.text)
+            // Still no closing fence within the cap: parseFrontmatter (uncapped) may well see a
+            // `visibility: hidden` that this bounded read cannot, so fail closed.
+            if (big.truncated && !FRONTMATTER_CLOSED_RE.test(text)) return 'hidden'
         } catch {
             return undefined
         }
     }
-    const { data } = parseFrontmatter(text)
-    return isVisibilityLiteral(data.visibility) ? data.visibility : undefined
+    const m = text.match(FRONTMATTER_REGEX)
+    if (!m) return undefined // unclosed fence — not frontmatter
+    let data: unknown
+    try {
+        data = parseYaml(m[1] ?? '')
+    } catch {
+        return 'hidden'
+    }
+    if (data === null || data === undefined) return undefined // empty block
+    if (typeof data !== 'object' || Array.isArray(data)) return 'hidden'
+    const v = (data as Record<string, unknown>).visibility
+    if (v === undefined || v === null || v === '') return undefined
+    return isVisibilityLiteral(v) ? v : 'hidden'
 }
 
 /** Memoized per-directory folder-cascade lookup: many files share a directory, and
@@ -586,6 +606,26 @@ async function walkDenyEntries(
     )
 
     applyStemInheritance(resolved)
+
+    // Deleting a note moves it to `.trash/<ms>-<name>`, which drops its folder cascade and (for a
+    // folder) its whole path — a trashed copy of a hidden note would resolve visible. So once the
+    // vault restricts ANYTHING for this channel, the trash is restricted too: a restricted file, OR
+    // a folderVisibility rule that restricts the channel even when its folder is gone (deleted
+    // folder, rule left behind). When nothing is restricted the trash adds nothing: non-Claude chat
+    // backends refuse to start when any entry is restricted, so a rule-free vault must stay at zero
+    // even with a non-empty trash.
+    const inTrash = (rel: string) => rel === '.trash' || rel.startsWith('.trash/')
+    const folderRestricts = Object.values(folderVisibility).some(
+        v => !isVisibleToChannel(v, channel),
+    )
+    if (
+        folderRestricts ||
+        resolved.some(
+            f =>
+                !inTrash(f.rel) && !isVisibleToChannel(f.visibility, channel),
+        )
+    )
+        for (const f of resolved) if (inTrash(f.rel)) f.visibility = 'hidden'
 
     // The absolute spellings one restricted file is readable at, deduped, minus `abs` itself.
     //

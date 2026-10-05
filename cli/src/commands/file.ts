@@ -8,6 +8,12 @@ import {
     createEntry,
     listTree,
 } from '../../../core/src/files'
+import {
+    agentChannel,
+    agentDenyEntries,
+    filterTree,
+    folderRestricted,
+} from '../../../core/src/visibilityFilter'
 
 export const commands: CommandMap = {
     read: {
@@ -86,7 +92,21 @@ export const commands: CommandMap = {
         usage: '[--vault <dir>] [--pretty]',
         run: async args => {
             const vault = requireVault(args)
-            out(await listTree(vault), args)
+            // Fail closed: agentDenyEntries throws when visibility is undeterminable, and that
+            // propagates (non-zero exit, empty stdout) rather than printing the full tree.
+            const entries = await agentDenyEntries(vault)
+            const channel = agentChannel()
+            const tree = await listTree(vault)
+            out(
+                channel
+                    ? filterTree(
+                          tree,
+                          entries,
+                          await folderRestricted(vault, channel),
+                      )
+                    : tree,
+                args,
+            )
         },
     },
 }

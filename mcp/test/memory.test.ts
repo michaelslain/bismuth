@@ -1,14 +1,23 @@
-import { test, expect, beforeEach, afterEach } from 'bun:test'
+import { test, expect, beforeEach, afterEach, describe } from 'bun:test'
 import {
     mkdtempSync,
     mkdirSync,
     writeFileSync,
+    readFileSync,
+    existsSync,
     rmSync,
     realpathSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { memoryDir, resolveVaultRoot } from '../src/memory'
+import {
+    memoryDir,
+    resolveVaultRoot,
+    remember,
+    recall,
+    forget,
+    mcpAgentChannel,
+} from '../src/memory'
 
 // memoryDir() is the ONE gate shared by the memory tools (remember/recall/forget) and the
 // daemon-management tools (daemonEnabled() in daemon.ts, which is defined as memoryDir() !=
@@ -135,4 +144,147 @@ test('BISMUTH_VAULT takes priority over an ambient vault found via cwd', () => {
 
     expect(resolveVaultRoot()).toBe(explicitVault)
     expect(memoryDir()).toBe(join(explicitVault, '.daemon', 'memory'))
+})
+
+// ── remember / forget vs. restricted memory notes ──────────────────────────────────────────────
+// `remember` rebuilt the frontmatter without `visibility`, so overwriting a hidden note silently
+// un-hid it. The owner keeps the value; an agent may not touch a note it cannot see at all.
+
+describe('remember/forget and memory-note visibility', () => {
+    let memDir: string
+
+    beforeEach(() => {
+        memDir = join(noVaultDir, 'memory')
+        mkdirSync(memDir, { recursive: true })
+    })
+
+    const noteFile = (name: string) => join(memDir, `${name}.md`)
+    const seed = (name: string, visibility?: 'hidden' | 'chat-only') =>
+        writeFileSync(
+            noteFile(name),
+            `---\ntype: fact\ntags: [a]\ncreated: 2026-01-01\nupdated: 2026-01-01${
+                visibility ? `\nvisibility: ${visibility}` : ''
+            }\n---\n\nORIGINALBODY\n`,
+        )
+
+    test('owner remember over a hidden note keeps visibility: hidden', async () => {
+        seed('secret', 'hidden')
+        await remember({ name: 'secret', content: 'NEWBODY' }, memDir)
+        const raw = readFileSync(noteFile('secret'), 'utf8')
+        expect(raw).toContain('visibility: hidden')
+        expect(raw).toContain('NEWBODY')
+    })
+
+    test('owner remember over a chat-only note keeps visibility: chat-only', async () => {
+        seed('chatty', 'chat-only')
+        await remember(
+            { name: 'chatty', content: 'NEWBODY' },
+            memDir,
+            { channel: null },
+        )
+        expect(readFileSync(noteFile('chatty'), 'utf8')).toContain(
+            'visibility: chat-only',
+        )
+    })
+
+    test('remember of a brand-new note writes no visibility line', async () => {
+        await remember({ name: 'fresh', content: 'x' }, memDir, {
+            channel: 'daemon',
+        })
+        expect(readFileSync(noteFile('fresh'), 'utf8')).not.toContain(
+            'visibility',
+        )
+    })
+
+    test('daemon remember on a hidden or chat-only note is refused, file unchanged', async () => {
+        seed('secret', 'hidden')
+        seed('chatty', 'chat-only')
+        const before = {
+            secret: readFileSync(noteFile('secret'), 'utf8'),
+            chatty: readFileSync(noteFile('chatty'), 'utf8'),
+        }
+        for (const name of ['secret', 'chatty'] as const) {
+            await expect(
+                remember({ name, content: 'NEWBODY' }, memDir, {
+                    channel: 'daemon',
+                }),
+            ).rejects.toThrow(
+                'refused: that memory note is not visible to this agent',
+            )
+            expect(readFileSync(noteFile(name), 'utf8')).toBe(before[name])
+        }
+    })
+
+    test('chat remember: refused on hidden, allowed on chat-only (and keeps it)', async () => {
+        seed('secret', 'hidden')
+        seed('chatty', 'chat-only')
+        await expect(
+            remember({ name: 'secret', content: 'NEWBODY' }, memDir, {
+                channel: 'chat',
+            }),
+        ).rejects.toThrow('refused:')
+        expect(readFileSync(noteFile('secret'), 'utf8')).toContain(
+            'ORIGINALBODY',
+        )
+        await remember({ name: 'chatty', content: 'NEWBODY' }, memDir, {
+            channel: 'chat',
+        })
+        const raw = readFileSync(noteFile('chatty'), 'utf8')
+        expect(raw).toContain('NEWBODY')
+        expect(raw).toContain('visibility: chat-only')
+    })
+
+    test('agent remember over a visible note still works', async () => {
+        seed('open')
+        await remember({ name: 'open', content: 'NEWBODY' }, memDir, {
+            channel: 'daemon',
+        })
+        expect(readFileSync(noteFile('open'), 'utf8')).toContain('NEWBODY')
+    })
+
+    test('daemon forget on a hidden note is refused, file kept', async () => {
+        seed('secret', 'hidden')
+        await expect(
+            forget({ name: 'secret' }, memDir, { channel: 'daemon' }),
+        ).rejects.toThrow(
+            'refused: that memory note is not visible to this agent',
+        )
+        expect(existsSync(noteFile('secret'))).toBe(true)
+    })
+
+    test('chat forget: refused on hidden, allowed on chat-only', async () => {
+        seed('secret', 'hidden')
+        seed('chatty', 'chat-only')
+        await expect(
+            forget({ name: 'secret' }, memDir, { channel: 'chat' }),
+        ).rejects.toThrow('refused:')
+        expect(existsSync(noteFile('secret'))).toBe(true)
+        expect(
+            (await forget({ name: 'chatty' }, memDir, { channel: 'chat' })).ok,
+        ).toBe(true)
+        expect(existsSync(noteFile('chatty'))).toBe(false)
+    })
+
+    test('owner forget removes a hidden note; forgetting a missing note is ok:false for an agent', async () => {
+        seed('secret', 'hidden')
+        expect((await forget({ name: 'secret' }, memDir)).ok).toBe(true)
+        expect(existsSync(noteFile('secret'))).toBe(false)
+        expect(
+            (await forget({ name: 'nope' }, memDir, { channel: 'daemon' })).ok,
+        ).toBe(false)
+    })
+
+    test('daemon recall excludes hidden and chat-only notes', async () => {
+        seed('secret', 'hidden')
+        seed('chatty', 'chat-only')
+        seed('open')
+        const res = await recall({ query: 'ORIGINALBODY' }, memDir)
+        expect(res.notes.map(n => n.name)).toEqual(['open'])
+    })
+
+    test('mcpAgentChannel mirrors core mcpChannel: unset/garbage -> daemon, chat -> chat', () => {
+        expect(mcpAgentChannel({})).toBe('daemon')
+        expect(mcpAgentChannel({ BISMUTH_MCP_CHANNEL: 'x' })).toBe('daemon')
+        expect(mcpAgentChannel({ BISMUTH_MCP_CHANNEL: 'chat' })).toBe('chat')
+    })
 })

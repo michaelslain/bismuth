@@ -7,6 +7,11 @@ import { bool, flag, out, positionals, requireVault } from '../args'
 import { searchVault, type SearchOpts } from '../../../core/src/search'
 import { replaceInVault } from '../../../core/src/replace'
 import { commitVault, snapshotMessage } from '../../../core/src/backup'
+import {
+    agentDenyEntries,
+    filterByPath,
+    isDeniedPath,
+} from '../../../core/src/visibilityFilter'
 
 /** Build SearchOpts from the shared --regex/--case/--word boolean flags. */
 function buildOpts(args: string[]): SearchOpts {
@@ -24,12 +29,21 @@ export const commands: CommandMap = {
         run: async args => {
             const vault = requireVault(args)
             const [query] = positionals(args)
+            // Fail closed: agentDenyEntries throws when visibility cannot be determined, and that
+            // propagates so the CLI exits non-zero. [] is the owner.
+            const entries = await agentDenyEntries(vault)
             const results = await searchVault(
                 vault,
                 query ?? '',
                 buildOpts(args),
             )
-            out(results, args)
+            // searchVault returns every match (no cap) and the index is shared with the server
+            // across channels, so the filter belongs on its result, before anything else
+            // (sorting, limiting) a caller might add.
+            out(
+                filterByPath(results, entries, h => h.path),
+                args,
+            )
         },
     },
     replace: {
@@ -40,6 +54,8 @@ export const commands: CommandMap = {
             const vault = requireVault(args)
             const [query, replacement] = positionals(args)
             const scope = flag(args, 'scope') ?? 'vault'
+            // Before the snapshot, so an undeterminable vault fails before anything is written.
+            const entries = await agentDenyEntries(vault)
             if (!bool(args, 'no-snapshot')) {
                 // Best-effort, matching POST /replace's pre-replace snapshot: a vault that isn't a git
                 // repo yet (or any other git failure) must not block the replace itself.
@@ -57,6 +73,10 @@ export const commands: CommandMap = {
                 replacement ?? '',
                 buildOpts(args),
                 scope,
+                // An agent never rewrites (or names in the report) a restricted note.
+                entries.length > 0
+                    ? { skip: rel => isDeniedPath(entries, rel) }
+                    : undefined,
             )
             out(result, args)
         },

@@ -74,7 +74,7 @@ Every command that reaches a running server (`api`, `update status`/`update appl
 
 **Fails safe, never fabricates a token.** A missing run record, an unreadable one, a live core whose record predates this feature (no `token` field), or a `--api`/`BISMUTH_API` target that isn't a loopback host all send **no** token header — the server's ordinary non-owner 403/redaction applies exactly as before this feature existed.
 
-**This is NOT the agent/owner boundary — read this before assuming it is.** The token is attached by matching the target PORT against the run registry; it does not consult `BISMUTH_AGENT_CHANNEL` (the separate signal `core/src/visibilityCliGate.ts` uses to decide whether the CLI even *runs* a given command — see [visibility docs](../vault/visibility.md)). A process that can still read `~/.bismuth/run/<vault>.json` (mode `0600` — this stops other machine **users**, not necessarily the owner's own unsandboxed processes) gets the same owner identity over HTTP that the owner's interactive shell does. The real stop for a Bismuth-spawned agent is the **OS-sandbox deny-read** on that exact file (`core/src/ownerToken.ts`'s `ownerTokenDenyPath`, wired with `failIfUnavailable: true` into every agent spawn) — not this header-attach logic, and not `BISMUTH_AGENT_CHANNEL`. For content the vault's visibility settings can express (a hidden/chat-only note), the CLI's own Tier-C gate still refuses `chat`/`search`/`api`/`export`/… under a restricted vault + agent channel — but a vault that restricts *nothing* gives that gate nothing to refuse, and an agent process outside Bismuth's own sandbox that can still read the run record is not stopped by anything documented on this page.
+**This is NOT the agent/owner boundary — read this before assuming it is.** The token is attached by matching the target PORT against the run registry; it does not consult `BISMUTH_AGENT_CHANNEL` (the separate signal `core/src/visibilityCliGate.ts` uses to decide whether the CLI even *runs* a given command — see [visibility docs](../vault/visibility.md)). A process that can still read `~/.bismuth/run/<vault>.json` (mode `0600` — this stops other machine **users**, not necessarily the owner's own unsandboxed processes) gets the same owner identity over HTTP that the owner's interactive shell does. The real stop for a Bismuth-spawned agent is the **OS-sandbox deny-read** on that exact file (`core/src/ownerToken.ts`'s `ownerTokenDenyPath`, wired with `failIfUnavailable: true` into every agent spawn) — not this header-attach logic, and not `BISMUTH_AGENT_CHANNEL`. For content the vault's visibility settings can express (a hidden/chat-only note), the CLI's own Tier-C gate still refuses `api`/`serve`/`export`/`chat`/`update`/… under a restricted vault + agent channel (`search`, `rows`, `task` and the other cross-note commands now filter hidden notes out of their results instead — see [Agent visibility filtering](#agent-visibility-filtering)) — but a vault that restricts *nothing* gives that gate nothing to refuse, and an agent process outside Bismuth's own sandbox that can still read the run record is not stopped by anything documented on this page.
 
 ### Argument-parsing semantics (gotchas)
 
@@ -96,6 +96,17 @@ Every command prints through the shared `out(data, args)`:
 | objects / arrays | `JSON.stringify`, single-line by default, **2-space indented when `--pretty` is passed** (the helper checks `bool(args, "pretty")`). |
 
 This makes the CLI uniformly machine-parseable: anything that returns structured data emits JSON.
+
+### Agent visibility filtering
+
+An **agent** is a process with `BISMUTH_AGENT_CHANNEL` set (`chat` or `daemon`), or a CLI spawned by the MCP server (`BISMUTH_MCP_CHANNEL` set). For an agent, the cross-note commands below return their normal result with notes hidden from that channel left out (`daemon` hides `hidden` and `chat-only`, `chat` hides `hidden`), instead of refusing. The owner's own shell (neither variable set) is never filtered. Each affected command notes this under its heading. Common rules:
+
+- An explicit argv path naming a restricted note is refused (`Refused: "<path>" is marked off-limits…`).
+- If visibility cannot be determined (an unparseable `.settings`), the command exits non-zero with no output; it never prints unfiltered results.
+- Counts, groups and summaries cover visible notes only, because restricted notes are dropped before aggregation.
+- Still refused for agents, whenever the vault restricts anything: `api`, `serve`, `export`, `chat`, `update`, `checkpoint` (except `advance`/`ref`), `settings status-bar`, and any unclassified command.
+
+Full model, tier table and the reason for each refusal: [visibility docs](../vault/visibility.md#agents-and-the-bismuth-cli-filtered-not-refused).
 
 ---
 
@@ -146,6 +157,7 @@ List the entire vault file tree as JSON (`listTree`).
 ```bash
 bismuth tree --vault ~/vault --pretty
 ```
+**Agent filtering:** hidden files are omitted, and so is a hidden folder unless it still holds a visible file.
 
 ---
 
@@ -156,7 +168,7 @@ Note creation, templates, and the daily note. All require a vault.
 ### `note new <path> [--template NAME] [--template-folder DIR] [--no-template]`
 Create a new note, optionally seeded from a template. The path gets a `.md` extension appended if missing. Steps:
 1. `createEntry(vault, rel, "file")`.
-2. If `--template NAME` is given: list templates from the template folder (`--template-folder`, default `"Templates"`), find one whose `name` **or** `path` equals `NAME` (fails `note new: template not found: <NAME>` otherwise), read it, run `expandTemplate(raw, { now: new Date(), title })` where `title` is the filename without dir/`.md`, and write the result.
+2. If `--template NAME` is given: list templates from the template folder (`--template-folder`, default the vault's `.settings` `templates.folder`, itself defaulting to `"Templates"`), find one whose `name` **or** `path` equals `NAME` (fails `note new: template not found: <NAME>` otherwise), read it, run `expandTemplate(raw, { now: new Date(), title })` where `title` is the filename without dir/`.md`, and write the result.
 3. Otherwise (no `--template`), unless `--no-template` is passed: fall back to the vault's configured default template (`settings.templates.newNote`, read via `loadAppConfig(vault)`), mirroring the app's FileTree "New File" action. If it's set and the file exists, it's read + expanded + written the same way as an explicit `--template`. Empty/missing setting or missing file → no-op (plain empty note, unchanged behavior).
 4. Prints `{ path: rel, created: true }`.
 ```bash
@@ -164,13 +176,15 @@ bismuth note new "Meetings/Standup" --template "Meeting" --vault ~/vault
 bismuth note new "Quick.md" --vault ~/vault              # applies settings.templates.newNote if configured
 bismuth note new "Quick.md" --no-template --vault ~/vault  # always a plain empty note
 ```
+**Agent filtering:** a hidden `--template` is refused (`refused: that template is not visible to this agent`), and a template that does not exist gets the same message so names do not leak. A hidden configured default template (`settings.templates.newNote`) yields a blank note plus a `warning:` line on stderr. `note new` also refuses a target path inside a hidden folder or one that names a hidden note.
 
 ### `templates [--template-folder DIR]`
-List available note templates (`listTemplates`). Default folder `"Templates"`.
+List available note templates (`listTemplates`). Default folder: the vault's `.settings` `templates.folder` (schema default `"Templates"`).
 ```bash
 bismuth templates --vault ~/vault --pretty
 bismuth templates --template-folder "_templates" --vault ~/vault
 ```
+**Agent filtering:** hidden templates are omitted from the list.
 
 ### `daily [--id <id|n>]`
 Open (creating if needed) today's daily note. Reads every configured daily-note type via `readDailyNotes(vault)` (`settings.dailyNotes`) and selects the one at `--id` — either the config's string `id` (`--id work`) or a 0-based index into that array (`--id 1`); a value that parses as an integer is the index, anything else is matched against each `id`. Default is index `0`, the first configured type. If the vault configures none at all, index `0` falls back to `{ id: "daily", label: "Daily", icon: "CalendarDays", folder: "", fileName: "{{date}}", template: "" }`; any other index fails, and the only id accepted is `daily`. An id that matches no config fails with `daily: no daily-note type with id "<v>" — configured ids: <a>, <b>`. An out-of-range index against a vault that DOES configure types fails naming how many it configures and the valid range (`--id <n> out of range — this vault configures <count> daily-note type(s) (valid range: 0-<max>)`). Computes the path via `dailyNotePath(config, now)`. If it already exists → prints `{ path, created: false }`. Otherwise it reads the configured template (if set and present) and writes `dailyNoteContent(config, now, templateRaw)`, then prints `{ path, created: true }`.
@@ -179,6 +193,7 @@ bismuth daily --vault ~/vault --pretty
 bismuth daily --id 1 --vault ~/vault --pretty   # the SECOND configured daily-note type
 bismuth daily --id work --vault ~/vault --pretty # the type whose id is `work`
 ```
+**Agent filtering:** a hidden target path, or one inside a hidden folder, is refused (and never printed as `{ path, created: false }`). A hidden template is skipped: the note is created without it and a `warning:` line is printed to stderr.
 
 ---
 
@@ -192,6 +207,7 @@ Ranked full-text search with match snippets — mid-word and typo-tolerant (non-
 bismuth search "neural net" --vault ~/vault --pretty
 bismuth search "TODO\(\w+\)" --regex --case --vault ~/vault
 ```
+**Agent filtering:** only visible hits are returned; restricted notes are dropped before the hits are ranked and counted.
 
 ### `replace <query> <replacement> [--scope <path>] [--no-snapshot] [--regex] [--case] [--word]`
 Find-and-replace across the whole vault, or a single note with `--scope <path>` (default scope is `"vault"`). Both query and replacement default to `""` if missing. Takes a git snapshot of the vault (via `commitVault`/`snapshotMessage`, matching `POST /replace`'s ordering — snapshot *before* replacing, so the change can be undone) and can be skipped with `--no-snapshot` for scripted use. Unlike the HTTP route, which returns 400 and blocks the replace if the commit fails, the CLI's snapshot is best-effort: a non-repo vault is git-initialized rather than blocking, and any other snapshot failure prints a `warning:` to stderr but still lets the replace proceed. Prints the result object.
@@ -200,6 +216,7 @@ bismuth replace "colour" "color" --word --vault ~/vault --pretty
 bismuth replace "TODO" "DONE" --scope notes/todo.md --vault ~/vault
 bismuth replace "colour" "color" --no-snapshot --vault ~/vault
 ```
+**Agent filtering:** restricted notes are skipped (never rewritten) and never appear in the reported files or count.
 
 ---
 
@@ -213,6 +230,8 @@ bismuth graph --vault ~/vault   # vault only (empty 3rd brain)
 ```
 (This is a command exercised by `cli/test/cli.test.ts`, which asserts the printed JSON's `nodes` contain the sample vault's note ids.)
 
+**Agent filtering:** hidden notes are omitted along with their edges, tags used only by them, and any community label that was a hidden note's title. For an agent, `--memory` must be exactly `<vault>/.daemon/memory`; any other directory (outside the vault, or another folder inside it) is refused, because only that directory can be visibility-checked.
+
 ---
 
 ## Task commands (`commands/task.ts`)
@@ -225,6 +244,7 @@ List all checkbox tasks in the vault (`collectVaultTasks`). With no `--query`, p
 bismuth task list --vault ~/vault --pretty
 bismuth task list --query "not done\ndue before tomorrow\nsort by due" --vault ~/vault
 ```
+**Agent filtering:** hidden notes' tasks are dropped before `--query` filtering and sorting, so `errors` is clean too.
 
 ### `task toggle <file> <line> [--status <char>]`
 Toggle the done state of a task at `<file>:<line>`, where `<line>` is a **1-based** line number. Mirrors `POST /tasks/toggle`: reads the note, splits on `\n`, and either runs `toggleTaskLine(lines[idx], today())` (no `--status`, the plain binary checkbox toggle) or `setTaskLineStatus(lines[idx], status, today())` (with `--status`, setting the checkbox to that exact character — e.g. `/` in-progress, `-` cancelled) on the target line (either may insert a recurrence's next occurrence — handled by splicing in place), then runs the whole file through `reorderTaskBlocks()` before writing it back (`core/src/taskReorder.ts`, mirroring `POST /tasks/toggle`'s own ordering) and prints `ok`. **A resolved task can therefore move position in the file, not just change its checkbox** — within each contiguous run of task items, `reorderTaskBlocks` sinks every resolved (done/cancelled) item's block (head line + indented children) below the still-open ones, preserving relative order within each group, the same as toggling it in the app does.
@@ -241,6 +261,7 @@ Permanently remove every resolved (`done`/`cancelled`) task item — head line p
 bismuth task archive "Projects/Todo.md" --vault ~/vault   # one note
 bismuth task archive --vault ~/vault                      # whole vault
 ```
+**Agent filtering:** restricted notes are skipped and never counted in `{ removed, files }`.
 
 ### `task migrate [--dry-run]`
 Rewrite legacy emoji task signifiers (`📅`/`⏫`/`🔁`/…) to bracket fields (`[due 2026-09-14]`, `[high]`, `[every week]`; dates are `[due …]`, `[scheduled …]`, `[start …]`, `[done …]`, `[created …]`, `[cancelled …]`, and priority is one of `[highest]`/`[high]`/`[medium]`/`[low]`/`[lowest]`) across every markdown file in the vault, via `migrateContent` (`core/src/taskMigrate.ts`) reading through the legacy parser (`core/src/taskLegacy.ts`) and rewriting through the bracket grammar — the one place the old spelling is still understood, since `parseTaskLine` itself only reads brackets now. **Run by hand or automatically**: the app also runs this once, the first time it opens a vault. `--dry-run` computes and reports the same per-file counts without writing anything.
@@ -250,6 +271,7 @@ Each file's read/migrate/write is wrapped in its own try/catch, so one unreadabl
 bismuth task migrate --dry-run --vault ~/vault --pretty
 bismuth task migrate --vault ~/vault
 ```
+**Agent filtering:** restricted notes are skipped, and `files`, `flagged` and `skipped` list visible notes only.
 
 ---
 
@@ -299,6 +321,8 @@ Checks performed:
 - **Unresolvable source** — the base's `source:`, when its `ref`/`from` names a base that isn't an actual file in the vault. `resolveSource`/`resolveBaseRows` are deliberately tolerant of this (an unresolvable ref just resolves to zero rows, no throw) — `base validate` surfaces the failure that path hides.
 - **Unparseable filter/formula expressions** — the base's `filters`, the source `where`, and every formula (including a declared `{type: formula}` property's `expr`) run through `parseExpr`; `passesFilter`/`computeFormulas` normally swallow a parse failure silently (treating it as `false`/`undefined`).
 
+**Agent filtering:** a ref or task-file path that is hidden from the agent (or missing) is reported as `<not visible>` instead of by name, so validation cannot be used to probe for a hidden note.
+
 ```bash
 bismuth base validate "Bases/Board.md" --vault ~/vault --pretty
 # { "ok": true, "errors": [] }
@@ -314,6 +338,8 @@ Resolve a base's rows (`resolveBaseRows` — the same own-table-or-declared-sour
 Non-chart view kinds (`table`, `cards`, `list`, `bullets`, `kanban`, `map`, `calendar`, `flashcards`) print the `ViewResult` verbatim: `{ view, columns, groups, summaries }`, where `groups` is `[{ key, rows }]` (a single `key: ""` group when the view has no `groupBy`).
 
 Chart kinds (`bar`, `line`, `stat`, `heatmap`) route their view's filtered rows (groups flattened back out first — grouping doesn't apply to a chart) through `buildChartData` (`core/src/bases/chart.ts`) instead, printing `{ view, chart }` — `chart.points` is the computed `{ key, label, value, date? }` series, not raw rows. A `heatmap` view additionally gets `heatmapWeeks` (`buildHeatmapWeeks`'s week-grid).
+
+**Agent filtering:** restricted notes are dropped from the rows before `runView`, so `summaries`, `chart` and `metrics` cover visible notes only. A base whose `ref:` points at a hidden base behaves as if the ref did not exist, so the output is identical to a missing ref and nothing signals that a hidden base is there.
 
 ```bash
 bismuth base render "Bases/Board.md" --vault ~/vault --pretty
@@ -331,6 +357,8 @@ Resolve a `SourceSpec` to a uniform `Row[]`, following base composition. Exactly
 - none → `{ kind: "notes" }` (all vault notes).
 
 Resolution runs server-side-equivalent via `resolveSource(spec, { root: vault, today })`.
+**Agent filtering (`rows`, and `row`):** restricted notes are dropped right after the source is resolved, before any grouping or count. `row add|update|delete|reorder` take an explicit base path, so they are covered by the argv path refusal.
+
 ```bash
 bismuth rows --of "[[Reading]]" --vault ~/vault --pretty
 bismuth rows --where 'file.hasTag("book")' --vault ~/vault
@@ -368,6 +396,8 @@ bismuth row reorder "Bases/Reading.md" 0 3 --vault ~/vault
 Rewrite every ` ```query ` fence in the vault whose `tasks:` field still holds legacy Tasks-DSL text (`not done`, `due before tomorrow`, …) into the current `tasks:` + `where:` + `sort:` shape. Optional — the `taskDsl.ts` translation shim keeps reading the old form forever, so this is a cleanup, not a requirement. `--dry-run` reports the same per-file counts without writing anything.
 
 Each file's read/migrate/write is its own try/catch, exactly like `task migrate` — one unreadable file is skipped and reported rather than aborting the run. Files with CRLF line endings are skipped and reported too: the query-fence scanner only splits on `\n`, so a `\r\n` file is not checked for legacy blocks at all (fails safe — nothing is corrupted — but the file must be converted to LF and re-run to migrate it). Prints `{ changed, files, unconvertible, degraded, skipped }`: `changed` is the total fence count rewritten, `files` is `{ file, changed }` per file touched, `unconvertible` is `{ file, block }` for a fence whose body couldn't be migrated at all, `degraded` is `{ file, block, leaves }` for a fence that migrated but had at least one DSL leaf that didn't translate (mirroring `task list`'s `errors`) — `leaves` also names each ignored DSL instruction line (`group by`, `limit`, `hide`, `show`, `short mode`, `full mode`, `explain`), which the migrated fence has no equivalent for, `skipped` is `{ file, error }` for files that couldn't be checked (CRLF or unreadable).
+**Agent filtering:** restricted notes are skipped and never reported.
+
 ```bash
 bismuth base migrate-queries --dry-run --vault ~/vault --pretty
 bismuth base migrate-queries --vault ~/vault
@@ -380,19 +410,19 @@ bismuth base migrate-queries --vault ~/vault
 Reads mirror `GET /cards/*`; `card review` mirrors the dual-mode `POST /cards/review`. See the [flashcards/SRS docs](../flashcards/srs.md). All require a vault. `today()` drives due calculations + review scheduling.
 
 ### `card decks`
-List flashcard decks with total + due counts (`collectDecks(vault, today())`).
+List flashcard decks with total + due counts. **Agent filtering:** the decks are computed from the filtered card list, so totals and due counts cover visible cards only.
 ```bash
 bismuth card decks --vault ~/vault --pretty
 ```
 
 ### `card all`
-List every flashcard parsed from the vault (`collectCards(vault)`).
+List every flashcard parsed from the vault (`collectCards(vault)`). **Agent filtering:** cards from restricted notes are omitted.
 ```bash
 bismuth card all --vault ~/vault --pretty
 ```
 
 ### `card due [--deck <name>]`
-List flashcards due today (`dueCards(vault, today(), deck?)`), optionally filtered to one deck.
+List flashcards due today, optionally filtered to one deck. **Agent filtering:** cards from restricted notes are omitted; due cards are selected from the filtered card list.
 ```bash
 bismuth card due --vault ~/vault
 bismuth card due --deck "Spanish" --vault ~/vault --pretty
@@ -405,7 +435,7 @@ bismuth card note "Notes/Biology.md" --vault ~/vault --pretty
 ```
 
 ### `card review` — dual mode
-Two distinct invocation shapes, branched on whether `--file` + `--index` are both present.
+Two distinct invocation shapes, branched on whether `--file` + `--index` are both present. **Agent filtering:** reviewing a card whose id (`<notePath>::<i>::<j>`) names a restricted note is refused, in addition to the argv path refusal for `--file`.
 
 **Row card (flashcard base):** `--file <base> --index <n> --response <hard|good|easy> [--dueField <c> --easeField <c> --intervalField <c>]`. Parses the base, grabs `rows[index]` (`row not found: <file>#<index>` if absent), loads the vault's SRS settings (`const srs = (await loadAppConfig(vault)).srs`), and applies SM-2 to the row's scheduling columns via `applyReviewToRow(row.note, response, today(), srs, fields)`, then writes it back with `upsertRow`. The custom scheduling columns are only applied when **all three** of `--dueField`/`--easeField`/`--intervalField` are given (otherwise defaults are used). `--index` must be an integer.
 
@@ -464,6 +494,8 @@ bismuth settings get --key appearance.theme --vault ~/vault
 ```
 
 ### `settings set <key.path> <value>`
+**Agents:** refused (`settings set` and `settings unset`) whenever the vault restricts anything, since an agent could rewrite `folderVisibility`. See [visibility](../vault/visibility.md).
+
 Set a `.settings` value at a dotted path. The path is split on `.`; the value is coerced via `JSON.parse` (falling back to raw string, same rule as `prop set`). Calls `setSettingInFile(vault, keyPath.split("."), value)`. Prints `{ ok: true }`.
 ```bash
 bismuth settings set appearance.theme dark --vault ~/vault
@@ -484,8 +516,8 @@ Report this vault's [visibility](../vault/visibility.md) deny plan for a channel
 
 | Caller | Output |
 |---|---|
-| **Owner** (`BISMUTH_AGENT_CHANNEL` unset) | `{ channel, determined: true, count, entries: [<rel path>, …] }` — the full list, since the owner already knows what they hid. |
-| **Agent channel** (`chat`/`daemon`) | `{ channel, determined: true, count }` — **no `entries` key at all.** A count, never a path. |
+| **Owner** (`BISMUTH_AGENT_CHANNEL` unset and not spawned by the MCP server) | `{ channel, determined: true, count, entries: [<rel path>, …] }` — the full list, since the owner already knows what they hid. |
+| **Agent** (`chat`/`daemon` channel, or a CLI spawned by the MCP server) | `{ channel, determined: true, count }` — **no `entries` key at all.** A count, never a path. |
 
 `settings` is Tier A (`ALWAYS_SAFE_COMMANDS`) in `core/src/visibilityCliGate.ts`'s command classification (by its `settings`-prefixed group, unchanged by this command; the one exception is `settings status-bar`, see below), so the outer CLI gate never refuses `settings deny-list` wholesale even in a restricted vault — the count-only branch above is what actually protects it. See [visibility docs § CLI preflight](../vault/visibility.md#the-deny-list-preflight-settings-deny-list) for the full reasoning and the enumeration-oracle threat this closes.
 ```bash
@@ -508,6 +540,8 @@ bismuth folder-icon "Projects" anything --clear --vault ~/vault   # icon arg ign
 ```
 
 ### `folder-visibility <folder> <chat-only|hidden> [--clear]`
+**Agents:** refused whenever the vault restricts anything, because clearing a folder's rule is the bypass. Allowed in a vault that restricts nothing. See [visibility](../vault/visibility.md).
+
 Set (or, with `--clear`, clear) a folder's AI [visibility](../vault/visibility.md) in `.settings` — the folder-level counterpart to a note's own `visibility` frontmatter field (`setFolderVisibility(vault, folder, clear ? null : visibility)`). The folder path is normalized before it's used as the settings key, so a trailing slash from shell tab-completion still enforces. Prints `{ ok: true }`. Args validated: a missing `<folder>` always fails (`usage: folder-visibility <folder> <chat-only|hidden> [--clear]`), and the second positional must be exactly `chat-only` or `hidden` **unless** `--clear` is passed (clearing needs no value).
 ```bash
 bismuth folder-visibility "Journal" hidden --vault ~/vault
@@ -742,7 +776,7 @@ bismuth api GET /version --api http://localhost:4322
 
 This is the escape hatch for any endpoint without a dedicated CLI command (see the full route list in the project's server documentation).
 
-**One deliberate carve-out: `status-bar/trust`.** When `BISMUTH_AGENT_CHANNEL` is anything other than the owner (`chat` or `daemon`), `api` refuses any path that starts with `status-bar/trust` (leading slashes are stripped first, so `/status-bar/trust`, `status-bar/trust` and `//status-bar/trust` are all caught) with `refused: approving a status bar command is the user decision; ask them to click [ allow ] in the bar`, before any request is made. Approving a `run:` command is the owner's decision, not an agent's; the owner (channel unset) is not refused. Pinned by `cli/test/apiTrustRefusal.test.ts`; the route itself is documented at [`POST /status-bar/trust`](../api/http-reference.md#post-status-bartrust).
+**Two deliberate carve-outs: `status-bar/trust` and `doctor`.** When `BISMUTH_AGENT_CHANNEL` is anything other than the owner (`chat` or `daemon`), or `BISMUTH_MCP_CHANNEL` is set (the MCP server spawned the CLI), `api` refuses `status-bar/trust` and `doctor`, `doctor/…` before any request is made. The path is normalised the way the request URL is (leading slashes and backslashes, `./` and `a/../` segments, `%2e`, query and fragment, percent-encoding), so `/status-bar/trust`, `./doctor/fix` and `%2e/doctor` are all caught. The refusals read `refused: approving a status bar command is the user decision; ask them to click [ allow ] in the bar` and `refused: doctor repairs go through `bismuth doctor` (safe fixes only for agents); the owner applies the rest`. Approving a `run:` command, and applying destructive doctor repairs, is the owner's decision, not an agent's; the owner (channel unset) is not refused. Pinned by `cli/test/apiTrustRefusal.test.ts`; the trust route itself is documented at [`POST /status-bar/trust`](../api/http-reference.md#post-status-bartrust).
 
 **Owner-gated routes are reachable, not blocked by construction.** `api` shares `cli/src/http.ts`'s `call()` with every other server-talking group, so it now carries the same owner-token attach described in [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) above: `bismuth api GET /chat/sessions` (or any other owner-only route) succeeds exactly when a matching local run record's token is available — the same condition that gates the dedicated [`chat` group](#chat-commands-commandschatts). It is not the case that an owner-gated route is structurally unreachable from this command; it 403s only when no token can be attached (no running core discovered at `base`, or a run record with no `token` field). Prefer the dedicated `chat`/`app`/`gcal`/`relay` commands where one exists — `api` remains the fallback for routes without one.
 
@@ -829,7 +863,7 @@ bismuth install --mcp all
 ```
 
 ### `uninstall`
-Removes the machine-wide CLI symlink (if it's ours), the global MCP registration (`claude mcp remove -s user bismuth`), and `~/.bismuth`.
+First unloads and removes the daemon's launchd/systemd service (it is KeepAlive, so deleting its binary out from under it would leave it crash-looping), then removes the machine-wide CLI symlink (if it's ours), the global MCP registration (`claude mcp remove -s user bismuth`), and `~/.bismuth`.
 
 ## Backend commands (`commands/backends.ts`)
 
@@ -840,6 +874,54 @@ Read-only and cheap by construction: it resolves binaries and reads version stri
 ```bash
 bismuth backends
 bismuth backends --installed --json --pretty
+```
+
+## Docs commands (`commands/docs.ts`)
+
+The CLI twin of the MCP's `bismuth_docs_list/search/read` tools; both call the same `listDocs`/`searchDocs`/`readDoc` (`mcp/src/docs.ts`). Headless, no vault. The docs root is `BISMUTH_DOCS_DIR`, else the repo's `docs/` when run from source, else `~/.bismuth/docs` (the installer's copy; a compiled binary has no source tree).
+
+- **`docs list`** — every page as `{path, title}`; the index, start here.
+- **`docs search <query…> [--limit <n>]`** — ranked `{path, heading, snippet}` hits (snippets only, never whole pages).
+- **`docs read <path> [--section <heading>]`** — the page text raw (not JSON), or one `##` section. A missing page or section exits non-zero.
+
+```bash
+bismuth docs search tasks bracketed fields --limit 3
+bismuth docs read mcp/overview.md --section "Parity"
+```
+
+---
+
+## Memory commands (`commands/memory.ts`)
+
+The CLI twin of the MCP's `remember`/`recall`/`forget` tools, on the vault's 3rd-brain graph (`<vault>/.daemon/memory`; see [../daemon/overview.md](../daemon/overview.md)). Headless.
+
+**Which graph:** `--memory <dir>`, else `BISMUTH_MEMORY_DIR`, else the resolved vault's own `.daemon/memory` (`--vault`, else `BISMUTH_VAULT`, else the cwd walked up to a `.settings`) but only when that vault has `daemon.enabled: true`. Otherwise the command exits non-zero with `Memory is unavailable — the daemon is not enabled for this vault.`, the MCP's own refusal text (one shared constant, `MEMORY_UNAVAILABLE` in `mcp/src/memory.ts`).
+
+- **`memory remember --name <n> --content <md> [--type <t>] [--tags a,b] [--folder <f>]`** — save or overwrite by name (an existing note keeps its `type` and `created`). Prints `{ok, name}`.
+- **`memory recall <query…> [--folder <f>]`** — search; supports `tag:` `type:` `keyword:` `link:` `after:` `before:` filters. Prints `{ok, count, notes}`.
+- **`memory forget <name>`** — remove a note (the name may be folder-prefixed). Prints `{ok, name}`.
+
+**Agent filtering:** `memory` is always allowed for agents, and protects itself. For an agent, `remember` and `forget` on a memory note whose `visibility` is hidden from that channel are refused (`refused: that memory note is not visible to this agent`), and `recall` omits them. Memory frontmatter is parsed as YAML, and a note whose frontmatter head is malformed counts as hidden (fail closed), so `recall` omits it and `remember`/`forget` refuse it. For an agent, `--memory` must be exactly `<vault>/.daemon/memory`; any other directory (outside the vault, or another folder inside it) is refused, because only that directory can be visibility-checked. `remember` keeps an existing note's `visibility` (it used to drop the key, silently un-hiding a hidden note), for the owner as well.
+
+```bash
+bismuth memory remember --name zebra-fact --content "zebras are striped" --tags animal
+bismuth memory recall type:fact stripes --pretty
+bismuth memory forget zebra-fact
+```
+
+---
+
+## Doctor commands (`commands/doctor.ts`)
+
+### `doctor [--fix] [--safe-only] [--only <id>[,<id>…]] [--section <id>[,<id>…]] [--vault <path>] [--json]`
+Answers "is this machine, and this vault, in the state the current build expects?" — leftovers from older builds, version skew between the installed binaries and the bundle, and pending vault migrations. Read-only unless `--fix` is passed. Each finding has an id (`<section>.<slug>`, plus `:<qualifier>` when one check fires several times) and, when it can be repaired, a repair marked `[safe]` or `[destructive]`. **Safe** repairs only rebuild or relink what Bismuth itself owns, and are idempotent. **Destructive** repairs delete something a person could miss (a retired service, an old directory) and are the ones that need consent: `--fix` applies both, `--safe-only` applies only the safe ones, and `--only <ids>` narrows `--fix` to those exact finding ids (an id that matches no finding is reported as `unknown id: <id>`).
+
+Sections are `legacy`, `install`, `daemon`, `runtime`, `vault` and `backends`; `--section` runs a subset. The `vault` section needs a vault (`--vault` or `BISMUTH_VAULT`) and is skipped without one. A section that cannot run reports `<section>.check-failed` and the rest still run. `--json` prints the full report (`ok`, `findings`, `fixed`, `failed`, `pending`, `unknownIds`). Bridged to the MCP as `bismuth_doctor`. Reference: [doctor](../overview/doctor.md).
+```bash
+bismuth doctor
+bismuth doctor --vault ~/notes --json --pretty
+bismuth doctor --fix --safe-only
+bismuth doctor --fix --only legacy.claude-bot-service
 ```
 
 ## Checkpoint commands (`commands/checkpoint.ts`)
@@ -871,6 +953,7 @@ Edit a calendar base file **by API** instead of hand-editing raw YAML — the ap
 
 ### `calendar bases`
 Discover the vault's calendar base files: every `.md` whose frontmatter is `type: base` with a calendar view (`view: calendar`, or a legacy `views:` list whose first entry is `{type: calendar}`). Prints `[{ path, title, events, categories }]` (title falls back to the basename; `categories` is the name list). Use this to find the `<basePath>` the other commands take.
+**Agent filtering:** calendar bases hidden from the agent are omitted. Every other `calendar …` subcommand takes a `<basePath>`, which is refused when it names a restricted base.
 ```bash
 bismuth calendar bases --vault ~/vault --pretty
 ```
@@ -1011,6 +1094,7 @@ bismuth gcal disconnect
 
 ### `gcal targets`
 List calendar bases with Google sync enabled — the exact scan the auto-sync ticker runs (`listGcalSyncTargets(vault, legacy)`, `core/src/gcal/discover.ts`), with `legacy` built from this vault's own `googleCalendar.{enabled,calendarId,basePath}` settings (`loadAppConfig`) so the legacy global-mapping fallback is honored just like the real ticker. Prints `[{ basePath, calendarId }, …]`. **Headless — requires only `--vault`.**
+**Agent filtering:** hidden bases are omitted. `gcal health` filters its per-base paths the same way; `gcal sync <basePath>` needs a resolvable vault for an agent (it cannot check visibility without one) and refuses a hidden base.
 ```bash
 bismuth gcal targets --vault ~/vault --pretty
 ```
@@ -1038,6 +1122,8 @@ Read Bismuth's in-process registry of Claude Code work happening inside THIS vau
 `GET /relay/snapshot` → `{ sessions: RelaySession[], subagents: RelaySubagent[] }` (see `core/src/relay.ts` for both shapes), same `resolveCore` discovery precedence as `app`/`gcal`.
 
 **Redaction now depends on the owner-token attach.** `GET /relay/snapshot` used to be blanket owner-only for the same reason `GET /chat/sessions` is gated — a `RelaySubagent.lastMessage` is free-text final output that can quote vault content — but a `lastMessage`-redacted response is served to any non-owner request instead of a 403 (see [../api/http-reference.md](../api/http-reference.md#visibility-gating), shape D, and `redactSnapshot()` in `core/src/relay.ts`). `cli/src/http.ts`'s `call()` (see [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) above) now attaches `X-Bismuth-Token` whenever a matching local run record has one — so a plain shell invocation of `relay list`, run as the vault owner against their own running core, gets the FULL unredacted snapshot (`lastMessage` included), the same as the app's own UI. It falls back to the redacted view (bookkeeping fields only — ids, types, timestamps, `cwd`, `backend`) only when no token can be attached: no running core discovered at `base`, or a run record predating this feature.
+**Agent filtering:** when an agent runs it, the snapshot is always passed through `redactSnapshot` before printing (no `lastMessage`), whether or not an owner token could be attached.
+
 ```bash
 bismuth relay list --pretty
 ```
@@ -1048,7 +1134,7 @@ bismuth relay list --pretty
 
 Read the vault owner's own past chat history (terminal *and* in-app sessions) from the shell — wraps three **owner-gated** server routes (`core/src/server.ts`'s `GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`; see [chat overview § Unification with terminal sessions](../chat/overview.md#unification-with-terminal-sessions)). All three blanket-refuse (403) any request that isn't `requestChannel(req) === "owner"` — a past transcript has no single vault path to filter visibility against, so unlike a row/search-hit list there is no "safe partial" response to fall back to for a non-owner caller. Before this group existed, `cli/src/http.ts` never attached the owner token (see [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) above), so this content was unreachable from any shell invocation — only the app's own History picker UI could read it. Same `resolveCore` discovery precedence as `app`/`gcal`/`relay`: `--api <url>` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (matched by `--vault`/`BISMUTH_VAULT`) → `:4321`.
 
-**The agent path stays gated.** `chat` is deliberately unclassified in `core/src/visibilityCliGate.ts` (not in `ALWAYS_SAFE_COMMANDS` or `PATH_SCOPED_COMMANDS`), so it falls into the refuse-when-restricted tail alongside `search`/`rows`/`base`/`export`/`api` — an agent channel (`BISMUTH_AGENT_CHANNEL=chat|daemon`) is refused before ever reaching the network **whenever the vault restricts anything** (pinned by `core/test/visibilityCliGate.test.ts` and end-to-end by `cli/test/cli.test.ts`). See the owner-identity caveat above: in a vault that restricts *nothing*, that gate has nothing to refuse, and the real stop for a Bismuth-spawned agent is the OS-sandbox deny-read on the run record — not this CLI-level command classification, and not `BISMUTH_AGENT_CHANNEL` itself.
+**The agent path stays gated.** `chat` is deliberately unclassified in `core/src/visibilityCliGate.ts` (not in `ALWAYS_SAFE_COMMANDS` or `PATH_SCOPED_COMMANDS`), so it falls into the refuse-when-restricted tail alongside `api`/`serve`/`export`/`update` — an agent channel (`BISMUTH_AGENT_CHANNEL=chat|daemon`) is refused before ever reaching the network **whenever the vault restricts anything** (pinned by `core/test/visibilityCliGate.test.ts` and end-to-end by `cli/test/cli.test.ts`). See the owner-identity caveat above: in a vault that restricts *nothing*, that gate has nothing to refuse, and the real stop for a Bismuth-spawned agent is the OS-sandbox deny-read on the run record — not this CLI-level command classification, and not `BISMUTH_AGENT_CHANNEL` itself.
 
 ### `chat list [--scope user|daemon|all] [--api <url>]`
 `GET /chat/sessions?scope=<scope>` → `{ sessions: ChatSessionInfo[] }`, newest first. `scope` defaults to `user` (excludes the daemon's own cron-fired sessions) — see the [chat overview](../chat/overview.md#unification-with-terminal-sessions) for exactly what each scope returns.
@@ -1096,10 +1182,13 @@ bismuth chat search "vault schema" --pretty
 | `page list/create/resolve/mark-failed` | page.ts | **yes** (per-vault `<vault>/.daemon/pages`) | JSON |
 | `install` `install --mcp <cli>` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + per-CLI MCP config) | JSON |
 | `backends` | backends.ts | **no** (probes binaries on PATH; read-only) | table / JSON |
+| `docs list` `docs search` `docs read` | docs.ts | **no** (reads the docs tree) | JSON / raw page text |
+| `memory remember` `memory recall` `memory forget` | memory.ts | **no** (needs a daemon-enabled vault, or `--memory <dir>`) | JSON |
+| `doctor` | doctor.ts | **no** (machine-wide; `--vault` adds the vault checks) | table / JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 | `gcal status/connect/sync/disconnect` | gcal.ts | **no** (needs a running server) | JSON |
 | `gcal targets` `gcal health` | gcal.ts | **yes** — `health`'s manifest lives machine-wide at `~/.bismuth/gcal`, but entries are keyed by vault, so `--vault` resolves which one | JSON |
 | `relay list` | relay.ts | **no** (needs a running server; full snapshot for the owner, `lastMessage`-redacted otherwise — see the section above) | JSON |
 | `chat list` `chat read` `chat search` | chat.ts | **no** (needs a running server + the owner token; refuse-when-restricted under an agent channel — see the section above) | JSON |
 
-Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `cli/test/apiTrustRefusal.test.ts`, `cli/test/guideCommands.test.ts`, `cli/src/registry.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/taskReorder.ts`, `core/src/taskMigrate.ts`, `core/src/taskLegacy.ts`, `core/src/bases/taskDsl.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`
+Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/doctor.ts`, `cli/src/commands/docs.ts`, `cli/src/commands/memory.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `cli/test/apiTrustRefusal.test.ts`, `cli/test/guideCommands.test.ts`, `cli/src/registry.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/taskReorder.ts`, `core/src/taskMigrate.ts`, `core/src/taskLegacy.ts`, `core/src/bases/taskDsl.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`

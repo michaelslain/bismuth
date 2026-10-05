@@ -32,21 +32,40 @@ The compiled binary reads `BISMUTH_DOCS_DIR` for the docs (`mcp/src/server.ts`) 
 
 ## Tools (token-frugal by design)
 
-The server in `mcp/src/server.ts` uses the low-level `@modelcontextprotocol/sdk` `Server` and `StdioServerTransport` with raw JSON Schema, not zod. Before a client calls a tool, it receives `SERVER_INSTRUCTIONS` from `mcp/src/instructions.ts`; `mcp/src/serverInstructions.test.ts` keeps that text under 150 words. The instructions do two jobs. First, they are the **guide triggers** (see [Guides](#guides) below): every time an agent creates, edits or debugs a base it is told to read `bases/authoring.md` first, and a vault conversion is pointed at its guide. Second, they prevent a common tagging mistake: an image or PDF uses the hidden companion note `<file>.<ext>.md`, set with `bismuth prop set <file.pdf> tags '[...]'`. Do not create a separate `<name>.md` solely to embed a binary and hold its tags. See [`vault/frontmatter.md`](../vault/frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs) for the complete companion-note model.
+The server in `mcp/src/server.ts` uses the low-level `@modelcontextprotocol/sdk` `Server` and `StdioServerTransport` with raw JSON Schema, not zod. Before a client calls a tool, it receives `SERVER_INSTRUCTIONS` from `mcp/src/instructions.ts`; `mcp/src/serverInstructions.test.ts` keeps that text under 160 words. The instructions do two jobs. First, they are the **guide triggers** (see [Guides](#guides) below): every time an agent creates, edits or debugs a base it is told to read `bases/authoring.md` first, and a vault conversion is pointed at its guide. Second, they prevent a common tagging mistake: an image or PDF uses the hidden companion note `<file>.<ext>.md`, set with `bismuth prop set <file.pdf> tags '[...]'`. Do not create a separate `<name>.md` solely to embed a binary and hold its tags. See [`vault/frontmatter.md`](../vault/frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs) for the complete companion-note model.
 
-It registers **five always-on tools** (plus, when the daemon is enabled for the vault, three daemon-gated memory tools + eleven daemon-management tools — see below). The always-on count is deliberately fixed: broad capabilities (e.g. app control) route through `bismuth_cli`/`bismuth_cli_help` rather than adding always-listed schemas, because this MCP is machine-wide and every extra always-listed tool costs context in every session on the machine. The daemon-gated tools sidestep that tax entirely by only appearing inside a daemon-enabled session. Docs (guides included) are served as **pointers + snippets, not full bodies**, so a session spends tokens only on the one page it actually needs:
+It registers **six always-on tools** (plus, when the daemon is enabled for the vault, three daemon-gated memory tools + eleven daemon-management tools — see below). The always-on count is deliberately fixed: broad capabilities (e.g. app control) route through `bismuth_cli`/`bismuth_cli_help` rather than adding always-listed schemas, because this MCP is machine-wide and every extra always-listed tool costs context in every session on the machine. The daemon-gated tools sidestep that tax entirely by only appearing inside a daemon-enabled session. Docs (guides included) are served as **pointers + snippets, not full bodies**, so a session spends tokens only on the one page it actually needs:
 
 | Tool | Args | Returns |
 |---|---|---|
 | `bismuth_docs_list` | — | every doc page `{path, title}` (the index — start here) |
 | `bismuth_docs_search` | `query`, `limit?` | ranked `{path, heading, snippet}` — **snippets only**, cheap |
 | `bismuth_docs_read` | `path`, `section?` | one doc page, or a single `##` section, on demand |
+| `bismuth_doctor` | `fix?`, `safeOnly?`, `only?`, `section?`, `vault?` | checks this machine (and a vault) for leftovers from older builds, version skew and pending migrations; `fix: true` repairs. Bridges `bismuth doctor --json` and returns the full report — reference: [cli/reference.md](../cli/reference.md#doctor-commands-commandsdoctorts) |
 | `bismuth_cli` | `args: string[]` | runs the `bismuth` CLI (e.g. `["task","list","--vault","…"]`) → stdout/stderr/exit |
 | `bismuth_cli_help` | `group?` | the CLI reference (all commands, or one group) |
+
+`SERVER_INSTRUCTIONS` ends with one pointer to it: if Bismuth misbehaves after an update (missing CLI, stale MCP, daemon not running), run `bismuth_doctor` first.
 
 Typical flow: `docs_search` → read only the top hit with `docs_read`; act with `bismuth_cli`. For a guide: `docs_read` the page the server instructions name.
 
 Every vault feature rides `bismuth_cli` the same way — notes, search, tasks, bases/rows, flashcards, settings, and **calendar management** (discover calendar bases, event CRUD incl. recurrence/RRULE and per-occurrence overrides, categories/colors — the `calendar` group; see `cli/reference.md` § Calendar commands). No per-feature MCP tools exist by design.
+
+## Parity
+
+The MCP and the CLI are two doors onto one capability set. Every MCP tool has a CLI command that does the same thing, and every CLI command is reachable from MCP through `bismuth_cli`. The first half is a table, `CLI_TWINS` in `mcp/src/cliTwins.ts`; `cli/test/mcpParity.test.ts` pins both halves, so a tool added to `server.ts` without a twin fails a test instead of shipping a capability only one surface has. `bismuth_cli` and `bismuth_cli_help` are the only entries with no twin: they ARE the CLI.
+
+| Tool | CLI twin |
+|---|---|
+| `bismuth_docs_list` / `bismuth_docs_search` / `bismuth_docs_read` | `docs list` / `docs search` / `docs read` |
+| `bismuth_doctor` | `doctor` |
+| `remember` / `recall` / `forget` | `memory remember` / `memory recall` / `memory forget` |
+| `daemon_status` / `daemon_devices` / `daemon_owner` / `daemon_list` | `daemon status` / `daemon devices` / `daemon owner` / `daemon graph` |
+| `cron_run` / `cron_toggle` / `process_toggle` / `daemon_logs` | `daemon cron run` / `daemon cron toggle` / `daemon process toggle` / `daemon logs` |
+| `page_list` / `page_create` / `page_resolve` | `page list` / `page create` / `page resolve` |
+| `bismuth_cli` / `bismuth_cli_help` | none (the bridge itself) |
+
+The docs and memory tools call shared code in `mcp/src/docs.ts` and `mcp/src/memory.ts`, which `cli/src/commands/docs.ts` and `memory.ts` import by relative path (`mcp/` never imports `core/`; `cli/` may import `mcp/`). The daemon and doctor tools go the other way: they spawn the CLI through `runCli`. Group reference: `cli/reference.md` § Docs commands, § Memory commands.
 
 ## Guides
 
@@ -106,8 +125,9 @@ Full reference (args, the pure name→CLI-argv mapper, and still-missing follow-
 
 - `mcp/src/docs.ts` — pure index/search/read over `docs/` (`listDocs`/`searchDocs`/`readDoc`); section-level scoring, path-traversal-guarded (`resolveWithin()` from `mcp/src/paths.ts`). Unit-tested (`docs.test.ts`).
 - `mcp/src/cli.ts` — runs the CLI: the `BISMUTH_CLI` compiled binary when set (machine-wide install), else `bun run cli/src/index.ts` (dev). Passes `BISMUTH_VAULT`/`BISMUTH_MEMORY` through; `runCli`/`cliHelp`, never throws.
-- `mcp/src/memory.ts` — the daemon-gated memory tools (`remember`/`recall`/`forget`) + the `memoryDir()` gate; delegates to `@bismuth/memory` against `BISMUTH_MEMORY_DIR`. Also exports `resolveVaultRoot()` (`BISMUTH_VAULT` else cwd walked up to a `.settings` file), which `memoryDir()` falls back to when no `BISMUTH_MEMORY_DIR` is already set — checking the resolved vault's own `daemon.enabled` directly — and which `daemon.ts`'s `daemonVaultRoot()` reuses so the two gates always agree.
+- `mcp/src/memory.ts` — the daemon-gated memory tools (`remember`/`recall`/`forget`) + the `memoryDir()` gate (and `memoryDirFor(vault)`, its vault-explicit half, which the `memory` CLI group uses); delegates to `@bismuth/memory` against `BISMUTH_MEMORY_DIR`. Also exports `resolveVaultRoot()` (`BISMUTH_VAULT` else cwd walked up to a `.settings` file), which `memoryDir()` falls back to when no `BISMUTH_MEMORY_DIR` is already set — checking the resolved vault's own `daemon.enabled` directly — and which `daemon.ts`'s `daemonVaultRoot()` reuses so the two gates always agree.
 - `mcp/src/daemon.ts` — the daemon-gated daemon-management tools (crons/processes/pages/status/devices/owner); the pure `daemonCliArgs` name→CLI-argv mapper (unit-tested, `daemon.test.ts`), `daemonVaultRoot()` derivation, and `daemonEnabled()` gate; bridges the `bismuth` CLI via `runCli`. See [daemon-tools.md](daemon-tools.md).
-- `mcp/src/server.ts` — registers the tools and dispatches to the above; docs root from `BISMUTH_DOCS_DIR` (install) else `../../docs` (dev). `ListTools` appends the memory + daemon tools only when `daemonEnabled()` resolves. Diagnostics go to stderr only (stdout is the protocol channel). Run standalone: `bun run mcp/src/server.ts`.
+- `mcp/src/cliTwins.ts` — `CLI_TWINS`, the tool → CLI-phrase table the parity test pins (see Parity above).
+- `mcp/src/server.ts` — registers the tools (exports `ALL_TOOL_NAMES` and the pure `doctorCliArgs`) and dispatches to the above; docs root from `BISMUTH_DOCS_DIR` (install) else `../../docs` (dev). `ListTools` appends the memory + daemon tools only when `daemonEnabled()` resolves. Diagnostics go to stderr only (stdout is the protocol channel). Run standalone: `bun run mcp/src/server.ts`.
 
-Source: `mcp/src/server.ts`, `mcp/src/memory.ts`, `mcp/src/daemon.ts`, `mcp/src/docs.ts`, `mcp/src/instructions.ts`, `mcp/src/cli.ts`, `relay/.mcp.json`, `core/src/bismuthInstall.ts`, `core/src/terminal.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/agentBackends/catalog.ts`, `core/src/chatProviders/codex/driver.ts`, `app/src/uiControlClient.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `daemon/src/daemon/session.ts`, `daemon/src/lib/bismuthPaths.ts`, `app/scripts/build-bismuth-tools.ts`, `docs/bases/authoring.md`, `docs/guides/`. Full app-control reference: [app-control.md](app-control.md).
+Source: `mcp/src/server.ts`, `mcp/src/memory.ts`, `mcp/src/daemon.ts`, `mcp/src/docs.ts`, `mcp/src/instructions.ts`, `mcp/src/cli.ts`, `mcp/src/cliTwins.ts`, `cli/test/mcpParity.test.ts`, `cli/src/commands/docs.ts`, `cli/src/commands/memory.ts`, `relay/.mcp.json`, `core/src/bismuthInstall.ts`, `core/src/terminal.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/agentBackends/catalog.ts`, `core/src/chatProviders/codex/driver.ts`, `app/src/uiControlClient.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `daemon/src/daemon/session.ts`, `daemon/src/lib/bismuthPaths.ts`, `app/scripts/build-bismuth-tools.ts`, `docs/bases/authoring.md`, `docs/guides/`. Full app-control reference: [app-control.md](app-control.md).
