@@ -174,8 +174,18 @@ export function insertTextAtCoords(
     y: number,
     text: string,
 ): boolean {
+    // The same note can be open in two split panes: insert into the one UNDER the point, not
+    // whichever view happened to register first (which put the link in the other pane).
+    let target: EditorView | null = null
     for (const view of liveViews) {
         if (view.state.facet(notePathFacet) !== notePath) continue
+        const r = view.dom.getBoundingClientRect()
+        const under = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
+        if (under || !target) target = view
+        if (under) break
+    }
+    if (target) {
+        const view = target
         const at = view.posAtCoords({ x, y }) ?? view.state.selection.main.head
         view.dispatch({
             changes: { from: at, insert: text },

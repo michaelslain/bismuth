@@ -19,7 +19,8 @@ import {
 import { usesReferenceGeometry } from './noteRef'
 import { isDismissKey } from '../ui/widgetKeys'
 
-// A tab/pane can OPTIONALLY carry the vault `path` it displays (a note) so it works as a
+// A tab/pane can OPTIONALLY carry the vault `path` it displays (a note, image or PDF —
+// noteRef.ts's isLinkablePath) so it works as a
 // drag SOURCE for the chat-reference / editor-wikilink drop targets (Row 74), same as a
 // sidebar note. `note`/`folder` are sidebar file-tree rows (Row 73/74).
 export type DragDescriptor =
@@ -159,11 +160,11 @@ export function createViewDrag(
                 // The pane's content, off the runtime data-pane-content hook PaneLeaf sets, so we
                 // can decide the reference geometry without reaching into App's model.
                 const content = pane.getAttribute('data-pane-content') ?? undefined
-                // A sidebar note row dragged with a referenceable payload (drop-to-[[wikilink]], Row
-                // 74c) over a pane hosting a live editor WHOSE CONTENT IS A MARKDOWN NOTE uses the
-                // much larger reference zone instead of the split-replace box — almost anywhere on
-                // the pane inserts a link. Tab/pane drags keep the split-box geometry (regressed
-                // pane rearranging otherwise). usesReferenceGeometry is the SAME predicate
+                // Any drag with a referenceable payload — a sidebar row, a tab or a pane header
+                // (drop-to-[[wikilink]], Row 74c) — over a pane hosting a live editor WHOSE CONTENT IS
+                // A MARKDOWN NOTE uses the much larger reference zone instead of the split-replace
+                // box: almost anywhere on the pane inserts a link, and only the outer edges split.
+                // usesReferenceGeometry is the SAME predicate
                 // (editorReferencePath, in noteRef.ts) that isEditorReferenceDrop uses to decide the
                 // actual drop behaviour, so the band and the drop can never disagree. Self-drop
                 // exclusion lives in that shared predicate too, not here: this only decides which

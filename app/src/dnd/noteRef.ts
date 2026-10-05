@@ -15,6 +15,13 @@ export function isMarkdown(path: string): boolean {
     return /\.(md|markdown)$/i.test(path)
 }
 
+/** True for a file a note can REFERENCE — a markdown note (`[[wikilink]]`) or an image/PDF
+ *  (`![[embed]]`). The one test for which tabs and panes carry their path as a drag source, so a tab
+ *  or pane header dropped on a note links exactly what a sidebar row of the same file would. */
+export function isLinkablePath(path: string): boolean {
+    return isMarkdown(path) || isImagePath(path) || isPdfPath(path)
+}
+
 /** The wikilink-visible name of a note path: its basename with the markdown extension stripped
  *  (wikilinks resolve by filename, not path — `Projects/Gamma.md` → `Gamma`). */
 export function noteNameFromPath(path: string): string {
@@ -104,9 +111,11 @@ export function chatIdForContent(content: string | undefined): string | null {
 /** The path a drop of `descriptor` onto a pane showing `content` (with `hasEditor` a live
  *  CodeMirror view) would insert a `[[wikilink]]`/`![[embed]]` for — or null when this isn't a
  *  reference drop at all. Non-null iff ALL of: `hasEditor`, `content` is a markdown note, the
- *  descriptor is a SIDEBAR tree row (`kind === 'note'`) rather than a tab/pane drag, the payload
- *  resolves a linkable path via `descriptorNotePath` ?? `descriptorEmbedPath`, and that path isn't
- *  the pane's own content (no self-reference). This is the ONE predicate behind both the
+ *  payload resolves a linkable path via `descriptorNotePath` ?? `descriptorEmbedPath`, and that path
+ *  isn't the pane's own content (no self-reference). WHERE the drag started does not matter: a
+ *  sidebar row, a tab and a split pane's header carrying the same file all link it. It used to be
+ *  sidebar rows only, so the same file dropped on the same spot linked from the sidebar but
+ *  replaced the pane from a tab or pane header. This is the ONE predicate behind both the
  *  reference-zone GEOMETRY (`usesReferenceGeometry`, consulted while the drag is still moving) and
  *  the reference-drop BEHAVIOUR (`isEditorReferenceDrop`, consulted at drop) — they differ only by
  *  whether `zone === 'center'` is also required, so the cue shown mid-drag can never disagree with
@@ -117,7 +126,6 @@ export function editorReferencePath(
     hasEditor: boolean,
 ): string | null {
     if (!content || !isMarkdown(content) || !hasEditor) return null
-    if (!descriptor || descriptor.kind !== 'note') return null
     const refPath = descriptorNotePath(descriptor) ?? descriptorEmbedPath(descriptor)
     return refPath !== null && refPath !== content ? refPath : null
 }
@@ -146,8 +154,8 @@ export function isEditorReferenceDrop(
  *  resolves a path — the SAME predicate `isEditorReferenceDrop` uses to decide the actual drop
  *  behaviour, minus its `zone === 'center'` requirement (the geometry is what DECIDES the zone, so
  *  it can't itself depend on one). Because the band and the drop share this one predicate, they can
- *  never disagree — a tab/pane drag (not `kind === 'note'`) or a non-markdown pane both fall through
- *  to the ordinary split-box geometry with no special-casing here. */
+ *  never disagree — a pathless drag (a chat/terminal/graph tab), a folder or a non-markdown pane all
+ *  fall through to the ordinary split-box geometry with no special-casing here. */
 export function usesReferenceGeometry(
     descriptor: DragDescriptor | null,
     hasEditor: boolean,

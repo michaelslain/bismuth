@@ -3,6 +3,7 @@ import { describe, it, expect } from 'bun:test'
 import {
     chatIdForContent,
     isMarkdown,
+    isLinkablePath,
     noteNameFromPath,
     wikilinkFor,
     descriptorMovePath,
@@ -16,6 +17,16 @@ import {
 } from './noteRef'
 import { CHAT_PREFIX } from '../tabIds'
 import type { DragDescriptor } from './viewDrag'
+
+describe('isLinkablePath', () => {
+    it('true for notes, images and PDFs; false for everything else', () => {
+        expect(isLinkablePath('a/Beta.md')).toBe(true)
+        expect(isLinkablePath('assets/pic.png')).toBe(true)
+        expect(isLinkablePath('reports/summary.pdf')).toBe(true)
+        expect(isLinkablePath('Budget.sheet')).toBe(false)
+        expect(isLinkablePath('.settings')).toBe(false)
+    })
+})
 
 describe('isMarkdown', () => {
     it('accepts .md / .markdown case-insensitively', () => {
@@ -270,9 +281,18 @@ describe('usesReferenceGeometry', () => {
     it('false for a sidebar note row when the pane has no live editor', () => {
         expect(usesReferenceGeometry(note('Beta.md'), false, 'Alpha.md')).toBe(false)
     })
-    it('false for a tab or pane descriptor, even over a live editor (Row 74 unchanged, no regression on pane rearranging)', () => {
-        expect(usesReferenceGeometry(tab('Beta.md'), true, 'Alpha.md')).toBe(false)
-        expect(usesReferenceGeometry(pane('Beta.md'), true, 'Alpha.md')).toBe(false)
+    it('true for a note-backed tab or pane header over a live editor — the drag source does not change the drop', () => {
+        expect(usesReferenceGeometry(tab('Beta.md'), true, 'Alpha.md')).toBe(true)
+        expect(usesReferenceGeometry(pane('Beta.md'), true, 'Alpha.md')).toBe(true)
+        expect(usesReferenceGeometry(pane('assets/pic.png'), true, 'Alpha.md')).toBe(true)
+    })
+    it('false for a pathless tab or pane (chat/terminal/graph) — those keep rearranging', () => {
+        expect(usesReferenceGeometry(tab(undefined), true, 'Alpha.md')).toBe(false)
+        expect(usesReferenceGeometry(pane(undefined), true, 'Alpha.md')).toBe(false)
+    })
+    it('false for a pane or tab dropped on the pane showing its own note', () => {
+        expect(usesReferenceGeometry(pane('Alpha.md'), true, 'Alpha.md')).toBe(false)
+        expect(usesReferenceGeometry(tab('Alpha.md'), true, 'Alpha.md')).toBe(false)
     })
     it('false for a folder', () => {
         expect(usesReferenceGeometry(folder('Archive'), true, 'Alpha.md')).toBe(false)
@@ -332,10 +352,17 @@ describe('regressions the cross product must catch', () => {
             isEditorReferenceDrop('.settings', note('Beta.md'), 'center', true),
         ).toBe(false)
     })
-    it("a note-backed tab over another note's centre is not a reference drop", () => {
-        expect(
-            isEditorReferenceDrop('Alpha.md', tab('Beta.md'), 'center', true),
-        ).toBe(false)
+    it("a sidebar row, a tab and a pane header carrying the same note all link it at another note's centre", () => {
+        for (const d of [note('Beta.md'), tab('Beta.md'), pane('Beta.md')])
+            expect(isEditorReferenceDrop('Alpha.md', d, 'center', true)).toBe(
+                true,
+            )
+    })
+    it("any of them at another note's edge splits instead of linking", () => {
+        for (const d of [note('Beta.md'), tab('Beta.md'), pane('Beta.md')])
+            expect(isEditorReferenceDrop('Alpha.md', d, 'left', true)).toBe(
+                false,
+            )
     })
 })
 

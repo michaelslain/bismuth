@@ -10,7 +10,7 @@ import {
     contentLabel,
     contentIcon,
 } from './tabIds'
-import { isMarkdown } from './dnd/noteRef'
+import { isLinkablePath } from './dnd/noteRef'
 
 export type Leaf = { kind: 'leaf'; id: string; content: string }
 export type Split = {
@@ -599,12 +599,12 @@ export function deserializeTabs(
 
 // === Tab-bar presentation (the tab rail — App.tsx renders these, dragging reads tabNotePath) ===
 
-// The markdown-note path a tab displays (so dragging it works as a Row-74 reference source —
-// dropping the tab onto a chat inserts a [[mention]], onto a note inserts a wikilink), or
-// undefined for sentinels/non-notes and any multi-pane ("omnitab") tab.
+// The note, image or PDF path a tab displays (so dragging it works as a Row-74 reference source —
+// dropping the tab onto a chat inserts a [[mention]], onto a note's middle a [[wikilink]] or
+// ![[embed]]), or undefined for sentinels, other files and any multi-pane ("omnitab") tab.
 export function tabNotePath(t: Tab): string | undefined {
     const r = t.root
-    return r.kind === 'leaf' && !isSentinel(r.content) && isMarkdown(r.content)
+    return r.kind === 'leaf' && !isSentinel(r.content) && isLinkablePath(r.content)
         ? r.content
         : undefined
 }

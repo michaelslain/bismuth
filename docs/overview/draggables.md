@@ -27,7 +27,10 @@ Every draggable arrives one of two ways, and a surface must handle both:
   `dnd/noteRef.ts`.
 
 Where the drag started does not change anything: dragging out of Finder while Finder is the
-focused app, or while Bismuth is focused, arrives as the same native event.
+focused app, or while Bismuth is focused, arrives as the same native event. The same holds inside
+the app: a sidebar row, a tab and a split pane's header carrying the same file do the same thing on
+a note pane — the middle (everything but the outer 10% band) links it, the edges split. One shared
+predicate, `noteRef.ts`'s `editorReferencePath`, decides both the drop cue and the drop.
 
 ## The matrix
 
@@ -44,7 +47,7 @@ focused app, or while Bismuth is focused, arrives as the same native event.
 | Sidebar note (`.md`) | `[[wikilink]]` at the drop point | `[[mention]]` + chat reference | `[[mention]]` + chat reference |
 | Sidebar image / PDF | `![[embed]]` at the drop point | `[[mention]]` + chat reference | `[[mention]]` + chat reference |
 | Sidebar other file / folder | opens beside the note (split) | `[[mention]]` + chat reference | `[[mention]]` + chat reference |
-| Tab / pane | split, graft or replace (rearranging) | `[[mention]]` when it shows a vault file, else split | same as chat tab |
+| Tab / pane | showing a note, image or PDF: `[[wikilink]]` / `![[embed]]` in the middle, split at the outer edges — the same as a sidebar row of that file; anything else (or a pane onto itself): split, graft or replace (rearranging) | `[[mention]]` when it shows a vault file, else split | same as chat tab |
 
 ## Per surface
 

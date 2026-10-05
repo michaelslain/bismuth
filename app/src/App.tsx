@@ -181,7 +181,7 @@ import {
     descriptorEmbedPath,
     descriptorChatRefPath,
     chatIdForContent,
-    isMarkdown,
+    isLinkablePath,
     isEditorReferenceDrop,
     wikilinkFor,
     embedFor,
@@ -3160,7 +3160,7 @@ export default function App() {
                                     const path =
                                         content &&
                                         !isSentinel(content) &&
-                                        isMarkdown(content)
+                                        isLinkablePath(content)
                                             ? content
                                             : undefined
                                     viewDrag.startPane(

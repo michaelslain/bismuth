@@ -690,7 +690,7 @@ test('hasRestorableContent: true when a split tab has a non-graph pane alongside
     ).toBe(true)
 })
 
-// --- tabNotePath (drag source: which tabs carry a markdown note path) ---
+// --- tabNotePath (drag source: which tabs carry a linkable note/image/PDF path) ---
 
 test('tabNotePath: a plain markdown-note tab returns its path', () => {
     expect(tabNotePath(makeTab('folder/Note.md'))).toBe('folder/Note.md')
@@ -701,8 +701,14 @@ test('tabNotePath: undefined for a sentinel tab (graph/terminal/chat)', () => {
     expect(tabNotePath(makeTab(TERMINAL_PREFIX + 'x'))).toBeUndefined()
 })
 
-test('tabNotePath: undefined for a non-markdown file (sheet/draw)', () => {
+test('tabNotePath: an image or PDF tab returns its path (it embeds when dropped on a note)', () => {
+    expect(tabNotePath(makeTab('assets/pic.png'))).toBe('assets/pic.png')
+    expect(tabNotePath(makeTab('papers/x.pdf'))).toBe('papers/x.pdf')
+})
+
+test('tabNotePath: undefined for an unlinkable file (sheet/draw/.settings)', () => {
     expect(tabNotePath(makeTab('Sheet1.sheet'))).toBeUndefined()
+    expect(tabNotePath(makeTab('.settings'))).toBeUndefined()
 })
 
 test('tabNotePath: undefined for a multi-pane ("omnitab") tab', () => {

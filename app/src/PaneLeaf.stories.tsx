@@ -157,3 +157,36 @@ export const WithReferenceCue: Story = {
         </Wrap>
     ),
 }
+
+/** The same drop from a split pane's HEADER (a `pane` descriptor carrying its note's path), in a
+ *  split (`showHeader`): the source no longer changes the drop, so the middle of another note shows
+ *  the reference cue a tree row would — not the replace box that used to swap the pane out. */
+export const WithReferenceCueFromPaneHeader: Story = {
+    render: () => (
+        <Wrap>
+            <PaneLeaf
+                {...baseProps}
+                node={noteLeafNode}
+                showHeader={true}
+                dragState={() => ({
+                    ...idleDrag,
+                    active: true,
+                    descriptor: {
+                        kind: 'pane',
+                        tabId: 'tab-1',
+                        leafId: 'leaf-2',
+                        label: 'Beta',
+                        width: 10,
+                        path: 'Beta.md',
+                    },
+                    target: {
+                        kind: 'pane',
+                        leafId: 'leaf-1',
+                        zone: 'center',
+                        editor: true,
+                    },
+                })}
+            />
+        </Wrap>
+    ),
+}
