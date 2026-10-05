@@ -253,28 +253,28 @@ const at = (id: string, title: string, startTime: string, endTime: string, extra
 export const GridSizes: Story = {
     render: () => (
         <Row gap="10px" column>
-            <GridSlot event={at('g1', 'Veritus - NOTES review', '10:30', '11:00')} />
+            <GridSlot event={at('g1', 'Yoga - gym jogging', '10:30', '11:00')} />
             <GridSlot
-                event={at('g2', 'Veritus - NOTES review', '10:30', '10:45')}
+                event={at('g2', 'Yoga - gym jogging', '10:30', '10:45')}
                 next={at('g2n', 'Next', '11:00', '12:00')}
             />
-            <GridSlot event={at('g3', 'Unfiled quick call', '10:30', '11:00', { category: undefined })} />
+            <GridSlot event={at('g3', 'Unfiled quick gig', '10:30', '11:00', { category: undefined })} />
             <GridSlot
-                event={at('g3m', 'Veritus - NOTES review', '10:30', '11:00', { categories: ['Work', 'Personal', 'Focus', 'Health'] })}
+                event={at('g3m', 'Yoga - gym jogging', '10:30', '11:00', { categories: ['Work', 'Personal', 'Focus', 'Health'] })}
                 categories={MORE_CATEGORIES}
             />
-            <GridSlot event={at('g3b', 'Veritus - NOTES review', '10:30', '11:15')} />
+            <GridSlot event={at('g3b', 'Yoga - gym jogging', '10:30', '11:15')} />
             <GridSlot
-                event={at('g4', 'Morning Routine', '08:00', '09:00', { categories: ['Work', 'Personal', 'Focus', 'Health'] })}
+                event={at('g4', 'Morning yoga', '08:00', '09:00', { categories: ['Work', 'Personal', 'Focus', 'Health'] })}
                 categories={MORE_CATEGORIES}
             />
             <GridSlot
-                event={at('g5', 'Morning Routine', '08:00', '09:00', { categories: ['Work', 'Personal', 'Focus', 'Health'] })}
+                event={at('g5', 'Morning yoga', '08:00', '09:00', { categories: ['Work', 'Personal', 'Focus', 'Health'] })}
                 categories={MORE_CATEGORIES}
                 width="100px"
             />
             <GridSlot
-                event={at('g6', 'Offsite planning', '13:00', '15:00', {
+                event={at('g6', 'Offsite gym planning', '13:00', '15:00', {
                     categories: ['Work', 'Personal', 'Focus', 'Health'],
                     location: 'Room 4B',
                 })}
