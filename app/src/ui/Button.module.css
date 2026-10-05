@@ -283,4 +283,8 @@
 .btn--icon.btn--sm.btn--danger-hover:not(:disabled) { color: var(--faint); }
 .btn--icon.btn--danger-hover:hover:not(:disabled),
 .btn--icon.btn--sm.btn--danger-hover:hover:not(:disabled) { color: var(--danger); }
+/* The text register's twin — a list row's remove `[x]` (DESIGN.md, lists in a modal): --faint at
+   rest, --danger under the pointer. `:not(:disabled)` puts the rest rule one class above
+   `.btn--text.btn--normal`, so it wins regardless of order. */
+.btn--text.btn--danger-hover:not(:disabled) { color: var(--faint); }
 .btn--text.btn--danger-hover:hover:not(:disabled) { color: var(--danger); }

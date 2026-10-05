@@ -2,9 +2,10 @@
 // The model dialog's "presets" section — the top of ChatModelPicker's left column, above the
 // connectors, because a preset is a connector too (plus a model and an effort). Each saved preset is
 // one row in the connector rows' own shape: `▸` when it matches what the chat is running, its name,
-// a trailing `[x]` that deletes it — the same bracket `x` as the dialog's own close. What it holds (`connector // model // effort`) is the row's
-// tooltip; picking it shows the rest, since the connector ▸ and the right column's model check and
-// effort follow. A `+ save` control at the bottom turns into a name input (prefilled with a
+// a trailing `[x]` that deletes it — the same bracket `x` as the dialog's own close, but --faint
+// until the pointer is on it, then --danger, like every list row's remove `[x]`. What it holds
+// (`connector // model // effort`) is the row's tooltip; picking it shows the rest, since the
+// connector ▸ and the right column's model check and effort follow. A `+ save` control at the bottom turns into a name input (prefilled with a
 // suggestion, selected so typing replaces it).
 //
 // Controlled: the list comes in as `presets` and every change goes out through onApply / onSave /
@@ -62,6 +63,7 @@ const ChatPresetList: Component<ChatPresetListProps> = props => {
                             </PlainButton>
                             <TextButton
                                 class={styles.delete}
+                                danger="hover"
                                 aria-label={`Delete preset ${preset.name}`}
                                 title={`Delete preset ${preset.name}`}
                                 onClick={() => props.onDelete(i())}

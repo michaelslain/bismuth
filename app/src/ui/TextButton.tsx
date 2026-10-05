@@ -9,8 +9,9 @@ export type TextButtonVariant = ButtonState
 export type TextButtonProps = {
     /** "normal" (standalone, default) | "selected" | "unselected" (toggle/series member). */
     variant?: TextButtonVariant
-    /** Destructive tone (e.g. Delete) — orthogonal to variant. */
-    danger?: boolean
+    /** Destructive tone (e.g. Delete) — orthogonal to variant. `'hover'` holds it back: --faint at
+     *  rest, --danger under the pointer (a list row's remove `[x]`). */
+    danger?: boolean | 'hover'
     /** Accent + bold, no box — the view's one emphasized action. At most one per view. */
     primary?: boolean
     /** Colour for the selected state (a `var(--…)` token) — pre-registered for bracket-toggles Task 1. */
