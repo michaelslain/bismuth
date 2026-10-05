@@ -111,6 +111,7 @@ const ALLOW = new Set<string>([
     'ui/Button.module.css:btn--icon',
     'ui/Button.module.css:btn--lg',
     'ui/Button.module.css:btn--normal',
+    'ui/Button.module.css:btn--pick-one',
     'ui/Button.module.css:btn--primary',
     'ui/Button.module.css:btn--selected',
     'ui/Button.module.css:btn--sm',

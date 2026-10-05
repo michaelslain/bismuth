@@ -153,6 +153,27 @@
 /* off toggle member: brackets laid out but not painted — selecting a sibling moves no one */
 .btn--icon.btn--unselected::before,
 .btn--icon.btn--unselected::after { visibility: hidden; }
+/* PICK-ONE group member (icon-gaps, 2026-10-05): the off members draw NO bracket space. Reserving
+   it (the rule above) kept every icon still, but the eye groups `[▣]` as one unit: two off icons
+   sat ~10px apart ink to ink while the on one's bracket sat ~6px from its neighbour, so the row
+   read lopsided (the mini-graph mode switcher). In a group where exactly one member is always on,
+   the row's width is constant without the reservation; only the icons between the old and the new
+   selection slide by one bracket. A lone on/off toggle does NOT opt in: there the reserved space is
+   what keeps its neighbours from moving when it flips.
+   EVERY member then gets the same side room, so every unit edge — bracket ink for the on member,
+   glyph ink for the rest — sits one gap apart. Inside an IconBar the room is half of what the
+   square --iconbar-box leaves around the glyph (1em = the glyph size, see font-size above): a bare
+   member is that exact square, and units sit the bar's own 8px apart ink to ink. Outside a bar,
+   --sp-1. `min-width: 0` drops the toolzone square floor, which would otherwise add slack outside
+   the on member's brackets only. Three classes outrank ViewBar's `button[data-kind="icon"]`
+   padding reset (a class, an attribute and a tag). */
+.btn--icon.btn--pick-one.btn--unselected::before,
+.btn--icon.btn--pick-one.btn--unselected::after { content: none; }
+.btn--icon.btn--pick-one.btn--selected,
+.btn--icon.btn--pick-one.btn--unselected {
+  padding-inline: max(var(--sp-1), calc((var(--iconbar-box, 0px) - 1em) / 2));
+  min-width: 0;
+}
 /* Optical centring + a tight gap (icon-brackets). Two separate defects, both measured from pixels:
    - CENTRING. Flex-centring the brackets' LINE BOX put the icon 1.6px low in every toolbar and dead
      centre at 13.5px, because Chrome rounds Monaspace's ascent/descent to whole pixels (12px ->

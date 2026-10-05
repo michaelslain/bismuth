@@ -38,6 +38,14 @@ describe('buttonClass', () => {
             'btn btn--icon btn--normal',
         )
     })
+    it('emits btn--pick-one for an icon button only', () => {
+        expect(
+            buttonClass({ kind: 'icon', state: 'unselected', pickOne: true }, id),
+        ).toBe('btn btn--icon btn--unselected btn--pick-one')
+        expect(buttonClass({ pickOne: true }, id)).toBe(
+            'btn btn--text btn--normal',
+        )
+    })
     it('emits btn--primary when primary is set', () => {
         expect(buttonClass({ primary: true }, id)).toBe(
             'btn btn--text btn--normal btn--primary',

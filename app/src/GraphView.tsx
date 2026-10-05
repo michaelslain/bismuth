@@ -525,6 +525,9 @@ export function GraphView(props: {
                                                 // explanatory form matters more here than on the text
                                                 // switcher, not less.
                                                 label={MODE_HINT[id]}
+                                                // Pick-one: exactly one mode is ever on, so the off
+                                                // modes draw no bracket space and the gaps stay even.
+                                                pickOne
                                                 variant={
                                                     props.mode === id
                                                         ? 'selected'

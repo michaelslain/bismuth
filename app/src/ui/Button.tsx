@@ -25,6 +25,9 @@ export type ButtonProps = {
     /** Colour for the selected state (a `var(--…)` token or a token-derived value). Sets
      *  `--btn-accent` on the root, read by `.btn--text.btn--selected` in place of `--accent`. */
     accent?: string
+    /** Member of a pick-one icon group (exactly one member is ever on): the off state draws no
+     *  bracket space. Icon kind only — see buttonClass.ts. */
+    pickOne?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -42,6 +45,7 @@ function Button(props: ButtonProps) {
         'danger',
         'primary',
         'accent',
+        'pickOne',
         'class',
         'type',
         'style',
@@ -76,6 +80,7 @@ function Button(props: ButtonProps) {
                     size: local.size,
                     danger: local.danger,
                     primary: local.primary,
+                    pickOne: local.pickOne,
                     class: local.class,
                 },
                 styles,

@@ -171,9 +171,11 @@ export const ToolbarAndStandalone: Story = {
 
 const TOOLS = ['Pencil', 'Eraser', 'Square', 'Box']
 
-/** A toggle group (the drawing dock's shape) with the selection in two different places. Only the
- *  on member draws `[▣]`; the off members hold their brackets' space, so both rows are the SAME
- *  width — moving the selection never shifts a sibling. `play` measures it. */
+/** A toggle group (the drawing dock's stacked shape) with the selection in two different places.
+ *  Only the on member draws `[▣]`; the off members hold their brackets' space, so both rows are the
+ *  SAME width and every icon keeps its column — moving the selection never shifts a sibling. This
+ *  is the default, and what a lone on/off toggle and a column-aligned stack want. `PickOneGroup`
+ *  below is the opt-out. `play` measures it. */
 export const ToggleGroupWidth: Story = {
     render: () => (
         <Row column gap="10px">
@@ -206,5 +208,85 @@ export const ToggleGroupWidth: Story = {
         expect(groups.length).toBe(2)
         const [a, b] = groups.map(g => g.getBoundingClientRect().width)
         expect(Math.abs(a! - b!)).toBeLessThan(0.5)
+    },
+}
+
+/** Ink edges of each unit in a row: the on member's bracket ink sits at its content edge (box minus
+ *  side room), an off member's at its glyph. */
+const unitGaps = (group: Element): number[] => {
+    const units = [...group.querySelectorAll('button')].map(b => {
+        if (b.getAttribute('data-state') === 'selected') {
+            const r = b.getBoundingClientRect()
+            const cs = getComputedStyle(b)
+            return {
+                l: r.left + parseFloat(cs.paddingLeft),
+                r: r.right - parseFloat(cs.paddingRight),
+            }
+        }
+        const r = b.querySelector('svg, img')!.getBoundingClientRect()
+        return { l: r.left, r: r.right }
+    })
+    return units.slice(1).map((u, i) => u.l - units[i]!.r)
+}
+
+/** `pickOne`: the same group, where exactly one member is always on. The off members draw NO
+ *  bracket space, so `[▣]` sits the same gap from its neighbours as two bare glyphs do — reserving
+ *  it left ~10px between two off icons against ~6px beside the on one's bracket. The rows stay
+ *  the SAME width (one member is always bracketed); only the icons between the two selections
+ *  slide. Inside an IconBar (bottom row) the off members are the bar's 18px square. `play`
+ *  measures both: every unit gap equal, every row one width. */
+export const PickOneGroup: Story = {
+    render: () => (
+        <Row column gap="10px">
+            {[0, 2].map(on => (
+                <div
+                    data-testid="group"
+                    style={{
+                        display: 'inline-flex',
+                        gap: 'var(--bar-icon-gap)',
+                        'align-self': 'flex-start',
+                    }}
+                >
+                    {TOOLS.map((icon, i) => (
+                        <IconButton
+                            {...{ icon }}
+                            label={icon}
+                            pickOne
+                            variant={i === on ? 'selected' : 'unselected'}
+                        />
+                    ))}
+                </div>
+            ))}
+            {[0, 2].map(on => (
+                <IconBar label="Pick-one bar" data-testid="bar">
+                    {TOOLS.map((icon, i) => (
+                        <IconButton
+                            {...{ icon }}
+                            label={icon}
+                            pickOne
+                            variant={i === on ? 'selected' : 'unselected'}
+                        />
+                    ))}
+                </IconBar>
+            ))}
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        for (const id of ['group', 'bar']) {
+            const rows = [
+                ...canvasElement.querySelectorAll<HTMLElement>(
+                    `[data-testid="${id}"]`,
+                ),
+            ]
+            expect(rows.length).toBe(2)
+            for (const row of rows) {
+                const gaps = unitGaps(row)
+                expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(
+                    0.5,
+                )
+            }
+            const [a, b] = rows.map(r => r.getBoundingClientRect().width)
+            expect(Math.abs(a! - b!)).toBeLessThan(0.5)
+        }
     },
 }

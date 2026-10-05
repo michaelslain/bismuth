@@ -235,9 +235,13 @@ export function Toolbar(props: {
           tools | colors/sizes | smooth/paper | undo-redo/zoom. */}
             <div class={styles['draw-row']}>
                 <div class={styles['draw-group']}>
+                    {/* pickOne: a single row (no stacked partner to keep columns with), so the
+                        off tools draw no bracket space and the gaps stay even. The stacked rows
+                        below keep their reserved space — their columns line up row to row. */}
                     <SegmentedToggle
                         look="icon"
                         size="sm"
+                        pickOne
                         options={toolOpts()}
                         value={t().tool}
                         onChange={id => props.setTools({ tool: id })}

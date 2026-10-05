@@ -26,7 +26,8 @@
 // <GraphView> in a single render knows to set it false on whichever isn't the one being shown.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor, within } from 'storybook/test'
-import { getOwner, onCleanup } from 'solid-js'
+import { createSignal, getOwner, onCleanup } from 'solid-js'
+import type { GraphMode } from './commands'
 import { GraphView } from './GraphView'
 import { SAMPLE_HUB_ID, sampleGraphData, sampleClusteredGraphData } from './ui/_graphFixtures'
 import { settings, setSettings } from './settings'
@@ -284,6 +285,9 @@ export const MiniModeSwitcher: Story = {
         setSettings('daemon', 'enabled', true)
         onCleanup(() => setSettings('daemon', 'enabled', previous))
 
+        // A live mode, so clicking a mode moves the selection — the pick-one gaps are only proven by
+        // looking at every member selected in turn (play() below walks all three).
+        const [mode, setMode] = createSignal<GraphMode>('2nd')
         const graph = sampleGraphData(8)
         return (
             <div style={{ height: '305px', width: '266px' }}>
@@ -291,8 +295,8 @@ export const MiniModeSwitcher: Story = {
                     graph={graph}
                     communitySource={graph}
                     onOpen={noop}
-                    mode="2nd"
-                    setMode={noop}
+                    mode={mode()}
+                    setMode={setMode}
                     active={graph.nodes[1]?.id ?? null}
                     fill
                     mini
@@ -325,6 +329,37 @@ export const MiniModeSwitcher: Story = {
         expect(
             Math.abs(first.getBoundingClientRect().left - barLeft),
         ).toBeLessThanOrEqual(1)
+
+        // EVEN GAPS, PICK-ONE (icon-gaps). A unit is `[▣]` for the on mode and the bare glyph for
+        // the rest; with each mode selected in turn, every unit-to-unit gap is the same within
+        // half a pixel, and the row's width never changes. The on unit's edge is its box minus
+        // its side room (the bracket ink sits at the content edge); an off unit's is its glyph.
+        const group = first.closest('[role="toolbar"]') as HTMLElement
+        const buttons = [...group.querySelectorAll('button')]
+        const widths: number[] = []
+        for (const button of buttons) {
+            button.click()
+            await waitFor(() =>
+                expect(button.getAttribute('data-state')).toBe('selected'),
+            )
+            const units = buttons.map(b => {
+                if (b.getAttribute('data-state') === 'selected') {
+                    const r = b.getBoundingClientRect()
+                    const cs = getComputedStyle(b)
+                    return {
+                        l: r.left + parseFloat(cs.paddingLeft),
+                        r: r.right - parseFloat(cs.paddingRight),
+                    }
+                }
+                const r = b.querySelector('svg, img')!.getBoundingClientRect()
+                return { l: r.left, r: r.right }
+            })
+            const gaps = units.slice(1).map((u, i) => u.l - units[i].r)
+            expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(0.5)
+            widths.push(group.getBoundingClientRect().width)
+        }
+        expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(0.5)
+        buttons[0].click()
     },
 }
 

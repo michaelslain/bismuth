@@ -19,6 +19,10 @@ export type IconButtonProps = {
     /** Destructive tone — orthogonal to variant. `'hover'`: `--faint` at rest, `--danger` on hover. */
     danger?: boolean | 'hover'
     size?: ButtonSize
+    /** Member of a pick-one group (exactly one member is ever `selected`): an `unselected` member
+     *  draws no bracket space, so the gaps around the one `[▣]` match the gaps between bare glyphs.
+     *  Leave it off for a lone on/off toggle — there the reserved space keeps neighbours still. */
+    pickOne?: boolean
     /** Icon pixel size. Defaults to the enclosing IconBar's, else the app's one icon size (ui/iconSize.ts); app code never passes it. */
     iconSize?: number
 } & Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'>

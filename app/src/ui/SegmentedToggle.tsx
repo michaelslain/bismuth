@@ -30,6 +30,11 @@ export type SegmentedToggleProps<T> = {
      *  everywhere else in the app. `size` is honoured for `look="icon"`; Button itself ignores
      *  it for `kind="text"`. */
     look?: 'icon'
+    /** `look="icon"` only: the off segments draw no bracket space, so the one `[▣]` sits the same
+     *  gap from its neighbours as two bare glyphs do (see IconButton's `pickOne`). Leave it off where
+     *  a row must keep fixed columns — the drawing dock's stacked colour/size rows line up by column,
+     *  and a moving selection would shift one row against the other. */
+    pickOne?: boolean
 }
 
 /**
@@ -61,6 +66,7 @@ function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
                             opt.id === props.value ? 'selected' : 'unselected'
                         }
                         size={props.size}
+                        pickOne={props.pickOne}
                         aria-pressed={
                             kind() === 'text'
                                 ? opt.id === props.value

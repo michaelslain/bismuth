@@ -424,8 +424,14 @@ the accent. An outline appears only when it means something.
 - **Toggles are brackets too:** a segmented control is a row of `[option]` buttons `--sp-4`
   apart; the on option is `selected` (accent + bold), the rest `unselected`. Icon-only tool
   groups (the drawing dock, the embedded-graph icon groups) are the same bracket idiom: the on
-  option draws `[▣]`, the off ones are bare glyphs holding their brackets' space, so the group
-  never changes width as the selection moves. There is no separate butted look.
+  option draws `[▣]`, the off ones are bare glyphs. By default an off glyph holds its brackets'
+  space, so nothing moves as the selection does — right for a lone on/off toggle and for stacked
+  rows that line up by column (the dock's colour/size pair). A **pick-one** row (`pickOne`: exactly
+  one member is always on — the mini-graph mode switcher, the dock's tool row) reserves nothing:
+  reserved space put two off icons ~10px apart ink to ink against ~6px beside the on bracket, and
+  the eye reads `[▣]` as one unit, so the row looked lopsided. With one member always bracketed the
+  row keeps its width anyway; every unit — `[▣]` or `▣` — sits one gap apart, and only the icons
+  between the old and new selection slide. There is no separate butted look.
 - **`accent` recolours a selected toggle** (a category's own colour).
 - **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
   confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
@@ -438,7 +444,8 @@ the accent. An outline appears only when it means something.
   hover. Only a **`selected`** toggle member draws `[▣]` — generated `[`/`]` glyphs (same device
   as the text button's brackets, hidden from the accessible name the same way) painted accent with
   the icon. An **`unselected`** member lays its brackets out invisibly, so it occupies the same
-  width as when on. Text buttons (`[label]`) and icon-text buttons (`[▣ label]`) are a worded
+  width as when on — unless it is in a **pick-one** group (`pickOne`), where it draws no bracket
+  space and every member takes the same side room, so unit gaps come out even (see Toggles). Text buttons (`[label]`) and icon-text buttons (`[▣ label]`) are a worded
   command and keep their brackets in every state; the bare-vs-bracketed rule is icon-only.
   Where brackets are drawn they are the edge, as on a text button: no collar and no width floor.
   **One bracket size:**

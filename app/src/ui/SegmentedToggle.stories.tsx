@@ -294,6 +294,56 @@ export const IconOption: Story = {
     },
 }
 
+/** `pickOne` (a single row with no stacked partner — the drawing dock's tool row): the off
+ *  segments draw no bracket space, so the one `[▣]` sits the same gap from its neighbours as two
+ *  bare glyphs do. Click through: the row keeps one width, and only the glyphs between the old and
+ *  the new selection slide. */
+export const IconOptionPickOne: Story = {
+    render: () => {
+        const [v, setV] = createSignal('pen')
+        return (
+            <SegmentedToggle
+                value={v()}
+                onChange={setV}
+                look="icon"
+                size="sm"
+                pickOne
+                options={[
+                    {
+                        id: 'pen',
+                        title: 'Pen',
+                        ariaLabel: 'Pen',
+                        label: <Icon value="Pen" size={14} />,
+                    },
+                    {
+                        id: 'eraser',
+                        title: 'Eraser',
+                        ariaLabel: 'Eraser',
+                        label: <Icon value="Eraser" size={14} />,
+                    },
+                    {
+                        id: 'highlighter',
+                        title: 'Highlighter',
+                        ariaLabel: 'Highlighter',
+                        label: <Icon value="Highlighter" size={14} />,
+                    },
+                ]}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const wrap = canvasElement.querySelector(
+            '[data-look="icon"]',
+        ) as HTMLElement
+        expect(wrap).not.toBeNull()
+        const pen = canvasElement.querySelector<HTMLElement>(
+            '[aria-label="Pen"]',
+        )!
+        expect(pen.getAttribute('data-kind') === 'icon').toBe(true)
+        expect(pen.getAttribute('data-state') === 'selected').toBe(true)
+    },
+}
+
 /** `look="icon"` colour swatches — the drawing dock's colour row: each swatch is a filled
  *  square glyph inside a plain icon bracket, `--sp-4` apart (DESIGN.md: sibling bracket buttons
  *  never sit closer, no exception for icon runs). The active swatch's BRACKETS turn

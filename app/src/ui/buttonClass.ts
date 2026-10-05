@@ -13,6 +13,9 @@
 // on every row at rest reads as ten errors rather than ten rows.
 // `primary` is a second orthogonal tone: accent + bold, no box — the view's one
 // emphasized action (max one per view; text buttons only).
+// `pickOne` marks an icon button as a member of a PICK-ONE group (exactly one member is ever on):
+// its off state draws no bracket space, so `[▣]` and the bare `▣` units sit one gap apart — see
+// `.btn--pick-one` in Button.module.css. Ignored for `kind: 'text'`, whose brackets always paint.
 // `size` is ignored for `kind: 'text'` — every text button renders at one size
 // (--fs-ui). `icon` still takes sm/md/lg.
 export type ButtonKind = 'text' | 'icon'
@@ -41,6 +44,8 @@ export function buttonClass(
         /** Accent + bold, no box — the view's one emphasized action.
          *  Orthogonal to `state`/`danger`, same as those. At most one per view. */
         primary?: boolean
+        /** Member of a pick-one icon group — see the header. Icon kind only. */
+        pickOne?: boolean
         class?: string
     },
     cls: ButtonClassMap,
@@ -59,6 +64,7 @@ export function buttonClass(
               ? cls['btn--danger']
               : '',
         opts.primary ? cls['btn--primary'] : '',
+        opts.pickOne && kind === 'icon' ? cls['btn--pick-one'] : '',
         opts.class,
     )
 }
