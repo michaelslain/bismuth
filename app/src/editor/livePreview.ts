@@ -1596,7 +1596,16 @@ export const livePreview = [
         // is what keeps a deliberately zero-advance run classified as hidden rather than as
         // collapsed content (bench/storyAudit.ts skips display:none / visibility:hidden subtrees;
         // font-size:0 alone made every delimiter in the editor a "zero-size but has text" lead).
-        '.cm-hidden-syntax': { 'font-size': '0', visibility: 'hidden' },
+        // Ligatures + contextual alternates OFF: in the native macOS WKWebView (the Tauri app — NOT
+        // Chrome, NOT Playwright's WebKit) CoreText shapes a size-0 Monaspace run with `calt` (texture
+        // healing) on and leaves real advance width between glyphs while every single glyph measures
+        // 0 — a hidden `](https://…)` ate 4 cells, so `[text](url), ` showed a gap before the comma.
+        '.cm-hidden-syntax': {
+            'font-size': '0',
+            visibility: 'hidden',
+            'font-variant-ligatures': 'none',
+            'font-feature-settings': '"calt" 0, "liga" 0',
+        },
         '.cm-strong': { 'font-weight': 'bold' },
         '.cm-em': { 'font-style': 'italic' },
         '.cm-strike': { 'text-decoration': 'line-through', opacity: '0.7' },

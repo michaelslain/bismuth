@@ -1803,8 +1803,11 @@ const FRONTMATTER_LINK_TEXT = [
  *  override that stops the `[`, `](url)` and `[[`/`]]` runs collapsing to zero width.
  *
  *  Context: a user reported "a lot of space after the hyperlink" in exactly this frontmatter
- *  shape. Two investigations measured every hidden run at 0px and attributed the gap entirely to
- *  literal spaces in the note's own source. This story is what makes that measurement permanent.
+ *  shape. Two investigations measured every hidden run at 0px in Chrome and blamed literal spaces
+ *  in the source — wrong: the gap is real, but ONLY in the native macOS WKWebView, where CoreText
+ *  shapes a size-0 Monaspace run with `calt` on and leaves advance width (a hidden `](url)` = 4
+ *  cells). Chrome and Playwright's WebKit both measure 0, so the width loop below cannot catch it;
+ *  the ligature assertion pins the fix (livePreview.ts's `.cm-hidden-syntax` rule) instead.
  *
  *  Reads the OFF-CURSOR state, so no `view.focus()` and no caret placement — compare
  *  RevealedMarks, which must focus because it asserts the REVEALED state instead. */
@@ -1859,6 +1862,7 @@ export const FrontmatterLinkCoverage: Story = {
         await expect(hidden.length).toBeGreaterThan(0)
         for (const el of hidden) {
             await expect(el.getBoundingClientRect().width).toBeLessThan(0.5)
+            await expect(getComputedStyle(el).fontVariantLigatures).toBe('none')
         }
     },
 }
