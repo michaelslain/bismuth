@@ -125,14 +125,8 @@
 //   bun bench/tokenLint.ts --bless          # overwrite the baseline with the CURRENT violation set
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { arg, has } from './args'
 
-const arg = (n: string, d = '') => {
-    const i = process.argv.indexOf(`--${n}`)
-    return i >= 0 && process.argv[i + 1] && !process.argv[i + 1]!.startsWith('--')
-        ? process.argv[i + 1]!
-        : d
-}
-const has = (n: string) => process.argv.includes(`--${n}`)
 
 const ROOT = join(import.meta.dir, '..')
 const SRC = join(ROOT, 'app', 'src')

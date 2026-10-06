@@ -1,7 +1,8 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { mkdir, readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import {
     LAUNCHD_LABEL,
     MACHINE_PID_FILE,
@@ -269,32 +270,25 @@ export function restartDaemon(): { ok: boolean; error?: string } {
     return { ok: true }
 }
 
-// ── Daemon-process identity ──────────────────────────────────────────────────
+// ── Pid liveness ─────────────────────────────────────────────────────────────
 
-/**
- * True only when the calling process IS the daemon (its pid matches the machine
- * PID file).
- *
- * `daemon/process.ts` keeps the `managed` map at module scope, so any process
- * importing it has its own copy. When server.ts is loaded outside the daemon
- * (terminal-launched MCP, plugin cache, dev hot-reload), calling
- * startProcess/spawnProcess from there forks managed children that the actual
- * daemon doesn't track — producing duplicate loops with the same name.
- *
- * Mutating MCP tools must gate on this so only the daemon's MCP surface can
- * change process state. Read-only tools (process_list, status) work everywhere.
- *
- * Accepts an optional override path for testing.
- */
-export async function isDaemonProcess(
-    pidFile: string = MACHINE_PID_FILE,
-): Promise<boolean> {
+/** Is `pid` a live process right now (signal-0 probe)? */
+export function pidAlive(pid: number): boolean {
     try {
-        const text = await readFile(pidFile, 'utf-8')
-        const pid = parseInt(text.trim(), 10)
-        return Number.isFinite(pid) && pid === process.pid
+        process.kill(pid, 0)
+        return true
     } catch {
         return false
+    }
+}
+
+/** Read a pid file; null when absent, unreadable, or not a positive integer. */
+export function readDaemonPid(file: string = MACHINE_PID_FILE): number | null {
+    try {
+        const pid = parseInt(readFileSync(file, 'utf-8').trim(), 10)
+        return Number.isFinite(pid) && pid > 0 ? pid : null
+    } catch {
+        return null
     }
 }
 

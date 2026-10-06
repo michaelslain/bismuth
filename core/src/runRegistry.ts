@@ -11,7 +11,7 @@
 //
 // One rule governs the cleanup below: a record is only ever DELETED on proof its owner is dead.
 // See the block comment above readRunRecords.
-import { homedir } from 'node:os'
+import { bismuthHome } from './bismuthHome'
 import { join } from 'node:path'
 import { mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
 import { writeFileAtomicSync } from './atomicWrite'
@@ -33,7 +33,7 @@ export interface RunRecord {
 /** `~/.bismuth/run` — where each running core drops its discovery record. Overridable via
  *  BISMUTH_RUN_DIR (tests). */
 export function runRegistryDir(): string {
-    return process.env.BISMUTH_RUN_DIR || join(homedir(), '.bismuth', 'run')
+    return process.env.BISMUTH_RUN_DIR || bismuthHome('run')
 }
 
 /** Stable per-vault filename (base64url of the absolute vault path), so relaunching the same vault

@@ -233,7 +233,7 @@ Lets the chat composer's `@file` mention reference any vault file, wired into th
 **Behavior:**
 - `rankFileCandidates(getFiles(), query)` ranks the full vault file list against the typed query, capped at 50 results; each option shows the file's label with its folder as `detail`.
 - `filter: false` (own ranking) and no `validFor` — re-queries every keystroke, mirroring the emoji source.
-- `apply` fires the optional `onPick(path)` callback (so `ChatView` can wire the picked file into the chat's context via `chatContext.ts`) and inserts `[[Name]] ` — built from the display label, so the popup pick and the inserted text always agree — with the caret parked just past the trailing space.
+- `apply` fires the optional `onPick(path)` callback (so `ChatView` can wire the picked file into the chat's context via `chat/chatContext.ts`) and inserts `[[Name]] ` — built from the display label, so the popup pick and the inserted text always agree — with the caret parked just past the trailing space.
 
 ---
 

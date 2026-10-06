@@ -9,7 +9,7 @@ import styles from './ChatModelMenu.module.css'
 import type { ChatControlsView } from './ChatControls'
 import ChatModelPicker from './ChatModelPicker'
 import PlainButton from '../ui/PlainButton'
-import { modelLabelFor } from '../chatModelResolution'
+import { modelLabelFor } from './chatModelResolution'
 import { modelWord } from './modelWord'
 
 export type ChatModelMenuProps = { session: ChatControlsView }

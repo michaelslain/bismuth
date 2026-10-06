@@ -4,9 +4,8 @@
 // transcripts strictly for vault-scoped sessions — never globally, the way the old
 // ~/.claude/settings.json hooks did.
 import {
-    writeNote,
+    writeAutoNote,
     buildAutoNoteBody,
-    todayISO,
     type TranscriptEntry,
 } from '@bismuth/memory'
 
@@ -50,23 +49,8 @@ export async function collectTranscript(
     const body = buildAutoNoteBody(entries)
     if (body === null) return // trivial or cron-fired — not worth a note
 
-    const now = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
-    const sid = sessionId ? sessionId.slice(0, 8) : 'unknown'
-    const date = todayISO(now)
     try {
-        await writeNote(
-            `auto-${ts}-${sid}`,
-            {
-                type: 'auto',
-                tags: ['auto', 'raw', 'session'],
-                created: date,
-                updated: date,
-            },
-            body,
-            dir,
-        )
+        await writeAutoNote(dir, sessionId || 'unknown', 'session', body)
     } catch {
         // best-effort — never fail the session end
     }

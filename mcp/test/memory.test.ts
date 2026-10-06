@@ -1,14 +1,12 @@
-import { test, expect, beforeEach, afterEach, describe } from 'bun:test'
+import { test, expect, beforeEach, afterEach, afterAll, describe } from 'bun:test'
+import { tempDir, sweepTempDirs } from './tempDirs'
 import {
-    mkdtempSync,
     mkdirSync,
     writeFileSync,
     readFileSync,
     existsSync,
-    rmSync,
     realpathSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     memoryDir,
@@ -16,7 +14,6 @@ import {
     remember,
     recall,
     forget,
-    mcpAgentChannel,
 } from '../src/memory'
 
 // memoryDir() is the ONE gate shared by the memory tools (remember/recall/forget) and the
@@ -42,7 +39,7 @@ beforeEach(() => {
     delete process.env.BISMUTH_MEMORY_DIR
     delete process.env.BISMUTH_VAULT
     noVaultDir = realpathSync(
-        mkdtempSync(join(tmpdir(), 'bismuth-mcp-memory-test-')),
+        tempDir('bismuth-mcp-memory-test-'),
     )
     process.chdir(noVaultDir)
 })
@@ -53,8 +50,9 @@ afterEach(() => {
     if (VAULT === undefined) delete process.env.BISMUTH_VAULT
     else process.env.BISMUTH_VAULT = VAULT
     process.chdir(CWD)
-    rmSync(noVaultDir, { recursive: true, force: true })
 })
+
+afterAll(sweepTempDirs)
 
 /** Write a vault's `.settings` with (or without) a top-level `daemon.enabled` key. */
 function writeVaultSettings(vault: string, enabled: boolean | undefined): void {
@@ -280,11 +278,5 @@ describe('remember/forget and memory-note visibility', () => {
         seed('open')
         const res = await recall({ query: 'ORIGINALBODY' }, memDir)
         expect(res.notes.map(n => n.name)).toEqual(['open'])
-    })
-
-    test('mcpAgentChannel mirrors core mcpChannel: unset/garbage -> daemon, chat -> chat', () => {
-        expect(mcpAgentChannel({})).toBe('daemon')
-        expect(mcpAgentChannel({ BISMUTH_MCP_CHANNEL: 'x' })).toBe('daemon')
-        expect(mcpAgentChannel({ BISMUTH_MCP_CHANNEL: 'chat' })).toBe('chat')
     })
 })

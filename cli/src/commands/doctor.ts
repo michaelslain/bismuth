@@ -7,7 +7,7 @@
 // repairs (deleting directories, unloading services) without the owner, and in a vault that hides
 // anything the `vault` section is dropped, because its finding ids carry note paths.
 import type { CommandMap } from '../types'
-import { bool, flag, out } from '../args'
+import { bool, flag, optionalVault, out } from '../args'
 import { runDoctor } from '../../../core/src/doctor/run'
 import { defaultContext } from '../../../core/src/doctor/context'
 import { formatDoctorReport } from '../../../core/src/doctor/format'
@@ -62,7 +62,7 @@ export const commands: CommandMap = {
             'Find leftovers from older builds, version skew and pending vault migrations; --fix repairs them',
         usage: '[--fix] [--safe-only] [--only <id>[,<id>…]] [--section <id>[,<id>…]] [--vault <path>] [--json]',
         run: async args => {
-            const vault = flag(args, 'vault') ?? process.env.BISMUTH_VAULT
+            const vault = optionalVault(args)
             const agent = isAgent()
             const opts = doctorAgentOptions(
                 {
@@ -75,7 +75,7 @@ export const commands: CommandMap = {
                 agent && (await vaultRestricted(vault)),
             )
             const report = await runDoctor(defaultContext({ vault }), opts)
-            if (args.includes('--json')) {
+            if (bool(args, 'json')) {
                 out(report, args)
                 return
             }

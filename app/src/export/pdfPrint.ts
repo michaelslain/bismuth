@@ -3,7 +3,7 @@
 // (html2canvas + jsPDF, everywhere else), and run whichever was picked with a safety net — a
 // failing WebKit print falls back to canvas rather than losing the export outright.
 import { injectHead, WEBKIT_PRINT_HEAD } from './printCss'
-import { isTauri } from '../nativeMenu'
+import { isTauri } from '../platform'
 
 export type PdfEngine = 'webkit' | 'canvas'
 

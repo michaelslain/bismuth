@@ -30,6 +30,8 @@
 // information to do that. A paint-time hue picked per cell from "whichever cluster is nearest" has
 // hard seams the `screen` blend then makes worse.
 
+import { clamp, clamp01 } from '../math'
+
 export const FIELD_W = 64
 export const FIELD_H = 40
 
@@ -223,7 +225,7 @@ export function normalise(field: Float32Array): Float32Array {
  * substitute divisor, so the caller can pick `k` knowing the peak this frame actually produced.
  */
 export function scaleField(field: DensityField, k: number): DensityField {
-    const f = Number.isFinite(k) ? Math.max(0, Math.min(1, k)) : 1
+    const f = Number.isFinite(k) ? clamp01(k) : 1
     if (f === 1) return field
     for (let i = 0; i < field.length; i++) field[i] *= f
     return field
@@ -333,7 +335,7 @@ const CLOUD_MIN_PER_RING = 6,
     CLOUD_MAX_PER_RING = 16
 
 const clampInt = (v: number, lo: number, hi: number) =>
-    Math.max(lo, Math.min(hi, Math.round(v)))
+    clamp(Math.round(v), lo, hi)
 
 /**
  * A spread that can actually be sampled: non-finite or negative becomes 0, i.e. the documented

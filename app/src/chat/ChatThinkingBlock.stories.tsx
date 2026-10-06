@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import ChatThinkingBlock from './ChatThinkingBlock'
-import type { ThinkingPart } from '../chatTranscript'
+import type { ThinkingPart } from './chatTranscriptLogic'
 
 const meta = {
     title: 'Chat/ChatThinkingBlock',

@@ -17,7 +17,7 @@ import {
 import { CONVERSATION_ITEMS } from '../chat/_transcriptFixtures'
 import { isArmingGesture } from './daemonChatArming'
 import { browserStorage, readLastMode } from '../chat/chatSessionPrefs'
-import { modelStorageKeys } from '../chatProvider'
+import { modelStorageKeys } from '../chat/chatProvider'
 import { DAEMON_CHAT_ID } from '../tabIds'
 
 // `_stubChatSession.ts`'s own `onFocusRequest` is a permanent no-op (it never calls back a

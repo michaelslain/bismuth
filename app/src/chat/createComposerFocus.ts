@@ -9,7 +9,7 @@
 // Must be called inside a reactive owner (a component body) — it calls createEffect/onCleanup.
 import { createEffect, onCleanup, type Accessor } from 'solid-js'
 import type { ChatSession } from './chatSession'
-import type { ComposerHandle } from '../ChatComposer'
+import type { ComposerHandle } from './ChatComposer'
 
 /** Subscribes to `session().onFocusRequest` once both a session and a ready composer handle
  *  exist, focusing then scrolling the composer into view on each request. Re-subscribes whenever

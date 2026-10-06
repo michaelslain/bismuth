@@ -72,9 +72,14 @@ export function fail(msg: string): never {
  * Resolve the vault dir: `--vault <dir>` flag wins, then `BISMUTH_VAULT` env. Fails if none is set.
  */
 export function requireVault(args: string[]): string {
-    const v = flag(args, 'vault') ?? process.env.BISMUTH_VAULT
+    const v = optionalVault(args)
     if (!v) fail('no vault — pass --vault <dir> or set BISMUTH_VAULT')
     return v
+}
+
+/** The vault dir if given: `--vault <dir>` flag, then `BISMUTH_VAULT` env, else undefined. */
+export function optionalVault(args: string[]): string | undefined {
+    return flag(args, 'vault') ?? process.env.BISMUTH_VAULT
 }
 
 /** Resolve the memory dir (optional): `--memory` flag, then BISMUTH_MEMORY. */

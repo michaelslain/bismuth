@@ -2,7 +2,7 @@
 // (api.ts, app.ts, gcal.ts, relay.ts, chat.ts, update.ts). Everything else in the CLI works
 // headlessly; these hit live routes and therefore need one small fetch wrapper. Kept
 // dependency-light so any server-talking group can import a stable contract.
-import { fail, flag } from './args'
+import { fail, flag, optionalVault } from './args'
 import { readRunRecords, resolveRunRegistryBase } from '../../core/src/runRegistry'
 
 /** Builds the "could not reach" message for a failed connection to `base`. Lets each
@@ -25,7 +25,7 @@ export function resolveCore(args: string[]): string {
         process.env.BISMUTH_API ??
         process.env.CLAUDE_RELAY_URL
     if (explicit) return explicit.replace(/\/+$/, '')
-    const vault = flag(args, 'vault') ?? process.env.BISMUTH_VAULT
+    const vault = optionalVault(args)
     const fromRegistry = resolveRunRegistryBase(vault)
     if (fromRegistry) return fromRegistry
     return 'http://localhost:4321'

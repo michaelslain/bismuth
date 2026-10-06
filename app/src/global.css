@@ -382,7 +382,7 @@
      compositing against --shadow-hard (defined above, projected per-theme from
      core/src/theme/tokens.ts). --shadow-menu/-popup/-card/-modal are deleted (wave 1, §7) — every
      former consumer reads --lift now. The five backdrop-filter sites outside global.css's `ui/ui.css`
-     section's .asc-modal/.asc-popover (the `Editor.css` section, PreviewView.module.css, the
+     section's .asc-modal/.asc-popover (the CodeMirror theming section, PreviewView.module.css, the
      `switcher.css` section) are unchanged by
      wave 1 — those surfaces belong to later waves (editor: wave 5, preview: wave 7, palette
      switcher: wave 3). */
@@ -392,7 +392,7 @@
      The ONE proportional face. Mono stays the default for all chrome, labels, code, terminal
      and graph; this is scoped to note prose (the CodeMirror editor), note HEADINGS, note TABLES,
      and chat message bodies INCLUDING the composer you type them into — never code (blocks and
-     spans), frontmatter or math, which are pulled back to --ui-font-stack in the `Editor.css` section and
+     spans), frontmatter or math, which are pulled back to --ui-font-stack in the CodeMirror theming section and
      chat/ChatTextBubble.module.css.
 
      HEADINGS MOVED INTO THIS SCOPE 2026-08-31. They were excluded, which meant a note set its
@@ -404,7 +404,7 @@
      TABLES MOVED INTO THIS SCOPE 2026-08-31 too, same day, same reasoning: a table in a note is
      the note's own content, not chrome, and rendering it in a different family from the paragraph
      above it made a note look like two documents. Unlike headings, tables also lose the SIZE
-     reset in the `Editor.css` section (headings keep it, because livePreview.ts gives them their own absolute
+     reset in the CodeMirror theming section (headings keep it, because livePreview.ts gives them their own absolute
      scale; a table has none, so leaving the size reset on would flatten it back to mono size).
 
      IBM Plex Serif (via @fontsource/ibm-plex-serif, static 400/500/600/700 + italics) since
@@ -594,8 +594,8 @@
    names, so there is nothing here for a module to hash — these rules are global or they do not
    exist at all.
 
-   Cascade note for whoever moves the next batch of rules out of global.css's `App.css` section: `@import` hoisted this file ahead of App.css when the two were separate stylesheets, so this
-   file always wins the ORDER contest against anything in global.css's `App.css` section. That is inert here — every
+   Cascade note: this section sits ahead of the app shell section in one file, so this
+   section always wins the ORDER contest against anything in the app shell section. That is inert here — every
    rule below is specificity 0-0-0 or 0-0-1, so any class rule anywhere still beats it. Keep it that
    way; the moment a class selector lands in this file the hoist stops being harmless. */
 * { box-sizing: border-box; }
@@ -658,7 +658,7 @@ body { background: var(--bg); color: var(--fg); }
    The test allows that form and only that form.
 
    DEPENDENCY: the sheen rule below animates `asc-sheen`, whose `@keyframes` still lives in
-   global.css's `App.css` section beside `.asc-wordmark`. CSS Modules hash keyframe names too, so if `.asc-wordmark`
+   global.css below, beside `.asc-wordmark`. CSS Modules hash keyframe names too, so if `.asc-wordmark`
    ever migrates into a module the keyframes block has to stay global or this rule silently
    stops animating — a blank-looking word, not an error. */
 /* Iridescent "bismuth" — every literal, whole-word occurrence of the word "bismuth" is painted
@@ -672,7 +672,7 @@ body { background: var(--bg); color: var(--fg); }
    rather than a second infinite loop — PORTING.md §7 permits exactly one decorative sheen. */
 .bismuth-word, .cm-bismuth {
   /* THE SAME GRADIENT AS THE TOP-STRIP WORDMARK, deliberately — `--grad`, exactly what
-     `.asc-wordmark` paints with (global.css's `App.css` section). This used to be a bespoke saturated rainbow
+     `.asc-wordmark` paints with (defined below). This used to be a bespoke saturated rainbow
      (#ff6ec7 → #a06bff → #4d8bff → #22d3d6 → #5ff0a8 → #ffd36e) that shared only the sheen
      animation, so the app's two iridescent surfaces were two different brands. One mark, one
      gradient.
@@ -698,7 +698,7 @@ body { background: var(--bg); color: var(--fg); }
    wrapper: a FULL-PANE base is a standalone data grid and keeps the --fs-ui chrome size. Element
    selectors (not the CSS-module class) so this stays one rule and outranks .table/.dateCell.
    --prose-font-size, NOT --editor-font-size: note tables now render at --prose-font-size
-   (Editor.tsx's editorTheme — see the "TABLES ARE PROSE" note in the `Editor.css` section), so pinning this to the
+   (Editor.tsx's editorTheme — see the "TABLES ARE PROSE" note in the CodeMirror theming section), so pinning this to the
    mono size left an in-note query-block table ~22% smaller than the note's own markdown tables,
    directly under them, serif-at-mono-size — exactly the mismatch this rule exists to prevent. */
 .bismuth-query-block table,
@@ -725,7 +725,7 @@ body { background: var(--bg); color: var(--fg); }
    with the render's inline style) so the native marker never doubles the text glyph.
 
    Moving these out of App.css flipped one precedence pair worth recording so nobody re-litigates
-   it: `.card-md li` sets `margin: 0` and stays in global.css's `App.css` section, so it now sorts AFTER this file and
+   it: `.card-md li` sets `margin: 0` (it lives in bases/FlipCard.module.css, not here) and sorts AFTER this file, so it
    would out-rank the `li` margin below at equal specificity. It does not matter. cellList.ts
    writes `margin:0.05em 0` as an INLINE style on every li it emits, and an inline declaration
    beats both rules — before the split and after. The class appears in no other markup, so there
@@ -1080,7 +1080,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
        that turned out to be dead (confirmed when `GcalSyncPanel.module.css` was extracted; never
        copied), so nothing calendar-side actually restyled it, then or now. That stylesheet is gone
        as of Task 15 (2026-09-13). Separately, the `.status-text .status-dot` rule above already
-       pointed at App.css for its sizing. That
+       pointed at the App.css body for its sizing (that rule has since moved to ui/StatusDot.module.css). That
        sizing lived in ONE grouped rule with `.chip .dot` at the time of this move, so the chip
        family travelled with it rather than being split across two files. UPDATE 2026-08-27: the
        `.chip` base and its six tone variants — flagged right above as zero-consumer deletion
@@ -1151,8 +1151,8 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    These are unused for now: Stage 4 (app/src/ui/ascii/, Solid components) and
    Stage 5 (views) are what will actually render them. Not ported here: the
    "App frame" section (.asc-app/.asc-window/.asc-strip/.asc-statusbar/.asc-rail)
-   and .asc-wordmark/.asc-table, which belong to global.css's `App.css` section's view chrome (later
-   stages). The .viewbar and .crumb set is no longer the exception this
+   and .asc-wordmark/.asc-table, which belong to view chrome (later stages; .asc-wordmark ended up in
+   global.css's app shell section, .asc-table has no rule anywhere now). The .viewbar and .crumb set is no longer the exception this
    note used to name — it moved INTO this file; see the cross-component
    primitives block directly above.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -1227,7 +1227,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    grid, and in an inherited proportional font its `.` cells collapse to ~3px while
    `#` stays wide, so the bar reads as a thin dotted line instead of a meter. */
 .asc-meter { white-space: pre; color: var(--accent); font-family: var(--ui-font-stack); }
-/* Namespaced, not `.empty` — global.css's `App.css` section's global `.empty` (the empty-pane flex column)
+/* Namespaced, not `.empty` — a bare global `.empty` (the empty-pane flex column, since renamed `.empty-pane` in EmptyPane.module.css)
    would otherwise turn this inline run into a block and break the bar onto 3 lines. */
 .asc-meter .asc-meter-empty { color: var(--faint); }
 .asc-field { position: relative; overflow: hidden; background: var(--graph-bg); }
@@ -1869,7 +1869,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
  *   5. command/file palette, chat history picker — shares font/selected/shadow TOKENS only
  * A hashed local could never reach the imperative writers (rowDom.ts/DatePicker.tsx's literal classes/
  * yamlFixHover.ts set `.className` directly on elements the bundler never sees), so this file
- * is the same category as the `Editor.css`/`Terminal.css` sections: a global mechanism, not a missing component.
+ * is the same category as the CodeMirror theming and terminal sections: a global mechanism, not a missing component.
  * Multiple importers (App.tsx, ui/Select.tsx) is legitimate here for that reason.
  *
  * The `:root` token block that used to live here moved to app/src/styles/tokens.css (2026-09-12,

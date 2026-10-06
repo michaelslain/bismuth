@@ -23,7 +23,6 @@ import { openNote } from '../ui/openNote'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextButton } from '../ui/TextButton'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
-import { openContextMenu } from '../nativeMenu'
 import { copyChatText } from './copyChatText'
 import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
@@ -33,7 +32,7 @@ import ChatSystemNote from './ChatSystemNote'
 import DaemonFace from '../daemon/DaemonFace'
 import type { DaemonMood } from '../daemon/daemonFaceModel'
 import { avatarIndex } from './chatAvatar'
-import type { AssistantItem, TurnItem, UserItem } from '../chatTranscript'
+import type { AssistantItem, TurnItem, UserItem } from './chatTranscriptLogic'
 import styles from './ChatTranscript.module.css'
 
 export type ChatTranscriptProps = {
@@ -172,7 +171,7 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
                 onSelect: () => copyChatText(selected || text),
             },
         ]
-        openContextMenu(e.clientX, e.clientY, items, setMenu)
+        setMenu({ x: e.clientX, y: e.clientY, items })
     }
 
     /** On mouse-up, if there's a non-empty text selection inside a message bubble, float a "Reply"

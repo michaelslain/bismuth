@@ -376,7 +376,7 @@ describe('#15 lists in table cells (block-rendered display face)', () => {
 describe('#41 tags in table cells', () => {
     test("a #tag in a cell renders as the reader's tag chip; false-positives stay literal", () => {
         // The block display face uses the reader engine, whose tag chip is span.bismuth-tag
-        // (styled in global.css's `Editor.css` section to match the editor's .cm-tag mark).
+        // (styled in global.css's CodeMirror theming section to match the editor's .cm-tag mark).
         const cell = renderCellDom('plan #work and #123 not, C# no')
         const tags = cell.querySelectorAll('.bismuth-tag')
         expect(tags.length).toBe(1) // only #work

@@ -423,8 +423,8 @@ async function postRelay(path: string, body: unknown): Promise<void>
 // Gate: returns the tab id or undefined if not in a Bismuth terminal.
 function terminalId(): string | undefined
 
-// Runs the hook body: always exits 0, swallows all thrown errors.
-function runHook(fn: () => Promise<void>): void
+// Gates on CLAUDE_TERMINAL_ID, reads stdin, always exits 0.
+function hook(fn: (input: HookInput, tid: string) => Promise<void>): void
 ```
 
 The `HookInput` interface:

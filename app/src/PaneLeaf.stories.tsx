@@ -2,7 +2,7 @@
 // (here always the graph-tab sentinel, which needs no vault/transport at all — see PaneContent),
 // and the two drop affordances layered on top mid-drag.
 //
-// WHY THIS FILE EXISTS: `.pane-leaf`/`.pane-body` (App.css) and the family PaneHeader.stories.tsx +
+// WHY THIS FILE EXISTS: `.pane-leaf`/`.pane-body` (PaneLeaf.module.css) and the family PaneHeader.stories.tsx +
 // PaneDropZone.stories.tsx already cover move from the global stylesheets into the shared
 // PaneTree.module.css. Recorded BEFORE that move, per THE RECIPE.
 //

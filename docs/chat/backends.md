@@ -35,7 +35,7 @@ Consequences worth knowing:
   fallback to the first INSTALLED backend in `AUTO_ORDER` (`resolveAutoProvider` — the picker-visible
   backends in catalog order, Claude first), else Claude. `GET /agents/free` reports the same order
   as `backends: {id, label, installed}[]`; the app keeps it in `app/src/chat/agentAvailability.ts`
-  and resolves a tab with `chatProvider.ts`'s `resolveChatProvider(choice, setting, installed)` —
+  and resolves a tab with `chat/chatProvider.ts`'s `resolveChatProvider(choice, setting, installed)` —
   a per-tab choice, then a `.settings` backend id, then `auto`. An `auto` chat does not spawn until
   that read lands (a failed read, e.g. on mobile, falls back to Claude), and with nothing installed
   it shows the setup screen without spawning at all.
@@ -45,7 +45,7 @@ Consequences worth knowing:
 Surfaces ask what a backend *can do*, never which backend it *is*:
 
 ```ts
-providerCan(provider, "computerUse")      // app/src/chatProvider.ts
+providerCan(provider, "computerUse")      // app/src/chat/chatProvider.ts
 can(backendId, "visibilityGate")          // core/src/agentBackends/catalog.ts
 ```
 

@@ -38,8 +38,7 @@
 //   4. The subprocess is killed on closeChat/abort-timeout/an unexpected exit, and on process
 //      "exit" (shutdownAll below) — never left running past its chat.
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { bismuthHome } from '../../bismuthHome'
 import type { ChatFrame, ChatImage, ChatSink } from '../../chat'
 import {
     detachSessionSink,
@@ -100,7 +99,7 @@ import {
  * installed the tools degrades to an empty mcpServers array, never a crash.
  */
 function bismuthMcpBin(): string | null {
-    const p = join(homedir(), '.bismuth', 'bin', 'bismuth-mcp')
+    const p = bismuthHome('bin', 'bismuth-mcp')
     return existsSync(p) ? p : null
 }
 

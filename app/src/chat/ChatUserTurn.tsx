@@ -8,7 +8,7 @@ import Text from '../ui/Text'
 import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
 import ChatTextBubble from './ChatTextBubble'
-import type { UserItem } from '../chatTranscript'
+import type { UserItem } from './chatTranscriptLogic'
 import styles from './ChatUserTurn.module.css'
 
 export type ChatUserTurnProps = {

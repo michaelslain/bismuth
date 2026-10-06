@@ -12,24 +12,28 @@ import { existsSync, realpathSync } from 'node:fs'
 // These paths are a DELIBERATE literal duplicate of bismuthInstall.ts's BIN_DIR/MCP_DEST/CLI_DEST/
 // DOCS_DIR — the same convention as daemon/src/lib/claudeWhich.ts: the daemon is a separate
 // workspace + separately-bundled binary, so it must not import across into @bismuth/core.
-const BISMUTH_HOME = join(homedir(), '.bismuth')
-const BIN_DIR = join(BISMUTH_HOME, 'bin')
+// bismuthHome is likewise a deliberate literal duplicate of core/src/bismuthHome.ts.
+
+/** `~/.bismuth/<parts>`, evaluated per call. */
+export function bismuthHome(...parts: string[]): string {
+    return join(homedir(), '.bismuth', ...parts)
+}
 
 /** The installed bismuth-mcp binary, or undefined when the app never installed the tools. */
 export function mcpBin(): string | undefined {
-    const p = join(BIN_DIR, 'bismuth-mcp')
+    const p = bismuthHome('bin', 'bismuth-mcp')
     return existsSync(p) ? p : undefined
 }
 
 /** The installed bismuth CLI binary (consumed by the MCP's bismuth_cli tool via BISMUTH_CLI). */
 export function cliBin(): string | undefined {
-    const p = join(BIN_DIR, 'bismuth')
+    const p = bismuthHome('bin', 'bismuth')
     return existsSync(p) ? p : undefined
 }
 
 /** The installed docs tree (consumed by the MCP's docs tools via BISMUTH_DOCS_DIR). */
 export function docsDir(): string | undefined {
-    const p = join(BISMUTH_HOME, 'docs')
+    const p = bismuthHome('docs')
     return existsSync(p) ? p : undefined
 }
 
@@ -50,7 +54,7 @@ export function docsDir(): string | undefined {
 
 /** `~/.bismuth/run`, honouring the same BISMUTH_RUN_DIR override core does (tests set it). */
 function runRegistryDir(): string {
-    return process.env.BISMUTH_RUN_DIR || join(BISMUTH_HOME, 'run')
+    return process.env.BISMUTH_RUN_DIR || bismuthHome('run')
 }
 
 /** This vault's run record. */

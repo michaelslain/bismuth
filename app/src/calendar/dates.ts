@@ -6,11 +6,16 @@ export function parseLocalDate(iso: string): Date {
     return new Date(iso + 'T00:00:00')
 }
 
+/** A number as at least two digits, zero-padded. */
+export function pad2(n: number): string {
+    return String(n).padStart(2, '0')
+}
+
 export function formatTime(time: string, military: boolean): string {
     if (military) return time
     const [h, m] = time.split(':').map(Number)
     const h12 = h % 12 || 12
-    return `${h12}:${String(m).padStart(2, '0')}`
+    return `${h12}:${pad2(m)}`
 }
 
 export function formatGutterHour(h: number, military: boolean): string {

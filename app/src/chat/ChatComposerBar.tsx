@@ -22,20 +22,20 @@ import {
 } from 'solid-js'
 import styles from './ChatComposerBar.module.css'
 import type { ChatSession } from './chatSession'
-import { ChatComposer, type ComposerHandle } from '../ChatComposer'
+import { ChatComposer, type ComposerHandle } from './ChatComposer'
 import { IconButton } from '../ui/IconButton'
 import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { createMenuNav } from '../ui/popover/createMenuNav'
-import { classifyComposerKey } from '../chatComposerKeys'
+import { classifyComposerKey } from './chatComposerKeys'
 import { settings } from '../settings'
 import {
     HISTORY_BOTTOM,
     historyUp,
     historyDown,
     type HistoryCursor,
-} from '../chatHistory'
+} from './chatHistory'
 import { filePathsFromTransfer } from '../fileIntake'
-import { addChatReference } from '../chatContext'
+import { addChatReference } from './chatContext'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
 

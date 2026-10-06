@@ -7,7 +7,6 @@ import {
     customOverrideMap,
     contrastRatio,
     customTokenMap,
-    isColor,
     isThemePath,
     parseCustomTheme,
     themeFilePath,
@@ -43,23 +42,7 @@ describe('paths + names', () => {
     })
 })
 
-describe('isColor + contrastRatio', () => {
-    it('accepts the colour forms', () => {
-        for (const c of [
-            '#fff',
-            '#ffff',
-            '#15161A',
-            '#15161A80',
-            'rgb(1,2,3)',
-            'rgba(1, 2, 3, .5)',
-            'hsl(200 50% 40%)',
-            'hsla(200,50%,40%,.3)',
-            'transparent',
-        ])
-            expect(isColor(c), c).toBe(true)
-        for (const c of ['purple-ish', '#ff', '#fffff', 'rgb(1,2', '', 'red'])
-            expect(isColor(c), c).toBe(false)
-    })
+describe('contrastRatio', () => {
     it('computes WCAG contrast', () => {
         expect(contrastRatio('#000000', '#ffffff')).toBeCloseTo(21, 1)
         expect(contrastRatio('#fff', '#fff')).toBeCloseTo(1, 5)

@@ -10,6 +10,7 @@ import { Show, createSignal, onCleanup } from 'solid-js'
 import type { PaneNode, Leaf } from './panes'
 import { PaneLeaf, type PaneTreeProps } from './PaneLeaf'
 import styles from './PaneTree.module.css'
+import { clamp } from './math'
 
 export type { PaneTreeProps }
 
@@ -26,7 +27,7 @@ export function PaneTree(props: PaneTreeProps) {
             {split => {
                 let container!: HTMLDivElement
                 // While dragging the divider, sizes must track the cursor exactly — suppress the
-                // flex-basis transition (see .pane-split.resizing in global.css's `App.css` section) for the duration.
+                // flex-basis transition (see .pane-split.resizing in PaneTree.module.css) for the duration.
                 const [resizing, setResizing] = createSignal(false)
                 // Teardown for an in-flight divider drag. Hoisted to the split-branch scope so
                 // onCleanup can detach the window listeners if this node unmounts mid-drag
@@ -44,7 +45,7 @@ export function PaneTree(props: PaneTreeProps) {
                                 : (ev.clientY - rect.top) / rect.height
                         props.onResize(
                             split().id,
-                            Math.min(0.92, Math.max(0.08, ratio)),
+                            clamp(ratio, 0.08, 0.92),
                         )
                     }
                     // pointercancel (OS pointer takeover) must end the drag too, or the

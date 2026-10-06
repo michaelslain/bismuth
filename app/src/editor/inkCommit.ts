@@ -119,6 +119,7 @@ import {
 } from '../../../core/src/drawing/drawBlocks'
 import { roundStrokes, type Stroke } from '../../../core/src/drawing/model'
 import { frontmatterCloseLine } from './frontmatterUtils'
+import { clamp } from '../math'
 
 /** One block's contribution to the seam table.
  *
@@ -785,7 +786,7 @@ export function planReorder(
         if (target > from) target -= 1
     }
 
-    target = Math.max(0, Math.min(target, rest.length))
+    target = clamp(target, 0, rest.length)
     // Match the document's line endings rather than splicing a bare LF into a CRLF note — the
     // same trap insertDrawBlock was fixed for.
     const blank = lines.some(l => l.endsWith('\r')) ? '\r' : ''

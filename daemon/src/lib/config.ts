@@ -1,5 +1,5 @@
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { bismuthHome } from './bismuthPaths'
 
 // ── One runtime, many brains ──────────────────────────────────────────────────
 // The daemon is a single machine process that multiplexes per-vault brains. Machine-
@@ -11,7 +11,7 @@ import { join } from 'node:path'
 /** Machine-level daemon home: device-id, owner.json, devices.json, daemon.pid, logs,
  *  and vaults.json (the registry of known vault roots). NOT per-vault. */
 export const MACHINE_DIR =
-    process.env.BISMUTH_DAEMON_DIR || join(homedir(), '.bismuth', 'daemon')
+    process.env.BISMUTH_DAEMON_DIR || bismuthHome('daemon')
 export const MACHINE_PID_FILE = join(MACHINE_DIR, 'daemon.pid')
 export const MACHINE_LOGS_DIR = join(MACHINE_DIR, 'logs')
 /** JSON array of absolute vault roots the daemon knows about (written by Bismuth core).
@@ -106,9 +106,6 @@ export function vaultPaths(
 
 /** Default cron job session timeout in seconds */
 export const DEFAULT_CRON_TIMEOUT = 300
-
-/** Dream consolidation interval (6 hours) */
-export const DEFAULT_DREAM_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 /** How often the cron scheduler checks for jobs to fire */
 export const CRON_CHECK_INTERVAL_MS = 60_000

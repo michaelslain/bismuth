@@ -270,19 +270,19 @@
   "count": 1
  },
  {
-  "file": "ChatSetup.module.css",
+  "file": "chat/ChatSetup.module.css",
   "rule": "spacing-literal",
   "detail": "1px var(--sp-2)",
   "count": 1
  },
  {
-  "file": "ChatSetup.module.css",
+  "file": "chat/ChatSetup.module.css",
   "rule": "spacing-literal",
   "detail": "32px",
   "count": 1
  },
  {
-  "file": "ChatView.module.css",
+  "file": "chat/ChatView.module.css",
   "rule": "spacing-literal",
   "detail": "4px",
   "count": 1

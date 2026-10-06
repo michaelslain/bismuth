@@ -12,7 +12,7 @@
 // by age on server boot.
 
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { bismuthHome } from './bismuthHome'
 import { join } from 'node:path'
 
 /** How long a staged file survives. Long enough to outlive the conversation that referenced it,
@@ -22,7 +22,7 @@ export const TMP_MAX_AGE_MS = 24 * 60 * 60 * 1000
 /** `~/.bismuth/tmp` — sibling of the run registry's `~/.bismuth/run`. Overridable via
  *  `BISMUTH_TMP_DIR` (tests point it at a scratch dir). */
 export function tmpFilesDir(): string {
-    return process.env.BISMUTH_TMP_DIR || join(homedir(), '.bismuth', 'tmp')
+    return process.env.BISMUTH_TMP_DIR || bismuthHome('tmp')
 }
 
 /**

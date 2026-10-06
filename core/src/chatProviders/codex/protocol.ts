@@ -32,6 +32,7 @@
 //     events), so this module never has to assume either way — a reused id in a later turn can
 //     never collide with stale state from an earlier one.
 import type { ChatFrame } from '../../chat'
+import { isRecord } from '../../isRecord'
 
 /** Per-session translation state, threaded through every `translateThreadEvent` call. */
 export interface CodexTranslateState {
@@ -68,10 +69,6 @@ export function resetCodexTurnState(state: CodexTranslateState): void {
     state.text.clear()
     state.toolUseSeen.clear()
     state.toolResultSeen.clear()
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-    return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
 function str(v: unknown): string | undefined {

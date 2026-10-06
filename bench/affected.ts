@@ -26,14 +26,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
-
-const arg = (n: string, d = '') => {
-    const i = process.argv.indexOf(`--${n}`)
-    return i >= 0 && process.argv[i + 1] && !process.argv[i + 1]!.startsWith('--')
-        ? process.argv[i + 1]!
-        : d
-}
-const has = (n: string) => process.argv.includes(`--${n}`)
+import { arg, has } from './args'
 
 const ROOT = join(import.meta.dir, '..')
 const BASE_REF = arg('base', 'HEAD')
@@ -43,15 +36,18 @@ const RANGE = arg('range')
 const gitArgs = RANGE
     ? ['diff', '--name-only', RANGE, process.argv[process.argv.indexOf('--range') + 2] ?? 'HEAD']
     : ['diff', '--name-only', BASE_REF]
+const gitLines = async (args: string[]) =>
+    (await new Response(Bun.spawn(['git', '-C', ROOT, ...args]).stdout).text())
+        .split('\n')
+        .filter(Boolean)
+// `git diff` never lists an untracked new file, so a brand-new component and its story would map to
+// nothing. A range compares two refs, where the working tree is irrelevant, so only the other modes add them.
 const files = EXPLICIT
     ? EXPLICIT.split(',').map(f => f.trim()).filter(Boolean)
-    : (
-          await new Response(
-              Bun.spawn(['git', '-C', ROOT, ...gitArgs]).stdout,
-          ).text()
-      )
-          .split('\n')
-          .filter(Boolean)
+    : [
+          ...(await gitLines(gitArgs)),
+          ...(RANGE ? [] : await gitLines(['ls-files', '--others', '--exclude-standard'])),
+      ]
 const appFiles = files.filter(f => f.startsWith('app/src/'))
 
 /** Files whose reach is the entire catalogue. Scoping a global stylesheet or the token source to a

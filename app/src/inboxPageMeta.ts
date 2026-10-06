@@ -1,7 +1,7 @@
 // app/src/inboxPageMeta.ts
 // Pure text for an inbox page's chrome: the ViewBar readout and the action bar's status phrase.
 import type { DaemonPage } from '../../core/src/daemonPages'
-import { STATUS_WORD } from './daemonInboxLogic'
+import { STATUS_WORD } from './daemon/daemonInboxLogic'
 import { relTimeISO } from './relTime'
 
 /** `needs review // from answer-emails // 2h ago` as three strings (the caller adds the `//`). */

@@ -8,7 +8,7 @@
 // item with `queued: true` AFTER the streaming assistant turn — so the naive "look at the last
 // item" check would see the queued user bubble and stop reporting speaking, even though the
 // assistant is still actively talking. Walk back past any trailing queued user bubbles first.
-import type { TurnItem } from '../chatTranscript'
+import type { TurnItem } from './chatTranscriptLogic'
 
 export function isSpeaking(
     transcript: readonly TurnItem[],

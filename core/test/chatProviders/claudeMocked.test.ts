@@ -28,15 +28,14 @@
 // No production files were changed for this task.
 import { afterAll, afterEach, describe, expect, test } from 'bun:test'
 import { readdirSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { rm } from 'node:fs/promises'
 import { closeChat, detachSink, newChatId, sendMessage } from '../../src/chat'
 import { whichClaude } from '../../src/claudeWhich'
 import { backendMockEnv } from '../support/backendEnv'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
 import { shouldRunSlowTests } from '../slowGate'
+import { tempDir } from '../tempDirs'
 
 const HAS_CLAUDE = whichClaude() !== null
 // Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
@@ -109,7 +108,7 @@ describeOrSkip(
         async function newTempDir(
             prefix = 'bismuth-claude-mocked-',
         ): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             tempDirs.push(dir)
             return dir
         }
@@ -118,7 +117,7 @@ describeOrSkip(
          *  — see setupDirs' own comment for why a dir created inside the now-idempotent setup() must
          *  outlive the single test that happened to trigger it. */
         async function newSetupTempDir(prefix: string): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             setupDirs.push(dir)
             return dir
         }

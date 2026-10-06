@@ -832,7 +832,7 @@ export class TableWidget extends WidgetType {
             // A cell whose DISPLAY face is visually empty (a freshly-added row, or a cleared cell)
             // block-renders to no line box and collapses to a sliver, so its row would be shorter than
             // filled rows (#62 "new rows are really short" / "empty line hides itself" on blur). We inject
-            // a REAL placeholder — `span.cm-td-ph` holding a genuine NON-BREAKING SPACE — that global.css's `Editor.css` section
+            // a REAL placeholder — `span.cm-td-ph` holding a genuine NON-BREAKING SPACE — that global.css's CodeMirror theming section
             // styles as a BLOCK whose actual nbsp content makes a line box WebKit cannot collapse (unlike
             // `min-height` on a `display: table-cell`, which WebKit ignores). Its line-height is the shared
             // `--cm-td-lh`, IDENTICAL to a filled cell AND to the nested EDIT editor (cellEditor.ts) — so an

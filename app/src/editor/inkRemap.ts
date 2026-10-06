@@ -33,12 +33,13 @@
 // tables map through {@link remapSeams}, which always returns a table.
 import { MapMode, type ChangeDesc, type Text } from '@codemirror/state'
 import type { Seam } from './inkCommit'
+import { clamp } from '../math'
 
 /** Clamp a document position into `doc` before asking which line it is on. `mapPos` cannot
  *  return an out-of-range position for a well-formed change set, but a caller passing a stale
  *  `before` would, and `lineAt` throws rather than saturating. */
 const lineAt = (doc: Text, pos: number): number =>
-    doc.lineAt(Math.max(0, Math.min(pos, doc.length))).number
+    doc.lineAt(clamp(pos, 0, doc.length)).number
 
 /**
  * Where the 1-based `line` went — the fence's own opening line, for an op that names a fence.

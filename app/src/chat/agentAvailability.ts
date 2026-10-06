@@ -8,7 +8,7 @@
 // records 'failed', which resolution treats as the old claude fallback rather than waiting forever.
 import { createSignal } from 'solid-js'
 import type { FreeAgentStatus } from '../../../core/src/freeAgent'
-import type { InstalledBackends } from '../chatProvider'
+import type { InstalledBackends } from './chatProvider'
 import { api } from '../api'
 
 export type AgentBackend = FreeAgentStatus['backends'][number]

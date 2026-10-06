@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { hasHiddenChars, isCommandTrusted, trustCommand, trustFilePath } from './statusBarTrust'
+import { tempDir } from '../test/tempDirs'
 
 let dir: string
 let prev: string | undefined
 beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'sbtrust-'))
+    dir = tempDir('sbtrust-')
     prev = process.env.BISMUTH_TRUST_FILE
     process.env.BISMUTH_TRUST_FILE = join(dir, 'sub', 'trusted.json')
 })
@@ -32,7 +32,7 @@ describe('statusBarTrust', () => {
     })
     test('different vault is untrusted', () => {
         trustCommand(dir, 'git branch')
-        expect(isCommandTrusted(mkdtempSync(join(tmpdir(), 'sbtrust2-')), 'git branch')).toBe(false)
+        expect(isCommandTrusted(tempDir('sbtrust2-'), 'git branch')).toBe(false)
     })
     test('corrupt file reads as nothing trusted and is rewritten', () => {
         trustCommand(dir, 'a')

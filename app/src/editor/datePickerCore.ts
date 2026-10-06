@@ -4,6 +4,7 @@
 // importing the editor's CSS or @codemirror/view. See datePickerExtension.tsx for the UI.
 import type { Schema } from '../../../core/src/schema/types'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
+import { minutesToStr } from '../calendar/components/views/timeGridDrag'
 
 export type DateKind = 'date' | 'datetime'
 
@@ -106,5 +107,5 @@ export function composeDateValue(
  *  (matching the native `<input type="time">` and the rest of the LOCAL date math here), so
  *  two users on a shared vault each see their own local time. Date injectable for tests. */
 export function nowHHMM(d: Date = new Date()): string {
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    return minutesToStr(d.getHours() * 60 + d.getMinutes())
 }

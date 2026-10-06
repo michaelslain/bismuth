@@ -5,7 +5,7 @@ import { parse } from 'yaml'
 /** The shapes a vault's settings can be in, first readable wins. The daemon is a separate process
  *  that may read a vault BEFORE core migrates it, so it falls back from the single `.settings`
  *  file to the interim `.settings/settings.yaml` and the legacy root `settings.yaml`. */
-const SETTINGS_SHAPES = [
+export const SETTINGS_SHAPES = [
     '.settings',
     join('.settings', 'settings.yaml'),
     'settings.yaml',

@@ -7,7 +7,7 @@
 // setAsAppMenu REPLACES the whole menu, so we re-add the standard app/Edit/Window
 // items (Quit, Copy/Paste/Undo, Minimize…) as PredefinedMenuItems — otherwise the
 // native Cmd+C/V/Z and Quit would disappear.
-import { isTauri } from './nativeMenu'
+import { isTauri } from './platform'
 
 export interface AppMenuActions {
     openFolder: () => void

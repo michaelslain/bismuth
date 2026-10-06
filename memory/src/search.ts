@@ -1,9 +1,9 @@
 import {
-    loadAllNotes,
     getMemoryDir,
     isMemoryNoteVisibleToDaemon,
 } from './graph'
 import type { MemoryNote } from './graph'
+import { loadAllNotesCached } from './noteCache'
 
 const STOP_WORDS = new Set([
     'the',
@@ -207,7 +207,7 @@ export async function searchMemory(
 
     // Visibility gate (docs/vault/visibility.md): a "chat-only"/"hidden" memory note never
     // surfaces via recall — memory notes are flat, so this is a per-note check, not a cascade.
-    const notes = (await loadAllNotes(dir)).filter(isMemoryNoteVisibleToDaemon)
+    const notes = (await loadAllNotesCached(dir)).filter(isMemoryNoteVisibleToDaemon)
 
     // Score and filter
     const scored: ScoredNote[] = []

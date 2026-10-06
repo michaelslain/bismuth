@@ -19,6 +19,7 @@ import { IconTextButton } from '../ui/IconTextButton'
 import { Loading } from '../ui/EmptyState'
 import FilePicker from '../ui/FilePicker'
 import { pushToast } from '../Toast'
+import { isImageFile } from '../fileIntake'
 import styles from './DrawingPage.module.css'
 
 // --- Image intake (import button / paste / drag-drop) ---------------------------------
@@ -26,9 +27,6 @@ import styles from './DrawingPage.module.css'
 // stays portable + headless-exportable. These helpers turn a File/blob into a centered,
 // page-fit ImageEl in 816×1056 logical space (`fitImage` lives in core/src/drawing/pageInk.ts,
 // shared with the in-place image/PDF ink that maps the same page box).
-const IMAGE_NAME_RE = /\.(png|jpe?g|gif|webp|svg)$/i
-const isImageFile = (f: File): boolean =>
-    f.type.startsWith('image/') || IMAGE_NAME_RE.test(f.name)
 
 function blobToDataUrl(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {

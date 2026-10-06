@@ -4,6 +4,8 @@
 // Combines top-degree hubs with the currently-open file.
 // Pure (no DOM, no canvas) so it can be unit-tested directly.
 
+import { clamp, clamp01 } from '../math'
+
 type NodeLike = { id: string; kind: string }
 type EdgeEndpoint = string | { id: string }
 type EdgeLike = { source: EdgeEndpoint; target: EdgeEndpoint }
@@ -117,7 +119,7 @@ export function fileLabelBudget(
 ): number {
     if (totalCandidates <= 0 || t <= revealT) return 0
     const span = Math.max(1e-6, fullT - revealT)
-    const u = Math.max(0, Math.min(1, (t - revealT) / span))
+    const u = clamp01((t - revealT) / span)
     return Math.round(Math.pow(u, power) * totalCandidates)
 }
 
@@ -150,7 +152,7 @@ export function clusterLabelBudget(
     if (totalCandidates <= 0) return 0
     const byRows = Math.floor(Math.max(0, rows) / CLUSTER_LABEL_ROWS_PER_LABEL)
     const floor = Math.min(CLUSTER_LABEL_MIN_BUDGET, totalCandidates)
-    return Math.max(floor, Math.min(byRows, totalCandidates))
+    return clamp(byRows, floor, totalCandidates)
 }
 
 /**
@@ -180,7 +182,7 @@ export function fileLabelAlpha(
     fadeSpan: number = FILE_LABEL_FADE_SPAN,
 ): number {
     if (t <= revealT) return 0
-    const u = Math.max(0, Math.min(1, (t - revealT) / Math.max(1e-6, fadeSpan)))
+    const u = clamp01((t - revealT) / Math.max(1e-6, fadeSpan))
     return u * u * (3 - 2 * u)
 }
 
@@ -225,7 +227,7 @@ export function levelBoundaries(
 }
 
 function smoothstep01(u: number): number {
-    const c = Math.max(0, Math.min(1, u))
+    const c = clamp01(u)
     return c * c * (3 - 2 * c)
 }
 

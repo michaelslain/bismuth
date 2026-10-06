@@ -5,7 +5,7 @@
 // boot, core copies it to ~/.bismuth/bin and runs `<bin> --ensure-installed` (which writes the
 // plist/unit pointing at that stable path). Every function is best-effort and never throws —
 // a failed daemon install must never block the app.
-import { homedir } from 'node:os'
+import { bismuthHome } from './bismuthHome'
 import { join } from 'node:path'
 import {
     mkdirSync,
@@ -23,7 +23,7 @@ import { spawnSync } from 'node:child_process'
 export function daemonBinPath(): string {
     return (
         process.env.BISMUTH_DAEMON_BIN ||
-        join(homedir(), '.bismuth', 'bin', 'bismuth-daemon')
+        bismuthHome('bin', 'bismuth-daemon')
     )
 }
 
@@ -98,7 +98,7 @@ export async function installDaemonFromBundle(): Promise<void> {
     const src = join(bundle, 'bin', 'bismuth-daemon')
     if (!existsSync(src)) return
     const bin = daemonBinPath()
-    const marker = join(homedir(), '.bismuth', '.daemon-installed')
+    const marker = bismuthHome('.daemon-installed')
     try {
         const st = statSync(src)
         const sig = `${st.size}:${Math.floor(st.mtimeMs)}`
@@ -112,7 +112,7 @@ export async function installDaemonFromBundle(): Promise<void> {
             await runSetup()
             return
         } // current → just ensure the service
-        mkdirSync(join(homedir(), '.bismuth', 'bin'), { recursive: true })
+        mkdirSync(bismuthHome('bin'), { recursive: true })
         // Copy to a temp file then atomically rename over `bin`. A direct copyFileSync TRUNCATES
         // the destination, which on Linux throws ETXTBSY when `bin` is the currently-executing
         // daemon binary (the service outlives the app, so the old version is running during an

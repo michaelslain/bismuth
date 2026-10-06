@@ -31,12 +31,8 @@ import { join } from 'node:path'
 import { launchChrome } from './chromeSession'
 import { poolSize } from './poolSize'
 import { STORY_READY_EXPRESSION } from './storyReady'
+import { arg, BASE, loadStoryIndex } from './args'
 
-const arg = (n: string, d = '') => {
-    const i = process.argv.indexOf(`--${n}`)
-    return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d
-}
-const BASE = arg('base', 'http://localhost:6006')
 const ONLY = arg('story', '')
 const OUT_DIR = arg('out', join(import.meta.dir, '..', '.claude', 'audit'))
 const SETTLE = Number(arg('settle', '700'))
@@ -213,11 +209,7 @@ const PROBE = `(() => {
   return JSON.stringify({ flags, box, stats: { visible, textLen, canvases } });
 })()`
 
-const index = await (await fetch(`${BASE}/index.json`)).json()
-const matches = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY)
-const entries = Object.values(index.entries as Record<string, any>)
-    .filter((e: any) => matches(e.id))
-    .sort((a: any, b: any) => a.id.localeCompare(b.id))
+const entries = await loadStoryIndex(BASE, ONLY)
 if (entries.length === 0)
     throw new Error(`no stories matched (--story ${ONLY})`)
 

@@ -2,7 +2,7 @@
 // Pure decisions behind the bot's avatar in ChatTranscript: the daemon face (.:[00]:.) sits on the
 // LOWEST assistant row only — every earlier assistant turn carries just the name — and animates by
 // the chat's own liveness. No Solid imports — see chatAvatar.test.ts.
-import type { TurnItem } from '../chatTranscript'
+import type { TurnItem } from './chatTranscriptLogic'
 import { deriveMood, type DaemonMood } from '../daemon/daemonFaceModel'
 
 /** Index of the item that carries the face, or -1 when none does. While a reply is awaited the

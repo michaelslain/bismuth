@@ -14,6 +14,7 @@
 import { test, expect, beforeEach, afterEach } from 'bun:test'
 import {
     mkdtempSync,
+    mkdirSync,
     rmSync,
     writeFileSync,
     readFileSync,
@@ -155,4 +156,34 @@ test("refreshVaultsSeen does not touch vaults.json — membership is core's alon
     write({ '/v/served': ANCIENT })
     await refreshVaultsSeen(['/v/served'], { file, force: true })
     expect(readFileSync(vaultsFile, 'utf-8')).toBe(original)
+})
+
+// ── loadAllVaults settings cache ──────────────────────────────────────────────────────────────
+
+test('loadAllVaults reuses unchanged settings, sees an mtime bump, and defaults the name without identity.md', async () => {
+    // config.ts fixes the machine dir at import, so this runs in a subprocess with its own env.
+    const root = join(dir, 'vault')
+    mkdirSync(root)
+    writeFileSync(join(dir, 'vaults.json'), JSON.stringify([root]))
+    const proc = Bun.spawn(
+        ['bun', join(import.meta.dir, 'registryCacheProbe.ts'), root],
+        {
+            env: { ...process.env, BISMUTH_DAEMON_DIR: dir },
+            stdout: 'pipe',
+            stderr: 'pipe',
+        },
+    )
+    const [out, err] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+    ])
+    expect(await proc.exited, err).toBe(0)
+    expect(JSON.parse(out.trim().split('\n').pop()!)).toEqual({
+        first: { enabled: true, name: 'Ada' },
+        unchangedMtime: { enabled: true, name: 'Ada' }, // served from cache: no re-read
+        edited: { enabled: false, name: 'Ada' },
+        noIdentity: { enabled: false, name: 'daemon' },
+        legacyFirst: { enabled: false, name: 'daemon' },
+        legacyEdited: { enabled: true, name: 'daemon' }, // legacy-shape-only edit seen
+    })
 })

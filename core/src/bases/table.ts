@@ -43,13 +43,6 @@ function headerIndex(lines: string[]): number {
     return -1
 }
 
-/** The header column names of the first GFM table in `body` (authoritative column order), or []. */
-export function tableColumns(body: string): string[] {
-    const lines = body.split('\n')
-    const i = headerIndex(lines)
-    return i < 0 ? [] : splitRow(lines[i])
-}
-
 /** Parse the first GFM table found in `body` into rows. file.name/path come from `meta`. */
 export function parseMarkdownTable(
     body: string,
@@ -83,21 +76,4 @@ export function parseMarkdownTable(
         })
     }
     return rows
-}
-
-/** Format a value as a single table cell: escape pipes, flatten newlines, comma-join arrays. */
-function fmt(v: unknown): string {
-    if (v === undefined || v === null) return ''
-    const s = Array.isArray(v) ? v.join(', ') : String(v)
-    return s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
-}
-
-/** Serialize rows back to a GFM table given an explicit column order. */
-export function rowsToMarkdownTable(columns: string[], rows: Row[]): string {
-    const header = `| ${columns.join(' | ')} |`
-    const sep = `| ${columns.map(() => '---').join(' | ')} |`
-    const body = rows.map(
-        r => `| ${columns.map(c => fmt(r.note[c])).join(' | ')} |`,
-    )
-    return [header, sep, ...body].join('\n')
 }

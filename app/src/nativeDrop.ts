@@ -17,7 +17,7 @@
 // through the vault. In a plain browser build (no Tauri) this is a no-op and the existing HTML5
 // drop handlers remain the path.
 
-import { isTauri } from './nativeMenu'
+import { isTauri } from './platform'
 import { isWindowsPlatform } from './platform'
 import { nativeDragScale, nativeDragUnits } from './nativeDropRouting'
 

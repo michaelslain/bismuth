@@ -10,7 +10,6 @@ import {
     DESIGN_TOKENS,
     TOKEN_GROUPS,
     applyColorTokens,
-    checkTokenValue,
     nonFieldTokens,
     parseTokenMap,
     type TokenDef,
@@ -72,19 +71,6 @@ export function themeNameFromPath(rel: string): string | null {
 
 export function isThemePath(rel: string): boolean {
     return themeNameFromPath(rel) !== null
-}
-
-const COLOR_DEF: TokenDef = {
-    key: 'color',
-    kind: 'color',
-    group: 'surface',
-    default: '',
-    doc: '',
-    field: 'background', // a field def: plain colours only
-}
-
-export function isColor(v: string): boolean {
-    return typeof v === 'string' && checkTokenValue(COLOR_DEF, v).ok
 }
 
 function rgbOf(c: string): [number, number, number] | null {

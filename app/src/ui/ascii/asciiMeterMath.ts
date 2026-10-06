@@ -5,6 +5,8 @@
 // plain functions so they're unit-testable without a DOM (repo convention, see
 // app/src/ui/buttonClass.ts).
 
+import { clamp } from '../../math'
+
 /**
  * Filled cell count for a meter of the given `width`: `value * width`, rounded,
  * then clamped to `[0, width]`. `value` itself is NOT clamped to 0–1 first — a
@@ -12,7 +14,7 @@
  * one, matching the reference implementation.
  */
 export function meterFill(value: number, width: number): number {
-    return Math.max(0, Math.min(width, Math.round(value * width)))
+    return clamp(Math.round(value * width), 0, width)
 }
 
 /**
@@ -51,5 +53,5 @@ export function fitMeterWidth(
 ): number {
     if (!Number.isFinite(availablePx) || !Number.isFinite(chPx) || chPx <= 0) return min
     const cells = Math.floor((availablePx - extraPx) / chPx) - 2 // '[' and ']'
-    return Math.max(min, Math.min(max, cells))
+    return clamp(cells, min, max)
 }

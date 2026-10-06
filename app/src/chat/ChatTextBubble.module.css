@@ -177,7 +177,7 @@
     border-radius: var(--r-0);
 }
 
-/* ── Mono pull-back inside a message — matches the editor's own exclusion list (Editor.css), so
+/* ── Mono pull-back inside a message — matches the editor's own exclusion list (global.css's CodeMirror theming section), so
    a code fence looks identical whether read in a note or a chat message. Headings and tables stay
    prose, same as the editor. Sizes are the editor's too: a fence at --code-font-size, inline
    `code` at --fs-rel-code (the rule above), so it scales inside a heading. ─────────────────── */

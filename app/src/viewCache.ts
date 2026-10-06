@@ -24,6 +24,36 @@ export function readCache<T>(key: string): T | undefined {
     }
 }
 
+/** Raw string read for keys whose stored format is not JSON (flags, opaque blobs). Never throws. */
+export function readRaw(key: string): string | null {
+    try {
+        if (typeof localStorage === 'undefined') return null
+        return localStorage.getItem(key)
+    } catch {
+        return null
+    }
+}
+
+/** Raw string write, the counterpart of readRaw. Never throws — a blocked store skips persistence. */
+export function writeRaw(key: string, value: string): void {
+    try {
+        if (typeof localStorage === 'undefined') return
+        localStorage.setItem(key, value)
+    } catch {
+        // unavailable or over quota — skip persisting; the app works without it
+    }
+}
+
+/** A JSON array under `key`, keeping only the entries `isEntry` accepts; missing, malformed or
+ *  non-array storage reads as an empty list. */
+export function readArray<T>(
+    key: string,
+    isEntry: (x: unknown) => x is T,
+): T[] {
+    const arr = readCache<unknown>(key)
+    return Array.isArray(arr) ? arr.filter(isEntry) : []
+}
+
 export function writeCache(key: string, value: unknown): void {
     try {
         if (typeof localStorage === 'undefined') return

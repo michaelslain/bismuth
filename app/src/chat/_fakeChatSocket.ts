@@ -20,7 +20,7 @@
 // rendering several stories at once), dispose each other's sessions out from under them. Each story
 // owns its retain/release pair and must not assume another story's session stays alive.
 import { onCleanup } from 'solid-js'
-import { forgetChatSession } from '../chatSessionStore'
+import { forgetChatSession } from './chatSessionStore'
 import { retainChatSessions } from './chatSessions'
 import type { ChatFrame } from '../../../core/src/chat'
 

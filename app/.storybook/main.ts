@@ -3,13 +3,13 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 /**
- * Storybook for the Bismuth `app/src/ui/` Solid.js component library.
+ * Storybook for the whole Bismuth app: the `ui/` primitives and the feature surfaces' stories,
+ * colocated under `src/`.
  *
- * Framework: `storybook-solidjs-vite` (community Solid renderer + Storybook's Vite
- * builder). NOTE: this package has NO Storybook-8 build — it starts at 9.0.0 — so we
- * run Storybook 9. `@storybook/addon-essentials` does not exist for SB9 either (its
- * features — controls / actions / viewport / backgrounds / docs — are baked into core),
- * so no addons are needed for the catalog. See `.storybook/README.md`.
+ * Framework: `storybook-solidjs-vite` (community Solid renderer + Storybook's Vite builder).
+ * It has no Storybook-8 build — it starts at 9.0.0 — so this is Storybook 9, where the former
+ * addon-essentials features are built into core and `addons` stays empty.
+ * Theme axis, fakeTransport and fonts live in `preview.ts`; see `.storybook/README.md`.
  */
 
 /** Walk up from `start` to the nearest `package.json` carrying a `workspaces` field — the same

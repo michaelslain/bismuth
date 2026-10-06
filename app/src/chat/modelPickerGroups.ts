@@ -4,7 +4,7 @@
 // the part before the FIRST `/` and show only the rest. Every other connector is one flat, unnamed
 // group showing the model's own label.
 import type { ChatModelOption } from './chatSession'
-import type { ChatProviderChoice } from '../chatProvider'
+import type { ChatProviderChoice } from './chatProvider'
 
 export type PickerModel = ChatModelOption & { shortLabel: string }
 export type PickerGroup = { name: string; models: PickerModel[] }

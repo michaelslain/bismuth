@@ -5,7 +5,7 @@ import type {
     FreeAgentProgress,
     FreeAgentStatus,
 } from '../../../core/src/freeAgent'
-import { modelStorageKeys } from '../chatProvider'
+import { modelStorageKeys } from './chatProvider'
 
 /** Mirror of core's ZEN_FREE_ROTATE_ID (opencodeTranslate.ts); a test pins equality. */
 export const ZEN_FREE_ROTATE_ID = 'bismuth/zen-free-rotate'

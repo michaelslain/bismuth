@@ -1,7 +1,7 @@
 // Visual spec for <PaneTree> — the recursive renderer for one tab's pane layout: a leaf shows
 // content, a split divides space between two children with a draggable divider.
 //
-// WHY THIS FILE EXISTS: `.pane-split`/`.pane-child`/`.pane-divider` (App.css, plus the
+// WHY THIS FILE EXISTS: `.pane-split`/`.pane-child`/`.pane-divider` (PaneTree.module.css, plus the
 // `@keyframes pane-in` animation `.pane-child` uses — Trap 6, invisible to a `^\.`-anchored grep)
 // move into the shared PaneTree.module.css alongside the leaf-family rules covered by
 // PaneLeaf.stories.tsx / PaneHeader.stories.tsx / PaneDropZone.stories.tsx. Recorded BEFORE that

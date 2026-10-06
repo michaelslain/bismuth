@@ -31,6 +31,8 @@
 // centred on its corner; the `-`/`=` strokes share its baseline (its crossbar) and the `|` ink is
 // centred on its stem x. Every glyph draws at a whole device-pixel origin.
 
+import { clamp } from '../../math'
+
 /** 0 = edge not drawn, 1 = rule (`-`), 2 = heavy (`=`); vertical edges are 0 or 1 (`|`). */
 export type HorizontalEdge = 0 | 1 | 2
 export type VerticalEdge = 0 | 1
@@ -133,7 +135,7 @@ export type GlyphInk = { dashW: number; plusW: number; plusH: number }
 export function tileGeometry(chPx: number, ink: GlyphInk, dpr: number, pitchTiles: number = DEFAULT_DASH_PITCH) {
     const bw = Math.max(1, Math.round(chPx * dpr))
     const pitch = Math.max(1, Math.round(pitchTiles * bw))
-    const dash = Math.max(1, Math.min(pitch, Math.round(ink.dashW * dpr)))
+    const dash = clamp(Math.round(ink.dashW * dpr), 1, pitch)
     const gap = pitch - dash
     const even = (v: number) => Math.max(2, 2 * Math.round(v / 2))
     const cx = even(ink.plusW * dpr + gap)

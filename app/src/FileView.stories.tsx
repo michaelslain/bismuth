@@ -12,7 +12,7 @@ import { FileView } from './FileView'
 import { PaneContent } from './PaneContent'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
-import { refreshDaemonPages } from './daemonInbox'
+import { refreshDaemonPages } from './daemon/daemonInboxApi'
 import { sampleDaemonPages } from './ui/_daemonFixtures'
 import { start as startServerVersion } from './serverVersion'
 

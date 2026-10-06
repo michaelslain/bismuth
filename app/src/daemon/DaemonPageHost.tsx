@@ -25,14 +25,14 @@ import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import { api } from '../api'
 import { settings } from '../settings'
-import { daemonName } from '../daemonIdentity'
+import { daemonName } from './daemonIdentityLogic'
 import {
     anyWorking,
     dueCount,
     inboxPages,
     refreshDaemonPages,
-} from '../daemonInbox'
-import { chatBusy, chatComposing, chatSpeaking } from '../chatActivity'
+} from './daemonInboxApi'
+import { chatBusy, chatComposing, chatSpeaking } from '../chat/chatActivity'
 import { DAEMON_CHAT_ID } from '../tabIds'
 import { chatSession } from '../chat/chatSessions'
 import { armDaemonChat, armDaemonChatForDrop } from './daemonChatArm'
@@ -55,7 +55,7 @@ import {
     failedSorted,
     scheduledSorted,
     resolvedSorted,
-} from '../daemonInboxLogic'
+} from './daemonInboxLogic'
 import { cronNeedsAttention, processNeedsAttention } from './daemonAttention'
 import { deriveMood } from './daemonFaceModel'
 import { barReadouts, faceCaption, hasRecentFailure } from './daemonPageModel'

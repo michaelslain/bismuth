@@ -1,10 +1,11 @@
+import { bismuthHome } from './bismuthHome'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 // Where Bismuth's one-click "free agent" puts the opencode binary it downloads (core/src/freeAgent.ts).
 // Appended LAST to claudeLookupPath, so a user's own install always wins over the managed copy.
-export const FREE_AGENT_BIN_DIR = join(homedir(), '.bismuth', 'agents', 'bin')
+export const FREE_AGENT_BIN_DIR = bismuthHome('agents', 'bin')
 
 // nvm installs node — and globally-installed CLIs like `claude` (`npm i -g
 // @anthropic-ai/claude-code`) — under $NVM_DIR/versions/node/<version>/bin, a dir a

@@ -175,7 +175,7 @@ export async function spawnVaultBackend(
                 lastExit = exitCode
                 break
             }
-            await new Promise(res => setTimeout(res, 150))
+            await Bun.sleep(150)
         }
 
         if (!died) {

@@ -11,7 +11,8 @@ import { Loading } from './ui/EmptyState'
 import { IconTextButton } from './ui/IconTextButton'
 import { TextInput } from './ui/TextInput'
 import { pushToast } from './Toast'
-import { isTauri } from './nativeMenu'
+import { isTauri } from './platform'
+import { pluralWord } from './plural'
 import { pickFile, pickFolder } from './appWindow'
 import { formatsForOptions, ext } from './export/formats'
 import {
@@ -685,7 +686,7 @@ export function ExportView(props: {
                             class={styles['exp-hint']}
                         >
                             {pdfPageCount()}{' '}
-                            {pdfPageCount() === 1 ? 'page' : 'pages'}
+                            {pluralWord(pdfPageCount(), 'page')}
                         </Text>
                     </Show>
                 </div>

@@ -61,15 +61,14 @@
 // separate concern, not as a workaround for this.
 //
 import { afterAll, afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { rm } from 'node:fs/promises'
 import { whichBinary } from '../../src/claudeWhich'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
 import { backendMockEnv } from '../support/backendEnv'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
 import { shouldRunSlowTests } from '../slowGate'
+import { tempDir } from '../tempDirs'
 
 const HAS_OPENCODE = whichBinary('opencode') !== null
 // Gated on the binary existing and on the slow-suite opt-out (this spawns a REAL agent binary).
@@ -268,7 +267,7 @@ describeOrSkip(
         async function newTempDir(
             prefix = 'bismuth-opencode-mocked-',
         ): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             tempDirs.push(dir)
             return dir
         }
@@ -276,7 +275,7 @@ describeOrSkip(
         /** Like newTempDir, but tracked in xdgDirs (survives every afterEach, cleaned only in afterAll) —
          *  see xdgDirs' own comment for why an XDG_*_HOME dir must outlive the single test that created it. */
         async function newXdgTempDir(prefix: string): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             xdgDirs.push(dir)
             return dir
         }

@@ -16,6 +16,7 @@ import { themeColors } from '../../../core/src/drawing/theme'
 import { smoothStrokePoints } from '../../../core/src/drawing/smooth'
 import { widthFor, isRealPressure } from './input'
 import styles from './DrawingCanvas.module.css'
+import { clamp01 } from '../math'
 
 export interface ToolState {
     // 'lasso' is a NOTE-INK tool only (editor/InkOverlay.tsx: select ink, then move or resize it
@@ -147,7 +148,7 @@ export function DrawingCanvas(props: {
     function pressureByte(pressure: number, speed: number): number {
         const base = props.tools().size
         const w = widthFor({ base, pressure, speed, hasRealPressure: hasReal })
-        const p01 = Math.max(0, Math.min(1, w / (base * 1.75)))
+        const p01 = clamp01(w / (base * 1.75))
         return Math.round(p01 * 255)
     }
     function paintLive() {

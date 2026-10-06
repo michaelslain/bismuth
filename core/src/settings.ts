@@ -31,7 +31,6 @@ import {
     normalizeFolderKey,
     parseSettingsText,
     readDailyNotesFrom,
-    readFolderIconsFrom,
     readFolderVisibilityFrom,
     serializeSettingsFromText,
 } from './settingsSerialize'
@@ -782,15 +781,6 @@ export async function serializeSettingsForFrontend(
         res?.raw ?? null,
         (await listCustomThemes(vault)).filter(t => t.theme).map(t => t.name),
     )
-}
-
-/** Read the per-folder icon map from settings.yaml. Absent file / section → {}. */
-export async function readFolderIcons(
-    vault: string,
-): Promise<Record<string, string>> {
-    const res = await readSettings(vault)
-    if (!res) return {}
-    return readFolderIconsFrom(res.data)
 }
 
 /** Read the per-folder visibility map from settings.yaml. Absent file / section / corrupt YAML →

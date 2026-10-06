@@ -20,6 +20,7 @@ import Label from './ui/Label'
 import Text from './ui/Text'
 // ASCII register: --fs-ui rows on the .asc-popover panel, each carrying the node's own glyph.
 import styles from './GraphSearch.module.css'
+import { clamp } from './math'
 
 export interface SearchItem {
     id: string
@@ -86,7 +87,7 @@ export function GraphSearch(props: {
     function move(delta: number): void {
         const n = results().length
         if (n === 0) return
-        const next = Math.max(0, Math.min(selected() + delta, n - 1))
+        const next = clamp(selected() + delta, 0, n - 1)
         setSelected(next)
         const item = results()[next]
         if (item) props.onPreview?.(item.id)

@@ -24,15 +24,14 @@
 // that actually proves the mock served the turn), not on `result.isError`, and says so inline —
 // asserting `isError:false` here would be asserting something this task found to be untrue.
 import { afterAll, afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { rm } from 'node:fs/promises'
 import { whichBinary } from '../../src/claudeWhich'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
 import { backendMockEnv } from '../support/backendEnv'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
 import { shouldRunSlowTests } from '../slowGate'
+import { tempDir } from '../tempDirs'
 
 const HAS_CODEX = whichBinary('codex') !== null
 // Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
@@ -74,7 +73,7 @@ describeOrSkip(
         const setupDirs: string[] = []
 
         async function newTempDir(prefix: string): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             tempDirs.push(dir)
             return dir
         }
@@ -82,7 +81,7 @@ describeOrSkip(
         /** Like newTempDir, but tracked in setupDirs (survives every afterEach, cleaned only in afterAll)
          *  — see setupDirs' own comment. */
         async function newSetupTempDir(prefix: string): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             setupDirs.push(dir)
             return dir
         }

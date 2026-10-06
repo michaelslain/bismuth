@@ -6,8 +6,8 @@
 import { Show, type Component } from 'solid-js'
 import styles from './ChatHistoryRow.module.css'
 import type { ChatOrigin } from '../api'
-import { chatOriginIcon } from '../chatOrigin'
-import { relativeTime } from './chatRelativeTime'
+import { chatOriginIcon } from './chatOrigin'
+import { relTimeChat } from '../relTime'
 import { Icon } from '../icons/Icon'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
@@ -38,7 +38,7 @@ const ChatHistoryRow: Component<ChatHistoryRowProps> = props => (
             {props.summary?.trim() || 'Untitled session'}
         </Label>
         <Text as="span" size="ui" tone="faint" class={styles.time}>
-            {relativeTime(props.lastModified)}
+            {relTimeChat(props.lastModified)}
         </Text>
         <Show when={props.snippet}>
             {snippet => (

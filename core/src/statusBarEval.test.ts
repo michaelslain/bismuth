@@ -1,16 +1,16 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { countTree, evaluateStatusBar, type StatusEvalDeps } from './statusBarEval'
 import { normalizeStatusBar } from './statusBarItems'
 import type { Row } from './bases/types'
+import { tempDir } from '../test/tempDirs'
 
 const today = '2026-10-03'
 let root: string
 
 beforeAll(() => {
-    root = mkdtempSync(join(tmpdir(), 'sbeval-'))
+    root = tempDir('sbeval-')
     mkdirSync(root, { recursive: true })
     writeFileSync(join(root, 'a.md'), `---\ntags: [x]\n---\n- [ ] x [due ${today}]\n`)
     writeFileSync(join(root, 'b.md'), '# b\n')
@@ -135,7 +135,7 @@ describe('evaluateStatusBar', () => {
         expect(out.map(s => s.text)).toEqual(['first', 'second'])
     })
     test('query on a filtered base counts the rows it shows', async () => {
-        const dir = mkdtempSync(join(tmpdir(), 'sbbase-'))
+        const dir = tempDir('sbbase-')
         writeFileSync(join(dir, 'x.md'), '---\nstatus: reading\n---\n# x\n')
         writeFileSync(join(dir, 'y.md'), '---\nstatus: done\n---\n# y\n')
         writeFileSync(

@@ -3,6 +3,8 @@
 // the placement/move/remove actions (Task F) can round-trip a screen click through the SAME
 // projection the renderer already uses, rather than a second hand-rolled one drifting from it.
 
+import { clamp } from '../math'
+
 // Web Mercator: convert (lat, lng) at zoom level z to world-pixel coords.
 // Standard slippy-map projection — one tile = 256px, 2^z tiles per axis.
 export function project(
@@ -68,8 +70,7 @@ export function screenToLatLng(
     const wx = centerWorld.x + (screenX - size.w / 2)
     const wy = centerWorld.y + (screenY - size.h / 2)
     const { lat, lng } = unproject(wx, wy, zoom)
-    const clamp = (v: number, lim: number) => Math.max(-lim, Math.min(lim, v))
-    return { lat: round6(clamp(lat, 85)), lng: round6(clamp(lng, 180)) }
+    return { lat: round6(clamp(lat, -85, 85)), lng: round6(clamp(lng, -180, 180)) }
 }
 
 /**
@@ -271,7 +272,7 @@ export function zoomAround(
     delta: number,
     anchor?: XY,
 ): { zoom: number; center: { lat: number; lng: number } } | null {
-    const z1 = Math.max(1, Math.min(18, zoom + delta))
+    const z1 = clamp(zoom + delta, 1, 18)
     if (z1 === zoom) return null
     const ax = anchor ? anchor.x : size.w / 2
     const ay = anchor ? anchor.y : size.h / 2

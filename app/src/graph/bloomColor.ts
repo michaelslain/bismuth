@@ -24,7 +24,7 @@ export const parseHexColor = parseHex
 // Territory tint — the per-cell mix of a community's colour over the base phosphor hue.
 // ---------------------------------------------------------------------------
 
-/** Rec. 709 luma: the weighting the eye actually uses, and the same one bench/visual.ts's probe
+/** Rec. 709 luma: the weighting the eye actually uses, and the same one bench/appShots.ts's probe
  *  measures brightness with. */
 export const luma = (r: number, g: number, b: number): number =>
     0.2126 * r + 0.7152 * g + 0.0722 * b

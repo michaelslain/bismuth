@@ -42,7 +42,7 @@
 // crossfades, not switches, and `lodMix` owns both ends of the first one — see the field docs on
 // `glyphAlpha`/`memberEdgeAlpha` for the trap of collapsing them into a single number.
 
-import { parseHex } from '../color/parseHex'
+import { parseCssColor } from '../color/parseHex'
 import type { GraphData, GraphNode } from '../../../core/src/graph'
 import { nodeVisualState } from '../../../core/src/daemonViz'
 import {
@@ -408,40 +408,6 @@ const VIEWPORT_LABEL_PAD = 40
 /** Shared empty roster — the fail-closed fallback in layoutClusterNames (see `namableByLevel`). */
 const EMPTY_COMMUNITY_SET: ReadonlySet<number> = new Set<number>()
 
-/** Parse a CSS colour STRING (the tokens table only ever holds `#rgb`/`#rrggbb` hex — see
- *  theme/tokens.ts — or, defensively, `rgb()`/`rgba()`) into 0..255 channels for the LEVEL-DRIVEN
- *  colour blend's per-tick RGB lerp. Returns null on anything else so the caller can fall back to a
- *  neutral colour instead of propagating a NaN into the paint.
- *
- *  The 3-digit/6-digit hex core is shared with clusterVisual.ts's parseCssColorToRgb via
- *  color/parseHex.ts. Two branches stay local because they are NOT shared by every hex-to-RGB
- *  call site in the codebase: hex longer than 6 digits is accepted here (truncated to the first 6)
- *  where bloomColor.ts's parseHexColor and pageGeometry.ts's parseRgbColor both reject it — the
- *  three sites disagree on that malformed input (this one returns a truncated triple, bloomColor
- *  returns null, pageGeometry falls back to white), so no single shared answer would be faithful
- *  to all three; and the rgb()/rgba() fallback below. */
-function parseColorToRGB(css: string): [number, number, number] | null {
-    const s = css.trim()
-    if (s[0] === '#') {
-        const hex = parseHex(s)
-        if (hex) return [hex[0], hex[1], hex[2]]
-        const h = s.slice(1)
-        if (h.length >= 6) {
-            const r = parseInt(h.slice(0, 2), 16),
-                g = parseInt(h.slice(2, 4), 16),
-                b = parseInt(h.slice(4, 6), 16)
-            return Number.isFinite(r) &&
-                Number.isFinite(g) &&
-                Number.isFinite(b)
-                ? [r, g, b]
-                : null
-        }
-        return null
-    }
-    const m = s.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i)
-    return m ? [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])] : null
-}
-
 type RGB = [number, number, number]
 const rgbDist = (a: RGB, b: RGB) =>
     Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
@@ -480,9 +446,9 @@ export function deriveEdgeBaseAlpha(
     bgCss: string,
     edgeCss: string,
 ): number {
-    const neutral = parseColorToRGB(neutralCss),
-        bg = parseColorToRGB(bgCss),
-        edge = parseColorToRGB(edgeCss)
+    const neutral = parseCssColor(neutralCss),
+        bg = parseCssColor(bgCss),
+        edge = parseCssColor(edgeCss)
     if (!neutral || !bg || !edge) return EDGE_BASE_ALPHA_FALLBACK
     const isLight = srgbLuminance(bg) > 127.5
     const origColor = isLight ? mixRGB(neutral, bg, 0.45) : neutral
@@ -1798,7 +1764,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
                     BLEND_BASE + this.commColors.length,
                 )
                 this.commColors.push(hex)
-                this.commColorsRGB.push(parseColorToRGB(hex) ?? [255, 255, 255])
+                this.commColorsRGB.push(parseCssColor(hex) ?? [255, 255, 255])
             }
             this.communitySlotByLevel[L] = slotByCommunity
         }

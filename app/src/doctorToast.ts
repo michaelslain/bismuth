@@ -2,6 +2,7 @@
 // safe one), ask the owner once. Pure of JSX — it imports toastStore, not Toast.tsx, so a headless
 // test can drive it. Deps are injected so the test never touches the network.
 import type { DoctorReport } from '../../core/src/doctor/types'
+import { plural } from './plural'
 import { dismissToast, pushToast, updateToast } from './toastStore'
 
 export type DoctorToastDeps = {
@@ -16,7 +17,7 @@ const DONE_TTL = 5_000
 /** `doctor // 2 repairs need your ok: a, b` — more than two collapse to `a, b +2 more`. */
 export function doctorToastMessage(titles: string[]): string {
     const n = titles.length
-    const head = `doctor // ${n} ${n === 1 ? 'repair needs' : 'repairs need'} your ok: `
+    const head = `doctor // ${plural(n, 'repair needs', 'repairs need')} your ok: `
     const named = titles.slice(0, SHOWN).join(', ')
     return n > SHOWN ? `${head}${named} +${n - SHOWN} more` : head + named
 }

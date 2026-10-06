@@ -40,13 +40,8 @@ import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { launchChrome, type Cdp } from './chromeSession'
 import { poolSize } from './poolSize'
+import { arg, BASE, has, loadStoryIndex } from './args'
 
-const arg = (n: string, d = '') => {
-    const i = process.argv.indexOf(`--${n}`)
-    return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d
-}
-const has = (n: string) => process.argv.includes(`--${n}`)
-const BASE = arg('base', 'http://localhost:6006')
 const ONLY = arg('story', '')
 /* DERIVED, not a hardcoded constant — see bench/poolSize.ts. 8, matching invariants.ts/playCheck.ts
    rather than storyAudit.ts's 12: this tool shares their risk, not storyAudit's. storyAudit's higher
@@ -367,7 +362,7 @@ const FREEZE = `(() => {
   window.Date = D;
 })()`
 
-const index = await (await fetch(`${BASE}/index.json`)).json()
+const allIds = (await loadStoryIndex(BASE)).map(e => e.id as string)
 // --story takes an exact id OR a PREFIX. Exact-only was a footgun: story ids are
 // "<component>--<case>", so the natural thing to type for a component — `--story shell-windowcontrols`
 // — matched nothing and threw, and the per-component workflow this harness is used for is exactly
@@ -430,7 +425,7 @@ const matchesOnly = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY)
  *  check of that story; typing a broad prefix is not that, and under `--update` it is destructive.
  *  Naming the id in full still works, so nothing an author actually meant to do is blocked. */
 const excluded = (id: string) => UNSTABLE.indexOf(id) >= 0 && id !== ONLY
-const storyIds = Object.keys(index.entries)
+const storyIds = allIds
     .filter(id => matchesOnly(id) && !excluded(id))
     .sort()
 if (storyIds.length === 0)
@@ -450,7 +445,7 @@ if (ONLY)
 // profile delete that this harness needed after leaking 20 profiles / 600 MB, and which two sibling
 // tools each got wrong in their own way before it was shared.
 //
-// `--force-prefers-reduced-motion` is passed explicitly, not defaulted in the helper: visual.ts must
+// `--force-prefers-reduced-motion` is passed explicitly, not defaulted in the helper: appShots.ts must
 // NOT have it, because its readiness loop waits for animation to settle.
 // SESSION IS MUTABLE so a dead browser can be REPLACED mid-sweep rather than ending the run.
 // Chrome's renderer gets killed under memory pressure — the CDP call then rejects with "Session with
@@ -481,7 +476,7 @@ const isDeadSession = (e: unknown) => {
 
 /** One fully-configured target: fixed viewport at scale 1, pinned timezone, frozen clock (see
  *  DETERMINISM above) and the NET_WATCH quiescence probe. PER-TOOL, deliberately not folded into
- *  chromeSession.ts's helper — visual.ts renders at scale 2 and needs real time, so none of the
+ *  chromeSession.ts's helper — appShots.ts renders at scale 2 and needs real time, so none of the
  *  style-reading tools' setup can be a shared default there.
  *
  *  ONE CALL PER POOL SLOT, not once per browser: every setting below is target-scoped (CDP methods
@@ -772,7 +767,7 @@ if (UPDATE) {
             // element records each) that `--story app-sheetview` had deliberately preserved.
             // Keying the carry-forward off the live Storybook index keeps the delete-on-removal
             // behaviour intact: an id gone from the index is still dropped.
-            const live = new Set(Object.keys(index.entries))
+            const live = new Set(allIds)
             const carried: Record<string, unknown> = {}
             for (const id of Object.keys(prev))
                 if (!(id in captured) && live.has(id)) carried[id] = prev[id]

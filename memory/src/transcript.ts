@@ -10,6 +10,8 @@
 // a unit and can attribute facts correctly. All mechanical string work — collection never
 // spends a single LLM token.
 import { MEMORY_BLOCK_TAG } from './recall'
+import { todayISO } from './dates'
+import { writeNote } from './graph'
 
 export interface TranscriptEntry {
     type?: string
@@ -186,4 +188,29 @@ export function buildAutoNoteBody(entries: TranscriptEntry[]): string | null {
     const total = turns.reduce((n, t) => n + t.user.length + t.claude.length, 0)
     if (total < MIN_BODY_CHARS) return null // trivial
     return renderTurns(trimToBudget(turns))
+}
+
+/** Write an auto-typed raw note for a finished conversation. `source` ('session' | 'chat') is the
+ *  only tag that differs between the relay SessionEnd hook and core's visual-chat capture. */
+export async function writeAutoNote(
+    dir: string,
+    sessionId: string,
+    source: 'session' | 'chat',
+    body: string,
+): Promise<void> {
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+    const date = todayISO(now)
+    await writeNote(
+        `auto-${ts}-${sessionId.slice(0, 8)}`,
+        {
+            type: 'auto',
+            tags: ['auto', 'raw', source],
+            created: date,
+            updated: date,
+        },
+        body,
+        dir,
+    )
 }

@@ -36,8 +36,8 @@ function findVaultRoot(start: string): string | null {
 }
 
 /** Read just `daemon.enabled` out of a vault's `.settings` (YAML). A literal duplicate of
- *  core/src/settings.ts's readDaemonEnabledSync — this workspace can't import @bismuth/core
- *  (same convention as daemon/src/lib/bismuthPaths.ts). Degrades to false on any
+ *  core/src/settings.ts's readDaemonEnabledSync — mirrored here so the memory
+ *  tools stay free of core (same convention as daemon/src/lib/bismuthPaths.ts). Degrades to false on any
  *  missing/corrupt/malformed file; never throws. */
 function daemonEnabledForVault(vault: string): boolean {
     try {
@@ -98,15 +98,6 @@ export function memoryDir(): string | null {
  */
 export function memoryDirFor(vault: string): string | null {
     return daemonEnabledForVault(vault) ? join(vault, '.daemon', 'memory') : null
-}
-
-/** Which agent channel an MCP-served call runs as. A literal mirror of core's `mcpChannel()` (this
- *  workspace can't import @bismuth/core): `chat` stays `chat`; unset or anything else is `daemon`, the
- *  stricter default. */
-export function mcpAgentChannel(
-    env: Record<string, string | undefined> = process.env,
-): 'chat' | 'daemon' {
-    return env.BISMUTH_MCP_CHANNEL === 'chat' ? 'chat' : 'daemon'
 }
 
 /** Who is calling a memory write. `null`/`undefined` = the owner (no restriction). */

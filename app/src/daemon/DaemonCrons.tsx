@@ -13,7 +13,6 @@
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { DaemonCron } from '../../../core/src/daemonGraph'
-import { openContextMenu } from '../nativeMenu'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
@@ -124,7 +123,7 @@ function DaemonCrons(props: DaemonCronsProps) {
     const openMenu = (cron: DaemonCron, e: MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        openContextMenu(e.clientX, e.clientY, menuItems(cron), setMenu)
+        setMenu({ x: e.clientX, y: e.clientY, items: menuItems(cron) })
     }
 
     const rowActions = (cron: DaemonCron) => {

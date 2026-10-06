@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { themeTemplate } from '../../src/theme/customTheme'
 import {
@@ -10,10 +9,11 @@ import {
     writeCustomThemeFile,
 } from '../../src/theme/themeFiles'
 import { THEMES } from '../../src/theme/tokens'
+import { tempDir } from '../tempDirs'
 
 let vault: string
 beforeEach(async () => {
-    vault = await mkdtemp(join(tmpdir(), 'themes-'))
+    vault = tempDir('themes-')
 })
 afterEach(async () => {
     await rm(vault, { recursive: true, force: true })
@@ -74,7 +74,7 @@ describe('themeFiles', () => {
         await expect(writeCustomThemeFile(vault, 'link', 'label: x')).rejects.toThrow()
         expect(await readFile(join(vault, 'real.yaml'), 'utf8')).toBe('label: R\n')
 
-        const v2 = await mkdtemp(join(tmpdir(), 'themes-link-'))
+        const v2 = tempDir('themes-link-')
         try {
             await mkdir(join(v2, 'elsewhere'))
             await writeFile(join(v2, 'elsewhere', 'a.yaml'), '')

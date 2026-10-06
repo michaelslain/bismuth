@@ -105,7 +105,7 @@ export async function htmlToPngHeadless(
         const width = Math.max(1, Math.ceil(contentSize.width))
         const height = Math.max(1, Math.ceil(contentSize.height))
         // deviceScaleFactor 2 — the repo's convention for output meant to be looked at
-        // (bench/visual.ts sets it explicitly; the app's own PNG export defaults to 2). At 1x
+        // (bench/appShots.ts sets it explicitly; the app's own PNG export defaults to 2). At 1x
         // this shot is visibly blurrier than the app's export of the same note, which would
         // contradict the fidelity this module exists to provide.
         await session.page('Emulation.setDeviceMetricsOverride', {

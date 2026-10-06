@@ -24,7 +24,7 @@
    flashcard/editor `.card-*` families belong to bases/FlashcardsView.module.css, not here. Nothing
    to move.
 
-   `.graph-slot-main` STAYS GLOBAL in global.css's `App.css` section despite the prefix — it is App.tsx's own top-level
+   `.graph-slot-main` STAYS GLOBAL in global.css's app shell section despite the prefix — it is App.tsx's own top-level
    layout slot (the no-active-tab fallback the pane grid falls back to), not GraphView's chrome.
    shell/EditorPane.tsx's file header documents this explicitly. Page-frame, not a component.
 
@@ -34,7 +34,7 @@
    against import order once the two lived in separate stylesheets.
 
    `.graph-card-h` COLLAPSES into one rule: `.graph-legend-card .graph-card-h` (asciiGraph.css) is
-   STRICTLY higher specificity than the bare `.graph-card-h` (App.css) — a genuine specificity
+   STRICTLY higher specificity than the bare `.graph-card-h` (GraphView.module.css) — a genuine specificity
    difference, not a tie — and `.graph-card-h` has exactly one render context (always a direct child
    of `.graph-legend-card`, in both GraphView.tsx and DaemonList.stories.tsx's InGraphCard), so the
    override's properties always applied regardless of file order. Collapsing was safe and verified:

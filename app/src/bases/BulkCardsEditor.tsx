@@ -5,6 +5,7 @@ import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import { renderMarkdown } from './markdown'
 import { SEPARATORS, type ParsedCard } from './cardsEdit'
+import { plural } from '../plural'
 import styles from './BulkCardsEditor.module.css'
 
 export type BulkCardsEditorProps = {
@@ -74,8 +75,7 @@ const BulkCardsEditor: Component<BulkCardsEditorProps> = props => (
                         class={styles['cards-cnt']}
                         data-testid="bulk-preview-count"
                     >
-                        {props.parsed.length}{' '}
-                        {props.parsed.length === 1 ? 'card' : 'cards'}
+                        {plural(props.parsed.length, 'card')}
                     </Text>
                 </div>
                 <div class={styles['cards-pvlist']}>

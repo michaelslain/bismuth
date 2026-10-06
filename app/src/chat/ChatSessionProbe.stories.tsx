@@ -17,7 +17,7 @@ import ChatSessionProbe from './ChatSessionProbe'
 import { chatSession } from './chatSessions'
 import { retainFakeChat } from './_fakeChatSocket'
 import { LAST_MODE_KEY } from './chatSessionPrefs'
-import { modelStorageKeys } from '../chatProvider'
+import { modelStorageKeys } from './chatProvider'
 import type { ChatFrame, ChatManifest } from '../../../core/src/chat'
 
 const meta = {

@@ -391,7 +391,7 @@ These are deliberate. Each is either product identity, algorithm tuning or data,
 | Terminal glyph-fallback font list | `app/src/Terminal.tsx` | the Nerd Font fallback list is what terminal programs expect to find; the sixteen ANSI colours are NOT listed here because they are derived from tokens (--rail, --danger, --fg and the rest), so a token edit already moves the terminal |
 | Export and drawing palettes | `app/src/export/, core/src/drawing/` | exported files and drawings are theme-independent so they look the same wherever they are opened |
 | Google event colours | `core/src/gcal/colors.ts` | Google defines these; they are data from another system |
-| Chat tab colour swatches | `app/src/chatColors.ts` | per-chat identity colours chosen by the person, stored as data |
+| Chat tab colour swatches | `app/src/chat/chatColors.ts` | per-chat identity colours chosen by the person, stored as data |
 | Univer sheet theme variables | `app/src/global.css (--univer-* on .bismuth-sheet, not :root)` | Univer's own --univer-* vars are scoped to the sheet and already derived from tokens (--accent and friends) in CSS, so a token edit reaches the sheet without a token of their own |
 | Graph hub-label pill colours | `app/src/GraphView.tsx (labelTextColor, labelBgColor)` | the translucent rgba pill behind graph hub labels is chosen per light or dark theme as a legibility pair over the graph canvas, not a themed colour; label text on light themes does follow --fg |
 | PDF page constants | `core/src/theme/tokens.ts (PDF_PAGE_PAPER, PDF_PAGE_RULE, PDF_HIGHLIGHT_YELLOW)` | a PDF page is white paper and a highlight is highlighter yellow in every theme; the margin and highlight fill must match that fixed page, not a theme surface |

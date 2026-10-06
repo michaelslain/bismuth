@@ -12,7 +12,7 @@ import ChatThinkingBlock from './ChatThinkingBlock'
 import ChatToolRow from './ChatToolRow'
 import ChatQuestionCard from './ChatQuestionCard'
 import ChatPermissionCard from './ChatPermissionCard'
-import type { AssistantItem } from '../chatTranscript'
+import type { AssistantItem } from './chatTranscriptLogic'
 import styles from './ChatAssistantTurn.module.css'
 
 export type ChatAssistantTurnProps = {

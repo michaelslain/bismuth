@@ -1,8 +1,8 @@
 // Visual spec for <TabRail> — the app's ONLY tab presentation, a right-edge vertical rail.
 // Collapsed (46px, `--rail-w`) it shows just the action toolbar + tab icons; expanded (232px, via
 // :hover / :focus-within / the Alt+Shift+S pin) it widens leftward over the editor without
-// reflowing it. (This header said 48px for a while; nothing anywhere is 48 — global.css's
-// `App.css` section sets `.layout.has-rail { --rail-w: 46px }` and `.tab-rail-inner` hardcodes the
+// reflowing it. (This header said 48px for a while; nothing anywhere is 48 — shell/AppFrame.module.css
+// sets `.layout[data-has-rail] { --rail-w: 46px }` and `.tab-rail-inner` hardcodes the
 // same 46.)
 //
 // WHY THIS FILE EXISTS: recorded BEFORE the `.tab-rail*` rules (+ `.tab-rename`, + the

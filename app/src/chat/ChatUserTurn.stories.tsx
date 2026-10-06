@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import ChatUserTurn from './ChatUserTurn'
-import type { UserItem } from '../chatTranscript'
+import type { UserItem } from './chatTranscriptLogic'
 import { IMAGE_TURN_ITEMS, QUEUED_ITEMS } from './_transcriptFixtures'
 
 const meta = {

@@ -13,7 +13,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { InboxPageView } from './InboxPageView'
-import { refreshDaemonPages } from './daemonInbox'
+import { refreshDaemonPages } from './daemon/daemonInboxApi'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { sampleDaemonPages } from './ui/_daemonFixtures'

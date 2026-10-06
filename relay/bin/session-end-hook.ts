@@ -7,18 +7,10 @@
 //   2. When the daemon is enabled (BISMUTH_MEMORY_DIR set), collect the session transcript
 //      into memory as an auto note — except on `compact` (the same logical session
 //      continues). This replaces claude-bot's old global ~/.claude collect hook.
-import {
-    readHookInput,
-    postRelay,
-    terminalId,
-    memoryDir,
-    runHook,
-} from '../lib/report.ts'
+import { hook, postRelay, memoryDir } from '../lib/report.ts'
 import { collectTranscript } from '../lib/memory.ts'
 
-runHook(async () => {
-    if (!terminalId()) return // not launched from a Bismuth terminal tab
-    const input = await readHookInput()
+hook(async input => {
     const reason = String(input.reason ?? '')
     const dir = memoryDir()
 

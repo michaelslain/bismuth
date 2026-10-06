@@ -96,16 +96,9 @@
 //   bun bench/playCheck.ts --json
 import { launchChrome } from './chromeSession'
 import { poolSize } from './poolSize'
+import { arg, BASE, has, loadStoryIndex } from './args'
 
-const arg = (n: string, d = '') => {
-    const i = process.argv.indexOf(`--${n}`)
-    return i >= 0 && process.argv[i + 1] && !process.argv[i + 1]!.startsWith('--')
-        ? process.argv[i + 1]!
-        : d
-}
-const has = (n: string) => process.argv.includes(`--${n}`)
 
-const BASE = arg('base', 'http://localhost:6006')
 const ONLY = arg('story')
 const W = Number(arg('width', '1280'))
 const H = Number(arg('height', '900'))
@@ -203,12 +196,7 @@ function classify(
     return 'PASS'
 }
 
-const index = await (await fetch(`${BASE}/index.json`)).json()
-const matches = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY)
-const ids = Object.values(index.entries as Record<string, any>)
-    .filter((e: any) => e.type === 'story' && matches(e.id))
-    .map((e: any) => e.id as string)
-    .sort()
+const ids = (await loadStoryIndex(BASE, ONLY)).map(e => e.id as string)
 if (!ids.length) throw new Error(`no stories matched (--story ${ONLY})`)
 
 const session = await launchChrome({ label: 'playcheck', width: W, height: H })

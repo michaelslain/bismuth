@@ -6,7 +6,7 @@ import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
 import CodeBlock from '../ui/CodeBlock'
-import type { ThinkingPart } from '../chatTranscript'
+import type { ThinkingPart } from './chatTranscriptLogic'
 import styles from './ChatThinkingBlock.module.css'
 
 export type ChatThinkingBlockProps = {

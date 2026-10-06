@@ -11,6 +11,8 @@
 //
 // Values are opaque serializeTabs() blobs (panes.ts) — this module never parses them.
 
+import { readArray, writeCache } from './viewCache'
+
 const KEY = 'bismuth-closed-sessions-v1'
 const CAP = 10
 
@@ -24,26 +26,11 @@ export function pushSession(
     return next.length > cap ? next.slice(next.length - cap) : next
 }
 
-function read(): string[] {
-    try {
-        const raw = localStorage.getItem(KEY)
-        if (!raw) return []
-        const arr = JSON.parse(raw)
-        return Array.isArray(arr)
-            ? arr.filter((x): x is string => typeof x === 'string')
-            : []
-    } catch {
-        return []
-    }
-}
+const read = (): string[] =>
+    readArray(KEY, (x): x is string => typeof x === 'string')
 
-function write(stack: string[]): void {
-    try {
-        localStorage.setItem(KEY, JSON.stringify(stack))
-    } catch {
-        // storage unavailable/full — reopen-across-windows just won't be available this run
-    }
-}
+// a blocked/full store just means reopen-across-windows isn't available this run
+const write = (stack: string[]): void => writeCache(KEY, stack)
 
 /** Stash a closed window's serialized tab layout (most-recent last). */
 export function pushClosedSession(serializedTabs: string): void {

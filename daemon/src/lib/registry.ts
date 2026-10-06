@@ -1,8 +1,8 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseFrontmatter } from './frontmatter.ts'
 import { atomicWriteJson } from './atomicJson.ts'
-import { readVaultSettingsDoc } from './vaultSettings.ts'
+import { readVaultSettingsDoc, SETTINGS_SHAPES } from './vaultSettings.ts'
 import {
     VAULTS_FILE,
     VAULTS_SEEN_FILE,
@@ -90,6 +90,50 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
     }
 
     return { enabled, name, backend, codexWriteAgentsMd, inheritUserMcp }
+}
+
+interface CachedSettings {
+    /** mtimes of every path readDaemonSettings can read: each settings shape, then identity.md. */
+    mtimes: number[]
+    value: DaemonSettings
+}
+
+/** Per-root parse cache for {@link readDaemonSettings}, keyed by vault root. Entries are reused only
+ *  while BOTH source files keep the same mtime, so an edit (e.g. flipping daemon.enabled) is seen on
+ *  the very next tick. A stat is far cheaper than a read + YAML parse, and this runs per vault per tick. */
+const settingsCache = new Map<string, CachedSettings>()
+
+/** Clear the settings cache. Test-only seam — the cache is module state. */
+export function resetDaemonSettingsCache(): void {
+    settingsCache.clear()
+}
+
+/** mtime in ms, or -1 when the file is absent/unreadable. */
+async function mtimeOf(path: string): Promise<number> {
+    try {
+        return (await stat(path)).mtimeMs
+    } catch {
+        return -1
+    }
+}
+
+async function readDaemonSettingsCached(root: string): Promise<DaemonSettings> {
+    // Every shape readVaultSettingsDoc may fall back to, so an edit to a legacy-only file is seen too.
+    const paths = [
+        ...SETTINGS_SHAPES.map(rel => join(root, rel)),
+        join(root, '.daemon', 'identity.md'),
+    ]
+    const mtimes = await Promise.all(paths.map(mtimeOf))
+    const hit = settingsCache.get(root)
+    if (
+        hit &&
+        hit.mtimes.length === mtimes.length &&
+        hit.mtimes.every((m, i) => m === mtimes[i])
+    )
+        return hit.value
+    const value = await readDaemonSettings(root)
+    settingsCache.set(root, { mtimes, value })
+    return value
 }
 
 // ── "Last seen" must mean "actually in use" ───────────────────────────────────────────────────
@@ -217,7 +261,7 @@ export async function loadAllVaults(): Promise<
 > {
     const out: Array<{ ctx: VaultContext; enabled: boolean }> = []
     for (const root of await knownVaultRoots()) {
-        const s = await readDaemonSettings(root)
+        const s = await readDaemonSettingsCached(root)
         out.push({
             ctx: vaultPaths(
                 root,

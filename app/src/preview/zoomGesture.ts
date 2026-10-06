@@ -19,6 +19,8 @@
 // once, from `requestAnimationFrame`, with the latest pointer position — so a burst of events costs
 // one re-layout, not one per event.
 
+import { clamp, clamp01 } from '../math'
+
 /** `exp(-deltaY * k)`: ~1% per pixel of wheel delta — a pinch's small deltas track the fingers. */
 const WHEEL_K = 0.01
 /** A mouse wheel notch reports ~100px; clamp so one notch is ~1.3×, not ~2.7×. */
@@ -28,14 +30,14 @@ const WHEEL_DELTA_CLAMP = 28
  *  2 = pages, normalized to px first. */
 export function wheelZoomFactor(deltaY: number, deltaMode = 0): number {
     const px = deltaMode === 1 ? deltaY * 16 : deltaMode === 2 ? deltaY * 400 : deltaY
-    const d = Math.max(-WHEEL_DELTA_CLAMP, Math.min(WHEEL_DELTA_CLAMP, px))
+    const d = clamp(px, -WHEEL_DELTA_CLAMP, WHEEL_DELTA_CLAMP)
     return Math.exp(-d * WHEEL_K)
 }
 
 /** Ease-out cubic between two zoom levels, interpolated in LOG space so a 1→4 tween spends as long
  *  on 1→2 as on 2→4 (perceived size is multiplicative). `t` is 0..1. */
 export function easeZoom(from: number, to: number, t: number): number {
-    const k = 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 3)
+    const k = 1 - Math.pow(1 - clamp01(t), 3)
     return Math.exp(Math.log(from) + (Math.log(to) - Math.log(from)) * k)
 }
 

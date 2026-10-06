@@ -20,9 +20,9 @@ import Select from '../ui/Select'
 import { IconTextButton } from '../ui/IconTextButton'
 import Text from '../ui/Text'
 import ChatModelMenu from './ChatModelMenu'
-import { providerCan, resolveChatProvider } from '../chatProvider'
+import { providerCan, resolveChatProvider } from './chatProvider'
 import { installedBackendIds, loadAgentAvailability } from './agentAvailability'
-import { PERMISSION_MODE_OPTIONS } from '../chatPermissionMode'
+import { PERMISSION_MODE_OPTIONS } from './chatPermissionMode'
 import {
     browserStorage,
     readLastEffort,

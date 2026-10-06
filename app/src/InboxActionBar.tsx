@@ -4,7 +4,7 @@
 // replace the phrase. Owns no signal and never fetches — the host passes everything in.
 import { For, Show, type Component } from 'solid-js'
 import type { DaemonPage } from '../../core/src/daemonPages'
-import { STATUS_COLOR } from './daemonInboxLogic'
+import { STATUS_COLOR } from './daemon/daemonInboxLogic'
 import { actionBarPhrase } from './inboxPageMeta'
 import StatusDot from './ui/StatusDot'
 import Text from './ui/Text'

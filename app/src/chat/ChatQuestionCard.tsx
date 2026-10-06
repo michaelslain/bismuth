@@ -10,7 +10,7 @@ import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
 import { TextInput } from '../ui/TextInput'
 import PlainButton from '../ui/PlainButton'
-import type { QuestionPart } from '../chatTranscript'
+import type { QuestionPart } from './chatTranscriptLogic'
 import styles from './ChatQuestionCard.module.css'
 
 export type ChatQuestionCardProps = {

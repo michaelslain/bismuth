@@ -179,14 +179,14 @@ const editorTheme = EditorView.theme({
         // face is scoped to note prose and chat message bodies. The token existed and was loaded
         // but nothing ever read it — the wave that decided it deferred the wiring, so prose kept
         // rendering in Monaspace.
-        // Everything that is NOT prose is pulled back to --ui-font-stack in global.css's `Editor.css` section (headings,
+        // Everything that is NOT prose is pulled back to --ui-font-stack in global.css's CodeMirror theming section (headings,
         // code blocks and inline code, tables, frontmatter, math). codeFontTheme below already
         // overrides this whole scroller for config buffers, and its comment has always called
         // this declaration "editorTheme's prose font" — this makes that true.
         fontFamily: 'var(--prose-font)',
         // --prose-font-size, not --editor-font-size: the serif needs ~15% more nominal px to read
         // at the same optical size as the mono it replaced (global.css's `styles/tokens.css` section --prose-scale carries
-        // the measurement). The mono exclusions in global.css's `Editor.css` section reset BOTH family and size, so a code
+        // the measurement). The mono exclusions in global.css's CodeMirror theming section reset BOTH family and size, so a code
         // fence or a heading is unaffected by this.
         fontSize: 'var(--prose-font-size)',
         lineHeight: 'calc(var(--row-h, 18px) * var(--prose-line-height, 1))',

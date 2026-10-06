@@ -1,11 +1,11 @@
 import { expect, test, describe } from 'bun:test'
 import {
     isImagePath,
-    isImageFile,
     imageEmbed,
     appendEmbedToValue,
     markdownDropTarget,
 } from './kanbanImageDrop'
+import { isImageFile } from '../fileIntake'
 
 describe('isImagePath', () => {
     test('accepts known image extensions, case-insensitive', () => {

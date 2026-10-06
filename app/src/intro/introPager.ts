@@ -1,6 +1,8 @@
 // app/src/intro/introPager.ts
 // The intro's pager arithmetic, pure. No framework imports.
 
+import { clamp } from '../math'
+
 /** Index of the slide named `startAt`; absent or unknown → 0. */
 export function startIndex(
     slides: readonly { key: string }[],
@@ -24,17 +26,16 @@ export function step(
     target = index,
 ): { index: number; enter: boolean } {
     const last = Math.max(0, count - 1)
-    const clamp = (k: number) => Math.max(0, Math.min(last, k))
     switch (move) {
         case 'next':
             return index >= last
                 ? { index: last, enter: true }
-                : { index: clamp(index + 1), enter: false }
+                : { index: clamp(index + 1, 0, last), enter: false }
         case 'prev':
-            return { index: clamp(index - 1), enter: false }
+            return { index: clamp(index - 1, 0, last), enter: false }
         case 'skip':
             return { index: last, enter: false }
         case 'go':
-            return { index: clamp(target), enter: false }
+            return { index: clamp(target, 0, last), enter: false }
     }
 }

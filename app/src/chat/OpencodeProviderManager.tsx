@@ -16,7 +16,7 @@ import InlineCode from '../ui/InlineCode'
 import OpencodeProviderRow from './OpencodeProviderRow'
 import { filterAvailable } from './opencodeProviderFilter'
 import { api, type OpencodeProviderList } from '../api'
-import { OPENCODE_LOGIN_COMMAND } from '../chatProvider'
+import { OPENCODE_LOGIN_COMMAND } from './chatProvider'
 import { pushToast } from '../toastStore'
 import { copyChatText } from './copyChatText'
 

@@ -51,9 +51,7 @@ export function faceCaption(
         if (!last || at > last.at) last = { name: c.name, at }
     }
     if (!last) return 'watching // nothing has run yet'
-    // relTimeMs measures against the wall clock; shift the timestamp so the age is taken from
-    // `nowMs` instead, which keeps this deterministic under test.
-    const age = relTimeMs(Date.now() - (nowMs - last.at))
+    const age = relTimeMs(last.at, nowMs)
     return `watching // last: ${last.name} ${age}`
 }
 

@@ -1,6 +1,7 @@
 import { Show } from 'solid-js'
 import PlainButton from '../ui/PlainButton'
 import Text from '../ui/Text'
+import { plural } from '../plural'
 import styles from './InboxIndicator.module.css'
 
 // The status bar's daemon-inbox NOTIFICATION indicator.
@@ -53,7 +54,7 @@ export function InboxIndicator(props: { count: number; onOpen: () => void }) {
     // in the bar whose click does something other than copy text.
     const label = () =>
         pending()
-            ? `Inbox: ${props.count} page${props.count === 1 ? '' : 's'} awaiting review. Open inbox.`
+            ? `Inbox: ${plural(props.count, 'page')} awaiting review. Open inbox.`
             : 'Inbox: nothing awaiting review. Open inbox.'
     return (
         <PlainButton

@@ -103,14 +103,6 @@ function evalMetricExpr(node: Expr, rows: Row[]): number | null {
     }
 }
 
-/** Evaluate a metric expression (e.g. "sum(priority)", "count(status == \"done\")") over
- *  `rows`. Throws an Error with a human reason on a parse failure or a bare identifier
- *  used outside an aggregate call. */
-export function evaluateMetric(rows: Row[], source: string): number | null {
-    const ast = parseExpr(source)
-    return evalMetricExpr(ast, rows)
-}
-
 /** The metric a stat view falls back to when it declares no `stats:` — mirrors the
  *  view's own x/y/aggregate. `count()` when aggregate is count or no y resolved;
  *  otherwise `<agg>(<y>)` (y with any "note." prefix stripped), labelled

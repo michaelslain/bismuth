@@ -8,13 +8,13 @@
 import {
     DEFAULT_PERMISSION_MODE,
     sanitizePermissionMode,
-} from '../chatPermissionMode'
+} from './chatPermissionMode'
 import { isBackendId } from '../../../core/src/agentBackends/catalog'
 import {
     modelStorageKeys,
     providerStorageKey,
     type ChatProviderChoice,
-} from '../chatProvider'
+} from './chatProvider'
 
 export type StorageLike = {
     getItem: (key: string) => string | null

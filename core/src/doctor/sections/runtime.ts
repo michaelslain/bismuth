@@ -12,6 +12,7 @@ import {
     writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { isRecord } from '../../isRecord'
 import { itemLines } from '../format'
 import type { DoctorContext, DoctorSection, Finding } from '../types'
 
@@ -34,9 +35,6 @@ function readJson(path: string): unknown {
         return undefined
     }
 }
-
-const isObject = (v: unknown): v is Record<string, unknown> =>
-    !!v && typeof v === 'object' && !Array.isArray(v)
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -73,7 +71,7 @@ function runRecordFindings(ctx: DoctorContext): Finding[] {
         if (!name.endsWith('.json')) continue
         const path = join(dir, name)
         const rec = readJson(path)
-        if (!isObject(rec) || typeof rec.pid !== 'number') continue
+        if (!isRecord(rec) || typeof rec.pid !== 'number') continue
         if (ctx.pidAlive(rec.pid)) continue
         paths.push(path)
         // the file name is base64 of the vault path: name the vault itself
@@ -124,7 +122,7 @@ function trustFile(ctx: DoctorContext): string {
 function trustedCommandFindings(ctx: DoctorContext): Finding[] {
     const file = trustFile(ctx)
     const table = readJson(file)
-    if (!isObject(table)) return []
+    if (!isRecord(table)) return []
     const orphans = Object.keys(table).filter(provablyMissing)
     if (orphans.length === 0) return []
     return [
@@ -141,7 +139,7 @@ function trustedCommandFindings(ctx: DoctorContext): Finding[] {
                     try {
                         // re-read: only drop keys that are still provably missing at apply time
                         const current = readJson(file)
-                        if (!isObject(current)) return []
+                        if (!isRecord(current)) return []
                         const kept = Object.fromEntries(
                             Object.entries(current).filter(
                                 ([k]) => !provablyMissing(k),
@@ -170,7 +168,7 @@ function trustedCommandFindings(ctx: DoctorContext): Finding[] {
 
 function gcalFindings(ctx: DoctorContext): Finding[] {
     const manifest = readJson(join(ctx.bismuthHome, 'gcal', 'sync.json'))
-    if (!isObject(manifest) || !isObject(manifest.bases)) return []
+    if (!isRecord(manifest) || !isRecord(manifest.bases)) return []
     const missing = new Set<string>()
     for (const key of Object.keys(manifest.bases)) {
         const i = key.indexOf('::')
@@ -199,7 +197,7 @@ function appConfigFindings(ctx: DoctorContext): Finding[] {
         'config.json',
     )
     const cfg = readJson(file)
-    if (!isObject(cfg) || typeof cfg.vault !== 'string' || !cfg.vault) return []
+    if (!isRecord(cfg) || typeof cfg.vault !== 'string' || !cfg.vault) return []
     if (existsSync(cfg.vault)) return []
     return [
         {

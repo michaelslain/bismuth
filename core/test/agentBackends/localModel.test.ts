@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BACKEND_LIST, can } from '../../src/agentBackends/catalog'
@@ -17,6 +17,7 @@ import {
     readLocalModel,
     resolveLocalSpawn,
 } from '../../src/agentBackends/localModelProbe'
+import { tempDir } from '../tempDirs'
 
 const LM: LocalModel = { url: 'http://localhost:1234', model: '', apiKey: '' }
 
@@ -172,7 +173,7 @@ describe('probe', () => {
     })
 
     async function vault(settings: string): Promise<string> {
-        const d = await mkdtemp(join(tmpdir(), 'bismuth-localmodel-'))
+        const d = tempDir('bismuth-localmodel-')
         dirs.push(d)
         await writeFile(join(d, '.settings'), settings)
         return d

@@ -1,3 +1,6 @@
+import { pad2 } from '../../dates'
+import { clamp as clampNumber } from '../../../math'
+
 export const MAX_MINUTES = 23 * 60 + 45
 export const SNAP_INTERVAL = 30
 
@@ -21,9 +24,7 @@ export function pointerDistance(dx: number, dy: number): number {
 }
 
 export function minutesToStr(m: number): string {
-    const hours = String(Math.floor(m / 60)).padStart(2, '0')
-    const minutes = String(m % 60).padStart(2, '0')
-    return `${hours}:${minutes}`
+    return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`
 }
 
 export function snap(m: number): number {
@@ -31,7 +32,7 @@ export function snap(m: number): number {
 }
 
 export function clamp(m: number): number {
-    return Math.max(0, Math.min(MAX_MINUTES, m))
+    return clampNumber(m, 0, MAX_MINUTES)
 }
 
 export type CreatePayload = { date: string; startTime: string; endTime?: string }

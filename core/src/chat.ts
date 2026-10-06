@@ -23,7 +23,7 @@ import {
     extractText,
     recallMemory,
     stripInjectedBlocks,
-    writeNote as writeMemoryNote,
+    writeAutoNote,
     type TranscriptEntry,
 } from '@bismuth/memory'
 import {
@@ -40,7 +40,6 @@ import {
     resolveLocalSpawn,
     type ResolvedLocal,
 } from './agentBackends/localModelProbe'
-import { todayISO } from './dates'
 import { backfillLegacyDaemonSessions } from './chatDaemonLegacy'
 import {
     detachSessionSink,
@@ -2592,21 +2591,7 @@ function captureToMemory(s: ChatSession): void {
             if (touchedRestricted) return // a chat-only/hidden file was discussed or opened — never capture
             const body = buildAutoNoteBody(entries)
             if (body === null) return // trivial
-            const now = new Date()
-            const pad = (n: number) => String(n).padStart(2, '0')
-            const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
-            const date = todayISO(now)
-            await writeMemoryNote(
-                `auto-${ts}-${sessionId.slice(0, 8)}`,
-                {
-                    type: 'auto',
-                    tags: ['auto', 'raw', 'chat'],
-                    created: date,
-                    updated: date,
-                },
-                body,
-                memoryDir,
-            )
+            await writeAutoNote(memoryDir, sessionId, 'chat', body)
         } catch {
             /* best-effort — memory capture must never surface as a chat error */
         }

@@ -32,6 +32,7 @@
 // is why only the origin needs converting. See inkCommit.ts for the contract itself.
 import type { Stroke } from '../../../core/src/drawing/model'
 import { inkBounds, type InkBounds } from '../editor/drawBlockGeometry'
+import { clamp } from '../math'
 
 /** Smallest resize factor a drag may produce. Below this a drawing is a dot and there is no
  *  handle left to grab to undo it. */
@@ -247,7 +248,7 @@ export function clampScale(
                   edgeCap(bounds.maxY, originY, a.minY, a.maxY),
               ),
     )
-    return Math.max(MIN_SCALE, Math.min(factor, cap))
+    return clamp(factor, MIN_SCALE, cap)
 }
 
 /** The bounding box of a subset of a block's strokes, or null when the subset is empty. A thin

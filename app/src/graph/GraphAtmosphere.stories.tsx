@@ -33,9 +33,9 @@ type Story = StoryObj<typeof meta>
 
 const STAGE_H = '360px'
 
-/** `.graph-area`'s own rule (global.css's `App.css` section) the real renderer relies on:
+/** `.graph-area`'s own rule (app/src/GraphView.module.css) the real renderer relies on:
  *  `position: relative` sizes the bloom canvas + vignette's `inset: 0`. Painted `--bg` behind it
- *  (global.css's `App.css` section's reset does this via `body`, which Storybook's isolated
+ *  (global.css's element reset section does this via `body`, which Storybook's isolated
  *  iframe still has, but the fixed-height stage below is
  *  not `body` itself) so the `mix-blend-mode: screen` bloom has a dark ground to glow against,
  *  exactly like the graph pane it normally sits in. */

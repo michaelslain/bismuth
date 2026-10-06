@@ -14,9 +14,9 @@
 import type { Accessor } from 'solid-js'
 import type { ChatManifest } from '../../../core/src/chat'
 import type { ChatSessionInfo, ChatSearchHit, ChatScope } from '../api'
-import type { TurnItem } from '../chatTranscript'
+import type { TurnItem } from './chatTranscriptLogic'
 import { isSpeaking } from './chatSpeaking'
-import type { ChatProviderChoice } from '../chatProvider'
+import type { ChatProviderChoice } from './chatProvider'
 import type { FileCandidate } from '../editor/atMention'
 import {
     createEffect,
@@ -34,52 +34,52 @@ import {
     type PermissionPart,
     type QuestionPart,
     type UserItem,
-} from '../chatTranscript'
+} from './chatTranscriptLogic'
 import { getFocusedSelection } from '../editorRegistry'
 import {
     getEditorTabs,
     addChatReference,
     getChatReferences,
     clearChatReferences,
-} from '../chatContext'
-import { buildEditorContextText } from '../chatEditorContext'
-import { chatPersonaName } from '../daemonIdentity'
-import { publishChatTitle } from '../chatTitles'
+} from './chatContext'
+import { buildEditorContextText } from './chatEditorContext'
+import { chatPersonaName } from '../daemon/daemonIdentityLogic'
+import { publishChatTitle } from './chatTitles'
 import {
     rememberChatSession,
     recallChatSession,
     forgetChatSession,
-} from '../chatSessionStore'
-import { publishChatOrigin } from '../chatOrigin'
+} from './chatSessionStore'
+import { publishChatOrigin } from './chatOrigin'
 import {
     publishChatBusy,
     publishChatComposing,
     publishChatSpeaking,
     clearChatActivity,
-} from '../chatActivity'
-import { setChatColor, resolveChatColorArg } from '../chatColors'
+} from './chatActivity'
+import { setChatColor, resolveChatColorArg } from './chatColors'
 import {
     parseChatSlashCommand,
     CLIENT_SLASH_COMMANDS,
     withClientSlashCommands,
-} from '../chatSlashCommands'
+} from './chatSlashCommands'
 import {
     resolveInitialModel,
     reconcileManifestModel,
     modelOptionFor,
-} from '../chatModelResolution'
+} from './chatModelResolution'
 import {
     providerCan,
     resolveChatProvider,
     sanitizeChatProvider,
-} from '../chatProvider'
+} from './chatProvider'
 import { installedBackendIds, loadAgentAvailability } from './agentAvailability'
-import { restoreQueuedComposerState } from '../chatQueueRestore'
+import { restoreQueuedComposerState } from './chatQueueRestore'
 import { lastChange } from '../serverVersion'
 import { vaultTree, refreshVaultTree } from '../treeStore'
 import { gateDone, gateError, gateStop } from './chatTurnGate'
-import { reconcilePermissionMode } from '../chatPermissionMode'
-import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from '../chatEffort'
+import { reconcilePermissionMode } from './chatPermissionMode'
+import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from './chatEffort'
 import {
     basename,
     classifyIntake,
@@ -87,7 +87,7 @@ import {
     jpegNameFor,
 } from '../fileIntake'
 import { wikilinkFor, noteNameFromPath } from '../dnd/noteRef'
-import { buildHistoryEntries } from '../chatHistory'
+import { buildHistoryEntries } from './chatHistory'
 import { settings } from '../settings'
 import type { ChatPreset } from './chatPresets'
 import {

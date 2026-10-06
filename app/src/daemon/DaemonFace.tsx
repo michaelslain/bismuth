@@ -246,7 +246,7 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
         >
             <div
                 // `asc-wordmark` is a bare global on purpose — the app's one gradient flourish
-                // (global.css's `App.css` section), shared with the top strip and intro hero; see
+                // (global.css's app shell section), shared with the top strip and intro hero; see
                 // DaemonFace.module.css `.face`.
                 class={`${styles.face} asc-wordmark`}
                 role="img"

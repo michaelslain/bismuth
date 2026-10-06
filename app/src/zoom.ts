@@ -26,7 +26,7 @@
 // it changes far more often than a typical setting (repeated Cmd+= presses) — the
 // same class of transient per-window UI choice as the graph's 2D/3D toggle.
 import { readCache, writeCache } from './viewCache'
-import { isTauri } from './nativeMenu'
+import { isTauri } from './platform'
 
 const ZOOM_KEY = 'bismuth:ui:zoom' // percent, e.g. 100
 const STEPS = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200]

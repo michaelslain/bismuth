@@ -38,9 +38,5 @@ if (!argv.includes('--all')) {
     process.exit(await run(['bench/invariants.ts']))
 }
 
-let worst = 0
-for (const p of prefixes) {
-    const code = await run(['bench/invariants.ts', '--story', p])
-    if (code > worst) worst = code
-}
-process.exit(worst)
+// ONE run (one Chrome) for every prefix, not one launch per prefix.
+process.exit(await run(['bench/invariants.ts', '--story', prefixes.join(',')]))

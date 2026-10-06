@@ -1,14 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import {
-    mkdtemp,
-    readdir,
-    readFile,
-    rm,
-    stat,
-    utimes,
-    writeFile,
-} from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
     pruneTmpFiles,
@@ -16,13 +7,14 @@ import {
     stageTmpFile,
     tmpFilesDir,
 } from '../src/tmpFiles'
+import { tempDir } from './tempDirs'
 
 let dir: string
 let prevEnv: string | undefined
 
 beforeEach(async () => {
     prevEnv = process.env.BISMUTH_TMP_DIR
-    dir = await mkdtemp(join(tmpdir(), 'bismuth-tmpfiles-test-'))
+    dir = tempDir('bismuth-tmpfiles-test-')
     process.env.BISMUTH_TMP_DIR = join(dir, 'tmp')
 })
 

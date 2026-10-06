@@ -1,7 +1,7 @@
 // app/src/color/parseHex.ts
 //
-// Shared hex-colour parser, factored out of four near-identical hand-rolled copies
-// (graph/AsciiGraphRenderer.ts's parseColorToRGB, graph/clusterVisual.ts's parseCssColorToRgb,
+// Shared colour parsers, factored out of near-identical hand-rolled copies
+// (graph/AsciiGraphRenderer.ts and graph/clusterVisual.ts's CSS-colour parsers, now parseCssColor below;
 // graph/bloomColor.ts's parseHexColor, export/pageGeometry.ts's parseRgbColor). Pure — no
 // framework imports — so it is unit-testable on its own.
 //
@@ -42,4 +42,28 @@ export function parseHex(value: string): Rgb | null {
         ]
     }
     return null
+}
+
+/** `#rgb`/`#rrggbb` hex (via parseHex), a longer `#…` hex truncated to its first 6 digits, or
+ *  `rgb()`/`rgba()` → 0..255 channels (rgb() channels are not rounded or clamped). Null on anything else. */
+export function parseCssColor(css: string): [number, number, number] | null {
+    const s = css.trim()
+    if (s[0] === '#') {
+        const hex = parseHex(s)
+        if (hex) return [hex[0], hex[1], hex[2]]
+        const h = s.slice(1)
+        if (h.length >= 6) {
+            const r = parseInt(h.slice(0, 2), 16),
+                g = parseInt(h.slice(2, 4), 16),
+                b = parseInt(h.slice(4, 6), 16)
+            return Number.isFinite(r) &&
+                Number.isFinite(g) &&
+                Number.isFinite(b)
+                ? [r, g, b]
+                : null
+        }
+        return null
+    }
+    const m = s.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i)
+    return m ? [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])] : null
 }

@@ -30,7 +30,7 @@ import {
 } from 'solid-js'
 import { DEFAULTS } from '../settings'
 import { DEFAULT_THEME, type ThemeName } from '../themes'
-import { isTauri } from '../nativeMenu'
+import { isTauri } from '../platform'
 import IntroCopy from './IntroCopy'
 import IntroGraph, { type IntroGraphStage } from './IntroGraph'
 import IntroFooter from './IntroFooter'

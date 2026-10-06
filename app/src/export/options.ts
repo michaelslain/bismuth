@@ -2,6 +2,7 @@
 // Default export options. Kept out of types.ts so that file stays type-only and the
 // default lives in one place (used by the CLI, the in-app ExportView, and tests).
 import type { ExportOptions, RenderMode } from './types'
+import { clamp } from '../math'
 
 /** Default PDF body font size, in points — a standard document body size. */
 export const DEFAULT_PDF_FONT_SIZE = 12
@@ -12,7 +13,7 @@ export const PDF_FONT_SIZES: readonly number[] = [9, 10, 11, 12, 14, 16, 18]
 /** Clamp an arbitrary font-size request into the supported range (guards CLI/headless input). */
 export function clampPdfFontSize(pt: number): number {
     if (!Number.isFinite(pt)) return DEFAULT_PDF_FONT_SIZE
-    return Math.max(6, Math.min(48, pt))
+    return clamp(pt, 6, 48)
 }
 
 export function defaultExportOptions(): ExportOptions {

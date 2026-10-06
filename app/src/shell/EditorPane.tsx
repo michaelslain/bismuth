@@ -10,7 +10,7 @@
 //
 // `.graph-slot-main` (the no-active-tab fallback placeholder) is NOT rendered by this file — it
 // stays inline in App.tsx as part of the `children` slot, exactly like the PaneTree/overlay `<For>`
-// loops, and stays a global App.css page-frame class (global.css's `App.css` section; App.tsx's
+// loops, and stays a global.css page-frame class (global.css's app shell section; App.tsx's
 // own layout slot, not this
 // component's or GraphView's — see GraphView.module.css's header for that decision).
 //

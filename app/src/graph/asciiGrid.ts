@@ -11,6 +11,8 @@
 // (THE LAW: zoom is resolution — the cell never changes size, the grid subdivides), and
 // bismuth-design/ascii/PORTING.md §4.
 
+import { clamp, clamp01 } from '../math'
+
 /** Cell metrics at --fs-ui (11.5px Monaspace Xenon) — global.css's `asciiGraph.css` section
  *  --cell-w / --cell-h. CELL_W is the font's own advance width at that size; CELL_H is the app's
  *  unified row unit (--row-h, owned by global.css's `ui/ui.css` section — same rhythm the sidebar
@@ -478,14 +480,14 @@ export function maxResFor(
 export function resolutionT(res: number, maxRes: number): number {
     if (maxRes <= 1) return 0
     const t = Math.log(Math.max(1, res)) / Math.log(maxRes)
-    return Math.max(0, Math.min(1, t))
+    return clamp01(t)
 }
 
 /** Inverse of `resolutionT`: the resolution multiplier sitting at internal progress `t` (0=fit,
  *  1=deepest) against a given `maxRes` ceiling. */
 export function resFromT(t: number, maxRes: number): number {
     if (maxRes <= 1) return 1
-    return Math.pow(maxRes, Math.max(0, Math.min(1, t)))
+    return Math.pow(maxRes, clamp01(t))
 }
 
 /**
@@ -506,13 +508,13 @@ export const ZOOM_STEP_PCT = 10
 
 /** Snap a raw HUD percent to the nearest `ZOOM_STEP_PCT` stop, clamped to 0..100. */
 export function snapZoomPercent(pct: number): number {
-    const clamped = Math.max(0, Math.min(100, pct))
+    const clamped = clamp(pct, 0, 100)
     return Math.round(clamped / ZOOM_STEP_PCT) * ZOOM_STEP_PCT
 }
 
 /** Inverse of `resolutionPercent`: the resolution multiplier for a HUD percent (100=fit, 0=deepest)
  *  against a given `maxRes` ceiling. */
 export function resFromPercent(pct: number, maxRes: number): number {
-    const t = 1 - Math.max(0, Math.min(100, pct)) / 100
+    const t = 1 - clamp(pct, 0, 100) / 100
     return resFromT(t, maxRes)
 }

@@ -15,7 +15,7 @@
 // ~/.bismuth convention + atomic temp+rename writes. Best-effort and never authoritative: an
 // unreadable/corrupt file degrades to "no saved model" (the CLI's own restore still applies).
 
-import { homedir } from 'node:os'
+import { bismuthHome } from './bismuthHome'
 import { join } from 'node:path'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { writeFileAtomicSync } from './atomicWrite'
@@ -34,7 +34,7 @@ const CAP = 500
 /** `~/.bismuth/chat` — where the per-session model file lives. Overridable via BISMUTH_CHAT_DIR
  *  (tests). */
 export function chatStateDir(): string {
-    return process.env.BISMUTH_CHAT_DIR || join(homedir(), '.bismuth', 'chat')
+    return process.env.BISMUTH_CHAT_DIR || bismuthHome('chat')
 }
 
 function modelsFile(): string {

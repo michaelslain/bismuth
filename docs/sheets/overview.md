@@ -302,7 +302,7 @@ The gray-token remaps are scoped to `.bismuth-sheet .univer-dark` so light mode 
 Generated file — do not edit by hand. Regenerate with:
 
 ```bash
-bun gen-univer-icons.ts
+bun run gen:univer-icons
 ```
 
 Re-skins Univer's toolbar SVG icons with Lucide equivalents using a CSS mask technique: each icon targets a stable `univerjs-icon-*-icon` class, applies a `mask`/`-webkit-mask` of the Lucide SVG as a data URI, sets `background-color: currentColor`, and hides the original SVG children with `display: none`. This approach survives Univer re-renders and requires no DOM manipulation.

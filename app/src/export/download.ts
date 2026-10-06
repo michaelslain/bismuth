@@ -30,7 +30,7 @@
 // The Tauri side is injectable (TauriDelivery) so the routing + verify + reveal logic is
 // unit-testable without a webview (download.test.ts); the real seam lazy-imports the
 // plugins exactly like before.
-import { isTauri } from '../nativeMenu'
+import { isTauri } from '../platform'
 
 /** The impure Tauri surface deliverFile needs — injectable for tests. */
 export interface TauriDelivery {

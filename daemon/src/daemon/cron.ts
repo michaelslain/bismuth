@@ -23,6 +23,7 @@ import { enqueueWrite } from '../lib/writeQueue'
 import { consumeTrigger, listTriggers } from '../lib/drainTriggers'
 import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import { heartbeatDevice, isOwner } from '../lib/owner'
+import { safeTick } from '../lib/safeTick'
 import { loadEnabledVaults } from '../lib/registry.ts'
 import {
     DEFAULT_CRON_TIMEOUT,
@@ -1320,7 +1321,7 @@ export function startCronScheduler(): void {
     if (cronInterval !== null) return
 
     // Run catch-up check immediately on start, across every enabled vault.
-    ;(async () => {
+    void safeTick('cron-catchup', async () => {
         // Heartbeat even on a non-owner device so it stays selectable.
         await heartbeatDevice()
         if (!(await isOwner())) return
@@ -1340,14 +1341,14 @@ export function startCronScheduler(): void {
                 }
             }
         }
-    })()
+    })
 
     // Check for MCP trigger files every 5 seconds for fast response (all vaults)
     triggerInterval = setInterval(() => {
-        void processAllTriggers()
+        void safeTick('cron-triggers', processAllTriggers)
     }, TRIGGER_CHECK_INTERVAL_MS)
 
-    cronInterval = setInterval(async () => {
+    cronInterval = setInterval(() => void safeTick('cron', async () => {
         // Heartbeat every tick — even when idle / not owner — so this device stays
         // selectable in devices.json.
         await heartbeatDevice()
@@ -1372,7 +1373,7 @@ export function startCronScheduler(): void {
                 }
             }
         }
-    }, CRON_CHECK_INTERVAL_MS)
+    }), CRON_CHECK_INTERVAL_MS)
 }
 
 export function stopCronScheduler(): void {

@@ -4,7 +4,7 @@
 // run through `buildTranscript(frames)` so each story can show exactly one thing without needing a
 // full frame sequence to arrive at it (an answered permission, say, with no unanswered one ever
 // having existed).
-import type { TurnItem } from '../chatTranscript'
+import type { TurnItem } from './chatTranscriptLogic'
 
 /** Prose with a bulleted list and bold text — proves bold reads at prose size (Acceptance: "Bold
  *  text in prose is the prose size at bold weight — never larger"), not just plain paragraphs. */

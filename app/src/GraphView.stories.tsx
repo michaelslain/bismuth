@@ -2,9 +2,9 @@
 // `props.visible !== false && !docHidden()` (GraphView.tsx:342,378). Any browser-automation tab
 // that is not foregrounded reports `document.visibilityState === "hidden"`, so the rAF loop is
 // paused and the canvas samples as 0% inked — indistinguishable from a broken renderer. This is
-// documented in bench/visual.ts, which exists precisely because of it and launches its own Chrome
+// documented in bench/appShots.ts, which exists precisely because of it and launches its own Chrome
 // with --disable-*background* flags to get a live loop unattended. Verify this story either in a
-// real foregrounded browser or via bench/visual.ts; do not "fix" the story in response to a blank
+// real foregrounded browser or via bench/appShots.ts; do not "fix" the story in response to a blank
 // automated screenshot.
 // Visual spec for <GraphView> — the ASCII knowledge-graph canvas. It takes `graph: GraphData`
 // as a plain prop and makes NO api./fetch calls of its own; every position comes pre-computed
@@ -57,7 +57,7 @@ const resetLayers = () => {
 
 // Fixed px, not vh: the Storybook preview iframe is short with the Controls panel open (see
 // Calendar/MonthView.stories.tsx's own note on this), and `.graph-root` fills its parent's
-// height (global.css's `App.css` section `.graph-root { height: 100% }`).
+// height (GraphView.module.css `.graph-root { height: 100% }`).
 const STORY_H = '640px'
 
 /** The full-pane 2D field: a self node, 8 wikilink-chained notes, a few tags fanning off them —
@@ -178,7 +178,7 @@ const assertMiniHeaderControls = (root: HTMLElement, mode: GraphMode) => {
 /**
  * The cramped sidebar slot: `mini` swaps the text-segmented mode switcher for bare icon
  * buttons and adds the bottom-right LOCAL text toggle; sized to the sidebar's own default height
- * (global.css's `App.css` section `--sidebar-graph-height, 305px`) rather than the full pane. Mode is "local" — a
+ * (shell/Sidebar.module.css `--sidebar-graph-height, 305px`) rather than the full pane. Mode is "local" — a
  * lens over the open note's neighbourhood, not a sibling of 2nd/3rd/both — which also makes it
  * the one GraphMode this gallery can show without faking the daemon setting: GraphView's own
  * effect resets 3rd/both back to "2nd" while `settings.daemon.enabled` is off (the

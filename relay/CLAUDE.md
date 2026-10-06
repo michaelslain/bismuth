@@ -59,7 +59,7 @@ relay/
   .mcp.json                    # declares the bismuth MCP server (dev repo); loaded per-session with the plugin (see docs/mcp/overview.md)
   hooks/hooks.json             # SessionStart / UserPromptSubmit / SubagentStart / SubagentStop / SessionEnd
   bin/                         # the 5 hook scripts + wrap.ts (the generic wrapper-mode session reporter)
-  lib/report.ts                # readHookInput + postRelay (best-effort) + runHook + gating — reused by wrap.ts too
+  lib/report.ts                # readHookInput + postRelay (best-effort) + hook() wrapper (gate + input + exit 0) + registerSession — reused by wrap.ts too
   lib/memory.ts                # collectTranscript — thin over @bismuth/memory, gated on BISMUTH_MEMORY_DIR
   shim/claude                  # PATH shim: exec real claude --plugin-dir <relay> (unchanged, claude-only)
   shim/agent-shim               # generic multi-call PATH shim for other ("wrapper"-mode) backends

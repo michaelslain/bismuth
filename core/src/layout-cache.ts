@@ -18,7 +18,7 @@ import {
     statSync,
     unlinkSync,
 } from 'node:fs'
-import { homedir } from 'node:os'
+import { bismuthHome } from './bismuthHome'
 import { join, basename } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { LayoutInput, Positions } from './layout'
@@ -48,7 +48,7 @@ const to2d = (p: number[]): [number, number] => [p[0], p[1]]
 
 const CACHE_DIR =
     process.env.BISMUTH_LAYOUT_CACHE_DIR ||
-    join(homedir(), '.bismuth', 'layout-cache')
+    bismuthHome('layout-cache')
 // v20: LinLog energy model + degree-proportional repulsion now DEFAULT (layout.ts LayoutOptions
 //      energyModel/degreeRepulsion, resolved in withDefaults) — attraction along links is ln(1+d)
 //      instead of a Hooke spring, and many-body repulsion is scaled by (degree+1) per node. Task 4's

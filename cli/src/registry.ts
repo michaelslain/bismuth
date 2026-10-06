@@ -1,66 +1,73 @@
-// The merged `bismuth` command registry, split out of index.ts so the binary and the skill drift
-// test (cli/test/skillCommands.test.ts) share ONE registry and ONE matcher. `resolveCommand` is the
+// The merged `bismuth` command registry, split out of index.ts so the binary and the parity
+// test (cli/test/mcpParity.test.ts) share ONE registry and ONE matcher. `resolveCommand` is the
 // longest-match rule the dispatcher uses: a three-word phrase ("daemon cron toggle") first, then a
 // two-word phrase ("task toggle"), then a one-word command ("graph").
 import type { CommandMap } from './types'
-import { commands as fileCmds } from './commands/file'
-import { commands as noteCmds } from './commands/note'
-import { commands as searchCmds } from './commands/search'
-import { commands as graphCmds } from './commands/graph'
-import { commands as taskCmds } from './commands/task'
-import { commands as baseCmds } from './commands/base'
-import { commands as calendarCmds } from './commands/calendar'
-import { commands as cardCmds } from './commands/card'
-import { commands as propCmds } from './commands/prop'
-import { commands as settingsCmds } from './commands/settings'
-import { commands as daemonCmds } from './commands/daemon'
-import { commands as drawCmds } from './commands/draw'
-import { commands as serveCmds } from './commands/serve'
-import { commands as exportCmds } from './commands/export'
-import { commands as apiCmds } from './commands/api'
-import { commands as appCmds } from './commands/app'
-import { commands as pageCmds } from './commands/page'
-import { commands as installCmds } from './commands/install'
-import { commands as backendsCmds } from './commands/backends'
-import { commands as doctorCmds } from './commands/doctor'
-import { commands as checkpointCmds } from './commands/checkpoint'
-import { commands as updateCmds } from './commands/update'
-import { commands as gcalCmds } from './commands/gcal'
-import { commands as relayCmds } from './commands/relay'
-import { commands as chatCmds } from './commands/chat'
-import { commands as docsCmds } from './commands/docs'
-import { commands as memoryCmds } from './commands/memory'
-import { commands as themeCmds } from './commands/theme'
-export const registry: CommandMap = {
-    ...fileCmds,
-    ...noteCmds,
-    ...searchCmds,
-    ...graphCmds,
-    ...taskCmds,
-    ...baseCmds,
-    ...calendarCmds,
-    ...cardCmds,
-    ...propCmds,
-    ...settingsCmds,
-    ...daemonCmds,
-    ...drawCmds,
-    ...serveCmds,
-    ...exportCmds,
-    ...apiCmds,
-    ...appCmds,
-    ...pageCmds,
-    ...installCmds,
-    ...backendsCmds,
-    ...doctorCmds,
-    ...checkpointCmds,
-    ...updateCmds,
-    ...gcalCmds,
-    ...relayCmds,
-    ...chatCmds,
-    ...docsCmds,
-    ...memoryCmds,
-    ...themeCmds,
-}
+import * as file from './commands/file'
+import * as note from './commands/note'
+import * as search from './commands/search'
+import * as graph from './commands/graph'
+import * as task from './commands/task'
+import * as base from './commands/base'
+import * as calendar from './commands/calendar'
+import * as card from './commands/card'
+import * as prop from './commands/prop'
+import * as settings from './commands/settings'
+import * as daemon from './commands/daemon'
+import * as draw from './commands/draw'
+import * as serve from './commands/serve'
+import * as exportCmd from './commands/export'
+import * as api from './commands/api'
+import * as app from './commands/app'
+import * as page from './commands/page'
+import * as install from './commands/install'
+import * as backends from './commands/backends'
+import * as doctor from './commands/doctor'
+import * as checkpoint from './commands/checkpoint'
+import * as update from './commands/update'
+import * as gcal from './commands/gcal'
+import * as relay from './commands/relay'
+import * as chat from './commands/chat'
+import * as docs from './commands/docs'
+import * as memory from './commands/memory'
+import * as theme from './commands/theme'
+
+/** Merge order is load-bearing: a later group's key overwrites an earlier one. */
+const GROUPS: { commands: CommandMap }[] = [
+    file,
+    note,
+    search,
+    graph,
+    task,
+    base,
+    calendar,
+    card,
+    prop,
+    settings,
+    daemon,
+    draw,
+    serve,
+    exportCmd,
+    api,
+    app,
+    page,
+    install,
+    backends,
+    doctor,
+    checkpoint,
+    update,
+    gcal,
+    relay,
+    chat,
+    docs,
+    memory,
+    theme,
+]
+
+export const registry: CommandMap = Object.assign(
+    {},
+    ...GROUPS.map(g => g.commands),
+)
 
 /** Longest-match a command phrase against the registry. Returns the matching registry key (three
  *  words, then two, then one), or null when the first words name no registered command. */

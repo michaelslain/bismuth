@@ -30,7 +30,7 @@ import DaemonPageHost from './DaemonPageHost'
 import { barReadouts } from './daemonPageModel'
 import type { DaemonMood } from './daemonFaceModel'
 import { settings, setSettings } from '../settings'
-import { refreshDaemonPages } from '../daemonInbox'
+import { refreshDaemonPages } from './daemonInboxApi'
 import { daemonChatArmed } from './daemonChatArm'
 import Text from '../ui/Text'
 import ChatComposerBar from '../chat/ChatComposerBar'
@@ -50,7 +50,7 @@ import {
     failedSorted,
     scheduledSorted,
     resolvedSorted,
-} from '../daemonInboxLogic'
+} from './daemonInboxLogic'
 import { cronNeedsAttention, processNeedsAttention } from './daemonAttention'
 import type { DaemonPage as DaemonPageFixture } from '../../../core/src/daemonPages'
 import type { DaemonCron, DaemonProcess } from '../../../core/src/daemonGraph'

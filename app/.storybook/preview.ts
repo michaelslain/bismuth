@@ -1,40 +1,9 @@
 import type { Preview } from 'storybook-solidjs-vite'
 
 // ── Fonts ─────────────────────────────────────────────────────────────────────
-// Same font faces the app entry (src/index.tsx) loads: all five Monaspace variants —
-// one family does the whole interface (prose/input values AND the UI monospace used
-// by buttons, chips, select triggers). Without these the components fall back to the
-// browser default.
-import '@fontsource/monaspace-xenon/400.css'
-import '@fontsource/monaspace-xenon/500.css'
-import '@fontsource/monaspace-xenon/700.css'
-import '@fontsource/monaspace-neon/400.css'
-import '@fontsource/monaspace-neon/500.css'
-import '@fontsource/monaspace-neon/700.css'
-import '@fontsource/monaspace-argon/400.css'
-import '@fontsource/monaspace-argon/500.css'
-import '@fontsource/monaspace-argon/700.css'
-import '@fontsource/monaspace-krypton/400.css'
-import '@fontsource/monaspace-krypton/500.css'
-import '@fontsource/monaspace-krypton/700.css'
-import '@fontsource/monaspace-radon/400.css'
-import '@fontsource/monaspace-radon/500.css'
-import '@fontsource/monaspace-radon/700.css'
-// Same reasoning as above, for the app entry's prose-serif imports (IBM Plex Serif, the default,
-// and Lora — visual-unification wave 0, §9.1 introduced the first). Without these lines here too,
-// every prose story — and FontSpecimen.stories.tsx, the one place a face is judged before any
-// real surface consumes it — would silently render against the Georgia fallback, passing every
-// visual check while proving nothing.
-import '@fontsource/ibm-plex-serif/400.css'
-import '@fontsource/ibm-plex-serif/400-italic.css'
-import '@fontsource/ibm-plex-serif/500.css'
-import '@fontsource/ibm-plex-serif/500-italic.css'
-import '@fontsource/ibm-plex-serif/600.css'
-import '@fontsource/ibm-plex-serif/600-italic.css'
-import '@fontsource/ibm-plex-serif/700.css'
-import '@fontsource/ibm-plex-serif/700-italic.css'
-import '@fontsource-variable/lora/wght.css'
-import '@fontsource-variable/lora/wght-italic.css'
+// The same faces the app entry loads, from one shared module (src/fonts.ts). Without them
+// the components fall back to the browser default.
+import '../src/fonts'
 
 // ── Stylesheets ───────────────────────────────────────────────────────────────
 // ONE global stylesheet (one-global-stylesheet, Task 14). It used to be ui.css + App.css +

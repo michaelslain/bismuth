@@ -6,7 +6,7 @@
 // importer.
 import { createSignal, Show } from 'solid-js'
 import type { DaemonPage } from '../../../core/src/daemonPages'
-import { STATUS_COLOR, STATUS_WORD } from '../daemonInboxLogic'
+import { STATUS_COLOR, STATUS_WORD } from './daemonInboxLogic'
 import { api } from '../api'
 import { pushToast } from '../Toast'
 import { relTimeISO } from '../relTime'

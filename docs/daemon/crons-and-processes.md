@@ -48,8 +48,6 @@ Machine-level identity/runtime state (`daemon.pid`, `devices.json`, `owner.json`
 | `RESTART_BACKOFF_RESET_MS` | `300000` | uptime past which a process restart resets backoff |
 | `RESTART_BACKOFF_MAX_MS` | `60000` | restart backoff ceiling |
 
-(`DEFAULT_DREAM_INTERVAL_MS` = 6 h also exists in config but is not used by the cron path — dreaming ships as the hourly `dream` cron below.)
-
 `FILE_WATCH_DEBOUNCE_MS` (`daemon/src/daemon/fileWatch.ts`, not `lib/config.ts`) = `2000` — how long the per-vault file watcher waits for quiet before flushing a batch of changed paths to file-change crons (see [File-change crons](#file-change-crons)).
 
 ---

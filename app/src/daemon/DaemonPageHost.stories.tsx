@@ -11,7 +11,7 @@ import { getOwner, onCleanup, type JSX } from 'solid-js'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import DaemonPageHost from './DaemonPageHost'
 import { settings, setSettings } from '../settings'
-import { refreshDaemonPages } from '../daemonInbox'
+import { refreshDaemonPages } from './daemonInboxApi'
 
 const meta = {
     title: 'Daemon/DaemonPageHost',

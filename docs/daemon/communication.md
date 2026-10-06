@@ -14,7 +14,7 @@ The two memory hooks ship in the **`relay/` workspace** and load **per-session, 
 - `core/src/terminal.ts` spawns each terminal tab's PTY with a PATH shim (`relay/shim/claude`) that makes a bare `claude` run `claude --plugin-dir <relay>`, plus env: `CLAUDE_TERMINAL_ID` (the tab's pty id), `CLAUDE_RELAY_URL` (this app's core server), and — **only when `settings.daemon.enabled` for this vault** — `BISMUTH_MEMORY_DIR` (the vault's `.daemon/memory`).
 - The plugin's `hooks/hooks.json` binds the hooks; nothing is installed in `~/.claude`. Outside a Bismuth terminal the plugin isn't even present, and each hook additionally gates on `CLAUDE_TERMINAL_ID` (a cheap belt-and-suspenders guard via `relay/lib/report.ts`).
 
-So memory is recalled into prompts + collected from transcripts **strictly for vault-scoped Bismuth sessions**, never globally. Both hooks are best-effort: they read JSON from stdin, swallow every error, and `exit(0)` within a budget (`runHook` in `lib/report.ts`) so they never block your session.
+So memory is recalled into prompts + collected from transcripts **strictly for vault-scoped Bismuth sessions**, never globally. Both hooks are best-effort: they read JSON from stdin, swallow every error, and `exit(0)` within a budget (`hook` in `lib/report.ts`) so they never block your session.
 
 | Script | Hook event | Memory job (gated on `BISMUTH_MEMORY_DIR`) | Agent-graph job (always) |
 | --- | --- | --- | --- |
@@ -106,7 +106,6 @@ Shape `{ ownerDeviceId, ownerLabel, updatedAt }`.
 
 - **Absent file = UNCLAIMED** → falls back to legacy single-device behavior.
 - `isOwner()` is `true` if `owner.json` is absent, otherwise `ownerDeviceId === thisDeviceId`.
-- `setOwnerDevice()` claims ownership but **rejects** if the device has not heartbeated into `devices.json` first.
 - `owner.json` is written byte-compatibly with what Bismuth reads — Bismuth is the cross-device coordinator that reads/writes it; the daemon only consults it.
 
 ### Owner-gating effect

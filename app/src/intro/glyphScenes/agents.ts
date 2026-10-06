@@ -9,6 +9,7 @@ import {
     type GlyphFrame,
     type GlyphScene,
 } from '../../ui/ascii/glyphScene'
+import { clamp01 } from '../../math'
 
 export const AGENTS: readonly string[] = [
     'claude',
@@ -41,7 +42,6 @@ const PACKET_PHASE_MS = 400
 const PACKET_ROWS = [2, 3, 4, 5, 6, 7, 8, 9, 11, 12].map(r => TOP + r)
 
 const centred = (width: number) => Math.floor((COLS - width) / 2)
-const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
 
 const labels = AGENTS.map(a => `[${a}]`)
 const NAMES_WIDTH =

@@ -11,7 +11,7 @@
 //
 // WHY THIS FILE EXISTS. Three tools (cssBaseline, probeStory, visual) each grew their own copy of
 // launch + port-poll + CDP-attach + teardown, and all three got the teardown wrong in three DIFFERENT
-// ways: visual.ts created a profile dir and never deleted it at all; cssBaseline.ts deleted it but
+// ways: appShots.ts created a profile dir and never deleted it at all; cssBaseline.ts deleted it but
 // after a SIGTERM that leaves Chrome still writing, so rmSync lost the race, threw ENOTEMPTY, and a
 // swallowing catch made it look clean — 20 profiles / 600 MB before anyone measured it, against ~2 MB
 // leaked by the entire rest of the repo's suite; probeStory.ts shipped the same SIGTERM bug and had it
@@ -24,15 +24,15 @@
 //
 // WHAT IT DELIBERATELY DOES NOT OWN — per-tool setup stays in the tool, because sharing it would
 // change what a tool measures:
-//   * `Emulation.setDeviceMetricsOverride` — visual.ts renders at deviceScaleFactor 2 for legible
+//   * `Emulation.setDeviceMetricsOverride` — appShots.ts renders at deviceScaleFactor 2 for legible
 //     screenshots; the two style-reading tools use 1. Baked in here, one of them would silently
 //     change resolution.
 //   * `Emulation.setTimezoneOverride` and the Date-freezing `Page.addScriptToEvaluateOnNewDocument` —
-//     cssBaseline.ts's determinism requirements. visual.ts deliberately does NOT freeze the clock
+//     cssBaseline.ts's determinism requirements. appShots.ts deliberately does NOT freeze the clock
 //     (its readiness loop waits for animation to settle, which needs time to actually advance), so
 //     forcing that on it would change its screenshots.
 //   * `--force-prefers-reduced-motion` — passed by the three style-reading tools (probeStory.ts,
-//     cssBaseline.ts x2, storyAudit.ts), NOT by visual.ts, for the same reason.
+//     cssBaseline.ts x2, storyAudit.ts), NOT by appShots.ts, for the same reason.
 //     It is a caller-supplied flag, never a default. It is also deliberately NOT passed by
 //     playCheck.ts, which is the one tool this flag actually matters for: playCheck runs
 //     INTERACTION assertions (play() functions), and forcing reduced motion there would make the
@@ -55,8 +55,6 @@ export const CALL_TIMEOUT_MS = Number(
 
 export const CHROME =
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /** A CDP call. Resolves with `result`, rejects if the protocol returned an `error` — callers rely on
  *  being able to catch that (cssBaseline.ts catches a dead session to name the story it died on). */
@@ -179,7 +177,7 @@ export async function launchChrome(
         } catch {
             /* not up yet */
         }
-        if (!wsUrl) await sleep(100)
+        if (!wsUrl) await Bun.sleep(100)
     }
     if (!wsUrl) {
         close()

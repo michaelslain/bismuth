@@ -4,7 +4,7 @@
 // Call makeStubChatSession() inside a story's render (or its play()'s setup), never at module scope
 // — the signals need a live reactive root, and Bun resolves solid-js to its server build outside one.
 import { createSignal } from 'solid-js'
-import type { TurnItem } from '../chatTranscript'
+import type { TurnItem } from './chatTranscriptLogic'
 import type { ChatManifest } from '../../../core/src/chat'
 import type {
     ChatAttachment,
@@ -15,7 +15,7 @@ import type {
     ChatSelectOption,
     ChatSession,
 } from './chatSession'
-import type { ChatProviderChoice } from '../chatProvider'
+import type { ChatProviderChoice } from './chatProvider'
 import type { ChatSearchHit, ChatSessionInfo, ChatScope } from '../api'
 import type { FileCandidate } from '../editor/atMention'
 

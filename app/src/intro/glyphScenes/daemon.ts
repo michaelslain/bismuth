@@ -8,6 +8,7 @@ import {
     type GlyphFrame,
     type GlyphScene,
 } from '../../ui/ascii/glyphScene'
+import { clamp01 } from '../../math'
 
 export const DAEMON_CRONS: readonly { expr: string; job: string }[] = [
     { expr: '*/15 * * * *', job: 'weave memory' },
@@ -63,7 +64,7 @@ function logTime(n: number): string {
 
 function drawPrompt(f: GlyphFrame, t: number): void {
     const shown = Math.floor(
-        PROMPT.length * Math.min(1, Math.max(0, t / (REVEAL_MS * 0.4))),
+        PROMPT.length * clamp01(t / (REVEAL_MS * 0.4)),
     )
     for (let k = 0; k < shown; k++)
         putChar(f, LEFT + k, TOP + 1, PROMPT[k], k === 0 ? 'accent' : 'fg')

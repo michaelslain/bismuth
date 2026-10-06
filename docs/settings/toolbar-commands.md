@@ -455,7 +455,7 @@ Neither caller passes a size: both rows render inside `ui/IconBar`, which sizes 
 Behavior of the current renderer:
 
 - It resolves the command via `resolveButtonCommands(props2.btn, commands())[0]` — the **first resolvable id** in the button's `command`/`commands` config (see precedence below); any further ids in a `commands:` list are never invoked.
-- `open-inbox` is special-cased as a daemon surface: the whole button is hidden while `settings.daemon.enabled` is off, and it carries a live `dueCount()` badge (from `app/src/daemonInbox.ts`) no other command carries.
+- `open-inbox` is special-cased as a daemon surface: the whole button is hidden while `settings.daemon.enabled` is off, and it carries a live `dueCount()` badge (from `app/src/daemon/daemonInboxApi.ts`) no other command carries.
 - If a command resolves, it renders a `CommandButton` with `btn.icon`, label `btn.tooltip ?? command.label`, and `onClick` running `command.action(e)`.
 - If nothing resolves (unknown/unbound id, or an empty `commands` list with no fallback `command`), it renders a **disabled** `CommandButton` with icon `btn.icon || "CircleHelp"` and label `Unknown command: <id>`.
 - The actual icon/label/badge/disabled markup lives in `CommandButton`, which knows nothing about commands, the daemon, or the inbox — `ToolbarButton` does all the resolution and hands it plain props.
@@ -537,4 +537,4 @@ toolbar:
 - [Keybindings](./keybindings.md) — the parallel split-data system for keyboard shortcuts (`KEYBINDING_CATALOG` + `matchesKeybinding`).
 - [App control](../mcp/app-control.md) — the `bismuth app run`/`POST /ui/command` surface that runs commands from outside the UI, including the `interactive` reply shape and the `UI_CONTROL_BLOCKLIST`.
 
-Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`, `app/src/shell/CommandButton.tsx`, `app/src/daemonInbox.ts`, `core/src/settings.ts`, `app/src/homePage.ts`
+Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`, `app/src/shell/CommandButton.tsx`, `app/src/daemon/daemonInboxApi.ts`, `core/src/settings.ts`, `app/src/homePage.ts`

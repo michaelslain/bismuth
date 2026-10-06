@@ -9,7 +9,6 @@
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { DaemonProcess } from '../../../core/src/daemonGraph'
-import { openContextMenu } from '../nativeMenu'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { TextButton } from '../ui/TextButton'
 import DaemonSection from './DaemonSection'
@@ -101,7 +100,7 @@ function DaemonProcesses(props: DaemonProcessesProps) {
     const openMenu = (process: DaemonProcess, e: MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        openContextMenu(e.clientX, e.clientY, menuItems(process), setMenu)
+        setMenu({ x: e.clientX, y: e.clientY, items: menuItems(process) })
     }
 
     const rowActions = (process: DaemonProcess) => {

@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import ChatPermissionCard from './ChatPermissionCard'
-import type { PermissionPart } from '../chatTranscript'
+import type { PermissionPart } from './chatTranscriptLogic'
 
 const meta = {
     title: 'Chat/ChatPermissionCard',

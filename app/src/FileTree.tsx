@@ -13,7 +13,7 @@ import { readCache, writeCache, scopedKey } from './viewCache'
 import { lastChange } from './serverVersion'
 import { refreshVaultTree } from './treeStore'
 import { ContextMenu, type MenuItem } from './ContextMenu'
-import { openContextMenu } from './nativeMenu'
+import { plural } from './plural'
 import { pushToast } from './Toast'
 import {
     renameEntries,
@@ -803,7 +803,11 @@ export function FileTree(props: {
         e.preventDefault()
         e.stopPropagation()
         // Native OS menu in the Tauri build; HTML ContextMenu fallback in the browser.
-        openContextMenu(e.clientX, e.clientY, buildMenuItems(node), setMenu)
+        setMenu({
+            x: e.clientX,
+            y: e.clientY,
+            items: buildMenuItems(node),
+        })
     }
 
     /** Move `from` into `targetDir` ("" = vault root). Guards no-op and into-self. Driven by the
@@ -1015,9 +1019,7 @@ export function FileTree(props: {
         const parts: string[] = []
         if (createdPaths.length)
             parts.push(
-                `Added ${createdPaths.length} file${
-                    createdPaths.length === 1 ? '' : 's'
-                }`,
+                `Added ${plural(createdPaths.length, 'file')}`,
             )
         if (skipped.length) parts.push(`skipped ${skipped.join(', ')}`)
         if (parts.length) pushToast(parts.join(' — '))

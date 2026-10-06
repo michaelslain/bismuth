@@ -17,23 +17,16 @@
  *
  * Usage:
  *   bun bench/invariants.ts                 # every story
- *   bun bench/invariants.ts --story ui-     # a prefix
+ *   bun bench/invariants.ts --story ui-     # a prefix; repeat the flag or comma-join for several
  *   bun bench/invariants.ts --json          # machine-readable
  */
 import { launchChrome } from './chromeSession'
 import { poolSize } from './poolSize'
 import { STORY_READY_EXPRESSION } from './storyReady'
+import { arg, argAll, BASE, has, loadStoryIndex } from './args'
 
-const arg = (n: string, d = '') => {
-    const i = process.argv.indexOf(`--${n}`)
-    return i >= 0 && process.argv[i + 1] && !process.argv[i + 1]!.startsWith('--')
-        ? process.argv[i + 1]!
-        : d
-}
-const has = (n: string) => process.argv.includes(`--${n}`)
 
-const BASE = arg('base', 'http://localhost:6006')
-const ONLY = arg('story')
+const ONLY = argAll('story')
 const W = Number(arg('width', '1280'))
 const H = Number(arg('height', '900'))
 /** Upper bound on how long to wait for a story to put SOMETHING on the page, and the quiet period
@@ -256,11 +249,8 @@ const CHECKS = `(() => {
     return JSON.stringify({ count: all.length, findings: out })
 })()`
 
-const index = await (await fetch(`${BASE}/index.json`)).json()
-const ids = Object.keys(index.entries)
-    .filter(id => !ONLY || id === ONLY || id.startsWith(ONLY))
-    .sort()
-if (!ids.length) throw new Error(`no stories matched (--story ${ONLY})`)
+const ids = (await loadStoryIndex(BASE, ONLY)).map(e => e.id as string)
+if (!ids.length) throw new Error(`no stories matched (--story ${ONLY.join(',')})`)
 
 const s = await launchChrome({ label: 'invariants', width: W, height: H })
 

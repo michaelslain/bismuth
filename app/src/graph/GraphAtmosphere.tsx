@@ -132,7 +132,7 @@ export function GraphAtmosphere(props: {
                 }
                 // v⁴: crushes the mid-range so only genuinely dense regions light up (chosen over v²/v³
                 // in an earlier sweep — v² read as fog over the whole graph; that sweep's absolute
-                // numbers predate the alpha-weighted probe fix in bench/visual.ts and aren't comparable
+                // numbers predate the alpha-weighted probe fix in bench/appShots.ts and aren't comparable
                 // to anything below, but the ORDERING isn't affected: v⁴ <= v² pointwise for every v in
                 // [0,1], so it reads as less-inked under any reasonable weighting).
                 //

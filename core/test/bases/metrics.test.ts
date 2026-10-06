@@ -1,7 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { parseBase } from '../../src/bases/parse'
 import {
-    evaluateMetric,
     metricResults,
     defaultMetric,
 } from '../../src/bases/metrics'
@@ -53,63 +52,6 @@ describe('parseBase stats normalization', () => {
             'views:\n  - type: stat\n    name: S\n    stats: "sum(priority)"\n',
         )
         expect(cfg.view.stats).toBeUndefined()
-    })
-})
-
-describe('evaluateMetric', () => {
-    test('count() counts all rows', () => {
-        const rows = [row({}), row({}), row({})]
-        expect(evaluateMetric(rows, 'count()')).toBe(3)
-    })
-
-    test('sum(priority) sums the property across rows', () => {
-        const rows = [row({ priority: 1 }), row({ priority: 2 }), row({ priority: 3 })]
-        expect(evaluateMetric(rows, 'sum(priority)')).toBe(6)
-    })
-
-    test('avg(priority) over no rows is null', () => {
-        expect(evaluateMetric([], 'avg(priority)')).toBeNull()
-    })
-
-    test('sum(price) / sum(units) divides two aggregates', () => {
-        const rows = [
-            row({ price: 10, units: 2 }),
-            row({ price: 20, units: 3 }),
-        ]
-        expect(evaluateMetric(rows, 'sum(price) / sum(units)')).toBe(6)
-    })
-
-    test('count(status == "done") counts rows where the expr is truthy', () => {
-        const rows = [
-            row({ status: 'done' }),
-            row({ status: 'open' }),
-            row({ status: 'done' }),
-        ]
-        expect(evaluateMetric(rows, 'count(status == "done")')).toBe(2)
-    })
-
-    test('max(priority) - min(priority)', () => {
-        const rows = [row({ priority: 1 }), row({ priority: 5 }), row({ priority: 3 })]
-        expect(evaluateMetric(rows, 'max(priority) - min(priority)')).toBe(4)
-    })
-
-    test('a parse error throws', () => {
-        expect(() => evaluateMetric([], 'sum(')).toThrow()
-    })
-
-    test('a bare identifier outside an aggregate throws', () => {
-        expect(() => evaluateMetric([row({ priority: 1 })], 'priority')).toThrow(
-            'priority must be inside sum, avg, min, max or count',
-        )
-    })
-
-    test('division by zero is null', () => {
-        const rows = [row({ price: 10, units: 0 })]
-        expect(evaluateMetric(rows, 'sum(price) / sum(units)')).toBeNull()
-    })
-
-    test('sum over no numbers is 0', () => {
-        expect(evaluateMetric([], 'sum(priority)')).toBe(0)
     })
 })
 

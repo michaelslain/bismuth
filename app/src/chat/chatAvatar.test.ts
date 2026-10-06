@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test'
 import { avatarIndex, chatAvatarMood } from './chatAvatar'
-import type { TurnItem } from '../chatTranscript'
+import type { TurnItem } from './chatTranscriptLogic'
 
 const user: TurnItem = { role: 'user', text: 'hi' }
 const bot: TurnItem = {

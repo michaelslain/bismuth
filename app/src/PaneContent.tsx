@@ -27,7 +27,7 @@ const DaemonPageHost = lazy(() => import('./daemon/DaemonPageHost'))
 // unmounting it on a tab/pane switch is harmless, because the chat's session (WS, transcript,
 // draft, streaming turn) lives in the registry App retains (chat/chatSessions.ts), not in the view.
 const ChatView = lazy(() =>
-    import('./ChatView').then(m => ({ default: m.ChatView })),
+    import('./chat/ChatView').then(m => ({ default: m.ChatView })),
 )
 
 import { EmptyPane } from './EmptyPane'

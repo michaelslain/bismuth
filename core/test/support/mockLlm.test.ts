@@ -4,8 +4,7 @@ import { tempDir } from '../helpers'
 // harness itself doesn't spawn claude/codex/opencode/etc; core/test/support/backendEnv.ts's per-CLI
 // mapping is exercised as a pure function here, not by actually running a CLI).
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DEFAULT_FIXTURE_DIR, startMockLlm } from './mockLlm'
@@ -170,9 +169,7 @@ describe('backendMockEnv', () => {
                     expect(() => backendMockEnv(id, MOCK_URL)).toThrow(
                         /workDir/,
                     )
-                    const dir = mkdtempSync(
-                        join(tmpdir(), `backendenv-driftguard-${id}-`),
-                    )
+                    const dir = tempDir(`backendenv-driftguard-${id}-`)
                     const env = backendMockEnv(id, MOCK_URL, dir)
                     expect(Object.keys(env).length).toBeGreaterThan(0)
                     const written = readdirSync(dir)
@@ -190,9 +187,7 @@ describe('backendMockEnv', () => {
                     expect(() => backendMockEnv(id, MOCK_URL)).toThrow(
                         /workDir/,
                     )
-                    const dir = mkdtempSync(
-                        join(tmpdir(), `backendenv-driftguard-${id}-`),
-                    )
+                    const dir = tempDir(`backendenv-driftguard-${id}-`)
                     expect(() => backendMockEnv(id, MOCK_URL, dir)).toThrow(
                         /openclawGatewayPort/,
                     )
@@ -210,9 +205,7 @@ describe('backendMockEnv', () => {
                     expect(() => backendMockEnv(id, MOCK_URL)).toThrow(
                         /workDir/,
                     )
-                    const dir = mkdtempSync(
-                        join(tmpdir(), `backendenv-driftguard-${id}-`),
-                    )
+                    const dir = tempDir(`backendenv-driftguard-${id}-`)
                     const env = backendMockEnv(id, MOCK_URL, dir)
                     expect(Object.keys(env).length).toBeGreaterThan(0)
                     const written = readFileSync(

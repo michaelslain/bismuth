@@ -32,7 +32,7 @@ The compiled binary reads `BISMUTH_DOCS_DIR` for the docs (`mcp/src/server.ts`) 
 
 ## Tools (token-frugal by design)
 
-The server in `mcp/src/server.ts` uses the low-level `@modelcontextprotocol/sdk` `Server` and `StdioServerTransport` with raw JSON Schema, not zod. Before a client calls a tool, it receives `SERVER_INSTRUCTIONS` from `mcp/src/instructions.ts`; `mcp/src/serverInstructions.test.ts` keeps that text under 160 words. The instructions do two jobs. First, they are the **guide triggers** (see [Guides](#guides) below): every time an agent creates, edits or debugs a base it is told to read `bases/authoring.md` first, and a vault conversion is pointed at its guide. Second, they prevent a common tagging mistake: an image or PDF uses the hidden companion note `<file>.<ext>.md`, set with `bismuth prop set <file.pdf> tags '[...]'`. Do not create a separate `<name>.md` solely to embed a binary and hold its tags. See [`vault/frontmatter.md`](../vault/frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs) for the complete companion-note model.
+The server in `mcp/src/server.ts` uses the low-level `@modelcontextprotocol/sdk` `Server` and `StdioServerTransport` with raw JSON Schema, not zod. Before a client calls a tool, it receives `SERVER_INSTRUCTIONS` from `mcp/src/instructions.ts`; `mcp/test/serverInstructions.test.ts` keeps that text under 160 words. The instructions do two jobs. First, they are the **guide triggers** (see [Guides](#guides) below): every time an agent creates, edits or debugs a base it is told to read `bases/authoring.md` first, and a vault conversion is pointed at its guide. Second, they prevent a common tagging mistake: an image or PDF uses the hidden companion note `<file>.<ext>.md`, set with `bismuth prop set <file.pdf> tags '[...]'`. Do not create a separate `<name>.md` solely to embed a binary and hold its tags. See [`vault/frontmatter.md`](../vault/frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs) for the complete companion-note model.
 
 It registers **six always-on tools** (plus, when the daemon is enabled for the vault, three daemon-gated memory tools + eleven daemon-management tools — see below). The always-on count is deliberately fixed: broad capabilities (e.g. app control) route through `bismuth_cli`/`bismuth_cli_help` rather than adding always-listed schemas, because this MCP is machine-wide and every extra always-listed tool costs context in every session on the machine. The daemon-gated tools sidestep that tax entirely by only appearing inside a daemon-enabled session. Docs (guides included) are served as **pointers + snippets, not full bodies**, so a session spends tokens only on the one page it actually needs:
 
@@ -65,7 +65,7 @@ The MCP and the CLI are two doors onto one capability set. Every MCP tool has a 
 | `page_list` / `page_create` / `page_resolve` | `page list` / `page create` / `page resolve` |
 | `bismuth_cli` / `bismuth_cli_help` | none (the bridge itself) |
 
-The docs and memory tools call shared code in `mcp/src/docs.ts` and `mcp/src/memory.ts`, which `cli/src/commands/docs.ts` and `memory.ts` import by relative path (`mcp/` never imports `core/`; `cli/` may import `mcp/`). The daemon and doctor tools go the other way: they spawn the CLI through `runCli`. Group reference: `cli/reference.md` § Docs commands, § Memory commands.
+The docs and memory tools call shared code in `mcp/src/docs.ts` and `mcp/src/memory.ts`, which `cli/src/commands/docs.ts` and `memory.ts` import by relative path (`mcp/` imports `core/` only for the visibility CLI gate, `core/src/visibilityCliGate.ts`; `cli/` may import `mcp/`). The daemon and doctor tools go the other way: they spawn the CLI through `runCli`. Group reference: `cli/reference.md` § Docs commands, § Memory commands.
 
 ## Guides
 
@@ -83,7 +83,7 @@ These used to ship as **skills**: a `skills/` tree, a `bismuth_skill` MCP tool, 
 
 Codex's `AGENTS.md` managed block (`core/src/chatProviders/codex/driver.ts`'s `CODEX_AGENTS_MD_CONTENT`, written via `core/src/agentBackends/agentsMd.ts`; opt-in per `settings.codex.writeAgentsMd`) repeats the same pointers via `bismuth_docs_read`. It doesn't inline any guide, since AGENTS.md is a memory/persona channel refreshed every session, not a place to duplicate a maintained page.
 
-Two drift tests keep the guides honest: one authoring page per view kind, every `docs/**/*.md` path a guide cites exists, and no guide still mentions the retired skill surface (`core/test/guides.test.ts`); every `bismuth <command>` a guide shows resolves in the CLI registry via `resolveCommand` (`cli/test/guideCommands.test.ts`). `mcp/src/serverInstructions.test.ts` checks every docs path the instructions name exists.
+Two drift tests keep the guides honest: one authoring page per view kind, every `docs/**/*.md` path a guide cites exists, and no guide still mentions the retired skill surface (`core/test/guides.test.ts`); every `bismuth <command>` a guide shows resolves in the CLI registry via `resolveCommand` (`cli/test/guideCommands.test.ts`). `mcp/test/serverInstructions.test.ts` checks every docs path the instructions name exists.
 
 ## App control — driving a running window (ZERO new MCP tools)
 

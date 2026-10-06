@@ -1,17 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import {
-    mkdtempSync,
-    readFileSync,
-    readdirSync,
-    statSync,
-    rmSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, readdirSync, statSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeFileAtomic, writeFileAtomicSync } from '../src/atomicWrite'
+import { tempDir } from './tempDirs'
 
 function scratch(): string {
-    return mkdtempSync(join(tmpdir(), 'atomic-'))
+    return tempDir('atomic-')
 }
 
 describe('writeFileAtomic', () => {

@@ -18,6 +18,8 @@
 // normalizer) are unit-tested in cssColor.test.ts; the browser-only resolution paths
 // (probe element, 1x1 canvas pixel read) degrade gracefully to the fallback.
 
+import { clamp01 } from '../math'
+
 /** Matches any CSS Color 4+ function html2canvas cannot parse. `color-mix(` first so the
  *  plain `color(` alternative can't shadow it (same-prefix); `light-dark(` for completeness. */
 const UNSAFE_COLOR_FN_RE =
@@ -36,14 +38,14 @@ const COLOR_SRGB_RE =
 function channelTo255(ch: string): number {
     if (ch === 'none') return 0
     const v = ch.endsWith('%') ? parseFloat(ch) / 100 : parseFloat(ch)
-    return Math.round(Math.min(1, Math.max(0, v)) * 255)
+    return Math.round(clamp01(v) * 255)
 }
 
 function alphaTo1(a: string | undefined): number {
     if (a === undefined) return 1
     if (a === 'none') return 0
     const v = a.endsWith('%') ? parseFloat(a) / 100 : parseFloat(a)
-    return Math.min(1, Math.max(0, v))
+    return clamp01(v)
 }
 
 /**

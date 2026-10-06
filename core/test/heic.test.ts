@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     convertHeicToJpeg,
@@ -10,6 +9,7 @@ import {
     looksLikeHeic,
 } from '../src/heic'
 import { AppError } from '../src/error'
+import { tempDir } from './tempDirs'
 
 // A 8×8 checkerboard PNG, hand-built so the fixture needs no binary blob in the repo. Encoded
 // with zlib STORED blocks (deflate's uncompressed mode) so we can emit a valid PNG without a
@@ -88,7 +88,7 @@ const CAN_MINT_HEIC =
  *  CAN_MINT_HEIC is true, so a broken fixture surfaces as a failing test rather than a skip. */
 async function makeHeicFixture(): Promise<Uint8Array | null> {
     if (!CAN_MINT_HEIC) return null
-    const dir = await mkdtemp(join(tmpdir(), 'bismuth-heic-fixture-'))
+    const dir = tempDir('bismuth-heic-fixture-')
     try {
         const png = join(dir, 'src.png')
         const heic = join(dir, 'src.heic')

@@ -6,7 +6,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, within } from 'storybook/test'
 import ChatAssistantTurn from './ChatAssistantTurn'
-import type { AssistantItem } from '../chatTranscript'
+import type { AssistantItem } from './chatTranscriptLogic'
 import {
     COMMAND_OUTPUT_ITEMS,
     CONVERSATION_ITEMS,

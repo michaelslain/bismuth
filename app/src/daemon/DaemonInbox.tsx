@@ -15,7 +15,7 @@ import {
     failedSorted,
     scheduledSorted,
     resolvedSorted,
-} from '../daemonInboxLogic'
+} from './daemonInboxLogic'
 import DaemonSection from './DaemonSection'
 import DaemonMoreLine from './DaemonMoreLine'
 import InboxRow from './InboxRow'

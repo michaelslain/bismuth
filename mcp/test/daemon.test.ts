@@ -1,7 +1,5 @@
-import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { test, expect, beforeEach, afterEach, afterAll } from 'bun:test'
+import { tempDir, sweepTempDirs } from './tempDirs'
 import {
     daemonTools,
     daemonEnabled,
@@ -29,7 +27,7 @@ let noVaultDir: string
 beforeEach(() => {
     delete process.env.BISMUTH_MEMORY_DIR
     delete process.env.BISMUTH_VAULT
-    noVaultDir = mkdtempSync(join(tmpdir(), 'bismuth-mcp-daemon-test-'))
+    noVaultDir = tempDir('bismuth-mcp-daemon-test-')
     process.chdir(noVaultDir)
 })
 
@@ -40,8 +38,9 @@ afterEach(() => {
     if (VAULT === undefined) delete process.env.BISMUTH_VAULT
     else process.env.BISMUTH_VAULT = VAULT
     process.chdir(CWD)
-    rmSync(noVaultDir, { recursive: true, force: true })
 })
+
+afterAll(sweepTempDirs)
 
 // ── gating ────────────────────────────────────────────────────────────────────
 

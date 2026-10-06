@@ -3,6 +3,7 @@
 // in the box grid, and the loop's gating arithmetic. No DOM, so it is unit-tested (glyphPaint.test.ts).
 import { COMPACT_FLOOR_SCALE } from '../../graph/asciiGrid'
 import type { GlyphFrame } from './glyphScene'
+import { clamp } from '../../math'
 
 export type GlyphRun = {
     row: number
@@ -95,5 +96,5 @@ export function fitScale(
 ): number {
     const s = Math.min(boxW / (sceneCols * cellW), boxH / (sceneRows * cellH))
     if (s >= 1 && s - 1 <= 0.01) return 1
-    return Math.min(MAX_SCALE, Math.max(COMPACT_FLOOR_SCALE, s))
+    return clamp(s, COMPACT_FLOOR_SCALE, MAX_SCALE)
 }

@@ -53,9 +53,7 @@
 // correctly reporting the leaked `openclaw`/`openclaw-acp` pids. All reverted after confirming each
 // failure.
 import { afterAll, afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { whichBinary } from '../../src/claudeWhich'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
@@ -73,6 +71,7 @@ import {
 } from '../support/openclawGateway'
 import { pidAlive } from '../support/acpFakeAgentProcess'
 import { shouldRunSlowTests } from '../slowGate'
+import { tempDir } from '../tempDirs'
 
 const HAS_OPENCLAW = whichBinary('openclaw') !== null
 // Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
@@ -275,7 +274,7 @@ describeOrSkip(
         const tempDirs: string[] = []
 
         async function newTempDir(prefix: string): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             tempDirs.push(dir)
             return dir
         }

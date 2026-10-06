@@ -10,7 +10,6 @@ import { describe, expect, test } from 'bun:test'
 import {
     parseGraphBlock,
     serializeGraphBlock,
-    emptyGraphBlock,
     freshNodeId,
     addNode,
     removeNode,
@@ -26,7 +25,7 @@ import {
 // ---- representative graphs for the spec -> md -> spec direction -------------
 
 const REPRESENTATIVE: Record<string, GraphBlockSpec> = {
-    empty: emptyGraphBlock(),
+    empty: { nodes: [], edges: [] },
     singleNode: { nodes: [{ id: 'alone' }], edges: [] },
     labeledNodes: {
         nodes: [
@@ -192,7 +191,7 @@ describe("graphBlock mutations (the widget's edit affordances)", () => {
     }
 
     test('freshNodeId avoids collisions', () => {
-        expect(freshNodeId(emptyGraphBlock())).toBe('node')
+        expect(freshNodeId({ nodes: [], edges: [] })).toBe('node')
         const taken: GraphBlockSpec = {
             nodes: [{ id: 'node' }, { id: 'node-2' }],
             edges: [],

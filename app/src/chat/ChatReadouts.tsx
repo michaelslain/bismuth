@@ -13,6 +13,7 @@ import { Show, type Component } from 'solid-js'
 import AsciiMeter from '../ui/ascii/AsciiMeter'
 import Text from '../ui/Text'
 import type { ChatSession } from './chatSession'
+import { plural } from '../plural'
 import styles from './ChatReadouts.module.css'
 
 export type ChatReadoutsProps = {
@@ -30,7 +31,7 @@ const CONTEXT_WARN = 0.8
 
 /** `1 mcp server down` / `2 mcp servers down`. Pure so its wording is pinned in one place. */
 export function mcpDownLabel(down: number): string {
-    return `${down} mcp server${down === 1 ? '' : 's'} down`
+    return `${plural(down, 'mcp server')} down`
 }
 
 const ChatReadouts: Component<ChatReadoutsProps> = props => {

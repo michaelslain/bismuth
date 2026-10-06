@@ -196,7 +196,7 @@
 
 /* ── Find bar (Cmd/Ctrl+F over a code/text or PDF preview) ─────────────────────────────
    Overlaid top-right of the scrolling body; visual twin of the editor's `.bismuth-find`
-   (Editor.css) but self-contained so PreviewView never depends on the editor being loaded. */
+   (global.css's CodeMirror theming section) but self-contained so PreviewView never depends on the editor being loaded. */
 /* `.preview-find` is this component's own `onKeyDown={e => e.stopPropagation()}` wrapper
    `<div>` (that stopPropagation is load-bearing — see the comment at its call site) around
    `ui/SearchBar`, not SearchBar's own `class` — SearchBar owns every visual of the field itself

@@ -22,7 +22,7 @@ All three consumers (`GraphView.tsx`, `intro/IntroGraph.tsx`, `graph/EmbeddedGra
 - **Rendering** (`AsciiGraphRenderer`) — the character-grid renderer: zoom, camera, interaction, labels, what didn't carry over from the old renderer.
 - **Graph Atmosphere** (`GraphAtmosphere.tsx`) — the density-field phosphor bloom effect.
 - **Daemon Node Visual Encoding** (`daemonViz.ts`) — how cron/process state maps to fill/border/opacity.
-- **Utility Functions** — `subgraphByKinds`, `mergeGraphs`, `emptyGraph`, `graphSig`.
+- **Utility Functions** — `subgraphByKinds`, `mergeGraphs`, `graphSig`.
 - **Graph Builder Pipeline Summary** — end-to-end diagrams for each mode's data flow.
 - **Key Invariants and Gotchas** — the things worth re-reading before you rely on them.
 
@@ -238,7 +238,7 @@ case "local":
 ```
 
 1. `subgraphByKinds(graph, SECOND_BRAIN_KINDS)` narrows to `note`/`tag` nodes (local mode is always over the 2nd brain, regardless of what mode was active before the lens was switched on).
-2. `localSubgraph(g, centerId, depth = 1)` (`core/src/graph.ts`) keeps `centerId` (the open note's graph id) and, by BFS over `g.edges` in **both** directions (outbound links and backlinks alike), every node within `depth` hops — one hop by default. It **strips** `community`/`communityPath`/`communityPathLabels` from every surviving node: a dozen notes coloured by the whole vault's community structure said nothing at this scale (see the function's own doc comment). If `centerId` isn't in `g` (e.g. nothing is open), it returns `emptyGraph()`.
+2. `localSubgraph(g, centerId, depth = 1)` (`core/src/graph.ts`) keeps `centerId` (the open note's graph id) and, by BFS over `g.edges` in **both** directions (outbound links and backlinks alike), every node within `depth` hops — one hop by default. It **strips** `community`/`communityPath`/`communityPathLabels` from every surviving node: a dozen notes coloured by the whole vault's community structure said nothing at this scale (see the function's own doc comment). If `centerId` isn't in `g` (e.g. nothing is open), it returns an empty graph (`{ nodes: [], edges: [] }`).
 
 The full-vault positions on the surviving nodes are meaningless at neighbourhood scale (a dozen notes scattered across the whole vault's ±2000-unit world), so `GraphView.tsx` re-lays the subgraph out **client-side** rather than rendering it as-is:
 
@@ -617,10 +617,6 @@ mergeGraphs([
 ])
 // → nodes: [{ id: "x", label: "First", ... }]  — "First" preserved
 ```
-
-### `emptyGraph()` (`graph.ts`)
-
-Returns `{ nodes: [], edges: [] }`.
 
 ### `graphSig(graph, vaultKey)` (`layout-cache.ts`)
 

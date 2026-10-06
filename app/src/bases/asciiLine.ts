@@ -6,6 +6,7 @@
 import { formatValue } from '../../../core/src/bases/chartText'
 import { dayDiff, monthDiff } from '../../../core/src/bases/trend'
 import type { Bin } from '../../../core/src/dates'
+import { clamp } from '../math'
 
 export interface LinePoint {
     label: string
@@ -48,7 +49,7 @@ function rowFor(
     if (span <= 0) return height - 1
     const frac = (value - scaleMin) / span
     const r = height - 1 - Math.round(frac * (height - 1))
-    return Math.max(0, Math.min(height - 1, r))
+    return clamp(r, 0, height - 1)
 }
 
 /**
@@ -248,7 +249,7 @@ export function buildLinePlot(
         const label = visible[i].label
         const center = colOf(i)
         let start = center - Math.floor(label.length / 2)
-        start = Math.max(0, Math.min(totalLen - label.length, start))
+        start = clamp(start, 0, totalLen - label.length)
         for (let k = 0; k < label.length; k++) labelChars[start + k] = label[k]
     }
     const axisLabels = labelChars.join('').replace(/\s+$/, '')
@@ -313,5 +314,5 @@ export function stepIndex(current: number | null, dir: ArrowDirection, n: number
     if (dir === 'first') return 0
     if (dir === 'last') return n - 1
     if (current === null) return dir === 'next' ? 0 : n - 1
-    return Math.max(0, Math.min(n - 1, current + (dir === 'next' ? 1 : -1)))
+    return clamp(current + (dir === 'next' ? 1 : -1), 0, n - 1)
 }

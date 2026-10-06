@@ -167,6 +167,29 @@ describe('installFreeAgent', () => {
         expect(last.total).toBe(BYTES.length)
     })
 
+    test('with BISMUTH_TMP_DIR set and no io.tmpDir, the work dir is created under it', async () => {
+        const root = tempDir('free-agent-env-')
+        const prev = process.env.BISMUTH_TMP_DIR
+        process.env.BISMUTH_TMP_DIR = root
+        try {
+            const { io } = fakeIO()
+            delete io.tmpDir
+            const seen: string[] = []
+            const base = io.exec!
+            io.exec = async (cmd, o) => {
+                if (cmd[0] === 'unzip') seen.push(cmd[cmd.indexOf('-d') + 1]!)
+                return base(cmd, o)
+            }
+            const r = await installFreeAgent(io)
+            expect(r.phase).toBe('ready')
+            expect(seen).toHaveLength(1)
+            expect(seen[0]!.startsWith(root)).toBe(true)
+        } finally {
+            if (prev === undefined) delete process.env.BISMUTH_TMP_DIR
+            else process.env.BISMUTH_TMP_DIR = prev
+        }
+    })
+
     test('a digest mismatch is an error and leaves nothing at the final path', async () => {
         const tampered = new TextEncoder().encode('something else entirely!!')
         const { io, binDir } = fakeIO({}, { bytes: tampered })

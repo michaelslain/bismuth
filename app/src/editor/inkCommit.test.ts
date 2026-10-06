@@ -24,13 +24,32 @@ import {
 import { scaleStrokes, translateStrokes } from '../drawing/lasso'
 import { STANDALONE_PAD } from './drawBlock'
 import { standaloneHeight } from './drawBlockGeometry'
+import type { DrawBlock } from '../../../core/src/drawing/drawBlocks'
+import type { Stroke } from '../../../core/src/drawing/model'
 import {
     insertDrawBlock,
-    removeDrawBlock,
     scanDrawBlocks,
     writeDrawBlock,
 } from '../../../core/src/drawing/drawBlocks'
-import type { Stroke } from '../../../core/src/drawing/model'
+
+function removeDrawBlock(text: string, block: DrawBlock): string {
+    const lines = text.split('\n')
+    let openIdx = block.fromLine - 1
+    const closeIdx = block.toLine - 1
+
+    // A standalone fence is preceded by a blank line that exists only to separate it from
+    // the previous block. Deleting the fence but not that blank line leaves it stacked
+    // against whatever blank line follows the fence, doubling the separator. Swallow it too
+    // so removal restores exactly one blank line, matching the attached case (which never had
+    // a leading blank to begin with).
+    if (block.standalone && openIdx > 0 && lines[openIdx - 1].trim() === '') {
+        openIdx -= 1
+    }
+
+    const before = lines.slice(0, openIdx)
+    const after = lines.slice(closeIdx + 1)
+    return [...before, ...after].join('\n')
+}
 
 const doc = 'First paragraph.\n\nSecond paragraph.\n'
 
@@ -745,6 +764,22 @@ describe('planCommit — never hangs a fence off a frontmatter close', () => {
 })
 
 describe('planCommit — the prose', () => {
+    test('removing a standalone fence leaves exactly one blank line between the prose', () => {
+        // insertDrawBlock writes no leading blank, so add the separator a real note carries.
+        const withFence = insertDrawBlock(
+            'Before.\n\nAfter.\n',
+            1,
+            [pen([10, 20, 180, 20, 40, 180])],
+            true,
+        ).replace('Before.\n```', 'Before.\n\n```')
+        const blocks = scanDrawBlocks(withFence)
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].standalone).toBe(true)
+        const out = removeDrawBlock(withFence, blocks[0])
+        expect(out).toContain('Before.\n\nAfter.')
+        expect(out).not.toContain('\n\n\n')
+    })
+
     test('leaves the prose untouched', () => {
         const out = planCommit(doc, pen([10, 20, 180, 20, 40, 180]), seams)
         expect(out).toContain('First paragraph.')

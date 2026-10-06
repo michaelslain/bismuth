@@ -8,7 +8,7 @@ import {
     renderCalloutHtml,
     type CalloutHeader,
 } from '../editor/callout'
-import { BISMUTH_SCAN_RE, bismuthWrapSource } from '../editor/bismuthWord'
+import { BISMUTH_SCAN_RE, iridescentBismuthWith } from '../editor/bismuthWord'
 import { renderCellListHtml } from '../editor/cellList'
 import { specForWikiEmbed } from '../editor/embedSpec'
 import { api } from '../api'
@@ -187,16 +187,7 @@ marked.use({ extensions: [mathBlockExt, mathInlineExt, calloutBlockExt] })
 // "bismuth" is plain text — no extension re-wraps it) and survives `sanitizeHtml` (span + class).
 const BISMUTH_PROTECT_RE =
     /```[\s\S]*?```|~~~[\s\S]*?~~~|`+[^`\n]*?`+|<a\b[^>]*>[\s\S]*?<\/a>|<span\b[^>]*>[\s\S]*?<\/span>|<[^>]+>|\[\[[^\]]*?\]\]|\[[^\]]*?\]\([^)]*?\)|https?:\/\/[^\s<>)\]]+/gi
-function iridescentBismuth(src: string): string {
-    // Shared mask → wrap → restore transform (editor/bismuthWord.ts) — this surface passes its own
-    // protected-span set (fenced/inline code, injected <a>/<span> + any tag, wikilinks, md links,
-    // bare URLs); the editable-table-cell renderer passes a different one.
-    return bismuthWrapSource(
-        src,
-        BISMUTH_PROTECT_RE,
-        w => `<span class="bismuth-word">${escapeHtml(w)}</span>`,
-    )
-}
+const iridescentBismuth = iridescentBismuthWith(BISMUTH_PROTECT_RE)
 
 // ── Lists inside table cells ──────────────────────────────────────────────────
 // A GFM cell is one line, so a `<br>`-separated run of `- item` / `1. item` markers is

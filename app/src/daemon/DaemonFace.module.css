@@ -19,7 +19,7 @@
 }
 
 /* THE RAINBOW IS THE WORDMARK'S. The glyph row also carries the global `.asc-wordmark` class
-   (global.css's `App.css` section's ASCII register: the --grad sheen, bold weight), the same
+   (global.css's app shell section's ASCII register: the --grad sheen, bold weight), the same
    class the top strip's
    `bismuth` and the intro hero use — never a copied gradient. This rule sets only the knobs
    `.asc-wordmark` exposes (`--wordmark-size`, `--wordmark-tracking`) and never font-size or

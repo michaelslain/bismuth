@@ -264,7 +264,7 @@ export function reorderTabs(
     const from = tabs.findIndex(t => t.id === tabId)
     if (from === -1) return tabs
     const adjusted = from < toIndex ? toIndex - 1 : toIndex
-    const clamped = Math.max(0, Math.min(adjusted, tabs.length - 1))
+    const clamped = clamp(adjusted, 0, tabs.length - 1)
     if (clamped === from) return tabs
     const next = tabs.slice()
     const [moved] = next.splice(from, 1)
@@ -353,7 +353,7 @@ export function detachLeafToTab(
     const next = tabs.map(t =>
         t.id === srcTabId ? { ...t, root: afterClose, focusId } : t,
     )
-    const clamped = Math.max(0, Math.min(toIndex, next.length))
+    const clamped = clamp(toIndex, 0, next.length)
     next.splice(clamped, 0, newTab)
     // The detached tab is unpinned; if it landed inside the pinned block, push it back out.
     return { tabs: sortPinned(next), newTabId: newTab.id }
@@ -364,13 +364,14 @@ export function detachLeafToTab(
 // the same clamp-then-sortPinned shape detachLeafToTab uses above, so an inserted unpinned
 // tab that lands inside the pinned block gets pushed back out.
 export function insertTabAt(tabs: Tab[], tab: Tab, index: number): Tab[] {
-    const clamped = Math.max(0, Math.min(index, tabs.length))
+    const clamped = clamp(index, 0, tabs.length)
     const next = tabs.slice()
     next.splice(clamped, 0, tab)
     return sortPinned(next)
 }
 
 import type { Rect } from './dnd/geometry'
+import { clamp } from './math'
 export type { Rect }
 export type Dir = 'left' | 'right' | 'up' | 'down'
 

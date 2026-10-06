@@ -6,6 +6,8 @@
 // which Select/DateFieldEditor never needed (their lists always sit flush with the trigger's left
 // edge and are narrower than the viewport).
 
+import { clamp } from '../math'
+
 export type AnchorRect = { top: number; left: number; placement: 'below' | 'above' }
 
 /** Where a `panel` of the given size should sit relative to `anchor`, inside `viewport`.
@@ -29,8 +31,8 @@ export function computeAnchorRect(
 
     const top = resolved === 'below' ? anchor.bottom + gap : anchor.top - gap - panel.height
 
-    const clampedTop = Math.max(0, Math.min(top, viewport.height - panel.height))
-    const left = Math.max(0, Math.min(anchor.left, viewport.width - panel.width))
+    const clampedTop = clamp(top, 0, viewport.height - panel.height)
+    const left = clamp(anchor.left, 0, viewport.width - panel.width)
 
     return { top: clampedTop, left, placement: resolved }
 }

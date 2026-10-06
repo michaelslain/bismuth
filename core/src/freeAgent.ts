@@ -14,9 +14,9 @@ import {
     renameSync,
     rmSync,
 } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { FREE_AGENT_BIN_DIR, whichBinary } from './claudeWhich'
+import { tmpFilesDir } from './tmpFiles'
 import { AUTO_ORDER, BACKENDS, type BackendId } from './agentBackends/catalog'
 
 export { FREE_AGENT_BIN_DIR }
@@ -138,7 +138,7 @@ function resolveIO(io?: Partial<FreeAgentIO>): FreeAgentIO {
         platform: io?.platform ?? process.platform,
         arch: io?.arch ?? process.arch,
         binDir: io?.binDir ?? FREE_AGENT_BIN_DIR,
-        tmpDir: io?.tmpDir ?? join(homedir(), '.bismuth', 'tmp'),
+        tmpDir: io?.tmpDir ?? tmpFilesDir(),
         idleTimeoutMs: io?.idleTimeoutMs ?? 30_000,
         totalTimeoutMs: io?.totalTimeoutMs ?? 600_000,
     }

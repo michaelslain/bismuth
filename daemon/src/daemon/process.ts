@@ -5,6 +5,7 @@ import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { openSync, closeSync } from 'node:fs'
 import { parseFrontmatter, frontmatterValue } from '../lib/frontmatter'
 import { isOwner } from '../lib/owner'
+import { pidAlive, readDaemonPid } from '../lib/platform'
 import { consumeTrigger, listTriggers } from '../lib/drainTriggers'
 import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import {
@@ -228,16 +229,7 @@ async function readPidFile(
     ctx: VaultContext,
     name: string,
 ): Promise<number | null> {
-    try {
-        const content = await readFile(
-            join(pidsDirFor(ctx), `${name}.pid`),
-            'utf-8',
-        )
-        const pid = parseInt(content.trim(), 10)
-        return Number.isFinite(pid) && pid > 0 ? pid : null
-    } catch {
-        return null
-    }
+    return readDaemonPid(join(pidsDirFor(ctx), `${name}.pid`))
 }
 
 async function writePidFile(
@@ -349,7 +341,7 @@ async function killAndConfirm(
     pid: number,
     timeoutMs: number = 2000,
 ): Promise<void> {
-    if (!isAlive(pid)) return
+    if (!pidAlive(pid)) return
     // Try the process group first (children of `detached: true` are in their
     // own group); fall back to the bare pid for processes we didn't spawn.
     try {
@@ -361,7 +353,7 @@ async function killAndConfirm(
     }
     const softDeadline = Date.now() + timeoutMs
     while (Date.now() < softDeadline) {
-        if (!isAlive(pid)) return
+        if (!pidAlive(pid)) return
         await new Promise(r => setTimeout(r, 50))
     }
     try {
@@ -372,7 +364,7 @@ async function killAndConfirm(
     } catch {}
     const hardDeadline = Date.now() + 1000
     while (Date.now() < hardDeadline) {
-        if (!isAlive(pid)) return
+        if (!pidAlive(pid)) return
         await new Promise(r => setTimeout(r, 25))
     }
 }
@@ -392,15 +384,6 @@ function killProcessGroup(mp: ManagedProcess): void {
     }
     // Note: intentionally do NOT clear mp.proc here. The exit handler needs it,
     // and stopProcesses polls mp.proc.pid to confirm actual exit before SIGKILL.
-}
-
-function isAlive(pid: number): boolean {
-    try {
-        process.kill(pid, 0)
-        return true
-    } catch {
-        return false
-    }
 }
 
 function forceKill(mp: ManagedProcess): void {
@@ -493,7 +476,7 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     // in `ps` means a previous instance of this def is still running. Kill it
     // first — otherwise we'd create a duplicate.
     const stalePid = await readPidFile(ctx, def.file)
-    if (stalePid && stalePid !== mp.proc?.pid && isAlive(stalePid)) {
+    if (stalePid && stalePid !== mp.proc?.pid && pidAlive(stalePid)) {
         console.warn(
             `[process] Stale pid ${stalePid} for "${def.name}" — killing before spawn`,
         )
@@ -504,7 +487,7 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     const psRows = await scanPs()
     const orphans = matchOrphans(def, mp.proc?.pid ?? null, psRows)
     for (const o of orphans) {
-        if (!isAlive(o.pid)) continue
+        if (!pidAlive(o.pid)) continue
         console.warn(
             `[process] Orphan pid ${o.pid} matches "${def.name}" (${o.command}) — killing before spawn`,
         )
@@ -652,7 +635,7 @@ export async function reapOrphans(ctx: VaultContext): Promise<void> {
 
     for (const def of defs) {
         const stalePid = await readPidFile(ctx, def.file)
-        if (stalePid && isAlive(stalePid)) {
+        if (stalePid && pidAlive(stalePid)) {
             console.warn(
                 `[process] Reaping orphan pid ${stalePid} for "${def.name}" (stale pid file)`,
             )
@@ -673,7 +656,7 @@ export async function reapOrphans(ctx: VaultContext): Promise<void> {
     for (const def of defs) {
         const orphans = matchOrphans(def, null, psRows)
         for (const o of orphans) {
-            if (!isAlive(o.pid)) continue
+            if (!pidAlive(o.pid)) continue
             console.warn(
                 `[process] Reaping orphan pid ${o.pid} for "${def.name}" (argv match: ${o.command})`,
             )
@@ -717,7 +700,7 @@ async function stopAndClear(
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
         const stillAlive = active.filter(
-            ([, mp]) => mp.proc?.pid && isAlive(mp.proc.pid),
+            ([, mp]) => mp.proc?.pid && pidAlive(mp.proc.pid),
         )
         if (stillAlive.length === 0) break
         await new Promise(resolve => setTimeout(resolve, 100))
@@ -725,7 +708,7 @@ async function stopAndClear(
 
     // Escalate to SIGKILL for any survivors
     for (const [, mp] of active) {
-        if (mp.proc?.pid && isAlive(mp.proc.pid)) {
+        if (mp.proc?.pid && pidAlive(mp.proc.pid)) {
             console.warn(
                 `[process] "${mp.def.name}" (PID ${mp.proc.pid}) did not exit on SIGTERM — sending SIGKILL`,
             )
@@ -739,7 +722,7 @@ async function stopAndClear(
     const hardDeadline = Date.now() + 2000
     while (Date.now() < hardDeadline) {
         const stillAlive = active.filter(
-            ([, mp]) => mp.proc?.pid && isAlive(mp.proc.pid),
+            ([, mp]) => mp.proc?.pid && pidAlive(mp.proc.pid),
         )
         if (stillAlive.length === 0) break
         await new Promise(resolve => setTimeout(resolve, 50))
@@ -816,18 +799,18 @@ export async function stopProcess(
 
     const softDeadline = Date.now() + timeoutMs
     while (Date.now() < softDeadline) {
-        if (!isAlive(pid)) break
+        if (!pidAlive(pid)) break
         await new Promise(r => setTimeout(r, 100))
     }
 
-    if (isAlive(pid)) {
+    if (pidAlive(pid)) {
         console.warn(
             `[process] "${name}" (PID ${pid}) did not exit on SIGTERM — sending SIGKILL`,
         )
         forceKill(mp)
         const hardDeadline = Date.now() + 2000
         while (Date.now() < hardDeadline) {
-            if (!isAlive(pid)) break
+            if (!pidAlive(pid)) break
             await new Promise(r => setTimeout(r, 50))
         }
     }
@@ -861,7 +844,7 @@ export async function listProcesses(
         let status: ProcessInfo['status'] = 'stopped'
 
         if (mp.proc?.pid) {
-            if (isAlive(mp.proc.pid)) {
+            if (pidAlive(mp.proc.pid)) {
                 pid = mp.proc.pid
                 running = true
                 status = 'running'
@@ -1012,7 +995,7 @@ const triggerIntervals = new Map<string, ReturnType<typeof setInterval>>()
 /** True when a managed process with this name (in this vault) has a live OS child. */
 function isRunning(ctx: VaultContext, name: string): boolean {
     const mp = managed.get(procKey(ctx, name))
-    return !!(mp?.proc?.pid && isAlive(mp.proc.pid))
+    return !!(mp?.proc?.pid && pidAlive(mp.proc.pid))
 }
 
 /**

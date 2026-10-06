@@ -2,8 +2,8 @@
 // surfaces call the same pure listDocs/searchDocs/readDoc (mcp/src/docs.ts), so a page found one
 // way reads identically the other. Headless — no vault, no server.
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { bismuthHome } from '../../../core/src/bismuthHome'
+import { resolve } from 'node:path'
 import type { CommandMap } from '../types'
 import { flag, positionals, fail, out } from '../args'
 import { listDocs, searchDocs, readDoc } from '../../../mcp/src/docs'
@@ -14,7 +14,7 @@ import { listDocs, searchDocs, readDoc } from '../../../mcp/src/docs'
 function docsRoot(): string {
     if (process.env.BISMUTH_DOCS_DIR) return process.env.BISMUTH_DOCS_DIR
     const repoDocs = resolve(import.meta.dir, '../../../docs')
-    return existsSync(repoDocs) ? repoDocs : join(homedir(), '.bismuth', 'docs')
+    return existsSync(repoDocs) ? repoDocs : bismuthHome('docs')
 }
 
 export const commands: CommandMap = {

@@ -49,12 +49,13 @@ relay/shim/zdotdir/.zsh_history
 # docs/contributing/testing.md's offline-testing section for how these get used.
 .offline-cli-tools/
 
-# visual-regression screenshots (bench/visual.ts)
+# visual-regression screenshots (bench/appShots.ts)
 shots/
 
 
 # full drift dump from bench/cssBaseline.ts (regenerated every failing run)
 bench/css-baseline.drift.txt
+bench/css-baseline.json
 
 # full findings dump from bench/moduleClassCheck.ts (regenerated every failing run)
 bench/module-class-check.txt

@@ -39,11 +39,11 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: 'the secret reset combo (Mod+Ctrl+Alt+Shift+R, matched via e.code === "KeyR") is deliberately undiscoverable — putting it in .settings defeats its only purpose; plus a backup Escape guard for the Cmd+O switcher gated on switcherOpen(), mirroring SwitcherBar’s own dismiss so it still works if focus left the input',
     },
     {
-        file: 'ChatComposer.tsx',
+        file: 'chat/ChatComposer.tsx',
         reason: 'ArrowUp/ArrowDown here only probe CodeMirror caret position (atTop/atBottom via moveVertically) to feed chatComposerKeys.ts — the actual chat-history-prev/next dispatch is matchesKeybinding-driven there, not here (see the doc comment on onKeyDown in this file)',
     },
     {
-        file: 'chatComposerKeys.ts',
+        file: 'chat/chatComposerKeys.ts',
         reason: "the chat composer's slash-popover branch — its own navigation keymap, which must keep owning those keys first, same as the CM completion popup",
     },
     {

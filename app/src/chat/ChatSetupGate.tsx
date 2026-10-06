@@ -30,9 +30,9 @@ import {
     setAgentStatus,
 } from './agentAvailability'
 import type { ChatSession } from './chatSession'
-import ChatSetup from '../ChatSetup'
+import ChatSetup from './ChatSetup'
 import Text from '../ui/Text'
-import { providerLabel, sanitizeChatProvider } from '../chatProvider'
+import { providerLabel, sanitizeChatProvider } from './chatProvider'
 import styles from './ChatSetupGate.module.css'
 
 export type ChatSetupGateProps = {

@@ -52,6 +52,7 @@ import {
     createRow,
     safeFilename,
 } from './rowWrites'
+import { clamp } from '../math'
 
 // Frontmatter key used to persist manual within-column ordering.
 export const ORDER_KEY = 'order'
@@ -169,7 +170,7 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
         // Target column's new integer ordering — explicit orders for every card keep the sort stable
         // (a fractional-only scheme drifts). Applied OPTIMISTICALLY (see the clear-effect above).
         const others = deps.sortedRows(group).filter(r => rowId(r) !== id)
-        const i = Math.max(0, Math.min(insertAt, others.length))
+        const i = clamp(insertAt, 0, others.length)
         const newList = [...others.slice(0, i), dragged, ...others.slice(i)]
         deps.drag().snapshotRects()
         o.setPending(prev => {

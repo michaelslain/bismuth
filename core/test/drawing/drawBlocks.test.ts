@@ -4,7 +4,6 @@ import {
     scanDrawBlocks,
     writeDrawBlock,
     insertDrawBlock,
-    removeDrawBlock,
 } from '../../src/drawing/drawBlocks'
 import { encodeStrokes } from '../../src/drawing/inkCodec'
 import type { Stroke } from '../../src/drawing/model'
@@ -237,34 +236,5 @@ describe('insertDrawBlock', () => {
     test('leaves an LF document on LF', () => {
         const out = insertDrawBlock('One.\n\nTwo.\n', 1, strokes)
         expect(out).not.toContain('\r')
-    })
-})
-
-describe('removeDrawBlock', () => {
-    test('removes an attached fence and leaves the prose intact', () => {
-        const [b] = scanDrawBlocks(attached)
-        expect(removeDrawBlock(attached, b)).toBe('Some paragraph.\n\nAfter.\n')
-    })
-
-    // Fix round, item 2 (BLOCKING). A standalone fence is sandwiched between two blank lines
-    // (one separating it from the paragraph above, one from the paragraph below). Removing
-    // just the fence lines left both blank lines behind, doubling the separator. This test
-    // covers exactly the standalone case the plan's original test never exercised — the
-    // attached case above happens to collapse correctly on its own, which is why the gap was
-    // invisible.
-    test('removes a standalone fence without leaving a doubled blank line', () => {
-        const [b] = scanDrawBlocks(standalone)
-        expect(removeDrawBlock(standalone, b)).toBe('Some paragraph.\n\nAfter.\n')
-    })
-
-    // The blank-line swallow keys on the fence's declared mode, not on what precedes it: an
-    // ATTACHED fence that happens to sit under a blank line must keep that blank line, because
-    // it is the user's paragraph break and not a separator this module put there.
-    test('keeps the blank line above an attached fence', () => {
-        const spaced = `Some paragraph.\n\n\`\`\`draw\n${payload}\n\`\`\`\n\nAfter.\n`
-        const [b] = scanDrawBlocks(spaced)
-        expect(removeDrawBlock(spaced, b)).toBe(
-            'Some paragraph.\n\n\nAfter.\n',
-        )
     })
 })

@@ -26,6 +26,7 @@
 // as AGENTS.md.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isRecord } from '../isRecord'
 
 export const CODEX_HOOK_SCRIPT_NAME = 'bismuth-relay-hook.ts'
 const CODEX_DIR_NAME = '.codex'
@@ -176,10 +177,6 @@ export function buildCodexHooksJson(scriptPath: string): CodexHooksJson {
     for (const [event, arg, matcher] of HOOK_TABLE)
         hooks[event] = [entry(arg, matcher)]
     return { description: HOOKS_JSON_DESCRIPTION, hooks }
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-    return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
 /** True when a hooks.json matcher ENTRY is one Bismuth authored — matched by its command string

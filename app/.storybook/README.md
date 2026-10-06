@@ -1,7 +1,8 @@
-# Storybook for `app/src/ui/`
+# Storybook for the Bismuth app
 
-Visual catalog for the Bismuth Solid.js UI primitives. This is the visual **spec**
-the eventual React (Claude Design) ports must match, so faithfulness matters.
+Visual catalog of the whole app: the `ui/` primitives plus the feature surfaces (bases, calendar,
+graph, chat, shell, daemon, ...). Stories sit next to the components they document
+(`src/**/*.stories.@(ts|tsx)`), and this catalog is the visual-verification surface.
 
 ```bash
 cd app
@@ -22,51 +23,52 @@ bun run build-storybook  # static build → app/storybook-static/
   from **`storybook-solidjs-vite`** directly (it bundles the renderer; there is no separate
   `storybook-solidjs@9` package).
 
-## What makes the Solid components render STYLED (the reusable finding)
+## What makes components render like the real app
 
-The primitives are ~entirely CSS-custom-property driven. Getting them to render like the
-real app takes **three layers**, all wired in `preview.ts` + `preview-head.html`:
+The components carry no colour values of their own — every colour, surface, border and radius
+comes from CSS custom properties. `preview.ts` + `preview-head.html` wire up what the app
+normally provides:
 
-1. **Fonts** — import the same `@fontsource` faces the app entry loads (all five Monaspace
-   variants — Xenon/Neon/Argon/Krypton/Radon). Without them buttons/chips/select triggers
-   fall back to browser mono.
+1. **Fonts** — `import '../src/fonts'`, the same module the app entry (`src/index.tsx`) imports
+   (Monaspace variants + IBM Plex Serif + Lora). Without them text falls back to browser defaults.
 
-2. **Stylesheets** — one import, `../src/global.css`, whose sections carry (among others):
-   - the `App.css` section — global `:root` first-paint CSS-var *fallbacks*, the semantic tokens
-     the theme map does **not** provide (`--danger`, `--success`, `--shadow-*`), the `body`
-     background/color, `* { box-sizing }`, and the `button { font: inherit }` reset.
-   - the `ui/ui.css` section — the primitives' own chrome (`.btn`, `.ui-input`, `.ui-select-*`,
-     `.ui-overlay`, `.chip-toggle`).
-   - the `ui/popover/popover.css` section — the shared floating-list surface that `Select`'s open
-     dropdown (`<PopoverList>`) renders into.
+2. **Stylesheet** — one import, `../src/global.css`: the global layer only (tokens, element reset,
+   classes written into runtime-generated HTML). Component rules live in each component's own
+   `.module.css`, which the component imports itself.
 
-3. **Runtime theme tokens (the crucial step)** — global.css's `App.css` section only defines the color vars as
-   dark *fallbacks*. In the real app, `App.tsx` projects the **selected theme's** palette
-   onto `:root` at runtime via `settingsToCssVars(settings)`. `preview.ts` replicates that
-   with the schema `DEFAULTS`, so the catalog renders in the real default theme
-   (**ink**), identical to a fresh vault:
+3. **Runtime theme tokens** — `global.css` only holds first-paint fallbacks. `App.tsx` projects
+   the selected theme onto `:root` via `settingsToCssVars`; `preview.ts` calls the same
+   projection over the schema `DEFAULTS`, so stories render in the real default theme (`ink`).
+   Never hardcode a stand-in for a token.
 
-   ```ts
-   import { settingsToCssVars, setCssVars } from "../src/settingsCssVars";
-   import { DEFAULTS } from "../../core/src/schema/settingsSchema";
-   setCssVars(settingsToCssVars(DEFAULTS as unknown as Settings));
-   ```
+4. **Theme axis** — a toolbar `Theme` global re-projects on every render (the four built-in
+   themes plus the example custom theme `dusk` from `ui/_themeFixtures`). A story can pass
+   `parameters.tokens` to override `appearance.tokens`.
 
-   > For the React port: the components carry **no color values of their own** — every color,
-   > surface, border, radius token comes from these `--vars`. Port `settingsToCssVars` +
-   > `themes.ts` (both are DOM/Solid-free already) and project the same variables, or the
-   > ports will render unstyled.
+5. **App-shell font** — a global `body` font rule mirroring `shell/AppFrame.module.css`, since
+   stories mount without the `.app-shell` ancestor that declares it.
 
-4. **`preview-head.html`** sets `window.__BISMUTH_FIRST_RUN__ = true` **before** the preview
-   bundle evaluates. `settingsCssVars.ts` transitively imports `settings.ts`, whose module
-   scope opens an `EventSource` + `GET /settings` to live-sync from the core backend. There is
-   no backend in Storybook; the flag makes `settings.ts` take its first-run branch and skip
-   the network sync (otherwise: failed-fetch spam).
+6. **`fakeTransport`** — `setTransport(fakeTransport(...))` installs an in-memory backend
+   (`ui/_fakeTransport`, seeded from `ui/_baseFixtures`), so components that fetch on mount
+   settle instead of sitting in "Loading…".
 
-## Notes for the React port
+7. **`preview-head.html`** sets `window.__BISMUTH_FIRST_RUN__ = true` before the preview bundle
+   evaluates, so `settings.ts` takes its first-run branch and skips the `EventSource` +
+   `GET /settings` sync (there is no backend: otherwise failed-fetch spam).
 
-- Only **`Button`** (via `buttonClass`) and **`Chip`** have real visual variant axes. See
-  each `*.stories.tsx` header for the enumerated variants.
-- **`ChipToggle` tones**: the `tone` prop (`teal | blue | violet | green | gold | rose`, accent
-  when unset) maps to Button's `accent` prop as `var(--<tone>)`, which `.btn--text.btn--selected`
-  in `ui/Button.module.css` reads — so every tone has its own *selected* colour.
+## `main.ts`
+
+- **`cacheDir`** is per checkout (`app/.storybook-cache/sb-vite`, gitignored). The default lives
+  under `node_modules/.cache`, which a worktree symlinks to the main checkout, so two Storybooks
+  would re-optimize deps into one directory and white-screen each other's open tab.
+- **`server.fs.allow`** is widened to the real workspace root. A worktree has its own `bun.lock`,
+  which stops Vite's auto-detection at the worktree root, and symlinked `node_modules` assets
+  (`@font-face` urls) then 403 and silently fall back to a system font.
+
+## Notes
+
+- A story id comes from `meta.title`, not the file path: copy it from
+  `curl -s :6006/index.json | jq -r '.entries|keys[]'`.
+- `ChipToggle` tones (`teal | blue | violet | green | gold | rose`, accent when unset) map to
+  Button's `accent` prop as `var(--<tone>)`, which `.btn--text.btn--selected` in
+  `ui/Button.module.css` reads.

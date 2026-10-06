@@ -1,6 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     serviceUnitPath,
@@ -8,6 +7,7 @@ import {
     CLAUDE_BOT_UNIT,
     type Exec,
 } from '../src/serviceUnit'
+import { tempDir } from './tempDirs'
 
 function rec(code = 0) {
     const calls: string[][] = []
@@ -32,7 +32,7 @@ describe('serviceUnitPath', () => {
 
 describe('removeServiceUnit', () => {
     test('darwin: unload then delete, idempotent', async () => {
-        const home = mkdtempSync(join(tmpdir(), 'svc-'))
+        const home = tempDir('svc-')
         const p = serviceUnitPath('darwin', home, CLAUDE_BOT_UNIT)!
         mkdirSync(join(home, 'Library', 'LaunchAgents'), { recursive: true })
         writeFileSync(p, '<plist/>')
@@ -55,7 +55,7 @@ describe('removeServiceUnit', () => {
         expect(r2.calls).toEqual([])
     })
     test('a failed unload still deletes the file and warns', async () => {
-        const home = mkdtempSync(join(tmpdir(), 'svc-'))
+        const home = tempDir('svc-')
         const p = serviceUnitPath('darwin', home, CLAUDE_BOT_UNIT)!
         mkdirSync(join(home, 'Library', 'LaunchAgents'), { recursive: true })
         writeFileSync(p, '<plist/>')
@@ -67,7 +67,7 @@ describe('removeServiceUnit', () => {
         expect(existsSync(p)).toBe(false)
     })
     test('linux: stop, disable, rm, daemon-reload', async () => {
-        const home = mkdtempSync(join(tmpdir(), 'svc-'))
+        const home = tempDir('svc-')
         const p = serviceUnitPath('linux', home, CLAUDE_BOT_UNIT)!
         mkdirSync(join(home, '.config', 'systemd', 'user'), { recursive: true })
         writeFileSync(p, '[Unit]')

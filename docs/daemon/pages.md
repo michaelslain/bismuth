@@ -79,12 +79,12 @@ Both the sidecar dir (`.state/`) and the trigger dir (`.triggers/`, below) are d
 due = status === "pending" && now >= (deliverAt ?? createdAt)
 ```
 
-There is **no** delivery write, no `queued`/`delivered` state, and no backend delivery ticker — `due` is re-evaluated fresh every time the frontend reads `GET /daemon/pages` (`app/src/daemonInboxLogic.ts` `isDue`).
+There is **no** delivery write, no `queued`/`delivered` state, and no backend delivery ticker — `due` is re-evaluated fresh every time the frontend reads `GET /daemon/pages` (`app/src/daemon/daemonInboxLogic.ts` `isDue`).
 
 - **"Deliver on next open"** = omit `deliverAt` → due immediately.
 - **"Deliver at a time"** = a future `deliverAt` → not due until then, even if the app never closed.
 
-The frontend evaluates this at two points: a cold-launch check (`App.tsx`'s `onMount`, catching anything that became due while closed) and a live poll while the app runs — 30s normally, tightened to ~5s while any page is `working`, plus an immediate refresh on any structural vault change (`serverVersion.ts` `lastChange()`). Both are gated on `settings.daemon.enabled`. The frontend diffs the previous due-id snapshot to toast only newly-due pages (`app/src/daemonInbox.ts`).
+The frontend evaluates this at two points: a cold-launch check (`App.tsx`'s `onMount`, catching anything that became due while closed) and a live poll while the app runs — 30s normally, tightened to ~5s while any page is `working`, plus an immediate refresh on any structural vault change (`serverVersion.ts` `lastChange()`). Both are gated on `settings.daemon.enabled`. The frontend diffs the previous due-id snapshot to toast only newly-due pages (`app/src/daemon/daemonInboxApi.ts`).
 
 ## Button-press protocol
 

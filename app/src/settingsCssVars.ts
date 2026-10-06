@@ -20,7 +20,7 @@ import { customThemeOverrides } from './customThemes'
  *  The color tokens (--bg/--fg/--border/--panel/--text-muted/surfaces/etc.) all come from
  *  the selected Bismuth theme (app/src/themes.ts), which carries the full base palette —
  *  background, surfaces, border, text, muted, accent, and the graph node ramp — so the whole
- *  app + graph share one source of color. global.css's `App.css` section :root keeps only literal first-paint fallbacks. */
+ *  app + graph share one source of color. global.css's tokens section :root keeps only literal first-paint fallbacks. */
 export function settingsToCssVars(s: Settings): Record<string, string> {
     const a = resolveAppearance(s.appearance)
     const palette = a.accentPalette?.length

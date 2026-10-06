@@ -6,9 +6,9 @@ import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
 import CodeBlock from '../ui/CodeBlock'
-import { chipSummary } from '../chatToolIcon'
+import { chipSummary } from './chatToolIcon'
 import { summarizeInput } from './chatToolFormat'
-import type { PermissionPart } from '../chatTranscript'
+import type { PermissionPart } from './chatTranscriptLogic'
 import styles from './ChatPermissionCard.module.css'
 
 export type ChatPermissionCardProps = {

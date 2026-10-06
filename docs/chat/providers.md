@@ -63,7 +63,7 @@ With no `opencode` on the machine, Bismuth can download opencode's official GitH
 
 ## opencode-native surfaces (commands, auth, Zen free rotation)
 
-Three opencode-specific affordances (all pure parts unit-tested in `core/test/chatProviders/opencodeTranslate.test.ts` + `app/src/chatProvider.test.ts`), working in either mode:
+Three opencode-specific affordances (all pure parts unit-tested in `core/test/chatProviders/opencodeTranslate.test.ts` + `app/src/chat/chatProvider.test.ts`), working in either mode:
 
 - **Command autocomplete** — opencode's command registry rides the manifest, so typing `/` in the composer autocompletes opencode commands exactly like Claude's. Server mode reads it off the typed `GET /command`; run mode parses `opencode debug config`'s resolved `command` key (config-dir commands + `opencode.json(c)` `command` entries + **plugin-registered** commands) — both merged with the built-ins `/init` and `/review` (`withOpencodeBuiltinCommands`). Descriptions ride the manifest's `commandDetails` and show in the "/" popover. A sent turn whose text leads with a **known** `/command` runs as the server's `session.command()` (or `opencode run --command <name> <args>` in run mode); an unknown `/word` flows through as prose.
 - **Provider credentials** — the opencode credential state (`opencode auth list`, parsed by `parseOpencodeAuthList`) is emitted as an `auth` frame per session open — a plain CLI spawn, unaffected by which mode a session is running in (verified live it doesn't contend with a running server's sqlite). The client stores it as `authProviders`, but there is **no header auth pill** and no component renders that list: credentials are managed in `OpencodeProviderManager`, hosted in the right column of the model dialog when the opencode connector is selected ([opencode providers](opencode-providers.md)). `opencode auth login` is an interactive CLI wizard (providers, API keys, **opencode Zen**), so the manager's footer offers **open terminal** (opens a Bismuth terminal tab via the `bismuth-open-terminal` event) and **copy command** for what its connect rows do not cover.
@@ -71,7 +71,7 @@ Three opencode-specific affordances (all pure parts unit-tested in `core/test/ch
 
 ## Graceful degradation (what opencode sessions still don't have)
 
-Claude-specific surfaces are **hidden, not broken**, for opencode sessions (`providerCan`, `app/src/chatProvider.ts` — see [backends.md](backends.md)):
+Claude-specific surfaces are **hidden, not broken**, for opencode sessions (`providerCan`, `app/src/chat/chatProvider.ts` — see [backends.md](backends.md)):
 
 - **Permission MODE select** (in the controls row) — server mode CAN raise and answer a live permission ask (`permissionPrompts: true`), but there is no verified way to switch a session's permission MODE (no Default/Plan/AcceptEdits/Bypass vocabulary in the server API), so `permissionModes` stays false and the mode `Select` stays hidden either way.
 - **Effort toggle** (in the model dialog) — hides itself: opencode models carry `effortLevels: []` on the `models` frame in either mode.
@@ -123,4 +123,4 @@ The seven ACP backends — `cline`, `gemini`, `goose`, `openclaw`, `hermes`, and
 
 ---
 
-Source: `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/chatProviders/opencode/opencodeTranslate.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/chatProviders/codex/protocol.ts`, `core/src/chatProviders/acp/driver.ts`, `core/src/chatProviders/acp/agents.ts`, `core/src/chatProviders/acp/protocol.ts`, `core/src/agentBackends/catalog.ts`, `core/src/schema/settingsSchema.ts`, `app/src/chatProvider.ts`, `app/src/chat/ChatModelPicker.tsx`, `app/src/chat/ChatControls.tsx`, `app/src/chat/OpencodeProviderManager.tsx`.
+Source: `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/chatProviders/opencode/opencodeTranslate.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/chatProviders/codex/protocol.ts`, `core/src/chatProviders/acp/driver.ts`, `core/src/chatProviders/acp/agents.ts`, `core/src/chatProviders/acp/protocol.ts`, `core/src/agentBackends/catalog.ts`, `core/src/schema/settingsSchema.ts`, `app/src/chat/chatProvider.ts`, `app/src/chat/ChatModelPicker.tsx`, `app/src/chat/ChatControls.tsx`, `app/src/chat/OpencodeProviderManager.tsx`.

@@ -1,3 +1,4 @@
+import { bismuthHome } from './bismuthHome'
 // core/src/daemon.ts
 // Bismuth's read/write window onto the daemon's MACHINE-LEVEL identity state files.
 // Machine-level identity (device-id, devices.json, owner.json, daemon.pid) now lives
@@ -41,7 +42,7 @@ import { AppError } from './error'
 /** The daemon's machine-level identity dir: BISMUTH_DAEMON_DIR env, else ~/.bismuth/daemon. */
 export function daemonMachineDir(): string {
     return (
-        process.env.BISMUTH_DAEMON_DIR || join(homedir(), '.bismuth', 'daemon')
+        process.env.BISMUTH_DAEMON_DIR || bismuthHome('daemon')
     )
 }
 

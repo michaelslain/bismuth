@@ -2,12 +2,12 @@
 // .settings. A cloned vault must not execute anything until the owner approves it.
 import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { bismuthHome } from './bismuthHome'
+import { dirname, resolve } from 'node:path'
 
 /** process.env.BISMUTH_TRUST_FILE || ~/.bismuth/trusted-commands.json */
 export function trustFilePath(): string {
-    return process.env.BISMUTH_TRUST_FILE || join(homedir(), '.bismuth', 'trusted-commands.json')
+    return process.env.BISMUTH_TRUST_FILE || bismuthHome('trusted-commands.json')
 }
 
 const hash = (command: string) => createHash('sha256').update(command).digest('hex')

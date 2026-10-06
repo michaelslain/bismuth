@@ -85,8 +85,7 @@
 // broken once during development to confirm it actually fails when the thing it claims stops being
 // true.
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { whichBinary } from '../../src/claudeWhich'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
@@ -94,6 +93,7 @@ import { backendMockEnv } from '../support/backendEnv'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
 import { shouldRunSlowTests } from '../slowGate'
+import { tempDir } from '../tempDirs'
 
 const HAS_GEMINI = whichBinary('gemini') !== null
 // Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
@@ -175,7 +175,7 @@ describeOrSkip(
         const tempDirs: string[] = []
 
         async function newTempDir(prefix: string): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             tempDirs.push(dir)
             return dir
         }

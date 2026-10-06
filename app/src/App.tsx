@@ -19,7 +19,13 @@ import {
     injectedVaultPath,
     summarizeSync,
 } from './api'
-import { readCache, writeCache, scopedKey } from './viewCache'
+import {
+    readCache,
+    writeCache,
+    readRaw,
+    writeRaw,
+    scopedKey,
+} from './viewCache'
 import { vaultTree } from './treeStore'
 import { dedupeInflight } from './inflight'
 import { decideGraphRefresh } from './graphRefreshGate'
@@ -51,21 +57,20 @@ import { ToastHost, pushToast, dismissToast, updateToast } from './Toast'
 import { applyUpdateAndRelaunch } from './updateCheck'
 import GalleryHost from './ui/gallery/GalleryHost'
 import { FolderPrompt } from './FolderPrompt'
-import { DaemonOwnerModal } from './DaemonOwnerModal'
-import { DaemonSetupModal } from './DaemonSetupModal'
+import { DaemonOwnerModal } from './daemon/DaemonOwnerModal'
+import { DaemonSetupModal } from './daemon/DaemonSetupModal'
 import { BismuthInstallModal } from './BismuthInstallModal'
 import FreeAgentSetupModal from './chat/FreeAgentSetupModal'
-import { completeFreeAgentSetup } from './chat/freeAgentClient'
 import { setAgentStatus } from './chat/agentAvailability'
 import { GcalConnectModal } from './GcalConnectModal'
 import StatusTrustDialog from './shell/StatusTrustDialog'
 import { EditDictionaryModal } from './EditDictionaryModal'
 import { UpdateBanner } from './UpdateBanner'
-import { refreshDaemonPages, anyWorking, dueCount } from './daemonInbox'
+import { refreshDaemonPages, anyWorking, dueCount } from './daemon/daemonInboxApi'
 import { openAppWindow, pickFolder, rememberLastVault } from './appWindow'
 import { resolveWindowId, tabsStorageKey } from './windowId'
 import { pushClosedSession, popClosedSession } from './closedSession'
-import { chatColor, setChatColor, CHAT_COLOR_SWATCHES } from './chatColors'
+import { chatColor, setChatColor, CHAT_COLOR_SWATCHES } from './chat/chatColors'
 import { setPendingAnchor } from './pendingAnchor'
 import { installNativeDrop, uninstallNativeDrop } from './nativeDrop'
 import { isReloadNavigation } from './navType'
@@ -100,14 +105,14 @@ import {
     setChatIconProvider,
 } from './tabIds'
 import { tabRailVisible } from './tabRailVisibility'
-import { daemonName, refreshDaemonIdentity } from './daemonIdentity'
-import { chatTitle } from './chatTitles'
-import { chatOrigin, chatOriginIcon } from './chatOrigin'
+import { daemonName, refreshDaemonIdentity } from './daemon/daemonIdentityLogic'
+import { chatTitle } from './chat/chatTitles'
+import { chatOrigin, chatOriginIcon } from './chat/chatOrigin'
 import { isExportable } from './export/formats'
 import { createBootGate } from './bootGate'
 import { homeContent, retargetSeed } from './homePage'
 import { createStatusBarFeed } from './shell/statusBarFeed'
-import { publishEditorTabs } from './chatContext'
+import { publishEditorTabs } from './chat/chatContext'
 import {
     connectUiControl,
     type UiControlHandle,
@@ -192,17 +197,17 @@ import {
 } from './dnd/noteRef'
 import { insertTextAtCoords, insertIntoFocusedEditor } from './editorRegistry'
 import { ContextMenu, type MenuItem, type QuickAction } from './ContextMenu'
-import { openContextMenu, isTauri } from './nativeMenu'
+import { isTauri } from './platform'
+import { plural } from './plural'
 import './global.css'
-import ChatColorDot from './ChatColorDot'
+import ChatColorDot from './chat/ChatColorDot'
 import { migrationPollDelays } from './migrationPoll'
 import { isMacPlatform } from './platform'
 import {
     THEME_VARS_KEY,
-    FIRST_RUN_POWERUPS_KEY,
-    FIRST_RUN_AGENT_KEY,
 } from './storageKeys'
-import { providerLabel, sanitizeChatProvider } from './chatProvider'
+import { runFirstRunHandoff } from './intro/firstRunHandoff'
+import { detectAiActive as detectAi } from './ai/detectAiActive'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
@@ -371,10 +376,7 @@ export default function App() {
     // clear inside onCloseRequested can be lost if WebKit hasn't flushed it before the process exits)
     // and it works identically in the browser and the Tauri app.
     const reloaded = isReloadNavigation()
-    const savedTabs =
-        typeof localStorage !== 'undefined'
-            ? localStorage.getItem(TABS_STORAGE_KEY)
-            : null
+    const savedTabs = readRaw(TABS_STORAGE_KEY)
     // Parse the persisted layout ONCE — deserializeTabs re-ids every node, so parsing it twice would
     // mint divergent ids for the same tabs. Reuse this single parse for both the restore + the stash.
     const savedLayout = deserializeTabs(savedTabs, () => true)
@@ -673,22 +675,19 @@ export default function App() {
     const historyForward = () => navigateHistory(1)
     // Left sidebar visibility (Option+S / "Toggle sidebar" command). Persisted.
     const [sidebarVisible, setSidebarVisible] = createSignal(
-        localStorage.getItem(SIDEBAR_STORAGE_KEY) !== '0',
+        readRaw(SIDEBAR_STORAGE_KEY) !== '0',
     )
     createEffect(() =>
-        localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarVisible() ? '1' : '0'),
+        writeRaw(SIDEBAR_STORAGE_KEY, sidebarVisible() ? '1' : '0'),
     )
     const toggleSidebar = () => setSidebarVisible(v => !v)
     // Right tab rail held open (Alt+Shift+S / "Toggle tab rail" command). Persisted. Defaults OFF —
     // the rail's hover-to-expand behaviour is unchanged and still the default way in.
     const [tabRailPinned, setTabRailPinned] = createSignal(
-        localStorage.getItem(TAB_RAIL_PINNED_STORAGE_KEY) === '1',
+        readRaw(TAB_RAIL_PINNED_STORAGE_KEY) === '1',
     )
     createEffect(() =>
-        localStorage.setItem(
-            TAB_RAIL_PINNED_STORAGE_KEY,
-            tabRailPinned() ? '1' : '0',
-        ),
+        writeRaw(TAB_RAIL_PINNED_STORAGE_KEY, tabRailPinned() ? '1' : '0'),
     )
     const toggleTabRail = () => setTabRailPinned(v => !v)
     // The shell arrangement (`layout:` in .settings): which window edge each panel sits on, which
@@ -825,7 +824,12 @@ export default function App() {
                     quickActions?: QuickAction[]
                 }>
             ).detail
-            openContextMenu(d.x, d.y, d.items, setEditorMenu, d.quickActions)
+            setEditorMenu({
+                x: d.x,
+                y: d.y,
+                items: d.items,
+                quickActions: d.quickActions,
+            })
         }
         window.addEventListener('bismuth-context-menu', onCtx)
         // The editor's emoji rail button can't reach the picker directly (it's a CodeMirror extension),
@@ -1118,49 +1122,20 @@ export default function App() {
         }
         pushToast('Open a note, base, or sheet to export it')
     }
-    // Estimate how AI-generated the active page reads — fully local + offline (transformers.js
-    // in the webview; see ai/aiDetect.ts). The detector + its model are dynamically imported so
-    // they stay out of the boot bundle and the ~34MB model only downloads on first use. NOTE:
-    // the score is a rough hint, not proof, and the model is unvalidated on Claude-class text —
-    // the toast intentionally shows just the number (per product choice).
-    const detectAiActive = async () => {
+    // Resolve the active note's path, then hand the detection (toast progress included) to
+    // ai/detectAiActive.ts, which stays out of the boot bundle's detector import.
+    const detectAiActive = () => {
         const at = activeTab()
         const fallback = at && at.root.kind === 'leaf' ? at.root.content : null
         const c = focusedContent() ?? fallback
-        if (!c || isSentinel(c) || !c.endsWith('.md')) {
-            pushToast('Open a note to check it for AI-generated text')
-            return
-        }
-        // Persistent toast (ttl 0) updated in place as a real loading phase: the first-run model
-        // download %, then "section N/M" per window — a big essay is many windows, each a forward
-        // pass, so this can run for a while and needs visible progress.
-        const progress = pushToast('Preparing AI detector…', undefined, 0)
-        try {
-            const text = await api.read(c)
-            const { detectAiScore } = await import('./ai/aiDetect')
-            const { score, peak, chunks } = await detectAiScore(text, p => {
-                updateToast(
-                    progress,
-                    p.phase === 'load'
-                        ? `Downloading detector model… ${p.pct}%`
-                        : `Analyzing… section ${p.done}/${p.total}`,
-                )
-            })
-            dismissToast(progress)
-            const pct = Math.round(score * 100)
-            const detail =
-                chunks > 1
-                    ? ` (peak ${Math.round(peak * 100)}% across ${chunks} sections)`
-                    : ''
-            pushToast(`AI-likelihood ≈ ${pct}%${detail}`)
-        } catch (e) {
-            dismissToast(progress)
-            pushToast(
-                (e as Error)?.name === 'TooShortError'
-                    ? 'Not enough text on this page to analyze'
-                    : `AI detection failed: ${(e as Error).message}`,
-            )
-        }
+        const path = c && !isSentinel(c) && c.endsWith('.md') ? c : null
+        return detectAi({
+            path,
+            read: p => api.read(p),
+            pushToast,
+            updateToast,
+            dismissToast,
+        })
     }
     // Emoji library: pop the grid picker (the SAME gallery the icon-field completion uses, sourced to
     // emoji only) and insert the chosen glyph. The always-visible home for the full library — reached
@@ -1303,7 +1278,7 @@ export default function App() {
         }
         updateToast(
             id,
-            `Updating Bismuth (${status.behind} commit${status.behind === 1 ? '' : 's'} behind)…`,
+            `Updating Bismuth (${plural(status.behind, 'commit')} behind)…`,
         )
         const phaseText = (p: string) =>
             p === 'pulling'
@@ -1430,7 +1405,7 @@ export default function App() {
         )?.getBoundingClientRect()
         const x = rect ? rect.left : 8
         const y = rect ? rect.bottom + 4 : 48
-        openContextMenu(x, y, items, setCreateMenu)
+        setCreateMenu({ x, y, items })
     }
     // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
     const openGraph = () => openTool(GRAPH_TAB)
@@ -1473,7 +1448,7 @@ export default function App() {
             const { removed } = await api.archiveTasks(c)
             pushToast(
                 removed > 0
-                    ? `Archived ${removed} completed task${removed === 1 ? '' : 's'}`
+                    ? `Archived ${plural(removed, 'completed task')}`
                     : 'No completed tasks to archive',
             )
         } catch (e) {
@@ -1485,7 +1460,7 @@ export default function App() {
             const { removed, files } = await api.archiveTasks()
             pushToast(
                 removed > 0
-                    ? `Archived ${removed} task${removed === 1 ? '' : 's'} across ${files} note${files === 1 ? '' : 's'}`
+                    ? `Archived ${plural(removed, 'task')} across ${plural(files, 'note')}`
                     : 'No completed tasks to archive',
             )
         } catch (e) {
@@ -1641,10 +1616,7 @@ export default function App() {
     // NOT to restore it (stashing it for Cmd+Shift+T instead); on a reload it's restored as-is. The
     // same signal read also heartbeats the control channel (one extra send, no new state).
     createEffect(() => {
-        localStorage.setItem(
-            TABS_STORAGE_KEY,
-            serializeTabs(tabs(), activeTabId()),
-        )
+        writeRaw(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()))
         uiControl?.heartbeat(listTabsSnapshot())
     })
     // Stack of recently-closed tabs for "Reopen closed tab" (Cmd+Shift+T). Whole-tab closes
@@ -2443,111 +2415,14 @@ export default function App() {
         onCleanup(() => uninstallNativeDrop())
     })
 
-    // The agent chosen on the intro's "Pick an agent." slide (same hand-off as the power-ups: the
-    // intro has no backend). 'free-agent' runs the free-agent setup (the same helper the palette
-    // modal uses); a backend id is the user's explicit choice, so it is written to chat.provider.
+    // First-run hand-off from the intro (agent choice + power-ups): see intro/firstRunHandoff.ts.
     onMount(() => {
-        const agent = localStorage.getItem(FIRST_RUN_AGENT_KEY)
-        if (agent === null) return
-        localStorage.removeItem(FIRST_RUN_AGENT_KEY)
-        setTimeout(() => {
-            if (agent === 'free-agent') {
-                completeFreeAgentSetup(api, localStorage, () => {}, undefined, {
-                    onStatus: setAgentStatus,
-                })
-                    .then(r => {
-                        if (r.phase === 'error')
-                            throw new Error(r.message ?? 'setup failed')
-                        pushToast(
-                            r.action === 'already-installed'
-                                ? 'The free agent is already installed'
-                                : 'Set up the free agent',
-                        )
-                    })
-                    .catch(e =>
-                        pushToast(
-                            `Free agent setup failed: ${(e as Error).message}`,
-                        ),
-                    )
-                return
-            }
-            const provider = sanitizeChatProvider(agent)
-            api.setSetting(['chat', 'provider'], provider)
-                .then(() =>
-                    pushToast(`Chat set to ${providerLabel(provider)}`),
-                )
-                .catch(e =>
-                    pushToast(
-                        `couldn't set the chat agent: ${(e as Error).message}`,
-                    ),
-                )
-        }, 2500)
-    })
-    // Run the power-ups the user chose on the first-run intro (persisted to localStorage there,
-    // since the intro has no backend). Fires once after the vault opens, then clears the flag.
-    // Uses the SAME api the command-palette commands use. Delayed so the sidecar is listening.
-    onMount(() => {
-        // Only a post-intro launch carries this key. A normal launch has none — and an ABSENT
-        // key must not be read as "deselected everything", or we'd PATCH settings on every boot.
-        const raw = localStorage.getItem(FIRST_RUN_POWERUPS_KEY)
-        if (raw === null) return
-        localStorage.removeItem(FIRST_RUN_POWERUPS_KEY)
-        let chosen: string[]
-        try {
-            chosen = JSON.parse(raw)
-        } catch {
-            return
-        }
-        if (!Array.isArray(chosen)) return
-        // The daemon power-up doubles as the master-switch opt-in: enable the daemon
-        // integration iff the user picked the daemon on the intro, disable it otherwise. Only
-        // fires on the post-intro launch (key present), so it never overrides a later toggle.
-        void api.setSetting(
-            ['daemon', 'enabled'],
-            chosen.includes('daemon-setup'),
-        )
-        if (chosen.length === 0) return
-        // Each runner returns its installer result; `action` tells us whether it was a fresh
-        // install or a no-op because it's already there ("adopted"/"up-to-date") — so we can
-        // say "already installed" instead of falsely claiming a setup or showing an error.
-        const ALREADY = new Set(['adopted', 'up-to-date', 'skipped-no-src'])
-        const runners: Record<
-            string,
-            { label: string; run: () => Promise<{ action?: string }> }
-        > = {
-            // The bundled daemon installs the service rather than git-cloning, so map its {ok}
-            // result onto the {action} shape this generic installer-runner expects.
-            'daemon-setup': {
-                label: 'the daemon',
-                run: async () => {
-                    const r = await api.daemonSetup()
-                    return { action: r.ok ? 'installed' : 'failed' }
-                },
-            },
-            'bismuth-install': {
-                label: 'Bismuth CLI + MCP',
-                run: () => api.bismuthInstall(),
-            },
-        }
-        setTimeout(() => {
-            for (const id of chosen) {
-                const r = runners[id]
-                if (!r) continue
-                r.run()
-                    .then(res =>
-                        pushToast(
-                            ALREADY.has(res?.action ?? '')
-                                ? `${r.label} already installed`
-                                : `Set up ${r.label}`,
-                        ),
-                    )
-                    .catch(e =>
-                        pushToast(
-                            `${r.label} setup failed: ${(e as Error).message}`,
-                        ),
-                    )
-            }
-        }, 2500)
+        runFirstRunHandoff({
+            api,
+            storage: localStorage,
+            pushToast,
+            setAgentStatus,
+        })
     })
     // Global keyboard shortcuts. Every combo is read from settings.keybindings
     // (defaults in core/src/keybindings.ts), matched via matchesKeybinding. Two literals
@@ -2769,8 +2644,6 @@ export default function App() {
     // message anywhere. SKIPPED notes are still un-migrated for a per-file reason and have lost
     // their fields until someone acts. Detail goes to the console, because a toast that named
     // files would be unreadable and a console warning alone is invisible in a bundled app.
-    const plural = (n: number, one: string, many: string) =>
-        `${n} ${n === 1 ? one : many}`
     const reportTaskMigration = async (): Promise<void> => {
         const poll = async (): Promise<Awaited<
             ReturnType<typeof api.taskMigration>
@@ -2909,10 +2782,6 @@ export default function App() {
         sidebarSections() // …or the docked graph square is added, removed or reordered
         requestAnimationFrame(placeFloaterSettled)
     })
-    onMount(() => {
-        window.addEventListener('resize', placeFloater)
-        onCleanup(() => window.removeEventListener('resize', placeFloater))
-    })
     // Keep the terminal overlays AND the graph floater in sync when the body resizes
     // (window resize, sidebar toggle, divider drag). Belt-and-suspenders: the editor-body observer
     // catches body-level reflows, the per-host observer (hostRO) catches a single leaf resizing, and
@@ -2920,6 +2789,12 @@ export default function App() {
     // its size (so a host's rect can't drift while an overlay stays put). All three re-measure the
     // same cheap function.
     onMount(() => {
+        const onResize = () => {
+            measureOverlayHosts()
+            placeFloater()
+        }
+        window.addEventListener('resize', onResize)
+        onCleanup(() => window.removeEventListener('resize', onResize))
         if (!editorBodyEl) return
         const ro = new ResizeObserver(() => {
             measureOverlayHosts()
@@ -2928,12 +2803,9 @@ export default function App() {
         ro.observe(editorBodyEl)
         hostRO = new ResizeObserver(() => measureOverlayHosts())
         observeHosts() // bind to whatever hosts the initial active tab rendered
-        const onResize = () => measureOverlayHosts()
-        window.addEventListener('resize', onResize)
         onCleanup(() => {
             ro.disconnect()
             hostRO?.disconnect()
-            window.removeEventListener('resize', onResize)
         })
     })
 
@@ -3089,7 +2961,7 @@ export default function App() {
                 icon: 'Download',
                 onSelect: () => openExport(content),
             })
-        openContextMenu(e.clientX, e.clientY, items, setEditorMenu)
+        setEditorMenu({ x: e.clientX, y: e.clientY, items })
     }
 
     // Status bar's single location readout (issue #10) — pure presentation of existing signals,
@@ -3251,12 +3123,7 @@ export default function App() {
                                     }))
                                 }
                                 onMenu={(leafId, x, y) =>
-                                    openContextMenu(
-                                        x,
-                                        y,
-                                        paneMenuItems(leafId),
-                                        setPaneMenu,
-                                    )
+                                    setPaneMenu({ x, y, items: paneMenuItems(leafId) })
                                 }
                                 onClose={closePane}
                                 dragState={drag}
@@ -3318,12 +3185,11 @@ export default function App() {
                                         const leafId = leafIdForContent(id)
                                         if (!leafId) return
                                         e.preventDefault()
-                                        openContextMenu(
-                                            e.clientX,
-                                            e.clientY,
-                                            paneMenuItems(leafId),
-                                            setPaneMenu,
-                                        )
+                                        setPaneMenu({
+                                            x: e.clientX,
+                                            y: e.clientY,
+                                            items: paneMenuItems(leafId),
+                                        })
                                     }}
                                 >
                                     <Suspense

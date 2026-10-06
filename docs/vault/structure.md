@@ -66,7 +66,7 @@ Output shaping for the two system entries (`core/src/files.ts:157-166`):
 - `.settings` → `{ path: ".settings", kind: "file", label: "settings", icon: "Settings2" }`.
 - `.daemon` → `{ path: ".daemon", kind: "dir", isSystemFolder: true, label: daemonName }`, where `daemonName` is `opts.daemonName?.trim() || "daemon"` (the daemon's configured `identity.md` name, read by the server via `daemonIdentityName()`).
 
-`TreeEntry.isSystemFolder` and `TreeEntry.label` (`core/src/graph.ts`) exist specifically to carry this: the frontend sidebar uses them to render the entry distinctly and guard it from rename/delete/drag (see "System-folder protection" below). Folder-level `icon` overrides (via the icon picker, stored in the `.settings` file's `folderIcons` map — see `settings.ts`'s `setFolderIcon`/`readFolderIcons`) are **not** applied inside `listTree` itself — they're merged onto `dir` entries per-request by the `GET /tree` route in `server.ts`, so a folder-icon change is reflected without needing the underlying tree cache to rebuild.
+`TreeEntry.isSystemFolder` and `TreeEntry.label` (`core/src/graph.ts`) exist specifically to carry this: the frontend sidebar uses them to render the entry distinctly and guard it from rename/delete/drag (see "System-folder protection" below). Folder-level `icon` overrides (via the icon picker, stored in the `.settings` file's `folderIcons` map — see `settings.ts`'s `setFolderIcon`) are **not** applied inside `listTree` itself — they're merged onto `dir` entries per-request by the `GET /tree` route in `server.ts`, so a folder-icon change is reflected without needing the underlying tree cache to rebuild.
 
 ### `listMarkdown` — only `.md` files
 

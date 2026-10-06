@@ -32,21 +32,6 @@ export interface Owner {
     updatedAt: string
 }
 
-export interface DeviceListEntry {
-    deviceId: string
-    label: string
-    lastSeenISO: string
-    isOwner: boolean
-    isThis: boolean
-}
-
-export interface DeviceInfo {
-    deviceId: string
-    label: string
-    isOwner: boolean
-    owner: Owner | null
-}
-
 function devicesPath(home: string): string {
     return join(home, 'devices.json')
 }
@@ -109,31 +94,6 @@ export async function heartbeatDevice(
 }
 
 /**
- * List all known devices with ownership/self flags. Matches the device_list
- * MCP return shape exactly.
- */
-export async function listDevices(
-    home: string = MACHINE_DIR,
-): Promise<{ devices: DeviceListEntry[]; ownerDeviceId: string | null }> {
-    const [devices, owner, thisId] = await Promise.all([
-        readDevices(home),
-        getOwner(home),
-        getDeviceId(home),
-    ])
-    const ownerDeviceId = owner?.ownerDeviceId ?? null
-    const list: DeviceListEntry[] = Object.entries(devices).map(
-        ([deviceId, entry]) => ({
-            deviceId,
-            label: entry.label,
-            lastSeenISO: entry.lastSeenISO,
-            isOwner: ownerDeviceId === deviceId,
-            isThis: thisId === deviceId,
-        }),
-    )
-    return { devices: list, ownerDeviceId }
-}
-
-/**
  * True when this device may run normally:
  *  - owner.json absent (UNCLAIMED) => true (legacy / single-device behavior)
  *  - else ownerDeviceId === thisDeviceId
@@ -143,49 +103,4 @@ export async function isOwner(home: string = MACHINE_DIR): Promise<boolean> {
     if (!owner) return true
     const thisId = await getDeviceId(home)
     return owner.ownerDeviceId === thisId
-}
-
-/**
- * Full device identity + ownership view. Matches the device_info MCP shape.
- */
-export async function deviceInfo(
-    home: string = MACHINE_DIR,
-): Promise<DeviceInfo> {
-    const [deviceId, owner] = await Promise.all([
-        getDeviceId(home),
-        getOwner(home),
-    ])
-    const ownedByThis = owner ? owner.ownerDeviceId === deviceId : true
-    return {
-        deviceId,
-        label: getDeviceLabel(),
-        isOwner: ownedByThis,
-        owner,
-    }
-}
-
-/**
- * Claim ownership for `deviceId`. Rejects if the device is not present in
- * devices.json (a device must heartbeat before it can be made owner). Writes
- * owner.json byte-compatibly with what Bismuth reads, then returns the updated
- * device_info view.
- */
-export async function setOwnerDevice(
-    deviceId: string,
-    home: string = MACHINE_DIR,
-): Promise<DeviceInfo> {
-    const devices = await readDevices(home)
-    const entry = devices[deviceId]
-    if (!entry) {
-        throw new Error(
-            `Device "${deviceId}" is not present in devices.json — cannot set as owner`,
-        )
-    }
-    const owner: Owner = {
-        ownerDeviceId: deviceId,
-        ownerLabel: entry.label,
-        updatedAt: new Date().toISOString(),
-    }
-    await atomicWriteJson(ownerPath(home), owner, { ensureDir: true })
-    return deviceInfo(home)
 }

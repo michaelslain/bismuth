@@ -16,10 +16,9 @@
 //   bun bench/tableRenderPerf.ts --port 6312
 //   -> tableRenderPerf render=<ms> fps=<n>
 import { launchChrome } from './chromeSession'
+import { arg } from './args'
 
-const argv = process.argv.slice(2)
-const portAt = argv.indexOf('--port')
-const port = portAt >= 0 ? Number(argv[portAt + 1]) : NaN
+const port = Number(arg('port', 'NaN'))
 if (!Number.isInteger(port) || port <= 0) {
     console.error('usage: bun bench/tableRenderPerf.ts --port <n>   (--port is required)')
     process.exit(2)

@@ -227,7 +227,7 @@ ${headingRules}
   pre { background: ${p.head}; margin: ${rule}px 0; padding: ${rule / 2}px 1rem; border-radius: 6px; overflow: auto;
         white-space: pre-wrap; word-break: break-word; line-height: ${rule}px; }
   /* EVERYTHING PULLED BACK OUT OF PROSE RETURNS TO THE MONO FACE AT THE EDITOR SIZE — the same
-     scoping global.css's Editor.css section applies in the app, not a guess at what looks code-ish. Its list is
+     scoping global.css's CodeMirror theming section applies in the app, not a guess at what looks code-ish. Its list is
      cm-codeblock, cm-inline-code, cm-code-header, cm-code-lang, cm-code-numbered, cm-frontmatter,
      cm-fm-key, cm-math, cm-math-src, cm-inline-math, cm-list-marker, cm-syntax-mark, cm-tag and
      cm-task-field — and BOTH the family and the SIZE reset, to --code-font-size: a step below

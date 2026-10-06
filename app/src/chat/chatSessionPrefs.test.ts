@@ -13,8 +13,8 @@ import {
     type StorageLike,
 } from './chatSessionPrefs'
 import { BACKEND_IDS } from '../../../core/src/agentBackends/catalog'
-import { DEFAULT_PERMISSION_MODE } from '../chatPermissionMode'
-import { modelStorageKeys, providerStorageKey } from '../chatProvider'
+import { DEFAULT_PERMISSION_MODE } from './chatPermissionMode'
+import { modelStorageKeys, providerStorageKey } from './chatProvider'
 
 /** A Map-backed Storage stand-in; `entries` is exposed so tests assert on what was actually written. */
 function memoryStorage(seed: Record<string, string> = {}) {

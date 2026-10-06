@@ -1,9 +1,5 @@
 import { test, expect } from 'bun:test'
-import { mergeGraphs, emptyGraph, type GraphData } from '../src/graph'
-
-test('emptyGraph has no nodes or edges', () => {
-    expect(emptyGraph()).toEqual({ nodes: [], edges: [] })
-})
+import { mergeGraphs, type GraphData } from '../src/graph'
 
 test('mergeGraphs concatenates and dedupes nodes by id, keeps all edges', () => {
     const a: GraphData = {
@@ -23,14 +19,14 @@ test('mergeGraphs concatenates and dedupes nodes by id, keeps all edges', () => 
 })
 
 test('merging empty graphs returns empty graph', () => {
-    const g1 = emptyGraph()
-    const g2 = emptyGraph()
+    const g1: GraphData = { nodes: [], edges: [] }
+    const g2: GraphData = { nodes: [], edges: [] }
     const merged = mergeGraphs([g1, g2])
     expect(merged).toEqual({ nodes: [], edges: [] })
 })
 
 test('merging single empty graph returns empty', () => {
-    const merged = mergeGraphs([emptyGraph()])
+    const merged = mergeGraphs([{ nodes: [], edges: [] }])
     expect(merged).toEqual({ nodes: [], edges: [] })
 })
 

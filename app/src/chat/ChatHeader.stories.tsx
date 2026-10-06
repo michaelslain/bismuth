@@ -7,7 +7,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import ChatHeader from './ChatHeader'
 import { makeStubChatSession } from './_stubChatSession'
-import { chatOriginIcon } from '../chatOrigin'
+import { chatOriginIcon } from './chatOrigin'
 import type { ChatManifest } from '../../../core/src/chat'
 
 const meta = {

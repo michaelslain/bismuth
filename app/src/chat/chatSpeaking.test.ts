@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test'
 import { isSpeaking } from './chatSpeaking'
-import type { TurnItem, UserItem, AssistantItem } from '../chatTranscript'
+import type { TurnItem, UserItem, AssistantItem } from './chatTranscriptLogic'
 
 const user = (over: Partial<UserItem> = {}): UserItem => ({
     role: 'user',

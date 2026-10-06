@@ -3,7 +3,7 @@
 // reads BISMUTH_VAULT/BISMUTH_MEMORY from the environment, so we pass process.env through.
 // Never throws — every failure mode resolves to a CliResult.
 
-import { gateCliArgs } from './visibilityGate'
+import { gateCliArgs } from '../../core/src/visibilityCliGate'
 
 export interface CliResult {
     stdout: string
@@ -25,7 +25,7 @@ export async function runCli(
     args: string[],
     opts?: { cwd?: string; timeoutMs?: number },
 ): Promise<CliResult> {
-    // The VISIBILITY GATE (./visibilityGate.ts). Checked here, at the single chokepoint every MCP tool
+    // The VISIBILITY GATE (core/src/visibilityCliGate.ts). Checked here, at the single chokepoint every MCP tool
     // spawns through, rather than at each call site — so a future tool cannot forget it. The vault
     // owner's own `bismuth` invocations are unaffected: they don't come through this MCP server.
     const gate = await gateCliArgs(args)

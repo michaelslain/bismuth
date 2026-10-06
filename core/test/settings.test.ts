@@ -117,17 +117,12 @@ test('initializeSettings does not clobber an existing file', async () => {
     expect(res!.data).toEqual({ appearance: { theme: 'light' } })
 })
 
-import { readFolderIcons, setFolderIcon } from '../src/settings'
-
-test('readFolderIcons returns {} when settings.yaml is absent', async () => {
-    const vault = await emptyVault()
-    expect(await readFolderIcons(vault)).toEqual({})
-})
+import { setFolderIcon } from '../src/settings'
 
 test('setFolderIcon persists a folder icon into settings.yaml', async () => {
     const vault = await emptyVault()
     await setFolderIcon(vault, 'projects', 'Folder')
-    expect(await readFolderIcons(vault)).toEqual({ projects: 'Folder' })
+    expect((await readSettings(vault))?.data.folderIcons ?? {}).toEqual({ projects: 'Folder' })
     const res = await readSettings(vault)
     expect((res!.data.folderIcons as Record<string, unknown>).projects).toBe(
         'Folder',
@@ -141,7 +136,7 @@ test('setFolderIcon cannot inject a folderVisibility line through its key or ico
     const res = await readSettings(vault)
     expect(res!.parseError).toBeUndefined()
     expect(res!.data.folderVisibility).toBeUndefined()
-    expect(await readFolderIcons(vault)).toEqual({
+    expect((await readSettings(vault))?.data.folderIcons ?? {}).toEqual({
         [key]: 'Folder\nfolderVisibility: {}',
     })
 })
@@ -150,7 +145,7 @@ test('setFolderIcon with an empty icon deletes the entry', async () => {
     const vault = await emptyVault()
     await setFolderIcon(vault, 'projects', 'Folder')
     await setFolderIcon(vault, 'projects', '')
-    expect(await readFolderIcons(vault)).toEqual({})
+    expect((await readSettings(vault))?.data.folderIcons ?? {}).toEqual({})
     // sparse: the emptied map is its default, so the key leaves the file too
     expect((await readSettings(vault))!.data.folderIcons).toBeUndefined()
 })

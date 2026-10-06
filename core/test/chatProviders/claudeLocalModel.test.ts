@@ -4,8 +4,7 @@
 // server is unreachable rather than silently falling back to the cloud. Isolation mirrors
 // claudeMocked.test.ts (CLAUDE_CONFIG_DIR + cleared Bedrock/Vertex escape hatches).
 import { afterAll, afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     closeChat,
@@ -20,6 +19,7 @@ import { whichClaude } from '../../src/claudeWhich'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
 import { shouldRunSlowTests } from '../slowGate'
+import { tempDir } from '../tempDirs'
 
 const HAS_CLAUDE = whichClaude() !== null
 const describeLive =
@@ -46,7 +46,7 @@ const chatIds: string[] = []
 let mock: MockLlmHandle | undefined
 
 async function vaultWith(settings: string): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), 'bismuth-claude-local-'))
+    const dir = tempDir('bismuth-claude-local-')
     tempDirs.push(dir)
     await writeFile(join(dir, '.settings'), settings)
     return dir
@@ -82,9 +82,7 @@ describeLive(
             // --metrics also exposes the request journal this test reads bodies from.
             mock = await startMockLlm(undefined, ['--metrics'])
             for (const k of ENV_KEYS) delete process.env[k]
-            process.env.CLAUDE_CONFIG_DIR = await mkdtemp(
-                join(tmpdir(), 'bismuth-claude-config-'),
-            )
+            process.env.CLAUDE_CONFIG_DIR = tempDir('bismuth-claude-config-')
             tempDirs.push(process.env.CLAUDE_CONFIG_DIR)
 
             const cwd = await vaultWith(
@@ -156,9 +154,7 @@ describeFast('claude chat on a local model: a cloud model id', () => {
     test('setModel with an id the server does not list keeps the local model and re-emits the manifest', async () => {
         mock = await startMockLlm()
         for (const k of ENV_KEYS) delete process.env[k]
-        process.env.CLAUDE_CONFIG_DIR = await mkdtemp(
-            join(tmpdir(), 'bismuth-claude-config-'),
-        )
+        process.env.CLAUDE_CONFIG_DIR = tempDir('bismuth-claude-config-')
         tempDirs.push(process.env.CLAUDE_CONFIG_DIR)
         const cwd = await vaultWith(
             `localModel:\n  enabled: true\n  url: ${mock.url}\n  model: mock-local\n`,

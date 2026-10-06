@@ -5,15 +5,17 @@
 // Covers exactly what WRAPPER_REPORTING_ENABLED's doc comment (core/src/terminal.ts) claims was
 // verified: signal forwarding, exit-code fidelity, and the "never wrap Claude Code" guard — the
 // three things that make wrapping an interactive TUI risky if done wrong.
-import { test, expect } from 'bun:test'
-import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { afterAll, test, expect } from 'bun:test'
+import { writeFileSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
+import { sweepTempDirs, tempDir } from './tempDirs'
+
+afterAll(sweepTempDirs)
 
 const WRAP_TS = join(import.meta.dir, '..', 'bin', 'wrap.ts')
 
 function tmp(): string {
-    return mkdtempSync(join(tmpdir(), 'bismuth-wrap-test-'))
+    return tempDir('bismuth-wrap-test-')
 }
 
 function writeStub(dir: string, name: string, body: string): string {

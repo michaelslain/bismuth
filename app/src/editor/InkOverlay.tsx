@@ -97,6 +97,7 @@ import { extractFrontmatterBoundary } from './frontmatterUtils'
 import { settings } from '../settings'
 import { matchesKeybinding } from '../keybindings'
 import styles from './InkOverlay.module.css'
+import { clamp01 } from '../math'
 
 // Tool state is module-level so the pen/color/size choice follows the user across notes for
 // the session (same defaults as DrawingPage's DEFAULT_TOOLS).
@@ -1265,7 +1266,7 @@ export function InkOverlay(props: {
             speed,
             hasRealPressure: hasReal,
         })
-        return Math.round(Math.max(0, Math.min(1, w / (b * 1.75))) * 255)
+        return Math.round(clamp01(w / (b * 1.75)) * 255)
     }
     const armHold = () => {
         clearTimeout(holdTimer)

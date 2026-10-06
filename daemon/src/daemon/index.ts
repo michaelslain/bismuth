@@ -29,9 +29,12 @@ import {
     installDaemon,
     reloadDaemon,
     planEnsureInstalled,
+    pidAlive,
+    readDaemonPid,
 } from '../lib/platform.ts'
 import { augmentPath } from '../lib/childEnv.ts'
 import { logActivity, pruneActivityLogs } from '../lib/activityLog'
+import { safeTick } from '../lib/safeTick'
 import {
     MACHINE_DIR,
     MACHINE_PID_FILE,
@@ -64,12 +67,15 @@ async function ensureDirs(): Promise<void> {
 
 /** A vault's brain dirs under <root>/.daemon, created before we touch its state. */
 async function ensureVaultDirs(ctx: VaultContext): Promise<void> {
-    await mkdir(ctx.daemonDir, { recursive: true })
-    await mkdir(ctx.memoryDir, { recursive: true })
-    await mkdir(ctx.cronsDir, { recursive: true })
-    await mkdir(ctx.processesDir, { recursive: true })
-    await mkdir(ctx.logsDir, { recursive: true })
-    await mkdir(ctx.pagesDir, { recursive: true })
+    await Promise.all(
+        [
+            ctx.memoryDir,
+            ctx.cronsDir,
+            ctx.processesDir,
+            ctx.logsDir,
+            ctx.pagesDir,
+        ].map(dir => mkdir(dir, { recursive: true })),
+    )
 
     // Seed every registered default that's MISSING (identity, the default crons, and any seedable
     // added in future versions) in one declarative, incremental pass — a new default lands here on
@@ -261,9 +267,13 @@ async function main(): Promise<void> {
     // Reconcile per-vault process supervision + sessions on a timer so the set of
     // running brains tracks settings.daemon.enabled across all vaults.
     reconcileInterval = setInterval(() => {
-        void reconcileVaults()
+        void safeTick('reconcile', reconcileVaults)
     }, CRON_CHECK_INTERVAL_MS)
     log('Vault reconcile loop started')
+
+    process.on('unhandledRejection', err => {
+        console.error(`[daemon] unhandled rejection: ${err}`)
+    })
 
     // Graceful shutdown
     process.on('SIGTERM', () => shutdown('SIGTERM'))
@@ -330,20 +340,8 @@ async function ensureInstalled(): Promise<void> {
  * `--status` and by ensureInstalled's decision not to bounce a healthy service.
  */
 function isDaemonRunning(): boolean {
-    try {
-        const pid = Number(readFileSync(MACHINE_PID_FILE, 'utf8').trim())
-        if (pid > 0) {
-            try {
-                process.kill(pid, 0)
-                return true
-            } catch {
-                return false
-            }
-        }
-    } catch {
-        /* no pid file → not running */
-    }
-    return false
+    const pid = readDaemonPid()
+    return pid !== null && pidAlive(pid)
 }
 
 function printStatus(): void {

@@ -88,38 +88,35 @@ export async function postRelay(path: string, body: unknown): Promise<void> {
     }
 }
 
-/** Run a hook body so it always exits 0 and never throws past the runtime. */
-export function runHook(fn: () => Promise<void>): void {
-    fn()
+/**
+ * Wrap a hook body: gates on CLAUDE_TERMINAL_ID (no-op outside a Bismuth terminal tab), reads
+ * the stdin payload, and runs `fn` so it always exits 0 and never throws past the runtime.
+ */
+export function hook(
+    fn: (input: HookInput, tid: string) => Promise<void>,
+): void {
+    ;(async () => {
+        const tid = terminalId()
+        if (!tid) return
+        await fn(await readHookInput(), tid)
+    })()
         .catch(() => {})
         .finally(() => process.exit(0))
 }
 
-/** The /relay/session body for an already-read hook payload, or null when it carries no
- *  session id. Split out so a hook that needs the payload for other work (recall-hook reads
- *  `prompt`) can register through the same body as `reportSession`. */
-export function sessionPayload(
+/**
+ * Register this terminal-tab session as a root node in the agents graph by posting to
+ * /relay/session. Used by SessionStart and UserPromptSubmit (the latter doubles as a
+ * heartbeat). No-ops when the payload carries no session id.
+ */
+export async function registerSession(
     input: HookInput,
     tid: string,
-): { sessionId: string; terminalId: string; cwd: string } | null {
-    if (!input.session_id) return null
-    return {
+): Promise<void> {
+    if (!input.session_id) return
+    await postRelay('/relay/session', {
         sessionId: input.session_id,
         terminalId: tid,
         cwd: input.cwd ?? '',
-    }
-}
-
-/**
- * Register this terminal-tab session as a root node in the agents graph by posting
- * to /relay/session. Used by the SessionStart hook; UserPromptSubmit (recall-hook) does
- * the same register through `sessionPayload` since it also needs the payload for recall.
- * No-ops when not launched from a Bismuth terminal tab or when the payload carries no
- * session id.
- */
-export async function reportSession(): Promise<void> {
-    const tid = terminalId()
-    if (!tid) return // not launched from a Bismuth terminal tab
-    const body = sessionPayload(await readHookInput(), tid)
-    if (body) await postRelay('/relay/session', body)
+    })
 }

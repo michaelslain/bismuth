@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { createStatusRunner } from './statusBarRun'
+import { tempDir } from '../test/tempDirs'
 
-const vault = () => mkdtempSync(join(tmpdir(), 'sbrun-'))
+const vault = () => tempDir('sbrun-')
 
 describe('createStatusRunner', () => {
     test('echo', async () => {

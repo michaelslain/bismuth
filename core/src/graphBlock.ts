@@ -59,10 +59,6 @@ export interface GraphBlockParseResult {
     errors: GraphBlockError[]
 }
 
-export function emptyGraphBlock(): GraphBlockSpec {
-    return { nodes: [], edges: [] }
-}
-
 // ---- tokens ----------------------------------------------------------------
 
 const BARE_CHAR = /[A-Za-z0-9_.\-/]/

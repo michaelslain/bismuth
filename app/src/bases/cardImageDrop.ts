@@ -19,8 +19,8 @@ import { api } from '../api'
 import { settings } from '../settings'
 import { pushToast } from '../Toast'
 import { attachmentTarget } from '../attachmentPath'
-import { basename } from '../fileIntake'
-import { imageEmbed, isImageFile, isImagePath } from './kanbanImageDrop'
+import { basename, isImageFile } from '../fileIntake'
+import { imageEmbed, isImagePath } from './kanbanImageDrop'
 
 /** One image's bytes, ready to upload, keyed by the basename it should take in the vault. */
 export type ImageUpload = { name: string; bytes: ArrayBuffer }

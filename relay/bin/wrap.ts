@@ -24,7 +24,7 @@
 // error swallowed, never blocks or fails the user's session). Reuses that module's `terminalId`/
 // `postRelay` rather than duplicating them. Unlike a hook script, though, this process's OWN
 // exit-code/signal fidelity matters — it lives for the CLI's whole interactive session, not a
-// single quick hook invocation, so (unlike lib/report.ts's `runHook`) it must relay the real
+// single quick hook invocation, so (unlike lib/report.ts's `hook()`) it must relay the real
 // binary's actual exit code and forward interactive signals (Ctrl+C, `kill`) to it, not just
 // exit 0 quickly.
 import { randomUUID } from 'node:crypto'

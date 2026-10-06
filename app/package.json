@@ -97,7 +97,7 @@
     "@phosphor-icons/core": "2.1.1",
     "@resvg/resvg-js": "^2.6.2",
     "@tauri-apps/cli": "^2",
-    "@types/bun": "latest",
+    "@types/bun": "1.4.2",
     "@types/katex": "^0.16.8",
     "@types/node": "^25",
     "concurrently": "^9.2.1",

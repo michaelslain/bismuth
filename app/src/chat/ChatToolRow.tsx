@@ -10,9 +10,9 @@ import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import PlainButton from '../ui/PlainButton'
 import CodeBlock from '../ui/CodeBlock'
-import { chipSummary, clamp, pickToolIcon } from '../chatToolIcon'
+import { chipSummary, clamp, pickToolIcon } from './chatToolIcon'
 import { prettyInput, summarizeInput } from './chatToolFormat'
-import type { ToolPart } from '../chatTranscript'
+import type { ToolPart } from './chatTranscriptLogic'
 import styles from './ChatToolRow.module.css'
 
 export type ChatToolRowProps = {

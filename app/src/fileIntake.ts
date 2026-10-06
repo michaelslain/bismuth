@@ -44,6 +44,28 @@ export function extensionOf(pathOrName: string): string {
     return dot < 0 ? '' : base.slice(dot + 1).toLowerCase()
 }
 
+/** Image extensions accepted as embeddable images, keyed off the NAME (an OS drag exposes only a
+ *  path/basename, and some drag sources hand a File an empty `type`). Wider than CHAT_IMAGE_EXT. */
+export const IMAGE_EXT = new Set([
+    'png',
+    'jpg',
+    'jpeg',
+    'gif',
+    'webp',
+    'svg',
+    'avif',
+    'bmp',
+    'ico',
+])
+
+/** Is this File an image? MIME first (the reliable signal in a browser drop), with an extension
+ *  fallback for sources that hand an empty `File.type`. */
+export function isImageFile(file: { name: string; type: string }): boolean {
+    return (
+        file.type.startsWith('image/') || IMAGE_EXT.has(extensionOf(file.name))
+    )
+}
+
 /** The image MIME for a name the chat composer can attach directly, else null. */
 export function imageMimeFromName(pathOrName: string): string | null {
     return CHAT_IMAGE_EXT[extensionOf(pathOrName)] ?? null

@@ -207,10 +207,6 @@ export interface TreeEntry {
     ownVisibility?: 'chat-only' | 'hidden'
 }
 
-export function emptyGraph(): GraphData {
-    return { nodes: [], edges: [] }
-}
-
 export function mergeGraphs(graphs: GraphData[]): GraphData {
     const byId = new Map<string, GraphNode>()
     const edges: GraphEdge[] = []

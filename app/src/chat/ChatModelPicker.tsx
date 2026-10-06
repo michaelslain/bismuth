@@ -24,9 +24,9 @@ import SectionLabel from '../ui/SectionLabel'
 import Text from '../ui/Text'
 import OpencodeProviderManager from './OpencodeProviderManager'
 import ChatPresetList from './ChatPresetList'
-import { CHAT_PROVIDER_OPTIONS, modelPriceBadge } from '../chatProvider'
+import { CHAT_PROVIDER_OPTIONS, modelPriceBadge } from './chatProvider'
 import { groupModels } from './modelPickerGroups'
-import { modelLabelFor } from '../chatModelResolution'
+import { modelLabelFor } from './chatModelResolution'
 import { modelWord } from './modelWord'
 import {
     deletePreset,

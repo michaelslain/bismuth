@@ -178,25 +178,6 @@ export function insertDrawBlock(
     return [...before, ...fenceLines, ...after].join('\n')
 }
 
-export function removeDrawBlock(text: string, block: DrawBlock): string {
-    const lines = text.split('\n')
-    let openIdx = block.fromLine - 1
-    const closeIdx = block.toLine - 1
-
-    // A standalone fence is preceded by a blank line that exists only to separate it from
-    // the previous block. Deleting the fence but not that blank line leaves it stacked
-    // against whatever blank line follows the fence, doubling the separator. Swallow it too
-    // so removal restores exactly one blank line, matching the attached case (which never had
-    // a leading blank to begin with).
-    if (block.standalone && openIdx > 0 && lines[openIdx - 1].trim() === '') {
-        openIdx -= 1
-    }
-
-    const before = lines.slice(0, openIdx)
-    const after = lines.slice(closeIdx + 1)
-    return [...before, ...after].join('\n')
-}
-
 /** Every 1-based line covered by a draw fence, capped at `lineCount`. Both the editor's paint
  *  (InkOverlay) and the export's HTML rewrite (app/src/export/inkHtml.ts) need this set to walk
  *  a block's extent without stepping into a neighbouring fence, so it is built once here rather

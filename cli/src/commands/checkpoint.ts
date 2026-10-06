@@ -8,7 +8,7 @@
 //   …process the delta…
 //   bismuth checkpoint advance dream --dir <vault>/.daemon/memory   # move the bookmark to HEAD
 import type { CommandMap } from '../types'
-import { flag, bool, positionals, out, fail } from '../args'
+import { flag, bool, positionals, out, fail, optionalVault } from '../args'
 import {
     checkpointDelta,
     advanceCheckpoint,
@@ -18,8 +18,7 @@ import {
 
 /** The repo to operate on: --dir wins, then --vault, then BISMUTH_VAULT. */
 function repoDir(args: string[]): string {
-    const d =
-        flag(args, 'dir') ?? flag(args, 'vault') ?? process.env.BISMUTH_VAULT
+    const d = flag(args, 'dir') ?? optionalVault(args)
     if (!d) fail('no dir — pass --dir <path> (the vault or memory repo)')
     return d
 }

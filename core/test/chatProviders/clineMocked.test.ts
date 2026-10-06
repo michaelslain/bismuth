@@ -35,15 +35,14 @@
 // that later task, proves the SEPARATE fact that a real cline binary can now be driven to a
 // completed turn against a local mock, through this exact same unmodified driver.
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { rm } from 'node:fs/promises'
 import { whichBinary } from '../../src/claudeWhich'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
 import { backendMockEnv } from '../support/backendEnv'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
 import { shouldRunSlowTests } from '../slowGate'
+import { tempDir } from '../tempDirs'
 
 /** Sum of `aimock_requests_total{...}` counter values whose `path` label is aimock's own
  *  `/v1/chat/completions` route (confirmed from aimock's own `server.js`:
@@ -113,7 +112,7 @@ describeOrSkip(
         })
 
         async function newTempDir(prefix: string): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             tempDirs.push(dir)
             return dir
         }
@@ -232,7 +231,7 @@ describeOrSkip(
         })
 
         async function newTempDir(prefix: string): Promise<string> {
-            const dir = await mkdtemp(join(tmpdir(), prefix))
+            const dir = tempDir(prefix)
             tempDirs.push(dir)
             return dir
         }

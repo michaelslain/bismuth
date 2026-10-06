@@ -1,6 +1,6 @@
-import { test, expect, afterEach } from 'bun:test'
-import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { test, expect, afterEach, afterAll } from 'bun:test'
+import { tempDir, sweepTempDirs } from './tempDirs'
+import { writeFileSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
 import { handleCallTool, doctorCliArgs, server, ALL_TOOL_NAMES } from '../src/server'
@@ -18,6 +18,8 @@ afterEach(() => {
     if (originalBismuthCli === undefined) delete process.env.BISMUTH_CLI
     else process.env.BISMUTH_CLI = originalBismuthCli
 })
+
+afterAll(sweepTempDirs)
 
 function callTool(name: string, args: Record<string, unknown> = {}) {
     const request: CallToolRequest = {
@@ -56,7 +58,7 @@ test('dispatching bismuth_cli_help through the real handler leaves a normal look
 
 test('outside a daemon-enabled vault the server lists exactly the six always-on tools', async () => {
     const saved = { mem: process.env.BISMUTH_MEMORY_DIR, vault: process.env.BISMUTH_VAULT, cwd: process.cwd() }
-    const empty = mkdtempSync(join(tmpdir(), 'mcp-tools-'))
+    const empty = tempDir('mcp-tools-')
     delete process.env.BISMUTH_MEMORY_DIR
     delete process.env.BISMUTH_VAULT
     process.chdir(empty)
@@ -77,7 +79,6 @@ test('outside a daemon-enabled vault the server lists exactly the six always-on 
         process.chdir(saved.cwd)
         if (saved.mem !== undefined) process.env.BISMUTH_MEMORY_DIR = saved.mem
         if (saved.vault !== undefined) process.env.BISMUTH_VAULT = saved.vault
-        rmSync(empty, { recursive: true, force: true })
     }
 })
 
@@ -104,40 +105,32 @@ test('doctorCliArgs ignores false/empty inputs', () => {
 test('dispatching bismuth_doctor runs the CLI with the mapped argv', async () => {
     // A stand-in `bismuth` that echoes the argv it was given, so the test sees exactly what
     // handleCallTool -> runCli executed.
-    const dir = mkdtempSync(join(tmpdir(), 'mcp-doctor-'))
+    const dir = tempDir('mcp-doctor-')
     const bin = join(dir, 'bismuth')
     writeFileSync(bin, '#!/bin/sh\nfor a in "$@"; do echo "$a"; done\n')
     chmodSync(bin, 0o755)
     process.env.BISMUTH_CLI = bin
-    try {
-        const result = await callTool('bismuth_doctor', { fix: true, only: ['a.b'] })
-        expect(result.isError).toBe(false)
-        const text = (result.content[0] as { text: string }).text
-        expect(text.trim().split('\n')).toEqual(['doctor', '--json', '--fix', '--only', 'a.b'])
-    } finally {
-        rmSync(dir, { recursive: true, force: true })
-    }
+    const result = await callTool('bismuth_doctor', { fix: true, only: ['a.b'] })
+    expect(result.isError).toBe(false)
+    const text = (result.content[0] as { text: string }).text
+    expect(text.trim().split('\n')).toEqual(['doctor', '--json', '--fix', '--only', 'a.b'])
 })
 
 test('the spawned CLI always sees a BISMUTH_MCP_CHANNEL, so doctor treats MCP calls as an agent', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'mcp-channel-'))
+    const dir = tempDir('mcp-channel-')
     const bin = join(dir, 'bismuth')
     writeFileSync(bin, '#!/bin/sh\necho "channel=$BISMUTH_MCP_CHANNEL"\n')
     chmodSync(bin, 0o755)
     process.env.BISMUTH_CLI = bin
     const saved = process.env.BISMUTH_MCP_CHANNEL
-    try {
-        delete process.env.BISMUTH_MCP_CHANNEL
-        const unset = await callTool('bismuth_cli', { args: ['doctor', '--fix'] })
-        expect((unset.content[0] as { text: string }).text.trim()).toBe('channel=daemon')
-        process.env.BISMUTH_MCP_CHANNEL = 'chat'
-        const chat = await callTool('bismuth_cli', { args: ['doctor', '--fix'] })
-        expect((chat.content[0] as { text: string }).text.trim()).toBe('channel=chat')
-    } finally {
-        if (saved === undefined) delete process.env.BISMUTH_MCP_CHANNEL
-        else process.env.BISMUTH_MCP_CHANNEL = saved
-        rmSync(dir, { recursive: true, force: true })
-    }
+    delete process.env.BISMUTH_MCP_CHANNEL
+    const unset = await callTool('bismuth_cli', { args: ['doctor', '--fix'] })
+    expect((unset.content[0] as { text: string }).text.trim()).toBe('channel=daemon')
+    process.env.BISMUTH_MCP_CHANNEL = 'chat'
+    const chat = await callTool('bismuth_cli', { args: ['doctor', '--fix'] })
+    expect((chat.content[0] as { text: string }).text.trim()).toBe('channel=chat')
+    if (saved === undefined) delete process.env.BISMUTH_MCP_CHANNEL
+    else process.env.BISMUTH_MCP_CHANNEL = saved
 })
 
 test('bismuth_doctor flags a failing doctor run as isError', async () => {

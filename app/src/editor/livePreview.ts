@@ -97,7 +97,7 @@ const tag = Decoration.mark({ class: 'cm-tag' })
 // Editor.tsx mousedown navigation gate (`.cm-link, .cm-wikilink`) opens it with no extra branch.
 const memoryRef = Decoration.mark({ class: 'cm-wikilink cm-memory-ref' })
 // Every whole-word "bismuth" in prose gets the iridescent bismuth-crystal gradient
-// (styled by `.cm-bismuth` in global.css's `App.css` section, shared with the reading-mode
+// (styled by `.cm-bismuth` in global.css's content section, shared with the reading-mode
 // `.bismuth-word`).
 const bismuthWord = Decoration.mark({ class: 'cm-bismuth' })
 const headingLines = [1, 2, 3, 4, 5, 6].map(l =>
@@ -1612,8 +1612,8 @@ export const livePreview = [
         // Legacy optical correction from the serif-prose era: the --mono-scale factor
         // (settings: appearance.monoScale, default 1 — no-op now that prose is Monaspace
         // too) let mono code optically match a serif body. It lives only where mono sits
-        // inside prose (code regions here + the flashcard .card-md code in global.css's
-        // `App.css` section) —
+        // inside prose (code regions here + the flashcard .card-md code in
+        // bases/FlipCard.module.css) —
         // NOT on the all-mono UI chrome. Keep all mono regions (inline code, blocks,
         // frontmatter, tables) on it in case a future theme reintroduces the mismatch.
         // Inline code + the same inline-code marks rendered inside a table cell (inlineMarkdown.ts
@@ -1645,7 +1645,7 @@ export const livePreview = [
         // editor's mono face at the editor size — the same pair the chat transcript, the Milkdown
         // chip and the in-table chip use, so a #tag reads identically on every surface (the user's
         // call, 2026-09-03). --ui-font-stack rather than the MONO_FONT literal so appearance.uiFont
-        // still governs it, per the family-list note in global.css's `Editor.css` section; the token's default IS MONO_FONT's
+        // still governs it, per the family-list note in global.css's CodeMirror theming section; the token's default IS MONO_FONT's
         // stack, so this is a no-op under default settings. The SIZE comes from that section's size
         // list (a class that sets font-family inline here needs an entry there — see that comment).
         '.cm-tag': { color: 'var(--gold)', 'font-family': 'var(--ui-font-stack)' },
@@ -1969,7 +1969,7 @@ export const livePreview = [
         // `fit-content` so the wrap hugs the table — the hover toolbar then aligns to the
         // table's top-right corner instead of floating off in the full-width line box.
         // `--cm-td-lh` is the ONE cell line-height, inherited by the display cells, the empty-cell
-        // placeholder (`.cm-td-ph` in global.css's `Editor.css` section), AND the nested in-cell editor (cellEditor.ts `.cm-scroller`)
+        // placeholder (`.cm-td-ph` in global.css's CodeMirror theming section), AND the nested in-cell editor (cellEditor.ts `.cm-scroller`)
         // — so the EDIT face and the DISPLAY face share an identical line box and nothing jumps on blur
         // (#62). Compact (always-on) drops it to 1.3 below.
         '.cm-table-wrap': {

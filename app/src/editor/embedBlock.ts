@@ -33,6 +33,7 @@ import {
     specForMarkdownImage,
     specForWikiEmbed,
 } from './embedSpec'
+import { clamp } from '../math'
 
 // Kinds whose box can be drag-resized (and the new size persisted as `|WxH`).
 const RESIZABLE_KINDS = new Set<EmbedKind>(['image', 'pdf', 'video', 'html'])
@@ -232,7 +233,7 @@ class EmbedWidget extends WidgetType {
             const a = getAspect()
             const maxW = wrap.parentElement?.clientWidth || 2000
             const w = Math.round(
-                Math.max(40, Math.min(startW + (e.clientX - startX), maxW)),
+                clamp(startW + (e.clientX - startX), 40, maxW),
             )
             wrap.style.width = `${w}px`
             if (a) wrap.style.height = `${Math.round(w / a)}px` // set both together — no fight, no flicker

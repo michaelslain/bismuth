@@ -17,6 +17,7 @@
 
 import { RULE_PX } from './htmlTemplate'
 import { parseHex } from '../color/parseHex'
+import { clamp } from '../math'
 
 /** US Letter portrait, in PDF points (72pt/in): 8.5in x 11in. */
 export const PAGE_W_PT = 612 // 8.5 * 72
@@ -500,5 +501,5 @@ export function parseRgbColor(color: string): [number, number, number] {
 }
 
 function clamp255(n: string): number {
-    return Math.max(0, Math.min(255, Math.round(parseFloat(n))))
+    return clamp(Math.round(parseFloat(n)), 0, 255)
 }

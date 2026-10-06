@@ -15,7 +15,7 @@ import { settings, setSettings } from '../settings'
 import type { ChatPreset } from './chatPresets'
 import type { ChatControlsView } from './ChatControls'
 import type { ChatModelOption } from './chatSession'
-import type { ChatProviderChoice } from '../chatProvider'
+import type { ChatProviderChoice } from './chatProvider'
 
 const meta = {
     title: 'Chat/ChatModelPicker',

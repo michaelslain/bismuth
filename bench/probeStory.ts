@@ -43,6 +43,7 @@
 //   bun bench/probeStory.ts shell-windowcontrols--default
 //   bun bench/probeStory.ts app-filetree--default --select "div > div" --props padding-left,color
 import { launchChrome } from './chromeSession'
+import { BASE } from './args'
 
 const VALUE_FLAGS = new Set([
     'select',
@@ -67,7 +68,6 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 const ID = positional[0] ?? ''
-const BASE = opts.get('base') ?? 'http://localhost:6006'
 const SELECT = opts.get('select') ?? ''
 const ROOT_SEL = opts.get('root') ?? '#storybook-root'
 const SETTLE = Number(opts.get('settle') ?? 800)
@@ -177,7 +177,7 @@ if (!index.entries?.[ID]) {
 }
 
 // Launch + attach + teardown are chromeSession.ts's. `--force-prefers-reduced-motion` is passed
-// explicitly rather than defaulted there: visual.ts must NOT have it (its readiness loop waits for
+// explicitly rather than defaulted there: appShots.ts must NOT have it (its readiness loop waits for
 // animation to settle), so it belongs to the caller that wants it.
 let session
 try {

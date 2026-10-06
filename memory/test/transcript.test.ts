@@ -1,12 +1,18 @@
-import { describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, test } from 'bun:test'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { sweepTempDirs, tempDir } from './tempDirs'
 import {
     extractTurns,
     trimToBudget,
     buildAutoNoteBody,
+    writeAutoNote,
     PER_MESSAGE_CHARS,
     MAX_BODY_CHARS,
     type TranscriptEntry,
 } from '../src/transcript'
+
+afterAll(sweepTempDirs)
 
 const user = (text: string): TranscriptEntry => ({
     type: 'user',
@@ -191,5 +197,19 @@ describe('buildAutoNoteBody', () => {
         // SDK SessionMessages have the same {type, message:{role, content}} shape.
         const sdk: TranscriptEntry[] = JSON.parse(JSON.stringify(raw))
         expect(buildAutoNoteBody(sdk)).toBe(buildAutoNoteBody(raw))
+    })
+})
+
+describe('writeAutoNote', () => {
+    test('writes auto-<ts>-<first 8 of id>.md with auto frontmatter + body', async () => {
+        const dir = tempDir('bismuth-autonote-test-')
+        await writeAutoNote(dir, 'abcdef0123456789', 'session', 'the body')
+        const files = readdirSync(dir)
+        expect(files).toHaveLength(1)
+        expect(files[0]).toMatch(/^auto-\d{8}-\d{6}-abcdef01\.md$/)
+        const text = readFileSync(join(dir, files[0]), 'utf8')
+        expect(text).toContain('type: auto')
+        expect(text).toContain('session')
+        expect(text).toContain('the body')
     })
 })

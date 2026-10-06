@@ -75,6 +75,7 @@ import { matchesKeybinding } from '../keybindings'
 import createAnnotationStore from './createAnnotationStore'
 import type { AnnotationStore } from './annotationTypes'
 import styles from './PageInk.module.css'
+import { clamp01 } from '../math'
 
 /** One source page as PreviewView measured it: where it renders, in the HOST's coordinate space
  *  (the host is `inset: 0` over the element that positions the pages), and its natural size. */
@@ -356,7 +357,7 @@ function PageInk(props: PageInkProps) {
             speed,
             hasRealPressure: hasReal,
         })
-        return Math.round(Math.max(0, Math.min(1, w / (b * 1.75))) * 255)
+        return Math.round(clamp01(w / (b * 1.75)) * 255)
     }
     const armHold = (i: number) => {
         clearTimeout(holdTimer)

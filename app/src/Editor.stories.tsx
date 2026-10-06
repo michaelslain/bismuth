@@ -526,7 +526,7 @@ view: table
  *  uses. The rule used to pin --editor-font-size, which — now that note markdown tables render
  *  at --prose-font-size (this file's MixedTypography story; Editor.tsx's editorTheme) — left a
  *  query-block table ~22% smaller than the note's own table directly above it: serif at mono
- *  size, the exact combination the "TABLES ARE PROSE" note in global.css's `Editor.css` section
+ *  size, the exact combination the "TABLES ARE PROSE" note in global.css's CodeMirror theming section
  *  documents as wrong.
  *  Asserts the two cells resolve to the SAME computed font-size instead of hardcoding either
  *  token, so a regression on either side of the pair fails this story. */
@@ -688,7 +688,7 @@ A paragraph with **bold text**, a #demo-tag, and \`inline code\`.
 1. ordered one
 `
 
-/** Regression for the size-reset list in global.css's `Editor.css` section: .cm-list-marker / .cm-syntax-mark / .cm-tag set
+/** Regression for the size-reset list in global.css's CodeMirror theming section: .cm-list-marker / .cm-syntax-mark / .cm-tag set
  *  their font-family INLINE in livePreview.ts's EditorView.theme() rather than through the
  *  family-reset selector list, and were never added to the paired SIZE-reset list either — so
  *  all three silently inherited --prose-font-size (17.28px against the intended 13.5px, exactly
@@ -857,7 +857,7 @@ const TAG_TYPOGRAPHY_TEXT = [
  *  2026-09-03: "they should all be the same, monaspace"). This story covers the two CodeMirror
  *  paths — the `.cm-tag` decoration in body prose, and the `span.bismuth-tag` that
  *  bases/markdown.ts writes into a RENDERED table cell, which reaches a different stylesheet
- *  (global.css's `Editor.css` section) than the decoration does (livePreview.ts's theme). ChatView carries the other
+ *  (global.css's CodeMirror theming section) than the decoration does (livePreview.ts's theme). ChatView carries the other
  *  surface.
  *
  *  expectBoundToUiFont, alongside expectUiFace, is load-bearing here: a rule that hardcoded the

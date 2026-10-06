@@ -87,7 +87,7 @@ export async function runSetupFree(
     args: string[],
     install: Install = installFreeAgent,
 ): Promise<void> {
-    const json = args.includes('--json')
+    const json = bool(args, 'json')
     let lastPhase = ''
     let lastMb = -1
     const onProgress = (p: FreeAgentProgress) => {
@@ -139,7 +139,7 @@ export const commands: CommandMap = {
                 : all
             // `--json` is handled by out(); the readable table is the default for a human debugging a
             // provider that won't start.
-            if (args.includes('--json')) {
+            if (bool(args, 'json')) {
                 out(reports, args)
                 return
             }

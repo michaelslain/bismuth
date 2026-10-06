@@ -16,6 +16,7 @@ import {
     type TaskPatch,
     type TaskPriority,
 } from './taskEdit'
+import { clamp } from '../math'
 
 // A Record over the union, so adding a priority to `TaskPriority` is a compile error here.
 const PRIORITY_KEYS: Record<TaskPriority, true> = {
@@ -127,7 +128,7 @@ export function reinsertTaskBlock(
         lines.length > 1 && lines[lines.length - 1] === ''
             ? lines.length - 1
             : lines.length
-    let at = Math.max(0, Math.min(index, max))
+    let at = clamp(index, 0, max)
     if (anchor !== undefined && lines[index - 1] !== anchor) {
         const first = lines.indexOf(anchor)
         if (first !== -1 && first === lines.lastIndexOf(anchor)) at = first + 1

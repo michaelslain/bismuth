@@ -158,13 +158,12 @@ Single-owner semantics across multiple devices, machine-scoped under `MACHINE_DI
 - **`devices.json`** — `{ "<deviceId>": { label, lastSeenISO } }`. Every daemon UPSERTS its own entry each tick (heartbeat), even when idle or non-owner, so it stays selectable as a future owner. `deviceId` is a stable UUID persisted at `MACHINE_DIR/device-id` (`daemon/src/lib/device.ts`); `label` is `os.hostname()`.
 - **`owner.json`** — `{ ownerDeviceId, ownerLabel, updatedAt }`. **Absent file = UNCLAIMED** ⇒ `isOwner()` is `true` (legacy / single-device behavior). Otherwise `isOwner()` is `ownerDeviceId === thisDeviceId`.
 - **`heartbeatDevice(home?)`** — atomic (`tmp` + `rename`) upsert of this device's entry with a fresh `lastSeenISO`.
-- **`setOwnerDevice(deviceId)`** — claims ownership, but rejects a device not already present in `devices.json` (a device must heartbeat before it can be made owner). Writes `owner.json` byte-compatibly with what Bismuth core reads.
 
 Only the owner device holds sessions and fires the model; a non-owner heartbeats and supervises processes but stays idle. (Writes are atomic via `tmp`+`rename` to survive a crash mid-write.)
 
-### Daemon-process identity (`isDaemonProcess`)
+### Daemon-process identity (`pidAlive` / `readDaemonPid`)
 
-`isDaemonProcess(pidFile = MACHINE_PID_FILE)` (`daemon/src/lib/platform.ts`) returns `true` only when the calling process's pid equals the pid in `daemon.pid`. Because `process.ts` keeps its `managed` child map at module scope, a non-daemon importer (terminal-launched MCP, plugin cache, dev hot-reload) would fork untracked children; mutating process MCP tools gate on this so only the real daemon process can drive them. Read-only tools work everywhere.
+`readDaemonPid(pidFile = MACHINE_PID_FILE)` and `pidAlive(pid)` (`daemon/src/lib/platform.ts`) read the pid recorded in `daemon.pid` and check that process is alive. Because `process.ts` keeps its `managed` child map at module scope, a non-daemon importer (terminal-launched MCP, plugin cache, dev hot-reload) would fork untracked children, so only the real daemon process should drive them. Read-only tools work everywhere.
 
 ---
 

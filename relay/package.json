@@ -8,7 +8,7 @@
     "@bismuth/memory": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.4.2",
     "@types/node": "^25",
     "typescript": "~5.6.2"
   }

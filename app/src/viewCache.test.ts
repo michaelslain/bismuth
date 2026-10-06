@@ -1,5 +1,12 @@
 import { test, expect, beforeEach } from 'bun:test'
-import { readCache, writeCache, scopedKey } from './viewCache'
+import {
+    readCache,
+    writeCache,
+    scopedKey,
+    readRaw,
+    writeRaw,
+    readArray,
+} from './viewCache'
 
 /** Minimal in-memory Storage stub (Bun test env has no localStorage). */
 function installMemoryStorage(): Map<string, string> {
@@ -67,4 +74,25 @@ test("writes under one backend's scoped key don't leak into another's read", () 
     expect(readCache(scopedKey(key, 'http://localhost:4321'))).toEqual({
         vault: 'A',
     })
+})
+
+test('readRaw/writeRaw/readArray never throw when storage throws', () => {
+    const boom = () => {
+        throw new Error('blocked')
+    }
+    ;(globalThis as any).localStorage = { getItem: boom, setItem: boom }
+    expect(readRaw('k')).toBeNull()
+    expect(() => writeRaw('k', 'v')).not.toThrow()
+    expect(readArray('k', (x): x is string => typeof x === 'string')).toEqual(
+        [],
+    )
+})
+
+test('readArray keeps accepted entries and reads junk as empty', () => {
+    const isStr = (x: unknown): x is string => typeof x === 'string'
+    writeCache('a', ['x', 1, 'y'])
+    expect(readArray('a', isStr)).toEqual(['x', 'y'])
+    writeCache('o', { not: 'array' })
+    expect(readArray('o', isStr)).toEqual([])
+    expect(readArray('missing', isStr)).toEqual([])
 })

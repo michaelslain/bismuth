@@ -15,9 +15,9 @@ import {
     remember,
     recall,
     forget,
-    mcpAgentChannel,
     MEMORY_UNAVAILABLE,
 } from './memory'
+import { mcpChannel } from '../../core/src/visibilityCliGate'
 import {
     daemonTools,
     daemonEnabled,
@@ -294,12 +294,12 @@ const memoryHandlers: Record<
                 folder?: string
             },
             dir,
-            { channel: mcpAgentChannel() },
+            { channel: mcpChannel() },
         ),
     recall: (args, dir) =>
         recall(args as { query: string; folder?: string }, dir),
     forget: (args, dir) =>
-        forget(args as { name: string }, dir, { channel: mcpAgentChannel() }),
+        forget(args as { name: string }, dir, { channel: mcpChannel() }),
 }
 
 // Exported (rather than left as an inline callback) so tests can dispatch a fabricated

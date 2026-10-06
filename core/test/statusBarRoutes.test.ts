@@ -1,10 +1,9 @@
 // core/test/statusBarRoutes.test.ts — GET /status-bar + POST /status-bar/trust against a real server.
 import { test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
 import { makeVault } from './helpers'
+import { tempDir } from './tempDirs'
 
 const TOKEN = 'status-bar-test-token'
 const prevToken = process.env.BISMUTH_OWNER_TOKEN
@@ -12,7 +11,7 @@ const prevTrust = process.env.BISMUTH_TRUST_FILE
 
 beforeAll(() => {
     process.env.BISMUTH_OWNER_TOKEN = TOKEN
-    process.env.BISMUTH_TRUST_FILE = join(mkdtempSync(join(tmpdir(), 'bismuth-trust-')), 'trusted.json')
+    process.env.BISMUTH_TRUST_FILE = join(tempDir('bismuth-trust-'), 'trusted.json')
 })
 afterAll(() => {
     if (prevToken === undefined) delete process.env.BISMUTH_OWNER_TOKEN

@@ -1,14 +1,14 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, writeFile, rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { listFsPaths } from '../src/fsPaths'
+import { tempDir } from './tempDirs'
 
 // A fake home with a few dirs + files to complete against. Never touches the real home.
 let home: string
 
 beforeAll(async () => {
-    home = await mkdtemp(join(tmpdir(), 'fspaths-'))
+    home = tempDir('fspaths-')
     await mkdir(join(home, '.claude-bot'))
     await mkdir(join(home, '.claude'))
     await mkdir(join(home, 'Documents'))

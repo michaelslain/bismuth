@@ -55,6 +55,7 @@
 //   bun bench/pdfScroll.ts                                          # defaults to ManyPages @ :6435
 //   bun bench/pdfScroll.ts preview-pdfpages--many-pages --base http://localhost:6006
 import { launchChrome } from './chromeSession'
+import { arg, BASE } from './args'
 
 const VALUE_FLAGS = new Set(['base', 'duration'])
 const argv = process.argv.slice(2)
@@ -71,8 +72,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 const ID = positional[0] ?? 'preview-pdfpages--many-pages'
-const BASE = opts.get('base') ?? 'http://localhost:6006'
-const DURATION_MS = Number(opts.get('duration') ?? 3000)
+const DURATION_MS = Number(arg('duration', '3000'))
 const W = 1280,
     H = 900
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))

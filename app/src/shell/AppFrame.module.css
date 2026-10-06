@@ -1,5 +1,5 @@
 /* AppFrame.module.css — the outermost shell: top strip, the three-cell grid, status bar. Moved out
-   of global.css's App.css section. Single owner: AppFrame.tsx.
+   of global.css's app shell section. Single owner: AppFrame.tsx.
 
    Hashed classes. The frame is reached from outside only through `data-app-shell`.
 

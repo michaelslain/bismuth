@@ -74,7 +74,7 @@ export function HeatmapView(props: HeatmapViewProps) {
         const dates = data()
             .points.map(p => p.date)
             .filter((d): d is string => !!d)
-        return dates.length ? dates.sort().at(-1)! : null
+        return dates.length ? dates.reduce((a, b) => (b > a ? b : a)) : null
     })
 
     const [columns, setColumns] = createSignal(20)
