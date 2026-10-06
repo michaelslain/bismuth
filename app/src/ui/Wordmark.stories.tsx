@@ -55,11 +55,11 @@ export const Body: Story = {
     },
 }
 
-/** With the trailing blinking caret, as the top strip renders it. */
+/** The default: the word with its trailing blinking caret, as every surface renders it. */
 export const BodyWithCaret: Story = {
     render: () => (
         <Panel>
-            <Wordmark size="body" caret />
+            <Wordmark size="body" />
         </Panel>
     ),
     play: async ({ canvasElement }) => {
@@ -67,7 +67,19 @@ export const BodyWithCaret: Story = {
     },
 }
 
-/** The hero size (`--fs-hero`). */
+/** `caret={false}`: the bare word, for a caller that genuinely wants no cursor. */
+export const BodyBare: Story = {
+    render: () => (
+        <Panel>
+            <Wordmark size="body" caret={false} />
+        </Panel>
+    ),
+    play: async ({ canvasElement }) => {
+        await expect(canvasElement.querySelectorAll('.asc-caret').length).toBe(0)
+    },
+}
+
+/** The hero size (`--fs-wordmark-display`), its caret grown with the word. */
 export const Hero: Story = {
     render: () => (
         <Panel>
@@ -106,7 +118,7 @@ export const AcrossThemes: Story = {
                         <span style={{ 'min-width': '90px' }}>
                             <Label>{THEME_LABELS[name] ?? name}</Label>
                         </span>
-                        <Wordmark size="body" caret />
+                        <Wordmark size="body" />
                         <Wordmark size="hero" />
                     </div>
                 )

@@ -1,9 +1,8 @@
-/* app/src/intro/VaultIntro.module.css — the first-run intro takeover's root + stage.
+/* app/src/intro/VaultIntro.module.css — the first-run intro takeover's root.
    Themed through the app's CSS vars (--bg/--fg/--accent/…), which the theme picker rewrites on
-   :root, so the whole surface re-themes live. Everything else the takeover draws lives with the
-   component that draws it (IntroGraph, IntroHeader, IntroFrame, IntroHero, IntroCopy, ThemePicker,
-   PowerUpList, IntroCta, IntroNav); this file owns only the full-window root and the stage the
-   frame fills. */
+   :root, so the whole surface re-themes live. Everything the takeover draws lives with the
+   component that draws it (IntroWindow, IntroFooter, IntroGraph, IntroHero, IntroCopy,
+   ThemePicker, PowerUpList); this file owns only the full-window ground that centres the window. */
 
 .vi-root {
   position: fixed;
@@ -11,8 +10,9 @@
   /* Below the popover portal layer (~1100). The intro is the only thing on screen on
      first run, so it doesn't need to sit above everything. */
   z-index: 100;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-7);
   overflow: hidden;
   background: var(--bg);
   color: var(--fg);
@@ -23,16 +23,4 @@
 .vi-root *::before,
 .vi-root *::after {
   box-sizing: border-box;
-}
-
-/* ---- stage ---- */
-/* Fills the whole .vi-root and hosts the slide's IntroFrame (IntroHeader is an absolute overlay, so
-   it doesn't push the stage down). Sits above the graph layers. All of the layout is the frame's. */
-.vi-stage {
-  position: relative;
-  z-index: 2;
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
 }

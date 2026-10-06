@@ -24,8 +24,6 @@ import styles from './IntroCopy.module.css'
 export type IntroCopyProps = {
     title: string
     body: string
-    /** Graph is painted directly behind the copy: add the --bg text halo + radial scrim. */
-    backdrop?: boolean
     /** Type the text in on mount (default true). False, or `prefers-reduced-motion`, shows both
      *  texts whole from the first frame. */
     type?: boolean
@@ -90,13 +88,12 @@ const IntroCopy: Component<IntroCopyProps> = props => {
         <div
             class={[
                 styles['intro-copy'],
-                props.backdrop ? styles['intro-copy--backdrop'] : '',
                 props.class,
             ]
                 .filter(Boolean)
                 .join(' ')}
         >
-            <Heading level={1} size="hero-xl" register="prose">
+            <Heading level={1} size="hero" register="prose">
                 <Text as="span" inherit>
                     {props.title.slice(0, counts().title)}
                 </Text>
@@ -105,7 +102,7 @@ const IntroCopy: Component<IntroCopyProps> = props => {
                     {props.title.slice(counts().title)}
                 </Text>
             </Heading>
-            <Text size="title" register="prose" class={styles.body}>
+            <Text size="lead" register="prose" class={styles.body}>
                 <Text as="span" inherit>
                     {props.body.slice(0, counts().body)}
                 </Text>

@@ -956,14 +956,6 @@ export class AsciiGraphRenderer implements GraphRenderer {
     private zoomPct = 100
     private wheelAccum = 0
     private userTook = false
-    // INTRO FRAMING (ported from CanvasGraphRenderer.ts:418/522/524 — its only two off-seam camera
-    // knobs, used by the first-run Vault Intro and nothing else). `fitMargin` divides the 100% fit
-    // scale, so >1 is extra zoom-OUT; `frameOffsetY` slides the graph's screen ORIGIN down by that
-    // fraction of the host height, leaving the canvas itself full-bleed. Both are static per mount —
-    // they are framing, not camera state — so neither is touched by fit(resetCamera)/resetView().
-    private fitMargin = 1
-    private frameOffsetY = 0
-
     // 2D<->3D MODE MORPH (modeMorph.ts) — what a `viewMode` flip now runs instead of the hard camera
     // cut setConfig used to apply (see graphRenderer.ts's EPITAPH item 1). `null` when settled — no
     // flip in flight.
@@ -1205,34 +1197,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
         } else this.stop()
     }
 
-    /** Extra fit zoom-OUT (see the `fitMargin` field). Refits immediately; the floor mirrors
-     *  CanvasGraphRenderer's own `Math.max(0.2, m)` so a 0 can never divide the fit scale away. */
-    setFitMargin(m: number) {
-        this.fitMargin = Number.isFinite(m) ? Math.max(0.2, m) : 1
-        this.fit()
-    }
-
-    /** Slide the graph's screen origin down by `frac` of the host height (see the `frameOffsetY`
-     *  field). No refit — the fit SCALE is unchanged, only where the origin lands. */
-    setFrameOffsetY(frac: number) {
-        this.frameOffsetY = Number.isFinite(frac) ? frac : 0
-        this.dirty = true
-    }
-
-    /** The screen px the world origin projects to, before perspective: grid centre + pan + the
-     *  intro's vertical frame offset. A helper rather than three inlined copies so the node
+    /** The screen px the world origin projects to, before perspective: grid centre + pan. A helper rather than three inlined copies so the node
      *  projection, the entity projection and the cursor-anchored zoom can never disagree about where
      *  the graph's centre is — they all have to invert each other exactly. */
     private originX(panPx: number) {
         return this.m.padX + (this.m.cols / 2) * this.m.cellW + panPx
     }
     private originY(panPx: number) {
-        return (
-            this.m.padY +
-            (this.m.rows / 2) * this.m.cellH +
-            panPx +
-            this.frameOffsetY * this.H
-        )
+        return this.m.padY + (this.m.rows / 2) * this.m.cellH + panPx
     }
 
     // ---- data ----------------------------------------------------------------
@@ -1674,10 +1646,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
      * The field's GROUND, per `GraphConfig.transparent`.
      *
      * `.asc-field` (global.css's `ui/ui.css` section) paints an opaque `--graph-bg` behind the canvas — right for a graph pane,
-     * wrong for the first-run Vault Intro, which cross-fades TWO full-bleed graph layers (opacity
-     * 0↔1) over the page's own `--bg`. An opaque ground there fades the entire page background
-     * between `--bg` and `--graph-bg` on every slide change, and those two tokens differ in three of
-     * the four themes (riso's pair is the widest gap). The canvas itself is already
+     * wrong for the first-run Vault Intro, whose one graph moves and fades between two slides over
+     * the intro window's own ground. An opaque ground there paints a `--graph-bg` slab over the
+     * window that fades in and out with the graph, and those tokens differ in three of the four
+     * themes (riso's pair is the widest gap). The canvas itself is already
      * transparent — paint() clears it rather than filling — so suppressing this one background is the
      * whole of it.
      *
@@ -2035,7 +2007,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
                   this.m,
                   Math.max(1e-6, this.radius3),
               )
-        return raw / this.fitMargin
+        return raw
     }
 
     /** Recompute the world→px fit ("res = 1 fits the whole graph on the grid", i.e. 100%) and the
@@ -3551,9 +3523,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // The QUANTIZED pan (see rasterize()/asciiGrid.ts quantizePan) — the pan-jitter fix: `panXQ`/
         // `panYQ` are always a whole multiple of the cell size, so the world→cell rounding PHASE below
         // never shifts mid-drag. The leftover sub-cell remainder (`panXFrac`/`panYFrac`) is applied only
-        // as a canvas translate at paint time, never here. `originY` also folds in the intro's static
-        // vertical frame offset (see setFrameOffsetY) — a constant px shift, so unlike the drag pan it
-        // cannot re-phase the world→cell rounding mid-interaction and needs no quantization.
+        // as a canvas translate at paint time, never here.
         const ox = this.originX(this.panXQ)
         const oy = this.originY(this.panYQ)
         return {

@@ -869,7 +869,7 @@ Pure rules for the FLAT field (the knowledge graph with `[clusters]` off). `degr
 Pure label-ladder math — both halves are live. `computeAlwaysOnSet(nodes, edges, activeFile, hubCount)` unions the top-`hubCount` nodes by undirected degree with the active file. The zoom-driven ladder (`fileLabelBudget`/`fileLabelAlpha`/`clusterLabelAlpha`/`clusterLevelAlphas`/`levelBoundaries`/`clusterLabelText`/`eyebrowWidthCells`, plus the `FILE_LABEL_*`/`CLUSTER_LABEL_MAX_CHARS` constants) crossfades cluster names to file names as resolution deepens past `FILE_LABEL_REVEAL_T`. Unit-tested (`labelSelection.test.ts`).
 
 #### `graph/GraphAtmosphere.tsx`
-Shared graph "atmosphere" overlay — the iridescent cluster-glow + depth vignette layered over the graph canvas. Extracted so `GraphView` and the first-run intro graph share one source instead of duplicating the glow divs/wiring. Rendered as a sibling after the renderer's canvas; structurally typed against any renderer exposing `setGlowCallback()` (fed by `AsciiGraphRenderer`'s per-frame top-3 community centroid projections, via `densityField.ts`). Styled by `GraphAtmosphere.module.css`.
+Shared graph "atmosphere" overlay — the iridescent cluster-glow + depth vignette layered over the graph canvas. Used by `GraphView` only (the first-run intro draws its graph without it). Rendered as a sibling after the renderer's canvas; structurally typed against any renderer exposing `setGlowCallback()` (fed by `AsciiGraphRenderer`'s per-frame top-3 community centroid projections, via `densityField.ts`). Styled by `GraphAtmosphere.module.css`.
 
 #### `graph/graphLayers.ts`
 The graph's transient per-window display choices: `[clusters]` (`GraphConfig.showLodMasses`) and the 2D/3D dimension. Module-level signals (`graphClusters`/`setGraphClusters`, `graphViewMode`/`setGraphViewMode`, `GraphViewMode = '2d' | '3d'`) so the full-pane graph and the sidebar mini graph share one value, seeded from `localStorage` via `viewCache` (`CLUSTERS_KEY`, `VIEW_MODE_KEY`) so they survive a reload WITHOUT writing `.settings` — toggling the dimension once rewrote `settings.yaml` canonically, which reloaded an open settings buffer and scrolled it to the top. `readStoredFlag` is on unless the stored value is exactly `false`; `readStoredViewMode` is 2D unless it is exactly `'3d'`. The gradient (`GraphAtmosphere`'s bloom + vignette) is not one of these — it is the persisted `graph.gradient` setting, off by default.
@@ -1593,7 +1593,7 @@ Dialog for picking a vault folder (used by "Open folder" flow).
 The takeover (`position: fixed`, mounted by `index.tsx` on first run). Owns four signals (slide index, theme, busy, selected power-ups), snapshots `:root`'s theme vars on mount and restores them on unmount, and composes the pieces below. Props: `startAt` (which slide opens first), `initialTheme`, and `onEnter` (the CTA seam; default `introEnterVault.enterVault` with the real Tauri/localStorage deps). No component asks which slide is showing — a slide's row in `introSlides.ts` says which pieces it wants.
 
 #### `introSlides.ts`
-`SLIDES` (key, title, body, `graph`, `hero`, `extra`, `corner` per slide), `POWER_UPS` + `DEFAULT_POWERUPS`, `powerUpCommands()` (selected ids → command-palette ids) and `togglePowerUp()`. Tested.
+`SLIDES` (key, `label`, title, body, `hero`, `extra` per slide), `POWER_UPS` + `DEFAULT_POWERUPS`, `powerUpCommands()` (selected ids → command-palette ids) and `togglePowerUp()`. Tested.
 
 #### `introPager.ts` / `introKeys.ts`
 `step(index, count, move, target)` is the pager arithmetic (`next` on the last slide asks the caller to enter the vault; `skip` jumps to the last slide); `startIndex()` resolves `startAt`. `introKeyAction(e)` maps ArrowRight/ArrowLeft/the shared dismiss key to `next`/`prev`/`skip` (the arrow keys are the pager's recorded keybinding exception). Both tested.
@@ -1605,18 +1605,16 @@ The takeover (`position: fixed`, mounted by `index.tsx` on first run). Owns four
 `enterVault(choice, deps)` — the CTA with every effect injected: browser preview logs, Tauri opens `choose_first_vault`, production persists the chosen power-ups and theme vars first (`storageKeys.ts`), dev navigates into the app. Returns `opened | cancelled | failed | browser`. Tested.
 
 #### `vaultIntroGraph.ts`
-`SMALL_GRAPH` / `BIG_GRAPH` (baked-layout dummy clouds) and `applyGraphConfig()`. Tested by `VaultIntro.test.ts`.
+`BIG_GRAPH` (the baked-layout dummy cloud) and `applyGraphConfig()`. Tested by `VaultIntro.test.ts`.
 
 #### Components
-- `IntroGraph.tsx` — one renderer + canvas + `GraphAtmosphere`; `VaultIntro` mounts two and cross-fades them.
-- `IntroHeader.tsx` — the floating top overlay: corner `LogoMark` (`showMark`) and the skip button.
-- `IntroFrame.tsx` — the one grid every slide is laid out on (`variant` `hero`/`setup`; slots `data-intro-slot="hero|text|nav"`), so the hero box, headline and nav never move between slides.
-- `IntroHero.tsx` — a slide's non-graph visual: `GlyphArt` (`ui/ascii/`) painting a scene from `glyphScenes/` (`wordmark`, `daemon`, `agents`, `begin`).
-- `IntroCopy.tsx` — headline over paragraph in the prose face; `backdrop` adds the text halo over a graph.
+- `IntroWindow.tsx` — the framed window every slide sits in: a wordmark strip with the skip X, a fixed-height art box, a fixed-height copy slot (so the headline sits at one y on every slide) and a footer; slots `data-intro-slot="art|text|footer"`. `VaultIntro` centres it.
+- `IntroFooter.tsx` — the footer: `2/7 // palette` readout, `[back]` and the primary `[next]` (`[enter your vault]` / `[opening…]` on the last slide).
+- `IntroGraph.tsx` — one renderer + canvas drawn inside its positioned parent (the graph slide's art box), no bloom.
+- `IntroHero.tsx` — a slide's non-graph art: the hero `ui/Wordmark` (`wordmark`, `begin` + `IntroPrompt`) or `GlyphArt` (`ui/ascii/`) painting a scene from `glyphScenes/` (`daemon`, `agents`).
+- `IntroCopy.tsx` — headline over paragraph in the prose face.
 - `ThemePicker.tsx` + `ThemeSwatchCard.tsx` — the four-card theme group (`role="group"`, `aria-pressed`).
 - `PowerUpList.tsx` — one `Card` per power-up holding a `ToggleRow`.
-- `IntroCta.tsx` — the one primary `[enter your vault]` / `[opening…]` button.
-- `IntroNav.tsx` — back / `PagerDots` / next, dots centred on every slide.
 
 ---
 

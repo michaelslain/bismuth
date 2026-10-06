@@ -5,14 +5,13 @@
    This file is state plus composition and nothing else. What each slide says and shows is the
    table in ./introSlides; the pager arithmetic, key mapping, theme painting and the CTA's
    effects are the pure modules ./introPager, ./introKeys, ./introTheme and ./introEnterVault;
-   everything it draws is a component (IntroGraph, IntroHeader, IntroFrame, IntroHero, IntroCopy,
-   ThemePicker, PowerUpList, IntroCta, IntroNav). Nothing here asks which slide is showing — a
+   everything it draws is a component (IntroWindow, IntroFooter, IntroGraph, IntroHero, IntroCopy,
+   ThemePicker, PowerUpList). Nothing here asks which slide is showing — a
    slide's table row says which pieces it wants.
 
-   The theme step shows a real 3D knowledge graph (dummy unlabeled nodes, the app's own graph
-   renderer), and picking a theme recolors it live; the SAME graph carries into the "Three
-   brains, one mind" slide. The picked theme also re-themes the whole takeover and seeds the new
-   vault's appearance.theme (written by the Tauri `choose_first_vault` command on the CTA).
+   The graph slide draws a real 3D knowledge graph inside its art box (dummy unlabeled nodes, the
+   app's own graph renderer). The picked theme re-themes the whole takeover and seeds the new
+   vault's appearance.theme (written by the Tauri `choose_first_vault` command on the last slide's primary button).
 
    A face picker (5 Monaspace variants, plus the serifs for the prose face) was considered but
    deliberately left out: persisting a chosen face into the NEW vault would need either a new
@@ -33,12 +32,10 @@ import { DEFAULTS } from '../settings'
 import { DEFAULT_THEME, type ThemeName } from '../themes'
 import { isTauri } from '../nativeMenu'
 import IntroCopy from './IntroCopy'
-import IntroCta from './IntroCta'
-import IntroGraph from './IntroGraph'
-import IntroHeader from './IntroHeader'
-import IntroFrame from './IntroFrame'
+import IntroGraph, { type IntroGraphStage } from './IntroGraph'
+import IntroFooter from './IntroFooter'
 import IntroHero from './IntroHero'
-import IntroNav from './IntroNav'
+import IntroWindow from './IntroWindow'
 import PowerUpList from './PowerUpList'
 import {
     binariesFor,
@@ -64,7 +61,7 @@ import {
     type SlideKey,
 } from './introSlides'
 import { applyIntroTheme, snapshotRootTheme } from './introTheme'
-import { SMALL_GRAPH, BIG_GRAPH } from './vaultIntroGraph'
+import { BIG_GRAPH } from './vaultIntroGraph'
 import styles from './VaultIntro.module.css'
 
 export type VaultIntroProps = {
@@ -119,26 +116,6 @@ const enterWithRealDeps = (choice: EnterVaultChoice) => {
     })
 }
 
-/** The design window: the 1280x912 the big graph's fit was tuned in, with its 432px hero box. */
-const DESIGN_H = 912
-const DESIGN_HERO_H = 432
-const FIT_DEFAULT = { offsetY: -0.133, fitMargin: 1.96 }
-
-/** Where the big graph must sit to land on the hero box: the box centre relative to the root centre
- *  (as a fraction of the root height) plus the cloud's own asymmetry, and a margin that keeps the
- *  glyph cloud's height in proportion to the box. Both are the graph renderer's host-height
- *  fractions, so they are re-derived from the live rects rather than hardcoded. */
-const fitToHero = (root: Element, hero: Element) => {
-    const r = root.getBoundingClientRect()
-    const h = hero.getBoundingClientRect()
-    if (r.height <= 0 || h.height <= 0) return FIT_DEFAULT
-    const centreY = h.top + h.height / 2 - r.top
-    return {
-        offsetY: (centreY - r.height / 2) / r.height + 0.011,
-        fitMargin: 1.96 * (r.height / DESIGN_H) * (DESIGN_HERO_H / h.height),
-    }
-}
-
 const VaultIntro: Component<VaultIntroProps> = props => {
     const [index, setIndex] = createSignal(startIndex(SLIDES, props.startAt))
     const [theme, setTheme] = createSignal<ThemeName>(
@@ -156,8 +133,14 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     const agent = () => picked() ?? defaultIntroAgent(agentOptions())
     const noneFound = () => detected().length === 0
     const slide = () => SLIDES[index()]
-    let root!: HTMLDivElement
-    const [fit, setFit] = createSignal(FIT_DEFAULT)
+    /** Where the intro graph stands on this slide, or nothing: behind the theme cards, then in the
+     *  foreground on the three-brains slide. */
+    const graphStage = (): IntroGraphStage | undefined =>
+        slide().key === 'theme'
+            ? 'backdrop'
+            : slide().key === 'graph'
+              ? 'hero'
+              : undefined
 
     // The intro mounts and unmounts inside a running page (Storybook, replay): record :root's
     // theme vars before the first paint below and put them back on the way out.
@@ -196,16 +179,6 @@ const VaultIntro: Component<VaultIntroProps> = props => {
         move(action)
     }
     onMount(() => {
-        const hero = root.querySelector('[data-intro-slot="hero"]')
-        if (!hero) return
-        const measure = () => setFit(fitToHero(root, hero))
-        measure()
-        const ro = new ResizeObserver(measure)
-        ro.observe(root)
-        ro.observe(hero)
-        onCleanup(() => ro.disconnect())
-    })
-    onMount(() => {
         if (props.detectedAgents) return
         void detectInstalledAgents().then(setDetected)
     })
@@ -213,117 +186,80 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     onCleanup(() => window.removeEventListener('keydown', onKey))
 
     return (
-        <div class={styles['vi-root']} ref={root}>
-            {/* Two independent graphs that cross-fade (opacity) between the theme + graph
-                slides: a small full-bleed starter cloud, and a big condensed "three brains"
-                cloud. Separate instances → no shared renderer, no re-render on slide change. */}
-            <IntroGraph
-                graph={SMALL_GRAPH}
-                active={slide().graph === 'small'}
-                theme={theme()}
-            />
-            {/* offsetY / fitMargin anchor the big cloud to the hero box, not to the window: they are
-                fractions of the host (= root) height H, while the box is fixed px, so they are
-                derived from the box's measured rect (see fitToHero) and follow a resize.
-                offsetY: the box centre's distance from the window centre, as a fraction of H, +0.011
-                for the cloud not being symmetric about its origin (measured at 1280x912: the glyph
-                centre landed 0.011 H low). fitMargin: the glyph cloud's height is proportional to H
-                / fitMargin, so the margin scales with H and inversely with the box height; 1.96 is
-                the value that fits the 432px box at H = 912 with ~60px clear above the headline. */}
-            <IntroGraph
-                graph={BIG_GRAPH}
-                active={slide().graph === 'big'}
-                theme={theme()}
-                offsetY={fit().offsetY}
-                fitMargin={fit().fitMargin}
-            />
-
-            <IntroHeader
-                icon={DEFAULTS.appearance.icon}
-                showMark={slide().corner}
-                onSkip={() => move('skip')}
-            />
-
-            <div class={styles['vi-stage']}>
-                {/* One frame for every slide: the same grid, so the hero box, the headline and the
-                    nav never move between slides. The hero and the copy are keyed on the slide so
-                    they remount each change and their enter animation replays; the frame, the nav
-                    (and the keyboard focus on it) and the persistent graphs never remount. */}
-                <IntroFrame
-                    variant={
-                        slide().extra === 'themes' ||
-                        slide().extra === 'pickagent' ||
-                        slide().extra === 'powerups'
-                            ? 'setup'
-                            : 'hero'
-                    }
-                    hero={
-                        <Show when={slide()} keyed>
-                            {s => (
-                                <>
-                                    <Show when={s.hero}>
-                                        {hero => <IntroHero hero={hero()} />}
-                                    </Show>
-                                    <Show when={s.extra === 'themes'}>
-                                        <ThemePicker
-                                            value={theme()}
-                                            onChange={setTheme}
-                                        />
-                                    </Show>
-                                    <Show when={s.extra === 'pickagent'}>
-                                        <PowerUpList
-                                            single
-                                            items={agentOptions()}
-                                            selected={[agent()]}
-                                            onToggle={setPicked}
-                                        />
-                                    </Show>
-                                    <Show when={s.extra === 'powerups'}>
-                                        <PowerUpList
-                                            items={POWER_UPS}
-                                            selected={powerups()}
-                                            onToggle={id =>
-                                                setPowerups(p =>
-                                                    togglePowerUp(p, id),
-                                                )
-                                            }
-                                        />
-                                    </Show>
-                                </>
-                            )}
-                        </Show>
-                    }
-                    text={
-                        <Show when={slide()} keyed>
-                            {s => (
-                                <>
-                                    <IntroCopy
-                                        title={s.title}
-                                        body={slideBody(s, noneFound())}
-                                        backdrop={!!s.graph}
+        <div class={styles['vi-root']}>
+            <IntroWindow
+                onClose={() => move('skip')}
+                backdrop={
+                    // ONE graph for the palette and three-brains slides: the condition stays true
+                    // across that step, so the instance persists and just changes stage.
+                    <Show when={graphStage()}>
+                        {stage => (
+                            <IntroGraph
+                                graph={BIG_GRAPH}
+                                active
+                                stage={stage()}
+                                theme={theme()}
+                            />
+                        )}
+                    </Show>
+                }
+                art={
+                    <Show when={slide()} keyed>
+                        {s => (
+                            <>
+                                <Show when={s.hero}>
+                                    {hero => <IntroHero hero={hero()} />}
+                                </Show>
+                                <Show when={s.extra === 'themes'}>
+                                    <ThemePicker
+                                        value={theme()}
+                                        onChange={setTheme}
                                     />
-                                    <Show when={s.extra === 'cta'}>
-                                        <IntroCta
-                                            busy={busy()}
-                                            onEnter={() => move('next')}
-                                        />
-                                    </Show>
-                                </>
-                            )}
-                        </Show>
-                    }
-                    nav={
-                        <IntroNav
-                            index={index()}
-                            count={SLIDES.length}
-                            onPrev={() => move('prev')}
-                            onNext={() => move('next')}
-                            onSelect={k => move('go', k)}
-                            backdrop={!!slide().graph}
-                        />
-                    }
-                />
-            </div>
+                                </Show>
+                                <Show when={s.extra === 'pickagent'}>
+                                    <PowerUpList
+                                        single
+                                        items={agentOptions()}
+                                        selected={[agent()]}
+                                        onToggle={setPicked}
+                                    />
+                                </Show>
+                                <Show when={s.extra === 'powerups'}>
+                                    <PowerUpList
+                                        items={POWER_UPS}
+                                        selected={powerups()}
+                                        onToggle={id =>
+                                            setPowerups(p =>
+                                                togglePowerUp(p, id),
+                                            )
+                                        }
+                                    />
+                                </Show>
+                            </>
+                        )}
+                    </Show>
+                }
+                text={
+                    <Show when={slide()} keyed>
+                        {s => (
+                            <IntroCopy
+                                title={s.title}
+                                body={slideBody(s, noneFound())}
+                            />
+                        )}
+                    </Show>
+                }
+                footer={
+                    <IntroFooter
+                        index={index()}
+                        count={SLIDES.length}
+                        label={slide().label}
+                        busy={busy()}
+                        onPrev={() => move('prev')}
+                        onNext={() => move('next')}
+                    />
+                }
+            />
         </div>
     )
 }

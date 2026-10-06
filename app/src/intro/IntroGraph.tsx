@@ -1,72 +1,54 @@
-// One self-contained 3D graph instance (its own renderer + canvas + atmosphere). Renders its
-// baked-layout graph ONCE (framed instantly, no settle/auto-fit motion), recolors on theme
-// change, and pauses when not `active`. The intro mounts two — a small full-bleed cloud for the
-// theme slide and a big condensed one for "three brains" — and cross-fades between them via the
-// `.active` opacity transition, so there's no shared instance and no re-render on slide change.
+// One self-contained 3D graph instance (its own renderer + canvas), drawn inside its positioned
+// parent box with no bloom or vignette. Renders its baked-layout graph ONCE (framed instantly, no
+// settle/auto-fit motion), recolors on theme change, and pauses when not `active`.
 import { createEffect, onCleanup, onMount, type Component } from 'solid-js'
 import { AsciiGraphRenderer } from '../graph/AsciiGraphRenderer'
 import type { GraphRenderer } from '../graph/graphRenderer'
-import { GraphAtmosphere, type BloomSink } from '../graph/GraphAtmosphere'
 import type { GraphData } from '../../../core/src/graph'
 import type { ThemeName } from '../themes'
 import { applyGraphConfig } from './vaultIntroGraph'
 import styles from './IntroGraph.module.css'
+
+export type IntroGraphStage = 'backdrop' | 'hero'
 
 export type IntroGraphProps = {
     graph: GraphData
     /** Visible + rendering; inactive instances fade to 0 and pause. */
     active: boolean
     theme: ThemeName
-    /** Vertical frame offset (fraction of the host height), 0 = centred. Reactive. */
-    offsetY?: number
-    /** Zoom-out margin passed to setFitMargin. Reactive. */
-    fitMargin?: number
+    /** Where the ONE intro graph stands, inside IntroWindow's backdrop slot (the whole window body).
+     *  'backdrop' — small and dim behind the palette slide's theme cards. 'hero' — the three-brains
+     *  slide: brought forward over the art box, larger and at full strength. Changing it animates
+     *  the move (the renderer re-fits as its box grows), so the same graph slides into the
+     *  foreground. Absent: it fills its parent box (stories). */
+    stage?: IntroGraphStage
     class?: string
 }
 
 const IntroGraph: Component<IntroGraphProps> = props => {
     let host!: HTMLDivElement
     const renderer: GraphRenderer = new AsciiGraphRenderer()
-    // This renderer instance never gets swapped — one IntroGraph drives one renderer for its whole
-    // life — so wiring it straight to a sink here has none of the staleness risk a `renderer` prop
-    // has on GraphAtmosphere. It still goes through the same BloomSink shape GraphView.tsx uses
-    // (the reference shape) rather than a one-off, so there is exactly one way <GraphAtmosphere>
-    // is ever fed a field. See GraphAtmosphere.tsx's file-level comment for why it takes a sink
-    // instead of the renderer itself.
-    const bloomSink: BloomSink = {}
     let mounted = false
     onMount(() => {
         renderer.mount(host, () => {})
-        renderer.setBloomCallback?.(field => bloomSink.current?.(field))
         renderer.render(props.graph)
         mounted = true
         applyGraphConfig(renderer, props.theme)
-        if (props.fitMargin) renderer.setFitMargin(props.fitMargin) // zoom the cloud out a touch
-        // Shift the graph itself (not the canvas) so it can sit in the upper area while the canvas
-        // stays full-bleed (seamless with the page). 0 = centered.
-        renderer.setFrameOffsetY(props.offsetY ?? 0)
         renderer.setVisible(props.active)
     })
     onCleanup(() => renderer.destroy())
     createEffect(() => mounted && applyGraphConfig(renderer, props.theme))
     createEffect(() => mounted && renderer.setVisible(props.active))
-    // The frame offset and fit margin follow their props (VaultIntro derives them from the hero box
-    // and re-derives them when the window resizes); onMount only applies the first values.
-    createEffect(() => {
-        const margin = props.fitMargin
-        if (mounted && margin) renderer.setFitMargin(margin)
-    })
-    createEffect(() => {
-        const offset = props.offsetY ?? 0
-        if (mounted) renderer.setFrameOffsetY(offset)
-    })
     return (
         <div
             class={`${styles['root']}${props.class ? ` ${props.class}` : ''}`}
-            classList={{ [styles['active']]: props.active }}
+            classList={{
+                [styles['active']]: props.active,
+                [styles['stage-backdrop']]: props.stage === 'backdrop',
+                [styles['stage-hero']]: props.stage === 'hero',
+            }}
         >
             <div class={styles['canvas']} ref={host} />
-            <GraphAtmosphere sink={bloomSink} />
         </div>
     )
 }

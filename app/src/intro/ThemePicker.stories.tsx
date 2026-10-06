@@ -31,3 +31,14 @@ export const Interactive: Story = {
         return <ThemePicker value={value()} onChange={setValue} />
     },
 }
+
+/** A narrow window: the four cards wrap or shrink inside the art box, never overflow it. */
+export const Narrow: Story = {
+    decorators: [
+        Story => (
+            <div style={{ width: 'calc(90 * var(--cell-w))' }}>
+                <Story />
+            </div>
+        ),
+    ],
+}

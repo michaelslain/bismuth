@@ -6521,124 +6521,13 @@ describe('vector-edge fidelity — edge width follows the resolution STOP, not r
 })
 
 // ---------------------------------------------------------------------------------------------
-// INTRO FRAMING + THE TWO NON-KNOWLEDGE-GRAPH CONSUMERS
+// THE TWO NON-KNOWLEDGE-GRAPH CONSUMERS
 //
-// `setFitMargin`, `setFrameOffsetY` and `GraphConfig.transparent` exist for exactly one caller (the
-// first-run Vault Intro), and `labelEveryNode` for exactly one other (the ` ```graph ` note block).
-// Ported here from CanvasGraphRenderer as part of moving both sites onto this renderer. Each test
-// below pairs the feature ON against the SAME mount with it OFF — a smoke assertion on the ON case
-// alone would pass against a renderer that ignores the knob entirely, which is precisely how the
-// old `graphLabelHubCount: 9999` shipped as a no-op for a year.
+// `GraphConfig.transparent` exists for the first-run Vault Intro, and `labelEveryNode` for the
+// ` ```graph ` note block. Each test below pairs the feature ON against the SAME mount with it OFF —
+// a smoke assertion on the ON case alone would pass against a renderer that ignores the knob
+// entirely, which is precisely how the old `graphLabelHubCount: 9999` shipped as a no-op for a year.
 // ---------------------------------------------------------------------------------------------
-
-/** Half the screen-space extent of the PROJECTED nodes, in px — how big the cloud reads. Measured
- *  over every node rather than the on-grid subset: the whole point of a fit margin is to change how
- *  much of the cloud fits, so clipping to the grid first would measure the grid, not the framing
- *  (and at margin 0.2 nothing is on the grid at all). Measured in 2D, where the projection is
- *  exactly linear in the fit scale — 3D's perspective divide is not, so a ratio assertion there
- *  would be approximate for reasons that have nothing to do with fitMargin. */
-function screenHalfExtent(r: AsciiGraphRenderer): number {
-    const p = lodPriv(r) as unknown as { nodes: { sx: number; sy: number }[] }
-    let minX = Infinity,
-        maxX = -Infinity,
-        minY = Infinity,
-        maxY = -Infinity
-    for (const nv of p.nodes) {
-        minX = Math.min(minX, nv.sx)
-        maxX = Math.max(maxX, nv.sx)
-        minY = Math.min(minY, nv.sy)
-        maxY = Math.max(maxY, nv.sy)
-    }
-    return Math.max(maxX - minX, maxY - minY) / 2
-}
-
-describe('intro framing — setFitMargin / setFrameOffsetY (ported from CanvasGraphRenderer)', () => {
-    it('setFitMargin divides the fit scale, so the cloud reads that much smaller', () => {
-        const plain = mountRenderer('2d')
-        const wide = mountRenderer('2d')
-        wide.r.setFitMargin(1.55)
-        frame()
-        frame()
-        const before = screenHalfExtent(plain.r)
-        const after = screenHalfExtent(wide.r)
-        expect(before).toBeGreaterThan(0)
-        // The whole point: 1.55 is a zoom-OUT of exactly that factor, not "a bit smaller".
-        expect(before / after).toBeCloseTo(1.55, 2)
-        plain.r.destroy()
-        wide.r.destroy()
-    })
-
-    it('clamps a degenerate margin instead of dividing the fit scale away', () => {
-        const { r } = mountRenderer('2d')
-        const base = screenHalfExtent(r)
-        r.setFitMargin(0) // would be a divide-by-zero -> Infinity/NaN screen coords
-        frame()
-        frame()
-        const clamped = screenHalfExtent(r)
-        expect(Number.isFinite(clamped)).toBe(true)
-        expect(base / clamped).toBeCloseTo(0.2, 2) // Canvas's own Math.max(0.2, m) floor
-        r.setFitMargin(Number.NaN)
-        frame()
-        frame()
-        expect(screenHalfExtent(r)).toBeCloseTo(base, 4) // non-finite -> back to the plain fit
-        r.destroy()
-    })
-
-    it('setFrameOffsetY slides the projected graph down by that fraction of the host height', () => {
-        // Per-NODE displacement, not a mean over the on-grid set: the shift pushes nodes off the grid,
-        // so a mean over "what's still on the grid" measures the clipping, not the offset (it reads
-        // ~7px of the real 72). Every node must move by exactly the same amount — that IS the property.
-        const { r } = mountRenderer('2d')
-        const p = lodPriv(r) as unknown as {
-            nodes: { sx: number; sy: number; node: { id: string } }[]
-        }
-        const before = new Map(
-            p.nodes.map(n => [n.node.id, { sx: n.sx, sy: n.sy }]),
-        )
-        r.setFrameOffsetY(0.12)
-        frame()
-        frame()
-        expect(p.nodes.length).toBeGreaterThan(0)
-        for (const nv of p.nodes) {
-            const was = before.get(nv.node.id)!
-            // 0.12 of the 600px box — an exact px displacement, not merely "lower".
-            expect(nv.sy - was.sy).toBeCloseTo(0.12 * BOX.height, 6)
-            expect(nv.sx).toBeCloseTo(was.sx, 6) // horizontally untouched
-        }
-        r.destroy()
-    })
-
-    it('shifts the LOD masses by the SAME offset the nodes get', () => {
-        // There are two projection origins (projectNodes and projectEntities) and NEITHER caller this
-        // knob exists for exercises the second one (the intro is 3D, the graph block has no
-        // communities). Applying the offset to one and not the other would leave every mass floating
-        // off the notes it summarizes, with nothing in either caller to show it. Asserted at fit, which
-        // is the far band: the leaf projection deliberately doesn't run there, so this is the entity
-        // half alone, against the same 0.12 * H the test above pins for the node half.
-        const { r } = mountRenderer('2d', lodGraph(), {
-            showLodMasses: true,
-        } as never)
-        const p = lodPriv(r) as unknown as { entityFlat: { sy: number }[] }
-        const before = p.entityFlat.map(e => e.sy)
-        expect(
-            before.filter(y => Number.isFinite(y) && y !== 0).length,
-        ).toBeGreaterThan(0)
-        r.setFrameOffsetY(0.12)
-        frame()
-        frame()
-        let checked = 0
-        for (let i = 0; i < p.entityFlat.length; i++) {
-            if (!Number.isFinite(before[i]) || before[i] === 0) continue // never-projected level
-            expect(p.entityFlat[i].sy - before[i]).toBeCloseTo(
-                0.12 * BOX.height,
-                6,
-            )
-            checked++
-        }
-        expect(checked).toBeGreaterThan(0)
-        r.destroy()
-    })
-})
 
 describe("GraphConfig.transparent — the intro's see-through ground", () => {
     it("suppresses the field's opaque --graph-bg only when asked", () => {

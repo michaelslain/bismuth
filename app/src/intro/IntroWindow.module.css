@@ -1,0 +1,80 @@
+/* The intro's framed window. Fixed-height art box + fixed-height text slot, so the headline sits at
+   one y on every slide whatever the art holds. The window does not position itself: its parent
+   centres it. */
+.intro-window {
+  --intro-art-h: calc(24 * var(--row-h));
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(calc(180 * var(--cell-w)), 100% - 2 * var(--sp-7));
+  max-height: 100%;
+  background: var(--editor);
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+/* Short windows: the art box drops to 16 rows so the footer stays on screen. 47rem = 752px: the
+   full window is ~692px tall plus the page's two --sp-7 margins, so below that there is no slack.
+   The app's default 1200x800 window keeps the full 24 rows. */
+@media (max-height: 47rem) {
+  .intro-window {
+    --intro-art-h: calc(16 * var(--row-h));
+  }
+}
+.strip {
+  flex: 0 0 auto;
+  height: var(--h-band);
+  display: flex;
+  align-items: center;
+  gap: var(--bar-icon-gap);
+  padding: 0 var(--sp-6);
+  border-bottom: 1px solid var(--border-soft);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.spacer {
+  flex: 1;
+}
+.body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--sp-7) var(--sp-7) 0;
+}
+/* Behind everything in the body; the art box and the copy stack above it. */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.art {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  width: 100%;
+  height: var(--intro-art-h);
+}
+.text {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(110 * var(--cell-w));
+  height: calc(9 * var(--row-h));
+  padding-top: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.footer {
+  flex: 0 0 auto;
+}

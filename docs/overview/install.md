@@ -344,18 +344,18 @@ const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App
 
 **The `intro-seen` marker (separate from the vault config):** A *global*, app-level flag at `<app-config-dir>/intro-seen` — written by `mark_intro_seen`, checked by `has_seen_intro`. It is deliberately kept **separate from `config.json`**: it is one flag across all vaults (the intro is not re-shown per vault), and replaying it never touches the saved vault paths.
 
-**The slideshow** (`app/src/intro/VaultIntro.tsx`, driven by the slide table in `app/src/intro/introSlides.ts`) is an arrow-key/dot-navigable sequence of slides (`SlideKey`):
+**The slideshow** (`app/src/intro/VaultIntro.tsx`, driven by the slide table in `app/src/intro/introSlides.ts`) is an arrow-key / `[back]` `[next]` navigable sequence of slides (`SlideKey`):
 
 | Slide | What it shows |
 |---|---|
-| `welcome` | "Notes that think." — wikilinks pitch, the glyph-art `bismuth` wordmark |
-| `theme` | "Pick your palette." — four swatch cards (`ThemePicker`); choosing one **live-recolors a real 3D knowledge graph** (the app's own `AsciiGraphRenderer` drawing a baked-layout dummy point-cloud, `SMALL_GRAPH`) and re-themes the whole takeover |
-| `graph` | "Three brains, one mind." — the same 3D graph carries over, cross-fading to a bigger condensed cloud (`BIG_GRAPH`) |
-| `daemon` | "An agent that never sleeps." — the background Bismuth daemon |
-| `agents` | "Bring your own agent." — chat runs on whichever coding agent you already use (Claude Code, Codex, Gemini, opencode, Cline, Goose); Bismuth speaks MCP, so any of them can search the docs and write bases, queries and notes |
-| `pickagent` | "Pick an agent." — a single choice (`PowerUpList` with `single`): every coding-agent CLI found on this machine, then the **free agent** (opencode on free models, no account, about 45 MB). The intro has no backend, so detection is the Tauri command `detect_agents(binaries)` (`lib.rs`): it returns the subset of the picker-visible backends' binaries (`binariesFor` in `introAgents.ts`) that are executable files in any `PATH` entry, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, every `~/.nvm/versions/node/*/bin`, `~/.bismuth/agents/bin`, `/usr/bin` or `/bin` (mirroring `claudeLookupPath`, since a Finder-launched app has a minimal `PATH`). The first installed agent is selected; with none found the copy says so and the free agent is the only card. Outside the desktop app detection returns nothing. Choosing an installed agent writes `chat.provider` after the vault opens; choosing the free agent runs its setup |
-| `powerups` | "Optional power-ups." — toggle which setups to run after the vault opens (see below) |
-| `begin` | "Open your vault." — the final CTA, **"Enter your vault"** |
+| `welcome` | "Notes that think" — wikilinks pitch, the gradient `ui/Wordmark` at hero size |
+| `theme` | "Pick your palette" — four swatch cards in one row (`ThemePicker`), each showing every colour the theme paints with, over the intro's live graph (`BIG_GRAPH`, 337 nodes so the renderer auto-spins it, drawn by the app's own `AsciiGraphRenderer`), set back small and dim behind the cards; choosing one re-themes the whole takeover and recolours that graph live |
+| `graph` | "Three brains, one mind" — the SAME graph instance slides into the foreground: it grows over the art box and comes to full strength (`IntroGraph`'s `stage` moves from `backdrop` to `hero`). It is six equal topic blossoms on the points of an octahedron around "you", so it reads balanced as it spins |
+| `daemon` | "An agent that never sleeps" — the background Bismuth daemon |
+| `agents` | "Bring your own agent" — chat runs on whichever coding agent you already use (Claude Code, Codex, Gemini, opencode, Cline, Goose); Bismuth speaks MCP, so any of them can search the docs and write bases, queries and notes |
+| `pickagent` | "Pick an agent" — a single choice (`PowerUpList` with `single`): every coding-agent CLI found on this machine, then the **free agent** (opencode on free models, no account, about 45 MB). The intro has no backend, so detection is the Tauri command `detect_agents(binaries)` (`lib.rs`): it returns the subset of the picker-visible backends' binaries (`binariesFor` in `introAgents.ts`) that are executable files in any `PATH` entry, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, every `~/.nvm/versions/node/*/bin`, `~/.bismuth/agents/bin`, `/usr/bin` or `/bin` (mirroring `claudeLookupPath`, since a Finder-launched app has a minimal `PATH`). The first installed agent is selected; with none found the copy says so and the free agent is the only card. Outside the desktop app detection returns nothing. Choosing an installed agent writes `chat.provider` after the vault opens; choosing the free agent runs its setup |
+| `powerups` | "Optional power-ups" — toggle which setups to run after the vault opens (see below) |
+| `begin` | "Open your vault" — the final CTA, **"Enter your vault"** |
 
 The theme picker only recolors live; it commits **nothing** until the CTA. On commit, the chosen theme name is passed to the Tauri command (below) which **seeds the new vault's `appearance.theme`** so the app paints in that theme on first boot.
 

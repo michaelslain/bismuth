@@ -19,22 +19,26 @@ export const AGENTS: readonly string[] = [
     'goose',
 ]
 
-const COLS = 96
-const ROWS = 16
+// The art box is 126 x 18 cells (IntroWindow): a scene of exactly that size draws at scale 1, on
+// whole-pixel cells, which is what keeps the glyph edges as crisp as the file tree's text.
+const COLS = 126
+const ROWS = 18
+/** Rows of blank above the diagram (13 rows used of 18). */
+const TOP = 3
 const REVEAL_MS = 1200
-const NAME_ROW = 1
-const LINE_TOP = 2
-const LINE_BOTTOM = 9
+const NAME_ROW = TOP + 1
+const LINE_TOP = TOP + 2
+const LINE_BOTTOM = TOP + 9
 const LINE_STEPS = LINE_BOTTOM - LINE_TOP
-const MCP_ROW = 10
+const MCP_ROW = TOP + 10
 const MCP = '[ mcp ]'
-const VAULT_ROW = 13
+const VAULT_ROW = TOP + 13
 const VAULT = '( vault )'
 const PACKET_STEP_MS = 120
 const PACKET_PERIOD_MS = 2400
 const PACKET_PHASE_MS = 400
 /** Cells a packet visits: the converging lines (rows 2-9), then the stem (rows 11-12). */
-const PACKET_ROWS = [2, 3, 4, 5, 6, 7, 8, 9, 11, 12]
+const PACKET_ROWS = [2, 3, 4, 5, 6, 7, 8, 9, 11, 12].map(r => TOP + r)
 
 const centred = (width: number) => Math.floor((COLS - width) / 2)
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x))

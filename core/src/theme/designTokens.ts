@@ -239,6 +239,7 @@ const TYPE_SCALE: TokenDef[] = [
     typeScale('fs-display', 'length', '24px', 'Display headings.'),
     typeScale('fs-hero', 'length', '40px', 'Hero text.'),
     typeScale('fs-hero-xl', 'length', '48px', 'Largest hero text.'),
+    typeScale('fs-wordmark-display', 'length', '96px', "The brand wordmark as a slide's whole picture (the first-run intro)."),
     typeScale('fs-h1', 'length', 'max(var(--fs-display), var(--editor-font-size))', 'Note heading 1.'),
     typeScale('fs-h2', 'length', 'max(var(--fs-title), var(--editor-font-size))', 'Note heading 2.'),
     typeScale('fs-h3', 'length', 'var(--editor-font-size)', 'Note heading 3.'),

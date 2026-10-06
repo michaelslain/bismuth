@@ -748,6 +748,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.fs-wordmark-display": {
+    "type": {
+      "kind": "token",
+      "token": "fs-wordmark-display"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.fw-bold": {
     "type": {
       "kind": "token",

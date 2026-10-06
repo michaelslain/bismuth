@@ -6,7 +6,8 @@ import styles from './Wordmark.module.css'
 export type WordmarkProps = {
     /** 'body' = --fs-body (top strip), 'hero' = --fs-hero. Default 'body'. */
     size?: 'body' | 'hero'
-    /** Trailing blinking <Caret /> (ui/Caret). */
+    /** Trailing blinking <Caret /> (ui/Caret). ON by default: the mark is the word AND its cursor,
+     *  wherever it appears (top strip, intro window, intro slides). Pass false for a bare word. */
     caret?: boolean
     class?: string
 }
@@ -40,7 +41,7 @@ const Wordmark: Component<WordmarkProps> = props => {
             <Text as="span" inherit class="asc-wordmark">
                 bismuth
             </Text>
-            {props.caret && <Caret />}
+            {props.caret !== false && <Caret class={styles.caret} />}
         </Text>
     )
 }

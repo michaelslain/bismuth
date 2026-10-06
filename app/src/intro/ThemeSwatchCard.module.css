@@ -1,8 +1,10 @@
 /* Flat register: hairline border, square corners, accent ring on selection — no glow, no
-   elevation shadow. The preview and its two chips are Swatch statics; their sizes come from the
+   elevation shadow. The preview and its colour chips are Swatch statics; their sizes come from the
    single classes below (Swatch's base rule is :where(), so a lone class wins). */
 .card {
-  width: 152px;
+  flex: 0 1 calc(32 * var(--cell-w));
+  min-width: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -21,45 +23,34 @@
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
-/* The well is the 72px bordered preview box and the positioning context for the chips; the
-   preview Swatch fills it, so the chips sit 6px in from the inside of the hairline. */
+/* The well is the bordered preview box and the positioning context for the colour row; the
+   preview Swatch fills it. */
 .well {
   position: relative;
   width: 100%;
-  height: 72px;
+  height: calc(5 * var(--row-h));
   border: 1px solid var(--border);
 }
 .preview {
   width: 100%;
   height: 100%;
 }
-.chip {
+/* The colour row sits on the theme's own ground, bottom-left: text, muted, accent, a gap, then
+   the graph ramp. */
+.chips {
   position: absolute;
-  bottom: var(--sp-3);
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--border);
-}
-.chip-fg {
   left: var(--sp-3);
+  bottom: var(--sp-3);
+  display: flex;
+  gap: var(--sp-2);
 }
-.chip-accent {
-  left: calc(var(--sp-3) + 16px + var(--sp-2));
+.ramp {
+  display: flex;
+  gap: var(--sp-2);
+  margin-left: var(--sp-3);
 }
-.name {
-  /* Text's eyebrow supplies the tracking; uppercase is a keyword, not a token literal. */
-  text-transform: uppercase;
-}
-.card.selected .name {
-  color: var(--accent);
-}
-/* Short windows: IntroFrame scales the hero box down, so the card comes back with it and the control
-   never exceeds the short box. 50rem = 800px at the default root. */
-@media (max-height: 50rem) {
-  .card {
-    width: 124px;
-  }
-  .well {
-    height: 56px;
-  }
+.chip {
+  width: calc(2.5 * var(--cell-w));
+  height: calc(2.5 * var(--cell-w));
+  border: 1px solid var(--border);
 }

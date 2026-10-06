@@ -1,8 +1,0 @@
-/* app/src/intro/IntroCta.module.css — the first-run intro's one primary action, on its own line
-   under the copy. Moved out of VaultIntro.module.css (one stylesheet, one importer). A little
-   space above it (a decision deserves room before it), none below — the pager row supplies that. */
-.cta {
-  margin-top: var(--sp-4);
-  display: flex;
-  justify-content: center;
-}

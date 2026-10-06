@@ -12,85 +12,80 @@ export type SlideKey =
     | 'powerups'
     | 'begin'
 export type SlideHero = 'wordmark' | 'daemon' | 'agents' | 'begin'
-export type SlideGraph = 'small' | 'big'
 export type SlideExtra = 'themes' | 'pickagent' | 'powerups' | 'cta'
 
 export type Slide = {
     key: SlideKey
+    /** Footer readout name. */
+    label: string
     title: string
     body: string
     /** The body when the slide's content came back empty (the pick-an-agent slide, when no agent
      *  CLI was found on this machine). Absent: `body` always applies. */
     bodyEmpty?: string
-    /** Which IntroGraph is active. A graph slide also gets the copy/nav backdrop. */
-    graph?: SlideGraph
-    /** Non-graph visual above the copy. */
+    /** Art drawn in the art box (the graph slide is identified by its key). */
     hero?: SlideHero
-    /** Corner LogoMark shown (false where the big wordmark hero already is). */
-    corner: boolean
     extra?: SlideExtra
 }
 
 export const SLIDES: Slide[] = [
     {
         key: 'welcome',
-        title: 'Notes that think.',
+        label: 'welcome',
+        title: 'Notes that think',
         body: 'Write notes and connect them with [[wikilinks]]. Bismuth links them into a graph you can explore and search.',
         hero: 'wordmark',
-        corner: false,
     },
     {
         key: 'theme',
-        title: 'Pick your palette.',
+        label: 'palette',
+        title: 'Pick your palette',
         body: 'Choose a theme for your vault. You can change it anytime from settings.',
-        graph: 'small',
         extra: 'themes',
-        corner: true,
     },
     {
         key: 'graph',
-        title: 'Three brains, one mind.',
+        label: 'three brains',
+        title: 'Three brains, one mind',
         body: "Your notes and Bismuth's memory connect into one graph, so what you know and what it learns stay woven together.",
-        graph: 'big',
-        corner: true,
     },
     {
         key: 'daemon',
-        title: 'An agent that never sleeps.',
+        label: 'daemon',
+        title: 'An agent that never sleeps',
         body: "A background daemon runs on a schedule: folding new memory into your graph, re-linking notes, and surfacing what you'd forgotten.",
         hero: 'daemon',
-        corner: true,
     },
     {
         key: 'agents',
-        title: 'Bring your own agent.',
+        label: 'agents',
+        title: 'Bring your own agent',
         body: 'Chat runs on whichever coding agent you already use — Claude Code, Codex, Gemini, opencode, Cline, Goose. Bismuth speaks MCP, so any of them can search the docs and write your bases, queries and notes.',
         hero: 'agents',
-        corner: true,
     },
     {
         key: 'pickagent',
-        title: 'Pick an agent.',
+        label: 'agent',
+        title: 'Pick an agent',
         body: 'Chat runs on a coding agent on your machine. Pick one you already have, or set up a free one.',
         bodyEmpty:
             'Chat runs on a coding agent on your machine. None is installed yet, so start with a free one.',
         extra: 'pickagent',
-        corner: true,
     },
     {
         key: 'powerups',
-        title: 'Optional power-ups.',
+        label: 'power-ups',
+        title: 'Optional power-ups',
         body: 'Pick what to set up. Bismuth turns them on once you open your vault, or you can do it anytime from the command palette.',
         extra: 'powerups',
-        corner: true,
     },
     {
         key: 'begin',
-        title: 'Open your vault.',
+        label: 'open vault',
+        title: 'Open your vault',
         body: 'Pick a folder and Bismuth makes it a vault. Start writing, and the graph fills itself in.',
         hero: 'begin',
         extra: 'cta',
-        corner: false,
     },
 ]
 

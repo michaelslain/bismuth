@@ -39,6 +39,7 @@ export default class GlyphCanvas {
     private hidden = false
     private reduced = false
     private mql: MediaQueryList | null = null
+    private dprMql: MediaQueryList | null = null
 
     private raf = 0
     private t0 = 0
@@ -82,6 +83,7 @@ export default class GlyphCanvas {
             this.mql.addEventListener('change', this.onReduced)
         }
 
+        this.watchDpr()
         this.readTokens()
 
         if (typeof ResizeObserver === 'function') {
@@ -137,6 +139,8 @@ export default class GlyphCanvas {
         document.removeEventListener('visibilitychange', this.onVisibility)
         this.mql?.removeEventListener('change', this.onReduced)
         this.mql = null
+        this.dprMql?.removeEventListener('change', this.onDpr)
+        this.dprMql = null
         this.canvas?.remove()
         this.canvas = null
         this.ctx = null
@@ -209,6 +213,22 @@ export default class GlyphCanvas {
     }
 
     private onResize = () => {
+        if (this.scene) this.draw(this.timeNow())
+    }
+
+    /** The backing store is sized from devicePixelRatio, which a resize never reports: zooming or
+     *  moving the window to another display changes it with the box untouched, leaving the old
+     *  bitmap stretched (soft). Watch the ratio itself and repaint when it moves. */
+    private watchDpr() {
+        this.dprMql?.removeEventListener('change', this.onDpr)
+        this.dprMql = null
+        if (typeof matchMedia !== 'function') return
+        this.dprMql = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+        this.dprMql.addEventListener('change', this.onDpr)
+    }
+
+    private onDpr = () => {
+        this.watchDpr()
         if (this.scene) this.draw(this.timeNow())
     }
 

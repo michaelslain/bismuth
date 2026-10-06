@@ -40,7 +40,7 @@ export function TopStrip(props: {
         >
             {/* THE WORD, not the ASCII crystal: ui/Wordmark (`bismuth` in the gradient sheen) closed by
                 the blinking caret the status bar's daemon readout also uses. */}
-            <Wordmark size="body" caret />
+            <Wordmark size="body" />
             <div class={styles['top-strip-spacer']} />
             {props.children}
         </div>

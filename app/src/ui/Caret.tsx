@@ -1,4 +1,5 @@
-import type { Component } from 'solid-js'
+import { onCleanup, onMount, type Component } from 'solid-js'
+import { syncToDocumentClock } from './caretClock'
 
 export type CaretProps = {
     class?: string
@@ -14,7 +15,24 @@ export type CaretProps = {
  * 0x0 box, invisible regardless of color/animation.
  */
 const Caret: Component<CaretProps> = props => {
-    return <span class={`asc-caret${props.class ? ` ${props.class}` : ''}`}>_</span>
+    let el!: HTMLSpanElement
+    // Every caret blinks on ONE clock (ui/caretClock.ts): pinned on mount, and again whenever its
+    // blink restarts — a class that turns the animation off and back on (the intro copy's typing
+    // state) starts a fresh, unsynced one.
+    onMount(() => {
+        const sync = () => syncToDocumentClock(el)
+        sync()
+        el.addEventListener('animationstart', sync)
+        onCleanup(() => el.removeEventListener('animationstart', sync))
+    })
+    return (
+        <span
+            ref={el}
+            class={`asc-caret${props.class ? ` ${props.class}` : ''}`}
+        >
+            _
+        </span>
+    )
 }
 
 export default Caret

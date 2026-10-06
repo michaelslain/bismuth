@@ -180,9 +180,9 @@ export interface GraphConfig {
     labelBgColor: string
     selfColor: number
     /** Don't paint the field's own opaque ground — let whatever is behind the canvas show through.
-     *  Set by the first-run Vault Intro, which cross-fades two full-bleed graph layers over the page's
-     *  own `--bg`; an opaque ground there fades the whole page background between `--bg` and
-     *  `--graph-bg` on every slide change. See AsciiGraphRenderer's `applyGround()`. */
+     *  Set by the first-run Vault Intro, whose graph sits behind the theme cards and then over the
+     *  art box, on the intro window's own ground; an opaque ground there would paint a `--graph-bg`
+     *  slab over the window. See AsciiGraphRenderer's `applyGround()`. */
     transparent?: boolean
     /** graph.backgroundNoise (settingsSchema.ts) — the faint ASCII noise texture under the field.
      *  Off by default. */
@@ -277,13 +277,6 @@ export interface GraphRenderer {
     resetView(): void
     getNodesForUI(): NodeForUI[]
     getCommunityCentroids(): Map<number, CommunityCentroid>
-    /** Extra fit zoom-OUT: the 100% ("fit the whole graph") scale is divided by this, so 1 is the
-     *  normal fit and 1.55 leaves the cloud filling ~2/3 of the box. The first-run Vault Intro's only
-     *  framing knob besides `setFrameOffsetY` — see VaultIntro.tsx's IntroGraph. */
-    setFitMargin(m: number): void
-    /** Shift the GRAPH (not the canvas) vertically by a fraction of the host's height — positive is
-     *  down. Lets a full-bleed canvas keep its seamless edges while the cloud sits off-centre. */
-    setFrameOffsetY(frac: number): void
     setFpsCallback(cb: (fps: number) => void): void
     setPaintCallback(cb: (nodeCount: number) => void): void
     /** Fired when an empty-space click drops a persistent highlight. */

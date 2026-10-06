@@ -247,6 +247,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `fs-display` | length | `24px` | Display headings. |
 | `fs-hero` | length | `40px` | Hero text. |
 | `fs-hero-xl` | length | `48px` | Largest hero text. |
+| `fs-wordmark-display` | length | `96px` | The brand wordmark as a slide's whole picture (the first-run intro). |
 | `fs-h1` | length | `max(var(--fs-display), var(--editor-font-size))` | Note heading 1. |
 | `fs-h2` | length | `max(var(--fs-title), var(--editor-font-size))` | Note heading 2. |
 | `fs-h3` | length | `var(--editor-font-size)` | Note heading 3. |

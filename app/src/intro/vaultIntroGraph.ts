@@ -16,20 +16,50 @@
    the byte-identical defect) — the fix is to keep anything a test needs to import out of any file
    that contains JSX.
 
-   `VaultIntro.tsx` imports all three names back from here unchanged; the component itself is
-   otherwise untouched. */
+   `IntroGraph.tsx` imports applyGraphConfig back from here and VaultIntro.tsx imports BIG_GRAPH. */
 import type { GraphRenderer } from '../graph/graphRenderer'
 import { paletteToInts, hexToInt } from '../themeColors'
 import type { GraphData } from '../../../core/src/graph'
 import { THEMES, type ThemeName } from '../themes'
 import { DEFAULT_ACCENT_PALETTE } from '../settings'
 
-// Build a point-cloud graph with BAKED positions (a seeded random sphere). Baking positions
-// means the renderer draws the layout directly — no cold force-settle, no auto-fit race — so
-// it frames any node count instantly and reliably. The "you" hub sits at the center.
-function makeCloud(n: number, radius: number, seed: number): GraphData {
+// Grow the intro's graph with BAKED positions (the renderer draws them directly — no cold
+// force-settle, no auto-fit race). It has to read as a designed object, not noise: six topic
+// "blossoms" of equal size sit on the six points of an octahedron — four on a ring around the spin
+// axis, one above, one below — so the shape is balanced from every angle as it turns. "You" sit at
+// the centre with a spoke to every topic's hub, each topic links to its neighbours, and inside a
+// topic notes grow by preferential attachment (a new note links to a well-linked one more often),
+// so each hub bursts into a star with branches. A note is kept inside its topic's sphere, so every
+// blossom is round and the gaps between them stay clean.
+//
+// The renderer's 3D fit scales the FARTHEST node from the origin to the box edge, so the whole
+// cloud is normalised to that radius: nothing strays past the blossoms' rims.
+function growBlossoms(
+    perTopic: number,
+    radius: number,
+    seed: number,
+): GraphData {
     let s = seed
     const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
+    const unit = (): [number, number, number] => {
+        const z = 2 * rnd() - 1
+        const a = rnd() * Math.PI * 2
+        const r = Math.sqrt(1 - z * z)
+        return [r * Math.cos(a), r * Math.sin(a), z]
+    }
+    type V3 = [number, number, number]
+    // The octahedron: a ring of four around the vertical (spin) axis, then top and bottom. Ring
+    // topics take graph colours 0-3; the two poles share colour 4.
+    const SHELL = 0.62
+    const BLOSSOM = 0.24
+    const centres: V3[] = [
+        [SHELL, 0, 0],
+        [0, 0, SHELL],
+        [-SHELL, 0, 0],
+        [0, 0, -SHELL],
+        [0, SHELL, 0],
+        [0, -SHELL, 0],
+    ]
     const nodes: GraphData['nodes'] = [
         {
             id: 'you',
@@ -39,39 +69,90 @@ function makeCloud(n: number, radius: number, seed: number): GraphData {
             position2d: [0, 0],
         },
     ]
-    for (let i = 0; i < n; i++) {
-        const r = radius * Math.cbrt(rnd())
-        const theta = rnd() * Math.PI * 2
-        const phi = Math.acos(2 * rnd() - 1)
-        const x = r * Math.sin(phi) * Math.cos(theta)
-        const y = r * Math.sin(phi) * Math.sin(theta)
-        const z = r * Math.cos(phi)
-        nodes.push({
-            id: `n${i}`,
-            label: '',
-            kind: 'note',
-            community: i % 5,
-            position: [x, y, z] as [number, number, number],
-            position2d: [x, y] as [number, number],
-        })
-    }
     const edges: GraphData['edges'] = []
-    for (let i = 0; i < n; i++) {
-        if (i % 6 === 0) edges.push({ from: 'you', to: `n${i}`, kind: 'link' })
-        if (i >= 7) edges.push({ from: `n${i - 7}`, to: `n${i}`, kind: 'link' })
+    const hubs: string[] = []
+    centres.forEach((centre, c) => {
+        const own: { id: string; p: V3; deg: number }[] = []
+        const add = (p: V3) => {
+            const id = `n${c}-${own.length}`
+            own.push({ id, p, deg: 0 })
+            nodes.push({
+                id,
+                label: '',
+                kind: 'note',
+                community: Math.min(c, 4),
+                position: p,
+                position2d: [p[0], p[1]],
+            })
+            return own[own.length - 1]!
+        }
+        const hub = add(centre)
+        hubs.push(hub.id)
+        for (let j = 1; j < perTopic; j++) {
+            // Preferential attachment: a parent is picked with probability ~ (degree + 1).
+            let total = 0
+            for (const g of own) total += g.deg + 1
+            let pick = rnd() * total
+            let parent = own[0]!
+            for (const g of own) {
+                pick -= g.deg + 1
+                if (pick <= 0) {
+                    parent = g
+                    break
+                }
+            }
+            const [ux, uy, uz] = unit()
+            const len = BLOSSOM * (0.18 + 0.22 * rnd())
+            let p: V3 = [
+                parent.p[0] + ux * len,
+                parent.p[1] + uy * len,
+                parent.p[2] + uz * len,
+            ]
+            // Keep the note inside its blossom: past the rim, it is pulled back onto it.
+            const d: V3 = [p[0] - centre[0], p[1] - centre[1], p[2] - centre[2]]
+            const r = Math.hypot(...d)
+            if (r > BLOSSOM) {
+                const k = (BLOSSOM * (0.85 + 0.15 * rnd())) / r
+                p = [
+                    centre[0] + d[0] * k,
+                    centre[1] + d[1] * k,
+                    centre[2] + d[2] * k,
+                ]
+            }
+            const node = add(p)
+            edges.push({ from: parent.id, to: node.id, kind: 'link' })
+            parent.deg++
+            node.deg++
+        }
+    })
+    // Spokes from "you" to every hub; the ring's neighbours link to each other; the poles link to
+    // every ring topic.
+    for (const h of hubs) edges.push({ from: 'you', to: h, kind: 'link' })
+    for (let c = 0; c < 4; c++) {
+        edges.push({ from: hubs[c]!, to: hubs[(c + 1) % 4]!, kind: 'link' })
+        edges.push({ from: hubs[4]!, to: hubs[c]!, kind: 'link' })
+        edges.push({ from: hubs[5]!, to: hubs[c]!, kind: 'link' })
+    }
+    // Normalise so the farthest note sits exactly at `radius`.
+    let far = 1e-6
+    for (const n of nodes)
+        far = Math.max(far, Math.hypot(...(n.position as V3)))
+    const k = radius / far
+    for (const n of nodes) {
+        const [x, y, z] = n.position as V3
+        n.position = [x * k, y * k, z * k]
+        n.position2d = [x * k, y * k]
     }
     return { nodes, edges }
 }
 
-// Theme slide: a small starter cloud (just enough to show the palette). Three-brains slide:
-// a whole vault's worth of notes (~the size of a real Bismuth vault) — the explosion.
-// Exported so the headless smoke test drives the renderer with the REAL first-run fixtures rather
-// than a stand-in (they differ in the ways that matter: node count either side of the 350-node idle
-// spin cut-off, and a baked layout with no settle).
-export const SMALL_GRAPH = makeCloud(54, 300, 1234567)
-export const BIG_GRAPH = makeCloud(1874, 760, 987654321)
+// The palette slide's backdrop and the three-brains slide's hero: one graph, six topics of 56 notes.
+// 337 nodes in all, deliberately: AsciiGraphRenderer only auto-spins a 3D graph of at most 350
+// nodes (its tick() spin guard), and the intro's graph has to turn on both slides.
+// Exported so the headless smoke test drives the renderer with the REAL first-run fixture.
+export const BIG_GRAPH = growBlossoms(56, 760, 987654321)
 
-// Push the chosen theme's colors into a renderer. Shared by both IntroGraph instances. Typed to the
+// Push the chosen theme's colors into a renderer. Used by IntroGraph. Typed to the
 // SEAM, not to a concrete renderer class — the intro is a consumer of GraphRenderer like any other.
 // Exported for the headless smoke test (VaultIntro.test.ts), which drives a real renderer with this
 // exact config; the component itself cannot be mounted under `bun test` (bun resolves solid-js/web
@@ -99,11 +180,11 @@ export function applyGraphConfig(renderer: GraphRenderer, name: ThemeName) {
         graphLabelHubCount: 0,
         edgeColor: hexToInt(ap.neutral, 0xaeb4c2),
         edgeOpacity: ap.isLight ? 0.22 : 0.34,
-        // Transparent ground so the page's own --bg shows THROUGH the graph. Load-bearing, not
-        // vestigial: the field's viewport otherwise paints an opaque --graph-bg, and the two IntroGraph
-        // layers CROSS-FADE (opacity 0↔1), so an opaque ground would fade the whole page background
-        // between --bg and --graph-bg on every slide change — visible in three of the four themes
-        // (riso's pair is the widest gap). See AsciiGraphRenderer.applyGround().
+        // Transparent ground so the intro window's own ground shows THROUGH the graph. Load-bearing,
+        // not vestigial: the field's viewport otherwise paints an opaque --graph-bg, and the graph
+        // fades and moves between the palette and three-brains slides, so an opaque ground would be
+        // a --graph-bg slab fading over the window — visible in three of the four themes (riso's pair
+        // is the widest gap). See AsciiGraphRenderer.applyGround().
         transparent: true,
         backgroundColor: hexToInt(ap.background, 0x14151b),
         labelTextColor: 'rgba(0,0,0,0)',

@@ -1,6 +1,23 @@
-/* app/src/intro/IntroHero.module.css — the hero is glyph art that fills IntroFrame's hero box. The
-   box's size is the frame's business (96 x 16 graph cells at `--intro-glyph-scale`); this only passes it down. */
+/* app/src/intro/IntroHero.module.css — the hero fills the art box and centres its art. */
 .intro-hero {
   width: 100%;
   height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* the begin slide: the wordmark alone is centred (same y as the welcome slide); the prompt hangs
+   out of flow one --sp-6 below it */
+.begin {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.begin-prompt {
+  position: absolute;
+  top: calc(100% + var(--sp-6));
+  left: 50%;
+  transform: translateX(-50%);
 }

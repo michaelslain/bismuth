@@ -14,7 +14,7 @@
 // test` at all in this repo — see that module's header comment for the full root cause, confirmed
 // against Task 26's identical fix for `app/src/graph/embeddedGraphRender.ts`). This file replays
 // `IntroGraph`'s own onMount sequence against a real AsciiGraphRenderer, in order:
-//     mount → setBloomCallback → render → applyGraphConfig → setFitMargin → setFrameOffsetY → setVisible
+//     mount → render → applyGraphConfig → setVisible
 // Get that order or those arguments wrong and the intro is blank; everything else in the component
 // is slide chrome.
 //
@@ -25,8 +25,7 @@ import { GlobalWindow } from 'happy-dom'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { AsciiGraphRenderer } from '../graph/AsciiGraphRenderer'
 import type { GraphRenderer } from '../graph/graphRenderer'
-import type { DensityField } from '../graph/densityField'
-import { applyGraphConfig, BIG_GRAPH, SMALL_GRAPH } from './vaultIntroGraph'
+import { applyGraphConfig, BIG_GRAPH } from './vaultIntroGraph'
 import { THEME_NAMES, type ThemeName } from '../themes'
 import { NODE_GLYPHS } from '../graph/asciiGrid'
 import type { GraphData } from '../../../core/src/graph'
@@ -54,8 +53,9 @@ const installed: string[] = []
 const saved: Record<string, unknown> = {}
 const restore: [Record<string, unknown>, string, unknown][] = []
 
-// The intro's graph layers are full-bleed (`.vi-graph3d { inset: 0 }`), so this is a window.
-const BOX = { width: 1440, height: 900 }
+// The graph is drawn inside the window's art box (1086px wide, 432px tall: the window is 180 cells
+// wide less two --sp-7 paddings, the box 24 rows tall).
+const BOX = { width: 1086, height: 432 }
 
 interface FakeCtx {
     fills: { text: string; x: number; y: number }[]
@@ -181,157 +181,86 @@ function frame(t = 16) {
     for (const cb of q) cb(t)
 }
 
-/** The renderer's own per-frame QA snapshot (AsciiGraphStats). `notesOnScreen` is a NODE count,
- *  unlike the paint callback's cell count. */
-const statsOf = (r: GraphRenderer) =>
-    (
-        r as unknown as {
-            computeStats(): {
-                notesOnScreen: number
-                bloomPoints: number
-                bloomWeight: number
-                bloomSdx: number
-                bloomSdy: number
-            }
-        }
-    ).computeStats()
-
 interface Mounted {
     r: GraphRenderer
     viewport: HTMLElement
     painted: number[]
-    blooms: DensityField[]
 }
 
 /** IntroGraph's onMount, verbatim, against a real renderer. */
 function mountIntroGraph(
     graph: GraphData,
     theme: ThemeName = 'ink',
-    opts: { offsetY?: number; fitMargin?: number; active?: boolean } = {},
+    opts: { active?: boolean } = {},
 ): Mounted {
     const host = document.createElement('div')
     document.body.appendChild(host)
     const r: GraphRenderer = new AsciiGraphRenderer()
     const painted: number[] = []
-    const blooms: DensityField[] = []
     r.mount(host, () => {})
     r.setPaintCallback(n => painted.push(n))
-    r.setBloomCallback?.(f => blooms.push(f))
     r.render(graph)
     applyGraphConfig(r, theme)
-    if (opts.fitMargin) r.setFitMargin(opts.fitMargin)
-    r.setFrameOffsetY(opts.offsetY ?? 0)
     r.setVisible(opts.active ?? true)
     ctx.fills.length = 0
     ctx.strokes = 0
     painted.length = 0
-    blooms.length = 0
     frame()
     return {
         r,
         viewport: host.firstElementChild as HTMLElement,
         painted,
-        blooms,
     }
 }
 
-describe('VaultIntro — the first-run cloud on the unified renderer', () => {
-    it('the two clouds are the fixtures the slides describe', () => {
-        // Not decoration: 54 vs 1874 straddles the renderer's 350-node idle-spin cut-off, which is the
-        // difference between the theme slide's turning cloud and the "three brains" one holding still.
-        expect(SMALL_GRAPH.nodes.length).toBe(55) // 54 + the "you" hub
-        expect(BIG_GRAPH.nodes.length).toBe(1875)
+describe('VaultIntro — the graph slide on the unified renderer', () => {
+    it('the cloud is the fixture the slide describes', () => {
+        expect(BIG_GRAPH.nodes.length).toBe(337)
+        // the renderer only auto-spins a 3D graph of at most 350 nodes; the intro's must turn
+        expect(BIG_GRAPH.nodes.length).toBeLessThanOrEqual(350)
         // Positions are BAKED (no force settle, no auto-fit race) — every node must carry one.
-        expect(SMALL_GRAPH.nodes.every(n => n.position && n.position2d)).toBe(
-            true,
-        )
+        expect(BIG_GRAPH.nodes.every(n => n.position && n.position2d)).toBe(true)
     })
 
-    it("paints the theme slide's small cloud", () => {
-        const { r, painted } = mountIntroGraph(SMALL_GRAPH)
-        // Every node of a 55-node cloud is on the field. `notesOnScreen` counts NODES; the paint
-        // callback counts CELLS, and two nodes can land on one cell (this fixture has one such pair),
-        // so the two numbers are close but not equal — asserted separately rather than conflated.
-        expect(statsOf(r).notesOnScreen).toBe(SMALL_GRAPH.nodes.length)
-        expect(painted.at(-1)).toBeGreaterThan(0)
+    it("paints the three-brains slide's whole-vault cloud inside the art box", () => {
+        const { r, painted } = mountIntroGraph(BIG_GRAPH)
+        // 336 notes in six topic blossoms: many share a cell, so the painted count is a large fraction of
+        // the field rather than the node count. The number that matters is that it is NOT near-zero —
+        // a mis-framed cloud empties the grid.
+        expect(painted.at(-1)).toBeGreaterThan(80)
         expect(ctx.strokes).toBeGreaterThan(0) // the link edges too
         r.destroy()
     })
 
-    it("idly spins the theme slide's cloud — a static first screen is a real regression", () => {
-        // applyGraphConfig sets `spin: true` + `spinSpeed`, and AsciiGraphRenderer's own tick loop
-        // (`!is2d && cfg.spin && nodes.length <= 350 && !userTook && !dragging` → `ry += spinSpeed`)
-        // is the ONLY thing that would ever move this cloud: the theme slide never zooms, pans, or
-        // drags. SMALL_GRAPH's 55 nodes sit under the 350-node cutoff and applyGraphConfig's
-        // viewMode is "3d" (2D never spins, no matter what spin/spinSpeed hold), so idle spin must
-        // be observably live here. This asserts on PROJECTED SCREEN POSITIONS moving across real
-        // frames, not on the config object still holding the value applyGraphConfig wrote into it —
-        // that would pass even if the renderer ignored spin/spinSpeed entirely.
-        const { r } = mountIntroGraph(SMALL_GRAPH)
+    it('frames the cloud INSIDE the box — it neither collapses nor spills', () => {
+        const { r } = mountIntroGraph(BIG_GRAPH)
         const p = r as unknown as { nodes: { sx: number; sy: number }[] }
-        const before = p.nodes.map(n => ({ sx: n.sx, sy: n.sy }))
-        // One more real tick. Nothing else in this path can still be moving a node's screen position
-        // at this point — the camera starts (and stays) at exactly its 100%/fit resolution with no
-        // zoom/pan/target change anywhere above, so a big dt can't be hiding a leftover camera-glide
-        // confound here the way it would right after a fresh zoom or re-theme.
-        frame(1000)
-        let moved = 0
-        for (let i = 0; i < p.nodes.length; i++) {
-            if (
-                Math.hypot(
-                    p.nodes[i].sx - before[i].sx,
-                    p.nodes[i].sy - before[i].sy,
-                ) > 0.01
-            )
-                moved++
+        let minX = Infinity,
+            maxX = -Infinity,
+            minY = Infinity,
+            maxY = -Infinity
+        for (const nv of p.nodes) {
+            minX = Math.min(minX, nv.sx)
+            maxX = Math.max(maxX, nv.sx)
+            minY = Math.min(minY, nv.sy)
+            maxY = Math.max(maxY, nv.sy)
         }
-        // The "you" hub sits at the world origin, on the rotation axis — it never moves no matter how
-        // much the cloud spins, so 100% is not attainable; virtually every other node should have.
-        expect(moved).toBeGreaterThan(p.nodes.length * 0.9)
+        expect(minX).toBeGreaterThanOrEqual(0)
+        expect(maxX).toBeLessThanOrEqual(BOX.width)
+        expect(minY).toBeGreaterThanOrEqual(0)
+        expect(maxY).toBeLessThanOrEqual(BOX.height)
+        expect(maxY - minY).toBeGreaterThan(BOX.height * 0.3)
+        expect(maxY - minY).toBeLessThanOrEqual(BOX.height * 1.05)
         r.destroy()
-    })
-
-    it("paints the three-brains slide's whole-vault cloud, framed by its own margin + offset", () => {
-        const { r, painted } = mountIntroGraph(BIG_GRAPH, 'ink', {
-            offsetY: 0.12,
-            fitMargin: 1.55,
-        })
-        // 1874 nodes into a 228x50 grid: many share a cell, so the painted count is a large fraction of
-        // the field rather than the node count. The number that matters is that it is NOT near-zero —
-        // a mis-framed cloud (bad fit margin, offset applied twice) empties the grid.
-        expect(painted.at(-1)).toBeGreaterThan(1000)
-        r.destroy()
-    })
-
-    it('frames the big cloud INSIDE the window — the margin is what keeps it off the edges', () => {
-        const extent = (m: Mounted) => {
-            const p = m.r as unknown as { nodes: { sx: number; sy: number }[] }
-            let minY = Infinity,
-                maxY = -Infinity
-            for (const nv of p.nodes) {
-                minY = Math.min(minY, nv.sy)
-                maxY = Math.max(maxY, nv.sy)
-            }
-            return maxY - minY
-        }
-        const plain = mountIntroGraph(BIG_GRAPH, 'ink', { offsetY: 0.12 })
-        const framed = mountIntroGraph(BIG_GRAPH, 'ink', {
-            offsetY: 0.12,
-            fitMargin: 1.55,
-        })
-        expect(extent(framed)).toBeLessThan(extent(plain)) // 1.55 really is a zoom-out
-        expect(extent(framed)).toBeGreaterThan(BOX.height * 0.3) // ...and not a collapse to a dot
-        plain.r.destroy()
-        framed.r.destroy()
     })
 
     it("shows NO names and no cluster machinery — the intro's nodes are deliberately anonymous", () => {
         // `showGraphLabels: false`. The cloud does carry a community per node (it is what gives the
-        // palette slide five colours to show off), so "no communities" is NOT what keeps cluster names
-        // off the field — the label gate is. Worth pinning: drop that gate and the first thing a new
-        // user sees is a screen captioned CLUSTER 0 … CLUSTER 4.
-        expect(SMALL_GRAPH.nodes.some(n => n.community != null)).toBe(true)
-        const { r } = mountIntroGraph(SMALL_GRAPH)
+        // palette five colours), so "no communities" is NOT what keeps cluster names off the field —
+        // the label gate is. Worth pinning: drop that gate and the first thing a new user sees is a
+        // screen captioned CLUSTER 0 … CLUSTER 4.
+        expect(BIG_GRAPH.nodes.some(n => n.community != null)).toBe(true)
+        const { r } = mountIntroGraph(BIG_GRAPH)
         expect(ctx.fills.length).toBeGreaterThan(0)
         // Every fill is a run of degree-ramp glyphs — no letters of any kind.
         const ramp = new Set<string>([...NODE_GLYPHS, ' '])
@@ -340,73 +269,28 @@ describe('VaultIntro — the first-run cloud on the unified renderer', () => {
         r.destroy()
     })
 
-    it('keeps the page background showing through (transparent: true)', () => {
-        // The two layers cross-fade; an opaque --graph-bg ground would pulse the whole page background
-        // on every slide change.
-        const { r, viewport } = mountIntroGraph(SMALL_GRAPH)
+    it('keeps the window ground showing through (transparent: true)', () => {
+        // The graph sits on the window's own --editor ground; an opaque --graph-bg would paint a
+        // differently coloured rectangle inside the art box.
+        const { r, viewport } = mountIntroGraph(BIG_GRAPH)
         expect(viewport.style.background).toBe('transparent')
-        r.destroy()
-    })
-
-    it("emits a live atmosphere — the intro's bloom is its only glow", () => {
-        // 3D has no mass band at any stop, so this is Task 17's glyph branch alone. An all-zero field
-        // is a black screen behind the copy, which is what the intro's whole visual is.
-        const { r, blooms } = mountIntroGraph(SMALL_GRAPH)
-        const field = blooms.at(-1)!
-        expect(field).toBeTruthy()
-        let peak = 0
-        for (const v of field) {
-            expect(Number.isFinite(v)).toBe(true)
-            peak = Math.max(peak, v)
-        }
-        expect(peak).toBeGreaterThan(0)
-        const stats = statsOf(r)
-        expect(stats.bloomPoints).toBe(SMALL_GRAPH.nodes.length)
-        expect(stats.bloomWeight).toBeGreaterThan(0)
-        // ...spread over the field rather than collapsed into one cell (a spike normalises to a dot).
-        expect(stats.bloomSdx).toBeGreaterThan(0.05)
-        expect(stats.bloomSdy).toBeGreaterThan(0.05)
         r.destroy()
     })
 
     it('re-themes live without blanking — every theme in the picker', () => {
         // The theme card click path: applyGraphConfig again on the SAME live renderer. setConfig
         // re-reads tokens, re-measures and re-fits, and a bug there empties the field silently.
-        const { r, painted } = mountIntroGraph(SMALL_GRAPH)
+        const { r, painted } = mountIntroGraph(BIG_GRAPH)
         for (const name of THEME_NAMES) {
             applyGraphConfig(r, name)
             frame(1000)
-            expect(statsOf(r).notesOnScreen).toBe(SMALL_GRAPH.nodes.length)
-            expect(painted.at(-1)).toBeGreaterThan(0)
-            // The framing knob must survive a re-config — setConfig calls fit() itself.
-            expect((r as unknown as { fitMargin: number }).fitMargin).toBe(1)
+            expect(painted.at(-1)).toBeGreaterThan(80)
         }
         r.destroy()
     })
 
-    it('holds its framing across a re-theme', () => {
-        const { r } = mountIntroGraph(BIG_GRAPH, 'ink', {
-            offsetY: 0.12,
-            fitMargin: 1.55,
-        })
-        const p = r as unknown as {
-            nodes: { sy: number }[]
-            fitMargin: number
-            frameOffsetY: number
-        }
-        const before = p.nodes.map(n => n.sy)
-        applyGraphConfig(r, 'cathode')
-        frame(1000)
-        expect(p.fitMargin).toBe(1.55)
-        expect(p.frameOffsetY).toBe(0.12)
-        for (let i = 0; i < p.nodes.length; i++)
-            expect(p.nodes[i].sy).toBeCloseTo(before[i], 6)
-        r.destroy()
-    })
-
-    it('the inactive layer is paused, and resumes when its slide arrives', () => {
-        // Both IntroGraphs mount at once; only the active one may run a rAF loop.
-        const { r, painted } = mountIntroGraph(SMALL_GRAPH, 'ink', {
+    it('an inactive instance is paused, and resumes when it becomes active', () => {
+        const { r, painted } = mountIntroGraph(BIG_GRAPH, 'ink', {
             active: false,
         })
         painted.length = 0
@@ -415,8 +299,7 @@ describe('VaultIntro — the first-run cloud on the unified renderer', () => {
         expect(painted).toEqual([])
         r.setVisible(true)
         frame(3000)
-        expect(painted.at(-1)).toBeGreaterThan(0)
-        expect(statsOf(r).notesOnScreen).toBe(SMALL_GRAPH.nodes.length)
+        expect(painted.at(-1)).toBeGreaterThan(80)
         r.destroy()
     })
 })

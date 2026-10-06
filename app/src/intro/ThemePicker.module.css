@@ -1,4 +1,11 @@
 .picker {
+  /* Sits above the palette slide's backdrop graph, which fills the same art box. */
+  position: relative;
+  z-index: 1;
   display: flex;
-  gap: var(--sp-6);
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: var(--sp-5);
+  width: 100%;
+  max-width: 100%;
 }

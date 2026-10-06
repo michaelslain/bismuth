@@ -1,0 +1,15 @@
+.footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--h-band);
+    padding: 0 var(--sp-6);
+    border-top: 1px solid var(--border-soft);
+    box-sizing: border-box;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-5);
+}

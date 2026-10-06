@@ -180,6 +180,8 @@
   --fs-hero: 40px;
   /* display step above --fs-hero; Heading size='hero-xl' */
   --fs-hero-xl: 48px;
+  /* the brand wordmark as a slide's whole picture (the first-run intro's welcome + open slides) */
+  --fs-wordmark-display: 96px;
 
   /* fixed dev-HUD traffic light, deliberately theme-independent (graph fps HUD) */
   --hud-fps-good: #3fb950;

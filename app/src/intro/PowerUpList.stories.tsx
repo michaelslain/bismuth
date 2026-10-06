@@ -134,3 +134,14 @@ export const Interactive: Story = {
         expect(row.getAttribute('aria-checked')).toBe('false')
     },
 }
+
+/** A narrow window: the art box is ~90 cells wide, so the two cards must wrap or shrink inside it. */
+export const Narrow: Story = {
+    decorators: [
+        Story => (
+            <div style={{ width: 'calc(90 * var(--cell-w))' }}>
+                <Story />
+            </div>
+        ),
+    ],
+}

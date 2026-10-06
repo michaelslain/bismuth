@@ -1,6 +1,7 @@
 import type { Component } from 'solid-js'
 import { For } from 'solid-js'
 import Card from '../ui/Card'
+import Text from '../ui/Text'
 import ToggleRow from '../ui/ToggleRow'
 import styles from './PowerUpList.module.css'
 
@@ -30,7 +31,11 @@ const PowerUpList: Component<PowerUpListProps> = props => {
                         <ToggleRow
                             icon={p.icon}
                             label={p.name}
-                            description={p.desc}
+                            description={
+                                <Text size="body" tone="muted" register="prose">
+                                    {p.desc}
+                                </Text>
+                            }
                             checked={props.selected.includes(p.id)}
                             muted={!props.selected.includes(p.id)}
                             onToggle={() => props.onToggle(p.id)}

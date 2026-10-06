@@ -1,14 +1,11 @@
-// The per-slide hero of the first-run intro, one story per kind, each drawn at a pinned time well
-// past its scene's reveal so the frame is the resting one. The wrapper is the hero box IntroFrame
-// gives it (96 x 16 cells at IntroFrame's 1.5 `--intro-glyph-scale`). Canvas proof is pixels: each play counts inked pixels on the canvas.
-// `WordmarkLive` has no pinned time, so the real loop runs.
+// The per-slide hero of the first-run intro, one story per kind. The wrapper is IntroWindow's art
+// box (126 cells x 18 rows) on the window ground. Glyph scenes are drawn at a pinned time well past
+// their reveal so the frame is the resting one; canvas proof is pixels (inked fraction).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import type { JSX } from 'solid-js'
 import { agentsScene } from './glyphScenes/agents'
-import { createBeginScene } from './glyphScenes/begin'
 import { daemonScene } from './glyphScenes/daemon'
-import { wordmarkScene } from './glyphScenes/wordmark'
 import IntroHero from './IntroHero'
 
 const meta = {
@@ -19,8 +16,9 @@ const meta = {
         (Story: () => JSX.Element) => (
             <div
                 style={{
-                    width: 'calc(96 * var(--cell-w) * 1.5)',
-                    height: 'calc(16 * var(--row-h) * 1.5)',
+                    width: 'calc(126 * var(--cell-w))',
+                    height: 'calc(18 * var(--row-h))',
+                    background: 'var(--editor)',
                 }}
             >
                 <Story />
@@ -51,10 +49,20 @@ const expectInked = async (root: HTMLElement) => {
     await waitFor(() => expect(inked(canvas)).toBeGreaterThan(0.01))
 }
 
-/** The welcome slide: the `bismuth` block-letter wordmark over a sparse noise field. */
+/** The welcome slide: the gradient `bismuth` wordmark. */
 export const Wordmark: Story = {
-    args: { hero: 'wordmark', at: wordmarkScene.revealMs + 3000 },
-    play: ({ canvasElement }) => expectInked(canvasElement),
+    args: { hero: 'wordmark' },
+    play: ({ canvasElement }) => {
+        expect(canvasElement.textContent).toContain('bismuth')
+    },
+}
+
+/** The begin slide: the wordmark with the `> open vault_` prompt one --sp-6 below it. */
+export const Begin: Story = {
+    args: { hero: 'begin' },
+    play: ({ canvasElement }) => {
+        expect(canvasElement.textContent).toContain('> open vault')
+    },
 }
 
 /** The daemon slide: `> bismuth daemon status`, three cron rows and a log. */
@@ -67,24 +75,4 @@ export const Daemon: Story = {
 export const Agents: Story = {
     args: { hero: 'agents', at: agentsScene.revealMs + 3000 },
     play: ({ canvasElement }) => expectInked(canvasElement),
-}
-
-/** The begin slide: the formed wordmark over the `> open vault_` prompt. Pinned two whole blink
- *  cycles past the reveal (at the default 1.2s cursor blink), so the cursor is in its ON half. */
-export const Begin: Story = {
-    args: { hero: 'begin', at: createBeginScene(1200).revealMs + 2400 },
-    play: ({ canvasElement }) => expectInked(canvasElement),
-}
-
-/** The welcome wordmark with no pinned time: the real animation loop (reveal, then sheen). */
-export const WordmarkLive: Story = {
-    args: { hero: 'wordmark' },
-    play: async ({ canvasElement }) => {
-        await waitFor(() => {
-            if (!canvasElement.querySelector('canvas'))
-                throw new Error('no canvas mounted')
-        })
-        const host = canvasElement.querySelector('[role="img"]')!
-        await expect(host.getAttribute('aria-label')).toBe('bismuth')
-    },
 }
