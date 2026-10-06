@@ -50,13 +50,16 @@ import {
     anchorAt,
     currentPageIndex,
     layoutPages,
+    pointAnchorAt,
     positionAt,
+    scrollForPointAnchor,
     scrollTopForAnchor,
     scrollTopForPage,
     scrollTopForPosition,
     visiblePageRange,
     type PageBox,
     type PageSize,
+    type PointAnchor,
     type ReadingAnchor,
 } from './pageLayout'
 import { pdfCache, rasterStash, type LoadedPdf } from './pdfDocCache'
@@ -200,6 +203,10 @@ function PdfPages(props: PdfPagesProps) {
     // and the end of applyJump (a controller jump or the initial-position restore) — and cleared in
     // boot() so a fresh/switched document never re-anchors to the PREVIOUS document's place.
     let anchor: (ReadingAnchor & { xFraction: number; atTop: boolean }) | undefined
+    // Set only for the duration of a `controller.zoomAt` call: the reflow that zoom causes keeps
+    // THIS page point under the pointer instead of the middle anchor above.
+    let pointAnchor: PointAnchor | undefined
+    let pointPinTop = false
 
     async function boot() {
         const token = ++loadToken
@@ -497,6 +504,38 @@ function PdfPages(props: PdfPagesProps) {
             }
             applyJump(index, yFraction)
         },
+        zoomAt: (apply, x, y) => {
+            const el = scrollRef
+            if (!el || status() !== 'ready' || containerW() <= 0) {
+                apply()
+                return
+            }
+            // No pointer (the − / + / fit glide): the viewport's centre, except that a reader at
+            // the very top stays at the top rather than drifting into the page.
+            const r = el.getBoundingClientRect()
+            const atTop = el.scrollTop <= 0
+            const vx =
+                x === undefined ? el.clientWidth / 2 : x - r.left - el.clientLeft
+            const vy =
+                y === undefined
+                    ? atTop
+                        ? 0
+                        : el.clientHeight / 2
+                    : y - r.top - el.clientTop
+            pointPinTop = y === undefined && atTop
+            pointAnchor = pointAnchorAt(
+                layout().boxes,
+                el.scrollLeft + vx,
+                el.scrollTop + vy,
+                vx,
+                vy,
+            )
+            try {
+                apply()
+            } finally {
+                pointAnchor = undefined
+            }
+        },
     }
     createEffect(() => {
         const jump = pendingJump()
@@ -562,7 +601,7 @@ function PdfPages(props: PdfPagesProps) {
         on(
             layout,
             curLayout => {
-                if (!anchor || !scrollRef || status() !== 'ready') return
+                if ((!anchor && !pointAnchor) || !scrollRef || status() !== 'ready') return
                 // A ResizeObserver reporting a 0-width box (a split dragged fully closed, a pane
                 // momentarily collapsed) makes `layout()` recompute every box to w:0/h:0 —
                 // `scrollTopForAnchor` would then return 0, this effect would write scrollTop = 0,
@@ -571,6 +610,16 @@ function PdfPages(props: PdfPagesProps) {
                 if (containerW() <= 0 || curLayout.boxes.length === 0) return
                 const jump = untrack(pendingJump)
                 if (jump && 'restore' in jump) return
+                if (pointAnchor) {
+                    const at = scrollForPointAnchor(curLayout.boxes, pointAnchor)
+                    scrollRef.scrollTop = pointPinTop ? 0 : at.top
+                    scrollRef.scrollLeft = at.left
+                    setScrollTop(scrollRef.scrollTop)
+                    captureAnchor()
+                    report()
+                    return
+                }
+                if (!anchor) return
                 const top = anchor.atTop
                     ? 0
                     : scrollTopForAnchor(curLayout.boxes, anchor, containerH())

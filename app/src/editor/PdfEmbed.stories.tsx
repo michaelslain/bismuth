@@ -84,10 +84,62 @@ export const Zoomed: Story = {
                 fitWidth * 1.3,
             ),
         )
-        expect(
-            canvasElement.querySelector('[data-testid="pdf-zoom-steps"]')
-                ?.textContent,
-        ).toContain('144%')
+        // The steps glide (preview/createPreviewZoom), so the label lands on 144% at the end of it.
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-testid="pdf-zoom-steps"]')
+                    ?.textContent,
+            ).toContain('144%'),
+        )
+    },
+}
+
+/** A pinch (ctrl+wheel, as Chrome reports a trackpad pinch) zooms in proportion to the fingers and
+ *  keeps the spot under the pointer under the pointer. */
+export const PinchZoom: Story = {
+    args: { load, name: 'papers/handbook.pdf' },
+    render: args => (
+        <Box>
+            <PdfEmbed {...args} />
+        </Box>
+    ),
+    play: async ({ canvasElement }) => {
+        const page = () =>
+            canvasElement.querySelector('[data-pdf-page="0"]') as HTMLElement | null
+        await waitFor(
+            () => expect(page()?.getBoundingClientRect().width).toBeGreaterThan(0),
+            { timeout: 5000 },
+        )
+        const r0 = page()!.getBoundingClientRect()
+        const x = r0.left + r0.width * 0.3
+        const y = r0.top + 60
+        const fx0 = (x - r0.left) / r0.width
+        const fy0 = (y - r0.top) / r0.height
+        const body = page()!.closest('[data-embed-own-click]') as HTMLElement
+        // 20 small pinch deltas → exp(0.03 * 20) ≈ 1.82×, applied on the next frame.
+        for (let i = 0; i < 20; i++) {
+            body.dispatchEvent(
+                new WheelEvent('wheel', {
+                    deltaY: -3,
+                    ctrlKey: true,
+                    clientX: x,
+                    clientY: y,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        }
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-testid="pdf-zoom-steps"]')
+                    ?.textContent,
+            ).toContain('182%'),
+        )
+        const r1 = page()!.getBoundingClientRect()
+        expect(r1.width / r0.width).toBeCloseTo(1.82, 1)
+        // The page point that was under the pointer still is (within a pixel or two).
+        expect(Math.abs(r1.left + fx0 * r1.width - x)).toBeLessThan(2)
+        expect(Math.abs(r1.top + fy0 * r1.height - y)).toBeLessThan(2)
     },
 }
 

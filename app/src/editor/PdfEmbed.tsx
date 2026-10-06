@@ -2,8 +2,8 @@
 // The rendered face of a `![[file.pdf]]` / `![](file.pdf)` embed in a note (editor/embedBlock.ts):
 // the SAME pdf.js page stack the PDF preview tab uses (preview/PdfPages), inside a card whose
 // header names the file and carries the preview tab's zoom group `− 100% + fit` (preview/PdfZoom,
-// plus ctrl/cmd+wheel over the pages) and the `p. N / M` readout (preview/PageReadout — click to
-// jump).
+// plus pinch and ctrl/cmd+wheel over the pages, anchored at the pointer — preview/createPreviewZoom)
+// and the `p. N / M` readout (preview/PageReadout — click to jump).
 //
 // It replaces a bare `<iframe src=…pdf>`, which handed the PDF to the webview's NATIVE viewer:
 // WKWebView ignores the `#toolbar=0` open-parameter and floats its own grey zoom/open/download
@@ -20,6 +20,7 @@ import { createSignal } from 'solid-js'
 import PdfPages from '../preview/PdfPages'
 import PageReadout from '../preview/PageReadout'
 import PdfZoom from '../preview/PdfZoom'
+import createPreviewZoom from '../preview/createPreviewZoom'
 import Label from '../ui/Label'
 import type { PdfPagesController } from '../preview/annotationTypes'
 import { pageIndexFromFragment } from './embedSpec'
@@ -44,12 +45,15 @@ const ZOOM_MAX = 4
 function PdfEmbed(props: PdfEmbedProps) {
     const [current, setCurrent] = createSignal(0)
     const [count, setCount] = createSignal(0)
-    // Same bounds and wheel step as the preview tab (PreviewView); 1 = fit width. Transient: an
-    // embed's zoom is not written back into the note.
-    const [zoom, setZoom] = createSignal(1)
-    const zoomBy = (factor: number) =>
-        setZoom(z => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor)))
     let controller: PdfPagesController | undefined
+    // Same bounds and gestures as the preview tab (PreviewView); 1 = fit width. Transient: an
+    // embed's zoom is not written back into the note.
+    const zoom = createPreviewZoom({
+        min: ZOOM_MIN,
+        max: ZOOM_MAX,
+        anchor: (apply, x, y) =>
+            controller ? controller.zoomAt(apply, x, y) : apply(),
+    })
     const start = pageIndexFromFragment(props.page)
 
     return (
@@ -59,7 +63,11 @@ function PdfEmbed(props: PdfEmbedProps) {
                     {props.name}
                 </Label>
                 <div class={styles['pdf-embed-controls']} data-embed-own-click>
-                    <PdfZoom zoom={zoom} onZoomBy={zoomBy} onFit={() => setZoom(1)} />
+                    <PdfZoom
+                        zoom={zoom.zoom}
+                        onZoomBy={zoom.stepBy}
+                        onFit={zoom.fit}
+                    />
                     <PageReadout
                         current={current}
                         count={count}
@@ -70,15 +78,11 @@ function PdfEmbed(props: PdfEmbedProps) {
             <div
                 class={styles['pdf-embed-body']}
                 data-embed-own-click
-                onWheel={e => {
-                    if (!(e.ctrlKey || e.metaKey)) return
-                    e.preventDefault()
-                    zoomBy(e.deltaY < 0 ? 1.08 : 1 / 1.08)
-                }}
+                ref={zoom.attach}
             >
                 <PdfPages
                     load={props.load}
-                    zoom={zoom()}
+                    zoom={zoom.zoom()}
                     cacheKey={props.cacheKey}
                     initialPosition={
                         start === undefined

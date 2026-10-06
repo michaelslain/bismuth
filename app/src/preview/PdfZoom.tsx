@@ -1,8 +1,8 @@
 // app/src/preview/PdfZoom.tsx
-// The PDF zoom group `− 100% + fit`: shared by the preview tab's bar (preview/PreviewBar) and the
-// in-note PDF embed's header (editor/PdfEmbed), so both zoom the same way with the same controls.
-// Only the steps carry `data-bar-drop="4"` — inside a ViewBar the collapse ladder hides them on a
-// narrow pane while ctrl/cmd+wheel still zooms and `fit` stays as the one-click way back. Outside
+// The preview zoom group `− 100% + fit`: shared by the preview tab's bar (preview/PreviewBar — a
+// PDF or an image) and the in-note PDF embed's header (editor/PdfEmbed), so every surface zooms the
+// same way with the same controls. Only the steps carry `data-bar-drop="4"` — inside a ViewBar the
+// collapse ladder hides them on a narrow pane while a pinch or ctrl/cmd+wheel still zooms and `fit` stays as the one-click way back. Outside
 // a ViewBar the attribute does nothing.
 import IconButton from '../ui/IconButton'
 import TextButton from '../ui/TextButton'

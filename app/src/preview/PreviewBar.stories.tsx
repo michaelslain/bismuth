@@ -144,14 +144,14 @@ export const PdfModesOn: Story = {
     },
 }
 
-/** An image: the same DRAW toggle and the same file-actions group as a PDF, in the same places —
- *  and nothing PDF-only (no readout, zoom, highlight, scratch or bookmarks). */
+/** An image: the same zoom group, DRAW toggle and file-actions group as a PDF, in the same places —
+ *  and nothing PDF-only (no page readout, highlight, scratch or bookmarks). */
 export const Image: Story = {
     render: () => <Harness width={1000} kind="image" name="whiteboard-2026-09-15.png" native />,
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
         const canvas = within(bar)
-        const p = expectCalm(bar, 1, 0)
+        const p = expectCalm(bar, 2, 0)
         await expect(p.frames).toBe(0)
         // The annotate + file-actions groups are the two wrappers stories actually query by
         // testid (probeBar itself reads controls by aria-label/rect, never these).
@@ -162,7 +162,10 @@ export const Image: Story = {
         await expect(canvas.getByLabelText('Draw')).toBeInTheDocument()
         await expect(canvas.getByLabelText('Open in default app')).toBeInTheDocument()
         await expect(canvas.getByLabelText('Reveal in file manager')).toBeInTheDocument()
-        for (const label of ['Zoom in', 'Fit width', 'Highlight text', 'Scratch paper', 'Bookmarks']) {
+        for (const label of ['Zoom out', 'Zoom in', 'Fit width']) {
+            await expect(canvas.getByLabelText(label)).toBeInTheDocument()
+        }
+        for (const label of ['Highlight text', 'Scratch paper', 'Bookmarks']) {
             await expect(canvas.queryByLabelText(label)).toBeNull()
         }
         await expect(bar.querySelector('[data-testid="page-readout"]')).toBeNull()
@@ -197,7 +200,7 @@ export const ImageWithSize: Story = {
     ),
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
-        expectCalm(bar, 0, 0)
+        expectCalm(bar, 1, 0)
         const readouts = bar.querySelector('[data-testid="vb-readouts"]') as HTMLElement
         await expect(readouts).toBeInTheDocument()
         const label = within(readouts).getByText('1600 × 900')

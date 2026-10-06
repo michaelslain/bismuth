@@ -4,7 +4,9 @@ import {
     anchorAt,
     currentPageIndex,
     layoutPages,
+    pointAnchorAt,
     positionAt,
+    scrollForPointAnchor,
     scrollTopForAnchor,
     scrollTopForPage,
     scrollTopForPosition,
@@ -396,5 +398,50 @@ describe('anchorAt / scrollTopForAnchor', () => {
     test('never negative even for a middle above the top of the content', () => {
         const a = anchorAt(boxes, 0, 10000) // huge viewport pushes the middle far past the content
         expect(scrollTopForAnchor(boxes, a, 10000)).toBe(0)
+    })
+})
+
+describe('pointAnchorAt / scrollForPointAnchor', () => {
+    const sizes = [
+        { w: 200, h: 300 },
+        { w: 200, h: 300 },
+    ]
+
+    test('the page point under the cursor stays under it across a zoom', () => {
+        const before = layoutPages(sizes, 400, 1, 16, 0, 16).boxes
+        // Cursor at viewport (120, 90) with the content scrolled to (0, 310).
+        const a = pointAnchorAt(before, 120, 400, 120, 90)
+        expect(a.index).toBe(0)
+        const after = layoutPages(sizes, 400, 2, 16, 0, 16).boxes
+        const { left, top } = scrollForPointAnchor(after, a)
+        const box = after[a.index]!
+        // Content point the anchor maps to on the new layout, seen at the same viewport point.
+        expect(box.left + a.xFraction * box.w - left).toBeCloseTo(120)
+        expect(box.top + a.yFraction * box.h - top).toBeCloseTo(90)
+        // Same fraction of the page: (120 - 16) / 368 across, (400 - 16) / 552 down.
+        expect(a.xFraction).toBeCloseTo((120 - 16) / 368)
+        expect(a.yFraction).toBeCloseTo((400 - 16) / 552)
+    })
+
+    test('a point in the gap below a page anchors to that page, past its bottom', () => {
+        const boxes = layoutPages(sizes, 400, 1, 16, 0, 16).boxes
+        const gapY = boxes[0]!.top + boxes[0]!.h + 8
+        const a = pointAnchorAt(boxes, 200, gapY, 200, 10)
+        expect(a.index).toBe(0)
+        expect(a.yFraction).toBeGreaterThan(1)
+        expect(scrollForPointAnchor(boxes, a).top).toBeCloseTo(gapY - 10)
+    })
+
+    test('a point in the top gutter anchors to the first page with a negative fraction', () => {
+        const boxes = layoutPages(sizes, 400, 1, 16, 0, 16).boxes
+        const a = pointAnchorAt(boxes, 200, 4, 200, 4)
+        expect(a.index).toBe(0)
+        expect(a.yFraction).toBeLessThan(0)
+        expect(scrollForPointAnchor(boxes, a).top).toBeCloseTo(0)
+    })
+
+    test('empty boxes → zero offsets', () => {
+        const a = pointAnchorAt([], 10, 10, 5, 5)
+        expect(scrollForPointAnchor([], a)).toEqual({ left: 0, top: 0 })
     })
 })

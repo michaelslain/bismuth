@@ -73,7 +73,9 @@ import type {
     PdfPagesController,
 } from './preview/annotationTypes'
 import CompanionFrontmatter from './preview/CompanionFrontmatter'
-import { imageScratchLayout } from './preview/imageScratchLayout'
+import { imageZoomLayout } from './preview/imageZoomLayout'
+import createPreviewZoom from './preview/createPreviewZoom'
+import { attachZoomGestures } from './preview/zoomGesture'
 import { visiblePageRange, type PageBox, type PageSize } from './preview/pageLayout'
 import { loadPdfView, savePdfView } from './preview/pdfViewMemory'
 import { containRect } from '../../core/src/drawing/pageInk'
@@ -212,19 +214,31 @@ export function PreviewView(props: {
     // PDF zoom — transient (not a `.settings` key, per the plan's ruling), restored per file
     // from `pdfViewMemory` (fit-width the first time a file is opened this session). 1 = fit
     // width (PdfPages' own contract).
-    const PDF_ZOOM_MIN = 0.25
-    const PDF_ZOOM_MAX = 4
-    const [pdfZoom, setPdfZoom] = createSignal(1)
-    const zoomBy = (factor: number) =>
-        setPdfZoom(z =>
-            Math.min(PDF_ZOOM_MAX, Math.max(PDF_ZOOM_MIN, z * factor)),
-        )
+    // Pinch / ctrl+wheel apply at once, anchored at the pointer (PdfPages' `zoomAt`); the bar's
+    // − / + / fit glide (preview/createPreviewZoom).
+    const pdfZoomCtl = createPreviewZoom({
+        min: 0.25,
+        max: 4,
+        anchor: (apply, x, y) =>
+            pdfController ? pdfController.zoomAt(apply, x, y) : apply(),
+    })
+    const pdfZoom = pdfZoomCtl.zoom
+    // Image zoom — transient, back to the fit (1) on every open. Never below the fit: smaller than
+    // the pane shows nothing more. Anchored by `imageZoomAt` below.
+    const imageZoomCtl = createPreviewZoom({
+        min: 1,
+        max: 8,
+        anchor: (apply, x, y) => imageZoomAt(apply, x, y),
+    })
+    const imageZoom = imageZoomCtl.zoom
     createEffect(
         on(path, () => {
             const key = pdfMemoryKey()
-            setPdfZoom(key ? loadPdfView(key)?.zoom ?? 1 : 1)
+            pdfZoomCtl.set(key ? loadPdfView(key)?.zoom ?? 1 : 1)
+            imageZoomCtl.set(1)
         }),
     )
+    const zoomCtl = () => (kind() === 'image' ? imageZoomCtl : pdfZoomCtl)
 
     // Fetch the text body only for code/text kinds (GET /file returns "" for a missing file).
     const [code] = createResource(
@@ -254,6 +268,15 @@ export function PreviewView(props: {
     // One entry per rendered page, in PageInk's host coordinates (the host is `inset: 0` over
     // the body for an image, over PdfPages' scroll content for a PDF).
     const [imagePages, setImagePages] = createSignal<PageInkPage[]>([])
+    // The image's scroll content while it is laid out explicitly (scratch on, or zoomed) — the
+    // stage grows past the body once the picture does. undefined = the plain CSS-centred image.
+    const [imageStage, setImageStage] = createSignal<{ w: number; h: number }>()
+    // The `<img>` currently mounted (the plain and the explicit path each mount their own).
+    let imgEl: HTMLImageElement | undefined
+    const stageStyle = () => {
+        const st = imageStage()
+        return st ? { width: `${st.w}px`, height: `${st.h}px` } : undefined
+    }
     const [pdfPages, setPdfPages] = createSignal<PageInkPage[]>([])
     // The loaded image's natural pixel size, for PreviewBar's readout slot — absent before load
     // and after a load error, matching the PDF page-count readout's own absent-until-known shape.
@@ -395,15 +418,19 @@ export function PreviewView(props: {
      *  strip needs room beside it, laid out as one centred unit (`imageScratchLayout.ts`), so
      *  this measures the BODY's own content box (never the image's, which this render is about to
      *  size explicitly) and lays image + strip out in host coordinates, the same body-relative
-     *  space PageInk's `pages()` already use. With SCRATCH off this is UNCHANGED from before —
+     *  space PageInk's `pages()` already use. ZOOMED (`imageZoom() !== 1`) takes the same explicit
+     *  path, scaled about that fit (`imageZoomLayout.ts`), and sizes the stage so the body scrolls
+     *  to pan. With SCRATCH off at zoom 1 this is UNCHANGED from before —
      *  `ImageInkLandsAtRealMeasuredRect` (PreviewView.stories.tsx) depends on that exact math. */
     const measureImage = (img: HTMLImageElement) => {
         const body = bodyRef
-        const natW = img.naturalWidth
-        const natH = img.naturalHeight
+        // Falls back to the size the last load reported (`imageSize`): a zoom that crosses 1 swaps
+        // in a fresh `<img>`, which may not report its own natural size for a frame.
+        const natW = img.naturalWidth || imageSize()?.w || 0
+        const natH = img.naturalHeight || imageSize()?.h || 0
         if (!body || !img.isConnected || !natW || !natH) return
         const ratio = marginRatio()
-        if (ratio > 0) {
+        if (ratio > 0 || imageZoom() !== 1) {
             // The fixed gutter `.preview-image` used to carry as its own CSS padding, now the
             // gutter of the AREA the image+strip unit centres inside (read off the body itself so
             // it never depends on the image's own — now overridden — style).
@@ -411,21 +438,25 @@ export function PreviewView(props: {
                 parseFloat(
                     getComputedStyle(body).getPropertyValue('--sp-6'),
                 ) || 0
-            const area = {
-                left: gutter,
-                top: gutter,
-                w: Math.max(0, body.clientWidth - 2 * gutter),
-                h: Math.max(0, body.clientHeight - 2 * gutter),
-            }
-            const { rendered, marginW } = imageScratchLayout(
-                area,
+            const { rendered, marginW, stage } = imageZoomLayout(
+                { w: body.clientWidth, h: body.clientHeight },
+                gutter,
                 natW,
                 natH,
                 ratio,
+                imageZoom(),
             )
-            setImagePages([{ rendered, nat: { w: natW, h: natH }, marginW }])
+            setImageStage(stage)
+            setImagePages([
+                {
+                    rendered,
+                    nat: { w: natW, h: natH },
+                    ...(ratio > 0 ? { marginW } : {}),
+                },
+            ])
             return
         }
+        setImageStage(undefined)
         const br = body.getBoundingClientRect()
         const ir = img.getBoundingClientRect()
         const cs = getComputedStyle(img)
@@ -450,10 +481,33 @@ export function PreviewView(props: {
     /** The image's ref: re-measure on load and whenever it or the body resizes (a pane resize
      *  can re-centre the picture without changing its size, hence both). */
     const attachImage = (img: HTMLImageElement) => {
+        imgEl = img
         const ro = new ResizeObserver(() => measureImage(img))
         ro.observe(img)
         if (bodyRef) ro.observe(bodyRef)
         onCleanup(() => ro.disconnect())
+    }
+    /** Run `apply` (a zoom change), re-lay the image out at once, and scroll so the picture point
+     *  under client (`x`, `y`) — the body's centre for a button glide — stays put. */
+    const imageZoomAt = (apply: () => void, x?: number, y?: number) => {
+        const body = bodyRef
+        const page = imagePages()[0]
+        if (!body || !page || page.rendered.w <= 0 || page.rendered.h <= 0) {
+            apply()
+            if (imgEl) measureImage(imgEl)
+            return
+        }
+        const r = body.getBoundingClientRect()
+        const vx = x === undefined ? body.clientWidth / 2 : x - r.left - body.clientLeft
+        const vy = y === undefined ? body.clientHeight / 2 : y - r.top - body.clientTop
+        const fx = (body.scrollLeft + vx - page.rendered.left) / page.rendered.w
+        const fy = (body.scrollTop + vy - page.rendered.top) / page.rendered.h
+        apply()
+        if (imgEl) measureImage(imgEl)
+        const next = imagePages()[0]
+        if (!next) return
+        body.scrollLeft = next.rendered.left + fx * next.rendered.w - vx
+        body.scrollTop = next.rendered.top + fy * next.rendered.h - vy
     }
     const onPdfLayout = (l: {
         boxes: PageBox[]
@@ -657,9 +711,9 @@ export function PreviewView(props: {
                 currentPage={currentPage}
                 pageCount={pageCount}
                 onGoToPage={i => pdfController?.scrollToPage(i)}
-                zoom={pdfZoom}
-                onZoomBy={zoomBy}
-                onFit={() => setPdfZoom(1)}
+                zoom={() => zoomCtl().zoom()}
+                onZoomBy={f => zoomCtl().stepBy(f)}
+                onFit={() => zoomCtl().fit()}
                 annotReady={annotReady}
                 drawMode={drawMode}
                 onToggleDraw={toggleDraw}
@@ -699,11 +753,17 @@ export function PreviewView(props: {
                     [styles['preview-body--desk']]: inkable(),
                 }}
                 data-testid="preview-body"
-                ref={bodyRef}
-                onWheel={e => {
-                    if (kind() !== 'pdf' || !(e.ctrlKey || e.metaKey)) return
-                    e.preventDefault()
-                    zoomBy(e.deltaY < 0 ? 1.08 : 1 / 1.08)
+                ref={el => {
+                    bodyRef = el
+                    // Pinch / ctrl+wheel on an image or PDF zooms it; anything else keeps the
+                    // webview's own behaviour (the listener only claims events for those kinds).
+                    onCleanup(
+                        attachZoomGestures(
+                            el,
+                            (f, x, y) => zoomCtl().pinch(f, x, y),
+                            inkable,
+                        ),
+                    )
                 }}
             >
                 {/* Find bar / note, overlaid top-right of the body (never for image/external). */}
@@ -853,7 +913,7 @@ export function PreviewView(props: {
                                 centring/`object-fit: contain`, no wrapper, no inline sizing — the
                                 path `ImageInkLandsAtRealMeasuredRect` measures. */}
                             <Show
-                                when={marginRatio() > 0}
+                                when={marginRatio() > 0 || imageZoom() !== 1}
                                 fallback={
                                     <img
                                         ref={attachImage}
@@ -875,7 +935,10 @@ export function PreviewView(props: {
                                     />
                                 }
                             >
-                                <div class={styles['preview-image-host']}>
+                                <div
+                                    class={styles['preview-image-host']}
+                                    style={stageStyle()}
+                                >
                                     <img
                                         ref={attachImage}
                                         class={`${styles['preview-image']} ${styles['preview-image--scratch']}`}
@@ -942,7 +1005,15 @@ export function PreviewView(props: {
                                 including the strip's note blocks (final review, finding 4: this
                                 used to mount in the opposite order, so ink on an image painted
                                 UNDER the text layer). */}
+                            {/* The overlays span the STAGE, not just the body's visible box, so on a
+                                zoomed-and-panned image PageInk's sticky draw dock still pins to the
+                                bottom of the scrollport instead of scrolling away with the body's
+                                first screenful. */}
                             <Show when={imagePages().length > 0}>
+                                <div
+                                    class={styles['preview-image-overlay']}
+                                    style={stageStyle()}
+                                >
                                 <Show when={companion()}>
                                     <ScratchTextLayer
                                         store={companion()!}
@@ -962,6 +1033,7 @@ export function PreviewView(props: {
                                     onExit={exitDraw}
                                     store={store()}
                                 />
+                                </div>
                             </Show>
                         </Show>
                     </Match>

@@ -30,6 +30,7 @@ import { setTransport, type Transport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { clearPdfView, loadPdfView } from './preview/pdfViewMemory'
 import { anchorAt, positionAt } from './preview/pageLayout'
+import { ZOOM_TWEEN_MS } from './preview/zoomGesture'
 import { inkSidecarFor } from '../../core/src/fileKinds'
 import {
     emptyDoc,
@@ -259,6 +260,83 @@ export const Image: Story = {
             hexToRgb(editorHex),
         )
     },
+}
+
+/** Pinch-zooming an image opened as its own tab: ctrl+wheel (how Chrome reports a trackpad pinch)
+ *  zooms in proportion and keeps the spot under the pointer under it, the body scrolls to pan the
+ *  zoomed picture, the ink layer's page slot stays on the picture, and `fit` glides back. */
+export const ImagePinchZoom: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        return (
+            <div style={{ height: '100vh' }}>
+                <PreviewView
+                    path="assets/photo.png"
+                    tagNames={NO_TAGS}
+                    imageSrc={photoPng}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() =>
+            expect(canvas.getByText('1600 × 900')).toBeInTheDocument(),
+        )
+        const img = () => canvasElement.querySelector('img') as HTMLImageElement
+        const body = canvasElement.querySelector(
+            '[data-testid="preview-body"]',
+        ) as HTMLElement
+        const r0 = img().getBoundingClientRect()
+        const x = r0.left + r0.width * 0.3
+        const y = r0.top + r0.height * 0.4
+        for (let i = 0; i < 30; i++) {
+            body.dispatchEvent(
+                new WheelEvent('wheel', {
+                    deltaY: -3,
+                    ctrlKey: true,
+                    clientX: x,
+                    clientY: y,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        }
+        await waitFor(() => expect(canvas.getByText('246%')).toBeInTheDocument())
+        const r1 = img().getBoundingClientRect()
+        expect(r1.width / r0.width).toBeCloseTo(2.46, 1)
+        expect(Math.abs(r1.left + 0.3 * r1.width - x)).toBeLessThan(2)
+        expect(Math.abs(r1.top + 0.4 * r1.height - y)).toBeLessThan(2)
+        // Zoomed past the pane, the body scrolls to pan.
+        expect(body.scrollWidth).toBeGreaterThan(body.clientWidth)
+        expect(body.scrollLeft).toBeGreaterThan(0)
+        // Ink lands on the picture: the ink layer's page slot IS the zoomed image's rect.
+        const slot = canvasElement
+            .querySelector('[data-testid="ink-page-0"]')!
+            .getBoundingClientRect()
+        expect(Math.abs(slot.left - r1.left)).toBeLessThanOrEqual(1)
+        expect(Math.abs(slot.width - r1.width)).toBeLessThanOrEqual(1)
+        fireEvent.click(canvas.getByRole('button', { name: 'Fit width' }))
+        await waitFor(() => expect(canvas.getByText('100%')).toBeInTheDocument())
+        await waitFor(() =>
+            expect(img().getBoundingClientRect().width).toBeCloseTo(r0.width, 0),
+        )
+    },
+}
+
+/** Click the bar's `+` once and let its glide (preview/createPreviewZoom) LAND. The glide is a
+ *  fixed-length animation, so its own duration plus two frames is when it has applied its last
+ *  value — waiting on the label alone is not enough: it rounds to 120% mid-glide, and a glide still
+ *  running reflows the stack after the story has moved on. */
+async function zoomInOnceAndLand(root: HTMLElement) {
+    const pageW = () =>
+        (root.querySelector('[data-pdf-page="0"]') as HTMLElement).getBoundingClientRect().width
+    const before = pageW()
+    await fireEvent.click(within(root).getByLabelText('Zoom in'))
+    await new Promise(r => setTimeout(r, ZOOM_TWEEN_MS))
+    for (let i = 0; i < 2; i++) await new Promise(r => requestAnimationFrame(r))
+    await expect(pageW()).toBeCloseTo(before * 1.2, 1)
+    await expect(within(root).getByText('120%')).toBeInTheDocument()
 }
 
 // A data URI a browser fails to decode as an image (no valid image bytes), so the `<img>`'s
@@ -834,10 +912,16 @@ export const PdfSurvivesParentChurn: Story = {
         const root = canvasElement.querySelector(
             `.${styles['preview-app']}`,
         ) as HTMLElement
-        await fireEvent.click(canvas.getByLabelText('Zoom in'))
-        await expect(canvas.getByText('120%')).toBeInTheDocument()
+        await zoomInOnceAndLand(canvasElement)
+        const pageW = () =>
+            (canvasElement.querySelector('[data-pdf-page="0"]') as HTMLElement)
+                .getBoundingClientRect().width
+        const widthBeforePanel = pageW()
         await fireEvent.click(bookmarksBtn(canvasElement))
         await expect(pressedOf(bookmarksBtn(canvasElement))).toBe('true')
+        // The panel narrows the page stack once its ResizeObserver reports — scrolling before that
+        // would set an offset the reflow then (correctly) re-anchors away from.
+        await waitFor(() => expect(pageW()).toBeLessThan(widthBeforePanel - 1))
         const liveCanvas = () =>
             canvasElement.querySelector('[data-testid="ink-canvas-live"]')
         await expect(toggleDrawKey(root)).toBe(false)
@@ -2072,8 +2156,7 @@ export const PdfRemountRestoresView: Story = {
         )
 
         // Zoom `+` once (120%) and open the bookmarks panel.
-        await fireEvent.click(canvas.getByLabelText('Zoom in'))
-        await expect(canvas.getByText('120%')).toBeInTheDocument()
+        await zoomInOnceAndLand(canvasElement)
         await fireEvent.click(bookmarksBtn(canvasElement))
         await expect(pressedOf(bookmarksBtn(canvasElement))).toBe('true')
 

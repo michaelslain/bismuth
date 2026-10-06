@@ -193,3 +193,55 @@ export function scrollTopForAnchor(
         scrollTopForPosition(boxes, anchor.index, anchor.yFraction, 0) - viewportH / 2,
     )
 }
+
+/** A content point pinned to a viewport point across a zoom: which page it is on, where on that
+ *  page as fractions of the page's own box (unclamped, so a point in a gap, the `pad` gutter or the
+ *  margin paper beside the page round-trips too), and where in the viewport it sat (`vx`/`vy`,
+ *  px from the scroll element's top-left). */
+export type PointAnchor = {
+    index: number
+    xFraction: number
+    yFraction: number
+    vx: number
+    vy: number
+}
+
+/** The anchor for content point (`x`, `y`) — scroll content px — currently shown at viewport point
+ *  (`vx`, `vy`). The page is the one whose top is at or above `y` (the first page for a point in
+ *  the top gutter). Empty boxes → page 0 at fraction 0. */
+export function pointAnchorAt(
+    boxes: PageBox[],
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+): PointAnchor {
+    let index = 0
+    for (let i = 0; i < boxes.length; i++) {
+        if (boxes[i]!.top > y) break
+        index = i
+    }
+    const box = boxes[index]
+    if (!box) return { index: 0, xFraction: 0, yFraction: 0, vx, vy }
+    return {
+        index,
+        xFraction: box.w > 0 ? (x - box.left) / box.w : 0,
+        yFraction: box.h > 0 ? (y - box.top) / box.h : 0,
+        vx,
+        vy,
+    }
+}
+
+/** Inverse of `pointAnchorAt` on a re-laid-out stack: the scroll offsets that put the anchored
+ *  page point back under (`vx`, `vy`). Not clamped — the browser clamps to the scroll range. */
+export function scrollForPointAnchor(
+    boxes: PageBox[],
+    a: PointAnchor,
+): { left: number; top: number } {
+    const box = boxes[Math.min(boxes.length - 1, Math.max(0, a.index))]
+    if (!box) return { left: 0, top: 0 }
+    return {
+        left: box.left + a.xFraction * box.w - a.vx,
+        top: box.top + a.yFraction * box.h - a.vy,
+    }
+}

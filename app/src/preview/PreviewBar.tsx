@@ -5,7 +5,7 @@
 //
 //   identity  file icon + filename (ellipsizes first, never vanishes)
 //   readouts  p. N / M (pdf) // W × H (image)
-//   config    [− 100% + fit]   [highlight draw scratch]    pdf  ·  [draw] on an image
+//   config    [− 100% + fit]   [highlight draw scratch]    pdf  ·  [− 100% + fit] [draw] on an image
 //   actions   [bookmarks]      [open-externally reveal]    bookmarks pdf only · file actions Tauri
 //
 // GROUPS ARE SPACING, NOT DIVIDERS. Inside a group controls sit at `--bar-icon-gap` — the annotate
@@ -41,7 +41,7 @@ export type PreviewBarProps = {
     currentPage?: () => number
     pageCount?: () => number
     onGoToPage?: (index: number) => void
-    /** pdf zoom */
+    /** pdf / image zoom (1 = fit) */
     zoom?: () => number
     onZoomBy?: (factor: number) => void
     onFit?: () => void
@@ -111,13 +111,11 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
             }
             config={
                 <Show when={inkable()}>
-                    <Show when={pdf()}>
-                        <PdfZoom
-                            zoom={() => props.zoom?.() ?? 1}
-                            onZoomBy={f => props.onZoomBy?.(f)}
-                            onFit={() => props.onFit?.()}
-                        />
-                    </Show>
+                    <PdfZoom
+                        zoom={() => props.zoom?.() ?? 1}
+                        onZoomBy={f => props.onZoomBy?.(f)}
+                        onFit={() => props.onFit?.()}
+                    />
                     <div class={styles.group} data-testid="preview-annotate">
                         <Show when={pdf()}>
                             <IconButton

@@ -12,6 +12,11 @@
 // render lands is it blitted onto the visible canvas — resizing the canvas bitmap and drawing into
 // it in the same task, so no frame ever paints it empty. A newer size change cancels the older
 // in-flight render, and its result is dropped.
+//
+// SETTLE BEFORE RE-RENDERING: a pinch changes the box every frame. Re-rasterizing per frame kept
+// pdf.js busy on renders that were cancelled before they landed, and the zoom stuttered behind
+// them. Once a page has a raster, a size change only stretches it (CSS, free) and the sharp
+// re-render runs `RESIZE_SETTLE_MS` after the size stops moving.
 import { createEffect, createMemo, on, onCleanup } from 'solid-js'
 import type { PageBox } from './pageLayout'
 import styles from './PdfPageCanvas.module.css'
@@ -25,6 +30,8 @@ type PDFPageProxy = import('pdfjs-dist').PDFPageProxy
 // plain `setTimeout` delay where `requestIdleCallback` is absent (Safari/WebKit). Short enough that
 // a reader who stops scrolling gets selectable text quickly.
 const TEXT_LAYER_IDLE_DEADLINE_MS = 120
+// How long a page's box must hold still before it is re-rendered at its new size.
+const RESIZE_SETTLE_MS = 140
 
 export type PdfPageCanvasProps = {
     index: number
@@ -231,9 +238,25 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
 
     // Runs once after mount (refs are assigned by then) and again whenever the box's SIZE changes;
     // a box that only moved (a `top` shift) keeps its raster as-is.
-    createEffect(on([boxW, boxH], ([w, h]) => void run(w, h)))
+    // The first paint is immediate; later size changes wait for the size to settle (header).
+    let settleTimer: number | undefined
+    createEffect(
+        on([boxW, boxH], ([w, h]) => {
+            if (settleTimer !== undefined) window.clearTimeout(settleTimer)
+            settleTimer = undefined
+            if (renderedW === 0) {
+                void run(w, h)
+                return
+            }
+            settleTimer = window.setTimeout(() => {
+                settleTimer = undefined
+                void run(w, h)
+            }, RESIZE_SETTLE_MS)
+        }),
+    )
     onCleanup(() => {
         disposed = true
+        if (settleTimer !== undefined) window.clearTimeout(settleTimer)
         renderTask?.cancel()
         textLayer?.cancel()
         cancelScheduledTextLayer()

@@ -37,6 +37,10 @@ export type PdfPagesController = {
     /** Scroll so page `index` sits at the top of the viewport; `yFraction` (0..1) offsets into
      *  the page. */
     scrollToPage: (index: number, yFraction?: number) => void
+    /** Run `apply` (which changes the zoom) and keep whatever sat under client point (`x`, `y`)
+     *  under it — the pinch / ctrl+wheel anchor. Without a point (a button glide) the viewport's
+     *  centre is kept instead, or the top for a reader already at the very top. */
+    zoomAt: (apply: () => void, x?: number, y?: number) => void
 }
 
 /** The ONE owner of a binary's companion note (`<file>.md`) while its preview is open: the tags

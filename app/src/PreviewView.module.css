@@ -59,18 +59,35 @@
 
 /* Image + scratch strip (SCRATCH on): PreviewView.tsx's measureImage lays them out together, in
    HOST px, as one unit (preview/imageScratchLayout.ts) — the same body-relative coordinate space
-   PageInk's `pages()` already use. This host mirrors PageInk's own (`inset: 0` over
-   `.preview-body`, which is already `position: relative`), so the image's rendered rect and the
-   strip beside it share the exact positioning PageInk/ScratchTextLayer paint into. With SCRATCH
-   off none of this exists — `.preview-image` below keeps its ordinary CSS auto-centring alone.
+   PageInk's `pages()` already use. This host and `.preview-image-overlay` below share one box
+   (the body's content origin, at least the body's size), so the image's rendered rect and the
+   strip beside it share the exact positioning PageInk/ScratchTextLayer paint into. Zoomed, both
+   are sized inline to the whole stage (PreviewView's `imageStage`) so the body scrolls to pan.
+   With SCRATCH off at the fit none of this exists — `.preview-image` below keeps its ordinary CSS
+   auto-centring alone.
    `background: var(--editor)` (Task 4 — was `--surface-2`) matches PdfPages' `.pdf-scroll` desk
    AND `.preview-body--desk` above: the desk is the `--editor` ground everywhere, and the strip
    beside the image is the one thing raised onto `--surface-1` (Task 3) — the same two-surface
    system a PDF page and its own strip already read as. */
 .preview-image-host {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
+  min-width: 100%;
+  min-height: 100%;
   background: var(--editor);
+}
+
+/* The image's ScratchTextLayer + PageInk, over the same stage as the host above: the body's box at
+   the fit, the zoomed picture's full scroll content otherwise (width/height set inline from
+   PreviewView's `imageStage`). It takes no pointer events itself — its layers opt back in. */
+.preview-image-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 100%;
+  min-height: 100%;
+  pointer-events: none;
 }
 
 /* The image's strip (ScratchPaper, passed this class via its `class` prop) — the same hard lift
