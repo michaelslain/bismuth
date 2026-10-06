@@ -4,7 +4,7 @@
   font-family: var(--ui-font-stack);
   font-size: var(--fs-display);
   line-height: 1.05;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ls-display);
   color: var(--fg);
 }
 .statValue.accent { color: var(--accent); }

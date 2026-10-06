@@ -61,13 +61,19 @@ import { settingsToCssVars, setCssVars } from '../src/settingsCssVars'
 import { DEFAULTS } from '../../core/src/schema/settingsSchema'
 import { THEME_NAMES, THEME_LABELS } from '../../core/src/theme/tokens'
 import type { Settings } from '../src/settings'
+import { setCustomThemesFeed } from '../src/customThemes'
+import { EXAMPLE_THEMES_FEED } from '../src/ui/_themeFixtures'
+
+// The example custom theme (dusk) from the real parser, registered BEFORE the first projection so
+// the Theme toolbar's `dusk` entry resolves through the same path the app uses for a vault theme.
+setCustomThemesFeed(EXAMPLE_THEMES_FEED)
 
 /** Project one theme's palette onto :root, exactly as App.tsx does at runtime. */
-const applyTheme = (theme: string) =>
+const applyTheme = (theme: string, tokens: Record<string, string> = {}) =>
     setCssVars(
         settingsToCssVars({
             ...DEFAULTS,
-            appearance: { ...(DEFAULTS as any).appearance, theme },
+            appearance: { ...(DEFAULTS as any).appearance, theme, tokens },
         } as unknown as Settings),
     )
 
@@ -88,7 +94,7 @@ applyTheme((DEFAULTS as any).appearance.theme)
 // Mirrors `.app-shell`'s own declaration in shell/AppFrame.module.css. Global, so no story has to re-solve it — the
 // same reason the theme tokens and the fake transport are installed here rather than per story.
 const appFont = document.createElement('style')
-appFont.textContent = `body { font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace); }`
+appFont.textContent = `body { font: var(--fs-ui, 11.5px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace); }`
 document.head.appendChild(appFont)
 
 // ── Backend seam ──────────────────────────────────────────────────────────────
@@ -134,10 +140,16 @@ const preview: Preview = {
             toolbar: {
                 title: 'Theme',
                 icon: 'paintbrush',
-                items: THEME_NAMES.map(name => ({
-                    value: name,
-                    title: THEME_LABELS[name],
-                })),
+                items: [
+                    ...THEME_NAMES.map(name => ({
+                        value: name,
+                        title: THEME_LABELS[name],
+                    })),
+                    ...EXAMPLE_THEMES_FEED.themes.map(t => ({
+                        value: t.name,
+                        title: t.label,
+                    })),
+                ],
                 dynamicTitle: true,
             },
         },
@@ -147,7 +159,9 @@ const preview: Preview = {
     // story is measured against by bench/cssBaseline.ts and bench/invariants.ts.
     decorators: [
         (Story, context) => {
-            applyTheme(context.globals.theme)
+            // `parameters.tokens` is the story's `appearance.tokens` override (the registry seam);
+            // a story without it projects none, so setCssVars removes a previous story's overrides.
+            applyTheme(context.globals.theme, context.parameters.tokens)
             return Story()
         },
     ],

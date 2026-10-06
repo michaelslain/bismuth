@@ -8,7 +8,7 @@
    hover or when open (a clickable row never paints a background, user decision 2026-09-23). Open is
    told by the chevron turning and taking the accent. */
 .row .head { width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: var(--sp-3); min-height: calc(var(--row-h) + 2 * var(--sp-1)); padding: 0; cursor: pointer; }
-.row .chev { flex: 0 0 auto; color: var(--faint); transition: transform .16s, color .16s; }
+.row .chev { flex: 0 0 auto; color: var(--faint); transition: transform calc(.16s * var(--motion-scale)), color calc(.16s * var(--motion-scale)); }
 .row .head:hover .chev { color: var(--fg); }
 .row.open .chev { transform: rotate(90deg); color: var(--accent); }
 .row .nameTxt { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

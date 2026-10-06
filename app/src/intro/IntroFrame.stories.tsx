@@ -134,11 +134,13 @@ export const HeroFilled: Story = {
                 '--row-h',
             ),
         )
-        const cell = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue(
-                '--cell-w',
-            ),
-        )
+        // --cell-w is a calc() over --fs-ui, and an unregistered custom property reads back as
+        // that unresolved string — resolve it through a probe's width instead
+        const probe = document.createElement('div')
+        probe.style.width = 'var(--cell-w)'
+        stage.append(probe)
+        const cell = probe.getBoundingClientRect().width
+        probe.remove()
         await expect(cs.position).toBe('relative')
         await expect(box.height).toBeCloseTo(16 * row * 1.5, 0)
         await expect(box.width).toBeCloseTo(96 * cell * 1.5, 0)

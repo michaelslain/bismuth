@@ -1,7 +1,11 @@
 /* app/src/ui/Field.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
    Task 7). ui/Field.tsx was the sole reader anywhere in the app. Modal redesign Task 4
-   (2026-09-23): Field is SettingsField's older sibling, so it gets the same label-column layout,
-   keyed to the same `--label-col` token — a Field lines up with any neighboring SettingsField
-   rows even though the two components are unrelated in code. */
-.ui-field { display: grid; grid-template-columns: var(--label-col) 1fr; column-gap: var(--sp-6); align-items: start; font-size: var(--fs-ui); }
+   (2026-09-23): Field is SettingsField's older sibling with the same two-column label layout
+   (but a content-sized label column, see below). The row aligns on the text baseline
+   so the caption sits on the input's text line, not on its top edge. */
+/* The label column is sized to its content (floor: 9 cells, so the short labels of one form share
+   a column and their inputs align) — a fixed --label-col left a ~214px dead gap on a narrow form.
+   The underline FormControl draws with --rule-soft is ~1.2:1 on dark themes: inside a Field it
+   uses --border. */
+.ui-field { --rule-soft: 1px solid var(--border); display: grid; grid-template-columns: minmax(calc(var(--cell-w) * 9), max-content) 1fr; column-gap: var(--sp-6); align-items: baseline; font-size: var(--fs-ui); }
 .ui-field > span { color: var(--text-muted); }

@@ -70,7 +70,7 @@
   margin: 0 5px; padding: 0 10px; border-radius: var(--r-0);
   color: var(--text-muted); cursor: pointer; user-select: none;
   white-space: nowrap; position: relative;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background calc(0.12s * var(--motion-scale)) var(--ease-std), color calc(0.12s * var(--motion-scale)) var(--ease-std);
 }
 .tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
 /* LEFT RAIL: the 1px border is on the rail's right, so the icon column needs one more pixel on its
@@ -121,7 +121,7 @@
    the opacity fade finishes, so hiding never outraces the fade. Every reveal selector below
    restores `opacity`/`visibility` the moment the rail expands or is pinned, with the delay flipped
    to the reveal side instead, so the label is visible-for-hit-testing before its fade-in starts. */
-.tab-rail-label { flex-grow: 0; visibility: hidden; opacity: 0; transition: opacity 0.16s ease, visibility 0s linear 0.16s; }
+.tab-rail-label { flex-grow: 0; visibility: hidden; opacity: 0; transition: opacity calc(0.16s * var(--motion-scale)) var(--ease-std), visibility 0s linear calc(0.16s * var(--motion-scale)); }
 /* A PINNED RAIL MUST REVEAL EVERYTHING A HOVERED ONE DOES. Widening to 232px is only half of
    expanding — the labels, close buttons and pin buttons all fade in off `:hover`/`:focus-within`,
    so a pinned rail that only got the width was 232px of blank space with bare icons in it. Every
@@ -129,7 +129,7 @@
    ANCESTOR REACHED VIA `[data-tab-rail]` (see this file's header) — was `.tab-rail` before the
    module split. */
 [data-tab-rail]:not([data-hover-off]):hover .tab-rail-label, [data-tab-rail]:focus-within .tab-rail-label,
-[data-tab-rail][data-rail-pinned] .tab-rail-label { flex-grow: 1; visibility: visible; opacity: 1; transition: opacity 0.16s ease, visibility 0s; }
+[data-tab-rail][data-rail-pinned] .tab-rail-label { flex-grow: 1; visibility: visible; opacity: 1; transition: opacity calc(0.16s * var(--motion-scale)) var(--ease-std), visibility 0s; }
 /* Revealed labels sit 0.6em off their icon on EVERY row, so the active icon's `]` (drawn outside the
    icon, see above) never touches its name and all names keep one column. Only when revealed: a
    collapsed label is 0 wide, and a margin there would overflow the 46px rail. */
@@ -154,7 +154,7 @@
 .tab-rail-row .tab-x, .tab-rail-row .tab-pin {
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: opacity calc(0.12s * var(--motion-scale)) var(--ease-std);
 }
 /* No color override here any more (one-button task 9): `.tab-x` is a `size="sm"` IconButton in
    its default "normal" state, which `Button.module.css`'s `.btn--icon.btn--sm.btn--normal` already

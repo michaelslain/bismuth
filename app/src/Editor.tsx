@@ -69,7 +69,8 @@ import { frontmatterBodyRange } from './editor/frontmatterUtils'
 import { normalizeFrontmatterSpacing } from './editor/normalizeFrontmatter'
 import { isConfigBuffer, isSettingsBuffer } from './editor/settingsBuffer'
 import { InkOverlay } from './editor/InkOverlay'
-import { SETTINGS_SCHEMA } from '../../core/src/schema/settingsSchema'
+import { settingsSchemaFor } from '../../core/src/schema/themedSettingsSchema'
+import { customThemes, customThemeOverrides } from './customThemes'
 import { propertyRegistry } from './propertyRegistry'
 import {
     parseWikilink,
@@ -1221,6 +1222,7 @@ export function Editor(props: {
     // note would keep showing stale "unknown property" marks.
     createEffect(() => {
         propertyRegistry() // track: re-run whenever the registry signal updates
+        customThemes() // track: a theme file edit changes the settings schema's theme enum
         if (view) requestRelint(view) // forceLinting alone no-ops on a settled linter
     })
 
@@ -1567,12 +1569,12 @@ export function Editor(props: {
                   ...(isSettingsBuffer(path)
                       ? [
                             yamlSchema({
-                                getSchema: () => SETTINGS_SCHEMA,
+                                getSchema: () => settingsSchemaFor(Object.keys(customThemes())),
                                 mode: 'settings' as const,
                                 resolveLink: () => true,
                             }),
                             settingsCompletion(
-                                () => SETTINGS_SCHEMA,
+                                () => settingsSchemaFor(Object.keys(customThemes())),
                                 completionIconNames,
                                 templatePaths,
                                 vaultPaths,
@@ -2206,6 +2208,9 @@ export function Editor(props: {
             a.monoScale,
             e.lineHeight,
         ] // tracked deps (CSS-reflow leaves)
+        // a token or theme-file override can also move font/size vars: track every value
+        void Object.values(a.tokens ?? {})
+        void customThemeOverrides()
         const v = view
         if (!v) return
         const keep = v.scrollDOM.scrollTop

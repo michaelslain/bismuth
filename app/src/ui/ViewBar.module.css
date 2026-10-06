@@ -124,10 +124,10 @@
    and on PaneHeader (which is a name-only ViewBar). */
 .viewbar[data-pane-dim] .crumb b { color: var(--text-muted); }
 .viewbar .crumb { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; min-width: 0; }
-.viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.viewbar .crumb b { color: var(--fg); font-weight: var(--fw-medium); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .viewbar .crumb svg { color: var(--faint); }
 /* Serif crumb title (standalone calendar month, etc.). */
-.viewbar .crumb b.crumb-serif { font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; }
+.viewbar .crumb b.crumb-serif { font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: var(--fw-bold); letter-spacing: var(--ls-display); }
 /* ── The collapse ladder ──────────────────────────────────────────────────────────────────────
    Every view bar gets narrow-pane behaviour by TAGGING its controls, not by writing queries. A view
    declares INTENT — `<BarLabel drop="early|late">` on a word, `data-bar-drop` on a whole control —

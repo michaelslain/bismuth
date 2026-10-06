@@ -6,7 +6,7 @@
 .dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--r-dot);
   border: none;
   /* var(--border) alone is a hairline colour, too weak to carry a standalone 8px mark. */
   background: color-mix(in srgb, var(--fg) 32%, transparent);
@@ -16,7 +16,7 @@
   color: var(--fg);
   cursor: pointer;
   padding: 0;
-  transition: 0.22s;
+  transition: calc(0.22s * var(--motion-scale));
 }
 .dot:hover:not(.on) {
   background: color-mix(in srgb, var(--border) 50%, var(--fg));

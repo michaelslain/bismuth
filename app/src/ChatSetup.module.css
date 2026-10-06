@@ -28,7 +28,7 @@
 .chat-setup h3 {
   margin: 0;
   font-size: var(--fs-lead);
-  font-weight: 600;
+  font-weight: var(--fw-bold);
   color: var(--fg);
 }
 .chat-setup > p {

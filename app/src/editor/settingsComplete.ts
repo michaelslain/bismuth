@@ -35,6 +35,8 @@ import {
     modifierFamily,
     eventToCombo,
 } from '../keybindings'
+import { tokenDef } from '../../../core/src/theme/designTokens'
+import { MONO_FONTS, PROSE_FONTS } from '../../../core/src/theme/fontFamilies'
 import { setGalleryOpen } from '../ui/gallery/galleryState'
 
 /**
@@ -168,7 +170,29 @@ function valueOptions(type: PropertyType): string[] {
     if (typeof type === 'string')
         return type === 'boolean' ? ['true', 'false'] : []
     if (type.kind === 'enum') return type.values
+    if (type.kind === 'token') return tokenValueOptions(type.token)
     return []
+}
+
+const EASING_KEYWORDS = ['ease', 'linear', 'ease-in', 'ease-out', 'ease-in-out']
+
+/** Values to offer on a design-token value: the family lists for font kinds, light/dark for the
+ *  scheme, the easing keywords, and otherwise the registry default as the one suggestion. */
+function tokenValueOptions(key: string): string[] {
+    const def = tokenDef(key)
+    if (!def) return []
+    switch (def.kind) {
+        case 'font-mono':
+            return [...MONO_FONTS]
+        case 'font-prose':
+            return [...PROSE_FONTS]
+        case 'scheme':
+            return ['light', 'dark']
+        case 'easing':
+            return [...new Set([...EASING_KEYWORDS, def.default])]
+        default:
+            return [def.default]
+    }
 }
 
 /**
@@ -190,8 +214,13 @@ function scopeAt(
         const text = ctx.state.doc.line(n).text
         const header = text.match(/^(\s*)([\w-]+):\s*$/)
         if (header && header[1].length < indent) {
+            // A nested header (appearance > tokens) resolves through its own parent's scope.
+            const parent =
+                header[1].length === 0
+                    ? root
+                    : scopeAt(root, ctx, n, header[1].length).schema
             return {
-                schema: fieldsOf(root[header[2]]) ?? {},
+                schema: fieldsOf(parent[header[2]]) ?? {},
                 sectionKey: header[2],
             }
         }
@@ -704,9 +733,13 @@ export function settingsCompletionSource(
                     name.toLowerCase().startsWith(typed.toLowerCase()),
                 )
                 .map(([name, e]) => {
-                    const detail = [typeLabel(e.type), rangeLabel(e)]
-                        .filter(Boolean)
-                        .join(' ')
+                    const isToken =
+                        typeof e.type === 'object' && e.type.kind === 'token'
+                    const detail = isToken
+                        ? (e.doc ?? '')
+                        : [typeLabel(e.type), rangeLabel(e)]
+                              .filter(Boolean)
+                              .join(' ')
                     const info = docInfo(e)
                     return {
                         label: name,

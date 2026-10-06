@@ -10,7 +10,7 @@
 /* A wrapping label breaks the single-line --row-h assumption — it needs its own vertical
    padding and an auto height instead. */
 .row.wrap { align-items: flex-start; height: auto; padding: var(--sp-2) 0; }
-.row.wrap .name { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
+.row.wrap .name { white-space: normal; overflow: visible; text-overflow: clip; line-height: var(--lh-tight); }
 .row.wrap .toggle { margin-top: var(--sp-1); }
 /* A described row stacks the label row over the description. The label row keeps the one-line
    --row-h; the whole root stays the click target. */
@@ -20,5 +20,5 @@
    its own description — body size, medium weight, wide tracking. Sets no colour, so
    `.row.off .name` still wins the faint. Both rules are `.row.described …` so they beat the Text
    primitive's single-class `.text--body` deterministically. */
-.row.described .name { font-size: var(--fs-body); font-weight: var(--fw-medium); letter-spacing: 0.06em; }
+.row.described .name { font-size: var(--fs-body); font-weight: var(--fw-medium); letter-spacing: var(--ls-label); }
 .row.described .description { padding-top: var(--sp-2); padding-bottom: var(--sp-2); line-height: 1.45; }

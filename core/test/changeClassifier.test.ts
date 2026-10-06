@@ -3,6 +3,7 @@ import {
     extractFingerprint,
     diffFingerprints,
     createChangeTracker,
+    createThemeFileTracker,
     flushDelayMs,
     MAX_COALESCE_INTERVALS,
 } from '../src/changeClassifier'
@@ -207,4 +208,15 @@ test('flushDelayMs: sustained sub-debounce writes cannot defer a batch forever',
         debounceMs * MAX_COALESCE_INTERVALS,
     )
     expect(flushDelayMs(now, openedAt, debounceMs)).toBe(0)
+})
+
+test('theme files: an edit of an existing file leaves the tree clean; a create or delete dirties it', () => {
+    const t = createThemeFileTracker(['.themes/dusk.yaml'])
+    expect(t.classify('.themes/dusk.yaml', true)).toBe(false) // autosave of a boot-time file
+    expect(t.classify('.themes/dusk.yaml', true)).toBe(false) // and again
+    expect(t.classify('.themes/late.yaml', true)).toBe(true) // created after boot
+    expect(t.classify('.themes/late.yaml', true)).toBe(false) // its next autosave is an edit
+    expect(t.classify('.themes/dusk.yaml', false)).toBe(true) // deleted
+    expect(t.classify('.themes/dusk.yaml', false)).toBe(false) // a repeated delete event
+    expect(t.classify('.themes/dusk.yaml', true)).toBe(true) // re-created
 })

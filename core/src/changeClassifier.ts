@@ -144,3 +144,29 @@ export function createChangeTracker(): ChangeTracker {
         },
     }
 }
+
+/**
+ * Tracks which `.themes/*.yaml` files exist, so a change event can be told apart as a create,
+ * an edit or a delete. The tree lists the `.themes` folder's files, so only a create or delete
+ * is structural; an autosave of an EXISTING theme file changes nothing the tree shows (the app
+ * refetches `GET /themes` itself off the SSE `paths`).
+ */
+export interface ThemeFileTracker {
+    /** Record a change to `path`; true when the TREE is dirty (the file appeared or vanished). */
+    classify(path: string, existsNow: boolean): boolean
+}
+
+/** `known` seeds the files already on disk at boot, so the first edit of one is not a "create". */
+export function createThemeFileTracker(
+    known: Iterable<string>,
+): ThemeFileTracker {
+    const files = new Set(known)
+    return {
+        classify(path, existsNow) {
+            const wasKnown = files.has(path)
+            if (existsNow) files.add(path)
+            else files.delete(path)
+            return wasKnown !== existsNow
+        },
+    }
+}

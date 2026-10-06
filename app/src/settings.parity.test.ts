@@ -16,7 +16,7 @@ const isObjectEntry = (e: SchemaEntry): boolean =>
  *  (a free-form user registry, not a fixed setting). */
 function leafPaths(schema: Schema, prefix = ''): string[] {
     return Object.entries(schema).flatMap(([k, e]) => {
-        if (k === 'properties') return []
+        if (k === 'properties' || k === 'tokens') return [] // free-form / sparse maps
         if (isObjectEntry(e))
             return leafPaths(
                 (e.type as { fields: Schema }).fields,
@@ -42,7 +42,7 @@ describe('settings schema parity', () => {
     it('every settable leaf carries a non-empty doc (so autocomplete can explain it)', () => {
         const check = (schema: Schema, prefix = '') => {
             for (const [k, e] of Object.entries(schema)) {
-                if (k === 'properties') continue
+                if (k === 'properties' || k === 'tokens') continue // sparse: absent = registry default
                 if (isObjectEntry(e)) {
                     check(
                         (e.type as { fields: Schema }).fields,

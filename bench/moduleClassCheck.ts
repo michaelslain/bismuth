@@ -154,6 +154,10 @@ const SKIP_MODULES = new Set<string>([
     // production importer exists (confirmed via `grep -rln ChatSessionProbe app/src` — only itself
     // and its own .stories.tsx), by design.
     'chat/ChatSessionProbe.module.css',
+    // CustomThemePanel.tsx: the swatch board for judging a custom colour theme, rendered only by
+    // ui/CustomThemePanel.stories.tsx + ui/CustomTheme.stories.tsx (confirmed via `grep -rl
+    // CustomThemePanel app/src`); no app call site, so `vite build` never pulls it in.
+    'ui/CustomThemePanel.module.css',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')

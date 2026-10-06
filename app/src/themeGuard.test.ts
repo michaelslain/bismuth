@@ -23,6 +23,7 @@ import {
     SEMANTIC_LIGHT,
 } from './themes'
 import { settingsToCssVars } from './settingsCssVars'
+import { tokenDef } from '../../core/src/theme/designTokens'
 import { DEFAULTS } from './settings'
 
 const APP_SRC = dirname(fileURLToPath(import.meta.url))
@@ -33,6 +34,10 @@ const ROOT = join(APP_SRC, '..', '..')
 // below is unchanged.
 const APP_CSS = join(APP_SRC, 'global.css')
 const TOKENS = join(ROOT, 'core', 'src', 'theme', 'tokens.ts')
+// The token registry carries the ink theme's colours as its defaults (it cannot import tokens.ts at
+// runtime — tokens.ts imports it). A sanctioned third copy: tokenRegistry.test.ts pins every one of
+// them to what settingsToCssVars projects, so it cannot drift.
+const DESIGN_TOKENS = join(ROOT, 'core', 'src', 'theme', 'designTokens.ts')
 
 /** ColorTokens fields every theme MUST define (the base palette). */
 const REQUIRED_TOKEN_FIELDS: (keyof ColorTokens)[] = [
@@ -203,6 +208,16 @@ describe('theme guard — projection contract', () => {
     })
 })
 
+describe('theme guard — overrides add only registered keys', () => {
+    it('every key an override adds over the base map resolves through tokenDef', () => {
+        const base = new Set(Object.keys(settingsToCssVars(DEFAULTS)))
+        const s = structuredClone(DEFAULTS)
+        s.appearance.tokens = { 'sp-3': '10px', 'r-card': '0', 'cursor-blink': '1s', 'prose-font': 'Lora' }
+        const added = Object.keys(settingsToCssVars(s)).filter(k => !base.has(k))
+        for (const k of added) expect(tokenDef(k.slice(2)), k).toBeDefined()
+    })
+})
+
 describe('theme guard — semantic + elevation tokens re-theme (light ≠ dark)', () => {
     const dark = settingsToCssVars(withTheme('ink'))
     const light = settingsToCssVars(withTheme('paper'))
@@ -236,7 +251,7 @@ describe('theme guard — centralized colors never re-duplicate (anti-drift lint
     it('the category swatch ramp lives only in tokens.ts + styles/tokens.css :root fallbacks', () => {
         for (const hex of ACCENT_RAMP) {
             const stray = filesContaining(hex).filter(
-                f => f !== TOKENS && f !== APP_CSS,
+                f => f !== TOKENS && f !== APP_CSS && f !== DESIGN_TOKENS,
             )
             expect(
                 stray.map(f => f.slice(ROOT.length + 1)),
@@ -252,7 +267,7 @@ describe('theme guard — centralized colors never re-duplicate (anti-drift lint
             SEMANTIC_DARK.warning,
         ]) {
             const stray = filesContaining(hex).filter(
-                f => f !== TOKENS && f !== APP_CSS,
+                f => f !== TOKENS && f !== APP_CSS && f !== DESIGN_TOKENS,
             )
             expect(
                 stray.map(f => f.slice(ROOT.length + 1)),

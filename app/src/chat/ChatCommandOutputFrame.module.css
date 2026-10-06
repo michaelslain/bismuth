@@ -17,6 +17,6 @@
     border-bottom: 1px solid var(--chat-border-soft, var(--border-soft));
     font-size: var(--fs-micro);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: var(--ls-label);
     color: var(--faint);
 }

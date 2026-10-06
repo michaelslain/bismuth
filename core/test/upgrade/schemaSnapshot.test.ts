@@ -40,6 +40,8 @@ function describeType(t: PropertyType): unknown {
         return { kind: 'list', item: t.item ? describeType(t.item) : null }
     if (t.kind === 'path')
         return { kind: 'path', only: t.only ?? null, scope: t.scope ?? null }
+    // a token leaf is validated by the registry entry it names, so that name IS its constraint
+    if (t.kind === 'token') return { kind: 'token', token: t.token }
     return { kind: 'object' } // recursed into separately, so its fields are not inlined here
 }
 
@@ -114,6 +116,12 @@ test('every non-object schema leaf carries a default, so an upgrading user is ne
         // Maps that are legitimately empty until the user fills them (folderIcons, properties, …) are
         // declared as objects with no fields; those get `{}` from reconcile, not a scalar default.
         if (isObject) continue
+        // An `appearance.tokens.<key>` override has no default of its own on purpose: ABSENT means
+        // "the theme's value", and the registry (designTokens.ts) holds the token's real default.
+        const isToken =
+            typeof m.type === 'object' &&
+            (m.type as { kind?: string }).kind === 'token'
+        if (isToken) continue
         if (m.default === null) missing.push(path)
     }
     // A leaf with no default is a key reconcile seeds as `null` — the app then reads null for a

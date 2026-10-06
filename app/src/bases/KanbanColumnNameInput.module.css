@@ -11,7 +11,7 @@
     min-width: 160px;
 }
 .field .input {
-    font-weight: 400;
+    font-weight: var(--fw-regular);
 }
 /* FormControl's `.ui-input` has no horizontal padding (padding: 0) — the error's left edge
    already sits flush with the input's own text x with no extra inset needed. */

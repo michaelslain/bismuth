@@ -60,7 +60,7 @@
 .chat-bubble h5,
 .chat-bubble h6 {
     margin: 0.55em 0 0.3em;
-    font-weight: 600;
+    font-weight: var(--fw-bold);
 }
 .chat-bubble h1 {
     font-size: var(--fs-h1);
@@ -165,7 +165,7 @@
 }
 .chat-bubble th {
     background: var(--chat-surface-1, var(--surface-1));
-    font-weight: 600;
+    font-weight: var(--fw-bold);
 }
 .chat-bubble :global(.bismuth-tag) {
     color: var(--accent);

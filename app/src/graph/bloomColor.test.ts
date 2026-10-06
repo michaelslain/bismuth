@@ -2,7 +2,6 @@ import { expect, test } from 'bun:test'
 import {
     luma,
     parseHexColor,
-    parseRgbTriple,
     tintTerritory,
     TERRITORY_TINT,
     type Rgb,
@@ -32,25 +31,6 @@ test('parseHexColor rejects anything malformed instead of returning NaN channels
     expect(parseHexColor('#zzzzzz')).toBeNull() // non-hex digits
     expect(parseHexColor('rgb(1, 2, 3)')).toBeNull()
     expect(parseHexColor('teal')).toBeNull()
-})
-
-test('parseRgbTriple reads a comma-separated triple, with or without spaces', () => {
-    expect(parseRgbTriple('150, 230, 216')).toEqual([150, 230, 216])
-    expect(parseRgbTriple('150,230,216')).toEqual([150, 230, 216])
-    expect(parseRgbTriple('  150 , 230 , 216  ')).toEqual([150, 230, 216])
-})
-
-test('parseRgbTriple clamps out-of-range channels', () => {
-    expect(parseRgbTriple('999, -5, 300')).toEqual([255, 0, 255])
-})
-
-test('parseRgbTriple rejects anything malformed instead of returning NaN/Infinity channels', () => {
-    expect(parseRgbTriple('')).toBeNull()
-    expect(parseRgbTriple('150, 230')).toBeNull() // only two channels
-    expect(parseRgbTriple('150, 230, 216, 1')).toBeNull() // four channels (e.g. rgba mistake)
-    expect(parseRgbTriple('a, b, c')).toBeNull()
-    expect(parseRgbTriple('150, , 216')).toBeNull() // empty middle token
-    expect(parseRgbTriple('150, Infinity, 216')).toBeNull()
 })
 
 // ---------------------------------------------------------------------------
@@ -171,7 +151,7 @@ test('the luma renormalisation can overdrive a channel past 255, and it is clamp
 
 test('every channel comes back a paintable byte — never NaN, never out of range', () => {
     // A NaN channel is not an error, it is an INVISIBLE one: ImageData coerces it to 0 and a screen
-    // blend composites black as a no-op. Extremes here because a theme's --bloom-rgb is hand-authored.
+    // blend composites black as a no-op. Extremes here because a theme's accent is hand-authored.
     for (const [base, cell] of [
         [
             [0, 0, 0],

@@ -46,7 +46,7 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 
 | Key | Type | Default | Bounds / Values | Doc |
 |-----|------|---------|-----------------|-----|
-| `theme` | enum | `ink` | `ink`, `paper`, `cathode`, `riso` | Bismuth color theme: ink (default) · paper · cathode · riso. |
+| `theme` | enum | `ink` | `ink`, `paper`, `cathode`, `riso` | Bismuth color theme: ink (default) · paper · cathode · riso, or the name of a custom theme in `.themes/<name>.yaml` (the enum then also lists the vault's valid custom themes; see [Custom themes](themes.md#custom-themes)). |
 | `icon` | enum | `hopper-crystal` | `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings` | App logo mark (favicon + sidebar logo). One of the 14 Bismuth marks. |
 | `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI + MONO font — a Monaspace variant, used for all chrome (rail, tabs, buttons, menus, calendar chips) AND the mono constructs inside a note: code blocks, inline code, frontmatter, math and in-note tags. Config buffers (`.settings`, `*.yaml`) render entirely in it. |
 | `proseFont` | enum | `IBM Plex Serif` | `IBM Plex Serif`, `Lora`, `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Prose font — the proportional face for the user's own writing: note body text, note headings, note tables, chat message bodies and the chat composer. Default `IBM Plex Serif` (`Lora`'s family string is `'Lora Variable'`); set it to a Monaspace variant for an all-mono editor. |
@@ -54,13 +54,13 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 | `sidebarWidth` | number | `266` | min `200`, max `600` | Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css). |
 | `sidebarGraphHeight` | number | `305` | min `200`, max `500` | Height of the mini graph panel in the sidebar (px). |
 | `tabRailWidth` | number | `232` | min `160`, max `480` | Right tab rail's open width (px) — hovered or pinned; collapsed it is always the 46px icon column. Set by dragging the rail's left edge. |
-| `uiFontSize` | number | `11.5` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px) (the ASCII design's `--fs-ui` workhorse size). |
+| `uiFontSize` | number | `11.5` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px). It sets `--fs-ui`, the workhorse chrome size, and the ASCII grid's cell width follows it (6.3px at the 11.5 default). |
 | `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
-| `tabFontSize` | number | `11.5` | min `11`, max `14` | Editor tab label font size (px). |
 | `iconSize` | number | `12` | min `11`, max `20` | Icon size in px for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides (only a few oversized illustration marks opt out, each marked `icon-size-exempt:`). Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
 | `cursorWidth` | number | `2` | min `1`, max `4` | Text cursor bar width (px) — the ONE cursor every editor, field and terminal draws. |
 | `cursorGlideMs` | number | `70` | min `20`, max `200` | Text cursor glide between positions (ms), in every editor, field and terminal. |
 | `cursorBlinkSeconds` | number | `1.2` | min `0.6`, max `2` | Text cursor blink cycle (seconds), shared by every cursor in the app. |
+| `tokens` | map | `{}` | keys are design-token names | Per-vault design-token overrides: a map of token key (the CSS variable name without `--`) to value, applied on top of the selected theme. `tokens: { accent: '#ff6b6b', r-card: 0, sp-3: 10px }`. Every value is checked against its token's kind; a bad value is an error and that key is dropped, an unknown key is a warning (`unknown token: <key>`, with a did-you-mean hint). Autocomplete under `tokens:` offers every token with its doc line. The legacy keys above (`uiFont`, `editorFontSize`, …) alias tokens, and an explicit `tokens` entry beats its legacy key. `GET /settings` returns the keys present in the file, validated, with present legacy keys folded in. Full list, kinds and defaults: [Design tokens](tokens.md). |
 
 Example:
 
@@ -71,6 +71,9 @@ appearance:
   uiFont: Monaspace Xenon
   editorFontSize: 18
   sidebarWidth: 320
+  tokens:
+    accent: '#ff6b6b'
+    r-card: 0
 ```
 
 ---

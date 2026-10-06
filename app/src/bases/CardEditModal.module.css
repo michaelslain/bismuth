@@ -54,7 +54,7 @@
   border: none;
   border-bottom: var(--rule-soft);
   background: transparent;
-  transition: border-color 0.14s ease;
+  transition: border-color calc(0.14s * var(--motion-scale)) var(--ease-std);
   cursor: text;
 }
 .mdField:hover { border-bottom: var(--rule); }

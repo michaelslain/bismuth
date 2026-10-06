@@ -135,6 +135,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Toolbar & commands](settings/toolbar-commands.md) — toolbar config + command catalog
 - [Themes](settings/themes.md) — theme/palette/fonts
 - [Shell layout](settings/layout.md) — which side the sidebar and tab rail sit on, sidebar section order, the status bar toggle
+- [Design tokens](settings/tokens.md) — every design token (key, kind, default, what it paints), the two places to set one (`appearance.tokens`, a theme's `tokens:`), precedence, and what is not a token
 - [Status bar & home page](settings/status-bar.md) — the configurable bottom bar (token text, query counts, approved shell commands) and the `homePage` setting (not yet applied by the app)
 
 ## Graph & terminal
@@ -159,6 +160,7 @@ The in-repo background runtime — **one machine process that multiplexes per-va
 - [Authoring bases](bases/authoring.md) — read before creating, editing or debugging a `type: base` note or a ` ```query ` block; one page per view kind under `bases/authoring/`
 - [Obsidian → Bismuth](guides/converting-obsidian-to-bismuth.md) — turning an Obsidian vault into a Bismuth vault in a new folder, with topic pages under `guides/converting-obsidian-to-bismuth/`
 - [Bismuth → Obsidian](guides/converting-bismuth-to-obsidian.md) — the reverse, with topic pages under `guides/converting-bismuth-to-obsidian/`
+- [Custom themes](guides/custom-themes.md) — read before making or changing a colour theme: the `.themes/<name>.yaml` partial-override format (`extends` + `tokens:`), the create → validate → use workflow, coherence rules, and a worked example
 
 These are plain docs pages, not Claude Code skills: the MCP server's instructions name them and agents open them with `bismuth_docs_read` ([MCP server](mcp/overview.md)).
 

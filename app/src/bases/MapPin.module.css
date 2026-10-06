@@ -10,7 +10,7 @@
   align-items: center;
   pointer-events: auto;
   cursor: pointer;
-  transition: transform 120ms ease;
+  transition: transform calc(120ms * var(--motion-scale)) var(--ease-std);
 }
 .mapPin:hover { transform: translate(-50%, -100%) scale(1.08); }
 /* A pin being dragged to a new spot. */

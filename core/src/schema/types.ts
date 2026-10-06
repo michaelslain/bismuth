@@ -22,6 +22,9 @@ export type PropertyType =
           caseInsensitive?: boolean
           allowPrefixes?: string[]
       }
+    // A design token's value, checked by the token registry (core/src/theme/designTokens.ts).
+    // `token` is the registry key (the CSS custom property name without `--`).
+    | { kind: 'token'; token: string }
     | { kind: 'list'; item?: PropertyType }
     | { kind: 'object'; fields: Schema }
 

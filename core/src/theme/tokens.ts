@@ -19,6 +19,8 @@
 //     (projected by settingsCssVars so components read var(--danger)/var(--shadow-hard) not
 //     literals).
 
+import { applyColorTokens } from './designTokens'
+
 /** The resolved color tokens every consumer reads. `neutral` is the edge/muted grey;
  *  `accentPalette` is the graph node ramp. Everything past `accentPalette` is optional:
  *  each documents the CSS var it feeds. `settingsCssVars` prefers an explicit field when
@@ -372,18 +374,35 @@ export const SHADOW_LIGHT: ShadowTokens = {
     hard: 'rgba(16, 24, 40, .35)',
 }
 
-/** Resolve a theme name to its color tokens; unknown names fall back to the default.
- *  This is also the legacy-settings migration path: a vault's `.settings` saved under
- *  the pre-redesign 12-theme system (any of the old theme-name strings) is an unknown
- *  name here and silently resolves to DEFAULT_THEME ("ink") instead of throwing. */
-export function resolveTheme(name: string): ColorTokens {
-    return THEMES[name as ThemeName] ?? THEMES[DEFAULT_THEME]
+/** True for the four built-in theme names (a custom theme may never shadow one). */
+export function isBuiltinTheme(name: string): name is ThemeName {
+    return (THEME_NAMES as readonly string[]).includes(name)
 }
 
-/** Resolve the effective colors for an appearance subtree. Initial release: colors
- *  come entirely from the selected theme (no per-color overrides). */
-export function resolveAppearance(a: { theme: string }): ColorTokens {
-    return resolveTheme(a.theme)
+/** Resolve a theme name to its color tokens; unknown names fall back to the default.
+ *  `custom` maps a name to the tokens of a VALID custom theme; a built-in name always wins.
+ *  This is also the legacy-settings migration path: a vault's `.settings` saved under
+ *  the pre-redesign 12-theme system (any of the old theme-name strings) is an unknown
+ *  name here and silently resolves to DEFAULT_THEME ("ink") instead of throwing. The same
+ *  fallback paints ink for a custom theme whose file is missing or invalid. */
+export function resolveTheme(
+    name: string,
+    custom?: Readonly<Record<string, ColorTokens>>,
+): ColorTokens {
+    if (isBuiltinTheme(name)) return THEMES[name]
+    if (custom && Object.prototype.hasOwnProperty.call(custom, name))
+        return custom[name]
+    return THEMES[DEFAULT_THEME]
+}
+
+/** resolveTheme(a.theme, custom), then a.tokens' FIELD tokens on top (applyColorTokens). */
+export function resolveAppearance(
+    a: { theme: string; tokens?: Readonly<Record<string, string>> },
+    custom?: Readonly<Record<string, ColorTokens>>,
+): ColorTokens {
+    const base = resolveTheme(a.theme, custom)
+    if (!a.tokens || Object.keys(a.tokens).length === 0) return base
+    return applyColorTokens(base, a.tokens)
 }
 
 /** The semantic status trio for a resolved theme: prefer the theme's own explicit

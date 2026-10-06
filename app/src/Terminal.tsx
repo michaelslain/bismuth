@@ -5,6 +5,8 @@ import { Terminal as Xterm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { settings } from './settings'
+import { resolveAppearance } from './themes'
+import { customThemeOverrides } from './customThemes'
 import { api, wsBase } from './api'
 import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 
@@ -415,9 +417,19 @@ export function TerminalTab(props: {
     createEffect(() => {
         settings.appearance.theme // track
         settings.appearance.uiFont // track
+        resolveAppearance(settings.appearance) // track custom-theme edits under an unchanged name
+        void Object.values(settings.appearance.tokens ?? {}) // track every token value: a token edit repaints the xterm theme
+        customThemeOverrides() // track: so does a theme file's non-colour override
         if (!term) return // onMount hasn't completed yet — skip silently
+        // buildTerminalTheme reads CSS vars, so defer until App.tsx's projection effect has run.
+        queueMicrotask(() => {
+            try {
+                if (term) term.options.theme = buildTerminalTheme()
+            } catch {
+                /* ignore during teardown */
+            }
+        })
         try {
-            term.options.theme = buildTerminalTheme()
             term.options.fontFamily = resolvedFontFamily()
             recomputeCursorMetrics()
         } catch {

@@ -62,3 +62,7 @@ test('the running server actually advertises SERVER_INSTRUCTIONS, not just a con
         ._instructions
     expect(instructions).toBe(SERVER_INSTRUCTIONS)
 })
+
+test('SERVER_INSTRUCTIONS sends theme work to the custom themes guide', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('guides/custom-themes.md')
+})

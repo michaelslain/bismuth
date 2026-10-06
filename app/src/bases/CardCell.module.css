@@ -21,7 +21,7 @@
   min-height: var(--h-control); padding: var(--sp-2) 0; box-sizing: border-box; overflow: hidden;
   font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--fg);
   border-bottom: var(--rule-soft);
-  white-space: pre-wrap; word-break: break-word; transition: border-color 0.14s;
+  white-space: pre-wrap; word-break: break-word; transition: border-color calc(0.14s * var(--motion-scale));
 }
 .cell:hover .cell-md { border-bottom-color: var(--border); }
 .cell[data-cell='back'] .cell-md { color: color-mix(in srgb, var(--fg) 82%, var(--text-muted)); }
@@ -29,7 +29,7 @@
    cell's first line and leave dead space above the underline; blocks stack with one small gap. */
 .cell-md p, .cell-md ul, .cell-md ol, .cell-md pre, .cell-md blockquote { margin: 0; }
 .cell-md > * + * { margin-top: var(--sp-2); }
-.cell-md strong { color: var(--fg); font-weight: 600; }
+.cell-md strong { color: var(--fg); font-weight: var(--fw-bold); }
 .cell-md em { font-style: italic; }
 .cell-md code { font-size: var(--fs-rel-code); background: color-mix(in srgb, var(--fg) 10%, transparent); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-0); }
 .cell-md img { max-width: 100%; max-height: var(--cell-img-max); object-fit: contain; border-radius: var(--r-0); display: block; }

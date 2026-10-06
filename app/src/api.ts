@@ -127,6 +127,7 @@ import type { Task } from '../../core/src/tasks'
 import type { Card } from '../../core/src/srs/types'
 import type { Row, ParsedBase, SourceSpec } from '../../core/src/bases/types'
 import type { Schema } from '../../core/src/schema/types'
+import type { ThemesFeed } from '../../core/src/theme/customTheme'
 import type { DoctorReport } from '../../core/src/doctor/types'
 import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
 import type { DaemonSnapshot } from '../../core/src/daemonGraph'
@@ -448,6 +449,8 @@ export const api = {
     trustStatusCommand: async (command: string): Promise<void> => {
         await post('/status-bar/trust', { command })
     },
+    // Every custom theme in the vault's .themes/ (valid ones with tokens, invalid with diagnostics).
+    themes: () => getJson<ThemesFeed>('/themes'),
     graph: () => getJson<GraphData>('/graph'),
     // The daemon page's crons + background services + liveness for this vault.
     daemonSnapshot: () => getJson<DaemonSnapshot>('/daemon/snapshot'),

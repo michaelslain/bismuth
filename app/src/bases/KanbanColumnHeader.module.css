@@ -1,6 +1,6 @@
 /* ---- KanbanColumnHeader ---- */
 .header {
-  display: flex; align-items: center; gap: var(--sp-3); font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
+  display: flex; align-items: center; gap: var(--sp-3); font-weight: var(--fw-medium); font-size: var(--fs-ui); color: var(--fg);
   margin: 0 var(--sp-5);
   padding: 0 0 var(--sp-3);
   box-sizing: border-box;
@@ -43,7 +43,7 @@
   margin-right: var(--sp-3);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease;
+  transition: opacity calc(120ms * var(--motion-scale)) var(--ease-std);
 }
 [data-kbcol]:hover .actions,
 [data-kbcol][data-hover] .actions,

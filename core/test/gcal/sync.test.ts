@@ -674,3 +674,60 @@ test('without claimLegacy, a legacy bare manifest entry is never read: no delete
     // This vault's OWN sync state lives under its namespaced key instead.
     expect(readManifest(home).bases[manifestKey(vault, 'cal.md')]).toBeDefined()
 })
+
+test('a `.settings` accent token colours the `accent` category on push, over the theme accent', async () => {
+    const withCategory = (accent?: string) => {
+        if (accent)
+            writeFileSync(
+                join(vault, '.settings'),
+                `appearance:\n    tokens:\n        accent: '${accent}'\n`,
+            )
+        const rows: Row[] = [
+            {
+                file: emptyFile(),
+                note: {
+                    id: 'loc-c',
+                    title: 'Colored',
+                    date: '2026-06-24',
+                    startTime: '14:00',
+                    endTime: '15:00',
+                    category: 'Work',
+                    localUpdated: at(50),
+                },
+                formula: {},
+            },
+        ]
+        writeFileSync(
+            join(vault, 'cal.md'),
+            reassemble(
+                CAL_BASE.replace(
+                    'categories: []',
+                    'categories:\n  - name: Work\n    color: accent',
+                ),
+                rows,
+            ),
+        )
+    }
+    const pushedColor = async () => {
+        await syncEvents({
+            vault,
+            basePath: 'cal.md',
+            calendarId: 'primary',
+            accessToken: 'tok',
+            policy: 'lastWriteWins',
+            timeZone: TZ,
+            theme: 'ink',
+            manifestHome: home,
+        })
+        return [...g.events.values()].find(e => e.summary === 'Colored')
+            .colorId
+    }
+    withCategory()
+    expect(await pushedColor()).toBe('2') // ink accent #93BDB0 → Sage
+    // fresh vault state: same event, now with a settings accent of Tomato red
+    g.events.clear()
+    rmSync(home, { recursive: true, force: true })
+    home = tempDir('bismuth-home-')
+    withCategory('#dc2127')
+    expect(await pushedColor()).toBe('11')
+})

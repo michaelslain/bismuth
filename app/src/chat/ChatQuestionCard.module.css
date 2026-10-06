@@ -51,7 +51,7 @@
     flex: 0 0 auto;
     font-family: var(--ui-font-stack);
     font-size: var(--fs-micro);
-    font-weight: 600;
+    font-weight: var(--fw-bold);
     letter-spacing: var(--ls-eyebrow);
     color: var(--faint);
 }
@@ -86,7 +86,7 @@
     border: none;
     border-top: 1px solid var(--chat-border-soft, var(--border-soft));
     cursor: pointer;
-    transition: color 0.12s ease;
+    transition: color calc(0.12s * var(--motion-scale)) var(--ease-std);
     font: inherit;
     color: var(--fg);
 }
@@ -115,13 +115,13 @@
 .chat-question-option .chat-question-option-label {
     line-height: inherit;
     font-size: var(--fs-body);
-    font-weight: 500;
+    font-weight: var(--fw-medium);
     color: inherit;
 }
 .chat-question-option .chat-question-option-desc {
     font-size: var(--fs-ui);
     color: var(--text-muted);
-    line-height: 1.4;
+    line-height: var(--lh-tight);
 }
 .chat-question-option.picked .chat-question-option-desc {
     color: var(--fg);

@@ -5,6 +5,6 @@
 .row { display: flex; }
 /* min-height is two typed lines: a `|` run needs a line box of room past the corners' two half lines,
    and a header whose content is short (no today circle) would otherwise be corners only. */
-.header { flex: 1; min-width: 0; box-sizing: border-box; min-height: calc(var(--cell-h) * 2); padding: var(--sp-4) var(--sp-5); font-size: var(--fs-ui); font-weight: 500; color: var(--text-muted); position: relative; }
+.header { flex: 1; min-width: 0; box-sizing: border-box; min-height: calc(var(--cell-h) * 2); padding: var(--sp-4) var(--sp-5); font-size: var(--fs-ui); font-weight: var(--fw-medium); color: var(--text-muted); position: relative; }
 .header.today { color: var(--fg); }
 .weekday { color: inherit; }

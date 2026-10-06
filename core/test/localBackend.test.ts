@@ -35,6 +35,16 @@ function memVault(initial: Record<string, string>): {
                       birthtimeMs: 0,
                   }
                 : null,
+        listDir: async (_root, rel) => {
+            const prefix = rel ? `${rel}/` : ''
+            return [
+                ...new Set(
+                    Object.keys(files)
+                        .filter(p => p.startsWith(prefix))
+                        .map(p => p.slice(prefix.length).split('/')[0]),
+                ),
+            ]
+        },
         realPath: async p => p,
     }
     return { fa, files }
@@ -367,5 +377,47 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         await expect(
             be.dispatch('POST', '/tasks/toggle', { path: 't.md', line: 0 }),
         ).rejects.toMatchObject({ statusCode: 400 })
+    })
+})
+
+describe('localBackend settings + themes (iPad parity with the desktop server)', () => {
+    const vaultFor = (settings: string | null, extra: Record<string, string> = {}) =>
+        memVault({ 'a.md': 'x', ...(settings === null ? {} : { '.settings': settings }), ...extra })
+
+    test('no .settings serves the schema defaults, empty themes', async () => {
+        setFileAccess(vaultFor(null).fa)
+        const be = createLocalBackend({ vault: '/v' })
+        const s = (await be.dispatch('GET', '/settings')) as any
+        expect(s.appearance.theme).toBe('ink')
+        expect(s.appearance.tokens).toEqual({})
+        expect(await be.dispatch('GET', '/themes')).toEqual({ themes: [], invalid: [] })
+    })
+
+    test('appearance.theme, a custom theme and an appearance.tokens override come through', async () => {
+        const yaml = 'label: Dusk\nextends: cathode\n'
+        setFileAccess(
+            vaultFor(
+                'appearance:\n  theme: dusk\n  tokens:\n    accent: "#ff0000"\n',
+                { '.themes/dusk.yaml': yaml, '.themes/readme.txt': 'ignored' },
+            ).fa,
+        )
+        const be = createLocalBackend({ vault: '/v' })
+        const feed = (await be.dispatch('GET', '/themes')) as any
+        expect(feed.themes.map((t: any) => [t.name, t.label, t.extends])).toEqual([
+            ['dusk', 'Dusk', 'cathode'],
+        ])
+        const s = (await be.dispatch('GET', '/settings')) as any
+        // a custom theme name survives the enum clamp only because the feed widened the schema
+        expect(s.appearance.theme).toBe('dusk')
+        expect(s.appearance.tokens.accent).toBe('#ff0000')
+    })
+
+    test('an unknown theme name and a corrupt .settings degrade to defaults', async () => {
+        setFileAccess(vaultFor('appearance:\n  theme: nope\n').fa)
+        let be = createLocalBackend({ vault: '/v' })
+        expect(((await be.dispatch('GET', '/settings')) as any).appearance.theme).toBe('ink')
+        setFileAccess(vaultFor('appearance:\n  theme: : : broken\n').fa)
+        be = createLocalBackend({ vault: '/v' })
+        expect(((await be.dispatch('GET', '/settings')) as any).appearance.theme).toBe('ink')
     })
 })

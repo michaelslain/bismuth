@@ -24,8 +24,9 @@ export interface CalloutMeta {
     label: string
     /** Lucide icon NAME — for any surface that wants the component (the SVG below is what HTML uses). */
     icon: string
-    /** Concrete accent hex. A CSS var would be cleaner in-app, but the PDF rasterizer (html2canvas)
-     *  needs a real color, so a fixed per-type palette is the single source for every surface. */
+    /** Accent hex for EXPORT only (the PDF rasterizer needs a concrete color). In-app surfaces read
+     *  `--callout-<type>` (global.css, registered in core/src/theme/designTokens.ts); callout.test.ts
+     *  pins this equal to the token default. */
     color: string
 }
 
@@ -144,12 +145,11 @@ export function renderCalloutHtml(
         : ''
     const cls = `callout callout-${header.type}`
     const data = escapeAttr(header.type)
-    // Emit the per-type accent as an inline `--callout-color` custom property so THIS module is
-    // the single source of the color for every in-app rendered surface (cards / transclusion /
-    // live-preview widget): the CSS reads var(--callout-color) generically, with no per-type hex
-    // list to keep in sync. `meta.color` is a controlled hex from CALLOUT_TYPES. (The standalone
-    // export doc still carries its own concrete per-type rules via htmlTemplate.ts, unaffected.)
-    const style = ` style="--callout-color:${meta.color}"`
+    // Emit the per-type accent as an inline `--callout-color` pointing at the `--callout-<type>`
+    // token (global.css, registered in core/src/theme/designTokens.ts), so in-app surfaces carry no
+    // hex. CALLOUT_TYPES[*].color stays the export-only hex (htmlTemplate.ts), pinned to the token
+    // defaults by callout.test.ts.
+    const style = ` style="--callout-color:var(--callout-${canonicalCalloutType(header.type)})"`
     if (header.foldable) {
         const open = header.collapsed ? '' : ' open'
         return `<details class="${cls}" data-callout="${data}"${style}${open}><summary class="callout-title">${titleHtmlBlock}</summary>${content}</details>`

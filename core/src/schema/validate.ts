@@ -10,6 +10,7 @@ import type {
 import { isRealCalendarDate } from '../dates'
 import { extractWikilinks } from '../wikilinks'
 import { parseList } from './coerce'
+import { checkTokenValue, suggestTokenKey, tokenDef } from '../theme/designTokens'
 
 /** Pull the link target from a value: "[[Target|Display]]" -> "Target", else the raw string. */
 function linkTarget(value: string): string {
@@ -130,6 +131,13 @@ export function validateValue(
     // create). Completion (settingsComplete.ts) is where the type does its real work.
     if (type.kind === 'path') return null
 
+    if (type.kind === 'token') {
+        const def = tokenDef(type.token)
+        if (!def) return null
+        const r = checkTokenValue(def, value)
+        return r.ok ? null : err(r.problem)
+    }
+
     if (type.kind === 'enum') {
         const str = String(value)
         const match = type.caseInsensitive
@@ -163,6 +171,9 @@ export function validateValue(
         }
         const obj = value as Record<string, unknown>
         for (const [key, entry] of Object.entries(type.fields)) {
+            // token leaves are validated one by one in collectUnknownKeys
+            if (typeof entry.type === 'object' && entry.type.kind === 'token')
+                continue
             // validateEntry (not validateValue) so nested fields get soft min/max
             // range checks too — our settings.yaml nests every tunable under a section.
             const inner = validateEntry(entry, obj[key], ctx)
@@ -211,7 +222,31 @@ function collectUnknownKeys(
     out: Diagnostic[],
 ): void {
     for (const [key, value] of Object.entries(obj)) {
-        const entry = fields[key]
+        const entry = Object.hasOwn(fields, key) ? fields[key] : undefined
+        if (basePath.join('.') === 'appearance.tokens') {
+            const def = tokenDef(key)
+            if (!def) {
+                // The token registry owns the did-you-mean for a misspelt token key.
+                const hint = suggestTokenKey(key)
+                out.push({
+                    path: [...basePath, key],
+                    severity: 'warning',
+                    message: `unknown token: ${key}`,
+                    ...(hint ? { suggestions: [hint] } : {}),
+                })
+                continue
+            }
+            if (value !== undefined && value !== null) {
+                const r = checkTokenValue(def, value)
+                if (!r.ok)
+                    out.push({
+                        path: [...basePath, key],
+                        severity: 'error',
+                        message: r.problem,
+                    })
+            }
+            continue
+        }
         if (!entry) {
             out.push({
                 path: [...basePath, key],

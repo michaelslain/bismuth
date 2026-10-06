@@ -3,7 +3,16 @@
 // (core/src/theme/tokens.ts) because the dependency runs app → core: core consumers
 // (gcal color mapping, drawing paper/ink, the settings schema's theme enum) must be
 // able to import the tokens, and core cannot import app. The frontend keeps importing
-// from "./themes" — these are byte-identical runtime values.
+// from "./themes" — byte-identical runtime values, except resolveTheme/resolveAppearance,
+// which are bound to the reactive custom-theme signal (customThemes.ts) so a vault's
+// .themes/<name>.yaml resolves with no caller edit, and re-resolves reactively.
+import {
+    resolveTheme as coreResolveTheme,
+    resolveAppearance as coreResolveAppearance,
+} from '../../core/src/theme/tokens'
+import type { TokenMap } from '../../core/src/theme/designTokens'
+import { customThemes } from './customThemes'
+
 export type {
     ColorTokens,
     ThemeName,
@@ -23,8 +32,14 @@ export {
     SEMANTIC_LIGHT,
     SHADOW_DARK,
     SHADOW_LIGHT,
-    resolveTheme,
-    resolveAppearance,
     semanticTokens,
     shadowTokens,
 } from '../../core/src/theme/tokens'
+
+export const resolveTheme = (name: string) =>
+    coreResolveTheme(name, customThemes())
+export const resolveAppearance = (a: {
+    theme: string
+    tokens?: TokenMap
+}) =>
+    coreResolveAppearance(a, customThemes())

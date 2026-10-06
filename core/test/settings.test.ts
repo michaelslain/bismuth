@@ -575,9 +575,19 @@ describe('reconcile strips a pre-sparse materialized defaults dump, once', () =>
         const doc = dumpDoc()
         doc.setIn(['graph', 'nodeSize'], 9)
         await writeNote(vault, '.settings', doc.toString())
-        const before = await serializeSettingsForFrontend(vault)
+        // appearance.tokens lists only keys PRESENT in the file (legacy keys folded in), so the
+        // dump's default-valued legacy keys vanish from it once stripped. Every other field of the
+        // feed is unchanged; the dropped tokens were all at their registry defaults.
+        const strip = (feed: any) => {
+            const { tokens, ...appearance } = feed.appearance
+            return [{ ...feed, appearance }, tokens] as const
+        }
+        const [before, tokensBefore] = strip(await serializeSettingsForFrontend(vault))
         await reconcileSettings(vault)
-        expect(await serializeSettingsForFrontend(vault)).toEqual(before)
+        const [after, tokensAfter] = strip(await serializeSettingsForFrontend(vault))
+        expect(after).toEqual(before)
+        expect(Object.keys(tokensBefore).length).toBeGreaterThan(0)
+        expect(tokensAfter).toEqual({})
     })
 })
 
@@ -1154,5 +1164,51 @@ describe('readFolderVisibilityResult fails closed on malformed rules', () => {
             ok: true,
             map: {},
         })
+    })
+})
+
+test('serializeSettingsForFrontend accepts a valid custom theme name and rejects an unknown one', async () => {
+    const { themeTemplate } = await import('../src/theme/customTheme')
+    const vault = await emptyVault()
+    await writeNote(vault, '.themes/dusk.yaml', themeTemplate({ label: 'Dusk', extends: 'ink' }))
+    await writeNote(vault, '.settings', 'appearance:\n  theme: dusk\n')
+    const ok = await serializeSettingsForFrontend(vault)
+    expect((ok.appearance as Record<string, unknown>).theme).toBe('dusk')
+    await writeNote(vault, '.settings', 'appearance:\n  theme: nope\n')
+    const bad = await serializeSettingsForFrontend(vault)
+    expect((bad.appearance as Record<string, unknown>).theme).toBe('ink')
+})
+
+describe('appearance.tokens in the frontend feed', () => {
+    test('validated, normalized, present-only; an explicit token beats its legacy key', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'appearance:\n  editorFontSize: 16\n  tokens:\n    sp-3: 10px\n    editor-font-size: 18px\n    bogus: 1\n',
+        )
+        const feed = (await serializeSettingsForFrontend(vault)) as any
+        expect(feed.appearance.tokens).toEqual({
+            'editor-font-size': '18px',
+            'sp-3': '10px',
+        })
+        expect(feed.appearance.editorFontSize).toBe(16)
+    })
+
+    test('a legacy key alone folds into tokens', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', 'appearance:\n  editorFontSize: 16\n')
+        const feed = (await serializeSettingsForFrontend(vault)) as any
+        expect(feed.appearance.tokens['editor-font-size']).toBe('16px')
+        expect(feed.appearance.editorFontSize).toBe(16)
+    })
+
+    test('no tokens and no legacy keys gives {}', async () => {
+        const vault = await emptyVault()
+        const feed = (await serializeSettingsForFrontend(vault)) as any
+        expect(feed.appearance.tokens).toEqual({})
+        await writeNote(vault, '.settings', 'graph:\n  spin: false\n')
+        const feed2 = (await serializeSettingsForFrontend(vault)) as any
+        expect(feed2.appearance.tokens).toEqual({})
     })
 })

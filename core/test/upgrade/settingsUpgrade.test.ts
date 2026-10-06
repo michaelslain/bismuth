@@ -208,6 +208,56 @@ describe('upgrading an old-era settings file through reconcile', () => {
         rmSync(vault, { recursive: true, force: true })
     })
 
+    test('legacy appearance keys fold into appearance.tokens in the feed; nothing is rewritten on disk', async () => {
+        const { vault, text } = await upgradeOldVault()
+        const feed = (await serializeSettingsForFrontend(vault)) as any
+        expect(typeof feed.appearance.tokens).toBe('object')
+        // the fixture's retired theme triggers the type-scale reset, which removed the legacy keys
+        expect(feed.appearance.tokens).toEqual({})
+        expect(readFileSync(join(vault, SETTINGS_FILE), 'utf8')).toBe(text)
+        expect(text).not.toContain('tokens:')
+        rmSync(vault, { recursive: true, force: true })
+    })
+
+    test('current legacy appearance keys fold into tokens; the file is untouched', async () => {
+        const vault = emptyVault()
+        const text =
+            'appearance:\n  uiFont: Monaspace Neon\n  editorFontSize: 16\n  iconSize: 14\n  cursorBlinkSeconds: 1\n  monoScale: 0.8\neditor:\n  lineHeight: 1.4\n'
+        writeFileSync(join(vault, SETTINGS_FILE), text)
+        await reconcileSettings(vault)
+        const feed = (await serializeSettingsForFrontend(vault)) as any
+        expect(readFileSync(join(vault, SETTINGS_FILE), 'utf8')).toBe(text)
+        expect(feed.appearance.tokens).toEqual({
+            'ui-font-stack': 'Monaspace Neon',
+            'mono-scale': '0.8',
+            'editor-font-size': '16px',
+            'prose-line-height': '1.4',
+            icon: '14px',
+            'cursor-blink': '1s',
+        })
+        rmSync(vault, { recursive: true, force: true })
+    })
+
+    test('a saved appearance.tabFontSize is tolerated: reconcile prunes it, and uiFontSize now reaches the fs-ui token', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            '# keep me\nappearance:\n  tabFontSize: 13\n  uiFontSize: 14\n',
+        )
+        // must not throw: the key left the schema but a vault written before still carries it
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+        expect(text).not.toContain('tabFontSize') // RETIRED_KEYS prunes it
+        expect(text).toContain('uiFontSize: 14') // the live sibling is untouched
+        expect(text).toContain('# keep me')
+        const feed = (await serializeSettingsForFrontend(vault)) as any
+        expect(feed.appearance.tabFontSize).toBeUndefined()
+        expect(feed.appearance.tokens['fs-ui']).toBe('14px')
+        expect('tab-font-size' in feed.appearance.tokens).toBe(false)
+        expect('ui-font-size' in feed.appearance.tokens).toBe(false)
+        rmSync(vault, { recursive: true, force: true })
+    })
+
     test('reconcile is idempotent — a second upgrade pass changes nothing', async () => {
         const { vault, text } = await upgradeOldVault()
         await reconcileSettings(vault)

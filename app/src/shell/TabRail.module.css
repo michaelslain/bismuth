@@ -65,7 +65,7 @@
 
   overflow: hidden;                  /* clips labels/close-X while collapsed */
   transform: translateZ(0);          /* own compositing layer: WKWebView paints a sticky header in a pane scroller over a non-composited overlay regardless of z-index */
-  transition: width 0.22s var(--ease), box-shadow 0.22s var(--ease);
+  transition: width calc(0.22s * var(--motion-scale)) var(--ease), box-shadow calc(0.22s * var(--motion-scale)) var(--ease);
 }
 /* PINNED IS A THIRD WAY IN, not a different expanded state: same 232px surface width as hover, it
    just does not need the pointer to stay there. It deliberately DIFFERS from hover in two things —
@@ -96,7 +96,7 @@
 .rail-edge {
   position: absolute; top: 0; bottom: 0;
   right: 46px; width: 6px;
-  transition: right 0.22s var(--ease);
+  transition: right calc(0.22s * var(--motion-scale)) var(--ease);
 }
 .tab-rail:not(.hover-off):hover .rail-edge,
 .tab-rail:focus-within .rail-edge,

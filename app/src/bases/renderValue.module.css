@@ -1,6 +1,6 @@
 /* First-column "title" cell: a typed accent title glyph (renderValue.renderTitle) +
    medium-weight label — no SVG icon. */
-.cellTitle { display: inline-flex; align-items: center; gap: var(--sp-4); font-weight: 500; }
+.cellTitle { display: inline-flex; align-items: center; gap: var(--sp-4); font-weight: var(--fw-medium); }
 /* No outline or ring on any focus, mouse or keyboard (2026-09-27, same decision as
    CardFrame's `.interactive.card:focus-visible`) — a plain right-click on the title's own
    <a> focuses it first (browsers focus a focusable target on mousedown, before the

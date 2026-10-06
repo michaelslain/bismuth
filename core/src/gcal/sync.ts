@@ -14,6 +14,11 @@ import { parseFrontmatter } from '../frontmatter'
 import { parseBaseFile } from '../bases/parse'
 import { reassemble } from '../bases/rowOps'
 import { categoryColorId } from './colors'
+import { isBuiltinTheme } from '../theme/tokens'
+import { themesFeed } from '../theme/themeFiles'
+import { customTokenMap } from '../theme/customTheme'
+import { parseTokenMap } from '../theme/designTokens'
+import { readSettings } from '../settings'
 import { placeholderFile, type Row } from '../bases/types'
 import {
     listEvents,
@@ -94,13 +99,20 @@ const DAY_MS = 86_400_000
 function categoryColorMap(
     text: string,
     theme?: string,
+    customAccents?: Record<string, string>,
+    accentOverride?: string,
 ): Record<string, string> {
     const cats = parseFrontmatter(text).data.categories // reuse the canonical FM parser (tolerates malformed YAML)
     const out: Record<string, string> = {}
     for (const c of Array.isArray(cats) ? cats : []) {
         const cc = c as { name?: unknown; color?: unknown }
         if (cc && cc.name && cc.color) {
-            const id = categoryColorId(String(cc.color), theme)
+            const id = categoryColorId(
+                String(cc.color),
+                theme,
+                customAccents,
+                accentOverride,
+            )
             if (id) out[String(cc.name)] = id
         }
     }
@@ -162,7 +174,26 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
     const text = await readNote(vault, basePath) // throws if the base file is missing
     const meta = { name: basePath.split('/').pop() ?? basePath, path: basePath }
     const { rows, config } = parseBaseFile(text, meta)
-    const colorMap = categoryColorMap(text, theme) // category name → Google colorId (for pushed events)
+    // A custom theme's `accent` token resolves the `accent` category color.
+    let customAccents: Record<string, string> | undefined
+    if (theme && !isBuiltinTheme(theme)) {
+        const tokens = customTokenMap(await themesFeed(vault))[theme]
+        if (tokens) customAccents = { [theme]: tokens.accent }
+    }
+    // `.settings` `appearance.tokens.accent` (read fresh: the sync args carry only the theme name).
+    const settingsTokens = parseTokenMap(
+        (
+            (await readSettings(vault))?.data.appearance as
+                | Record<string, unknown>
+                | undefined
+        )?.tokens,
+    ).tokens
+    const colorMap = categoryColorMap(
+        text,
+        theme,
+        customAccents,
+        settingsTokens.accent,
+    ) // category name → Google colorId (for pushed events)
     const manifest: SyncManifest = readManifest(manifestHome)
     // PER-VAULT + PER-CALENDAR: this base's own sync state (link map + token + target), keyed by
     // vault + base path so a dev/test/agent core on a COPY of the vault gets its own, empty entry

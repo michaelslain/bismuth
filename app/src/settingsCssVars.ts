@@ -13,6 +13,8 @@ import {
 } from './settings'
 import { resolveAppearance, semanticTokens, shadowTokens } from './themes'
 import { refreshAsciiGlyphTiles } from './ui/ascii/asciiGlyphTiles'
+import { overrideVars } from './effectiveTokens'
+import { customThemeOverrides } from './customThemes'
 
 /** Pure: the full `{ "--var": "value" }` map for the given settings. DOM-free + testable.
  *  The color tokens (--bg/--fg/--border/--panel/--text-muted/surfaces/etc.) all come from
@@ -50,6 +52,7 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     const sem = semanticTokens(a)
     const shadow = shadowTokens(a)
     return {
+        '--color-scheme': light ? 'light' : 'dark',
         '--bg': a.background,
         '--fg': a.foreground,
         '--accent': a.accent,
@@ -214,9 +217,8 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         '--sidebar-width': s.appearance.sidebarWidth + 'px',
         '--sidebar-graph-height': s.appearance.sidebarGraphHeight + 'px',
         '--tab-rail-width': s.appearance.tabRailWidth + 'px',
-        '--ui-font-size': s.appearance.uiFontSize + 'px',
+        '--fs-ui': s.appearance.uiFontSize + 'px',
         '--mono-scale': String(s.appearance.monoScale),
-        '--tab-font-size': s.appearance.tabFontSize + 'px',
         '--palette-top-offset': s.ui.paletteTopOffset,
         '--pane-divider-width': s.ui.paneDividerWidth + 'px',
         '--prose-line-height': String(s.editor.lineHeight),
@@ -229,16 +231,41 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         '--kanban-col-min': s.ui.kanbanColumnMinWidth + 'px',
         '--kanban-col-max': s.ui.kanbanColumnMaxWidth + 'px',
         '--map-min-height': s.ui.mapMinHeight + 'px',
+        // Registry overrides (settings tokens > the theme's own), over everything above.
+        ...overrideVars(s, customThemeOverrides()),
     }
 }
 
-/** Apply a precomputed `{ "--var": "value" }` map to the document root. No-op outside the
- *  DOM. Split out so callers that also cache the map (for the pre-bundle theme script) can
- *  compute it once. The inline script in index.html applies the SAME map shape from cache. */
+/** The keys the last setCssVars applied, so a key that stops being projected (an override
+ *  removed) is taken off :root instead of lingering. Null until the first call, which adopts
+ *  whatever `--` keys the index.html first-paint script already set. */
+let applied: Set<string> | null = null
+
+/** Forget the applied key set (test seam). */
+export function resetAppliedCssVars(): void {
+    applied = null
+}
+
+/** Apply a precomputed `{ "--var": "value" }` map to the document root, removing any key the
+ *  previous call applied that is absent now. No-op outside the DOM. Split out so callers that
+ *  also cache the map (for the pre-bundle theme script) can compute it once. The inline script
+ *  in index.html applies the SAME map shape from cache. */
 export function setCssVars(vars: Record<string, string>): void {
     if (typeof document === 'undefined') return
-    const root = document.documentElement
-    for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v)
+    const style = document.documentElement.style
+    if (applied === null) {
+        applied = new Set()
+        for (let i = 0; i < style.length; i++) {
+            const k = style.item(i)
+            if (k.startsWith('--')) applied.add(k)
+        }
+    }
+    for (const k of applied) if (!(k in vars)) style.removeProperty(k)
+    applied = new Set(Object.keys(vars))
+    for (const [k, v] of Object.entries(vars)) style.setProperty(k, v)
+    // color-scheme: native form controls + scrollbars follow the theme's light/dark
+    const scheme = vars['--color-scheme']
+    if (scheme) style.colorScheme = scheme
     // the typed grid's glyph mask tiles are drawn in the UI font at its size: re-rasterise if
     // either just changed (a no-op, after one cheap read, when nothing in its key did)
     refreshAsciiGlyphTiles()

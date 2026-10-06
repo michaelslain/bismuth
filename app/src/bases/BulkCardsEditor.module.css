@@ -19,7 +19,7 @@
 /* The standard TextInput supplies the chrome; override font (mono) + sizing. */
 .cards-bulk-input textarea.cards-bulk-textarea {
   flex: 1; min-height: var(--bulk-input-min-h); resize: none;
-  font-family: var(--ui-font-stack); font-size: var(--fs-body); line-height: 1.7;
+  font-family: var(--ui-font-stack); font-size: var(--fs-body); line-height: var(--lh-ui);
 }
 .cards-bulk-preview { display: flex; flex-direction: column; min-height: 0; }
 .cards-pvhead { display: flex; align-items: baseline; gap: var(--sp-4); margin-bottom: var(--sp-4); }

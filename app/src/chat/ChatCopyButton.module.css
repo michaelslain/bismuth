@@ -17,7 +17,7 @@
     top: 0;
     right: 0;
     opacity: 0;
-    transition: opacity 0.12s ease;
+    transition: opacity calc(0.12s * var(--motion-scale)) var(--ease-std);
 }
 [data-chat-bubble-wrap]:hover .chat-copy-btn,
 [data-chat-bubble-wrap]:focus-within .chat-copy-btn {

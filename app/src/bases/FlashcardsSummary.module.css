@@ -18,7 +18,7 @@
 .good-text { color: var(--blue); }
 
 .fc-empty.fc-empty { gap: var(--sp-2); }
-.fc-empty-title.fc-empty-title { font-family: var(--ui-font-stack); font-style: italic; font-weight: 500; font-size: var(--fs-lead); margin: 0; color: var(--text-muted); }
+.fc-empty-title.fc-empty-title { font-family: var(--ui-font-stack); font-style: italic; font-weight: var(--fw-medium); font-size: var(--fs-lead); margin: 0; color: var(--text-muted); }
 .fc-empty-body.fc-empty-body { font-family: var(--ui-font-stack); font-style: italic; font-size: var(--fs-lead); color: var(--text-muted); }
 .fc-empty-body.fc-empty-body .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 var(--sp-1); }
 .fc-empty-body.fc-empty-body code { font-family: var(--ui-font-stack); font-style: italic; background: none; padding: 0; }

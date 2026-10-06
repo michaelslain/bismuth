@@ -7,7 +7,7 @@
 // imports Bun/node:fs.
 //
 // COVERED: the read path (graph, tree, file, meta, base, rows, tasks, cards,
-// search, settings-defaults) and content-only writes (file, set/delete-property,
+// search, settings, themes) and content-only writes (file, set/delete-property,
 // row update/delete, tasks/toggle, cards/review, replace). NOT YET COVERED
 // (throw NOT_SUPPORTED): structural fs ops (create/move/delete/restore),
 // folder-icon + set-setting (settings.yaml writer), asset upload, backup/git,
@@ -51,6 +51,9 @@ import { AppError } from './error'
 import { normalizeStatusBar } from './statusBarItems'
 import { evaluateStatusBar, countTree } from './statusBarEval'
 import { DEFAULTS as SETTINGS_DEFAULTS } from './schema/settingsSchema'
+import { serializeSettingsFromText } from './settingsSerialize'
+import { THEMES_DIR } from './theme/customTheme'
+import { themesFeedFromFiles } from './theme/themeFeed'
 import type { SourceSpec } from './bases/types'
 import type { ReviewResponse } from './srs/types'
 
@@ -97,6 +100,12 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
         }
     }
 
+    /** `<vault>/.themes/*.yaml` through FileAccess (never throws: no dir = no custom themes). */
+    async function loadThemesFeed() {
+        const names = await (await fa()).listDir(vault, THEMES_DIR)
+        return themesFeedFromFiles(names, readOrNull)
+    }
+
     function notSupported(route: string): never {
         throw new AppError(
             'EINVAL',
@@ -136,10 +145,21 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 return buildVaultRows(vault)
             case 'GET /config':
                 return { vault, memory: memory ?? null }
-            case 'GET /settings':
-                // First cut: schema defaults (no settings.yaml reconcile/merge yet — a
-                // documented follow-up). The app store seeds from these and stays usable.
-                return SETTINGS_DEFAULTS
+            case 'GET /settings': {
+                // Same pure merge the desktop server runs (settingsSerialize.ts), fed from FileAccess:
+                // the stored `.settings` over DEFAULTS, so appearance.theme / .tokens / every other
+                // saved key reaches the app. A missing or unparseable file degrades to defaults.
+                try {
+                    return serializeSettingsFromText(
+                        await readOrNull('.settings'),
+                        (await loadThemesFeed()).themes.map(t => t.name),
+                    )
+                } catch {
+                    return SETTINGS_DEFAULTS
+                }
+            }
+            case 'GET /themes':
+                return loadThemesFeed()
             case 'GET /status-bar': {
                 // parses .settings itself: readSettings is bound to Bun fs, which mobile lacks
                 const raw = await readOrNull('.settings')

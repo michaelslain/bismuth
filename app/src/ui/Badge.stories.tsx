@@ -86,3 +86,17 @@ export const AllVariants: Story = {
         </Row>
     ),
 }
+
+/** The 'solid' variant in each category hue (the `hue` prop). */
+export const Hues: Story = {
+    render: () => (
+        <Row label="hue">
+            <Badge variant="solid" hue="teal">teal</Badge>
+            <Badge variant="solid" hue="blue">blue</Badge>
+            <Badge variant="solid" hue="violet">violet</Badge>
+            <Badge variant="solid" hue="green">green</Badge>
+            <Badge variant="solid" hue="gold">gold</Badge>
+            <Badge variant="solid" hue="rose">rose</Badge>
+        </Row>
+    ),
+}

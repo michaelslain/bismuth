@@ -112,6 +112,15 @@ export function tauriFileAccess(): FileAccess {
             }
         },
 
+        listDir: async (root, rel) => {
+            try {
+                const entries = await readDir(rel ? join(root, rel) : root)
+                return entries.map(e => e.name)
+            } catch {
+                return [] // missing dir (no .themes yet) is routine, not an error
+            }
+        },
+
         // iOS has no realpath via the plugin; cycle detection on the logical path is
         // sufficient (symlink-vaults aren't a mobile concern). Best-effort identity.
         realPath: async path => path,

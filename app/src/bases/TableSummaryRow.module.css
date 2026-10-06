@@ -11,7 +11,7 @@
      typed row and push its vertical run to the wrong whole number of `|` */
   padding: 0;
   height: max(var(--ascii-row-h, var(--h-control)), var(--h-control));
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   color: var(--text-muted);
   white-space: nowrap;
   vertical-align: middle;

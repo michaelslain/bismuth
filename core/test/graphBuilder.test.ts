@@ -14,6 +14,7 @@ function memAccess(vault: Record<string, string>): FileAccess {
         readNote: async (_root, rel) => vault[rel] ?? '',
         writeNote: async () => {},
         statNote: async () => null,
+        listDir: async () => [],
         realPath: async p => p,
     }
 }

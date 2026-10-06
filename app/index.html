@@ -9,13 +9,15 @@
     <script>
       // Paint the last-known theme BEFORE the bundle loads, so the correct theme shows
       // immediately instead of flashing global.css's `App.css` section's default-theme fallbacks until settings
-      // hydrate. Reads the var map the app caches under "oa-theme-vars-v1" (see App.tsx);
+      // hydrate. Reads the var map the app caches under "bismuth-theme-vars-v1" (THEME_VARS_KEY in
+      // storageKeys.ts; App.tsx writes it); setCssVars adopts these keys, so a later removal sticks;
       // a cold cache is a no-op (the :root fallbacks apply, exactly as before).
       try {
-        var t = localStorage.getItem("oa-theme-vars-v1");
+        var t = localStorage.getItem("bismuth-theme-vars-v1");
         if (t) {
           var vars = JSON.parse(t), root = document.documentElement.style;
           for (var k in vars) if (vars[k] != null) root.setProperty(k, vars[k]);
+          if (vars["--color-scheme"]) root.colorScheme = vars["--color-scheme"];
         }
       } catch (e) {}
     </script>

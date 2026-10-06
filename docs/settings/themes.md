@@ -10,7 +10,7 @@ The ASCII redesign defines four themes in `bismuth-design/ascii/design-system/to
 
 ## Theme Names
 
-The setting is `appearance.theme` in `.settings` (the vault's hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:34`). The schema enum lists 4 names; the first is the default.
+The setting is `appearance.theme` in `.settings` (the vault's hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:34`). The schema enum lists the 4 built-in names (the first is the default) plus the vault's valid custom themes (`settingsSchemaFor` in `core/src/schema/themedSettingsSchema.ts` extends the enum per vault).
 
 ```yaml
 appearance:
@@ -349,9 +349,8 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 | `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
 | `appearance.tabRailWidth` | `--tab-rail-width` | `232px` |
-| `appearance.uiFontSize` | `--ui-font-size` | `11.5px` |
+| `appearance.uiFontSize` | `--fs-ui` | `11.5px` |
 | `appearance.monoScale` | `--mono-scale` | `1` |
-| `appearance.tabFontSize` | `--tab-font-size` | `11.5px` |
 | `appearance.cursorWidth` | `--cursor-width` | `2px` |
 | `appearance.cursorGlideMs` | `--cursor-glide` | `70ms` |
 | `appearance.cursorBlinkSeconds` | `--cursor-blink` | `1.2s` |
@@ -482,17 +481,39 @@ The 2D/3D graph dimension and graph simulation settings are **not** affected by 
 
 ---
 
+## Custom themes
+
+A vault can define its own themes. Agents should start at the [custom themes guide](../guides/custom-themes.md); every token a theme may set is in the [design tokens reference](tokens.md).
+
+- **File**: `<vault>/.themes/<name>.yaml`, one per theme. A theme is a **partial override**: optional `label`, optional `extends` (a built-in, default `ink`) and a `tokens:` map holding only the tokens it changes. An empty file is valid and is stock `ink`. Token keys are CSS variable names without `--` (`bg`, `accent`, `r-card`), and a token is any registered design token, not only a colour: see [the tokens reference](tokens.md). The old format's top-level keys (`background`, `isLight`, …) still parse but warn `<key>: moved — write it under tokens: as <new key>`. The name matches `^[a-z0-9][a-z0-9-]{0,39}$` and may not be a built-in. Parsing and validation are pure, in `core/src/theme/customTheme.ts`; file I/O is `core/src/theme/themeFiles.ts`.
+- **Select it**: `appearance.theme: <name>` in `.settings` (or `bismuth theme use <name>`). The schema enum and the editor lint accept the name only when the theme is valid.
+- **Precedence**: built-in default, then the theme's `extends`, then the theme's `tokens:`, then `.settings` `appearance.tokens` (an explicit token also beats its legacy `.settings` key; a legacy key present in the file beats the theme). Details: [tokens reference](tokens.md#precedence).
+- **Hardening**: a theme file or `.themes/` directory that is a symlink is refused, and a file over 64 KB is refused. A symlinked `.themes/` directory is refused with each file listed as `cannot read file: symlink refused`, and a non-file entry reads `cannot read file: not a regular file`.
+- **`GET /themes`**: returns a `ThemesFeed`, every custom theme with its `extends`, override `tokens` and resolved `colors`, plus the invalid ones with diagnostics. See [the HTTP reference](../api/http-reference.md#get-themes).
+- **App side**: `app/src/customThemes.ts` holds a reactive `customThemes` signal fed by `GET /themes`, refetched when an SSE `paths` entry matches `isThemePath`. `resolveTheme`/`resolveAppearance` consult it, so `settingsCssVars`, the graph, the sheets, the drawing toolbar and every other caller repaint with no reload, both when the file is edited and when `appearance.theme` changes.
+- **Invalid or missing → `ink`.** A theme file that fails validation, or a name with no file, paints `ink`, the same fallback as any unknown name. Diagnostics are in `GET /themes` and `bismuth theme validate`. Contrast problems are warnings only.
+- **Mobile**: the iPad/iOS in-process backend answers `GET /themes` with an empty feed (`FileAccess` has no directory listing), so a custom theme shows `ink` there for now.
+- **Not themed**: export (fixed light/dark scopes) and drawing paper stay theme-independent. `.themes/` and its top-level `*.yaml` files are listed in the sidebar tree, like `.settings`.
+
+---
+
 ## resolveTheme / resolveAppearance / semanticTokens / shadowTokens
 
 ```ts
 // Resolve a theme name string to its ColorTokens.
-// Unknown names (including every pre-redesign 12-theme name) silently fall back to
-// DEFAULT_THEME ("ink").
-resolveTheme(name: string): ColorTokens
+// `custom` maps a name to the resolved colours of a VALID custom theme; a built-in
+// name always wins over a custom theme of the same name. Unknown names (including
+// every pre-redesign 12-theme name) silently fall back to DEFAULT_THEME ("ink").
+resolveTheme(name: string, custom?: Readonly<Record<string, ColorTokens>>): ColorTokens
 
-// Resolve from the appearance sub-object in settings.
-// Currently identical to resolveTheme(a.theme); no per-color overrides exist yet.
-resolveAppearance(a: { theme: string }): ColorTokens
+// Resolve from the appearance sub-object in settings: resolveTheme(a.theme, custom),
+// then the FIELD tokens in a.tokens written on top (applyColorTokens). Non-field
+// tokens (lengths, durations, ...) are not ColorTokens; they are projected straight
+// onto :root by settingsCssVars.
+resolveAppearance(
+    a: { theme: string; tokens?: Readonly<Record<string, string>> },
+    custom?: Readonly<Record<string, ColorTokens>>,
+): ColorTokens
 
 // The semantic status trio (danger/success/warning) for a resolved theme — prefers
 // the theme's own explicit fields, else SEMANTIC_LIGHT/SEMANTIC_DARK by t.isLight.

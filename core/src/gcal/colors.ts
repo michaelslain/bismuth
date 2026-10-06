@@ -74,10 +74,29 @@ export function nearestGoogleColorId(
 export function categoryColorId(
     color: string | undefined,
     theme?: string,
+    customAccents?: Record<string, string>,
+    accentOverride?: string,
 ): string | undefined {
     if (!color) return undefined
-    if (color === 'accent')
-        return nearestGoogleColorId(THEME_ACCENT[theme ?? ''] ?? DEFAULT_ACCENT)
+    if (color === 'accent') {
+        // A `.settings` `appearance.tokens.accent` beats the theme's own accent, as it does in the app.
+        if (accentOverride && hexToRgb(accentOverride))
+            return nearestGoogleColorId(accentOverride)
+        const name = theme ?? ''
+        // Own-property guards: a custom theme named `constructor`/`valueOf` must not resolve to
+        // an Object.prototype member. An accent hexToRgb cannot read (rgb()/hsl()) falls back
+        // to the ink accent rather than yielding no colour.
+        const accent = Object.hasOwn(THEME_ACCENT, name)
+            ? THEME_ACCENT[name]
+            : customAccents && Object.hasOwn(customAccents, name)
+              ? customAccents[name]
+              : DEFAULT_ACCENT
+        return nearestGoogleColorId(
+            typeof accent === 'string' && hexToRgb(accent)
+                ? accent
+                : DEFAULT_ACCENT,
+        )
+    }
     if (SWATCH_HEX[color]) return nearestGoogleColorId(SWATCH_HEX[color])
     return nearestGoogleColorId(color) // hex passthrough
 }

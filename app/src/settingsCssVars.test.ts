@@ -1,8 +1,12 @@
 // app/src/settingsCssVars.test.ts
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { settingsToCssVars } from './settingsCssVars'
 import { DEFAULTS, FONT_STACKS, DEFAULT_PROSE_SCALE } from './settings'
 import { THEMES } from './themes'
+import { setCssVars, resetAppliedCssVars } from './settingsCssVars'
+import snapshot from './settingsCssVars.defaults.snapshot.json'
+import { setCustomThemesFeed } from './customThemes'
+import { parseCustomTheme } from '../../core/src/theme/customTheme'
 
 function withTheme(theme: string) {
     return {
@@ -79,8 +83,9 @@ describe('settingsToCssVars', () => {
     it('maps appearance/ui sizing to px vars and passes CSS lengths through', () => {
         const vars = settingsToCssVars(DEFAULTS)
         expect(vars['--sidebar-width']).toBe('266px') // the ASCII design's 266px vault rail
-        expect(vars['--ui-font-size']).toBe('11.5px')
-        expect(vars['--tab-font-size']).toBe('11.5px')
+        expect(vars['--fs-ui']).toBe('11.5px') // appearance.uiFontSize drives the chrome size
+        expect('--ui-font-size' in vars).toBe(false) // retired: --fs-ui is the one chrome size var
+        expect('--tab-font-size' in vars).toBe(false) // retired with appearance.tabFontSize
         expect(vars['--pane-divider-width']).toBe('5px')
         expect(vars['--palette-top-offset']).toBe('12vh') // CSS length passed through verbatim
     })
@@ -164,5 +169,113 @@ describe('light themes read their own explicit ASCII scope values, not a derived
         expect(darkVars['--green']).toBe(td.categoryGreen)
         expect(darkVars['--gold']).toBe(td.categoryGold)
         expect(darkVars['--rose']).toBe(td.categoryRose)
+    })
+})
+
+describe('token registry projection', () => {
+    it('DEFAULTS project byte-identically to the pre-registry map (plus --color-scheme)', () => {
+        expect(settingsToCssVars(DEFAULTS)).toEqual({
+            '--color-scheme': 'dark',
+            ...snapshot,
+        })
+    })
+
+    it('a token overrides its own var and the vars the theme pins explicitly stay put', () => {
+        const base = settingsToCssVars(DEFAULTS)
+        const s = structuredClone(DEFAULTS)
+        s.appearance.tokens = { 'sp-3': '10px', accent: '#ff6b6b' }
+        const v = settingsToCssVars(s)
+        expect(v['--sp-3']).toBe('10px')
+        expect(v['--accent']).toBe('#ff6b6b')
+        // ink pins accentSoft itself, so the accent override must not recompute it. This holds
+        // because of that pin (every built-in theme sets accentSoft), not because overrides never
+        // reach derived fallbacks: assert the pin so the test cannot pass for the wrong reason.
+        expect(THEMES.ink.accentSoft).toBeDefined()
+        expect(v['--accent-soft']).toBe(THEMES.ink.accentSoft!)
+        expect(v['--accent-soft']).toBe(base['--accent-soft'])
+    })
+
+    it('a non-colour token changes exactly its own var and nothing else', () => {
+        const base = settingsToCssVars(DEFAULTS)
+        const s = structuredClone(DEFAULTS)
+        s.appearance.tokens = { 'sp-3': '10px' }
+        const v = settingsToCssVars(s)
+        const changed = Object.keys(v).filter(k => v[k] !== base[k])
+        expect(changed).toEqual(['--sp-3'])
+    })
+
+    it("a settings token beats the theme's own editor-font-size, which beats the projected default", () => {
+        const themeYaml = `label: 'Big'\nextends: ink\ntokens:\n  editor-font-size: '14px'\n`
+        const parsed = parseCustomTheme('big', themeYaml)
+        expect(parsed.theme).toBeDefined()
+        setCustomThemesFeed({
+            themes: [
+                {
+                    name: 'big',
+                    label: parsed.theme!.label,
+                    extends: parsed.theme!.extends,
+                    isLight: parsed.theme!.colors.isLight ?? false,
+                    tokens: parsed.theme!.tokens,
+                    colors: parsed.theme!.colors,
+                },
+            ],
+            invalid: [],
+        })
+        try {
+            const s = structuredClone(DEFAULTS)
+            s.appearance.theme = 'big'
+            // theme token over the projected legacy default (13.5px)
+            expect(settingsToCssVars(s)['--editor-font-size']).toBe('14px')
+            // a settings token over the theme's
+            s.appearance.tokens = { 'editor-font-size': '18px' }
+            expect(settingsToCssVars(s)['--editor-font-size']).toBe('18px')
+        } finally {
+            setCustomThemesFeed({ themes: [], invalid: [] })
+        }
+    })
+})
+
+describe('setCssVars removal', () => {
+    const fakeStyle = (initial: Record<string, string> = {}) => {
+        const m = new Map(Object.entries(initial))
+        return {
+            m,
+            colorScheme: '',
+            setProperty: (k: string, v: string) => void m.set(k, v),
+            removeProperty: (k: string) => void m.delete(k),
+            item: (i: number) => [...m.keys()][i] ?? '',
+            get length() {
+                return m.size
+            },
+        }
+    }
+    const hadDocument = 'document' in globalThis
+    const priorDocument = (globalThis as any).document
+    const install = (style: ReturnType<typeof fakeStyle>) => {
+        ;(globalThis as any).document = { documentElement: { style } }
+        resetAppliedCssVars()
+    }
+    // the stub must not leak into other test files sharing this process
+    afterEach(() => {
+        if (hadDocument) (globalThis as any).document = priorDocument
+        else delete (globalThis as any).document
+        resetAppliedCssVars()
+    })
+
+    it('removes a key that is no longer projected, keeps the rest', () => {
+        const st = fakeStyle()
+        install(st)
+        setCssVars({ '--a': '1', '--b': '2' })
+        setCssVars({ '--a': '1' })
+        expect([...st.m.keys()]).toEqual(['--a'])
+    })
+
+    it('adopts keys the first-paint script set, then removes them if absent', () => {
+        const st = fakeStyle({ '--stale': 'x', 'color-scheme': 'dark' })
+        install(st)
+        setCssVars({ '--a': '1', '--color-scheme': 'light' })
+        expect(st.m.has('--stale')).toBe(false)
+        expect(st.m.get('color-scheme')).toBe('dark') // non-`--` keys are never adopted
+        expect(st.colorScheme).toBe('light')
     })
 })

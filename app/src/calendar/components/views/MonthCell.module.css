@@ -9,7 +9,7 @@
 .cell { position: relative; padding: calc((max(var(--ascii-row-h, var(--h-control)), var(--h-control)) - var(--cell-h)) / 2) var(--ascii-tile-w, 1ch); min-height: var(--month-cell-min-h, 80px); min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: var(--sp-2); }
 .cell:hover { background: var(--hover-bg); }
 .cell:hover [data-add-task], .cell:focus-within [data-add-task] { opacity: 1; }
-.number { font-size: var(--fs-ui); font-weight: 400; color: var(--text-muted); flex-shrink: 0; }
+.number { font-size: var(--fs-ui); font-weight: var(--fw-regular); color: var(--text-muted); flex-shrink: 0; }
 /* leading/trailing days that spill in from the prev/next month: dimmed numbers */
 .number.dim { opacity: 0.55; color: var(--faint); }
 .items { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }

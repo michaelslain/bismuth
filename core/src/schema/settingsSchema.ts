@@ -18,6 +18,8 @@ import {
     CATEGORY_SWATCHES,
     THEME_NAMES as THEME_NAME_TUPLE,
 } from '../theme/tokens'
+import { MONO_FONTS, PROSE_FONTS } from '../theme/fontFamilies'
+import { DESIGN_TOKENS } from '../theme/designTokens'
 import {
     BACKEND_IDS,
     BACKEND_LIST,
@@ -35,19 +37,6 @@ const DAEMON_BACKEND_IDS = BACKEND_LIST.filter(b => b.capabilities.daemon).map(
     b => b.id,
 )
 
-// Kept in lockstep with app/src/settings.ts MONO_FONTS/PROSE_FONTS/FONT_STACKS.
-// The five Monaspace variants — chrome + in-note mono constructs (uiFont), and an
-// all-mono-editor option on proseFont too.
-const MONO_FONTS = [
-    'Monaspace Xenon',
-    'Monaspace Neon',
-    'Monaspace Argon',
-    'Monaspace Krypton',
-    'Monaspace Radon',
-]
-// proseFont's valid values: the two proportional serifs — IBM Plex Serif (the default) and Lora —
-// plus the same five Monaspace variants, for a user who wants an all-mono editor.
-const PROSE_FONTS = ['IBM Plex Serif', 'Lora', ...MONO_FONTS]
 // The theme enum is sourced directly from the color source of truth
 // (core/src/theme/tokens.ts) — no hand-maintained copy to drift from THEMES.
 const THEME_NAMES = [...THEME_NAME_TUPLE]
@@ -94,8 +83,24 @@ for (const k of KEYBINDING_CATALOG) {
     keybindingFields[k.id] = { type: 'keybind', default: k.default, doc: k.doc }
 }
 
+// `appearance.tokens`: one field per registered design token, derived from DESIGN_TOKENS (the one
+// registry). No per-field defaults — the file is sparse and an absent key is the token's registry
+// default (global.css). Validation + completion read each field's `token` kind.
+const tokenFields: Schema = {}
+for (const def of DESIGN_TOKENS) {
+    tokenFields[def.key] = {
+        type: { kind: 'token', token: def.key },
+        doc: def.doc,
+    }
+}
+
 export const SETTINGS_SCHEMA: Schema = {
     appearance: object({
+        tokens: {
+            type: { kind: 'object', fields: tokenFields },
+            default: {},
+            doc: 'Design-token overrides: token-name: value, e.g. sp-3: 10px. Only tokens you set are stored; an absent token is its default. Ctrl-Space lists every token.',
+        },
         // Bismuth color theme — selects EVERY color in the app + graph (background,
         // surfaces, border, text, muted, accent, and the graph node palette). The theme
         // is the single source of color; app/src/themes.ts holds the token values that
@@ -104,7 +109,7 @@ export const SETTINGS_SCHEMA: Schema = {
         theme: {
             type: enumType(THEME_NAMES),
             default: 'ink',
-            doc: 'Bismuth color theme: ink (default) // paper // cathode // riso.',
+            doc: 'Bismuth color theme: ink (default) // paper // cathode // riso, or the name of a custom theme in .themes/<name>.yaml.',
         },
         // Per-vault app logo mark (favicon + sidebar logo). One of the 14 Bismuth marks.
         icon: {
@@ -113,12 +118,12 @@ export const SETTINGS_SCHEMA: Schema = {
             doc: 'App logo mark: hopper-crystal // node-b // square-funnel // nested-diamonds // pinwheel // node-crystal // lattice // diamond-bloom // node-diamond // octagon-bloom // spin-cross // tri-bloom // radial-graph // node-rings.',
         },
         uiFont: {
-            type: enumType(MONO_FONTS),
+            type: enumType([...MONO_FONTS]),
             default: 'Monaspace Xenon',
             doc: 'UI + MONO font — a Monaspace variant, used for all chrome (rail, tabs, buttons, menus, calendar chips) AND for the mono constructs inside a note: code blocks, inline code, frontmatter, math and in-note tags. Config buffers (.settings, *.yaml) render entirely in it.',
         },
         proseFont: {
-            type: enumType(PROSE_FONTS),
+            type: enumType([...PROSE_FONTS]),
             default: 'IBM Plex Serif',
             doc: "PROSE font — the proportional face for everything that is the user's own writing: note body text, note headings, note tables, chat message bodies and the chat composer. IBM Plex Serif // Lora // the five Monaspace variants. Set it to a Monaspace variant for an all-mono editor.",
         },
@@ -155,7 +160,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 11.5,
             min: 11,
             max: 16,
-            doc: "Base UI font size — sidebar, tabs, menus (px) (the ASCII design's --fs-ui workhorse size).",
+            doc: "Base UI font size — sidebar, tabs, menus (px). It sets --fs-ui, the workhorse chrome size, and the ASCII grid's cell width follows it (6.3px at the 11.5 default).",
         },
         monoScale: {
             type: 'number',
@@ -163,13 +168,6 @@ export const SETTINGS_SCHEMA: Schema = {
             min: 0.6,
             max: 1,
             doc: 'Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; 1 = no correction.',
-        },
-        tabFontSize: {
-            type: 'number',
-            default: 11.5,
-            min: 11,
-            max: 14,
-            doc: 'Editor tab label font size (px).',
         },
         iconSize: {
             type: 'number',

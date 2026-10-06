@@ -61,6 +61,14 @@ describe('mergeServerSettings', () => {
         expect(mergeServerSettings({}).homePage).toBe('')
     })
 
+    it('replaces appearance.tokens wholesale and leaves DEFAULTS untouched', () => {
+        const out = mergeServerSettings({
+            appearance: { tokens: { 'sp-3': '10px' } },
+        })
+        expect(out.appearance.tokens).toEqual({ 'sp-3': '10px' })
+        expect(DEFAULTS.appearance.tokens).toEqual({})
+    })
+
     it('replaces statusBar wholesale (no index-overlay against the 4-item default)', () => {
         expect(mergeServerSettings({ statusBar: [{ text: 'x' }] }).statusBar).toEqual([{ text: 'x' }])
     })

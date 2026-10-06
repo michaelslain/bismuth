@@ -55,7 +55,7 @@
 .edge:focus .line,
 .edge[data-dragging] .line {
     opacity: 1;
-    transition-delay: 0.08s;
+    transition-delay: calc(0.08s * var(--motion-scale));
 }
 
 /* ANCHORED TO THE LINE, NOT TO THE STRIP'S FAR EDGE. The strip's width varies — 6px on a visible
@@ -94,9 +94,9 @@
     pointer-events: auto;
     transform: translate(0, -50%) scale(1);
     transition:
-        transform var(--dur-pop) var(--ease-spring) 0.12s,
-        opacity var(--dur) var(--ease) 0.12s,
-        visibility 0s linear 0.12s;
+        transform var(--dur-pop) var(--ease-spring) calc(0.12s * var(--motion-scale)),
+        opacity var(--dur) var(--ease) calc(0.12s * var(--motion-scale)),
+        visibility 0s linear calc(0.12s * var(--motion-scale));
 }
 .edge[data-dragging] .pop {
     opacity: 0;

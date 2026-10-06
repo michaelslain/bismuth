@@ -30,6 +30,7 @@ import { commands as relayCmds } from './commands/relay'
 import { commands as chatCmds } from './commands/chat'
 import { commands as docsCmds } from './commands/docs'
 import { commands as memoryCmds } from './commands/memory'
+import { commands as themeCmds } from './commands/theme'
 export const registry: CommandMap = {
     ...fileCmds,
     ...noteCmds,
@@ -58,6 +59,7 @@ export const registry: CommandMap = {
     ...chatCmds,
     ...docsCmds,
     ...memoryCmds,
+    ...themeCmds,
 }
 
 /** Longest-match a command phrase against the registry. Returns the matching registry key (three

@@ -21,6 +21,7 @@ import {
 } from '../../core/src/schema/settingsSchema'
 import type { KeybindingId } from '../../core/src/keybindings'
 import { isSettingsPath } from '../../core/src/changeClassifier'
+import { isThemePath } from '../../core/src/theme/customTheme'
 import { THEMES, DEFAULT_THEME } from './themes'
 import type { ChatPreset } from './chat/chatPresets'
 
@@ -31,6 +32,7 @@ import type { ChatPreset } from './chat/chatPresets'
 // is the spine object cast to this shape, so there is still ONE DEFAULTS.
 export interface Settings {
     appearance: {
+        tokens: Record<string, string> // design-token overrides present in .settings (legacy keys folded in)
         // Centralized theme tokens (the 5 groups everything derives from).
         // Bismuth color theme name — selects all colors; see app/src/themes.ts. The app
         // is dark-only. There are no per-color override keys in the initial release.
@@ -44,7 +46,6 @@ export interface Settings {
         tabRailWidth: number // px
         uiFontSize: number // px
         monoScale: number // optical-size multiplier for Monaspace (mono UI/code)
-        tabFontSize: number // px
         iconSize: number // px
         cursorWidth: number // px — the one text cursor, everywhere
         cursorGlideMs: number // ms
@@ -230,19 +231,9 @@ export { SETTINGS_DEFAULTS as DEFAULTS }
 const _DEFAULTS: Settings = SETTINGS_DEFAULTS
 void (DEFAULTS satisfies SpineSettings)
 
-// The five Monaspace variants — the only valid values for `uiFont` (chrome + in-note mono
-// constructs: code blocks, inline code, frontmatter, math, tags).
-export const MONO_FONTS = [
-    'Monaspace Xenon',
-    'Monaspace Neon',
-    'Monaspace Argon',
-    'Monaspace Krypton',
-    'Monaspace Radon',
-] as const
-
-// The valid values for `proseFont` — the two proportional serifs, IBM Plex Serif (the default) and
-// Lora, plus the same five Monaspace variants, for an all-mono editor.
-export const PROSE_FONTS = ['IBM Plex Serif', 'Lora', ...MONO_FONTS] as const
+// `uiFont`'s and `proseFont`'s valid families live in ONE list, shared with the schema and the token
+// registry (core/src/theme/fontFamilies.ts).
+export { MONO_FONTS, PROSE_FONTS } from '../../core/src/theme/fontFamilies'
 
 // Font choices → full CSS font stacks. The serifs are the proportional faces for note prose +
 // chat bodies; the five Monaspace variants cover both `uiFont` (chrome + in-note mono) and, as an
@@ -447,8 +438,8 @@ if (typeof window !== 'undefined') {
                     if (change.version <= 0) return
                     // Match the `.settings` file (and the legacy `settings.yaml` / interim `.settings/settings.yaml`
                     // during the migration window) via the shared predicate — the watcher reports the
-                    // vault-relative path verbatim.
-                    if (!change.paths.some(isSettingsPath)) return
+                    // vault-relative path verbatim. Custom theme files too: core clamps a missing/invalid theme name to ink.
+                    if (!change.paths.some(p => isSettingsPath(p) || isThemePath(p))) return
                     void (async () => {
                         let data: Record<string, unknown>
                         try {

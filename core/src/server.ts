@@ -1,5 +1,5 @@
 import { join, relative } from 'node:path'
-import { statSync } from 'node:fs'
+import { statSync, readdirSync } from 'node:fs'
 import { createSseRegistry, formatEvent } from './sse'
 import { createAsyncCache, type AsyncCache } from './asyncCache'
 import { createSelfWriteMarks } from './selfWriteMarks'
@@ -148,8 +148,19 @@ import {
     resolveRequestChannel,
     type RequestChannel,
 } from './ownerToken'
+import { themesFeed } from './theme/themeFiles'
+import { isThemePath } from './theme/customTheme'
+import {
+    isHidden,
+    isWatchIgnored,
+    isSystemFolderPath,
+    isDaemonMemoryPath,
+    isDaemonMemoryNoise,
+    skipWatchWalk,
+} from './watchSkip'
 import {
     createChangeTracker,
+    createThemeFileTracker,
     isSettingsPath,
     flushDelayMs,
 } from './changeClassifier'
@@ -495,7 +506,10 @@ export function createServer(cfg: CoreConfig) {
     // nothing on disk to ever produce the echo that would consume it, and a real external
     // `.settings` edit landing in that window would be silently swallowed as a phantom echo.
     markSelfWritten([SETTINGS_FILE])
-    void reconcileSettings(cfg.vault)
+    // Kept (never rejects) so GET /settings can wait for it: serializing a fully materialized
+    // legacy `.settings` BEFORE the reconcile strips its defaults folds all the legacy keys into
+    // `appearance.tokens`, pinning them over the active theme for that first load.
+    const bootReconcile: Promise<void> = reconcileSettings(cfg.vault)
         .then(wrote => {
             if (wrote) rearmSelfWritten([SETTINGS_FILE])
             else unmarkSelfWritten([SETTINGS_FILE])
@@ -653,36 +667,27 @@ export function createServer(cfg: CoreConfig) {
     // without changing its connections — e.g. a bot status file restamped every
     // couple of seconds.
     const tracker = createChangeTracker()
-    const isHidden = (p: string) => p.startsWith('.') || p.includes('/.')
-    // The daemon rewrites its status file (DAEMON.md) into the vault root every
-    // ~2s (daemon-status-updater). It's a status artifact, not knowledge — reacting to its
-    // churn (version bump → cache invalidation → every content-dependent base re-resolving
-    // over the whole vault) needlessly pegs CPU. Drop its changes in the watcher so they never
-    // bump the version. The file still lists + renders; only its 2s heartbeat rewrites are
-    // ignored (you don't want live graph/row/editor refreshes for a status heartbeat anyway).
-    const DAEMON_STATUS_FILE = 'DAEMON.md'
-    const DAEMON_STATUS_PATH = '/' + DAEMON_STATUS_FILE
-    const isWatchIgnored = (p: string) =>
-        isHidden(p) ||
-        p === DAEMON_STATUS_FILE ||
-        p.endsWith(DAEMON_STATUS_PATH)
-    // The .daemon folder is dot-prefixed (so isHidden treats it as hidden) but its contents ARE
-    // meaningful: .daemon shows in the sidebar, and .daemon/memory is the 3rd brain. Route its
-    // changes through instead of dropping them as hidden. (The `.settings` FILE is matched earlier
-    // by isSettingsPath, before the hidden-drop.)
-    const isSystemFolderPath = (p: string) => p.startsWith('.daemon/')
-    const isDaemonMemoryPath = (p: string) =>
-        p === '.daemon/memory' || p.startsWith('.daemon/memory/')
-    // .daemon/memory has its own autosave git repo (scheduleBackup, below) plus whatever other
-    // dotfiles land inside it — none of that is the 3rd brain itself. A dot-prefixed segment
-    // BELOW .daemon/memory/ (.daemon/memory/.git/**, a stray .DS_Store) is noise the same way
-    // the dedicated memory watcher's isHidden guard already treats it; the folder itself and its
-    // ordinary subfolders/notes are not.
-    const isDaemonMemoryNoise = (p: string) => {
-        if (!isDaemonMemoryPath(p)) return false
-        const rest = p.slice('.daemon/memory'.length).replace(/^\//, '')
-        return rest !== '' && isHidden(rest)
+    // `.themes/*.yaml` files already present at boot, so the first autosave of one is an edit.
+    const themeFileExists = (rel: string) => {
+        try {
+            return statSync(join(cfg.vault, rel)).isFile()
+        } catch {
+            return false
+        }
     }
+    const themeFiles = createThemeFileTracker(
+        (() => {
+            try {
+                return readdirSync(join(cfg.vault, '.themes'))
+                    .map(n => `.themes/${n}`)
+                    .filter(isThemePath)
+            } catch {
+                return []
+            }
+        })(),
+    )
+    // Watcher path predicates (dot-hidden, DAEMON.md heartbeat, .daemon system folders, memory
+    // noise) are pure and live in ./watchSkip.ts, with their reasons.
     // The daemon writes high-frequency runtime state under .daemon while it runs — process logs,
     // pid/session files, cron .running.json/.last-fired.json/.triggers. None of it changes the
     // sidebar or the graph, so reacting to it (cache invalidate → version bump → SSE → full
@@ -805,6 +810,14 @@ export function createServer(cfg: CoreConfig) {
                 graph = true
                 if (p.endsWith('.md')) notePaths.push(p)
                 else tree = true
+                continue
+            }
+            // .themes/<name>.yaml is dot-hidden but meaningful: it never feeds the graph, but
+            // the tree lists `.themes` + its yaml files, so a create/delete/rename must dirty it.
+            // The path also rides the SSE `paths` and the app refetches GET /themes itself.
+            if (isThemePath(p)) {
+                // Only a create/delete is structural; an autosave of an existing file is not.
+                if (themeFiles.classify(p, themeFileExists(p))) tree = true
                 continue
             }
             if (isSystemFolderPath(p)) {
@@ -1060,9 +1073,6 @@ export function createServer(cfg: CoreConfig) {
     const watchers: LiveWatcher[] = []
     // watchLive, not a bare fs.watch: a change made while the watch is still starting (this server's
     // own boot writes, an agent editing as the app launches) is otherwise never reported.
-    const skipWatchWalk = (rel: string) =>
-        isDaemonMemoryNoise(rel) ||
-        (isWatchIgnored(rel) && !isSystemFolderPath(`${rel}/`))
     try {
         watchers.push(
             watchLive(
@@ -1077,6 +1087,7 @@ export function createServer(cfg: CoreConfig) {
                         filename &&
                         !isSystemFolderPath(filename) &&
                         !isSettingsPath(filename) &&
+                        !isThemePath(filename) &&
                         isWatchIgnored(filename)
                     )
                         return
@@ -1686,8 +1697,13 @@ export function createServer(cfg: CoreConfig) {
             return ok({ vault: cfg.vault, memory: cfg.memory ?? null })
         },
 
+        // Every custom theme in <vault>/.themes (valid + invalid with diagnostics). Uncached: the
+        // folder is tiny and the app refetches on a `.themes/*.yaml` SSE path.
+        'GET /themes': async (_, __) => ok(await themesFeed(cfg.vault)),
+
         'GET /settings': async (_, __) => {
             // Parsed app settings (file merged over defaults) for frontend hydration.
+            await bootReconcile
             return ok(await serializeSettingsForFrontend(cfg.vault))
         },
 

@@ -299,6 +299,7 @@ describe('resolveBaseRows realPath rooting (FileAccess seam)', () => {
             readNote: async () => '---\ntype: base\n---\n',
             writeNote: async () => {},
             statNote: async () => null,
+            listDir: async () => [],
             realPath: async p => {
                 asked.push(p)
                 return p

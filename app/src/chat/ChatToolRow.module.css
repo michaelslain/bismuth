@@ -85,7 +85,7 @@
 }
 .chat-tool-section-label {
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: var(--ls-label);
     margin: var(--sp-4) 0 var(--sp-2);
 }
 .chat-tool-pre {

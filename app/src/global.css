@@ -184,6 +184,21 @@
   --hud-fps-ok: #d29922;
   --hud-fps-bad: #f85149;
 
+  /* callout accents, theme-independent like the fps HUD (app/src/editor/callout.ts reads them by type) */
+  --callout-note: #448aff;
+  --callout-tip: #00bfa5;
+  --callout-success: #21c065;
+  --callout-question: #e0a526;
+  --callout-warning: #ef8e2c;
+  --callout-failure: #e5484d;
+  --callout-danger: #e93147;
+  --callout-bug: #e93147;
+  --callout-example: #a371f7;
+  --callout-quote: #9aa0a6;
+  --callout-abstract: #00b8d4;
+  --callout-todo: #448aff;
+  --callout-important: #00b8d4;
+
   /* ── Relative sizing — NEW (task 1, token literals sweep). Steps expressed in `em`, meant for a
      size that scales WITH its inherited context rather than to an absolute px step in the scale
      above (inline `code` inside prose that itself resizes per --editor-font-size/prose ramp). */
@@ -227,6 +242,7 @@
      itself, not chrome. Kept at its pre-existing 1px value; cssBaseline showed real drift
      at --r-0 so this stays a distinct token rather than aliasing to it. */
   --r-mark: 1px;
+  --r-dot: 50%; /* status dots, colour dots, pager dots */
 
   /* ── Rule / border — --rule/--rule-soft moved verbatim from ui.css:56-57 (values unchanged:
      both already read var(--border)/var(--border-soft), so nothing about how a hairline renders
@@ -258,15 +274,19 @@
      already read var(--dur-fast)/var(--dur)/var(--ease) (DaemonList, GraphView.module.css,
      ChatComposer, the `ui/ui.css` section) pick up the new curve/timing for free — no edit needed there, which is
      the entire point of them having been tokenized already. */
-  --dur-fast: 80ms;
-  --dur: 120ms;
+  /* --motion-scale multiplies every transition and animation duration; 0 turns motion off. */
+  --motion-scale: 1;
+  --dur-fast: calc(80ms * var(--motion-scale));
+  --dur: calc(120ms * var(--motion-scale));
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* the browser `ease` curve many components use, named so a theme can retime it */
+  --ease-std: ease;
   /* --ease-spring / --dur-pop: the ONE overshooting curve (≈10% past the target, then back), for a
      control that springs out under the pointer on purpose — the panel edge chevron
      (shell/EdgeHandle). Entrances only; every exit stays on --ease. Not a general-purpose curve:
      a bounce on ordinary chrome reads as noise. */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --dur-pop: 260ms;
+  --dur-pop: calc(260ms * var(--motion-scale));
 
   /* ── Spacing — NEW (§2.2, §7 wave 0). A 2/4/6/8 grid, not 4/8: the existing radius ladder
      (2/3/4/5) and row unit (18px) already say this app is denser than an 8-grid product. No
@@ -472,7 +492,7 @@
   --cursor-width: 2px;
   --cursor-glide: 70ms;
   --cursor-blink: 1.2s;
-  --sheen: 8s;          /* wordmark gradient traverse */
+  --sheen: calc(8s * var(--motion-scale));          /* wordmark gradient traverse */
 
   /* Field noise opacity (bismuth-design/ascii/design-system/tokens/ascii.css): the noise
      layer under a GraphField's rasterized edges. Only consumer is ui/ascii/GraphField.module.css. */
@@ -1361,7 +1381,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition: background calc(0.1s * var(--motion-scale)) var(--ease-std), color calc(0.1s * var(--motion-scale)) var(--ease-std);
 }
 .bismuth-find-btn:hover { background: var(--hover-bg); color: var(--fg); }
 .bismuth-find-btn:active { background: var(--border); }
@@ -1758,18 +1778,19 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
  */
 
 /* The character grid's cell metrics (bismuth-design/ascii/design-system/tokens/ascii.css). --cell-w is the
-   font's own advance width at --fs-ui (11.5px) — if the font size changes this must change with it,
-   or the drawing shears. GRID LAW: line-height == cell height, always — never scale a glyph.
-   AsciiGraphRenderer reads --cell-w live off the host (asciiGrid.ts's CELL_W is only the
-   pre-mount/test fallback). One cell width for both the main pane and the sidebar mini-graph —
-   there is no denser variant any more.
+   font's own advance width at --fs-ui, derived from it (6.3px at the 11.5px default) so appearance.uiFontSize
+   moves the grid with the font — a fixed width would shear the drawing. GRID LAW: line-height == cell height, always — never scale a glyph.
+   The canvas graph does NOT read it: AsciiGraphRenderer rasterizes at its own fixed CELL_W/FONT_PX
+   (asciiGrid.ts), so uiFontSize moves the CSS grid consumers, not the graph field. An unregistered
+   custom property reads back through getPropertyValue as the unresolved calc() string — resolve it
+   via an element's measured width, never parseFloat.
    --cell-h / --cell-h-dense (the line-box height — the app's unified row unit, and Glyph.tsx's
    own dense cell) MOVED to ui/ui.css 2026-08-27 (visual-unification audit §7 wave 0, finding
    §4.6): they are shared-primitive geometry (Glyph.tsx is consumed well outside the graph), not
    something the graph field itself owns, so a shared primitive depending on this feature
    stylesheet for its sizing was the bug. Values unchanged. */
 :root {
-  --cell-w: 6.3px;               /* advance width at --fs-ui (11.5px) */
+  --cell-w: calc(var(--fs-ui) * 6.3 / 11.5); /* advance width, scaled from --fs-ui: 6.3px at the 11.5px default */
   --cell-w-dense: 4.2px;         /* advance width at 7px — Glyph.tsx's own dense cell (unrelated primitive, not used by the graph field) */
 }
 

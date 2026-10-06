@@ -25,12 +25,12 @@
    the base's `<ViewBar>` regions, so they style something outside this component's own DOM. They
    replaced a second full header this view used to draw under the base's own 36px bar (130px of
    chrome above the card, the worst in the app). */
-.count { font-size: var(--fs-ui); color: var(--text-muted); letter-spacing: 0.14em; white-space: nowrap; }
+.count { font-size: var(--fs-ui); color: var(--text-muted); letter-spacing: var(--ls-eyebrow); white-space: nowrap; }
 .count .card-dir { color: var(--faint); letter-spacing: 0.02em; }
 /* text-transform: lowercase, not lowercase literals — BaseView.stories.tsx's own play test queries
    this row by the literal text "HARD"/"GOOD"/"EASY", so the DOM keeps its existing case and only the
    rendering changes. */
-.tally { display: flex; gap: var(--sp-6); font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.06em; text-transform: lowercase; }
+.tally { display: flex; gap: var(--sp-6); font-size: var(--fs-ui); color: var(--faint); letter-spacing: var(--ls-label); text-transform: lowercase; }
 .tally .a { --tally-n: var(--violet); }
 .tally .g { --tally-n: var(--blue); }
 .tally .e { --tally-n: var(--green); }

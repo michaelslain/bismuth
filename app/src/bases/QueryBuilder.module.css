@@ -42,7 +42,7 @@
 .panel .qb-preview code {
   font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
-  line-height: 1.6;
+  line-height: var(--lh-prose);
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;

@@ -16,7 +16,7 @@
   z-index: 1;
   background: var(--bg);
   text-align: left;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   color: var(--text-muted);
   padding: calc((max(var(--ascii-row-h, var(--h-control)), var(--h-control)) - var(--cell-h)) / 2) var(--ascii-tile-w, 1ch);
   white-space: nowrap;
@@ -56,7 +56,7 @@
   align-self: center;
   background: var(--border);
   border-radius: var(--r-0);
-  transition: background 120ms ease;
+  transition: background calc(120ms * var(--motion-scale)) var(--ease-std);
 }
 .thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
 .thResize:hover::after, .thAtEdge .thResize::after { background: var(--accent); }

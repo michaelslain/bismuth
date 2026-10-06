@@ -41,6 +41,7 @@ import {
     type StartDeps,
 } from '../serverVersion'
 import { sampleDaemonSnapshot, sampleActivity } from './_daemonFixtures'
+import { EXAMPLE_THEMES_FEED } from './_themeFixtures'
 
 /** The default opencode provider catalog a story gets: 2 connected, 12 available (api-key and
  *  OAuth methods mixed; one OAuth provider uses a paste-the-code method, the rest sign in
@@ -540,6 +541,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     sampleDaemonSnapshot()) as unknown as T
             if (pathname === '/daemon/logs')
                 return (seed.daemonLogs ?? sampleActivity()) as unknown as T
+            if (pathname === '/themes') return EXAMPLE_THEMES_FEED as unknown as T
             if (pathname === '/graph') {
                 return (seed.graph ?? { nodes: [], edges: [] }) as unknown as T
             }

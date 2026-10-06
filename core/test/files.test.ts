@@ -716,3 +716,14 @@ test("delete then restore round-trips a daemon page's state through the trash", 
     moveEntry(dir, trashPath, '.daemon/pages/drafts.md')
     expect(existsSync(join(dir, '.daemon/pages/.state/drafts.json'))).toBe(true)
 })
+
+test('listTree lists .themes and its top-level *.yaml only', async () => {
+    const dir = tempDir('bismuth-tree-themes-')
+    created.push(dir)
+    await Bun.write(join(dir, '.themes/dusk.yaml'), 'label: Dusk\n')
+    await Bun.write(join(dir, '.themes/notes.txt'), 'x')
+    await Bun.write(join(dir, '.themes/sub/x.yaml'), 'label: X\n')
+    await Bun.write(join(dir, 'a.md'), '# A')
+    const paths = (await listTree(dir)).map(e => e.path).sort()
+    expect(paths).toEqual(['.themes', '.themes/dusk.yaml', 'a.md'])
+})

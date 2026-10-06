@@ -107,13 +107,6 @@
     "max": 600,
     "required": false
   },
-  "appearance.tabFontSize": {
-    "type": "number",
-    "default": 11.5,
-    "min": 11,
-    "max": 14,
-    "required": false
-  },
   "appearance.tabRailWidth": {
     "type": "number",
     "default": 232,
@@ -132,6 +125,1755 @@
       ]
     },
     "default": "ink",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens": {
+    "type": {
+      "kind": "object"
+    },
+    "default": {},
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.accent": {
+    "type": {
+      "kind": "token",
+      "token": "accent"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.accent-edge": {
+    "type": {
+      "kind": "token",
+      "token": "accent-edge"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.accent-purple": {
+    "type": {
+      "kind": "token",
+      "token": "accent-purple"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.accent-soft": {
+    "type": {
+      "kind": "token",
+      "token": "accent-soft"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.ascii-dash-pitch": {
+    "type": {
+      "kind": "token",
+      "token": "ascii-dash-pitch"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.bar-crumb-gap": {
+    "type": {
+      "kind": "token",
+      "token": "bar-crumb-gap"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.bar-icon-gap": {
+    "type": {
+      "kind": "token",
+      "token": "bar-icon-gap"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.bar-icon-size": {
+    "type": {
+      "kind": "token",
+      "token": "bar-icon-size"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.bg": {
+    "type": {
+      "kind": "token",
+      "token": "bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.blue": {
+    "type": {
+      "kind": "token",
+      "token": "blue"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.border": {
+    "type": {
+      "kind": "token",
+      "token": "border"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.border-soft": {
+    "type": {
+      "kind": "token",
+      "token": "border-soft"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-abstract": {
+    "type": {
+      "kind": "token",
+      "token": "callout-abstract"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-bug": {
+    "type": {
+      "kind": "token",
+      "token": "callout-bug"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-danger": {
+    "type": {
+      "kind": "token",
+      "token": "callout-danger"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-example": {
+    "type": {
+      "kind": "token",
+      "token": "callout-example"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-failure": {
+    "type": {
+      "kind": "token",
+      "token": "callout-failure"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-important": {
+    "type": {
+      "kind": "token",
+      "token": "callout-important"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-note": {
+    "type": {
+      "kind": "token",
+      "token": "callout-note"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-question": {
+    "type": {
+      "kind": "token",
+      "token": "callout-question"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-quote": {
+    "type": {
+      "kind": "token",
+      "token": "callout-quote"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-success": {
+    "type": {
+      "kind": "token",
+      "token": "callout-success"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-tip": {
+    "type": {
+      "kind": "token",
+      "token": "callout-tip"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-todo": {
+    "type": {
+      "kind": "token",
+      "token": "callout-todo"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.callout-warning": {
+    "type": {
+      "kind": "token",
+      "token": "callout-warning"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.code-scale": {
+    "type": {
+      "kind": "token",
+      "token": "code-scale"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.color-scheme": {
+    "type": {
+      "kind": "token",
+      "token": "color-scheme"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.cursor-blink": {
+    "type": {
+      "kind": "token",
+      "token": "cursor-blink"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.cursor-glide": {
+    "type": {
+      "kind": "token",
+      "token": "cursor-glide"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.cursor-width": {
+    "type": {
+      "kind": "token",
+      "token": "cursor-width"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.danger": {
+    "type": {
+      "kind": "token",
+      "token": "danger"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.dur": {
+    "type": {
+      "kind": "token",
+      "token": "dur"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.dur-fast": {
+    "type": {
+      "kind": "token",
+      "token": "dur-fast"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.dur-pop": {
+    "type": {
+      "kind": "token",
+      "token": "dur-pop"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.ease": {
+    "type": {
+      "kind": "token",
+      "token": "ease"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.ease-spring": {
+    "type": {
+      "kind": "token",
+      "token": "ease-spring"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.ease-std": {
+    "type": {
+      "kind": "token",
+      "token": "ease-std"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.editor": {
+    "type": {
+      "kind": "token",
+      "token": "editor"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.editor-font-size": {
+    "type": {
+      "kind": "token",
+      "token": "editor-font-size"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.faint": {
+    "type": {
+      "kind": "token",
+      "token": "faint"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fg": {
+    "type": {
+      "kind": "token",
+      "token": "fg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.field-noise-op": {
+    "type": {
+      "kind": "token",
+      "token": "field-noise-op"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.focus-ring": {
+    "type": {
+      "kind": "token",
+      "token": "focus-ring"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.focus-ring-offset": {
+    "type": {
+      "kind": "token",
+      "token": "focus-ring-offset"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-body": {
+    "type": {
+      "kind": "token",
+      "token": "fs-body"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-body-lg": {
+    "type": {
+      "kind": "token",
+      "token": "fs-body-lg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-display": {
+    "type": {
+      "kind": "token",
+      "token": "fs-display"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-h1": {
+    "type": {
+      "kind": "token",
+      "token": "fs-h1"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-h2": {
+    "type": {
+      "kind": "token",
+      "token": "fs-h2"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-h3": {
+    "type": {
+      "kind": "token",
+      "token": "fs-h3"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-h4": {
+    "type": {
+      "kind": "token",
+      "token": "fs-h4"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-h5": {
+    "type": {
+      "kind": "token",
+      "token": "fs-h5"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-h6": {
+    "type": {
+      "kind": "token",
+      "token": "fs-h6"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-hero": {
+    "type": {
+      "kind": "token",
+      "token": "fs-hero"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-hero-xl": {
+    "type": {
+      "kind": "token",
+      "token": "fs-hero-xl"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-lead": {
+    "type": {
+      "kind": "token",
+      "token": "fs-lead"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-micro": {
+    "type": {
+      "kind": "token",
+      "token": "fs-micro"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-nano": {
+    "type": {
+      "kind": "token",
+      "token": "fs-nano"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-title": {
+    "type": {
+      "kind": "token",
+      "token": "fs-title"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fs-ui": {
+    "type": {
+      "kind": "token",
+      "token": "fs-ui"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fw-bold": {
+    "type": {
+      "kind": "token",
+      "token": "fw-bold"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fw-h1": {
+    "type": {
+      "kind": "token",
+      "token": "fw-h1"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fw-h2": {
+    "type": {
+      "kind": "token",
+      "token": "fw-h2"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fw-h3": {
+    "type": {
+      "kind": "token",
+      "token": "fw-h3"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fw-h4": {
+    "type": {
+      "kind": "token",
+      "token": "fw-h4"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fw-h5": {
+    "type": {
+      "kind": "token",
+      "token": "fw-h5"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fw-h6": {
+    "type": {
+      "kind": "token",
+      "token": "fw-h6"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fw-medium": {
+    "type": {
+      "kind": "token",
+      "token": "fw-medium"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.fw-regular": {
+    "type": {
+      "kind": "token",
+      "token": "fw-regular"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.glow-accent": {
+    "type": {
+      "kind": "token",
+      "token": "glow-accent"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.glow-text": {
+    "type": {
+      "kind": "token",
+      "token": "glow-text"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.glyph-scale": {
+    "type": {
+      "kind": "token",
+      "token": "glyph-scale"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.gold": {
+    "type": {
+      "kind": "token",
+      "token": "gold"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.grad": {
+    "type": {
+      "kind": "token",
+      "token": "grad"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.graph-0": {
+    "type": {
+      "kind": "token",
+      "token": "graph-0"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.graph-1": {
+    "type": {
+      "kind": "token",
+      "token": "graph-1"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.graph-2": {
+    "type": {
+      "kind": "token",
+      "token": "graph-2"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.graph-3": {
+    "type": {
+      "kind": "token",
+      "token": "graph-3"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.graph-4": {
+    "type": {
+      "kind": "token",
+      "token": "graph-4"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.graph-bg": {
+    "type": {
+      "kind": "token",
+      "token": "graph-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.graph-edge": {
+    "type": {
+      "kind": "token",
+      "token": "graph-edge"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.green": {
+    "type": {
+      "kind": "token",
+      "token": "green"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.h-band": {
+    "type": {
+      "kind": "token",
+      "token": "h-band"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.h-control": {
+    "type": {
+      "kind": "token",
+      "token": "h-control"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.h-row": {
+    "type": {
+      "kind": "token",
+      "token": "h-row"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.hover-bg": {
+    "type": {
+      "kind": "token",
+      "token": "hover-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.hud-fps-bad": {
+    "type": {
+      "kind": "token",
+      "token": "hud-fps-bad"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.hud-fps-good": {
+    "type": {
+      "kind": "token",
+      "token": "hud-fps-good"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.hud-fps-ok": {
+    "type": {
+      "kind": "token",
+      "token": "hud-fps-ok"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.icon": {
+    "type": {
+      "kind": "token",
+      "token": "icon"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.label-halo": {
+    "type": {
+      "kind": "token",
+      "token": "label-halo"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.lh-grid": {
+    "type": {
+      "kind": "token",
+      "token": "lh-grid"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.lh-prose": {
+    "type": {
+      "kind": "token",
+      "token": "lh-prose"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.lh-tight": {
+    "type": {
+      "kind": "token",
+      "token": "lh-tight"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.lh-ui": {
+    "type": {
+      "kind": "token",
+      "token": "lh-ui"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.lift": {
+    "type": {
+      "kind": "token",
+      "token": "lift"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.list-max-h": {
+    "type": {
+      "kind": "token",
+      "token": "list-max-h"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.ls-display": {
+    "type": {
+      "kind": "token",
+      "token": "ls-display"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.ls-eyebrow": {
+    "type": {
+      "kind": "token",
+      "token": "ls-eyebrow"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.ls-label": {
+    "type": {
+      "kind": "token",
+      "token": "ls-label"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.map-coast": {
+    "type": {
+      "kind": "token",
+      "token": "map-coast"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.map-grid": {
+    "type": {
+      "kind": "token",
+      "token": "map-grid"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.map-land": {
+    "type": {
+      "kind": "token",
+      "token": "map-land"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.map-sea": {
+    "type": {
+      "kind": "token",
+      "token": "map-sea"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.mono-scale": {
+    "type": {
+      "kind": "token",
+      "token": "mono-scale"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.motion-scale": {
+    "type": {
+      "kind": "token",
+      "token": "motion-scale"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.node-cold": {
+    "type": {
+      "kind": "token",
+      "token": "node-cold"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.node-self": {
+    "type": {
+      "kind": "token",
+      "token": "node-self"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.note-column": {
+    "type": {
+      "kind": "token",
+      "token": "note-column"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.on-accent": {
+    "type": {
+      "kind": "token",
+      "token": "on-accent"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.on-scrim": {
+    "type": {
+      "kind": "token",
+      "token": "on-scrim"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.optical-nudge": {
+    "type": {
+      "kind": "token",
+      "token": "optical-nudge"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.overlay-bg": {
+    "type": {
+      "kind": "token",
+      "token": "overlay-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.panel": {
+    "type": {
+      "kind": "token",
+      "token": "panel"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.pop-bg": {
+    "type": {
+      "kind": "token",
+      "token": "pop-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.pop-bg-strong": {
+    "type": {
+      "kind": "token",
+      "token": "pop-bg-strong"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-detail-opacity": {
+    "type": {
+      "kind": "token",
+      "token": "popover-detail-opacity"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-font-size": {
+    "type": {
+      "kind": "token",
+      "token": "popover-font-size"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-min-width": {
+    "type": {
+      "kind": "token",
+      "token": "popover-min-width"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-pad": {
+    "type": {
+      "kind": "token",
+      "token": "popover-pad"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-radius": {
+    "type": {
+      "kind": "token",
+      "token": "popover-radius"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-row-gap": {
+    "type": {
+      "kind": "token",
+      "token": "popover-row-gap"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-row-pad-x": {
+    "type": {
+      "kind": "token",
+      "token": "popover-row-pad-x"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-row-pad-y": {
+    "type": {
+      "kind": "token",
+      "token": "popover-row-pad-y"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-row-radius": {
+    "type": {
+      "kind": "token",
+      "token": "popover-row-radius"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-selected-bg": {
+    "type": {
+      "kind": "token",
+      "token": "popover-selected-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-shadow": {
+    "type": {
+      "kind": "token",
+      "token": "popover-shadow"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.prose-font": {
+    "type": {
+      "kind": "token",
+      "token": "prose-font"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.prose-line-height": {
+    "type": {
+      "kind": "token",
+      "token": "prose-line-height"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.prose-scale": {
+    "type": {
+      "kind": "token",
+      "token": "prose-scale"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.r-0": {
+    "type": {
+      "kind": "token",
+      "token": "r-0"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.r-card": {
+    "type": {
+      "kind": "token",
+      "token": "r-card"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.r-chip": {
+    "type": {
+      "kind": "token",
+      "token": "r-chip"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.r-control": {
+    "type": {
+      "kind": "token",
+      "token": "r-control"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.r-dot": {
+    "type": {
+      "kind": "token",
+      "token": "r-dot"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.r-mark": {
+    "type": {
+      "kind": "token",
+      "token": "r-mark"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.r-panel": {
+    "type": {
+      "kind": "token",
+      "token": "r-panel"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.rail": {
+    "type": {
+      "kind": "token",
+      "token": "rail"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.rose": {
+    "type": {
+      "kind": "token",
+      "token": "rose"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.row-h": {
+    "type": {
+      "kind": "token",
+      "token": "row-h"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.rule": {
+    "type": {
+      "kind": "token",
+      "token": "rule"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.rule-accent": {
+    "type": {
+      "kind": "token",
+      "token": "rule-accent"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.rule-dashed": {
+    "type": {
+      "kind": "token",
+      "token": "rule-dashed"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.rule-soft": {
+    "type": {
+      "kind": "token",
+      "token": "rule-soft"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.rule-soft-dashed": {
+    "type": {
+      "kind": "token",
+      "token": "rule-soft-dashed"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.scrim-bg": {
+    "type": {
+      "kind": "token",
+      "token": "scrim-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.selection": {
+    "type": {
+      "kind": "token",
+      "token": "selection"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.shadow-hard": {
+    "type": {
+      "kind": "token",
+      "token": "shadow-hard"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.sheen": {
+    "type": {
+      "kind": "token",
+      "token": "sheen"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.sp-1": {
+    "type": {
+      "kind": "token",
+      "token": "sp-1"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.sp-2": {
+    "type": {
+      "kind": "token",
+      "token": "sp-2"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.sp-3": {
+    "type": {
+      "kind": "token",
+      "token": "sp-3"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.sp-4": {
+    "type": {
+      "kind": "token",
+      "token": "sp-4"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.sp-5": {
+    "type": {
+      "kind": "token",
+      "token": "sp-5"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.sp-6": {
+    "type": {
+      "kind": "token",
+      "token": "sp-6"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.sp-7": {
+    "type": {
+      "kind": "token",
+      "token": "sp-7"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.state-active-bg": {
+    "type": {
+      "kind": "token",
+      "token": "state-active-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.state-disabled-op": {
+    "type": {
+      "kind": "token",
+      "token": "state-disabled-op"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.state-focus-ring": {
+    "type": {
+      "kind": "token",
+      "token": "state-focus-ring"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.state-hover-bg": {
+    "type": {
+      "kind": "token",
+      "token": "state-hover-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.state-selected-bg": {
+    "type": {
+      "kind": "token",
+      "token": "state-selected-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.state-selected-fg": {
+    "type": {
+      "kind": "token",
+      "token": "state-selected-fg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.success": {
+    "type": {
+      "kind": "token",
+      "token": "success"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.surface-1": {
+    "type": {
+      "kind": "token",
+      "token": "surface-1"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.surface-2": {
+    "type": {
+      "kind": "token",
+      "token": "surface-2"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.surface-3": {
+    "type": {
+      "kind": "token",
+      "token": "surface-3"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.teal": {
+    "type": {
+      "kind": "token",
+      "token": "teal"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.term-bg": {
+    "type": {
+      "kind": "token",
+      "token": "term-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.term-fg": {
+    "type": {
+      "kind": "token",
+      "token": "term-fg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.text-muted": {
+    "type": {
+      "kind": "token",
+      "token": "text-muted"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.ui-font-stack": {
+    "type": {
+      "kind": "token",
+      "token": "ui-font-stack"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.vignette-edge": {
+    "type": {
+      "kind": "token",
+      "token": "vignette-edge"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.violet": {
+    "type": {
+      "kind": "token",
+      "token": "violet"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.warning": {
+    "type": {
+      "kind": "token",
+      "token": "warning"
+    },
+    "default": null,
     "min": null,
     "max": null,
     "required": false

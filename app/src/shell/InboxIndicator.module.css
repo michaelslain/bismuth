@@ -51,6 +51,6 @@
    PRESENCE (absent at zero) and the count itself both change, so this satisfies WCAG 1.4.1 rather
    than leaning on hue the way the pre-2026-08-29 connection warning did. */
 .status-inbox-dot {
-  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  display: inline-block; width: 5px; height: 5px; border-radius: var(--r-dot);
   flex: 0 0 auto; background: var(--gold);
 }

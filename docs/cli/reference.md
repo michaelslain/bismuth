@@ -688,6 +688,49 @@ bismuth daemon process delete "Web Search" --vault ~/vault
 
 ---
 
+## Theme commands (`commands/theme.ts`)
+
+Custom colour themes: `<vault>/.themes/<name>.yaml`. All but `theme tokens` require a vault and run headlessly. The format, token list and workflow are in the [custom themes guide](../guides/custom-themes.md). Output is JSON (`--pretty` honoured); errors go through `fail()`.
+
+### `theme tokens [--group <group>] [--kind <kind>]`
+Every design token a theme can override, in registry order. Output a JSON array of `{ key, kind, group, default, doc, field?, setting? }`. `--group` and `--kind` filter; an unknown value exits `1` and lists the valid ones. Needs no vault content.
+```bash
+bismuth theme tokens --group motion --vault ~/vault
+```
+
+### `theme list`
+Built-ins plus every custom theme. Output `{ active, configured, themes: [{ name, label, extends, valid, tokens }] }`. `tokens` is the count of overrides in the file (0 for built-ins). `configured` is the raw `appearance.theme` string from `.settings` (`null` if unset); `active` is what actually paints, so an invalid or missing configured theme shows `active: "ink"` beside the `configured` name. `extends` is `null` for an invalid file. Exit `0`.
+```bash
+bismuth theme list --vault ~/vault --pretty
+```
+
+### `theme show <name>`
+Output `{ name, label, extends, tokens, diagnostics }` for a custom theme (`tokens` holds its overrides only). A built-in name prints `extends` as itself with no tokens. An unknown name exits `1` and prints a hint on stderr telling you to run `theme list` or `theme create`. An invalid theme exits `1` and prints, all on stderr, `theme '<name>' is invalid`, one `  <severity>: <message>` line per diagnostic, and `Fix the file, then run: bismuth theme validate <name>`.
+```bash
+bismuth theme show dusk --vault ~/vault
+```
+
+### `theme create <name> [--label <text>] [--from <theme>] [--extends <builtin>] [--force]`
+Writes `.themes/<name>.yaml`. Without `--from` it is the minimal template (`extends` is `--extends` or `ink`, `tokens: {}`). With `--from` it is the full commented template: a built-in `--from` sets `extends` to it; a custom `--from` copies its `extends` and `tokens`. `--label` defaults to the name title-cased. Output `{ path, name }`. Exit `1` if the name is invalid or a built-in, `--from` is unknown, `--extends` is not a built-in, or the file exists and `--force` was not passed.
+```bash
+bismuth theme create dusk --extends paper --vault ~/vault
+bismuth theme create dusk --from paper --force --vault ~/vault
+```
+
+### `theme validate [<name>]`
+Validates one custom theme, or every file in `.themes/` when no name is given. Output `{ ok, results: [{ name, diagnostics }] }`, each diagnostic `{ field, severity, message }`. Every error is also printed on stderr, one per line as `<name>: <message>`. Exit `1` on any error, and on a built-in name (only custom themes are validated); warnings alone (contrast) exit `0`.
+```bash
+bismuth theme validate dusk --vault ~/vault
+```
+
+### `theme use <name>`
+Validates the theme, then sets `appearance.theme` in `.settings` (comment-preserving, like `settings set`). Output `{ ok, theme }`. Exit `1` if the theme is unknown or invalid; nothing is written.
+```bash
+bismuth theme use dusk --vault ~/vault
+```
+
+---
+
 ## Drawing render command (`commands/draw.ts`)
 
 ### `render <file.draw> [--pdf] [--out FILE] [--theme dark|light]`
@@ -1185,6 +1228,7 @@ bismuth chat search "vault schema" --pretty
 | `calendar bases/create/list/range/day/get/search/overlaps/add/move/delete/override/delete-occurrence` + `calendar categories` + `calendar category add/update/remove` | calendar.ts | yes | JSON / `{ok:true}` |
 | `daemon status/devices/owner/install/setup/update/stop/restart` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
 | `daemon graph` `daemon cron toggle/run/create/delete` `daemon process toggle/create/delete` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |
+| `theme tokens` `theme list` `theme show` `theme create` `theme validate` `theme use` | theme.ts | yes | JSON |
 | `render` | draw.ts | **no** (filesystem path) | `wrote <file>` |
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |
@@ -1204,4 +1248,4 @@ bismuth chat search "vault schema" --pretty
 | `relay list` | relay.ts | **no** (needs a running server; full snapshot for the owner, `lastMessage`-redacted otherwise — see the section above) | JSON |
 | `chat list` `chat read` `chat search` | chat.ts | **no** (needs a running server + the owner token; refuse-when-restricted under an agent channel — see the section above) | JSON |
 
-Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/doctor.ts`, `cli/src/commands/docs.ts`, `cli/src/commands/memory.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `cli/test/apiTrustRefusal.test.ts`, `cli/test/guideCommands.test.ts`, `cli/src/registry.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/taskReorder.ts`, `core/src/taskMigrate.ts`, `core/src/taskLegacy.ts`, `core/src/bases/taskDsl.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`
+Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/doctor.ts`, `cli/src/commands/docs.ts`, `cli/src/commands/memory.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/src/commands/theme.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `cli/test/apiTrustRefusal.test.ts`, `cli/test/guideCommands.test.ts`, `cli/src/registry.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/taskReorder.ts`, `core/src/taskMigrate.ts`, `core/src/taskLegacy.ts`, `core/src/bases/taskDsl.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`

@@ -46,7 +46,7 @@
 }
 .dot-wrap.glow {
     box-shadow: var(--glow-accent);
-    border-radius: 50%;
+    border-radius: var(--r-dot);
 }
 
 /* `max-width` bounds this column's `max-content` track sizing function (DaemonCrons/

@@ -3,5 +3,5 @@
    `.month-cell-number { color: var(--text-muted) }`) onto this element, and at equal specificity the
    winner would depend on which module's CSS loaded last. */
 .root { display: inline; }
-.root.today { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 600; }
+.root.today { width: 20px; height: 20px; border-radius: var(--r-dot); background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: var(--fw-bold); }
 .root.today.inline { display: inline-grid; vertical-align: middle; }

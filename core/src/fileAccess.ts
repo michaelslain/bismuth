@@ -28,6 +28,9 @@ export interface FileAccess {
     writeNote(root: string, rel: string, contents: string): Promise<void>
     /** Stat one note; resolves null if it vanished since listing. */
     statNote(root: string, rel: string): Promise<FileStat | null>
+    /** Entry names (files and folders, no path prefix) directly inside a vault-relative dir, dotfiles
+     *  included. Resolves [] when the dir is missing or unreadable; never throws. */
+    listDir(root: string, rel: string): Promise<string[]>
     /** Canonicalize an absolute path for cycle detection; best-effort (returns input on failure). */
     realPath(path: string): Promise<string>
 }
@@ -46,7 +49,7 @@ export function setFileAccess(a: FileAccess): void {
 export async function getFileAccess(): Promise<FileAccess> {
     if (access) return access
     const files = await import('./files')
-    const { stat, realpath } = await import('node:fs/promises')
+    const { stat, realpath, readdir } = await import('node:fs/promises')
     const { join } = await import('node:path')
     access = {
         listMarkdown: files.listMarkdown,
@@ -63,6 +66,7 @@ export async function getFileAccess(): Promise<FileAccess> {
                 birthtimeMs: st.birthtimeMs || st.ctimeMs,
             }
         },
+        listDir: async (root, rel) => readdir(join(root, rel)).catch(() => []),
         realPath: async path => realpath(path).catch(() => path),
     }
     return access

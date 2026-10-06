@@ -42,3 +42,24 @@
     padding: var(--sp-1) var(--sp-2);
     pointer-events: none;
 }
+
+/* category hue for the 'solid' variant — replaces --accent as the fill; declared after
+   .badge--solid so it wins on source order */
+.badge--hue-teal {
+    background: var(--teal);
+}
+.badge--hue-blue {
+    background: var(--blue);
+}
+.badge--hue-violet {
+    background: var(--violet);
+}
+.badge--hue-green {
+    background: var(--green);
+}
+.badge--hue-gold {
+    background: var(--gold);
+}
+.badge--hue-rose {
+    background: var(--rose);
+}

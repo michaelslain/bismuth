@@ -13,6 +13,7 @@ export const SERVER_INSTRUCTIONS =
     'kind>.md for the kind you are writing. Converting a vault between Obsidian and Bismuth: ' +
     'first read guides/converting-obsidian-to-bismuth.md or ' +
     'guides/converting-bismuth-to-obsidian.md. ' +
+    'Making or changing a colour theme: first read guides/custom-themes.md. ' +
     "An image or PDF has no frontmatter of its own — its tags/properties live in its companion " +
     'note <file>.<ext>.md (e.g. paper.pdf.md), a hidden file the app opens as the binary itself. ' +
     "To tag or set a property on a binary, run `bismuth prop set <file.pdf> tags '[\"a\",\"b\"]'` " +

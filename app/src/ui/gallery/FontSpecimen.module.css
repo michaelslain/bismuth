@@ -51,7 +51,7 @@
 
 .prose {
     margin: 0;
-    line-height: 1.6;
+    line-height: var(--lh-prose);
     color: var(--fg);
 }
 

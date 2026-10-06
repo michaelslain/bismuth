@@ -30,6 +30,7 @@ import { localLayoutInput } from './graph/localLayoutInput'
 import { settings, DEFAULT_ACCENT_PALETTE } from './settings'
 import { paletteToInts, hexToInt as hexToIntT } from './themeColors'
 import { resolveAppearance } from './themes'
+import { customThemeOverrides } from './customThemes'
 import { GraphSearch, type SearchItem } from './GraphSearch'
 import { SegmentedToggle } from './ui/SegmentedToggle'
 import { IconButton } from './ui/IconButton'
@@ -288,6 +289,11 @@ export function GraphView(props: {
     const buildConfig = (): GraphConfig => {
         const gs = settings.graph
         const ap = resolveAppearance(settings.appearance)
+        // A token edit / theme override changes the CSS vars the canvas reads: track both.
+        // reading the record's values subscribes to every token key (a bare read of the
+        // object only tracks the reference)
+        void Object.values(settings.appearance.tokens ?? {})
+        void customThemeOverrides()
         const palette = ap.accentPalette?.length
             ? ap.accentPalette
             : DEFAULT_ACCENT_PALETTE

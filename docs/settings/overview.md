@@ -172,9 +172,8 @@ interface SchemaEntry {
 | `sidebarWidth` | number | `266` | 200–600 | Left sidebar width in px (the ASCII design's 266px vault rail). |
 | `sidebarGraphHeight` | number | `305` | 200–500 | Mini graph panel height in the sidebar in px. |
 | `tabRailWidth` | number | `232` | 160–480 | Right tab rail's open width in px (hovered or pinned). Set by dragging the rail's left edge. |
-| `uiFontSize` | number | `11.5` | 11–16 | Base UI font size (sidebar, tabs, menus) in px (the ASCII design's `--fs-ui` workhorse size). |
+| `uiFontSize` | number | `11.5` | 11–16 | Base UI font size (sidebar, tabs, menus) in px. It sets `--fs-ui`, the workhorse chrome size, and the ASCII grid's cell width (`--cell-w`) scales with it (6.3px at the 11.5 default). |
 | `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
-| `tabFontSize` | number | `11.5` | 11–14 | Editor tab label font size in px. |
 | `iconSize` | number | `12` | 11–20 | Icon size in px for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides (only a few oversized illustration marks opt out, each marked `icon-size-exempt:`). Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
 | `cursorWidth` | number | `2` | 1–4 | Text cursor bar width in px — the ONE cursor every editor, field and terminal draws. Moved from `terminal.*` (migrated on reconcile). |
 | `cursorGlideMs` | number | `70` | 20–200 | Text cursor glide between positions in ms, in every editor, field and terminal. Moved from `terminal.*`. |
@@ -585,9 +584,8 @@ The function is called reactively in `App.tsx` whenever `settings` changes. The 
 | `appearance.sidebarWidth` | `--sidebar-width` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` |
 | `appearance.tabRailWidth` | `--tab-rail-width` |
-| `appearance.uiFontSize` | `--ui-font-size` |
+| `appearance.uiFontSize` | `--fs-ui` |
 | `appearance.monoScale` | `--mono-scale` |
-| `appearance.tabFontSize` | `--tab-font-size` |
 | `appearance.cursorWidth` | `--cursor-width` |
 | `appearance.cursorGlideMs` | `--cursor-glide` |
 | `appearance.cursorBlinkSeconds` | `--cursor-blink` |

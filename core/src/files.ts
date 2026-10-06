@@ -30,6 +30,8 @@ function resolveInVault(root: string, rel: string): string {
     return abs
 }
 
+const THEME_FILE_RE = /^\.themes\/[^/]+\.yaml$/
+
 /** Recursively walk a directory tree, filtering entries based on a filter function.
  *
  * Filter function signature:
@@ -136,14 +138,17 @@ export async function listTree(
     // `.settings` is a single hidden FILE (the vault config); `.daemon` is a folder shown only when
     // this vault's daemon is enabled.
     const allowDot = (rel: string): boolean =>
-        rel === '.settings' || (!!opts?.daemonEnabled && rel === '.daemon')
+        rel === '.settings' ||
+        rel === '.themes' ||
+        (!!opts?.daemonEnabled && rel === '.daemon')
     const inSystemFolder = (rel: string): boolean => rel.startsWith('.daemon/')
 
     const entries = await walkDir(
         root,
         (d, rel) => {
             if (d.isDirectory()) {
-                return true // Include all directories
+                // Nothing below `.themes` lists, subfolders included.
+                return !rel.startsWith('.themes/')
             }
 
             const name = d.name
@@ -155,6 +160,10 @@ export async function listTree(
 
             // The root settings file (hidden `.settings`, no extension) — always include it.
             if (rel === '.settings') return true
+
+            // `.themes/<name>.yaml` — custom theme files. Only the top-level yaml files list;
+            // anything else inside `.themes` (notes, subfolders' contents) stays out of the tree.
+            if (rel.startsWith('.themes/')) return THEME_FILE_RE.test(rel)
 
             // System folders surface every file regardless of extension (cron/process
             // defs, memory notes, …) — the .draw marker still applies.

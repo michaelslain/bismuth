@@ -1413,12 +1413,12 @@ const calloutThemeSpec: Record<string, Record<string, string>> = {
         'list-style': 'none',
     },
 }
-for (const [type, meta] of Object.entries(CALLOUT_TYPES)) {
+for (const [type] of Object.entries(CALLOUT_TYPES)) {
     calloutThemeSpec[`.cm-callout-wrap .callout-${type}`] = {
-        'border-left-color': meta.color,
+        'border-left-color': `var(--callout-${type})`,
     }
     calloutThemeSpec[`.cm-callout-wrap .callout-${type} > .callout-title`] = {
-        color: meta.color,
+        color: `var(--callout-${type})`,
     }
 }
 const calloutTheme = EditorView.theme(calloutThemeSpec)

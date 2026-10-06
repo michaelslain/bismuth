@@ -50,7 +50,7 @@
   border-right: var(--rule);
   box-shadow: var(--lift);
   font-family: var(--popover-font);
-  animation: switcher-drop 0.14s var(--ease);
+  animation: switcher-drop calc(0.14s * var(--motion-scale)) var(--ease);
 }
 @keyframes switcher-drop { from { transform: translateX(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .switcher-bar { animation: none; } }
@@ -117,14 +117,14 @@
   background: transparent;
   cursor: pointer;
   font: inherit;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background calc(0.12s * var(--motion-scale)) var(--ease-std), border-color calc(0.12s * var(--motion-scale)) var(--ease-std);
 }
 .search-empty-cta:hover {
   background: color-mix(in srgb, var(--teal) 8%, transparent);
   border-color: color-mix(in srgb, var(--teal) 60%, var(--border));
 }
 .search-empty-icon { color: var(--teal); opacity: 0.9; }
-.search-empty-title { font-size: var(--fs-body-lg); color: var(--fg); font-weight: 500; }
+.search-empty-title { font-size: var(--fs-body-lg); color: var(--fg); font-weight: var(--fw-medium); }
 .search-empty-hint { font-size: var(--fs-ui); color: var(--text-muted); }
 .search-kbd {
   font-family: var(--ui-font-stack);

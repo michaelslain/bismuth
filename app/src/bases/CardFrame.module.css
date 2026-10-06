@@ -16,7 +16,7 @@
 /* Cards open their note on click — show it's interactive. Flat + hairline: no in-flow
    elevation shadow (the ASCII system's floating-only shadow rule); hover reads as an
    accent border + the shared hover-bg wash instead of a lift. */
-.interactive.card { cursor: pointer; transition: background 0.08s ease, border-color 0.08s ease; }
+.interactive.card { cursor: pointer; transition: background calc(0.08s * var(--motion-scale)) var(--ease-std), border-color calc(0.08s * var(--motion-scale)) var(--ease-std); }
 .interactive.card:hover { border-color: var(--accent); background: var(--hover-bg); }
 /* No outline or ring on any focus, mouse or keyboard (2026-09-27) — without this the browser's
    default blue focus ring paints on this role="button" tabindex={0} surface. */
@@ -31,7 +31,7 @@
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
-  transition: background 130ms ease, border-color 130ms ease, opacity 130ms ease;
+  transition: background calc(130ms * var(--motion-scale)) var(--ease-std), border-color calc(130ms * var(--motion-scale)) var(--ease-std), opacity calc(130ms * var(--motion-scale)) var(--ease-std);
   will-change: transform;
 }
 .draggable.card:hover { background: var(--hover-bg); border-color: var(--accent); }

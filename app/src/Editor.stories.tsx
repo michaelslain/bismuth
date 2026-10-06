@@ -276,9 +276,17 @@ const CALLOUT_TEXT = `# Callout Test
 
 Before the callout.
 
-> [!KEY] KEY:
-> frontier — line
-> set — area under the line (triangle)
+> [!note] Note
+> a plain note callout
+
+> [!tip] Tip
+> a tip callout
+
+> [!warning] Warning
+> a warning callout
+
+> [!danger] Danger
+> a danger callout
 
 After the callout.
 `

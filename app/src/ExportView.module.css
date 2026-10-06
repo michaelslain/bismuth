@@ -79,7 +79,7 @@
   text-align: center;
   padding: 48px 52px;
   font-size: var(--fs-ui);
-  line-height: 1.7;
+  line-height: var(--lh-ui);
 }
 
 /* ---- Right: options panel on the rail ---------------------------------- */

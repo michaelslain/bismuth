@@ -39,9 +39,9 @@ import { TemplatePalette } from './palette/TemplatePalette'
 import { bindCommands, resolveButtonCommands, type GraphMode } from './commands'
 import { BASE_VIEW_KINDS } from './baseViews'
 import { settings, setSettings, settingsHydrated } from './settings'
+import { customThemesLoaded } from './customThemes'
 import { showDoctorToast } from './doctorToast'
 import { settingsToCssVars, setCssVars } from './settingsCssVars'
-import { resolveAppearance } from './themes'
 import { matchesKeybinding, toMenuAccelerator } from './keybindings'
 import { initZoom, zoomIn, zoomOut, zoomReset } from './zoom'
 import { lastChange, currentConnectionState, serverVersion } from './serverVersion'
@@ -1580,14 +1580,13 @@ export default function App() {
     // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
     // adding a CSS-driven setting is one line there + one var() in the stylesheet.
     createEffect(() => {
+        // Wait for the real settings + custom themes: projecting DEFAULTS first would strip the
+        // first-paint script's cached vars and flip the theme twice.
+        if (!settingsHydrated() || !customThemesLoaded()) return
         const vars = settingsToCssVars(settings)
         setCssVars(vars)
-        // Light/dark themes: set color-scheme so native form controls + scrollbars match.
-        document.documentElement.style.colorScheme = resolveAppearance(
-            settings.appearance,
-        ).isLight
-            ? 'light'
-            : 'dark'
+        // color-scheme (light/dark, for native controls + scrollbars) rides in the map as
+        // --color-scheme and setCssVars applies it.
         // Cache the computed vars so index.html's inline script can paint the theme before
         // the bundle even loads next launch (no flash of the default fallback theme).
         writeCache(THEME_VARS_KEY, vars)
@@ -2889,7 +2888,13 @@ export default function App() {
     // the editor pane, so re-place once after the transition settles for its final size.
     const placeFloaterSettled = () => {
         placeFloater()
-        setTimeout(placeFloater, 280) // just past the --sidebar-w transition (0.26s)
+        // just past the --sidebar-w transition (0.26s, scaled by --motion-scale)
+        const s = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue(
+                '--motion-scale',
+            ),
+        )
+        setTimeout(placeFloater, 280 * (Number.isFinite(s) ? s : 1))
     }
     createEffect(() => {
         activeTab() // re-place on active-tab change AND on its pane tree mutating (split / divider drag)

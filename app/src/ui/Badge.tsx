@@ -5,6 +5,7 @@ import styles from './Badge.module.css'
 export type BadgeTag = 'span' | 'div'
 export type BadgeVariant = 'inline' | 'solid'
 export type BadgeTone = 'muted' | 'faint' | 'danger'
+export type BadgeHue = 'teal' | 'blue' | 'violet' | 'green' | 'gold' | 'rose'
 
 export type BadgeProps = {
     /** Tag to render. 'span' (default). */
@@ -23,6 +24,8 @@ export type BadgeProps = {
      *  need the caller's own opacity dimming, not a color of their own. Ignored by 'solid', which
      *  is always --bg on --accent. */
     tone?: BadgeTone
+    /** Solid variant only: the category colour replaces --accent; --bg text stays. */
+    hue?: BadgeHue
     class?: string
     children?: JSX.Element
 } & Omit<JSX.HTMLAttributes<HTMLSpanElement>, 'class' | 'children'>
@@ -33,6 +36,7 @@ function badgeClass(props: BadgeProps): string {
         styles.badge,
         variant === 'solid' ? styles['badge--solid'] : '',
         props.tone ? styles[`badge--${props.tone}`] : '',
+        props.hue ? styles[`badge--hue-${props.hue}`] : '',
         props.class,
     ]
         .filter(Boolean)
@@ -48,7 +52,7 @@ function badgeClass(props: BadgeProps): string {
  * onto the rendered element.
  */
 const Badge: Component<BadgeProps> = props => {
-    const [local, rest] = splitProps(props, ['as', 'variant', 'tone', 'class', 'children'])
+    const [local, rest] = splitProps(props, ['as', 'variant', 'tone', 'hue', 'class', 'children'])
     return (
         <Dynamic component={local.as ?? 'span'} class={badgeClass(props)} {...rest}>
             {local.children}

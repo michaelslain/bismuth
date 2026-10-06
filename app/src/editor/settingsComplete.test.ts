@@ -388,3 +388,36 @@ describe('settings key + enum completion (schema-driven discovery)', () => {
         ])
     })
 })
+
+describe('appearance.tokens completion', () => {
+    it('offers every sp-N token with its doc as the detail', () => {
+        const res = complete('appearance:\n  tokens:\n    sp-', true)
+        const labels = res?.options.map(o => o.label) ?? []
+        for (const n of [1, 2, 3, 4, 5, 6, 7]) expect(labels).toContain(`sp-${n}`)
+        expect(res?.options.find(o => o.label === 'sp-3')?.detail).toBe(
+            'Spacing step 3.',
+        )
+    })
+
+    it('offers the registry default for a length value', () => {
+        const labels =
+            complete('appearance:\n  tokens:\n    sp-3: ', true)?.options.map(
+                o => o.label,
+            ) ?? []
+        expect(labels).toEqual(['6px'])
+    })
+
+    it('offers the families for font tokens, light/dark for the scheme, keywords for easing', () => {
+        const l = (k: string) =>
+            complete(`appearance:\n  tokens:\n    ${k}: `, true)?.options.map(
+                o => o.label,
+            ) ?? []
+        expect(l('prose-font')).toContain('Lora')
+        expect(l('ui-font-stack')).toContain('Monaspace Radon')
+        expect(l('ui-font-stack')).not.toContain('Lora')
+        expect(l('color-scheme')).toEqual(['light', 'dark'])
+        expect(l('ease')).toEqual(
+            expect.arrayContaining(['ease', 'linear', 'ease-in-out']),
+        )
+    })
+})

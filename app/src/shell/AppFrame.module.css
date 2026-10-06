@@ -15,7 +15,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace);
+    font: var(--fs-ui, 11.5px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace);
 }
 
 /* The grid. Columns + areas are inline (shellColumns.ts) because they depend on which side each of
@@ -29,7 +29,7 @@
     --rail-w: 0px;
     flex: 1 1 auto;
     min-height: 0;
-    font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace);
+    font: var(--fs-ui, 11.5px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace);
     transition: --sidebar-w 0.26s var(--ease), --rail-w 0.26s var(--ease);
 }
 .layout[data-has-rail] { --rail-w: 46px; }

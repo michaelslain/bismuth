@@ -19,4 +19,4 @@
    over a chat pane when a file/folder is dragged onto it — a mention, NOT a split (no quadrant
    highlight). Square now (--r-0, visual-unification §9.2), not the pill its name once implied. */
 .pane-drop-reference { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); border-radius: var(--r-0); }
-.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5); border-radius: var(--r-0); background: var(--accent); color: var(--on-accent); font-size: var(--fs-body); font-weight: 600; box-shadow: var(--lift); }
+.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5); border-radius: var(--r-0); background: var(--accent); color: var(--on-accent); font-size: var(--fs-body); font-weight: var(--fw-bold); box-shadow: var(--lift); }

@@ -1,0 +1,88 @@
+/* CustomThemePanel — one importer: CustomThemePanel.tsx */
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
+    width: 480px;
+    box-sizing: border-box;
+    padding: var(--sp-7);
+    background: var(--surface-1);
+    color: var(--fg);
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    border: var(--rule);
+    /* --rule/--rule-soft are declared on :root with var() inside, so they resolve against
+       :root's colours; redeclare them here so every hairline inside tracks THIS theme. */
+    --rule: 1px solid var(--border);
+    --rule-soft: 1px solid var(--border-soft);
+}
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+}
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--sp-5);
+}
+.tiers {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-5);
+    font-size: var(--fs-ui);
+    font-family: var(--ui-font-stack);
+}
+.accentRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--sp-5);
+}
+.graphRow {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--sp-5);
+}
+.swatchCell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+}
+.swatch {
+    width: 12px;
+    height: 12px;
+}
+.surfaces {
+    display: flex;
+    align-items: stretch;
+    gap: var(--sp-4);
+}
+.surface {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    min-height: calc(var(--sp-7) + var(--sp-5));
+    padding: var(--sp-4) var(--sp-5);
+    border: var(--rule);
+}
+.surface1 { background: var(--surface-1); }
+.surface2 { background: var(--surface-2); }
+.surface3 { background: var(--surface-3); }
+.hairline {
+    background: transparent;
+    border: var(--rule-soft);
+}
+.overrides {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--sp-4);
+}
+.override {
+    display: inline-flex;
+    gap: var(--sp-3);
+    align-items: baseline;
+}

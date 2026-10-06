@@ -29,7 +29,8 @@ Because nothing in the logic pipeline may statically import Bun/`node:fs` (or th
 | `GET /tree` | `FileAccess.listTree(vault)` |
 | `GET /vault-data` | `buildVaultRows(vault)` (the Bases feed) |
 | `GET /config` | `{ vault, memory }` |
-| `GET /settings` | schema `DEFAULTS` (no `.settings` reconcile yet — see below) |
+| `GET /settings` | the vault's `.settings` (read via `FileAccess`) merged over schema `DEFAULTS` by the same pure serializer the desktop server uses (`serializeSettingsFromText`, `core/src/settingsSerialize.ts`), widened by the custom themes below — so `appearance.theme`, `appearance.tokens` and every saved key reach the app. A missing or unparseable file degrades to `DEFAULTS`. No reconcile (the file is never rewritten) |
+| `GET /themes` | `FileAccess.listDir(vault, '.themes')` + each `.themes/<name>.yaml` through `themesFeedFromFiles` (`core/src/theme/themeFeed.ts`) → the same `{ themes, invalid }` feed desktop serves. No `.themes` dir = empty feed |
 | `GET /status-bar` | parses `.settings` itself (the `readSettings` helper is bound to Bun fs) and returns `{ segments }` from `evaluateStatusBar(normalizeStatusBar(statusBar), …)`. `run:` shell segments never execute — each comes back with the error `shell segments are desktop-only` — and `isTrusted` is always `true`, so no trust prompt is raised |
 | `GET /schema` | `{ properties: {} }` |
 | `GET /templates` | `[]` (needs a dir walk — follow-up) |
@@ -58,7 +59,7 @@ Because nothing in the logic pipeline may statically import Bun/`node:fs` (or th
 These routes throw through `notSupported(route)`: an `AppError` with code **`EINVAL`**, status **501** and the message `<METHOD /path> is not supported by the in-process backend yet`. ("NOT_SUPPORTED" is only the label used in the source comments and tests, not the error code.) The in-process backend has no HTTP, so this surfaces as a thrown error, not a network response:
 
 - **Structural filesystem ops** — `POST /create`, `POST /move`, `POST /delete`, `POST /restore` (need `FileAccess` extended with create/move/delete).
-- **`POST /set-setting`** and **`POST /folder-icon`** — need a `.settings` (settings.yaml) writer; `GET /settings` currently returns bare schema defaults, so `.settings` reconcile/merge is a paired follow-up.
+- **`POST /set-setting`** and **`POST /folder-icon`** — need a `.settings` writer (`GET /settings` already reads the file, read-only).
 - **`POST /daily-note`** — daily-note materialization.
 - **Binary asset upload** — `uploadAsset` (below) throws, as do `fetchAsset`, `convertHeic` and `stageTmpFile`; asset bytes need `tauri-plugin-fs` + `convertFileSrc`.
 - **`POST /backup`** (git snapshot) and **`POST /open-folder`** (spawning a sibling backend) — no git, no second process on device.
@@ -81,6 +82,7 @@ interface FileAccess {
   writeNote(root, rel, contents): Promise<void>;
   listBases(root): Promise<string[]>;       // all .base, vault-relative
   statNote(root, rel): Promise<FileStat | null>;   // size + ms timestamps, null if vanished
+  listDir(root, rel): Promise<string[]>;    // entry names in a vault-relative dir, [] if missing
   realPath(path): Promise<string>;          // canonicalize for cycle detection (best-effort)
 }
 ```
@@ -90,7 +92,7 @@ interface FileAccess {
 
 ### The mobile impl — `app/src/mobile/tauriFileAccess.ts`
 
-`tauriFileAccess()` backs `FileAccess` with `@tauri-apps/plugin-fs` (`readTextFile`/`writeTextFile`/`readDir`/`stat`). A recursive `walk` uses `readDir`, wrapped in try/catch (skip unreadable dirs, parity with the Bun `walkDir`) and **skips dotfiles** (`.git`/`.obsidian`/…) like desktop. `listMarkdown`/`listBases` collect by extension; `listTree` emits dirs plus files in `TREE_EXTS` (`.md`/`.base`/`.sheet`/`.draw`). `statNote` maps the plugin's `Date` fields to ms (`ctimeMs` falls back to `birthtime`). `realPath` is identity — iOS has no plugin `realpath` and cycle detection on the logical path suffices (symlink-vaults aren't a mobile concern).
+`tauriFileAccess()` backs `FileAccess` with `@tauri-apps/plugin-fs` (`readTextFile`/`writeTextFile`/`readDir`/`stat`). A recursive `walk` uses `readDir`, wrapped in try/catch (skip unreadable dirs, parity with the Bun `walkDir`) and **skips dotfiles** (`.git`/`.obsidian`/…) like desktop. `listMarkdown`/`listBases` collect by extension; `listTree` emits dirs plus files in `TREE_EXTS` (`.md`/`.base`/`.sheet`/`.draw`). `statNote` maps the plugin's `Date` fields to ms (`ctimeMs` falls back to `birthtime`). `listDir` is `readDir` mapped to entry names (`[]` on a missing dir; dotfiles included, unlike `walk`, because `.themes` is hidden). `realPath` is identity — iOS has no plugin `realpath` and cycle detection on the logical path suffices (symlink-vaults aren't a mobile concern).
 
 The vault `root` is an absolute, **security-scoped** directory the user granted; paths are POSIX. The mobile entry starts access to the scoped resource (`startAccessingSecurityScopedResource`) before the first read.
 

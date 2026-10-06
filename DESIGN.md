@@ -146,9 +146,9 @@ governance:
     match: "**/*.module.css"
     importersExempt: ["**/*.stories.*", "**/*.test.*", "**/_*"]
   tokens:
-    # tokens.ts owns every colour; tokens.css holds the first-paint copy of the ink theme plus the
+    # tokens.ts owns every colour; global.css holds the first-paint copy of the ink theme plus the
     # whole geometry / type / motion scale; settingsCssVars.ts projects the selected theme at runtime
-    files: [core/src/theme/tokens.ts, app/src/global.css, app/src/settingsCssVars.ts]
+    files: [core/src/theme/tokens.ts, core/src/theme/designTokens.ts, app/src/global.css, app/src/settingsCssVars.ts]
     use: "var(--"
   # classes built OUTSIDE the bundler, so :global() is the only spelling available —
   # RUNTIME_CLASS_PREFIXES in app/src/cssLayering.test.ts, the same list, plus xterm's own DOM
@@ -209,7 +209,7 @@ chrome accents. On the intro's glyph wordmark the sheen is drawn as a band of `@
 The system ships as four themes over one set of token names: **Ink** (the default, dark: warm
 paper ink on charcoal), **Paper** (its light counterpart), **Cathode** (hot phosphor terminal, the
 only theme that glows) and **Riso** (cream paper and indigo ink, print-flat). The frontmatter
-records Ink. `core/src/theme/tokens.ts` holds all four and is the only source of colour.
+records Ink. `core/src/theme/tokens.ts` holds all four and is the only source of colour defaults; a vault can override any token on top of them.
 
 **Key Characteristics:**
 - One monospace family (Monaspace, Xenon by default) for all chrome; one serif (IBM Plex Serif by default, Lora selectable) for note prose.
@@ -259,9 +259,14 @@ are for data that genuinely has categories.
 **The Categorical Ramp Rule.** A ramp hue means "this belongs to group N". It is never used to make
 something prettier, and it is never used for danger or success.
 
-**The Single Source Rule.** Colour is defined in `core/src/theme/tokens.ts` and nowhere else. The
-literals in `app/src/styles/tokens.css` are a first-paint copy of Ink, which `themeGuard.test.ts`
-keeps byte-identical. A component stylesheet only ever reads `var(--…)`.
+**The Single Source Rule.** A token's default is defined once: colours in `core/src/theme/tokens.ts`,
+everything else on `:root` in `app/src/global.css`. `core/src/theme/designTokens.ts` registers every
+token (key, kind, group, default, what it paints), and `app/src/tokenRegistry.test.ts` fails on a
+`:root` variable that is neither registered nor listed as a non-token. A vault overrides tokens
+through a theme's `tokens:` (`.themes/<name>.yaml`) and `.settings` `appearance.tokens`, never by
+editing the defaults; `docs/settings/tokens.md` is the reference. The literals in `global.css` are a
+first-paint copy of Ink, which `themeGuard.test.ts` keeps byte-identical. A component stylesheet
+only ever reads `var(--…)`.
 
 ## Typography
 

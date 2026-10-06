@@ -27,6 +27,16 @@ test('the `accent` token resolves via the active theme', () => {
     expect(categoryColorId('accent')).toBe('2') // default ink accent #93BDB0 → Sage
 })
 
+test('a settings accent override beats the theme accent; an unreadable one is ignored', () => {
+    expect(categoryColorId('accent', 'ink', undefined, '#dc2127')).toBe('11')
+    expect(
+        categoryColorId('accent', 'ink', { ink: '#51b749' }, '#dc2127'),
+    ).toBe('11')
+    expect(categoryColorId('accent', 'paper', undefined, 'rgb(1,2,3)')).toBe(
+        categoryColorId('accent', 'paper'),
+    )
+})
+
 test('toGoogle sets colorId from the category via the color map', async () => {
     const { toGoogle } = await import('../../src/gcal/map')
     const body = toGoogle(
@@ -44,4 +54,26 @@ test('toGoogle sets colorId from the category via the color map', async () => {
         toGoogle({ title: 'Y', date: '2026-06-24' }, 'America/Los_Angeles')
             .colorId,
     ).toBeUndefined()
+})
+
+test('a custom theme named after an Object.prototype key does not poison the accent', () => {
+    expect(() => categoryColorId('accent', 'constructor')).not.toThrow()
+    expect(categoryColorId('accent', 'valueOf')).toBe(
+        categoryColorId('accent', 'ink'),
+    )
+    expect(categoryColorId('accent', 'toString', { toString: '#51b749' })).toBe(
+        '10',
+    )
+})
+
+test('an rgb() custom accent falls back to the ink accent instead of throwing', () => {
+    expect(() =>
+        categoryColorId('accent', 'dusk', { dusk: 'rgb(1,2,3)' }),
+    ).not.toThrow()
+    expect(categoryColorId('accent', 'dusk', { dusk: 'rgb(1,2,3)' })).toBe(
+        categoryColorId('accent', 'ink'),
+    )
+    expect(categoryColorId('accent', 'dusk', { dusk: 'hsl(10 20% 30%)' })).toBe(
+        categoryColorId('accent', 'ink'),
+    )
 })

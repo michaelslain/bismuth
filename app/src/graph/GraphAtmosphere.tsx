@@ -33,12 +33,11 @@
 // The bloom is drawn at FIELD_W×FIELD_H and scaled up by the browser's own smoothing, which is
 // both cheap and exactly the soft falloff we want.
 //
-// Colour is theme-derived, never hardcoded in a renderer: an explicit --bloom-rgb custom property
-// (a "r, g, b" triple, e.g. from a future per-theme override) wins if it parses; otherwise the
-// active theme's --accent (a hex colour — see settingsCssVars.ts) is parsed and used; otherwise a
-// literal CRT-phosphor teal is the last resort, for the rare case neither resolves (stylesheet not
-// yet loaded). See bloomColor.ts for the pure, unit-tested parsers — malformed input from either
-// property falls back rather than producing a NaN channel (which paints invisible black).
+// Colour is theme-derived, never hardcoded in a renderer: the active theme's --accent
+// (a hex colour — see settingsCssVars.ts) is parsed and used; otherwise a
+// literal CRT-phosphor teal is the last resort, for the rare case it doesn't resolve (stylesheet
+// not yet loaded). See bloomColor.ts for the pure, unit-tested parser — malformed input
+// falls back rather than producing a NaN channel (which paints invisible black).
 //
 // That base hue is the GROUND, not the whole picture: where the emitted field carries per-cluster
 // territory colour (densityField.ts's `field.rgb`), each cell is mixed partway toward its own
@@ -56,7 +55,6 @@ import { onCleanup, onMount, type JSX } from 'solid-js'
 import { FIELD_W, FIELD_H, type DensityField } from './densityField'
 import {
     parseHexColor,
-    parseRgbTriple,
     tintTerritory,
     type Rgb,
 } from './bloomColor'
@@ -73,17 +71,14 @@ export interface BloomSink {
     last?: DensityField
 }
 
-/** CRT-phosphor teal — used only if neither an explicit --bloom-rgb nor a themed --accent
+/** CRT-phosphor teal — used only if no themed --accent
  *  resolves. Not a hue choice; a last-resort default for a broken/absent stylesheet. */
 const FALLBACK_RGB: Rgb = [150, 230, 216]
 
-/** Explicit --bloom-rgb wins if it parses; else the active theme's --accent (hex); else
- *  FALLBACK_RGB. Reads computed style on `el` — caller controls when this runs (mount + theme
- *  switch only, never per frame). */
+/** The active theme's --accent (hex); else FALLBACK_RGB. Reads computed style on `el` —
+ *  caller controls when this runs (mount + theme switch only, never per frame). */
 function resolveBloomRgb(el: Element): Rgb {
     const style = getComputedStyle(el)
-    const override = parseRgbTriple(style.getPropertyValue('--bloom-rgb'))
-    if (override) return override
     const accent = parseHexColor(style.getPropertyValue('--accent'))
     if (accent) return accent
     return FALLBACK_RGB
