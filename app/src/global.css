@@ -74,6 +74,8 @@
   --danger: #C87F72;
   --success: #A3BE8C;
   --warning: #CBB27E;
+  --warning-soft: color-mix(in srgb, #CBB27E 7%, transparent);
+  --warning-edge: color-mix(in srgb, #CBB27E 45%, transparent);
   /* --shadow-menu/-popup/-card/-modal (the four blurred elevation shadows) were DELETED
      2026-08-27 (visual-unification audit §9.3, wave 1) — no blur survives the redesign. Every
      former consumer now reads --lift instead (see the Elevation block below). */
@@ -278,6 +280,10 @@
   --motion-scale: 1;
   --dur-fast: calc(80ms * var(--motion-scale));
   --dur: calc(120ms * var(--motion-scale));
+  /* --dur-grow: a surface growing into another — a daemon-page box opening to fill the page
+     (DaemonPage.tsx reads it for its Web Animation). Longer than --dur because it moves a whole
+     panel, not a control. */
+  --dur-grow: calc(140ms * var(--motion-scale));
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   /* the browser `ease` curve many components use, named so a theme can retime it */
   --ease-std: ease;

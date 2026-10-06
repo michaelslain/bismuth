@@ -1,25 +1,22 @@
 // app/src/daemon/DaemonHub.tsx
-// The daemon page's left column — the hub: the living face, the daemon's name (a DaemonIdentity
-// trigger hiding its blurb + `[ edit ]` behind hover/focus), and its own chat underneath.
+// The daemon page's left column — the hub, drawn as ONE quiet box: a header row (the daemon's
+// name, a DaemonIdentity trigger hiding its blurb + `[ edit ]` behind hover/focus, and the faint
+// mood word), the living face centred in the middle, and the daemon's own chat pinned to the box
+// bottom. Once a conversation has messages the face goes entirely (it rides the transcript's
+// lowest assistant row instead) and the chat fills everything under the header, so the composer
+// sits on the box's bottom edge in both states.
 // Presentational: the host derives mood/blurb and owns the chat session; this only lays the
-// column out.
+// box out.
 //
-// Resting, DaemonIdentity sits centred under the full-size face, showing only the name — its
-// blurb + `[ edit ]` card stays hidden until hovered or focused (see DaemonIdentity.tsx). Once a
-// conversation has messages the face region goes entirely: the face lives IN the transcript then,
-// as the avatar on its lowest assistant row beside the name (ChatTranscript), and one face on
-// screen is the point. `chatFills` with no conversation still collapses the face to DaemonFace's
-// `compact` one-line-header form with a bare name beside it — though no host passes that pair any
-// more: chat history, the pane that used to, is now a dialog over the page (ChatHistoryModal).
-//
-// Off (`enabled === false`): no identity, no chat — DaemonFace stays asleep and the caller
-// (DaemonPage) is the one that decides what replaces this column's usual content.
+// Off (`enabled === false`): no box, no identity, no chat — the sleeping face alone with how to
+// wake it, exactly as before.
 import { Show, type JSX } from 'solid-js'
+import Card from '../ui/Card'
 import Text from '../ui/Text'
 import EmptyState from '../ui/EmptyState'
 import DaemonFace from './DaemonFace'
 import DaemonIdentity from './DaemonIdentity'
-import type { DaemonMood } from './daemonFaceModel'
+import { moodWord, type DaemonMood } from './daemonFaceModel'
 import styles from './DaemonHub.module.css'
 
 export type DaemonHubProps = {
@@ -30,76 +27,72 @@ export type DaemonHubProps = {
      *  paints immediately instead of settling against the provisional NO_SNAPSHOT-derived one. */
     loading?: boolean
     enabled: boolean
-    /** true once the conversation has any items — the face region is dropped, since the face
-     *  then rides the transcript's lowest assistant row instead. */
+    /** true once the conversation has any items — the face is dropped, since the face then rides
+     *  the transcript's lowest assistant row instead. */
     conversing: boolean
-    /** The chat region fills the column instead of sizing to its content — true while
-     *  conversing, and also while a full-height pane has taken the region over. Also what
-     *  collapses the face + identity to the one-line header form. */
+    /** The chat region fills the box under the header instead of sitting under the face — true
+     *  while conversing, and also while a full-height pane has taken the region over. */
     chatFills: boolean
-    /** Rendered under the identity, filling the rest of the column. Host passes <DaemonChat/>;
-     *  stories a stub. */
+    /** Rendered at the box bottom. Host passes <DaemonChat/>; stories a stub. */
     chat: JSX.Element
     onEditIdentity: () => void
     class?: string
 }
 
 function DaemonHub(props: DaemonHubProps) {
-    const compact = () => props.chatFills
-
-    // Compact (conversing / chatFills): keep today's one-line-header behaviour — name only, no
-    // hover card, there's no room next to a one-line header for either. Resting: the name is a
-    // DaemonIdentity trigger, whose blurb + [ edit ] live in a card hidden until hovered/focused.
-    const identity = () => (
-        <Show
-            when={!compact()}
-            fallback={
-                <Text as="span" size="ui" tone="default" class={styles.name}>
-                    {props.name}
-                </Text>
-            }
-        >
-            <DaemonIdentity
-                name={props.name}
-                blurb={props.blurb}
-                onEdit={props.onEditIdentity}
-            />
-        </Show>
-    )
+    const fills = () => props.chatFills || props.conversing
 
     return (
-        <div
-            class={`${styles.hub} ${!compact() ? styles.resting : ''} ${props.class ?? ''}`}
-            data-testid="daemon-page-hub"
-            data-resting={compact() ? 'false' : 'true'}
-        >
-            <Show when={!props.conversing}>
+        <Show
+            when={props.enabled}
+            fallback={
                 <div
-                    class={`${styles.faceRegion} ${compact() ? styles.faceCompact : ''}`}
-                    data-testid="daemon-face-region"
+                    class={`${styles.off} ${props.class ?? ''}`}
+                    data-testid="daemon-page-hub"
+                    data-resting="true"
                 >
-                    <DaemonFace
-                        mood={props.mood}
-                        loading={props.loading}
-                        size={compact() ? 'compact' : 'hero'}
-                        caption={props.enabled ? identity() : undefined}
-                    />
-                    <Show when={!props.enabled}>
-                        <EmptyState class={styles.off}>
+                    <div class={styles.offFace} data-testid="daemon-face-region">
+                        <DaemonFace mood={props.mood} loading={props.loading} size="hero" />
+                        <EmptyState class={styles.offLine}>
                             set daemon.enabled: true in .settings to wake it
                         </EmptyState>
-                    </Show>
+                    </div>
                 </div>
-            </Show>
-            <Show when={props.enabled}>
+            }
+        >
+            <Card
+                variant="quiet"
+                class={`${styles.hub} ${props.class ?? ''}`}
+                data-testid="daemon-page-hub"
+                data-resting={fills() ? 'false' : 'true'}
+            >
+                <div class={styles.header}>
+                    <DaemonIdentity
+                        name={props.name}
+                        blurb={props.blurb}
+                        onEdit={props.onEditIdentity}
+                    />
+                    <Text as="span" size="ui" tone="faint">
+                        {moodWord(props.mood)}
+                    </Text>
+                </div>
+                <Show when={!fills()}>
+                    <div class={styles.faceRegion} data-testid="daemon-face-region">
+                        <DaemonFace
+                            mood={props.mood}
+                            loading={props.loading}
+                            size="hero"
+                        />
+                    </div>
+                </Show>
                 <div
-                    class={`${styles.chatRegion} ${compact() ? styles.chatFill : ''}`}
+                    class={`${styles.chatRegion} ${fills() ? styles.chatFill : ''}`}
                     data-testid="daemon-page-chat"
                 >
                     {props.chat}
                 </div>
-            </Show>
-        </div>
+            </Card>
+        </Show>
     )
 }
 

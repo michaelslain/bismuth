@@ -192,6 +192,22 @@ export function moodLabel(mood: DaemonMood): string {
     return LABEL[mood]
 }
 
+const WORD: Record<DaemonMood, string> = {
+    asleep: 'asleep',
+    idle: 'resting',
+    busy: 'working',
+    alert: 'needs you',
+    hurt: 'hurt',
+    listening: 'listening',
+    talking: 'talking',
+    thinking: 'thinking',
+}
+
+/** The faint one-word mood on the hub box's header row (`resting`, `talking`, …). */
+export function moodWord(mood: DaemonMood): string {
+    return WORD[mood]
+}
+
 // ── Mood settle ──────────────────────────────────────────────────────────────────────────────
 // The raw derived mood can flip several times a second (a poll, a keystroke). The face should
 // only ever show a mood that has HELD for MOOD_SETTLE_MS — this is the hysteresis. Pure: the

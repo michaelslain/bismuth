@@ -15,3 +15,18 @@
 .card--proposal {
     border-left: var(--accent-edge);
 }
+
+/* `variant="quiet"` — a panel on the page ground: the editor fill and the soft rule, for
+   surfaces that sit side by side (the daemon page's boxes) where --surface-1 reads too heavy. */
+.card--quiet {
+    background: var(--editor);
+    border: var(--rule-soft);
+}
+
+/* `attention` — orthogonal to variant: this surface is waiting on the user. The tint is a
+   background-IMAGE so it layers over whichever fill the variant chose. Declared last so its
+   border-color wins over a variant's border. */
+.card--attention {
+    border-color: var(--warning-edge);
+    background-image: linear-gradient(var(--warning-soft), var(--warning-soft));
+}

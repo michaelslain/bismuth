@@ -61,3 +61,12 @@
 .log-row.tone-ok .log-duration {
     color: var(--text-muted);
 }
+/* Day label above a day's rows in the full variant — same left edge as the rows' text. */
+.log-day {
+    display: block;
+    padding: var(--sp-3) var(--sp-4) var(--sp-1);
+}
+/* Opened log: cap the list so time, who, what and duration stay together. */
+.log-full {
+    max-width: 100ch;
+}

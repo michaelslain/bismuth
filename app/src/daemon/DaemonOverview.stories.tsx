@@ -50,7 +50,7 @@ function items(n: number, label: string): string[] {
 }
 
 /** A stub section over plain strings that honours its own `limit()` accessor exactly like the
- *  real list components: slice to the limit, and a `+N more // show` line that expands in place. */
+ *  real list components: slice to the limit, and a label-only `+N more` line (it opens the section in the real lists; here it just expands the stub). */
 function StubSection(props: {
     title: string
     count?: number
@@ -82,8 +82,7 @@ function StubSection(props: {
                             ? `all ${props.rows.length}`
                             : `+${props.rows.length - (props.limit() as number)} more`
                     }
-                    open={open()}
-                    onToggle={() => setOpen(v => !v)}
+                    onOpen={() => setOpen(v => !v)}
                 />
             </Show>
         </DaemonSection>

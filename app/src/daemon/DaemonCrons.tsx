@@ -27,6 +27,11 @@ import type { RowLimit } from './daemonRowBudget'
 import styles from './DaemonCrons.module.css'
 
 export type DaemonCronsProps = {
+    /** 'box' (default): the capped list inside its DaemonSection box. 'full': every row, no box
+     *  of its own — the opened section's DaemonTakeover supplies the heading. */
+    variant?: 'box' | 'full'
+    /** Opens this section full screen — the box heading, its open button and its more-line call it. */
+    onOpenSection?: () => void
     crons: DaemonCron[]
     daemonRunning: boolean
     onOpen: (file: string) => void
@@ -62,15 +67,15 @@ function DaemonCrons(props: DaemonCronsProps) {
     } | null>(null)
     const [deletingName, setDeletingName] = createSignal<string | null>(null)
     const [busyName, setBusyName] = createSignal<string | null>(null)
-    const [expanded, setExpanded] = createSignal(false)
+    const full = () => props.variant === 'full'
     const sorted = createMemo(() =>
         attentionFirst(props.crons, c => cronNeedsAttention(c, props.daemonRunning)),
     )
     const limited = createMemo(
-        () => props.limit !== undefined && sorted().length > props.limit,
+        () => !full() && props.limit !== undefined && sorted().length > props.limit,
     )
     const shown = createMemo(() =>
-        props.limit === undefined || expanded()
+        full() || props.limit === undefined
             ? sorted()
             : sorted().slice(0, props.limit),
     )
@@ -163,61 +168,78 @@ function DaemonCrons(props: DaemonCronsProps) {
         )
     }
 
-    return (
-        <DaemonSection
-            title="crons"
-            count={props.crons.length}
-            empty="no crons yet // ask the daemon"
-            isEmpty={props.crons.length === 0}
-            class={props.class}
+    const listEl = () => (
+        <div
+            class={styles.cronsList}
+            data-variant={props.variant}
+            data-testid={full() ? 'daemon-crons-full' : undefined}
         >
-            <Show when={props.crons.length > 0}>
-                <div class={styles.cronsList}>
-                    <For each={shown()}>
-                        {cron => (
-                            <DaemonRow
-                                name={cron.name}
-                                tone={cronTone(cron, props.daemonRunning)}
-                                status={statusFor(cron, props.daemonRunning)}
-                                meta={metaFor(cron)}
-                                dim={!cron.enabled}
-                                onOpen={() =>
-                                    props.onOpen(
-                                        `.daemon/crons/${cron.file}.md`,
-                                    )
-                                }
-                                onContextMenu={e => openMenu(cron, e)}
-                                actions={rowActions(cron)}
-                                confirming={deletingName() === cron.name}
-                            />
-                        )}
-                    </For>
-                </div>
-                <Show when={limited()}>
-                    <DaemonMoreLine
-                        label={
-                            expanded()
-                                ? `all ${sorted().length}`
-                                : `+${sorted().length - (props.limit as number)} more`
+            <For each={shown()}>
+                {cron => (
+                    <DaemonRow
+                        name={cron.name}
+                        tone={cronTone(cron, props.daemonRunning)}
+                        status={statusFor(cron, props.daemonRunning)}
+                        meta={metaFor(cron)}
+                        dim={!cron.enabled}
+                        onOpen={() =>
+                            props.onOpen(
+                                `.daemon/crons/${cron.file}.md`,
+                            )
                         }
-                        open={expanded()}
-                        onToggle={() => setExpanded(v => !v)}
+                        onContextMenu={e => openMenu(cron, e)}
+                        actions={rowActions(cron)}
+                        confirming={deletingName() === cron.name}
                     />
-                </Show>
-            </Show>
-            <Show when={menu()}>
-                {m => (
-                    <Portal>
-                        <ContextMenu
-                            x={m().x}
-                            y={m().y}
-                            items={m().items}
-                            onClose={() => setMenu(null)}
-                        />
-                    </Portal>
                 )}
-            </Show>
-        </DaemonSection>
+            </For>
+        </div>
+    )
+    const menuEl = () => (
+        <Show when={menu()}>
+            {m => (
+                <Portal>
+                    <ContextMenu
+                        x={m().x}
+                        y={m().y}
+                        items={m().items}
+                        onClose={() => setMenu(null)}
+                    />
+                </Portal>
+            )}
+        </Show>
+    )
+
+    return (
+        <Show
+            when={!full()}
+            fallback={
+                <>
+                    <Show when={props.crons.length > 0}>{listEl()}</Show>
+                    {menuEl()}
+                </>
+            }
+        >
+            <DaemonSection
+                title="crons"
+                count={props.crons.length}
+                empty="no crons yet // ask the daemon"
+                isEmpty={props.crons.length === 0}
+                onOpen={props.onOpenSection}
+                class={props.class}
+            >
+                <Show when={props.crons.length > 0}>
+                    {listEl()}
+                    <Show when={limited()}>
+                        <DaemonMoreLine
+                            label={`+${sorted().length - (props.limit as number)} more`}
+                            onOpen={props.onOpenSection}
+                        />
+                    </Show>
+                </Show>
+                {menuEl()}
+            </DaemonSection>
+        </Show>
     )
 }
 

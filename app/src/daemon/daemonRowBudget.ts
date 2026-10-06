@@ -7,7 +7,7 @@
 // attention, so a limit never hides a problem). Rows left over go round-robin, one at a time, to
 // the sections that still have more to show — so a long log cannot starve a short cron list, and
 // a short list never wastes rows it does not need. A section that ends up cut off spends one row
-// on its `+N more // show` line, which is accounted for here.
+// on its `+N more` line, which is accounted for here.
 
 export type SectionNeed = {
     /** Rows the section has in total. */
@@ -53,4 +53,20 @@ export function allocateRows(available: number, needs: SectionNeed[]): RowLimit[
 export function rowUnits(heightPx: number, overheadPx: number, pitchPx: number): number {
     if (pitchPx <= 0) return 0
     return Math.max(0, Math.floor((heightPx - overheadPx) / pitchPx))
+}
+
+export type BoxChromeMeasure = {
+    padTop: number
+    padBottom: number
+    borderTop: number
+    borderBottom: number
+    heading: number
+    /** The row-gap between the heading and the rows. */
+    gap: number
+}
+
+/** The fixed height one section box spends outside its rows: padding, border, the heading row and
+ *  the one gap between heading and rows. */
+export function boxChromeHeight(m: BoxChromeMeasure): number {
+    return m.padTop + m.padBottom + m.borderTop + m.borderBottom + m.heading + m.gap
 }

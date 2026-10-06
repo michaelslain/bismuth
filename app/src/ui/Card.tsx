@@ -3,24 +3,28 @@
 // classes in ui/ui.css that a call site had to remember by hand. Real component, colocated
 // module + story, per the 2026-08-27 visual-unification audit's §9.8 ("a shared stylesheet is
 // evidence of a missing component").
-import type { JSX } from 'solid-js'
+import { splitProps, type JSX } from 'solid-js'
 import styles from './Card.module.css'
 
-export type CardVariant = 'default' | 'proposal'
+export type CardVariant = 'default' | 'proposal' | 'quiet'
 
 export type CardProps = {
-    /** 'default' (flat --surface-1 fill, hairline border) | 'proposal' — adds the shared 2px
+    /** 'quiet' — `--editor` fill, `--rule-soft` border, for side-by-side panels. 'default' (flat --surface-1 fill, hairline border) | 'proposal' — adds the shared 2px
      *  accent LEFT edge (--accent-edge, same treatment as Callout/Frontmatter) for a suggested
      *  item inside a list, e.g. VaultIntro's power-up rows. */
     variant?: CardVariant
+    /** The surface is waiting on the user — orthogonal to `variant` (`--warning-edge` border + a `--warning-soft` tint layered over the fill). */
+    attention?: boolean
     class?: string
     children?: JSX.Element
-}
+} & Omit<JSX.HTMLAttributes<HTMLDivElement>, 'class' | 'children'>
 
 function cardClass(props: CardProps): string {
     return [
         styles.card,
         props.variant === 'proposal' ? styles['card--proposal'] : '',
+        props.variant === 'quiet' ? styles['card--quiet'] : '',
+        props.attention ? styles['card--attention'] : '',
         props.class,
     ]
         .filter(Boolean)
@@ -28,7 +32,12 @@ function cardClass(props: CardProps): string {
 }
 
 function Card(props: CardProps) {
-    return <div class={cardClass(props)}>{props.children}</div>
+    const [local, rest] = splitProps(props, ['variant', 'attention', 'class', 'children'])
+    return (
+        <div {...rest} class={cardClass(local)}>
+            {local.children}
+        </div>
+    )
 }
 
 export default Card

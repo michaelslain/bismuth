@@ -6,9 +6,9 @@
 
    Wide (>= 760px of the page's own width): [ viewbar (identity // status) ]
                                              [ hub  |  overview ]
-   Two columns, both the stage's own full height with the same inset top and bottom. The overview
-   column is never narrower than the hub column — `minmax(320px, 1fr) minmax(360px, 1.2fr)`, so a
-   long cron name has at least as much room as the identity block in the hub.
+   Two columns, both the stage's own full height with the same inset top and bottom: the hub box
+   fills the left, a `clamp(340px, 34%, 460px)` column of boxes the right. Opened: one box over
+   both columns.
    Narrow (< 760px): hub then overview, stacked in a scrolling column — DaemonOverview owns its
    own narrow sizing from here down.
    Off: one column, just the hub (sleeping face + how to wake it) — no overview column. */
@@ -31,10 +31,54 @@
     min-height: 0;
     display: grid;
     align-items: stretch;
-    grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.2fr);
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 34%, 460px);
     grid-template-rows: minmax(0, 1fr);
-    gap: var(--sp-7);
-    padding: var(--sp-6) 18px;
+    gap: var(--sp-4);
+    padding: var(--sp-5);
+}
+
+/* The stage's own box, so the opened overlay can sit over it without scrolling with it (the
+   narrow and short stages scroll). */
+.body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* The opened section: an overlay at rest exactly where the stage's content box is (inset = the
+   stage's padding). It never moves — DaemonPage.tsx only fades it in place while `.frame` carries
+   the motion. */
+.opened {
+    position: absolute;
+    inset: var(--sp-5);
+    z-index: 2;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* The empty box that carries the open/close motion (DaemonPage.tsx animates its rect from the
+   clicked box to the opened view and back). Under the opened view, over the rest; never a target. */
+.frame {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+}
+.frameBox {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+}
+
+.rest {
+    display: contents;
+}
+.rest[data-hidden='true'] {
+    display: none;
 }
 
 .hub {
@@ -83,11 +127,12 @@
     .stage {
         display: flex;
         flex-direction: column;
-        gap: var(--sp-6);
-        padding: var(--sp-6);
+        gap: var(--sp-4);
+        padding: var(--sp-5);
         overflow-y: auto;
     }
-    .stage > * {
+    .stage > *,
+    .rest > * {
         flex: none;
     }
     .hub {
@@ -95,10 +140,6 @@
     }
     .panel {
         order: 1;
-        /* Section headings/dots carry their own inset past the stage's own padding — pull the
-           whole column back by it so section text lines up with the hub's composer border at the
-           same 16px edge instead of jagging in further. */
-        margin-inline: calc(-1 * var(--sp-4));
     }
 }
 
@@ -108,5 +149,8 @@
         grid-template-rows: minmax(220px, 1fr);
         padding-block: var(--sp-4);
         overflow-y: auto;
+    }
+    .opened {
+        inset: var(--sp-4) var(--sp-5);
     }
 }

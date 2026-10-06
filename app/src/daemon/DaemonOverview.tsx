@@ -3,7 +3,7 @@
 // opaque `DaemonSection` handed in by the caller — this component owns only the stack's layout,
 // never the list components themselves (DaemonPageHost wires those in). ONE scroll for the whole
 // column — no section scrolls on its own. Each slot is a row-limited list that shows its first N
-// rows then a `+N more // show` line; this component measures its own height, works out how many
+// rows then a label-only `+N more` line that opens the section; this component measures its own height, works out how many
 // rows each section can show at rest (daemonRowBudget.ts's `allocateRows`), and hands each slot
 // an accessor for its limit — `undefined` means "show every row". Narrow (DaemonPage's `.page`
 // size container below 760px) drops the measurement for a static per-section cap instead:
@@ -11,7 +11,7 @@
 // whole and this component's height is `auto`.
 import { createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js'
 import styles from './DaemonOverview.module.css'
-import { allocateRows, rowUnits, type RowLimit } from './daemonRowBudget'
+import { allocateRows, boxChromeHeight, rowUnits, type RowLimit } from './daemonRowBudget'
 
 export type DaemonSectionKey = 'inbox' | 'crons' | 'services' | 'log'
 
@@ -21,7 +21,7 @@ export type DaemonSectionRows = {
     /** Rows that need the user's attention — the limit never cuts below this many. */
     attention: number
     /** Extra trailing lines the section renders below its rows that also cost a row of height
-     *  (the inbox's `N resolved // show` line). Defaults to 0. */
+     *  (the inbox's `N resolved` line). Defaults to 0. */
     extraLines?: number
 }
 
@@ -29,7 +29,7 @@ export type DaemonOverviewProps = {
     rows: Record<DaemonSectionKey, DaemonSectionRows>
     /** Each slot is a function of the section's computed limit, so Solid can re-read the
      *  accessor reactively inside the JSX without the list itself being re-created (which would
-     *  lose its expanded state). */
+     *  lose its state). */
     inbox: (limit: () => RowLimit) => JSX.Element
     crons: (limit: () => RowLimit) => JSX.Element
     services: (limit: () => RowLimit) => JSX.Element
@@ -61,6 +61,23 @@ function DaemonOverview(props: DaemonOverviewProps) {
     let el: HTMLDivElement | undefined
     const [limits, setLimits] = createSignal<RowLimit[]>(SECTION_KEYS.map(() => undefined))
 
+    /** One box's fixed chrome, read off the first rendered `[data-section-box]` (hooks, never
+     *  classes). Before the boxes carry the hooks, the old hardcoded heading overhead stands in. */
+    const boxChrome = (cs: CSSStyleDeclaration, rowH: number): number => {
+        const box = el?.querySelector<HTMLElement>('[data-section-box]')
+        if (!box) return rowH + (parseFloat(cs.getPropertyValue('--sp-2')) || 0)
+        const b = getComputedStyle(box)
+        const heading = box.querySelector<HTMLElement>('[data-section-heading]')
+        return boxChromeHeight({
+            padTop: parseFloat(b.paddingTop) || 0,
+            padBottom: parseFloat(b.paddingBottom) || 0,
+            borderTop: parseFloat(b.borderTopWidth) || 0,
+            borderBottom: parseFloat(b.borderBottomWidth) || 0,
+            heading: heading?.offsetHeight ?? rowH,
+            gap: parseFloat(b.rowGap) || 0,
+        })
+    }
+
     const measure = () => {
         if (!el) return
         const cs = getComputedStyle(el)
@@ -71,15 +88,14 @@ function DaemonOverview(props: DaemonOverviewProps) {
         }
         const rowH = parseFloat(cs.getPropertyValue('--row-h')) || 0
         const sp1 = parseFloat(cs.getPropertyValue('--sp-1')) || 0
-        const sp2 = parseFloat(cs.getPropertyValue('--sp-2')) || 0
-        const sp6 = parseFloat(cs.getPropertyValue('--sp-6')) || 0
         const pitch = rowH + 2 * sp1
         const needs = SECTION_KEYS.map(key => props.rows[key])
-        const headings = 4 * (rowH + sp2)
-        const gaps = 3 * sp6
+        const chrome = 4 * boxChrome(cs, rowH)
+        const gaps = 3 * (parseFloat(cs.rowGap) || 0)
         const emptyLines = needs.reduce((a, r) => a + (r.total === 0 ? 1 : 0), 0) * pitch
         const extraLines = needs.reduce((a, r) => a + (r.extraLines ?? 0), 0) * pitch
-        const overhead = headings + gaps + emptyLines + extraLines
+        // +4: slack for rounding in clientHeight and the fractional pixels the stacked boxes sum.
+        const overhead = chrome + gaps + emptyLines + extraLines + 4
         const available = rowUnits(el.clientHeight, overhead, pitch)
         setLimits(
             allocateRows(

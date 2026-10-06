@@ -1,0 +1,10 @@
+/* app/src/daemon/DaemonInbox.module.css — DaemonInbox.tsx is the ONLY importer.
+   The opened inbox: capped so a row's title and age stay together, and the `resolved` sub-label
+   inset to the rows' own left padding. */
+.inbox-full {
+    max-width: 100ch;
+}
+.resolved-label {
+    display: block;
+    padding-left: var(--sp-4);
+}

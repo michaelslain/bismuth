@@ -9,7 +9,8 @@ const meta = {
     component: Card,
     parameters: { layout: 'padded' },
     argTypes: {
-        variant: { control: 'inline-radio', options: ['default', 'proposal'] },
+        variant: { control: 'inline-radio', options: ['default', 'proposal', 'quiet'] },
+        attention: { control: 'boolean' },
         children: { control: 'text' },
     },
     args: {
@@ -38,12 +39,42 @@ export const Proposal: Story = {
     },
 }
 
-/** Both variants side by side. */
+/** `quiet`: the editor fill and the soft rule, for panels side by side on the page ground. */
+export const Quiet: Story = {
+    args: { variant: 'quiet', children: 'A quiet panel — --editor fill, --rule-soft outline.' },
+}
+
+/** `attention` on the default variant: warning-edge border plus a faint warning tint. */
+export const Attention: Story = {
+    render: () => (
+        <Row label="default // default + attention" column>
+            <Card variant="default">default</Card>
+            <Card variant="default" attention>
+                default + attention — waiting on you
+            </Card>
+        </Row>
+    ),
+}
+
+/** The daemon inbox look: quiet fill, attention edge and tint. */
+export const QuietAttention: Story = {
+    args: {
+        variant: 'quiet',
+        attention: true,
+        children: 'quiet + attention — 2 need you',
+    },
+}
+
+/** Every variant side by side on the page ground. */
 export const AllVariants: Story = {
     render: () => (
         <Row label="variant" column>
             <Card variant="default">default — flat, no accent edge</Card>
             <Card variant="proposal">proposal — 2px accent left edge</Card>
+            <Card variant="quiet">quiet — editor fill, soft rule</Card>
+            <Card variant="quiet" attention>
+                quiet + attention — warning edge and tint
+            </Card>
         </Row>
     ),
 }

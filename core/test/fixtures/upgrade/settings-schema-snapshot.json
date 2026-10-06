@@ -468,6 +468,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.dur-grow": {
+    "type": {
+      "kind": "token",
+      "token": "dur-grow"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.dur-pop": {
     "type": {
       "kind": "token",
@@ -1872,6 +1882,26 @@
     "type": {
       "kind": "token",
       "token": "warning"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.warning-edge": {
+    "type": {
+      "kind": "token",
+      "token": "warning-edge"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.warning-soft": {
+    "type": {
+      "kind": "token",
+      "token": "warning-soft"
     },
     "default": null,
     "min": null,

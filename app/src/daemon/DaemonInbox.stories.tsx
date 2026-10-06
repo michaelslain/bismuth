@@ -1,10 +1,13 @@
 // Visual spec for <DaemonInbox> — the daemon page's inbox section: a flat list (due, failed,
 // scheduled — no group headings) over `pages` (a plain prop, not a module-level signal — see
-// DaemonInbox.tsx), with a trailing "N resolved // show" toggle over done/dismissed pages. Row
-// presses hit /daemon/pages/archive, which the shared fakeTransport acks generically.
+// DaemonInbox.tsx), with a trailing "N resolved" more-line over done/dismissed pages that opens
+// the section. Box stories sit in a 420px frame; Full stories show the opened section's body.
+// Row presses hit /daemon/pages/archive, which the shared fakeTransport acks generically.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createSignal } from 'solid-js'
 import { expect, userEvent, within } from 'storybook/test'
 import DaemonInbox from './DaemonInbox'
+import TextButton from '../ui/TextButton'
 import { sampleDaemonPages } from '../ui/_daemonFixtures'
 import type { DaemonPage } from '../../../core/src/daemonPages'
 
@@ -40,7 +43,7 @@ const RESOLVED_ONLY: DaemonPage[] = sampleDaemonPages().filter(
  *  headings anywhere. */
 export const Default: Story = {
     render: () => (
-        <div style={{ width: '360px', height: '480px' }}>
+        <div style={{ width: '420px', height: '480px' }}>
             <DaemonInbox
                 pages={[...sampleDaemonPages(), SCHEDULED_PAGE]}
                 onOpen={() => {}}
@@ -68,7 +71,7 @@ export const Default: Story = {
 /** No pages at all — the section's own empty line. */
 export const Empty: Story = {
     render: () => (
-        <div style={{ width: '360px', height: '260px' }}>
+        <div style={{ width: '420px', height: '260px' }}>
             <DaemonInbox pages={[]} onOpen={() => {}} onChanged={() => {}} />
         </div>
     ),
@@ -79,10 +82,10 @@ export const Empty: Story = {
 }
 
 /** Nothing open, but two resolved pages — count badge reads 0, the empty line still shows, and
- *  "2 resolved // show" appears beneath it, expanding to the two rows on click. */
+ *  "2 resolved" appears beneath it as a line that opens the section. */
 export const EmptyWithResolved: Story = {
     render: () => (
-        <div style={{ width: '360px', height: '360px' }}>
+        <div style={{ width: '420px', height: '360px' }}>
             <DaemonInbox
                 pages={RESOLVED_ONLY}
                 onOpen={() => {}}
@@ -96,22 +99,18 @@ export const EmptyWithResolved: Story = {
         const badge = within(section as HTMLElement).getByText('0')
         await expect(badge).toBeInTheDocument()
         await expect(canvas.getByText('nothing needs you')).toBeInTheDocument()
-        const toggle = canvas.getByRole('button', { name: /2 resolved/ })
-        await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+        await expect(
+            canvas.getByRole('button', { name: /2 resolved/ }),
+        ).toBeInTheDocument()
         await expect(
             canvas.queryByText('Memory consolidation complete'),
         ).toBeNull()
-        await userEvent.click(toggle)
-        await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-        await expect(canvas.getByText(/hide/)).toBeInTheDocument()
-        await expect(
-            canvas.getByText('Memory consolidation complete'),
-        ).toBeInTheDocument()
     },
 }
 
 /** A row-limited list — 6 open pages + 2 resolved, `limit={3}` shows 3 open rows plus
- *  `+3 more // show`, then the separate `2 resolved // show` toggle below it. */
+ *  `+3 more`, then the separate `2 resolved` line; both open the section. */
+let opened = 0
 export const Limited: Story = {
     render: () => {
         const openPages: DaemonPage[] = Array.from({ length: 6 }, (_, i) => ({
@@ -126,12 +125,13 @@ export const Limited: Story = {
         }))
         const pages = [...openPages, ...RESOLVED_ONLY]
         return (
-            <div style={{ width: '360px', height: '480px' }}>
+            <div style={{ width: '420px', height: '480px' }}>
                 <DaemonInbox
                     pages={pages}
                     onOpen={() => {}}
                     onChanged={() => {}}
                     limit={3}
+                    onOpenSection={() => (opened += 1)}
                 />
             </div>
         )
@@ -143,20 +143,22 @@ export const Limited: Story = {
         ).toBe(3)
         const more = canvas.getByRole('button', { name: /\+3 more/ })
         await expect(more).toBeInTheDocument()
-        const resolvedToggle = canvas.getByRole('button', { name: /2 resolved/ })
-        await expect(resolvedToggle).toBeInTheDocument()
+        await expect(
+            canvas.getByRole('button', { name: /2 resolved/ }),
+        ).toBeInTheDocument()
         await userEvent.click(more)
+        await expect(opened).toBe(1)
         await expect(
             canvasElement.querySelectorAll('[data-testid="inbox-row"]').length,
-        ).toBe(6)
+        ).toBe(3)
     },
 }
 
 /** A failed page alongside open + resolved ones — the failed page reads as one plain row, no
- *  retry button, and "N resolved // show" is the only way to reveal the resolved rows. */
+ *  retry button, and the box shows only an "N resolved" line, never resolved rows. */
 export const FailedAndResolved: Story = {
     render: () => (
-        <div style={{ width: '360px', height: '480px' }}>
+        <div style={{ width: '420px', height: '480px' }}>
             <DaemonInbox
                 pages={sampleDaemonPages()}
                 onOpen={() => {}}
@@ -170,10 +172,106 @@ export const FailedAndResolved: Story = {
             canvas.getByText('Calendar sync failed'),
         ).toBeInTheDocument()
         await expect(canvas.queryByRole('button', { name: /retry/ })).toBeNull()
-        const toggle = canvas.getByRole('button', { name: /resolved/ })
-        await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-        toggle.focus()
-        await userEvent.keyboard('{Enter}')
-        await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+        await expect(
+            canvas.getByRole('button', { name: /resolved/ }),
+        ).toBeInTheDocument()
+    },
+}
+
+/** The opened section's body: every open row, then a faint `resolved` sub-heading and every
+ *  resolved row. No DaemonSection of its own. */
+export const Full: Story = {
+    render: () => (
+        <div style={{ width: '420px' }}>
+            <DaemonInbox
+                variant="full"
+                pages={[...sampleDaemonPages(), SCHEDULED_PAGE]}
+                onOpen={() => {}}
+                onChanged={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-inbox-full"]'),
+        ).not.toBeNull()
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-section-inbox"]'),
+        ).toBeNull()
+        await expect(canvas.getByText('resolved')).toBeInTheDocument()
+        await expect(
+            canvas.getByText('Memory consolidation complete'),
+        ).toBeInTheDocument()
+    },
+}
+
+/** Full with nothing open: the faint empty line, then the resolved pages. */
+export const FullWithResolved: Story = {
+    render: () => (
+        <div style={{ width: '420px' }}>
+            <DaemonInbox
+                variant="full"
+                pages={RESOLVED_ONLY}
+                onOpen={() => {}}
+                onChanged={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('nothing needs you')).toBeInTheDocument()
+        await expect(canvas.getByText('resolved')).toBeInTheDocument()
+        await expect(
+            canvasElement.querySelectorAll('[data-testid="inbox-row"]').length,
+        ).toBe(RESOLVED_ONLY.length)
+    },
+}
+
+/** Box attention state is reactive: resolving the last open page drops the gold heading and
+ *  the `N need you` label live. */
+export const AttentionToggle: Story = {
+    render: () => {
+        const [pages, setPages] = createSignal<DaemonPage[]>([
+            SCHEDULED_PAGE,
+            ...RESOLVED_ONLY,
+        ].map((p, i) => (i === 0 ? { ...p, deliverAt: undefined } : p)))
+        return (
+            <div style={{ width: '420px', height: '360px' }}>
+                <TextButton
+                    onClick={() =>
+                        setPages(ps =>
+                            ps.map(p =>
+                                p.status === 'pending'
+                                    ? { ...p, status: 'done' as const }
+                                    : p,
+                            ),
+                        )
+                    }
+                >
+                    resolve last open page
+                </TextButton>
+                <DaemonInbox
+                    pages={pages()}
+                    onOpen={() => {}}
+                    onChanged={() => {}}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvasElement.querySelectorAll('[data-testid="inbox-row"]').length,
+        ).toBe(1)
+        await expect(canvas.getByText('1 need you')).toBeInTheDocument()
+        await userEvent.click(
+            canvas.getByRole('button', { name: /resolve last open page/ }),
+        )
+        await expect(canvas.queryByText(/need you/)).toBeNull()
+        await expect(
+            canvasElement.querySelectorAll('[data-testid="inbox-row"]').length,
+        ).toBe(0)
+        await expect(canvas.getByText('nothing needs you')).toBeInTheDocument()
     },
 }

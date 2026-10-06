@@ -25,6 +25,8 @@ const baseProps = {
     onDelete: fn(async () => {}),
 }
 
+const onOpenSection = fn()
+
 /** A mix of statuses — ok, running, failed, disabled, and a file-change trigger. */
 export const Default: Story = {
     render: () => (
@@ -264,8 +266,8 @@ export const ConfirmDelete: Story = {
 }
 
 /** A row-limited list — 8 crons with the 6th failed. `limit={3}` shows the failed one first
- *  (attentionFirst) plus 2 more, then `+5 more // show`; clicking it reveals all 8 with
- *  `all 8 // hide`. The count badge always reads the full total, never the limited count. */
+ *  (attentionFirst) plus 2 more, then `+5 more`; clicking it calls onOpenSection (the host
+ *  opens the full-screen section). The count badge always reads the full total, never the limited count. */
 export const Limited: Story = {
     render: () => {
         const crons = Array.from({ length: 8 }, (_, i) => ({
@@ -294,7 +296,12 @@ export const Limited: Story = {
         }))
         return (
             <div style={{ width: '360px', height: '260px' }}>
-                <DaemonCrons {...baseProps} crons={crons} limit={3} />
+                <DaemonCrons
+                    {...baseProps}
+                    crons={crons}
+                    limit={3}
+                    {...{ onOpenSection }}
+                />
             </div>
         )
     },
@@ -314,9 +321,41 @@ export const Limited: Story = {
         await expect(badge).toBeInTheDocument()
         const more = canvas.getByRole('button', { name: /\+5 more/ })
         await expect(more).toBeInTheDocument()
+        // The opener hands off to the host (full-screen section) — it no longer expands in place.
         await userEvent.click(more)
-        await expect(rowNames().length).toBe(8)
-        await expect(canvas.getByRole('button', { name: /all 8/ })).toBeInTheDocument()
+        await expect(onOpenSection).toHaveBeenCalled()
+        await expect(rowNames().length).toBe(3)
+    },
+}
+
+/** The opened section's list — every row (12 crons), no box of its own, at takeover width. */
+export const Full: Story = {
+    render: () => {
+        const crons = Array.from({ length: 12 }, (_, i) => ({
+            name: `cron-${i}`,
+            file: `cron-${i}`,
+            schedule: i % 3 === 0 ? '*/15 * * * *' : '0 7 * * 1-5',
+            on: 'schedule' as const,
+            watch: null,
+            enabled: i !== 4,
+            lastFired: {
+                timestamp: new Date(Date.now() - (i + 1) * 10 * 60 * 1000).toISOString(),
+                result: i === 2 ? ('failed' as const) : ('success' as const),
+            },
+            running: false,
+            startedAt: null,
+        }))
+        return (
+            <div style={{ width: '100%', 'max-width': '1300px' }}>
+                <DaemonCrons {...baseProps} variant="full" crons={crons} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const list = canvasElement.querySelector('[data-testid="daemon-crons-full"]')!
+        await expect(list.getAttribute('data-variant')).toBe('full')
+        await expect(list.querySelectorAll('[data-testid="daemon-row"]').length).toBe(12)
+        await expect(canvasElement.querySelector('[data-testid="daemon-section-crons"]')).toBeNull()
     },
 }
 

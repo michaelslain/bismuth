@@ -66,6 +66,7 @@ import { editorContextMenu } from './editor/contextMenu'
 import { harperSpellcheck } from './editor/harper'
 import { yamlSchema, isInFrontmatter } from './editor/yamlSchema'
 import { frontmatterBodyRange } from './editor/frontmatterUtils'
+import { hideFrontmatter } from './editor/hideFrontmatter'
 import { normalizeFrontmatterSpacing } from './editor/normalizeFrontmatter'
 import { isConfigBuffer, isSettingsBuffer } from './editor/settingsBuffer'
 import { InkOverlay } from './editor/InkOverlay'
@@ -742,6 +743,9 @@ export function Editor(props: {
     title?: () => string | undefined
     /** Render the note title display-only (no rename on commit, not editable, not tab-focusable). */
     titleReadOnly?: boolean
+    /** Hide the YAML frontmatter (display only — the text is kept and saved). For buffers whose
+     *  frontmatter belongs to a machine, e.g. a daemon page. Read once at view creation. */
+    hideFrontmatter?: boolean
 }) {
     let host!: HTMLDivElement
     let wrapper!: HTMLDivElement
@@ -1643,6 +1647,8 @@ export function Editor(props: {
                   // Calendar popover for `date`/`datetime` frontmatter properties (registered in
                   // the propertyRegistry): native date/time inputs + relative-date quick options.
                   datePropertyPicker(propertyRegistry),
+                  // A machine-owned note (a daemon page) hides its frontmatter; display only.
+                  ...(props.hideFrontmatter ? [hideFrontmatter()] : []),
                   notePathFacet.of(path),
                   // Note candidates so a wikilink clicked inside a table cell resolves to its real vault
                   // path and opens (#33). A getter, not a snapshot, so it never goes stale.

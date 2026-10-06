@@ -195,6 +195,10 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         '--danger': sem.danger,
         '--success': sem.success,
         '--warning': sem.warning,
+        // The attention pair (DESIGN.md "Warning"): a box waiting on the user — the daemon inbox
+        // while a page is open. Derived from the theme's own warning, like --accent-soft.
+        '--warning-soft': `color-mix(in srgb, ${sem.warning} 7%, transparent)`,
+        '--warning-edge': `color-mix(in srgb, ${sem.warning} 45%, transparent)`,
         // Bloom is a theme decision (only cathode turns it on); components read the token,
         // never a hardcoded shadow.
         '--glow-accent': a.glowAccent ?? 'none',

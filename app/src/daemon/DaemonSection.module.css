@@ -1,22 +1,31 @@
 /* app/src/daemon/DaemonSection.module.css — DaemonSection.tsx is the ONLY importer.
    The shared frame for each of the daemon page's right-column sections (inbox / crons / services
-   / log): a heading row, an optional empty line, then the section's own rows. Every section sizes
+   / log): a heading row (no rule under it), an optional empty line, then the section's own rows. Every section sizes
    to its content — DaemonOverview owns the column's one scroll. */
 .section {
     display: flex;
     flex-direction: column;
-    flex: none;
+    min-height: 0;
+    gap: var(--sp-2);
 }
 .heading {
     display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    padding: 0 var(--sp-4);
-    margin-bottom: var(--sp-2);
+    align-items: baseline;
+    justify-content: space-between;
+    padding-inline: var(--sp-4);
 }
 .count {
     opacity: 0.65;
     font-weight: var(--fw-regular);
+}
+.trail {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+}
+.section[data-attention='true'] .title,
+.section[data-attention='true'] .count {
+    color: var(--warning);
 }
 .empty {
     height: var(--row-h);
@@ -26,4 +35,12 @@
 }
 .body {
     flex: none;
+}
+/* An openable box is one big target: the pointer says so, and its outline comes up a step
+   under the pointer (not the inbox's gold edge, which stays as it is). */
+.section[data-openable='true'] {
+    cursor: pointer;
+}
+.section[data-openable='true']:not([data-attention='true']):hover {
+    border-color: var(--border);
 }

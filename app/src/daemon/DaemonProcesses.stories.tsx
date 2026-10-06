@@ -24,6 +24,8 @@ const baseProps = {
     onDelete: fn(async () => {}),
 }
 
+const onOpenSection = fn()
+
 /** A mix of enabled (glowing, "on") and disabled ("off", dimmed) services. */
 export const Default: Story = {
     render: () => (
@@ -149,7 +151,7 @@ export const ConfirmDelete: Story = {
     },
 }
 
-/** A row-limited list — 6 services, `limit={2}` shows 2 rows plus `+4 more // show`. The count
+/** A row-limited list — 6 services, `limit={2}` shows 2 rows plus `+4 more`. The count
  *  badge always reads the full total, never the limited count. */
 export const Limited: Story = {
     render: () => {
@@ -161,7 +163,12 @@ export const Limited: Story = {
         }))
         return (
             <div style={{ width: '360px', height: '160px' }}>
-                <DaemonProcesses {...baseProps} processes={processes} limit={2} />
+                <DaemonProcesses
+                    {...baseProps}
+                    processes={processes}
+                    limit={2}
+                    {...{ onOpenSection }}
+                />
             </div>
         )
     },
@@ -178,9 +185,35 @@ export const Limited: Story = {
         await expect(badge).toBeInTheDocument()
         const more = canvas.getByRole('button', { name: /\+4 more/ })
         await expect(more).toBeInTheDocument()
+        // The opener hands off to the host (full-screen section) — it no longer expands in place.
         await userEvent.click(more)
-        await expect(rows().length).toBe(6)
-        await expect(canvas.getByRole('button', { name: /all 6/ })).toBeInTheDocument()
+        await expect(onOpenSection).toHaveBeenCalled()
+        await expect(rows().length).toBe(2)
+    },
+}
+
+/** The opened section's list — every row (12 services), no box of its own, at takeover width. */
+export const Full: Story = {
+    render: () => {
+        const processes = Array.from({ length: 12 }, (_, i) => ({
+            name: `service-${i}`,
+            file: `service-${i}`,
+            enabled: i !== 3,
+            running: false,
+        }))
+        return (
+            <div style={{ width: '100%', 'max-width': '1300px' }}>
+                <DaemonProcesses {...baseProps} variant="full" processes={processes} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const list = canvasElement.querySelector('[data-testid="daemon-processes-full"]')!
+        await expect(list.getAttribute('data-variant')).toBe('full')
+        await expect(list.querySelectorAll('[data-testid="daemon-row"]').length).toBe(12)
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-section-services"]'),
+        ).toBeNull()
     },
 }
 

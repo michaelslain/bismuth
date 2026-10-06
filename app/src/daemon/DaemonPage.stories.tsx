@@ -14,7 +14,16 @@
 // Busy/talking faces tick every few hundred ms, so two shots of the same mood rarely match — that
 // is the face working, not flake.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { getOwner, onCleanup, Show, type JSX } from 'solid-js'
+import {
+    createMemo,
+    createSignal,
+    getOwner,
+    Match,
+    onCleanup,
+    Show,
+    Switch,
+    type JSX,
+} from 'solid-js'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import DaemonPage, { type DaemonPageProps } from './DaemonPage'
 import DaemonPageHost from './DaemonPageHost'
@@ -27,7 +36,11 @@ import Text from '../ui/Text'
 import ChatComposerBar from '../chat/ChatComposerBar'
 import ChatControls from '../chat/ChatControls'
 import { makeStubChatSession } from '../chat/_stubChatSession'
-import DaemonOverview, { type DaemonOverviewProps } from './DaemonOverview'
+import DaemonOverview, {
+    type DaemonOverviewProps,
+    type DaemonSectionKey,
+} from './DaemonOverview'
+import DaemonTakeover from './DaemonTakeover'
 import DaemonCrons from './DaemonCrons'
 import DaemonProcesses from './DaemonProcesses'
 import DaemonInbox from './DaemonInbox'
@@ -132,6 +145,7 @@ function fullOverview(): JSX.Element {
                 <DaemonInbox
                     pages={pages}
                     limit={limit()}
+                    onOpenSection={noop}
                     onOpen={noop}
                     onChanged={noop}
                 />
@@ -141,6 +155,7 @@ function fullOverview(): JSX.Element {
                     crons={SNAPSHOT.crons}
                     daemonRunning
                     limit={limit()}
+                    onOpenSection={noop}
                     onOpen={noop}
                     onRun={noop}
                     onToggle={noop}
@@ -152,12 +167,19 @@ function fullOverview(): JSX.Element {
                     processes={SNAPSHOT.processes}
                     daemonRunning
                     limit={limit()}
+                    onOpenSection={noop}
                     onOpen={noop}
                     onToggle={noop}
                     onDelete={async () => {}}
                 />
             )}
-            log={limit => <DaemonLog events={events} limit={limit()} />}
+            log={limit => (
+                <DaemonLog
+                    events={events}
+                    limit={limit()}
+                    onOpenSection={noop}
+                />
+            )}
         />
     )
 }
@@ -172,6 +194,7 @@ function emptyOverview(): JSX.Element {
                 <DaemonInbox
                     pages={[]}
                     limit={limit()}
+                    onOpenSection={noop}
                     onOpen={noop}
                     onChanged={noop}
                 />
@@ -181,6 +204,7 @@ function emptyOverview(): JSX.Element {
                     crons={[]}
                     daemonRunning
                     limit={limit()}
+                    onOpenSection={noop}
                     onOpen={noop}
                     onRun={noop}
                     onToggle={noop}
@@ -192,12 +216,15 @@ function emptyOverview(): JSX.Element {
                     processes={[]}
                     daemonRunning
                     limit={limit()}
+                    onOpenSection={noop}
                     onOpen={noop}
                     onToggle={noop}
                     onDelete={async () => {}}
                 />
             )}
-            log={limit => <DaemonLog events={[]} limit={limit()} />}
+            log={limit => (
+                <DaemonLog events={[]} limit={limit()} onOpenSection={noop} />
+            )}
         />
     )
 }
@@ -260,6 +287,7 @@ function crowdedOverview(): {
                 <DaemonInbox
                     pages={pages}
                     limit={limit()}
+                    onOpenSection={noop}
                     onOpen={noop}
                     onChanged={noop}
                 />
@@ -269,6 +297,7 @@ function crowdedOverview(): {
                     crons={crons}
                     daemonRunning
                     limit={limit()}
+                    onOpenSection={noop}
                     onOpen={noop}
                     onRun={noop}
                     onToggle={noop}
@@ -280,12 +309,19 @@ function crowdedOverview(): {
                     processes={processes}
                     daemonRunning
                     limit={limit()}
+                    onOpenSection={noop}
                     onOpen={noop}
                     onToggle={noop}
                     onDelete={async () => {}}
                 />
             )}
-            log={limit => <DaemonLog events={events} limit={limit()} />}
+            log={limit => (
+                <DaemonLog
+                    events={events}
+                    limit={limit()}
+                    onOpenSection={noop}
+                />
+            )}
         />
     )
     return { overview, crons }
@@ -365,8 +401,8 @@ const rect = (el: Element) => el.getBoundingClientRect()
 
 /** The layout contract every enabled page must keep: the face centred in the hub column, the
  *  chat (when present) never wider than that column, and — for the wide grid — the overview
- *  column never narrower than the hub column. `stacked: true` (the narrow stories) skips that
- *  last check: the columns are no longer side by side. */
+ *  column `clamp(340px, 34%, 460px)` wide, sharing the hub box's top and bottom. `stacked: true`
+ *  (the narrow stories) skips that last check: the columns are no longer side by side. */
 async function assertLayout(
     canvasElement: HTMLElement,
     opts: {
@@ -417,9 +453,13 @@ async function assertLayout(
     if (page!.dataset.enabled === 'true') {
         await expect(overview).not.toBeNull()
         if (!opts.stacked) {
-            await expect(rect(overview!).width).toBeGreaterThanOrEqual(
-                h.width - 1,
-            )
+            // The right column is `clamp(340px, 34%, 460px)` wide; the hub box and the column
+            // share top and bottom edges.
+            const o = rect(overview!)
+            await expect(o.width).toBeGreaterThanOrEqual(339)
+            await expect(o.width).toBeLessThanOrEqual(461)
+            await expect(Math.abs(o.top - h.top)).toBeLessThanOrEqual(1)
+            await expect(Math.abs(o.bottom - h.bottom)).toBeLessThanOrEqual(1)
         }
     } else {
         await expect(overview).toBeNull()
@@ -531,7 +571,7 @@ export const AwakeEmpty: Story = {
 /** A large fixture — 12 crons (one failed, late in the list), 10 services, 8 inbox pages, 60 log
  *  events — in the standard wide frame: the dynamic row budget keeps every section's heading
  *  visible with no scroll at rest, and the failed cron is never hidden behind a limit despite its
- *  position in the source list. Expanding a more-line then makes the column scroll. */
+ *  position in the source list. The more-lines open the section full screen (the Opened* stories). */
 export const AwakeCrowded: Story = {
     render: () => {
         const { overview } = crowdedOverview()
@@ -577,37 +617,6 @@ export const AwakeCrowded: Story = {
         await expect(
             cronRows.some(r => r.textContent?.includes('cron-10')),
         ).toBe(true)
-    },
-}
-
-/** The crowded page after expanding crons in place: the section shows all 12 and the ONE column
- *  scroll takes over — no section ever scrolls on its own. Kept separate from `AwakeCrowded` so
- *  that story's screenshot is the resting state. */
-export const AwakeCrowdedExpanded: Story = {
-    render: AwakeCrowded.render,
-    play: async ({ canvasElement }) => {
-        const overviewEl = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="daemon-page-overview"] [data-testid="daemon-overview"]',
-        )!
-        const cronsSection = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="daemon-section-crons"]',
-        )!
-        const cronsMoreLine = cronsSection.querySelector<HTMLElement>(
-            '[data-testid="daemon-more-line"]',
-        )
-        await expect(cronsMoreLine).not.toBeNull()
-        await fireEvent.click(cronsMoreLine!)
-        await waitFor(() =>
-            expect(
-                cronsSection.querySelectorAll('[data-testid="daemon-row"]')
-                    .length,
-            ).toBe(12),
-        )
-        await waitFor(() =>
-            expect(overviewEl.scrollHeight).toBeGreaterThan(
-                overviewEl.clientHeight,
-            ),
-        )
     },
 }
 
@@ -661,6 +670,306 @@ export const Conversing: Story = {
         await expect(
             rect(chat).height / rect(hub).height,
         ).toBeGreaterThanOrEqual(0.5)
+    },
+}
+
+/** The shared assertions of every opened-section story. */
+const assertOpened =
+    (key: DaemonSectionKey) =>
+    async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+        const opened = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-page-opened"]',
+        )
+        await expect(opened).not.toBeNull()
+        await expect(
+            canvasElement
+                .querySelector<HTMLElement>('[data-testid="daemon-page-hub"]')!
+                .getClientRects().length,
+        ).toBe(0)
+        await expect(
+            canvasElement
+                .querySelector<HTMLElement>(
+                    '[data-testid="daemon-page-overview"]',
+                )!
+                .getClientRects().length,
+        ).toBe(0)
+        await expect(
+            opened!.querySelector('[data-testid="daemon-takeover"]'),
+        ).not.toBeNull()
+        await expect(
+            opened!.querySelector(
+                `[data-testid="daemon-${key === 'services' ? 'processes' : key}-full"]`,
+            ),
+        ).not.toBeNull()
+        const stage = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-page-stage"]',
+        )!
+        await expect(rect(opened!).width).toBeGreaterThan(
+            rect(stage).width * 0.9,
+        )
+        // The ViewBar locus names the opened section.
+        await expect(
+            within(canvasElement).getAllByText(key).length,
+        ).toBeGreaterThan(1)
+    }
+
+/** The opened section's takeover, built from the REAL takeover + `variant="full"` list over the
+ *  shared fixtures — what DaemonPageHost hands DaemonPage as `openedView`. */
+function openedStory(
+    key: DaemonSectionKey,
+    view: JSX.Element,
+    count?: number,
+): Story {
+    return {
+        render: () => (
+            <Frame>
+                <DaemonPage
+                    {...pageProps('idle', 'watching // last: dream 4m ago', {
+                        opened: key,
+                        openedView: (
+                            <DaemonTakeover
+                                title={key}
+                                count={count}
+                                onClose={noop}
+                            >
+                                {view}
+                            </DaemonTakeover>
+                        ),
+                    })}
+                />
+            </Frame>
+        ),
+    }
+}
+
+/** Opened inbox: open pages, then the faint `resolved` sub-heading and resolved pages. */
+export const OpenedInbox: Story = {
+    ...openedStory(
+        'inbox',
+        <DaemonInbox
+            variant="full"
+            pages={sampleDaemonPages()}
+            onOpen={noop}
+            onChanged={noop}
+        />,
+        dueSorted(sampleDaemonPages(), Date.now()).length +
+            failedSorted(sampleDaemonPages()).length,
+    ),
+    play: assertOpened('inbox'),
+}
+
+/** Opened crons: every row, the takeover scrolls if needed. */
+export const OpenedCrons: Story = {
+    ...openedStory(
+        'crons',
+        <DaemonCrons
+            variant="full"
+            crons={SNAPSHOT.crons}
+            daemonRunning
+            onOpen={noop}
+            onRun={noop}
+            onToggle={noop}
+            onDelete={async () => {}}
+        />,
+        SNAPSHOT.crons.length,
+    ),
+    play: assertOpened('crons'),
+}
+
+/** Opened services: every row. */
+export const OpenedServices: Story = {
+    ...openedStory(
+        'services',
+        <DaemonProcesses
+            variant="full"
+            processes={SNAPSHOT.processes}
+            daemonRunning
+            onOpen={noop}
+            onToggle={noop}
+            onDelete={async () => {}}
+        />,
+        SNAPSHOT.processes.length,
+    ),
+    play: assertOpened('services'),
+}
+
+/** Opened log: events grouped under faint day labels. */
+export const OpenedLog: Story = {
+    ...openedStory(
+        'log',
+        <DaemonLog variant="full" events={sampleActivity()} />,
+    ),
+    play: assertOpened('log'),
+}
+
+/** The page with every box live: click anywhere on a box (not on one of its rows) and the
+ *  section GROWS out of that box to fill the page; `[x close]` (or Esc) shrinks it back into place.
+ *  Story-local state stands in for DaemonPageHost — same `opened` / last-opened wiring. */
+function interactivePage(): JSX.Element {
+    const pages = sampleDaemonPages()
+    const events = sampleActivity()
+    const [opened, setOpened] = createSignal<DaemonSectionKey | null>(null)
+    const lastOpened = createMemo<DaemonSectionKey | null>(
+        prev => opened() ?? prev,
+        null,
+    )
+    const close = () => setOpened(null)
+    const overview = (
+        <DaemonOverview
+            rows={overviewRows(
+                pages,
+                SNAPSHOT.crons,
+                SNAPSHOT.processes,
+                events,
+                true,
+            )}
+            inbox={limit => (
+                <DaemonInbox
+                    pages={pages}
+                    limit={limit()}
+                    onOpenSection={() => setOpened('inbox')}
+                    onOpen={noop}
+                    onChanged={noop}
+                />
+            )}
+            crons={limit => (
+                <DaemonCrons
+                    crons={SNAPSHOT.crons}
+                    daemonRunning
+                    limit={limit()}
+                    onOpenSection={() => setOpened('crons')}
+                    onOpen={noop}
+                    onRun={noop}
+                    onToggle={noop}
+                    onDelete={async () => {}}
+                />
+            )}
+            services={limit => (
+                <DaemonProcesses
+                    processes={SNAPSHOT.processes}
+                    daemonRunning
+                    limit={limit()}
+                    onOpenSection={() => setOpened('services')}
+                    onOpen={noop}
+                    onToggle={noop}
+                    onDelete={async () => {}}
+                />
+            )}
+            log={limit => (
+                <DaemonLog
+                    events={events}
+                    limit={limit()}
+                    onOpenSection={() => setOpened('log')}
+                />
+            )}
+        />
+    )
+    const openedView = (
+        <Switch>
+            <Match when={lastOpened() === 'inbox'}>
+                <DaemonTakeover
+                    title="inbox"
+                    count={overviewRows(pages, [], [], [], true).inbox.total}
+                    onClose={close}
+                >
+                    <DaemonInbox
+                        variant="full"
+                        pages={pages}
+                        onOpen={noop}
+                        onChanged={noop}
+                    />
+                </DaemonTakeover>
+            </Match>
+            <Match when={lastOpened() === 'crons'}>
+                <DaemonTakeover
+                    title="crons"
+                    count={SNAPSHOT.crons.length}
+                    onClose={close}
+                >
+                    <DaemonCrons
+                        variant="full"
+                        crons={SNAPSHOT.crons}
+                        daemonRunning
+                        onOpen={noop}
+                        onRun={noop}
+                        onToggle={noop}
+                        onDelete={async () => {}}
+                    />
+                </DaemonTakeover>
+            </Match>
+            <Match when={lastOpened() === 'services'}>
+                <DaemonTakeover
+                    title="services"
+                    count={SNAPSHOT.processes.length}
+                    onClose={close}
+                >
+                    <DaemonProcesses
+                        variant="full"
+                        processes={SNAPSHOT.processes}
+                        daemonRunning
+                        onOpen={noop}
+                        onToggle={noop}
+                        onDelete={async () => {}}
+                    />
+                </DaemonTakeover>
+            </Match>
+            <Match when={lastOpened() === 'log'}>
+                <DaemonTakeover title="log" onClose={close}>
+                    <DaemonLog variant="full" events={events} />
+                </DaemonTakeover>
+            </Match>
+        </Switch>
+    )
+    return (
+        <Frame>
+            <DaemonPage
+                {...pageProps('alert', 'needs you // 3 due', {
+                    overview,
+                    opened: opened(),
+                    openedView,
+                })}
+            />
+        </Frame>
+    )
+}
+
+/** Click any box to open it and watch it grow; close to watch it shrink back. No play — it is
+ *  for a person to drive. `GrowAndShrink` below asserts the same motion headlessly. */
+export const OpenAnySection: Story = {
+    render: () => interactivePage(),
+}
+
+/** The motion, asserted: opening keeps the page visible behind the growing box until the grow
+ *  ends (`data-moving`), then hides it; closing shows it again and removes the box once it has
+ *  shrunk back. */
+export const GrowAndShrink: Story = {
+    render: () => interactivePage(),
+    play: async ({ canvasElement }) => {
+        const q = (sel: string) => canvasElement.querySelector<HTMLElement>(sel)
+        const visible = (sel: string) =>
+            (q(sel)?.getClientRects().length ?? 0) > 0
+        await waitFor(() => expect(q('[data-section="crons"]')).not.toBeNull())
+        // Bare box space, not a row: the whole box is the target.
+        fireEvent.click(q('[data-section="crons"]')!)
+        await waitFor(() =>
+            expect(
+                q('[data-testid="daemon-page-opened"]')?.dataset.moving,
+            ).toBe('true'),
+        )
+        await expect(visible('[data-testid="daemon-page-hub"]')).toBe(true)
+        await waitFor(() =>
+            expect(
+                q('[data-testid="daemon-page-opened"]')?.dataset.moving,
+            ).toBe('false'),
+        )
+        await expect(visible('[data-testid="daemon-page-hub"]')).toBe(false)
+        fireEvent.click(q('[data-testid="daemon-takeover-close"]')!)
+        await waitFor(() =>
+            expect(visible('[data-testid="daemon-page-hub"]')).toBe(true),
+        )
+        await waitFor(() =>
+            expect(q('[data-testid="daemon-page-opened"]')).toBeNull(),
+        )
     },
 }
 

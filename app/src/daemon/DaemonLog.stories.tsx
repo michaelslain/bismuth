@@ -49,8 +49,9 @@ export const Empty: Story = {
 const NOW = Date.now()
 const MIN = 60 * 1000
 
-/** A row-limited list — 30 events, `limit={10}` shows the newest 10 plus `+20 more // show`;
- *  clicking it reveals all 30 with `all 30 // hide`. */
+/** A row-limited list — 30 events, `limit={10}` shows the newest 10 plus `+20 more`, which
+ *  opens the section (it never expands inline). */
+let opened = 0
 export const Limited: Story = {
     render: () => {
         const events: ActivityEvent[] = Array.from({ length: 30 }, (_, i) => ({
@@ -63,7 +64,11 @@ export const Limited: Story = {
         }))
         return (
             <div style={{ width: '420px' }}>
-                <DaemonLog events={events} limit={10} />
+                <DaemonLog
+                    events={events}
+                    limit={10}
+                    onOpenSection={() => (opened += 1)}
+                />
             </div>
         )
     },
@@ -73,7 +78,47 @@ export const Limited: Story = {
         const more = canvas.getByRole('button', { name: /\+20 more/ })
         await expect(more).toBeInTheDocument()
         await userEvent.click(more)
-        await expect(logRows(canvasElement).length).toBe(30)
-        await expect(canvas.getByRole('button', { name: /all 30/ })).toBeInTheDocument()
+        await expect(opened).toBe(1)
+        await expect(logRows(canvasElement).length).toBe(10)
+    },
+}
+
+/** The opened section's body: events across three days grouped under faint day labels. */
+export const Full: Story = {
+    render: () => {
+        const at = (daysAgo: number, hour: number, i: number): ActivityEvent => {
+            const d = new Date()
+            d.setDate(d.getDate() - daysAgo)
+            d.setHours(hour, 0, 0, 0)
+            return {
+                ts: d.toISOString(),
+                kind: 'cron',
+                name: `job-${i}`,
+                event: 'finished',
+                outcome: 'success',
+                durationMs: 1000,
+            }
+        }
+        const events = [
+            at(0, 1, 0),
+            at(0, 0, 1),
+            at(1, 20, 2),
+            at(1, 9, 3),
+            at(3, 14, 4),
+        ]
+        return (
+            <div style={{ width: '420px' }}>
+                <DaemonLog variant="full" events={events} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-log-full"]'),
+        ).not.toBeNull()
+        await expect(canvas.getByText('today')).toBeInTheDocument()
+        await expect(canvas.getByText('yesterday')).toBeInTheDocument()
+        await expect(logRows(canvasElement).length).toBe(5)
     },
 }

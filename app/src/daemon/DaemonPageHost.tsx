@@ -12,7 +12,15 @@
 //
 // Polls run only while mounted AND the daemon is enabled; a tick that lands while the document is
 // hidden is skipped, and coming back into view refetches at once. All timers clear on cleanup.
-import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
+import {
+    createEffect,
+    createMemo,
+    createSignal,
+    on,
+    onCleanup,
+    Match,
+    Switch,
+} from 'solid-js'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import { api } from '../api'
@@ -33,7 +41,11 @@ import DropCue from '../ui/DropCue'
 import styles from './DaemonPageHost.module.css'
 import { pushToast } from '../toastStore'
 import DaemonChat from './DaemonChat'
-import DaemonOverview, { type DaemonOverviewProps } from './DaemonOverview'
+import DaemonOverview, {
+    type DaemonOverviewProps,
+    type DaemonSectionKey,
+} from './DaemonOverview'
+import DaemonTakeover from './DaemonTakeover'
 import DaemonInbox from './DaemonInbox'
 import DaemonCrons from './DaemonCrons'
 import DaemonProcesses from './DaemonProcesses'
@@ -61,6 +73,8 @@ export type DaemonPageHostProps = {
 const SNAPSHOT_POLL_MS = 4000
 const LOGS_POLL_MS = 5000
 const LOG_LIMIT = 60
+/** The opened log section shows up to this many events. */
+const FULL_LOG_LIMIT = 500
 
 /** Before the first snapshot lands: nothing configured, not (yet) known to be running. */
 const NO_SNAPSHOT: DaemonSnapshot = {
@@ -76,6 +90,10 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     const [snapshot, setSnapshot] = createSignal<DaemonSnapshot>(NO_SNAPSHOT)
     const [loaded, setLoaded] = createSignal(false)
     const [events, setEvents] = createSignal<ActivityEvent[]>([])
+    const [fullEvents, setFullEvents] = createSignal<ActivityEvent[] | null>(
+        null,
+    )
+    const [opened, setOpened] = createSignal<DaemonSectionKey | null>(null)
     const [now, setNow] = createSignal(Date.now())
     const enabled = () => settings.daemon.enabled
     const session = () => chatSession(DAEMON_CHAT_ID)
@@ -91,13 +109,23 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         }
         setNow(Date.now())
     }
+    // The poll serves both the box (60) and an opened log (FULL_LOG_LIMIT), so an opened log stays
+    // live; closing it clears the full list so a reopen never shows the previous open's events.
     const fetchLogs = async () => {
+        const full = opened() === 'log'
         try {
-            setEvents(await api.daemonLogs({ limit: LOG_LIMIT }))
+            const ev = await api.daemonLogs({
+                limit: full ? FULL_LOG_LIMIT : LOG_LIMIT,
+            })
+            setEvents(full ? ev.slice(0, LOG_LIMIT) : ev)
+            if (full) setFullEvents(ev)
         } catch {
             /* keep the previous log */
         }
     }
+    createEffect(
+        on(opened, k => (k === 'log' ? void fetchLogs() : setFullEvents(null))),
+    )
 
     createEffect(() => {
         if (!enabled()) return
@@ -212,7 +240,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     const onEditIdentity = () => props.onOpen('.daemon/identity.md')
 
     // What DaemonOverview needs to size each section's dynamic row limit — attention floors it
-    // never cuts into, plus the inbox's own trailing "N resolved // show" line, which costs a row
+    // never cuts into, plus the inbox's own trailing "N resolved" line, which costs a row
     // of height too when it's rendered.
     const rows = (): DaemonOverviewProps['rows'] => {
         const pages = inboxPages()
@@ -230,16 +258,96 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             },
             crons: {
                 total: snap.crons.length,
-                attention: snap.crons.filter(c => cronNeedsAttention(c, snap.daemon.running)).length,
+                attention: snap.crons.filter(c =>
+                    cronNeedsAttention(c, snap.daemon.running),
+                ).length,
             },
             services: {
                 total: snap.processes.length,
-                attention: snap.processes.filter(p => processNeedsAttention(p, snap.daemon.running))
-                    .length,
+                attention: snap.processes.filter(p =>
+                    processNeedsAttention(p, snap.daemon.running),
+                ).length,
             },
             log: { total: events().length, attention: 0 },
         }
     }
+
+    const close = () => setOpened(null)
+    const pagesOpenCount = () => {
+        const pages = inboxPages()
+        const t = Date.now()
+        return (
+            dueSorted(pages, t).length +
+            failedSorted(pages).length +
+            scheduledSorted(pages, t).length
+        )
+    }
+
+    // The section the opened view renders: the open one, else the last one opened, so DaemonPage's
+    // shrink-back animation still has the section's content after `opened` clears.
+    const lastOpened = createMemo<DaemonSectionKey | null>(
+        prev => opened() ?? prev,
+        null,
+    )
+    const openedView = () => (
+        <Switch>
+            <Match when={lastOpened() === 'inbox'}>
+                <DaemonTakeover
+                    title="inbox"
+                    count={pagesOpenCount()}
+                    onClose={close}
+                >
+                    <DaemonInbox
+                        variant="full"
+                        pages={inboxPages()}
+                        onOpen={props.onOpen}
+                        onChanged={onChanged}
+                    />
+                </DaemonTakeover>
+            </Match>
+            <Match when={lastOpened() === 'crons'}>
+                <DaemonTakeover
+                    title="crons"
+                    count={snapshot().crons.length}
+                    onClose={close}
+                >
+                    <DaemonCrons
+                        variant="full"
+                        crons={snapshot().crons}
+                        daemonRunning={snapshot().daemon.running}
+                        onOpen={props.onOpen}
+                        onRun={name => void onRunCron(name)}
+                        onToggle={(name, on) => void onToggleCron(name, on)}
+                        onDelete={onDeleteCron}
+                    />
+                </DaemonTakeover>
+            </Match>
+            <Match when={lastOpened() === 'services'}>
+                <DaemonTakeover
+                    title="services"
+                    count={snapshot().processes.length}
+                    onClose={close}
+                >
+                    <DaemonProcesses
+                        variant="full"
+                        processes={snapshot().processes}
+                        daemonRunning={snapshot().daemon.running}
+                        onOpen={props.onOpen}
+                        onToggle={(name, on) => void onToggleProcess(name, on)}
+                        onDelete={onDeleteProcess}
+                    />
+                </DaemonTakeover>
+            </Match>
+            <Match when={lastOpened() === 'log'}>
+                <DaemonTakeover title="log" onClose={close}>
+                    <DaemonLog
+                        variant="full"
+                        events={fullEvents() ?? events()}
+                    />
+                </DaemonTakeover>
+            </Match>
+        </Switch>
+    )
 
     return (
         <div
@@ -266,6 +374,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                 limit={limit()}
                                 onOpen={props.onOpen}
                                 onChanged={onChanged}
+                                onOpenSection={() => setOpened('inbox')}
                             />
                         )}
                         crons={limit => (
@@ -279,6 +388,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                     void onToggleCron(name, on)
                                 }
                                 onDelete={onDeleteCron}
+                                onOpenSection={() => setOpened('crons')}
                             />
                         )}
                         services={limit => (
@@ -291,11 +401,20 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                     void onToggleProcess(name, on)
                                 }
                                 onDelete={onDeleteProcess}
+                                onOpenSection={() => setOpened('services')}
                             />
                         )}
-                        log={limit => <DaemonLog events={events()} limit={limit()} />}
+                        log={limit => (
+                            <DaemonLog
+                                events={events()}
+                                limit={limit()}
+                                onOpenSection={() => setOpened('log')}
+                            />
+                        )}
                     />
                 }
+                opened={opened()}
+                openedView={openedView()}
                 conversing={conversing()}
                 // Only a conversation fills the region now — chat history opens as a dialog over
                 // the page (chat/ChatHistoryModal.tsx), not as a pane inside it.

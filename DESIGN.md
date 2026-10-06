@@ -248,7 +248,7 @@ are for data that genuinely has categories.
 ### Semantic
 - **Danger / Success / Warning** (`--danger` `--success` `--warning`): status only. They share
   hues with the category ramp in Ink but are separate tokens, so recolouring a category never
-  recolours a destructive button.
+  recolours a destructive button. `--warning-soft` (7%) and `--warning-edge` (45%) are the warning's attention pair — a surface waiting on the user (the daemon inbox box while a page is open), never decoration.
 
 ### Named Rules
 **The Three Inks Rule.** Text has exactly three steps. `--fg` is read, `--text-muted` is scanned,

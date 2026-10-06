@@ -21,12 +21,10 @@ export type DaemonIdentityProps = {
 const DaemonIdentity: Component<DaemonIdentityProps> = props => {
     const blurbId = createUniqueId()
 
-    // A `<span>` root, not a `<div>`: DaemonHub hands this whole component to DaemonFace's
-    // `caption` slot, which wraps it in a `<Text as="p">` — a block element here would force the
-    // browser to implicitly close that `<p>` early and pop this out as a sibling, losing the
-    // caption's own centering/spacing rules.
+    // A `<span>` root: it sits inline in DaemonHub's header row beside the mood word. The card
+    // opens below-left of the name.
     return (
-        <Text as="span" size="inherit" tone="inherit" class={`${styles.wrap} ${props.class ?? ''}`}>
+        <Text as="span" size="ui" weight="bold" tone="default" class={`${styles.wrap} ${props.class ?? ''}`}>
             <PlainButton
                 class={styles.nameTrigger}
                 aria-describedby={props.blurb ? blurbId : undefined}

@@ -63,3 +63,15 @@
         visibility: visible;
     }
 }
+/* The opened section sits in a full-width takeover: bound every track (no 1fr) and cap the list
+   so name, schedule and status stay together instead of spreading across the screen. */
+.cronsList[data-variant='full'] {
+    grid-template-columns: auto minmax(12ch, max-content) minmax(14ch, 40ch) max-content;
+    justify-content: start;
+    max-width: 100ch;
+}
+@media (hover: none) {
+    .cronsList[data-variant='full'] {
+        grid-template-columns: auto minmax(12ch, max-content) minmax(14ch, 40ch) max-content auto;
+    }
+}

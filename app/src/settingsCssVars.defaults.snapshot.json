@@ -48,6 +48,8 @@
     "--danger": "#C87F72",
     "--success": "#A3BE8C",
     "--warning": "#CBB27E",
+    "--warning-edge": "color-mix(in srgb, #CBB27E 45%, transparent)",
+    "--warning-soft": "color-mix(in srgb, #CBB27E 7%, transparent)",
     "--glow-accent": "0 0 0 1px rgba(147,189,176,0.14)",
     "--glow-text": "none",
     "--shadow-hard": "rgba(0,0,0,.45)",

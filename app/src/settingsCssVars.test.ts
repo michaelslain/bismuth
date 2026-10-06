@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { settingsToCssVars } from './settingsCssVars'
 import { DEFAULTS, FONT_STACKS, DEFAULT_PROSE_SCALE } from './settings'
-import { THEMES } from './themes'
+import { THEMES, THEME_NAMES } from './themes'
 import { setCssVars, resetAppliedCssVars } from './settingsCssVars'
 import snapshot from './settingsCssVars.defaults.snapshot.json'
 import { setCustomThemesFeed } from './customThemes'
@@ -104,6 +104,17 @@ describe('settingsToCssVars + themes', () => {
     it("an unknown theme falls back to the default theme's colors", () => {
         const vars = settingsToCssVars(withTheme('does-not-exist'))
         expect(vars['--bg']).toBe(THEMES.ink.background)
+    })
+})
+
+describe('attention tokens', () => {
+    it('projects the attention pair from each theme warning', () => {
+        for (const theme of THEME_NAMES) {
+            const vars = settingsToCssVars(withTheme(theme))
+            const w = vars['--warning']
+            expect(vars['--warning-soft']).toBe(`color-mix(in srgb, ${w} 7%, transparent)`)
+            expect(vars['--warning-edge']).toBe(`color-mix(in srgb, ${w} 45%, transparent)`)
+        }
     })
 })
 

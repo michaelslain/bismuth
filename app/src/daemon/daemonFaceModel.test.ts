@@ -3,6 +3,7 @@ import {
     composeFace,
     deriveMood,
     moodLabel,
+    moodWord,
     faceFrame,
     nextBlinkDelay,
     tickMs,
@@ -261,4 +262,10 @@ test('settle: next equal to shown clears pending, and a later hold restarts the 
     expect(s.shown).toBe('idle')
     s = settleMood(s, 'busy', 600 + MOOD_SETTLE_MS)
     expect(s.shown).toBe('busy')
+})
+
+test('moodWord: the faint header word', () => {
+    expect(moodWord('idle')).toBe('resting')
+    expect(moodWord('talking')).toBe('talking')
+    expect(moodWord('hurt')).toBe('hurt')
 })

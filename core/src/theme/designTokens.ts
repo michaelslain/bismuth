@@ -172,6 +172,8 @@ const SEMANTIC: TokenDef[] = [
     semantic('danger', 'color', '#C87F72', 'Destructive actions and errors.', { field: 'danger' }),
     semantic('success', 'color', '#A3BE8C', 'Success and done.', { field: 'success' }),
     semantic('warning', 'color', '#CBB27E', 'Caution.', { field: 'warning' }),
+    semantic('warning-soft', 'color', 'color-mix(in srgb, #CBB27E 7%, transparent)', 'Faint caution tint behind a box that needs attention.'),
+    semantic('warning-edge', 'color', 'color-mix(in srgb, #CBB27E 45%, transparent)', 'Caution tint for the outline of a box that needs attention.'),
 ]
 
 const state = grp('state')
@@ -328,6 +330,7 @@ const MOTION: TokenDef[] = [
     motion('motion-scale', 'number', '1', 'Multiplies every CSS transition and animation duration; 0 turns CSS motion off. Not scaled: cursor-blink, cursor-glide and the graph renderer\'s own morph timings.'),
     motion('dur-fast', 'duration', 'calc(80ms * var(--motion-scale))', 'Fast transitions: hover, press.'),
     motion('dur', 'duration', 'calc(120ms * var(--motion-scale))', 'Standard transitions.'),
+    motion('dur-grow', 'duration', 'calc(140ms * var(--motion-scale))', 'A surface growing into another: a daemon-page box opening to fill the page.'),
     motion('dur-pop', 'duration', 'calc(260ms * var(--motion-scale))', 'Popovers and larger movements.'),
     motion('ease', 'easing', 'cubic-bezier(0.22, 1, 0.36, 1)', 'The standard ease-out.'),
     motion('ease-spring', 'easing', 'cubic-bezier(0.34, 1.56, 0.64, 1)', 'A small overshoot.'),

@@ -1,0 +1,45 @@
+/* app/src/InboxActionBar.module.css
+   The bottom action bar of an inbox page — a hairline on its TOP edge (the mirror of ViewBar's own
+   border-bottom above the body), same row height as ViewBar. The hairline + vertical padding stay
+   on this OUTER element, full pane width; the CONTENT is centred inside `.row` so it shares the
+   editor's reading column (`--note-column`), margin auto on a fixed-width box centring it within
+   the full pane the way `.cm-content` does. */
+.inbox-action-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-height: var(--h-band);
+  padding: var(--sp-5) var(--sp-6);
+  border-top: var(--rule-soft);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  width: 100%;
+  max-width: var(--note-column);
+  margin: 0 auto;
+}
+/* Status dot + phrase (or a warning), pushing the buttons to the trailing edge. */
+.lead {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.phrase {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* SEMANTIC token, not a category swatch (see core/src/theme/tokens.ts). */
+.warn {
+  color: var(--warning);
+}
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}

@@ -1,5 +1,5 @@
 // Visual spec for <InboxPageView> — the action bar PINNED TO THE BOTTOM of a `type:
-// daemon-page` note's editor: the page's actions[] as buttons, or a status chip/owner
+// daemon-page` note's editor: the page's actions[] as buttons, or a status phrase/owner
 // warning once there's nothing left to press. The Editor body fills the space above and
 // scrolls on its own; the bar stays put under it. Like InboxView, `page()` is looked up by
 // `path` in the SAME module-level daemonInbox.ts signal — populated the same way here (a
@@ -11,7 +11,7 @@
 // own default stub, which carries `owner: null` — the "no owner assigned" state `notOwner()`
 // is meant to handle.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import { InboxPageView } from './InboxPageView'
 import { refreshDaemonPages } from './daemonInbox'
 import { setTransport } from './api'
@@ -54,7 +54,25 @@ source: cron:gcal-sync
 Google Calendar sync failed: token expired.
 `
 
+const DREAM_PATH = '.daemon/pages/dream-consolidation.md'
+const DREAM_TEXT = `---
+type: daemon-page
+title: Memory consolidation complete
+source: cron:dream
+---
+
+Consolidated 14 memory notes into 3 themes.
+`
+// A page file with NO frontmatter at all — the body must show whole.
+const VAULT_REVIEW_PATH = '.daemon/pages/vault-review.md'
+const NO_FRONTMATTER_TEXT = `Summarizing new and edited notes from the last 7 days.
+
+type: this line is body text, not frontmatter
+`
+
 const PAGE_FILES = {
+    [DREAM_PATH]: DREAM_TEXT,
+    [VAULT_REVIEW_PATH]: NO_FRONTMATTER_TEXT,
     [REPLY_DRAFTS_PATH]: REPLY_DRAFTS_TEXT,
     [GCAL_SYNC_PATH]: GCAL_SYNC_TEXT,
 }
@@ -123,8 +141,8 @@ function Pane(props: { w: string; children: any }) {
     )
 }
 
-/** The action bar's [submit] left edge must equal the note text column's left edge
- *  (`.cm-content`'s left, within 2px) — the bar's CONTENT shares the editor's centred reading
+/** The action bar's status phrase (the row's leading group) must start at the note text column's
+ *  left edge (`.cm-content`'s left, within 2px) — the bar's CONTENT shares the editor's centred reading
  *  column (`--note-column`) instead of sitting at the pane's left edge. The bar's own top
  *  hairline still spans the full pane width — asserted separately below. */
 async function assertActionsAlignToText(canvasElement: HTMLElement) {
@@ -132,13 +150,14 @@ async function assertActionsAlignToText(canvasElement: HTMLElement) {
     const bar = canvasElement.querySelector(
         '[data-testid="inbox-page-actions"]',
     )
-    const submit = bar?.querySelector('button') ?? null
+    // bar > row > lead: the left group holding the status dot + phrase
+    const lead = bar?.firstElementChild?.firstElementChild ?? null
     await expect(content).not.toBeNull()
     await expect(bar).not.toBeNull()
-    await expect(submit).not.toBeNull()
+    await expect(lead).not.toBeNull()
     const contentLeft = (content as HTMLElement).getBoundingClientRect().left
-    const submitLeft = (submit as HTMLElement).getBoundingClientRect().left
-    await expect(Math.abs(submitLeft - contentLeft)).toBeLessThanOrEqual(2)
+    const leadLeft = (lead as HTMLElement).getBoundingClientRect().left
+    await expect(Math.abs(leadLeft - contentLeft)).toBeLessThanOrEqual(2)
     // The bar's own top hairline still spans the full pane — its rect, not its inner row, is as
     // wide as the pane host that contains both it and the editor body.
     const barRect = (bar as HTMLElement).getBoundingClientRect()
@@ -146,6 +165,15 @@ async function assertActionsAlignToText(canvasElement: HTMLElement) {
     const hostRect = host.getBoundingClientRect()
     await expect(barRect.left).toBeCloseTo(hostRect.left, 0)
     await expect(barRect.width).toBeCloseTo(hostRect.width, 0)
+}
+
+/** The frontmatter block must be hidden from the editor's rendered text. */
+async function assertFrontmatterHidden(canvasElement: HTMLElement) {
+    await waitFor(() => {
+        const t = canvasElement.querySelector('.cm-content')?.textContent
+        expect(t).toBeTruthy()
+        expect(t).not.toMatch(/type: daemon-page|source:|^---/)
+    })
 }
 
 /** A pending page: two live actions ("Submit" / "Dismiss") in the bar pinned to the bottom. */
@@ -178,6 +206,7 @@ export const Pending: Story = {
         const barTop = (bar as HTMLElement).getBoundingClientRect().top
         await expect(barTop).toBeGreaterThan(bodyTop)
         await assertActionsAlignToText(canvasElement)
+        await assertFrontmatterHidden(canvasElement)
     },
 }
 
@@ -221,6 +250,9 @@ export const Failed: Story = {
             />
         )
     },
+    play: async ({ canvasElement }) => {
+        await assertFrontmatterHidden(canvasElement)
+    },
 }
 
 /** The `/daemon/status` shape that used to CRASH this view: no `owner` key at all. The guard
@@ -247,5 +279,52 @@ export const StatusWithoutOwner: Story = {
         await expect(canvasElement.textContent || '').not.toMatch(
             /ownerDeviceId/,
         )
+    },
+}
+
+/** A done page: the `done // <note>` phrase, no buttons. */
+export const Done: Story = {
+    render: () => {
+        setTransport(pagesTransport())
+        void refreshDaemonPages()
+        return (
+            <InboxPageView
+                path={DREAM_PATH}
+                initialText={DREAM_TEXT}
+                onSaved={noop}
+                noteNames={() => []}
+                memoryNames={() => []}
+                tagNames={() => []}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await assertFrontmatterHidden(canvasElement)
+    },
+}
+
+/** A page file with no frontmatter: nothing to hide, the body shows intact. */
+export const NoFrontmatter: Story = {
+    render: () => {
+        setTransport(pagesTransport())
+        void refreshDaemonPages()
+        return (
+            <InboxPageView
+                path={VAULT_REVIEW_PATH}
+                initialText={NO_FRONTMATTER_TEXT}
+                onSaved={noop}
+                noteNames={() => []}
+                memoryNames={() => []}
+                tagNames={() => []}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await expect(canvasElement.textContent || '').toMatch(
+            /Summarizing new and edited notes/,
+        )
+        await expect(
+            canvasElement.querySelector('.cm-content')!.textContent,
+        ).toMatch(/type: this line is body text/)
     },
 }

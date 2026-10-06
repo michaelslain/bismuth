@@ -20,6 +20,11 @@ import type { RowLimit } from './daemonRowBudget'
 import styles from './DaemonProcesses.module.css'
 
 export type DaemonProcessesProps = {
+    /** 'box' (default): the capped list inside its DaemonSection box. 'full': every row, no box
+     *  of its own — the opened section's DaemonTakeover supplies the heading. */
+    variant?: 'box' | 'full'
+    /** Opens this section full screen — the box heading, its open button and its more-line call it. */
+    onOpenSection?: () => void
     processes: DaemonProcess[]
     daemonRunning: boolean
     onOpen: (file: string) => void
@@ -46,15 +51,15 @@ function DaemonProcesses(props: DaemonProcessesProps) {
     } | null>(null)
     const [deletingName, setDeletingName] = createSignal<string | null>(null)
     const [busyName, setBusyName] = createSignal<string | null>(null)
-    const [expanded, setExpanded] = createSignal(false)
+    const full = () => props.variant === 'full'
     const sorted = createMemo(() =>
         attentionFirst(props.processes, p => processNeedsAttention(p, props.daemonRunning)),
     )
     const limited = createMemo(
-        () => props.limit !== undefined && sorted().length > props.limit,
+        () => !full() && props.limit !== undefined && sorted().length > props.limit,
     )
     const shown = createMemo(() =>
-        props.limit === undefined || expanded()
+        full() || props.limit === undefined
             ? sorted()
             : sorted().slice(0, props.limit),
     )
@@ -128,63 +133,78 @@ function DaemonProcesses(props: DaemonProcessesProps) {
         )
     }
 
-    return (
-        <DaemonSection
-            title="services"
-            count={props.processes.length}
-            empty="no services yet // ask the daemon"
-            isEmpty={props.processes.length === 0}
-            class={props.class}
+    const listEl = () => (
+        <div
+            class={styles.list}
+            data-variant={props.variant}
+            data-testid={full() ? 'daemon-processes-full' : undefined}
+            classList={{ [styles['with-actions']]: deletingName() !== null }}
         >
-            <Show when={props.processes.length > 0}>
-                <div
-                    class={styles.list}
-                    classList={{ [styles['with-actions']]: deletingName() !== null }}
-                >
-                    <For each={shown()}>
-                        {process => (
-                            <DaemonRow
-                                name={process.name}
-                                tone={toneFor(process, props.daemonRunning)}
-                                status={statusFor(process)}
-                                dim={!process.enabled}
-                                onOpen={() =>
-                                    props.onOpen(
-                                        `.daemon/processes/${process.file}.md`,
-                                    )
-                                }
-                                onContextMenu={e => openMenu(process, e)}
-                                actions={rowActions(process)}
-                                confirming={deletingName() === process.name}
-                            />
-                        )}
-                    </For>
-                </div>
-                <Show when={limited()}>
-                    <DaemonMoreLine
-                        label={
-                            expanded()
-                                ? `all ${sorted().length}`
-                                : `+${sorted().length - (props.limit as number)} more`
+            <For each={shown()}>
+                {process => (
+                    <DaemonRow
+                        name={process.name}
+                        tone={toneFor(process, props.daemonRunning)}
+                        status={statusFor(process)}
+                        dim={!process.enabled}
+                        onOpen={() =>
+                            props.onOpen(
+                                `.daemon/processes/${process.file}.md`,
+                            )
                         }
-                        open={expanded()}
-                        onToggle={() => setExpanded(v => !v)}
+                        onContextMenu={e => openMenu(process, e)}
+                        actions={rowActions(process)}
+                        confirming={deletingName() === process.name}
                     />
-                </Show>
-            </Show>
-            <Show when={menu()}>
-                {m => (
-                    <Portal>
-                        <ContextMenu
-                            x={m().x}
-                            y={m().y}
-                            items={m().items}
-                            onClose={() => setMenu(null)}
-                        />
-                    </Portal>
                 )}
-            </Show>
-        </DaemonSection>
+            </For>
+        </div>
+    )
+    const menuEl = () => (
+        <Show when={menu()}>
+            {m => (
+                <Portal>
+                    <ContextMenu
+                        x={m().x}
+                        y={m().y}
+                        items={m().items}
+                        onClose={() => setMenu(null)}
+                    />
+                </Portal>
+            )}
+        </Show>
+    )
+
+    return (
+        <Show
+            when={!full()}
+            fallback={
+                <>
+                    <Show when={props.processes.length > 0}>{listEl()}</Show>
+                    {menuEl()}
+                </>
+            }
+        >
+            <DaemonSection
+                title="services"
+                count={props.processes.length}
+                empty="no services yet // ask the daemon"
+                isEmpty={props.processes.length === 0}
+                onOpen={props.onOpenSection}
+                class={props.class}
+            >
+                <Show when={props.processes.length > 0}>
+                    {listEl()}
+                    <Show when={limited()}>
+                        <DaemonMoreLine
+                            label={`+${sorted().length - (props.limit as number)} more`}
+                            onOpen={props.onOpenSection}
+                        />
+                    </Show>
+                </Show>
+                {menuEl()}
+            </DaemonSection>
+        </Show>
     )
 }
 

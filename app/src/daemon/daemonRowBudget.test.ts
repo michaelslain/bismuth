@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { allocateRows, rowUnits } from './daemonRowBudget'
+import { allocateRows, boxChromeHeight, rowUnits } from './daemonRowBudget'
 
 const need = (total: number, floor = 3) => ({ total, floor })
 
@@ -79,4 +79,10 @@ test('rowUnits floors and never goes negative', () => {
     expect(rowUnits(500, 100, 22)).toBe(18)
     expect(rowUnits(50, 100, 22)).toBe(0)
     expect(rowUnits(500, 100, 0)).toBe(0)
+})
+
+test('boxChromeHeight: pads + borders + heading + one gap', () => {
+    expect(
+        boxChromeHeight({ padTop: 12, padBottom: 12, borderTop: 1, borderBottom: 1, heading: 18, gap: 4 }),
+    ).toBe(48)
 })

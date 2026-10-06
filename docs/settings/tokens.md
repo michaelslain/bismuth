@@ -175,6 +175,8 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `danger` | color | `#C87F72` | Destructive actions and errors. |
 | `success` | color | `#A3BE8C` | Success and done. |
 | `warning` | color | `#CBB27E` | Caution. |
+| `warning-soft` | color | `color-mix(in srgb, #CBB27E 7%, transparent)` | Faint caution tint behind a box that needs attention. |
+| `warning-edge` | color | `color-mix(in srgb, #CBB27E 45%, transparent)` | Caution tint for the outline of a box that needs attention. |
 
 ### state
 
@@ -344,6 +346,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `motion-scale` | number | `1` | Multiplies every CSS transition and animation duration; 0 turns CSS motion off. Not scaled: cursor-blink, cursor-glide and the graph renderer's own morph timings. |
 | `dur-fast` | duration | `calc(80ms * var(--motion-scale))` | Fast transitions: hover, press. |
 | `dur` | duration | `calc(120ms * var(--motion-scale))` | Standard transitions. |
+| `dur-grow` | duration | `calc(140ms * var(--motion-scale))` | A surface growing into another: a daemon-page box opening to fill the page. |
 | `dur-pop` | duration | `calc(260ms * var(--motion-scale))` | Popovers and larger movements. |
 | `ease` | easing | `cubic-bezier(0.22, 1, 0.36, 1)` | The standard ease-out. |
 | `ease-spring` | easing | `cubic-bezier(0.34, 1.56, 0.64, 1)` | A small overshoot. |
