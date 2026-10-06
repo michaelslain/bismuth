@@ -114,7 +114,7 @@ describe('ui control gate', () => {
 })
 
 describe('interactive commands', () => {
-    // These seven commands only OPEN A MODAL and then wait on a person to finish it — the action
+    // These eight commands only OPEN A MODAL and then wait on a person to finish it — the action
     // never completes the underlying task by itself (create/connect/setup/install dialogs, or a
     // picker like the emoji library / create menu). They stay runnable via app control BY DESIGN
     // (an agent opening the dialog to show a user how is the point); what changes is the
@@ -127,10 +127,11 @@ describe('interactive commands', () => {
         'daemon-owner',
         'daemon-setup',
         'bismuth-install',
+        'free-agent-setup',
         'gcal-connect',
     ]
 
-    it('marks exactly the seven modal-opening commands interactive', () => {
+    it('marks exactly the eight modal-opening commands interactive', () => {
         for (const id of interactiveIds) {
             const spec = COMMAND_CATALOG.find(c => c.id === id)
             expect(spec).toBeDefined()
@@ -153,7 +154,7 @@ describe('interactive commands', () => {
     })
 
     // A drift guard, same shape as the blocklist/pane-keybinding guards above: catches both an
-    // accidentally-unset flag on one of the seven AND an accidentally-set flag on an eighth id.
+    // accidentally-unset flag on one of the eight AND an accidentally-set flag on a ninth id.
     it('has no interactive ids beyond this exact set', () => {
         const actual = COMMAND_CATALOG.filter(c => c.interactive)
             .map(c => c.id)

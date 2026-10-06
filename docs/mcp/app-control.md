@@ -47,7 +47,7 @@ bismuth app <verb>  ──HTTP──▶  core /ui/command  ──WebSocket──
 
 The window waits for an action before replying `ok:true`. Async commands such as `detect-ai`, `gcal-sync`, and `archive-tasks` report success only after they finish.
 
-A small set of commands — `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `gcal-connect` — only opens a modal for a person to complete. They remain available through app control so, for example, an agent can open the Google Calendar connection dialog when asked how to connect it. `CommandSpec.interactive` in `core/src/commands.ts` marks these seven commands, and `run-command` reports that state:
+A small set of commands — `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `free-agent-setup`, `gcal-connect` — only opens a modal for a person to complete. They remain available through app control so, for example, an agent can open the Google Calendar connection dialog when asked how to connect it. `CommandSpec.interactive` in `core/src/commands.ts` marks these eight commands, and `run-command` reports that state:
 
 ```json
 { "ok": true, "result": { "interactive": true, "label": "Connect Google Calendar…", "note": "Opened \"Connect Google Calendar…\" — this needs a person to finish it in the app." } }

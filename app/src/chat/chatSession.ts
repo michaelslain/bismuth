@@ -23,6 +23,7 @@ import {
     createMemo,
     createSignal,
     getOwner,
+    on,
     onCleanup,
 } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
@@ -67,7 +68,12 @@ import {
     reconcileManifestModel,
     modelOptionFor,
 } from '../chatModelResolution'
-import { providerCan, sanitizeChatProvider } from '../chatProvider'
+import {
+    providerCan,
+    resolveChatProvider,
+    sanitizeChatProvider,
+} from '../chatProvider'
+import { installedBackendIds, loadAgentAvailability } from './agentAvailability'
 import { restoreQueuedComposerState } from '../chatQueueRestore'
 import { lastChange } from '../serverVersion'
 import { vaultTree, refreshVaultTree } from '../treeStore'
@@ -166,6 +172,9 @@ export type ChatSession = {
     models: Accessor<ChatModelOption[]>
     authProviders: Accessor<{ name: string; kind: string }[] | null>
     provider: Accessor<ChatProviderChoice>
+    /** True when `provider` was picked by `chat.provider: auto` (neither the tab nor the vault named
+     *  a backend) — the setup screen then says "none is set up yet" instead of naming one. */
+    providerAuto: Accessor<boolean>
     permMode: Accessor<string>
     displayModel: Accessor<string>
     displayModelValue: Accessor<string>
@@ -191,6 +200,9 @@ export type ChatSession = {
     switchModel: (model: string) => void
     switchEffort: (level: string) => void
     switchProvider: (provider: string) => void
+    /** Re-open the SAME provider after its setup problem was fixed (switchProvider is a no-op on
+     *  the same provider). Clears the dead end and starts a fresh socket. */
+    retrySetup: () => void
     /** Switch to a saved preset's provider + model + effort (chatPresets.ts). Another connector
      *  starts a new conversation, exactly as switchProvider does; the same one keeps it. */
     applyPreset: (preset: ChatPreset) => void
@@ -243,8 +255,10 @@ type QueuedTurn = {
 
 /**
  * Create one chat's session. Call inside a reactive owner (the registry's `createRoot`); the session
- * connects immediately — resuming the conversation this chat id last remembered, else opening a fresh
- * one — so anything that fakes the socket (stories) must be installed BEFORE this runs.
+ * connects as soon as its provider is known — at once for a tab or vault that names a backend, after
+ * the agent-availability read for `auto` (never, for an auto chat with nothing installed) — resuming
+ * the conversation this chat id last remembered, else opening a fresh one — so anything that fakes
+ * the socket (stories) must be installed BEFORE this runs.
  */
 export function createChatSession(chatId: string): ChatSession {
     const storage = browserStorage()
@@ -274,15 +288,37 @@ export function createChatSession(chatId: string): ChatSession {
         setEffort(level)
         persistEffort(storage, level)
     }
-    // This TAB's explicit provider choice, else the vault's `chat.provider` setting (card #90). The
-    // first spawned session latches the choice so backend and header can never drift apart.
+    // This TAB's explicit provider choice, else the vault's `chat.provider` setting (card #90), else
+    // (`auto`, the default) the first INSTALLED agent per the shared availability store. The first
+    // spawned session latches the choice so backend and header can never drift apart.
     const [providerChoice, setProviderChoice] =
         createSignal<ChatProviderChoice | null>(
             readProviderChoice(storage, chatId),
         )
-    const provider = createMemo<ChatProviderChoice>(
-        () => providerChoice() ?? sanitizeChatProvider(settings.chat.provider),
+    void loadAgentAvailability()
+    const providerResolution = createMemo(
+        () =>
+            resolveChatProvider(
+                providerChoice(),
+                settings.chat.provider,
+                installedBackendIds(),
+            ),
+        undefined,
+        {
+            equals: (a, b) =>
+                a.provider === b.provider &&
+                a.auto === b.auto &&
+                a.pending === b.pending &&
+                a.none === b.none,
+        },
     )
+    const provider = createMemo<ChatProviderChoice>(
+        () => providerResolution().provider,
+    )
+    const providerAuto = createMemo(() => providerResolution().auto)
+    // Whether this session has opened (or been told to open) a socket. An `auto` chat stays unstarted
+    // while availability is pending, and for good when nothing is installed (the setup screen).
+    let started = false
     const rememberProvider = (p: ChatProviderChoice) => {
         setProviderChoice(p)
         persistProvider(storage, chatId, p)
@@ -558,6 +594,8 @@ export function createChatSession(chatId: string): ChatSession {
                 setStreaming(false)
                 if (frame.code === 'no-claude') setSetupError('claude')
                 else if (frame.code === 'no-opencode') setSetupError('opencode')
+                // codex + the ACP drivers: the active backend's CLI is missing → the setup screen
+                else if (frame.code === 'no-binary') setSetupError(provider())
                 else if (frame.code === 'visibility-refused')
                     setGateRefusal({
                         binary: frame.binary ?? '',
@@ -1105,6 +1143,7 @@ export function createChatSession(chatId: string): ChatSession {
 
     /** Tear the current WS down cleanly and reconnect on `id`. */
     const reconnectOn = (id: string) => {
+        started = true
         bindGen++
         staleDones = 0
         clearTimeout(reconnectTimer)
@@ -1122,7 +1161,11 @@ export function createChatSession(chatId: string): ChatSession {
 
     const switchProvider = (p: string) => {
         const next = sanitizeChatProvider(p, provider())
-        if (next === provider()) return
+        // An unstarted chat's provider is only a placeholder, so naming it still opens a session.
+        if (next === provider() && started) return
+        // Set BEFORE rememberProvider: the latch flips the resolution, and the start effect below
+        // must not open a socket that reconnectOn is about to replace.
+        started = true
         rememberProvider(next)
         setModels([])
         setAuthProviders(null)
@@ -1135,6 +1178,13 @@ export function createChatSession(chatId: string): ChatSession {
         resetTranscript()
         reconnectOn(crypto.randomUUID())
         emitFocusRequest()
+    }
+
+    const retrySetup = () => {
+        setSetupError(null)
+        setGateRefusal(null)
+        setLastModel(readLastModel(storage, provider(), chatId))
+        reconnectOn(crypto.randomUUID())
     }
 
     const applyPreset = (preset: ChatPreset) => {
@@ -1335,9 +1385,28 @@ export function createChatSession(chatId: string): ChatSession {
 
     // Resume the conversation this chat id last remembered (a reopened tab comes back on the SAME
     // conversation); a brand-new chat takes the plain eager open.
-    const resumeId = recallChatSession(chatId)
-    if (resumeId) void resumeSession(resumeId)
-    else connect()
+    const start = () => {
+        started = true
+        const resumeId = recallChatSession(chatId)
+        if (resumeId) void resumeSession(resumeId)
+        else connect()
+    }
+    // An `auto` chat waits for availability (never spawn a placeholder backend), and with nothing
+    // installed shows the setup screen instead of spawning at all. When availability then resolves —
+    // first load, or the free agent's fresh status after an install — the parked session starts on
+    // the resolved backend here, ONCE; freeAgentClient's session step sees it already running.
+    createEffect(
+        on(providerResolution, r => {
+            if (r.pending || started) return
+            if (r.auto && r.none) {
+                setSetupError(r.provider)
+                return
+            }
+            setSetupError(null)
+            setLastModel(readLastModel(storage, r.provider, chatId))
+            start()
+        }),
+    )
 
     return {
         chatId,
@@ -1360,6 +1429,7 @@ export function createChatSession(chatId: string): ChatSession {
         models,
         authProviders,
         provider,
+        providerAuto,
         permMode,
         displayModel,
         displayModelValue,
@@ -1381,6 +1451,7 @@ export function createChatSession(chatId: string): ChatSession {
         switchModel,
         switchEffort,
         switchProvider,
+        retrySetup,
         applyPreset,
         startNewChat,
         quoteReply,

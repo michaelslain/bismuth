@@ -10,6 +10,7 @@ export type AppModal =
     | 'daemon-owner'
     | 'daemon-setup'
     | 'bismuth-install'
+    | 'free-agent-setup'
     | 'edit-dictionary'
     | 'gcal-connect'
     | 'status-trust'

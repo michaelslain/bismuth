@@ -7,6 +7,7 @@ import {
     nvmBinPaths,
     claudeLookupPath,
     claudeSpawnEnv,
+    FREE_AGENT_BIN_DIR,
 } from '../src/claudeWhich'
 
 // The real OS username, resolved the SAME way claudeSpawnEnv does (`id -un`), not via node:os's
@@ -90,6 +91,15 @@ describe('claudeLookupPath', () => {
         const out = claudeLookupPath({})
         for (const dir of ['/usr/bin', '/bin', '/usr/sbin', '/sbin'])
             expect(out.split(':')).toContain(dir)
+    })
+
+    // A user's own opencode (homebrew, npm) must outrank Bismuth's managed download.
+    test('appends the managed free-agent bin dir LAST, after /sbin', () => {
+        const parts = claudeLookupPath({ PATH: '/usr/bin' }).split(':')
+        expect(parts[parts.length - 1]).toBe(FREE_AGENT_BIN_DIR)
+        expect(parts.indexOf('/sbin')).toBeLessThan(
+            parts.indexOf(FREE_AGENT_BIN_DIR),
+        )
     })
 })
 

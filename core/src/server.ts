@@ -104,6 +104,11 @@ import {
     refreshOpencodeFrames,
 } from './chatProviders/opencode/opencode'
 import {
+    getFreeAgentStatus,
+    installedBackendIds,
+    startFreeAgentInstall,
+} from './freeAgent'
+import {
     listProviders,
     oauthAuthorize,
     oauthCallback,
@@ -1189,6 +1194,7 @@ export function createServer(cfg: CoreConfig) {
                 url.searchParams.get('provider') ?? undefined,
                 (appConfig.chat as Record<string, unknown> | undefined)
                     ?.provider,
+                installedBackendIds,
             )
             return ok({
                 frames: id
@@ -1263,6 +1269,17 @@ export function createServer(cfg: CoreConfig) {
                 },
                 { connected: true, body: true },
             ),
+
+        // Free agent (docs/api/http-reference.md): status of the managed opencode download + a
+        // one-click install. Owner-only — it downloads and installs an executable.
+        'GET /agents/free': req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            return ok(getFreeAgentStatus())
+        },
+        'POST /agents/free/install': req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            return ok(startFreeAgentInstall())
+        },
 
         'GET /events': (_, __) => {
             let subscriber: ReadableStreamDefaultController<Uint8Array>
@@ -3636,6 +3653,7 @@ export function createServer(cfg: CoreConfig) {
                         parsed.provider,
                         (appConfig.chat as Record<string, unknown> | undefined)
                             ?.provider,
+                        installedBackendIds,
                     )
                     if (parsed.type === 'open') {
                         // Chat OPEN (the ChatView just mounted / reconnected on a fresh id): spawn the session

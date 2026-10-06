@@ -15,6 +15,18 @@ import {
     checkBackends,
     type BackendReport,
 } from '../../../core/src/agentBackends/doctor'
+import {
+    installFreeAgent,
+    type FreeAgentProgress,
+} from '../../../core/src/freeAgent'
+
+/** The hint shown under "Not installed:". opencode's is overridden HERE, in formatting only —
+ *  `catalog.ts`'s `installHint` is also what the chat error frame shows, and must stay untouched. */
+export function formatBackendHint(id: string, hint: string): string {
+    return id === 'opencode'
+        ? 'run `bismuth backends setup-free` for a free agent (no account), or install from opencode.ai'
+        : hint
+}
 
 /** One human-readable line per backend. `--json` (via `out`) is the machine path; this is the
  *  default because the common use is a person checking why a provider won't start. */
@@ -61,12 +73,61 @@ function formatTable(reports: BackendReport[]): string {
     if (missing.length) {
         lines.push('')
         lines.push('Not installed:')
-        for (const m of missing) lines.push(`  ${m.id}: ${m.hint}`)
+        for (const m of missing)
+            lines.push(`  ${m.id}: ${formatBackendHint(m.id, m.hint!)}`)
     }
     return lines.join('\n')
 }
 
+type Install = typeof installFreeAgent
+
+/** `bismuth backends setup-free [--json]`. The installer is injectable so tests never download.
+ *  Exit code 1 (via `process.exitCode`, so output flushes) when the install ends in `phase:'error'`. */
+export async function runSetupFree(
+    args: string[],
+    install: Install = installFreeAgent,
+): Promise<void> {
+    const json = args.includes('--json')
+    let lastPhase = ''
+    let lastMb = -1
+    const onProgress = (p: FreeAgentProgress) => {
+        if (json) return
+        if (p.phase === 'downloading') {
+            const mb = Math.floor((p.received ?? 0) / 1048576)
+            if (lastPhase === 'downloading' && mb === lastMb) return
+            lastMb = mb
+            lastPhase = p.phase
+            const total = p.total ? ` / ${Math.round(p.total / 1048576)}` : ''
+            console.log(`downloading opencode ${mb}${total} MB`)
+            return
+        }
+        if (p.phase === lastPhase) return
+        lastPhase = p.phase
+        if (p.phase === 'verifying') console.log('checking the download…')
+        else if (p.phase === 'installing') console.log('installing…')
+    }
+    const final = await install(undefined, onProgress)
+    if (final.phase === 'error') process.exitCode = 1
+    if (json) {
+        out(final, args)
+        return
+    }
+    if (final.phase === 'error') {
+        console.error(`error: ${final.message ?? 'could not set up the free agent'}`)
+    } else if (final.action === 'already-installed') {
+        console.log(`ready: opencode already installed at ${final.path ?? 'PATH'}`)
+    } else {
+        console.log(`ready: opencode ${final.version ?? ''} (installed)`.replace('  ', ' '))
+    }
+}
+
 export const commands: CommandMap = {
+    'backends setup-free': {
+        summary:
+            'Download opencode into ~/.bismuth/agents/bin so chat can run on free models (no account)',
+        usage: '[--json]',
+        run: async args => runSetupFree(args),
+    },
     backends: {
         summary:
             'List agent backends: which CLIs are installed here, and which surfaces each supports',

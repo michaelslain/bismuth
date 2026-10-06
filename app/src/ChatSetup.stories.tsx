@@ -1,8 +1,12 @@
 // Visual spec for <ChatSetup> — the dead-end screen ChatView.tsx swaps in for the transcript when
 // a chat can't run: the active provider's CLI is missing, or this vault's hidden-notes policy can't
-// be honoured. See ChatSetup.tsx for why one component covers all three copy variants.
+// be honoured. See ChatSetup.tsx for why one component covers every copy variant.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import ChatSetup from './ChatSetup'
+import FreeAgentSetup from './chat/FreeAgentSetup'
+import Text from './ui/Text'
+import AgentSwitchRow from './chat/AgentSwitchRow'
 
 const meta = {
     title: 'Chat/ChatSetup',
@@ -17,48 +21,61 @@ const frame = (children: unknown) => (
     <div style={{ height: '420px', display: 'flex' }}>{children as any}</div>
 )
 
-/** Claude Code's CLI isn't installed — the most common setup dead end. */
-export const ClaudeMissing: Story = {
+/** No agent is set up (an `auto` chat with nothing installed) — the neutral screen with only the
+ *  free-agent download, nothing to switch to. */
+export const NoAgent: Story = {
     render: () =>
         frame(
             <ChatSetup
                 icon="MessageSquare"
                 iconLabel="Chat"
-                heading="Claude Code isn't available"
+                heading="this chat needs an agent"
                 body={
-                    <p>
-                        This chat runs the <code>claude</code> CLI on your
-                        machine — it isn't installed or signed in. Install
-                        Claude Code and sign in, then reopen this tab.
-                    </p>
+                    <Text>
+                        No coding agent is installed yet. Set up a free one in
+                        one click.
+                    </Text>
                 }
-                actionLabel="use opencode instead"
-                onAction={() => {}}
+                extra={
+                    <FreeAgentSetup
+                        progress={{ phase: 'idle' }}
+                        onStart={() => {}}
+                    />
+                }
             />,
         ),
+    play: async ({ canvasElement }) => {
+        await expect(canvasElement.textContent).toContain('this chat needs an agent')
+        await expect(canvasElement.textContent).toContain('No coding agent is installed yet.')
+        await expect(canvasElement.textContent).toContain('set up free agent')
+    },
 }
 
-/** opencode's CLI isn't installed. */
-export const OpencodeMissing: Story = {
+/** An explicitly chosen agent isn't installed — the body names it. */
+export const AgentMissing: Story = {
     render: () =>
         frame(
             <ChatSetup
                 icon="MessageSquare"
                 iconLabel="Chat"
-                heading="opencode isn't available"
+                heading="this chat needs an agent"
                 body={
-                    <p>
-                        This chat is set to the opencode provider, but the{' '}
-                        <code>opencode</code> CLI wasn't found on your
-                        machine. Install it from opencode.ai (e.g.{' '}
-                        <code>brew install sst/tap/opencode</code>), then
-                        reopen this tab.
-                    </p>
+                    <Text>
+                        opencode isn't installed. Set up a free agent instead,
+                        or install opencode and reopen this chat.
+                    </Text>
                 }
-                actionLabel="use claude code instead"
-                onAction={() => {}}
+                extra={
+                    <FreeAgentSetup
+                        progress={{ phase: 'idle' }}
+                        onStart={() => {}}
+                    />
+                }
             />,
         ),
+    play: async ({ canvasElement }) => {
+        await expect(canvasElement.textContent).toContain("opencode isn't installed.")
+    },
 }
 
 /** A visibility refusal — the backend IS installed, it just can't honour this vault's hidden
@@ -81,4 +98,45 @@ export const VisibilityRefused: Story = {
                 onAction={() => {}}
             />,
         ),
+    play: async ({ canvasElement }) => {
+        await expect(canvasElement.textContent).toContain("can't honour this vault's hidden notes")
+        await expect(canvasElement.textContent).toContain('use claude code instead')
+    },
+}
+
+/** The `extra` slot: the free-agent block, . */
+export const WithExtra: Story = {
+    render: () =>
+        frame(
+            <ChatSetup
+                icon="MessageSquare"
+                iconLabel="Chat"
+                heading="this chat needs an agent"
+                body={
+                    <Text>
+                        OpenAI Codex isn't installed. Switch to an agent you
+                        already have, or set up a free one.
+                    </Text>
+                }
+                extra={
+                    <>
+                        <AgentSwitchRow
+                            backends={[
+                                { id: 'claude', label: 'Claude Code' },
+                                { id: 'gemini', label: 'Gemini CLI' },
+                            ]}
+                            onPick={() => {}}
+                        />
+                        <FreeAgentSetup
+                            progress={{ phase: 'idle' }}
+                            onStart={() => {}}
+                        />
+                    </>
+                }
+            />,
+        ),
+    play: async ({ canvasElement }) => {
+        await expect(canvasElement.textContent).toContain('set up free agent')
+        await expect(canvasElement.textContent).toContain('claude code')
+    },
 }

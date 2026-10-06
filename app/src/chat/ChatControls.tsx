@@ -20,7 +20,8 @@ import Select from '../ui/Select'
 import { IconTextButton } from '../ui/IconTextButton'
 import Text from '../ui/Text'
 import ChatModelMenu from './ChatModelMenu'
-import { providerCan, sanitizeChatProvider } from '../chatProvider'
+import { providerCan, resolveChatProvider } from '../chatProvider'
+import { installedBackendIds, loadAgentAvailability } from './agentAvailability'
 import { PERMISSION_MODE_OPTIONS } from '../chatPermissionMode'
 import {
     browserStorage,
@@ -199,8 +200,9 @@ export type ChatControlsProps = {
  *  of the fallback branch (not a module-level constant) so a preference changed elsewhere in the same
  *  tab is picked up immediately, matching a real session's own initial read.
  *  Mirrors `createChatSession`'s own provider/model reads EXACTLY — same functions, same order, same
- *  fallbacks — `readProviderChoice(storage, chatId) ?? sanitizeChatProvider(settings.chat.provider)`
- *  then `readLastModel(storage, provider, chatId)` — so a host that passes its chat id (the daemon
+ *  fallbacks — `resolveChatProvider(readProviderChoice(storage, chatId), settings.chat.provider,
+ *  installedBackendIds())` (so an `auto` chat shows the agent it will actually run on, never a
+ *  placeholder) then `readLastModel(storage, provider, chatId)` — so a host that passes its chat id (the daemon
  *  page's `DAEMON_CHAT_ID`) sees the SAME per-chat provider/model the armed session will adopt, not
  *  just the global fallback that used to be all this read (a model once picked inside that chat used
  *  to make the row's text change the instant it armed). With no `chatId`, both reads only have a
@@ -208,9 +210,12 @@ export type ChatControlsProps = {
  *  yet) would also fall back to. */
 function buildDisabledSession(chatId?: string): ChatControlsView {
     const storage = browserStorage()
-    const provider =
-        (chatId ? readProviderChoice(storage, chatId) : null) ??
-        sanitizeChatProvider(settings.chat.provider)
+    void loadAgentAvailability()
+    const provider = resolveChatProvider(
+        chatId ? readProviderChoice(storage, chatId) : null,
+        settings.chat.provider,
+        installedBackendIds(),
+    ).provider
     const model = readLastModel(storage, provider, chatId)
     return {
         provider: () => provider,

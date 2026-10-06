@@ -8,6 +8,7 @@ import {
     providerInstallHint,
     providerLabel,
     providerStorageKey,
+    resolveChatProvider,
     sanitizeChatProvider,
 } from './chatProvider'
 
@@ -141,5 +142,61 @@ describe('modelPriceBadge', () => {
 describe('OPENCODE_LOGIN_COMMAND', () => {
     test("the provider manager's login command is opencode's own auth wizard", () => {
         expect(OPENCODE_LOGIN_COMMAND).toBe('opencode auth login')
+    })
+})
+
+describe('resolveChatProvider', () => {
+    const r = resolveChatProvider
+    test('a per-tab explicit choice wins over the setting and availability', () => {
+        expect(r('codex', 'opencode', null)).toEqual({
+            provider: 'codex',
+            auto: false,
+            pending: false,
+            none: false,
+        })
+    })
+    test('a setting naming a backend wins when the tab never chose', () => {
+        expect(r(null, 'gemini', ['claude'])).toEqual({
+            provider: 'gemini',
+            auto: false,
+            pending: false,
+            none: false,
+        })
+    })
+    test('auto while availability is unknown is pending on a claude placeholder', () => {
+        expect(r(null, 'auto', null)).toEqual({
+            provider: 'claude',
+            auto: true,
+            pending: true,
+            none: false,
+        })
+    })
+    test('a failed availability read falls back to claude, not pending', () => {
+        expect(r(null, 'auto', 'failed')).toEqual({
+            provider: 'claude',
+            auto: true,
+            pending: false,
+            none: false,
+        })
+    })
+    test('auto picks the first installed backend in catalog order', () => {
+        expect(r(null, 'auto', ['gemini', 'codex']).provider).toBe('codex')
+        expect(r(null, 'auto', ['opencode', 'claude']).provider).toBe('claude')
+        expect(r(null, 'auto', ['codex']).auto).toBe(true)
+    })
+    test('auto with nothing installed is none on a claude placeholder', () => {
+        expect(r(null, 'auto', [])).toEqual({
+            provider: 'claude',
+            auto: true,
+            pending: false,
+            none: true,
+        })
+    })
+    test('an absent or garbage setting resolves like auto', () => {
+        expect(r(null, undefined, ['opencode']).provider).toBe('opencode')
+        expect(r('nope', 'gpt-cli', ['opencode'])).toMatchObject({
+            provider: 'opencode',
+            auto: true,
+        })
     })
 })

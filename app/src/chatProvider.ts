@@ -13,7 +13,10 @@
 // per-chat + global keys.
 import {
     BACKEND_LIST,
+    DEFAULT_BACKEND,
     backendOf,
+    isBackendId,
+    resolveAutoProvider,
     resolveBackendId,
     type BackendCapabilities,
     type BackendId,
@@ -47,6 +50,63 @@ export function sanitizeChatProvider(
     fallback: ChatProviderChoice = 'claude',
 ): ChatProviderChoice {
     return resolveBackendId(raw, fallback)
+}
+
+/** What the agent-availability read knows: the installed backend ids, `null` while the read is
+ *  still in flight, or `'failed'` when it can't answer (mobile has no such route, or a transient
+ *  network error). */
+export type InstalledBackends = readonly string[] | null | 'failed'
+
+/** The provider a chat runs on, and how it was reached. `auto` = neither the tab nor the vault named
+ *  a backend, so the first INSTALLED one was picked; `pending` = auto, but availability isn't known
+ *  yet (the session must not spawn); `none` = auto and nothing is installed (show the setup screen,
+ *  never spawn). While pending or none, `provider` is the default backend as a placeholder. */
+export type ChatProviderResolution = {
+    provider: ChatProviderChoice
+    auto: boolean
+    pending: boolean
+    none: boolean
+}
+
+/**
+ * Pure: which backend a chat runs on. A per-tab explicit `choice` wins, then a vault `setting` that
+ * names a backend; anything else (`auto`, absent, garbage) is auto — the first installed backend in
+ * the catalog's AUTO_ORDER. A failed availability read falls back to the default backend (the old
+ * behaviour) rather than waiting forever.
+ */
+export function resolveChatProvider(
+    choice: string | null,
+    setting: unknown,
+    installed: InstalledBackends,
+): ChatProviderResolution {
+    const explicit = isBackendId(choice)
+        ? choice
+        : isBackendId(setting)
+          ? setting
+          : null
+    if (explicit)
+        return { provider: explicit, auto: false, pending: false, none: false }
+    if (installed === null)
+        return {
+            provider: DEFAULT_BACKEND,
+            auto: true,
+            pending: true,
+            none: false,
+        }
+    if (installed === 'failed')
+        return {
+            provider: DEFAULT_BACKEND,
+            auto: true,
+            pending: false,
+            none: false,
+        }
+    const picked = resolveAutoProvider(installed)
+    return {
+        provider: picked ?? DEFAULT_BACKEND,
+        auto: true,
+        pending: false,
+        none: picked === null,
+    }
 }
 
 /** The per-tab localStorage key holding this chat's explicit provider choice. */

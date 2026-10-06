@@ -875,6 +875,18 @@ Read-only and cheap by construction: it resolves binaries and reads version stri
 bismuth backends
 bismuth backends --installed --json --pretty
 ```
+In the plain table, the `Not installed:` hint for `opencode` points at `bismuth backends setup-free` (overridden in `backends.ts` formatting only; the catalog's `installHint`, which the chat error frame also shows, is unchanged).
+
+### `backends setup-free [--json]`
+Downloads opencode's official GitHub release into `~/.bismuth/agents/bin/opencode` so chat can run on opencode Zen's free models with **no account and no API key** (about 45 MB). The download's sha256 is checked against the release's `digest`; a mismatch, a missing digest or an archive without the binary installs nothing. If `opencode` is already on `PATH`, nothing is downloaded and the command reports `already installed`.
+
+Plain output is one line per phase change: `downloading opencode 12 / 45 MB` (throttled to whole-MB changes), `checking the download…`, `installing…`, then `ready: opencode <version> (installed)` or `ready: opencode already installed at <path>`. `--json` prints only the final progress object (`{phase, action?, version?, message?}`). Exit code `1` on `phase:'error'`, with the message on stderr.
+
+**Daemon caveat:** the free agent covers chat only. The managed binary is not on your shell PATH, so a terminal tab finds it only if you add ~/.bismuth/agents/bin to PATH yourself. opencode has no daemon surface, so the background brain still needs Claude Code or Codex.
+```bash
+bismuth backends setup-free
+bismuth backends setup-free --json
+```
 
 ## Docs commands (`commands/docs.ts`)
 
@@ -1182,6 +1194,7 @@ bismuth chat search "vault schema" --pretty
 | `page list/create/resolve/mark-failed` | page.ts | **yes** (per-vault `<vault>/.daemon/pages`) | JSON |
 | `install` `install --mcp <cli>` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + per-CLI MCP config) | JSON |
 | `backends` | backends.ts | **no** (probes binaries on PATH; read-only) | table / JSON |
+| `backends setup-free` | backends.ts | **no** (downloads opencode into `~/.bismuth/agents/bin`) | progress lines / JSON |
 | `docs list` `docs search` `docs read` | docs.ts | **no** (reads the docs tree) | JSON / raw page text |
 | `memory remember` `memory recall` `memory forget` | memory.ts | **no** (needs a daemon-enabled vault, or `--memory <dir>`) | JSON |
 | `doctor` | doctor.ts | **no** (machine-wide; `--vault` adds the vault checks) | table / JSON |

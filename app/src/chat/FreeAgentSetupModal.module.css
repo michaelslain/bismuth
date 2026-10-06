@@ -1,0 +1,8 @@
+/* app/src/chat/FreeAgentSetupModal.module.css — FreeAgentSetupModal.tsx is the ONLY importer. */
+.column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--sp-3) 0;
+}

@@ -40,6 +40,12 @@ export type BackendId = (typeof BACKEND_IDS)[number]
 /** The default backend for a chat tab that never chose one and a vault with no `chat.provider`. */
 export const DEFAULT_BACKEND: BackendId = 'claude'
 
+/** `chat.provider: auto` (the setting's default): the first INSTALLED backend in AUTO_ORDER, so a
+ *  vault that never chose an agent opens on whichever one this machine has. Only `auto` resolves this
+ *  way — an explicit id is never swapped for another backend (a user who picked Codex and silently got
+ *  Claude has been lied to about what ran). */
+export const AUTO_PROVIDER = 'auto'
+
 /**
  * How a backend's turn output arrives, which is the only streaming distinction the UI cares about:
  *  - "delta": token-level deltas (Claude Code's stream-json / an SDK query) — prose types out.
@@ -708,6 +714,18 @@ export const BACKEND_LIST: readonly BackendDescriptor[] = BACKEND_IDS.map(
     id => BACKENDS[id],
 )
 
+/** The backends `auto` may pick, in preference order: every picker-visible backend, catalog order. */
+export const AUTO_ORDER: readonly BackendId[] = BACKEND_LIST.filter(
+    b => !b.hidden,
+).map(b => b.id)
+
+/** Pure: the first backend in AUTO_ORDER whose id is in `installed`, or null when none is. */
+export function resolveAutoProvider(
+    installed: readonly string[],
+): BackendId | null {
+    return AUTO_ORDER.find(id => installed.includes(id)) ?? null
+}
+
 /** Type guard for an untrusted id (a stale localStorage value, a wire field, a `.settings` typo). */
 export function isBackendId(v: unknown): v is BackendId {
     return (
@@ -717,16 +735,24 @@ export function isBackendId(v: unknown): v is BackendId {
 
 /**
  * Pure: resolve which backend to use. `requested` is what the client sent on the wire; `fallback`
- * is the vault's `chat.provider` setting. Anything unrecognized (absent, a typo, a backend a newer
+ * is the vault's `chat.provider` setting; when that is `auto`, `installed` (the backends whose binary
+ * resolves here — a thunk, so the PATH probe only runs when `auto` is actually reached) picks the first in AUTO_ORDER. Anything unrecognized (absent, a typo, a backend a newer
  * build knows and this one doesn't) degrades to the next tier, bottoming out at Claude — so garbage
  * input can never spawn the wrong binary or throw.
  */
 export function resolveBackendId(
     requested: unknown,
     fallback?: unknown,
+    installed: readonly string[] | (() => readonly string[]) = [],
 ): BackendId {
     if (isBackendId(requested)) return requested
     if (isBackendId(fallback)) return fallback
+    if (fallback === AUTO_PROVIDER)
+        return (
+            resolveAutoProvider(
+                typeof installed === 'function' ? installed() : installed,
+            ) ?? DEFAULT_BACKEND
+        )
     return DEFAULT_BACKEND
 }
 

@@ -141,6 +141,7 @@ import type {
     InstallResult,
 } from '../../core/src/bismuthInstall'
 import type { UpdateStatus, UpdateProgress } from '../../core/src/selfUpdate'
+import type { FreeAgentStatus, FreeAgentProgress } from '../../core/src/freeAgent'
 import type { GcalStatus } from '../../core/src/gcal'
 import type { SyncResult } from '../../core/src/gcal/sync'
 import { serializeDoc, type DrawingDoc } from '../../core/src/drawing/model'
@@ -752,6 +753,9 @@ export const api = {
     updateStatus: () => getJson<UpdateStatus>('/update/status'),
     applyUpdate: () => postJson<UpdateProgress>('/update/apply', {}),
     updateProgress: () => getJson<UpdateProgress>('/update/progress'),
+    // One-click free agent: opencode download state + start (idempotent server-side).
+    freeAgentStatus: () => getJson<FreeAgentStatus>('/agents/free'),
+    freeAgentInstall: () => postJson<FreeAgentProgress>('/agents/free/install', {}),
 
     // Google Calendar sync — Phase 0: OAuth plumbing. Credentials + tokens live OUTSIDE
     // the vault (~/.bismuth/gcal). The consent URL opens in the system browser; the

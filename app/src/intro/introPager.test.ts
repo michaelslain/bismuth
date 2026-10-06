@@ -4,6 +4,11 @@ import { startIndex, step } from './introPager'
 const slides = [{ key: 'welcome' }, { key: 'theme' }, { key: 'begin' }]
 
 describe('step', () => {
+    it('pages through eight slides', () => {
+        expect(step(6, 8, 'next')).toEqual({ index: 7, enter: false })
+        expect(step(7, 8, 'next')).toEqual({ index: 7, enter: true })
+        expect(step(1, 8, 'skip')).toEqual({ index: 7, enter: false })
+    })
     it('next advances without entering', () => {
         expect(step(0, 7, 'next')).toEqual({ index: 1, enter: false })
         expect(step(5, 7, 'next')).toEqual({ index: 6, enter: false })

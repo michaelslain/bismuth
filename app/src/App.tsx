@@ -54,6 +54,9 @@ import { FolderPrompt } from './FolderPrompt'
 import { DaemonOwnerModal } from './DaemonOwnerModal'
 import { DaemonSetupModal } from './DaemonSetupModal'
 import { BismuthInstallModal } from './BismuthInstallModal'
+import FreeAgentSetupModal from './chat/FreeAgentSetupModal'
+import { completeFreeAgentSetup } from './chat/freeAgentClient'
+import { setAgentStatus } from './chat/agentAvailability'
 import { GcalConnectModal } from './GcalConnectModal'
 import StatusTrustDialog from './shell/StatusTrustDialog'
 import { EditDictionaryModal } from './EditDictionaryModal'
@@ -193,7 +196,12 @@ import './global.css'
 import ChatColorDot from './ChatColorDot'
 import { migrationPollDelays } from './migrationPoll'
 import { isMacPlatform } from './platform'
-import { THEME_VARS_KEY, FIRST_RUN_POWERUPS_KEY } from './storageKeys'
+import {
+    THEME_VARS_KEY,
+    FIRST_RUN_POWERUPS_KEY,
+    FIRST_RUN_AGENT_KEY,
+} from './storageKeys'
+import { providerLabel, sanitizeChatProvider } from './chatProvider'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
@@ -1245,6 +1253,9 @@ export default function App() {
     // Machine-wide bismuth CLI + MCP install panel (idempotent, version-gated ensure).
     const bismuthInstallOpen = () => modal() === 'bismuth-install'
     const openBismuthInstall = () => openModal('bismuth-install')
+    // Free agent: download opencode + default chats to Zen Free (rotating).
+    const freeAgentSetupOpen = () => modal() === 'free-agent-setup'
+    const openFreeAgentSetup = () => openModal('free-agent-setup')
     // Manual "Update Bismuth" command — for when the UpdateBanner was dismissed/missed. Checks
     // fresh, then runs the same apply→build→relaunch pipeline as the banner, reporting progress
     // in a persistent toast. Cleanly says "up to date" when there's nothing to pull (incl. dev).
@@ -1505,6 +1516,7 @@ export default function App() {
                 openDaemonSetup,
                 updateDaemon,
                 openBismuthInstall,
+                openFreeAgentSetup,
                 updateApp,
                 openEditDictionary,
                 archiveTasks,
@@ -2413,6 +2425,46 @@ export default function App() {
         onCleanup(() => uninstallNativeDrop())
     })
 
+    // The agent chosen on the intro's "Pick an agent." slide (same hand-off as the power-ups: the
+    // intro has no backend). 'free-agent' runs the free-agent setup (the same helper the palette
+    // modal uses); a backend id is the user's explicit choice, so it is written to chat.provider.
+    onMount(() => {
+        const agent = localStorage.getItem(FIRST_RUN_AGENT_KEY)
+        if (agent === null) return
+        localStorage.removeItem(FIRST_RUN_AGENT_KEY)
+        setTimeout(() => {
+            if (agent === 'free-agent') {
+                completeFreeAgentSetup(api, localStorage, () => {}, undefined, {
+                    onStatus: setAgentStatus,
+                })
+                    .then(r => {
+                        if (r.phase === 'error')
+                            throw new Error(r.message ?? 'setup failed')
+                        pushToast(
+                            r.action === 'already-installed'
+                                ? 'The free agent is already installed'
+                                : 'Set up the free agent',
+                        )
+                    })
+                    .catch(e =>
+                        pushToast(
+                            `Free agent setup failed: ${(e as Error).message}`,
+                        ),
+                    )
+                return
+            }
+            const provider = sanitizeChatProvider(agent)
+            api.setSetting(['chat', 'provider'], provider)
+                .then(() =>
+                    pushToast(`Chat set to ${providerLabel(provider)}`),
+                )
+                .catch(e =>
+                    pushToast(
+                        `couldn't set the chat agent: ${(e as Error).message}`,
+                    ),
+                )
+        }, 2500)
+    })
     // Run the power-ups the user chose on the first-run intro (persisted to localStorage there,
     // since the intro has no backend). Fires once after the vault opens, then clears the flag.
     // Uses the SAME api the command-palette commands use. Delayed so the sidecar is listening.
@@ -3441,6 +3493,11 @@ export default function App() {
                     <Show when={bismuthInstallOpen()}>
                         <BismuthInstallModal
                             onClose={() => closeModal('bismuth-install')}
+                        />
+                    </Show>
+                    <Show when={freeAgentSetupOpen()}>
+                        <FreeAgentSetupModal
+                            onClose={() => closeModal('free-agent-setup')}
                         />
                     </Show>
                     <Show when={editDictionaryOpen()}>

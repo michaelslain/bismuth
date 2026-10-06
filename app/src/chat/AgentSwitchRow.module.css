@@ -1,0 +1,13 @@
+/* app/src/chat/AgentSwitchRow.module.css — AgentSwitchRow.tsx is the ONLY importer.
+   A centred, wrapping row: one button per installed agent, at the default tone (a real choice, not a hint). */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  /* wider than SegmentedToggle's --sp-4: each TextButton's brackets hang -0.175em outward, so a
+     smaller gap renders the siblings touching ("[claude code][gemini cli]") */
+  column-gap: var(--sp-5);
+  row-gap: var(--sp-1);
+  max-width: 420px;
+}

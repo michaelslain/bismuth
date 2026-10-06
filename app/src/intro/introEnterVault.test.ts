@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'bun:test'
-import { FIRST_RUN_POWERUPS_KEY, THEME_VARS_KEY } from '../storageKeys'
+import {
+    FIRST_RUN_AGENT_KEY,
+    FIRST_RUN_POWERUPS_KEY,
+    THEME_VARS_KEY,
+} from '../storageKeys'
 import { enterVault, type EnterVaultDeps } from './introEnterVault'
 import { introThemeVars } from './introTheme'
 
-const choice = { theme: 'paper' as const, icon: 'hopper-crystal', powerups: ['cli', 'daemon', 'x'] }
+const choice = { theme: 'paper' as const, icon: 'hopper-crystal', powerups: ['cli', 'daemon', 'x'], agent: 'free-agent' }
 
 function rig(over: Partial<EnterVaultDeps> & { ok?: boolean } = {}) {
     const calls = {
@@ -32,12 +36,13 @@ function rig(over: Partial<EnterVaultDeps> & { ok?: boolean } = {}) {
 }
 
 describe('enterVault', () => {
-    it('prod + picked: persists both keys, invokes, opened', async () => {
+    it('prod + picked: persists all three keys, invokes, opened', async () => {
         const { calls, deps } = rig()
         expect(await enterVault(choice, deps)).toBe('opened')
         expect(calls.invoke).toEqual([['choose_first_vault', { theme: 'paper', icon: 'hopper-crystal' }]])
         expect(calls.set).toEqual([
             [FIRST_RUN_POWERUPS_KEY, JSON.stringify(['daemon-setup', 'bismuth-install'])],
+            [FIRST_RUN_AGENT_KEY, 'free-agent'],
             [THEME_VARS_KEY, JSON.stringify(introThemeVars('paper'))],
         ])
         expect(calls.nav).toEqual([])
@@ -85,7 +90,7 @@ describe('enterVault', () => {
         expect(calls.set).toEqual([])
     })
 
-    it('a setItem that throws still reaches invoke, and the second write is still tried', async () => {
+    it('a setItem that throws still reaches invoke, and every later write is still tried', async () => {
         const attempted: string[] = []
         const { calls, deps } = rig({
             storage: {
@@ -96,7 +101,7 @@ describe('enterVault', () => {
             },
         })
         expect(await enterVault(choice, deps)).toBe('opened')
-        expect(attempted).toEqual([FIRST_RUN_POWERUPS_KEY, THEME_VARS_KEY])
+        expect(attempted).toEqual([FIRST_RUN_POWERUPS_KEY, FIRST_RUN_AGENT_KEY, THEME_VARS_KEY])
         expect(calls.invoke.length).toBe(1)
     })
 

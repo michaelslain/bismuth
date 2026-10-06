@@ -215,6 +215,46 @@ fn seed_vault_settings(vault: &str, theme: &str, icon: &str) {
     let _ = std::fs::write(path, body);
 }
 
+// Which of `binaries` resolve to an executable file on this machine. The first-run intro has no
+// core server to ask (`injected` is None on first run), so it asks here. A Finder-launched app has
+// a minimal PATH, so the dirs core/src/claudeWhich.ts's claudeLookupPath adds are searched too.
+#[tauri::command]
+fn detect_agents(binaries: Vec<String>) -> Vec<String> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    dirs.push("/opt/homebrew/bin".into());
+    dirs.push("/usr/local/bin".into());
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        dirs.push(home.join(".bun").join("bin"));
+        dirs.push(home.join(".local").join("bin"));
+        if let Ok(versions) = std::fs::read_dir(home.join(".nvm").join("versions").join("node")) {
+            for v in versions.flatten() {
+                dirs.push(v.path().join("bin"));
+            }
+        }
+        dirs.push(home.join(".bismuth").join("agents").join("bin"));
+    }
+    dirs.push("/usr/bin".into());
+    dirs.push("/bin".into());
+    binaries
+        .into_iter()
+        .filter(|b| {
+            // A bare name only: a path separator or ".." would escape the search dirs.
+            if b.is_empty() || b.contains('/') || b.contains("..") {
+                return false;
+            }
+            dirs.iter().any(|d| {
+                std::fs::metadata(d.join(b))
+                    .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+                    .unwrap_or(false)
+            })
+        })
+        .collect()
+}
+
 // First-run CTA: open the native folder picker, make the chosen folder a vault, persist
 // config.json, and relaunch into it. Works for a brand-new folder (seeds the picked theme)
 // OR an existing vault (its own settings.yaml is left untouched — see seed_vault_settings).
@@ -805,7 +845,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, finish_intro, reset_first_run, set_last_vault, set_ui_zoom, read_drag_pasteboard, print_pdf::print_pdf])
+        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, detect_agents, finish_intro, reset_first_run, set_last_vault, set_ui_zoom, read_drag_pasteboard, print_pdf::print_pdf])
         .setup(|app| {
             // One-time: carry an existing user's saved vault config across the bundle-id
             // rename. Must run before any config read below (the config dir is id-keyed).

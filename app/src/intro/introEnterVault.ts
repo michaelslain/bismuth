@@ -3,11 +3,21 @@
 // picker, write the vault with the chosen theme, relaunch into it. The Rust command does the work
 // and app.restart().
 import type { ThemeName } from '../themes'
-import { FIRST_RUN_POWERUPS_KEY, THEME_VARS_KEY } from '../storageKeys'
+import {
+    FIRST_RUN_AGENT_KEY,
+    FIRST_RUN_POWERUPS_KEY,
+    THEME_VARS_KEY,
+} from '../storageKeys'
 import { powerUpCommands } from './introSlides'
 import { introThemeVars } from './introTheme'
 
-export type EnterVaultChoice = { theme: ThemeName; icon: string; powerups: string[] }
+export type EnterVaultChoice = {
+    theme: ThemeName
+    icon: string
+    powerups: string[]
+    /** 'free-agent' or an installed backend id. */
+    agent: string
+}
 
 export type EnterVaultDeps = {
     dev: boolean
@@ -29,7 +39,7 @@ export async function enterVault(
     choice: EnterVaultChoice,
     deps: EnterVaultDeps,
 ): Promise<EnterVaultResult> {
-    const { theme, icon, powerups } = choice
+    const { theme, icon, powerups, agent } = choice
     const { dev, tauri, invoke, storage, navigate, log } = deps
     if (!tauri) {
         // Browser preview (?intro=1): no native picker / backend.
@@ -42,7 +52,7 @@ export async function enterVault(
     // debug (it would kill the tauri-dev backend → white screen), so navigate into the app
     // ourselves. Nothing is persisted: the dev vault comes from BISMUTH_VAULT regardless.
     if (!dev) {
-        // Persist the chosen power-ups (command-palette ids) for the post-restart app to run
+        // Persist the chosen agent and power-ups (command-palette ids) for the post-restart app to run
         // against the real backend, and the theme vars for its first paint. Each write is
         // best-effort (private mode) and independent of the other.
         try {
@@ -50,6 +60,11 @@ export async function enterVault(
                 FIRST_RUN_POWERUPS_KEY,
                 JSON.stringify(powerUpCommands(powerups)),
             )
+        } catch {
+            /* non-fatal */
+        }
+        try {
+            storage?.setItem(FIRST_RUN_AGENT_KEY, agent)
         } catch {
             /* non-fatal */
         }

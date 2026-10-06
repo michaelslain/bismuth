@@ -11,13 +11,13 @@ const ITEMS = [
     {
         id: 'daemon',
         icon: 'Bot',
-        name: 'DAEMON',
+        name: 'daemon',
         desc: "A background agent that runs crons and weaves memory while you're away.",
     },
     {
         id: 'cli',
         icon: 'SquareTerminal',
-        name: 'CLI + MCP',
+        name: 'cli + mcp',
         desc: 'Drive your vault from the shell, and let your coding agent read the docs + write bases.',
     },
 ]
@@ -34,6 +34,73 @@ type Story = StoryObj<typeof meta>
 
 /** Both power-ups selected — how the slide opens. */
 export const BothOn: Story = {}
+
+/** One card alone, centred at one card's width (the pick-an-agent slide with nothing installed). */
+export const Single: Story = {
+    args: {
+        items: [
+            {
+                id: 'free-agent',
+                icon: 'Download',
+                name: 'free agent',
+                desc: 'Runs opencode on free models. No account, about 45 MB. Free models may keep your prompts.',
+            },
+        ],
+        selected: ['free-agent'],
+    },
+}
+
+const AGENTS = [
+    {
+        id: 'claude',
+        icon: 'SquareTerminal',
+        name: 'claude code',
+        desc: 'Installed on this machine.',
+    },
+    {
+        id: 'codex',
+        icon: 'SquareTerminal',
+        name: 'openai codex',
+        desc: 'Installed on this machine.',
+    },
+    {
+        id: 'free-agent',
+        icon: 'Download',
+        name: 'free agent',
+        desc: 'Runs opencode on free models. No account, about 45 MB. Free models may keep your prompts.',
+    },
+]
+
+/** `single`: exactly one card selected; clicking another moves the selection. */
+export const SingleSelect: Story = {
+    render: () => {
+        const [picked, setPicked] = createSignal('claude')
+        return (
+            <PowerUpList
+                single
+                items={AGENTS}
+                selected={[picked()]}
+                onToggle={setPicked}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const rows = () =>
+            Array.from(
+                canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-testid="toggle-row"]',
+                ),
+            )
+        const checked = () => rows().map(r => r.getAttribute('aria-checked'))
+        expect(checked()).toEqual(['true', 'false', 'false'])
+        rows()[2].click()
+        await new Promise(r => setTimeout(r, 0))
+        expect(checked()).toEqual(['false', 'false', 'true'])
+        rows()[2].click()
+        await new Promise(r => setTimeout(r, 0))
+        expect(checked()).toEqual(['false', 'false', 'true'])
+    },
+}
 
 /** One selected, one off: the `[x]` / `[ ]` pair side by side. */
 export const OneOff: Story = { args: { selected: ['daemon'] } }

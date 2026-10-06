@@ -1,6 +1,6 @@
 /* app/src/intro/VaultIntro.tsx — first-run "open your vault" intro.
    A full-window takeover shown only on first launch (gated in index.tsx): a short slideshow
-   (welcome -> theme -> three brains -> daemon -> agents -> power-ups -> begin).
+   (welcome -> theme -> three brains -> daemon -> agents -> pick an agent -> power-ups -> begin).
 
    This file is state plus composition and nothing else. What each slide says and shows is the
    table in ./introSlides; the pager arithmetic, key mapping, theme painting and the CTA's
@@ -23,6 +23,7 @@
 import {
     Show,
     createEffect,
+    createMemo,
     createSignal,
     onCleanup,
     onMount,
@@ -39,6 +40,13 @@ import IntroFrame from './IntroFrame'
 import IntroHero from './IntroHero'
 import IntroNav from './IntroNav'
 import PowerUpList from './PowerUpList'
+import {
+    binariesFor,
+    defaultIntroAgent,
+    idsForBinaries,
+    introAgentOptions,
+} from './introAgents'
+import { AUTO_ORDER } from '../../../core/src/agentBackends/catalog'
 import ThemePicker from './ThemePicker'
 import {
     enterVault,
@@ -51,6 +59,7 @@ import {
     DEFAULT_POWERUPS,
     POWER_UPS,
     SLIDES,
+    slideBody,
     togglePowerUp,
     type SlideKey,
 } from './introSlides'
@@ -67,6 +76,24 @@ export type VaultIntroProps = {
     /** Seam for the CTA. Default: introEnterVault.enterVault with the real Tauri/env deps. A
      *  story passes a never-resolving promise to hold the busy state. */
     onEnter?: (choice: EnterVaultChoice) => Promise<EnterVaultResult>
+    /** Backend ids already installed on this machine. Given, it replaces detection (stories);
+     *  absent, the intro asks the Tauri shell on mount and falls back to none. */
+    detectedAgents?: string[]
+}
+
+/** Ask the Tauri shell which agent CLIs are installed (the intro has no backend to ask). Outside
+ *  the desktop app, or if the call throws, nothing is detected: only the free agent is offered. */
+const detectInstalledAgents = async (): Promise<string[]> => {
+    if (!isTauri()) return []
+    try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const found = await invoke<string[]>('detect_agents', {
+            binaries: binariesFor(AUTO_ORDER),
+        })
+        return idsForBinaries(found)
+    } catch {
+        return []
+    }
 }
 
 /** The CTA with the real effects: the Tauri command, localStorage, and a hard navigation. */
@@ -119,6 +146,15 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     )
     const [busy, setBusy] = createSignal(false)
     const [powerups, setPowerups] = createSignal(DEFAULT_POWERUPS)
+    const [detected, setDetected] = createSignal<string[]>(
+        props.detectedAgents ?? [],
+    )
+    const [picked, setPicked] = createSignal<string>()
+    const agentOptions = createMemo(() => introAgentOptions(detected()))
+    // Until the user clicks a card, the choice follows the options (so it lands on the first
+    // installed agent once detection returns).
+    const agent = () => picked() ?? defaultIntroAgent(agentOptions())
+    const noneFound = () => detected().length === 0
     const slide = () => SLIDES[index()]
     let root!: HTMLDivElement
     const [fit, setFit] = createSignal(FIT_DEFAULT)
@@ -139,6 +175,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 theme: theme(),
                 icon: DEFAULTS.appearance.icon,
                 powerups: powerups(),
+                agent: agent(),
             })
         } finally {
             // 'opened' leaves the intro busy: the app is relaunching (or navigating) away.
@@ -167,6 +204,10 @@ const VaultIntro: Component<VaultIntroProps> = props => {
         ro.observe(root)
         ro.observe(hero)
         onCleanup(() => ro.disconnect())
+    })
+    onMount(() => {
+        if (props.detectedAgents) return
+        void detectInstalledAgents().then(setDetected)
     })
     onMount(() => window.addEventListener('keydown', onKey))
     onCleanup(() => window.removeEventListener('keydown', onKey))
@@ -211,6 +252,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 <IntroFrame
                     variant={
                         slide().extra === 'themes' ||
+                        slide().extra === 'pickagent' ||
                         slide().extra === 'powerups'
                             ? 'setup'
                             : 'hero'
@@ -226,6 +268,14 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                         <ThemePicker
                                             value={theme()}
                                             onChange={setTheme}
+                                        />
+                                    </Show>
+                                    <Show when={s.extra === 'pickagent'}>
+                                        <PowerUpList
+                                            single
+                                            items={agentOptions()}
+                                            selected={[agent()]}
+                                            onToggle={setPicked}
                                         />
                                     </Show>
                                     <Show when={s.extra === 'powerups'}>
@@ -249,7 +299,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                 <>
                                     <IntroCopy
                                         title={s.title}
-                                        body={s.body}
+                                        body={slideBody(s, noneFound())}
                                         backdrop={!!s.graph}
                                     />
                                     <Show when={s.extra === 'cta'}>

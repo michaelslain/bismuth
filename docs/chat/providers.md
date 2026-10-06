@@ -50,6 +50,10 @@ Verified live against opencode **1.18.4** + `@opencode-ai/sdk` **1.18.9**:
 - **Cost**: read off the turn's authoritative `session.prompt()`/`session.command()` response (`info.cost`), not accumulated from step-finish events.
 - **Stop**: `abortTurn` calls the server's own `session.abort()` — verified live that the blocked `session.prompt()` call then resolves with `info.error.name === "MessageAbortedError"` (reported as a clean Stop, not a turn failure) rather than hanging or rejecting.
 
+### Managed install (the free agent)
+
+With no `opencode` on the machine, Bismuth can download opencode's official GitHub release (`anomalyco/opencode`) into `~/.bismuth/agents/bin/opencode` (`core/src/freeAgent.ts`, `GET /agents/free` + `POST /agents/free/install` in [the HTTP reference](../api/http-reference.md#free-agent-agentsfree)). That directory is appended **last** to `claudeLookupPath`, after `/sbin`, so **your own opencode always wins**: a homebrew or npm install earlier on the PATH is used, and the install is skipped entirely (`already-installed`) when one is found. The download is verified against the sha256 `digest` GitHub publishes on the release asset and is refused on any mismatch or a missing digest, so a tampered or truncated file is never executed. opencode has no daemon surface, so the background daemon still needs Claude Code or Codex.
+
 ### Run mode (fallback, unchanged from the original per-turn driver)
 
 - Each turn spawns `opencode run --format json --auto [-s ses_…] [-m provider/model] <text>` with `cwd` = the vault. stdout is NDJSON — one event per line: `text`/`reasoning` parts arrive **complete per part** (no streaming), `tool_use` events arrive with `state.status` already resolved, `step_finish` accumulates `cost`.

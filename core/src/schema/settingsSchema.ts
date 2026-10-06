@@ -20,6 +20,8 @@ import {
 import {
     BACKEND_IDS,
     BACKEND_LIST,
+    AUTO_ORDER,
+    AUTO_PROVIDER,
     DEFAULT_BACKEND,
 } from '../agentBackends/catalog'
 
@@ -71,10 +73,11 @@ const CALENDAR_VIEWS = ['month', 'week', '3day', 'day']
 // (core/src/agentBackends/catalog.ts) — the same source the router, the frontend picker and the
 // capability gating read, so adding a backend never needs a schema edit. catalog.ts is import-free
 // by design, so pulling it in here keeps this module bundle-safe for the app.
-const CHAT_PROVIDER_IDS = [...BACKEND_IDS]
+const CHAT_PROVIDER_IDS = [AUTO_PROVIDER, ...BACKEND_IDS]
 const CHAT_PROVIDER_DOC =
-    `Default chat provider for NEW chat tabs: ${BACKEND_LIST.map(b => `"${b.id}" runs ${b.label}`).join(', ')}. ` +
-    'Each chat can still pick its own provider in the header.'
+    `Default chat provider for NEW chat tabs: "auto" (the default) runs the first agent installed on this machine, in this order: ${AUTO_ORDER.join(', ')}; ` +
+    `or name one: ${BACKEND_LIST.map(b => `"${b.id}" runs ${b.label}`).join(', ')}. ` +
+    'A named provider is never swapped for another. Each chat can still pick its own provider in the header.'
 
 const enumType = (values: string[]): PropertyType => ({ kind: 'enum', values })
 const object = (fields: Schema): SchemaEntry => ({
@@ -602,7 +605,7 @@ export const SETTINGS_SCHEMA: Schema = {
         // Derived from the agent-backend catalog — no hand-maintained copy to drift from BACKEND_IDS.
         provider: {
             type: enumType(CHAT_PROVIDER_IDS),
-            default: DEFAULT_BACKEND,
+            default: AUTO_PROVIDER,
             doc: CHAT_PROVIDER_DOC,
         },
         // Saved provider + model + effort combinations, picked from the chat's model dialog

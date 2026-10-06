@@ -365,7 +365,7 @@ Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior. The se
 
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
-| `provider` | enum | `claude` | Which agent backend a chat runs on by default: `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `hermes`, `claude-code-acp`, `codex-acp`. This is the default for a chat tab that hasn't chosen for itself — the header's backend picker overrides it per tab, and that choice persists (localStorage, keyed by the chat tab id). Each backend's controls render per declared capability, so a backend without permission modes or effort simply hides them. See [agent backends](../chat/backends.md). |
+| `provider` | enum | `auto` | Which agent backend a chat runs on by default: `auto`, `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `hermes`, `claude-code-acp`, `codex-acp`. `auto` (the default) picks the first backend whose CLI is **installed** on this machine, in catalog order (Claude Code first), so someone with only Codex lands on Codex; with nothing installed the chat shows the "this chat needs an agent" setup screen instead of spawning. A named backend is never swapped for another. This is the default for a chat tab that hasn't chosen for itself — the header's backend picker overrides it per tab, and that choice persists (localStorage, keyed by the chat tab id). Each backend's controls render per declared capability, so a backend without permission modes or effort simply hides them. See [agent backends](../chat/backends.md). |
 | `presets` | list | `[]` | Saved provider + model + effort combinations — `{name, provider, model, effort}` each — applied from the chat's model dialog in the chat tab and the daemon chat. `[+ save]` in that dialog writes one; `[x]` removes one. Empty `model`/`effort` = that connector's/model's default. Picking a preset on another connector starts a new conversation, as any connector switch does. |
 
 Example:
@@ -636,6 +636,7 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `daemon-setup` | Set up daemon… | `Download` |
 | `daemon-update` | Update daemon… | `RefreshCw` |
 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` |
+| `free-agent-setup` | Set up free agent… | `Download` |
 | `update-app` | Update Bismuth… | `RefreshCw` |
 | `gcal-connect` | Connect Google Calendar… | `Calendar` |
 | `gcal-sync` | Sync Google Calendar | `RefreshCw` |

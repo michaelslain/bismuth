@@ -70,6 +70,8 @@ export interface CommandHandlers {
     updateDaemon: () => void | Promise<void>
     // Open the panel to install the bismuth CLI + MCP machine-wide.
     openBismuthInstall: () => void
+    // Open the panel to download opencode and run it on free models (no account).
+    openFreeAgentSetup: () => void
     // Manually update the Bismuth app (same pipeline as the UpdateBanner button) — for when
     // the banner was dismissed or missed. No-op-with-toast when already up to date / in dev.
     updateApp: () => void | Promise<void>
@@ -165,6 +167,7 @@ export function bindCommands(
         'daemon-setup': h.openDaemonSetup,
         'daemon-update': h.updateDaemon,
         'bismuth-install': h.openBismuthInstall,
+        'free-agent-setup': h.openFreeAgentSetup,
         'update-app': h.updateApp,
         'edit-dictionary': h.openEditDictionary,
         'gcal-connect': h.gcalConnect,

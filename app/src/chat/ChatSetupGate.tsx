@@ -1,15 +1,37 @@
 // app/src/chat/ChatSetupGate.tsx — ChatSetupGate.tsx is the ONLY importer of ChatSetupGate.module.css.
 // The "this chat can't run" dead end, extracted so ChatView and DaemonChat share ONE copy of the
 // install/refusal copy instead of two forks (final review: DaemonChat's copy had lost the install
-// instructions and used bare `<p>`). Renders one of three ChatSetup states — a visibility refusal
-// (the backend is installed, it just can't be trusted with this vault's hidden notes), the active
-// provider's CLI missing, or opencode's CLI missing while it's the active provider — or `children`
-// when the session has neither problem.
-import { Match, Show, Switch, type Component, type JSX } from 'solid-js'
+// instructions and used bare `<p>`). Renders one of two ChatSetup states — a visibility refusal
+// (the backend is installed, it just can't be trusted with this vault's hidden notes), or the
+// backend-neutral three-line "<agent> isn't installed" screen when no agent can run (an `auto` chat with
+// nothing installed, or an explicitly chosen backend that is missing) — or `children` when the
+// session has neither problem.
+import {
+    Match,
+    Show,
+    Switch,
+    createSignal,
+    createEffect,
+    on,
+    type Component,
+    type JSX,
+} from 'solid-js'
+import type {
+    FreeAgentProgress,
+    FreeAgentStatus,
+} from '../../../core/src/freeAgent'
+import { api } from '../api'
+import FreeAgentSetup, { FREE_AGENT_COPY } from './FreeAgentSetup'
+import AgentSwitchRow from './AgentSwitchRow'
+import { completeFreeAgentSetup } from './freeAgentClient'
+import {
+    agentBackends,
+    refreshAgentAvailability,
+    setAgentStatus,
+} from './agentAvailability'
 import type { ChatSession } from './chatSession'
 import ChatSetup from '../ChatSetup'
 import Text from '../ui/Text'
-import InlineCode from '../ui/InlineCode'
 import { providerLabel, sanitizeChatProvider } from '../chatProvider'
 import styles from './ChatSetupGate.module.css'
 
@@ -19,6 +41,8 @@ export type ChatSetupGateProps = {
      *  filling the host (ChatSetup's own `flex: 1 1 auto` only does anything inside a flex parent
      *  that WANTS it to fill — see ChatSetupGate.module.css). */
     compact?: boolean
+    /** Use this instead of the shared agent-availability store, and fetch nothing (stories, tests). */
+    freeAgentStatus?: FreeAgentStatus
     class?: string
     children: JSX.Element
 }
@@ -29,6 +53,58 @@ const ChatSetupGate: Component<ChatSetupGateProps> = props => {
     const blocked = () => !!gateRefusal() || !!setupError()
     const switchProvider = (provider: string) =>
         props.session.switchProvider(provider)
+
+    const [progress, setProgress] = createSignal<FreeAgentProgress>({
+        phase: 'idle',
+    })
+    // Re-read availability whenever the dead end shows, so an agent installed outside the app since
+    // the last read is offered in the switch row (and an auto chat parked here can start on it).
+    createEffect(
+        on(blocked, b => {
+            if (b && !props.freeAgentStatus) void refreshAgentAvailability()
+        }),
+    )
+    const backends = () =>
+        props.freeAgentStatus ? props.freeAgentStatus.backends : agentBackends()
+    /** Every OTHER installed agent — the one-click ways out of this dead end. */
+    const alternatives = () =>
+        (backends() ?? []).filter(
+            b => b.installed && b.id !== props.session.provider(),
+        )
+    const heading = () =>
+        props.session.providerAuto()
+            ? 'no agent installed'
+            : `${providerLabel(props.session.provider()).toLowerCase()} isn't installed`
+    /** The free agent is the row's only button when nothing else is installed on an auto chat. */
+    const freeAgentLabel = () =>
+        props.session.providerAuto() && alternatives().length === 0
+            ? 'set up free agent'
+            : 'free agent'
+    const copy = () =>
+        props.session.providerAuto()
+            ? FREE_AGENT_COPY
+            : `free agent ${FREE_AGENT_COPY}`
+    const busy = () =>
+        progress().phase !== 'idle' && progress().phase !== 'error'
+
+    /** Download (or detect) opencode, apply the Zen Free defaults, land the fresh status in the
+     *  availability store, then re-open the chat on it. */
+    const startFreeAgent = async () => {
+        try {
+            await completeFreeAgentSetup(
+                api,
+                localStorage,
+                setProgress,
+                props.session,
+                { onStatus: setAgentStatus },
+            )
+        } catch (e) {
+            setProgress({
+                phase: 'error',
+                message: e instanceof Error ? e.message : String(e),
+            })
+        }
+    }
 
     return (
         <Show when={blocked()} fallback={props.children}>
@@ -60,46 +136,29 @@ const ChatSetupGate: Component<ChatSetupGateProps> = props => {
                             />
                         )}
                     </Match>
-                    {/* Provider-specific guidance: name the missing CLI, how to get it, and a
-                        one-click switch to the OTHER provider — gate gracefully, never a dead
-                        end with no way out. */}
-                    <Match when={setupError() === 'opencode'}>
-                        <ChatSetup
-                            icon="MessageSquare"
-                            iconLabel="Chat"
-                            heading="opencode isn't available"
-                            body={
-                                <Text>
-                                    This chat is set to the opencode provider,
-                                    but the <InlineCode>opencode</InlineCode>{' '}
-                                    CLI wasn't found on your machine. Install
-                                    it from opencode.ai (e.g.{' '}
-                                    <InlineCode>
-                                        brew install sst/tap/opencode
-                                    </InlineCode>
-                                    ), then reopen this tab.
-                                </Text>
-                            }
-                            actionLabel="use claude code instead"
-                            onAction={() => switchProvider('claude')}
-                        />
-                    </Match>
+                    {/* No agent can run: ONE neutral screen for every backend, three lines — what is
+                        missing, one row of choices (installed agents, then the free agent as a peer),
+                        and the free agent's footnote (or its progress / error). */}
                     <Match when={setupError()}>
                         <ChatSetup
-                            icon="MessageSquare"
-                            iconLabel="Chat"
-                            heading="Claude Code isn't available"
-                            body={
-                                <Text>
-                                    This chat runs the{' '}
-                                    <InlineCode>claude</InlineCode> CLI on your
-                                    machine — it isn't installed or signed in.
-                                    Install Claude Code and sign in, then
-                                    reopen this tab.
-                                </Text>
+                            heading={heading()}
+                            extra={
+                                <>
+                                    <AgentSwitchRow
+                                        backends={alternatives()}
+                                        onPick={switchProvider}
+                                        freeAgentLabel={freeAgentLabel()}
+                                        onFreeAgent={startFreeAgent}
+                                        disabled={busy()}
+                                    />
+                                    <FreeAgentSetup
+                                        buttonless
+                                        copy={copy()}
+                                        progress={progress()}
+                                        onStart={startFreeAgent}
+                                    />
+                                </>
                             }
-                            actionLabel="use opencode instead"
-                            onAction={() => switchProvider('opencode')}
                         />
                     </Match>
                 </Switch>

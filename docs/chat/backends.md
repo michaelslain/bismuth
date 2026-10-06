@@ -30,7 +30,15 @@ Consequences worth knowing:
   descriptor — not a union edit across a dozen files.
 - An unknown id (a stale localStorage value, a typo in `.settings`, a backend a newer build knows
   and this one doesn't) degrades to the next tier and bottoms out at Claude. It never throws and
-  never spawns the wrong binary.
+  never spawns the wrong binary. The one non-backend value is `auto` (`AUTO_PROVIDER`, the
+  `chat.provider` default): `resolveBackendId(requested, fallback, installed)` resolves an `auto`
+  fallback to the first INSTALLED backend in `AUTO_ORDER` (`resolveAutoProvider` — the picker-visible
+  backends in catalog order, Claude first), else Claude. `GET /agents/free` reports the same order
+  as `backends: {id, label, installed}[]`; the app keeps it in `app/src/chat/agentAvailability.ts`
+  and resolves a tab with `chatProvider.ts`'s `resolveChatProvider(choice, setting, installed)` —
+  a per-tab choice, then a `.settings` backend id, then `auto`. An `auto` chat does not spawn until
+  that read lands (a failed read, e.g. on mobile, falls back to Claude), and with nothing installed
+  it shows the setup screen without spawning at all.
 
 ## Capabilities replace per-provider branching
 
@@ -289,13 +297,12 @@ closed it as a single chokepoint the chat router calls before any backend is spa
 
 A missing binary must never crash and never silently fall back to a different backend: a user who
 picked Codex and silently got Claude has been lied to about what ran. What actually happens today
-differs by driver. `claude` (`no-claude`) and `opencode` (`no-opencode`) produce the **setup
-screen** (`ChatSetupGate`). The Codex driver and the shared ACP driver instead emit
-`{type:"error", code:"no-binary", binary}` with the install hint, and nothing in `app/src` reads
-`no-binary`: `chatSession.ts`'s `case 'error'` sends it down the generic `setTurnError(message)`
-path, so the user gets an **inline turn error** carrying the install hint, not the setup screen. It
-is still a clear, non-silent failure on the backend they picked — but giving those backends the
-setup screen is not done, so do not write a new driver on the assumption that it is.
+is the same for every driver: `claude` emits `no-claude`, `opencode` emits `no-opencode`, and the
+Codex driver and the shared ACP driver emit `{type:"error", code:"no-binary", binary}`.
+`chatSession.ts`'s `case 'error'` maps all three to `setSetupError(provider())`, so every backend
+gets the same backend-neutral **setup screen** (`ChatSetupGate`: "this chat needs an agent", the
+missing backend named in the body, the free agent, and a switch to any other installed agent). A
+new driver gets it for free by emitting `no-binary` for a missing CLI.
 
 ## Verifying a backend, and the failure mode to watch for
 

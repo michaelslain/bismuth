@@ -279,6 +279,7 @@
     "type": {
       "kind": "enum",
       "values": [
+        "auto",
         "claude",
         "claude-code-acp",
         "cline",
@@ -291,7 +292,7 @@
         "opencode"
       ]
     },
-    "default": "claude",
+    "default": "auto",
     "min": null,
     "max": null,
     "required": false

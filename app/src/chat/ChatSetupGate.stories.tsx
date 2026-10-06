@@ -2,10 +2,11 @@
 // ChatView.tsx and DaemonChat.tsx so both compose ONE copy of the install/refusal messaging (final
 // review finding: the daemon copy had lost the install instructions and used bare `<p>`).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, within } from 'storybook/test'
 import ChatSetupGate from './ChatSetupGate'
 import { makeStubChatSession } from './_stubChatSession'
 import Text from '../ui/Text'
+import type { FreeAgentStatus } from '../../../core/src/freeAgent'
 
 const meta = {
     title: 'Chat/ChatSetupGate',
@@ -22,6 +23,15 @@ function Frame(props: { children: unknown }) {
             {props.children as never}
         </div>
     )
+}
+
+// The gate reads the shared agent-availability store (GET /agents/free); stories pass the status
+// instead so they stay deterministic (the fake transport has no such route).
+const NO_OPENCODE: FreeAgentStatus = {
+    opencode: { installed: false, path: null, managed: false },
+    claude: { installed: false },
+    backends: [],
+    progress: { phase: 'idle' },
 }
 
 const Children = () => <Text>chat content — hidden while a dead end shows</Text>
@@ -72,34 +82,75 @@ export const VisibilityRefusal: Story = {
     },
 }
 
-/** The active provider's CLI (claude) isn't installed — full install copy, one-click switch to
- *  opencode. */
-export const ClaudeMissing: Story = {
+/** An `auto` chat with nothing installed: three lines, `[set up free agent]` as the row's only button. */
+export const NoAgentAuto: Story = {
     render: () => (
         <Frame>
             <ChatSetupGate
                 session={makeStubChatSession({
                     setupError: 'claude',
                     provider: 'claude',
+                    providerAuto: true,
                 })}
+                freeAgentStatus={NO_OPENCODE}
             >
                 <Children />
             </ChatSetupGate>
         </Frame>
     ),
     play: async ({ canvasElement }) => {
-        await expect(
-            canvasElement.textContent?.includes("Claude Code isn't available"),
-        ).toBe(true)
-        await expect(
-            canvasElement.textContent?.includes('Install Claude Code and sign in'),
-        ).toBe(true)
+        const text = canvasElement.textContent ?? ''
+        await expect(text).toContain('no agent installed')
+        await expect(text).toContain('set up free agent')
+        await expect(text).toContain(
+            'runs opencode on free models: no account, about 45 MB, prompts may be kept',
+        )
+        await expect(text).not.toContain('free agent runs')
     },
 }
 
-/** opencode is the active provider but its CLI isn't found — the install copy names the exact
- *  brew command, one-click switch to Claude Code. */
-export const OpencodeMissing: Story = {
+/** Codex was picked explicitly and is missing; Claude Code and Gemini CLI are installed, so the
+ *  switch row offers both (the real catalog labels, lowercased). */
+export const ExplicitMissingWithOthers: Story = {
+    render: () => (
+        <Frame>
+            <ChatSetupGate
+                session={makeStubChatSession({
+                    setupError: 'codex',
+                    provider: 'codex',
+                })}
+                freeAgentStatus={{
+                    ...NO_OPENCODE,
+                    claude: { installed: true },
+                    backends: [
+                        { id: 'claude', label: 'Claude Code', installed: true },
+                        { id: 'opencode', label: 'opencode', installed: false },
+                        { id: 'codex', label: 'OpenAI Codex', installed: false },
+                        { id: 'gemini', label: 'Gemini CLI', installed: true },
+                    ],
+                }}
+            >
+                <Children />
+            </ChatSetupGate>
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await expect(canvasElement.textContent).toContain(
+            "openai codex isn't installed",
+        )
+        await expect(canvasElement.textContent).toContain(
+            'free agent runs opencode on free models: no account, about 45 MB, prompts may be kept',
+        )
+        await expect(c.getByRole('button', { name: 'free agent' })).toBeTruthy()
+        await expect(c.getByRole('button', { name: 'claude code' })).toBeTruthy()
+        await expect(c.getByRole('button', { name: 'gemini cli' })).toBeTruthy()
+        await expect(c.queryByRole('button', { name: 'openai codex' })).toBeNull()
+    },
+}
+
+/** An explicit backend is missing and nothing else is installed: no switch row. */
+export const ExplicitMissingNoOthers: Story = {
     render: () => (
         <Frame>
             <ChatSetupGate
@@ -107,18 +158,19 @@ export const OpencodeMissing: Story = {
                     setupError: 'opencode',
                     provider: 'opencode',
                 })}
+                freeAgentStatus={NO_OPENCODE}
             >
                 <Children />
             </ChatSetupGate>
         </Frame>
     ),
     play: async ({ canvasElement }) => {
-        await expect(
-            canvasElement.textContent?.includes("opencode isn't available"),
-        ).toBe(true)
-        await expect(
-            canvasElement.textContent?.includes('brew install sst/tap/opencode'),
-        ).toBe(true)
+        const text = canvasElement.textContent ?? ''
+        await expect(text).toContain(
+            "opencode isn't installed",
+        )
+        await expect(text).toContain('free agent')
+        await expect(text).not.toContain('set up free agent')
     },
 }
 
@@ -129,7 +181,11 @@ export const Compact: Story = {
         <div style={{ height: '480px', width: '340px', border: '1px solid var(--border-soft)' }}>
             <ChatSetupGate
                 compact
-                session={makeStubChatSession({ setupError: 'claude' })}
+                session={makeStubChatSession({
+                    setupError: 'claude',
+                    providerAuto: true,
+                })}
+                freeAgentStatus={NO_OPENCODE}
             >
                 <Children />
             </ChatSetupGate>
@@ -139,8 +195,8 @@ export const Compact: Story = {
         const setup = canvasElement.querySelector<HTMLElement>(
             '[class*="chat-setup"]',
         )!
-        // Compact: the dead end's own content height is well short of the 480px host — it does
-        // not stretch to fill it.
-        await expect(setup.getBoundingClientRect().height).toBeLessThan(300)
+        // Compact: the dead end's own content height (with the free-agent block, ~350px at this
+        // width) is short of the 480px host — it does not stretch to fill it.
+        await expect(setup.getBoundingClientRect().height).toBeLessThan(420)
     },
 }

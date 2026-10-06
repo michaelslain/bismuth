@@ -4,17 +4,19 @@ import {
     POWER_UPS,
     SLIDES,
     powerUpCommands,
+    slideBody,
     togglePowerUp,
 } from './introSlides'
 
 describe('SLIDES', () => {
-    it('has the seven slides in order', () => {
+    it('has the eight slides in order', () => {
         expect(SLIDES.map(s => s.key)).toEqual([
             'welcome',
             'theme',
             'graph',
             'daemon',
             'agents',
+            'pickagent',
             'powerups',
             'begin',
         ])
@@ -74,6 +76,11 @@ describe('SLIDES', () => {
                 'Chat runs on whichever coding agent you already use — Claude Code, Codex, Gemini, opencode, Cline, Goose. Bismuth speaks MCP, so any of them can search the docs and write your bases, queries and notes.',
             ],
             [
+                'pickagent',
+                'Pick an agent.',
+                'Chat runs on a coding agent on your machine. Pick one you already have, or set up a free one.',
+            ],
+            [
                 'powerups',
                 'Optional power-ups.',
                 'Pick what to set up. Bismuth turns them on once you open your vault, or you can do it anytime from the command palette.',
@@ -87,18 +94,34 @@ describe('SLIDES', () => {
     })
     it('keeps the authored copy', () => {
         expect(SLIDES[0].title).toBe('Notes that think.')
-        expect(SLIDES[6].title).toBe('Open your vault.')
+        expect(SLIDES[7].title).toBe('Open your vault.')
         expect(SLIDES.every(s => s.title && s.body)).toBe(true)
+    })
+})
+
+describe('slideBody', () => {
+    const pick = SLIDES.find(s => s.key === 'pickagent')!
+    it('says none is installed only when the slide has that wording and nothing was found', () => {
+        expect(slideBody(pick, true)).toBe(
+            'Chat runs on a coding agent on your machine. None is installed yet, so start with a free one.',
+        )
+        expect(slideBody(pick, false)).toBe(pick.body)
+        const theme = SLIDES.find(s => s.key === 'theme')!
+        expect(slideBody(theme, true)).toBe(theme.body)
+    })
+    it('the pick-an-agent slide renders the agent picker', () => {
+        expect(pick.extra).toBe('pickagent')
     })
 })
 
 describe('power-ups', () => {
     it('defaults to both on', () => {
         expect(DEFAULT_POWERUPS).toEqual(['daemon', 'cli'])
-        expect(POWER_UPS.map(p => p.id)).toEqual(DEFAULT_POWERUPS)
+        expect(POWER_UPS.map(p => p.id)).toEqual(['daemon', 'cli'])
+        expect(POWER_UPS.map(p => p.name)).toEqual(['daemon', 'cli + mcp'])
     })
-    it('maps ids to commands in POWER_UPS order and drops unknowns', () => {
-        expect(powerUpCommands(['cli', 'daemon', 'x'])).toEqual([
+    it('maps ids to commands in POWER_UPS order, dropping unknowns', () => {
+        expect(powerUpCommands(['cli', 'daemon', 'free-agent', 'x'])).toEqual([
             'daemon-setup',
             'bismuth-install',
         ])

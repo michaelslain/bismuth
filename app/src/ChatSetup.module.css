@@ -31,7 +31,7 @@
   font-weight: 600;
   color: var(--fg);
 }
-.chat-setup p {
+.chat-setup > p {
   margin: 0;
   max-width: 380px;
   font-size: var(--fs-body-lg);
@@ -40,6 +40,14 @@
 /* The setup screen's switch-provider escape hatch (card #90) — breathing room off the copy. */
 .switch-btn {
   margin-top: var(--sp-5);
+}
+/* Button's own `.btn--text.btn--normal { color: var(--fg) }` is 0,2,0 and wins over a lone class;
+   the [data-kind] hook (Button sets it) lifts this to 0,4,0 so the escape hatch stays quiet. */
+.chat-setup .switch-btn[data-kind] {
+  color: var(--faint);
+}
+.chat-setup .switch-btn[data-kind]:hover:not(:disabled) {
+  color: var(--fg);
 }
 .chat-setup code {
   font-family: var(--ui-font-stack);

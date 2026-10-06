@@ -1,0 +1,20 @@
+/* app/src/chat/FreeAgentSetup.module.css — FreeAgentSetup.tsx is the ONLY importer.
+   A centred column: the action (or the live progress line), then one muted prose line. */
+.free-agent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-3);
+  max-width: 420px;
+}
+.copy {
+  text-wrap: balance;
+}
+.progress {
+  text-wrap: balance;
+  font-variant-numeric: tabular-nums;
+}
+.error {
+  color: var(--danger);
+}

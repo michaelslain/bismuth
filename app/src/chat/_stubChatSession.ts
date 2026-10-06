@@ -33,6 +33,7 @@ export type StubChatSessionInit = Partial<{
     models: ChatModelOption[]
     authProviders: { name: string; kind: string }[] | null
     provider: ChatProviderChoice
+    providerAuto: boolean
     permMode: string
     displayModel: string
     displayModelValue: string
@@ -92,6 +93,7 @@ export function makeStubChatSession(
     const [provider] = createSignal<ChatProviderChoice>(
         init.provider ?? 'claude',
     )
+    const [providerAuto] = createSignal(init.providerAuto ?? false)
     const [permMode] = createSignal(init.permMode ?? 'bypassPermissions')
     const [displayModel] = createSignal(init.displayModel ?? '')
     const [displayModelValue] = createSignal(init.displayModelValue ?? '')
@@ -192,6 +194,7 @@ export function makeStubChatSession(
         models,
         authProviders,
         provider,
+        providerAuto,
         permMode,
         displayModel,
         displayModelValue,
@@ -215,6 +218,7 @@ export function makeStubChatSession(
         switchEffort: level => log('switchEffort')(level),
         applyPreset: preset => log('applyPreset')(preset),
         switchProvider: p => log('switchProvider')(p),
+        retrySetup: () => log('retrySetup')(),
         startNewChat: () => log('startNewChat')(),
         quoteReply: text => log('quoteReply')(text),
         history,

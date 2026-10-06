@@ -42,7 +42,7 @@ export interface CommandSpec {
 }
 ```
 
-Seven catalog entries set `interactive: true`: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `gcal-connect` — see ["Interactive commands & app control"](#interactive-commands--app-control) below.
+Eight catalog entries set `interactive: true`: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `free-agent-setup`, `gcal-connect` — see ["Interactive commands & app control"](#interactive-commands--app-control) below.
 
 `COMMAND_IDS` is derived as `COMMAND_CATALOG.map(c => c.id)` (catalog order), and `commandLabel(id)` returns the label for an id or `undefined` for an unknown id.
 
@@ -102,13 +102,14 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 42 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
 | 43 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
 | 44 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
-| 45 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
-| 46 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
-| 47 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
-| 48 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
-| 49 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
-| 50 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
-| 51 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
+| 45 | `free-agent-setup` | Set up free agent… | `Download` | `h.openFreeAgentSetup` |
+| 46 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
+| 47 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
+| 48 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
+| 49 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
+| 50 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
+| 51 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
+| 52 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
 
 Notes on individual commands:
 
@@ -128,6 +129,7 @@ Notes on individual commands:
 - **The panel edge lines run the same two toggles.** The left sidebar's right line and the tab rail's left line are grab strips (`app/src/shell/EdgeHandle.tsx`): **drag** one to resize the panel (writes `appearance.sidebarWidth` / `appearance.tabRailWidth`, clamped to the schema's range by `app/src/edgeResize.ts`), **click** it to run `toggle-sidebar` / `toggle-tab-rail`, and **hover** it to make a chevron button spring out at its vertical centre, pointing the way the panel will move (`‹` hide / `›` show the sidebar, `‹` pin / `›` unpin the rail) — the same toggle, its tooltip naming the live keybinding. With the sidebar hidden its strip is the window's left edge, so hovering there offers `›` show. Focusable by Tab: Enter or Space toggles, as on a real button.
 - **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.
 - **`bismuth-install`**: opens the panel to install the `bismuth` CLI + MCP machine-wide (`h.openBismuthInstall`).
+- **`free-agent-setup`**: opens the panel that downloads opencode and defaults chats to Zen Free (rotating) — no account (`h.openFreeAgentSetup`). The intro's `free agent` power-up runs the same setup on first launch.
 - **`update-app`**: manually updates the Bismuth app (same pipeline as the `UpdateBanner` button) for when the banner was dismissed or missed; no-op-with-toast when already up to date / in dev (`h.updateApp`).
 - **`new-claude-chat`**: opens a fresh Claude Code chat session in its own tab (`h.newClaudeChat`).
 - **`gcal-connect` / `gcal-sync` / `gcal-disconnect`**: open the "Connect Google Calendar" OAuth panel (`h.gcalConnect`), pull events from Google Calendar into the configured base (`h.gcalSync`), and disconnect Google Calendar — revoke + wipe stored tokens (`h.gcalDisconnect`).
@@ -135,7 +137,7 @@ Notes on individual commands:
 
 ### Notable absences / gotchas
 
-- **Several commands share an icon**: `Download` (`export`, `daemon-setup`, `bismuth-install`), `RefreshCw` (`daemon-update`, `update-app`, `gcal-sync`), and **`new-tab` shares `Plus` with `create-menu`**. That is intentional and allowed — icon uniqueness is not an invariant (only `id` uniqueness is).
+- **Several commands share an icon**: `Download` (`export`, `daemon-setup`, `bismuth-install`, `free-agent-setup`), `RefreshCw` (`daemon-update`, `update-app`, `gcal-sync`), and **`new-tab` shares `Plus` with `create-menu`**. That is intentional and allowed — icon uniqueness is not an invariant (only `id` uniqueness is).
 - Icons are **Lucide icon names** by convention (matched against the icon registry on the frontend), but toolbar/daily-note `icon` fields may also be a literal emoji (see "Button fields").
 
 ### The `create-menu` chooser
@@ -184,7 +186,7 @@ Each kind seeds a file named `Untitled <label>.md` (`baseFileName`) with starter
 
 Commands are also reachable from outside the UI, via **app control** — `bismuth app run <id>` / MCP → `POST /ui/command` → App.tsx's `runCommand` handler → the same bound `action()` a click would run. Two mechanisms in `core/src/commands.ts` govern that surface, both distinct from the palette/toolbar path above:
 
-- **The `interactive` flag** (`CommandSpec.interactive`, on `CommandSpec` — see the interface above) marks a command whose action only **opens a modal** and hands off to a person, never completing the underlying task itself. Seven catalog entries set it: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `gcal-connect`. These stay runnable via app control **by design** — an agent opening the Google Calendar connect dialog in answer to "how do I connect gcal?" is showing the user how, which is the point. What changes is the reply: `runCommand` awaits `cmd.action()` and then, when `cmd.interactive` is true, returns `{ ok: true, interactive: true, label: cmd.label, note: 'Opened "<label>" — this needs a person to finish it in the app.' }` instead of the plain `{ ok: true }` an ordinary command gets — so a caller can branch on `result.interactive` and know a dialog is now open and waiting on someone at the keyboard, not that the task is done.
+- **The `interactive` flag** (`CommandSpec.interactive`, on `CommandSpec` — see the interface above) marks a command whose action only **opens a modal** and hands off to a person, never completing the underlying task itself. Eight catalog entries set it: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `free-agent-setup`, `gcal-connect`. These stay runnable via app control **by design** — an agent opening the Google Calendar connect dialog in answer to "how do I connect gcal?" is showing the user how, which is the point. What changes is the reply: `runCommand` awaits `cmd.action()` and then, when `cmd.interactive` is true, returns `{ ok: true, interactive: true, label: cmd.label, note: 'Opened "<label>" — this needs a person to finish it in the app.' }` instead of the plain `{ ok: true }` an ordinary command gets — so a caller can branch on `result.interactive` and know a dialog is now open and waiting on someone at the keyboard, not that the task is done.
 - **`UI_CONTROL_BLOCKLIST`** (`core/src/commands.ts`) is a flat list of command ids that app control refuses outright, regardless of `interactive`: `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` — heavyweight/system verbs an unattended caller shouldn't trigger blindly, plus opening a Claude chat (a live, recursive Agent-SDK session — a materially different trust boundary than opening a note). `isUiControlAllowed(id)` returns `COMMAND_IDS.includes(id) && !UI_CONTROL_BLOCKLIST.includes(id)`; `uiControlAllowedIds()` returns the catalog ids minus the blocklist (what `bismuth app commands` lists). `runCommand` checks the blocklist first and replies `{ ok: false, error: 'command "<id>" is not allowed via app control' }` before even resolving the command.
 
 Full reference for the app-control surface (routes, `bismuth app`/`page` CLI groups, the MCP tools that ride it): [docs/mcp/app-control.md](../mcp/app-control.md).
@@ -274,6 +276,8 @@ export interface CommandHandlers {
   updateDaemon: () => void | Promise<void>;
   // Open the panel to install the bismuth CLI + MCP machine-wide.
   openBismuthInstall: () => void;
+  // Open the panel to download opencode and run it on free models (no account).
+  openFreeAgentSetup: () => void;
   // Manually update the Bismuth app (same pipeline as the UpdateBanner button) — for when
   // the banner was dismissed or missed. No-op-with-toast when already up to date / in dev.
   updateApp: () => void | Promise<void>;
@@ -304,7 +308,7 @@ Because actions may anchor a popover, run async, or return a value the caller ne
 `App.tsx` (around line 998) constructs the bound map reactively:
 
 ```ts
-const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openDaemon, setMode, openDailyNote, equalizePanes, splitPaneRight, splitPaneDown, closeFocusedPane, focusPaneLeft, focusPaneRight, focusPaneUp, focusPaneDown, toggleSidebar, toggleTabRail, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
+const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openDaemon, setMode, openDailyNote, equalizePanes, splitPaneRight, splitPaneDown, closeFocusedPane, focusPaneLeft, focusPaneRight, focusPaneUp, focusPaneDown, toggleSidebar, toggleTabRail, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, openFreeAgentSetup, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
 ```
 
 ### Binding algorithm

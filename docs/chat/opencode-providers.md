@@ -12,6 +12,10 @@ An opencode chat runs on whichever provider the user has connected to **opencode
 
 Route shapes, status codes and error bodies are in the [HTTP reference](../api/http-reference.md#opencode-provider-manager-opencode).
 
+## No account needed for Zen's free models
+
+Measured 2026-10-05 against opencode 1.18.34: with an empty `$HOME` and no sign-in, `opencode models opencode` lists Zen's free models and `opencode run -m opencode/big-pickle` answers. So a user with no coding agent can chat for free. The chat setup screen's `[set up free agent]` downloads opencode into `~/.bismuth/agents/bin` and makes Zen Free (rotating) (`bismuth/zen-free-rotate`) the default model. Some free models log or train on prompts, and the setup screen says so. opencode can change this at any time; if a free turn is answered with a 401 it surfaces as a normal turn error. The daemon still needs Claude Code or Codex, since opencode has no daemon surface.
+
 ## Not installed
 
 The routes answer `409 { error: "opencode-missing" }` when the `opencode` binary is absent or its server will not start. The manager shows that message in place of the lists; the terminal footer below still works.

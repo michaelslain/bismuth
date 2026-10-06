@@ -373,6 +373,29 @@ Four routes over the running `opencode serve` (the shared server in `core/src/ch
 - **`POST /opencode/oauth/authorize`** — body `{ id: string, method: number }` (`method` = index into the provider's `methods`) → `{ url: string, method: "auto" | "code", instructions: string }`. The client opens `url`.
 - **`POST /opencode/oauth/callback`** — body `{ id: string, method: number, code?: string }` → `{ ok: true }`. `code` is the pasted code for a `code` method; an `auto` method omits it and the call resolves when the browser sign-in completes. Re-emits the `models` + `auth` frames on success.
 
+### Free agent (`/agents/free`)
+Two routes behind the one-click "free agent": Bismuth downloads opencode's official GitHub release into `~/.bismuth/agents/bin/opencode` so chat can run on opencode Zen's free models with no account. Both are **blanket owner-only** (the install downloads and installs an executable) and live in the read table (no vault cache invalidation). Non-owner → `403 { error: "forbidden" }`. Implementation: `core/src/freeAgent.ts`.
+
+- **`GET /agents/free`** → `FreeAgentStatus`:
+  ```ts
+  { opencode: { installed: boolean, path: string | null, managed: boolean }, // managed = path is under ~/.bismuth/agents/bin
+    claude: { installed: boolean },
+    // every picker-visible backend in AUTO_ORDER (catalog order, Claude first) — what
+    // chat.provider: auto resolves against, and the setup screen's switch row
+    backends: { id: BackendId, label: string, installed: boolean }[],
+    progress: FreeAgentProgress }
+  ```
+- **`POST /agents/free/install`** → `FreeAgentProgress`. Starts the install in the background and returns the current progress at once; poll `GET /agents/free`. **Idempotent while busy**: a second call (another click, another window) returns the running progress and starts no second download. If opencode is already on the machine (`which`), nothing is downloaded and the progress ends `{ phase: "ready", action: "already-installed" }`.
+  ```ts
+  { phase: "idle" | "downloading" | "verifying" | "installing" | "ready" | "error",
+    received?: number, total?: number,  // bytes, during "downloading"
+    message?: string,                   // human error text when phase is "error"
+    action?: "installed" | "already-installed", // when phase is "ready"
+    version?: string,                   // `opencode --version`, when ready
+    path?: string }                     // the existing binary, when action is "already-installed"
+  ```
+- **Fail-closed.** The download is sha256-hashed while it streams and compared with the `digest` GitHub publishes on the release asset. A mismatch, a missing digest, a non-2xx response, an archive with no `opencode` inside, or a platform with no build (`opencode has no build for this platform`) ends in `phase: "error"` and leaves nothing at the final path.
+
 ### `POST /list-dir`
 - **Body:** `{ path?: string, only?: "dir" | "file" }`. `path` is the partial filesystem path the user is typing (absolute or `~`-relative); `only` narrows to dirs or files.
 - **Action:** `listFsPaths(path, only)` (`core/src/fsPaths.ts`) — `readdir`s the parent of `path` and returns matching children, display paths preserving the `~`/`/` form. Backs `scope: "fs"` settings autocomplete (filesystem-path settings).

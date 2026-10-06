@@ -8,16 +8,20 @@ export type SlideKey =
     | 'graph'
     | 'daemon'
     | 'agents'
+    | 'pickagent'
     | 'powerups'
     | 'begin'
 export type SlideHero = 'wordmark' | 'daemon' | 'agents' | 'begin'
 export type SlideGraph = 'small' | 'big'
-export type SlideExtra = 'themes' | 'powerups' | 'cta'
+export type SlideExtra = 'themes' | 'pickagent' | 'powerups' | 'cta'
 
 export type Slide = {
     key: SlideKey
     title: string
     body: string
+    /** The body when the slide's content came back empty (the pick-an-agent slide, when no agent
+     *  CLI was found on this machine). Absent: `body` always applies. */
+    bodyEmpty?: string
     /** Which IntroGraph is active. A graph slide also gets the copy/nav backdrop. */
     graph?: SlideGraph
     /** Non-graph visual above the copy. */
@@ -65,6 +69,15 @@ export const SLIDES: Slide[] = [
         corner: true,
     },
     {
+        key: 'pickagent',
+        title: 'Pick an agent.',
+        body: 'Chat runs on a coding agent on your machine. Pick one you already have, or set up a free one.',
+        bodyEmpty:
+            'Chat runs on a coding agent on your machine. None is installed yet, so start with a free one.',
+        extra: 'pickagent',
+        corner: true,
+    },
+    {
         key: 'powerups',
         title: 'Optional power-ups.',
         body: 'Pick what to set up. Bismuth turns them on once you open your vault, or you can do it anytime from the command palette.',
@@ -97,23 +110,23 @@ export const POWER_UPS: PowerUp[] = [
         id: 'daemon',
         cmd: 'daemon-setup',
         icon: 'Bot',
-        name: 'DAEMON',
+        name: 'daemon',
         desc: "A background agent that runs crons and weaves memory while you're away.",
     },
     {
         id: 'cli',
         cmd: 'bismuth-install',
         icon: 'SquareTerminal',
-        name: 'CLI + MCP',
+        name: 'cli + mcp',
         desc: 'Drive your vault from the shell, and let your coding agent read the docs + write bases.',
     },
 ]
 
-/** Both on by default. Re-running their setup is idempotent, so it is safe to leave them checked
+/** All on by default. Re-running their setup is idempotent, so it is safe to leave them checked
  *  even when already installed (CLI+MCP re-syncs on boot, daemon auto-updates on launch). */
 export const DEFAULT_POWERUPS: string[] = ['daemon', 'cli']
 
-/** Selected ids → command-palette ids, in POWER_UPS order; an unknown id is dropped. */
+/** Selected ids → command-palette ids in POWER_UPS order; an unknown id is dropped. */
 export function powerUpCommands(selected: string[]): string[] {
     return POWER_UPS.filter(p => selected.includes(p.id)).map(p => p.cmd)
 }
@@ -122,4 +135,9 @@ export function togglePowerUp(selected: string[], id: string): string[] {
     return selected.includes(id)
         ? selected.filter(x => x !== id)
         : [...selected, id]
+}
+
+/** The slide's body: `bodyEmpty` when the slide has one and `empty` says nothing was found. */
+export function slideBody(slide: Slide, empty: boolean): string {
+    return empty && slide.bodyEmpty ? slide.bodyEmpty : slide.body
 }

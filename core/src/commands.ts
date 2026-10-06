@@ -108,6 +108,12 @@ export const COMMAND_CATALOG: CommandSpec[] = [
         icon: 'Download',
         interactive: true,
     },
+    {
+        id: 'free-agent-setup',
+        label: 'Set up free agent…',
+        icon: 'Download',
+        interactive: true,
+    },
     { id: 'update-app', label: 'Update Bismuth…', icon: 'RefreshCw' },
     {
         id: 'gcal-connect',

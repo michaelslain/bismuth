@@ -1,6 +1,6 @@
 // The first-run intro takeover — one story per slide.
 //
-// THE WHOLE SEVEN-SLIDE FLOW RENDERED IN NO STORY AT ALL until now. VaultIntro took no props
+// THE WHOLE EIGHT-SLIDE FLOW RENDERED IN NO STORY AT ALL until now. VaultIntro took no props
 // and kept the current slide in a private signal, so only slide 0 was ever reachable and the
 // other six — including the two that mount a live 3D graph — were invisible to visual
 // verification. `startAt` (added with these stories) seeds that signal so each slide can be
@@ -42,10 +42,20 @@ export const Daemon: Story = { args: { startAt: 'daemon' } }
  *  naming the supported agent backends. */
 export const Agents: Story = { args: { startAt: 'agents' } }
 
-/** Slide 6 — the optional power-up rows, both toggled on by default. */
+/** Slide 6 with no agent CLI found: the free agent alone, centred, selected. */
+export const PickAgentNone: Story = {
+    args: { startAt: 'pickagent', detectedAgents: [] },
+}
+
+/** Slide 6 with Claude Code and Codex found: three cards, the first installed one selected. */
+export const PickAgentSome: Story = {
+    args: { startAt: 'pickagent', detectedAgents: ['claude', 'codex'] },
+}
+
+/** Slide 7 — the optional power-up rows, both toggled on by default. */
 export const PowerUps: Story = { args: { startAt: 'powerups' } }
 
-/** Slide 7 — the formed wordmark over an `> open vault_` prompt, with the one bracket-primary CTA
+/** Slide 8 — the formed wordmark over an `> open vault_` prompt, with the one bracket-primary CTA
  *  under the copy. */
 export const Begin: Story = { args: { startAt: 'begin' } }
 
@@ -55,13 +65,13 @@ export const ThemePaperPicked: Story = {
     args: { startAt: 'theme', initialTheme: 'paper' },
 }
 
-/** Slide 6 with the CLI + MCP power-up switched off, then DAEMON toggled from the keyboard. */
+/** Slide 7 with the cli + mcp power-up switched off, then daemon toggled from the keyboard. */
 export const PowerUpOff: Story = {
     args: { startAt: 'powerups' },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const cli = canvas.getByRole('switch', { name: /CLI \+ MCP/ })
-        const daemon = canvas.getByRole('switch', { name: /DAEMON/ })
+        const cli = canvas.getByRole('switch', { name: /cli \+ mcp/ })
+        const daemon = canvas.getByRole('switch', { name: /daemon/ })
         await expect(cli.getAttribute('aria-checked')).toBe('true')
         await userEvent.click(cli)
         await waitFor(() => expect(cli.getAttribute('aria-checked')).toBe('false'))
@@ -105,7 +115,7 @@ export const NarrowTitle: Story = {
 const SLIDE_COUNT = SLIDES.length
 
 /** Every slide's hero box, headline and nav sit at the same y, and the hero box is the same size.
- *  Walks all seven slides with the real Next button (stopping before the last Next, which enters
+ *  Walks all eight slides with the real Next button (stopping before the last Next, which enters
  *  the vault) and compares each slide's numbers to slide 1's. It also pins the box to its spec
  *  (16 rows x 1.5 glyph scale, so a frame that is uniformly wrong cannot pass) and checks each
  *  slide's copy ends above the nav. */
@@ -171,6 +181,13 @@ export const DaemonPaper: Story = {
 }
 export const AgentsPaper: Story = {
     args: { startAt: 'agents', initialTheme: 'paper' },
+}
+export const PickAgentSomePaper: Story = {
+    args: {
+        startAt: 'pickagent',
+        detectedAgents: ['claude', 'codex'],
+        initialTheme: 'paper',
+    },
 }
 export const BeginPaper: Story = {
     args: { startAt: 'begin', initialTheme: 'paper' },
