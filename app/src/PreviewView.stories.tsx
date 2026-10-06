@@ -54,6 +54,8 @@ import pdfPagesStyles from './preview/PdfPages.module.css'
 import PdfPages from './preview/PdfPages'
 import { rectsToPages } from './preview/selectionRects'
 import { barItems, probeBar } from './ui/_previewBarAssertions'
+import TextButton from './ui/TextButton'
+import Text from './ui/Text'
 
 const meta = {
     title: 'App/PreviewView',
@@ -2282,5 +2284,115 @@ export const PdfPanelAndScratchKeepPlace: Story = {
             await fireEvent.click(scratch)
             await waitFor(() => expect(pressedOf(scratch)).toBe('false'))
         })
+    },
+}
+
+// ── Leave a PDF and come back ───────────────────────────────────────────────────────────────────
+// The user's report: "when i leave a pdf and come back, all the highlights are gone and i need to
+// reopen everything". Leaving a PDF tab for a note unmounts PreviewView; coming back remounts it
+// from PdfPages' session doc cache, which used to never report its page layout again — so every
+// highlight (and ink stroke, and scratch note) stayed unpainted over a fully painted PDF.
+//
+// This story is the real round trip, through the real wiring: `[ pdf ]` / `[ note ]` mount and
+// unmount PreviewView exactly the way a tab switch does, `pdfCacheKey` puts it on the cache path a
+// returning tab takes, and the fake transport keeps every sidecar write in memory, so a highlight
+// made here is really saved and really read back on return. Try it by hand: select text, press the
+// highlight button, switch to the note, switch back. The play() below does the same once.
+const RETURN_PDF_PATH = 'docs/leave-and-return.pdf'
+const RETURN_CACHE_KEY = 'story:leave-and-return'
+
+let setReturnTab: ((t: 'pdf' | 'note') => void) | undefined
+
+export const PdfLeaveAndReturnKeepsHighlights: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        const [tab, setTab] = createSignal<'pdf' | 'note'>('pdf')
+        setReturnTab = setTab
+        return (
+            <div
+                style={{
+                    height: '100vh',
+                    display: 'flex',
+                    'flex-direction': 'column',
+                }}
+            >
+                <div style={{ display: 'flex', gap: '8px', padding: '8px' }}>
+                    <TextButton
+                        variant={tab() === 'pdf' ? 'selected' : 'unselected'}
+                        data-testid="return-tab-pdf"
+                        onClick={() => setTab('pdf')}
+                    >
+                        pdf
+                    </TextButton>
+                    <TextButton
+                        variant={tab() === 'note' ? 'selected' : 'unselected'}
+                        data-testid="return-tab-note"
+                        onClick={() => setTab('note')}
+                    >
+                        note
+                    </TextButton>
+                </div>
+                <div style={{ flex: '1', 'min-height': '0' }}>
+                    <Show
+                        when={tab() === 'pdf'}
+                        fallback={
+                            <div style={{ padding: '16px' }} data-testid="return-note">
+                                <Text tone="muted">
+                                    a note // the pdf is unmounted while this is open
+                                </Text>
+                            </div>
+                        }
+                    >
+                        <PreviewView
+                            path={RETURN_PDF_PATH}
+                            tagNames={NO_TAGS}
+                            pdfLoad={annotatedLoad}
+                            pdfCacheKey={RETURN_CACHE_KEY}
+                        />
+                    </Show>
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const rects = () =>
+            canvasElement.querySelectorAll('[data-testid="highlight-rect"]').length
+        const firstSpan = () =>
+            canvasElement.querySelector<HTMLElement>('[data-pdf-page="0"] span')
+
+        await waitFor(
+            () => expect(firstSpan()?.getBoundingClientRect().width ?? 0).toBeGreaterThan(0),
+            { timeout: 8000 },
+        )
+        const hlBtn = canvas.getByLabelText('Highlight text') as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false))
+
+        // Highlight the first line, the way a person does: select, then press.
+        selectSpan(firstSpan()!)
+        await fireEvent.click(hlBtn)
+        await waitFor(() => expect(rects()).toBe(1))
+
+        // Leave for the note: the PDF really unmounts.
+        setReturnTab!('note')
+        await waitFor(() => {
+            expect(canvasElement.querySelector('[data-testid="return-note"]')).not.toBeNull()
+            expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBe(0)
+        })
+
+        // Come back: the cached remount must paint the saved highlight again, on the live span.
+        setReturnTab!('pdf')
+        await waitFor(
+            () => {
+                expect(rects()).toBe(1)
+                const r = canvasElement
+                    .querySelector<HTMLElement>('[data-testid="highlight-rect"]')!
+                    .getBoundingClientRect()
+                const sr = firstSpan()!.getBoundingClientRect()
+                expect(Math.abs(r.left - sr.left)).toBeLessThan(3)
+                expect(Math.abs(r.width - sr.width)).toBeLessThan(3)
+            },
+            { timeout: 5000 },
+        )
     },
 }

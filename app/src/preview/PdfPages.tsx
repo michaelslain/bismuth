@@ -138,6 +138,12 @@ let nextDocId = 1
 
 function PdfPages(props: PdfPagesProps) {
     let scrollRef: HTMLDivElement | undefined
+    // `scrollRef` as a signal, for the ONE effect that must re-run when the element appears: the
+    // `onLayout` report. A cache-hit remount flips `status` to 'ready' inside the boot effect,
+    // BEFORE `<Show>` has created the scroll div — so the report ran once with no element, bailed,
+    // and (tracking only `status`) never ran again. PreviewView paints highlights, ink and scratch
+    // notes solely from those boxes, so every annotation vanished on returning to a cached PDF.
+    const [scrollEl, setScrollEl] = createSignal<HTMLDivElement>()
 
     // Resolved ONCE via Solid's `children()` helper. `props.overlay` is a getter (an inline
     // `overlay={<X/>}` at the call site compiles to one), and reading a getter prop twice — once
@@ -346,6 +352,7 @@ function PdfPages(props: PdfPagesProps) {
     // when that branch tears down (an error, or a reload that briefly flips back to 'loading').
     const setScrollRef = (el: HTMLDivElement) => {
         scrollRef = el
+        setScrollEl(el)
         // A microtask, not a synchronous read here: Solid calls a ref as soon as its element
         // exists, which can be before that element (and the ancestors `--sp-6` cascades from) is
         // actually connected to the document — `getComputedStyle` on a detached node resolves
@@ -385,6 +392,7 @@ function PdfPages(props: PdfPagesProps) {
             // every page still laid out. Reported, that became `{ index: 0, yFraction: 0 }` and
             // overwrote the remembered position a moment before the next mount read it back.
             if (scrollRef === el) scrollRef = undefined
+            if (untrack(scrollEl) === el) setScrollEl(undefined)
         })
         props.controller?.(controller)
     }
@@ -528,11 +536,12 @@ function PdfPages(props: PdfPagesProps) {
     }
 
     createEffect(() => {
-        if (status() !== 'ready' || !scrollRef) return
+        const el = scrollEl()
+        if (status() !== 'ready' || !el) return
         props.onLayout?.({
             boxes: layout().boxes,
             sizes: sizes(),
-            scrollEl: scrollRef,
+            scrollEl: el,
         })
     })
 

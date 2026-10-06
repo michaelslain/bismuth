@@ -137,6 +137,11 @@ export function PreviewView(props: {
      *  that key instead of being skipped; production never sets this prop, so `pdfMemoryKey()` is
      *  always `path()` there. */
     pdfViewKey?: string
+    /** DATA SEAM: opts a `pdfLoad` story into PdfPages' session doc cache under a key unique to
+     *  that story — the cache-hit remount is the path a user takes returning to a PDF tab, and
+     *  `pdfLoad` alone (like `pdfViewKey`) deliberately gets no cache. Production never sets it,
+     *  so the cache key is always `path()` there. */
+    pdfCacheKey?: string
     /** DATA SEAM (final review — PdfViewBarNarrow measured the trail without these): defaults to
      *  `isTauri()`, which is always false in a Storybook browser tab, so a story measuring the
      *  ViewBar's collapse behaviour never saw the open-in-default-app / reveal icon buttons
@@ -976,8 +981,11 @@ export function PreviewView(props: {
                             // The doc cache is keyed on the REAL path only, never `pdfViewKey` — a
                             // story proving view-memory restore (`pdfViewKey` set) must still get
                             // no cache, exactly like every other `pdfLoad` story, so it only ever
-                            // proves the memory seam it asked for.
-                            cacheKey={props.pdfLoad ? undefined : path()}
+                            // proves the memory seam it asked for. `pdfCacheKey` is the separate,
+                            // explicit opt-in for a story that means to exercise the cache.
+                            cacheKey={
+                                props.pdfCacheKey ?? (props.pdfLoad ? undefined : path())
+                            }
                             initialPosition={
                                 pdfMemoryKey()
                                     ? loadPdfView(pdfMemoryKey()!)?.position

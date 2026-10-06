@@ -801,6 +801,71 @@ export const CacheSurvivesRemount: Story = {
     },
 }
 
+/** Return to a cached instance: the remount must report its layout again. PreviewView paints
+ *  highlights, ink and scratch notes ONLY from the boxes `onLayout` hands it, so a cache-hit
+ *  remount that never re-reports leaves every annotation unpainted over a fully painted PDF —
+ *  the "leave a PDF and come back, all the highlights are gone" bug. The hit path flips `status`
+ *  to 'ready' inside the boot effect, before the scroll element exists, so the report effect has
+ *  to wake up again once the element mounts. */
+let remountLayouts: PageBox[][] = []
+export const CacheRemountReportsLayout: Story = {
+    render: () => {
+        remountLayouts = []
+        const [mounted, setMounted] = createSignal(true)
+        return (
+            <div style={{ height: '640px' }}>
+                <button
+                    type="button"
+                    data-testid="pdfpages-relayout-unmount"
+                    onClick={() => setMounted(false)}
+                >
+                    unmount
+                </button>
+                <button
+                    type="button"
+                    data-testid="pdfpages-relayout-remount"
+                    onClick={() => setMounted(true)}
+                >
+                    remount
+                </button>
+                <Show when={mounted()}>
+                    <PdfPages
+                        load={load}
+                        zoom={1}
+                        cacheKey="story:CacheRemountReportsLayout"
+                        onLayout={l => remountLayouts.push(l.boxes)}
+                    />
+                </Show>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const measured = () =>
+            remountLayouts.some(b => b.length > 0 && b[0]!.w > 0)
+        const click = (id: string) =>
+            (
+                canvasElement.querySelector(
+                    `[data-testid="${id}"]`,
+                ) as HTMLButtonElement
+            ).click()
+
+        await waitFor(() => expect(measured()).toBe(true), { timeout: 5000 })
+
+        click('pdfpages-relayout-unmount')
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBe(0),
+            { timeout: 5000 },
+        )
+        remountLayouts = []
+        click('pdfpages-relayout-remount')
+
+        await waitFor(() => expect(measured()).toBe(true), { timeout: 5000 })
+    },
+}
+
 /** A ≥ 6-page fixture — `Default`'s 3-page one can't exercise "restore to page 3". */
 function buildSixPagePdf(): ArrayBuffer {
     const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
