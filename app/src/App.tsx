@@ -78,6 +78,7 @@ import { selectDisplayGraph } from './graph/displayGraph'
 import { viewCacheStructureSig } from './graph/graphStability'
 import type { GraphData } from '../../core/src/graph'
 import { binaryForCompanion } from '../../core/src/fileKinds'
+import { normalizeSidebarSections, otherSide } from '../../core/src/shellLayout'
 import type { NoteCandidate } from './editor/wikilink'
 import {
     memorySlugFromNodeId,
@@ -690,6 +691,21 @@ export default function App() {
         ),
     )
     const toggleTabRail = () => setTabRailPinned(v => !v)
+    // The shell arrangement (`layout:` in .settings): which window edge each panel sits on, which
+    // sidebar sections show and in what order, and whether the status bar shows. Three palette
+    // commands flip them through the store; the frame places the cells from these values.
+    const sidebarSide = () => settings.layout.sidebarSide
+    const tabRailSide = () => settings.layout.tabRailSide
+    const statusBarVisible = () => settings.layout.statusBar
+    const sidebarSections = createMemo(() =>
+        normalizeSidebarSections(settings.layout.sidebar),
+    )
+    const moveSidebarSide = () =>
+        setSettings('layout', 'sidebarSide', otherSide(sidebarSide()))
+    const moveTabRailSide = () =>
+        setSettings('layout', 'tabRailSide', otherSide(tabRailSide()))
+    const toggleStatusBar = () =>
+        setSettings('layout', 'statusBar', !statusBarVisible())
     // Panel edge drags (shell/EdgeHandle on the sidebar's and the rail's lines). The width is the
     // `.settings` value itself (appearance.sidebarWidth / tabRailWidth), written live as the pointer
     // moves — the settings store debounces the PATCH, so one drag is one write. `edgeResizing` turns
@@ -1503,6 +1519,9 @@ export default function App() {
                 focusPaneDown,
                 toggleSidebar,
                 toggleTabRail,
+                moveSidebarSide,
+                moveTabRailSide,
+                toggleStatusBar,
                 openFolder,
                 newWindow,
                 exportActive,
@@ -2593,7 +2612,7 @@ export default function App() {
             runUnlessEditableTarget(e, toggleSidebar)
             return
         }
-        // Pin/unpin the right tab rail (default Alt+Shift+S): same guard as the sidebar toggle.
+        // Pin/unpin the tab rail (default right edge; Alt+Shift+S): same guard as the sidebar toggle.
         if (matchesKeybinding(e, kb['toggle-tab-rail'])) {
             runUnlessEditableTarget(e, toggleTabRail)
             return
@@ -2831,6 +2850,10 @@ export default function App() {
     // active tab shows the graph), else the sidebar square (a tab is open), else the full main
     // pane (empty/no tab). Targeting the pane host is what lets the one graph instance cover a
     // split pane without remounting.
+    const floaterDocked = () =>
+        anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()
+    const floaterParked = () =>
+        floaterDocked() && !sidebarSections().includes('graph')
     const placeFloater = () => {
         if (!floater) return
         // Cmd+O switcher mode: the graph fills the whole editor body (the home view) as the
@@ -2841,7 +2864,15 @@ export default function App() {
             : activeTabShowsGraph()
               ? editorBodyEl?.querySelector<HTMLElement>('[data-graph-host]')
               : null
-        const slot = host ?? (anyTabOpen() ? sidebarSlot : mainSlot)
+        // The docked slot exists only while `graph` is among the sidebar sections; without it the
+        // floater is parked (GraphFloater `parked`) and there is nothing to place it on.
+        const slot =
+            host ??
+            (anyTabOpen()
+                ? floaterParked()
+                    ? undefined
+                    : sidebarSlot
+                : mainSlot)
         if (!slot) return
         const r = slot.getBoundingClientRect()
         // In switcher mode the search + results occupy a fixed left column; the graph fills only
@@ -2867,6 +2898,10 @@ export default function App() {
         settings.appearance.sidebarWidth // …or dragged wider/narrower by its edge
         activeTabShowsGraph() // …or when the graph moves between the sidebar slot and a pane host
         switcherOpen() // …or when Cmd+O expands the graph to fill the window (and back)
+        settings.layout.sidebarSide // …or the sidebar (and its graph square) moves to the other edge
+        settings.layout.tabRailSide // …or the rail moves, shifting the sidebar's column
+        settings.layout.statusBar // …or the status bar shows/hides, changing the body height
+        sidebarSections() // …or the docked graph square is added, removed or reordered
         requestAnimationFrame(placeFloaterSettled)
     })
     onMount(() => {
@@ -3093,6 +3128,36 @@ export default function App() {
             hasRail={true}
             railPinned={tabRailPinned()}
             resizing={edgeResizing()}
+            sidebarSide={sidebarSide()}
+            tabRailSide={tabRailSide()}
+            statusBarVisible={statusBarVisible()}
+            sidebarEdge={
+                <Show when={!switcherOpen()}>
+                    <EdgeHandle
+                        buttonSide={sidebarSide() === 'left' ? 'right' : 'left'}
+                        label="sidebar edge"
+                        action={sidebarVisible() ? 'hide sidebar' : 'show sidebar'}
+                        direction={
+                            sidebarVisible() === (sidebarSide() === 'left')
+                                ? 'left'
+                                : 'right'
+                        }
+                        combo={settings.keybindings['toggle-sidebar']}
+                        resizable={sidebarVisible()}
+                        reveal={!sidebarVisible() && sidebarSide() !== tabRailSide()}
+                        onResizeStart={() => startEdgeResize('sidebarWidth')}
+                        onResize={dx =>
+                            resizeEdge(
+                                'sidebarWidth',
+                                dx,
+                                sidebarSide() === 'left' ? 1 : -1,
+                            )
+                        }
+                        onResizeEnd={endEdgeResize}
+                        onActivate={toggleSidebar}
+                    />
+                </Show>
+            }
             topStrip={
                 <TopStrip
                     mac={isTauri() && IS_MAC_PLATFORM}
@@ -3110,6 +3175,8 @@ export default function App() {
             sidebar={
                 <Sidebar
                     visible={sidebarVisible()}
+                    side={sidebarSide()}
+                    sections={sidebarSections()}
                     graphCollapsed={!anyTabOpen() || activeTabShowsGraph()}
                     graphSlotRef={el => {
                         sidebarSlot = el
@@ -3131,23 +3198,6 @@ export default function App() {
             }
             main={
                 <EditorPane
-                    edge={
-                        <Show when={!switcherOpen()}>
-                            <EdgeHandle
-                                buttonSide="right"
-                                label="sidebar edge"
-                                action={sidebarVisible() ? 'hide sidebar' : 'show sidebar'}
-                                direction={sidebarVisible() ? 'left' : 'right'}
-                                combo={settings.keybindings['toggle-sidebar']}
-                                resizable={sidebarVisible()}
-                                reveal={!sidebarVisible()}
-                                onResizeStart={() => startEdgeResize('sidebarWidth')}
-                                onResize={dx => resizeEdge('sidebarWidth', dx, 1)}
-                                onResizeEnd={endEdgeResize}
-                                onActivate={toggleSidebar}
-                            />
-                        </Show>
-                    }
                     banner={<UpdateBanner />}
                     switcher={
                         <Show when={switcherOpen()}>
@@ -3291,9 +3341,9 @@ export default function App() {
                 </EditorPane>
             }
             rail={
-                /* The tab rail — the app's ONLY tab presentation (the horizontal strip is gone). The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
-          column; .tab-rail-inner is absolutely anchored to the right edge and widens leftward
-          OVER the editor on hover (via CSS :hover / :focus-within), so the editor never
+                /* The tab rail — the app's ONLY tab presentation (the horizontal strip is gone). The rail cell reserves the COLLAPSED width in AppFrame's grid (on the
+          `layout.tabRailSide` edge); .tab-rail-inner is absolutely anchored to that edge and widens
+          toward the editor, OVER it, on hover (via CSS :hover / :focus-within), so the editor never
           reflows. Top-to-bottom: the +/terminal/chat action TOOLBAR, then the scrollable
           tab-row list. Collapsed (48px) the toolbar wraps into a centered single-icon column
           aligned with the tab icons below; expanded (240px) it lays out as horizontal rows.
@@ -3301,20 +3351,31 @@ export default function App() {
           BUG #40: also gated on !switcherOpen() (tabRailVisible) — the Cmd+O quick switcher is a
           full-window search takeover that already hides the file-tree sidebar (`sidebar-hidden`,
           below); the rail used to keep floating over that takeover instead of hiding with it. The
-          grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (global.css's `App.css` section). */
+          grid column itself collapses to 0 in lockstep via AppFrame's `data-switcher-active` state (shell/AppFrame.module.css). */
                 <Show when={tabRailVisible({ switcherOpen: switcherOpen() })}>
                     <TabRail
                         pinned={tabRailPinned()}
                         resizing={edgeResizing()}
+                        side={tabRailSide()}
                         edge={
                             <EdgeHandle
-                                buttonSide="left"
+                                buttonSide={tabRailSide() === 'right' ? 'left' : 'right'}
                                 label="tab rail edge"
                                 action={tabRailPinned() ? 'unpin tab rail' : 'pin tab rail'}
-                                direction={tabRailPinned() ? 'right' : 'left'}
+                                direction={
+                                    tabRailPinned() === (tabRailSide() === 'right')
+                                        ? 'right'
+                                        : 'left'
+                                }
                                 combo={settings.keybindings['toggle-tab-rail']}
                                 onResizeStart={() => startEdgeResize('tabRailWidth')}
-                                onResize={dx => resizeEdge('tabRailWidth', dx, -1)}
+                                onResize={dx =>
+                                    resizeEdge(
+                                        'tabRailWidth',
+                                        dx,
+                                        tabRailSide() === 'right' ? -1 : 1,
+                                    )
+                                }
                                 onResizeEnd={endEdgeResize}
                                 onActivate={toggleTabRail}
                             />
@@ -3403,11 +3464,9 @@ export default function App() {
           the WebGL renderer (which reset the camera). `docked` (the sidebar clip-path) and `mini`
           only apply in the cramped sidebar square, not when it covers a full graph pane. */
                 <GraphFloater
-                    docked={
-                        anyTabOpen() &&
-                        !activeTabShowsGraph() &&
-                        !switcherOpen()
-                    }
+                    dockSide={sidebarSide()}
+                    parked={floaterParked()}
+                    docked={floaterDocked()}
                     ref={el => {
                         floater = el
                     }}
@@ -3439,11 +3498,8 @@ export default function App() {
                     >
                         <GraphView
                             fill
-                            mini={
-                                anyTabOpen() &&
-                                !activeTabShowsGraph() &&
-                                !switcherOpen()
-                            }
+                            mini={floaterDocked()}
+                            visible={!floaterParked()}
                             graph={displayGraph()}
                             communitySource={graph()}
                             onOpen={id => {

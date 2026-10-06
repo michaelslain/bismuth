@@ -1,37 +1,33 @@
 // app/src/shell/AppFrame.tsx
-// The outermost shell: the top strip, the sidebar/editor/rail/graph grid, and the status bar.
-// Lifted out of App.tsx verbatim — every box in the tree is presentational and posed from props
-// alone (see the plan's "the single most important reason for this shape"); no new component here
-// owns a signal, fetches, or reads `settings`.
+// The outermost shell: the top strip, the sidebar/editor/rail grid, and the status bar.
 //
-// CLASS NAMES ARE STILL BARE GLOBAL STRING LITERALS — this is the extraction half of the migration
-// only (see the plan's THE RECIPE).
+// The frame OWNS the grid: three cells (`data-shell-cell="sidebar|main|rail"`) placed by a computed
+// `grid-template-areas` (shellColumns.ts), so which side the sidebar and the tab rail sit on is a
+// pair of props and the slot elements never move in the DOM (DOM order stays sidebar, main, rail).
+// Its rules live in AppFrame.module.css; the shell is reached from outside only via
+// `data-app-shell`.
 //
-// SLOTS OVER PROP-DRILLING: eight JSX slots rather than this component knowing what a sidebar or a
-// tab rail is. `main` is the WHOLE `<EditorPane>` (its own body already includes the pane tree and
-// the terminal/chat overlays as ITS children); `modals` bundles the nine already-independently-
-// storied `<Show>` blocks (CommandPalette, TemplatePalette, FolderPrompt, DaemonOwnerModal,
-// DaemonSetupModal, BismuthInstallModal, EditDictionaryModal, GcalConnectModal, the three
-// ContextMenus) — see the plan's "what must not be extracted" item 8, they stay wired in App.tsx
-// exactly as before, just handed down as one slot instead of typed inline here; `overlays` bundles
-// DragGhost + ToastHost + GalleryHost, the remaining always-mounted layer that isn't the graph
-// floater and isn't a gated modal. Rendering ORDER is preserved exactly as App.tsx's original JSX
-// (sidebar, main, rail, floater, modals, overlays) since it is also DOM order.
+// SLOTS OVER PROP-DRILLING: JSX slots rather than this component knowing what a sidebar or a tab
+// rail is. `main` is the WHOLE `<EditorPane>`; `modals` bundles the independently-storied `<Show>`
+// blocks (palettes, modals, context menus) wired in App.tsx; `overlays` bundles DragGhost +
+// ToastHost + GalleryHost. `floater` is the always-mounted graph floater.
 //
-// `hasRail` is currently hardcoded `true` by App.tsx's caller (App.tsx:2791 before this
-// extraction) — kept as a REAL prop rather than simplified away, because the `--rail-w` transition
-// and the `.switcher-active` override both hang off `.layout.has-rail` in global.css's `App.css`
-// section, and collapsing
-// it to a constant inside this component would change what the cascade can see change.
+// `sidebarEdge` is the sidebar's `<EdgeHandle>`, placed on the sidebar's own inner line (the line
+// moves with `sidebarSide`, and with the rail sitting between sidebar and editor).
 //
-// `railPinned` is the same story one step further: the rail's PINNED state used to live only in
-// TabRail's own module (`.tab-rail.rail-pinned` → a 232px absolutely-positioned overlay), so the
-// grid column behind it stayed 46px and 186px of rail covered the note. The frame has to see the
-// state to reserve the width. NOTE the name collision, which is deliberate and safe: the class this
-// component writes is a GLOBAL bare literal read by global.css's `App.css` section, while
-// TabRail.module.css's identically
-// named class is HASHED and lands on a different element. They never meet.
-import type { JSX } from 'solid-js'
+// `hasRail` stays a REAL prop (App.tsx passes `true` today) because the `--rail-w` transition and
+// the switcher override hang off the `data-has-rail` state. `railPinned` lets the frame reserve the
+// full pinned width in the grid, not just widen the overlay.
+//
+// The side/status props are optional with defaults (left / right / visible) so callers that do not
+// yet pass them render exactly as before.
+import { Show, type JSX } from 'solid-js'
+import styles from './AppFrame.module.css'
+import {
+    gridTemplateAreas,
+    gridTemplateColumns,
+    shellColumns,
+} from './shellColumns'
 
 export function AppFrame(props: {
     topStrip: JSX.Element
@@ -46,33 +42,74 @@ export function AppFrame(props: {
     switcherActive: boolean
     hasRail: boolean
     railPinned: boolean
+    /** Which window edge the sidebar sits against. Default 'left'. */
+    sidebarSide?: 'left' | 'right'
+    /** Which window edge the tab rail sits against. Default 'right'. */
+    tabRailSide?: 'left' | 'right'
+    /** Render the bottom status bar slot. Default true. */
+    statusBarVisible?: boolean
+    /** The sidebar's <EdgeHandle>, placed on the sidebar's inner line. */
+    sidebarEdge?: JSX.Element
     /** An edge drag is live — the grid's column transitions switch off. */
     resizing?: boolean
 }) {
+    const sidebarSide = () => props.sidebarSide ?? 'left'
+    const tabRailSide = () => props.tabRailSide ?? 'right'
+    const cells = () => shellColumns(sidebarSide(), tabRailSide())
+    const flag = (on: boolean) => (on ? 'true' : undefined)
     return (
-        <div class="app-shell">
+        <div class={styles['app-shell']} data-app-shell="true">
             {props.topStrip}
             <div
-                class="layout"
-                classList={{
-                    'sidebar-hidden': props.sidebarHidden,
-                    'switcher-active': props.switcherActive,
-                    'has-rail': props.hasRail,
-                    'rail-pinned': props.railPinned,
-                }}
+                class={styles.layout}
+                data-switcher-active={flag(props.switcherActive)}
+                data-sidebar-hidden={flag(props.sidebarHidden)}
+                data-rail-pinned={flag(props.railPinned)}
+                data-has-rail={flag(props.hasRail)}
+                data-sidebar-side={sidebarSide()}
+                data-rail-side={tabRailSide()}
                 // A live edge drag (shell/EdgeHandle): the columns must follow the pointer, not
-                // ease 0.26s behind it. Inline rather than a `.layout.resizing` rule because
-                // global.css's App.css class-rule pile may only shrink (cssLayering.test.ts).
-                style={props.resizing ? { transition: 'none' } : undefined}
+                // ease 0.26s behind it.
+                style={{
+                    'grid-template-columns': gridTemplateColumns(cells()),
+                    'grid-template-areas': gridTemplateAreas(cells()),
+                    ...(props.resizing ? { transition: 'none' } : {}),
+                }}
             >
-                {props.sidebar}
-                {props.main}
-                {props.rail}
+                <div
+                    class={styles.cell}
+                    data-shell-cell="sidebar"
+                    style={{ 'grid-area': 'sidebar' }}
+                >
+                    {props.sidebar}
+                </div>
+                <div
+                    class={styles.cell}
+                    data-shell-cell="main"
+                    style={{ 'grid-area': 'main' }}
+                >
+                    {props.main}
+                </div>
+                <div
+                    class={styles.cell}
+                    data-shell-cell="rail"
+                    style={{ 'grid-area': 'rail' }}
+                >
+                    {props.rail}
+                </div>
+                <Show when={props.sidebarEdge}>
+                    <div
+                        class={styles['sidebar-edge']}
+                        data-side={sidebarSide()}
+                    >
+                        {props.sidebarEdge}
+                    </div>
+                </Show>
                 {props.floater}
                 {props.modals}
                 {props.overlays}
             </div>
-            {props.statusBar}
+            <Show when={props.statusBarVisible ?? true}>{props.statusBar}</Show>
         </div>
     )
 }

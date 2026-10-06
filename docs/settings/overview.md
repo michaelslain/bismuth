@@ -276,6 +276,17 @@ Two-way Google Calendar sync — connection-level config shared by every synced 
 | `mapMinHeight` | number | `480` | 300–800 | Minimum height of the Bases map view in px. |
 | `tableMinColWidth` | number | `60` | 30–150 | Minimum column width when resizing a Bases table in px. |
 
+### `layout`
+
+Details and the placement rules: [Shell layout](layout.md).
+
+| Key | Type | Default | Range | Description |
+|---|---|---|---|---|
+| `sidebarSide` | enum | `left` | `left`, `right` | Which window edge the sidebar sits on. |
+| `tabRailSide` | enum | `right` | `left`, `right` | Which window edge the vertical tab rail sits on. |
+| `sidebar` | list | `[toolbar, files, graph]` | `toolbar`, `files`, `graph` | Sidebar sections top to bottom; an omitted id is hidden. |
+| `statusBar` | boolean | `true` | — | Show the status bar along the bottom edge. |
+
 ### `server`
 
 | Key | Type | Default | Range | Description |

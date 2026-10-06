@@ -17,7 +17,7 @@
 // `bodyRef` is the callback-ref prop for `editorBodyEl`, which App.tsx's `measureOverlayHosts` and
 // `placeFloater` read via a `ResizeObserver` — that measurement stays in App.tsx (cross-boundary,
 // per the plan's "what must not be extracted" item 5); this component only forwards the element.
-import { Show, type JSX } from 'solid-js'
+import type { JSX } from 'solid-js'
 import styles from './EditorPane.module.css'
 
 export function EditorPane(props: {
@@ -25,16 +25,9 @@ export function EditorPane(props: {
     switcher: JSX.Element
     bodyRef: (el: HTMLDivElement) => void
     children: JSX.Element
-    /** The `<EdgeHandle>` on the sidebar's line — this pane's left edge IS that line, and stays it
-     *  when the sidebar is hidden (then it is the window's left edge), so the handle lives here
-     *  rather than in the sidebar, whose `overflow: hidden` would clip it to nothing. */
-    edge?: JSX.Element
 }) {
     return (
         <main class={styles['editor-pane']} data-editor-pane="true">
-            <Show when={props.edge}>
-                <div class={styles['edge-slot']}>{props.edge}</div>
-            </Show>
             {props.banner}
             {/* Cmd+O switcher: a big search bar absolutely positioned over the tab strip while
             switcher mode is on. The graph floater (below) fills the body behind it. */}

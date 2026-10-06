@@ -4,18 +4,20 @@ import styles from './Band.module.css'
 export type BandProps = {
     children?: JSX.Element
     class?: string
+    /** Which edge carries the --rule-soft hairline. Default 'bottom' (today's band). */
+    rule?: 'top' | 'bottom'
 } & Omit<JSX.HTMLAttributes<HTMLDivElement>, 'children' | 'class'>
 
 /**
- * The chrome band: --h-band tall, --sp-5 side padding, a --rule-soft bottom hairline. The one
+ * The chrome band: --h-band tall, --sp-5 side padding, a --rule-soft bottom hairline (or a top one via `rule="top"`). The one
  * definition of that shape — `ViewBar` and a `band` `IconBar` both render through it, so a toolbar
  * and a view header stacked in one column share their edges. It owns the box only; the composer
  * owns layout via `class`. Every other attribute (role, aria-*, data-*, style) passes through.
  */
 const Band: Component<BandProps> = props => {
-    const [local, rest] = splitProps(props, ['children', 'class'])
+    const [local, rest] = splitProps(props, ['children', 'class', 'rule'])
     return (
-        <div class={`${styles.band} ${local.class ?? ''}`} {...rest}>
+        <div class={`${styles.band} ${local.rule === 'top' ? styles['rule-top'] : ''} ${local.class ?? ''}`} {...rest}>
             {local.children}
         </div>
     )

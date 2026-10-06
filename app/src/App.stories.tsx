@@ -19,6 +19,7 @@ import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { SAMPLE_ROWS } from './ui/_baseFixtures'
 import { recheckUpdate } from './updateCheck'
+import { DEFAULTS, setSettings, type AppSettings } from './settings'
 
 const meta = {
     title: 'App/App',
@@ -31,7 +32,7 @@ type Story = StoryObj<typeof meta>
 
 // Fixed px, not vh — same reasoning as GraphView.stories.tsx / Editor.stories.tsx: the
 // Storybook preview iframe is short with the Controls panel open, and App fills its parent via
-// `.app-shell { height: 100% }`.
+// the app shell's `height: 100%`.
 const STORY_H = '760px'
 
 const Frame = (props: { children: unknown }) => (
@@ -45,8 +46,16 @@ const Frame = (props: { children: unknown }) => (
  *  `projects/`/`eng/` folders): FileTree renders folders COLLAPSED by default, so a note inside
  *  one is invisible to a query until something expands it — a root file needs no interaction to
  *  prove the tree has real content. */
-function seedVault(opts: { updateBehind?: number } = {}): void {
+function seedVault(
+    opts: {
+        updateBehind?: number
+        /** A `layout:` arrangement for this story; absent = the schema defaults. The store is
+         *  module-level and shared by every story in the browser, so it is always reset. */
+        layout?: Partial<AppSettings['layout']>
+    } = {},
+): void {
     localStorage.clear()
+    setSettings('layout', { ...DEFAULTS.layout, ...opts.layout })
     const names = SAMPLE_ROWS.map(r => r.file.name)
     const files = Object.fromEntries(
         names.map(name => [
@@ -105,7 +114,7 @@ export const Default: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await waitFor(() => {
-            expect(canvasElement.querySelector('.app-shell')).not.toBeNull()
+            expect(canvasElement.querySelector('[data-app-shell]')).not.toBeNull()
         })
         expect(canvas.getByLabelText('Vault files')).toBeInTheDocument()
         await waitFor(() => {
@@ -163,7 +172,7 @@ export const OpenWithSplitKeepsPanes: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await waitFor(() => {
-            expect(canvasElement.querySelector('.app-shell')).not.toBeNull()
+            expect(canvasElement.querySelector('[data-app-shell]')).not.toBeNull()
         })
 
         const noteA = 'Draft the roadmap.md'
@@ -244,5 +253,240 @@ export const OpenWithSplitKeepsPanes: Story = {
                 el => el.textContent?.includes('Ship storybook coverage'),
             ),
         ).toBe(false)
+    },
+}
+
+/** `layout:` mirrored — sidebar on the RIGHT, rail on the LEFT, sections `[files, graph, toolbar]`
+ *  (toolbar at the bottom with its hairline on top), no status bar. A note is open so the mini
+ *  graph docks in the sidebar square; the play function checks the arrangement is real: the cells
+ *  swapped edges, the status bar is gone, and the docked graph sits inside the right sidebar. */
+export const MirroredLayout: Story = {
+    render: () => {
+        seedVault({
+            layout: {
+                sidebarSide: 'right',
+                tabRailSide: 'left',
+                sidebar: ['files', 'graph', 'toolbar'],
+                statusBar: false,
+            },
+        })
+        return (
+            <Frame>
+                <App />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            expect(canvasElement.querySelector('[data-app-shell]')).not.toBeNull()
+        })
+        window.dispatchEvent(
+            new CustomEvent('bismuth-open', { detail: 'Draft the roadmap.md' }),
+        )
+        await waitFor(() => {
+            expect(canvasElement.querySelector('[data-pane-leaf]')).not.toBeNull()
+        })
+        const sidebar = canvasElement.querySelector<HTMLElement>(
+            '[data-shell-cell="sidebar"]',
+        )!
+        const rail = canvasElement.querySelector<HTMLElement>(
+            '[data-shell-cell="rail"]',
+        )!
+        const frame = canvasElement.querySelector<HTMLElement>(
+            '[data-app-shell]',
+        )!.getBoundingClientRect()
+        await waitFor(() => {
+            expect(
+                Math.abs(sidebar.getBoundingClientRect().right - frame.right),
+            ).toBeLessThan(2)
+            expect(
+                Math.abs(rail.getBoundingClientRect().left - frame.left),
+            ).toBeLessThan(2)
+            // no status bar → the grid reaches the bottom of the frame
+            expect(
+                Math.abs(sidebar.getBoundingClientRect().bottom - frame.bottom),
+            ).toBeLessThan(2)
+        })
+        // the docked graph sits inside the right sidebar
+        await waitFor(() => {
+            const f = canvasElement
+                .querySelector<HTMLElement>('[data-graph-floater]')!
+                .getBoundingClientRect()
+            const s = sidebar.getBoundingClientRect()
+            expect(f.left).toBeGreaterThanOrEqual(s.left - 1)
+            expect(f.right).toBeLessThanOrEqual(s.right + 1)
+        })
+    },
+}
+
+/** Boot the app on a seeded vault with `layout` applied, open a note so the sidebar's mini graph
+ *  docks, and hand back the real geometry the arrangement stories assert on. */
+async function openArranged(canvasElement: HTMLElement) {
+    await waitFor(() => {
+        expect(canvasElement.querySelector('[data-app-shell]')).not.toBeNull()
+    })
+    window.dispatchEvent(new CustomEvent('bismuth-open', { detail: 'Draft the roadmap.md' }))
+    await waitFor(() => {
+        expect(canvasElement.querySelector('[data-pane-leaf]')).not.toBeNull()
+        expect(canvasElement.querySelector('[data-graph-floater]')).not.toBeNull()
+    })
+    const rect = (sel: string) => canvasElement.querySelector<HTMLElement>(sel)!
+    return {
+        frame: rect('[data-app-shell]'),
+        sidebar: rect('[data-shell-cell="sidebar"]'),
+        main: rect('[data-shell-cell="main"]'),
+        rail: rect('[data-shell-cell="rail"]'),
+        toolbar: rect('[data-sidebar-toolbar]'),
+        graph: rect('[data-graph-floater]'),
+        files: rect('[data-ft-path]'),
+    }
+}
+
+/** The three grid cells' left edges, left to right, as names. */
+const cellOrder = (els: { sidebar: HTMLElement; main: HTMLElement; rail: HTMLElement }) =>
+    (['sidebar', 'main', 'rail'] as const)
+        .map(k => [k, els[k].getBoundingClientRect().left] as const)
+        .sort((a, b) => a[1] - b[1])
+        .map(([k]) => k)
+
+const arranged = (layout: Partial<AppSettings['layout']>) => () => {
+    seedVault({ layout })
+    return (
+        <Frame>
+            <App />
+        </Frame>
+    )
+}
+
+/** Sidebar moved to the right edge; the rail defaults right too, so the sidebar is outermost:
+ *  editor | rail | sidebar, the sidebar's hairline on its editor-facing (left) edge. */
+export const SidebarRight: Story = {
+    render: arranged({ sidebarSide: 'right' }),
+    play: async ({ canvasElement }) => {
+        const e = await openArranged(canvasElement)
+        await waitFor(() => expect(cellOrder(e)).toEqual(['main', 'rail', 'sidebar']))
+        const cs = getComputedStyle(e.sidebar.querySelector('aside')!)
+        expect(cs.borderLeftWidth).toBe('1px')
+        expect(cs.borderRightWidth).toBe('0px')
+    },
+}
+
+/** Tab rail moved to the left edge; the sidebar defaults left too, so the sidebar is outermost:
+ *  sidebar | rail | editor, hairline on the sidebar's right edge. */
+export const RailLeft: Story = {
+    render: arranged({ tabRailSide: 'left' }),
+    play: async ({ canvasElement }) => {
+        const e = await openArranged(canvasElement)
+        await waitFor(() => expect(cellOrder(e)).toEqual(['sidebar', 'rail', 'main']))
+        const cs = getComputedStyle(e.sidebar.querySelector('aside')!)
+        expect(cs.borderRightWidth).toBe('1px')
+        expect(cs.borderLeftWidth).toBe('0px')
+    },
+}
+
+/** Sidebar and rail both on the left: columns sidebar | rail | editor, hairline on the sidebar's
+ *  right edge. */
+export const BothLeft: Story = {
+    render: arranged({ sidebarSide: 'left', tabRailSide: 'left' }),
+    play: async ({ canvasElement }) => {
+        const e = await openArranged(canvasElement)
+        await waitFor(() => expect(cellOrder(e)).toEqual(['sidebar', 'rail', 'main']))
+        const cs = getComputedStyle(e.sidebar.querySelector('aside')!)
+        expect(cs.borderRightWidth).toBe('1px')
+        expect(cs.borderLeftWidth).toBe('0px')
+    },
+}
+
+/** Sidebar and rail both on the right: columns editor | rail | sidebar, hairline on the sidebar's
+ *  left (editor-facing) edge. */
+export const BothRight: Story = {
+    render: arranged({ sidebarSide: 'right', tabRailSide: 'right' }),
+    play: async ({ canvasElement }) => {
+        const e = await openArranged(canvasElement)
+        await waitFor(() => expect(cellOrder(e)).toEqual(['main', 'rail', 'sidebar']))
+        const cs = getComputedStyle(e.sidebar.querySelector('aside')!)
+        expect(cs.borderLeftWidth).toBe('1px')
+        expect(cs.borderRightWidth).toBe('0px')
+    },
+}
+
+/** Sidebar order files, graph, toolbar: the file tree on top, the filled graph square below it,
+ *  and the toolbar band as the bottom row of the column. */
+export const ToolbarLast: Story = {
+    render: arranged({ sidebar: ['files', 'graph', 'toolbar'] }),
+    play: async ({ canvasElement }) => {
+        const e = await openArranged(canvasElement)
+        await waitFor(() => {
+            const f = e.files.getBoundingClientRect()
+            const g = e.graph.getBoundingClientRect()
+            const t = e.toolbar.getBoundingClientRect()
+            expect(f.top).toBeLessThan(g.top)
+            expect(g.bottom).toBeLessThanOrEqual(t.top + 1)
+            expect(Math.abs(t.bottom - e.sidebar.getBoundingClientRect().bottom)).toBeLessThan(2)
+        })
+    },
+}
+
+/** Sidebar order graph, files, toolbar: the graph square at the very top of the column, the file
+ *  tree under it, toolbar band last. */
+export const GraphFirst: Story = {
+    render: arranged({ sidebar: ['graph', 'files', 'toolbar'] }),
+    play: async ({ canvasElement }) => {
+        const e = await openArranged(canvasElement)
+        await waitFor(() => {
+            const f = e.files.getBoundingClientRect()
+            const g = e.graph.getBoundingClientRect()
+            const t = e.toolbar.getBoundingClientRect()
+            expect(g.bottom).toBeLessThanOrEqual(f.top + 1)
+            expect(f.bottom).toBeLessThanOrEqual(t.top + 1)
+            expect(g.top).toBeLessThan(e.sidebar.getBoundingClientRect().top + 40)
+        })
+    },
+}
+
+/** `statusBar: false` — no bottom strip, so the sidebar column runs to the very bottom of the
+ *  frame. */
+export const NoStatusBar: Story = {
+    render: arranged({ statusBar: false }),
+    play: async ({ canvasElement }) => {
+        const e = await openArranged(canvasElement)
+        await waitFor(() => {
+            expect(
+                Math.abs(
+                    e.sidebar.getBoundingClientRect().bottom - e.frame.getBoundingClientRect().bottom,
+                ),
+            ).toBeLessThan(2)
+        })
+    },
+}
+
+/** `layout.sidebar: [toolbar, files]` — no `graph` section, so with a note open there is no docked
+ *  mini graph anywhere: the always-mounted floater is parked (invisible, inert). */
+export const GraphNotDocked: Story = {
+    render: () => {
+        seedVault({ layout: { sidebar: ['toolbar', 'files'] } })
+        return (
+            <Frame>
+                <App />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            expect(canvasElement.querySelector('[data-app-shell]')).not.toBeNull()
+        })
+        window.dispatchEvent(
+            new CustomEvent('bismuth-open', { detail: 'Draft the roadmap.md' }),
+        )
+        await waitFor(() => {
+            expect(canvasElement.querySelector('[data-pane-leaf]')).not.toBeNull()
+        })
+        const floater = canvasElement.querySelector<HTMLElement>('[data-graph-floater]')
+        expect(floater).not.toBeNull()
+        await waitFor(() => {
+            const cs = getComputedStyle(floater!)
+            expect(cs.visibility).toBe('hidden')
+            expect(cs.pointerEvents).toBe('none')
+        })
     },
 }

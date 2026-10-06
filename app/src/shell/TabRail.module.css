@@ -36,18 +36,18 @@
    family). */
 
 /* ── Vertical tab rail (ui.verticalTabs) ─────────────────────────────────────────────
-   `ui.verticalTabs` hides the horizontal .tabbar and renders a .tab-rail on the RIGHT
-   edge of the app instead (App.tsx, as the .layout grid's third column). Collapsed it's a
+   `ui.verticalTabs` hides the horizontal .tabbar and renders a .tab-rail on either
+   edge of the app instead (App.tsx, in AppFrame's rail cell — outermost on its edge, or second when the sidebar shares that edge). Collapsed it's a
    narrow icon column; on HOVER (or focus-within, so an in-rail rename stays open) it
-   widens leftward to reveal each tab's full name, then collapses on mouseleave.
+   widens toward the editor to reveal each tab's full name, then collapses on mouseleave.
 
    The .tab-rail cell reserves the COLLAPSED width in the grid (--rail-w, 46px — tokens/spacing.css's
    "right tab rail 46px collapsed / 232px open") FOR HOVER, and the full 232px when PINNED. The
-   surface (.tab-rail-inner) is absolutely anchored to the right and animates its own width either
+   surface (.tab-rail-inner) is absolutely anchored to either edge and animates its own width either
    way; what differs is whether the grid reserves room for it. HOVER stays a pure overlay so the
    editor body never reflows under the pointer; PINNED reflows the editor, because a rail that is
    staying is part of the layout and must not sit on top of the note (queue item 2). The pinned
-   column is set by `.layout.has-rail.rail-pinned` in global.css's `App.css` section — there, not
+   column is set by AppFrame.module.css via data attributes — there, not
    here, because --rail-w
    is consumed by the PARENT grid and a value set on this element would be invisible to it. Layout
    top-to-bottom: the +/terminal/chat action TOOLBAR, then the back/forward nav, then the scrollable
@@ -70,8 +70,8 @@
 /* PINNED IS A THIRD WAY IN, not a different expanded state: same 232px surface width as hover, it
    just does not need the pointer to stay there. It deliberately DIFFERS from hover in two things —
    see the `box-shadow: none` rule below (naming it rather than counting lines to it, since a line
-   count rots the next time anything is inserted between them), and global.css's `App.css`
-   section's `.layout.has-rail.rail-pinned` for the grid column, which hover never reserves.
+   count rots the next time anything is inserted between them), and AppFrame.module.css
+   via data attributes for the grid column, which hover never reserves.
    Toggled by the
    `toggle-tab-rail` command (Alt+Shift+S), which persists in localStorage exactly the way the left
    sidebar's own toggle does. */
@@ -108,6 +108,28 @@
    TabRailRow.module.css as `[data-hover-off]` — carries the guard. */
 .tab-rail.resizing .rail-edge,
 .tab-rail.resizing .tab-rail-inner { transition: none; }
+
+/* LEFT RAIL (`side="left"`, TabRail's `side` prop): the mirror image. The surface anchors left and
+   widens RIGHTWARD over the editor, its hairline moves to its right edge, and the edge strip rides
+   just outside that right border (`left` tracks the surface's width exactly as `right` does above).
+   The collapsed icon column is nudged 1px right (row margin in TabRailRow.module.css, actions
+   padding here) because the border now eats the column's RIGHT side, and the icon axis must stay at
+   the same x as on the right rail. */
+.tab-rail.side-left .tab-rail-inner {
+  right: auto; left: 0;
+  border-left: none;
+  border-right: 1px solid var(--border-soft);
+}
+.tab-rail.side-left .rail-edge {
+  right: auto; left: 46px;
+  transition: left 0.22s var(--ease);
+}
+.tab-rail.side-left:not(.hover-off):hover .rail-edge,
+.tab-rail.side-left:focus-within .rail-edge,
+.tab-rail.side-left.rail-pinned .rail-edge { left: var(--tab-rail-width, 232px); }
+.tab-rail.side-left.resizing .rail-edge { transition: none; }
+.tab-rail.side-left .tab-rail-inner > .tab-rail-actions { padding-left: calc(var(--sp-5) + 1px); }
+@media (prefers-reduced-motion: reduce) { .tab-rail.side-left .rail-edge { transition: none; } }
 
 /* Top action toolbar. Renders through `ui/IconBar` now (`band layout="wrap"`, toolbar-iconbar
    plan Task 3) — IconBar owns the box model entirely: the 36px band, the 0/var(--sp-5) side

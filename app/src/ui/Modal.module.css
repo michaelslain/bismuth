@@ -23,7 +23,7 @@
   /* Modals are portaled to <body>, outside .layout — so re-establish the app's
      Monaspace UI font + color here, or modal text falls back to the browser default
      (Times serif). Explicit serif elements (titles) still override. Line-height is
-     the app's row unit (--row-h), matching .app-shell/.layout below the modal. */
+     the app's row unit (--row-h), matching the app shell (shell/AppFrame.module.css) below the modal. */
   font: var(--fs-ui)/var(--row-h, 18px) var(--ui-font-stack);
   color: var(--fg);
 }

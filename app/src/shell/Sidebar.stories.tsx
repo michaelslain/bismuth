@@ -36,6 +36,8 @@ import sidebarStyles from './Sidebar.module.css'
 import { Sidebar } from './Sidebar'
 import { CommandButton } from './CommandButton'
 import { GraphFloater } from './GraphFloater'
+import { GraphView } from '../GraphView'
+import { sampleGraphData } from '../ui/_graphFixtures'
 
 const noop = () => {}
 
@@ -54,13 +56,63 @@ const Wrap = (props: { children: unknown }) => (
             height: '600px',
             width: '266px',
             border: '1px solid var(--border-soft)',
-            display: 'flex',
-            'flex-direction': 'column',
+            // a grid, so the <aside> stretches to the full 600px the way the app's grid cell
+            // stretches it; a flex column left it content-sized with dead space below
+            display: 'grid',
+            'grid-template-rows': 'minmax(0, 1fr)',
         }}
     >
         {props.children as never}
     </div>
 )
+
+/** The graph area as the app paints it: a real <GraphFloater docked> snapped onto the graph slot's
+ *  rect in `onMount` (what App.tsx's `placeFloater` does), filled with `--bg`. Call once per story
+ *  render; pass `slotRef` to the Sidebar and render `floater` beside it. */
+const useDockedGraph = (
+    onSlot?: (el: HTMLDivElement) => void,
+    realGraph = false,
+) => {
+    let slot: HTMLDivElement | undefined
+    let floater: HTMLDivElement | undefined
+    onMount(() => {
+        if (!slot || !floater) return
+        const r = slot.getBoundingClientRect()
+        floater.style.top = `${r.top}px`
+        floater.style.left = `${r.left}px`
+        floater.style.width = `${r.width}px`
+        floater.style.height = `${r.height}px`
+    })
+    return {
+        slotRef: (el: HTMLDivElement) => {
+            slot = el
+            onSlot?.(el)
+        },
+        floater: (
+            <GraphFloater docked={true} ref={el => (floater = el)}>
+                {realGraph ? (
+                    <GraphView
+                        fill
+                        mini
+                        graph={sampleGraphData(8)}
+                        onOpen={noop}
+                        mode="2nd"
+                        setMode={noop}
+                        active={null}
+                    />
+                ) : (
+                    <div
+                        style={{
+                            width: '100%',
+                            height: '100%',
+                            background: 'var(--bg)',
+                        }}
+                    />
+                )}
+            </GraphFloater>
+        ),
+    }
+}
 
 const toolbar = () => (
     <>
@@ -78,17 +130,21 @@ const treeStub = (
 
 /** Resting state: toolbar row, a tree stub, graph section expanded (visible). */
 export const Default: Story = {
-    render: () => (
-        <Wrap>
-            <Sidebar
-                visible={true}
-                graphCollapsed={false}
-                graphSlotRef={noop}
-                toolbar={toolbar()}
-                tree={treeStub}
-            />
-        </Wrap>
-    ),
+    render: () => {
+        const dock = useDockedGraph()
+        return (
+            <Wrap>
+                <Sidebar
+                    visible={true}
+                    graphCollapsed={false}
+                    graphSlotRef={dock.slotRef}
+                    toolbar={toolbar()}
+                    tree={treeStub}
+                />
+                {dock.floater}
+            </Wrap>
+        )
+    },
 }
 
 /** The graph section's `collapsed` state class — `display: none` — reached when a tab already
@@ -113,14 +169,163 @@ export const GraphCollapsed: Story = {
  *  `Default` by design (see the component header). It exists so a future `.sidebar.hidden` rule
  *  cannot land unmeasured by this gate. */
 export const Hidden: Story = {
+    render: () => {
+        const dock = useDockedGraph()
+        return (
+            <Wrap>
+                <Sidebar
+                    visible={false}
+                    graphCollapsed={false}
+                    graphSlotRef={dock.slotRef}
+                    toolbar={toolbar()}
+                    tree={treeStub}
+                />
+                {dock.floater}
+            </Wrap>
+        )
+    },
+}
+
+/** `side="right"` — the 1px line moves to the column's left edge. The sidebar sits flush to the
+ *  canvas's RIGHT edge (an editor-coloured area fills the left), the way the app places it, so the
+ *  border reads as the line between editor and sidebar. */
+export const RightSide: Story = {
+    render: () => {
+        const dock = useDockedGraph(undefined, true)
+        return (
+            <div
+                style={{
+                    display: 'flex',
+                    'justify-content': 'flex-end',
+                    height: '600px',
+                    width: '566px',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border-soft)',
+                }}
+            >
+                <div style={{ width: '266px', display: 'grid', 'grid-template-rows': 'minmax(0, 1fr)' }}>
+                    <Sidebar
+                        visible={true}
+                        graphCollapsed={false}
+                        graphSlotRef={dock.slotRef}
+                        toolbar={toolbar()}
+                        tree={treeStub}
+                        side="right"
+                    />
+                </div>
+                {dock.floater}
+            </div>
+        )
+    },
+}
+
+/** Toolbar as the last of three sections — its hairline moves to the top. */
+export const ToolbarLast: Story = {
+    render: () => {
+        const dock = useDockedGraph()
+        return (
+            <Wrap>
+                <Sidebar
+                    visible={true}
+                    graphCollapsed={false}
+                    graphSlotRef={dock.slotRef}
+                    toolbar={toolbar()}
+                    tree={treeStub}
+                    sections={['files', 'graph', 'toolbar']}
+                />
+                {dock.floater}
+            </Wrap>
+        )
+    },
+}
+
+/** Graph square first, then the files, then the toolbar. The graph's hairline faces the files
+ *  (its bottom edge), never the window top. */
+export const GraphFirst: Story = {
+    render: () => {
+        const dock = useDockedGraph(el => {
+            ;(window as any).__graphSlotFirst = el
+        })
+        return (
+            <Wrap>
+                <Sidebar
+                    visible={true}
+                    graphCollapsed={false}
+                    graphSlotRef={dock.slotRef}
+                    toolbar={toolbar()}
+                    tree={treeStub}
+                    sections={['graph', 'files', 'toolbar']}
+                />
+                {dock.floater}
+            </Wrap>
+        )
+    },
+    play: async () => {
+        const cs = getComputedStyle(
+            (window as any).__graphSlotFirst as HTMLElement,
+        )
+        expect(cs.borderTopWidth).toBe('0px')
+        expect(cs.borderBottomWidth).toBe('1px')
+    },
+}
+
+/** Toolbar, then graph, then files — the toolbar's own bottom hairline is the only line above the
+ *  graph, so the graph draws none on top. */
+export const ToolbarThenGraph: Story = {
+    render: () => {
+        const dock = useDockedGraph(el => {
+            ;(window as any).__graphSlotTG = el
+        })
+        return (
+            <Wrap>
+                <Sidebar
+                    visible={true}
+                    graphCollapsed={false}
+                    graphSlotRef={dock.slotRef}
+                    toolbar={toolbar()}
+                    tree={treeStub}
+                    sections={['toolbar', 'graph', 'files']}
+                />
+                {dock.floater}
+            </Wrap>
+        )
+    },
+    play: async () => {
+        const cs = getComputedStyle(
+            (window as any).__graphSlotTG as HTMLElement,
+        )
+        expect(cs.borderTopWidth).toBe('0px')
+        expect(cs.borderBottomWidth).toBe('1px')
+    },
+}
+
+/** `graph` left out — no docked graph square. */
+export const NoGraph: Story = {
     render: () => (
         <Wrap>
             <Sidebar
-                visible={false}
+                visible={true}
                 graphCollapsed={false}
                 graphSlotRef={noop}
                 toolbar={toolbar()}
                 tree={treeStub}
+                sections={['toolbar', 'files']}
+            />
+        </Wrap>
+    ),
+}
+
+/** Only the file tree. */
+export const FilesOnly: Story = {
+    render: () => (
+        <Wrap>
+            <Sidebar
+                visible={true}
+                graphCollapsed={false}
+                graphSlotRef={noop}
+                toolbar={toolbar()}
+                tree={treeStub}
+                sections={['files']}
             />
         </Wrap>
     ),
@@ -185,7 +390,8 @@ export const DockedGraph: Story = {
             <div
                 style={{
                     display: 'grid',
-                    'grid-template-columns': 'var(--sidebar-width, 266px) 320px',
+                    'grid-template-columns':
+                        'var(--sidebar-width, 266px) 320px',
                     height: '600px',
                     width: 'max-content',
                     '--sidebar-w': 'var(--sidebar-width, 266px)',
@@ -200,19 +406,30 @@ export const DockedGraph: Story = {
                 />
                 <div style={{ background: 'var(--bg)' }} />
                 <GraphFloater docked={true} ref={el => (floater = el)}>
-                    <div style={{ width: '100%', height: '100%', background: 'var(--bg)' }} />
+                    <div
+                        style={{
+                            width: '100%',
+                            height: '100%',
+                            background: 'var(--bg)',
+                        }}
+                    />
                 </GraphFloater>
             </div>
         )
     },
     play: async ({ canvasElement }) => {
         const aside = canvasElement.querySelector('aside') as HTMLElement
-        const floater = canvasElement.querySelector('[data-graph-floater]') as HTMLElement
+        const floater = canvasElement.querySelector(
+            '[data-graph-floater]',
+        ) as HTMLElement
         expect(aside).not.toBeNull()
         expect(floater).not.toBeNull()
         const borderX =
-            aside.getBoundingClientRect().right - parseFloat(getComputedStyle(aside).borderRightWidth)
+            aside.getBoundingClientRect().right -
+            parseFloat(getComputedStyle(aside).borderRightWidth)
         expect(floater.getBoundingClientRect().width).toBeGreaterThan(0)
-        expect(floater.getBoundingClientRect().right).toBeLessThanOrEqual(borderX)
+        expect(floater.getBoundingClientRect().right).toBeLessThanOrEqual(
+            borderX,
+        )
     },
 }

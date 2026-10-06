@@ -41,6 +41,23 @@ describe('bindCommands', () => {
         expect(calls).toEqual(['new-note', 'mode:2nd', 'settings'])
     })
 
+    it('binds the three shell-layout commands to their handlers', () => {
+        const { handlers, calls } = noopHandlers()
+        Object.assign(handlers, {
+            moveSidebarSide: () => calls.push('move-sidebar'),
+            moveTabRailSide: () => calls.push('move-rail'),
+            toggleStatusBar: () => calls.push('status-bar'),
+        })
+        const map = bindCommands(handlers)
+        expect(map.get('move-sidebar-side')?.label).toBe('Move sidebar to other side')
+        expect(map.get('move-tab-rail-side')?.icon).toBe('Columns2')
+        expect(map.get('toggle-status-bar')?.icon).toBe('PanelBottom')
+        map.get('move-sidebar-side')!.action()
+        map.get('move-tab-rail-side')!.action()
+        map.get('toggle-status-bar')!.action()
+        expect(calls).toEqual(['move-sidebar', 'move-rail', 'status-bar'])
+    })
+
     it("binds the create commands (new-base + create-menu '+')", () => {
         const { handlers, calls } = noopHandlers()
         const map = bindCommands(handlers)

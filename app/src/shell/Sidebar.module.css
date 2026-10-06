@@ -10,7 +10,7 @@
 
    `hidden` on the root `<aside>` is a DELIBERATE bare string literal, not an oversight. No
    `.sidebar.hidden` rule exists anywhere in the stylesheet — the sidebar's collapse is done by
-   `.layout.sidebar-hidden` one level up, in global.css's `App.css` section (Task 11's AppFrame).
+   `.layout.sidebar-hidden` one level up, in shell/AppFrame.module.css (`.layout[data-sidebar-hidden]`).
    Giving `hidden` a module
    lookup here would resolve to `undefined` and land a literal `class="undefined"` on the element,
    so it stays bare. The `Hidden` story exists to document this: it renders `visible: false` and
@@ -36,6 +36,11 @@
 /* Children are pinned to the full sidebar width so they don't reflow/squish while
    the column animates to 0 — overflow:hidden on .sidebar clips them as it collapses,
    producing a smooth slide instead of an instant on/off. */
+/* `side='right'`: the column sits against the window's right edge, so its 1px line moves to the
+   LEFT (editor) side. The graph section keeps its fixed `- 1px` width either way — it just starts
+   after the border instead of ending before it. Its children anchor to the RIGHT edge, so the
+   collapse clips them from the left, in lockstep with GraphFloater's dock-right clip. */
+.sidebar.right { border-right: 0; border-left: 1px solid var(--border-soft); align-items: flex-end; }
 .sidebar > * { width: var(--sidebar-width, 266px); box-sizing: border-box; }
 .sidebar-files { flex: 1; overflow: auto; padding: 0 var(--sp-4) var(--sp-4); min-height: 0; }
 /* Pinned one pixel narrower than `.sidebar > *` — the sidebar's content width, not its box — so
@@ -49,5 +54,7 @@
 /* --border-soft, not --border — every other hairline in this file already reads --border-soft
    (the sidebar's own right edge, this row's bottom edge below); this one was the odd one out,
    with no comment explaining why (visual-unification audit §4.8). It wasn't deliberate: fixed. */
-.sidebar-graph { border-top: 1px solid var(--border-soft); height: var(--sidebar-graph-height, 305px); }
+.sidebar-graph { height: var(--sidebar-graph-height, 305px); }
+.sidebar-graph.rule-top { border-top: 1px solid var(--border-soft); }
+.sidebar-graph.rule-bottom { border-bottom: 1px solid var(--border-soft); }
 .sidebar canvas { display: block; }

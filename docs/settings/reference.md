@@ -12,9 +12,9 @@ For lifecycle, frontend-store, and CSS-projection details, see the [Settings Ove
 
 The schema is a nested object. Top-level keys, in canonical alphabetical-set membership (the test asserts exactly this set):
 
-`appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `homePage`, `keybindings`, `localModel`, `mcp`, `properties`, `server`, `srs`, `statusBar`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
+`appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `homePage`, `keybindings`, `layout`, `localModel`, `mcp`, `properties`, `server`, `srs`, `statusBar`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
 
-The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `localModel`, `mcp`, `codex`, `srs`, `templates`, `properties`, `folderIcons`, `folderVisibility`, `toolbar`, `tabBar`, `statusBar`, `homePage`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this), which fixes its position in the schema and in autocomplete. It does not show up in a fresh `.settings`: that file is sparse (a new vault gets a two-line comment and no keys), and a key is written only when you change it.
+The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `layout`, `server`, `daemon`, `update`, `terminal`, `chat`, `localModel`, `mcp`, `codex`, `srs`, `templates`, `properties`, `folderIcons`, `folderVisibility`, `toolbar`, `tabBar`, `statusBar`, `homePage`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this), which fixes its position in the schema and in autocomplete. It does not show up in a fresh `.settings`: that file is sparse (a new vault gets a two-line comment and no keys), and a key is written only when you change it.
 
 ### Property types
 
@@ -272,6 +272,28 @@ ui:
   paletteTopOffset: 20vh
   paneDividerWidth: 8
   cardGridMinWidth: 280
+```
+
+---
+
+## `layout`
+
+Where the shell's big pieces sit and which of them show. Full page: [Shell layout](layout.md).
+
+| Key | Type | Default | Bounds | Doc |
+|-----|------|---------|--------|-----|
+| `sidebarSide` | enum | `left` | `left`, `right` | Which window edge the sidebar sits on. When the tab rail is on the same side, the sidebar is outermost and the rail sits between it and the editor. |
+| `tabRailSide` | enum | `right` | `left`, `right` | Which window edge the vertical tab rail sits on. When the sidebar is on the same side, the rail sits between the sidebar and the editor. |
+| `sidebar` | list of enum | `[toolbar, files, graph]` | items `toolbar`, `files`, `graph` | The sidebar sections from top to bottom; leave an id out to hide that section. Leaving out `graph` removes the docked mini graph while a note is open. |
+| `statusBar` | boolean | `true` | — | Show the status bar along the bottom edge of the window. |
+
+Example:
+
+```yaml
+layout:
+  sidebarSide: right
+  sidebar: [files, graph, toolbar]
+  statusBar: false
 ```
 
 ---
@@ -632,6 +654,9 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `focus-pane-down` | Focus pane down | `ArrowDown` |
 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` |
 | `toggle-tab-rail` | Toggle tab rail | `PanelRight` |
+| `move-sidebar-side` | Move sidebar to other side | `Columns2` |
+| `move-tab-rail-side` | Move tab rail to other side | `Columns2` |
+| `toggle-status-bar` | Toggle status bar | `PanelBottom` |
 | `daemon-owner` | Set daemon owner device… | `Server` |
 | `daemon-setup` | Set up daemon… | `Download` |
 | `daemon-update` | Update daemon… | `RefreshCw` |

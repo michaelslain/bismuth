@@ -136,6 +136,45 @@ export const FindPanelOpen: Story = {
     },
 }
 
+/** The mini graph's contract: its ViewBar header holds EXACTLY ONE 2d/3d TextButton plus
+ *  [clusters] and [local], and no bottom bar renders any of them (the bar, when present at all,
+ *  carries only the fps badge). `localSelected` is whether [local] must read as showing. Returns
+ *  the 2d/3d button. */
+const assertMiniHeaderControls = (root: HTMLElement, mode: GraphMode) => {
+    const bar = root.querySelector('[data-viewbar]')
+    if (!bar) throw new Error('no [data-viewbar] rendered')
+    const buttons = [...bar.querySelectorAll('button')]
+    const named = (re: RegExp) =>
+        buttons.filter(b => re.test(b.textContent?.trim() ?? ''))
+    const toggle = named(/^(2d|3d)$/)
+    expect(toggle).toHaveLength(1)
+    expect(named(/^clusters$/)).toHaveLength(1)
+    const local = named(/^local$/)
+    expect(local).toHaveLength(1)
+    expect(
+        /^Showing the open note's neighbourhood/.test(
+            local[0]!.getAttribute('title') ?? '',
+        ),
+    ).toBe(mode === 'local')
+    // Nothing the header owns may also render at the floor.
+    const floor = root.querySelector('[class*="graph-bottom-bar"]')
+    if (floor) {
+        expect(floor.querySelectorAll('button')).toHaveLength(0)
+    }
+    // And no control may clip: every header button sits inside the bar's box, on one row.
+    const box = bar.getBoundingClientRect()
+    const tops = new Set<number>()
+    for (const b of buttons) {
+        const r = b.getBoundingClientRect()
+        if (r.width === 0) continue
+        expect(r.left).toBeGreaterThanOrEqual(box.left - 0.5)
+        expect(r.right).toBeLessThanOrEqual(box.right + 0.5)
+        tops.add(Math.round(r.top + r.height / 2))
+    }
+    expect(tops.size).toBe(1)
+    return toggle[0]!
+}
+
 /**
  * The cramped sidebar slot: `mini` swaps the text-segmented mode switcher for bare icon
  * buttons and adds the bottom-right LOCAL text toggle; sized to the sidebar's own default height
@@ -193,33 +232,7 @@ export const MiniLocal: Story = {
         )
         expect(modeIcons).toHaveLength(0)
 
-        // The bottom bar's left cluster is now a SINGLE 2D/3D TextButton in the mini graph (task
-        // 1: slim the mini bar) — assert the COUNT, not mere existence, so a regression back to
-        // the two-segment toggle fails this.
-        const bottomBar = canvasElement.querySelector(
-            '[class*="graph-bottom-bar"]',
-        )
-        if (!bottomBar) throw new Error('no bottom bar rendered')
-        const leftCluster = bottomBar.querySelector(
-            '[class*="graph-bottom-narrow"]',
-        )
-        if (!leftCluster) throw new Error('no left cluster rendered')
-        const modeButtons = [...leftCluster.querySelectorAll('button')].filter(
-            b => /^(2d|3d)$/.test(b.textContent?.trim() ?? ''),
-        )
-        expect(modeButtons).toHaveLength(1)
-        const modeButton = modeButtons[0]!
-
-        // LOCAL is a text button. This story's mode is "local", so it must read as SELECTED — its
-        // title is the "showing…" string only in that state. Exactly one, so a second LOCAL control
-        // (or an icon regressing back in beside it) fails the count.
-        const localButtons = [...bottomBar.querySelectorAll('button')].filter(
-            b => b.textContent?.trim() === 'local',
-        )
-        expect(localButtons).toHaveLength(1)
-        expect(localButtons[0]!.getAttribute('title') ?? '').toMatch(
-            /^Showing the open note's neighbourhood/,
-        )
+        const modeButton = assertMiniHeaderControls(canvasElement, 'local')
 
         // Clicking the 2D/3D button flips its OWN label — it always shows the mode you'd switch
         // TO, so after one click it must read the opposite of what it read before. Scoped to
@@ -324,11 +337,16 @@ export const MiniModeSwitcher: Story = {
             bar.getBoundingClientRect().left +
             parseFloat(getComputedStyle(bar).paddingLeft)
 
-        // LEFT-ALIGNED, not centred. Sub-pixel tolerance only: this must not quietly pass for a
-        // bar that drifted a few px, and centring moves it by tens of px.
+        // LEFT-ALIGNED, not centred: the leading control is the 2d/3d button (a facet, ahead of the
+        // icons), so IT starts at the content edge and the first icon follows it. Sub-pixel
+        // tolerance only: centring moves it by tens of px.
+        const lead = assertMiniHeaderControls(canvasElement, '2nd')
         expect(
-            Math.abs(first.getBoundingClientRect().left - barLeft),
+            Math.abs(lead.getBoundingClientRect().left - barLeft),
         ).toBeLessThanOrEqual(1)
+        expect(first.getBoundingClientRect().left).toBeGreaterThan(
+            lead.getBoundingClientRect().right,
+        )
 
         // EVEN GAPS, PICK-ONE (icon-gaps). A unit is `[▣]` for the on mode and the bare glyph for
         // the rest; with each mode selected in turn, every unit-to-unit gap is the same within

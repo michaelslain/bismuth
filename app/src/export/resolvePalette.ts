@@ -53,8 +53,8 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
             TOKENS.map(t => [t, lit(`var(--${t})`, fallback.tokens[t])]),
         ) as Record<PaletteToken, string>
         // --ui-font-stack, NOT getComputedStyle(document.body).fontFamily. Nothing sets a
-        // font-family on <body> — global.css's `App.css` section puts the app's `font:` shorthand on .app-shell and
-        // .layout — so reading the body resolved to the browser default (Times on macOS), and
+        // font-family on <body> — shell/AppFrame.module.css puts the app's `font:` shorthand on `.app-shell` and
+        // `.layout` — so reading the body resolved to the browser default (Times on macOS), and
         // every base/calendar/sheet export has been rendering in Times rather than the app's
         // Monaspace. Verified live off the running app: bodyFontFamily === "Times".
         const rootCs = getComputedStyle(document.documentElement)

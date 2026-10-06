@@ -22,6 +22,8 @@ export type IconBarProps = {
     band?: boolean
     /** Glyph px for every IconButton inside. Default iconSize() — the app's one icon size. Stories pass it; app code never does. */
     iconSize?: number
+    /** With `band`: which edge carries the hairline, forwarded to Band's `rule`. Default 'bottom'. */
+    bandRule?: 'top' | 'bottom'
     class?: string
 } & Omit<
     JSX.HTMLAttributes<HTMLDivElement>,
@@ -39,6 +41,7 @@ const IconBar: Component<IconBarProps> = props => {
         'layout',
         'band',
         'iconSize',
+        'bandRule',
         'class',
         'style',
     ])
@@ -58,6 +61,7 @@ const IconBar: Component<IconBarProps> = props => {
             <Dynamic
                 component={local.band ? Band : 'div'}
                 role="toolbar"
+                rule={local.band ? local.bandRule : undefined}
                 aria-label={local.label}
                 class={`${styles.bar} ${local.layout === 'wrap' ? styles.wrap : ''} ${local.class ?? ''}`}
                 style={style()}

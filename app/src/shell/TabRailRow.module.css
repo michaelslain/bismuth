@@ -42,8 +42,7 @@
 
 /* A tab row: icon + (revealed) label + close/pin.
    THE 5px/10px ARE LOAD-BEARING AND MUST NOT BE ROUNDED ONTO --sp-*. The rail is 46px with a 1px
-   left border, so its visible centre is x=23. margin 5 + padding 10 = 15, plus that border, puts
-   the 14px icon's left edge at 16 and its centre at exactly 23. They HAD been rounded to
+   left border. margin 5 + padding 10 = 15, plus that border, puts the 12px icon box's left edge at 16 and its centre at 22 (1px left of the visible centre — accepted, shell-layout ruling). On a left rail the border is on the right and the row margin adds 1px. They HAD been rounded to
    --sp-2/--sp-5 (4+12=16), which shifted every collapsed icon 1px right — the drift this comment
    already warned about, made visible once the icons shrank to 18px boxes.
    `justify-content: center` is NOT the fix and was tried: the label is only CLIPPED by the inner's
@@ -74,6 +73,12 @@
   transition: background 0.12s ease, color 0.12s ease;
 }
 .tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
+/* LEFT RAIL: the 1px border is on the rail's right, so the icon column needs one more pixel on its
+   left to stay at the same x as on the right rail. Read off the rail root's own `data-rail-side`. The label
+   margin, the close-X anchor (`right: 10px`, the row's own padding) and the active brackets are all
+   row-relative and need no mirroring. */
+[data-rail-side='left'] .tab-rail-row { margin-left: calc(5px + 1px); }
+
 /* Active tab: accent text + accent BRACKETS around its icon (icon-brackets-on, 2026-10-02) — the
    app's one "this is on" mark, the same `[▣]` a selected icon button draws. It replaced an
    accent-soft fill + a 2px left bar: the rail's action buttons above sat bracketed while the tabs

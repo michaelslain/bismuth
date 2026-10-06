@@ -70,7 +70,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// In the real app `.tab-rail` is a CSS-grid item of `.layout` (global.css's `App.css` section:
+// In the real app `.tab-rail` is a CSS-grid item of `.layout` (AppFrame.module.css:
 // `.layout { display: grid; height: 100%; }`), and grid items stretch to fill BOTH the row height
 // and column width by default
 // (`align-items`/`justify-items: stretch`) — so `.tab-rail` always has real height and width, and its
@@ -297,7 +297,7 @@ export const WithEdge: Story = {
         const [width, setWidth] = createSignal(232)
         let start = 0
         // The APP'S grid, not `Wrap`: an editor column plus the rail's own column, 46px collapsed or
-        // the open width pinned (global.css's `.layout.has-rail`). In `Wrap` the rail's root fills
+        // the open width pinned (AppFrame.module.css via data attributes). In `Wrap` the rail's root fills
         // the whole frame, so the pointer anywhere in the story is "on the rail" and an unpin can
         // never be seen to close it.
         return (
@@ -350,6 +350,157 @@ export const WithEdge: Story = {
         await waitFor(() =>
             expect(Math.round(edge.getBoundingClientRect().right)).toBe(
                 Math.round(inner.getBoundingClientRect().left),
+            ),
+        )
+        edge.focus()
+        const chevron = canvasElement.querySelector('[data-edge-button]')!
+        await waitFor(() =>
+            expect(getComputedStyle(chevron).visibility).toBe('visible'),
+        )
+    },
+}
+
+// LEFT RAIL — `side="left"`. The mirror image: surface anchored left, hairline on its right, the
+// flyout widening rightward with `--lift`, the edge strip on the right line.
+
+/** Resting left rail: 46px, border on the RIGHT, anchored to the frame's left edge. `play` proves the
+ *  anchor and the border side, and that the icon centre sits 22px in from the surface's outer left edge — the exact
+ *  x a right rail's icons sit at, so the column does not shift when the rail changes side. */
+export const CollapsedLeft: Story = {
+    render: () => (
+        <Wrap>
+            <TabRail actions={actions()} side="left">
+                {rows}
+            </TabRail>
+        </Wrap>
+    ),
+    play: async ({ canvasElement }) => {
+        const inner = canvasElement.querySelector(
+            `.${styles['tab-rail-inner']}`,
+        )
+        if (!(inner instanceof HTMLElement))
+            throw new Error('.tab-rail-inner not found')
+        const cs = getComputedStyle(inner)
+        expect(cs.width).toBe('46px')
+        expect(cs.borderRightWidth).toBe('1px')
+        expect(cs.borderLeftWidth).toBe('0px')
+        const box = inner.getBoundingClientRect()
+        const icon = canvasElement.querySelector(
+            `.${rowStyles['tab-rail-icon']}`,
+        )
+        if (!(icon instanceof HTMLElement))
+            throw new Error('.tab-rail-icon not found')
+        const r = icon.getBoundingClientRect()
+        expect(Math.round(r.left + r.width / 2 - box.left)).toBe(22)
+    },
+}
+
+/** `:focus-within` on a left rail — widens RIGHTWARD to 232px carrying the lift shadow. */
+export const ExpandedLeft: Story = {
+    render: () => (
+        <Wrap>
+            <TabRail actions={actions()} side="left">
+                {rows}
+            </TabRail>
+        </Wrap>
+    ),
+    play: async ({ canvasElement }) => {
+        const closeBtn = canvasElement.querySelector(`.${rowStyles['tab-x']}`)
+        if (!(closeBtn instanceof HTMLElement))
+            throw new Error('close button not found')
+        closeBtn.focus()
+        const inner = canvasElement.querySelector(
+            `.${styles['tab-rail-inner']}`,
+        )
+        if (!(inner instanceof HTMLElement))
+            throw new Error('.tab-rail-inner not found')
+        await waitFor(() => expect(getComputedStyle(inner).width).toBe('232px'))
+        expect(getComputedStyle(inner).boxShadow).not.toBe('none')
+        expect(Math.round(inner.getBoundingClientRect().left)).toBe(
+            Math.round(
+                (inner.parentElement as HTMLElement).getBoundingClientRect()
+                    .left,
+            ),
+        )
+    },
+}
+
+/** PINNED left rail — 232px, no lift, labels revealed. */
+export const PinnedLeft: Story = {
+    render: () => (
+        <Wrap>
+            <TabRail actions={actions()} side="left" pinned>
+                {rows}
+            </TabRail>
+        </Wrap>
+    ),
+    play: async ({ canvasElement }) => {
+        const inner = canvasElement.querySelector(
+            `.${styles['tab-rail-inner']}`,
+        )
+        if (!(inner instanceof HTMLElement))
+            throw new Error('.tab-rail-inner not found')
+        await expect(getComputedStyle(inner).width).toBe('232px')
+        await expect(getComputedStyle(inner).boxShadow).toBe('none')
+    },
+}
+
+/** The left rail with its edge handle, on real state: the strip stands flush against the surface's
+ *  RIGHT border, the chevron springs out rightward, `›` pins and `‹` unpins. */
+export const WithEdgeLeft: Story = {
+    render: () => {
+        const [pinned, setPinned] = createSignal(true)
+        const [width, setWidth] = createSignal(232)
+        let start = 0
+        return (
+            <div
+                style={{
+                    '--tab-rail-width': `${width()}px`,
+                    display: 'grid',
+                    'grid-template-columns': `${pinned() ? width() : 46}px 1fr`,
+                    height: '500px',
+                    border: '1px solid var(--border-soft)',
+                    background: 'var(--bg)',
+                }}
+            >
+                <TabRail
+                    actions={actions()}
+                    side="left"
+                    pinned={pinned()}
+                    edge={
+                        <EdgeHandle
+                            buttonSide="right"
+                            label="tab rail edge"
+                            action={
+                                pinned() ? 'unpin tab rail' : 'pin tab rail'
+                            }
+                            direction={pinned() ? 'left' : 'right'}
+                            combo="Alt+Shift+S"
+                            onResizeStart={() => (start = width())}
+                            onResize={dx =>
+                                setWidth(dragWidth('tabRailWidth', start, dx, 1))
+                            }
+                            onActivate={() => setPinned(v => !v)}
+                        />
+                    }
+                >
+                    {rows}
+                </TabRail>
+                <div />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const inner = canvasElement.querySelector(
+            `.${styles['tab-rail-inner']}`,
+        )
+        const edge = canvasElement.querySelector('[data-edge-handle]')
+        if (!(inner instanceof HTMLElement) || !(edge instanceof HTMLElement))
+            throw new Error('rail surface or edge handle not found')
+        await expect(getComputedStyle(inner).width).toBe('232px')
+        await waitFor(() =>
+            expect(Math.round(edge.getBoundingClientRect().left)).toBe(
+                Math.round(inner.getBoundingClientRect().right),
             ),
         )
         edge.focus()

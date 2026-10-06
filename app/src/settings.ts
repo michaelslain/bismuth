@@ -120,6 +120,12 @@ export interface Settings {
         mapMinHeight: number // px
         tableMinColWidth: number // px
     }
+    layout: {
+        sidebarSide: 'left' | 'right' // window edge the sidebar sits on
+        tabRailSide: 'left' | 'right' // window edge the tab rail sits on
+        sidebar: Array<'toolbar' | 'files' | 'graph'> // sections top → bottom; an omitted id is hidden
+        statusBar: boolean // show the bottom status bar
+    }
     server: {
         fileWatchDebounceMs: number // backend: coalesce file changes (ms)
         sseHeartbeatMs: number // backend: live-update keepalive interval (ms)

@@ -75,8 +75,8 @@ const sections = parseSections(globalCss)
  *  This is deliberately selector-level, not token-level: `.layout` and `.layout.switcher-active`
  *  are two DIFFERENT selectors (one is a compound of the other), and treating them as "the same
  *  class .layout, declared twice" would make every state/variant selector in the codebase a false
- *  positive — App.css's own `.layout`/`.layout.has-rail`/`.layout.has-rail.switcher-active` family
- *  is exactly this shape. A real duplicate is the SAME selector, verbatim, in two sections. */
+ *  positive — App.css's old `.layout`/`.layout.has-rail`/`.layout.has-rail.switcher-active` family
+ *  was exactly this shape. A real duplicate is the SAME selector, verbatim, in two sections. */
 function selectorsDeclaredIn(css: string): Set<string> {
     const scanned = stripGlobal(stripComments(css))
     const out = new Set<string>()

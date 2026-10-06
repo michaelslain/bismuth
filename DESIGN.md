@@ -333,7 +333,13 @@ Spacing runs on a dense 2/4/6/8 grid (`--sp-1` … `--sp-7`: 2, 4, 6, 8, 12, 16,
 than an 8-grid product on purpose.
 
 The sidebar is 266px wide and collapses by animating the registered `--sidebar-w` property; the
-vertical tab rail overlays leftward on hover rather than reflowing the editor.
+vertical tab rail overlays toward the editor on hover rather than reflowing it.
+
+The arrangement is a setting (`layout:` in `.settings`, `docs/settings/layout.md`): each of the
+sidebar and the tab rail sits on either window edge, the sidebar's sections (toolbar, files,
+graph) show in a chosen order, and the status bar can be hidden. The default is sidebar left and
+rail right; when both choose the same edge the sidebar is outermost and the rail sits between it
+and the editor.
 
 **`ViewBar` is the one view header** (graph, Bases, calendar, flashcards, chat), with six named
 slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. When it narrows,

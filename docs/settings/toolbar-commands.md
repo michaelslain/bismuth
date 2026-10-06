@@ -98,18 +98,21 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 38 | `focus-pane-down` | Focus pane down | `ArrowDown` | `h.focusPaneDown` |
 | 39 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
 | 40 | `toggle-tab-rail` | Toggle tab rail | `PanelRight` | `h.toggleTabRail` |
-| 41 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 42 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
-| 43 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
-| 44 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
-| 45 | `free-agent-setup` | Set up free agent… | `Download` | `h.openFreeAgentSetup` |
-| 46 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
-| 47 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
-| 48 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
-| 49 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
-| 50 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
-| 51 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
-| 52 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
+| 41 | `move-sidebar-side` | Move sidebar to other side | `Columns2` | `h.moveSidebarSide` |
+| 42 | `move-tab-rail-side` | Move tab rail to other side | `Columns2` | `h.moveTabRailSide` |
+| 43 | `toggle-status-bar` | Toggle status bar | `PanelBottom` | `h.toggleStatusBar` |
+| 44 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
+| 45 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
+| 46 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
+| 47 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
+| 48 | `free-agent-setup` | Set up free agent… | `Download` | `h.openFreeAgentSetup` |
+| 49 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
+| 50 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
+| 51 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
+| 52 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
+| 53 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
+| 54 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
+| 55 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
 
 Notes on individual commands:
 
@@ -126,7 +129,8 @@ Notes on individual commands:
 - **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-local`): each calls `h.setMode(...)` with the corresponding graph mode string. `graph-local` switches to the open note's immediate neighborhood (`"local"` `GraphMode` — see `app/src/GraphView.tsx`), the same lens the graph's own LOCAL toggle button flips to. There is no `graph-daemon` command any more — the daemon's crons/processes moved off the graph onto their own page (`docs/graph/overview.md`).
 - **Pane commands** (`split-right`, `split-down`, `close-pane`, `focus-pane-left`, `focus-pane-right`, `focus-pane-up`, `focus-pane-down`): mirror the seven pane-arrangement keybindings in `core/src/keybindings.ts` (split/close/focus a pane), reusing `App.tsx`'s existing `splitPane`/`closeFocusedPane`/`focusNeighbor` logic rather than duplicating it. Their `CommandHandlers` fields (`splitPaneRight`, `splitPaneDown`, `closeFocusedPane`, `focusPaneLeft`, `focusPaneRight`, `focusPaneUp`, `focusPaneDown`) are **required**, not optional — a comment on the interface explains why: they were briefly optional while `App.tsx`'s wiring was pending, which let the catalog advertise all seven as runnable via app control while every one of them actually failed with "unknown command", an agent told a capability exists and then handed a failure. Required means `bindCommands`'s one call site (`App.tsx`) won't typecheck if a pane handler is ever dropped again. `toggleSidebar` and `toggleTabRail` are required for the same reason.
 - **`toggle-tab-rail`**: pins the right tab rail open, or lets it go back to expanding only on hover (`h.toggleTabRail`) — the tab-rail counterpart to `toggle-sidebar`. Same feature as the `toggle-tab-rail` keybinding (default `Alt+Shift+S`; see [keybindings](./keybindings.md)).
-- **The panel edge lines run the same two toggles.** The left sidebar's right line and the tab rail's left line are grab strips (`app/src/shell/EdgeHandle.tsx`): **drag** one to resize the panel (writes `appearance.sidebarWidth` / `appearance.tabRailWidth`, clamped to the schema's range by `app/src/edgeResize.ts`), **click** it to run `toggle-sidebar` / `toggle-tab-rail`, and **hover** it to make a chevron button spring out at its vertical centre, pointing the way the panel will move (`‹` hide / `›` show the sidebar, `‹` pin / `›` unpin the rail) — the same toggle, its tooltip naming the live keybinding. With the sidebar hidden its strip is the window's left edge, so hovering there offers `›` show. Focusable by Tab: Enter or Space toggles, as on a real button.
+- **`move-sidebar-side` / `move-tab-rail-side` / `toggle-status-bar`**: flip `layout.sidebarSide`, `layout.tabRailSide` and `layout.statusBar` through the settings store (`h.moveSidebarSide`, `h.moveTabRailSide`, `h.toggleStatusBar`), so the window rearranges live and the change lands in `.settings`. No keybindings; see [shell layout](./layout.md). `moveSidebarSide`, `moveTabRailSide` and `toggleStatusBar` are required `CommandHandlers` fields like the other shell toggles.
+- **The panel edge lines run the same two toggles.** The sidebar's inner line and the tab rail's inner line (the line facing the editor; with the default layout the sidebar's right and the rail's left) are grab strips (`app/src/shell/EdgeHandle.tsx`): **drag** one to resize the panel (writes `appearance.sidebarWidth` / `appearance.tabRailWidth`, clamped to the schema's range by `app/src/edgeResize.ts`), **click** it to run `toggle-sidebar` / `toggle-tab-rail`, and **hover** it to make a chevron button spring out at its vertical centre, pointing the way the panel will move (`‹` hide / `›` show the sidebar, `‹` pin / `›` unpin the rail) — the same toggle, its tooltip naming the live keybinding. With the sidebar hidden its strip is the window's left edge, so hovering there offers `›` show. Focusable by Tab: Enter or Space toggles, as on a real button.
 - **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.
 - **`bismuth-install`**: opens the panel to install the `bismuth` CLI + MCP machine-wide (`h.openBismuthInstall`).
 - **`free-agent-setup`**: opens the panel that downloads opencode and defaults chats to Zen Free (rotating) — no account (`h.openFreeAgentSetup`). The intro's `free agent` power-up runs the same setup on first launch.

@@ -18,3 +18,8 @@
   border-bottom: var(--rule-soft);
   box-sizing: border-box;
 }
+/* `rule="top"`: the hairline moves to the top edge (a band that is the LAST row of a column). */
+.rule-top {
+  border-top: var(--rule-soft);
+  border-bottom: 0;
+}

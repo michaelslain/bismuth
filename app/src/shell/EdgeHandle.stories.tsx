@@ -111,6 +111,66 @@ function RailDemo() {
     )
 }
 
+/** A RIGHT sidebar: panel on the window's right, strip on its left (editor) line, chevron out LEFTWARD. */
+function SidebarRightDemo(props: { hidden?: boolean }) {
+    const [width, setWidth] = createSignal(266)
+    const [visible, setVisible] = createSignal(!props.hidden)
+    let start = 0
+    return frame(
+        <>
+            {editor(
+                <EdgeHandle
+                    buttonSide="left"
+                    label="sidebar edge"
+                    action={visible() ? 'hide sidebar' : 'show sidebar'}
+                    direction={visible() ? 'right' : 'left'}
+                    combo="Alt+S"
+                    resizable={visible()}
+                    reveal={!visible()}
+                    onResizeStart={() => (start = width())}
+                    onResize={dx => setWidth(dragWidth('sidebarWidth', start, dx, -1))}
+                    onActivate={() => setVisible(v => !v)}
+                />,
+                'right',
+            )}
+            {panel(
+                visible() ? `${width()}px` : '0px',
+                'right',
+                visible() ? `sidebar // ${width()}px` : '',
+            )}
+        </>,
+    )
+}
+
+/** A LEFT tab rail: rail on the window's left, strip on its right line, chevron out RIGHTWARD. */
+function RailLeftDemo() {
+    const [width, setWidth] = createSignal(232)
+    const [pinned, setPinned] = createSignal(false)
+    let start = 0
+    return frame(
+        <>
+            {panel(
+                `${pinned() ? width() : COLLAPSED_RAIL}px`,
+                'left',
+                pinned() ? `rail // ${width()}px` : '',
+            )}
+            {editor(
+                <EdgeHandle
+                    buttonSide="right"
+                    label="tab rail edge"
+                    action={pinned() ? 'unpin tab rail' : 'pin tab rail'}
+                    direction={pinned() ? 'left' : 'right'}
+                    combo="Alt+Shift+S"
+                    onResizeStart={() => (start = width())}
+                    onResize={dx => setWidth(dragWidth('tabRailWidth', start, dx, 1))}
+                    onActivate={() => setPinned(v => !v)}
+                />,
+                'left',
+            )}
+        </>,
+    )
+}
+
 const meta = {
     title: 'Shell/EdgeHandle',
     component: EdgeHandle,
@@ -155,5 +215,34 @@ export const SidebarHiddenButton: Story = {
 /** The rail's line, mirrored: the chevron springs out LEFTWARD, `‹` — pin the rail open. */
 export const RailButton: Story = {
     render: () => <RailDemo />,
+    play: async ({ canvasElement }) => focusEdge(canvasElement),
+}
+
+/** A right sidebar at rest: the panel's 1px line is on its left; no highlight, no hint. */
+export const SidebarRight: Story = { render: () => <SidebarRightDemo /> }
+
+/** Right sidebar, hovered (posed by focus): the chevron springs out LEFTWARD over the editor,
+ *  pointing `right` — hide it toward the window's right edge. */
+export const SidebarRightButton: Story = {
+    render: () => <SidebarRightDemo />,
+    play: async ({ canvasElement }) => focusEdge(canvasElement),
+}
+
+/** Hidden right sidebar: its line is the window's RIGHT edge, the 24px reveal zone widens leftward
+ *  from it, and the chevron pops out leftward pointing `left` — show it. */
+export const SidebarRightHiddenButton: Story = {
+    render: () => <SidebarRightDemo hidden />,
+    play: async ({ canvasElement }) => {
+        await focusEdge(canvasElement, 24)
+        const edge = canvasElement.querySelector<HTMLElement>('[data-edge-handle]')!
+        const slot = edge.parentElement!.getBoundingClientRect()
+        const r = edge.getBoundingClientRect()
+        await expect(Math.abs(r.right - slot.right)).toBeLessThan(1)
+    },
+}
+
+/** A left rail's line, mirrored from `RailButton`: the chevron springs out RIGHTWARD, `›` — pin it. */
+export const RailLeftButton: Story = {
+    render: () => <RailLeftDemo />,
     play: async ({ canvasElement }) => focusEdge(canvasElement),
 }

@@ -29,7 +29,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const Wrap = (props: { children: unknown }) => (
+const Wrap = (props: { children: unknown; side?: 'left' | 'right' }) => (
     <div
         style={{
             width: '232px',
@@ -41,6 +41,7 @@ const Wrap = (props: { children: unknown }) => (
             class={styles['tab-rail']}
             style={{ position: 'static' }}
             data-tab-rail="true"
+            data-rail-side={props.side ?? 'right'}
         >
             <div
                 class={styles['tab-rail-inner']}
@@ -139,6 +140,25 @@ export const LongLabel: Story = {
                 {...base}
                 label="a-very-long-note-title-that-should-be-truncated-with-an-ellipsis.md"
             />
+        </Wrap>
+    ),
+}
+
+/** LEFT RAIL (`data-rail-side="left"`) — the row's 1px-shifted margin keeps the icon on the same
+ *  centred axis when the border moves to the rail's right. */
+export const DefaultLeft: Story = {
+    render: () => (
+        <Wrap side="left">
+            <TabRailRow {...base} />
+        </Wrap>
+    ),
+}
+
+/** Active row on a left rail — brackets still hang outside the icon axis. */
+export const ActiveLeft: Story = {
+    render: () => (
+        <Wrap side="left">
+            <TabRailRow {...base} active={true} />
         </Wrap>
     ),
 }

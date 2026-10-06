@@ -7,6 +7,7 @@
 import type { Schema, SchemaEntry, PropertyType } from './types'
 import { COMMAND_IDS } from '../commands'
 import { KEYBINDING_CATALOG } from '../keybindings'
+import { SIDEBAR_SECTIONS } from '../shellLayout'
 import {
     DEFAULT_STATUS_BAR,
     STATUS_BUILTINS,
@@ -531,6 +532,28 @@ export const SETTINGS_SCHEMA: Schema = {
             min: 30,
             max: 150,
             doc: 'Minimum column width when resizing a Bases table (px).',
+        },
+    }),
+    layout: object({
+        sidebarSide: {
+            type: enumType(['left', 'right']),
+            default: 'left',
+            doc: 'Which window edge the sidebar sits on. When the tab rail is on the same side, the sidebar is outermost and the rail sits between it and the editor.',
+        },
+        tabRailSide: {
+            type: enumType(['left', 'right']),
+            default: 'right',
+            doc: 'Which window edge the vertical tab rail sits on. When the sidebar is on the same side, the rail sits between the sidebar and the editor.',
+        },
+        sidebar: {
+            type: { kind: 'list', item: enumType([...SIDEBAR_SECTIONS]) },
+            default: ['toolbar', 'files', 'graph'],
+            doc: 'The sidebar sections from top to bottom (toolbar, files, graph); leave an id out to hide that section. Leaving out graph removes the docked mini graph while a note is open.',
+        },
+        statusBar: {
+            type: 'boolean',
+            default: true,
+            doc: 'Show the status bar along the bottom edge of the window.',
         },
     }),
     server: object({

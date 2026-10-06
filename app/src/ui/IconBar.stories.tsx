@@ -34,6 +34,17 @@ export const Band: Story = {
     ),
 }
 
+/** `bandRule="top"` — a band that is the last row of a column carries its hairline on top. */
+export const BandRuleTop: Story = {
+    render: () => (
+        <IconBar label="Band toolbar, rule on top" band bandRule="top">
+            <IconButton icon="Search" label="Search" />
+            <IconButton icon="Inbox" label="Inbox" />
+            <IconButton icon="Settings" label="Settings" />
+        </IconBar>
+    ),
+}
+
 /** The collapsed tab rail's shape: icons stack one per line, centred, in a narrow container. */
 export const Wrapped: Story = {
     render: () => (

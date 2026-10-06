@@ -40,7 +40,7 @@ export type EdgeHandleProps = {
     resizable?: boolean
     /** The panel is FULLY hidden, so this strip is all that is left of it at the window's edge:
      *  widen the hover zone so reaching toward that side of the screen reveals the button, rather
-     *  than demanding the pointer land on a 6px sliver. Only the left sidebar ever hides fully —
+     *  than demanding the pointer land on a 6px sliver. Only the sidebar ever hides fully (either side) —
      *  the tab rail always keeps its 46px column, so its line stays a thin strip. */
     reveal?: boolean
     onResizeStart?: () => void

@@ -20,9 +20,3 @@
 
 .editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-body { flex: 1; overflow: auto; min-height: 0; position: relative; }
-/* The sidebar edge handle's slot: a 6px band down this pane's left edge, i.e. just right of the
-   sidebar's border (or the window's edge when the sidebar is hidden). Positioned against
-   `[data-editor-pane]`'s `position: relative` (global.css). z-index 50 lifts it over the graph
-   floater (fixed, z 2) when the graph fills the body; this pane sets no z-index of its own, so the
-   number competes in the layout's context, under the tab rail's 100. */
-.edge-slot { position: absolute; top: 0; bottom: 0; left: 0; width: 6px; z-index: 50; }

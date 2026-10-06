@@ -107,6 +107,10 @@
    view's (notes, bases, calendar, chat). `.graph-viewbar` (below, passed as ViewBar's own `class`)
    exists only as the hook for the narrow-container rules below. */
 .graph-vb-right { display: inline-flex; align-items: center; gap: var(--sp-6); }
+/* The mini header leads with the single [3d] button, then the brain-mode icons; the lead group's
+   gap is 0 at this width (see the container rule below), so the icons keep their own distance
+   from [3d] — the same 6px that separates [clusters] from [local]. */
+.graph-mini-modes { margin-left: var(--sp-3); }
 .graph-area { container-type: inline-size; container-name: grapharea; position: relative; width: 100%; }
 /* Fills the graph area; the renderer mounts its <canvas> here. */
 .graph-canvas-host { width: 100%; height: 100%; }
@@ -161,12 +165,6 @@
     font-size: var(--fs-ui);
     padding: var(--sp-1) var(--sp-4);
 }
-/* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field, a single text
-   button (an icon-only version read as a mystery button). `margin-left: auto`
-   pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D button; pointer-events are
-   re-enabled because the bar itself is click-through. */
-
-.graph-bottom-local { display: flex; gap: var(--sp-4); margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; flex-shrink: 0; }
 /* Narrow (sidebar mini-graph): the mode switcher becomes ICONS (GraphView's MODE_ICON, chosen on
    props.mini) — a reversal of the earlier text-only rule, which still governs the FULL-PANE graph.
    Five text segments wrapped onto two rows here and ate the little field's height, which is exactly

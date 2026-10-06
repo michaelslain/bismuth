@@ -59,10 +59,8 @@ function hoverLabel(node: HoverNode): string {
 }
 
 
-// Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
-// full-pane graph): text-only, lowercase, no glyph prefix — same string in both so the little
-// and big toolbars read as one control at two sizes (the narrow one just wraps to a second row
-// if all five segments don't fit one line; see the @container rule in GraphView.module.css).
+// Mode-switcher text for the FULL-PANE graph: text-only, lowercase, no glyph prefix. The sidebar
+// mini-graph shows icons instead (MODE_ICON below).
 /** Refine ticks for the client-side LOCAL layout. A neighbourhood is tens of nodes, not thousands, so
  *  this settles in a few ms on the main thread — the backend budget (400) exists for 2000+ nodes and
  *  would be wasted here. */
@@ -485,6 +483,28 @@ export function GraphView(props: {
                 }
                 facet={
                     <>
+                        {/* Mini graph: the 2D/3D pair collapses to ONE button, labelled with the mode you
+            would switch TO — a two-segment toggle does not fit a 266px sidebar beside the mode
+            icons and [clusters] [local]. It answers "which projection of the same thing?", so it
+            is a FACET, leading, ahead of the brain-mode icons. The full-pane graph keeps the real
+            SegmentedToggle in `actions` below, unchanged. */}
+                        <Show when={props.mini}>
+                            <TextButton
+                                variant="unselected"
+                                title={
+                                    graphViewMode() === '2d'
+                                        ? 'Switch to 3D orbit'
+                                        : 'Switch to 2D birdseye'
+                                }
+                                onClick={() =>
+                                    setViewMode(
+                                        graphViewMode() === '2d' ? '3d' : '2d',
+                                    )
+                                }
+                            >
+                                {graphViewMode() === '2d' ? '3d' : '2d'}
+                            </TextButton>
+                        </Show>
                         {/* The mini-graph switcher renders through the same <IconBar> primitive as every
             other icon toolbar in the app (sidebar row, tab-rail actions) — same box, glyph size and
             gap, sized by one setting. No `band` here: this bar sits inside the ViewBar's `facet`
@@ -506,7 +526,7 @@ export function GraphView(props: {
                                         onChange={props.setMode}
                                         size="sm"
                                         // "local" is deliberately NOT here — it is not a sibling of the brain views. It is a lens
-                                        // on whatever note is open, so it gets its own on/off toggle in the mini-graph's bottom bar.
+                                        // on whatever note is open, so it gets its own on/off toggle in the mini-graph's header (config slot).
                                         options={modeOptions().map(id => ({
                                             id,
                                             title: MODE_HINT[id],
@@ -515,7 +535,10 @@ export function GraphView(props: {
                                     />
                                 }
                             >
-                                <IconBar label="Graph mode">
+                                <IconBar
+                                    label="Graph mode"
+                                    class={styles['graph-mini-modes']}
+                                >
                                     <For each={modeOptions()}>
                                         {id => (
                                             <IconButton
@@ -545,6 +568,7 @@ export function GraphView(props: {
                     </>
                 }
                 actions={
+                    props.mini ? undefined : (
                     /* One span, not one slot per control: `.graph-vb-right`'s own gap and the
                        `.graph-vb-wide` hide-when-narrow rule both hang off this element, and both
                        are GraphView.module.css's to own. */
@@ -553,12 +577,10 @@ export function GraphView(props: {
                         inherit
                         class={`${styles['graph-vb-wide']} ${styles['graph-vb-right']}`}
                     >
-                        <Show when={!props.mini}>
-                            <GraphLayerToggles
-                                clusters={graphClusters()}
-                                onClusters={setGraphClusters}
-                            />
-                        </Show>
+                        <GraphLayerToggles
+                            clusters={graphClusters()}
+                            onClusters={setGraphClusters}
+                        />
                         <SegmentedToggle
                             value={graphViewMode()}
                             onChange={setViewMode}
@@ -580,6 +602,44 @@ export function GraphView(props: {
                             </IconTextButton>
                         </Show>
                     </Text>
+                    )
+                }
+                config={
+                    /* Mini graph only: the two lenses on what the field shows. They answer "which
+                       settings govern this view?" — a config, trailing. Moved up from the old bottom
+                       bar so the docked graph has no empty band and no bar of controls at its floor.
+                       [clusters] is the same shared toggle as the full pane's layer toggles
+                       (graph/graphLayers.ts), so flipping it here flips it there too. LOCAL is a WORD,
+                       not an icon (an icon-only version read as a mystery button); it is separate from
+                       the brain-mode switcher because it is a different kind of choice: those pick
+                       WHICH graph, this picks whether to narrow the current one to the open note. */
+                    props.mini ? (
+                        <>
+                            <TextButton
+                                variant={graphClusters() ? 'selected' : 'unselected'}
+                                aria-pressed={graphClusters()}
+                                title={
+                                    graphClusters()
+                                        ? 'Clusters — notes read as named groups. Click to show every note'
+                                        : 'Every note — the biggest hubs named, more names as you zoom in. Click to group into clusters'
+                                }
+                                onClick={() => setGraphClusters(!graphClusters())}
+                            >
+                                clusters
+                            </TextButton>
+                            <TextButton
+                                variant={localOn() ? 'selected' : 'unselected'}
+                                title={
+                                    localOn()
+                                        ? "Showing the open note's neighbourhood — click to show the whole graph"
+                                        : 'Show only the open note and what it connects to'
+                                }
+                                onClick={toggleLocal}
+                            >
+                                local
+                            </TextButton>
+                        </>
+                    ) : undefined
                 }
             />
             <div
@@ -626,100 +686,55 @@ export function GraphView(props: {
                         />
                     </Popover>
                 </Show>
-                <div class={styles['graph-bottom-bar']}>
-                    <div class={styles['graph-bottom-narrow']}>
-                        {/* Mini graph: the 2D/3D pair collapses to ONE button, labelled with the mode
-                    you would switch TO — there's no room for a two-segment toggle plus a LOCAL
-                    control plus the hover pill in a 266px sidebar floor. The full-pane graph (and
-                    a merely narrow non-mini graph) keeps the real SegmentedToggle + Search button
-                    below, unchanged. */}
-                        <Show when={props.mini}>
-                            <TextButton
-                                variant="unselected"
-                                title={
-                                    graphViewMode() === '2d'
-                                        ? 'Switch to 3D orbit'
-                                        : 'Switch to 2D birdseye'
-                                }
-                                onClick={() =>
-                                    setViewMode(
-                                        graphViewMode() === '2d' ? '3d' : '2d',
-                                    )
-                                }
-                            >
-                                {graphViewMode() === '2d' ? '3d' : '2d'}
-                            </TextButton>
-                        </Show>
+                {/* Bottom HUD row. Mini graph: its controls live in the ViewBar now, so the bar only
+            exists to carry the fps badge (and is not rendered at all when that is off — no empty
+            bar). The full pane keeps its 2D/3D + search cluster here (hidden at >=521px, where the
+            ViewBar's own copies show). */}
+                <Show
+                    when={
+                        !props.mini ||
+                        (settings.graph.showFps && fps() !== null)
+                    }
+                >
+                    <div class={styles['graph-bottom-bar']}>
                         <Show when={!props.mini}>
-                            <SegmentedToggle
-                                class={styles['graph-bottom-toggle']}
-                                value={graphViewMode()}
-                                onChange={setViewMode}
-                                size="sm"
-                                options={[
-                                    { id: '2d', label: '2d' },
-                                    { id: '3d', label: '3d' },
-                                ]}
-                            />
-                            <Show when={props.fill}>
-                                <IconButton
-                                    icon="Search"
-                                    label="Search graph"
-                                    variant={
-                                        menuOpen() ? 'selected' : 'unselected'
-                                    }
-                                    onClick={() =>
-                                        menuOpen()
-                                            ? closeMenu()
-                                            : setMenuOpen(true)
-                                    }
+                            <div class={styles['graph-bottom-narrow']}>
+                                <SegmentedToggle
+                                    class={styles['graph-bottom-toggle']}
+                                    value={graphViewMode()}
+                                    onChange={setViewMode}
+                                    size="sm"
+                                    options={[
+                                        { id: '2d', label: '2d' },
+                                        { id: '3d', label: '3d' },
+                                    ]}
                                 />
-                            </Show>
+                                <Show when={props.fill}>
+                                    <IconButton
+                                        icon="Search"
+                                        label="Search graph"
+                                        variant={
+                                            menuOpen() ? 'selected' : 'unselected'
+                                        }
+                                        onClick={() =>
+                                            menuOpen()
+                                                ? closeMenu()
+                                                : setMenuOpen(true)
+                                        }
+                                    />
+                                </Show>
+                            </div>
+                        </Show>
+                        <Show when={settings.graph.showFps && fps() !== null}>
+                            <Badge
+                                class={styles['graph-bottom-fps']}
+                                style={{ color: fpsColor(fps()!) }}
+                            >
+                                {fps()} fps
+                            </Badge>
                         </Show>
                     </div>
-                    {/* LOCAL — the little graph only, bottom-RIGHT, on/off. A WORD, not an icon: an icon-only
-              version was tried and read as a mystery button, and the one word fits beside the single
-              2D/3D button. Separate from the brain-mode switcher because it is a different kind of
-              choice: those pick WHICH graph, this picks whether to narrow the current one to the
-              open note. */}
-                    <Show when={props.mini}>
-                        <div class={styles['graph-bottom-local']}>
-                            {/* [clusters] — the same shared toggle as the full pane's layer toggles
-                            (graph/graphLayers.ts), so flipping it here flips it there too. */}
-                            <TextButton
-                                variant={graphClusters() ? 'selected' : 'unselected'}
-                                aria-pressed={graphClusters()}
-                                title={
-                                    graphClusters()
-                                        ? 'Clusters — notes read as named groups. Click to show every note'
-                                        : 'Every note — the biggest hubs named, more names as you zoom in. Click to group into clusters'
-                                }
-                                onClick={() => setGraphClusters(!graphClusters())}
-                            >
-                                clusters
-                            </TextButton>
-                            <TextButton
-                                variant={localOn() ? 'selected' : 'unselected'}
-                                title={
-                                    localOn()
-                                        ? "Showing the open note's neighbourhood — click to show the whole graph"
-                                        : 'Show only the open note and what it connects to'
-                                }
-                                onClick={toggleLocal}
-                            >
-                                local
-                            </TextButton>
-                        </div>
-                    </Show>
-                    <Show when={settings.graph.showFps && fps() !== null}>
-                        <Badge
-                            class={styles['graph-bottom-fps']}
-                            style={{ color: fpsColor(fps()!) }}
-                        >
-                            {fps()} fps
-                        </Badge>
-                    </Show>
-                </div>
+                </Show>
                 {/* The floor's status line — the full pane only; under 521px (and always in the
                 sidebar mini-graph) `.graph-status` hides it and the bottom bar's own fps badge
                 takes over. */}

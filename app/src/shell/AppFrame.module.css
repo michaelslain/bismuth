@@ -1,0 +1,90 @@
+/* AppFrame.module.css — the outermost shell: top strip, the three-cell grid, status bar. Moved out
+   of global.css's App.css section. Single owner: AppFrame.tsx.
+
+   Hashed classes. The frame is reached from outside only through `data-app-shell`.
+
+   height:100% (NOT 100vh): the shell is the top-level element under #root, and `html, body, #root`
+   are all `height:100%`, so 100% tracks the webview's ACTUAL client area. The `vh` unit does NOT in
+   the macOS WKWebView across the windowed<->native-fullscreen transition (it resolves taller than
+   the real area, so the bottom of the content was clipped in full-screen).
+
+   line-height = --row-h (the ONE app-wide row unit): every chrome row shares this 18px cadence and
+   any descendant that sets no line-height inherits it. Prose opts out via --prose-line-height. */
+
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace);
+}
+
+/* The grid. Columns + areas are inline (shellColumns.ts) because they depend on which side each of
+   the sidebar and rail sits on. `--sidebar-w`/`--rail-w` are registered <length>s (global.css) so
+   the collapse animates; the sidebar/rail cells follow them. position:relative is the context for
+   the sidebar edge strip. */
+.layout {
+    display: grid;
+    position: relative;
+    --sidebar-w: var(--sidebar-width, 266px);
+    --rail-w: 0px;
+    flex: 1 1 auto;
+    min-height: 0;
+    font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace);
+    transition: --sidebar-w 0.26s var(--ease), --rail-w 0.26s var(--ease);
+}
+.layout[data-has-rail] { --rail-w: 46px; }
+/* PINNED IS LAYOUT; HOVER IS OVERLAY. The rail's inner panel animates its own width 46px -> 232px
+   while the cell only ever reserved 46px. Right for the hover flyout (a transient panel over the
+   editor, carrying --lift), wrong for pinned, where 186px of opaque rail sat on the note.
+   `:not([data-switcher-active])` rather than source order, so the takeover below wins in the
+   selector itself. */
+.layout[data-has-rail][data-rail-pinned]:not([data-switcher-active]) { --rail-w: var(--tab-rail-width, 232px); }
+/* The Cmd+O switcher takeover collapses both outer tracks in lockstep. */
+.layout[data-has-rail][data-switcher-active] { --rail-w: 0px; }
+.layout[data-sidebar-hidden] { --sidebar-w: 0px; }
+@media (prefers-reduced-motion: reduce) { .layout { transition: none; } }
+
+/* A cell is a 1x1 grid so its single child fills it. No position/z-index here: a cell must not
+   create a stacking context, or the rail's hover flyout would stop competing with main directly. */
+.cell {
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+}
+/* The collapsed sidebar clips its content from the cell; the rail's flyout must overflow it. */
+.cell[data-shell-cell='sidebar'] { overflow: hidden; }
+.cell[data-shell-cell='rail'] { overflow: visible; }
+
+/* The sidebar's edge handle strip, on the sidebar's inner line. z-index 50 lifts it over the graph
+   floater (fixed, z 2) and under the tab rail's 100, except same-side where it must sit over it
+   (below). */
+.sidebar-edge {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    z-index: 50;
+}
+.sidebar-edge[data-side='left'] { left: var(--sidebar-w); }
+.sidebar-edge[data-side='right'] { right: var(--sidebar-w); }
+/* Same side: the rail sits between sidebar and editor, so this strip stands on the rail's column —
+   lift it over the rail's z 100 or the rail swallows every hover and drag. */
+.layout[data-sidebar-side='left'][data-rail-side='left'] > .sidebar-edge,
+.layout[data-sidebar-side='right'][data-rail-side='right'] > .sidebar-edge { z-index: 101; }
+/* Clip the strip at the sidebar's border (EditorPane's overflow:hidden used to): the half-scale
+   chevron must not paint over the sidebar while it pops in/out. */
+.sidebar-edge[data-side='left'] { clip-path: inset(0 -100vw 0 0); }
+.sidebar-edge[data-side='right'] { clip-path: inset(0 0 0 -100vw); }
+
+/* While the switcher is active the floater gets an opaque app-bg fill so the graph reads as a clean
+   backdrop. `[data-graph-floater]`: the floater's class is hashed in its own module. */
+.layout[data-switcher-active] [data-graph-floater] { background: var(--bg); }
+
+/* While the switcher is active the sidebar toolbar "closes temporarily" — dimmed and
+   non-interactive — and restores on Esc. `[data-sidebar-toolbar]`: IconBar's classes are hashed. */
+.layout[data-switcher-active] [data-sidebar-toolbar] {
+    opacity: 0.35;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}

@@ -74,7 +74,7 @@ const applyTheme = (theme: string) =>
 applyTheme((DEFAULTS as any).appearance.theme)
 
 // ── The app-shell font ────────────────────────────────────────────────────────
-// THIRD crucial step, same spirit as the theme tokens above. global.css's `App.css` section declares the interface font
+// THIRD crucial step, same spirit as the theme tokens above. shell/AppFrame.module.css declares the interface font
 // on `.app-shell` / `.layout` — the two elements that wrap every pane in the real app — NOT on
 // `body`. Storybook mounts a component with neither ancestor, so anything that inherits its font
 // instead of naming one lands on the browser's default proportional SERIF.
@@ -85,7 +85,7 @@ applyTheme((DEFAULTS as any).appearance.theme)
 // that does not exist, or distrust the surface. Components that DO name a family (--ui-font-stack)
 // looked right, so the breakage was partial and easy to misread.
 //
-// Mirrors `.app-shell`'s own declaration in global.css's `App.css` section. Global, so no story has to re-solve it — the
+// Mirrors `.app-shell`'s own declaration in shell/AppFrame.module.css. Global, so no story has to re-solve it — the
 // same reason the theme tokens and the fake transport are installed here rather than per story.
 const appFont = document.createElement('style')
 appFont.textContent = `body { font: var(--ui-font-size, 13px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace); }`

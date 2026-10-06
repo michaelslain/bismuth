@@ -30,6 +30,19 @@ export const Default: Story = {
     ),
 }
 
+/** `rule="top"` — the hairline on the top edge, for a band that is the last row of a column. */
+export const RuleTop: Story = {
+    render: () => (
+        <div style={{ width: '280px' }}>
+            <Band rule="top">
+                <Text as="span" size="ui" tone="muted">
+                    a band, rule on top
+                </Text>
+            </Band>
+        </div>
+    ),
+}
+
 /** Its two composers stacked in one column: the first bracket of each starts on the same x. */
 export const Composers: Story = {
     render: () => (

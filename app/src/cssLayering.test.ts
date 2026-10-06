@@ -36,6 +36,10 @@ export const RUNTIME_CLASS_PREFIXES = ['bismuth-', 'callout-', 'cm-']
  *  It exists so the pile can only shrink: adding a rule to App.css instead of to a module fails
  *  here immediately, which is the regression this refactor is most exposed to.
  *
+ *  2, after the shell grid moved into shell/AppFrame.module.css (shell-layout, 2026-10): only
+ *  `.asc-wordmark` and `.graph-slot-main` remain — `.app-shell`, `.layout` and its four state rules are
+ *  AppFrame's own module now. Historical notes below describe the earlier, larger pile.
+ *
  *  9, after the pinned-rail fix (2026-09-02): the eight above plus
  *  `.layout.has-rail.rail-pinned:not(.switcher-active)`. This is the ONE direction in which this
  *  number may legitimately rise: the rule is page FRAME (it sets a `grid-template-columns` track on
@@ -48,7 +52,7 @@ export const RUNTIME_CLASS_PREFIXES = ['bismuth-', 'callout-', 'cm-']
  *  `.layout.has-rail`, `.layout.has-rail.switcher-active`, `.layout.sidebar-hidden`,
  *  `.graph-slot-main` — the page frame, which owns no single component and stays global on
  *  purpose (see App.css's own pointer comments for why each one is frame, not chrome). */
-export const MAX_APP_CSS_CLASS_RULES = 9
+export const MAX_APP_CSS_CLASS_RULES = 2
 
 const allFiles = (dir: string, acc: string[] = []): string[] => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {

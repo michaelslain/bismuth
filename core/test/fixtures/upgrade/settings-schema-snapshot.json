@@ -1052,6 +1052,69 @@
     "max": null,
     "required": false
   },
+  "layout": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "layout.sidebar": {
+    "type": {
+      "kind": "list",
+      "item": {
+        "kind": "enum",
+        "values": [
+          "files",
+          "graph",
+          "toolbar"
+        ]
+      }
+    },
+    "default": [
+      "toolbar",
+      "files",
+      "graph"
+    ],
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "layout.sidebarSide": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "left",
+        "right"
+      ]
+    },
+    "default": "left",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "layout.statusBar": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "layout.tabRailSide": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "left",
+        "right"
+      ]
+    },
+    "default": "right",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "localModel": {
     "type": {
       "kind": "object"
