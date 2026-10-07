@@ -13,7 +13,7 @@ import { createEffect, createRoot, createSignal, type Accessor } from 'solid-js'
 import { stringify } from 'yaml'
 import { api } from './api'
 import { readCache, writeCache } from './viewCache'
-import { diffLeaves } from './settingsDiff'
+import { diffLeaves, snapshotSettings } from './settingsDiff'
 import { SETTINGS_FILE } from './tabIds'
 import {
     DEFAULTS,
@@ -466,7 +466,7 @@ if (typeof window !== 'undefined') {
                     if (!hydrated) return
                     clearTimeout(persistTimer)
                     persistTimer = setTimeout(() => {
-                        const current = structuredClone(
+                        const current = snapshotSettings(
                             settings,
                         ) as unknown as Record<string, unknown>
                         const changes = diffLeaves(lastSnapshot, current)

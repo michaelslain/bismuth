@@ -1,6 +1,9 @@
 // app/src/settingsDiff.test.ts
 import { describe, expect, it } from 'bun:test'
-import { diffLeaves } from './settingsDiff'
+// The BROWSER store build: Bun resolves `solid-js/store` to the server build, which has no proxies,
+// so only this one reproduces what the persist timer sees in the app.
+import { createStore } from 'solid-js/store/dist/store.js'
+import { diffLeaves, snapshotSettings } from './settingsDiff'
 
 describe('diffLeaves', () => {
     it('returns nothing when objects are identical', () => {
@@ -104,6 +107,39 @@ describe('diffLeaves', () => {
         const next = { groups: [{ id: 1, items: [1, 3] }] }
         expect(diffLeaves(prev, next)).toEqual([
             { path: ['groups'], value: [{ id: 1, items: [1, 3] }] },
+        ])
+    })
+})
+
+describe('snapshotSettings', () => {
+    it('copies a live Solid store proxy, which structuredClone refuses', () => {
+        const [store, setStore] = createStore({
+            chat: { provider: 'auto', presets: [] as object[] },
+        })
+        setStore('chat', 'presets', [
+            {
+                name: 'opus high',
+                provider: 'claude',
+                model: 'opus',
+                effort: 'high',
+            },
+        ])
+        expect(() => structuredClone(store)).toThrow()
+        const snap = snapshotSettings(store)
+        expect(
+            diffLeaves({ chat: { provider: 'auto', presets: [] } }, snap),
+        ).toEqual([
+            {
+                path: ['chat', 'presets'],
+                value: [
+                    {
+                        name: 'opus high',
+                        provider: 'claude',
+                        model: 'opus',
+                        effort: 'high',
+                    },
+                ],
+            },
         ])
     })
 })

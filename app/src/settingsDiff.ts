@@ -9,6 +9,18 @@ export interface LeafChange {
     value: unknown
 }
 
+/**
+ * A plain, detached copy of the live settings store — the `prev` side of the next diff.
+ *
+ * NOT `structuredClone(settings)`: the store is a Solid proxy, and the structured-clone algorithm
+ * refuses every Proxy (`DataCloneError`, in Chrome and WebKit alike). That throw used to land inside
+ * the persist timer, so no GUI settings change ever reached `.settings`. Settings are pure JSON, so a
+ * JSON round-trip reads through the proxy and loses nothing.
+ */
+export function snapshotSettings<T>(store: T): T {
+    return JSON.parse(JSON.stringify(store)) as T
+}
+
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
     typeof v === 'object' && v !== null && !Array.isArray(v)
 
