@@ -1,4 +1,4 @@
-// design-system skill scripts v4 (2026-09-21) — copied into repos by install-gate; compare this line to detect a stale copy
+// design-system skill scripts v5 (2026-10-06) — copied into repos by install-gate; compare this line to detect a stale copy
 // Pure logic for the design-system skill. No filesystem access — every input arrives as a
 // string or an array of { path, content }. This file is copied into user repos alongside its
 // lib/ siblings, so it (and they) must stay dependency-free (plain Node ESM, node:path/posix
@@ -28,6 +28,88 @@ export const CHECK_NAMES = [
     'hardcodedFontSize', 'hardcodedRadius', 'bareElement', 'propsDestructure',
     'ignoreReason', 'globalReach', 'oneGlobalFile',
 ]
+
+// ---------------------------------------------------------------------------
+// Severity + baseline ratchet (pure — run-gate.mjs does the file I/O)
+// ---------------------------------------------------------------------------
+//
+// Only `error`-severity checks gate and only they may be baselined: a non-error finding is
+// printed as a warning and can never be accepted as debt (the analogue of "SKIP and UNSAFE are
+// not passes"). Every current check is an error; a new advisory check is added here as 'warn'.
+export const CHECK_SEVERITY = {
+    storyCoverage: 'error', oneImporter: 'error', hardcodedColor: 'error', hardcodedFont: 'error',
+    hardcodedFontSize: 'error', hardcodedRadius: 'error', bareElement: 'error',
+    propsDestructure: 'error', ignoreReason: 'error', globalReach: 'error', oneGlobalFile: 'error',
+}
+
+export function severityOf(check) {
+    return CHECK_SEVERITY[check] ?? 'error'
+}
+
+// A baseline entry is { check, path, count } — the rule, the file and HOW MANY findings of that
+// rule the file is accepted to carry. Never a line number (lines move on every edit). The count is
+// what stops headroom accumulating: with a bare check+path key, one accepted finding in a file
+// silently hid every new one beside it.
+//
+// The ratchet only goes down. Against `findings`:
+//   remaining — findings not covered: no entry, or the count is exceeded (the excess, latest lines)
+//   stale     — entries that accept more than now exists (fixed debt not yet pruned), or that name
+//               a non-error check; the gate FAILS on these, so a fix has to shrink the file
+//   legacy    — entries with no count (the pre-v5 shape): accepted at any count, flagged so they
+//               get pinned by `--prune`
+//   warnings  — non-error findings: reported, never gating, never baselined
+export function applyBaseline(findings, accepted = []) {
+    const warnings = findings.filter(f => severityOf(f.check) !== 'error')
+    const groups = new Map()
+    for (const f of findings) {
+        if (severityOf(f.check) !== 'error') continue
+        const k = `${f.check} ${f.path}`
+        if (!groups.has(k)) groups.set(k, [])
+        groups.get(k).push(f)
+    }
+    const entries = new Map(accepted.map(a => [`${a.check} ${a.path}`, a]))
+    const remaining = []
+    for (const [k, group] of groups) {
+        const e = entries.get(k)
+        if (!e) remaining.push(...group)
+        else if (e.count !== undefined && group.length > e.count) remaining.push(...group.slice(e.count))
+    }
+    const stale = []
+    const legacy = []
+    for (const [k, e] of entries) {
+        const found = groups.get(k)?.length ?? 0
+        if (severityOf(e.check) !== 'error') stale.push({ check: e.check, path: e.path, accepted: e.count ?? null, found, reason: 'not an error-severity check — cannot be baselined' })
+        else if (found === 0) stale.push({ check: e.check, path: e.path, accepted: e.count ?? null, found, reason: 'no longer found' })
+        else if (e.count === undefined) legacy.push({ check: e.check, path: e.path, found })
+        else if (found < e.count) stale.push({ check: e.check, path: e.path, accepted: e.count, found, reason: 'fixed in part' })
+    }
+    const order = (a, b) => a.check.localeCompare(b.check) || a.path.localeCompare(b.path)
+    return { remaining, stale: stale.sort(order), legacy: legacy.sort(order), warnings }
+}
+
+// A fresh baseline from today's findings — the one place entries are ever created (`--init`).
+export function buildBaseline(findings) {
+    const counts = new Map()
+    for (const f of findings) {
+        if (severityOf(f.check) !== 'error') continue
+        const k = `${f.check} ${f.path}`
+        counts.set(k, { check: f.check, path: f.path, count: (counts.get(k)?.count ?? 0) + 1 })
+    }
+    return [...counts.values()].sort((a, b) => a.check.localeCompare(b.check) || a.path.localeCompare(b.path))
+}
+
+// The accepted list after a prune: entries only ever shrink or vanish, never appear or grow.
+// A legacy (count-less) entry is pinned to what exists now.
+export function shrinkBaseline(findings, accepted = []) {
+    const now = new Map(buildBaseline(findings).map(e => [`${e.check} ${e.path}`, e.count]))
+    const out = []
+    for (const e of accepted) {
+        const found = now.get(`${e.check} ${e.path}`) ?? 0
+        if (found === 0 || severityOf(e.check) !== 'error') continue
+        out.push({ check: e.check, path: e.path, count: Math.min(e.count ?? found, found) })
+    }
+    return out.sort((a, b) => a.check.localeCompare(b.check) || a.path.localeCompare(b.path))
+}
 
 const DEFAULT_COMPONENTS_MATCH = '**/[A-Z]*.tsx'
 const DEFAULT_COMPONENTS_EXCLUDE = ['**/*.stories.tsx', '**/*.test.tsx', '**/_*']

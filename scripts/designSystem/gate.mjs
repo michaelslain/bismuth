@@ -1,31 +1,40 @@
 #!/usr/bin/env node
-// design-system skill scripts v4 (2026-09-21) — copied into repos by install-gate; compare this line to detect a stale copy
+// design-system skill scripts v5 (2026-10-06) — copied into repos by install-gate; compare this line to detect a stale copy
 // A short-output gate for CI / a repo's own test suite: run the design-system audit and fail
 // if anything not already accepted into a baseline is found.
 //
 // Self-contained against checks.mjs ONLY (no audit.mjs / manifest.mjs) — install-gate copies
 // just this file plus checks.mjs into the target repo, so it must not reach outside that pair.
 //
-// Usage: node run-gate.mjs --root <dir> [--baseline <file>]
+// Usage: node run-gate.mjs --root <dir> [--baseline <file>] [--init | --prune]
 //   --root <dir>       repo root to audit (required)
-//   --baseline <file>  JSON { accepted: [{ check, path }] } — findings matching an entry
-//                       (by check + path, ignoring line) are subtracted before the gate decides.
+//   --baseline <file>  JSON { accepted: [{ check, path, count }] } — the ratchet. An entry accepts
+//                       up to `count` findings of one check in one file (never a line number);
+//                       findings beyond it fail. An entry that accepts MORE than now exists is
+//                       STALE and fails too, so a fixed violation must be pruned and headroom
+//                       cannot accumulate. Only error-severity checks gate or can be baselined.
 //                       Default: <root>/design/baseline.json when it exists, else none.
+//   --init             write the baseline from today's findings; refuses if the file exists
+//   --prune            rewrite the baseline with entries shrunk to what exists now. It can only
+//                       lower or remove entries — never add or raise one. A count-less (pre-v5)
+//                       entry is pinned to today's count.
 //
-// Exit codes: 0 clean, 1 findings remain, 2 usage/setup error (e.g. no DESIGN.md governance block)
+// Exit codes: 0 clean, 1 findings remain or the baseline is stale, 2 usage/setup error
+// (e.g. no DESIGN.md governance block)
 
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { join, extname, relative, resolve } from 'node:path'
+import { readFileSync, existsSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs'
+import { join, extname, relative, resolve, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { parseGovernance, withDefaults, runChecks, BASELINE_PATH } from './checks.mjs'
+import { parseGovernance, withDefaults, runChecks, BASELINE_PATH, applyBaseline, buildBaseline, shrinkBaseline } from './checks.mjs'
 
 const IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'target', '.claude'])
 const READ_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte', '.astro', '.css', '.scss'])
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 
 function printHelp() {
-    console.log('usage: node run-gate.mjs --root <dir> [--baseline <file>]')
-    console.log('runs the design-system audit and fails (exit 1) on any finding not in the baseline')
+    console.log('usage: node run-gate.mjs --root <dir> [--baseline <file>] [--init | --prune]')
+    console.log('runs the design-system audit and fails (exit 1) on any finding not in the baseline, or on a stale baseline entry')
+    console.log('--init writes the baseline once; --prune shrinks it to what still exists (never adds or raises)')
 }
 
 export function parseArgs(argv) {
@@ -34,6 +43,8 @@ export function parseArgs(argv) {
         const a = argv[i]
         if (a === '--root') args.root = resolve(argv[++i])
         else if (a === '--baseline') args.baseline = argv[++i]
+        else if (a === '--init') args.init = true
+        else if (a === '--prune') args.prune = true
         else if (a === '--help' || a === '-h') args.help = true
         else throw new Error(`unknown argument: ${a}`)
     }
@@ -41,11 +52,20 @@ export function parseArgs(argv) {
 }
 
 function loadBaseline(path) {
-    if (!path) return new Set()
+    if (!path) return []
     if (!existsSync(path)) throw new Error(`baseline file not found: ${path}`)
     const data = JSON.parse(readFileSync(path, 'utf8'))
     const accepted = Array.isArray(data.accepted) ? data.accepted : []
-    return new Set(accepted.map(a => `${a.check} ${a.path}`))
+    for (const a of accepted) {
+        if (typeof a.check !== 'string' || typeof a.path !== 'string') throw new Error(`baseline entry needs a check and a path: ${JSON.stringify(a)}`)
+        if (a.count !== undefined && !(Number.isInteger(a.count) && a.count > 0)) throw new Error(`baseline entry ${a.check} ${a.path}: count must be a positive integer, got ${JSON.stringify(a.count)}`)
+    }
+    return accepted
+}
+
+function writeBaseline(path, accepted) {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, JSON.stringify({ accepted }, null, 2) + '\n')
 }
 
 function walkFiles(root, subdir) {
@@ -110,10 +130,15 @@ function main() {
     }
     const manifest = withDefaults(gov)
 
+    if (args.init && args.prune) {
+        console.error('run-gate: --init and --prune are exclusive')
+        process.exit(2)
+    }
+    const baselinePath = args.baseline ?? join(args.root, BASELINE_PATH)
     let accepted
     try {
-        const fallback = join(args.root, BASELINE_PATH)
-        accepted = loadBaseline(args.baseline ?? (existsSync(fallback) ? fallback : undefined))
+        if (args.init && existsSync(baselinePath)) throw new Error(`--init refuses to overwrite ${baselinePath} — use --prune to shrink it`)
+        accepted = args.init ? [] : loadBaseline(args.baseline ?? (existsSync(baselinePath) ? baselinePath : undefined))
     } catch (err) {
         console.error(`run-gate: ${err.message}`)
         process.exit(2)
@@ -125,18 +150,44 @@ function main() {
         process.exit(2)
     }
     const findings = runChecks(manifest, files)
-    const remaining = findings.filter(f => !accepted.has(`${f.check} ${f.path}`))
 
-    if (remaining.length === 0) {
+    if (args.init) {
+        const entries = buildBaseline(findings)
+        writeBaseline(baselinePath, entries)
+        console.log(`design-system gate: wrote ${baselinePath} — ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}, ${entries.reduce((n, e) => n + e.count, 0)} accepted findings`)
+        process.exit(0)
+    }
+    if (args.prune) {
+        const shrunk = shrinkBaseline(findings, accepted)
+        writeBaseline(baselinePath, shrunk)
+        console.log(`design-system gate: pruned ${baselinePath} — ${accepted.length} → ${shrunk.length} entries, ${accepted.reduce((n, e) => n + (e.count ?? 0), 0)} → ${shrunk.reduce((n, e) => n + e.count, 0)} counted findings`)
+        accepted = shrunk
+    }
+
+    const { remaining, stale, legacy, warnings } = applyBaseline(findings, accepted)
+
+    for (const f of warnings.slice(0, 50)) console.log(`warning ${f.check} ${f.path}:${f.line} ${f.message}`)
+    for (const l of legacy) console.log(`note: baseline entry ${l.check} ${l.path} has no count (accepts any number) — run with --prune to pin it at ${l.found}`)
+
+    if (remaining.length === 0 && stale.length === 0) {
         console.log('design-system gate: clean')
         process.exit(0)
     }
 
-    console.log(`design-system gate: ${remaining.length} finding${remaining.length === 1 ? '' : 's'}`)
-    for (const f of remaining.slice(0, 50)) {
-        console.log(`${f.check} ${f.path}:${f.line} ${f.message}`)
+    if (remaining.length > 0) {
+        console.log(`design-system gate: ${remaining.length} finding${remaining.length === 1 ? '' : 's'}`)
+        for (const f of remaining.slice(0, 50)) {
+            console.log(`${f.check} ${f.path}:${f.line} ${f.message}`)
+        }
+        if (remaining.length > 50) console.log(`… and ${remaining.length - 50} more`)
     }
-    if (remaining.length > 50) console.log(`… and ${remaining.length - 50} more`)
+    if (stale.length > 0) {
+        console.log(`design-system gate: stale baseline — ${stale.length} entr${stale.length === 1 ? 'y accepts' : 'ies accept'} more than exists; run with --prune and commit design/baseline.json`)
+        for (const e of stale.slice(0, 50)) {
+            console.log(`stale ${e.check} ${e.path} accepted ${e.accepted ?? 'any'}, found ${e.found} (${e.reason})`)
+        }
+        if (stale.length > 50) console.log(`… and ${stale.length - 50} more`)
+    }
     process.exit(1)
 }
 
