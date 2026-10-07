@@ -24,7 +24,7 @@ import { storedTitleColumn, writableKey } from './kanbanMeta'
 import { parentOf, joinPath } from '../fileTreeOps'
 import { flushEditorsAtOrUnder, flushSidecarsAtOrUnder } from '../editorRegistry'
 import { api } from '../api'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import { pushUndoToast } from '../undoToast'
 
 export type RowWriteCtx = {

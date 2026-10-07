@@ -6,7 +6,8 @@
 // The metrics are the app's list row, taken from daemon/DaemonRow: `--row-h` plus `--sp-1` either
 // side (22px), `--sp-3` between slots, `--fs-ui` regular `--fg`, no inline padding so the row's
 // first glyph sits on the modal's content edge, no hover fill (clickable rows never paint a
-// background — user decision 2026-09-23). `reveal` hides the trailing control until the row is
+// background — user decision 2026-09-23; `pressed` is the one exception, ruling 4 of the
+// design-system improve run). `reveal` hides the trailing control until the row is
 // hovered or holds focus, as DaemonRow does with `[run]`. Three rows that must line up — the
 // category rows and the add row under them — line up because they are the same component, not
 // because three stylesheets agree.
@@ -20,8 +21,15 @@ export type ListRowProps = {
     children: JSX.Element
     /** Trailing control, e.g. a RemoveRowButton. Never shrinks. */
     trailing?: JSX.Element
-    /** Hide `trailing` until the row is hovered or the trailing control holds focus (always shown on touch). */
+    /** Hide `trailing` until the row is hovered or the trailing control holds focus. ALWAYS shown
+     *  under `(hover: none)` — a touch screen has no hover, so a hidden control would be unreachable. */
     reveal?: boolean
+    /** The row is being pressed (or is the target of an open gesture): paints `--state-active-bg`,
+     *  the one pressed fill for rows and chips. */
+    pressed?: boolean
+    /** Align the slots on the first line's baseline instead of centring them — for a row whose main
+     *  slot wraps onto several lines (a task description), so a leading mark stays on line one. */
+    baseline?: boolean
     class?: string
 }
 
@@ -33,7 +41,13 @@ const ListRow: Component<ListRowProps> = props => {
     const trailing = children(() => props.trailing)
     return (
         <div
-            class={[styles.row, props.reveal ? styles.reveal : '', props.class ?? '']
+            class={[
+                styles.row,
+                props.reveal ? styles.reveal : '',
+                props.pressed ? styles.pressed : '',
+                props.baseline ? styles.baseline : '',
+                props.class ?? '',
+            ]
                 .filter(Boolean)
                 .join(' ')}
             data-testid="list-row"

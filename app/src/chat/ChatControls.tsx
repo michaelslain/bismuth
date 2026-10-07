@@ -55,8 +55,8 @@ export type ChatControlsView = Pick<
  *  standard command control (button-family migration: every clickable command renders as
  *  TextButton/IconButton/IconTextButton, never a hand-styled PlainButton — PlainButton is reserved
  *  for readouts/rows, not commands). `history` is a TOGGLE (the history panel is open or not), so
- *  it gets `variant="selected"|"unselected"` from `active`; `new chat` passes no `active` at all,
- *  so it falls through to plain `variant="normal"` — a one-shot action, not a toggle member.
+ *  it is `variant="selected"` while open and plain `variant="normal"` otherwise, so it inks like its
+ *  neighbour; `new chat` passes no `active` at all — a one-shot action, not a toggle member.
  *
  *  The word is wrapped in `data-row-label`, the row's own collapse-ladder hook
  *  (ChatControls.module.css's `@container chatrow` tier) — below that width the label disappears
@@ -72,12 +72,9 @@ type RowActionProps = {
 }
 
 const RowAction: Component<RowActionProps> = props => {
-    const variant = () =>
-        props.active === undefined
-            ? 'normal'
-            : props.active
-              ? 'selected'
-              : 'unselected'
+    // 'selected' while the toggle is on, 'normal' otherwise — never 'unselected', which inks the
+    // toggle grey beside the near-white `[+ new chat]` it shares a cluster with.
+    const variant = () => (props.active ? 'selected' : 'normal')
     return (
         <IconTextButton
             icon={props.icon}
@@ -186,8 +183,7 @@ export type ChatControlsProps = {
  *  "render the real controls disabled" means: the SAME components, the SAME classes, the SAME
  *  control set as the armed row (so the row is the same height and shape at every width — there is
  *  no longer a narrow-width ladder to keep in sync; the model control alone shrinks, see
- *  ChatControls.module.css), wrapped in `.disabled` (the app's standard disabled opacity, matching
- *  `.btn:disabled` in global.css's `ui/ui.css` section) plus the DOM's own `inert` attribute on
+ *  ChatControls.module.css), wrapped in `.disabled` (every ink drops to `--faint` — a colour, never an opacity) plus the DOM's own `inert` attribute on
  *  `.row` (ChatControls.tsx)
  *  so nothing in it is actually clickable OR reachable by Tab.
  *

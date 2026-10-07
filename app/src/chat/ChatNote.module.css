@@ -1,0 +1,20 @@
+/* ChatNote.module.css — ChatNote.tsx is the ONLY importer. One row, one size (`--fs-ui`), untracked;
+   the notice is --text-muted and the error --danger. Multi-line text keeps its line breaks. */
+.chat-note {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-4);
+    width: 100%;
+    padding: var(--sp-2) 0;
+    color: var(--text-muted);
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    white-space: pre-wrap;
+}
+.chat-note.danger {
+    color: var(--danger);
+}
+.chat-note-icon {
+    flex: 0 0 auto;
+    margin-top: var(--sp-1);
+}

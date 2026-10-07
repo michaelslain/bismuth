@@ -21,7 +21,21 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Auto-detected date x-axis (`due`) + numeric y-axis (`priority`, summed). */
+
+/** The x-axis label line is the last row of the plot. Two date labels glued together ("Aug 10Aug 12")
+ *  or one overwritten by its neighbour ("AuAug 10") both leave a lowercase letter or a digit
+ *  directly against a capital — a clean axis never does, because labels sit a column apart. */
+async function expectCleanAxisLabels(canvasElement: HTMLElement) {
+    const labels = await waitFor(() => {
+        const rows = canvasElement.querySelectorAll<HTMLElement>('pre > div')
+        const last = rows[rows.length - 1]
+        if (!last || !last.textContent?.trim()) throw new Error('axis labels not mounted yet')
+        return last.textContent
+    })
+    expect(labels).not.toMatch(/[a-z0-9][A-Z]/)
+}
+
+/** Auto-detected date x-axis (`due` + numeric y-axis (`priority`, summed). */
 export const Default: Story = {
     render: () => {
         const view = { type: 'line' as const }
@@ -32,6 +46,7 @@ export const Default: Story = {
             />
         )
     },
+    play: async ({ canvasElement }) => expectCleanAxisLabels(canvasElement),
 }
 
 /** `bin: "week"` collapses the 6 distinct due-dates into fewer week buckets, and `aggregate:
@@ -139,6 +154,78 @@ export const HoverAndDrill: Story = {
     },
 }
 
+/** The plot is the box `columnAt` measures from: `indexAtX` takes `pre.getBoundingClientRect().left`
+ *  as character column 0. Any padding/border on the `<pre>` (a leak from CodeBlock's default chrome)
+ *  shifts every hover and click by that much — so assert the chrome is gone AND that the hover marker
+ *  sits on a whole character column counted from the box's left edge, which is exactly what the
+ *  pointer-to-column maths assumes. */
+export const HoverColumnAlignsWithPointer: Story = {
+    render: () => {
+        const view = { type: 'line' as const }
+        return (
+            <LineView
+                result={sampleViewResult(undefined, { view })}
+                config={sampleBaseConfig({ view })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const pre = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('pre')
+            if (!el) throw new Error('plot not mounted yet')
+            return el
+        })
+        const cs = getComputedStyle(pre)
+        for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
+            expect(cs.getPropertyValue(`padding-${side.toLowerCase()}`)).toBe('0px')
+            expect(cs.getPropertyValue(`border-${side.toLowerCase()}-width`)).toBe('0px')
+        }
+        expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+
+        // Re-query the <pre> each time — ChartFrame's resize callback can re-render the plot's DOM.
+        const live = () => canvasElement.querySelector<HTMLElement>('pre')!
+        const rect = live().getBoundingClientRect()
+        live().dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: rect.left + rect.width * 0.6,
+                clientY: rect.top + rect.height * 0.5,
+                bubbles: true,
+            }),
+        )
+        const marker = await waitFor(() => {
+            const el = live().querySelector<HTMLElement>('[class*="hover"]')
+            if (!el) throw new Error('hover marker not rendered yet')
+            return el
+        })
+        const left = live().getBoundingClientRect().left
+        const m = marker.getBoundingClientRect()
+        // One character cell's width is the marker's own ('@' is one monospace glyph).
+        const cell = m.width
+        expect(cell).toBeGreaterThan(0)
+        // Counted from the box's left edge, the marker starts on a whole column. A 13px padding leak
+        // lands it ~1.8 columns off the grid the pointer maths uses.
+        const cols = (m.left - left) / cell
+        expect(Math.abs(cols - Math.round(cols))).toBeLessThan(0.25)
+        // And the first character of the first row begins exactly at the box's left edge.
+        const range = document.createRange()
+        range.selectNodeContents(live().firstElementChild!)
+        expect(Math.abs(range.getBoundingClientRect().left - left)).toBeLessThan(0.5)
+        // The pointer at that marker's left edge resolves to the marker's own column.
+        live().dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: m.left + 1,
+                clientY: rect.top + rect.height * 0.5,
+                bubbles: true,
+            }),
+        )
+        await waitFor(() => {
+            const again = live().querySelector<HTMLElement>('[class*="hover"]')
+            expect(again).not.toBeNull()
+            expect(Math.abs(again!.getBoundingClientRect().left - m.left)).toBeLessThan(0.5)
+        })
+    },
+}
+
 /** Exactly 2 points — `fitTrend` requires >=3, so no trend line and no trend math (only the
  *  definition line renders). */
 export const TwoPoints: Story = {
@@ -215,6 +302,7 @@ export const Narrow: Story = {
             </div>
         )
     },
+    play: async ({ canvasElement }) => expectCleanAxisLabels(canvasElement),
 }
 
 /** No rows: the one shared empty state, not a blank plot. */
@@ -323,8 +411,8 @@ export const OnOpenWired: Story = {
         pre.focus()
         await userEvent.keyboard('{ArrowRight}{Enter}')
         const link = await waitFor(() => {
-            const el = canvasElement.querySelector<HTMLElement>('a')
-            if (!el) throw new Error('drill has no note link yet')
+            const el = canvasElement.querySelector<HTMLElement>('[role="treeitem"]')
+            if (!el) throw new Error('drill has no note row yet')
             return el
         })
         await userEvent.click(link)

@@ -9,7 +9,8 @@
 .page-readout {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
+  /* One character cell — the space the rest text has between `p.` / the number / `/`. */
+  gap: 1ch;
   white-space: nowrap;
   font-size: var(--fs-ui);
   font-variant-numeric: tabular-nums;
@@ -25,7 +26,8 @@
   font-size: var(--fs-ui);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
-  padding: var(--sp-1) var(--sp-3);
+  /* No side padding: the rest text must start where the edit state's `p.` starts. */
+  padding: var(--sp-1) 0;
 }
 .readout:hover:not(:disabled) {
   color: var(--fg);
@@ -37,10 +39,17 @@
   flex: 0 0 auto;
 }
 
-/* Wide enough for a four-digit page number; the same font as the readout it replaced. */
+/* As many cells as the current page number has digits, so the field opens at exactly the room the
+   rest text's number does and clicking the readout moves nothing. That is a MINIMUM, not a width:
+   `field-sizing: content` grows the field as a longer number is typed, but an explicit `width`
+   switches it off (measured in Chrome: `width: 1ch` + "12" stayed 1 digit wide and scrolled), so
+   `width` is `auto`. Engines without field-sizing keep the minimum and scroll. Left-aligned, so the
+   digit sits right after `p.` in both states. */
 .input {
-  width: 5ch;
+  width: auto;
+  min-width: calc(var(--readout-digits, 1) * 1ch);
+  field-sizing: content;
   font-size: var(--fs-ui);
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: left;
 }

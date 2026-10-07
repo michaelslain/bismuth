@@ -3,19 +3,18 @@
    imported `styles` object, never as a string literal. Nothing outside TopStrip.tsx may target
    them.
 
-   `top-strip--mac` HASHES TOO, even though it is a modifier riding as a second class on the same
-   <div> as `top-strip`. Both are locals of this module, so TopStrip.tsx reaches the modifier via
-   `classList={{ [styles["top-strip--mac"]]: props.mac }}` — a bare "top-strip--mac" literal in
-   classList would still compile and match nothing.
+   THE BOX IS NOT HERE. TopStrip renders through ui/Band, which owns the height, the --sp-5 side
+   padding and the --rule-soft hairline; the macOS gap is Band's `inset="traffic-lights"`. This file
+   keeps only what a band does not decide — the row's layout, ink and the drag-region behaviour. It
+   must not set padding or a border: Band's rules and these are the same specificity, so a second
+   writer here would race the band's own by source order.
 
    The wordmark and its caret are NOT styled here: ui/Wordmark owns them (the bare global
    `.asc-wordmark` / `.asc-caret` classes plus its own tracking and size tokens), so the corner mark
    is one component and cannot drift.
 
-   ONE RULE IN THIS FILE IS OUTSIDE THE COMPUTED-STYLE BASELINE'S REACH FOR A DIFFERENT REASON THAN
-   USUAL: none of `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` has a `:hover` state, so all
-   three are fully covered by `bench/cssBaseline.ts`'s three Storybook stories (Default, Mac,
-   WindowsLinux) — there is no uncovered rule to flag here.
+   Neither `.top-strip` nor `.top-strip-spacer` has a `:hover` state, so both are fully covered by
+   `bench/cssBaseline.ts`'s three Storybook stories (Default, Mac, WindowsLinux).
 
    THE `[data-command-icon]` BOX-SIZE OVERRIDE IS GONE (toolbar-iconbar plan, Task 3). No
    CommandButton renders inside `.top-strip` today (its only child is WindowControls, which uses
@@ -25,11 +24,8 @@
    shell/CommandButton.tsx; nothing in the repo reads it any more. */
 
 .top-strip {
-  flex: 0 0 auto; height: var(--h-band); display: flex; align-items: center; gap: var(--bar-icon-gap); padding: 0 var(--sp-6);
-  border-bottom: 1px solid var(--border-soft); color: var(--text-muted); background: var(--bg);
+  flex: 0 0 auto; display: flex; align-items: center; gap: var(--bar-icon-gap);
+  color: var(--text-muted); background: var(--bg);
   font-size: var(--fs-ui); -webkit-user-select: none; user-select: none;
 }
-/* macOS Overlay titlebar: native traffic lights float over the strip's left edge (see
-   src-tauri/src/lib.rs build_main_window) — reserve room for them instead of the wordmark. */
-.top-strip--mac { padding-left: 78px; }
 .top-strip-spacer { flex: 1; }

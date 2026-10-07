@@ -1,5 +1,7 @@
 /* app/src/ui/AnchoredPopover.module.css — the anchor + dismiss layer shared by Select and
    DateFieldEditor. Same stacking pair those two hand-rolled before this component existed:
-   above Modal (1000), backdrop under panel. */
-.backdrop { position: fixed; inset: 0; z-index: 1090; }
-.panel { position: fixed; z-index: 1100; }
+   above Modal (--z-modal), backdrop under panel. The ladder has no separate rung for a popover's
+   own backdrop, so both sit on --z-popover and the panel wins by DOM order (AnchoredPopover.tsx
+   mounts the backdrop first, as its sibling). */
+.backdrop { position: fixed; inset: 0; z-index: var(--z-popover); }
+.panel { position: fixed; z-index: var(--z-popover); }

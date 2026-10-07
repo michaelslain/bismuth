@@ -30,7 +30,7 @@
     flex: 1 1 auto;
     min-height: 0;
     font: var(--fs-ui, 11.5px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace);
-    transition: --sidebar-w 0.26s var(--ease), --rail-w 0.26s var(--ease);
+    transition: --sidebar-w var(--dur-pop) var(--ease), --rail-w var(--dur-pop) var(--ease);
 }
 .layout[data-has-rail] { --rail-w: 46px; }
 /* PINNED IS LAYOUT; HOVER IS OVERLAY. The rail's inner panel animates its own width 46px -> 232px
@@ -71,7 +71,7 @@
 /* Same side: the rail sits between sidebar and editor, so this strip stands on the rail's column —
    lift it over the rail's z 100 or the rail swallows every hover and drag. */
 .layout[data-sidebar-side='left'][data-rail-side='left'] > .sidebar-edge,
-.layout[data-sidebar-side='right'][data-rail-side='right'] > .sidebar-edge { z-index: 101; }
+.layout[data-sidebar-side='right'][data-rail-side='right'] > .sidebar-edge { z-index: calc(var(--z-shell) + 1); }
 /* Clip the strip at the sidebar's border (EditorPane's overflow:hidden used to): the half-scale
    chevron must not paint over the sidebar while it pops in/out. */
 .sidebar-edge[data-side='left'] { clip-path: inset(0 -100vw 0 0); }
@@ -81,10 +81,12 @@
    backdrop. `[data-graph-floater]`: the floater's class is hashed in its own module. */
 .layout[data-switcher-active] [data-graph-floater] { background: var(--bg); }
 
-/* While the switcher is active the sidebar toolbar "closes temporarily" — dimmed and
-   non-interactive — and restores on Esc. `[data-sidebar-toolbar]`: IconBar's classes are hashed. */
+/* While the switcher is active the sidebar toolbar "closes temporarily" — disabled and
+   non-interactive — and restores on Esc. That IS a disabled state, so it reads the one sanctioned
+   disabled opacity rather than a hand-written 0.35. `[data-sidebar-toolbar]`: IconBar's classes are
+   hashed. */
 .layout[data-switcher-active] [data-sidebar-toolbar] {
-    opacity: 0.35;
+    opacity: var(--state-disabled-op);
     pointer-events: none;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--dur) var(--ease);
 }

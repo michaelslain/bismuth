@@ -42,8 +42,8 @@ function Stack(props: { children: JSX.Element }) {
 /** Fully controllable single heading. */
 export const Playground: Story = {}
 
-/** Every level, largest to smallest — the full ramp at a glance. h6 also picks up the muted,
- *  uppercase "label" treatment (--text-muted + --ls-label), same as the editors' own h6. */
+/** Every level, largest to smallest — the full ramp at a glance. h6 is the quietest step: micro,
+ *  muted and tracked (--text-muted + --ls-label) — and, like every level, never uppercase. */
 export const AllLevels: Story = {
     render: () => (
         <Stack>

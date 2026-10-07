@@ -9,7 +9,9 @@
 //
 // Props: path (the vault path to open), children (visible label, defaults to the path), class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import NoteLink from './NoteLink'
+import { Row } from './_storyKit'
 
 const meta = {
     title: 'UI/NoteLink',
@@ -25,6 +27,27 @@ export const Default: Story = {}
 
 /** A row title: --fg at rest, accent + underline on hover. */
 export const TitleTone: Story = { args: { tone: 'title' } }
+
+/** `external`: a web address, opened in a new tab. Same ink and the same hover-only underline as the
+ *  wikilink beside it — the two used to differ (an always-underlined button against an underline on
+ *  hover) in one task line. */
+export const External: Story = {
+    args: { path: 'https://example.com/spec', external: true, children: 'the spec' },
+    render: args => (
+        <span style={{ 'font-family': 'var(--ui-font-stack)', 'font-size': 'var(--fs-ui)' }}>
+            <NoteLink {...args} /> // <NoteLink path="projects/Roadmap.md">Roadmap</NoteLink>
+        </span>
+    ),
+    play: async ({ canvasElement }) => {
+        const [web, note] = [...canvasElement.querySelectorAll('a')]
+        const a = getComputedStyle(web!)
+        const b = getComputedStyle(note!)
+        expect(a.textDecorationLine).toBe('none')
+        expect(a.textDecorationLine).toBe(b.textDecorationLine)
+        expect(a.color).toBe(b.color)
+        expect(web!.getAttribute('title')).toBe('https://example.com/spec')
+    },
+}
 
 /** No children — the path itself is the label. */
 export const PathAsLabel: Story = {
@@ -50,53 +73,24 @@ export const InProse: Story = {
 export const ThreeRenderingsThisReplaces: Story = {
     render: () => (
         <div style={{ display: 'grid', gap: '14px', 'min-width': '30ch' }}>
-            <div>
-                <div
-                    style={{
-                        'font-size': '10.5px',
-                        color: 'var(--faint)',
-                        'text-transform': 'uppercase',
-                        'letter-spacing': '.06em',
-                        'margin-bottom': '4px',
-                    }}
-                >
-                    before — table view (UA default)
-                </div>
+            <Row label="before — table view (UA default)" column gap="4px">
                 {/* Deliberately unstyled: this is the bug, reproduced. */}
                 <a href="#" onClick={e => e.preventDefault()}>
                     Draft the roadmap
                 </a>
-            </div>
-            <div>
-                <div
-                    style={{
-                        'font-size': '10.5px',
-                        color: 'var(--faint)',
-                        'text-transform': 'uppercase',
-                        'letter-spacing': '.06em',
-                        'margin-bottom': '4px',
-                    }}
-                >
-                    before — list view (no link affordance at all)
-                </div>
+            </Row>
+            <Row
+                label="before — list view (no link affordance at all)"
+                column
+                gap="4px"
+            >
                 <span>Draft the roadmap</span>
-            </div>
-            <div>
-                <div
-                    style={{
-                        'font-size': '10.5px',
-                        color: 'var(--faint)',
-                        'text-transform': 'uppercase',
-                        'letter-spacing': '.06em',
-                        'margin-bottom': '4px',
-                    }}
-                >
-                    after — every view
-                </div>
+            </Row>
+            <Row label="after — every view" column gap="4px">
                 <NoteLink path="projects/Roadmap.md">
                     Draft the roadmap
                 </NoteLink>
-            </div>
+            </Row>
         </div>
     ),
 }

@@ -1,4 +1,4 @@
-/* The extra property lines on a card: a faint key column and the rendered value. */
+/* The extra property lines on a card: a muted key column and the rendered value. */
 .cardMetaList { display: grid; grid-template-columns: max-content 1fr; column-gap: 2ch; row-gap: var(--sp-2); margin-top: var(--sp-3); font-size: var(--fs-ui); }
 .item { display: contents; }
 .key { flex: 0 0 auto; }

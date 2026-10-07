@@ -60,6 +60,9 @@ export type ViewBarProps = ViewBarSlots & {
     /** One extra class per internal part — see `ViewBarParts`. A consumer that used to reach
      *  `:global(.vb-identity)` etc from its own stylesheet passes a local class here instead. */
     parts?: ViewBarParts
+    /** No inline padding, passed straight to `Band`'s `flush`. For a host that owns the bar's side
+     *  padding itself (BaseView) instead of zeroing it with a doubled selector. */
+    flush?: boolean
 }
 
 /**
@@ -121,6 +124,7 @@ function ViewBar(props: ViewBarProps) {
     // outside this file.
     return (
         <Band
+            flush={props.flush}
             class={cx(styles.viewbar, props.class)}
             data-viewbar
             data-pane-chrome={ownsChrome() ? '' : undefined}
@@ -210,11 +214,12 @@ function ViewBar(props: ViewBarProps) {
 export default ViewBar
 
 /** Breadcrumb: an optional leading icon + a bold title (the current view's name).
- *  `serif` renders the title in the editor serif (e.g. the standalone calendar month). */
+ *  The old `serif` prop is DELETED, not renamed: it had no production caller (only a story), and
+ *  its rule set `--ui-font-stack` anyway, so it never rendered a serif. Written text in the prose
+ *  face is `<Text register="prose">`'s job, not the crumb's. */
 export function Crumb(props: {
     icon?: string
     iconSize?: number
-    serif?: boolean
     /** Merged onto the root, so a caller can restyle one instance without forking Crumb. */
     class?: string
     children: JSX.Element
@@ -224,12 +229,7 @@ export function Crumb(props: {
             <Show when={props.icon}>
                 {i => <Icon value={i()} size={props.iconSize} />}
             </Show>
-            <b
-                classList={{ [styles['crumb-serif']]: !!props.serif }}
-                data-testid="crumb-title"
-            >
-                {props.children}
-            </b>
+            <b data-testid="crumb-title">{props.children}</b>
         </span>
     )
 }

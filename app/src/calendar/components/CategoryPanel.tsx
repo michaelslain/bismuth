@@ -13,7 +13,7 @@ import { TextButton } from '../../ui/TextButton'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
 import SettingsHint from '../../ui/SettingsHint'
-import { pushToast } from '../../toastStore'
+import { pushToast } from '../../ui/toastStore'
 import CategoryList from './CategoryList'
 import NewCategoryForm from './NewCategoryForm'
 

@@ -12,7 +12,7 @@
 .block {
     position: absolute;
     pointer-events: none;
-    border-radius: var(--r-chip);
+    border-radius: var(--r-0);
     /* A note beside the page reads AT the page's own text size, not the note-editor's prose size:
        --fs-body at the reference scale (SCRATCH_REF_SCALE = 0.75, a Letter page fit to a ~900px
        pane), where the PDF's own body text measures ~12.5px. Floored at --fs-ui so a page fit into
@@ -81,7 +81,7 @@
     content: '';
     width: var(--sp-6);
     height: var(--sp-1);
-    border-radius: var(--r-chip);
+    border-radius: var(--r-0);
     background: var(--faint);
     transition: background var(--dur-fast) var(--ease);
 }

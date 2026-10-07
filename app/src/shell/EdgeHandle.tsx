@@ -21,19 +21,21 @@ import { gestureStops } from '../ui/stopGestures'
 import { parseCombo } from '../ui/ascii/parseCombo'
 import { isActivateKey } from '../ui/widgetKeys'
 import { createSignal } from 'solid-js'
+import { edgeHandleView, type EdgePanel, type EdgeSide } from './edgeHandleLogic'
 
 /** Pixels a pressed pointer may wander before the press counts as a drag rather than a click. */
 const DRAG_SLOP = 3
 
 export type EdgeHandleProps = {
-    /** Which side of the line the button opens on — always away from the panel, over the editor. */
-    buttonSide: 'left' | 'right'
-    /** Accessible name of the strip, e.g. "sidebar edge". */
-    label: string
-    /** What the toggle does, lowercase — `hide sidebar`, `pin tab rail`. The button's name. */
-    action: string
-    /** Which way the chevron points: the direction the panel's edge will move on toggle. */
-    direction: 'left' | 'right'
+    /** Which panel this strip belongs to. Names the strip ("sidebar edge") and its toggle
+     *  ("hide sidebar", "pin tab rail"). */
+    panel: EdgePanel
+    /** The window edge the panel sits against. Where the button opens (away from the panel, over the
+     *  editor) and which way the chevron points follow from this and `open` — derived once, in
+     *  edgeHandleLogic.ts, rather than re-derived by every call site. */
+    edge: EdgeSide
+    /** The panel is expanded (sidebar visible / rail pinned), so the toggle collapses it. */
+    open: boolean
     /** The toggle's keybinding in the app's combo syntax, appended to the button's tooltip. */
     combo?: string
     /** False while the panel is collapsed to nothing — the strip still toggles but cannot drag. */
@@ -103,9 +105,10 @@ function EdgeHandle(props: EdgeHandleProps) {
         e.preventDefault()
         props.onActivate()
     }
+    const view = () => edgeHandleView(props.panel, props.edge, props.open)
     const tooltip = () => {
         const keys = comboText(props.combo)
-        return keys ? `${props.action} (${keys})` : props.action
+        return keys ? `${view().action} (${keys})` : view().action
     }
 
     return (
@@ -113,13 +116,13 @@ function EdgeHandle(props: EdgeHandleProps) {
             ref={rootEl}
             class={`${styles['edge']} ${props.className ?? ''}`}
             classList={{
-                [styles['button-left']]: props.buttonSide === 'left',
+                [styles['button-left']]: view().buttonSide === 'left',
                 [styles['fixed']]: props.resizable === false,
                 [styles['reveal']]: !!props.reveal,
             }}
             role="separator"
             aria-orientation="vertical"
-            aria-label={props.label}
+            aria-label={view().label}
             tabIndex={0}
             data-edge-handle
             data-dragging={dragging() ? 'true' : undefined}
@@ -146,7 +149,7 @@ function EdgeHandle(props: EdgeHandleProps) {
             >
                 <div class={styles['chip']}>
                     <IconButton
-                        icon={props.direction === 'left' ? 'ChevronLeft' : 'ChevronRight'}
+                        icon={view().direction === 'left' ? 'ChevronLeft' : 'ChevronRight'}
                         label={tooltip()}
                         tabIndex={-1}
                         onClick={() => {

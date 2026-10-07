@@ -17,18 +17,18 @@ test('every canonical name is covered exactly once — mapped XOR declared missi
     expect({ uncovered, both }).toEqual({ uncovered: [], both: [] })
 })
 
-test('ICON_MAP has no stray entries beyond the canonical 140', () => {
+test('ICON_MAP has no stray entries beyond the canonical 142', () => {
     const names = new Set(ICON_NAMES)
     const stray = Object.keys(ICON_MAP).filter(n => !names.has(n))
     expect(stray).toEqual([])
 })
 
-test('counts: 138 slug entries, 2 custom, 0 known-missing', () => {
+test('counts: 140 slug entries, 2 custom, 0 known-missing', () => {
     const entries = Object.values(ICON_MAP)
-    expect(entries.filter(e => e.kind === 'slug').length).toBe(138)
+    expect(entries.filter(e => e.kind === 'slug').length).toBe(140)
     expect(entries.filter(e => e.kind === 'custom').length).toBe(2)
     expect(KNOWN_MISSING.length).toBe(0)
-    // 138 + 2 + 0 === 140, the whole canonical set, asserted directly rather than trusting addition.
+    // 140 + 2 + 0 === 142, the whole canonical set, asserted directly rather than trusting addition.
     expect(entries.length + KNOWN_MISSING.length).toBe(ICON_NAMES.length)
 })
 
@@ -44,16 +44,23 @@ test('the five former "gaps" map to real Phosphor art — no canonical name draw
     expect(ICON_MAP.Vote).toEqual({ kind: 'slug', slug: 'check-square-offset' })
 })
 
-test('Regex and WholeWord are hand-authored custom marks, not slugs', () => {
+test('Regex and WholeWord are hand-authored PATH marks — no <text>, no font', () => {
+    for (const name of ['Regex', 'WholeWord']) {
+        const entry = ICON_MAP[name]
+        expect(entry.kind).toBe('custom')
+        if (entry.kind !== 'custom') continue
+        expect(entry.body, name).not.toContain('<text')
+        expect(entry.body, name).not.toContain('font')
+    }
     expect(ICON_MAP.Regex).toEqual({
         kind: 'custom',
         viewBox: '0 0 256 256',
-        body: expect.stringContaining('.*'),
+        body: expect.stringContaining('<path'),
     })
     expect(ICON_MAP.WholeWord).toEqual({
         kind: 'custom',
         viewBox: '0 0 256 256',
-        body: expect.stringContaining('[W]'),
+        body: expect.stringContaining('<path'),
     })
 })
 
@@ -72,11 +79,9 @@ test('named icons resolve to their recorded slug, not merely to something', () =
 test('no two names share a slug by copy-paste accident, except the deliberate pairs', () => {
     // A duplicated slug means two different actions show the same picture — invisible to any other
     // check (the earlier Nerd Font migration hit exactly this: Columns3/SquareKanban both pointed
-    // at the same MDI glyph before it was caught). Some sharing here IS deliberate — Columns2 and
-    // Columns3 both use Phosphor's one 3-column glyph, Power/PowerOff share one power glyph,
-    // PanelLeft/PanelRight share one sidebar glyph, Undo2/RotateCcw share one counter-clockwise
-    // arrow — each pair a case where Phosphor has no distinct art and the deliberate choice was to
-    // share it. Anything beyond that allow-list is a real regression.
+    // at the same MDI glyph before it was caught). Power/PowerOff and Columns2/Columns3 used to be
+    // allow-listed here and were a real bug: the daemon's Enable/Disable pair drew ONE picture, so
+    // the two buttons were indistinguishable. Only pairs that are the SAME concept may share.
     const bySlug = new Map<string, string[]>()
     for (const [name, entry] of Object.entries(ICON_MAP)) {
         if (entry.kind !== 'slug') continue
@@ -85,8 +90,8 @@ test('no two names share a slug by copy-paste accident, except the deliberate pa
         bySlug.set(entry.slug, list)
     }
     const allowedPairs = [
-        ['Columns2', 'Columns3'],
-        ['Power', 'PowerOff'],
+        // Phosphor's `list` IS the hamburger; List and Menu are the same picture by design.
+        ['List', 'Menu'],
         ['PanelLeft', 'PanelRight'],
         ['Undo2', 'RotateCcw'],
     ].map(pair => [...pair].sort().join(','))

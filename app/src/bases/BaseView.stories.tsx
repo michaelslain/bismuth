@@ -21,7 +21,7 @@ import { taskToRow } from '../../../core/src/bases/taskRow'
 import type { Task } from '../../../core/src/tasks'
 import { saveSession } from './flashcardsQueue'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
-import { toasts } from '../toastStore'
+import { toasts } from '../ui/toastStore'
 import taskRowStyles from './TaskRow.module.css'
 import tableViewStyles from './TableView.module.css'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
@@ -311,10 +311,10 @@ function FlashcardsPane(props: { w: string; path: string }) {
  *      individually.
  *
  *  ADDED THE SAME DAY, caught in review: none of the checks above can see the meter's glyph run
- *  overflow its own box. `.fcmeter` is `width: 100%` regardless of content and `.asc-meter` cannot
+ *  overflow its own box. `.fcmeter` is `width: 100%` regardless of content and the glyph run cannot
  *  wrap (`white-space: pre`), so an oversized cell count runs the glyphs off to the right WITHOUT
  *  moving `.fcmeter`'s own edges — every check above stays green through exactly that failure. The
- *  glyph run (`.asc-meter`, a global un-hashed class) is measured on its OWN box instead: it must
+ *  glyph run (AsciiMeter's hashed module class, found by structure) is measured on its OWN box instead: it must
  *  have real width, and its right edge must not pass its container's. */
 async function expectOneBar(canvasElement: HTMLElement): Promise<number> {
     const pane = canvasElement.querySelector(
@@ -338,7 +338,7 @@ async function expectOneBar(canvasElement: HTMLElement): Promise<number> {
     expect(barHeight).toBeLessThanOrEqual(36)
     expect(meterHeight).toBeLessThanOrEqual(28)
     // THE GLYPH RUN, NOT JUST ITS BOX. `.fcmeter`'s own CSS pins `width: 100%` regardless of what
-    // is inside it, and the meter's glyphs (`.asc-meter`, `white-space: pre`) cannot wrap — so if a
+    // is inside it, and the meter's glyphs (AsciiMeter glyph run, `white-space: pre`) cannot wrap — so if a
     // bad `chPx` or a broken `fitMeterWidth` clamp ever produced too many cells, the glyph run would
     // overflow horizontally WITHOUT changing `.fcmeter`'s own width or height at all. Every check
     // above this line (barHeight, meterHeight, chrome) would stay green through exactly that
@@ -357,7 +357,7 @@ async function expectOneBar(canvasElement: HTMLElement): Promise<number> {
     // moment the correction lands.
     await new Promise(resolve => setTimeout(resolve, 200))
     await waitFor(() => {
-        const glyphRun = meter.querySelector('.asc-meter') as HTMLElement
+        const glyphRun = meter.querySelector('[aria-hidden="true"] > *') as HTMLElement
         expect(glyphRun).not.toBeNull()
         const glyphBox = glyphRun.getBoundingClientRect()
         expect(glyphBox.width).toBeGreaterThan(0)
@@ -909,11 +909,26 @@ export const TasksCardsDense: Story = {
             canvas.getAllByTitle('Toggle task — right-click to set status'),
         )
         expect(boxes.length).toBe(DENSE_TASK_DEFS.length)
-        // Every status the compact register renders differently actually landed on screen.
-        expect(canvas.getAllByText('[x]').length).toBeGreaterThan(0)
-        expect(canvas.getAllByText('[-]').length).toBeGreaterThan(0)
-        expect(canvas.getAllByText('[/]').length).toBeGreaterThan(0)
-        expect(canvas.getAllByText('[ ]').length).toBeGreaterThan(0)
+        // Every status the compact register renders differently actually landed on screen. The
+        // glyph is CSS content around an empty <i> (ui/BracketToggle), so read the status hook and
+        // the computed ::before, not a text node.
+        const checkStatus = (s: string) => (s === 'in-progress' ? 'doing' : s)
+        expect(new Set(boxes.map(b => b.getAttribute('data-status')))).toEqual(
+            new Set(DENSE_TASK_DEFS.map(t => checkStatus(t.status))),
+        )
+        const glyphOf = (status: string) =>
+            boxes
+                .filter(b => b.getAttribute('data-status') === status)
+                .map(b => getComputedStyle(b.querySelector('i')!, '::before').content)
+        for (const [status, glyph] of [
+            ['done', '"x"'],
+            ['doing', '"/"'],
+            ['cancelled', '"-"'],
+        ] as const) {
+            expect(glyphOf(status).length).toBeGreaterThan(0)
+            for (const g of glyphOf(status)) expect(g).toBe(glyph)
+        }
+        for (const g of glyphOf('todo')) expect(['"x"', '"/"', '"-"']).not.toContain(g)
     },
 }
 

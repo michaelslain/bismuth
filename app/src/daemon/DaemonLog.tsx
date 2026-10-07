@@ -45,7 +45,6 @@ function DaemonLog(props: DaemonLogProps) {
                 classList={{
                     [styles['tone-fail']]: line.tone === 'fail',
                     [styles['tone-live']]: line.tone === 'live',
-                    [styles['tone-quiet']]: line.tone === 'quiet',
                     [styles['tone-ok']]: line.tone === 'ok',
                 }}
             >
@@ -97,14 +96,14 @@ function DaemonLog(props: DaemonLogProps) {
             >
                 <Show
                     when={props.events.length > 0}
-                    fallback={<Text tone="faint">nothing logged yet</Text>}
+                    fallback={<Text tone="muted">nothing logged yet</Text>}
                 >
                     <For each={days()}>
                         {d => (
                             <>
                                 <Text
                                     size="micro"
-                                    tone="faint"
+                                    tone="muted"
                                     class={styles['log-day']}
                                 >
                                     {d.label}

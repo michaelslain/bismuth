@@ -17,6 +17,7 @@ import { todayISO } from '../../../../../core/src/dates'
 import Text from '../../../ui/Text'
 import AsciiCellEdges from '../../../ui/ascii/AsciiCellEdges'
 import MonthCell from './MonthCell'
+import { sortDayEvents } from './timeGridLayout'
 import TaskDayCell from './TaskDayCell'
 import styles from './MonthView.module.css'
 
@@ -58,10 +59,9 @@ export function MonthView(props: MonthViewProps) {
                             <div class={styles['month-day']}>
                                 <Text
                                     as="div"
-                                    size="micro"
-                                    tone="faint"
-                                    weight="inherit"
-                                    eyebrow
+                                    size="ui"
+                                    tone="muted"
+                                    weight="medium"
                                     class={styles['month-day-name']}
                                     data-testid="month-day-name"
                                 >
@@ -69,8 +69,9 @@ export function MonthView(props: MonthViewProps) {
                                 </Text>
                                 {/* the header types its top + left (the last also its right) and its bottom
                                     HEAVY — the `=` under the labels; the first body row omits its top.
-                                    A sibling of the label, not a child: the eyebrow's letter-spacing is
-                                    inherited and would break the one-glyph-one-ch rule. */}
+                                    A sibling of the label, not a child, so no text style on the label can
+                                    reach the glyph run. The label reads like the week header's `Mon 10/5`:
+                                    mixed case, muted, medium. */}
                                 <AsciiCellEdges
                                     edges={[
                                         'top',
@@ -114,7 +115,11 @@ export function MonthView(props: MonthViewProps) {
                                     <Show
                                         when={props.placed}
                                         fallback={
-                                            <For each={allEvents().filter(e => e.date === dateStr())}>
+                                            <For
+                                                each={sortDayEvents(
+                                                    allEvents().filter(e => e.date === dateStr()),
+                                                )}
+                                            >
                                                 {e => (
                                                     <EventChip
                                                         event={e}

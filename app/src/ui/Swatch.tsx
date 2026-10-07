@@ -14,10 +14,11 @@ export type SwatchProps = (
     | { static?: false; label: string; onClick: () => void }
     | { static: true; label?: string; onClick?: never }
 ) & {
-    /** Any CSS colour — a resolved value, or a `var(--token)` reference. */
+    /** Any CSS colour — a resolved value, or a `var(--token)` reference. `''` is "no colour": it
+     *  paints an empty dashed box, never a swatch of some default hue. */
     color: string
     selected?: boolean
-    /** "md" (22px, a picker option, default) | "sm" (20px, the row's current-colour chip). */
+    /** "md" (--h-control, a picker option, default) | "sm" (--row-h, the row's current-colour chip). */
     size?: 'sm' | 'md'
     class?: string
 }
@@ -31,10 +32,11 @@ const Swatch: Component<SwatchProps> = props => (
                 classList={{
                     [styles['sm']!]: props.size === 'sm',
                     [styles['selected']!]: !!props.selected,
+                    [styles['empty']!]: !props.color,
                     [styles['static']!]: true,
                     [props.class ?? '']: !!props.class,
                 }}
-                style={{ background: props.color }}
+                style={{ background: props.color || undefined }}
                 aria-label={props.label}
                 aria-hidden={props.label ? undefined : 'true'}
                 title={props.label}
@@ -47,9 +49,10 @@ const Swatch: Component<SwatchProps> = props => (
             classList={{
                 [styles['sm']!]: props.size === 'sm',
                 [styles['selected']!]: !!props.selected,
+                [styles['empty']!]: !props.color,
                 [props.class ?? '']: !!props.class,
             }}
-            style={{ background: props.color }}
+            style={{ background: props.color || undefined }}
             aria-label={props.label}
             aria-pressed={props.selected ? 'true' : undefined}
             title={props.label}

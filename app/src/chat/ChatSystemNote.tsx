@@ -1,12 +1,11 @@
-// app/src/chat/ChatSystemNote.tsx — ChatSystemNote.module.css is the ONLY importer.
-// A quiet, non-error system notice (BUG #87): confirms a client-side slash command like `/chrome`
-// actually did something, without pretending to be part of the conversation (no speaker label,
-// never replayed from session history). Extracted verbatim from ChatView.tsx's transcript render.
+// app/src/chat/ChatSystemNote.tsx — a quiet, non-error system notice (BUG #87): confirms a
+// client-side slash command like `/chrome` actually did something, without pretending to be part
+// of the conversation (no speaker label, never replayed from session history). The row itself is
+// ChatNote (shared with the per-turn error and the "working" line); this only seats it in the
+// reading column.
 import type { Component } from 'solid-js'
-import { Icon } from '../icons/Icon'
-import Text from '../ui/Text'
+import ChatNote from './ChatNote'
 import ChatTurnColumn from './ChatTurnColumn'
-import styles from './ChatSystemNote.module.css'
 
 export type ChatSystemNoteProps = {
     text: string
@@ -15,11 +14,8 @@ export type ChatSystemNoteProps = {
 
 const ChatSystemNote: Component<ChatSystemNoteProps> = props => {
     return (
-        <ChatTurnColumn class={`${styles['chat-system-note']} ${props.class ?? ''}`}>
-            <Icon value="Info" />
-            <Text as="span" inherit>
-                {props.text}
-            </Text>
+        <ChatTurnColumn class={props.class ?? ''}>
+            <ChatNote icon="Info">{props.text}</ChatNote>
         </ChatTurnColumn>
     )
 }

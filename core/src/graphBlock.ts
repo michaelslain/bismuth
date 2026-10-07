@@ -391,6 +391,7 @@ export function graphBlockToGraphData(spec: GraphBlockSpec): GraphData {
             from: e.from,
             to: e.to,
             kind: 'link' as const,
+            ...(e.label !== undefined ? { label: e.label } : {}),
         })),
     }
 }

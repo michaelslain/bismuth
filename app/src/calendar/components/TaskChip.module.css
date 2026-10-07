@@ -1,10 +1,15 @@
-/* flex-wrap: wrap — a real narrow column (~120px), not just the pathological 41px stress test,
-   still can't fit marker + a readable title + "Nd late" on one line. Wrapping lets "Nd late"
-   flow onto its own line instead of starving the title down to 3-4 chars/line while everyone
-   stays crammed onto line one. When there IS room, this renders identically to a non-wrapping
-   row — nothing moves until it has to. row-gap: 0 because a wrapped .late shouldn't get extra
-   space above it that .chip's own column-gap already implies for a single row. */
+/* flex-wrap: wrap — a real narrow column (~120px) still can't fit marker + a readable title + "Nd
+   late" on one line. Wrapping lets "Nd late" flow onto its own line instead of starving the title
+   down to 3-4 chars/line while everyone stays crammed onto line one. When there IS room, this
+   renders identically to a non-wrapping row — nothing moves until it has to. row-gap: 0 because a
+   wrapped .late shouldn't get extra space above it that .chip's own column-gap already implies for
+   a single row.
+
+   `container: taskchip / inline-size` makes the chip the container the narrow-mode query below
+   measures — a chip can only restyle its DESCENDANTS from a query on itself, which is all the
+   collapse needs (.chip's own box stays the same; only .title and .late change). */
 .chip {
+    container: taskchip / inline-size;
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -23,25 +28,52 @@
     white-space: nowrap;
 }
 /* min-width guarantees at least ~22 characters of title before .chip's flex-wrap lets "Nd late"
-   drop to its own line — without a floor, flex-basis:0 lets the title shrink toward 0 first,
-   which (combined with overflow-wrap: anywhere, whose min-content is a SINGLE character) means
-   the title would rather explode into one letter per line than push the late label down. min()
-   against 100% so this never forces the chip wider than its column when the column itself is
-   under 22ch (the 41px DenseNarrow stress test, which stays a pre-existing, accepted limit).
-   22ch (not 12ch) is deliberate: at a ~171px week column, 12ch pinned the title to a ~12-char
-   ribbon on EVERY line once "Nd late" moved inline beside it, not just the first — a long chip
-   wrapped to 13 lines instead of the month grid's 8. Below ~250px this floor now loses to
-   min(…, 100%) and the late label drops to its own line instead (matching the month grid); at
-   all-day-strip width it stays inline, which is where inline actually reads well. */
+   drop to its own line — without a floor, flex-basis:0 lets the title shrink toward 0 first and
+   the title would rather break into slivers than push the late label down. min() against the chip's width LESS 4ch (the 3ch `[ ]` marker plus its --sp-2 gap) so the
+   marker always keeps line one for itself and the title, and so
+   this never forces the chip wider than its column when the column itself is under 22ch: there
+   the title takes the whole line and the late label wraps below it. 22ch (not 12ch) is
+   deliberate: at a ~171px week column, 12ch pinned the title to a ~12-char ribbon on EVERY line
+   once "Nd late" moved inline beside it. Below ~250px this floor loses to min(…, 100%) and the
+   late label drops to its own line instead; at all-day-strip width it stays inline.
+
+   `overflow-wrap: break-word`, NOT `anywhere`: both break a word that is longer than the line, but
+   `anywhere` also counts every character as a break opportunity when sizing min-content, so a
+   narrow column split "passport" into `passp/ort` while whole words would have fit. break-word
+   wraps at spaces first and only splits a word that cannot fit a line at all. */
 .title {
     flex: 1 1 0;
-    min-width: min(22ch, 100%);
-    overflow-wrap: anywhere;
+    min-width: min(22ch, calc(100% - 4ch));
+    overflow-wrap: break-word;
 }
+/* The late label gives way before the title does: it shrinks and ends in an ellipsis instead of
+   clipping mid-glyph ("23d lat") at the chip's edge. */
 .late {
     color: var(--danger);
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Under ~90px of content a wrapped title is a one-word-per-line column (the dense month grid's
+   ~45px cell). Collapse to ONE line instead: marker + a title that ends in an ellipsis. A
+   container query cannot restyle its own container, so the chip keeps `flex-wrap: wrap`; the late
+   label is what would wrap, so it is dropped here rather than shown as "23d …" on a second line.
+   The chip's danger wash + hairline still say "late", and its accessible name still carries
+   "N days late". */
+@container taskchip (max-width: 90px) {
+    .late {
+        display: none;
+    }
+    .title {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 }
 
 /* A finished task reads as finished, the same way it does in the list view — the marker char
@@ -53,11 +85,11 @@
    Keyed on `resolved`, not `status === 'done'`, so a CANCELLED task strikes through too. That is
    deliberate and matches the overdue rule right above it, which also uses `resolved`: both mean
    "this is finished with, stop showing it as work". The marker char still distinguishes the two
-   ([x] vs [-]) for anyone who needs to know WHICH. */
+   ([x] vs [-]) for anyone who needs to know WHICH. The strikethrough is the cue; the ink is
+   --text-muted (never opacity — DESIGN.md: no state is shown by opacity). */
 .resolved {
     text-decoration: line-through;
-    opacity: 0.55;
-    color: color-mix(in srgb, var(--fg) 52%, transparent);
+    color: var(--text-muted);
 }
 
 /* Carried forward from a day that has passed. A wash and a hairline, never a solid

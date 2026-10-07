@@ -1,12 +1,11 @@
-/* SortFields.module.css — "sort by" / "then by" rows: property | direction | remove. */
-.list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-6);
-}
-.row {
+/* SortFields.module.css — one sort key's controls: property | direction. The row chrome (the
+   "sort by" / "then by" label cell, reorder, remove), the row gap and the add row are
+   EditableRow's / EditableRows'. */
+.keyFields {
+    flex: 1 1 auto;
+    min-width: 0;
     display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
     gap: var(--sp-4);
     align-items: center;
 }

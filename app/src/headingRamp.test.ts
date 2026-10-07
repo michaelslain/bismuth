@@ -107,15 +107,26 @@ test('the ramp is monotonic — h1 >= h2 >= h3 >= h4 >= h5 >= h6', () => {
 
 test('h5 and h6 sit below body size ONLY while they carry the label register', () => {
     // These two are the sanctioned exception: they drop below body size and earn it by changing
-    // register (caps + tracking for h5, muted for h6) so they read as labels, not as stunted
-    // headings. If a surface drops the case/tracking, the exception is no longer justified.
+    // register — TRACKING plus MUTED INK, in lowercase — so they read as labels, not as stunted
+    // headings. If a surface drops the tracking or the muted ink, the exception is no longer
+    // justified.
+    //
+    // This used to pin `text-transform: uppercase` as the register, which made the no-all-caps
+    // rule and the ramp invariant contradict each other. Tracking + ink carries the same register
+    // without shouting, and without moving --fs-h5/--fs-h6. Asserted NEGATIVELY as well, so a
+    // future reintroduction of the caps fails here rather than only in a visual review.
     const live = read('editor/livePreview.ts')
     const h5 = live.slice(live.indexOf("'.cm-h5'"), live.indexOf("'.cm-h6'"))
-    expect(h5).toContain('text-transform')
     expect(h5).toContain('--ls-label')
+    expect(h5).toContain('--text-muted')
+    expect(h5).not.toContain("'text-transform': 'uppercase'")
 
-    const h6 = live.slice(live.indexOf("'.cm-h6'"))
-    expect(h6.slice(0, 400)).toContain('text-transform')
+    const h6 = live.slice(live.indexOf("'.cm-h6'"), live.indexOf("'.cm-quote'"))
+    expect(h6).toContain('--ls-label')
+    expect(h6).toContain('--text-muted')
+    expect(h6).not.toContain("'text-transform': 'uppercase'")
+    // The old `opacity: 0.85` was a second dimming on an already-muted label (DESIGN.md:426-428).
+    expect(h6).not.toMatch(/opacity:\s*'0\./)
 })
 
 test('the ramp has ONE definition — no surface hardcodes heading sizes', () => {
@@ -123,7 +134,7 @@ test('the ramp has ONE definition — no surface hardcodes heading sizes', () =>
     const surfaces: Array<[string, string]> = [
         ['editor/livePreview.ts', read('editor/livePreview.ts')],
         ['chat/ChatTextBubble.module.css', read('chat/ChatTextBubble.module.css')],
-        ['bases/CardEditModal.module.css', read('bases/CardEditModal.module.css')],
+        ['ui/MilkdownField.module.css', read('ui/MilkdownField.module.css')],
         ['bases/FlipCard.module.css', read('bases/FlipCard.module.css')],
     ]
     for (const [name, src] of surfaces) {

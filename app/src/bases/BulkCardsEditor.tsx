@@ -28,7 +28,7 @@ const DELIM_OPTIONS = [
 const BulkCardsEditor: Component<BulkCardsEditorProps> = props => (
     <div class={styles['cards-bulkwrap']}>
         <div class={styles['cards-bulk-toolbar']}>
-            <Text as="span" size="micro" tone="faint">
+            <Text as="span" size="micro" tone="muted">
                 separator
             </Text>
             <SegmentedToggle
@@ -38,7 +38,7 @@ const BulkCardsEditor: Component<BulkCardsEditorProps> = props => (
                 onChange={props.onDelim}
             />
             <div class={styles.sp} />
-            <Text as="span" size="ui" tone="faint" class={styles.hint}>
+            <Text as="span" size="ui" tone="muted" class={styles.hint}>
                 One card per line // front ‹sep› back
             </Text>
         </div>
@@ -47,7 +47,7 @@ const BulkCardsEditor: Component<BulkCardsEditorProps> = props => (
                 <Text
                     as="span"
                     size="micro"
-                    tone="faint"
+                    tone="muted"
                     class={styles['cards-bulk-lab']}
                 >
                     paste your cards
@@ -65,7 +65,7 @@ const BulkCardsEditor: Component<BulkCardsEditorProps> = props => (
             </div>
             <div class={styles['cards-bulk-preview']}>
                 <div class={styles['cards-pvhead']}>
-                    <Text as="span" size="micro" tone="faint">
+                    <Text as="span" size="micro" tone="muted">
                         preview
                     </Text>
                     <Text
@@ -82,7 +82,7 @@ const BulkCardsEditor: Component<BulkCardsEditorProps> = props => (
                     <Show
                         when={props.parsed.length > 0}
                         fallback={
-                            <EmptyState blockClass={styles['cards-pvempty']}>
+                            <EmptyState fill compact>
                                 parsed cards appear here as you paste.
                             </EmptyState>
                         }

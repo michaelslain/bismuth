@@ -75,7 +75,7 @@ export const CommandOutput: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText(/Command output/)).toBeInTheDocument()
+        await expect(canvas.getByText(/command output/)).toBeInTheDocument()
         await expect(canvas.getByText('tokens')).toBeInTheDocument()
     },
 }

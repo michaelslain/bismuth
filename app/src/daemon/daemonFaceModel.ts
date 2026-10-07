@@ -167,6 +167,16 @@ export function tickMs(mood: DaemonMood): number {
     return TICK_MS[mood]
 }
 
+/** The eye clock under the app's `--motion-scale` (global.css: it multiplies every duration, and 0
+ *  turns motion off). `null` = no ambient loop at all. A scale above 1 slows the clock like every
+ *  other duration; a scale below 1 would speed it past the >=600ms floor above, so it never goes
+ *  faster than the mood's own `tickMs`. A non-finite scale (var unset) counts as 1. */
+export function motionTickMs(mood: DaemonMood, scale: number): number | null {
+    const s = Number.isFinite(scale) ? scale : 1
+    if (s <= 0) return null
+    return TICK_MS[mood] * Math.max(1, s)
+}
+
 export function nextBlinkDelay(
     mood: DaemonMood,
     rand: () => number,

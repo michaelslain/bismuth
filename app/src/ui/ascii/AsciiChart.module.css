@@ -1,0 +1,10 @@
+/* app/src/ui/ascii/AsciiChart.module.css — the typed bar chart. Sole importer: AsciiChart.tsx.
+   Rows sit on the app's 18px row unit at the UI size (the sibling AsciiMeter's size), so the rows
+   read as lines of text rather than touching at --fs-micro / a 1.0 line-height. */
+.chart {
+    font-size: var(--fs-ui);
+    line-height: var(--row-h);
+    color: var(--text-muted);
+}
+.row { white-space: pre; }
+.bar { color: var(--bar-color, var(--accent)); }

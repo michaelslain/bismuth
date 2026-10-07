@@ -63,7 +63,7 @@ const NANO = 9.5
 const NANO_HOST = '[data-testid="event-chip"]'
 /** Sizes deliberately off the scale, with the reason. Anything not listed is reported. */
 const SCALE_EXEMPT = new Set([
-    17, 21, 22, 26, 30, 34, 38, 40, 48, // display/hero type in intro + note titles
+    17, 21, 22, 26, 30, 34, 38, 40, 48, 96, // display/hero type in intro + note titles; 96 = --fs-wordmark-display, the intro hero wordmark
     // ── The PROSE scale ──────────────────────────────────────────────────────────────────────
     // NOT listed here as literals. SCALE above is the MONO chrome ladder; note prose and chat
     // message bodies are deliberately off it (the settings schema says so: "prose is the one thing
@@ -109,7 +109,7 @@ const CHECKS = `(() => {
     const isChrome = el =>
         el.tagName === 'SCRIPT' || el.tagName === 'STYLE' ||
         (el.id && SB_IDS.indexOf(el.id) >= 0) ||
-        /\bsb-(preparing-story|preparing-docs|nopreview|errordisplay|wrapper)\b/.test(el.getAttribute('class') || '')
+        /\\bsb-(preparing-story|preparing-docs|nopreview|errordisplay|wrapper)\\b/.test(el.getAttribute('class') || '')
     const storyRoot = document.querySelector('#storybook-root')
     if (!storyRoot) return JSON.stringify({ fatal: 'no #storybook-root' })
     const roots = [storyRoot]
@@ -166,7 +166,12 @@ const CHECKS = `(() => {
     // ambient font-size (ui/Tex.tsx deliberately never sets font-size — DESIGN.md's "Typed, Not
     // Drawn" north star exempts KaTeX's own output from the app's type scale), so it will always
     // trip font-size-off-scale under any design.
-    const FOREIGN = '.cm-editor, .ProseMirror, .milkdown, .xterm, .univer-container, .bismuth-sheet, [data-testid="pdf-text-layer"], .katex'
+    // .univer-popup joins for the same reason as .univer-container: Univer PORTALS its menus (the
+    // sheet-tab menu: Copy / Rename / Change color / Hide) to <body>, OUTSIDE .univer-container, so the
+    // container entry never reaches them. They are Univer's own plain-DOM markup at its own 14px — a
+    // third-party library this project does not control — surfaced once app-panecontent--sheet got a
+    // real height (ds-improve-r1 Task 40). Scoped to the Univer popup, not a global 14px exemption.
+    const FOREIGN = '.cm-editor, .ProseMirror, .milkdown, .xterm, .univer-container, .univer-popup, .bismuth-sheet, [data-testid="pdf-text-layer"], .katex'
     const inForeign = el => !!el.closest(FOREIGN)
     const all = []
     for (const r of roots)

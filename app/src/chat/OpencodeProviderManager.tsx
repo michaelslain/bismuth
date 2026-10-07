@@ -13,11 +13,14 @@ import Text from '../ui/Text'
 import TextInput from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
 import InlineCode from '../ui/InlineCode'
+import RowList from '../ui/RowList'
+import ListRow from '../ui/ListRow'
+import ErrorText from '../ui/ErrorText'
 import OpencodeProviderRow from './OpencodeProviderRow'
 import { filterAvailable } from './opencodeProviderFilter'
 import { api, type OpencodeProviderList } from '../api'
 import { OPENCODE_LOGIN_COMMAND } from './chatProvider'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import { copyChatText } from './copyChatText'
 
 export type OpencodeProviderManagerProps = {
@@ -74,14 +77,7 @@ const OpencodeProviderManager: Component<
             <Show
                 when={loadError() === null}
                 fallback={
-                    <Text
-                        as="div"
-                        tone="muted"
-                        class={styles.state}
-                        role="alert"
-                    >
-                        {loadError()}
-                    </Text>
+                    <ErrorText class={styles['state-error']}>{loadError()}</ErrorText>
                 }
             >
                 <Show
@@ -106,29 +102,34 @@ const OpencodeProviderManager: Component<
                                     </Text>
                                 }
                             >
-                                <For each={l().connected}>
-                                    {p => (
-                                        <div class={styles.row}>
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                tone="default"
-                                                class={styles.name}
+                                <RowList class={styles.list}>
+                                    <For each={l().connected}>
+                                        {p => (
+                                            <ListRow
+                                                trailing={
+                                                    <Text
+                                                        as="span"
+                                                        inherit
+                                                        tone="muted"
+                                                    >
+                                                        {p.kind === 'api'
+                                                            ? 'api key'
+                                                            : p.kind}
+                                                    </Text>
+                                                }
                                             >
-                                                {p.name}
-                                            </Text>
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles.kind}
-                                            >
-                                                {p.kind === 'api'
-                                                    ? 'api key'
-                                                    : p.kind}
-                                            </Text>
-                                        </div>
-                                    )}
-                                </For>
+                                                <Text
+                                                    as="span"
+                                                    inherit
+                                                    tone="default"
+                                                    class={styles.name}
+                                                >
+                                                    {p.name}
+                                                </Text>
+                                            </ListRow>
+                                        )}
+                                    </For>
+                                </RowList>
                             </Show>
                             <div class={styles.filter}>
                                 <TextInput
@@ -140,137 +141,16 @@ const OpencodeProviderManager: Component<
                                     spellcheck={false}
                                 />
                             </div>
-                            <For each={filtered().shown}>
-                                {p => (
-                                    <OpencodeProviderRow
-                                        provider={p}
-                                        {...{ onConnected }}
-                                    />
-                                )}
-                            </For>
-                            <Show when={filtered().more > 0}>
-                                <Text
-                                    as="div"
-                                    inherit
-                                    tone="muted"
-                                    class={styles.note}
-                                >
-                                    +{filtered().more} more // keep typing
-                                </Text>
-                            </Show>
-                            <Show
-                                when={
-                                    filtered().shown.length === 0 &&
-                                    l().available.length > 0
-                                }
-                            >
-                                <Text
-                                    as="div"
-                                    inherit
-                                    tone="muted"
-                                    class={styles.note}
-                                >
-                                    no provider matches "{query().trim()}"
-                                </Text>
-                            </Show>
-                        </>
-                    )}
-                </Show>
-            </Show>
-            <div class={styles.help}>
-                <Text as="div" inherit tone="muted">
-                    anything else //{' '}
-                    <InlineCode>{OPENCODE_LOGIN_COMMAND}</InlineCode>
-                </Text>
-                <div class={styles.actions}>
-                    <TextButton onClick={openTerminal}>
-                        open terminal
-                    </TextButton>
-                    <TextButton onClick={copyCommand}>copy command</TextButton>
-                </div>
-            </div>
-        </div>
-    )
-
-    return (
-        <div class={`${styles.manager} ${props.class ?? ''}`}>
-            <Show
-                when={loadError() === null}
-                fallback={
-                    <Text
-                        as="div"
-                        tone="muted"
-                        class={styles.state}
-                        role="alert"
-                    >
-                        {loadError()}
-                    </Text>
-                }
-            >
-                <Show
-                    when={list()}
-                    fallback={
-                        <Text as="div" tone="muted" class={styles.state}>
-                            checking providers…
-                        </Text>
-                    }
-                >
-                    {l => (
-                        <>
-                            <Show
-                                when={l().connected.length > 0}
-                                fallback={
-                                    <Text
-                                        as="div"
-                                        tone="muted"
-                                        class={styles.state}
-                                    >
-                                        no providers connected yet
-                                    </Text>
-                                }
-                            >
-                                <For each={l().connected}>
+                            <RowList class={styles.list}>
+                                <For each={filtered().shown}>
                                     {p => (
-                                        <div class={styles.row}>
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                tone="default"
-                                                class={styles.name}
-                                            >
-                                                {p.name}
-                                            </Text>
-                                            <Text
-                                                as="span"
-                                                inherit
-                                                class={styles.kind}
-                                            >
-                                                {p.kind === 'api'
-                                                    ? 'api key'
-                                                    : p.kind}
-                                            </Text>
-                                        </div>
+                                        <OpencodeProviderRow
+                                            provider={p}
+                                            {...{ onConnected }}
+                                        />
                                     )}
                                 </For>
-                            </Show>
-                            <div class={styles.filter}>
-                                <TextInput
-                                    value={query()}
-                                    onInput={setQuery}
-                                    placeholder="add a provider…"
-                                    aria-label="add a provider"
-                                    autocomplete="off"
-                                    spellcheck={false}
-                                />
-                            </div>
-                            <For each={filtered().shown}>
-                                {p => (
-                                    <OpencodeProviderRow
-                                        provider={p}
-                                        {...{ onConnected }}
-                                    />
-                                )}
-                            </For>
+                            </RowList>
                             <Show when={filtered().more > 0}>
                                 <Text
                                     as="div"

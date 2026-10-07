@@ -128,24 +128,11 @@ const SKIP_MODULES = new Set<string>([
     // renders it). Confirmed via `grep -rl FontSpecimen app/src` — the only hits are the component,
     // its module, and its story.
     'ui/gallery/FontSpecimen.module.css',
-    // ui/Callout.tsx + ui/Frontmatter.tsx (visual-unification audit §7 wave 1, §9.8): new
-    // primitives wrapping the formerly-bare `.asc-callout`/`.asc-frontmatter` global classes.
-    // Both had ZERO JSX consumers before this move (the editor's live-preview callout/
-    // frontmatter widgets mirror the same visual recipe independently as CodeMirror decoration
-    // themes, which cannot import a Solid component) and still have none outside their own
-    // .stories.tsx — confirmed via `grep -rl Callout app/src` / `grep -rl Frontmatter app/src`.
-    // Same exemption as FontSpecimen above: a real component that exists to be reached for later,
-    // visible today only in Storybook, structurally cannot appear in a `vite build` of the app.
-    'ui/Callout.module.css',
-    'ui/Frontmatter.module.css',
-    // one-global-followups Task 5: Backlinks.tsx (and Glyph.tsx/GraphField.tsx, which had the same
-    // shape) were deleted outright as dead code, confirmed via `grep -rn` across app/src, bench/,
-    // core/, docs/ with only their own stories/tests as hits. AsciiTree.tsx was Backlinks' sole
-    // production-path consumer and is unaffected by that deletion (out of this task's scope), so
-    // AsciiTree.module.css is now unreachable too, visible today only via AsciiTree.stories.tsx —
-    // same shape as Callout/Frontmatter above: a real component, structurally unreachable by
-    // `vite build` until something mounts it again.
-    'ui/ascii/AsciiTree.module.css',
+    // ui/ascii/AsciiChart.tsx: split out of AsciiMeter.tsx (design-system improve run, task 15). As
+    // an export of AsciiMeter.tsx it had no call site anywhere in app/src and still has none —
+    // only ui/ascii/AsciiChart.stories.tsx renders it (`grep -rl AsciiChart app/src`). Giving it its
+    // own stylesheet makes that visible to this check; same exemption as FontSpecimen above.
+    'ui/ascii/AsciiChart.module.css',
     // ChatSessionProbe.tsx's own header says it plainly: "DEV-ONLY ... Not used by the app." No
     // production importer exists (confirmed via `grep -rln ChatSessionProbe app/src` — only itself
     // and its own .stories.tsx), by design.
@@ -410,6 +397,13 @@ for (const [file, text] of js) {
 // 5. Attribute each hash id to a source module (by class-name containment)
 // ---------------------------------------------------------------------------------------------
 const moduleOf = new Map<string, string>() // hashId -> "FileTree.module.css"
+/** Every module that is a CANDIDATE for some AMBIGUOUS hash. `moduleOf` credits an ambiguous hash to
+ *  ONE module (the first of the tie), so the other candidates never appear in `hashOf` — and the
+ *  dead-module check below would report a live component as having emitted nothing. Measured
+ *  2026-10-06: five modules each declare only `.chip`, `CategoryColorChip` is imported by three
+ *  production components and its `{ flex: none }` IS in the bundle, yet it was reported dead.
+ *  A candidate is credited for that one question ONLY; Check A still attributes to `moduleOf`. */
+const candidateOf = new Set<string>()
 const unattributed: string[] = []
 for (const [hash, locals] of localsByHash) {
     const fits = [...moduleClasses].filter(([, defined]) =>
@@ -421,6 +415,7 @@ for (const [hash, locals] of localsByHash) {
         // never silently presented as fact.
         fits.sort((a, b) => a[1].size - b[1].size)
         moduleOf.set(hash, fits[0][0])
+        for (const [mod] of fits) candidateOf.add(mod)
         unattributed.push(
             `AMBIGUOUS: hash ${hash} fits ${fits.length} modules (${fits.map(f => f[0]).join(', ')}); reporting as ${fits[0][0]}`,
         )
@@ -466,7 +461,7 @@ for (const [hash, locals] of [...localsByHash].sort()) {
     }
 }
 for (const [mod] of moduleClasses)
-    if (!hashOf.has(mod))
+    if (!hashOf.has(mod) && !candidateOf.has(mod))
         findings.push(
             `${mod}: emitted NOTHING into the bundle — no hashed class from this module is present (dead module, or it failed to build)`,
         )

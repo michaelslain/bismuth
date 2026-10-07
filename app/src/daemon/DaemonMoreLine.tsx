@@ -21,7 +21,7 @@ function DaemonMoreLine(props: DaemonMoreLineProps) {
             onClick={() => props.onOpen?.()}
             data-testid="daemon-more-line"
         >
-            <Text as="span" size="ui" tone="faint">
+            <Text as="span" size="ui" tone="muted">
                 {props.label}
             </Text>
         </PlainButton>

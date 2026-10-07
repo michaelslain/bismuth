@@ -43,7 +43,6 @@ import {
     createMemo,
     createResource,
     createSignal,
-    For,
     Match,
     on,
     onCleanup,
@@ -62,7 +61,10 @@ import PageInk, { type PageInkPage } from './preview/PageInk'
 import HighlightLayer from './preview/HighlightLayer'
 import PreviewBar from './preview/PreviewBar'
 import ScratchTextLayer from './preview/ScratchTextLayer'
-import ScratchPaper from './preview/ScratchPaper'
+import CodeFindBar from './preview/CodeFindBar'
+import CodePane from './preview/CodePane'
+import ImagePane from './preview/ImagePane'
+import PreviewUnavailable from './preview/PreviewUnavailable'
 import BookmarksPanel from './preview/BookmarksPanel'
 import createAnnotationStore from './preview/createAnnotationStore'
 import createCompanionStore from './preview/createCompanionStore'
@@ -85,15 +87,11 @@ import {
     setMarginRatio,
 } from '../../core/src/drawing/pageMargin'
 import { inkSidecarFor } from '../../core/src/fileKinds'
-import { Icon } from './icons/Icon'
-import { IconButton } from './ui/IconButton'
 import { IconTextButton } from './ui/IconTextButton'
-import SearchBar from './ui/SearchBar'
-import Text from './ui/Text'
-import EmptyState, { Loading } from './ui/EmptyState'
+import { Loading } from './ui/EmptyState'
 import { isTauri } from './platform'
 import { openPathInDefaultApp, revealPath } from './appWindow'
-import { pushToast } from './Toast'
+import { pushToast } from './ui/ToastHost'
 import { settings } from './settings'
 import { matchesKeybinding } from './keybindings'
 import styles from './PreviewView.module.css'
@@ -770,113 +768,22 @@ export function PreviewView(props: {
                 <Show
                     when={findOpen() && (kind() === 'code' || kind() === 'pdf')}
                 >
-                    <Switch>
-                        <Match when={kind() === 'code'}>
-                            {/* stopPropagation on this wrapper (not SearchBar itself — its
-                                onKeyDown prop reaches only the input) is what kept the app's
-                                capture-phase global keydown handler from seeing ANY key pressed
-                                anywhere in the find bar, including the trailing buttons — restated
-                                here rather than dropped in the SearchBar swap. */}
-                            <div
-                                class={styles['preview-find']}
-                                onKeyDown={e => e.stopPropagation()}
-                            >
-                                <SearchBar
-                                    size="compact"
-                                    placeholder="find"
-                                    aria-label="Find in file"
-                                    value={query()}
-                                    onInput={value => {
-                                        setActiveIndex(0)
-                                        setQuery(value)
-                                    }}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault()
-                                            step(e.shiftKey ? -1 : 1)
-                                        } else if (e.key === 'Escape') {
-                                            e.preventDefault()
-                                            closeFind()
-                                        }
-                                    }}
-                                    inputRef={el => (inputRef = el)}
-                                >
-                                    <Text
-                                        as="span"
-                                        inherit
-                                        class={styles['preview-find-count']}
-                                        classList={{
-                                            [styles['is-empty']]:
-                                                query() !== '' &&
-                                                matches().length === 0,
-                                        }}
-                                    >
-                                        {countLabel()}
-                                    </Text>
-                                    <IconButton
-                                        icon="ChevronUp"
-                                        label="Previous match (Shift+Enter)"
-                                        disabled={matches().length === 0}
-                                        onClick={() => {
-                                            step(-1)
-                                            inputRef?.focus()
-                                        }}
-                                    />
-                                    <IconButton
-                                        icon="ChevronDown"
-                                        label="Next match (Enter)"
-                                        disabled={matches().length === 0}
-                                        onClick={() => {
-                                            step(1)
-                                            inputRef?.focus()
-                                        }}
-                                    />
-                                    <IconButton
-                                        icon="CaseSensitive"
-                                        label="Match case"
-                                        variant={
-                                            caseSensitive()
-                                                ? 'selected'
-                                                : 'unselected'
-                                        }
-                                        aria-pressed={caseSensitive()}
-                                        onClick={() => {
-                                            setCaseSensitive(v => !v)
-                                            inputRef?.focus()
-                                        }}
-                                    />
-                                    <IconButton
-                                        icon="X"
-                                        label="Close (Esc)"
-                                        onClick={closeFind}
-                                    />
-                                </SearchBar>
-                            </div>
-                        </Match>
-                        <Match when={kind() === 'pdf'}>
-                            {/* PdfPages renders pdf.js's text layer (selectable/copyable per
-                                page), but there is no find-bar UI over it yet — say so plainly
-                                rather than pretending to search. */}
-                            <div
-                                class={`${styles['preview-find']} ${styles['preview-find-note']}`}
-                                onKeyDown={e => e.stopPropagation()}
-                            >
-                                <Icon value="Search" />
-                                <Text
-                                    as="span"
-                                    inherit
-                                    class={styles['preview-find-note-text']}
-                                >
-                                    In-app PDF search isn't available yet.
-                                </Text>
-                                <IconButton
-                                    icon="X"
-                                    label="Dismiss"
-                                    onClick={closeFind}
-                                />
-                            </div>
-                        </Match>
-                    </Switch>
+                    <CodeFindBar
+                        mode={kind() === 'pdf' ? 'pdf' : 'code'}
+                        query={query()}
+                        onQuery={value => {
+                            setActiveIndex(0)
+                            setQuery(value)
+                        }}
+                        count={countLabel()}
+                        noResults={query() !== '' && matches().length === 0}
+                        matchCount={matches().length}
+                        caseSensitive={caseSensitive()}
+                        onToggleCase={() => setCaseSensitive(v => !v)}
+                        onStep={step}
+                        onClose={closeFind}
+                        inputRef={el => (inputRef = el)}
+                    />
                 </Show>
 
                 <Switch>
@@ -884,157 +791,58 @@ export function PreviewView(props: {
                         <Show
                             when={!imgFailed()}
                             fallback={
-                                <div class={styles['preview-external']}>
-                                    <EmptyState title="Couldn't load image">
-                                        {`"${name()}" could not be displayed.`}
-                                        {isTauri()
-                                            ? ' Open it in its default app to view it.'
-                                            : ' Open it externally to view it.'}
-                                    </EmptyState>
-                                    <Show when={isTauri()}>
-                                        <IconTextButton
-                                            icon="ExternalLink"
-                                            onClick={() =>
-                                                void openExternal(false)
-                                            }
-                                        >
-                                            open in default app
-                                        </IconTextButton>
-                                    </Show>
-                                </div>
+                                <PreviewUnavailable
+                                    title="Couldn't load image"
+                                    what={`"${name()}" could not be displayed.`}
+                                    verb="view it"
+                                    onOpenExternal={() => void openExternal(false)}
+                                />
                             }
                         >
-                            {/* SCRATCH on: image + strip are laid out together in host px by
-                                measureImage/imageScratchLayout.ts, positioned absolutely inside a
-                                host that mirrors PageInk's own (`inset: 0` over `.preview-body`) —
-                                the SAME rendered rect `imagePages()` carries, so the ink layer and
-                                this layout agree on where the picture sits. With SCRATCH off the
-                                `<img>` below is byte-for-byte the old markup: plain CSS auto-
-                                centring/`object-fit: contain`, no wrapper, no inline sizing — the
-                                path `ImageInkLandsAtRealMeasuredRect` measures. */}
-                            <Show
-                                when={marginRatio() > 0 || imageZoom() !== 1}
-                                fallback={
-                                    <img
-                                        ref={attachImage}
-                                        class={styles['preview-image']}
-                                        src={imgSrc()}
-                                        alt={name()}
-                                        onLoad={e => {
-                                            setImageSize({
-                                                w: e.currentTarget.naturalWidth,
-                                                h: e.currentTarget.naturalHeight,
-                                            })
-                                            measureImage(e.currentTarget)
-                                        }}
-                                        onError={() => {
-                                            setImgFailed(true)
-                                            setImageSize(undefined)
-                                            setImagePages([])
-                                        }}
-                                    />
-                                }
-                            >
-                                <div
-                                    class={styles['preview-image-host']}
-                                    style={stageStyle()}
-                                >
-                                    <img
-                                        ref={attachImage}
-                                        class={`${styles['preview-image']} ${styles['preview-image--scratch']}`}
-                                        src={imgSrc()}
-                                        alt={name()}
-                                        onLoad={e => {
-                                            setImageSize({
-                                                w: e.currentTarget.naturalWidth,
-                                                h: e.currentTarget.naturalHeight,
-                                            })
-                                            measureImage(e.currentTarget)
-                                        }}
-                                        onError={() => {
-                                            setImgFailed(true)
-                                            setImageSize(undefined)
-                                            setImagePages([])
-                                        }}
-                                        style={
-                                            imagePages()[0]
-                                                ? {
-                                                      left: `${imagePages()[0]!.rendered.left}px`,
-                                                      top: `${imagePages()[0]!.rendered.top}px`,
-                                                      width: `${imagePages()[0]!.rendered.w}px`,
-                                                      height: `${imagePages()[0]!.rendered.h}px`,
-                                                  }
-                                                // Before the first measurement this `<img>` has no
-                                                // inline size (position: absolute, from
-                                                // `.preview-image--scratch`) and would otherwise
-                                                // paint at its natural size, pinned to the host's
-                                                // (0,0) corner, for one frame — hidden until
-                                                // `imagePages()[0]` exists instead (final review,
-                                                // finding 8).
-                                                : { visibility: 'hidden' }
-                                        }
-                                    />
-                                    <Show
-                                        when={
-                                            (imagePages()[0]?.marginW ?? 0) >
-                                            0
-                                        }
-                                    >
-                                        <ScratchPaper
-                                            index={0}
-                                            class={styles['preview-image-margin']}
-                                            style={{
-                                                position: 'absolute',
-                                                left: `${
-                                                    imagePages()[0]!.rendered
-                                                        .left +
-                                                    imagePages()[0]!.rendered
-                                                        .w
-                                                }px`,
-                                                top: `${imagePages()[0]!.rendered.top}px`,
-                                                width: `${imagePages()[0]!.marginW}px`,
-                                                height: `${imagePages()[0]!.rendered.h}px`,
-                                            }}
+                            <ImagePane
+                                src={imgSrc()}
+                                name={name()}
+                                scratch={marginRatio() > 0 || imageZoom() !== 1}
+                                page={imagePages()[0]}
+                                hasPages={imagePages().length > 0}
+                                stageStyle={stageStyle()}
+                                imgRef={attachImage}
+                                onLoad={img => {
+                                    setImageSize({
+                                        w: img.naturalWidth,
+                                        h: img.naturalHeight,
+                                    })
+                                    measureImage(img)
+                                }}
+                                onError={() => {
+                                    setImgFailed(true)
+                                    setImageSize(undefined)
+                                    setImagePages([])
+                                }}
+                                overlay={
+                                    <>
+                                        <Show when={companion()}>
+                                            <ScratchTextLayer
+                                                store={companion()!}
+                                                pages={imagePages}
+                                                doc={() => store()?.doc() ?? null}
+                                                interactive={scratchInteractive}
+                                                noteNames={props.noteNames}
+                                                tagNames={props.tagNames}
+                                                notePath={null}
+                                            />
+                                        </Show>
+                                        <PageInk
+                                            sidecarPath={inkSidecarFor(path())}
+                                            binaryPath={path()}
+                                            pages={imagePages}
+                                            active={drawMode}
+                                            onExit={exitDraw}
+                                            store={store()}
                                         />
-                                    </Show>
-                                </div>
-                            </Show>
-                            {/* ScratchTextLayer BEFORE PageInk, matching the PDF overlay order
-                                below (HighlightLayer, ScratchTextLayer, PageInk) — PageInk stays
-                                topmost in DOM order so draw-mode ink paints over everything,
-                                including the strip's note blocks (final review, finding 4: this
-                                used to mount in the opposite order, so ink on an image painted
-                                UNDER the text layer). */}
-                            {/* The overlays span the STAGE, not just the body's visible box, so on a
-                                zoomed-and-panned image PageInk's sticky draw dock still pins to the
-                                bottom of the scrollport instead of scrolling away with the body's
-                                first screenful. */}
-                            <Show when={imagePages().length > 0}>
-                                <div
-                                    class={styles['preview-image-overlay']}
-                                    style={stageStyle()}
-                                >
-                                <Show when={companion()}>
-                                    <ScratchTextLayer
-                                        store={companion()!}
-                                        pages={imagePages}
-                                        doc={() => store()?.doc() ?? null}
-                                        interactive={scratchInteractive}
-                                        noteNames={props.noteNames}
-                                        tagNames={props.tagNames}
-                                        notePath={null}
-                                    />
-                                </Show>
-                                <PageInk
-                                    sidecarPath={inkSidecarFor(path())}
-                                    binaryPath={path()}
-                                    pages={imagePages}
-                                    active={drawMode}
-                                    onExit={exitDraw}
-                                    store={store()}
-                                />
-                                </div>
-                            </Show>
+                                    </>
+                                }
+                            />
                         </Show>
                     </Match>
                     <Match when={kind() === 'pdf'}>
@@ -1127,58 +935,21 @@ export function PreviewView(props: {
                     </Match>
                     <Match when={kind() === 'code'}>
                         <Show when={!code.loading} fallback={<Loading />}>
-                            <pre
-                                class={styles['preview-code']}
-                                tabindex={0}
-                                ref={codeRef}
-                            >
-                                <Show when={segments()} fallback={code() ?? ''}>
-                                    <For each={segments()!}>
-                                        {seg =>
-                                            seg.matchIndex >= 0 ? (
-                                                <mark
-                                                    class={styles['preview-find-match']}
-                                                    classList={{
-                                                        [styles['is-active']]:
-                                                            seg.matchIndex ===
-                                                            activeIndex(),
-                                                    }}
-                                                    data-find-match
-                                                    data-active={
-                                                        seg.matchIndex ===
-                                                        activeIndex()
-                                                            ? true
-                                                            : undefined
-                                                    }
-                                                >
-                                                    {seg.text}
-                                                </mark>
-                                            ) : (
-                                                seg.text
-                                            )
-                                        }
-                                    </For>
-                                </Show>
-                            </pre>
+                            <CodePane
+                                code={code() ?? ''}
+                                segments={segments() ?? undefined}
+                                activeIndex={activeIndex()}
+                                codeRef={el => (codeRef = el)}
+                            />
                         </Show>
                     </Match>
                     <Match when={kind() === 'external'}>
-                        <div class={styles['preview-external']}>
-                            <EmptyState title="Preview not available">
-                                {`This ${extLabel(name())} file can't be previewed here.`}
-                                {isTauri()
-                                    ? ' Open it in its default app to view or edit it.'
-                                    : ' Open it externally to view or edit it.'}
-                            </EmptyState>
-                            <Show when={isTauri()}>
-                                <IconTextButton
-                                    icon="ExternalLink"
-                                    onClick={() => void openExternal(false)}
-                                >
-                                    open in default app
-                                </IconTextButton>
-                            </Show>
-                        </div>
+                        <PreviewUnavailable
+                            title="Preview not available"
+                            what={`This ${extLabel(name())} file can't be previewed here.`}
+                            verb="view or edit it"
+                            onOpenExternal={() => void openExternal(false)}
+                        />
                     </Match>
                 </Switch>
             </div>

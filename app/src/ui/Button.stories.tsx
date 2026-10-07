@@ -15,6 +15,7 @@
 // `state` prop passed in, `'normal'` for the stories that omit it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
+import { expect } from 'storybook/test'
 import { Button } from './Button'
 import { Icon } from '../icons/Icon'
 import { Row } from './_storyKit'
@@ -122,8 +123,8 @@ export const TextWithIcon: Story = {
     ),
 }
 
-/** Icon button — borderless; state changes opacity/fill (normal = full opacity,
- *  unselected = dimmed, selected = neutral fill). */
+/** Icon button — borderless; state changes ink and brackets, never opacity (normal = bare glyph,
+ *  unselected = muted ink, selected = accent ink with its brackets drawn). */
 export const IconStates: Story = {
     render: () => (
         <Row label="icon // states">
@@ -147,7 +148,8 @@ export const IconStates: Story = {
 }
 
 /** Sizes (mirrors IconButton.stories.tsx's `Sizes` — `size` is ignored for `kind="text"`, so this
- *  exercises it on `kind="icon"`, the register IconButton itself wraps). Audit Q2 #1. */
+ *  exercises it on `kind="icon"`, the register IconButton itself wraps). Audit Q2 #1. `lg` used to
+ *  have no rule and render exactly like `md`; the play pins that it is a genuinely larger target. */
 export const Sizes: Story = {
     render: () => (
         <Row label="icon // sizes">
@@ -162,6 +164,183 @@ export const Sizes: Story = {
             </Button>
         </Row>
     ),
+    play: ({ canvasElement }) => {
+        const box = (size: string) =>
+            canvasElement
+                .querySelector(`button[title="${size}"]`)!
+                .getBoundingClientRect()
+        expect(box('lg').height).toBeGreaterThan(box('md').height)
+        expect(box('lg').width).toBeGreaterThan(box('md').width)
+    },
+}
+
+// ── disabled: one recipe, every variant ──────────────────────────────────────────
+// A disabled icon button in the selected / unselected / danger variant used to paint accent / muted
+// / danger and read as enabled: `.btn--icon:disabled` and `.btn--icon.btn--selected` (etc.) are the
+// same specificity and the variant rule came later. Every story below pins the COMPUTED ink against
+// `--faint` itself (never a stand-in), and that nothing dims by opacity, so a regression in source
+// order fails here rather than looking fine.
+
+/** What `--faint` resolves to on an element in this frame, as a computed colour. Never a
+ *  hardcoded stand-in. */
+function resolvedFaint(host: Element) {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--faint)'
+    host.appendChild(probe)
+    const value = getComputedStyle(probe).color
+    probe.remove()
+    return value
+}
+
+/** The disabled button in `canvasElement` is `--faint` ink alone (full opacity: a dimmed --faint
+ *  falls under the 3:1 floor), brackets included; its enabled twin is NOT faint (so the assertion
+ *  cannot pass vacuously). */
+function expectDisabledRecipe(canvasElement: HTMLElement) {
+    const faint = resolvedFaint(canvasElement)
+    const off = canvasElement.querySelector<HTMLButtonElement>('button:disabled')!
+    const on = canvasElement.querySelector<HTMLButtonElement>(
+        'button:not(:disabled)',
+    )!
+    expect(getComputedStyle(off).color).toBe(faint)
+    expect(getComputedStyle(off).opacity).toBe('1')
+    expect(getComputedStyle(on).color).not.toBe(faint)
+    expect(getComputedStyle(on).opacity).toBe('1')
+    for (const part of ['::before', '::after']) {
+        if (getComputedStyle(off, part).content !== 'none') {
+            expect(getComputedStyle(off, part).color).toBe(faint)
+        }
+    }
+}
+
+/** Disabled + selected: faint, not accent — and its brackets (drawn when selected) go faint too. */
+export const IconDisabledSelected: Story = {
+    render: () => (
+        <Row label="icon // selected, enabled then disabled">
+            <Button kind="icon" state="selected" title="selected">
+                <Icon value="Star" />
+            </Button>
+            <Button kind="icon" state="selected" disabled title="selected, disabled">
+                <Icon value="Star" />
+            </Button>
+        </Row>
+    ),
+    play: ({ canvasElement }) => expectDisabledRecipe(canvasElement),
+}
+
+/** Disabled + unselected: faint ink — a visible step below an enabled muted one. */
+export const IconDisabledUnselected: Story = {
+    render: () => (
+        <Row label="icon // unselected, enabled then disabled">
+            <Button kind="icon" state="unselected" title="unselected">
+                <Icon value="Star" />
+            </Button>
+            <Button
+                kind="icon"
+                state="unselected"
+                disabled
+                title="unselected, disabled"
+            >
+                <Icon value="Star" />
+            </Button>
+        </Row>
+    ),
+    play: ({ canvasElement }) => expectDisabledRecipe(canvasElement),
+}
+
+/** Disabled + danger: faint, not danger red. */
+export const IconDisabledDanger: Story = {
+    render: () => (
+        <Row label="icon // danger, enabled then disabled">
+            <Button kind="icon" danger title="danger">
+                <Icon value="Trash2" />
+            </Button>
+            <Button kind="icon" danger disabled title="danger, disabled">
+                <Icon value="Trash2" />
+            </Button>
+        </Row>
+    ),
+    play: ({ canvasElement }) => expectDisabledRecipe(canvasElement),
+}
+
+/** Disabled + normal, plain and at the toolzone `sm` size (the size an IconBar gives every child). */
+export const IconDisabledNormal: Story = {
+    render: () => (
+        <Row label="icon // normal, enabled then disabled (md, sm)">
+            <Button kind="icon" title="normal">
+                <Icon value="Star" />
+            </Button>
+            <Button kind="icon" disabled title="normal, disabled">
+                <Icon value="Star" />
+            </Button>
+            <Button kind="icon" size="sm" disabled title="sm, disabled">
+                <Icon value="Star" />
+            </Button>
+        </Row>
+    ),
+    play: ({ canvasElement }) => {
+        const faint = resolvedFaint(canvasElement)
+        const buttons = [...canvasElement.querySelectorAll('button:disabled')]
+        expect(buttons.length).toBe(2)
+        for (const b of buttons) {
+            expect(getComputedStyle(b).color).toBe(faint)
+            expect(getComputedStyle(b).opacity).toBe('1')
+        }
+    },
+}
+
+/** The text register has the same recipe as the icon register: `--faint` ink alone, in every
+ *  variant (a disabled `unselected` used to be dimmed to 0.4 on top of it). */
+export const TextDisabledVariants: Story = {
+    render: () => (
+        <Row label="text // disabled: normal / unselected / selected / primary / danger">
+            <Button kind="text" disabled>
+                normal
+            </Button>
+            <Button kind="text" state="unselected" disabled>
+                unselected
+            </Button>
+            <Button kind="text" state="selected" disabled>
+                selected
+            </Button>
+            <Button kind="text" primary disabled>
+                primary
+            </Button>
+            <Button kind="text" danger disabled>
+                danger
+            </Button>
+        </Row>
+    ),
+    play: ({ canvasElement }) => {
+        const faint = resolvedFaint(canvasElement)
+        const buttons = [...canvasElement.querySelectorAll('button:disabled')]
+        expect(buttons.length).toBe(5)
+        for (const b of buttons) {
+            expect(getComputedStyle(b).color).toBe(faint)
+            expect(getComputedStyle(b).opacity).toBe('1')
+        }
+    },
+}
+
+/** `primary` and `selected` are both bold accent; primary alone carries a rest-state underline. */
+export const PrimaryVsSelected: Story = {
+    render: () => (
+        <Row label="text // selected beside primary">
+            <Button kind="text" state="selected">
+                selected
+            </Button>
+            <Button kind="text" primary>
+                primary
+            </Button>
+        </Row>
+    ),
+    play: ({ canvasElement }) => {
+        const label = (sel: string) =>
+            getComputedStyle(
+                canvasElement.querySelector(`${sel} > span`)!,
+            ).textDecorationLine
+        expect(label('button[data-primary]')).toBe('underline')
+        expect(label('button[data-state="selected"]')).toBe('none')
+    },
 }
 
 /** The full matrix at a glance. */

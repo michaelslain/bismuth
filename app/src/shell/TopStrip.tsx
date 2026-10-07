@@ -1,10 +1,11 @@
 import type { JSX } from 'solid-js'
+import Band from '../ui/Band'
 import Wordmark from '../ui/Wordmark'
 import styles from './TopStrip.module.css'
 
 // The wordmark + platform titlebar strip, lifted out of App.tsx verbatim (bismuth-design/ascii/README.md
 // "App shell", §1). macOS runs a transparent Overlay titlebar (native traffic lights float over
-// the strip, left padding reserves room for them via `top-strip--mac`) with no typed controls;
+// the strip, `<Band inset="traffic-lights">` reserves room for them) with no typed controls;
 // Windows/Linux run fully undecorated with typed `[-] [+] [x]` controls rendered as `children`
 // (see WindowControls); the browser/dev build gets neither.
 //
@@ -21,21 +22,24 @@ import styles from './TopStrip.module.css'
 // covered by `core:window:default`) — do NOT add a manual dblclick handler here, it would race
 // the native one.
 //
-// `.top-strip` and `.top-strip-spacer` are reached through the imported `styles` object; the
-// `top-strip--mac` modifier hashes too, so it goes into `classList` as `[styles["top-strip--mac"]]`
-// rather than a bare string (a literal would compile and match nothing). Bracket access, not
-// `styles.topStrip`: Vite only exposes camelCase aliases under css.modules.localsConvention, which
-// app/vite.config.ts does not set. The wordmark and its caret are ui/Wordmark's: it writes the bare
-// global `.asc-wordmark` / `.asc-caret` classes (global.css), so nothing here does.
+// THE STRIP IS A BAND (ui/Band): its height, its --sp-5 side padding and its --rule-soft hairline are
+// the band's, not this file's — so the wordmark starts on the same x as the sidebar toolbar and the
+// graph header below it (it used to hand-write a 16px inset, which gave the column two left axes).
+// The macOS gap is Band's NAMED `traffic-lights` inset, never a px value typed here.
+//
+// `.top-strip` and `.top-strip-spacer` are reached through the imported `styles` object. Bracket
+// access, not `styles.topStrip`: Vite only exposes camelCase aliases under css.modules.localsConvention,
+// which app/vite.config.ts does not set. The wordmark and its caret are ui/Wordmark's: it writes the
+// bare global `.asc-wordmark` / `.asc-caret` classes (global.css), so nothing here does.
 export function TopStrip(props: {
     mac: boolean
     dragRegion: boolean
     children?: JSX.Element
 }) {
     return (
-        <div
+        <Band
             class={styles['top-strip']}
-            classList={{ [styles['top-strip--mac']]: props.mac }}
+            inset={props.mac ? 'traffic-lights' : undefined}
             data-tauri-drag-region={props.dragRegion ? 'deep' : undefined}
         >
             {/* THE WORD, not the ASCII crystal: ui/Wordmark (`bismuth` in the gradient sheen) closed by
@@ -43,6 +47,6 @@ export function TopStrip(props: {
             <Wordmark size="body" />
             <div class={styles['top-strip-spacer']} />
             {props.children}
-        </div>
+        </Band>
     )
 }

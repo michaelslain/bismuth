@@ -113,7 +113,7 @@ import {
     type SettingsBinding,
 } from './editor/settingsKeymap'
 import { wrapSelection } from './editor/wrapSelection'
-import { pushToast } from './Toast'
+import { pushToast } from './ui/ToastHost'
 import {
     registerEditor,
     trackEditor,

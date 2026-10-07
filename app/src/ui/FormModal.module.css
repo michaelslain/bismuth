@@ -1,8 +1,8 @@
 /* app/src/ui/FormModal.module.css — the settings/editor modal shell (was calendar/Calendar.module.css
    `.evm-modal`, shared by six modals across calendar/ and bases/). Chrome — background, border,
    radius, blur — is `.asc-modal`'s job (ui/Modal.tsx); this supplies only size and layout. Never
-   re-declare an opaque background here: at equal specificity it silently defeats .asc-modal's
-   translucent fill + blur.
+   re-declare a background on the panel itself here: at equal specificity it silently defeats
+   .asc-modal's fill (the fill under the frame is `.panel::before` below, which mirrors it).
 
    Token aliases: none of the original .evm-modal's eight (--surface --surface2 --border2 --hi
    --evm-font --mono --azure --orchid) are needed here. --mono looked like the one exception (a
@@ -55,7 +55,10 @@
     position: absolute;
     z-index: -1;
     inset: 0;
-    background: var(--pop-bg-strong);
+    /* OPAQUE, same recipe as Modal.module.css's .asc-modal: the --pop-bg-strong tint laid over a
+       solid --bg, so content behind the dialog (a menu, the page) cannot ghost through at 94%. */
+    background-color: var(--bg);
+    background-image: linear-gradient(var(--pop-bg-strong), var(--pop-bg-strong));
 }
 
 /* The frame LINES, separate from the fill above: inset from the top by half a row so the top

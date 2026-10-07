@@ -53,13 +53,6 @@
   /* ViewBar separates lead and trail only by `space-between`, which is 0px once the lead has
      shrunk to its minimum — the filename's ellipsis would sit flush against the first control. */
   column-gap: var(--bar-crumb-gap);
-  /* Button.module.css dims an unselected icon button to 0.5 opacity by default (the "toggle
-     member, off" look), with a `--iconbar-unselected-opacity` escape hatch IconBar.module.css sets
-     back to 1 for its own children (a plain row of icon buttons is never "half a toggle"). This bar
-     is not an IconBar but its controls read the same: highlight/draw/scratch/bookmarks/file actions
-     are full-contrast muted ink at rest (task 5's Button-family migration comment above), not a
-     disabled-looking dim — so it sets the same escape hatch for its own tree. */
-  --iconbar-unselected-opacity: 1;
 }
 /* ViewBar's own ≤480px floor tier tightens `.vb-trail`'s own gap from --bar-crumb-gap down to
    --bar-icon-gap ("the seams between regions tighten... every sibling pair of bracket buttons

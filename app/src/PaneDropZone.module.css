@@ -8,15 +8,18 @@
  * on `.pane-dropzone`. A bare literal for one of these silently matches nothing once it hashes.
  */
 
+/* ONE "takes the drop" recipe, the same as ui/DropCue: the --rule-drop dashed accent ring over an 8%
+   accent wash. The split zones, the replace-the-pane zone and the reference cue all draw it — they
+   used to be three recipes (1px solid / 22% wash, 2px dashed / 14% wash, 1.5px dashed / 8% wash). */
 /* Drop-to-split indicator: highlights the half where a file dragged from the tree will land. */
-.pane-dropzone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 1px solid var(--accent); border-radius: var(--r-0); }
+.pane-dropzone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 8%, transparent); border: var(--rule-drop); border-radius: var(--r-0); }
 .pane-dropzone.left { left: 0; top: 0; width: 50%; height: 100%; }
 .pane-dropzone.right { right: 0; top: 0; width: 50%; height: 100%; }
 .pane-dropzone.up { left: 0; top: 0; width: 100%; height: 50%; }
 .pane-dropzone.down { left: 0; bottom: 0; width: 100%; height: 50%; }
-.pane-dropzone.center { inset: 0; background: color-mix(in srgb, var(--accent) 28%, transparent); } /* replace the whole pane */
+.pane-dropzone.center { inset: 0; } /* replace the whole pane */
 /* Drop-to-reference cue (Row 74): a full-pane wash + a centered "Drop to reference" badge, shown
    over a chat pane when a file/folder is dragged onto it — a mention, NOT a split (no quadrant
    highlight). Square now (--r-0, visual-unification §9.2), not the pill its name once implied. */
-.pane-drop-reference { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); border-radius: var(--r-0); }
+.pane-drop-reference { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 8%, transparent); border: var(--rule-drop); border-radius: var(--r-0); }
 .pane-drop-reference-cue { display: inline-flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5); border-radius: var(--r-0); background: var(--accent); color: var(--on-accent); font-size: var(--fs-body); font-weight: var(--fw-bold); box-shadow: var(--lift); }

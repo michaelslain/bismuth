@@ -13,9 +13,10 @@
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { DaemonCron } from '../../../core/src/daemonGraph'
-import { ContextMenu, type MenuItem } from '../ContextMenu'
+import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
 import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
+import Text from '../ui/Text'
 import DaemonSection from './DaemonSection'
 import DaemonRow from './DaemonRow'
 import DaemonMoreLine from './DaemonMoreLine'
@@ -214,7 +215,19 @@ function DaemonCrons(props: DaemonCronsProps) {
             when={!full()}
             fallback={
                 <>
-                    <Show when={props.crons.length > 0}>{listEl()}</Show>
+                    <Show
+                        when={props.crons.length > 0}
+                        fallback={
+                            <Text
+                                tone="muted"
+                                data-testid="daemon-crons-full-empty"
+                            >
+                                no crons yet // ask the daemon
+                            </Text>
+                        }
+                    >
+                        {listEl()}
+                    </Show>
                     {menuEl()}
                 </>
             }

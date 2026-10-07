@@ -13,6 +13,7 @@ import {
     spriteVar,
     tileCacheKey,
     tileGeometry,
+    verticalDash,
 } from './asciiGlyphTiles'
 
 describe('edgesKey', () => {
@@ -126,6 +127,43 @@ describe('tileGeometry', () => {
         expect(g.dash).toBeLessThanOrEqual(g.pitch)
         expect(g.cx).toBeGreaterThanOrEqual(2)
         expect(g.cy).toBeGreaterThanOrEqual(2)
+    })
+})
+
+describe('verticalDash (the `|` dash sits exactly between its two `+`)', () => {
+    test('the gap above the dash equals the gap below it, at every dpr, font size and ink', () => {
+        const seen = new Set<number>()
+        for (const dpr of [1, 1.25, 1.5, 2, 2.5, 3])
+            for (const ch of [6.1, 6.9, 7.13, 7.6])
+                for (const ink of [
+                    { dashW: 6, plusW: 5.5, plusH: 5.5 },
+                    { dashW: 4.2, plusW: 5, plusH: 6 },
+                    { dashW: 5, plusW: 7, plusH: 7 },
+                    { dashW: 5, plusW: 5, plusH: 6 },
+                ]) {
+                    const g = tileGeometry(ch, ink, dpr)
+                    const plusH = Math.round(ink.plusH * dpr)
+                    const off = Math.floor((g.cy - plusH) / 2) // where install() places the `+` in its tile
+                    const top = g.cy - off - plusH + g.dashVOffset
+                    const bottom = g.pitch - g.dashVOffset - g.dashV + off
+                    expect(top).toBe(bottom)
+                    expect(g.dashV - g.dash).toBeGreaterThanOrEqual(0)
+                    expect(g.dashV - g.dash).toBeLessThanOrEqual(1)
+                    seen.add(g.dashV - g.dash)
+                }
+        // both outcomes occur: the window is lengthened exactly when the parities disagree
+        expect([...seen].sort()).toEqual([0, 1])
+    })
+    test('the old floor offset was one device pixel off where the parities disagree (dpr 1: dash 5 in 14, + 6 in 16)', () => {
+        // pre-fix: d0 = floor((14 - 5) / 2) = 4  =>  gaps 5 + 4 = 9 above, 5 + 5 = 10 below
+        const old = { top: 16 - 5 - 6 + 4, bottom: 14 - 4 - 5 + 5 }
+        expect(old.top).not.toBe(old.bottom)
+        const v = verticalDash(14, 5, 16, 6)
+        expect(v.len).toBe(6)
+        expect(16 - 5 - 6 + v.offset).toBe(14 - v.offset - v.len + 5)
+    })
+    test('never longer than the pitch', () => {
+        expect(verticalDash(5, 5, 8, 3).len).toBe(5)
     })
 })
 

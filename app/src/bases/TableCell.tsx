@@ -21,7 +21,7 @@ import { propertyRegistry } from '../propertyRegistry'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import PlainButton from '../ui/PlainButton'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import styles from './TableCell.module.css'
 
 export type TableCellProps = {

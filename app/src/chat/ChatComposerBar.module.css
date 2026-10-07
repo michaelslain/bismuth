@@ -14,7 +14,7 @@
 }
 
 /* The message box: attachment chips + the CodeMirror field + send/stop inside ONE outlined
-   surface, capped to the 680px reading column — no fill, radius 3, a hairline border that turns
+   surface, capped to the reading column (`--chat-column`) — no fill, radius 3, a hairline border that turns
    --accent on focus. Layout the send/stop button and the attachment-remove button need is handed
    to IconButton via its own `class` prop (`.send`, `.attachment-remove`), placement only — see
    each class's own comment — rather than reached into via `:global()`. */
@@ -22,13 +22,13 @@
     /* The composer's one vertical rhythm value — the padding above/below the draft text inside the
        CodeMirror content box (ChatComposer.tsx's composerTheme reads it as
        var(--chat-composer-line-pad)) and the amount the send button lifts by to sit level with it. */
-    --chat-composer-line-pad: 5px;
+    --chat-composer-line-pad: var(--sp-2);
     position: relative;
     display: flex;
     align-items: flex-end;
     gap: var(--sp-3);
     width: 100%;
-    max-width: 680px;
+    max-width: var(--chat-column);
     margin: 0 auto;
     padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5);
     background: none;
@@ -113,17 +113,17 @@
    here. */
 .attachment-remove {
     position: absolute;
-    top: 3px;
-    right: 3px;
+    top: var(--sp-1);
+    right: var(--sp-1);
 }
 
 /* The slash-command autocomplete popover — a child of `.box` (not `.bar`), so its containing
-   block is the 680px centred column, not the bar's full-width row. `.bar` spans the whole pane
+   block is the centred reading column, not the bar's full-width row. `.bar` spans the whole pane
    width; anchoring to it left the popover pinned to the pane's left edge instead of the box. */
 .slash-popover {
     position: absolute;
     left: 0;
-    bottom: calc(100% + 6px);
+    bottom: calc(100% + var(--sp-3));
     z-index: 40;
     max-height: 280px;
     overflow-y: auto;
@@ -132,6 +132,6 @@
 
 /* Whatever the host renders directly under the box (the daemon page's ChatControls row). */
 .below {
-    max-width: 680px;
+    max-width: var(--chat-column);
     margin: var(--sp-3) auto 0;
 }

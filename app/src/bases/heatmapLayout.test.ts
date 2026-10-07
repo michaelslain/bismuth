@@ -209,4 +209,41 @@ describe('legendRanges', () => {
             expect(entry.glyph).toBe(glyphOf(level))
         }
     })
+
+    // Regression: the legend used to be computed from its own arithmetic, not levelOf's, so a lone
+    // value of 400 painted `#` while the legend read `- 400  + 401  # 402`. The legend must say
+    // what the GRID says, for every value a square can hold.
+    test('a lone value is one `#` entry, matching the glyph the grid draws', () => {
+        const entries = legendRanges(400, 400)
+        expect(entries.map(e => e.glyph)).toEqual(['.', '#'])
+        expect(entries[1].range).toBe('400')
+        expect(glyphOf(levelOf(400, 400, 400))).toBe('#')
+    })
+
+    test('a small peak lists only the bands a value can land in', () => {
+        // peak 3 draws `#`; the old legend printed `+ 3  # 4`
+        const entries = legendRanges(1, 3)
+        expect(entries.map(e => `${e.glyph} ${e.range}`)).toEqual(['. none', '- 1', '+ 2', '# 3'])
+    })
+
+    test('legend agrees with levelOf for every whole value, over many ranges', () => {
+        for (let min = 1; min <= 12; min++) {
+            for (let max = min; max <= 40; max++) {
+                const entries = legendRanges(min, max)
+                const seen = new Set<number>()
+                for (let v = min; v <= max; v++) {
+                    const level = levelOf(v, min, max)
+                    const entry = entries.find(e => e.level === level)
+                    expect(entry).toBeDefined()
+                    expect(entry!.glyph).toBe(glyphOf(level))
+                    const [lo, hi] = entry!.range.split('–').map(Number)
+                    expect(v).toBeGreaterThanOrEqual(lo)
+                    expect(v).toBeLessThanOrEqual(hi ?? lo)
+                    seen.add(level)
+                }
+                // no entry for a glyph the grid never draws
+                for (const e of entries.slice(1)) expect(seen.has(e.level)).toBe(true)
+            }
+        }
+    })
 })

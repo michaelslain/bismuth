@@ -97,16 +97,15 @@ export const WithTabsAndActions: Story = {
     },
 }
 
-/** A serif crumb title (the standalone calendar month heading shape) + a mode switcher
- *  on the far right — the Knowledge Graph header shape. */
-export const SerifCrumbWithModeSwitcher: Story = {
+/** A crumb title + a mode switcher on the far right — the Knowledge Graph header shape. */
+export const CrumbWithModeSwitcher: Story = {
     render: () => {
         const [mode, setMode] = createSignal('2d')
         return (
             <Frame>
                 <ViewBar
                     identity={
-                        <Crumb icon="Share2" serif>
+                        <Crumb icon="Share2">
                             Knowledge Graph
                         </Crumb>
                     }
@@ -168,7 +167,7 @@ export const AllRegions: Story = {
             .querySelector('[data-testid="vb-trail"]')!
             .getBoundingClientRect()
         expect(Math.round(barBox.height)).toBe(36)
-        expect(Math.round(barBox.right - trailBox.right)).toBe(18) // the bar's own padding
+        expect(Math.round(barBox.right - trailBox.right)).toBe(12) // the bar's own padding (--sp-5, via Band)
     },
 }
 
@@ -337,12 +336,13 @@ export const EmptyLeadKeepsTheTrailPinnedRight: Story = {
  */
 export const BelowFloor: Story = {
     render: () => (
-        // 300px, not the old 400px: the one-button pass shrank TextButton/IconButton (VBtn's
+        // 260px, not the old 400px: the one-button pass shrank TextButton/IconButton (VBtn's
         // padded box is gone), so at 400px the lead group's minimum
-        // content now fits without scrolling and this story proved nothing. 300px keeps a real
-        // ~40px shortfall (measured: 118px available vs 178px the icon buttons + crumb need),
+        // content now fits without scrolling and this story proved nothing. 260px keeps a real
+        // shortfall now that the bar pads 12px a side (re-measured 2026-10-06: 300px no longer
+        // overflowed, the lead fit at 176px exactly),
         // still comfortably below the 430px floor tier.
-        <Frame w="300px">
+        <Frame w="260px">
             <ViewBar
                 identity={<Crumb icon="Table">Reading List</Crumb>}
                 locus={<IconButton icon="ChevronLeft" label="Previous" />}
@@ -357,7 +357,7 @@ export const BelowFloor: Story = {
         const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         // The container really is below the floor boundary — otherwise this story proves nothing.
         expect(bar.clientWidth).toBeGreaterThan(0)
-        expect(bar.clientWidth).toBeLessThanOrEqual(300)
+        expect(bar.clientWidth).toBeLessThanOrEqual(260)
 
         const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
         expect(lead).toBeTruthy()
@@ -474,4 +474,16 @@ export const NestedBarsFirstClaims: Story = {
         ).toBeNull()
         await expect(bars[1].hasAttribute('data-pane-chrome')).toBe(false)
     },
+}
+
+/** `flush` — the bar draws no side padding of its own, for a host that owns it (BaseView). Stacked
+ *  against a default bar: the crumb's icon sits at the frame edge, and the bottom hairline is
+ *  still there, because padding and the rule are independent. */
+export const Flush: Story = {
+    render: () => (
+        <Frame>
+            <ViewBar identity={<Crumb icon="Share2">default padding</Crumb>} />
+            <ViewBar flush identity={<Crumb icon="Share2">flush</Crumb>} />
+        </Frame>
+    ),
 }

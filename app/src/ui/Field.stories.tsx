@@ -1,13 +1,11 @@
-// Visual spec for <Field> — a label wrapping its control (`label > span + control`),
-// the idiom repeated across EventModal / BaseSettings / card-add forms.
-//
-// Props: label (JSX, usually a short caption), class? (site-specific layout hook),
-// children (the wrapped control). Field owns no control styling itself — it renders
-// the shared `.ui-field` label chrome and defers entirely to whatever control is
-// passed in, so these stories pair it with TextInput/Select/SegmentedToggle to show
-// it in the context it's actually used.
+// Visual spec for <Field> — DEPRECATED, a thin alias of <SettingsField> (ds-improve-r1 Task 13).
+// It keeps its props (label, class?, labelClass?, children) and its content-sized label column, but
+// the label is SettingsField's real <label> bound to the control, on SettingsField's baseline.
+// These stories pair it with TextInput/Select/SegmentedToggle to show it where it is still used
+// (EmbeddedGraph's edit row, CustomThemePanel) and pin that the alias keeps the association.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
+import { expect } from 'storybook/test'
 import Field from './Field'
 import { TextInput } from './TextInput'
 import Select, { type SelectOption } from './Select'
@@ -43,18 +41,14 @@ export const WithTextInput: Story = {
 }
 
 /** A field whose label carries an extra class, merged onto the caption span (e.g.
- *  CardEditModal's Title field, whose caption matches the micro-caps register every
- *  other property label uses there). */
+ *  CardEditModal's Title field, whose caption matches the micro register every
+ *  other property label uses there). The class carries no rule here — the story pins only that
+ *  it is merged, not what a caller paints with it. */
 export const WithLabelClass: Story = {
     render: () => {
         const [v, setV] = createSignal('untitled')
         return (
             <div style={{ width: '280px' }}>
-                <style>
-                    {
-                        '.storyMicroLabel { font-size: var(--fs-micro); font-weight: var(--fw-bold); letter-spacing: 0.06em; text-transform: uppercase; }'
-                    }
-                </style>
                 <Field label="title" labelClass="storyMicroLabel">
                     <TextInput value={v()} onInput={setV} />
                 </Field>
@@ -137,5 +131,34 @@ export const StackedForm: Story = {
                 </Field>
             </div>
         )
+    },
+}
+
+/** The alias keeps the fix: the caption is a real <label> bound to the wrapped control (this is the
+ *  WCAG 1.3.1 / 4.1.2 association EmbeddedGraph's edit row relies on), and the label column is
+ *  content-sized, not SettingsField's 20-cell `--label-col`. */
+export const KeepsLabelAssociation: Story = {
+    render: () => {
+        const [v, setV] = createSignal('team sync')
+        return (
+            <div style={{ width: '280px' }}>
+                <Field label="title">
+                    <TextInput value={v()} onInput={setV} />
+                </Field>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const input = canvasElement.querySelector('input')!
+        await expect(input.labels).toHaveLength(1)
+        await expect(input.labels![0].tagName).toBe('LABEL')
+        await expect(input.labels![0].textContent).toBe('title')
+        // Content-sized column: a 5-letter label leaves the control far left of 20 cells (126px).
+        const field = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="settings-field"]',
+        )!
+        await expect(
+            input.getBoundingClientRect().left - field.getBoundingClientRect().left,
+        ).toBeLessThan(100)
     },
 }

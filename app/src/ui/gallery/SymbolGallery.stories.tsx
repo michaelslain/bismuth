@@ -12,6 +12,7 @@ import { expect, waitFor, within } from 'storybook/test'
 import SymbolGallery from './SymbolGallery'
 import { iconSource, emojiSource } from './sources'
 import { Button } from '../Button'
+import TextButton from '../TextButton'
 
 const meta = {
     title: 'UI/Gallery/SymbolGallery',
@@ -65,9 +66,9 @@ export const EmojiSource: Story = {
 export const FocusGuardIgnoresInModalFocus: Story = {
     render: () => (
         <div>
-            <button type="button" data-testid="decoy">
-                Decoy — outside the modal
-            </button>
+            <TextButton data-testid="decoy">
+                decoy // outside the modal
+            </TextButton>
             <SymbolGallery source={iconSource} onPick={noop} onClose={noop} />
         </div>
     ),

@@ -15,18 +15,18 @@
   display: grid; grid-template-columns: var(--cards-num-w) 1fr 1fr var(--cards-act-w); gap: var(--sp-5); align-items: center;
   padding: var(--sp-3) var(--sp-2); position: sticky; top: 0; z-index: 2;
   background: var(--pop-bg-strong); border-bottom: var(--rule-soft);
-  font-size: var(--fs-micro); color: var(--faint);
+  font-size: var(--fs-micro); color: var(--text-muted);
 }
 .cards-collbl span:first-child { text-align: center; }
 .cards-row { display: grid; grid-template-columns: var(--cards-num-w) 1fr 1fr var(--cards-act-w); gap: var(--sp-5); align-items: stretch; padding: var(--sp-2); border-top: 1px solid var(--border-soft); position: relative; }
 .cards-row:first-of-type { border-top: 0; }
-.cards-row.dragging { opacity: 0.4; }
-.cards-row.dropbefore::before { content: ""; position: absolute; left: var(--cards-num-w); right: calc(var(--cards-act-w) / 2 + var(--sp-2)); top: -1px; height: 2px; background: var(--accent); border-radius: var(--r-0); }
+.cards-row.dragging { background: var(--state-active-bg); }
+.cards-row.dropbefore::before { content: ""; position: absolute; left: var(--cards-num-w); right: calc(var(--cards-act-w) / 2 + var(--sp-2)); top: -1px; height: 0; border-top: var(--rule-drop); pointer-events: none; }
 
 /* The `#` handle is a PlainButton (a real, focusable control that also drags). Doubled so it out-ranks
    PlainButton's own reset regardless of stylesheet order. No focus ring, by decision. */
-.cards-num.cards-num { display: flex; align-items: flex-start; justify-content: center; padding-top: var(--sp-2); color: var(--faint); font-size: var(--fs-ui); cursor: grab; user-select: none; outline: none; }
-.cards-num.cards-num:hover { color: var(--text-muted); }
+.cards-num.cards-num { display: flex; align-items: flex-start; justify-content: center; padding-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-ui); cursor: grab; user-select: none; outline: none; }
+.cards-num.cards-num:hover { color: var(--fg); }
 .cards-num.cards-num:active { cursor: grabbing; }
 /* The draft row's `+` is a mark, not a handle: no grab cursor, accent coloured. */
 .cards-mark { display: flex; align-items: flex-start; justify-content: center; padding-top: var(--sp-2); color: var(--accent); font-size: var(--fs-lead); user-select: none; }
@@ -36,4 +36,4 @@
 
 /* Draft row: same underline field as every other row — no dashed placeholder box. Doubling is
    unconditionally correct (higher specificity always wins, regardless of declaration order). */
-.cards-draft.cards-draft { border-top: 1px dashed var(--border); margin-top: var(--sp-3); padding-top: var(--sp-5); }
+.cards-draft.cards-draft { border-top: var(--rule-dashed); margin-top: var(--sp-3); padding-top: var(--sp-5); }

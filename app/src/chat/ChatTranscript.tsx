@@ -16,19 +16,18 @@ import {
     type Component,
     type JSX,
 } from 'solid-js'
-import { Icon } from '../icons/Icon'
-import Text from '../ui/Text'
 import Caret from '../ui/Caret'
 import { openNote } from '../ui/openNote'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextButton } from '../ui/TextButton'
-import { ContextMenu, type MenuItem } from '../ContextMenu'
+import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
 import { copyChatText } from './copyChatText'
 import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
 import ChatUserTurn from './ChatUserTurn'
 import ChatAssistantTurn from './ChatAssistantTurn'
 import ChatSystemNote from './ChatSystemNote'
+import ChatNote from './ChatNote'
 import DaemonFace from '../daemon/DaemonFace'
 import type { DaemonMood } from '../daemon/daemonFaceModel'
 import { avatarIndex } from './chatAvatar'
@@ -244,22 +243,18 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
                 <Show when={props.awaitingReply}>
                     <ChatTurnColumn class={styles['chat-row']}>
                         <ChatTurnLabel label={props.persona} avatar={face()} />
-                        <div class={styles['chat-awaiting-dots']}>
+                        <ChatNote>
                             working
                             <Caret />
-                        </div>
+                        </ChatNote>
                     </ChatTurnColumn>
                 </Show>
                 <Show when={props.turnError}>
                     {msg => (
-                        <ChatTurnColumn class={styles['chat-turn-error']}>
-                            <Icon
-                                value="TriangleAlert"
-                                class={styles['chat-turn-error-icon']}
-                            />
-                            <Text as="span" inherit>
+                        <ChatTurnColumn>
+                            <ChatNote icon="TriangleAlert" tone="danger">
                                 {msg()}
-                            </Text>
+                            </ChatNote>
                         </ChatTurnColumn>
                     )}
                 </Show>

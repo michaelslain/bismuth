@@ -8,6 +8,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, within } from 'storybook/test'
 import MonthCell from './MonthCell'
 import Text from '../../../ui/Text'
+import { fitTiles, whenAsciiGlyphTilesInstalled } from '../../../ui/ascii/asciiGlyphTiles'
 import { encodeTaskDrag, TASK_DRAG_MIME } from '../../taskDrag'
 
 const meta = {
@@ -56,9 +57,70 @@ export const SpillDayIsDimmed: Story = {
     ),
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        const dim = getComputedStyle(c.getByText('31')).opacity
-        const live = getComputedStyle(c.getByText('1')).opacity
-        expect(Number(dim)).toBeLessThan(Number(live))
+        const dim = getComputedStyle(c.getByText('31'))
+        const live = getComputedStyle(c.getByText('1'))
+        // a quieter INK, not a see-through one: DESIGN.md shows no state by opacity
+        expect(dim.opacity).toBe('1')
+        expect(live.opacity).toBe('1')
+        expect(dim.color).not.toBe(live.color)
+    },
+}
+
+/** Today's number is dimmed by nothing, even when today is a spill day: the (0,2,0) `.dim` colour
+ *  would otherwise tie with the disc's own `.today` colour and paint faint ink on the accent. Read
+ *  against an in-month today beside it, so the expected ink is the live one, not a hardcoded token. */
+export const TodaySpillDayKeepsItsDisc: Story = {
+    render: () => (
+        <Frame>
+            <MonthCell date="2026-01-30" day={30} inMonth today isLastCol onOpen={() => {}} />
+            <MonthCell date="2026-01-31" day={31} inMonth={false} today isLastCol isLastRow onOpen={() => {}} />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const live = c.getByText('30')
+        const spill = c.getByText('31')
+        expect(getComputedStyle(spill).color).toBe(getComputedStyle(live).color)
+        expect(getComputedStyle(spill).backgroundColor).toBe(getComputedStyle(live).backgroundColor)
+        expect(getComputedStyle(spill).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+        // one --row-h row, square
+        const rowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-h'))
+        const r = spill.getBoundingClientRect()
+        expect(r.width).toBeCloseTo(rowH, 0)
+        expect(r.height).toBeCloseTo(rowH, 0)
+    },
+}
+
+/** The cell at rest sits on its floor (`calendar.monthCellMinHeight`, 80px by default), snapped UP
+ *  to corner tile + a whole number of dash pitches. At a bare 80px the vertical run held 4.57 pitches
+ *  and `round` stretched it to ~12.8px under the 14px dashes across (13.2 vs 13.6 as two graders
+ *  measured it). Reads the painted pitch off the real box, per axis, the way the primitive's own
+ *  story does — on a host whose WIDTH is snapped too, so any gap is the height's alone. */
+export const FloorPaintsOnePitchDownAndAcross: Story = {
+    render: () => (
+        <div data-testid="snapped" style={{ width: 'calc(var(--ascii-corner-w, 1ch) + 10 * var(--ascii-pitch, 2ch))' }}>
+            <MonthCell date="2026-01-14" day={14} inMonth today={false} isLastCol isLastRow onOpen={() => {}} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await whenAsciiGlyphTilesInstalled()
+        const cs = getComputedStyle(document.documentElement)
+        const cornerW = parseFloat(cs.getPropertyValue('--ascii-corner-w'))
+        const tileH = parseFloat(cs.getPropertyValue('--ascii-tile-h'))
+        const pitch = parseFloat(cs.getPropertyValue('--ascii-pitch'))
+        expect(pitch, 'the dash pitch is installed').toBeGreaterThan(0)
+        const cell = within(canvasElement).getByTestId('month-cell')
+        const host = cell.getBoundingClientRect()
+        // the floor is the setting, snapped up: never below it, and a whole number of pitches past a tile
+        const floor = parseFloat(cs.getPropertyValue('--month-cell-min-h'))
+        expect(host.height).toBeGreaterThanOrEqual(floor)
+        expect((host.height - tileH) / pitch, 'whole pitches of room down').toBeCloseTo(Math.round((host.height - tileH) / pitch), 2)
+        const edges = canvasElement.querySelector<HTMLElement>('[data-edges]')!
+        const r = edges.getBoundingClientRect()
+        const across = fitTiles(r.width - 2 * cornerW, pitch).pitch
+        const down = fitTiles(r.height - 2 * tileH, pitch).pitch
+        expect(across, 'painted pitch across').toBeCloseTo(pitch, 1)
+        expect(down, 'painted pitch down').toBeCloseTo(pitch, 1)
     },
 }
 

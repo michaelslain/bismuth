@@ -3,7 +3,7 @@
 // real state and asserts the edit, the reorder and the remove reach the callbacks.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import PropertyRowEditor from './PropertyRowEditor'
 import { blankPropertyRow, type PropertyFormRow } from './basePropertiesForm'
 
@@ -121,6 +121,14 @@ export const Interactive: Story = {
         await userEvent.clear(name)
         await userEvent.type(name, 'abc')
         await expect(name.value).toBe('abc')
+        // Disclosure's own `.disclosure { --disclosure-indent: calc(...) }` sits on the same element;
+        // the row zeroes it so the body hangs off the tree line. Read the resolved value, not the
+        // source order: an unzeroed indent resolves to the `calc(...)` text.
+        await expect(
+            getComputedStyle(
+                name.closest('[data-testid="disclosure"]')!,
+            ).getPropertyValue('--disclosure-indent').trim(),
+        ).toBe('0px')
         await expect(document.activeElement).toBe(name)
         await expect(c.getByLabelText('Move up')).toBeDisabled()
         await userEvent.click(c.getByLabelText('Move down'))
@@ -129,6 +137,29 @@ export const Interactive: Story = {
             canvasElement.querySelector('[data-log]')!.textContent,
         ).toBe('move 1,remove')
         await userEvent.click(c.getByRole('button', { name: /^abc/ }))
-        await expect(c.queryByPlaceholderText('property name')).toBeNull()
+        // The body collapses over a short height animation, then unmounts.
+        await waitFor(() =>
+            expect(c.queryByPlaceholderText('property name')).toBeNull(),
+        )
+    },
+}
+
+/** The visibility eye sits BESIDE the disclosure button, not inside it: nested, it became part of the
+ *  disclosure's accessible name, and a click on it had to fight the toggle. Clicking it flips
+ *  visibility and does not open the row. */
+export const EyeBesideTheHead: Story = {
+    render: () => <Harness initial={row({ hidden: true })} open={false} />,
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const head = canvasElement.querySelector<HTMLElement>('[aria-expanded]')!
+        expect(head.querySelector('button')).toBeNull()
+        const eye = c.getByLabelText(/^Show status/)
+        expect(head.contains(eye)).toBe(false)
+        expect(head.textContent).not.toContain('cards/table')
+        // A real glyph, not the dashed `?` fallback of an unknown icon name.
+        expect(eye.querySelector('svg')).toBeTruthy()
+        await userEvent.click(eye)
+        expect(head.getAttribute('aria-expanded')).toBe('false')
+        expect(c.getByLabelText(/^Hide status/)).toBeTruthy()
     },
 }

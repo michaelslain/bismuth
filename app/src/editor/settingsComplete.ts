@@ -387,7 +387,7 @@ function recordShortcut(view: EditorView, valueFrom: number): void {
     const timer = setTimeout(() => finish(null), 3000)
 
     // Lazy toast import keeps the Solid store out of this module's static path.
-    import('../Toast')
+    import('../ui/ToastHost')
         .then(({ pushToast, dismissToast }) => {
             if (done) return
             dismiss = dismissToast

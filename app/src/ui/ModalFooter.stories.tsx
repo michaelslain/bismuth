@@ -25,7 +25,7 @@ export const TrailingOnly: Story = {
     render: () => (
         <div style={shell}>
             <ModalFooter>
-                <TextButton variant="selected" data-testid="mf-done">
+                <TextButton primary data-testid="mf-done">
                     done
                 </TextButton>
             </ModalFooter>
@@ -56,7 +56,7 @@ export const LeadingAndTrailing: Story = {
                 <TextButton data-testid="mf-cancel">
                     cancel
                 </TextButton>
-                <TextButton variant="selected" data-testid="mf-save">
+                <TextButton primary data-testid="mf-save">
                     save
                 </TextButton>
             </ModalFooter>
@@ -92,7 +92,7 @@ export const LeadingFlush: Story = {
                     </TextButton>
                 }
             >
-                <TextButton variant="selected" data-testid="mf-save">
+                <TextButton primary data-testid="mf-save">
                     create event
                 </TextButton>
             </ModalFooter>

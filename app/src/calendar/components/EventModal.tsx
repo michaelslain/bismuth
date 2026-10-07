@@ -12,7 +12,7 @@ import {
     initialEventForm,
     type EventFormState,
 } from '../eventForm'
-import { pushToast } from '../../toastStore'
+import { pushToast } from '../../ui/toastStore'
 import FormModal from '../../ui/FormModal'
 import ModalBody from '../../ui/ModalBody'
 import ToggleRow from '../../ui/ToggleRow'

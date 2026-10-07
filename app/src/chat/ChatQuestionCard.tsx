@@ -3,14 +3,21 @@
 // single-select question submits on click (Claude-TUI feel); multi-select or several questions
 // stage picks and submit together. Every question also offers a free-text "Other". Skipping sends
 // a cancel. Extracted verbatim in behaviour from ChatView.tsx's local `QuestionCard` closure.
+// The surface is `ui/Card` (proposal) — it was a third copy of that recipe that even read the
+// deprecated `--r-card` — and each option wears a `ui/BracketToggle` mark (`[ ]` / `[x]`), single
+// select included: it used to draw Square/SquareCheck icons by hand for multi-select and no mark at
+// all for single-select.
 import { createStore } from 'solid-js/store'
 import { For, Show, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
+import Card from '../ui/Card'
+import BracketToggle from '../ui/BracketToggle'
 import { TextButton } from '../ui/TextButton'
 import { TextInput } from '../ui/TextInput'
 import PlainButton from '../ui/PlainButton'
 import type { QuestionPart } from './chatTranscriptLogic'
+import { chosenLabels } from './chatQuestionAnswer'
 import styles from './ChatQuestionCard.module.css'
 
 export type ChatQuestionCardProps = {
@@ -28,6 +35,17 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
     })
     const done = () => !!props.part.answered || !!props.part.cancelled
     const isPicked = (qi: number, label: string) => sel.picks[qi].includes(label)
+    // An answered card shows WHICH option was taken: a lone single-select question submits straight
+    // from the click and never stages a pick, so the answer map is the record, not `sel`.
+    // The answer is `parts.join(', ')`, so it cannot be split back apart (an option label may itself
+    // contain a comma) nor prefix-matched ("Yes" is a prefix of "Yes, do it"): walk it against the
+    // question's own labels instead (chatQuestionAnswer.ts).
+    const isChosen = (qi: number, label: string) =>
+        isPicked(qi, label) ||
+        chosenLabels(
+            props.part.answered?.[questions[qi].question] ?? '',
+            questions[qi].options.map(o => o.label),
+        ).has(label)
     const answeredFor = (qi: number) =>
         sel.picks[qi].length > 0 || sel.other[qi].trim().length > 0
     const allAnswered = () => questions.every((_, qi) => answeredFor(qi))
@@ -68,20 +86,22 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
     }
 
     return (
-        <div
-            class={`${styles['chat-question']} ${props.class ?? ''}`}
-            classList={{ [styles['answered']]: done() }}
+        <Card
+            variant="proposal"
+            class={[
+                styles['chat-question'],
+                done() ? styles['answered'] : '',
+                props.class ?? '',
+            ]
+                .filter(Boolean)
+                .join(' ')}
         >
             <div class={styles['chat-question-head']}>
                 <Icon
                     value="ListChecks"
                     class={styles['chat-question-icon']}
                 />
-                <Text
-                    as="span"
-                    weight="bold"
-                    class={styles['chat-question-title']}
-                >
+                <Text as="span" weight="bold" class={styles['chat-question-title']}>
                     {questions.length > 1
                         ? `${questions.length} questions`
                         : 'Question'}
@@ -94,6 +114,10 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                             <Show when={q.header}>
                                 <Text
                                     as="span"
+                                    eyebrow
+                                    size="micro"
+                                    tone="muted"
+                                    weight="bold"
                                     class={styles['chat-question-chip']}
                                 >
                                     {q.header?.toLowerCase()}
@@ -105,6 +129,9 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                             <Show when={q.multiSelect}>
                                 <Text
                                     as="span"
+                                    size="ui"
+                                    tone="muted"
+                                    italic
                                     class={styles['chat-question-multi']}
                                 >
                                     select all that apply
@@ -117,11 +144,12 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                                     <PlainButton
                                         class={styles['chat-question-option']}
                                         classList={{
-                                            [styles['picked']]: isPicked(
+                                            [styles['picked']]: isChosen(
                                                 qi(),
                                                 opt.label,
                                             ),
                                         }}
+                                        aria-pressed={isChosen(qi(), opt.label)}
                                         disabled={done()}
                                         onClick={() => onOption(qi(), opt.label)}
                                     >
@@ -132,20 +160,9 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                                                 styles['chat-question-option-main']
                                             }
                                         >
-                                            <Show when={q.multiSelect}>
-                                                <Icon
-                                                    value={
-                                                        isPicked(qi(), opt.label)
-                                                            ? 'SquareCheck'
-                                                            : 'Square'
-                                                    }
-                                                    class={
-                                                        styles[
-                                                            'chat-question-check'
-                                                        ]
-                                                    }
-                                                />
-                                            </Show>
+                                            <BracketToggle
+                                                checked={isChosen(qi(), opt.label)}
+                                            />
                                             <Text
                                                 as="span"
                                                 class={
@@ -160,6 +177,8 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                                         <Show when={opt.description}>
                                             <Text
                                                 as="span"
+                                                size="ui"
+                                                tone="muted"
                                                 class={
                                                     styles[
                                                         'chat-question-option-desc'
@@ -195,16 +214,14 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                 fallback={
                     <div
                         class={styles['chat-question-outcome']}
-                        classList={{
-                            [styles['cancelled']]: !props.part.answered,
-                        }}
+                        data-testid="chat-question-outcome"
                     >
                         <Show
                             when={props.part.answered}
                             fallback={
-                                <>
+                                <div class={styles['chat-question-answer']}>
                                     <Icon value="Ban" /> Skipped
-                                </>
+                                </div>
                             }
                         >
                             {ans => (
@@ -220,7 +237,10 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                                                 <Show when={q.header}>
                                                     <Text
                                                         as="span"
-                                                        inherit
+                                                        eyebrow
+                                                        size="micro"
+                                                        tone="muted"
+                                                        weight="bold"
                                                         class={
                                                             styles[
                                                                 'chat-question-chip'
@@ -258,7 +278,7 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                     </TextButton>
                 </div>
             </Show>
-        </div>
+        </Card>
     )
 }
 

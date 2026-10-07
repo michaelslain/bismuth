@@ -1,0 +1,7 @@
+/* EditableRow.module.css — the row's wrapper (row + the note under it) and its two small cells. */
+.item { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.actions { display: flex; align-items: center; gap: var(--sp-1); }
+/* The label cell is as wide as a SettingsField's label column PLUS its column gap, less the
+   ListRow's own slot gap, so a row's first control starts at the x the labelled fields below and
+   above it start at. */
+.label { display: block; min-width: 0; width: calc(var(--label-col) + var(--sp-6) - var(--sp-3)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

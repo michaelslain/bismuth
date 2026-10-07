@@ -73,6 +73,31 @@ export const Default: Story = {
     },
 }
 
+/** No rows and no pinned columns: the board says so, centred, instead of painting a blank lane.
+ *  Read-only here (no `basePath`), so there is no add-column ghost beside it. */
+export const Empty: Story = {
+    render: () => {
+        const view = kanbanView()
+        return (
+            <div style={{ height: '320px', display: 'flex', 'flex-direction': 'column' }}>
+                <KanbanView
+                    result={sampleViewResult([], { view })}
+                    config={sampleBaseConfig({ view })}
+                    onChange={noop}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-testid="ui-empty-block"]')?.textContent,
+            ).toContain('no cards'),
+        )
+        expect(canvasElement.querySelectorAll('[data-kbcol]').length).toBe(0)
+    },
+}
+
 /** A `basePath` makes the board editable (per-column "+" add-card composer, draggable cards/
  *  headers) and `columns` pins declared column keys as visible even when empty — "Blocked" has
  *  no cards here but stays on the board. */
@@ -144,6 +169,20 @@ export const HeaderActionsOnHover: Story = {
         })
         // Measure after the UI font lands — a late font swap re-measures the count's digits.
         await document.fonts.ready
+        // Four columns, four colours: the auto-coloured Blocked steps past the swatches the named
+        // Todo / Doing / Done columns own instead of repeating Doing's teal.
+        const resolved = ['Todo', 'Doing', 'Blocked', 'Done'].map(name => {
+            const column = canvasElement.querySelector<HTMLElement>(
+                `[data-kbcol="${name}"]`,
+            )!
+            const probe = document.createElement('i')
+            probe.style.background = 'var(--kb-col-color)'
+            column.appendChild(probe)
+            const color = getComputedStyle(probe).backgroundColor
+            probe.remove()
+            return color
+        })
+        expect(new Set(resolved).size).toBe(4)
         const header = col.firstElementChild as HTMLElement
         const bar = within(col).getByRole('toolbar', { name: 'Column actions' })
         const count = within(header).getByText('00')

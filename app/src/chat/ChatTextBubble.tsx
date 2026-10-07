@@ -4,16 +4,20 @@
 // ChatAssistantTurn's text parts. `command` renders a boxed monospace "Command output" panel
 // (like the Claude Code TUI's `/context` view) instead of loose prose (#28); the body still goes
 // through the same pipeline, so headings/bold/code fences/tables still render formatted.
-import { Show, type Component } from 'solid-js'
+import { createEffect, onCleanup, Show, type Component } from 'solid-js'
 import { renderNoteBody } from '../bases/markdown'
 import ChatCommandOutputFrame from './ChatCommandOutputFrame'
 import ChatCopyButton from './ChatCopyButton'
+import { typeBubbleTables } from './typeBubbleTables'
 import styles from './ChatTextBubble.module.css'
 
 export type ChatTextBubbleProps = {
     /** Raw markdown source. Renders nothing when blank (an image-only turn, say). */
     text: string
     role: 'user' | 'assistant'
+    /** Settled-aside ink (--text-muted) for a turn that is staged, not yet sent — instead of a
+     *  fade, which no state may use. */
+    muted?: boolean
     /** Slash-command result: boxed monospace panel instead of loose prose (#28). */
     command?: boolean
     /** Right-click → Reply/Copy menu, wired by the transcript (which owns the ContextMenu). */
@@ -22,16 +26,27 @@ export type ChatTextBubbleProps = {
 }
 
 const ChatTextBubble: Component<ChatTextBubbleProps> = props => {
+    let el!: HTMLDivElement
     const bubble = (
         <div
+            ref={el}
             class={`${styles['chat-bubble']} ${styles[props.role]}`}
             classList={{
                 [styles['chat-command-output-body']]: props.command,
+                [styles['muted']]: props.muted,
             }}
             data-chat-bubble
             innerHTML={renderNoteBody(props.text)}
         />
     )
+    // Tables are a typed grid (DESIGN.md's Typed Grid Rule), not drawn borders: once the markdown
+    // string has landed, mount the edges onto its cells. Declared AFTER `bubble` so it re-runs after
+    // the `innerHTML` binding when `text` changes, and tears its roots down before the next pass.
+    createEffect(() => {
+        void props.text
+        const dispose = typeBubbleTables(el)
+        onCleanup(dispose)
+    })
     return (
         <Show when={props.text.trim()}>
             <div

@@ -15,6 +15,7 @@
 // `.tab-rail-list` ancestry (not bare), since the row's own rules (icon column alignment, hover
 // reveal) are written as descendants of `.tab-rail`.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, waitFor, within } from 'storybook/test'
 import { TabRailRow } from './TabRailRow'
 import styles from './TabRail.module.css'
 
@@ -41,6 +42,11 @@ const Wrap = (props: { children: unknown; side?: 'left' | 'right' }) => (
             class={styles['tab-rail']}
             style={{ position: 'static' }}
             data-tab-rail="true"
+            // The rail's PINNED state, which is what reveals a row's label, close X and pin
+            // (TabRailRow.module.css keys every reveal off `[data-rail-pinned]`/`:hover`). Without it
+            // each story drew an icon and nothing else — `LongLabel` had no label to truncate and
+            // `Pinned` no pin to show, so neither proved a thing.
+            data-rail-pinned="true"
             data-rail-side={props.side ?? 'right'}
         >
             <div
@@ -80,6 +86,13 @@ export const Default: Story = {
             <TabRailRow {...base} />
         </Wrap>
     ),
+    play: async ({ canvasElement }) => {
+        // The label is actually rendered — the rail is pinned, so it is revealed, not collapsed away.
+        const label = within(canvasElement).getByText(base.label)
+        await waitFor(() => expect(label.offsetWidth).toBeGreaterThan(0))
+        expect(getComputedStyle(label).visibility).toBe('visible')
+        expect(getComputedStyle(label).opacity).toBe('1')
+    },
 }
 
 /** `.active` — the current tab, with its `::before` accent gradient bar. */
@@ -98,6 +111,14 @@ export const Pinned: Story = {
             <TabRailRow {...base} pinned={true} />
         </Wrap>
     ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const pin = c.getByRole('button', { name: 'Unpin tab' })
+        // Shown at full strength with a real box — and the close X is NOT what this row carries.
+        await waitFor(() => expect(getComputedStyle(pin).opacity).toBe('1'))
+        expect(pin.getBoundingClientRect().width).toBeGreaterThan(0)
+        expect(c.queryByRole('button', { name: 'Close tab' })).toBeNull()
+    },
 }
 
 /** `.dragging` — mid tab-drag visual state. */
@@ -133,15 +154,20 @@ export const Colored: Story = {
 }
 
 /** A title long enough to exercise `.tab-rail-label`'s ellipsis. */
+const LONG = 'a-very-long-note-title-that-should-be-truncated-with-an-ellipsis.md'
 export const LongLabel: Story = {
     render: () => (
         <Wrap>
-            <TabRailRow
-                {...base}
-                label="a-very-long-note-title-that-should-be-truncated-with-an-ellipsis.md"
-            />
+            <TabRailRow {...base} label={LONG} />
         </Wrap>
     ),
+    play: async ({ canvasElement }) => {
+        // The label has a real width AND is cut short: its content is wider than its box.
+        const label = within(canvasElement).getByText(LONG)
+        await waitFor(() => expect(label.clientWidth).toBeGreaterThan(0))
+        expect(label.scrollWidth).toBeGreaterThan(label.clientWidth)
+        expect(getComputedStyle(label).textOverflow).toBe('ellipsis')
+    },
 }
 
 /** LEFT RAIL (`data-rail-side="left"`) — the row's 1px-shifted margin keeps the icon on the same

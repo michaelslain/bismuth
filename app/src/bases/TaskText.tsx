@@ -1,6 +1,5 @@
 import { For, Match, Switch, type Component } from 'solid-js'
 import NoteLink from '../ui/NoteLink'
-import PlainButton from '../ui/PlainButton'
 import Tag from '../ui/Tag'
 import Text from '../ui/Text'
 import { parseTaskInline, type TaskInlineSegment } from './taskInline'
@@ -26,16 +25,9 @@ const notePath = (target: string) =>
 const LinkSegment: Component<{ url: string; label: string }> = props => {
     if (OPENABLE.test(props.url))
         return (
-            <PlainButton
-                class={styles.link}
-                title={props.url}
-                onClick={e => {
-                    e.stopPropagation()
-                    window.open(props.url, '_blank', 'noopener')
-                }}
-            >
+            <NoteLink path={props.url} external>
                 {props.label}
-            </PlainButton>
+            </NoteLink>
         )
     if (!HAS_SCHEME.test(props.url))
         return (

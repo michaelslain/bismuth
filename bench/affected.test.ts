@@ -5,7 +5,11 @@ import { join } from 'node:path'
 const ROOT = join(import.meta.dir, '..')
 
 test('an untracked new story file is treated as changed and mapped to its prefix', async () => {
-    const dir = join(ROOT, 'app/src/__affectedProbe')
+    // A DOT directory on purpose: Storybook's `../src/**/*.stories.*` glob skips dot-directories, so a
+    // running Storybook never indexes the probe. A visible name made the watcher index the file, then
+    // read it after the rmSync below and serve index.json as HTTP 500 until something forced a re-index.
+    // `git ls-files --others` (what bench/affected.ts reads) still lists it, so the test is unchanged.
+    const dir = join(ROOT, 'app/src/.affectedProbe')
     try {
         mkdirSync(dir, { recursive: true })
         writeFileSync(join(dir, 'Probe.stories.tsx'), "export default { title: 'Affected Probe Untracked' }\n")

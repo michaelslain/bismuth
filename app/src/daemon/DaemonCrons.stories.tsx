@@ -4,7 +4,14 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import DaemonCrons from './DaemonCrons'
-import { sampleDaemonSnapshot } from '../ui/_daemonFixtures'
+import DaemonProcesses from './DaemonProcesses'
+import DaemonInbox from './DaemonInbox'
+import DaemonLog from './DaemonLog'
+import {
+    sampleActivity,
+    sampleDaemonPages,
+    sampleDaemonSnapshot,
+} from '../ui/_daemonFixtures'
 
 const meta = {
     title: 'Daemon/DaemonCrons',
@@ -138,7 +145,8 @@ export const Disabled: Story = {
 }
 
 /** A cron name long enough that it must ellipsize instead of pushing the schedule/status/
- *  actions columns off the edge. */
+ *  actions columns off the edge — and the schedule, the first thing to give, still keeps a
+ *  readable stub (its track floors at 8ch) and its full text in a `title`. */
 export const LongName: Story = {
     render: () => (
         <div style={{ width: '260px', height: '120px' }}>
@@ -160,6 +168,16 @@ export const LongName: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const row = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-row"]',
+        )!
+        const meta = row.querySelector<HTMLElement>('[title]')!
+        await expect(meta.getAttribute('title')).toBe(meta.textContent)
+        const em = parseFloat(getComputedStyle(meta).fontSize)
+        // 8ch of this face is at least ~4em; the floor must hold at this squeezed width.
+        await expect(meta.getBoundingClientRect().width).toBeGreaterThan(em * 4)
+    },
 }
 
 /** A 40-char file-change trigger next to `failed 10m ago` — the schedule cell ellipsizes and
@@ -196,6 +214,11 @@ export const LongSchedule: Story = {
         await expect(schedule.scrollWidth).toBeGreaterThan(
             schedule.clientWidth,
         )
+        await expect(schedule.getAttribute('title')).toBe(schedule.textContent)
+        // The schedule keeps a readable stub even beside a long name + status.
+        await expect(
+            schedule.getBoundingClientRect().width,
+        ).toBeGreaterThan(parseFloat(getComputedStyle(schedule).fontSize) * 4)
         const status = canvas.getByText('failed 10m ago')
         const list = canvasElement.querySelector<HTMLElement>(
             '[class*="cronsList"]',
@@ -356,6 +379,94 @@ export const Full: Story = {
         await expect(list.getAttribute('data-variant')).toBe('full')
         await expect(list.querySelectorAll('[data-testid="daemon-row"]').length).toBe(12)
         await expect(canvasElement.querySelector('[data-testid="daemon-section-crons"]')).toBeNull()
+    },
+}
+
+/** Nothing configured and the section opened anyway: the opened body says so instead of a
+ *  blank takeover. */
+export const FullEmpty: Story = {
+    render: () => (
+        <div style={{ width: '100%', 'max-width': '1300px' }}>
+            <DaemonCrons {...baseProps} variant="full" crons={[]} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await expect(
+            within(canvasElement).getByText('no crons yet // ask the daemon'),
+        ).toBeInTheDocument()
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-crons-full"]'),
+        ).toBeNull()
+    },
+}
+
+/** The four opened lists (crons, services, inbox, log) at takeover width: ONE measure
+ *  (`--daemon-list-max`), so every list ends at the same x and its trailing column (status, age,
+ *  duration) sits in the same place. */
+export const OpenedListsShareMeasure: Story = {
+    render: () => (
+        <div
+            data-testid="measure-stack"
+            style={{ width: '100%', 'max-width': '1500px' }}
+        >
+            <DaemonCrons
+                {...baseProps}
+                variant="full"
+                crons={SNAPSHOT.crons}
+            />
+            <DaemonProcesses
+                variant="full"
+                daemonRunning
+                onOpen={fn()}
+                onToggle={fn()}
+                onDelete={fn(async () => {})}
+                processes={SNAPSHOT.processes}
+            />
+            <DaemonInbox
+                variant="full"
+                pages={sampleDaemonPages()}
+                onOpen={fn()}
+                onChanged={fn()}
+            />
+            <DaemonLog variant="full" events={sampleActivity()} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const q = (id: string) =>
+            canvasElement.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
+        const lists = [
+            q('daemon-crons-full'),
+            q('daemon-processes-full'),
+            q('daemon-inbox-full'),
+            q('daemon-log-full'),
+        ]
+        const right = lists[0].getBoundingClientRect().right
+        for (const l of lists)
+            await expect(
+                Math.abs(l.getBoundingClientRect().right - right),
+            ).toBeLessThanOrEqual(1)
+        // The cap really bites at this width: the stack is wider than one measure.
+        await expect(
+            q('measure-stack').getBoundingClientRect().right - right,
+        ).toBeGreaterThan(40)
+        // And the trailing text of each list ends inside that edge by the same inset.
+        const trailing = [
+            lists[0].querySelector<HTMLElement>('[data-testid="daemon-row"] > :nth-child(4)')!,
+            lists[1].querySelector<HTMLElement>('[data-testid="daemon-row"] > :nth-child(3)')!,
+            lists[2].querySelector<HTMLElement>('[data-testid="inbox-row"] button > :last-child')!,
+            lists[3].querySelector<HTMLElement>('[class*="log-row"] > :last-child')!,
+        ]
+        const sp4 = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--sp-4'),
+        )
+        // Where the TEXT ends: the box's right edge minus its own right padding (a services
+        // status carries the row's inset as padding, the other three as margin or the row).
+        for (const t of trailing) {
+            const end =
+                t.getBoundingClientRect().right -
+                parseFloat(getComputedStyle(t).paddingRight)
+            await expect(Math.abs(end - (right - sp4))).toBeLessThanOrEqual(1)
+        }
     },
 }
 

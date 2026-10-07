@@ -1,21 +1,27 @@
 /* app/src/ui/InlineTextInput.module.css — the inline-rename input (ui/InlineTextInput.tsx ONLY):
-   accent-bordered, sits in place of a label. Moved from EditableLabel.module.css's
-   `.ft-edit-input`; the file tree's 70% width stays with EditableLabel. */
+   it sits in place of a label. Moved from EditableLabel.module.css's `.ft-edit-input`; the file
+   tree's 70% width stays with EditableLabel.
+
+   ds-improve-r1 Task 13: it used to be a FILLED BOX — `--bg` fill, a 1px accent border and a second
+   1px accent focus outline — in a system whose fields are underline-only and which draws no focus
+   at all. It now copies FormControl's underline recipe (transparent, one `--rule` underline, no box,
+   no outline) and takes the LABEL's own box instead of a control's: the font, the line height and
+   the text's left edge are the label's (no padding, no side borders), and the height is exactly
+   one line, so swapping a row's label for this input neither grows the row nor moves the text.
+   `--rule` (the firm step), not `--rule-soft`: the field only ever exists while it is being edited
+   and the underline is the one thing that says "this is an input now" with nothing drawn on focus. */
 .inline-input {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
     font: inherit;
-    background: var(--bg);
+    line-height: inherit;
+    height: auto;
+    height: 1lh;
+    background: transparent;
     color: var(--fg);
-    border: 1px solid var(--accent);
+    border: none;
+    border-bottom: var(--rule);
     border-radius: var(--r-0);
-    padding: 0 var(--sp-1);
-}
-/* Focus: the input is only ever shown while it is being edited, so it is focused almost all its
-   life — the browser's own focus outline drew a second, blue ring on top of the accent border.
-   Replace it with a matching `outline` (not a `box-shadow`-only ring — box shadows are dropped in
-   forced-colors mode, which would leave no focus indicator at all) so focus stays visible in the
-   component's own colour AND survives forced colours. */
-.inline-input:focus,
-.inline-input:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: 0;
+    outline: none;
 }

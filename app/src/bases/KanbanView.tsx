@@ -43,9 +43,10 @@ import { propertyRegistry } from '../propertyRegistry'
 import { isRowHidden, pruneDeleted, type DeletedMap } from './kanbanDelete'
 import { type NativeDragDetail } from '../nativeDrop'
 import { claimNativeDrop } from '../nativeDropRouting'
-import { GROUP_PALETTE, autoGroupColor } from './groupHue'
-import { pushToast } from '../Toast'
+import { GROUP_PALETTE, autoGroupColor, claimedSlots } from './groupHue'
+import { pushToast } from '../ui/ToastHost'
 import Callout from '../ui/Callout'
+import EmptyState from '../ui/EmptyState'
 import InlineCode from '../ui/InlineCode'
 import styles from './KanbanView.module.css'
 
@@ -128,8 +129,11 @@ export function KanbanView(props: {
     // chosen by a stable hash of the column KEY (not its position) so reordering columns never
     // recolors them. Extracted so a rename can compare "what color would this key get on its
     // own" for both the old and the new key, without writing an override just to ask.
+    // The swatches the board's named columns (Doing, Done, an override) already own are skipped, so
+    // an auto column never paints the same dot as the column beside it.
+    const claimed = () => claimedSlots(columnKeys(), groupColors())
     function autoColor(key: string): string {
-        return autoGroupColor(key)
+        return autoGroupColor(key, claimed())
     }
 
     // Per-column color: explicit override > auto.
@@ -636,6 +640,13 @@ export function KanbanView(props: {
                 ref={rootEl}
                 style={{ '--kb-drag-h': `${drag.dragH()}px` }}
             >
+                {/* No columns at all (no rows, none pinned): say so, centred in the board, rather than
+                    painting a blank lane. A writable board still gets its add-column ghost after it. */}
+                <Show when={columnKeys().length === 0}>
+                    <EmptyState fill title="no cards">
+                        nothing in this view matches its filters
+                    </EmptyState>
+                </Show>
                 {/* Columns are keyed by their group KEY (a stable string), so a header reorder MOVES the
                     column DOM (FLIP-animated via data-kbcol) rather than re-rendering every column's
                     content, and a card status-toggle refetch (same keys) reuses columns. `columnKeys()`

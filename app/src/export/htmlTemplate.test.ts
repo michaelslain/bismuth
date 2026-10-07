@@ -448,12 +448,21 @@ describe('exported headings follow the app scale (editor/livePreview.ts + tokens
     }
 
     test('h5 and h6 change REGISTER rather than just shrinking', () => {
-        // The app's own comment: drop the caps + tracking and h5 becomes small body text.
+        // The app's own comment: drop the tracking + muted ink and h5 becomes small body text.
+        // THE REGISTER IS LABEL TRACKING PLUS MUTED INK, IN LOWERCASE — the same register
+        // `.cm-h5`/`.cm-h6` carry in editor/livePreview.ts, so an export reads like the editor it
+        // came from. This used to pin `text-transform: uppercase`, which put the ramp invariant
+        // and the no-all-caps rule in direct contradiction: the caps are now asserted NEGATIVELY
+        // so a reintroduction fails here rather than only in a visual review. Neither --fs-h5 nor
+        // --fs-h6 moved, so the intent — these two earn their sub-body size by changing register
+        // rather than merely shrinking — is unchanged.
         const css = emit(10, 1.25)
         for (const tag of ['h5', 'h6']) {
             const rule = new RegExp(`\\b${tag} \\{[^}]*\\}`).exec(css)?.[0] ?? ''
-            expect(rule).toContain('text-transform: uppercase')
+            expect(rule, `${tag} emitted no rule to grade`).toContain('font-size')
             expect(rule).toMatch(/letter-spacing:\s*[\d.]+em/)
+            expect(rule).toContain(`color: ${DEFAULT_PALETTE.dark.muted}`)
+            expect(rule).not.toContain('text-transform')
         }
     })
 

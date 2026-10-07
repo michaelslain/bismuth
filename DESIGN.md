@@ -274,7 +274,7 @@ only ever reads `var(--…)`.
 five metric-compatible Monaspace variants (`appearance.uiFont`), so the grid never reflows.
 **Prose Font:** IBM Plex Serif (with `Georgia, serif`), via `appearance.proseFont`; Lora Variable
 stays selectable.
-**Icon Font:** Symbols Nerd Font Mono, never user-selectable.
+**Icons:** drawn as inline SVG, not set in a font (see Shapes).
 
 **Character:** a slab mono doing the work of a terminal, and an engineered, academic serif —
 Plex, drawn beside a mono — for the part a person actually wrote. The two never mix within one register.
@@ -287,7 +287,7 @@ Plex, drawn beside a mono — for the part a person actually wrote. The two neve
 - **Body** (13px `--fs-body`): prose inside panels.
 - **UI** (11.5px `--fs-ui`, line-height 1.7): the workhorse. Rail, tabs, tables, menus, popovers,
   and every `[text button]`.
-- **Label / Micro** (10.5px `--fs-micro`, uppercase, `.06em`–`.14em` tracking): eyebrows,
+- **Label / Micro** (10.5px `--fs-micro`, lowercase as written, tracked by `--ls-eyebrow`, `.14em`): eyebrows,
   status bar, legends. The floor: nothing in the app is set smaller, bar the one exception below.
 - **Nano** (9.5px `--fs-nano`) — **avoid.** The single sanctioned exception to the 10.5px floor:
   a calendar event chip's location line, trailing the title inside a time-grid block too dense
@@ -305,8 +305,8 @@ Plex, drawn beside a mono — for the part a person actually wrote. The two neve
 
 ### The content heading ramp
 Markdown headings in every surface read `--fs-h1` … `--fs-h6`. h1/h2 are never smaller than prose,
-h3/h4 sit *at* prose size and separate by weight, h5/h6 drop into label register (caps, tracking,
-muted). The ramp is relative to the user's editor size, so it holds at every setting.
+h3/h4 sit *at* prose size and separate by weight, h5/h6 drop into label register (caps + tracking for h5, muted for h6 — rendered note content,
+pinned by `app/src/headingRamp.test.ts`; the caps are what license dropping below body size). The ramp is relative to the user's editor size, so it holds at every setting.
 
 ### Named Rules
 **The Heading-Never-Shrinks Rule.** A heading is never smaller than the prose it heads. Consume
@@ -321,7 +321,9 @@ run of written text (a card title) in the prose face; the default `chrome` stays
 characters but are one row style: same size, padding, height and dim fence tone; the code fence's
 language label is fence text in that tone. YAML keys read muted in both blocks.
 
-**The Untracked Body Rule.** Uppercase labels are widely tracked; body text is never tracked.
+**The Untracked Body Rule.** Labels are widely tracked; body text is never tracked.
+
+**The No All Caps Rule.** UI text is never uppercased: no `text-transform: uppercase`, and no text typed in capitals to get the effect. A label's case is the case it is written in. The rule governs UI **chrome**. Rendered note content is outside it: the editor's `.cm-h5`/`.cm-h6` label register (`editor/livePreview.ts`, pinned by `app/src/headingRamp.test.ts`) carries no caps either: it is **tracking (`--ls-label`) plus muted ink (`--text-muted`), in lowercase**, at the sub-body size (`--fs-h5`/`--fs-h6`, unchanged), and that register is what licenses those two sitting below body size. `--ls-eyebrow` supplies tracking alone; it never implies a case change. (User ruling, 2026-10-06.)
 
 ## Layout
 
@@ -359,6 +361,8 @@ The first-run intro lays every slide out in one frame, identical on all of them:
 **The Zoom-Is-Resolution Rule.** In the graph, a character never changes size. Zooming re-rasterizes
 the field at a finer grid.
 
+**The Intro Glyph Scale Rule.** The intro's hero box is 96 cells by 16 rows, scaled by `--intro-glyph-scale` (1.5x; three quarters of that, 1.125x, on windows 800px tall or less). The scale is one token read by the glyph canvas, never a literal in a consumer, and it is chosen so a cell is a whole number of device pixels. A scene is authored for the 96x16 box, never fit-scaled to whatever room is left.
+
 ## Elevation & Depth
 
 Flat by default. Depth comes from tonal steps (rail → ground → editor → surfaces 1–3) and hairline
@@ -369,6 +373,9 @@ borders, not shadows. Nothing in the app is blurred. Things that genuinely float
   for surfaces that float directly over live content with no scrim (popovers, context menus,
   autocomplete). `--shadow-hard` is projected per theme and is more opaque on light themes, since
   an unblurred shadow otherwise disappears.
+- **Lift start** (`--lift-start`: `-2px 2px 0 var(--shadow-hard)`): the mirror of `--lift` for a
+  surface anchored to the right edge (the default tab rail's flyout), whose `--lift` cue would land
+  off-window. Same colour, same zero blur; only the horizontal offset flips.
 - **Glow** (`--glow-accent`, `--glow-text`): a theme decision, not a component one. Ink, Paper and
   Riso set a flat 1px accent rim and no text glow; only Cathode blooms.
 
@@ -376,7 +383,9 @@ borders, not shadows. Nothing in the app is blurred. Things that genuinely float
 **The No-Blur Rule.** No `blur()` in a shadow and no `backdrop-filter`. Modals sit on a scrim
 (`--overlay-bg`) and need no shadow; popovers get `--lift`, and nothing else does.
 
-**The Token-Not-Shadow Rule.** Components read `--lift` or `--glow-*`; they never write a shadow literal.
+**The Token-Not-Shadow Rule.** Components read `--lift`, `--lift-start` or `--glow-*`; they never write a shadow literal.
+
+**The Z-Ladder Rule.** Stacking is a six-step ladder, never a raw `z-index` number: `--z-local` (1, inside a component), `--z-overlay` (20, pane overlays: chat panel, switcher, drop cues), `--z-shell` (100, shell chrome: tab rail, sidebar edge), `--z-modal` (1000, the modal scrim and panel, and the drag ghost), `--z-toast` (1050) and `--z-popover` (1100, popovers and menus). A component reads the step that names its layer; a new overlay picks a step rather than a number. The order has reasons, so do not reshuffle it. A popover tops the stack because a menu can open inside a modal and must sit over it. A toast sits above a modal, because a notification must be seen, but below a popover, so it never covers an open menu. A modal shares its band with the drag ghost.
 
 ## Shapes
 
@@ -386,8 +395,7 @@ curve is a genuine circle (status dots, at 50%). Lines are one of four named rul
 accent left edge (`--accent-edge`) marks exactly two things: the frontmatter block and a
 callout/proposal.
 
-Icons are 24px-grid pixel art rendered `crispEdges` at a single size (`--icon`, 12px — the `appearance.iconSize` setting; no call site passes its own), so the bitmap
-grid stays as hard as the character grid.
+Icons are Phosphor Regular outlines: inline SVG on a 256 viewBox, filled with `currentColor`, drawn at a single size (`--icon`, 12px — the `appearance.iconSize` setting; no call site passes its own). At 12px that is a scale of about 0.047 and a stroke of about 0.75px, so the set reads softer than the character grid beside it; nothing in the app sets `shape-rendering: crispEdges`. Snapping the set to the character grid so it matches the typed chrome is an open `redesign` recommendation, not shipped behaviour.
 
 ### Named Rules
 **The Square Corner Rule.** Radius is `0` or `50%`. The older `--r-chip` / `--r-control` /
@@ -423,9 +431,8 @@ the accent. An outline appears only when it means something.
   goes inside the brackets: `[✓ label]`. One size only.
 - **States are colour and weight, nothing drawn:** `normal` `--fg`; `unselected` (a toggle member
   that is off) `--text-muted`; `selected` `--accent` + bold (or `accent`, if set); `primary`
-  `--accent` + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover.
-  No state is ever shown by opacity — `unselected` used to dim to 0.5, which read as disabled and
-  failed contrast; it is full-opacity, muted-ink now, same as every other state.
+  `--accent` + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover. Disabled is `--faint` alone with **no** opacity: 0.45 over `--faint` measures 1.89:1 on `--bg`,
+  under the 3:1 floor. `--state-disabled-op` is not applied to a control; its one reader is the sidebar toolbar's switcher dim (see the Don'ts).
 - **Hover:** `unselected` lifts to `--fg`; states already at full ink underline the label
   (1px) instead of changing colour.
 - **Spacing:** sibling bracket buttons sit `--sp-4` apart — about one monospace cell — so a focus
@@ -449,9 +456,10 @@ the accent. An outline appears only when it means something.
   is `normal`.
 - **Focus:** no outline or ring on any button or clickable card/chip, on any focus — mouse or
   keyboard. Decided 2026-09-27: keyboard users lose the cue; focus is not drawn anywhere in this
-  system.
+  system. Enforced everywhere as of 2026-10-06 (user ruling): no row, field or control draws a
+  focus ring or outline, and none swaps in a replacement cue. Do not add one to a single component.
 - **Icon button — brackets mean "on":** a separate register, no box. A **standalone** icon button
-  (`normal`, `danger` included) is the bare pixel glyph with `--sp-1` of side room, `--accent` on
+  (`normal`, `danger` included) is the bare icon glyph with `--sp-1` of side room, `--accent` on
   hover. Only a **`selected`** toggle member draws `[▣]` — generated `[`/`]` glyphs (same device
   as the text button's brackets, hidden from the accessible name the same way) painted accent with
   the icon. An **`unselected`** member lays its brackets out invisibly, so it occupies the same
@@ -526,8 +534,8 @@ the accent. An outline appears only when it means something.
 
 ### Overlays
 - **Modal (`FormModal`):** the one dialog shell in the app — the old `PromptModal`/`CardsModal`
-  variants are gone. A single `--rule` hairline frame on `--pop-bg-strong` (translucent editor
-  ground), square, no shadow, over the `--overlay-bg` scrim. Composed from `ModalHeader` /
+  variants are gone. A single `--rule` hairline frame on `--pop-bg-strong` (the editor
+  ground laid over a solid `--bg` backing, so the panel is opaque), square, no shadow, over the `--overlay-bg` scrim. Composed from `ModalHeader` /
   `ModalBody` / `ModalFooter`, which between them draw one continuous frame rather than three
   stacked boxes.
 - **`ModalHeader`** IS the frame's top edge: `┌─ title // subtitle ─────────[x]┐`, one hairline
@@ -599,6 +607,7 @@ the last row adds `bottom`, a header types `bottom` as `=` and the first body ro
 ### Don't:
 - **Don't** write a hex, `rgb()` or named colour in a component stylesheet.
 - **Don't** round a corner, blur anything, or add a soft shadow.
+- **Don't** show a state with opacity. Hover, selected, done, muted and unavailable are ink (`--fg`, `--text-muted`, `--faint`) plus whatever non-colour cue is already there (strikethrough, weight, an underline). There is exactly one named exception: `--state-disabled-op` dims the sidebar toolbar while the switcher is active (`app/src/shell/AppFrame.module.css`), a whole non-interactive region rather than a control's text, which is not the case the 3:1 floor measured.
 - **Don't** use a ramp hue decoratively, or a semantic hue to mean a category.
 - **Don't** use `--faint` for content a user must read.
 - **Don't** put more than one accent or one `primary` button in a view.

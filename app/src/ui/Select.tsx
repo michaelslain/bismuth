@@ -16,11 +16,17 @@ export type SelectOption = { value: string; label: string; detail?: string }
  * `createMenuNav` for keyboard, anchored under the trigger by `<AnchoredPopover>`
  * (portaled to <body> so it escapes the modal's overflow and layers above it).
  */
-function Select(props: {
+export type SelectProps = {
     value: string
     options: SelectOption[]
     onChange: (value: string) => void
+    /** Shown, muted, while `value` is empty (and, with no placeholder, "Select…"). */
     placeholder?: string
+    /** Accessible name for the trigger, for a Select with no visible caption of its own (a filter
+     *  row's three selects). Inside a SettingsField the field's own label names it instead. */
+    label?: string
+    /** Not openable; the trigger reads `--faint` with the dashed rule, no hover. */
+    disabled?: boolean
     class?: string
     /** Appended to the trigger button's own class, alongside `class` (the root). Lets a caller
      *  style the trigger specifically without a `:global()` reach into `.ui-select-trigger`. */
@@ -35,7 +41,9 @@ function Select(props: {
      *  Escape-to-cancel behavior of its sibling text/number/date inputs. Optional — callers
      *  that don't host a transient editor (e.g. a settings row) can ignore it. */
     onDismiss?: () => void
-}) {
+}
+
+function Select(props: SelectProps) {
     const [open, setOpen] = createSignal(false)
     let triggerRef: HTMLButtonElement | undefined
     // The trigger's measured width, for the open list's min-width — captured on open so it
@@ -45,6 +53,13 @@ function Select(props: {
     const [triggerWidth, setTriggerWidth] = createSignal(0)
 
     const current = () => props.options.find(o => o.value === props.value)
+    // An EMPTY value is "nothing chosen" even when an option carries it (a "(clear)" row): the
+    // trigger then reads as a placeholder — muted — never as a chosen value in full ink.
+    const empty = () => props.value === ''
+    const shown = () =>
+        empty()
+            ? (props.placeholder ?? current()?.label ?? 'Select…')
+            : (current()?.label ?? props.placeholder ?? 'Select…')
 
     const nav = createMenuNav({
         count: () => props.options.length,
@@ -81,6 +96,10 @@ function Select(props: {
                 as="button"
                 ref={triggerRef}
                 type="button"
+                disabled={props.disabled}
+                aria-label={props.label}
+                aria-haspopup="listbox"
+                aria-expanded={open()}
                 data-select-trigger=""
                 class={`${styles['ui-select-trigger']} ${props.class ?? ''} ${props.triggerClass ?? ''}`}
                 onClick={() => (open() ? close() : openMenu())}
@@ -104,9 +123,11 @@ function Select(props: {
             >
                 <span
                     class={styles['ui-select-value']}
-                    classList={{ [styles['ui-select-placeholder']!]: !current() }}
+                    classList={{
+                        [styles['ui-select-placeholder']!]: empty() || !current(),
+                    }}
                 >
-                    {current()?.label ?? props.placeholder ?? 'Select…'}
+                    {shown()}
                 </span>
                 <span
                     class={`${styles['ui-select-caret']} ${props.caretClass ?? ''}`}
@@ -127,7 +148,16 @@ function Select(props: {
                     items={props.options.map(o => ({
                         label: o.label,
                         detail: o.detail,
+                        // Every row reserves the icon cell: the chosen row draws the Check, the
+                        // rest an empty gutter of the same width, so labels share one left edge.
                         icon: o.value === props.value ? 'Check' : undefined,
+                        prefix:
+                            o.value === props.value ? undefined : (
+                                <span
+                                    class={styles['ui-select-gutter']}
+                                    aria-hidden="true"
+                                />
+                            ),
                     }))}
                     active={nav.active()}
                     onActivate={choose}

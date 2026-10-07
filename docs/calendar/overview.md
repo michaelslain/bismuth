@@ -529,7 +529,7 @@ type DragState =
       startMinutes: number; currentMinutes: number; offsetMinutes: number }
 ```
 
-`TimeGrid` manages this: mousedown on an empty cell → `'create'` drag with ghost preview; mousedown on an event chip → `'move'` drag showing the chip at 30% opacity. Snaps to 30-minute intervals (`SNAP_INTERVAL = 30`); grid height is fixed at `GRID_PX = 1200`.
+`TimeGrid` manages this: mousedown on an empty cell → `'create'` drag with ghost preview; mousedown on an event chip → `'move'` drag showing the chip at 30% opacity. Snaps to 30-minute intervals (`SNAP_INTERVAL = 30`); grid height is fixed at `GRID_PX = 1728` (72px an hour, 18px a quarter hour).
 
 **Deciding click vs. drag.** The pure logic lives in `app/src/calendar/components/views/timeGridDrag.ts`, not inline in `TimeGrid.tsx`. `DRAG_DEADZONE_PX = 4` is a pointer-movement deadzone: a press must move MORE than 4px (`Math.hypot(dx, dy)` — Euclidean, so a diagonal wobble isn't measured as directional) before it counts as a drag rather than a click; the comparison is exclusive, so a press that moves exactly 4px still counts as a click. `TimeGrid`'s `onMouseMove` handler tracks the **running maximum** displacement (`movedPx = Math.max(movedPx, pointerDistance(...))`), not the live or final distance, so a press that wanders out past the deadzone and back to its origin is still a drag.
 
@@ -641,12 +641,12 @@ All three delegate to `TimeGrid`, passing the appropriate array of `Date` object
 
 The shared time-column renderer used by week, 3-day, and day views.
 
-- **Grid height**: `GRID_PX = 1200` px for the full 24-hour span.
+- **Grid height**: `GRID_PX = 1728` px for the full 24-hour span: 72px an hour (four 18px `--row-h` rows), so a quarter hour is 18px.
 - **Snapping**: all dragged times snap to 30-minute intervals.
 - **Max minutes**: `MAX_MINUTES = 23 * 60 + 45` (23:45) to prevent overflow.
 - **Sticky header**: day headers + all-day row are position-sticky so they stay visible while scrolling.
 - **All-day row**: events with no `startTime` are rendered in the sticky all-day row via `EventChip`.
-- **Timed events**: positioned absolutely by `(startMin / 1440) * GRID_PX` px from top. Duration ≤30 min gets 15 px of visual padding added (`visualDuration = duration + 15`) to remain legible.
+- **Timed events**: positioned absolutely by `(startMin / 1440) * GRID_PX` px from top. Height is `minutesToPx(max(duration, min(SHORT_MIN, room))) - 3` (floor 8px), where `room` is the gap to the next event's start: anything shorter than 30 minutes grows to one half-hour row (33px after the 3px hairline trim), but never into the next event. The result is clamped to `GRID_PX - top`, so a 23:45 start is cut at midnight. A zero-length drag span floors to 15 minutes (`ZERO_SPAN_MIN`, the ghost only). There is no `+15` padding.
 - **Create drag**: mousedown on empty column area → ghost preview div with accent color; mouseup ≥15 min opens `EventModal` with pre-filled `startTime`/`endTime`; mouseup <15 min opens `EventModal` with only `startTime`.
 - **Move drag**: mousedown on an event chip (threshold 4 px of movement to distinguish from a click) → chip fades to 30% opacity, ghost follows mouse; mouseup calls `store.updateEvent` directly (no recurrence dialog for moves).
 - **Recurring event chips in TimeGrid**: `masterId` and `occurrenceDate` props are passed so `EventChip` can delegate to `RecurrenceDialog` on edit/delete.

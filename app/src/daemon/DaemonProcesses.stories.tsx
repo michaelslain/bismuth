@@ -217,6 +217,24 @@ export const Full: Story = {
     },
 }
 
+/** Nothing configured and the section opened anyway: the opened body says so instead of a
+ *  blank takeover. */
+export const FullEmpty: Story = {
+    render: () => (
+        <div style={{ width: '100%', 'max-width': '1300px' }}>
+            <DaemonProcesses {...baseProps} variant="full" processes={[]} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await expect(
+            within(canvasElement).getByText('no services yet // ask the daemon'),
+        ).toBeInTheDocument()
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-processes-full"]'),
+        ).toBeNull()
+    },
+}
+
 /** No background services configured. */
 export const Empty: Story = {
     render: () => (

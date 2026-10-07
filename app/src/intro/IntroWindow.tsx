@@ -2,6 +2,7 @@
 // fixed-height art box and a fixed-height text slot, and a footer slot. It owns NO content and does
 // not position itself — its parent centres it. Slots carry `data-intro-slot` runtime hooks.
 import type { Component, JSX } from 'solid-js'
+import Band from '../ui/Band'
 import TextButton from '../ui/TextButton'
 import Wordmark from '../ui/Wordmark'
 import styles from './IntroWindow.module.css'
@@ -29,7 +30,7 @@ const IntroWindow: Component<IntroWindowProps> = props => {
                 .join(' ')}
             aria-label="Welcome to Bismuth"
         >
-            <div class={styles['strip']}>
+            <Band class={styles['strip']}>
                 <Wordmark size="body" />
                 <div class={styles['spacer']} />
                 <TextButton
@@ -38,7 +39,7 @@ const IntroWindow: Component<IntroWindowProps> = props => {
                 >
                     skip
                 </TextButton>
-            </div>
+            </Band>
             <div class={styles['body']}>
                 <div class={styles['backdrop']} data-intro-slot="backdrop">
                     {props.backdrop}

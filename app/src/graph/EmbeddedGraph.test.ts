@@ -383,3 +383,49 @@ describe('EmbeddedGraph — the ```graph block on the unified renderer', () => {
         r.destroy()
     })
 })
+
+// EDGE CAPTIONS (`a -> b: label`). The label used to die in graphBlockToGraphData, so the
+// LabeledEdges story drew none. These drive a real renderer on the fake canvas, where every
+// fillText lands in `ctx.fills` — canvas text is not in the DOM, so this IS the proof it was painted.
+const LABELED = `alice: Alice
+bob: Bob
+carol: Carol
+alice -> bob: manages
+bob -> carol: mentors
+carol -- alice: peer of
+`
+const CAPTIONS = ['manages', 'mentors', 'peer of']
+
+describe('EmbeddedGraph — edge captions', () => {
+    it('carries every edge label from the block through the layout', () => {
+        const { spec } = parseGraphBlock(LABELED)
+        expect(layoutGraphData(spec).edges.map(e => e.label)).toEqual(CAPTIONS)
+    })
+
+    it('paints each caption on the canvas, once, and counts it in the stats', () => {
+        const { r } = mountBlock(LABELED)
+        const drawn = ctx.fills.map(f => f.text)
+        for (const caption of CAPTIONS)
+            expect(drawn.filter(t => t === caption)).toHaveLength(1)
+        const stats = (
+            r as unknown as {
+                computeStats: () => { edgeLabelsDrawn: number }
+            }
+        ).computeStats()
+        expect(stats.edgeLabelsDrawn).toBe(CAPTIONS.length)
+        r.destroy()
+    })
+
+    it('draws no caption for an unlabelled block', () => {
+        const { r } = mountBlock()
+        const drawn = ctx.fills.map(f => f.text)
+        for (const caption of CAPTIONS) expect(drawn).not.toContain(caption)
+        const stats = (
+            r as unknown as {
+                computeStats: () => { edgeLabelsDrawn: number }
+            }
+        ).computeStats()
+        expect(stats.edgeLabelsDrawn).toBe(0)
+        r.destroy()
+    })
+})

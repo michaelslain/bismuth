@@ -1,7 +1,7 @@
 // app/src/pickResult.ts
 // Pure result type + classifier for native OS pickers (appWindow.ts's pickFolder/pickFile).
 // Deliberately its own module, importing nothing from Solid or Tauri: appWindow.ts has a
-// static `import { pushToast } from "./Toast"` for unrelated functions, and Toast.tsx is a real
+// static `import { pushToast } from "./ui/ToastHost"` for unrelated functions, and Toast.tsx is a real
 // Solid component (JSX). Bun's JSX-runtime resolution is cwd-dependent (see
 // docs/contributing/testing.md) and breaks under `bun test app/` run from the repo root — which
 // is exactly how the pre-commit gate invokes it (scripts/gate.ts). Keeping this classifier in a

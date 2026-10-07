@@ -54,6 +54,20 @@ export const Allowed: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('Allowed')).toBeInTheDocument()
+        // SETTLED IS INK, NOT OPACITY: nothing fades, and the outcome reads at full --fg.
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--fg)'
+        canvasElement.appendChild(probe)
+        const fg = getComputedStyle(probe).color
+        probe.remove()
+        const outcome = canvas.getByText('Allowed')
+        await expect(getComputedStyle(outcome).color).toBe(fg)
+        for (
+            let el: Element | null = outcome;
+            el && el !== canvasElement.parentElement;
+            el = el.parentElement
+        )
+            await expect(getComputedStyle(el).opacity).toBe('1')
     },
 }
 

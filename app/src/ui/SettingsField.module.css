@@ -3,10 +3,21 @@
    `--label-col`, so a bare SettingsField (no SettingsGrid ancestor) lines up identically to one
    nested in a SettingsGrid — every row lines up because every field reads the same token, not
    because of a shared grid ancestor. `span` drops the grid for a plain stacked column instead
-   (label above a full-width control), used for a control too wide to share the row. */
+   (label above a full-width control), used for a control too wide to share the row.
+
+   ds-improve-r1 Task 13 (field family): the label is a real <label> (SettingsField.tsx binds it).
+   `.head` is the label cell: a two-track grid — the label in the flexible track, the req/opt badge
+   in its own `auto` track — so a long label ellipsises instead of wrapping the badge onto a second
+   line, and every row is exactly one control-height tall. BASELINE: the head is `--h-control`
+   tall with its line centred, which is where FormControl centres the value's line (same
+   `--fs-ui` / `--lh-ui`), so the label's baseline and the value's baseline are the same line. */
 .field { display: grid; grid-template-columns: var(--label-col) 1fr; column-gap: var(--sp-6); row-gap: var(--sp-2); align-items: start; min-width: 0; }
 .field.span { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-4); }
-.label { grid-column: 1; display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-3); font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--text-muted); min-height: var(--h-control); }
+.head { grid-column: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; align-content: center; column-gap: var(--sp-3); min-width: 0; min-height: var(--h-control); font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--text-muted); }
+/* Stacked: the label sits above a full-width control, so the badge hugs the label rather than
+   floating at the far edge of a wide row. */
+.field.span .head { grid-template-columns: minmax(0, max-content) auto; justify-content: start; }
+.label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .control { grid-column: 2; display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
-.req { margin-left: 0; font-size: var(--fs-micro); color: var(--accent); }
-.opt { margin-left: 0; font-size: var(--fs-micro); color: var(--faint); }
+.req { font-size: var(--fs-micro); color: var(--accent); white-space: nowrap; }
+.opt { font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; }

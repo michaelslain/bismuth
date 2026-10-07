@@ -14,6 +14,7 @@ import FormControl from '../ui/FormControl'
 import Text from '../ui/Text'
 import { Icon } from '../icons/Icon'
 import { dateFieldPresets } from './dateFieldPresets'
+import { formatDateValue } from './valueDisplay'
 import styles from './DateFieldEditor.module.css'
 
 export type DateFieldEditorProps = {
@@ -47,7 +48,7 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
     const label = () => {
         const p = parsed()
         if (!p.date) return props.placeholder ?? 'Set date…'
-        return kind() === 'datetime' && p.time ? `${p.date} ${p.time}` : p.date
+        return formatDateValue(props.value, kind() === 'datetime')
     }
 
     function openPicker(): void {

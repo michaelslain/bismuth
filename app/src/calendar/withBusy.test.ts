@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test'
 import { withBusy } from './withBusy'
-import { toasts, dismissToast } from '../toastStore'
+import { toasts, dismissToast } from '../ui/toastStore'
 
 function state() {
     let v = false

@@ -15,7 +15,6 @@
     padding-inline: var(--sp-4);
 }
 .count {
-    opacity: 0.65;
     font-weight: var(--fw-regular);
 }
 .trail {

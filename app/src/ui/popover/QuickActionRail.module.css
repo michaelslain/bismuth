@@ -1,0 +1,10 @@
+/* app/src/ui/popover/QuickActionRail.module.css — the rail's own bits only. The box (fill, hairline,
+   inset, lift) is <Popover tone="menu">; this file is what makes it a COLUMN of icon buttons and
+   puts it on the popover rung of the stacking ladder. Replaces `.bismuth-popover-rail` in
+   global.css, which also had to override the 170px list min-width Popover does not impose. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  z-index: var(--z-popover);
+}

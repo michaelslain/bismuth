@@ -31,7 +31,7 @@ const VisibilityBadge: Component<VisibilityBadgeProps> = props => (
                         : 'Chat only — hidden from the daemon'
                 }
             >
-                <Icon value={v() === 'hidden' ? 'EyeOff' : 'MessageSquareOff'} />
+                <Icon value={v() === 'hidden' ? 'EyeSlash' : 'ChatSlash'} />
             </Badge>
         )}
     </Show>

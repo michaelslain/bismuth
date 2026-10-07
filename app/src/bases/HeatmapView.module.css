@@ -6,7 +6,7 @@
 .heatMonths {
   display: flex;
   font-size: var(--fs-ui);
-  color: var(--faint);
+  color: var(--text-muted);
   font-family: var(--ui-font-stack);
 }
 .heatMonthLabel { font-size: var(--fs-micro); }
@@ -14,14 +14,14 @@
 .heatMonthCol { width: 2ch; flex: none; overflow: visible; white-space: nowrap; }
 .heatGrid { display: flex; flex-direction: column; }
 .heatRow { display: flex; align-items: center; font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: var(--cell-h); }
-.heatDow { width: 2ch; flex: none; color: var(--faint); }
+.heatDow { width: 2ch; flex: none; color: var(--text-muted); }
 .legend {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--sp-4);
   font-size: var(--fs-micro);
-  color: var(--faint);
+  color: var(--text-muted);
   font-family: var(--ui-font-stack);
 }
 .legend .legendGlyph { width: 1ch; text-align: center; }

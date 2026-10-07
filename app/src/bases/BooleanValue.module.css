@@ -1,0 +1,3 @@
+/* BooleanValue — the glyph sits on the text's own line (a task row's, a cell's), not in a control-height
+   box, so a boolean cell is exactly as tall as its neighbours. */
+.bool { display: inline-flex; vertical-align: middle; --bracket-height: auto; }

@@ -1,0 +1,4 @@
+/* The chip is a leading mark in a row (ListRow's edge slot): it keeps its own size and never
+   shrinks when a long category name or a narrow modal squeezes the row. The dot and the popover
+   belong to StatusDot and ColorChip. */
+.chip { flex: none; }

@@ -1,20 +1,29 @@
 import { formatValue } from '../../../core/src/bases/chartText'
 
+/** The bars never get narrower than this many cells: below it two nearby values draw the same
+ *  length and the chart stops comparing anything. The label column gives way first. */
+export const MIN_BAR_CELLS = 8
+
 export type BarRow = {
     key: string
     label: string
     fill: number
     track: number
     value: string
+    /** The value is below zero: its `#` run is drawn in muted ink, and the value column carries the `-`. */
+    negative: boolean
 }
 
 /**
  * Lays out one meter row per point on a `columns`-wide character grid: `<label>  <fill><track>
  * <value>` (bases-bar.card.html). The label column is right-padded to the longest label, the
  * value column left-padded to the widest formatted value, and `fill + track` fills whatever
- * width is left after those two columns plus two 2-space gutters (4 columns). `fill` scales
- * `max(0, value)` against the largest value in the set — a negative value draws no fill, and an
- * all-zero set (max === 0) draws no fill rather than dividing by zero.
+ * width is left after those two columns plus two 2-space gutters (4 columns). The label column
+ * is capped so that leftover never drops under `MIN_BAR_CELLS` (a long label truncates instead).
+ * `fill` scales `abs(value)` against the largest magnitude in the set, and any non-zero value
+ * floors at one cell, so a meter never reads as empty while its number is not 0. A negative draws
+ * the same `#` run as its magnitude (`negative` flags it for muted ink, the `-` rides in the value
+ * column); only an exact 0, or an all-zero set (max === 0, no divide by zero), draws no fill.
  */
 export function layoutBars(
     points: { key: string; label: string; value: number }[],
@@ -31,7 +40,7 @@ export function layoutBars(
         formatted.reduce((w, v) => Math.max(w, v.length), 0),
         header?.value.length ?? 0,
     )
-    const maxLabelLen = Math.max(1, columns - valueWidth - 6)
+    const maxLabelLen = Math.max(1, columns - valueWidth - 4 - MIN_BAR_CELLS)
     const labels = points.map(p =>
         p.label.length > maxLabelLen
             ? p.label.slice(0, Math.max(1, maxLabelLen - 1)) + '…'
@@ -42,10 +51,11 @@ export function layoutBars(
         Math.min(header?.label.length ?? 0, maxLabelLen),
     )
     const barWidth = Math.max(0, columns - labelWidth - valueWidth - 4)
-    const max = points.reduce((m, p) => Math.max(m, p.value), 0)
+    const max = points.reduce((m, p) => Math.max(m, Math.abs(p.value)), 0)
 
     return points.map((p, i) => {
-        const fill = max > 0 ? Math.min(barWidth, Math.round((Math.max(0, p.value) / max) * barWidth)) : 0
+        const scaled = max > 0 ? Math.round((Math.abs(p.value) / max) * barWidth) : 0
+        const fill = p.value === 0 ? 0 : Math.min(barWidth, Math.max(1, scaled))
         const track = barWidth - fill
         return {
             key: p.key,
@@ -53,6 +63,7 @@ export function layoutBars(
             fill,
             track,
             value: formatted[i].padStart(valueWidth),
+            negative: p.value < 0,
         }
     })
 }

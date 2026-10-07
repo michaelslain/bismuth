@@ -9,7 +9,7 @@
 }
 
 .glyph {
-    color: var(--faint);
+    color: var(--text-muted);
     cursor: default;
 }
 

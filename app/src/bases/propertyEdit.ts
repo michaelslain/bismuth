@@ -107,6 +107,11 @@ export function propertyEditKind(
     siblingValues: unknown[],
     declaredType?: BasePropertyType,
 ): PropertyEditKind {
+    // A link (`{ path, display }`) or any other object value: no editor can round-trip it, and the
+    // text box it would fall through to opens on `String(value)` — "[object Object]" — which
+    // committing would write over the link. Shown, never edited, whatever the declared type.
+    if (value !== null && typeof value === 'object' && !Array.isArray(value))
+        return { kind: 'readonly' }
     if (declaredType) {
         switch (declaredType.kind) {
             case 'text':
@@ -232,6 +237,10 @@ export function selectOptionsWithCurrent(
  *  EDIT space (percent ×100, see numberFormat.ts), anything else as its string. null → ''. */
 export function propertyDraft(kind: PropertyEditKind, value: unknown): string {
     if (value == null) return ''
+    // Defence in depth: an object never reaches a text draft (propertyEditKind makes it read-only),
+    // but if one does, show what the read-only line shows, not "[object Object]".
+    if (typeof value === 'object' && !Array.isArray(value))
+        return readonlyText(value)
     if (kind.kind === 'number') {
         const n = typeof value === 'number' ? value : Number(value)
         return Number.isFinite(n)

@@ -9,6 +9,7 @@
 // resolve to pixel values. (A `Chat` story went with the chat overlay: the chat tab renders inline.) `Hidden` — no `rect` at all, the existing behaviour
 // (`display: none`, still mounted) that a future caller must not accidentally lose.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { PaneOverlay } from './PaneOverlay'
 
 const noop = () => {}
@@ -53,6 +54,21 @@ export const Terminal: Story = {
 /** No `rect` — the "no host in the active tab" case: `display: none`, still mounted (not
  *  unmounted), which is what preserves the PTY across a tab switch. */
 export const Hidden: Story = {
+    // bench/storyAudit.ts exempts this story from `empty-render` (EMPTY_BY_DESIGN), and an exemption
+    // is only honest if the story proves what it claims: the overlay is `display: none` AND its child
+    // is still mounted. The root is found through the child — the overlay carries no runtime hook, and
+    // inventing one that only this play reads would be a hook nothing in production uses.
+    play: async ({ canvasElement }) => {
+        // the INNERMOST div reading `[terminal]` — its ancestors share the same textContent
+        const child = Array.from(canvasElement.querySelectorAll('div')).find(
+            d => d.childElementCount === 0 && d.textContent?.trim() === '[terminal]',
+        )
+        await expect(child).toBeTruthy()
+        const overlay = child!.parentElement!
+        await expect(getComputedStyle(overlay).display).toBe('none')
+        await expect(overlay.isConnected).toBe(true)
+        await expect(canvasElement.textContent).toContain('[terminal]')
+    },
     render: () => (
         <Wrap>
             <PaneOverlay kind="terminal" onContextMenu={noop}>

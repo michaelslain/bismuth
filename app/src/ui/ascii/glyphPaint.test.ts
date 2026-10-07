@@ -7,6 +7,7 @@ import {
     quantizeAlpha,
     rowRuns,
     shouldRun,
+    snapCell,
 } from './glyphPaint'
 
 describe('rowRuns', () => {
@@ -77,5 +78,54 @@ describe('fitScale', () => {
     it('floors at 0.5 and caps at 2', () => {
         expect(fitScale(100, 40, 96, 16, 6.3, 18)).toBe(0.5)
         expect(fitScale(5000, 5000, 24, 5, 6.3, 18)).toBe(2)
+    })
+    it('takes the cap as a parameter: a host can ask for less than MAX_SCALE', () => {
+        expect(fitScale(5000, 5000, 24, 5, 6.3, 18, 4 / 3)).toBe(4 / 3)
+        expect(fitScale(5000, 5000, 24, 5, 6.3, 18)).toBe(2)
+        // a cap only limits growth: a box that already fits below it is untouched
+        expect(fitScale(907.2, 432, 96, 16, 6.3, 18, 4 / 3)).toBeCloseTo(4 / 3, 5)
+        expect(fitScale(604.8, 216, 96, 16, 6.3, 18, 4 / 3)).toBeCloseTo(0.75, 5)
+    })
+})
+
+describe('snapCell', () => {
+    const near = (x: number) => Math.abs(x - Math.round(x))
+    it('the intro art scale (4/3 on a 6.3 x 18 cell) fits no device grid unsnapped', () => {
+        // the defect being fixed: 8.4px at dpr 1 and 16.8 device px at dpr 2
+        expect(near(6.3 * (24 / 18) * 1)).toBeGreaterThan(0.3)
+        expect(near(6.3 * (24 / 18) * 2)).toBeGreaterThan(0.1)
+    })
+    for (const dpr of [1, 1.5, 2]) {
+        it(`cellW * dpr and cellH * dpr are whole numbers at dpr ${dpr}`, () => {
+            for (const s of [0.5, 0.7, 0.889, 1, 1.111, 1.2, 4 / 3, 1.7, 2]) {
+                const c = snapCell(s, 6.3, 18, dpr)
+                expect(near(c.cellW * dpr)).toBeLessThan(1e-9)
+                expect(near(c.cellH * dpr)).toBeLessThan(1e-9)
+            }
+        })
+    }
+    it('4/3 snaps to 8 x 23 css px at dpr 1 and 8.5 x 24 at dpr 2', () => {
+        const a = snapCell(4 / 3, 6.3, 18, 1)
+        expect([a.cellW, a.cellH]).toEqual([8, 23])
+        const b = snapCell(4 / 3, 6.3, 18, 2)
+        expect([b.cellW, b.cellH]).toEqual([8.5, 24])
+    })
+    it('shrinks a scale-1 cell at dpr 1 to 6 x 17: a stated decision, not an accident', () => {
+        // 6.3 x 18 is the graph's own cell; whole device pixels leave 6 x 17, a 5.6% shrink in row
+        // height. The canvas is drawn on that smaller grid, so a host sized exactly to scene x graph
+        // cell has a one-cell margin.
+        expect(snapCell(1, 6.3, 18, 1)).toMatchObject({ cellW: 6, cellH: 17 })
+    })
+    it('only ever shrinks, by at most 10%, so a fitted scene still fits', () => {
+        for (const dpr of [1, 2])
+            for (const s of [0.5, 0.889, 1, 4 / 3, 2]) {
+                const c = snapCell(s, 6.3, 18, dpr)
+                expect(c.scale).toBeLessThanOrEqual(s + 1e-9)
+                expect(c.scale).toBeGreaterThanOrEqual(s * 0.9 - 1 / (18 * dpr))
+            }
+    })
+    it('keeps the width within tolerance of the natural advance', () => {
+        const c = snapCell(4 / 3, 6.3, 18, 1)
+        expect(Math.abs(c.cellW / (6.3 * c.scale) - 1)).toBeLessThanOrEqual(0.03)
     })
 })

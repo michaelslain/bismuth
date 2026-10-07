@@ -69,7 +69,7 @@ export type TagsFieldProps = {
     value: string[]
     /** Every value the popup may suggest, best first (bare names). Read per keystroke. */
     suggestions: () => string[]
-    /** A tag list: each value is drawn teal like ui/Tag while you type, and a leading `#` typed
+    /** A tag list: each value is drawn --accent like ui/Tag while you type, and a leading `#` typed
      *  out of habit is dropped. Values are comma-separated either way. */
     tags?: boolean
     /** Fired with the parsed list each time an edit ends (Enter, or leaving the field). */
@@ -87,7 +87,7 @@ export type TagsFieldProps = {
 }
 
 // The field's own editor look: transparent, no padding, the UI font at the control size, tag
-// tokens in the read-only cell's teal. The underline + focus rule come from FormControl.
+// tokens in the read-only cell's --accent. The underline + focus rule come from FormControl.
 const fieldTheme = EditorView.theme({
     '&': { backgroundColor: 'transparent', color: 'var(--fg)', height: '100%' },
     '&.cm-focused': { outline: 'none' },
@@ -103,7 +103,7 @@ const fieldTheme = EditorView.theme({
     '.cm-placeholder': { color: 'var(--faint)' },
 })
 
-// Every value of a tag list drawn exactly the way ui/Tag draws a tag — `#name`, teal, UI face — so
+// Every value of a tag list drawn exactly the way ui/Tag draws a tag — `#name`, --accent, UI face — so
 // a tag reads the same in the field as in the cell. The `#` is DRAWN (a ::before on the mark), not
 // typed: the text stays `planning, docs`, which is what is saved. A value someone typed with its
 // own `#` is not given a second one. A value is the run between commas, without its spaces.

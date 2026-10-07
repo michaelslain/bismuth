@@ -1,7 +1,8 @@
 /* The absolutely-positioned slot one timed event occupies in a day column. */
 .slot { position: absolute; overflow: hidden; z-index: 1; cursor: grab; }
-/* A stacked (overlapping) lane rules itself off from the lane behind with a hard, 0-blur line of
-   ground drawn OUTSIDE its box — 2px on the left, 1px on top — so it paints over the event it
-   overlaps. (An inset shadow here paints UNDER the chip that fills the slot and never shows.) */
-.stacked { box-shadow: -2px -1px 0 0 var(--bg); }
+/* A stacked (overlapping) lane rules itself off from the lane behind with a hard ring of ground
+   drawn OUTSIDE its box, so it paints over the event it overlaps — an outline, not a box-shadow
+   literal: it takes the --sp-1 step, has no offsets or blur to hand-pick, and (unlike an inset
+   shadow, which paints UNDER the chip that fills the slot and never shows) sits wholly outside. */
+.stacked { outline: var(--sp-1) solid var(--bg); }
 .dim { opacity: 0.3; }

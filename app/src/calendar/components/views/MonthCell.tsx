@@ -57,7 +57,7 @@ const MonthCell: Component<MonthCellProps> = props => {
             <DayNumber
                 day={props.day}
                 today={props.today}
-                class={`${styles.number}${props.inMonth ? '' : ` ${styles.dim}`}`}
+                class={`${styles.number}${props.inMonth || props.today ? '' : ` ${styles.dim}`}`}
             />
             <div class={styles.items} data-testid="month-cell-events">
                 {props.children}

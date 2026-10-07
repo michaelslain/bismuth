@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, onMount } from 'solid-js'
+import { Show, createEffect, onCleanup, onMount } from 'solid-js'
 import {
     EditorView,
     keymap,
@@ -20,10 +20,13 @@ import type { NoteCandidate } from '../editor/wikilink'
 import { settings } from '../settings'
 import { api } from '../api'
 import { cursor } from '../editor/cursorTheme'
+import FormControl from './FormControl'
+import styles from './MarkdownField.module.css'
 
 // Theme: transparent, gutterless, prose-flow — so the field reads as rendered-yet-editable
 // markdown (like the note editor's live-preview), not a boxed code editor. The host element owns
-// the visible box (border/background/padding/min-height) via the caller's `class`. Font is
+// the visible box: `<FormControl as="div">` (MarkdownField.module.css), the same underline field as
+// every other value control. Font is
 // `--prose-font`/`--prose-font-size` (like CardEditor and Editor.tsx) so it looks identical to
 // the note editor's markdown; selection/caret tints mirror Editor.tsx so highlighting matches too.
 const fieldTheme = EditorView.theme({
@@ -38,7 +41,7 @@ const fieldTheme = EditorView.theme({
     '.cm-line': { padding: '0' },
     // The UI font stack (not the prose font the typed value uses) so the hint reads distinctly from real content.
     '.cm-placeholder': {
-        color: 'var(--faint)',
+        color: 'var(--text-muted)',
         fontStyle: 'italic',
         fontFamily: 'var(--ui-font-stack)',
         fontSize: 'var(--fs-body)',
@@ -59,6 +62,10 @@ export type MarkdownFieldProps = {
     placeholder?: string
     autofocus?: boolean
     class?: string
+    /** Chromeless: no underline, no resting height — just the editor, for text that sits directly
+     *  on a surface it does not own (ScratchBlock's note pinned on a page). Default false: the
+     *  field draws its own FormControl underline box. */
+    bare?: boolean
     /** Vault notes for `[[wikilink]]` completion — the SAME `NoteCandidate[]` shape
      *  (`{ label, path, folder? }`, `app/src/editor/wikilink.ts`) that `App.tsx`'s
      *  `noteCandidates` memo already produces for the note editor. Absent = no note candidates. */
@@ -175,7 +182,18 @@ function MarkdownField(props: MarkdownFieldProps) {
 
     onCleanup(() => view?.destroy())
 
-    return <div ref={host} class={props.class} />
+    return (
+        <Show
+            when={!props.bare}
+            fallback={<div ref={host} class={props.class} />}
+        >
+            <FormControl
+                as="div"
+                ref={host}
+                class={`${styles.field} ${props.class ?? ''}`.trim()}
+            />
+        </Show>
+    )
 }
 
 export default MarkdownField

@@ -686,7 +686,7 @@ export function createServer(cfg: CoreConfig) {
         // Single fs op on the hot open path: read directly and treat a missing file
         // as empty. The old exists()+readNote pair did two round-trips (stat then
         // open+read) per GET /file, doubling syscall latency for no benefit — and it
-        // had a TOCTOU window between the two. readNoteOrNull catches ENOENT for us.
+        // had a TOCTOU window between the two. readNoteOrNull swallows ALL read errors, not only ENOENT.
         return (await readNoteOrNull(vault, path)) ?? ''
     }
 

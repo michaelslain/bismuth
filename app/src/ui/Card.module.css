@@ -4,8 +4,12 @@
    --r-card, 4px) per §9.2 — 0 everywhere, no card-corner exception survives the redesign. */
 
 .card {
-    background: var(--surface-1);
-    border: var(--rule);
+    /* `--card-bg` is the one seam a host uses to tint a card without a third card recipe — chat sets
+       it to its own `--chat-surface-1`. Unset, it is the same --surface-1 fill as always. */
+    background: var(--card-bg, var(--surface-1));
+    /* `--card-border` is its sibling: a host that tints the fill tints the hairline with it (chat
+       sets both), so a tinted pane's cards do not draw neutral grey on a tinted ground. */
+    border: var(--card-border, var(--rule));
     border-radius: var(--r-0);
     padding: var(--sp-5) var(--sp-6);
 }
@@ -19,7 +23,7 @@
 /* `variant="quiet"` — a panel on the page ground: the editor fill and the soft rule, for
    surfaces that sit side by side (the daemon page's boxes) where --surface-1 reads too heavy. */
 .card--quiet {
-    background: var(--editor);
+    background: var(--card-bg, var(--editor));
     border: var(--rule-soft);
 }
 

@@ -73,7 +73,7 @@
 }
 /* In the grid the title runs at line-height 1.15, so a title-led head centres its dots on that. */
 .event-chip.in-grid .event-chip-head[data-untimed] .event-chip-dots { height: calc(var(--fs-ui) * 1.15); }
-/* Genuinely tiny blocks (a back-to-back 30-min slot is only ~22px tall): time, title and dots on
+/* Genuinely tiny blocks (a back-to-back 30-min slot is only ~33px tall): time, title and dots on
    ONE line. The head row dissolves into the chip's row so the dots can follow the title. */
 /* Baseline-aligned (the mono time and serif title share one baseline, not one centre line), with
    the single line centred in the slot via align-content — hence the wrap, which never fires: the

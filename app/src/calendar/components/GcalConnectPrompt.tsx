@@ -15,11 +15,8 @@ const GcalConnectPrompt: Component<GcalConnectPromptProps> = props => (
             two-way sync between this calendar and google — events only (no
             gmail, drive, or contacts).
         </SettingsHint>
-        <IconTextButton
-            icon="calendar"
-            variant="selected"
-            onClick={() => props.onConnect()}
-        >
+        {/* A command, not a pick: the modal's own primary action stays the only filled button. */}
+        <IconTextButton icon="calendar" onClick={() => props.onConnect()}>
             connect google calendar
         </IconTextButton>
     </div>

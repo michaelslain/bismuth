@@ -14,6 +14,10 @@ import type { PropertyEditKind } from './propertyEdit'
 import { setTransport } from '../api'
 import { dateFieldPresets } from './dateFieldPresets'
 import { fakeTransport } from '../ui/_fakeTransport'
+import TableCell from './TableCell'
+import PropertyDisplay from './PropertyDisplay'
+import { syntheticBaseFile } from '../../../core/src/bases/types'
+import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import {
     completionLabels,
     expectCompletions,
@@ -548,5 +552,128 @@ export const ReadonlyObject: Story = {
         await expect(canvas.getByText('Jane')).toBeInTheDocument()
         await expect(canvasElement.querySelector('input, textarea, button')).toBeNull()
         await expect(canvas.getByTestId('status')).toHaveTextContent('editing')
+    },
+}
+
+// ── The value does not move when you click into it ───────────────────────────────────────────────
+// A TableCell value measured 372 at rest and 367 in edit: a `-5px` horizontal margin on the editor.
+// Nothing reading text could see it, so these measure the left edge of the VALUE — the first glyph —
+// at rest and again in edit, through the REAL TableCell + PropertyDisplay a table renders.
+
+const SHIFT_CONFIG: BaseConfig = {
+    declaredProperties: ['author', 'rating', 'status', 'due'],
+    properties: {
+        author: { type: { kind: 'text' } },
+        rating: { type: { kind: 'number' } },
+        status: { type: { kind: 'select', options: ['todo', 'doing', 'done'] } },
+        due: { type: { kind: 'datetime' } },
+    },
+    view: { type: 'table' },
+}
+
+/** The x of the first glyph of a value: the text node's own rect, or — for a native input — its
+ *  box plus its padding (an input has no text node). */
+function valueLeft(host: HTMLElement): number {
+    const field = host.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
+    if (field) {
+        const cs = getComputedStyle(field)
+        return (
+            field.getBoundingClientRect().left +
+            parseFloat(cs.paddingLeft) +
+            parseFloat(cs.borderLeftWidth)
+        )
+    }
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!(n.textContent ?? '').trim()) continue
+        const r = document.createRange()
+        r.selectNodeContents(n)
+        return r.getBoundingClientRect().left
+    }
+    throw new Error('no value text found')
+}
+
+function ShiftCell(props: { col: string; value: unknown }) {
+    const [value, setValue] = createSignal<unknown>(props.value)
+    const row = (): Row => ({
+        file: syntheticBaseFile('Reading List.md'),
+        note: { [props.col]: value() },
+        formula: {},
+        index: 0,
+    })
+    return (
+        <div data-testid="shift-host" style={{ width: '256px', padding: '12px 0 12px 12px' }}>
+            <TableCell
+                row={row()}
+                col={props.col}
+                config={SHIFT_CONFIG}
+                siblingValues={() => []}
+                onCommit={setValue}
+            >
+                <PropertyDisplay id={props.col} row={row()} config={SHIFT_CONFIG} inline />
+            </TableCell>
+        </div>
+    )
+}
+
+const hostOf = (el: HTMLElement) =>
+    el.querySelector<HTMLElement>('[data-testid="shift-host"]')!
+
+async function expectNoShift(canvasElement: HTMLElement, open: () => Promise<void>) {
+    const host = hostOf(canvasElement)
+    const rest = valueLeft(host)
+    await open()
+    await waitFor(() =>
+        expect(host.querySelector('input, textarea, [data-select-trigger], [data-testid="date-field-trigger"]')).toBeTruthy(),
+    )
+    // Let the editor's own layout settle (a microtask focus, the Select's measured width).
+    await new Promise(r => requestAnimationFrame(() => r(null)))
+    expect(Math.abs(valueLeft(host) - rest)).toBeLessThan(0.5)
+}
+
+const clickCell = (canvasElement: HTMLElement) => async () => {
+    await userEvent.click(hostOf(canvasElement).querySelector<HTMLElement>('button')!)
+}
+
+/** A plain text cell: the editor starts where the value did, and is not capped narrower than the
+ *  cell it sits in (it was 200px inside a 256px cell). */
+export const EditKeepsTextInPlace: Story = {
+    render: () => <ShiftCell col="author" value="Frank Herbert" />,
+    play: async ({ canvasElement }) => {
+        await expectNoShift(canvasElement, clickCell(canvasElement))
+        const input = hostOf(canvasElement).querySelector('input')!
+        expect(input.getBoundingClientRect().width).toBeGreaterThan(220)
+    },
+}
+
+/** A number: same edge, and no native spinner (FormControl's reset applies). */
+export const EditKeepsNumberInPlace: Story = {
+    render: () => <ShiftCell col="rating" value={42} />,
+    play: async ({ canvasElement }) => {
+        await expectNoShift(canvasElement, clickCell(canvasElement))
+        const input = hostOf(canvasElement).querySelector('input')!
+        expect(input.type).toBe('number')
+        expect(getComputedStyle(input).appearance).toBe('textfield')
+    },
+}
+
+/** A status select: the dot and the word at rest, the dot and the trigger text in edit — and the
+ *  word starts at the same x. */
+export const EditKeepsStatusInPlace: Story = {
+    render: () => <ShiftCell col="status" value="doing" />,
+    play: async ({ canvasElement }) => {
+        await expectNoShift(canvasElement, clickCell(canvasElement))
+    },
+}
+
+/** A datetime reads `2026-09-14 14:00` at rest — not the stored `…T14:00` — and in edit alike. */
+export const EditKeepsDatetimeInPlace: Story = {
+    render: () => <ShiftCell col="due" value="2026-09-14T14:00" />,
+    play: async ({ canvasElement }) => {
+        const host = hostOf(canvasElement)
+        expect(host.textContent).toContain('2026-09-14 14:00')
+        expect(host.textContent).not.toContain('T14:00')
+        await expectNoShift(canvasElement, clickCell(canvasElement))
+        expect(host.textContent).toContain('2026-09-14 14:00')
     },
 }

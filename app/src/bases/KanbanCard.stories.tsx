@@ -48,6 +48,43 @@ export const Default: Story = {
     ),
 }
 
+const LONG_KEY = 'quarterly planning review owner'
+
+/** A long user-named property truncates its KEY (ellipsis, capped at 16ch) instead of widening
+ *  the key column until the value is squeezed to a character. The value keeps real width. */
+export const LongPropertyName: Story = {
+    render: () => (
+        <Card
+            row={{
+                ...SAMPLE_ROWS[1],
+                note: {
+                    ...SAMPLE_ROWS[1].note,
+                    [LONG_KEY]: 'someone with a long name',
+                },
+            }}
+            titleCol="file.name"
+            metaCols={['status', LONG_KEY]}
+            config={config}
+            editable={false}
+            onEditingChange={noop}
+            onRename={noopRename}
+            onSetMeta={noop}
+            onDelete={noop}
+            siblingValues={() => []}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const key = within(canvasElement).getByText(LONG_KEY)
+        const kcs = getComputedStyle(key)
+        expect(kcs.textOverflow).toBe('ellipsis')
+        expect(key.scrollWidth).toBeGreaterThan(key.clientWidth)
+        const value = within(canvasElement).getByText(
+            'someone with a long name',
+        )
+        expect(value.getBoundingClientRect().width).toBeGreaterThan(60)
+    },
+}
+
 /** No `order:` properties left after the title — the card face is title-only, no meta grid
  *  at all. */
 export const NoProperties: Story = {
@@ -167,7 +204,7 @@ export const Tags: Story = {
     ),
 }
 
-/** A boolean property keeps its ChipToggle display inside the value cell. */
+/** A boolean property is the shared `[ ]` / `[x]` glyph (BooleanValue) inside the value cell. */
 export const BooleanProperty: Story = {
     render: () => (
         <Card

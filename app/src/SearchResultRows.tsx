@@ -6,10 +6,10 @@
 // cards, so they read as the same list as the switcher's file-name rows above them. Extracted (originally out of the since-removed
 // SearchView tab) so no surface ever forks a lookalike of the result card.
 import { For, Show } from 'solid-js'
-import { Icon } from './icons/Icon'
 import { recordUse, fileKey } from './frecency'
 import type { SearchResult } from './searchOpts'
 import Label from './ui/Label'
+import PaletteRow from './ui/PaletteRow'
 import PlainButton from './ui/PlainButton'
 import Text from './ui/Text'
 import { snippetLead } from './snippetLead'
@@ -53,39 +53,34 @@ export function SearchResultRows(props: {
                     <div
                         class={`${styles['sresult']} ${props.class ?? ''}`}
                         data-testid="search-result"
-                        data-selected={props.selected === i() ? '' : undefined}
+                        role="group"
+                        aria-label={parts.name}
+                        data-group-selected={
+                            props.selected === i() ? '' : undefined
+                        }
                         onMouseMove={e => props.onRowPointerMove?.(i(), e)}
                     >
-                        {/* The whole header opens the file too (not just the snippet rows) — AI results
-                carry one byte-exact snippet, but making the title row a hit target keeps every
-                result openable even if a row ever comes back without a snippet. */}
-                        <PlainButton
-                            class={`${styles['sresult-head']} ${styles['sresult-head-open']}`}
-                            onClick={open}
-                        >
-                            <Text
-                                as="span"
-                                inherit
-                                class={styles['sresult-icon']}
-                            >
-                                <Icon value="FileText" />
-                            </Text>
-                            <Label class={styles['sresult-title']}>
-                                {parts.name}
-                            </Label>
-                            <Show when={parts.folder}>
-                                <Label
-                                    tone="faint"
-                                    fill
-                                    class={styles['sresult-path']}
-                                >
-                                    // {parts.folder}/
-                                </Label>
-                            </Show>
-                            <Label tone="faint" class={styles['sresult-count']}>
-                                {r.matchCount}
-                            </Label>
-                        </PlainButton>
+                        {/* The head IS a PaletteRow (ui/PaletteRow) — the same selectable row the
+                file-name rows above it render, so the keyboard cursor, the inset and the selection
+                wash are one implementation. The whole head opens the file (not just the snippet
+                rows): AI results carry one byte-exact snippet, and a title hit target keeps every
+                result openable even if a row ever comes back without one. The match count rides the
+                row's shortcut slot, muted — a count is content, not structure. */}
+                        <PaletteRow
+                            class={styles['sresult-head']}
+                            icon="FileText"
+                            selected={props.selected === i()}
+                            label={parts.name}
+                            sublabel={
+                                parts.folder ? `// ${parts.folder}/` : undefined
+                            }
+                            shortcut={
+                                <Text as="span" size="micro" tone="muted">
+                                    {r.matchCount}
+                                </Text>
+                            }
+                            onPick={open}
+                        />
                         <Show when={r.reason}>
                             <Text
                                 as="div"

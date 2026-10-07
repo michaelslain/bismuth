@@ -29,6 +29,7 @@
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { launchChrome } from './chromeSession'
+import { CLIP_BOX_SRC } from './clipBox'
 import { poolSize } from './poolSize'
 import { STORY_READY_EXPRESSION } from './storyReady'
 import { arg, BASE, loadStoryIndex } from './args'
@@ -66,6 +67,46 @@ const SHOT_SCALE = 2
 const MAX_SHOT_H = 1500
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+/* STORIES WHOSE EMPTINESS IS THE BEHAVIOUR UNDER TEST — a decision, not a silenced check.
+   `empty-render` is a HARD flag (verifyReport.ts's HARD_AUDIT_FLAGS, pinned by verifyReport.test.ts),
+   and for almost every story it is exactly right. These six are mounted hosts or story frames that are SUPPOSED
+   to paint nothing, so for any prefix covering them `bun run verify` could never pass. Exempting
+   them here, by exact id, leaves the flag's meaning for every other story untouched.
+   RULES FOR THIS MAP
+     * ID-EXACT and one entry per story. No prefix, no wildcard, no env-var bypass.
+     * A REASON per entry, naming the play() that asserts the emptiness — an exemption is only honest
+       for a story that proves what it claims. A story with no such play does not belong here.
+     * Applied AFTER the serial re-check below, so a story that is empty merely because it had not
+       painted yet still goes through the retry path first and is never exempted by accident.
+     * If an exempt story ever DOES render content, a `stale-exemption` lead says so — the entry
+       has outlived its reason and should be deleted. (A lead, never a failure.) */
+const EMPTY_BY_DESIGN = new Map<string, string>([
+    [
+        'shell-paneoverlay--hidden',
+        'display:none host that stays mounted so the PTY survives a tab switch; Hidden asserts display none + child still in the DOM',
+    ],
+    [
+        'app-panecontent--graph-sentinel',
+        'transparent placeholder host; the real renderer is the always-mounted graph floater in App.tsx; play asserts [data-graph-host]',
+    ],
+    [
+        'app-panecontent--terminal-sentinel',
+        'overlay-host placeholder so the xterm socket and scrollback survive a pane switch; play asserts [data-terminal-host]',
+    ],
+    [
+        'ui-modal--rebindable-dismiss-key',
+        'play rebinds ui-dismiss, asserts plain Escape leaves the dialog open, then that the rebound combo closes it and no dialog remains; the frame is blank because the Modal is dismissed',
+    ],
+    [
+        'ui-modal--stacked-escape',
+        'play opens a second modal, asserts Tab wraps inside the top one, then that Escape closes only the top and a second closes the one under it, leaving no dialog; the frame is blank because both are dismissed',
+    ],
+    [
+        'ui-dropcue--inactive',
+        'DropCue renders nothing when active is false; play asserts the host has no children and no aria-hidden cue element',
+    ],
+])
 
 /**
  * Runs in the page. Returns defect leads + a content bounding box + coarse stats.
@@ -196,15 +237,14 @@ const PROBE = `(() => {
   }
 
   const pad = 12;
-  const box = (minX === Infinity)
-    ? { x: 0, y: 0, width: Math.min(vw, 600), height: Math.min(vh, 400) }
-    : {
-        x: Math.max(0, Math.floor(minX - pad)),
-        y: Math.max(0, Math.floor(minY - pad)),
-        width: Math.min(vw, Math.ceil(maxX - Math.max(0, minX - pad) + pad)),
-        height: Math.min(${MAX_SHOT_H}, Math.ceil(maxY - Math.max(0, minY - pad) + pad)),
-      };
-  box.width = Math.max(32, box.width); box.height = Math.max(32, box.height);
+  // The rects above are VIEWPORT coordinates, but Page.captureScreenshot reads the clip as DOCUMENT
+  // coordinates (captureBeyondViewport:false does not change that). A story whose play() scrolled the
+  // page (scrollIntoView) is parked at scrollY>0, so an unshifted box photographs document y 0.. while
+  // the viewport sits elsewhere: a flat background frame (bases-gallery--map-pins-land at scrollY 3408).
+  // The maths lives in bench/clipBox.ts (unit-tested at scrollY 3408); its source is interpolated here.
+  ${CLIP_BOX_SRC}
+  const box = clipBox({ minX, minY, maxX, maxY, vw, vh, pad, maxH: ${MAX_SHOT_H},
+    sx: window.scrollX || 0, sy: window.scrollY || 0 });
 
   return JSON.stringify({ flags, box, stats: { visible, textLen, canvases } });
 })()`
@@ -443,6 +483,25 @@ if (stillToCheck.length) {
                 detail: String((err as Error).message).slice(0, 200),
             })
         }
+    }
+}
+
+/* EMPTY_BY_DESIGN, applied only now that every empty story has had its serial re-check. Drop the
+   empty-render flag from an exempt story; if an exempt story ISN'T flagged empty it renders content
+   and the entry is stale. Only stories present in THIS sweep are considered, so a --story filter
+   that does not reach an exempt id neither exempts nor complains. */
+for (const rec of report) {
+    const reason = EMPTY_BY_DESIGN.get(rec.id)
+    if (reason === undefined) continue
+    if (rec.flags.some((f: any) => f.kind === 'empty-render')) {
+        rec.flags = rec.flags.filter((f: any) => f.kind !== 'empty-render')
+    } else {
+        rec.flags.push({
+            kind: 'stale-exemption',
+            sel: ':root',
+            text: '',
+            detail: 'listed in EMPTY_BY_DESIGN but renders content; delete the entry',
+        })
     }
 }
 

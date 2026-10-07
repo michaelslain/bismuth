@@ -16,7 +16,7 @@
 //
 // NO FIXTURE SEAM NEEDED: the component takes three callbacks and holds no state, fetches nothing,
 // and reads no context. The Storybook-wide setup in .storybook/preview.ts already supplies
-// everything it depends on — the real theme tokens (`--faint`, `--hover-bg`, `--r-control`,
+// everything it depends on — the real theme tokens (`--text-muted`, `--r-control`,
 // `--ui-font-stack`) projected onto :root exactly as App.tsx projects them, and the app's interface
 // font on `body`, which matters here because `.win-btn` declares `font: inherit`.
 //
@@ -31,6 +31,7 @@
 // selector, not a quoted class attribute, so it does not show up as a false positive in the
 // leftover-literal sweep this migration runs over `win-`.)
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, within } from 'storybook/test'
 import { WindowControls } from './WindowControls'
 
 const noop = () => {}
@@ -46,9 +47,11 @@ type Story = StoryObj<typeof meta>
 
 /** The three buttons at rest — the only state that exists. Covers the flex row (`win-controls`, 2px
  *  gap) and both resting-state rules on the buttons themselves (`win-btn`'s inherited font, muted
- *  `--faint` colour, transparent background, `4px 8px` padding and `--r-control` radius). The close
+ *  `--text-muted` colour, transparent background, `4px 8px` padding and `--r-control` radius). The close
  *  button carries `win-btn--close` too, whose only rule is a `:hover` one, so it looks identical to
- *  its siblings here by design. */
+ *  its siblings here by design. The play asserts both halves for EVERY button: the resting computed
+ *  background is transparent, and (read off the CSSOM, since no play can pose a real :hover) every
+ *  `:hover` rule that names the button's classes shifts colour and sets no background. */
 export const Default: Story = {
     render: () => (
         <WindowControls
@@ -57,4 +60,56 @@ export const Default: Story = {
             onClose={noop}
         />
     ),
+    play: async ({ canvasElement }) => {
+        // The glyphs are literal `[-] [+] [x]` text, so the accessible NAME must come from elsewhere:
+        // a screen reader would otherwise announce the brackets. Resolved by role + name, which is
+        // exactly the lookup an assistive technology does.
+        const c = within(canvasElement)
+        for (const name of ['Minimize', 'Maximize', 'Close']) {
+            const btn = c.getByRole('button', { name })
+            expect(btn.tagName).toBe('BUTTON')
+        }
+        // INK ONLY ON HOVER. CSS :hover follows the real pointer and no play can pose it, so this
+        // asserts on the RULES that apply to each button: every `:hover` rule that names one of the
+        // button's own (hashed) classes shifts colour and sets no background. Reading the classes
+        // off the element keeps this correct under hashing; a rule that puts `--hover-bg` or a
+        // `--danger` plate back on hover makes `backgroundColor`/`background` non-empty and fails.
+        const hoverRules = (btn: HTMLElement) => {
+            const out: CSSStyleRule[] = []
+            for (const sheet of Array.from(document.styleSheets)) {
+                let rules: CSSRuleList
+                try {
+                    rules = sheet.cssRules
+                } catch {
+                    continue
+                }
+                for (const rule of Array.from(rules))
+                    if (
+                        rule instanceof CSSStyleRule &&
+                        rule.selectorText.includes(':hover') &&
+                        Array.from(btn.classList).some(cls =>
+                            rule.selectorText.includes(`.${CSS.escape(cls)}`),
+                        )
+                    )
+                        out.push(rule)
+            }
+            return out
+        }
+        const buttons = c.getAllByRole('button')
+        for (const btn of buttons) {
+            // RESTING: transparent. Hover is a different regression, asserted below.
+            expect(getComputedStyle(btn).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+            const rules = hoverRules(btn)
+            // Plain buttons carry one hover rule; the close button carries two (`.win-btn:hover` and
+            // `.win-btn.win-btn--close:hover`), so a pass over zero rules cannot happen.
+            expect(rules.length).toBeGreaterThanOrEqual(
+                btn.getAttribute('aria-label') === 'Close' ? 2 : 1,
+            )
+            for (const rule of rules) {
+                expect(rule.style.color).not.toBe('')
+                expect(rule.style.backgroundColor).toBe('')
+                expect(rule.style.background).toBe('')
+            }
+        }
+    },
 }

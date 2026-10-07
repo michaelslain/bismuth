@@ -39,7 +39,9 @@ const AllDayRow: Component<AllDayRowProps> = props => (
                         onDragOver={e => props.onCellDragOver?.(e, ds)}
                         onDrop={e => props.onCellDrop?.(e, ds)}
                     >
-                        {props.cell(ds)}
+                        <div class={styles.content}>
+                            {props.cell(ds)}
+                        </div>
                         <AsciiCellEdges
                             edges={
                                 i() === props.dates.length - 1

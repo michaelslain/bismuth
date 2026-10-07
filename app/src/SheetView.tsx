@@ -12,6 +12,7 @@ import { isExternalChange } from './sheet/sync'
 import type { SheetHandle } from './sheet/univerSheet'
 import { resolveAppearance } from './themes'
 import { settings } from './settings'
+import ErrorText from './ui/ErrorText'
 import styles from './SheetView.module.css'
 
 export function SheetView(props: { path: string; onSaved?: () => void }) {
@@ -120,7 +121,7 @@ export function SheetView(props: { path: string; onSaved?: () => void }) {
         <Show
             when={!error()}
             fallback={
-                <div class={styles['sheet-error']}>{error()}</div>
+                <ErrorText class={styles['sheet-error']}>{error()}</ErrorText>
             }
         >
             <div ref={container} class={styles['sheet-container']} />

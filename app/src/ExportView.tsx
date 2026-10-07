@@ -10,7 +10,8 @@ import Text from './ui/Text'
 import { Loading } from './ui/EmptyState'
 import { IconTextButton } from './ui/IconTextButton'
 import { TextInput } from './ui/TextInput'
-import { pushToast } from './Toast'
+import PathField from './ui/PathField'
+import { pushToast } from './ui/ToastHost'
 import { isTauri } from './platform'
 import { pluralWord } from './plural'
 import { pickFile, pickFolder } from './appWindow'
@@ -21,6 +22,7 @@ import {
     DEFAULT_PDF_FONT_SIZE,
 } from './export/options'
 import { readThemePalette } from './export/resolvePalette'
+import { SHEET_PAPER, sheetInkVars } from './export/sheetInk'
 import { renderExport, renderPreview } from './export/exporters'
 import { pageSections } from './export/pageBreaks'
 import { drawingToPng } from './export/drawingRaster'
@@ -72,7 +74,7 @@ const THEME_LABEL: Record<ExportTheme, string> = {
 // scope's --bg (a live CSS var, not a snapshot) so the swatch isn't lying in cathode/riso
 // (bismuth-design/ascii-extended PORTING.md §3c2).
 const THEME_SWATCH: Record<ExportTheme, string> = {
-    light: '#f7f6f2',
+    light: SHEET_PAPER,
     dark: 'var(--bg)',
 }
 
@@ -440,10 +442,15 @@ export function ExportView(props: {
                     }}
                     // The wrapper's fill while the iframe is loading/empty follows the CHOSEN export
                     // theme (not the app's own live scope): print-paper cream for "light", the app's
-                    // active --bg for "dark" — same source as THEME_SWATCH.dark above.
+                    // active --bg for "dark" — same source as THEME_SWATCH.dark above. On the cream
+                    // the app's ink tokens are re-scoped from the export palette (sheetInk.ts): the
+                    // app's own --fg is 1.18:1 on it in ink. Dark IS the app's scope, so it sets none.
                     style={{
                         '--paper-bg':
-                            theme() === 'dark' ? 'var(--bg)' : '#f7f6f2',
+                            theme() === 'dark' ? 'var(--bg)' : SHEET_PAPER,
+                        ...(theme() === 'light'
+                            ? sheetInkVars(readThemePalette('light'))
+                            : {}),
                     }}
                 >
                     <Show
@@ -522,50 +529,28 @@ export function ExportView(props: {
 
                 <div class={styles.field}>
                     <Label class={styles.flab}>Input path</Label>
-                    <div class={styles['path-row']}>
-                        <TextInput
-                            class={styles['path-input']}
-                            value={srcDraft()}
-                            onInput={setSrcDraft}
-                            onBlur={commitSrc}
-                            onKeyDown={(e: KeyboardEvent) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault()
-                                    commitSrc()
-                                }
-                            }}
-                            placeholder="vault-relative path, e.g. notes/idea.md"
-                            spellcheck={false}
-                        />
-                        <IconTextButton
-                            icon="FolderOpen"
-                            onClick={browseSource}
-                        >
-                            browse
-                        </IconTextButton>
-                    </div>
+                    <PathField
+                        value={srcDraft()}
+                        onInput={setSrcDraft}
+                        onCommit={commitSrc}
+                        onBrowse={browseSource}
+                        placeholder="vault-relative path, e.g. notes/idea.md"
+                        label="Input path"
+                    />
                 </div>
 
                 <div class={styles.field}>
                     <Label class={styles.flab}>Output path</Label>
-                    <div class={styles['path-row']}>
-                        <TextInput
-                            class={styles['path-input']}
-                            value={destFolder()}
-                            onInput={v => {
-                                setDestFolder(v)
-                                saveLs(DEST_KEY, v.trim())
-                            }}
-                            placeholder="Downloads (default)"
-                            spellcheck={false}
-                        />
-                        <IconTextButton
-                            icon="FolderOpen"
-                            onClick={browseDest}
-                        >
-                            browse
-                        </IconTextButton>
-                    </div>
+                    <PathField
+                        value={destFolder()}
+                        onInput={v => {
+                            setDestFolder(v)
+                            saveLs(DEST_KEY, v.trim())
+                        }}
+                        onBrowse={browseDest}
+                        placeholder="Downloads (default)"
+                        label="Output path"
+                    />
                 </div>
 
                 {/* Base-only: rendered view ("Visual") vs flat table ("Data"). */}

@@ -29,7 +29,7 @@ function calloutTypeCss(): string {
     return Object.entries(CALLOUT_TYPES)
         .map(
             ([type, meta]) =>
-                `.callout-${type}{border-left-color:${meta.color}}.callout-${type}>.callout-title{color:${meta.color}}`,
+                `.callout-${type}{border-left-color:${meta.color}}.callout-${type}>.callout-title .callout-icon{color:${meta.color}}`,
         )
         .join('\n  ')
 }
@@ -139,14 +139,18 @@ function styles(
             // leading whatever it is; a heading is not allowed to overflow.
             const natural = n <= 2 ? Math.round(size * ts.lhTight) : rule
             const lh = Math.max(natural, Math.ceil(size))
-            // h1 carries display tracking; h5/h6 earn their smaller size by switching REGISTER —
-            // uppercase + label tracking — rather than merely shrinking, and h6 is muted. Drop
-            // those and h5 becomes small body text, which is the app's own warning about them.
+            // h1 carries display tracking; h5/h6 earn their smaller size by switching REGISTER
+            // rather than merely shrinking. The register is LABEL TRACKING + MUTED INK, in
+            // lowercase — the same as `.cm-h5`/`.cm-h6` in editor/livePreview.ts, so an export
+            // reads like the editor it came from. (No `text-transform: uppercase`: the app's
+            // no-all-caps rule, and h6's muted ink replaces an `opacity: 0.85` that was a second
+            // dimming on an already-muted label.) Drop these and h5 becomes small body text,
+            // which is the app's own warning about them.
             const extra =
                 n === 1
                     ? ` letter-spacing: ${ts.lsDisplay};`
                     : n >= 5
-                      ? ` text-transform: uppercase; letter-spacing: ${ts.lsLabel};${n === 6 ? ' opacity: 0.85;' : ''}`
+                      ? ` letter-spacing: ${ts.lsLabel}; color: ${p.muted};`
                       : ''
             return `  h${n} { font-size: ${size}px; font-weight: ${ts.headingWeight[i]}; line-height: ${lh}px; margin: ${rule}px 0 0;${extra} }`
         })

@@ -44,7 +44,34 @@ test('renderPage fills the paper background then draws each stroke', () => {
     expect(joined).toContain('fill(')
 })
 
-test('highlighter strokes use multiply compositing', () => {
+// The blend is chosen by the PAPER's luminance, not fixed. `multiply` can only darken, which is
+// what a marker does on white — and on an opaque dark page it can only darken something already
+// near-black, so the mark vanished (measured: a gold stroke on the ink theme's #15161A page
+// composited to rgb(20,20,22), 1.02:1 against the paper it sits on). `screen` is multiply's
+// mirror — it can only lighten — and the same stroke composites to rgb(81,74,62), 2.07:1.
+test('highlighter strokes multiply on a LIGHT page', () => {
+    const doc = emptyDoc()
+    doc.pages[0].strokes.push({
+        t: 'hl',
+        c: '#e23b3b',
+        w: 8,
+        pts: [0, 0, 255, 50, 0, 255],
+    })
+    const ctx = recorder()
+    renderPage(
+        ctx,
+        doc.pages[0],
+        doc.paper,
+        themeColors('light'),
+        PAGE_W,
+        PAGE_H,
+    )
+    expect((ctx as any).calls.join('|')).toContain(
+        'globalCompositeOperation=multiply',
+    )
+})
+
+test('highlighter strokes SCREEN on a dark page — multiply would land them on the paper', () => {
     const doc = emptyDoc()
     doc.pages[0].strokes.push({
         t: 'hl',
@@ -58,6 +85,79 @@ test('highlighter strokes use multiply compositing', () => {
         doc.pages[0],
         doc.paper,
         themeColors('dark'),
+        PAGE_W,
+        PAGE_H,
+    )
+    const joined = (ctx as any).calls.join('|')
+    expect(joined).toContain('globalCompositeOperation=screen')
+    expect(joined).not.toContain('globalCompositeOperation=multiply')
+})
+
+test('the wash weight is the same on both papers — only the blend flips', () => {
+    const stroke = {
+        t: 'hl' as const,
+        c: '#e23b3b',
+        w: 8,
+        pts: [0, 0, 255, 50, 0, 255],
+    }
+    const alphas = (['dark', 'light'] as const).map(bucket => {
+        const doc = emptyDoc()
+        doc.pages[0].strokes.push({ ...stroke })
+        const ctx = recorder()
+        renderPage(
+            ctx,
+            doc.pages[0],
+            doc.paper,
+            themeColors(bucket),
+            PAGE_W,
+            PAGE_H,
+        )
+        return ((ctx as any).calls as string[]).filter(c =>
+            c.startsWith('globalAlpha='),
+        )
+    })
+    expect(alphas[0]).toContain('globalAlpha=0.32')
+    expect(alphas[0]).toEqual(alphas[1])
+})
+
+test('a PEN stroke is opaque and unblended on either page', () => {
+    for (const bucket of ['dark', 'light'] as const) {
+        const doc = emptyDoc()
+        doc.pages[0].strokes.push({
+            t: 'pen',
+            c: 'fg',
+            w: 4,
+            pts: [0, 0, 255, 30, 30, 255],
+        })
+        const ctx = recorder()
+        renderPage(
+            ctx,
+            doc.pages[0],
+            doc.paper,
+            themeColors(bucket),
+            PAGE_W,
+            PAGE_H,
+        )
+        const joined = (ctx as any).calls.join('|')
+        expect(joined).toContain('globalAlpha=1')
+        expect(joined).not.toContain('globalCompositeOperation=')
+    }
+})
+
+test('an unparseable paper colour keeps multiply, the historical behaviour', () => {
+    const doc = emptyDoc()
+    doc.pages[0].strokes.push({
+        t: 'hl',
+        c: '#e23b3b',
+        w: 8,
+        pts: [0, 0, 255, 50, 0, 255],
+    })
+    const ctx = recorder()
+    renderPage(
+        ctx,
+        doc.pages[0],
+        doc.paper,
+        { ...themeColors('dark'), bg: 'var(--bg)' },
         PAGE_W,
         PAGE_H,
     )

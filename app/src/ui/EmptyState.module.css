@@ -10,14 +10,46 @@
    bare class name (ChatView.stories.tsx, preview/PdfPages.stories.tsx, PreviewView.stories.tsx)
    now query `[data-testid="ui-empty-block"]`/`[data-testid="ui-empty"]` instead — the two
    `data-testid`s EmptyState.tsx adds for exactly this. See .claude/plans/ui-css-ownership.md. */
-.ui-empty { color: var(--text-muted); margin: 0; }
+.ui-empty { margin: 0; }
 .ui-empty-block { text-align: center; margin: auto; display: flex; flex-direction: column; gap: var(--sp-5); align-items: center; }
-/* KEPT, and EmptyState keeps its real <h2>. Routing this through Text's `eyebrow` prop was tried
-   and reverted: it replaced a heading element with a div — losing the document semantics a screen
-   reader relies on — to gain nothing, because this register is neither Text's scale nor Heading's
-   markdown ramp. It is also the app's ONLY uppercase eyebrow; DaemonList's and Graph's heads share
-   the tracking but are deliberately mixed-case, which is why `eyebrow` supplies tracking alone. */
-.ui-empty-block h2 { font-size: var(--fs-ui); font-weight: var(--fw-bold); color: var(--fg); margin: 0; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }
+/* The title is a real <Heading level={2}> (document semantics for a screen reader, type from the
+   one ramp) and the body a <Text tone="muted"> — neither carries a rule of its own here. NO
+   `text-transform`: nothing in this component is uppercased, and titles are written lowercase /
+   sentence case by the caller (see EmptyState.tsx). The earlier note here claimed this was "the
+   app's ONLY uppercase eyebrow"; it never was (GroupHeader and Heading h6 did it too), and
+   after the all-caps removal no component is. */
+.ui-empty-title { text-wrap: balance; }
+
+/* fill — centre in the box this is placed in, on both axes. `flex: 1` + `align-self: stretch`
+   fill a flex-column parent; `width/min-height: 100%` fill a block parent of definite size. The
+   auto margin of the base rule is dropped: a block that fills its box has nothing to centre
+   itself against. */
+.ui-empty-block--fill {
+  flex: 1 1 auto;
+  align-self: stretch;
+  /* `safe center`, not `center`: in a box shorter than the content (a table's empty body under its header
+     rule) plain `center` splits the overflow equally and the top half spills ABOVE the box, where it
+     cannot be scrolled to and is clipped by the rule. `safe` falls back to start alignment on overflow. */
+  justify-content: safe center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+/* compact — the one muted line. Declared AFTER fill and given the same single-class specificity,
+   but it only sets what fill does not (alignment) so the pair composes: compact + fill centres the
+   line, compact alone sits at the start with no auto margin. */
+.ui-empty-block--compact { margin: 0; gap: var(--sp-3); align-items: flex-start; text-align: start; }
+.ui-empty-block--compact.ui-empty-block--fill { align-items: center; text-align: center; }
+
+/* quiet — the title joins the body in muted italic. Descendant selector (0,2,0) beats Heading's
+   own single-class colour without a doubled selector. */
+.ui-empty-block--quiet .ui-empty-title { color: var(--text-muted); font-style: italic; }
+
+.ui-empty-action { display: flex; align-items: center; justify-content: center; gap: var(--sp-4); }
+.ui-empty-block--compact .ui-empty-action { justify-content: flex-start; }
+.ui-empty-block--compact.ui-empty-block--fill .ui-empty-action { justify-content: center; }
 
 .ui-loading { padding: var(--sp-7); color: var(--text-muted); }
 

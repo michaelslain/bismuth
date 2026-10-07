@@ -4,9 +4,9 @@
 // registry.ts) on demand, and exposes ONE Solid signal that flips when it lands, so every <Icon>
 // and the picker's search re-render with no per-call-site wiring.
 //
-// Who triggers the load: <Icon> when it meets a name outside the 140 canonical ones (a note's
+// Who triggers the load: <Icon> when it meets a name outside the 142 canonical ones (a note's
 // `icon: Books`), iconMarkup for the same in imperative code, and the icon picker's source when it
-// opens. The app's own chrome only ever uses the 140, so a vault that never picks a library icon
+// opens. The app's own chrome only ever uses the 142, so a vault that never picks a library icon
 // never downloads the chunk.
 //
 // A failed load (a chunk missing from a stale build) settles to `failed`, and a pending name then
@@ -53,7 +53,7 @@ export function loadIconLibrary(): Promise<void> {
 }
 
 /** `allIconNames()` for autocomplete, starting the library load on first use — the first completion
- *  offers the 140 canonical names, and every one after the chunk lands offers the whole library. */
+ *  offers the 142 canonical names, and every one after the chunk lands offers the whole library. */
 export function completionIconNames(): string[] {
     void loadIconLibrary()
     return allIconNames()

@@ -85,7 +85,7 @@ export const MAX_SCALE = 2
 
 /** Cell scale that fits the scene in the box: 1 when it fits the graph's own cell grid within 1%,
  *  otherwise shrunk to fit (floored at the graph's COMPACT_FLOOR_SCALE) or grown to fill (capped
- *  at MAX_SCALE). */
+ *  at `cap`, MAX_SCALE unless a host asks for less). */
 export function fitScale(
     boxW: number,
     boxH: number,
@@ -93,8 +93,44 @@ export function fitScale(
     sceneRows: number,
     cellW: number,
     cellH: number,
+    cap = MAX_SCALE,
 ): number {
     const s = Math.min(boxW / (sceneCols * cellW), boxH / (sceneRows * cellH))
     if (s >= 1 && s - 1 <= 0.01) return 1
-    return clamp(s, COMPACT_FLOOR_SCALE, MAX_SCALE)
+    return clamp(s, COMPACT_FLOOR_SCALE, Math.max(cap, COMPACT_FLOOR_SCALE))
+}
+
+/** A scene cell on the device-pixel grid: the scale it was snapped to, and the CSS-pixel cell size
+ *  (both axes are whole device pixels). */
+export type CellMetrics = { scale: number; cellW: number; cellH: number }
+
+/** How far a snapped cell width may drift from the font's natural advance at the snapped scale. The
+ *  advance is pinned to the cell with letterSpacing, so a few percent reads as tracking, not shear. */
+export const CELL_W_TOLERANCE = 0.03
+
+/** Snap a fitted scale DOWN onto the device-pixel grid so `cellW * dpr` and `cellH * dpr` are whole
+ *  numbers. A cell that straddles device pixels is resampled by the compositor, which is why glyph
+ *  art drawn at 1.33 on a 6.3px advance (8.4px) reads soft beside the DOM text. Shrinks only, so a
+ *  scene that fitted still fits; steps the row height one device pixel at a time and takes the first
+ *  whose rounded width stays within CELL_W_TOLERANCE of the font's natural advance. Pure. */
+export function snapCell(
+    scale: number,
+    baseCellW: number,
+    baseCellH: number,
+    dpr: number,
+): CellMetrics {
+    const d = dpr > 0 ? dpr : 1
+    const at = (n: number): CellMetrics => {
+        const s = n / (baseCellH * d)
+        const w = Math.max(1, Math.round(baseCellW * s * d))
+        return { scale: s, cellW: w / d, cellH: n / d }
+    }
+    const top = Math.max(1, Math.floor(baseCellH * scale * d + 1e-9))
+    const bottom = Math.max(1, Math.floor(top * 0.9))
+    for (let n = top; n >= bottom; n--) {
+        const c = at(n)
+        const natural = baseCellW * c.scale
+        if (Math.abs(c.cellW / natural - 1) <= CELL_W_TOLERANCE) return c
+    }
+    return at(top)
 }

@@ -187,6 +187,50 @@ export const Plain: Story = {
     },
 }
 
+/** `plain` and the default start at the SAME x (the native padding is reset), share the `--faint`
+ *  placeholder with FormControl/SearchBar, and both dim to `--faint` when disabled — before, plain
+ *  started ~2px right, hinted in `--text-muted` and had no disabled rule. */
+export const PlainMatchesDefault: Story = {
+    render: () => (
+        <div
+            style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: '16px',
+                width: '320px',
+            }}
+        >
+            <TextInput value="" placeholder="hint" onInput={() => {}} data-testid="pm-default" />
+            <TextInput plain value="" placeholder="hint" onInput={() => {}} data-testid="pm-plain" />
+            <TextInput plain disabled value="read only" onInput={() => {}} data-testid="pm-disabled" />
+            <TextInput plain multiline value="" onInput={() => {}} data-testid="pm-area" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const q = (id: string) =>
+            canvasElement.querySelector<HTMLInputElement>(`[data-testid="${id}"]`)!
+        const faint = (() => {
+            const probe = document.createElement('div')
+            probe.style.color = 'var(--faint)'
+            canvasElement.appendChild(probe)
+            const c = getComputedStyle(probe).color
+            probe.remove()
+            return c
+        })()
+        const def = q('pm-default')
+        const plain = q('pm-plain')
+        await expect(Math.round(plain.getBoundingClientRect().left)).toBe(
+            Math.round(def.getBoundingClientRect().left),
+        )
+        await expect(getComputedStyle(plain).paddingLeft).toBe('0px')
+        await expect(getComputedStyle(def, '::placeholder').color).toBe(faint)
+        await expect(getComputedStyle(plain, '::placeholder').color).toBe(faint)
+        await expect(getComputedStyle(q('pm-disabled')).color).toBe(faint)
+        await expect(getComputedStyle(q('pm-disabled')).opacity).toBe('1')
+        await expect(getComputedStyle(q('pm-area')).resize).toBe('none')
+    },
+}
+
 /** Every state side by side. */
 export const Gallery: Story = {
     render: () => (

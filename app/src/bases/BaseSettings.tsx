@@ -60,6 +60,8 @@ import { TextInput } from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import InlineCode from '../ui/InlineCode'
+import Text from '../ui/Text'
+import ErrorText from '../ui/ErrorText'
 import { ModalHeader } from '../ui/ModalHeader'
 import { ModalFooter } from '../ui/ModalFooter'
 import FormModal from '../ui/FormModal'
@@ -91,9 +93,11 @@ import PropertiesFields from './PropertiesFields'
 import styles from './BaseSettings.module.css'
 
 const DIR_OPTS = [
-    { value: 'ASC', label: 'Ascending' },
-    { value: 'DESC', label: 'Descending' },
+    { value: 'ASC', label: 'ascending' },
+    { value: 'DESC', label: 'descending' },
 ]
+
+const NO_TARGET_NOTE = 'no base file to save to'
 
 /**
  * A base's settings as a modal overlay — same FormModal chrome as the calendar's
@@ -218,7 +222,7 @@ export function BaseSettings(props: {
         })),
     )
     const propOptions = createMemo(() => [
-        { value: '', label: 'None' },
+        { value: '', label: 'none' },
         ...columnOptions(),
     ])
     const visibleCols = createMemo(() => orderOf(cols()))
@@ -334,13 +338,26 @@ export function BaseSettings(props: {
 
     const [saving, setSaving] = createSignal(false)
     const [error, setError] = createSignal<string | null>(null)
+    // With no `basePath` there is no file to write to. SAVE used to stay live and report success
+    // (`onSaved`) while discarding every edit — now it is off, and the footer says why.
+    const noTarget = () => !props.basePath
     const blocked = () =>
-        duplicateNames().size > 0 || duplicateFormulas().size > 0 || saving()
+        noTarget() ||
+        duplicateNames().size > 0 ||
+        duplicateFormulas().size > 0 ||
+        saving()
+
+    // What the footer says beside SAVE when it is not an error: why SAVE is off, or that a write
+    // is in flight.
+    const footerNote = (): string | undefined =>
+        noTarget() ? NO_TARGET_NOTE : saving() ? 'saving…' : undefined
 
     const save = async () => {
         const path = props.basePath
+        // Never report a save that wrote nothing because there was nowhere to write.
+        if (!path) return
         const patch = diffPatch(initial, desired(), keys())
-        if (!path || Object.keys(patch).length === 0) {
+        if (Object.keys(patch).length === 0) {
             props.onSaved()
             return
         }
@@ -468,7 +485,7 @@ export function BaseSettings(props: {
                             <Select
                                 value={groupProp()}
                                 options={propOptions()}
-                                placeholder="None"
+                                placeholder="none"
                                 onChange={setGroupProp}
                             />
                         </SettingsField>
@@ -547,9 +564,6 @@ export function BaseSettings(props: {
                     editing={editingProp()}
                     onEditing={setEditingProp}
                 />
-                <Show when={error()}>
-                    <SettingsHint class={styles.error}>{error()}</SettingsHint>
-                </Show>
             </ModalBody>
 
             <ModalFooter
@@ -562,6 +576,29 @@ export function BaseSettings(props: {
                     </IconTextButton>
                 }
             >
+                {/* Save's status lives HERE, beside the button it explains — the body scrolls and the
+                    footer does not, so a failure written at the end of the body was off-screen on
+                    any long base. */}
+                <Show
+                    when={error()}
+                    fallback={
+                        <Show when={footerNote()}>
+                            {note => (
+                                <Text
+                                    as="span"
+                                    size="ui"
+                                    tone="muted"
+                                    class={styles.note}
+                                    data-testid="settings-save-note"
+                                >
+                                    {note()}
+                                </Text>
+                            )}
+                        </Show>
+                    }
+                >
+                    <ErrorText class={styles.note}>{error()}</ErrorText>
+                </Show>
                 <TextButton onClick={props.onClose}>
                     cancel
                 </TextButton>
@@ -569,6 +606,7 @@ export function BaseSettings(props: {
                     icon="Check"
                     primary
                     disabled={blocked()}
+                    title={noTarget() ? NO_TARGET_NOTE : undefined}
                     onClick={save}
                 >
                     save

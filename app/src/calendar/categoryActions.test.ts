@@ -5,7 +5,7 @@ import {
     renameCategory,
     deleteCategoryWithUndo,
 } from './categoryActions'
-import { toasts, dismissToast } from './../toastStore'
+import { toasts, dismissToast } from '../ui/toastStore'
 
 async function freshStore() {
     const s = new EventStore(new MemoryBackend())

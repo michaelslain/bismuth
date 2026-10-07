@@ -25,5 +25,5 @@
 .month-grid-header { position: sticky; top: 0; z-index: 1; background: var(--bg); display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding-top: calc(var(--cell-h) / 2); }
 /* one typed row (as tall as a table header), the name inset ~1ch from the `|` like a day number */
 .month-day { position: relative; min-width: 0; display: flex; align-items: center; min-height: max(var(--ascii-row-h, var(--h-control)), var(--h-control)); }
-.month-day-name { flex: 1; min-width: 0; padding: 0 var(--ascii-tile-w, 1ch); text-transform: uppercase; }
+.month-day-name { flex: 1; min-width: 0; padding: 0 var(--ascii-tile-w, 1ch); }
 .month-grid { flex: 1 0 auto; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: auto; align-content: stretch; }

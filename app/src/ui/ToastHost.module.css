@@ -1,0 +1,37 @@
+/* app/src/ui/ToastHost.module.css
+   Fixed bottom-center toast stack (ToastHost.tsx). Both selectors are fully static.
+   Flat .asc-card register — pill-NOT: radius 3 (technical corners), a hairline border,
+   --surface-1 fill, --fs-ui type. An action reads as a bracket text button, the same
+   CLI-confirm register the permission/inbox row actions use. */
+.toast-host {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  z-index: var(--z-toast);
+  align-items: center;
+}
+.toast-pill {
+  background: var(--surface-1);
+  border: var(--rule);
+  border-radius: var(--r-0);
+  padding: var(--sp-4) var(--sp-5);
+  box-shadow: var(--lift);
+  font-size: var(--fs-ui);
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+}
+/* A failure: the danger ink on a danger hairline. `data-tone` is a runtime hook the host sets, so
+   the rule cannot drift from a hashed class literal. The message inherits the pill's colour. */
+.toast-pill[data-tone='danger'] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+/* The action's "[ label ]" bracket look is TextButton's own default rendering
+   (ToastHost.tsx renders a plain `<TextButton>`, no bracket prop needed) instead of this file
+   reaching into ui.css's `:global(.btn--text)` to redraw the same brackets by hand. */

@@ -66,8 +66,8 @@ export const EditPresets: Story = {
         await expect(out()).toBe('[]')
         await userEvent.click(c.getByText('open'))
         await expect(out()).toBe('["not done"]')
-        await userEvent.click(c.getByText('Any priority'))
-        await userEvent.click(await within(document.body).findByText('High'))
+        await userEvent.click(c.getByText('any priority'))
+        await userEvent.click(await within(document.body).findByText('high'))
         await expect(out()).toBe('["not done","priority is high"]')
     },
 }

@@ -38,12 +38,11 @@ const CODE_HEADER_CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: color-mix(in srgb, var(--fg) 45%, transparent);
+    color: var(--text-muted);
     padding: 2px;
-    opacity: 0.8;
-    transition: color 120ms, opacity 120ms;
+    transition: color var(--dur) var(--ease);
   }
-  .cm-code-copy:hover { color: var(--accent); opacity: 1; }
+  .cm-code-copy:hover { color: var(--accent); }
 `
 
 // The opening-fence row this widget rides sits inside `.cm-block-top`'s own padded band —

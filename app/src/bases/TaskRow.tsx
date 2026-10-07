@@ -1,6 +1,7 @@
 import { Show, type Component } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import { todayISO } from '../../../core/src/dates'
+import ListRow from '../ui/ListRow'
 import Text from '../ui/Text'
 import { IconButton } from '../ui/IconButton'
 import TaskCheck from './TaskCheck'
@@ -63,42 +64,51 @@ const TaskRow: Component<TaskRowProps> = props => {
         <div
             class={`${styles.taskItem} ${props.variant === 'card' ? styles.inCard : ''} ${props.class ?? ''}`}
         >
-            <TaskCheck
-                status={status()}
-                onToggle={e => props.onToggle(props.row, e)}
-                onSetStatus={e => props.onSetStatus(props.row, e)}
-            />
-            <Text
-                as="span"
-                inherit
-                class={`${styles.taskBody} ${done() ? styles.done : ''}`}
+            <ListRow
+                baseline
+                reveal
+                class={styles.line}
+                leading={
+                    <TaskCheck
+                        status={status()}
+                        onToggle={e => props.onToggle(props.row, e)}
+                        onSetStatus={e => props.onSetStatus(props.row, e)}
+                    />
+                }
+                trailing={
+                    <Show when={isEditableTask(props.row)}>
+                        <IconButton
+                            icon="Pencil"
+                            label="Edit task"
+                            size="sm"
+                            onClick={e => {
+                                e.stopPropagation()
+                                openTaskEditor({
+                                    row: props.row,
+                                    categoryField: props.categoryField,
+                                    onChanged: props.onChanged,
+                                })
+                            }}
+                        />
+                    </Show>
+                }
             >
-                <TaskText text={desc()} />
-                <TaskFieldChips
-                    priority={priority()}
-                    start={start()}
-                    scheduled={scheduled()}
-                    due={due()}
-                    recurrence={recurrence()}
-                    overdue={overdue()}
-                />
-            </Text>
-            <Show when={isEditableTask(props.row)}>
-                <IconButton
-                    icon="Pencil"
-                    label="Edit task"
-                    size="sm"
-                    class={styles.editBtn}
-                    onClick={e => {
-                        e.stopPropagation()
-                        openTaskEditor({
-                            row: props.row,
-                            categoryField: props.categoryField,
-                            onChanged: props.onChanged,
-                        })
-                    }}
-                />
-            </Show>
+                <Text
+                    as="span"
+                    inherit
+                    class={`${styles.taskBody} ${done() ? styles.done : ''}`}
+                >
+                    <TaskText text={desc()} />
+                    <TaskFieldChips
+                        priority={priority()}
+                        start={start()}
+                        scheduled={scheduled()}
+                        due={due()}
+                        recurrence={recurrence()}
+                        overdue={overdue()}
+                    />
+                </Text>
+            </ListRow>
         </div>
     )
 }

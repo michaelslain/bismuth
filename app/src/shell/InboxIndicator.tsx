@@ -16,7 +16,7 @@ import styles from './InboxIndicator.module.css'
 // WHY IT STILL RENDERS AT ZERO. A notification indicator that vanishes when there is nothing to
 // notify is not a *place* — the user asked for "a place in the toolbar for inbox notifications",
 // and a control that only exists while it has something to say can never be found, learned, or
-// pressed on purpose. So the resting state is quiet (faint, no dot, matching `.status-daemon`'s
+// pressed on purpose. So the resting state is quiet (muted, no dot, matching `.status-daemon`'s
 // weight) and the alert state lights up: a --gold dot plus the count promoted to --fg. Same shape
 // either way, so nothing in the bar reflows as pages arrive and settle.
 //

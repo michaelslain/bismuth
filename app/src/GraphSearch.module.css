@@ -18,19 +18,16 @@
    child's own module getting a second importer or the parent reaching into the child's hashed
    classes.
 
-   `.graph-search-row .graph-search-sub`'s font-size is now `var(--fs-micro)` (was a literal
-   `10.5px`) — the token the value always equalled; nothing renders differently.
+   THE RESULT ROWS ARE `ui/PaletteRow` (ds-improve Task 38) — one of the four implementations of the
+   selectable row that primitive replaces. Its icon, label, sublabel, selection wash and hover are its
+   own; this file keeps only the list, the glyph and the click-through wrapper. The `.graph-search-row`
+   / `.selected` / `-label` / `-sub` / `-empty` rules, and the uppercase no-matches line, went with it —
+   "No matches" is `ui/EmptyState compact` now (no all caps).
 
-   `.graph-search-bar` no longer carries any lead/input overrides (search-prompt Task 2) —
-   GraphSearch.tsx now passes SearchBar `size="compact"` for both registers and takes whatever
-   density/prompt-glyph/underline SearchBar itself draws; a caller styles SearchBar's own wrapper
-   for layout only, never its lead or input (one-module-one-importer: those are SearchBar's, not
-   this module's, to draw). `.graph-search-bar` below is layout-only. The list's own `border-top`
-   divider is also gone — the field's underline (SearchBar's own bottom rule) is the one divider
-   now, so the panel never stacked two lines. `:global(.selected)` on `.graph-search-row` is also
-   gone: GraphSearch owns its own row (unlike PaletteRow/SearchResultRows, whose owning `.tsx` sit
-   outside this task), so its `selected` state is now a plain local class read via
-   `styles['selected']` in GraphSearch.tsx, not the app-wide bare-literal convention. */
+   `.graph-search-bar` carries no lead/input overrides — GraphSearch.tsx passes SearchBar `size="compact"`
+   for both registers and takes whatever density/prompt-glyph/underline SearchBar itself draws; a caller
+   styles SearchBar's own wrapper for layout only. The list has no top divider of its own: the field's
+   underline (SearchBar's bottom rule) is the one line, so the panel never stacks two. */
 
 .graph-search { display: flex; flex-direction: column; font-family: inherit; width: 100%; min-height: 0; overflow: hidden; pointer-events: auto; }
 
@@ -43,30 +40,13 @@
 .graph-search-list { font-size: var(--fs-ui); overflow-y: auto; padding: var(--sp-2); }
 .graph-search[data-embedded] .graph-search-list { font-size: var(--fs-ui); padding: var(--sp-2); }
 
-.graph-search-row { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-0); cursor: pointer; white-space: nowrap; background: transparent; }
-.graph-search[data-embedded] .graph-search-row { border-radius: var(--r-0); padding: 1px var(--sp-2); gap: var(--sp-3); color: var(--text-muted); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
-.graph-search[data-embedded] .graph-search-row:hover { background: var(--hover-bg); }
-/* `.selected` is a plain local class now (GraphSearch.tsx sets it via `styles["selected"]`), not
-   the app-wide bare-literal convention — GraphSearch owns its own row, unlike PaletteRow/
-   SearchResultRows. The base rule's `background` here is the SAME value the embedded override
-   below also sets — no behavioural difference in the real app (the override always wins where
-   both could apply), but the base rule still has to exist standalone for the non-embedded
-   Storybook story. */
-.graph-search-row.selected { background: var(--accent-soft); }
-.graph-search[data-embedded] .graph-search-row.selected { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
-/* `.graph-search-label`'s flex/min-width/overflow/ellipsis/color(--fg) live on ui/Label.tsx
-   (`<Label fill tone="default">`) — this selector stays ONLY for the `.selected`
-   override below, which must keep reaching the element by this exact class name. */
-.graph-search[data-embedded] .graph-search-row.selected .graph-search-label { color: var(--accent); }
+/* The click-through wrapper GraphSearch.tsx puts around each PaletteRow to commit on mousedown — it
+   takes no box of its own, so the row inside lays out exactly as a bare PaletteRow does. */
+.graph-search-pick { display: contents; }
 
 /* Each result carries the same node glyph the field draws it with, so a row and its node read as
-   the same object — embedded-only, there is no bare-register version (there never was one). */
-.graph-search[data-embedded] .graph-search-glyph { font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--faint); width: var(--cell-w); flex: 0 0 auto; text-align: center; }
-.graph-search[data-embedded] .graph-search-row.selected .graph-search-glyph { color: var(--accent); }
-
-/* Placement only — overflow/ellipsis/white-space(nowrap)/color(--faint) live on ui/Label.tsx
-   (`<Label tone="faint">`). */
-.graph-search-row .graph-search-sub { margin-left: auto; padding-left: var(--sp-5); max-width: 42%; flex-shrink: 0; text-align: right; font-size: var(--fs-micro); }
-
-.graph-search-empty { padding: var(--sp-4) var(--sp-4); color: var(--faint); font-size: var(--fs-micro); }
-.graph-search[data-embedded] .graph-search-empty { padding: var(--sp-3) var(--sp-4); font-size: var(--fs-micro); letter-spacing: var(--ls-label); text-transform: uppercase; }
+   the same object — embedded-only, there is no bare-register version (there never was one). It rides
+   inside the PaletteRow's label; the selected row's wash/ink is PaletteRow's own (`data-selected`, a
+   runtime hook, not a class), and the glyph follows it. The glyph is structure, so --faint at rest. */
+.graph-search[data-embedded] .graph-search-glyph { font-family: var(--ui-font-stack); color: var(--faint); display: inline-block; width: var(--cell-w); margin-right: var(--sp-3); text-align: center; }
+.graph-search[data-embedded] [data-selected] .graph-search-glyph { color: var(--accent); }

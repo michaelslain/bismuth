@@ -48,6 +48,7 @@
 // mean the majority of these stories silently exercised none of InboxIndicator, which is how a
 // component ends up with stories that prove nothing about it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, within } from 'storybook/test'
 import { StatusBar } from './StatusBar'
 
 const noop = () => {}
@@ -74,6 +75,24 @@ const base = {
  *  empty inbox. */
 export const Default: Story = {
     render: () => <StatusBar {...base} />,
+    play: async ({ canvasElement }) => {
+        // The location is a real button, so it is a keyboard stop with the path as its name — it used
+        // to be a Label with an onClick that only a pointer could reach.
+        const location = within(canvasElement).getByRole('button', { name: base.location })
+        expect(location.tabIndex).toBe(0)
+        // The bar is a compact ui/Band: one --row-h line, a hairline on its TOP edge, and the band's own
+        // --sp-5 side padding — so its text starts where the toolbars above it do, not 4px further in.
+        const bar = location.parentElement as HTMLElement
+        const cs = getComputedStyle(bar)
+        const token = (name: string) =>
+            parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name))
+        expect(bar.getBoundingClientRect().height).toBe(token('--row-h'))
+        expect(cs.borderTopWidth).toBe('1px')
+        expect(cs.borderBottomWidth).toBe('0px')
+        expect(location.getBoundingClientRect().left - bar.getBoundingClientRect().left).toBe(
+            token('--sp-5'),
+        )
+    },
 }
 
 /** Before `GET /config` resolves (or on failure), `vaultPath` is empty — the readout degrades to

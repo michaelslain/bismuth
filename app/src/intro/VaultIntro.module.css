@@ -9,11 +9,15 @@
   inset: 0;
   /* Below the popover portal layer (~1100). The intro is the only thing on screen on
      first run, so it doesn't need to sit above everything. */
-  z-index: 100;
+  z-index: var(--z-shell);
   display: grid;
   place-items: center;
   padding: var(--sp-7);
   overflow: hidden;
+  /* The size container for IntroWindow's short-window step (`@container (max-height: 44rem)`): the
+     step reads THIS box's content (the viewport minus the two --sp-7 paddings above), so a story that sizes the takeover (or a parent
+     that squeezes it) really gets the 16-row art. */
+  container-type: size;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--ui-font-stack, "Monaspace Xenon"), ui-monospace, monospace;

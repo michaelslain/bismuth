@@ -75,8 +75,8 @@ export const AddAndDelete: Story = {
         await expect(await c.findByDisplayValue('formula')).toBeInTheDocument()
         await userEvent.click(c.getByText('add formula'))
         await expect(await c.findByDisplayValue('formula 2')).toBeInTheDocument()
-        await userEvent.click(c.getAllByLabelText('Delete formula')[0])
+        await userEvent.click(c.getAllByLabelText('Remove formula')[0])
         await expect(c.queryByDisplayValue('ppu')).not.toBeInTheDocument()
-        await expect(c.getAllByLabelText('Delete formula')).toHaveLength(2)
+        await expect(c.getAllByLabelText('Remove formula')).toHaveLength(2)
     },
 }

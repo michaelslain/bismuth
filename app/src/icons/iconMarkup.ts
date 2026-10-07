@@ -33,7 +33,7 @@ export function iconMarkup(name: string, size = 14): string {
     const hit = cache.get(key)
     if (hit !== undefined) return hit
 
-    // A library icon (outside the 140) before the library has loaded: kick the load and return
+    // A library icon (outside the 142) before the library has loaded: kick the load and return
     // the fallback UNCACHED, so the next render after it lands draws the real art.
     if (isPendingIconName(name)) {
         void loadIconLibrary()

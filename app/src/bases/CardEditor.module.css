@@ -6,3 +6,5 @@
 .cardEditor :global(.cm-editor) { background: transparent; }
 .cardEditor :global(.cm-editor.cm-focused) { outline: none; }
 .cardEditor :global(.cm-scroller) { font-family: var(--prose-font); font-size: var(--prose-font-size); }
+/* A load / save failure line: the message, then its retry. */
+.error { display: flex; align-items: baseline; gap: var(--sp-4); margin-top: var(--sp-3); }

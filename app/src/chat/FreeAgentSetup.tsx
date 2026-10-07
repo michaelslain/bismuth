@@ -5,6 +5,7 @@ import { Show, type Component } from 'solid-js'
 import type { FreeAgentProgress } from '../../../core/src/freeAgent'
 import { TextButton } from '../ui/TextButton'
 import Text from '../ui/Text'
+import ErrorText from '../ui/ErrorText'
 import { freeAgentLine } from './freeAgentClient'
 import styles from './FreeAgentSetup.module.css'
 
@@ -60,9 +61,7 @@ const FreeAgentSetup: Component<FreeAgentSetupProps> = props => {
                         </>
                     }
                 >
-                    <Text size="ui" class={styles.error} role="alert">
-                        {freeAgentLine(props.progress)}
-                    </Text>
+                    <ErrorText>{freeAgentLine(props.progress)}</ErrorText>
                     <TextButton onClick={props.onStart}>try again</TextButton>
                 </Show>
             </Show>

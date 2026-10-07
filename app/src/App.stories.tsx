@@ -330,6 +330,15 @@ async function openArranged(canvasElement: HTMLElement) {
         expect(canvasElement.querySelector('[data-pane-leaf]')).not.toBeNull()
         expect(canvasElement.querySelector('[data-graph-floater]')).not.toBeNull()
     })
+    // `[data-pane-leaf]` is there as soon as the pane's Suspense FALLBACK is, long before the
+    // lazy Editor chunk lands. Without this every arrangement story could settle (and be shot) with
+    // an empty pane while its layout assertions passed. A real lazy chunk load: more than 1s.
+    await waitFor(
+        () => {
+            expect(canvasElement.querySelector('.cm-content')).not.toBeNull()
+        },
+        { timeout: 5000 },
+    )
     const rect = (sel: string) => canvasElement.querySelector<HTMLElement>(sel)!
     return {
         frame: rect('[data-app-shell]'),

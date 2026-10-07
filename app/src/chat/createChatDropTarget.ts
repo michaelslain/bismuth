@@ -25,7 +25,7 @@ import {
     planDrop,
     type DragPasteboard,
 } from '../dropIntake'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import { deliverChatDrop } from './chatSessions'
 import { chatActionsFromPlan, type ChatDropAction } from './chatDrop'
 

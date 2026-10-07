@@ -9,6 +9,7 @@ import { createSignal, Show } from 'solid-js'
 import { TextInput } from '../../ui/TextInput'
 import Select from '../../ui/Select'
 import Text from '../../ui/Text'
+import TaskCheck from '../../bases/TaskCheck'
 import { isDismissKey, isConfirmKey } from '../../ui/widgetKeys'
 import { gestureStops } from '../../ui/stopGestures'
 import type { TaskComposeTarget } from '../taskCompose'
@@ -20,7 +21,7 @@ export type TaskCellComposerProps = {
      *  own label) once `targets` carries more than one option. */
     destination: string
     /** Resolved CSS colour of the destination's default category, painted on the `[ ]` marker.
-     *  Undefined → the marker's default --text-muted — the same contract as TaskChip's own
+     *  Undefined → TaskCheck's default read-only ink — the same contract as TaskChip's own
      *  `color` prop. Ignored once `targets` is non-empty — the picked target's own colour wins. */
     color?: string
     /** Every destination a commit could land in — one per source note (sourced base) or one
@@ -67,6 +68,7 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
     return (
         <div
             ref={root}
+            data-testid="task-cell-composer"
             class={[styles.composer, props.class ?? '']
                 .filter(Boolean)
                 .join(' ')}
@@ -76,15 +78,16 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
             {...gestureStops}
         >
             <div class={styles.row}>
-                <Text
-                    as="span"
-                    inherit
-                    class={styles.marker}
-                    data-testid="task-cell-composer-marker"
-                    style={markerColor() ? { color: markerColor() } : undefined}
-                >
-                    [ ]
-                </Text>
+                {/* The `[ ]` is the same mark a TaskChip draws — display only (readOnly): the
+                    composer owns the click, and the mark is a preview of the task to come. */}
+                <TaskCheck
+                    readOnly
+                    status="todo"
+                    color={markerColor()}
+                    label="new task"
+                    onToggle={() => {}}
+                    onSetStatus={() => {}}
+                />
                 <TextInput
                     plain
                     class={styles.input}
@@ -154,12 +157,25 @@ const TaskCellComposer: Component<TaskCellComposerProps> = props => {
                         <Show
                             when={props.destination}
                             fallback={
-                                <Text as="span" inherit class={styles.unset}>
+                                <Text
+                                    as="span"
+                                    inherit
+                                    class={`${styles.destinationText} ${styles.unset}`}
+                                    data-testid="task-cell-composer-destination-text"
+                                >
                                     → no destination note // set one in settings
                                 </Text>
                             }
                         >
-                            → {props.destination}
+                            <Text
+                                as="span"
+                                inherit
+                                class={styles.destinationText}
+                                title={props.destination}
+                                data-testid="task-cell-composer-destination-text"
+                            >
+                                → {props.destination}
+                            </Text>
                         </Show>
                     }
                 >

@@ -9,12 +9,13 @@ import { type Component, For, type JSX, Show } from 'solid-js'
 import AnchoredPopover from './AnchoredPopover'
 import ChipToggle from './ChipToggle'
 import PlainButton from './PlainButton'
+import Popover from './Popover'
 import Swatch from './Swatch'
 import { PALETTE_TOKENS, resolvePaletteColor } from './palette'
 import styles from './ColorChip.module.css'
 
 export type ColorChipProps = {
-    /** The current value: a palette token name or any CSS colour. Empty paints `var(--accent)`.
+    /** The current value: a palette token name or any CSS colour. Empty paints an empty dashed box (no colour chosen), not a hue.
      *  A caller with an `auto` entry should pass its EFFECTIVE colour (the computed one), not
      *  the stored null, or the chip shows the accent instead of the colour actually in use. */
     color: string
@@ -59,7 +60,7 @@ const ColorChip: Component<ColorChipProps> = props => {
                 fallback={
                     <Swatch
                         size="sm"
-                        color={resolvePaletteColor(props.color) || 'var(--accent)'}
+                        color={resolvePaletteColor(props.color)}
                         label="Choose colour"
                         selected={props.open}
                         onClick={props.onToggle}
@@ -82,31 +83,32 @@ const ColorChip: Component<ColorChipProps> = props => {
                 placement={props.placement}
                 open={props.open}
                 onDismiss={props.onToggle}
-                class={styles['pop']}
                 panelAttrs={{ 'data-testid': 'category-palette' }}
             >
-                <div class={styles['sws']}>
-                    <Show when={props.auto}>
-                        {auto => (
-                            <ChipToggle
-                                selected={auto().selected}
-                                onToggle={auto().onPick}
-                            >
-                                {auto().label}
-                            </ChipToggle>
-                        )}
-                    </Show>
-                    <For each={props.palette ?? PALETTE_TOKENS}>
-                        {entry => (
-                            <Swatch
-                                color={resolvePaletteColor(entry)}
-                                label={entryLabel(entry)}
-                                selected={isSelected(entry)}
-                                onClick={() => props.onPick(entry)}
-                            />
-                        )}
-                    </For>
-                </div>
+                <Popover tone="panel">
+                    <div class={styles['sws']}>
+                        <Show when={props.auto}>
+                            {auto => (
+                                <ChipToggle
+                                    selected={auto().selected}
+                                    onToggle={auto().onPick}
+                                >
+                                    {auto().label}
+                                </ChipToggle>
+                            )}
+                        </Show>
+                        <For each={props.palette ?? PALETTE_TOKENS}>
+                            {entry => (
+                                <Swatch
+                                    color={resolvePaletteColor(entry)}
+                                    label={entryLabel(entry)}
+                                    selected={isSelected(entry)}
+                                    onClick={() => props.onPick(entry)}
+                                />
+                            )}
+                        </For>
+                    </div>
+                </Popover>
             </AnchoredPopover>
         </div>
     )

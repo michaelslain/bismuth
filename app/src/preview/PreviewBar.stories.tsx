@@ -27,6 +27,8 @@ type HarnessProps = {
     draw?: boolean
     scratch?: boolean
     panel?: boolean
+    /** `annotReady` — false until the sidecar has loaded (default true). */
+    ready?: boolean
     imageSize?: { w: number; h: number }
 }
 
@@ -50,7 +52,7 @@ function Harness(props: HarnessProps): JSX.Element {
                 zoom={zoom}
                 onZoomBy={f => setZoom(z => z * f)}
                 onFit={() => setZoom(1)}
-                annotReady={() => true}
+                annotReady={() => props.ready ?? true}
                 drawMode={draw}
                 onToggleDraw={() => setDraw(v => !v)}
                 highlightArmed={armed}
@@ -123,6 +125,35 @@ export const Pdf: Story = {
         await fireEvent.click(bookmarks)
         await waitFor(() => expect(probeBar(bar).selectedCount).toBe(0))
         await expect(probeBar(bar).frames).toBe(0)
+    },
+}
+
+/** Before the sidecar has loaded the three annotate toggles are DISABLED, and a disabled control reads
+ *  as one: `--faint` ink, no opacity (the button family's one disabled recipe). They once painted
+ *  as enabled, indistinguishable from the live ones (wave-1 cascade bug: a selected/unselected rule
+ *  outranked the disabled one). The enabled neighbours (zoom) keep their own ink as the contrast. */
+export const NotReady: Story = {
+    render: () => <Harness width={1000} kind="pdf" ready={false} />,
+    play: async ({ canvasElement }) => {
+        const bar = barOf(canvasElement)
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--faint)'
+        bar.appendChild(probe)
+        const faint = getComputedStyle(probe).color
+        probe.style.color = 'var(--text-muted)'
+        const muted = getComputedStyle(probe).color
+        probe.remove()
+        await expect(faint).not.toBe(muted)
+        for (const label of ['Highlight text', 'Draw', 'Scratch paper']) {
+            const btn = within(bar).getByLabelText(label) as HTMLButtonElement
+            await expect(btn.disabled, `${label} disabled`).toBe(true)
+            await expect(getComputedStyle(btn).color, `${label} ink`).toBe(faint)
+            await expect(getComputedStyle(btn).opacity, `${label} opacity`).toBe('1')
+        }
+        // ...while an enabled neighbour keeps its own ink, so the three above are not simply the
+        // bar's resting colour.
+        const zoomIn = within(bar).getByLabelText('Zoom in')
+        await expect(getComputedStyle(zoomIn).color).not.toBe(faint)
     },
 }
 

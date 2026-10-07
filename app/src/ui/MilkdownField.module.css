@@ -1,0 +1,105 @@
+/* app/src/ui/MilkdownField.module.css — MilkdownField.tsx is the ONLY importer. The chrome and the
+   prose theming for the Milkdown WYSIWYG field. Both used to live in a CALLER
+   (bases/CardEditModal.module.css's `.mdField`, ~90 lines), so the field itself was chromeless and
+   its own stories showed a browser focus ring, no placeholder and a rounded box no real caller
+   produced.
+
+   The host is `<FormControl as="div">` (ui/FormControl.tsx), so the box is the field idiom every
+   other value control uses: transparent, an underline `--rule-soft` at rest that firms to `--rule`
+   on hover/focus, no fill, no accent, no ring. `.wysiwyg[data-control]` is (0,2,0) so these multi-line
+   overrides (FormControl's single-line `height: var(--h-control)`) win over `.ui-input` whichever
+   stylesheet loads first.
+
+   TYPE FACE — PROSE. A description is text a person wrote, so it sits in `--prose-font` at
+   `--prose-font-size`, the same face the CodeMirror MarkdownField uses for the same role. (The two
+   rendered one role in two faces: this one was the mono UI stack, that one the serif.) Anything
+   pulled back out of prose — inline code — returns to the mono stack at `--code-font-size`.
+
+   Milkdown ships no CSS, and ProseMirror/Milkdown create their own DOM with their own class
+   names, so those are reached with :global() — a third-party plain-DOM library, global by
+   necessity. The `attributes.class` createDocEditor sets ("bismuth-doc-milkdown") lands on the
+   contenteditable itself. */
+
+.wysiwyg[data-control='div'] {
+  height: auto;
+  /* Four control rows (96px), held on the HOST so an empty field is already its resting height in
+     the frames before the code-split surface mounts. */
+  min-height: calc(var(--h-control) * 4);
+  box-sizing: border-box;
+  padding: var(--sp-2) 0;
+  cursor: text;
+}
+.wysiwyg[data-control='div']:hover { border-bottom: var(--rule); }
+
+/* An image embedded in the description renders inline as the real picture (inlineNodes.ts draws
+   image embeds as <img>). Cap it to the field so a big photo can't blow out the dialog. */
+.wysiwyg :global(.bismuth-embed-image) { display: inline-block; max-width: 100%; vertical-align: top; }
+.wysiwyg :global(.bismuth-embed-img) {
+  max-width: 100%;
+  /* Ten control rows (240px): a layout size, not a spacing step. */
+  max-height: calc(var(--h-control) * 10);
+  height: auto;
+  border-radius: var(--r-0);
+  object-fit: contain;
+}
+
+/* The editable. `outline: none` — ProseMirror's contenteditable otherwise paints the browser's
+   default focus ring; nothing in this app draws focus, the host's underline firming is the cue.
+   The min-height is four control rows less the host's own padding, so an empty field is the
+   same resting height as the 96px box it replaces. */
+.wysiwyg :global(.bismuth-doc-milkdown) {
+  outline: none;
+  min-height: calc(var(--h-control) * 4 - var(--sp-4));
+  font-family: var(--prose-font);
+  font-size: var(--prose-font-size);
+  line-height: 1.55;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.wysiwyg :global(.bismuth-doc-milkdown p) { margin: 0 0 var(--sp-4); }
+.wysiwyg :global(.bismuth-doc-milkdown p:last-child) { margin-bottom: 0; }
+/* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, global.css's tokens section), never
+   em multipliers: the ramp's invariant (a heading is never smaller than the prose it heads) is
+   unrepresentable in units relative to an inherited size. */
+.wysiwyg :global(.bismuth-doc-milkdown h1) { font-size: var(--fs-h1); font-weight: var(--fw-h1); line-height: var(--lh-tight); margin: var(--sp-3) 0; }
+.wysiwyg :global(.bismuth-doc-milkdown h2) { font-size: var(--fs-h2); font-weight: var(--fw-h2); line-height: var(--lh-tight); margin: var(--sp-3) 0; }
+.wysiwyg :global(.bismuth-doc-milkdown h3) { font-size: var(--fs-h3); font-weight: var(--fw-h3); line-height: var(--lh-tight); margin: var(--sp-3) 0 var(--sp-2); }
+.wysiwyg :global(.bismuth-doc-milkdown h4) { font-size: var(--fs-h4); font-weight: var(--fw-h4); line-height: var(--lh-tight); margin: var(--sp-3) 0 var(--sp-2); }
+.wysiwyg :global(.bismuth-doc-milkdown h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); letter-spacing: var(--ls-label); margin: var(--sp-3) 0 var(--sp-2); }
+.wysiwyg :global(.bismuth-doc-milkdown h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); margin: var(--sp-3) 0 var(--sp-2); }
+.wysiwyg :global(.bismuth-doc-milkdown ul),
+.wysiwyg :global(.bismuth-doc-milkdown ol) { margin: var(--sp-2) 0; padding-left: var(--sp-7); }
+.wysiwyg :global(.bismuth-doc-milkdown li) { margin: var(--sp-1) 0; }
+.wysiwyg :global(.bismuth-doc-milkdown li > p) { margin: 0; }
+.wysiwyg :global(.bismuth-doc-milkdown strong) { font-weight: 700; }
+.wysiwyg :global(.bismuth-doc-milkdown em) { font-style: italic; }
+.wysiwyg :global(.bismuth-doc-milkdown code) {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-rel-code);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-0);
+  background: var(--surface-3);
+}
+.wysiwyg :global(.bismuth-doc-milkdown blockquote) {
+  margin: var(--sp-3) 0;
+  padding-left: var(--sp-5);
+  border-left: 2px solid var(--border);
+  color: var(--text-muted);
+}
+.wysiwyg :global(.bismuth-doc-milkdown a) { color: var(--accent); text-decoration: none; }
+
+/* Placeholder, shown while the document is one empty paragraph. ProseMirror keeps a lone
+   `<p><br></p>` when empty, which `:empty` never matches, so the test is "only child, whose only
+   child is the trailing <br>". The text arrives as a quoted-string custom property on the host
+   (MilkdownField.tsx sets `--field-placeholder` from its `placeholder` prop), so the component
+   hardcodes no copy; with no prop the var is unset and `content: none` draws nothing. It is a
+   hint a person reads, so `--text-muted`, not `--faint`. `float` keeps it from displacing the
+   caret that sits at the start of the line. */
+.wysiwyg :global(.bismuth-doc-milkdown > p:only-child:has(> br:only-child))::before {
+  content: var(--field-placeholder, none);
+  float: left;
+  height: 0;
+  color: var(--text-muted);
+  pointer-events: none;
+}

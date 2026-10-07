@@ -203,6 +203,24 @@ export const Full: Story = {
         await expect(
             canvas.getByText('Memory consolidation complete'),
         ).toBeInTheDocument()
+        // Row titles do not tie with the section's bold heading, and a resolved row is inked
+        // quieter than an open one.
+        const open = getComputedStyle(canvas.getByText('Calendar sync failed'))
+        const done = getComputedStyle(
+            canvas.getByText('Memory consolidation complete'),
+        )
+        await expect(Number(open.fontWeight)).toBeLessThan(600)
+        await expect(done.color).not.toBe(open.color)
+        // [archive] is a plain action, not the danger red [delete] carries.
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--danger)'
+        canvasElement.appendChild(probe)
+        const danger = getComputedStyle(probe).color
+        probe.remove()
+        await expect(
+            getComputedStyle(canvas.getAllByRole('button', { name: 'archive' })[0])
+                .color,
+        ).not.toBe(danger)
     },
 }
 

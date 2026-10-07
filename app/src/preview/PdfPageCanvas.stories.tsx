@@ -21,6 +21,7 @@ import { expect, waitFor } from 'storybook/test'
 import { jsPDF } from 'jspdf'
 import PdfPageCanvas from './PdfPageCanvas'
 import type { PageBox } from './pageLayout'
+import TextButton from '../ui/TextButton'
 
 const meta = {
     title: 'Preview/PdfPageCanvas',
@@ -81,20 +82,18 @@ export const TopOnlyMoveKeepsRaster: Story = {
                         pdfjs={() => ready()!.pdfjs}
                     />
                 </Show>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="move-only"
                     onClick={() => setBox(b => ({ ...b, top: b.top + 50 }))}
                 >
                     move
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="resize"
                     onClick={() => setBox(b => ({ ...b, w: b.w + 40 }))}
                 >
                     resize
-                </button>
+                </TextButton>
             </div>
         )
     },

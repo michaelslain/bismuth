@@ -48,7 +48,7 @@
     margin-left: var(--sp-4);
 }
 
-/* ── The quiet row: faint ui-size mono, no boxes, no fill, no caret (Acceptance). Shared by the
+/* ── The quiet row: muted ui-size mono, no boxes, no fill, no caret (Acceptance). Shared by the
    chat tab (below the composer, in place of the old header's config/actions) and the daemon page
    (below its composer, where a session may not exist yet — see `.disabled` below). ── */
 .row {
@@ -63,9 +63,16 @@
        padding) are the same decision and belong next to each other. */
     gap: 0;
     padding-left: 0;
+    /* Two pixels of right inset: the row's content overhung its box by exactly 2px (`scrollWidth` 242
+       in a 240px row — Overflow240 failed on main with that number; the cause is in the last
+       bracket button's box, which was not isolated further). The inset absorbs it. */
+    padding-right: var(--sp-1);
     font-family: var(--ui-font-stack);
     font-size: var(--fs-ui);
-    color: var(--faint);
+    /* `--text-muted`, not `--faint`: the model word, the permission mode and the two commands are
+       content a person reads and clicks, and `--faint` is structure (the `//` separators below keep
+       it). */
+    color: var(--text-muted);
     height: var(--h-control);
     /* The row's own collapse ladder queries THIS box's width, not the viewport — the daemon
        centre column and the chat tab give it very different available widths at the same window
@@ -141,7 +148,6 @@
     margin: 0 var(--sp-2);
     color: var(--faint);
 }
-
 .row .mode-select {
     background: transparent;
     border-color: transparent;
@@ -176,13 +182,21 @@
 
 /* The no-session row: Config/Actions render for real (buildDisabledSession() in ChatControls.tsx)
    so the control set — and therefore the row's height — is identical to the armed row's. This
-   class only supplies the LOOK (the same dimmed opacity `.btn:disabled` uses elsewhere, global.css's
-   `ui/ui.css` section);
-   the actual inertness is the DOM's own `inert` attribute on `.row` (ChatControls.tsx), not
-   `pointer-events: none` here — final-findings Group 2 #2: `pointer-events: none` stops a click but
-   leaves every control reachable by Tab, so a keyboard user could tab into a picker that does
-   nothing. `inert` removes the whole subtree from both the tab order and hit-testing in one
-   declarative attribute, and reads correctly to assistive tech besides. */
-.disabled {
-    opacity: 0.4;
+   class only supplies the LOOK; the actual inertness is the DOM's own `inert` attribute on `.row`
+   (ChatControls.tsx), not `pointer-events: none` here — `pointer-events: none` stops a click but
+   leaves every control reachable by Tab, while `inert` removes the whole subtree from both the tab
+   order and hit-testing in one declarative attribute, and reads correctly to assistive tech.
+
+   The look is INK, never opacity (DESIGN.md: no state is ever shown by opacity). The row used to
+   sit at `opacity: 0.4`, which put the model word at 1.8:1 and `bypass` at 2.4:1 and then snapped
+   bright on the first click; `inert` already makes the row non-interactive, so the dimming bought
+   nothing and cost legibility. Every ink in the row drops to `--faint` instead (4.5:1 on the base
+   ground) — the buttons and the permission select carry their own colour, hence the explicit
+   reach below — so arming steps the row from `--faint` up to `--text-muted` and the `bypass`
+   warning tint arrives with it. */
+.row.disabled,
+.row.disabled button,
+.row.disabled [data-kind],
+.row.disabled .mode-select--armed {
+    color: var(--faint);
 }

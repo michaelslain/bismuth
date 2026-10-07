@@ -101,9 +101,12 @@ export const Expandable: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        const head = canvas.getByRole('button', { name: /Read/ })
+        await expect(head.getAttribute('aria-expanded')).toBe('false')
         await userEvent.click(canvas.getByText('Read'))
-        // "Input" only renders once expanded — unique, unlike the argument text (which already
+        await expect(head.getAttribute('aria-expanded')).toBe('true')
+        // "input" only renders once expanded — unique, unlike the argument text (which already
         // shows once in the closed row's summary).
-        await expect(canvas.getByText('Input')).toBeInTheDocument()
+        await expect(canvas.getByText('input')).toBeInTheDocument()
     },
 }

@@ -9,11 +9,11 @@
 import { test, expect } from 'bun:test'
 import { ICON_NAMES } from './iconNames'
 
-test('exactly 140 canonical names', () => {
+test('exactly 142 canonical names', () => {
     // Absolute, not a lower bound — plan §10's whole coverage table (133/140, 135/140 etc.) is
     // measured against this exact figure, so a silent add/drop here invalidates every percentage
     // quoted in the plan and in iconMap.ts's comments without any test noticing.
-    expect(ICON_NAMES.length).toBe(140)
+    expect(ICON_NAMES.length).toBe(142)
 })
 
 test('every name is unique', () => {
@@ -28,7 +28,7 @@ test('every name is PascalCase-shaped', () => {
 })
 
 test('includes both the ordinary and the awkward/technical names', () => {
-    // Spot checks, not structural-only — a list could pass every check above by being 140 copies
+    // Spot checks, not structural-only — a list could pass every check above by being 142 copies
     // of "Plus" with a Set that happens to dedupe wrong. These are absolute values.
     for (const name of [
         'Plus',

@@ -2,7 +2,7 @@
    (`=` underneath, see AsciiCellEdges): sticky is already a positioned box, and it does not clip,
    so the glyphs that straddle its edges show. z-index 1 keeps the header AND its `=` above the
    body cells' overhanging glyphs while the table scrolls. Column headers are chrome (like the view tabs / query
-   label): an uppercase, widely-tracked eyebrow at --fs-micro, not the body's --fs-ui prose. */
+   label): a lowercase --fs-micro head in the muted ink — no all-caps, no tracking. */
 .th {
   position: sticky;
   /* half a line down: the header's top rule straddles its box, and the scroll edge would clip it;
@@ -22,13 +22,11 @@
   white-space: nowrap;
   font-family: var(--ui-font-stack);
   font-size: var(--fs-micro);
-  text-transform: uppercase;
-  letter-spacing: var(--ls-eyebrow, 0.14em);
   vertical-align: bottom;
 }
 .thDrag { cursor: grab; user-select: none; }
 .thDrag:active { cursor: grabbing; }
-.thOver { box-shadow: inset 2px 0 0 0 var(--accent); }
+/* The header a dragged column is over takes the drop: `ui/DropCue` (TableHeader.tsx) draws it. */
 /* display/overflow/ellipsis/white-space live in ui/Label.tsx (`<Label inline>`); this class
    stays for placement inside the <th> (max-width/vertical-align). */
 .thLabel { max-width: 100%; vertical-align: bottom; }
@@ -56,7 +54,7 @@
   align-self: center;
   background: var(--border);
   border-radius: var(--r-0);
-  transition: background calc(120ms * var(--motion-scale)) var(--ease-std);
+  transition: background var(--dur) var(--ease);
 }
-.thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
+.thResizable:hover .thResize::after { background: var(--text-muted); }
 .thResize:hover::after, .thAtEdge .thResize::after { background: var(--accent); }

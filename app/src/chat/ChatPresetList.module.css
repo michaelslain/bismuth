@@ -1,7 +1,8 @@
 /* app/src/chat/ChatPresetList.module.css — the model dialog's presets section (ONE importer:
-   ChatPresetList.tsx), at the top of ChatModelPicker's left column. A preset row copies the
-   connector rows below it — the same `▸` slot, hanging indent, muted → fg tones — so presets and
-   connectors read as one list of things to pick, split by a soft rule. Lowercase text only. */
+   ChatPresetList.tsx), at the top of ChatModelPicker's left column. A preset is a `ui/PickRow` in a
+   `ui/ListRow` — the same pick row the connectors and models below it are, so presets and
+   connectors read as one list of things to pick, split by a soft rule. The `[x]` reveal on hover is
+   ListRow's own (`reveal`), not a copy of it. Lowercase text only. */
 
 .root {
     display: flex;
@@ -14,57 +15,15 @@
     padding: var(--sp-3) var(--sp-5) var(--sp-2);
 }
 
-/* The preset button and its `[x]` side by side; the `[x]` sits on the name's first line. */
-.row {
-    display: flex;
-    /* baseline, not flex-start: the [x] reads on the name's FIRST line even when the name wraps. */
-    align-items: baseline;
-    min-width: 0;
+/* The ListRow's own box takes the dialog's right gutter (ListRow adds no inline padding, and PickRow
+   carries its own left one) so the `[x]` sits clear of the column's rule. Doubled class: ListRow's own `.row { padding: 0 }` is
+   the same specificity, and which sheet loads later would otherwise decide. */
+.row.row {
     padding-right: var(--sp-3);
 }
-.preset {
-    flex: 1;
+.pick {
+    flex: 1 1 auto;
     min-width: 0;
-    display: block;
-    /* Hanging indent, as the connector rows: a wrapped name aligns under itself, not the ▸. */
-    padding: var(--sp-3) var(--sp-2) var(--sp-3) calc(var(--sp-5) + 2ch);
-    text-indent: -2ch;
-    text-align: left;
-    overflow-wrap: anywhere;
-    color: var(--text-muted);
-}
-/* Lit by the ROW's hover, not the name's: reaching for the row's [x] must not dim the row it deletes. */
-.row:hover .preset,
-.preset--current {
-    color: var(--fg);
-}
-.mark {
-    display: inline-block;
-    width: 2ch;
-    text-indent: 0;
-    color: var(--accent);
-}
-.delete {
-    flex: none;
-}
-/* The [x] shows only while its row is hovered — ui/ListRow's trailing-slot reveal, rule for rule.
-   Opacity, never display/visibility: the name never reflows on hover, and a tabbed-to [x] stays in
-   tab order. Revealed by focus on the [x] ITSELF, not the row's focus-within — the dialog focuses
-   its first control on open (the first preset), which would show that row's [x] at rest. */
-.delete {
-    opacity: 0;
-    transition: opacity var(--dur-fast) var(--ease);
-}
-.row:hover .delete,
-.delete:focus-within,
-.delete:focus-visible {
-    opacity: 1;
-}
-/* No hover on a touch screen: always shown there, or a preset could never be deleted. */
-@media (hover: none) {
-    .delete {
-        opacity: 1;
-    }
 }
 
 /* `+ save` starts on the names' left edge (past the ▸ slot). */

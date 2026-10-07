@@ -2,77 +2,54 @@
    the Cmd+O switcher's keyword-content and Bismuth-AI results (palette/SwitcherBar.tsx renders
    SearchResultRows inline in its results list, under its file-name PaletteRow rows).
 
-   `.sresult[data-selected]` — the keyboard-highlighted group is a `data-selected` RUNTIME HOOK,
-   not a class: SwitcherBar.tsx's `scrollSelectedIntoView(..., '[data-selected]')` queries it
-   generically across PaletteRow file rows AND these groups in the SAME list, and a hashed
-   per-file class can't cross that boundary — see PaletteRow.module.css's header for the matching
-   convention on `.palette-row`.
+   THE FILE LINE IS A `ui/PaletteRow` — icon, name, folder crumb and match count are its anatomy and
+   its metrics, not a copy of them (this sheet used to say it "copies PaletteRow's anatomy" in the
+   same list that renders PaletteRow). What stays here is only what a PaletteRow does not have: the
+   per-file group, the snippet lines under it and the AI rationale.
+
+   THE KEYBOARD CURSOR is the head PaletteRow's own `data-selected` (the hook SwitcherBar's
+   `scrollSelectedIntoView(..., '[data-selected]')` finds across file rows AND these groups). The
+   snippets under a selected head take the same wash through `data-group-selected`, a runtime hook on
+   the group, so the whole group still reads as the one selected result.
 
    `[data-switcher-list] .sresult + .sresult` — keyed on the `data-switcher-list` attribute
    SwitcherBar.tsx sets on its results column, a `data-*` context hook rather than a reach into
-   SwitcherBar.module.css's own class. */
+   SwitcherBar.module.css's own class.
 
-/* .sresult — one group per file: a PaletteRow-shaped file line over compact snippet lines. No
-   border, no surface, no card padding — the switcher's file-name rows (palette/PaletteRow) and
-   these content rows are ONE list, so they share its row height, inset, type size and selection
-   treatment, and groups separate by a little vertical rhythm instead of boxes. */
+   NO HOVER BACKGROUND on a snippet: a clickable row never paints one on hover (ui/ListRow.tsx), so the
+   old `.sresult-snip:hover` wash is gone. */
+
+/* .sresult — one group per file: a PaletteRow file line over compact snippet lines. No border, no
+   surface, no card padding — the switcher's file-name rows and these content rows are ONE list, so
+   they share its row height, inset, type size and selection treatment, and groups separate by a
+   little vertical rhythm instead of boxes. */
 .sresult {
   display: flex;
   flex-direction: column;
   padding: var(--sp-1) 0 var(--sp-2);
   cursor: pointer;
 }
-/* Keyboard-highlighted group — the same treatment as `.palette-row[data-selected]`. */
-.sresult[data-selected] {
-  background: var(--state-selected-bg);
-}
-.sresult[data-selected] .sresult-icon,
-.sresult[data-selected] .sresult-title { color: var(--accent); }
+/* Head-row width floors. PaletteRow's title takes the free space (`flex: 1`, basis 0) and its folder
+   crumb keeps its full content width, so a deep path crushed the TITLE to ~1ch — the name vanished
+   and the crumb ran on whole. The title gets a floor and the crumb a smaller one, so on a narrow row
+   the crumb ellipsizes first and both stay readable. Structural selectors on the row's own root: the
+   title is the second child; the crumb the third, and only when a folder exists (else the third is the
+   last — the count). */
+.sresult-head > :nth-child(2) { min-width: 20ch; }
+.sresult-head > :nth-child(3):not(:last-child) { min-width: 8ch; }
+/* The selected group's snippets take the head's wash (the head paints its own through PaletteRow). */
+.sresult[data-group-selected] .sresult-snip,
+.sresult[data-group-selected] .sresult-reason { background: var(--state-selected-bg); }
 /* The switcher's results column is not a gap container; a hairline of air between groups. */
 [data-switcher-list] .sresult + .sresult { margin-top: var(--sp-1); }
 
-/* File line — the same anatomy and metrics as PaletteRow's `.palette-row`: --h-row tall,
-   --sp-5 inset and gap, --fs-ui, a 1.2em muted icon column. */
-.sresult-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-5);
-  min-height: var(--h-row);
-  padding: 0 var(--sp-5);
-  font-size: var(--fs-ui);
-  line-height: var(--h-row);
-  color: var(--fg);
-  white-space: nowrap;
-}
-/* The file line is itself a hit target (opens the file) — used for every result so an AI row
-   with a single snippet, or any future snippet-less row, is still openable from the title. */
-.sresult-head-open { cursor: pointer; }
-.sresult-head-open:hover,
-.sresult-snip:hover { background: var(--state-hover-bg); }
-.sresult-icon {
-  flex: none;
-  width: 1.2em;
-  height: 1.2em;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-}
-.sresult-title { flex: 0 1 auto; font-family: var(--popover-font); }
-.sresult-path { font-size: var(--fs-micro); }
-.sresult-count {
-  flex: none;
-  margin-left: auto;
-  padding-left: var(--sp-5);
-  font-size: var(--fs-micro);
-}
-
-/* .sresult-reason — the AI's one-line rationale, on the snippet text's left edge. */
+/* .sresult-reason — the AI's one-line rationale, on the snippet text's left edge: PaletteRow's inset,
+   its 1.2em icon column and the row gap. --text-muted, not --faint: it is a sentence the user reads. */
 .sresult-reason {
-  padding: 0 var(--sp-5) 0 calc(var(--sp-5) * 2 + var(--fs-ui) * 1.2);
+  padding: 0 var(--sp-4) 0 calc(var(--sp-4) + var(--sp-5) + var(--fs-ui) * 1.2);
   font-size: var(--fs-micro);
   line-height: 1.5;
-  color: var(--faint);
+  color: var(--text-muted);
 }
 
 /* Snippet line — the line number sits in the file line's icon column (right-aligned, so a
@@ -83,7 +60,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--sp-5);
-  padding: 0 var(--sp-5);
+  padding: 0 var(--sp-4);
   cursor: pointer;
   font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
@@ -91,13 +68,14 @@
   color: var(--text-muted);
   text-align: left;
 }
+/* A line number is a locator the user reads to find the match — --text-muted, not --faint. */
 .sresult-line {
   flex: none;
   width: calc(var(--fs-ui) * 1.2);
   display: inline-flex;
   justify-content: flex-end;
   font-size: var(--fs-micro);
-  color: var(--faint);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 .sresult-text { flex: 1; overflow-wrap: anywhere; }

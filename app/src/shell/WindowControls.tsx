@@ -20,6 +20,10 @@
 // with no Tauri runtime present. macOS runs a transparent Overlay titlebar with native traffic
 // lights instead, so on that platform these buttons never render at all.
 //
+// THE GLYPHS ARE LITERAL TEXT (`[-] [+] [x]`, the typed-controls look), so each button carries an
+// `aria-label`: without one a screen reader announces the brackets ("left bracket, minus, right
+// bracket") as the name. Hover is an ink shift only — no fill — see WindowControls.module.css.
+//
 // These render as `PlainButton` (app/src/ui/PlainButton.tsx), not a bare `<button>` or `ui/Button`:
 // PlainButton is a real `<button>` with its native chrome reset to nothing, so `.win-btn`/
 // `.win-btn--close` below stay the only thing that paint it — `ui/Button`'s `.btn` family would add
@@ -38,6 +42,7 @@ export function WindowControls(props: {
             <PlainButton
                 class={styles['win-btn']}
                 title="Minimize"
+                aria-label="Minimize"
                 onClick={props.onMinimize}
             >
                 [-]
@@ -45,6 +50,7 @@ export function WindowControls(props: {
             <PlainButton
                 class={styles['win-btn']}
                 title="Maximize"
+                aria-label="Maximize"
                 onClick={props.onToggleMaximize}
             >
                 [+]
@@ -52,6 +58,7 @@ export function WindowControls(props: {
             <PlainButton
                 class={`${styles['win-btn']} ${styles['win-btn--close']}`}
                 title="Close"
+                aria-label="Close"
                 onClick={props.onClose}
             >
                 [x]

@@ -1,7 +1,7 @@
-import { createMemo, Index, Show, type Component } from 'solid-js'
+import { createMemo, Index, type Component } from 'solid-js'
 import { IconTextButton } from '../ui/IconTextButton'
 import PropertyRowEditor from './PropertyRowEditor'
-import RowList from '../ui/RowList'
+import EditableRows from './EditableRows'
 import {
     blankPropertyRow,
     duplicatePropertyNames,
@@ -9,7 +9,6 @@ import {
     type PropertyFormRow,
 } from './basePropertiesForm'
 import { indexAfterMove, indexAfterRemove } from './baseSettingsPlan'
-import styles from './PropertiesFields.module.css'
 
 export type PropertiesFieldsProps = {
     rows: PropertyFormRow[]
@@ -52,38 +51,34 @@ const PropertiesFields: Component<PropertiesFieldsProps> = props => {
         props.onEditing(indexAfterMove(props.editing, i, j))
     }
     return (
-        <div class={props.class}>
-            <Show when={props.rows.length > 0}>
-                <RowList>
-                    {/* <Index>, not <For>: update() replaces the row object on every keystroke,
-                        and <For> would remount the row and drop focus on the first character. */}
-                    <Index each={props.rows}>
-                        {(row, i) => (
-                            <PropertyRowEditor
-                                row={row()}
-                                open={props.editing === i}
-                                duplicate={duplicates().has(i)}
-                                isFirst={i === 0}
-                                isLast={i === props.rows.length - 1}
-                                onToggleOpen={() =>
-                                    props.onEditing(
-                                        props.editing === i ? null : i,
-                                    )
-                                }
-                                onChange={patch => update(i, patch)}
-                                onMove={dir => move(i, dir)}
-                                onRemove={() => remove(i)}
-                            />
-                        )}
-                    </Index>
-                </RowList>
-            </Show>
-            <div class={styles.addProperty}>
+        <EditableRows
+            class={props.class}
+            add={
                 <IconTextButton icon="Plus" onClick={add}>
                     add property
                 </IconTextButton>
-            </div>
-        </div>
+            }
+        >
+            {/* <Index>, not <For>: update() replaces the row object on every keystroke, and <For>
+                would remount the row and drop focus on the first character. */}
+            <Index each={props.rows}>
+                {(row, i) => (
+                    <PropertyRowEditor
+                        row={row()}
+                        open={props.editing === i}
+                        duplicate={duplicates().has(i)}
+                        isFirst={i === 0}
+                        isLast={i === props.rows.length - 1}
+                        onToggleOpen={() =>
+                            props.onEditing(props.editing === i ? null : i)
+                        }
+                        onChange={patch => update(i, patch)}
+                        onMove={dir => move(i, dir)}
+                        onRemove={() => remove(i)}
+                    />
+                )}
+            </Index>
+        </EditableRows>
     )
 }
 

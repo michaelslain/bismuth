@@ -18,20 +18,18 @@
     color: var(--text-muted);
     text-align: center;
 }
-.row {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-4);
-    padding: var(--sp-3) var(--sp-5);
-    font-size: var(--fs-ui);
+/* The load failure: ErrorText owns the tone, so this carries only the placement `.state` has. */
+.state-error {
+    padding: var(--sp-5) var(--sp-5);
+    text-align: center;
 }
 .name {
     flex: 1;
+    min-width: 0;
 }
-.kind {
-    /* Plain lowercase text, no box — the req/opt badge idiom (DESIGN.md › Forms). */
-    font-size: var(--fs-ui);
-    color: var(--faint);
+/* The dialog's gutter for the connected and available RowLists: ListRow adds no inline padding. */
+.list {
+    padding: 0 var(--sp-5);
 }
 .filter {
     padding: var(--sp-3) var(--sp-5);
@@ -46,14 +44,8 @@
     gap: var(--sp-3);
     padding: var(--sp-4) var(--sp-5) var(--sp-5);
     font-size: var(--fs-ui);
-    line-height: 1.45;
-    border-top: 1px solid var(--border-soft);
-}
-.help code {
-    font-size: var(--fs-ui);
-    background: var(--border-soft);
-    border-radius: var(--r-0);
-    padding: 0 var(--sp-2);
+    line-height: var(--lh-tight);
+    border-top: var(--rule-soft);
 }
 /* `--bar-icon-gap` is the button family's ink-to-ink sibling distance; a plain `--sp-3` gap left
    `[open terminal][copy command]` touching, because each bracket pulls its outer bearing in. */

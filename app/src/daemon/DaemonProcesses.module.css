@@ -24,12 +24,9 @@
 .list.with-actions {
     grid-template-columns: auto minmax(12ch, 1fr) max-content auto;
 }
-/* Opened section: bounded name track (no 1fr) so the status stays beside the name. */
+/* Opened section: capped at the one daemon-list measure (--daemon-list-max, the same as the
+   crons, inbox and log lists), the name track absorbing the slack so the status column ends at
+   that measure's right edge like every other opened list. */
 .list[data-variant='full'] {
-    grid-template-columns: auto minmax(12ch, 40ch) max-content;
-    justify-content: start;
-    max-width: 100ch;
-}
-.list[data-variant='full'].with-actions {
-    grid-template-columns: auto minmax(12ch, 40ch) max-content auto;
+    max-width: var(--daemon-list-max);
 }

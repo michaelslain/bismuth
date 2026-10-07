@@ -7,8 +7,8 @@ import {
     mock,
 } from 'bun:test'
 
-// Toast.tsx is Solid JSX, which the bun runner can't load; the toast is not under test.
-mock.module('../Toast', () => ({ pushToast: () => {} }))
+// ui/ToastHost.tsx is Solid JSX, which the bun runner can't load; the toast is not under test.
+mock.module('../ui/ToastHost', () => ({ pushToast: () => {} }))
 const { api } = await import('../api')
 const { embedUploadsIntoValue } = await import('./imageEmbedWrite')
 

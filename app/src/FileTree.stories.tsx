@@ -30,8 +30,9 @@ import { mockIPC, clearMocks } from '@tauri-apps/api/mocks'
 import { FileTree } from './FileTree'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import { hoverProps } from './ui/_hoverRules'
 import { settings, setSettings } from './settings'
-import { toasts } from './toastStore'
+import { toasts } from './ui/toastStore'
 import { SETTINGS_FILE } from './tabIds'
 import type { TreeEntry } from '../../core/src/graph'
 import type { NativeDragDetail } from './nativeDrop'
@@ -99,6 +100,52 @@ export const Default: Story = {
                 />
             </Sidebar>
         )
+    },
+    // A system row must still get its hover cue. `.ft-row.system` and `.ft-row:hover` are both
+    // (0,2,0), so SOURCE ORDER decides who wins `color` — and the system rule once sat last, which
+    // left `.settings` / `.daemon` with no cue at all (the hover background that used to reach them
+    // was removed). `:hover` cannot be held from a play(), so read the live CSSOM instead: the hover
+    // rule must set `color` on the row AND be the last rule that matches the row and sets `color`.
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const colorRules = (row: Element): string[] => {
+            const out: string[] = []
+            const walk = (list: CSSRuleList) => {
+                for (const r of Array.from(list)) {
+                    if (r instanceof CSSStyleRule) {
+                        if (!r.style.getPropertyValue('color')) continue
+                        const hit = r.selectorText
+                            .split(',')
+                            .map(x => x.trim())
+                            .filter(x => !x.includes('ft-icon'))
+                            .some(x => {
+                                try {
+                                    return row.matches(x.replace(/:hover/g, ''))
+                                } catch {
+                                    return false
+                                }
+                            })
+                        if (hit) out.push(r.selectorText)
+                    } else if ('cssRules' in r)
+                        walk((r as CSSGroupingRule).cssRules)
+                }
+            }
+            for (const sheet of Array.from(document.styleSheets)) {
+                try {
+                    walk(sheet.cssRules)
+                } catch {
+                    /* a cross-origin sheet: not ours */
+                }
+            }
+            return out
+        }
+        for (const label of [/bismuth/, /settings/]) {
+            const text = await canvas.findByText(label)
+            const row = text.closest('div') ?? text
+            await expect(hoverProps(row, 'color')).toContain('color')
+            const rules = colorRules(row)
+            await expect(rules[rules.length - 1]).toContain(':hover')
+        }
     },
 }
 
@@ -604,5 +651,108 @@ export const UndoDeleteRestoresFile: Story = {
         } finally {
             setSettings('keybindings', 'undo-delete', restore)
         }
+    },
+}
+
+/** Dropping on the vault ROOT (the empty space below the last row): `dropHighlight` names `''`, and
+ *  the tree draws the one shared drop cue (ui/DropCue — the `--rule-drop` dashed accent ring) over
+ *  itself. Before this the root class had no rule at all, so the drop showed nothing. */
+export const DropTargetRoot: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={() => ''}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const root = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('[data-drop-root]')
+            if (!el) throw new Error('tree root not rendered yet')
+            return el
+        })
+        // The cue is the root's only aria-hidden absolutely-positioned child: a dashed ring.
+        const cue = await waitFor(() => {
+            const el = root.querySelector<HTMLElement>(':scope > div[aria-hidden="true"]')
+            if (!el) throw new Error('root drop cue not drawn')
+            return el
+        })
+        const cs = getComputedStyle(cue)
+        expect(cs.position).toBe('absolute')
+        expect(cs.borderTopStyle).toBe('dashed')
+    },
+}
+
+/** A folder row that is the drop target draws the same cue, INSIDE its row (filling it). */
+export const DropTargetFolderCue: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={() => 'reading'}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const row = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('[data-ft-path="reading"]')
+            if (!el) throw new Error('reading row not rendered yet')
+            return el
+        })
+        const cue = row.querySelector<HTMLElement>(':scope > div[aria-hidden="true"]')
+        expect(cue).not.toBeNull()
+        const r = row.getBoundingClientRect()
+        const c = cue!.getBoundingClientRect()
+        expect(Math.abs(c.height - r.height)).toBeLessThan(1) // fills the row, not a 2px sliver
+        expect(canvasElement.querySelectorAll('[data-ft-path="projects"] > div[aria-hidden="true"]').length).toBe(0)
+    },
+}
+
+/** The connector under a LAST folder is blank, not a `|` running past its `` `-- `` terminator. The
+ *  only top-level folder `a` is last, and so is `a/b`: `a/b/c.md` sits two levels down under two
+ *  last ancestors, so its prefix is blank columns + `|--`, never `|   |   |--`. */
+export const LastFolderBlankColumn: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                tree: [
+                    { path: 'a', kind: 'dir' },
+                    { path: 'a/b', kind: 'dir' },
+                    { path: 'a/b/c.md', kind: 'file' },
+                    { path: 'a/b/d.md', kind: 'file' },
+                ],
+            }),
+        )
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(await canvas.findByText('a'))
+        await userEvent.click(await canvas.findByText('b'))
+        const prefixOf = (path: string) =>
+            canvasElement.querySelector(`[data-ft-path="${path}"] > span`)?.textContent
+        await waitFor(() => expect(prefixOf('a/b/c.md')).toBeTruthy())
+        // depth 2, both ancestors last: two blank 4-col runs, then the middle-child connector.
+        expect(prefixOf('a/b/c.md')).toBe('        |--')
+        expect(prefixOf('a/b/d.md')).toBe('        `--')
+        // The `b` folder is its parent's last child: its own terminator is `` `-- ``.
+        expect(prefixOf('a/b')).toBe('    `--')
     },
 }

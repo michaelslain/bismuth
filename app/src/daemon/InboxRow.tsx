@@ -8,7 +8,7 @@ import { createSignal, Show } from 'solid-js'
 import type { DaemonPage } from '../../../core/src/daemonPages'
 import { STATUS_COLOR, STATUS_WORD } from './daemonInboxLogic'
 import { api } from '../api'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 import { relTimeISO } from '../relTime'
 import { TextButton } from '../ui/TextButton'
 import PlainButton from '../ui/PlainButton'
@@ -26,6 +26,9 @@ export type InboxRowProps = {
 function InboxRow(props: InboxRowProps) {
     const [archiving, setArchiving] = createSignal(false)
     const failed = () => props.page.status === 'failed'
+    // A resolved row reads quieter than an open one: same weight, muted ink.
+    const settled = () =>
+        props.page.status === 'done' || props.page.status === 'dismissed'
     const time = () => relTimeISO(props.page.createdAt)
 
     // The dot is colour only, so the button carries the words a screen reader needs, in the
@@ -69,7 +72,7 @@ function InboxRow(props: InboxRowProps) {
                 <Text
                     as="span"
                     size="inherit"
-                    weight="bold"
+                    tone={settled() ? 'muted' : 'default'}
                     class={styles['inbox-row-title']}
                 >
                     {props.page.title}
@@ -77,7 +80,7 @@ function InboxRow(props: InboxRowProps) {
                 <Text
                     as="span"
                     size="inherit"
-                    tone="faint"
+                    tone="muted"
                     class={styles['inbox-row-time']}
                 >
                     {time()}
@@ -86,7 +89,6 @@ function InboxRow(props: InboxRowProps) {
             <Show when={props.page.status !== 'working'}>
                 <div class={styles['inbox-row-actions']}>
                     <TextButton
-                        danger
                         aria-busy={archiving()}
                         onClick={archive}
                         onPointerDown={e => e.stopPropagation()}

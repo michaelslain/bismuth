@@ -15,4 +15,5 @@
 .lv0 { color: var(--faint); }
 .lv1 { color: var(--text-muted); }
 .lv2, .lv3 { color: var(--accent); }
+.cell[data-hovered] { color: var(--fg); background: var(--hover-bg); }
 .cell.selected { color: var(--fg); }

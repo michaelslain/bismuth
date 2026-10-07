@@ -1324,8 +1324,8 @@ Shared modal wrapper for all palettes (keyboard nav, backdrop, input focus).
 #### `palette/PaletteFrame.tsx`
 The shared overlay shell every palette-family surface renders — a `Modal` panel plus a search box on top — composed by `PaletteModal.tsx` and `ui/gallery/SymbolGallery.tsx` instead of each importing the former `Palette.module.css` directly.
 
-#### `palette/PaletteRow.tsx`
-One row's anatomy (icon, fuzzy-highlighted label, optional description/sublabel/shortcut), shared by the command/template palette (`PaletteModal.tsx`) and the Cmd+O switcher's file rows (`SwitcherBar.tsx`). Also exports `Highlight`, the fuzzy-match-highlighting renderer both use.
+#### `ui/PaletteRow.tsx`
+One row's anatomy (icon, fuzzy-highlighted label, optional detail/sublabel/shortcut), shared by the command/template palette (`PaletteModal.tsx`) and the Cmd+O switcher's file rows (`SwitcherBar.tsx`). Also exports `Highlight`, the fuzzy-match-highlighting renderer both use.
 
 ---
 
@@ -1541,7 +1541,7 @@ The one platform check — `isMacPlatform()`, true on macOS/iPadOS/iOS (decides 
 #### `nativeAppMenu.ts`
 `installAppMenu(handlers)` — configures the macOS native app menu (File/Edit/View) from `app.menu` Tauri config.
 
-#### `ContextMenu.tsx`
+#### `ui/ContextMenu.tsx`
 Browser-rendered context menu component. `MenuItem` type.
 
 #### `PreviewView.tsx`
@@ -1585,8 +1585,8 @@ Rendered for `::empty` pane content.
 #### `FolderPrompt.tsx`
 Dialog for picking a vault folder (used by "Open folder" flow).
 
-#### `Toast.tsx`
-`pushToast(message, action?, ttl?)` / `dismissToast(id)` / `ToastHost` component. Global toast notification system.
+#### `ui/ToastHost.tsx` + `ui/toastStore.ts`
+`pushToast(message, action?, ttl?)` / `dismissToast(id)` live in `ui/toastStore.ts` (pure signal, unit-testable); `ToastHost` in `ui/ToastHost.tsx` renders the stack and re-exports the store. Global toast notification system.
 
 #### `telemetry.ts`
 `recordSseError(e)` / `recordPollCatchup(v, lastSse)` — lightweight client telemetry (counts SSE errors and poll catch-ups, logged to console). No external service.

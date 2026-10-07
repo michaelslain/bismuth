@@ -17,8 +17,7 @@ import { propertyEditKind } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { isActivateKey } from '../ui/widgetKeys'
 import { CardEditModal } from './CardEditModal'
-import ChipToggle from '../ui/ChipToggle'
-import { Icon } from '../icons/Icon'
+import BooleanValue from './BooleanValue'
 import Text from '../ui/Text'
 import styles from './KanbanCard.module.css'
 import PropertyDisplay from './PropertyDisplay'
@@ -249,18 +248,12 @@ export function KanbanCard(props: {
                                     props.siblingValues(id),
                                     declType(),
                                 )
-                            // The boolean stays a ChipToggle (its own control look); every other
+                            // The boolean is the shared `[ ]` / `[x]` glyph (BooleanValue — the same
+                            // spelling as a table cell and the modal's toggle); every other
                             // read-only value is the shared, type-aware PropertyDisplay (#100).
                             const display = () =>
                                 kind().kind === 'boolean' ? (
-                                    <ChipToggle selected={value() === true}>
-                                        <Icon
-                                            value={
-                                                value() === true ? 'Check' : 'Square'
-                                            }
-                                        />
-                                        {value() === true ? 'Yes' : 'No'}
-                                    </ChipToggle>
+                                    <BooleanValue value={value() === true} />
                                 ) : (
                                     <PropertyDisplay
                                         {...{ id }}

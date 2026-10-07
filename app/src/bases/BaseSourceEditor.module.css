@@ -9,7 +9,7 @@
 .sourceGutter {
   flex: none; overflow: hidden; box-sizing: border-box;
   padding: var(--sp-5) var(--sp-4) var(--sp-5) var(--sp-5); text-align: right; user-select: none;
-  color: color-mix(in srgb, var(--fg) 35%, transparent);
+  color: var(--faint);
   font-family: var(--ui-font-stack); font-size: var(--editor-font-size, 13.5px); line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }

@@ -332,6 +332,122 @@ export const CarriedWeekColumn: Story = {
     },
 }
 
+/** Every whole word of `el`'s text, as the line boxes it was painted on. A word that is split
+ *  across two lines reports two rects with different tops — that IS the mid-word break
+ *  (`passp/ort`). Measured from layout, never from the stylesheet: a rule being present proves
+ *  nothing about where the browser actually broke the text. */
+function brokenWords(el: HTMLElement): string[] {
+    const broken: string[] = []
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        for (const m of (n.textContent ?? '').matchAll(/\S+/g)) {
+            const range = document.createRange()
+            range.setStart(n, m.index!)
+            range.setEnd(n, m.index! + m[0].length)
+            const tops = new Set(
+                [...range.getClientRects()].map(r => Math.round(r.top)),
+            )
+            if (tops.size > 1) broken.push(m[0])
+        }
+    }
+    return broken
+}
+
+const NARROW_CASES: { width: number; description: string; late: number }[] = [
+    { width: 220, description: 'follow up on the overdue item number 21', late: 23 },
+    { width: 120, description: 'renew passport', late: 23 },
+    { width: 106, description: 'renew the gym membership', late: 0 },
+    { width: 96, description: 'renew passport', late: 23 },
+    { width: 72, description: 'renew the gym membership', late: 0 },
+    { width: 48, description: 'follow up on the overdue item', late: 23 },
+]
+
+/** THE regression of the run: in the dense month grid (a ~48px day cell) a title broke mid-word —
+ *  `passp/ort`, `follo/w`, `membe/rship` — and "23d late" clipped to "23d lat". One chip per
+ *  column width, from a comfortable 220px down to a 48px cell. Above ~90px of content a chip wraps
+ *  at word boundaries (not one word may be split across lines) and the late label stays whole;
+ *  at and below it collapses to ONE ellipsised line (the late label drops out — the wash and
+ *  hairline still say late).
+ *  The play measures painted line boxes, so it fails on a title that breaks inside a word. */
+export const NarrowWholeWords: Story = {
+    render: () => (
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+            <For each={NARROW_CASES}>
+                {c => (
+                    <div
+                        data-width={c.width}
+                        style={{
+                            width: `${c.width}px`,
+                            border: '1px solid var(--border)',
+                        }}
+                    >
+                        <TaskChip
+                            task={task(c.description, '2026-08-30', c.late)}
+                            onToggle={() => {}}
+                            onOpen={() => {}}
+                            onSetStatus={() => {}}
+                        />
+                    </div>
+                )}
+            </For>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        for (const c of NARROW_CASES) {
+            const col = canvasElement.querySelector<HTMLElement>(
+                `[data-width="${c.width}"]`,
+            )!
+            const title = col.querySelector<HTMLElement>(
+                '[data-testid="task-chip-title"]',
+            )!
+            const chip = title.closest('div')!
+            const lineHeight = parseFloat(getComputedStyle(title).lineHeight)
+            const at = `${c.width}px "${c.description}"`
+            // (a) no word is split across two lines, at any width
+            expect(brokenWords(title), at).toEqual([])
+            // (b) nothing leaves the chip's own edge
+            const chipRight = chip.getBoundingClientRect().right
+            const spans = [...chip.querySelectorAll<HTMLElement>('span')]
+            // (text INSIDE the title is clipped by the title's own overflow, so its box is not the
+            // chip-edge question — the title's box is)
+            for (const span of spans.filter(sp => sp === title || !title.contains(sp))) {
+                expect(span.getBoundingClientRect().right, at).toBeLessThanOrEqual(
+                    chipRight + 1,
+                )
+            }
+            if (c.late > 0) {
+                // (c) the late label reads in FULL while the chip wraps (>90px of content) — never
+                // clipped mid-glyph ("23d lat") — and is gone once the chip collapses
+                const late = spans[spans.length - 1]
+                expect(late.textContent).toBe(`${c.late}d late`)
+                if (c.width > 102) {
+                    expect(late.scrollWidth, at).toBeLessThanOrEqual(
+                        late.clientWidth + 1,
+                    )
+                    expect(late.getBoundingClientRect().width, at).toBeGreaterThan(0)
+                } else {
+                    expect(getComputedStyle(late).display, at).toBe('none')
+                }
+            }
+            // (d) collapsed: a one-line title ending in an ellipsis. The chip's content box is
+            // width - 2 * --sp-3 - 2px border; the query is 90px of that.
+            if (c.width <= 102) {
+                expect(title.getBoundingClientRect().height, at).toBeLessThanOrEqual(
+                    lineHeight + 1,
+                )
+                expect(getComputedStyle(title).textOverflow).toBe('ellipsis')
+            }
+        }
+        // the narrowest chip really is truncated rather than spilling: its full title is wider
+        // than the box it was given
+        const narrow = canvasElement.querySelector<HTMLElement>('[data-width="48"]')!
+        const narrowTitle = narrow.querySelector<HTMLElement>(
+            '[data-testid="task-chip-title"]',
+        )!
+        expect(narrowTitle.scrollWidth).toBeGreaterThan(narrowTitle.clientWidth)
+    },
+}
+
 /** A DONE task on the calendar — history stays on the day it happened (`placeRows` never
  *  excludes resolved rows), so this chip must NOT read as still-open. Marker renders `[x]`,
  *  read straight off `note.statusChar` rather than derived from `resolved` alone. */
@@ -346,10 +462,16 @@ export const ResolvedDone: Story = {
             />,
         ),
     play: async ({ canvasElement }) => {
+        // The glyph is painted by ui/BracketToggle from the mark's `data-status`, so the status
+        // is the readable fact — `[x]` is not text in the DOM.
         const marker = canvasElement.querySelector<HTMLElement>(
             '[role="checkbox"]',
         )!
-        expect(marker.textContent?.trim()).toBe('[x]')
+        expect(marker.dataset.status).toBe('done')
+        expect(marker).toHaveAttribute('aria-checked', 'true')
+        // and the glyph actually painted: `::before` of the toggle's empty <i>, as
+        // ui/BracketToggle's own FourStates story reads it
+        expect(getComputedStyle(marker.querySelector('i')!, '::before').content).toBe('"x"')
     },
 }
 
@@ -370,7 +492,9 @@ export const ResolvedCancelled: Story = {
         const marker = canvasElement.querySelector<HTMLElement>(
             '[role="checkbox"]',
         )!
-        expect(marker.textContent?.trim()).toBe('[-]')
+        expect(marker.dataset.status).toBe('cancelled')
+        expect(marker).toHaveAttribute('aria-checked', 'false')
+        expect(getComputedStyle(marker.querySelector('i')!, '::before').content).toBe('"-"')
     },
 }
 
@@ -833,6 +957,51 @@ export const NoteLinkInsideChip: Story = {
             expect(host.getAttribute('data-toggled')).toBeNull()
         } finally {
             window.removeEventListener('bismuth-open', onOpen)
+        }
+    },
+}
+
+/** THE MARKER SHARES LINE ONE. In the ordinary week column (180px) and month cell (166px) the title's
+ *  `min-width` floor used to be wider than the room beside the `[ ]` marker, so the marker stranded
+ *  itself on a line above a one-word title (a chip three lines tall). The floor now leaves the
+ *  marker's 3ch + its gap, so the marker and the title's first line share one line box and the
+ *  "Nd late" label is what wraps. The play measures painted rects, not widths. */
+const ORDINARY_COLUMNS = [
+    { width: 166, description: 'renew passport', late: 13 },
+    { width: 180, description: 'pay rent', late: 3 },
+]
+export const MarkerSharesLineOneInOrdinaryColumns: Story = {
+    render: () => (
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+            <For each={ORDINARY_COLUMNS}>
+                {c => (
+                    <div data-width={c.width} style={{ width: `${c.width}px` }}>
+                        <TaskChip
+                            task={task(c.description, '2026-08-30', c.late)}
+                            onToggle={() => {}}
+                            onOpen={() => {}}
+                            onSetStatus={() => {}}
+                        />
+                    </div>
+                )}
+            </For>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        for (const c of ORDINARY_COLUMNS) {
+            const col = canvasElement.querySelector<HTMLElement>(`[data-width="${c.width}"]`)!
+            const title = col.querySelector<HTMLElement>('[data-testid="task-chip-title"]')!
+            const marker = title.parentElement!.firstElementChild as HTMLElement
+            const range = document.createRange()
+            range.selectNodeContents(title)
+            const first = range.getClientRects()[0]!
+            const m = marker.getBoundingClientRect()
+            const at = `${c.width}px "${c.description}"`
+            // one line box: the marker overlaps the title's first line vertically
+            expect(m.top, at).toBeLessThan(first.bottom)
+            expect(m.bottom, at).toBeGreaterThan(first.top)
+            // ...and the title starts beside it, not under it
+            expect(first.left, at).toBeGreaterThanOrEqual(m.right - 0.5)
         }
     },
 }

@@ -130,6 +130,12 @@ export const EveryStatus: Story = {
                 .closest(`.${styles.taskBody}`)!
                 .classList.contains(styles.done),
         ).toBe(false)
+        // Done is struck through in a quieter INK, never dimmed by opacity.
+        const done = canvas
+            .getByText('done — shipped')
+            .closest(`.${styles.taskBody}`) as HTMLElement
+        expect(getComputedStyle(done).opacity).toBe('1')
+        expect(getComputedStyle(done).textDecorationLine).toBe('line-through')
     },
 }
 
@@ -338,8 +344,8 @@ export const LinkClick: Story = {
 /**
  * The trailing edit pencil — present for BOTH origins (a scanned line task carries `note.line`,
  * a stored row carries a valid `index`), since `isEditableTask` (taskEdit.ts) accepts either.
- * It stays in the DOM (and the tab order) at all times — only its opacity is 0 until hover/
- * focus-within — so this asserts presence + aria-label rather than visibility, which a
+ * It stays in the DOM (and the tab order) at all times — only its slot's opacity is 0 until hover/
+ * focus, and never under `(hover: none)` — so this asserts presence + aria-label rather than visibility, which a
  * screenshot diff covers instead.
  */
 export const EditButton: Story = {
@@ -361,8 +367,15 @@ export const EditButton: Story = {
         const canvas = within(canvasElement)
         const buttons = canvas.getAllByLabelText('Edit task')
         expect(buttons.length).toBe(2)
-        for (const b of buttons)
-            expect(b.classList.contains(styles.editBtn)).toBe(true)
+        // The pencil is revealed by ListRow's `reveal`: hidden at rest on a pointer device, but
+        // ALWAYS shown under `(hover: none)` (an iPad has no hover), and shown while it holds focus.
+        const slot = (b: HTMLElement) => getComputedStyle(b.parentElement!).opacity
+        expect(slot(buttons[1]!)).toBe(
+            window.matchMedia('(hover: none)').matches ? '1' : '0',
+        )
+        buttons[1]!.focus()
+        await waitFor(() => expect(slot(buttons[1]!)).toBe('1'))
+        buttons[1]!.blur()
         // Clicking one opens the edit modal on that task (it portals to document.body).
         await userEvent.click(buttons[0])
         const body = within(document.body)

@@ -95,6 +95,9 @@ export interface GraphEdge {
      *  workflow-lane connection so the renderer draws it distinctly from an ordinary
      *  session→subagent edge. Undefined on every other edge (ordinary rendering). */
     workflow?: string
+    /** A caption drawn at the edge's midpoint. Only a hand-authored ```graph block carries one
+     *  (`a -> b: manages`); the vault and memory graphs never set it. */
+    label?: string
 }
 /**
  * A self-contained precomputed layout for one brain VIEW (2nd / 3rd), keyed by node id. The "both"

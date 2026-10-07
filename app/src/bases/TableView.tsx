@@ -426,7 +426,10 @@ export function TableView(props: {
                                                     keyed().byKey.get(key) ?? last)
                                             return (
                                                 <tr
-                                                    class={styles.row}
+                                                    classList={{
+                                                        [styles.rowActionable]:
+                                                            rowEditable(row()),
+                                                    }}
                                                     onContextMenu={e =>
                                                         onRowContextMenu(e, row())
                                                     }
@@ -517,7 +520,7 @@ export function TableView(props: {
                 still legible, and the table's own mount-time width seeding never has to wait
                 for a first row. */}
             <Show when={allRows().length === 0}>
-                <EmptyState title="no rows" class={styles.empty}>
+                <EmptyState fill title="no rows" class={styles.emptyFill}>
                     nothing in this view matches its filters
                 </EmptyState>
             </Show>

@@ -2,7 +2,7 @@
    The opened inbox: capped so a row's title and age stay together, and the `resolved` sub-label
    inset to the rows' own left padding. */
 .inbox-full {
-    max-width: 100ch;
+    max-width: var(--daemon-list-max);
 }
 .resolved-label {
     display: block;

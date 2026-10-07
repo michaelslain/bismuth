@@ -55,7 +55,7 @@ export function BulletsView(props: {
         <Show
             when={!empty()}
             fallback={
-                <EmptyState title="no rows">
+                <EmptyState fill title="no rows">
                     nothing in this view matches its filters
                 </EmptyState>
             }

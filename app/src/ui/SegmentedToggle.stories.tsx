@@ -240,8 +240,16 @@ export const DisabledOption: Story = {
         expect(middle.getAttribute('aria-pressed')).toBe('false')
         expect(first.getAttribute('aria-pressed')).toBe('true')
         // A disabled option must read as visibly different from an enabled-but-unselected sibling
-        // ('three') — both are --faint text, so opacity is the only remaining signal.
-        expect(getComputedStyle(middle).opacity).toBe('0.4')
+        // ('three'): `--faint` ink against that sibling's muted ink, both at full opacity (no state
+        // is shown by opacity, and a dimmed --faint falls under the 3:1 floor).
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--faint)'
+        canvasElement.appendChild(probe)
+        const faint = getComputedStyle(probe).color
+        probe.remove()
+        expect(getComputedStyle(middle).color).toBe(faint)
+        expect(getComputedStyle(last).color).not.toBe(faint)
+        expect(getComputedStyle(middle).opacity).toBe('1')
         expect(getComputedStyle(last).opacity).toBe('1')
     },
 }

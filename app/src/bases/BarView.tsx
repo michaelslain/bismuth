@@ -1,4 +1,4 @@
-import { Index, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import { Index, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import { buildChartData, type ChartPoint } from '../../../core/src/bases/chart'
 import {
@@ -11,7 +11,7 @@ import {
 import { barHeader, layoutBars } from './barRows'
 import type { ChartGrid } from './chartColumns'
 import ChartFrame from './ChartFrame'
-import ChartReadout from './ChartReadout'
+import Readout from '../ui/Readout'
 import ChartDrill from './ChartDrill'
 import type { ChartViewProps } from './chartViewProps'
 import PlainButton from '../ui/PlainButton'
@@ -56,6 +56,32 @@ export function BarView(props: ChartViewProps) {
         ),
     )
 
+    // How many rows the pane shows at once, when there are more than that. The body scrolls, so a
+    // long list otherwise reads as the whole list — `showing 22 of 60` says it is not. `null` when
+    // everything fits. Measured off the scrolling parent (a tag-free `parentElement`, not a class).
+    let chartRef: HTMLDivElement | undefined
+    const [shown, setShown] = createSignal<number | null>(null)
+    const measureShown = () => {
+        const body = chartRef?.parentElement
+        const first = chartRef?.querySelector<HTMLElement>('[data-bucket]')
+        if (!body || !first || first.offsetHeight === 0) return setShown(null)
+        const header = chartRef!.firstElementChild === first ? 0 : (chartRef!.firstElementChild as HTMLElement).offsetHeight
+        const fit = Math.floor((body.clientHeight - header) / first.offsetHeight)
+        setShown(body.scrollHeight > body.clientHeight + 1 && fit < bars().length ? Math.max(1, fit) : null)
+    }
+    onMount(() => {
+        measureShown()
+        if (typeof ResizeObserver === 'undefined' || !chartRef?.parentElement) return
+        const observer = new ResizeObserver(() => measureShown())
+        observer.observe(chartRef.parentElement)
+        onCleanup(() => observer.disconnect())
+    })
+    createEffect(() => {
+        bars()
+        grid()
+        queueMicrotask(measureShown)
+    })
+
     const readoutParts = createMemo(() => {
         const point = activePoint()
         if (point)
@@ -63,7 +89,10 @@ export function BarView(props: ChartViewProps) {
         const best = maxPoint()
         const caption = chartCaption(data())
         if (!best) return [caption]
-        return [caption, `peak ${formatValue(best.value)} (${best.label})`]
+        const parts = [caption, `peak ${formatValue(best.value)} (${best.label})`]
+        const n = shown()
+        if (n !== null) parts.push(`showing ${n} of ${bars().length}`)
+        return parts
     })
 
     // One header row above the bars: the x property's name over the label column, the value's
@@ -110,7 +139,7 @@ export function BarView(props: ChartViewProps) {
         <ChartFrame
             empty={data().points.length === 0}
             onGrid={setGrid}
-            readout={<ChartReadout parts={readoutParts()} active={activePoint() !== undefined} />}
+            readout={<Readout parts={readoutParts()} tone={activePoint() !== undefined ? 'default' : 'muted'} />}
             drill={
                 drillPoint() && (
                     <ChartDrill
@@ -122,7 +151,7 @@ export function BarView(props: ChartViewProps) {
                 )
             }
         >
-            <div class={styles.barChart}>
+            <div class={styles.barChart} ref={chartRef}>
                 <Show when={header()}>
                     <Text as="div" inherit tone="muted" class={styles.header}>
                         {header()}
@@ -157,6 +186,7 @@ export function BarView(props: ChartViewProps) {
                                 inherit
                                 class={styles.fill}
                                 classList={{
+                                    [styles.negative]: bar().negative,
                                     [styles.dim]:
                                         selectedKey() !== undefined && selectedKey() !== bar().key,
                                     [styles.active]: activeKey() === bar().key,

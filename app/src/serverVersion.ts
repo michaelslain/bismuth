@@ -5,7 +5,7 @@ import { recordSseError, recordPollCatchup } from './telemetry'
 // component, and a static import of anything from it forces Bun to transpile that JSX — which
 // breaks `bun test app/` from the repo root (the commit/push gate's invocation). See
 // toastStore.ts's header comment and docs/contributing/testing.md's JSX-resolution trap.
-import { pushToast, dismissToast } from './toastStore'
+import { pushToast, dismissToast } from './ui/toastStore'
 import {
     decideConnectionState,
     type ConnectionEvent,

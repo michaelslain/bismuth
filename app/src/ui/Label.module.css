@@ -1,30 +1,20 @@
-/* app/src/ui/Label.module.css — the truncating-label primitive (see Label.tsx). Derived from 13
-   near-identical rules that each hand-rolled the same truncation trio (DaemonList.module.css's
-   .daemon-row-label, PaneTree.module.css's .pane-header-label, shell/TabRail.module.css's
-   .tab-rail-label, palette/Palette.module.css's .palette-label/.palette-sub,
-   GraphView.module.css's .graph-search-label/.graph-search-sub, shell/StatusBar.module.css's
-   .status-path, bases/BaseView.module.css's .coverTitle/.coverAuthor/.cardAuthor/.thLabel,
-   bases/ListView's .ltext).
+/* app/src/ui/Label.module.css — the layout half of the truncating-label primitive (see
+   Label.tsx). Derived from 13 near-identical rules that each hand-rolled the same truncation
+   trio (DaemonList.module.css's .daemon-row-label, PaneTree.module.css's .pane-header-label,
+   shell/TabRail.module.css's .tab-rail-label, palette/Palette.module.css's
+   .palette-label/.palette-sub, GraphView.module.css's .graph-search-label/.graph-search-sub,
+   shell/StatusBar.module.css's .status-path, bases/BaseView.module.css's
+   .coverTitle/.coverAuthor/.cardAuthor/.thLabel, bases/ListView's .ltext).
 
-   THE TRAP: `text-overflow: ellipsis` does not truncate a bare text child of a flex container.
-   The text becomes an anonymous flex item whose min-width defaults to its full content width, so
-   the container's `overflow: hidden` just hard-clips it mid-character with no "…" ever drawn —
-   see shell/DragGhost.module.css's header for the fuller writeup (the bug that rule fixes is
-   exactly this one). `min-width: 0` below is what makes the item shrinkable enough for the
-   ellipsis logic to actually engage.
+   Label composes `Text`: the one-line ellipsis (including the `min-width: 0` that makes it
+   fire inside a flex row — see Text.module.css's .text--truncate) and the tone → colour map
+   both live THERE now, not here as a fourth copy. Only what is specific to Label stays:
 
-   ONLY THE SHARED PART LIVES HERE. Placement (flex: 1 vs margin-left: auto vs a fixed
-   max-width vs flex-shrink: 0), bespoke font-size, and any STATE-dependent color (a focused-pane
-   rule, a hover reveal, a `:global(.selected)` override) all stay in the call site's own module,
-   reached through the SAME literal class name via this component's `class` prop — those
-   selectors target that class directly and would silently stop matching if the class moved. */
-
-.label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-}
+   PLACEMENT (flex: 1 vs margin-left: auto vs a fixed max-width vs flex-shrink: 0), bespoke
+   font-size, and any STATE-dependent color (a focused-pane rule, a hover reveal, a
+   `:global(.selected)` override) stay in the call site's own module, reached through the SAME
+   literal class name via this component's `class` prop — those selectors target that class
+   directly and would silently stop matching if the class moved. */
 
 /* Grows to fill a flex row's remaining space before truncating — the common "primary value"
    case (daemon-row-label, pane-header-label, tab-rail-label, palette-label, graph-search-label,
@@ -34,28 +24,21 @@
 }
 
 /* For a label inside a non-flex ancestor (bases/TableView's <th>) — a bare <span> is inline and
-   the ellipsis trio silently does nothing on an inline box. */
+   the ellipsis silently does nothing on an inline box. */
 .label--inline {
     display: inline-block;
+    /* An inline-block is as wide as its text, so inside a fixed-width table cell it spilled out of
+       the cell and off the page, cut mid-glyph with no ellipsis. 100% of the containing block is
+       what lets the ellipsis trio fire. */
+    max-width: 100%;
 }
 
-/* ── tone — omit the prop entirely to inherit the ambient color instead (several call sites
-   deliberately leave color to an ancestor/state selector reached via the caller's own class) ── */
-.label--default {
-    color: var(--fg);
-}
-.label--muted {
-    color: var(--text-muted);
-}
-.label--faint {
-    color: var(--faint);
-}
-
-/* Two-line clamp instead of a single-line ellipsis (bases/CardsView's cover title) — needs
-   normal wrapping, not `white-space: nowrap`, so this must win the cascade over `.label` above;
-   declared after it for that reason (same specificity, later wins). */
+/* Two-line clamp instead of a single-line ellipsis (bases/CardsView's cover title). Label.tsx
+   does not ask Text to truncate in this mode — that would force `white-space: nowrap` — so the
+   overflow + `min-width: 0` the clamp needs are stated here instead. */
 .label--lines2 {
-    white-space: normal;
+    overflow: hidden;
+    min-width: 0;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;

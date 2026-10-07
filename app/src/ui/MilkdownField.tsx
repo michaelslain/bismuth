@@ -8,10 +8,14 @@
 //
 // The heavy Milkdown/ProseMirror bridge is code-split (dynamic import), so it stays out of app
 // boot. The caller owns the value: `onChange` fires per edit with the whole document's
-// markdown, `onBlur` fires when the editable loses focus — commit there. Chromeless: styling
-// comes entirely from the caller's own module (e.g. CardEditModal.module.css's `.mdField`).
+// markdown, `onBlur` fires when the editable loses focus — commit there. The field owns its own
+// chrome and prose theming (MilkdownField.module.css) and is hosted in `FormControl as="div"`, so
+// it reads as the same underline field as every other value control; a caller's `class` only
+// adjusts one instance.
 import { onCleanup, onMount } from 'solid-js'
 import { settings } from '../settings'
+import FormControl from './FormControl'
+import styles from './MilkdownField.module.css'
 import type {
     DocEditorHandle,
     createDocEditor as CreateDocEditorFn,
@@ -42,6 +46,8 @@ function MilkdownField(props: {
      *  The handle is NOT available synchronously: the Milkdown chunk is code-split, so a host must
      *  tolerate a null handle for the first frames. */
     onReady?: (handle: DocEditorHandle | null) => void
+    /** Hint shown while the document is empty. Optional — no copy is hardcoded here. */
+    placeholder?: string
     class?: string
 }) {
     let root!: HTMLDivElement
@@ -76,7 +82,23 @@ function MilkdownField(props: {
         handle = null
     })
 
-    return <div ref={root} class={props.class} />
+    return (
+        <FormControl
+            as="div"
+            ref={root}
+            class={`${styles.wysiwyg} ${props.class ?? ''}`.trim()}
+            style={
+                props.placeholder
+                    ? {
+                          // A quoted CSS string, read by the placeholder rule's `content: var(...)`.
+                          '--field-placeholder': JSON.stringify(
+                              props.placeholder,
+                          ),
+                      }
+                    : undefined
+            }
+        />
+    )
 }
 
 export default MilkdownField

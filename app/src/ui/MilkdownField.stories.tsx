@@ -7,6 +7,7 @@
 // frame before content appears, same as the real app.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
+import { expect, waitFor } from 'storybook/test'
 import MilkdownField from './MilkdownField'
 
 const meta = {
@@ -18,35 +19,62 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// The host owns the visible box (border/background/padding/min-height); MilkdownField itself
-// is fully chromeless (no stylesheet of its own). Mirrors MarkdownField.stories's fieldBoxStyle
-// so the two engines are easy to compare side by side in the sidebar.
-const fieldBoxStyle = {
-    width: '360px',
-    'min-height': '110px',
-    padding: '10px 12px',
-    border: '1px solid var(--border)',
-    'border-radius': '8px',
-    background: 'var(--surface-1)',
-} as const
+// MilkdownField owns its own chrome (FormControl's underline field + the prose theming in
+// MilkdownField.module.css); the story only fixes a width — the same one MarkdownField.stories
+// uses, so the two engines compare side by side. The hand-built rounded box this used to wrap it
+// in is one no real caller produces.
+const fieldWidthStyle = { width: '360px' } as const
 
-function Controlled(props: { initial?: string; autofocus?: boolean }) {
+function Controlled(props: {
+    initial?: string
+    autofocus?: boolean
+    placeholder?: string
+}) {
     const [v, setV] = createSignal(props.initial ?? '')
     return (
-        <div style={fieldBoxStyle}>
+        <div style={fieldWidthStyle}>
             <MilkdownField
                 value={v()}
                 onChange={setV}
                 autofocus={props.autofocus}
+                placeholder={props.placeholder}
             />
         </div>
     )
 }
 
+/** The editable ProseMirror node, once the code-split surface has mounted. */
+async function editable(canvasElement: HTMLElement): Promise<HTMLElement> {
+    let el: HTMLElement | null = null
+    await waitFor(() => {
+        el = canvasElement.querySelector('.bismuth-doc-milkdown')
+        if (!el) throw new Error('milkdown surface not mounted yet')
+    })
+    return el!
+}
+
 /** Empty field — the surface mounts async, so this also covers the brief pre-mount blank
  *  frame every MilkdownField shows on first paint. */
 export const Empty: Story = {
-    render: () => <Controlled />,
+    render: () => <Controlled placeholder="Add a description…" />,
+    // The field's OWN chrome: an underline (no box), transparent, the placeholder drawn in
+    // --text-muted, and no browser focus ring on the editable.
+    play: async ({ canvasElement }) => {
+        const host = canvasElement.querySelector(
+            '[data-control="div"]',
+        ) as HTMLElement
+        const cs = getComputedStyle(host)
+        expect(parseFloat(cs.borderBottomWidth)).toBeGreaterThan(0)
+        expect(cs.borderTopWidth).toBe('0px')
+        expect(cs.borderLeftWidth).toBe('0px')
+        expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+        expect(host.getBoundingClientRect().height).toBeGreaterThanOrEqual(96)
+        const el = await editable(canvasElement)
+        expect(getComputedStyle(el).outlineStyle).toBe('none')
+        const p = el.querySelector('p') as HTMLElement
+        const before = getComputedStyle(p, '::before')
+        expect(before.content).toBe('"Add a description…"')
+    },
 }
 
 /** Seeded with block-level markdown: a heading, a bold/italic sentence, and a bullet list —
@@ -60,6 +88,19 @@ export const Filled: Story = {
             }
         />
     ),
+    // Prose face (the one role both markdown fields share) and no browser focus ring.
+    play: async ({ canvasElement }) => {
+        const el = await editable(canvasElement)
+        const cs = getComputedStyle(el)
+        expect(cs.fontFamily).toContain('Plex Serif')
+        expect(cs.fontFamily).not.toContain('Monaspace')
+        expect(cs.outlineStyle).toBe('none')
+        const h2 = el.querySelector('h2') as HTMLElement
+        expect(h2).not.toBeNull()
+        expect(parseFloat(getComputedStyle(h2).fontSize)).toBeGreaterThan(
+            parseFloat(cs.fontSize),
+        )
+    },
 }
 
 /** Autofocused on mount (the field grabs the caret once the async surface finishes
@@ -68,4 +109,10 @@ export const Autofocused: Story = {
     render: () => (
         <Controlled initial="Focused once Milkdown mounts" autofocus />
     ),
+    // Focus is drawn by the underline firming, never by a ring on the editable.
+    play: async ({ canvasElement }) => {
+        const el = await editable(canvasElement)
+        await waitFor(() => expect(document.activeElement).toBe(el))
+        expect(getComputedStyle(el).outlineStyle).toBe('none')
+    },
 }

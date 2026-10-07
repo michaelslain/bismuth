@@ -32,7 +32,7 @@ import {
 } from '../../../core/src/scratchNotes'
 import type { ScratchBlock } from '../../../core/src/scratchTypes'
 import type { AnnotationLoadState, CompanionStore } from './annotationTypes'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 import { settings } from '../settings'
 import { registerSidecarFlush } from '../editorRegistry'
 

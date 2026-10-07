@@ -6,8 +6,8 @@
 // Every story feeds DaemonPage a REAL `<DaemonOverview>` built from the REAL `DaemonInbox`/
 // `DaemonCrons`/`DaemonProcesses`/`DaemonLog` over `app/src/ui/_daemonFixtures.ts` fixtures —
 // never a stand-in "crons panel" block — so these shots show the real right column, plus a local
-// `ChatStub` standing in for the hub's own chat: the REAL `chat/ChatComposerBar.tsx` +
-// `chat/ChatControls.tsx` driven by a stub session (`chat/_stubChatSession.ts`), so a layout story
+// `ChatStub` standing in for the hub's own chat: the REAL `DaemonChat.tsx` (composer bar +
+// controls + transcript) driven by a stub session (`chat/_stubChatSession.ts`), so a layout story
 // shows the shipped composer/controls look — never a hand-drawn mono placeholder. `Host` renders
 // the real container against the global fakeTransport instead, wiring everything for real.
 //
@@ -20,7 +20,6 @@ import {
     getOwner,
     Match,
     onCleanup,
-    Show,
     Switch,
     type JSX,
 } from 'solid-js'
@@ -32,10 +31,9 @@ import type { DaemonMood } from './daemonFaceModel'
 import { settings, setSettings } from '../settings'
 import { refreshDaemonPages } from './daemonInboxApi'
 import { daemonChatArmed } from './daemonChatArm'
-import Text from '../ui/Text'
-import ChatComposerBar from '../chat/ChatComposerBar'
-import ChatControls from '../chat/ChatControls'
+import DaemonChat from './DaemonChat'
 import { makeStubChatSession } from '../chat/_stubChatSession'
+import { CONVERSATION_ITEMS } from '../chat/_transcriptFixtures'
 import DaemonOverview, {
     type DaemonOverviewProps,
     type DaemonSectionKey,
@@ -327,53 +325,25 @@ function crowdedOverview(): {
     return { overview, crons }
 }
 
-/** The hub's `chat` slot for every story: the REAL `ChatComposerBar` with the REAL `ChatControls`
- *  as its `below` — exactly what `daemon/DaemonChat.tsx` renders — driven by a freshly-built stub
- *  session (`chat/_stubChatSession.ts`) so the composer box, placeholder and controls row read as
- *  the shipped daemon-chat look, not a hand-drawn mono mockup. With `tall`, also a plain
- *  transcript-shaped block above it that fills the rest of the column — standing in for
- *  `ChatTranscript`, whose own look belongs to `chat/ChatTranscript.stories.tsx`, not here. */
+/** The hub's `chat` slot for every story: the REAL `DaemonChat` (`daemon/DaemonChat.tsx` —
+ *  composer bar, controls row and, once there are messages, the real `ChatTranscript`) driven by a
+ *  freshly-built stub session (`chat/_stubChatSession.ts`), so the composer, the controls and the
+ *  conversing transcript read as the shipped daemon-chat look, not a hand-drawn mockup. With
+ *  `tall` the session holds a short conversation, so the transcript fills the column above the
+ *  composer exactly as it does in the app. */
 function ChatStub(props: { tall?: boolean }) {
-    const session = makeStubChatSession()
     return (
-        <div
-            data-testid="chat-stub"
-            style={{
-                display: 'flex',
-                'flex-direction': 'column',
-                height: '100%',
-                'min-height': '0',
-                gap: 'var(--sp-3)',
-            }}
-        >
-            <Show when={props.tall}>
-                <div
-                    style={{
-                        flex: '1',
-                        'min-height': '0',
-                        border: 'var(--rule)',
-                        'border-radius': 'var(--r-0)',
-                        padding: 'var(--sp-4)',
-                        overflow: 'hidden',
-                    }}
-                >
-                    <Text size="ui" tone="muted">
-                        you // what's due today?
-                    </Text>
-                    <Text size="ui">
-                        two pages need you, nothing else is late.
-                    </Text>
-                </div>
-            </Show>
-            <ChatComposerBar
-                session={session}
-                placeholder="Message daemon…"
-                noteNames={() => []}
-                memoryNames={() => []}
-                tagNames={() => []}
-                below={<ChatControls session={session} />}
-            />
-        </div>
+        <DaemonChat
+            session={makeStubChatSession({
+                transcript: props.tall ? [...CONVERSATION_ITEMS] : [],
+                persona: 'daemon',
+            })}
+            name="daemon"
+            onGesture={() => {}}
+            noteNames={() => []}
+            memoryNames={() => []}
+            tagNames={() => []}
+        />
     )
 }
 
@@ -427,15 +397,22 @@ async function assertLayout(
     const face = page!.querySelector('[data-testid="daemon-face"]')
     await expect(hub).not.toBeNull()
     const h = rect(hub!)
-    // Conversing: no hub face — the transcript's lowest assistant row carries it (the stub chat
-    // here has no transcript, so the whole page has none).
+    // Conversing: no hub face — the transcript's lowest assistant row carries it, as a small
+    // avatar INSIDE the chat (never the resting hero).
     if (opts.conversing) {
-        await expect(face).toBeNull()
+        await expect(
+            page!.querySelector('[data-testid="daemon-face-region"]'),
+        ).toBeNull()
+        const chat = page!.querySelector('[data-testid="daemon-page-chat"]')!
+        await expect(chat.contains(face)).toBe(true)
+        await expect(
+            parseFloat(getComputedStyle(face as Element).fontSize),
+        ).toBeLessThan(26)
     } else {
         await expect(face).not.toBeNull()
         await expect(rect(face!).width).toBeGreaterThan(0)
     }
-    const f = face ? rect(face) : undefined
+    const f = face && !opts.conversing ? rect(face) : undefined
     // Resting: the face is centred in the hub column. Compact (chatFills) — the one-line header
     // form, see DaemonHub — it rides left-aligned at the top instead, flush with the hub column.
     if (f && !opts.compact) {
@@ -670,6 +647,31 @@ export const Conversing: Story = {
         await expect(
             rect(chat).height / rect(hub).height,
         ).toBeGreaterThanOrEqual(0.5)
+        // At this wide width the transcript's turn column and the composer share ONE left edge
+        // (both are capped at --chat-column and centred), not a transcript wider than the bar.
+        const turn = within(canvasElement).getByText(
+            'What changed in the last release?',
+        )
+        const composer = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-chat-composer"]',
+        )!
+        // The composer's own box is the descendant capped at --chat-column (the wrapper and bar
+        // around it are full width).
+        // `--chat-column` resolved through a probe element (a hard-coded `680px` here would fail
+        // confusingly the day the token changes).
+        const probe = document.createElement('div')
+        probe.style.maxWidth = 'var(--chat-column)'
+        composer.appendChild(probe)
+        const column = getComputedStyle(probe).maxWidth
+        probe.remove()
+        await expect(column).not.toBe('none')
+        const box = [...composer.querySelectorAll<HTMLElement>('*')].find(
+            el => getComputedStyle(el).maxWidth === column,
+        )
+        await expect(box).toBeDefined()
+        await expect(
+            Math.abs(rect(turn).left - rect(box!).left),
+        ).toBeLessThanOrEqual(1)
     },
 }
 

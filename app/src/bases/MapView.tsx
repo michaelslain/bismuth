@@ -15,14 +15,14 @@ import { titleOf } from './kanbanMeta'
 import { canWriteStoredRow, storedNote } from './taskWrite'
 import { settings } from '../settings'
 import { api } from '../api'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import Text from '../ui/Text'
 import InlineCode from '../ui/InlineCode'
 import EmptyState from '../ui/EmptyState'
 import MapBasemap from './MapBasemap'
 import MapPin from './MapPin'
 import MapControls from './MapControls'
-import { ContextMenu, type MenuItem } from '../ContextMenu'
+import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
 import { createRow } from './rowWrites'
 import { newTaskVisible } from './taskScope'
 import { useRowEditor } from './useRowEditor'
@@ -786,12 +786,21 @@ export function MapView(props: {
 
                 {/* Scale bar. */}
                 <div class={styles.mapScale}>
+                    {/* Typed like AsciiMeter — `|----|` — not three 1px borders. The rule is a long run
+                        of dashes clipped to the bar's pixel width, so the ends stay put at any zoom. */}
                     <Text
                         as="span"
                         inherit
                         class={styles.mapScaleBar}
                         style={{ width: `${scaleBar().widthPx}px` }}
-                    />
+                        aria-hidden="true"
+                    >
+                        <Text as="span" inherit>|</Text>
+                        <Text as="span" inherit class={styles.mapScaleRule}>
+                            {'-'.repeat(80)}
+                        </Text>
+                        <Text as="span" inherit>|</Text>
+                    </Text>
                     <Text
                         as="span"
                         size="inherit"
@@ -805,7 +814,7 @@ export function MapView(props: {
 
                 <Show when={markers().length === 0}>
                     <div class={styles.mapEmpty}>
-                        <EmptyState title="no rows have a location">
+                        <EmptyState class={styles.mapEmptyPlate} title="no rows have a location">
                             add <InlineCode>{latKey()}</InlineCode> /{' '}
                             <InlineCode>{lngKey()}</InlineCode> properties to a
                             note to pin it

@@ -1,0 +1,5 @@
+/* EditableRows.module.css — the ONE row gap and the ONE add row of every Bases field editor.
+   RowList separates rows by their own height alone; a form row (underline controls, 24px) needs a
+   little air, so the list adds --sp-2 between rows — and between the last row and the add row. */
+.list { gap: var(--sp-2); }
+.add { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); }

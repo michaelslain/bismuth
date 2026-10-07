@@ -6,13 +6,13 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { showEventModal, events } from '../state'
-import { toasts } from '../../toastStore'
+import { toasts } from '../../ui/toastStore'
 import { EventChip } from './EventChip'
 import { EventStore, MemoryBackend } from '../EventStore'
 import { createSignal, Show } from 'solid-js'
 import type { CalendarEvent, Category } from '../types'
 import { Row } from '../../ui/_storyKit'
-import { layoutDay } from './views/timeGridLayout'
+import { GRID_PX, layoutDay, minutesToPx } from './views/timeGridLayout'
 
 const meta = {
     title: 'Calendar/EventChip',
@@ -235,7 +235,7 @@ function GridSlot(props: {
     )
 }
 
-const at = (id: string, title: string, startTime: string, endTime: string, extra: Partial<CalendarEvent> = {}): CalendarEvent => ({
+const at = (id: string, title: string, startTime: string, endTime: string | undefined, extra: Partial<CalendarEvent> = {}): CalendarEvent => ({
     id,
     title,
     date: '2026-01-12',
@@ -246,7 +246,7 @@ const at = (id: string, title: string, startTime: string, endTime: string, extra
 })
 
 /** Every block height a week column actually draws, at a narrow column width: 30-min blocks
- *  (which drop their time and fill exactly one half-hour row, ~22px — a 15-min block grows to the
+ *  (which drop their time and fill exactly one half-hour row, ~33px — a 15-min block grows to the
  *  same row; uncategorised; four categories), a 45-min block
  *  (time over one title line), and 1h+ blocks carrying four categories (three dots + "+1")
  *  beside their time range. */
@@ -301,6 +301,62 @@ export const LocationPlacement: Story = {
             <GridSlot event={at('p4', 'Speak Out BBQ', '12:00', '14:00', { location: 'Marina Park', link: 'https://example.com' })} width="150px" />
         </Row>
     ),
+}
+
+/** The edges of the day, laid out by `layoutDay` like every grid block: an event at 00:00, ones
+ *  at 23:30 and 23:45 (the last would grow past the closing rule, so it is cut at it), and one
+ *  written 23:00 to 01:00 — an end before its start is a zero-length block at its start. */
+export const DayEdges: Story = {
+    render: () => (
+        <Row gap="14px" column>
+            <GridSlot event={at('e1', 'Midnight sync', '00:00', '01:00')} />
+            <GridSlot event={at('e2', 'Late stretch', '23:30', '23:59')} />
+            <GridSlot event={at('e3', 'Last call', '23:45', undefined)} />
+            <GridSlot event={at('e4', 'Night shift', '23:00', '01:00')} />
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const chips = within(canvasElement).getAllByTestId('event-chip')
+        expect(chips.length).toBe(4)
+        const h = (i: number) => chips[i].getBoundingClientRect().height
+        // 23:30 and the zero-length 23:00-01:00 block each get the half-hour floor (one row, less
+        // the 3px trim); 23:45's floor would reach past midnight, so it is cut at the closing rule
+        expect(h(1)).toBeCloseTo(minutesToPx(30) - 3, 0)
+        expect(h(2)).toBeCloseTo(GRID_PX - minutesToPx(23 * 60 + 45), 0)
+        expect(h(3)).toBeCloseTo(minutesToPx(30) - 3, 0)
+    },
+}
+
+/** Location and link are hidden when a chip is too small for them — and come back when the pane
+ *  widens. The slot starts narrow (title wraps, meta would spill, so it hides), then widens. */
+export const OverflowReleasesOnWiden: Story = {
+    render: () => (
+        <div
+            data-testid="resize-slot"
+            style={{ position: 'relative', width: '56px', height: '72px' }}
+        >
+            <EventChip
+                event={at('o1', 'Speak Out BBQ', '12:00', '13:00', {
+                    location: 'Marina Park',
+                    link: 'https://example.com',
+                })}
+                categories={CATEGORIES}
+                inGrid
+                store={store}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const slot = c.getByTestId('resize-slot')
+        const metaOf = () => c.getByText('Marina Park').parentElement!
+        await waitFor(() => expect(metaOf().style.visibility).toBe('hidden'))
+        slot.style.width = '320px'
+        await waitFor(() => expect(metaOf().style.visibility).toBe('visible'))
+        // narrowing again hides it once more: the latch is released, not removed
+        slot.style.width = '56px'
+        await waitFor(() => expect(metaOf().style.visibility).toBe('hidden'))
+    },
 }
 
 // ---- keyboard, link safety, delete + undo -------------------------------------------------

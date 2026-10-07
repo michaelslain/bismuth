@@ -3,7 +3,7 @@
    object, never as a string literal. Nothing outside FileTree.tsx may target them.
 
    EVERY class in this file hashes, not just the `ft-` prefixed ones. The state classes that only
-   ever appear as a second class on an `ft-` element — `active`, `system`, `drop-target`, `open`,
+   ever appear as a second class on an `ft-` element — `active`, `system`, `open`,
    `hidden` — are locals of THIS module now, so FileTree.tsx reaches them as `styles.active` and
    friends too. That is the point: a bare global `.active` could never have been safely added to
    this file, and now it cannot leak the other way either.
@@ -15,8 +15,8 @@
    `selected` USED to be in that list — it reached the DOM and matched nothing, which is why
    multi-select looked broken. It is now a real rule below, so FileTree.tsx reaches it through the
    module like any other state class.
-   `drop-target` DOES live here (via `.ft-row.drop-target`), so FileTree.tsx uses the module name
-   for it — including on `.ft-root`, where it is likewise unstyled today and stays that way.
+   There is no `drop-target` class any more: a drop target is drawn by ui/DropCue (the one
+   "takes the drop" recipe), laid over a folder row (`.ft-row-cue`) or over `.ft-root`.
 
    `.ft-chevron` has zero references in any .tsx or .ts. It is moved verbatim rather than deleted:
    dead-rule removal is Task 11 of the modularization, and this task changes nothing but location. */
@@ -32,7 +32,7 @@
    FileTree rows render the prefix trimEnd()-ed: treePrefix's trailing space is there for the
    text-only <AsciiTree>, but in a flex row it stacks on top of .ft-row's gap and the icon box's
    own side bearing, which read as a gaping hole between "|--" and the folder glyph. */
-.ft-prefix { flex-shrink: 0; color: var(--faint); white-space: pre; font-family: var(--ui-font-stack); }
+.ft-prefix { flex-shrink: 0; color: var(--faint); white-space: pre; font-family: var(--ui-font-stack); font-style: normal; } /* never italic: a system row's slant turned the `|` connector into `/--` */
 /* AI-visibility badge (chat-only / hidden) beside a row's icon — see docs/vault/visibility.md.
    "hidden" reads as more severe (danger tint); "chat-only" stays muted like the rest of the row. */
 /* color(--faint / --danger when .hidden) moved to ui/Badge.tsx (`<Badge tone="faint" |
@@ -40,25 +40,27 @@
    here. */
 /* File-tree rows (folders + files) — exactly the app's row unit (--row-h, 18px; ui.css
    :root) tall, no pill radius. The connector prefix now carries depth; static look lives
-   here, the dynamic drop-target highlight stays inline/classList in FileTree.tsx. */
-.ft-row { display: flex; align-items: center; gap: var(--sp-3); height: var(--row-h, 18px); padding: 0 var(--sp-4); font-size: var(--fs-ui); color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }
+   here; the drop-target cue is a ui/DropCue child of the row (FileTree.tsx). */
+.ft-row { position: relative; display: flex; align-items: center; gap: var(--sp-3); height: var(--row-h, 18px); padding: 0 var(--sp-4); font-size: var(--fs-ui); color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }
 .ft-row .ft-icon { color: var(--text-muted); }
-/* THE reference three-weight state ladder (visual-unification audit §7 wave 3, §9's "separate
-   hover from selected everywhere"): plain mouse-over is the lightest wash (--state-hover-bg, an
-   8% --fg mix — was the equivalent --hover-bg, same value, renamed onto the canonical token),
-   a multi-selected row is a solid opaque fill one step up (--surface-3, see the comment below),
-   and the persistently OPEN file is the loudest treatment (--state-selected-bg = --accent-soft).
-   Every other surface in this wave (palette, popover) is swept to reproduce exactly this ladder —
-   this file is the one the audit already found correct and named as the pattern to copy. */
-.ft-row:hover { background: var(--state-hover-bg); color: var(--fg); }
+/* System folders (.settings / .daemon): rendered as muted, italic surfaces so they
+   read as runtime-managed rather than ordinary vault folders. Colour + slant are the cue — no
+   opacity (DESIGN.md: no state is ever shown by opacity). Declared BEFORE the state ladder below:
+   `.ft-row.system` is (0,2,0), the same weight as `.ft-row:hover`, so source order is what lets a
+   system row still lift to --fg on hover (and read --accent when open) instead of staying muted. */
+.ft-row.system { color: var(--text-muted); font-style: italic; }
+.ft-row.system .ft-icon { color: var(--text-muted); }
+/* The row state ladder. A clickable row never paints a background on HOVER (user decision
+   2026-09-23, ui/ListRow.tsx) — mouse-over only lifts the ink (--text-muted -> --fg). The fills that
+   remain are STATES, not hover: a PRESSED row (--state-active-bg, the one pressed fill for rows and
+   chips), a multi-selected row (a solid opaque --surface-3, see the comment below) and the
+   persistently OPEN file (--state-selected-bg = --accent-soft). */
+.ft-row:hover { color: var(--fg); }
 .ft-row:hover .ft-icon { color: var(--fg); }
-/* Keyboard focus. `outline-offset: -2px` (inward), unlike every other control in the app: a row is
-   flush against its neighbours inside a scroll container, so an outward ring is clipped at the top
-   and bottom edges and overlaps the adjacent row. Drawing it inside keeps the whole ring visible.
-   The container carries the tree's single tab stop, so it needs a ring of its own for the moment
-   focus lands there before the first arrow key. */
-.ft-row:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
-.ft-root:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+/* Nothing draws focus (DESIGN.md's focus rule). The container carries the tree's single tab stop
+   and moves focus onto a row on arrow keys, so both are focus TARGETS that must not fall back to
+   the UA's own ring either — hence an explicit `outline: none`, not a missing rule. */
+.ft-row, .ft-root { outline: none; }
 /* Multi-select (Cmd/Ctrl-click toggles a row, Shift-click extends a range, Delete removes the set).
    The selection logic was already complete — anchor tracking, visible-order ranges, nested-path
    pruning — but NOTHING RENDERED IT: the class reached the DOM and no rule anywhere matched it, so
@@ -68,18 +70,19 @@
    must not be confusable with the open one. --surface-3 is opaque where hover is an 8% wash and
    active is the accent tint, so a multi-selection reads as a solid contiguous block — which is
    exactly the shape information a range selection needs to convey. Declared BEFORE .active so a
-   row that is both still reads as active; both are 0-2-0 and order is what separates them. */
+   row that is both still reads as active; both are 0-2-0 and order is what separates them.
+   `:active` (pressed) is declared AFTER both for the same reason: a press has to read through a
+   selected or open row too, and all three are 0-2-0. */
 .ft-row.selected { background: var(--surface-3); color: var(--fg); }
 .ft-row.selected .ft-icon { color: var(--fg); }
 .ft-row.active { background: var(--state-selected-bg); color: var(--accent); text-shadow: var(--glow-text); }
 .ft-row.active .ft-icon { color: var(--accent); }
-.ft-row.drop-target { background: var(--state-selected-bg); }
-/* System folders (.settings / .daemon): rendered as muted, italic surfaces so they
-   read as runtime-managed rather than ordinary vault folders. */
-.ft-row.system { color: var(--text-muted); font-style: italic; opacity: 0.85; }
-.ft-row.system .ft-icon { color: var(--text-muted); }
-.ft-row.system:hover { opacity: 1; }
+.ft-row:active { background: var(--state-active-bg); }
+/* Drop cue: ui/DropCue (the one "takes the drop" recipe, --rule-drop) laid over a folder row. The
+   primitive insets itself by --sp-2, which in an 18px row leaves a sliver — so the row's cue fills
+   the row instead. `.ft-row .ft-row-cue` is (0,2,0) against the primitive's (0,1,0). */
+.ft-row .ft-row-cue { inset: 0; }
 /* Folder children slide open/closed: a grid row animates 0fr→1fr (i.e. 0→content
    height) with no measuring; the inner wrapper clips the overflow as it grows/shrinks. */
 /* FileTree root fills the sidebar's scroll area so empty space below the tree is still a drop target. */
-.ft-root { min-height: 100%; }
+.ft-root { position: relative; min-height: 100%; } /* the root DropCue lays over it */

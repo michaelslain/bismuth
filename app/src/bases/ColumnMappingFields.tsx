@@ -42,7 +42,7 @@ const ColumnMappingFields: Component<ColumnMappingFieldsProps> = props => (
                                 props.value[f.key] ?? '',
                                 props.columns,
                             )}
-                            placeholder={f.noneLabel ?? 'Not set'}
+                            placeholder={f.noneLabel ?? 'not set'}
                             onChange={c => props.onChange(f.key, c)}
                         />
                     </SettingsField>

@@ -10,8 +10,9 @@
 // MOOD_SETTLE_MS, and does so through one blink frame rather than a hard cut.
 //
 // Motion discipline: the eye and blink clocks stop while the document is hidden and on cleanup;
-// the one-shot settle/transition timers do not. Under `prefers-reduced-motion: reduce` the tick
-// never advances (the frame stays at tick 0) but blinks still happen — a blink is a single state
+// the one-shot settle/transition timers do not. The eye clock also follows the app's
+// `--motion-scale` (motionTickMs: 0 turns it off, >1 slows it). Under `prefers-reduced-motion:
+// reduce` the tick never advances (the frame stays at tick 0) but blinks still happen — a blink is a single state
 // change, not movement.
 import {
     createEffect,
@@ -33,10 +34,10 @@ import {
     DOUBLE_BLINK_GAP_MS,
     initialSettle,
     moodLabel,
+    motionTickMs,
     MOOD_SETTLE_MS,
     nextBlinkDelay,
     settleMood,
-    tickMs,
     WINK_MS,
     type DaemonMood,
     type SettleState,
@@ -71,6 +72,15 @@ function isHidden(): boolean {
     )
 }
 
+/** The app's `--motion-scale` (global.css), read off the root — 0 means motion is off. */
+function motionScale(): number {
+    if (typeof document === 'undefined') return 1
+    const raw = getComputedStyle(document.documentElement)
+        .getPropertyValue('--motion-scale')
+        .trim()
+    return raw === '' ? 1 : parseFloat(raw)
+}
+
 function reducedMotionQuery(): MediaQueryList | undefined {
     return typeof window !== 'undefined'
         ? window.matchMedia?.(REDUCED_MOTION)
@@ -93,6 +103,7 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
     const [hovered, setHovered] = createSignal(false)
     const [winking, setWinking] = createSignal(false)
     const [hidden, setHidden] = createSignal(isHidden())
+    const [scale, setScale] = createSignal(motionScale())
     const [reduced, setReduced] = createSignal(
         reducedMotionQuery()?.matches ?? false,
     )
@@ -170,19 +181,33 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
         const mq = reducedMotionQuery()
         const onMotion = (e: MediaQueryListEvent) => setReduced(e.matches)
         mq?.addEventListener('change', onMotion)
+        // `--motion-scale` is written onto the root's inline style by settingsCssVars, so the
+        // setting changing is a root `style` mutation — watch it so an idle face (mood not
+        // changing) still re-clocks its eye tick on the new scale. `class` covers a theme swap.
+        const motionObserver = new MutationObserver(() =>
+            setScale(motionScale()),
+        )
+        motionObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['style', 'class'],
+        })
         onCleanup(() => {
+            motionObserver.disconnect()
             document.removeEventListener('visibilitychange', onVisibility)
             mq?.removeEventListener('change', onMotion)
         })
     })
 
     // The eye clock. Restarts from tick 0 whenever the rendered mood changes, the page comes back
-    // into view, or reduced motion flips.
+    // into view, reduced motion flips, or `--motion-scale` changes.
     createEffect(() => {
         const mood = renderedMood()
         setTick(0)
-        if (hidden() || reduced()) return
-        const id = setInterval(() => setTick(t => t + 1), tickMs(mood))
+        // The one ambient loop: it follows `--motion-scale` like every transition (0 = off, >1 =
+        // slower) as well as reduced-motion.
+        const ms = motionTickMs(mood, scale())
+        if (hidden() || reduced() || ms === null) return
+        const id = setInterval(() => setTick(t => t + 1), ms)
         onCleanup(() => clearInterval(id))
     })
 

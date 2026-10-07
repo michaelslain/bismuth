@@ -1,10 +1,9 @@
 import { createEffect, Show, type Component } from 'solid-js'
-import { Icon } from '../icons/Icon'
 import Select from '../ui/Select'
 import Text from '../ui/Text'
 import { TextInput } from '../ui/TextInput'
 import { IconButton } from '../ui/IconButton'
-import PlainButton from '../ui/PlainButton'
+import Disclosure from '../ui/Disclosure'
 import RemoveRowButton from '../ui/RemoveRowButton'
 import SettingsField from '../ui/SettingsField'
 import SettingsHint from '../ui/SettingsHint'
@@ -51,7 +50,7 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
     // The list scrolls inside <ModalBody>, but nothing scrolled a newly-expanded row into that
     // window — its freshly-grown body sat under the modal's pinned footer. Scroll the row into
     // view whenever it opens. Deferred a frame: this fires as soon as `open` flips, BEFORE the
-    // <Show> below has inserted and laid out the body.
+    // <Collapsible> below has mounted and laid out the body.
     createEffect(() => {
         if (!props.open) return
         requestAnimationFrame(() => {
@@ -59,52 +58,45 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
         })
     })
     return (
-        <div
-            ref={rowEl}
-            class={`${styles.row} ${props.open ? styles.open : ''} ${props.class ?? ''}`}
-        >
-            <PlainButton
-                class={styles.head}
-                aria-expanded={props.open}
-                onClick={() => props.onToggleOpen()}
+        <div ref={rowEl} class={props.class}>
+            <Disclosure
+                open={props.open}
+                onToggle={() => props.onToggleOpen()}
+                class={styles.row}
+                summary={
+                    <>
+                        <Text
+                            as="span"
+                            inherit
+                            class={styles.nameTxt}
+                            classList={{ [styles.empty]: !props.row.name }}
+                        >
+                            {props.row.name || 'untitled property'}
+                        </Text>
+                        <Text as="span" inherit class={styles.kind}>
+                            {props.row.kind}
+                        </Text>
+                    </>
+                }
+                trailing={
+                    <IconButton
+                        icon={props.row.hidden ? 'EyeSlash' : 'Eye'}
+                        label={
+                            props.row.hidden
+                                ? `Show ${props.row.name || 'property'} on cards/table`
+                                : `Hide ${props.row.name || 'property'} from cards/table`
+                        }
+                        title={
+                            props.row.hidden
+                                ? 'Hidden from cards/table — click to show'
+                                : 'Visible on cards/table — click to hide'
+                        }
+                        onClick={() =>
+                            props.onChange({ hidden: !props.row.hidden })
+                        }
+                    />
+                }
             >
-                <Icon
-                    value="chevron-right"
-                    class={styles.chev}
-                    strokeWidth={2}
-                />
-                <Text
-                    as="span"
-                    inherit
-                    class={styles.nameTxt}
-                    classList={{ [styles.empty]: !props.row.name }}
-                >
-                    {props.row.name || 'untitled property'}
-                </Text>
-                <Text as="span" inherit class={styles.kind}>
-                    {props.row.kind}
-                </Text>
-                <IconButton
-                    icon={props.row.hidden ? 'eye-off' : 'eye'}
-                    label={
-                        props.row.hidden
-                            ? `Show ${props.row.name || 'property'} on cards/table`
-                            : `Hide ${props.row.name || 'property'} from cards/table`
-                    }
-                    title={
-                        props.row.hidden
-                            ? 'Hidden from cards/table — click to show'
-                            : 'Visible on cards/table — click to hide'
-                    }
-                    class={styles.eye}
-                    onClick={e => {
-                        e.stopPropagation()
-                        props.onChange({ hidden: !props.row.hidden })
-                    }}
-                />
-            </PlainButton>
-
-            <Show when={props.open}>
                 <div class={styles.body}>
                     <div class={styles.fields}>
                         <SettingsField label="name" span>
@@ -223,7 +215,7 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
                         />
                     </div>
                 </div>
-            </Show>
+            </Disclosure>
         </div>
     )
 }

@@ -63,23 +63,15 @@ export const CommitsOnce: Story = {
         await waitFor(() => expect(document.activeElement).toBe(el))
         await expect(el.selectionStart).toBe(0)
         await expect(el.selectionEnd).toBe('Chapter 2'.length)
-        // Focused, it shows its own accent-coloured `outline` — never the browser's own blue
-        // focus ring drawn on top of the accent border, and never a `box-shadow`-only ring, which
-        // forced-colors mode drops entirely (fix 3 finding 7).
+        // Focused, it draws NOTHING extra — no accent border, no outline, no fill (nothing in this
+        // system draws focus; DESIGN.md "focus"). It is an underline, like every field.
         const cs = getComputedStyle(el)
-        const accent = (() => {
-            const probe = document.createElement('div')
-            probe.style.color = 'var(--accent)'
-            canvasElement.appendChild(probe)
-            const c = getComputedStyle(probe).color
-            probe.remove()
-            return c
-        })()
         await expect(el.matches(':focus')).toBe(true)
-        await expect(cs.outlineStyle).not.toBe('none')
-        await expect(parseFloat(cs.outlineWidth)).toBeGreaterThan(0)
-        await expect(cs.outlineColor).toBe(accent)
-        await expect(cs.borderTopColor).toBe(accent)
+        await expect(cs.outlineStyle).toBe('none')
+        await expect(cs.borderTopStyle).toBe('none')
+        await expect(cs.borderLeftStyle).toBe('none')
+        await expect(cs.borderBottomStyle).toBe('solid')
+        await expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
         el.value = '  Results '
         key(el, 'Enter')
         el.dispatchEvent(new FocusEvent('blur'))
@@ -90,6 +82,34 @@ export const CommitsOnce: Story = {
         )
         await expect(commits).toEqual(['Results'])
         await expect(cancels).toBe(0)
+    },
+}
+
+/** It takes the LABEL's box, not a control's: same text x (no padding, no side borders) and one
+ *  line tall — so swapping a row's label for it neither grows the row (it rendered ~20px in an 18px
+ *  row) nor shifts the text (~4px of padding + border). */
+export const TakesTheLabelsBox: Story = {
+    render: () => (
+        <div style={{ width: '220px', 'font-size': 'var(--fs-ui)', 'line-height': 'var(--lh-ui)' }}>
+            <div data-testid="ti-row-label">Chapter 2</div>
+            <div data-testid="ti-row-edit">
+                <InlineTextInput value="Chapter 2" onCommit={() => {}} onCancel={() => {}} />
+            </div>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const label = canvasElement.querySelector('[data-testid="ti-row-label"]')!
+        const edit = canvasElement.querySelector('[data-testid="ti-row-edit"]')!
+        const el = input(canvasElement)
+        await expect(
+            Math.abs(el.getBoundingClientRect().height - label.getBoundingClientRect().height),
+        ).toBeLessThanOrEqual(1)
+        await expect(Math.round(el.getBoundingClientRect().left)).toBe(
+            Math.round(label.getBoundingClientRect().left),
+        )
+        await expect(edit.getBoundingClientRect().height).toBeLessThanOrEqual(
+            label.getBoundingClientRect().height + 1,
+        )
     },
 }
 

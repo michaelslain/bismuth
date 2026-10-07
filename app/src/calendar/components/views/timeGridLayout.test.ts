@@ -2,12 +2,14 @@ import { test, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import {
     GRID_PX,
+    computeLanes,
     MINUTES_PER_DAY,
     allDayOn,
     eventMinutes,
     ghostBox,
     layoutDay,
     minutesToPx,
+    sortDayEvents,
     timedOn,
     yToMinutes,
 } from './timeGridLayout'
@@ -118,4 +120,105 @@ test('the CSS custom property and the TS constant are one number', () => {
         'utf8',
     )
     expect(css).toContain(`--time-grid-height: ${GRID_PX}px`)
+})
+
+test('an event at 00:00 starts on the top rule', () => {
+    const [l] = layoutDay([ev('a', 'd', '00:00', '01:00')])
+    expect(l.top).toBe(0)
+    expect(l.height).toBeCloseTo(minutesToPx(60) - 3)
+})
+
+test('no block ever spills past the closing rule, however late it starts', () => {
+    for (const start of ['23:30', '23:45', '23:59']) {
+        for (const end of [undefined, '23:59']) {
+            const [l] = layoutDay([ev('a', 'd', start, end)])
+            expect(l.top + l.height).toBeLessThanOrEqual(GRID_PX)
+            expect(l.height).toBeGreaterThan(0)
+        }
+    }
+    // 23:30 still gets its full half-hour row; only 23:45 and later are cut short
+    const [h] = layoutDay([ev('a', 'd', '23:30')])
+    expect(h.height).toBeCloseTo(minutesToPx(30) - 3)
+    const [q] = layoutDay([ev('a', 'd', '23:45')])
+    expect(q.top + q.height).toBe(GRID_PX)
+})
+
+test('an end before the start is a zero-length block at the start, not a swap', () => {
+    // crossing midnight: 23:00 to 01:00. The start places the block, so it stays at 23:00
+    // and is capped like any other short block (never the 30-min floor of a negative span).
+    expect(eventMinutes(ev('a', 'd', '23:00', '01:00'))).toEqual({
+        startMin: 1380,
+        endMin: 1380,
+    })
+    const out = layoutDay([
+        ev('a', 'd', '23:00', '01:00'),
+        ev('b', 'd', '23:10', '23:40'),
+    ])
+    const a = out.find(l => l.event.id === 'a')!
+    expect(a.top).toBe(minutesToPx(1380))
+    // zero length grows toward the half-hour floor but only to the event that follows (10 min,
+    // 12px - the 3px trim = 9px, just over the 8px minimum) - never a flat 30-min block
+    expect(a.height).toBe(9)
+    expect(a.short).toBe(true)
+})
+
+test('computeLanes treats a reversed range as zero-length and still separates overlaps', () => {
+    const lanes = computeLanes([
+        { id: 'rev', startMin: 600, endMin: 540 },
+        { id: 'same', startMin: 600, endMin: 600 },
+        { id: 'later', startMin: 700, endMin: 760 },
+    ])
+    // the reversed and zero-length events share a minute, so they take two lanes
+    expect(lanes.get('rev')!.lanes).toBe(2)
+    expect(lanes.get('same')!.lane).not.toBe(lanes.get('rev')!.lane)
+    expect(lanes.get('later')).toEqual({ lane: 0, lanes: 1 })
+})
+
+test('timedOn returns a day in start-time order, whatever order it was stored in', () => {
+    const list = [
+        ev('c', 'd', '14:00', '15:00'),
+        ev('a', 'd', '09:00', '10:00'),
+        ev('x', 'other', '08:00'),
+        ev('b', 'd', '09:00', '09:30'),
+    ]
+    expect(timedOn(list, 'd').map(e => e.id)).toEqual(['a', 'b', 'c'])
+})
+
+test('sortDayEvents puts all-day first, then start time, and keeps ties in stored order', () => {
+    const list = [
+        ev('late', 'd', '14:00'),
+        ev('early', 'd', '09:00'),
+        ev('allday2', 'd'),
+        ev('tie1', 'd', '09:00'),
+        ev('allday1', 'd'),
+    ]
+    const before = list.map(e => e.id)
+    expect(sortDayEvents(list).map(e => e.id)).toEqual([
+        'allday2',
+        'allday1',
+        'early',
+        'tie1',
+        'late',
+    ])
+    expect(list.map(e => e.id)).toEqual(before) // never mutates its input
+})
+
+test('the grid is 72px an hour: every quarter hour lands on the 18px row unit', () => {
+    const ROW_UNIT = 18
+    expect(GRID_PX).toBe(24 * 4 * ROW_UNIT)
+    expect(minutesToPx(60)).toBe(4 * ROW_UNIT)
+    for (let q = 0; q <= 24 * 4; q++) {
+        const px = minutesToPx(q * 15)
+        // float division: land on the unit to rounding error, not by exact equality
+        expect(Math.abs(px - q * ROW_UNIT), `quarter ${q}`).toBeLessThan(1e-9)
+    }
+})
+
+test('30 min is the one-line compact block, 45 min is the first with room for time over title', () => {
+    const half = layoutDay([ev('h', 'd', '10:00', '10:30')])[0]
+    const three = layoutDay([ev('t', 'd', '10:00', '10:45')])[0]
+    expect(half.height).toBe(minutesToPx(30) - 3)
+    expect(half.compact).toBe(true)
+    expect(three.height).toBe(minutesToPx(45) - 3)
+    expect(three.compact).toBe(false)
 })

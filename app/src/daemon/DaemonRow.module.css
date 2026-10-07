@@ -59,9 +59,10 @@
     max-width: 28ch;
 }
 
-/* Schedule / trigger. Truncates FIRST — its column floors at 0 width (see the parent list's
-   grid-template-columns), so under pressure the grid shrinks this track toward zero before the
-   name column (floored at 12ch) has to give up any of its own room. */
+/* Schedule / trigger. Truncates FIRST, but never vanishes — its column floors at 8ch (see the
+   parent list's grid-template-columns) and the full text rides in its `title`, so under pressure
+   the schedule ellipsizes down to a readable stub before the name column (floored at 12ch) gives
+   up any of its own room. */
 .meta {
     min-width: 0;
     overflow: hidden;
@@ -69,14 +70,14 @@
     white-space: nowrap;
 }
 
-/* Status: a word plus age, never colour alone. Faint (ok/off/idle) by default; accent when
-   live, danger when failed — the same two reusable tone modifiers the old cronStatus/DaemonLog
+/* Status: a word plus age, never colour alone. Muted when ok or idle, faint when off (a disabled
+   definition); accent when live, danger when failed — the same two reusable tone modifiers the old cronStatus/DaemonLog
    rows already use. */
 .status {
     white-space: nowrap;
     flex-shrink: 0;
     justify-self: end;
-    color: var(--faint);
+    color: var(--text-muted);
 }
 .tone-ok {
     color: var(--text-muted);
@@ -87,9 +88,11 @@
 .tone-failed {
     color: var(--danger);
 }
-.tone-off,
-.tone-idle {
+.tone-off {
     color: var(--faint);
+}
+.tone-idle {
+    color: var(--text-muted);
 }
 
 /* Hidden at rest, revealed on row hover/focus-within (or mid inline-confirm) — opacity, never

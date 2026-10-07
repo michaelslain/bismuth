@@ -1,24 +1,42 @@
-/* ---------- list view ---------- */
+/* ---------- list view ----------
+
+   HOVER RULING (design-system improve r1 — the sibling row views follow it): a row paints a hover
+   wash ONLY when it is ACTIONABLE, i.e. when pressing it does something. Here that is the row that
+   renders as a button (an editable row opens the editor) — `.lrowAction`. A row that merely shows a
+   title (a plain `<div>`, whose NoteLink is the one real target) is inert and paints nothing, so a
+   wash never promises a press that does not exist. CardFrame already gates on `interactive` the
+   same way; TableView gates on `rowEditable`; BulletsView on the editable bullet button. The wash
+   is `--hover-bg` and nothing else — no opacity, no border.
+
+   GUTTER: every inline inset in this view is `--view-gutter`, so a row's first glyph starts where
+   the ViewBar above it does. GROUP RHYTHM: the gap between two groups is one `--row-h`, so a header
+   always lands on the row grid. ROW METRICS: a row is `--fs-ui` on `--sp-1` either side — the same
+   register as <TaskRow> (a task line in the same list) and ui/ListRow, so a list that mixes the two
+   has one row pitch, not ~34px beside ~20px. */
 .list { padding: var(--sp-4) 0; }
-.lgroup { padding: var(--sp-4) 0; }
+.lgroup + .lgroup { margin-top: var(--row-h); }
 /* GroupHeader owns the dot/label/count look; this only sets the row's own gutter. */
-.lghead { padding: var(--sp-4) var(--sp-6); }
+.lghead { padding: var(--sp-2) var(--view-gutter); }
 .lrow {
   display: flex;
   align-items: center;
   gap: var(--sp-5);
   width: 100%;
-  padding: var(--sp-4) var(--sp-6);
+  box-sizing: border-box;
+  padding: var(--sp-1) var(--view-gutter);
   border-bottom: 1px solid var(--border-soft, var(--border));
-  font-size: var(--fs-body);
+  font-size: var(--fs-ui);
   color: var(--fg);
-  cursor: pointer;
 }
-.lrow:hover { background: var(--hover-bg); }
-.lrow:not(button) { cursor: default; }
+/* Actionable rows only (see the ruling above). Declared after `.lrow` at equal specificity. */
+.lrowAction { cursor: pointer; }
+.lrowAction:hover { background: var(--hover-bg); }
+/* A task line shares this list: <TaskRow> pads `--sp-6` in its own module, which would start its
+   checkbox 4px right of a note row's title. Child combinator = (0,2,0), so this wins without
+   reaching into TaskRow's stylesheet. */
+.lgroup > .taskLine { padding-inline: var(--view-gutter); }
 /* flex/min-width/overflow/ellipsis/white-space moved to ui/Label.tsx (`<Label fill>`); nothing
    bespoke remained, so the rule and the `class` merge onto the element are both gone. */
-/* Faint author suffix after a list row's title. */
 /* The optional right-aligned third column (dates / counts). */
 .lrowRight { font-size: var(--fs-ui); flex: 0 0 auto; }
 

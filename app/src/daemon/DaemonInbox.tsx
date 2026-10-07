@@ -102,14 +102,14 @@ function DaemonInbox(props: DaemonInboxProps) {
             >
                 <Show
                     when={open().length > 0}
-                    fallback={<Text tone="faint">nothing needs you</Text>}
+                    fallback={<Text tone="muted">nothing needs you</Text>}
                 >
                     {rows(open())}
                 </Show>
                 <Show when={resolved().length > 0}>
                     <Text
                         size="ui"
-                        tone="faint"
+                        tone="muted"
                         class={styles['resolved-label']}
                     >
                         resolved

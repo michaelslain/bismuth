@@ -25,14 +25,19 @@
    label + value spans become direct grid children of `.kbMeta` — two cells in the SAME row —
    rather than a nested box the grid can't see into. */
 .kbMeta {
-  display: grid; grid-template-columns: max-content 1fr; column-gap: 2ch; row-gap: var(--sp-2); margin-top: 1px; /* 1px optical nudge under the title */
+  --kb-meta-key-max: 16ch;
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 2ch; row-gap: var(--sp-2); margin-top: 1px; /* 1px optical nudge under the title */
   font-size: var(--fs-ui); color: var(--fg); line-height: 1.35; overflow-wrap: anywhere;
 }
 /* `hideLabels` (#105): no key column at all — every value starts flush left in one column. */
-.kbMetaHideLabels { grid-template-columns: 1fr; }
+.kbMetaHideLabels { grid-template-columns: minmax(0, 1fr); }
 .kbMetaItem { display: contents; }
 .kbMetaLabel {
-  font-size: var(--fs-ui); color: var(--faint); line-height: 1.35; white-space: nowrap; align-self: baseline;
+  font-size: var(--fs-ui); color: var(--text-muted); line-height: 1.35; white-space: nowrap; align-self: baseline;
+  /* A long user-named property truncates instead of widening the key column: the grid's
+     `max-content` track is sized off the label's own width, so without a cap one long name left the
+     value a single character wide. The cap clamps the label's max-content contribution. */
+  max-width: var(--kb-meta-key-max); overflow: hidden; text-overflow: ellipsis;
 }
 /* A row with no key (tags, a markdown body, or any row once `hideLabels` removes the key
    column) spans the full grid width instead of sitting in the narrow value column alone. */
@@ -44,9 +49,9 @@
 .kbMetaValueWrap { display: inline-flex; align-items: baseline; min-width: 0; align-self: baseline; }
 .kbMetaClickable {
   cursor: pointer; border-radius: var(--r-0); padding: 1px var(--sp-2); margin: calc(-0.5 * var(--sp-1)) calc(-1 * var(--sp-2)); /* -1px (half --sp-1; tokenLint rejects a bare px): optical nudge so the chip text sits on the row baseline */
-  transition: background calc(120ms * var(--motion-scale)) var(--ease-std), color calc(120ms * var(--motion-scale)) var(--ease-std);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
-.kbMetaClickable:hover { background: var(--surface-2); color: var(--fg); }
+.kbMetaClickable:hover { background: var(--state-hover-bg); color: var(--fg); }
 /* A boolean meta property is always a ChipToggle (display AND editor in one) — ChipToggle
    composes ui/Button and owns its own size/padding/chrome now (one-button), so this file no
    longer overrides any of it. */

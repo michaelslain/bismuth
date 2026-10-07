@@ -116,7 +116,7 @@ export function QueryBuilder(props: {
     )
     // None + every column (group dropdown).
     const propOptionsOptional = createMemo<SelectOption[]>(() => [
-        { value: '', label: 'None' },
+        { value: '', label: 'none' },
         ...propOptions(),
     ])
 
@@ -222,7 +222,7 @@ export function QueryBuilder(props: {
                         <Select
                             value={state.group ?? ''}
                             options={propOptionsOptional()}
-                            placeholder="None"
+                            placeholder="none"
                             onChange={v => setState('group', v || undefined)}
                         />
                     </SettingsField>
@@ -232,7 +232,7 @@ export function QueryBuilder(props: {
                             value={
                                 state.limit != null ? String(state.limit) : ''
                             }
-                            placeholder="No limit"
+                            placeholder="no limit"
                             onInput={v => {
                                 const n = Number(v)
                                 setState(

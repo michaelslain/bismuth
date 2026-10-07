@@ -218,7 +218,7 @@ export function createKanbanDrag(opts: KanbanDragOptions) {
             height: `${r.height}px`,
             margin: '0',
             pointerEvents: 'none',
-            zIndex: '10000',
+            zIndex: 'var(--z-modal)',
             opacity: '0.92',
             // A dragged card is genuinely floating (following the cursor above the board) —
             // the one legitimate elevation shadow in this view, read off the theme token.

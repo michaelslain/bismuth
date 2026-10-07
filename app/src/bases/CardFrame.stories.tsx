@@ -71,3 +71,51 @@ export const TaskInteractiveDropTarget: Story = {
         children: <div>Task chip (interactive + drop target)</div>,
     },
 }
+
+/** The frame composes ui/Card but carries none of its padding: a cover runs edge to edge. It clips
+ *  its children by default (the cover's glyph field must not spill). */
+export const ClipsByDefault: Story = {
+    args: { children: <div style={{ padding: '16px' }}>Clipped</div> },
+    play: async ({ canvasElement }) => {
+        const root = canvasElement.firstElementChild as HTMLElement
+        const cs = getComputedStyle(root)
+        expect(cs.overflow).toBe('hidden')
+        expect(cs.paddingTop).toBe('0px')
+        expect(cs.paddingLeft).toBe('0px')
+    },
+}
+
+/** `overflow="visible"` is what lets a body card's CodeMirror completion popup leave the card. The
+ *  popup stand-in hangs 40px below the frame and must be visible there. */
+export const OverflowVisible: Story = {
+    args: {
+        overflow: 'visible',
+        children: (
+            <div style={{ padding: '16px', position: 'relative' }}>
+                Body card
+                <div
+                    data-testid="popup"
+                    style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: '0',
+                        'margin-top': '24px',
+                        padding: '8px',
+                        background: 'var(--surface-3)',
+                        border: 'var(--rule)',
+                    }}
+                >
+                    popup past the card edge
+                </div>
+            </div>
+        ),
+    },
+    play: async ({ canvasElement }) => {
+        const root = canvasElement.firstElementChild as HTMLElement
+        expect(getComputedStyle(root).overflow).toBe('visible')
+        const popup = canvasElement.querySelector('[data-testid="popup"]') as HTMLElement
+        expect(popup.getBoundingClientRect().bottom).toBeGreaterThan(
+            root.getBoundingClientRect().bottom,
+        )
+    },
+}

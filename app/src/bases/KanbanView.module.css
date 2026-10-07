@@ -17,7 +17,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   align-items: stretch;
-  padding: var(--sp-5);
+  padding: var(--view-gutter);
   flex: 1;
   min-height: 0;
   height: 100%;
@@ -29,7 +29,7 @@
 :global(html.kb-dragging), :global(html.kb-dragging) * { cursor: grabbing !important; user-select: none !important; }
 /* design-system-ignore globalReach: same html.kb-dragging state class as above */
 :global(html.kb-dragging) [data-kbghost] { cursor: grabbing; }
-.kanbanHint { margin: var(--sp-7); }
+.kanbanHint { margin: var(--view-gutter); }
 
 /* Column drop-gap placeholder — a slim, full-height insertion bar marking the slot the dragged
    column will land in (the horizontal analogue of .kanbanPlaceholderActive for cards). Stretches
@@ -41,8 +41,10 @@
   min-height: 80px;
   margin: 0 var(--sp-2);
   border-radius: var(--r-0);
-  background: var(--bismuth-accent-border);
-  box-shadow: 0 0 0 3px var(--bismuth-accent-soft);
+  /* Read from the real tokens, not the `--bismuth-*` aliases — those exist only on BaseView's
+     `.host`, so in a bare story (or anywhere outside it) this bar rendered unpainted. */
+  background: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px var(--accent-soft);
   pointer-events: none;
 }
 

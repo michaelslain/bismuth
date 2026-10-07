@@ -272,6 +272,9 @@ describe('graphBlockToGraphData', () => {
             { id: 'a', label: 'Alice', kind: 'note' },
             { id: 'b', label: 'b', kind: 'note' },
         ])
-        expect(g.edges).toEqual([{ from: 'a', to: 'b', kind: 'link' }])
+        // The edge's caption rides along — it used to be dropped here, so no ```graph block ever drew one.
+        expect(g.edges).toEqual([
+            { from: 'a', to: 'b', kind: 'link', label: 'x' },
+        ])
     })
 })

@@ -4,6 +4,8 @@ import type { PaperBg } from '../../../core/src/drawing/model'
 import type { ToolState } from './DrawingCanvas'
 import { ZOOM_MIN, ZOOM_MAX } from './DrawingPage'
 import { IconButton } from '../ui/IconButton'
+import IconBar from '../ui/IconBar'
+import Swatch from '../ui/Swatch'
 import { TextButton } from '../ui/TextButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { Icon } from '../icons/Icon'
@@ -44,18 +46,22 @@ const SIZE_LEVELS = [2, 5, 9, 14, 20]
 const SHARP_PATH = 'M2 13 L6 3 L10 13 L14 3 L18 13 L22 3'
 const SMOOTH_PATH = 'M2 9 C8 4 16 14 22 7'
 
+// A 16px box — the same box `ui/Swatch` draws the colour row in (`.draw-swatch`), so the two
+// stacked rows sit on one grid. It was 22x16 when the colour beside it was a hand-rolled
+// <svg><rect> that painted a 16px square inside a 22px box.
 const dotIcon = (size: number) => (
-    <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
-        <circle cx="11" cy="8" r={2 + (size / 20) * 5} fill="currentColor" />
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r={2 + (size / 20) * 5} fill="currentColor" />
     </svg>
 )
-// A color swatch in the identical 22×16 box as dotIcon — a FLAT 16px square (no
+// A color swatch in the identical 16×16 box as dotIcon — a FLAT 16px square (no
 // rounding), matching the register's "token swatches, butted in a single --border
 // frame" (bismuth-design/ascii-extended PORTING.md §2c / view-sheets-draw.card.html .sw-c).
+// `ui/Swatch static` IS that square — the app's one colour-square primitive — rather than a
+// second <svg><rect> copy of it; `.draw-swatch` keeps the 16-in-22 footprint and adds the
+// hairline ring a near-black "Default ink" needs to be visible on this dark dock at all.
 const colorSwatch = (fill: string) => (
-    <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
-        <rect x="3" y="0" width="16" height="16" fill={fill} />
-    </svg>
+    <Swatch static color={fill} class={styles['draw-swatch']} />
 )
 const smoothIcon = (d: string) => (
     <svg width="24" height="16" viewBox="0 0 24 16" aria-hidden="true">
@@ -338,7 +344,7 @@ export function Toolbar(props: {
                                 props.onResetZoom
                             }
                         >
-                            <div class={styles['draw-zoomrow']}>
+                            <IconBar bare>
                                 <IconButton
                                     icon="ZoomOut"
                                     label="Zoom out"
@@ -363,7 +369,7 @@ export function Toolbar(props: {
                                     onClick={() => props.onZoomIn!()}
                                     disabled={props.zoom!() >= ZOOM_MAX}
                                 />
-                            </div>
+                            </IconBar>
                         </Show>
                     </div>
                 </div>

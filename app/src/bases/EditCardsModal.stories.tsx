@@ -13,7 +13,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { EditCardsModal } from './EditCardsModal'
 import type { FileMeta, Row } from '../../../core/src/bases/types'
 import { spyApi } from './_apiSpy'
-import { toasts, dismissToast } from '../toastStore'
+import { toasts, dismissToast } from '../ui/toastStore'
 
 const noop = () => {}
 let changed = 0
@@ -149,6 +149,20 @@ export const BulkAddPreview: Story = {
             { front: 'capital of Italy', back: 'Rome' },
             { front: 'no separator here', back: '' },
         ])
+    },
+}
+
+/** One pasted line: the commit button reads "add 1 card", singular, not "add 1 cards". */
+export const BulkAddOneCard: Story = {
+    args,
+    beforeEach: install,
+    play: async () => {
+        await userEvent.click(body().getByRole('button', { name: /bulk add/ }))
+        const textarea = document.querySelector('textarea[placeholder*="Spanish word"]')
+        if (!(textarea instanceof HTMLTextAreaElement)) throw new Error('bulk paste textarea not found')
+        await userEvent.click(textarea)
+        await userEvent.type(textarea, 'capital of Italy :: Rome')
+        await waitFor(() => expect(body().getByRole('button', { name: 'add 1 card' })).toBeTruthy())
     },
 }
 

@@ -24,6 +24,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { TerminalTab } from './Terminal'
 import type { NativeDragDetail } from './nativeDrop'
+import { MIN_ANSI_CONTRAST, contrastRatio, parseColor } from './terminalAnsi'
 
 // --- Fake WebSocket, matching only the surface Terminal.tsx actually touches ------------------
 // `binaryType`, the on* handler properties, `.send()` (ignored — no live PTY on the other end to
@@ -443,6 +444,24 @@ export const AnsiPalette: Story = {
                     ]}
                 />
             </div>
+        )
+    },
+    /* ANSI BLACK MUST BE READABLE. It used to be the raw `--rail` token, which IS the terminal ground in
+       ink and cathode (1.00:1), so the word `black` printed in black vanished. Reads the rendered cell's
+       COMPUTED colour against the terminal host's computed background and asserts the ratio — a
+       "was the renderer called" check would pass on the invisible version too. */
+    play: async ({ canvasElement }) => {
+        const black = await waitFor(() => {
+            const el = canvasElement.querySelector('.xterm-fg-0')
+            if (!el) throw new Error('no ANSI black cell rendered yet')
+            return el as HTMLElement
+        })
+        const host = canvasElement.querySelector('.term-host') as HTMLElement
+        const ink = parseColor(getComputedStyle(black).color)
+        const ground = parseColor(getComputedStyle(host).backgroundColor)
+        if (!ink || !ground) throw new Error('could not read ink/ground colours')
+        await expect(contrastRatio(ink, ground)).toBeGreaterThanOrEqual(
+            MIN_ANSI_CONTRAST,
         )
     },
 }

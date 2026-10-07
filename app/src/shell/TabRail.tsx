@@ -73,6 +73,8 @@ export function TabRail(props: {
                     band
                     layout="wrap"
                     label="Tab actions"
+                    bandPadBlock
+                    bandInset={props.side === 'left' ? 'rail' : undefined}
                     class={styles['tab-rail-actions']}
                 >
                     {props.actions}

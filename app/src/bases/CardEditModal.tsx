@@ -34,6 +34,7 @@ import ModalBody from '../ui/ModalBody'
 import ModalFooter from '../ui/ModalFooter'
 import SettingsGrid from '../ui/SettingsGrid'
 import SettingsField from '../ui/SettingsField'
+import DropCue from '../ui/DropCue'
 import MilkdownField from '../ui/MilkdownField'
 import PropertyControl from './PropertyControl'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
@@ -292,15 +293,14 @@ export function CardEditModal(props: {
                 <div
                     ref={zone}
                     class={styles.mdDropZone}
-                    classList={{ [styles.mdDropActive]: dropField() === id }}
                     onDragEnter={e => onFieldDragOver(e, id)}
                     onDragOver={e => onFieldDragOver(e, id)}
                     onDragLeave={e => onFieldDragLeave(e, id)}
                     onDrop={e => void onFieldDrop(e, id)}
                 >
                     <MilkdownField
-                        class={styles.mdField}
                         value={initial}
+                        placeholder="Add a description…"
                         autofocus={props.focusTarget === id}
                         onReady={h => {
                             registerField(id, h, zone)
@@ -310,6 +310,7 @@ export function CardEditModal(props: {
                         }}
                         onBlur={() => commitMarkdown(id)}
                     />
+                    <DropCue active={dropField() === id} />
                 </div>
             )
         }

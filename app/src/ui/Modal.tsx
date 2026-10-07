@@ -56,7 +56,8 @@ const modalStack: symbol[] = []
  * reimplemented.
  *
  * The inner panel always carries Modal's own `.asc-modal` chrome (a hashed local in
- * Modal.module.css: pop-bg-strong fill, hairline border, radius 0, no blur, no shadow —
+ * Modal.module.css: pop-bg-strong tint over a solid --bg backing so the fill is OPAQUE, hairline
+ * border, radius 0, no blur, no shadow, no focus outline —
  * flattened 2026-08-27, visual-unification audit §9.2/§9.3, wave 1), the ONE floating-panel
  * chrome every modal in the app shares. `props.class` still layers on top for call-site
  * sizing/layout, and a caller with its own background/border/radius wins by pairing its

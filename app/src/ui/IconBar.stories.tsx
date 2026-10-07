@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import IconBar from './IconBar'
 import IconButton from './IconButton'
 import ViewBar from './ViewBar'
@@ -137,4 +138,81 @@ export const Hosts: Story = {
             </Row>
         </div>
     ),
+}
+
+/** The px a `--bar-icon-gap`-style token resolves to in this frame (never a hardcoded stand-in). */
+function resolvedGap(host: Element, token: string) {
+    const probe = document.createElement('span')
+    probe.style.marginLeft = `var(${token})`
+    host.appendChild(probe)
+    const value = getComputedStyle(probe).marginLeft
+    probe.remove()
+    return value
+}
+
+/** `bare` — the plain run of icon buttons: only the `--bar-icon-gap` between them. No
+ *  role="toolbar", no label, and the buttons keep their standalone size rather than the bar's
+ *  toolzone box. Replaces the `display: flex; gap: var(--bar-icon-gap)` pair that eight modules
+ *  hand-wrote. */
+export const Bare: Story = {
+    render: () => (
+        <IconBar bare data-bare>
+            <IconButton icon="Search" label="Search" />
+            <IconButton icon="Inbox" label="Inbox" />
+            <IconButton icon="Settings" label="Settings" />
+        </IconBar>
+    ),
+    play: ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-bare]')!
+        expect(bar.getAttribute('role')).toBeNull()
+        expect(bar.getAttribute('aria-label')).toBeNull()
+        expect(getComputedStyle(bar).display).toBe('flex')
+        expect(getComputedStyle(bar).flexDirection).toBe('row')
+        expect(getComputedStyle(bar).columnGap).toBe(
+            resolvedGap(canvasElement, '--bar-icon-gap'),
+        )
+        // no forced box: a bare IconButton is not the bar's --iconbar-box square
+        expect(getComputedStyle(bar).getPropertyValue('--iconbar-box')).toBe('')
+    },
+}
+
+/** `direction="column"` on a toolbar — one icon per line at the bar's own gap; reports
+ *  aria-orientation="vertical" (a map's zoom controls). */
+export const Column: Story = {
+    render: () => (
+        <IconBar label="Zoom controls" direction="column" data-column>
+            <IconButton icon="Plus" label="Zoom in" />
+            <IconButton icon="Minus" label="Zoom out" />
+            <IconButton icon="Search" label="Reset" />
+        </IconBar>
+    ),
+    play: ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-column]')!
+        expect(bar.getAttribute('role')).toBe('toolbar')
+        expect(bar.getAttribute('aria-orientation')).toBe('vertical')
+        expect(getComputedStyle(bar).flexDirection).toBe('column')
+        const [a, b] = [...bar.querySelectorAll('button')].map(x =>
+            x.getBoundingClientRect(),
+        )
+        expect(b.top).toBeGreaterThan(a.bottom - 1)
+        expect(Math.abs(a.left - b.left)).toBeLessThan(2)
+    },
+}
+
+/** `bare` + `direction="column"` — the vertical run with no toolbar semantics. */
+export const BareColumn: Story = {
+    render: () => (
+        <IconBar bare direction="column" data-bare-column>
+            <IconButton icon="Plus" label="Zoom in" />
+            <IconButton icon="Minus" label="Zoom out" />
+        </IconBar>
+    ),
+    play: ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-bare-column]')!
+        expect(bar.getAttribute('role')).toBeNull()
+        expect(getComputedStyle(bar).flexDirection).toBe('column')
+        expect(getComputedStyle(bar).rowGap).toBe(
+            resolvedGap(canvasElement, '--bar-icon-gap'),
+        )
+    },
 }

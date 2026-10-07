@@ -5,13 +5,13 @@
 // — PINNED to the bottom of the pane, always visible regardless of scroll position. Chrome, not
 // inline markdown: keeps the daemon-authored controls physically separate from the user's
 // editable prose.
-import { createResource, createSignal, Index, Show } from 'solid-js'
+import { createResource, createSignal, Show } from 'solid-js'
 import { Editor } from './Editor'
 import { api } from './api'
 import { flushEditorByPath } from './editorRegistry'
-import { pushToast } from './Toast'
+import { pushToast } from './ui/ToastHost'
 import ViewBar, { Crumb } from './ui/ViewBar'
-import BarLabel from './ui/BarLabel'
+import Readout from './ui/Readout'
 import InboxActionBar from './InboxActionBar'
 import { inboxPageReadouts } from './inboxPageMeta'
 import { inboxPages, refreshDaemonPages } from './daemon/daemonInboxApi'
@@ -101,20 +101,7 @@ export function InboxPageView(props: {
                 }
                 readouts={
                     <Show when={page()} keyed>
-                        {p => (
-                            <Index each={inboxPageReadouts(p)}>
-                                {(r, i) => (
-                                    <>
-                                        <Show when={i > 0}>
-                                            <Text as="span" size="ui" tone="faint">
-                                                //
-                                            </Text>
-                                        </Show>
-                                        <BarLabel long={r()} />
-                                    </>
-                                )}
-                            </Index>
-                        )}
+                        {p => <Readout parts={inboxPageReadouts(p)} />}
                     </Show>
                 }
             />

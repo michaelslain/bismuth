@@ -4,7 +4,7 @@
 import type { JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import ChartFrame from './ChartFrame'
-import ChartReadout from './ChartReadout'
+import Readout from '../ui/Readout'
 import ChartDrill from './ChartDrill'
 import { EMPTY_FILE, type Row } from '../../../core/src/bases/types'
 
@@ -60,7 +60,7 @@ export const EmptyWithHint: Story = {
 export const WithReadoutFooterDrill: Story = {
     args: {
         empty: false,
-        readout: <ChartReadout parts={['Jul 20', '3', '2 notes']} active />,
+        readout: <Readout parts={['Jul 20', '3', '2 notes']} tone="default" />,
         children: <div>chart content goes here</div>,
         footer: <div>y(t) = ...</div>,
         drill: (
@@ -78,7 +78,7 @@ export const WithReadoutFooterDrill: Story = {
 export const Narrow300px: Story = {
     args: {
         empty: false,
-        readout: <ChartReadout parts={['sum of priority by week of due', 'peak 3 (Jul 1)']} />,
+        readout: <Readout parts={['sum of priority by week of due', 'peak 3 (Jul 1)']} tone="muted" />,
         children: <div>chart content goes here</div>,
     },
     decorators: [narrowDecorator],

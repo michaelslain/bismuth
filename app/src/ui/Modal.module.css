@@ -14,7 +14,7 @@
 .ui-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -31,5 +31,21 @@
 /* Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1): no blur, no blurred
    elevation shadow, radius 0 — the chrome every dialog and floating panel in the app inherits.
    `.asc-modal` sits behind `.ui-overlay`'s scrim (--overlay-bg), which already separates it
-   from whatever was open underneath, so it stays fully flat: fill + hairline, nothing else. */
-.asc-modal { background: var(--pop-bg-strong); border: var(--rule); border-radius: var(--r-0); }
+   from whatever was open underneath, so it stays fully flat: fill + hairline, nothing else.
+
+   OPAQUE (ds-improve-r1 Task 14), consistent with Popover (Task 8): --pop-bg-strong is 94% alpha,
+   so content behind the dialog ghosted through its text (app-chatview--model-picker,
+   bases-kanbancard--context-menu-opens-edit). The token's value is untouched — its tint is laid
+   over a solid --bg backing layer instead, so the panel keeps its look and stops being see-through.
+   FormModal.module.css's `.panel::before` carries the same two lines for the fill under its frame.
+
+   `outline: none`: the panel is a `tabindex=-1` focus TARGET (Modal.tsx focuses it when the dialog
+   holds no controls), and with no outline rule Chrome painted its default blue rounded ring around
+   the whole dialog. Nothing draws focus in this app (DESIGN.md's focus rule). */
+.asc-modal {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--pop-bg-strong), var(--pop-bg-strong));
+  border: var(--rule);
+  border-radius: var(--r-0);
+  outline: none;
+}

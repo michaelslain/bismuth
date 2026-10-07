@@ -413,3 +413,49 @@ describe('stepIndex', () => {
         expect(stepIndex(null, 'next', 0)).toBeNull()
     })
 })
+
+describe('buildLinePlot x-axis labels', () => {
+    const days = ['Aug 8', 'Aug 10', 'Aug 12', 'Aug 13', 'Aug 14', 'Aug 20', 'Aug 21', 'Sep 1']
+    const points = (labels: string[]): LinePoint[] => labels.map((label, i) => ({ label, value: i + 1 }))
+
+    /** Walks the label line left to right, matching each point's label in order. Returns what is
+     *  wrong with it: a label glued to its neighbour, or ink that is no whole label (an overwrite). */
+    function labelDefects(axisLabels: string, labels: string[]): string[] {
+        const defects: string[] = []
+        let from = 0
+        let prevEnd = -2
+        let rest = axisLabels
+        for (const label of labels) {
+            const at = axisLabels.indexOf(label, from)
+            if (at < 0) continue // thinned away — allowed
+            if (at <= prevEnd + 1) defects.push(`"${label}" touches the label before it`)
+            rest = rest.slice(0, at) + ' '.repeat(label.length) + rest.slice(at + label.length)
+            prevEnd = at + label.length - 1
+            from = prevEnd + 1
+        }
+        if (rest.trim()) defects.push(`stray ink "${rest.trim()}"`)
+        return defects
+    }
+
+    test('real-time spacing never glues two labels together or overwrites one', () => {
+        // days apart: 0,2,4,5,6,12,13,24 — uneven, so some neighbours sit 1 column apart
+        const xs = [0, 2, 4, 5, 6, 12, 13, 24]
+        for (let columns = 14; columns <= 120; columns++) {
+            const plot = buildLinePlot(points(days), { columns, xs })
+            expect(labelDefects(plot.axisLabels, days.slice(plot.firstIndex))).toEqual([])
+        }
+    })
+
+    test('evenly spaced labels also keep a blank column between them, at every width', () => {
+        for (let columns = 10; columns <= 120; columns++) {
+            const plot = buildLinePlot(points(days), { columns })
+            expect(labelDefects(plot.axisLabels, days.slice(plot.firstIndex))).toEqual([])
+        }
+    })
+
+    test('the first label survives at the left edge when a neighbour is close', () => {
+        const plot = buildLinePlot(points(['Aug 8', 'Aug 10']), { columns: 26, xs: [0, 1] })
+        expect(plot.axisLabels.trimStart().startsWith('Aug 8')).toBe(true)
+        expect(plot.axisLabels).not.toContain('Aug 8Aug')
+    })
+})

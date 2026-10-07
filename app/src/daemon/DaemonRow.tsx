@@ -25,7 +25,7 @@ import styles from './DaemonRow.module.css'
 
 export type DaemonRowTone = 'ok' | 'running' | 'failed' | 'off' | 'idle'
 
-/** Same colours the `.tone-*` status-word classes already carry (DaemonRow.module.css) — the
+/** Same colours the `.tone-*` status-word classes carry (DaemonRow.module.css) — the
  *  dot and its status word have always matched, this just names the mapping once so <StatusDot>
  *  (which takes a raw colour, not a tone enum) can share it. */
 const TONE_COLOR: Record<DaemonRowTone, string> = {
@@ -33,7 +33,7 @@ const TONE_COLOR: Record<DaemonRowTone, string> = {
     running: 'var(--accent)',
     failed: 'var(--danger)',
     off: 'var(--faint)',
-    idle: 'var(--faint)',
+    idle: 'var(--text-muted)',
 }
 
 export type DaemonRowProps = {
@@ -91,7 +91,13 @@ function DaemonRow(props: DaemonRowProps) {
                 {props.name}
             </Label>
             <Show when={props.meta !== undefined}>
-                <Text as="span" size="micro" tone="muted" class={styles.meta}>
+                <Text
+                    as="span"
+                    size="micro"
+                    tone="muted"
+                    class={styles.meta}
+                    title={props.meta}
+                >
                     {props.meta}
                 </Text>
             </Show>

@@ -21,6 +21,7 @@ import PdfPages from '../preview/PdfPages'
 import PageReadout from '../preview/PageReadout'
 import PdfZoom from '../preview/PdfZoom'
 import createPreviewZoom from '../preview/createPreviewZoom'
+import Band from '../ui/Band'
 import Label from '../ui/Label'
 import type { PdfPagesController } from '../preview/annotationTypes'
 import { pageIndexFromFragment } from './embedSpec'
@@ -58,23 +59,30 @@ function PdfEmbed(props: PdfEmbedProps) {
 
     return (
         <div class={`${styles['pdf-embed']} ${props.class ?? ''}`}>
-            <div class={styles['pdf-embed-head']}>
+            {/* THE SAME BAND the preview tab's own header is: --h-band tall, --sp-5 side padding,
+                one --rule-soft hairline (ui/Band, which PreviewBar's ViewBar also renders through).
+                It used to be a hand-built ~24px strip with its own padding and border, so an embed
+                and the full-page preview of the same PDF sat on two different axes at two
+                different heights. The control ORDER follows PreviewBar too: the page readout
+                (which page am I on) reads before the zoom group (how big is it), i.e. ViewBar's
+                `readouts` slot before its `config` slot. */}
+            <Band class={styles['pdf-embed-head']}>
                 <Label fill tone="muted" class={styles['pdf-embed-name']}>
                     {props.name}
                 </Label>
                 <div class={styles['pdf-embed-controls']} data-embed-own-click>
-                    <PdfZoom
-                        zoom={zoom.zoom}
-                        onZoomBy={zoom.stepBy}
-                        onFit={zoom.fit}
-                    />
                     <PageReadout
                         current={current}
                         count={count}
                         onGo={i => controller?.scrollToPage(i)}
                     />
+                    <PdfZoom
+                        zoom={zoom.zoom}
+                        onZoomBy={zoom.stepBy}
+                        onFit={zoom.fit}
+                    />
                 </div>
-            </div>
+            </Band>
             <div
                 class={styles['pdf-embed-body']}
                 data-embed-own-click

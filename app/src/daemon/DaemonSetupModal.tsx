@@ -18,7 +18,7 @@ import SettingsField from '../ui/SettingsField'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
 import { api } from '../api'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 import type { InstallStatus, SetupResult } from '../../../core/src/daemonInstall'
 import type { Owner } from '../../../core/src/daemon'
 

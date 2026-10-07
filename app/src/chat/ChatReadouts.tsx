@@ -59,7 +59,7 @@ const ChatReadouts: Component<ChatReadoutsProps> = props => {
                         {mcpDownLabel(mcpDown())}
                     </Text>
                     <Show when={props.session.context()}>
-                        <Text as="span" inherit>
+                        <Text as="span" inherit data-bar-drop="4">
                             {'//'}
                         </Text>
                     </Show>
@@ -69,6 +69,10 @@ const ChatReadouts: Component<ChatReadoutsProps> = props => {
                         <Text
                             as="span"
                             inherit
+                            // The first thing the bar gives up (level 4, 650px — the slot the
+                            // old tools + MCP counts held): the meter is a gauge, the warning
+                            // beside it is the one readout that asks for attention and stays.
+                            data-bar-drop="4"
                             data-testid="chat-context"
                             title={`Context window: ${c().totalTokens.toLocaleString()} / ${c().maxTokens.toLocaleString()} tokens`}
                         >

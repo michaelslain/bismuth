@@ -1,8 +1,8 @@
 /* app/src/ui/IconBar.module.css — IconBar.tsx's own local stylesheet.
 
    Row/band/wrap layout only. IconBar reaches its IconButton children through inherited custom
-   properties (`--iconbar-glyph`, set inline from the JS iconSize number; `--iconbar-box`,
-   `--iconbar-unselected-opacity`, set here) that Button.module.css reads with fallbacks equal to
+   properties (`--iconbar-glyph`, set inline from the JS iconSize number; `--iconbar-box`, set
+   here) that Button.module.css reads with fallbacks equal to
    today's values — never a class selector or `:global()` into a child it does not own.
    `--iconbar-width: auto` is read by ViewBar.module.css, whose own rule otherwise pins every small
    icon button in a view bar to an 18px square — too narrow for the brackets, so an IconBar placed
@@ -15,7 +15,6 @@
     gap: var(--sp-1);
     --iconbar-box: var(--bar-icon-size);
     --iconbar-width: auto;
-    --iconbar-unselected-opacity: 1;
 }
 
 /* The band box (height, side padding, hairline) is ui/Band's, not declared here: `band` renders
@@ -24,4 +23,18 @@
 .wrap {
     flex-flow: row wrap;
     justify-content: center;
+}
+
+/* `bare`: a plain run of icon buttons — the gap and nothing else. No `--iconbar-box`/`--iconbar-width`,
+   so the children keep their standalone box; this is the one definition of the pair that eight
+   modules used to hand-write as `display: flex; gap: var(--bar-icon-gap)`. */
+.bare {
+    display: flex;
+    align-items: center;
+    gap: var(--bar-icon-gap);
+}
+
+/* `direction="column"` — declared after `.wrap` so a column never inherits wrap's row flow. */
+.column {
+    flex-flow: column nowrap;
 }

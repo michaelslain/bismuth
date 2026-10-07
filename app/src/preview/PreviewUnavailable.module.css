@@ -1,0 +1,11 @@
+/* app/src/preview/PreviewUnavailable.module.css — PreviewUnavailable.tsx is the ONLY importer.
+   Binary / unsupported / failed-to-load: a centred "not available" block + an open-with button. */
+.preview-unavailable {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-7);
+  text-align: center;
+}

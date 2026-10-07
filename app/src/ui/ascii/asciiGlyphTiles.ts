@@ -140,11 +140,15 @@ export function tileGeometry(chPx: number, ink: GlyphInk, dpr: number, pitchTile
     const even = (v: number) => Math.max(2, 2 * Math.round(v / 2))
     const cx = even(ink.plusW * dpr + gap)
     const cy = even(ink.plusH * dpr + gap)
+    const v = verticalDash(pitch, dash, cy, Math.round(ink.plusH * dpr))
     return {
         bw,
         pitch,
         dash,
         gap,
+        /** The `|` dash's length and its start inside the side tile — see verticalDash. */
+        dashV: v.len,
+        dashVOffset: v.offset,
         cx,
         cy,
         cssW: bw / dpr,
@@ -152,6 +156,23 @@ export function tileGeometry(chPx: number, ink: GlyphInk, dpr: number, pitchTile
         cssH: cy / dpr,
         cssPitch: pitch / dpr,
     }
+}
+
+/** The `|` dash's length and offset inside its pitch-long side tile, chosen so the dash sits
+ *  EXACTLY between its two `+`: the gap from the top `+` to the dash equals the gap from the dash
+ *  to the bottom `+`.
+ *
+ *  The two gaps differ by (e mod 2) - (g mod 2), where e = the corner tile's spare height around
+ *  the `+` ink (cy - plusH, split floor / ceil) and g = pitch - dash. When the parities disagree no
+ *  integer offset can balance them, and a dash one device pixel off-centre is visible between two
+ *  glyphs. A `|` is the font's stem cropped to a window, so — unlike a `-` — its length is ours to
+ *  set: lengthen the window by ONE device pixel (never shorten: the stem is always taller) and the
+ *  parities agree. The other axis keeps the `-` ink's own length, so the two dashes differ by one
+ *  device pixel at most, only where that is the price of being centred. */
+export function verticalDash(pitch: number, dash: number, cy: number, plusH: number): { len: number; offset: number } {
+    const e = cy - plusH
+    const len = (pitch - dash) % 2 === ((e % 2) + 2) % 2 || dash + 1 > pitch ? dash : dash + 1
+    return { len, offset: Math.max(0, Math.floor((pitch - len - (((e % 2) + 2) % 2)) / 2)) }
 }
 
 /** Where a dash starts inside its pitch-long run tile: centred, half a gap each side. */
@@ -302,7 +323,7 @@ function install(retried = false): void {
         ctx.beginPath()
         if (glyph === '|') {
             // the font's own stem, just a dash-long piece of it: same thickness, same ink
-            ctx.rect(x, y + d0, cx, g.dash)
+            ctx.rect(x, y + g.dashVOffset, cx, g.dashV)
             ctx.clip()
             ctx.fillText('|', x + pipeL - pipe.left, y + pipeY)
         } else {

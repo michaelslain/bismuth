@@ -23,9 +23,11 @@
    the ellipsis logic can shrink and truncate. Verified against shell-dragghost--long-label,
    which rendered a hard word-clip at the border before this fix. */
 .drag-ghost {
-  position: fixed; z-index: 1000; pointer-events: none;
+  position: fixed; z-index: var(--z-modal); pointer-events: none;
   display: flex; align-items: center; gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-5); font-size: var(--fs-ui);
+  /* One control tall (--h-control). It was --sp-3 padding around an 18px line = 32px, a height nothing
+     else in the app uses; the border is inside the height (border-box) so the number stays exact. */
+  box-sizing: border-box; height: var(--h-control); padding: 0 var(--sp-5); font-size: var(--fs-ui);
   max-width: 280px;
   background: var(--panel); color: var(--fg);
   /* No shadow, no radius (visual-unification §9.2/§9.3) — this was the least ascii-native
@@ -33,7 +35,9 @@
      (kept, it's what marks the ghost as a drop-target affordance rather than a shape) is enough
      separation against the cursor's surroundings; a drag cursor doesn't need to float. */
   border: 1px solid var(--accent); border-radius: var(--r-0);
-  opacity: 0.96; transform: scale(1.02); transform-origin: top left;
+  /* No `opacity` and no `transform: scale(...)`: a 1.02 scale resamples the label's glyphs onto a
+     fractional grid (the text goes soft while it is being dragged), and a 0.96 opacity is a state
+     shown by opacity for no reader's benefit. The ghost is already told apart by its accent border. */
 }
 .drag-ghost.pane { border-style: dashed; }
 .drag-ghost-label {

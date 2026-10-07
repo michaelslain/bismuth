@@ -43,7 +43,10 @@ export const Expandable: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        const head = canvas.getByRole('button', { name: /Thinking/ })
+        await expect(head.getAttribute('aria-expanded')).toBe('false')
         await userEvent.click(canvas.getByText('Thinking'))
+        await expect(head.getAttribute('aria-expanded')).toBe('true')
         await expect(canvas.getByText(/full test suite/)).toBeInTheDocument()
     },
 }

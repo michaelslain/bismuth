@@ -101,6 +101,7 @@ function ScratchBlock(props: ScratchBlockProps) {
                 value={untrack(() => props.block.text)}
                 onInput={text => props.onText(text)}
                 autofocus={untrack(() => props.autofocus)}
+                bare
                 class={styles.field}
                 noteNames={props.noteNames}
                 tagNames={props.tagNames}

@@ -5,7 +5,7 @@
 // Enter / click COMMIT — onFly flies the camera there. Esc closes. Pure props in / callbacks
 // out — it knows nothing about the renderer; GraphView supplies `items` and wires the
 // callbacks. Styled as a small graph overlay via theme tokens (--surface-2/--fg/--faint,
-// selected row = --accent-soft) so it tracks light and dark themes, 10–11px.
+// selected row = ui/PaletteRow's own wash) so it tracks light and dark themes, 10–11px.
 import {
     createSignal,
     createMemo,
@@ -16,7 +16,8 @@ import {
 } from 'solid-js'
 import SearchBar from './ui/SearchBar'
 import { IconButton } from './ui/IconButton'
-import Label from './ui/Label'
+import PaletteRow from './ui/PaletteRow'
+import EmptyState from './ui/EmptyState'
 import Text from './ui/Text'
 // ASCII register: --fs-ui rows on the .asc-popover panel, each carrying the node's own glyph.
 import styles from './GraphSearch.module.css'
@@ -76,7 +77,7 @@ export function GraphSearch(props: {
         selected()
         results()
         listRef
-            ?.querySelector<HTMLElement>(`[data-row].${styles['selected']}`)
+            ?.querySelector<HTMLElement>('[data-selected]')
             ?.scrollIntoView({ block: 'nearest' })
     })
 
@@ -140,60 +141,55 @@ export function GraphSearch(props: {
             {/* Only render the divider + list once there's a query — keeps the panel a tidy
           single search bar (no empty sliver) until the user actually searches. */}
             <Show when={query().trim()}>
-                <div ref={listRef} class={styles['graph-search-list']}>
+                <div
+                    ref={listRef}
+                    role="listbox"
+                    aria-label="graph nodes"
+                    class={styles['graph-search-list']}
+                >
                     <For each={results()}>
                         {(item, i) => (
+                            /* Commit on mousedown, not click: hovering a row runs a scrollIntoView effect, and if
+                  the list shifts between mousedown and mouseup the browser cancels the click (the open
+                  was intermittent). mousedown fires at press time regardless. preventDefault keeps the
+                  search input focused and avoids text-selection. The wrapper (display: contents) is
+                  where that lives, because PaletteRow only exposes a click. */
                             <div
-                                data-row
-                                class={styles['graph-search-row']}
-                                classList={{
-                                    [styles['selected']!]: selected() === i(),
-                                }}
-                                onMouseEnter={() => {
-                                    setSelected(i())
-                                    props.onPreview?.(item.id)
-                                }}
-                                // Commit on mousedown, not click: hovering a row runs a scrollIntoView effect, and if
-                                // the list shifts between mousedown and mouseup the browser cancels the click (the open
-                                // was intermittent). mousedown fires at press time regardless. preventDefault keeps the
-                                // search input focused and avoids text-selection.
+                                class={styles['graph-search-pick']}
                                 onMouseDown={e => {
                                     e.preventDefault()
                                     props.onFly(item.id)
                                 }}
                             >
-                                {/* The node glyph from the field's degree ramp, so a row and its node read as
-                  the same object (bismuth-design/ascii tokens/ascii.css --node-linked). */}
-                                <Text
-                                    as="span"
-                                    inherit
-                                    class={styles['graph-search-glyph']}
-                                    aria-hidden="true"
-                                >
-                                    o
-                                </Text>
-                                <Label
-                                    fill
-                                    tone="default"
-                                    class={styles['graph-search-label']}
-                                >
-                                    {item.label}
-                                </Label>
-                                <Show when={item.sub}>
-                                    <Label
-                                        tone="faint"
-                                        class={styles['graph-search-sub']}
-                                    >
-                                        {item.sub}
-                                    </Label>
-                                </Show>
+                                <PaletteRow
+                                    selected={selected() === i()}
+                                    onMouseMove={() => {
+                                        if (selected() === i()) return
+                                        setSelected(i())
+                                        props.onPreview?.(item.id)
+                                    }}
+                                    sublabel={item.sub}
+                                    label={
+                                        <>
+                                            {/* The node glyph from the field's degree ramp, so a row and its node
+                      read as the same object (bismuth-design/ascii tokens/ascii.css --node-linked). */}
+                                            <Text
+                                                as="span"
+                                                inherit
+                                                class={styles['graph-search-glyph']}
+                                                aria-hidden="true"
+                                            >
+                                                o
+                                            </Text>
+                                            {item.label}
+                                        </>
+                                    }
+                                />
                             </div>
                         )}
                     </For>
                     <Show when={query().trim() && results().length === 0}>
-                        <div class={styles['graph-search-empty']}>
-                            No matches
-                        </div>
+                        <EmptyState compact>No matches</EmptyState>
                     </Show>
                 </div>
             </Show>

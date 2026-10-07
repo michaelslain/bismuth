@@ -68,6 +68,7 @@ import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
+import Readout from '../ui/Readout'
 import Field from '../ui/Field'
 import { TextInput } from '../ui/TextInput'
 import styles from './EmbeddedGraph.module.css'
@@ -363,9 +364,12 @@ export function EmbeddedGraph(props: {
                     {hint()}
                 </Text>
                 <div class={styles['graph-block-spacer']} />
-                <Text as="span" inherit>
-                    {spec.nodes.length} nodes // {spec.edges.length} edges
-                </Text>
+                <Readout
+                    parts={[
+                        `${spec.nodes.length} nodes`,
+                        `${spec.edges.length} edges`,
+                    ]}
+                />
             </div>
         </div>
     )

@@ -5,4 +5,5 @@
    it back into the icon's own optical gap, so a row WITH a badge keeps the same text start position
    as a row without one. Remove it and every badged row's label shifts right by 3px. */
 .ft-visibility-badge { flex-shrink: 0; display: inline-flex; align-items: center; margin-left: -3px; }
-.ft-visibility-badge.hidden { opacity: 0.85; }
+/* The `hidden` state is an ink change, never an opacity (DESIGN.md: no state is shown by opacity). */
+.ft-visibility-badge.hidden { color: var(--text-muted); }

@@ -12,12 +12,21 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Show } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { EventModal } from './EventModal'
-import { ToastHost } from '../../Toast'
-import { toasts, dismissToast } from '../../toastStore'
+import { ToastHost } from '../../ui/ToastHost'
+import { toasts, dismissToast } from '../../ui/toastStore'
 import { EventStore, MemoryBackend } from '../EventStore'
 import { showEventModal, events, currentDate } from '../state'
 import { seedCalendarState } from '../../ui/_calendarFixtures'
 import type { CalendarEvent } from '../types'
+
+/** The modal is open and holds a form. Every story ends on this: a play that closes the modal
+ *  (save, delete, duplicate) ends by re-opening it on the event it just wrote, so the shot shows
+ *  the dialog instead of a blank 1200x800 frame — and a regression that leaves nothing on screen
+ *  fails here instead of passing. */
+async function expectModalOpen(): Promise<void> {
+    await waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
+    expect(document.querySelector('[data-testid="event-modal-title"]')).not.toBeNull()
+}
 
 const meta = {
     title: 'Calendar/EventModal',
@@ -154,6 +163,16 @@ export const Interactive: Story = {
             ),
         )
         expect(currentDate.value.getMonth()).toBe(ANCHOR.getMonth())
+
+        // End with the saved event open for editing, so the frame shows the form.
+        showEventModal.value = {
+            event: events.value.find(e => e.title === 'Plan the offsite')!,
+        }
+        await expectModalOpen()
+        expect(
+            (document.querySelector('[data-testid="event-modal-title"]') as HTMLInputElement)
+                .value,
+        ).toBe('Plan the offsite')
     },
 }
 
@@ -290,6 +309,12 @@ export const DeleteWithUndo: Story = {
         await waitFor(() =>
             expect(events.value.some(e => e.title === 'Dentist')).toBe(true),
         )
+
+        // End with the restored event open for editing, so the frame shows the form.
+        showEventModal.value = {
+            event: events.value.find(e => e.title === 'Dentist')!,
+        }
+        await expectModalOpen()
     },
 }
 
@@ -312,6 +337,12 @@ export const Duplicate: Story = {
             expect(events.value.filter(e => e.title === 'Retro')).toHaveLength(2),
         )
         expect(document.querySelector('[role="dialog"]')).toBeNull()
+
+        // End with the duplicate open for editing, so the frame shows the form.
+        showEventModal.value = {
+            event: events.value.filter(e => e.title === 'Retro')[1],
+        }
+        await expectModalOpen()
     },
 }
 

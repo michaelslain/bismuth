@@ -29,17 +29,18 @@ export const Week: Story = {
     play: async ({ canvasElement }) => {
         const heads = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="day-header"]')]
         expect(heads).toHaveLength(7)
-        // Fails if DayNumber's today circle stops rendering at 20px (a size change, or the
-        // `inline`/`today` variant silently not applying) — exactly one header should carry it.
-        // Width alone is ambiguous: the weekday name span sizes to its own text at ≈20.7px,
-        // which rounds to the same 20 — so also require the height (a non-circular badge would
-        // differ) and borderRadius: '50%' (a square swatch that happens to be 20x20 would not).
+        // Fails if DayNumber's today circle stops rendering one --row-h row square (a size change,
+        // or the `inline`/`today` variant silently not applying) — exactly one header should carry
+        // it. Width alone is ambiguous (the weekday name span sizes to its own text, ≈20px), so
+        // also require the height (a non-circular badge would differ) and borderRadius: '50%' (a
+        // square swatch of the same size would not).
+        const rowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-h'))
         const withCircle = heads.filter(h => {
             const el = [...h.querySelectorAll<HTMLElement>('span')].find(s => {
                 const rect = s.getBoundingClientRect()
                 return (
-                    Math.round(rect.width) === 20 &&
-                    Math.round(rect.height) === 20 &&
+                    Math.round(rect.width) === rowH &&
+                    Math.round(rect.height) === rowH &&
                     getComputedStyle(s).borderRadius === '50%'
                 )
             })

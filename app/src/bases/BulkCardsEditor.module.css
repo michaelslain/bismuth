@@ -33,8 +33,7 @@
 .cards-pf p, .cards-pb p { margin: 0; }
 /* Flex so the arrow and the back share a line (the rendered <p> is a block). */
 .cards-pb { display: flex; gap: var(--sp-3); }
-.cards-pb::before { content: "→ "; color: var(--blue); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
-.cards-pvcard.bad .cards-pf { color: var(--accent-purple); }
-.cards-warn-em { color: var(--accent-purple); }
-.cards-warn { color: var(--accent-purple); margin-top: var(--sp-2); }
-.cards-pvempty { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--faint); font-size: var(--fs-ui); text-align: center; padding: var(--sp-7); }
+.cards-pb::before { content: "→ "; color: var(--text-muted); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
+.cards-pvcard.bad .cards-pf { color: var(--warning); }
+.cards-warn-em { color: var(--warning); }
+.cards-warn { color: var(--warning); margin-top: var(--sp-2); }

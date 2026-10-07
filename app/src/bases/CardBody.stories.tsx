@@ -194,3 +194,28 @@ export const WithExtraColumns: Story = {
         expect(canvasElement.textContent).toContain('tags')
     },
 }
+
+/** One card title: what a person WROTE is prose, so the title sits in the prose face (the serif),
+ *  at the prose size, medium weight — not the mono bold it used to be. The probe resolves
+ *  `--prose-font` on a throwaway element so the assertion reads the token, not a literal. */
+export const TitleIsProse: Story = {
+    render: () => (
+        <div style={{ width: '220px', padding: '14px' }}>
+            <CardBody cols={cols} row={SAMPLE_ROWS[1]} config={config} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector<HTMLElement>('[class*="cardTitle"]')
+        expect(title).toBeTruthy()
+        const probe = document.createElement('div')
+        probe.style.fontFamily = 'var(--prose-font)'
+        probe.style.fontSize = 'var(--prose-font-size)'
+        canvasElement.appendChild(probe)
+        const want = getComputedStyle(probe)
+        const got = getComputedStyle(title!)
+        expect(got.fontFamily).toBe(want.fontFamily)
+        expect(got.fontSize).toBe(want.fontSize)
+        expect(Number(got.fontWeight)).toBe(500)
+        probe.remove()
+    },
+}

@@ -21,13 +21,13 @@
   flex: none;
 }
 .header:active { cursor: grabbing; }
-.title { text-transform: capitalize; color: var(--fg); }
+.title { color: var(--fg); }
 .dotSlot { display: inline-flex; align-items: center; flex: 0 0 auto; }
 /* The header's trailing group: the count, flush right, plus the rename/delete IconBar hung off
    its LEFT edge. Only the count is in flow, so at rest the count sits against the header's right
    edge with no reserved gap. */
 .trail { margin-left: auto; position: relative; display: flex; align-items: center; flex: none; }
-.count { font-size: var(--fs-ui); color: var(--faint); }
+.count { font-size: var(--fs-ui); color: var(--text-muted); }
 /* Rename/delete `IconBar` — absolutely positioned immediately left of the count (`right: 100%` of
    the trail), so revealing it moves neither the title nor the count. At rest it is invisible and
    non-interactive; hovering ANYWHERE on the column (not just the thin header strip) or focusing
@@ -43,7 +43,7 @@
   margin-right: var(--sp-3);
   opacity: 0;
   pointer-events: none;
-  transition: opacity calc(120ms * var(--motion-scale)) var(--ease-std);
+  transition: opacity var(--dur) var(--ease);
 }
 [data-kbcol]:hover .actions,
 [data-kbcol][data-hover] .actions,

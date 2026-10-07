@@ -5,15 +5,24 @@
  * that used to need the bare literal class now read the `data-draw-toolbar` attribute Toolbar.tsx's
  * root always carries instead, so this rule no longer needs `:global()` to stay reachable from
  * elsewhere — Toolbar.tsx is this class's one real owner either way. */
+/* `width: max-content` under the `max-width` cap, AND a row that may wrap. The two go together and
+   neither closes the bug alone, which is worth saying because the first is the obvious half:
+   `max-content` sizes the box to the row it actually contains, but `max-width` still clamps it
+   against a narrow surface, and a row that cannot wrap then keeps going past that clamp — which is
+   exactly what shipped: the pen toggle, the first colour and undo/redo painted OUTSIDE their own
+   border and the smoothing zigzag was clipped (`preview-pageink--pdf-ink-on-second-page-only`).
+   With `.draw-row` allowed to wrap, the clamp makes the groups fall onto a second line instead and
+   the box always contains what is in it. Wide surfaces are unchanged — one row, hugging. */
 .draw-toolbar {
   position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 5;
   display: flex; flex-direction: column; gap: var(--sp-2); align-items: center; padding: var(--sp-4) var(--sp-4);
-  max-width: calc(100% - 24px);
+  width: max-content; max-width: calc(100% - 24px);
   background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0);
   box-shadow: var(--lift);
 }
-/* One story: a single non-wrapping row of groups. */
-.draw-row { display: flex; flex-wrap: nowrap; justify-content: center; gap: var(--sp-2); align-items: center; }
+/* One row of groups while there is room for one; on a surface too narrow for the dock's own width
+   the groups wrap rather than spilling out of the border (see the box note above). */
+.draw-row { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); align-items: center; }
 /* Group dividers are hairline rules matching the design's .ddiv. Sibling bracket buttons inside
    a group sit `--sp-4` apart, same as everywhere else (DESIGN.md: no exception for icon runs). */
 .draw-group { display: flex; gap: var(--sp-4); align-items: center; padding-right: var(--sp-4); margin-right: var(--sp-2); border-right: 1px solid var(--border-soft); }
@@ -31,5 +40,16 @@
    TextButton (one-button Task 6). The readout is a real bracket command now (resetting to 100%
    is a click, not a caption), so TextButton supplies its whole look — no `.draw-zoompct` class
    needed any more (a fixed width for jitter-free digits would be a width rule on a Button-family
-   control, which the button rule bans). */
-.draw-zoomrow { display: flex; align-items: center; gap: var(--bar-icon-gap); }
+   control, which the button rule bans).
+   The row itself is `ui/IconBar bare` now (Task 5) — that primitive IS `display: flex;
+   align-items: center; gap: var(--bar-icon-gap)`, the exact three lines this class used to
+   hand-write, so there is no local rule left to keep.
+
+   The colour options compose `ui/Swatch static` instead of a hand-rolled <svg><rect>. The square
+   is a 16px square, and `dotIcon` next to it draws in a 16px box too, so the colour row and the
+   line-weight row below it stay on one grid without either carrying an off-scale side margin. It
+   GAINS a hairline ring: the "Default ink" swatch resolves to the PAPER's ink on a PDF/page-ink
+   surface, which is near-black on this dark dock and read as an empty `[ ]` with no square in it
+   at all. The ring is `--rule` (the `--border` hairline), not `--border-soft`: this square has to
+   survive sitting on its own near-black fill. */
+.draw-swatch { width: 16px; height: 16px; border: var(--rule); }

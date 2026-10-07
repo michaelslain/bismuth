@@ -47,7 +47,7 @@ import {
 import { statusFromChar } from '../../../core/src/taskReorder'
 import { todayISO } from '../../../core/src/dates'
 import { api } from '../api'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { openTaskEditor } from './openTaskEditor'
 

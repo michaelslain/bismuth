@@ -11,7 +11,7 @@
 import { createSignal, onMount, Show, type Component } from 'solid-js'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import { pushUndoToast } from '../undoToast'
 import { isConfirmKey } from '../ui/widgetKeys'
 import { openNote as openNoteEvent } from '../ui/openNote'

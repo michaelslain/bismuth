@@ -388,6 +388,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.chat-column": {
+    "type": {
+      "kind": "token",
+      "token": "chat-column"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.code-scale": {
     "type": {
       "kind": "token",
@@ -432,6 +442,16 @@
     "type": {
       "kind": "token",
       "token": "cursor-width"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.daemon-list-max": {
+    "type": {
+      "kind": "token",
+      "token": "daemon-list-max"
     },
     "default": null,
     "min": null,
@@ -1058,6 +1078,26 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.inset-traffic-lights": {
+    "type": {
+      "kind": "token",
+      "token": "inset-traffic-lights"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.intro-glyph-scale": {
+    "type": {
+      "kind": "token",
+      "token": "intro-glyph-scale"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.label-halo": {
     "type": {
       "kind": "token",
@@ -1112,6 +1152,16 @@
     "type": {
       "kind": "token",
       "token": "lift"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.lift-start": {
+    "type": {
+      "kind": "token",
+      "token": "lift-start"
     },
     "default": null,
     "min": null,
@@ -1242,6 +1292,16 @@
     "type": {
       "kind": "token",
       "token": "note-column"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.note-gutter": {
+    "type": {
+      "kind": "token",
+      "token": "note-gutter"
     },
     "default": null,
     "min": null,
@@ -1538,6 +1598,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.rail-w-collapsed": {
+    "type": {
+      "kind": "token",
+      "token": "rail-w-collapsed"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.rose": {
     "type": {
       "kind": "token",
@@ -1582,6 +1652,16 @@
     "type": {
       "kind": "token",
       "token": "rule-dashed"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.rule-drop": {
+    "type": {
+      "kind": "token",
+      "token": "rule-drop"
     },
     "default": null,
     "min": null,
@@ -1642,6 +1722,36 @@
     "type": {
       "kind": "token",
       "token": "sheen"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.skeleton-bar-h": {
+    "type": {
+      "kind": "token",
+      "token": "skeleton-bar-h"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.skeleton-ink": {
+    "type": {
+      "kind": "token",
+      "token": "skeleton-ink"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.skeleton-ink-faint": {
+    "type": {
+      "kind": "token",
+      "token": "skeleton-ink-faint"
     },
     "default": null,
     "min": null,
@@ -1868,6 +1978,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.view-gutter": {
+    "type": {
+      "kind": "token",
+      "token": "view-gutter"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.vignette-edge": {
     "type": {
       "kind": "token",
@@ -1912,6 +2032,66 @@
     "type": {
       "kind": "token",
       "token": "warning-soft"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.z-local": {
+    "type": {
+      "kind": "token",
+      "token": "z-local"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.z-modal": {
+    "type": {
+      "kind": "token",
+      "token": "z-modal"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.z-overlay": {
+    "type": {
+      "kind": "token",
+      "token": "z-overlay"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.z-popover": {
+    "type": {
+      "kind": "token",
+      "token": "z-popover"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.z-shell": {
+    "type": {
+      "kind": "token",
+      "token": "z-shell"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.z-toast": {
+    "type": {
+      "kind": "token",
+      "token": "z-toast"
     },
     "default": null,
     "min": null,

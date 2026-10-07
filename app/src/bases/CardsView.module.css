@@ -1,5 +1,7 @@
 /* ---------- cards view ---------- */
-.cards { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-6); }
+/* Inline inset is `--view-gutter` (ListView.module.css's rulings apply: gutter token, one `--row-h`
+   between groups, hover only on an actionable card — CardFrame gates its own on `interactive`). */
+.cards { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--view-gutter); }
 /* Responsive card grid: as many equal columns as fit at >= --card-grid-min (the
    ui.cardGridMinWidth setting), each column stretching to share the leftover space.
    Row-major flow keeps cards in their sorted order — a CSS-multicol "masonry" reads
@@ -39,5 +41,8 @@
    story) without this masonry context and must not carry it unconditionally. */
 .bodyGridCard { break-inside: avoid; margin: 0 0 var(--sp-5); width: 100%; display: inline-block; }
 
-/* GroupHeader owns the dot/label/count look; this only sets the header's own gutter. */
-.groupHeader { margin: var(--sp-4) 0 var(--sp-2); }
+/* GroupHeader owns the dot/label/count look. Groups sit in ONE flex column (header, grid, header,
+   grid), so the gap before a header is the column's `--sp-5` plus this margin: 12 + 6 = one
+   `--row-h` between a grid and the next group's header. The first header needs none — the
+   container's own padding already insets it. */
+.groupHeader:not(:first-child) { margin-top: calc(var(--row-h) - var(--sp-5)); }

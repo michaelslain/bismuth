@@ -6,9 +6,10 @@
 // `layout: 'fullscreen'` is required: .vi-root is `position: fixed; inset: 0`, so a padded or
 // centered canvas would clip it rather than show the takeover at its real size. The two sizing
 // stories (`ShortWindow`, `Narrow`) wrap it in a transformed box, which becomes the containing block
-// of that fixed root. The `(max-height: 47rem)` media query that drops the art box to 16 rows reads
-// the BROWSER viewport, which a story cannot change, so ShortWindow shows the fixed root squeezed into
-// 640px rather than the 16-row art box itself.
+// of that fixed root. The short-window step that drops the art box to 16 rows is a CONTAINER query on
+// that root (`@container (max-height: 44rem)`), so ShortWindow's 640px box really renders it. A
+// container query measures the root's CONTENT box (its `--sp-7` padding comes off both ends), which
+// is why `DefaultWindow`'s 800px app window must keep the full 24 rows.
 //
 // Reduced motion (the glyph scenes and the typed-in copy switch to their resting frame under
 // `prefers-reduced-motion`) cannot be emulated from inside a story, so it has no story.
@@ -121,6 +122,9 @@ export const BeginBusy: Story = {
  *  each slide to slide 1. */
 export const Geometry: Story = {
     args: { startAt: 'welcome' },
+    // A 900px stage, over the 44rem short-window step: the art box is the full 24 rows whatever
+    // the browser viewport is (the step reads this box, not the viewport).
+    decorators: [Box({ height: '900px' })],
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const h1 = () => canvasElement.querySelector('h1') as HTMLElement
@@ -151,7 +155,7 @@ export const Geometry: Story = {
                 '--row-h',
             ),
         )
-        await expect(first.artH).toBeLessThanOrEqual(18 * rowH)
+        await expect(first.artH).toBeCloseTo(24 * rowH, 0)
         for (let i = 1; i < SLIDES.length; i++) {
             await userEvent.click(canvas.getByRole('button', { name: /next/ }))
             await waitFor(() => expect(words()).toBe(SLIDES[i].title))
@@ -193,10 +197,52 @@ export const DaemonRiso: Story = {
     args: { startAt: 'daemon', initialTheme: 'riso' },
 }
 
-/** A 640px-tall stage: the footer must stay on screen. */
+/** A 640px-tall stage: the art box is the 16-row step and the footer stays on screen. */
 export const ShortWindow: Story = {
     args: { startAt: 'agents' },
     decorators: [Box({ height: '640px' })],
+    play: async ({ canvasElement }) => {
+        const rowH = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue(
+                '--row-h',
+            ),
+        )
+        const slot = (name: string) =>
+            canvasElement.querySelector(
+                `[data-intro-slot="${name}"]`,
+            ) as HTMLElement
+        await waitFor(() =>
+            expect(slot('art').getBoundingClientRect().height).toBeCloseTo(
+                16 * rowH,
+                0,
+            ),
+        )
+        await expect(
+            slot('footer').getBoundingClientRect().bottom,
+        ).toBeLessThanOrEqual(canvasElement.getBoundingClientRect().bottom)
+    },
+}
+
+/** The app's DEFAULT 1200x800 window: the art box keeps the full 24 rows. The short-window step is a
+ *  container query, which reads the root's CONTENT box (800px minus two `--sp-7` paddings = 752px),
+ *  so a threshold written in viewport terms (47rem = 752px, inclusive) fires exactly here. Geometry
+ *  (900px) and ShortWindow (640px) sit either side of that boundary and cannot see it. */
+export const DefaultWindow: Story = {
+    args: { startAt: 'welcome' },
+    decorators: [Box({ height: '800px' })],
+    play: async ({ canvasElement }) => {
+        const rowH = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue(
+                '--row-h',
+            ),
+        )
+        const art = canvasElement.querySelector(
+            '[data-intro-slot="art"]',
+        ) as HTMLElement
+        await waitFor(() =>
+            expect(art.getBoundingClientRect().height).toBeCloseTo(24 * rowH, 0),
+        )
+    },
 }
 
 /** An 860px-wide stage, agents slide: the window shrinks to `100% - 2 * --sp-7` and the longest

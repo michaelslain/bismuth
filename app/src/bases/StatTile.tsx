@@ -1,6 +1,7 @@
 import type { Component, JSX } from 'solid-js'
 import { Show, createSignal } from 'solid-js'
 import type { Bin } from '../../../core/src/dates'
+import Readout from '../ui/Readout'
 import Text from '../ui/Text'
 import Tex from '../ui/Tex'
 import SparklineChart from './SparklineChart'
@@ -19,8 +20,9 @@ export type StatTileProps = {
     valueStyle?: JSX.CSSProperties
     /** StatView's period-split line, e.g. `3 this week // 1 last week`. Omitted when the
      *  metric has no date axis to split by. Replaced by that bin's own value while a
-     *  sparkline glyph is hovered. */
-    period?: string
+     *  sparkline glyph is hovered. Parts (`['3 this week', '1 last week']`) are joined by
+     *  `ui/Readout`; a plain string is one part. */
+    period?: string | string[]
     /** A 12-bin sparkline (SparklineChart.tsx), omitted alongside `period` for the same reason.
      *  A plain glyph string still renders (non-interactively, no caption/hover) for any
      *  caller with no per-bin keys/labels to hand over. */
@@ -47,7 +49,10 @@ export type StatTileProps = {
  */
 const StatTile: Component<StatTileProps> = props => {
     const [hover, setHover] = createSignal<string | undefined>(undefined)
-    const periodText = () => hover() ?? props.period
+    const periodParts = () => {
+        const p = hover() ?? props.period
+        return p === undefined ? undefined : Array.isArray(p) ? p : [p]
+    }
     const onHover = (bucket: string | null) => {
         const spark = props.spark
         if (bucket === null || typeof spark !== 'object') {
@@ -84,10 +89,8 @@ const StatTile: Component<StatTileProps> = props => {
                     {props.delta}
                 </Text>
             </Show>
-            <Show when={periodText()}>
-                <Text as="div" inherit class={styles.statPeriod}>
-                    {periodText()}
-                </Text>
+            <Show when={periodParts()}>
+                {parts => <Readout parts={parts()} class={styles.statPeriod} />}
             </Show>
             <Show when={props.spark}>
                 <Show

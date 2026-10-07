@@ -14,7 +14,8 @@ import { fakeTransport } from '../ui/_fakeTransport'
 import { settings } from '../settings'
 import { companionPathFor } from '../../../core/src/fileKinds'
 import type { CompanionStore } from './annotationTypes'
-import { toasts } from '../toastStore'
+import { toasts } from '../ui/toastStore'
+import TextButton from '../ui/TextButton'
 
 const meta = {
     title: 'Preview/CompanionStore',
@@ -197,13 +198,12 @@ export const PathSwitchFlushesOldFile: Story = {
         return (
             <div data-testid="companion-store-host">
                 loadState: {store.loadState()}
-                <button
-                    type="button"
+                <TextButton
                     data-testid="switch-to-b"
                     onClick={() => setPath(PATH_B)}
                 >
                     switch
-                </button>
+                </TextButton>
             </div>
         )
     },

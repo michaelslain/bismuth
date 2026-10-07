@@ -12,9 +12,12 @@ import { clamp } from '../../math'
  * then clamped to `[0, width]`. `value` itself is NOT clamped to 0–1 first — a
  * caller passing 1.4 still lands on a full bar, and a negative value on an empty
  * one, matching the reference implementation.
+ *
+ * A value above zero never rounds down to an empty bar: `[..........]` reads as zero, so a
+ * small-but-real 0.04 on a 10-cell meter draws one `#`. Only an actual 0 (or less) is empty.
  */
 export function meterFill(value: number, width: number): number {
-    return clamp(Math.round(value * width), 0, width)
+    return clamp(Math.max(Math.round(value * width), value > 0 ? 1 : 0), 0, width)
 }
 
 /**
@@ -33,9 +36,21 @@ export function chartLabelPad(series: { label: string }[]): number {
     return Math.max(...series.map(s => s.label.length))
 }
 
-/** Filled cell count for one chart bar, scaled against the series' `max`. */
+/** Value column width: the widest printed value (0 for an empty series). Values are right-aligned
+ *  to it so the numerals' magnitudes line up down the column. */
+export function chartValueWidth(series: { value: number }[]): number {
+    if (series.length === 0) return 0
+    return Math.max(...series.map(s => String(s.value).length))
+}
+
+/**
+ * Filled cell count for one chart bar, scaled against the series' `max`. A value above zero
+ * floors at ONE cell: `3 / 118 * 16` rounds to 0, and a bar-less row reads as zero when it is
+ * not. Only an actual 0 (or less) draws nothing.
+ */
 export function chartFill(value: number, max: number, width: number): number {
-    return Math.round((value / max) * width)
+    const fill = Math.round((value / max) * width)
+    return clamp(Math.max(fill, value > 0 ? 1 : 0), 0, width)
 }
 
 /**

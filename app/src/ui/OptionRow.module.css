@@ -29,8 +29,11 @@
     min-height: calc(var(--row-h) + 2 * var(--sp-1)); padding: 0; background: transparent; border: none;
     font-family: var(--ui-font-stack); font-size: var(--fs-ui); font-weight: var(--fw-regular);
     color: var(--fg); cursor: pointer;
-    transition: color var(--dur-fast) var(--ease);
+    transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
+/* PRESSED is the one state this row paints a fill for (--state-active-bg, ruling 4) — no fill at
+   rest or on hover, so the press is the only moment the row is a surface. */
+.option-row:active { background: var(--state-active-bg); }
 /* No focus ring — every button in the app paints no focus indicator, mouse or keyboard, by user
    decision (2026-09-27), OptionRow included even though it is a dialog row rather than a bar
    control. */

@@ -28,7 +28,7 @@ import { disarmFakeServerVersion, fakeTransport } from '../ui/_fakeTransport'
 import { focusColumnHeaderButton, kanbanView } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
 import type { Transport } from '../api'
-import { toasts } from '../toastStore'
+import { toasts } from '../ui/toastStore'
 
 const meta = {
     title: 'Bases/KanbanView/Columns',
@@ -543,14 +543,18 @@ export const AddColumnFailsRestoresRemoved: Story = {
 /** A rename that lands on a key whose `autoColor` equals the OLD key's `autoColor` (no
  *  `groupColors` override on either side) stays Auto — the fix skips the `groupColors` write
  *  entirely rather than pinning a color the user never chose, which would show a plain rename
- *  as a custom color. "Todo" and "Todox" both fall through to the same hash-of-key palette slot
- *  (no `STATUS_COLOR` entry for either), so this rename is exactly that case. */
+ *  as a custom color. The columns must be NON-status keys: `STATUS_COLOR` names `todo`, `doing`
+ *  and `done`, so a status column's auto colour is its status hue, and any rename away from it
+ *  lands on a hash slot and rightly pins a colour. "Blocked" is not a status word, and "Blocked 2"
+ *  hashes to the same palette slot as it (slot 3), so this rename is exactly the same-auto case. */
 export const RenameColumnKeepsAuto: Story = {
     render: () => {
         const { transport, calls } = spiedTransport()
         kanbanCalls = calls
         setTransport(transport)
-        const view = kanbanView()
+        const view = kanbanView({
+            groupOrder: ['Todo', 'Doing', 'Blocked', 'Done'],
+        })
         return (
             <KanbanView
                 result={sampleViewResult(undefined, { view })}
@@ -563,20 +567,22 @@ export const RenameColumnKeepsAuto: Story = {
     play: async ({ canvasElement }) => {
         const col = focusColumnHeaderButton(
             canvasElement,
-            'Todo',
+            'Blocked',
             'Rename column',
         )
         await userEvent.keyboard('{Enter}')
-        const input = await waitFor(() => within(col).getByDisplayValue('Todo'))
+        const input = await waitFor(() =>
+            within(col).getByDisplayValue('Blocked'),
+        )
         await userEvent.clear(input)
         // A same-auto-color key that isn't just casing/whitespace of the original, so this
         // exercises the hash fallback comparison rather than the (trivially equal) identity case.
-        await userEvent.type(input, 'Todox')
+        await userEvent.type(input, 'Blocked 2')
         await userEvent.keyboard('{Enter}')
 
         await waitFor(() =>
             expect(
-                canvasElement.querySelector('[data-kbcol="Todox"]'),
+                canvasElement.querySelector('[data-kbcol="Blocked 2"]'),
             ).not.toBeNull(),
         )
         expect(

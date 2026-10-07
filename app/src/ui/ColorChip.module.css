@@ -1,8 +1,11 @@
-/* app/src/ui/ColorChip.module.css — the swatch chip + its palette surface. Placement, z-index and
-   flipping belong to AnchoredPopover; this file only paints the panel and lays out the swatches. */
+/* app/src/ui/ColorChip.module.css — the swatch chip + its palette's inner layout. Placement, z-index
+   and flipping belong to AnchoredPopover; the floating surface itself (fill, hairline, lift) is
+   ui/Popover — this file only lays the swatches out inside it. */
 .chipwrap { flex: 0 0 auto; display: inline-flex; }
-.pop { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0); padding: var(--sp-4); }
-.sws { display: flex; gap: var(--sp-3); align-items: center; }
-.trigger { display: inline-flex; align-items: center; padding: var(--sp-2); margin: calc(-1 * var(--sp-2)); border-radius: var(--r-dot); cursor: pointer; }
+/* The panel tone owns no inset, so the swatch row carries the 8px of breathing room. */
+.sws { display: flex; gap: var(--sp-3); align-items: center; padding: var(--sp-4); }
+.trigger { display: inline-flex; align-items: center; padding: var(--sp-2); margin: calc(-1 * var(--sp-2)); border-radius: var(--r-dot); cursor: pointer; transition: filter var(--dur) var(--ease); }
 .trigger:focus, .trigger:focus-visible { outline: none; }
-.trigger:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+/* The same hover as the default `Swatch` trigger (`.swatch.sm:hover`): brighten, no fill wash — one
+   control, one hover, whichever trigger it wears. */
+.trigger:hover { filter: brightness(1.1); }

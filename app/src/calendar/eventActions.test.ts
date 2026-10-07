@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import { EventStore, MemoryBackend } from './EventStore'
 import { deleteEventWithUndo, duplicateEvent } from './eventActions'
-import { toasts, dismissToast } from '../toastStore'
+import { toasts, dismissToast } from '../ui/toastStore'
 
 async function freshStore() {
     const s = new EventStore(new MemoryBackend())

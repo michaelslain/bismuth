@@ -62,11 +62,12 @@ export const Default: Story = {
         await expect(cs.fontFamily).toBe(getComputedStyle(proseProbe).fontFamily)
         proseProbe.remove()
 
-        const faintProbe = document.createElement('div')
-        faintProbe.style.color = 'var(--faint)'
-        canvasElement.appendChild(faintProbe)
-        await expect(cs.color).toBe(getComputedStyle(faintProbe).color)
-        faintProbe.remove()
+        // `--text-muted`, not `--faint`: the hint is copy a person reads, and --faint is structure.
+        const mutedProbe = document.createElement('div')
+        mutedProbe.style.color = 'var(--text-muted)'
+        canvasElement.appendChild(mutedProbe)
+        await expect(cs.color).toBe(getComputedStyle(mutedProbe).color)
+        mutedProbe.remove()
 
         // The hint's OWN box sits flush at the strip's corner (left/top: 0, set by the layer) — the
         // inset from the corner is the text's padding, not a gap before the box starts.

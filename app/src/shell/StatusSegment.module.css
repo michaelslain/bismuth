@@ -1,5 +1,5 @@
 /* StatusSegment.module.css — StatusSegment.tsx is the ONLY importer. A segment is one more
-   readout in the status bar's row: it inherits the bar's size and --faint colour and adds nothing
+   readout in the status bar's row: it inherits the bar's size and --text-muted colour and adds nothing
    of its own (no separator, no box), so the bar's own `gap` is the only spacing between readouts. */
 .status-segment {
   display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap;
@@ -10,12 +10,11 @@
 .status-segment--click { color: var(--segment-tone, inherit); cursor: pointer; }
 .status-segment--click:hover { color: var(--fg); }
 .status-segment--error { color: var(--danger); }
-/* The command stays --faint; the [ allow ] button is `TextButton primary` (accent + bold from the
-   button family), the one thing to act on. */
-.status-segment--untrusted { color: var(--faint); }
-/* Command and [ allow ] sit on one baseline, a bar-gap apart (the bar's own `gap`). The button
-   family's only box-making rule is `.btn { height: var(--h-control) }` (padding and border are
-   already zero on kind="text"); that fixed height is what overflowed the bar's 18px row, so it
-   yields to the line, and the button takes the bar's size and line-height. */
-.status-segment--untrusted { align-items: baseline; gap: var(--sp-6); }
+/* The command stays --text-muted (it is what the owner is being asked to approve, so it is content,
+   not structure); the [ allow ] button is `TextButton primary` (accent + bold from the button
+   family), the one thing to act on. Command and [ allow ] sit on one baseline, a bar-gap apart (the
+   bar's own `gap`). The button family's only box-making rule is `.btn { height: var(--h-control) }`
+   (padding and border are already zero on kind="text"); that fixed height is what overflowed the
+   bar's 18px row, so it yields to the line, and the button takes the bar's size and line-height. */
+.status-segment--untrusted { color: var(--text-muted); align-items: baseline; gap: var(--sp-6); }
 .status-segment--untrusted .status-segment-allow { font-size: inherit; line-height: inherit; height: auto; }

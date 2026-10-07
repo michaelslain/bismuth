@@ -17,7 +17,7 @@
 // Mirrors Editor.tsx exactly — the same dual-path shape notes already use for image drops.
 import { api } from '../api'
 import { settings } from '../settings'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 import { attachmentTarget } from '../attachmentPath'
 import { basename, isImageFile } from '../fileIntake'
 import { imageEmbed, isImagePath } from './kanbanImageDrop'

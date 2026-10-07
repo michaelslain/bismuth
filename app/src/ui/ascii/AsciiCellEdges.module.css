@@ -17,6 +17,17 @@
        --ascii-dash-pitch token, a dash then a blank `ch` — so both axes read `- - - -` and the gap
        from a `+` to its first dash is the gap between dashes; both repeat with `round`: a whole
        number of dashes fits, stretched by under 1/(2n), so a fluid width never cuts one;
+     - THE PITCH IS ONE NUMBER ON BOTH AXES ONLY WHERE `round` has nothing to stretch. The run's
+       room is the host's box less one corner tile (width - --ascii-corner-w across, height -
+       --ascii-tile-h down); it is a whole number of pitches exactly when the host is
+       corner-w + n x pitch wide and tile-h + m x pitch tall, and then both axes paint
+       --ascii-pitch to the pixel. Any other size is stretched to the nearest whole count — by up
+       to 25% when n is 1 or 2, which is how a 40px-high room once painted 13.3px dashes under
+       14.7px ones. So a host whose height is its own to choose snaps it: --ascii-row-h is one
+       pitch of room, a taller row is tile-h + m x pitch (calc() of --ascii-tile-h plus m times
+       --ascii-pitch, or CSS `round()` against --ascii-pitch to fit a minimum). Fluid
+       widths cannot snap; they stretch by under 1/(2n) of a dash, small for any real column.
+       The story asserts it from the painted geometry (AsciiCellEdges.stories.tsx);
      - `-`/`=` share the `+`'s crossbar and `|` its stem.
    Which glyph sits in which slice is the sprite, selected by the
    edge set's runtime hooks — data-edges (drawn edges, in top right bottom left order) and data-heavy

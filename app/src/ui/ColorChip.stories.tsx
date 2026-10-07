@@ -25,6 +25,12 @@ export const Closed: Story = {
         onToggle: () => {},
         onPick: () => {},
     },
+    play: ({ canvasElement }) => {
+        const chip = within(canvasElement).getByLabelText('Choose colour')
+        expect(chip.getBoundingClientRect().width).toBeGreaterThan(0)
+        expect(getComputedStyle(chip).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+        expect(document.querySelector('[data-testid="category-palette"]')).toBeNull()
+    },
 }
 
 /** The popover open, downward (the default) — seven palette tokens, the stored colour's swatch
@@ -55,6 +61,8 @@ export const Open: Story = {
         // bare `props.value === tok` comparison never matches a `var(--token)` value.
         expect(pressed.length).toBe(1)
         expect(pressed[0]).toHaveAttribute('aria-label', 'green')
+        // the palette sits on the shared floating surface, not a private copy of its recipe
+        expect(palette.querySelector('[data-popover]')).not.toBeNull()
     },
 }
 
@@ -186,7 +194,8 @@ export const Interactive: Story = {
 }
 
 /** No stored colour (`''`, as TaskCalendarSettings passes for an uncoloured category): the chip
- *  falls back to `--accent` rather than painting a hollow square. */
+ *  reads as EMPTY — a dashed, unfilled box — rather than a solid accent swatch that looks like a
+ *  chosen teal. */
 export const EmptyColor: Story = {
     args: {
         color: '',
@@ -196,9 +205,11 @@ export const EmptyColor: Story = {
     },
     play: async ({ canvasElement }) => {
         const chip = within(canvasElement).getByLabelText('Choose colour')
-        const bg = getComputedStyle(chip).backgroundColor
-        expect(bg).not.toBe('rgba(0, 0, 0, 0)')
-        expect(bg).not.toBe('transparent')
+        const cs = getComputedStyle(chip)
+        expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+        expect(cs.borderStyle).toBe('dashed')
+        const r = chip.getBoundingClientRect()
+        expect(r.width).toBeGreaterThan(0)
     },
 }
 
@@ -224,6 +235,11 @@ export const CustomTrigger: Story = {
     },
     play: async ({ canvasElement }) => {
         const trigger = within(canvasElement).getByLabelText('Choose colour')
+        // One control, one hover: the custom trigger brightens like the default Swatch trigger
+        // (a `filter` transition) instead of washing a 12% fill behind the dot. A synthetic
+        // pointer cannot raise CSS `:hover`, so this pins the transitioned property, not the state.
+        expect(getComputedStyle(trigger).transitionProperty).toBe('filter')
+        expect(getComputedStyle(trigger).backgroundColor).toBe('rgba(0, 0, 0, 0)')
         await userEvent.click(trigger)
         await waitFor(() =>
             expect(

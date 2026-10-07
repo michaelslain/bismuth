@@ -7,6 +7,7 @@ import {
     faceFrame,
     nextBlinkDelay,
     tickMs,
+    motionTickMs,
     initialSettle,
     settleMood,
     MOOD_SETTLE_MS,
@@ -268,4 +269,24 @@ test('moodWord: the faint header word', () => {
     expect(moodWord('idle')).toBe('resting')
     expect(moodWord('talking')).toBe('talking')
     expect(moodWord('hurt')).toBe('hurt')
+})
+
+test('motionTickMs is the mood clock at the default scale', () => {
+    for (const m of MOODS) expect(motionTickMs(m, 1)).toBe(tickMs(m))
+})
+
+test('motionTickMs turns the loop off at scale 0 or below', () => {
+    for (const m of MOODS) {
+        expect(motionTickMs(m, 0)).toBeNull()
+        expect(motionTickMs(m, -1)).toBeNull()
+    }
+})
+
+test('motionTickMs slows with a scale above 1 and never speeds past the mood clock', () => {
+    expect(motionTickMs('busy', 2)).toBe(tickMs('busy') * 2)
+    expect(motionTickMs('busy', 0.25)).toBe(tickMs('busy'))
+})
+
+test('motionTickMs treats a missing scale as 1', () => {
+    expect(motionTickMs('idle', Number.NaN)).toBe(tickMs('idle'))
 })

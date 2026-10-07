@@ -2,6 +2,8 @@
    flex: 1 1 auto lets it shrink below its content inside the capped column-flex panel, so IT
    scrolls and the header/footer stay pinned. Children keep their natural height (flex-shrink: 0),
    otherwise a child with overflow:hidden shrinks to fit and silently clips instead of the body
-   scrolling. */
-.body { flex: 1 1 auto; padding: var(--sp-5) var(--sp-6) var(--sp-6); display: flex; flex-direction: column; gap: var(--row-h); overflow-y: auto; min-height: 0; }
+   scrolling. Padding is --sp-6 on all four sides (the top used to be a step tighter than the bottom)
+   and the gap between children is --sp-6 too — it was --row-h (18px), a layout unit that is not on
+   the spacing scale. */
+.body { flex: 1 1 auto; padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-6); overflow-y: auto; min-height: 0; }
 .body > * { flex-shrink: 0; }

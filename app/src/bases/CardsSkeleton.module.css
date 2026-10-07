@@ -1,23 +1,32 @@
-/* ---- cards silhouette ---- */
+/* ---- cards silhouette ----
+   Mirrors CardsView.module.css so the loaded cards land where the placeholders were: `.cards` is its
+   `.cards` (padding --view-gutter, a column), `.grid` is its `.cardGrid` (auto-fill columns of at least
+   --card-grid-min, the `ui.cardGridMinWidth` setting, 220px when unset) and `.cover` is
+   CardCover's height — six character rows plus the 1px rule. The card box itself is CardFrame.
+   The two template declarations are written twice (a stylesheet has one importer); the
+   CardsSkeleton story measures both and fails if they ever drift. */
 .cards {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: var(--sp-5);
-  padding: var(--sp-6);
-}
-.card {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
-  padding: 0 0 var(--sp-5);
-  border: var(--rule-soft, 1px solid var(--border-soft));
-  border-radius: var(--r-0);
-  overflow: hidden;
+  gap: var(--sp-5);
+  padding: var(--view-gutter);
+  /* A block in a flex frame defaults to its content's width and `min-width: auto` — the grid's
+     10 cards then collapsed to slivers. It fills its container and may shrink below content. */
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
-.cardCover {
-  height: 72px;
-  background: color-mix(in srgb, var(--faint) 16%, transparent);
-  border-bottom: 1px solid var(--border-soft, var(--border));
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr));
+  gap: var(--sp-5);
+  align-items: start;
 }
-.cardLineWide { height: 11px; margin: 0 var(--sp-5); }
-.cardLine { height: 9px; width: 55%; margin: 0 var(--sp-5); }
+.cover {
+  height: calc(var(--cell-h) * 6 + 1px);
+  background: var(--skeleton-ink-faint);
+  border-bottom: var(--rule-soft);
+}
+.body { padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); }
+.lineWide { height: var(--skeleton-bar-h); }
+.line { height: var(--skeleton-bar-h); width: 55%; }

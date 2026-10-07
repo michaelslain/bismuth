@@ -14,6 +14,7 @@ import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
 import { pushUndoToast } from '../undoToast'
 import { restoreRowAt } from './restoreRow'
+import { plural } from '../plural'
 import CardsListEditor from './CardsListEditor'
 import BulkCardsEditor from './BulkCardsEditor'
 import { resetKeys, stripSchedule } from './flashcardsActions'
@@ -245,7 +246,7 @@ export function EditCardsModal(props: {
                     />
                     <div class={styles.sp} />
                     <Show when={mode() === 'list'}>
-                        <Text as="span" size="ui" tone="faint" class={styles.hint}>
+                        <Text as="span" size="ui" tone="muted" class={styles.hint}>
                             drag # to reorder
                         </Text>
                     </Show>
@@ -320,7 +321,7 @@ export function EditCardsModal(props: {
                         disabled={busy() || validCount() === 0}
                         onClick={() => void addBulk()}
                     >
-                        add {validCount()} cards
+                        add {plural(validCount(), 'card')}
                     </TextButton>
                 </Show>
             </ModalFooter>

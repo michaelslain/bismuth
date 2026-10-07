@@ -1,7 +1,16 @@
 /* app/src/ui/ascii/AsciiTree.module.css — moved in from ui/ui.css (2026-09-12, CSS modules
-   migration Task 7). ui/ascii/AsciiTree.tsx was the sole reader of all four rules anywhere in
-   the app. */
-.asc-tree { font-size: var(--fs-ui); line-height: var(--lh-ui); }
-.asc-tree-row { padding: 1px var(--sp-5); white-space: pre; color: var(--text-muted); cursor: pointer; }
+   migration Task 7). ui/ascii/AsciiTree.tsx is the sole reader of every rule here.
+
+   A row is exactly one app row unit (--row-h, 18px): no vertical padding, a line-height equal to
+   the height, so a stack of rows lands on the same ruler as every other list. Label and meta are
+   two slots of a flex row, so the meta is right-aligned at the row's trailing edge whatever the
+   prefix, glyph and label add up to — it no longer depends on counting characters. */
+.asc-tree { font-size: var(--fs-ui); line-height: var(--row-h); }
+.asc-tree-row {
+    display: flex; align-items: baseline; height: var(--row-h); padding: 0 var(--sp-5);
+    white-space: pre; color: var(--text-muted); cursor: pointer; outline: none; /* nothing draws focus (DESIGN.md) */
+}
 .asc-tree-row:hover { background: var(--hover-bg); color: var(--fg); }
 .asc-tree-row.active { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
+.asc-tree-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.asc-tree-meta { flex: 0 0 auto; padding-left: var(--sp-5); text-align: right; }

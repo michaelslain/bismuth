@@ -90,17 +90,16 @@ export const Row: Story = {
         )!
         const plainColor = getComputedStyle(modelWord).color
         expect(armed.color).not.toBe(plainColor)
-        // Acceptance 7: "opus 4.8 // bypass // [history] [new chat]" — `history` (closed) and
-        // `new chat` are both real bracket TextButtons (button-family migration, no PlainButton),
-        // and CLOSED `history` must no longer paint the same colour as `new chat` — the defect
-        // Acceptance 7 calls out ("today selected and normal are the same colour — that defect
-        // goes"). `history` is unselected (--faint) while closed; `new chat` is a plain normal
-        // action (--fg).
+        // Acceptance 7: "opus 4.8 // bypass // [history] [new chat]" — `history` and `new chat`
+        // are both real bracket TextButtons (button-family migration, no PlainButton). CLOSED
+        // `history` now inks like `new chat` (both `normal`): it used to take the `unselected`
+        // variant and read grey beside a near-white `[+ new chat]`, as if disabled. Only the OPEN
+        // toggle is `selected`.
         const history = within(canvasElement).getByTestId('chat-history')
         const newChat = within(canvasElement).getByTestId('chat-new')
         expect(history.tagName).toBe('BUTTON')
         expect(newChat.tagName).toBe('BUTTON')
-        expect(getComputedStyle(history).color).not.toBe(
+        expect(getComputedStyle(history).color).toBe(
             getComputedStyle(newChat).color,
         )
         // The `//` separator lands on the ACTIONS CLUSTER as a whole (one `//` before it,
@@ -157,6 +156,29 @@ export const NoSession: Story = {
         expect(noSession.getBoundingClientRect().height).toBe(
             armed.getBoundingClientRect().height,
         )
+        // THE DISABLED LOOK IS INK, NEVER OPACITY (DESIGN.md:426-428): the row and everything in
+        // it paints at full opacity — a dimmed row put the model word at 1.8:1 — and the model
+        // word steps down to `--faint` against the armed row's `--text-muted`.
+        for (const el of [noSession, ...Array.from(noSession.querySelectorAll<HTMLElement>('*'))]) {
+            expect(getComputedStyle(el).opacity).toBe('1')
+        }
+        const probe = (token: string) => {
+            const p = document.createElement('span')
+            p.style.color = `var(${token})`
+            canvasElement.appendChild(p)
+            const color = getComputedStyle(p).color
+            p.remove()
+            return color
+        }
+        const wordOf = (row: HTMLElement) =>
+            row.querySelector<HTMLElement>(
+                '[data-testid="chat-model"] button, [data-testid="chat-model"] span',
+            )!
+        const disabledInk = getComputedStyle(wordOf(noSession)).color
+        const armedInk = getComputedStyle(wordOf(armed)).color
+        expect(disabledInk).toBe(probe('--faint'))
+        expect(armedInk).toBe(probe('--text-muted'))
+        expect(disabledInk).not.toBe(armedInk)
     },
 }
 
@@ -222,6 +244,13 @@ export const Narrow360: Story = overflowProof(360)
  *  control, permission mode, history, new chat) and the model control free to shrink, the row must
  *  still fit on one line even here. */
 export const Narrow260: Story = overflowProof(260)
+
+/** The `.row`'s 2px right inset absorbs an overhang whose exact box was never isolated, so one
+ *  width proving "no overflow" is thin evidence — these two sit either side of the 280px
+ *  `@container chatrow` tier (where history/new chat give up their word) to prove the inset holds
+ *  across it, not just at 240/260/360. */
+export const Narrow280: Story = overflowProof(280)
+export const Narrow320: Story = overflowProof(320)
 
 /** THE REAL GATE for Acceptance line 4 ("no pixel ladder" / the row can never overflow): a 240px
  *  container — narrower than either width sample above — with a DELIBERATELY LONG model label, the

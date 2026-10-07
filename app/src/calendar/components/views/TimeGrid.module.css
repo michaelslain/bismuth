@@ -3,12 +3,14 @@
    The grid's height is `--time-grid-height`, defined once here on `.time-grid` and read by every
    module beneath it; JS reads the matching TS constant `GRID_PX` (timeGridLayout.ts), and
    timeGridLayout.test.ts fails if the two ever disagree. */
-.time-grid { --time-grid-height: 1200px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.time-grid { --time-grid-height: 1728px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .time-grid-body { flex: 1; overflow-y: auto; }
 /* The typed grid's glyphs straddle every boundary (half a line above the first edge, half a `ch`
-   right of the last), and the scroll body clips — so the columns keep a little room on the right,
-   and the sticky top a half line above, or the outer `-` and `|` would print half cut. */
-.time-grid-columns { display: flex; flex-direction: column; padding-right: var(--sp-4); }
+   right of the last), and the scroll body clips — so the columns keep a little room on the right
+   (--sp-3, the month grid's outer gutter too), and the sticky top a half line above, or the outer `-`
+   and `|` would print half cut. An hour is 72px (GRID_PX): four 18px rows, so the hour lines, the
+   half-hour cells and the 15-minute snap all land on the unit. */
+.time-grid-columns { display: flex; flex-direction: column; padding-right: var(--sp-3); }
 .time-grid-sticky-top { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-top: calc(var(--cell-h) / 2); }
 .time-grid-time-rows { display: flex; position: relative; min-height: var(--time-grid-height); padding-bottom: calc(var(--sp-7) * 2); }
 .time-gutter-hour-block { display: flex; flex-direction: column; height: calc(var(--time-grid-height) / 24); }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { dismissToast, toasts } from './toastStore'
+import { dismissToast, toasts } from './ui/toastStore'
 import { doctorToastMessage, showDoctorToast } from './doctorToast'
 import type { DoctorReport, FindingReport } from '../../core/src/doctor/types'
 

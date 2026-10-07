@@ -2,6 +2,7 @@
 // "column") share. Each story hosts it in the same kind of flex column its real host provides,
 // over a stub session (chat/_stubChatSession.ts).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, within } from 'storybook/test'
 import ChatSessionBody from './ChatSessionBody'
 import { makeStubChatSession } from './_stubChatSession'
 import { CONVERSATION_ITEMS } from './_transcriptFixtures'
@@ -61,6 +62,45 @@ export const PaneConversation: Story = {
             />
         </Host>
     ),
+}
+
+/** At a narrow pane width (both columns below their `--chat-column` cap, so neither centres) the
+ *  composer's outlined box starts exactly where the transcript's turn text does — they share
+ *  `--note-gutter`, not two literals that can drift 16px apart. */
+export const PaneGutterAligned: Story = {
+    render: () => (
+        <div style={{ width: '560px' }}>
+            <Host>
+                <ChatSessionBody
+                    variant="pane"
+                    session={makeStubChatSession({ transcript: [...CONVERSATION_ITEMS] })}
+                    placeholder="Message Claude"
+                    persona="Claude"
+                    empty={greeting()}
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                    composerTestId="pane-composer"
+                />
+            </Host>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const wrapper = within(canvasElement).getByTestId('pane-composer')
+        const box = wrapper.firstElementChild as HTMLElement
+        const turn = within(canvasElement).getAllByText('you')[0]
+        const boxLeft = box.getBoundingClientRect().left
+        const turnLeft = turn.getBoundingClientRect().left
+        await expect(Math.abs(boxLeft - turnLeft)).toBeLessThan(1)
+        // ...and that left edge IS the shared gutter, not both having drifted to zero
+        const probe = document.createElement('span')
+        probe.style.display = 'block'
+        probe.style.width = 'var(--note-gutter)'
+        canvasElement.appendChild(probe)
+        const gutter = probe.getBoundingClientRect().width
+        probe.remove()
+        await expect(boxLeft - canvasElement.getBoundingClientRect().left).toBeGreaterThanOrEqual(gutter)
+    },
 }
 
 export const PaneEmpty: Story = {

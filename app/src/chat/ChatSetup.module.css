@@ -3,7 +3,7 @@
    ChatView.css verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented
    below. Consumed by ChatView.tsx only.
 
-   OWNS: .chat-setup, .chat-setup-icon, .switch-btn (+ plain `h3`/`p`/`code` element selectors under
+   OWNS: .chat-setup, .chat-setup-icon, .switch-btn (+ plain `h3`/`p` element selectors under
    `.chat-setup`, which need no hashing). The switch-provider escape hatch's spacing is handed to
    TextButton via its `class` prop rather than reached into via `:global(.btn)`. */
 
@@ -17,11 +17,10 @@
   justify-content: center;
   text-align: center;
   gap: var(--sp-3);
-  padding: 32px;
+  padding: var(--sp-7);
   color: var(--text-muted);
 }
 .chat-setup-icon {
-  opacity: 0.5;
   margin-bottom: var(--sp-3);
   pointer-events: none;
 }
@@ -41,21 +40,13 @@
 .switch-btn {
   margin-top: var(--sp-5);
 }
-/* Button's own `.btn--text.btn--normal { color: var(--fg) }` is 0,2,0 and wins over a lone class;
-   the [data-kind] hook (Button sets it) lifts this to 0,4,0 so the escape hatch stays quiet. */
+/* The only action on the screen, so it inks as one: `--text-muted`, brightening to `--fg` on hover.
+   It was `--faint` (4.5:1 against its sibling heading's 14:1), which read as disabled. Button's own
+   `.btn--text.btn--normal { color: var(--fg) }` is 0,2,0 and wins over a lone class; the
+   [data-kind] hook (Button sets it) lifts this to 0,4,0. */
 .chat-setup .switch-btn[data-kind] {
-  color: var(--faint);
+  color: var(--text-muted);
 }
 .chat-setup .switch-btn[data-kind]:hover:not(:disabled) {
   color: var(--fg);
-}
-.chat-setup code {
-  font-family: var(--ui-font-stack);
-  /* A type-scale step, not 0.9em — that relative value computed to 12.15px (off the app's fixed
-     scale, bench/invariants.ts's font-size-off-scale) the moment this copy got a dedicated story
-     (ChatSetupGate.stories.tsx) to render it against. */
-  font-size: var(--fs-ui);
-  background: var(--chat-surface-2);
-  border-radius: var(--r-0);
-  padding: 1px var(--sp-2);
 }

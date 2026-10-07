@@ -8,7 +8,7 @@ import type {
 } from '../../../core/src/bases/types'
 import { placeholderFile } from '../../../core/src/bases/types'
 import { apiBase, httpTransport, setTransport, type Transport } from '../api'
-import { toasts } from '../toastStore'
+import { toasts } from '../ui/toastStore'
 import { createKanbanActions, type PendingMove } from './kanbanActions'
 import type { DeletedMap } from './kanbanDelete'
 

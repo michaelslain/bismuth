@@ -49,6 +49,14 @@ export type DatePickerProps = {
     handleRef?: (handle: DatePickerHandle) => void
 }
 
+// NO `showPicker()` CALL ANYWHERE IN THIS FILE, deliberately. The overlay is opened by the
+// engine's own `::-webkit-calendar-picker-indicator` glyph (see DatePicker.module.css), which is
+// the only opener. Calling `showPicker()` on a click anywhere in the field popped the overlay
+// every time the user clicked a segment to type into it — a change to what the control does —
+// and `showPicker` is unverified in the shipped WKWebView, where the `try/catch` it needs
+// swallows the failure silently. `DatePicker.stories.tsx`'s `DateAndTime` play spies on
+// `HTMLInputElement.prototype.showPicker` and fails if a call comes back.
+
 const DatePicker: Component<DatePickerProps> = props => {
     const [date, setDate] = createSignal(props.initialDate)
     const [time, setTime] = createSignal(props.initialTime)

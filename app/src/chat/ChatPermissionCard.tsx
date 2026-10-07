@@ -1,13 +1,16 @@
 // app/src/chat/ChatPermissionCard.tsx — ChatPermissionCard.module.css is the ONLY importer.
-// An inline permission prompt: allow / allow always / deny, or (once answered/cancelled) a muted
-// outcome line. Extracted verbatim in behaviour from ChatView.tsx's local `PermissionCard` closure.
+// An inline permission prompt: allow / allow always / deny, or (once answered/cancelled) a settled
+// outcome line. Composes `ui/Card` (the proposal recipe: bordered surface + the accent left edge)
+// instead of rebuilding it; the chat tint arrives through Card's `--card-bg` seam, set in the
+// stylesheet. The argument summary is ChatToolInput — the same block the tool row shows.
 import { Show, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
+import Card from '../ui/Card'
 import { TextButton } from '../ui/TextButton'
-import CodeBlock from '../ui/CodeBlock'
 import { chipSummary } from './chatToolIcon'
 import { summarizeInput } from './chatToolFormat'
+import ChatToolInput from './ChatToolInput'
 import type { PermissionPart } from './chatTranscriptLogic'
 import styles from './ChatPermissionCard.module.css'
 
@@ -25,39 +28,41 @@ const ChatPermissionCard: Component<ChatPermissionCardProps> = props => {
         chipSummary(summarizeInput(props.part.input), props.part.toolName, 160)
     const done = () => !!props.part.answered || !!props.part.cancelled
     return (
-        <div
-            class={`${styles['chat-permission']} ${props.class ?? ''}`}
-            classList={{ [styles['answered']]: done() }}
+        <Card
+            variant="proposal"
+            class={[
+                styles['chat-permission'],
+                done() ? styles['answered'] : '',
+                props.class ?? '',
+            ]
+                .filter(Boolean)
+                .join(' ')}
         >
             <div class={styles['chat-permission-head']}>
-                <Icon
-                    value="Lock"
-                    class={styles['chat-permission-icon']}
-                />
-                <Text as="span" size="ui">
+                <Icon value="Lock" class={styles['chat-permission-icon']} />
+                <Text as="span" inherit class={styles['chat-permission-title']}>
                     Allow{' '}
-                    <Text as="span" weight="bold">
+                    <Text as="span" inherit weight="bold">
                         {props.part.toolName}
                     </Text>
                     ?
                 </Text>
             </div>
             <Show when={summary()}>
-                <CodeBlock class={styles['chat-permission-summary']}>
-                    {summary()}
-                </CodeBlock>
+                <ChatToolInput
+                    class={styles['chat-permission-summary']}
+                    tone="muted"
+                    maxHeight={160}
+                    text={summary()}
+                />
             </Show>
             <Show
                 when={!done()}
                 fallback={
-                    <div
+                    <Text
+                        as="div"
+                        inherit
                         class={styles['chat-permission-outcome']}
-                        classList={{
-                            [styles['deny']]:
-                                props.part.answered?.behavior === 'deny',
-                            [styles['cancelled']]:
-                                !props.part.answered && !!props.part.cancelled,
-                        }}
                     >
                         <Icon
                             value={
@@ -75,7 +80,7 @@ const ChatPermissionCard: Component<ChatPermissionCardProps> = props => {
                                     : 'Allowed'
                                 : 'Denied'
                             : 'Cancelled'}
-                    </div>
+                    </Text>
                 }
             >
                 <div class={styles['chat-permission-actions']}>
@@ -85,9 +90,7 @@ const ChatPermissionCard: Component<ChatPermissionCardProps> = props => {
                     >
                         allow
                     </TextButton>
-                    <TextButton
-                        onClick={() => props.onAnswer('allow', true)}
-                    >
+                    <TextButton onClick={() => props.onAnswer('allow', true)}>
                         allow always
                     </TextButton>
                     <TextButton
@@ -98,7 +101,7 @@ const ChatPermissionCard: Component<ChatPermissionCardProps> = props => {
                     </TextButton>
                 </div>
             </Show>
-        </div>
+        </Card>
     )
 }
 

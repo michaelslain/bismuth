@@ -91,6 +91,70 @@ export const Full: Story = {
     },
 }
 
+/** A NARROW surface — the one the dock used to break on. The box is capped at
+ *  `calc(100% - 24px)` so it cannot run off the surface, and its row could not wrap, so on a pane
+ *  this size the bordered box stopped at the cap while the groups kept going: the pen toggle, the
+ *  first colour and undo/redo painted OUTSIDE their own border and the smoothing zigzag was
+ *  clipped (`preview-pageink--pdf-ink-on-second-page-only`). The assertion is the containment
+ *  itself — every control inside the box it belongs to — so it fails on any dock narrower than
+ *  what it holds, whichever of the two rules regresses. 380px is comfortably under the dock's own
+ *  width, so the cap is doing real work here rather than being slack. */
+export const Narrow: Story = {
+    render: () => {
+        const { tools, setTools } = useToolState()
+        const [bg, setBg] = createSignal<PaperBg>('grid')
+        const [zoom, setZoom] = createSignal(1)
+        return (
+            <div
+                style={{ position: 'relative', height: '260px', width: '380px' }}
+            >
+                <Toolbar
+                    tools={tools}
+                    setTools={setTools}
+                    bg={bg}
+                    setBackground={setBg}
+                    onUndo={() => {}}
+                    onRedo={() => {}}
+                    zoom={zoom}
+                    onZoomIn={() => setZoom(1)}
+                    onZoomOut={() => setZoom(1)}
+                    onResetZoom={() => setZoom(1)}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dock = canvasElement.querySelector<HTMLElement>(
+            '[data-draw-toolbar]',
+        )!
+        expect(dock).not.toBeNull()
+        const box = dock.getBoundingClientRect()
+        const controls = [
+            ...dock.querySelectorAll<HTMLElement>('button'),
+        ]
+        // Every tool, colour, size, smoothing, paper and zoom control — if this count collapses
+        // the containment below is being asserted over nothing.
+        expect(controls.length).toBeGreaterThan(15)
+        for (const c of controls) {
+            const r = c.getBoundingClientRect()
+            expect(r.left).toBeGreaterThanOrEqual(box.left - 0.5)
+            expect(r.right).toBeLessThanOrEqual(box.right + 0.5)
+            // VERTICAL containment too. The row is allowed to wrap at this width, and a wrapped
+            // second line that the dock's own height does not grow to cover is clipped — which
+            // horizontal containment alone cannot see, because a clipped control still sits
+            // between the dock's left and right edges.
+            expect(
+                r.top,
+                'a control sits above the dock — the wrapped row is clipped',
+            ).toBeGreaterThanOrEqual(box.top - 0.5)
+            expect(
+                r.bottom,
+                'a control sits below the dock — the wrapped second row is clipped',
+            ).toBeLessThanOrEqual(box.bottom + 0.5)
+        }
+    },
+}
+
 /** The minimal note-ink overlay usage (app/src/editor/InkOverlay.tsx's real call site):
  *  no paper background, no zoom, no image import — since ink annotates a note rather than a
  *  dedicated `.draw` page — but WITH the lasso, which is the note-ink half of "select it and

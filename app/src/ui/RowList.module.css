@@ -3,3 +3,6 @@
    daemon's crons list is (daemon/DaemonRow.module.css). */
 .list { display: flex; flex-direction: column; }
 .scroll { overflow: hidden auto; }
+/* Rows never shrink: in a column flex box an overflowing list squeezed its rows to ~23px against
+   their 24px floor and the scroll cap never engaged (ui-rowlist--scrolling). Overflow scrolls. */
+.list > * { flex-shrink: 0; }

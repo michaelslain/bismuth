@@ -27,7 +27,9 @@ export const Muted: Story = {
     args: { label: 'Weekends', checked: false, muted: true },
 }
 
-/** `locked`: shown but not changeable — no hover, default cursor, click/keyboard do nothing.
+/** `locked`: shown but not changeable — default cursor, click/keyboard do nothing, and it LOOKS
+ *  locked: the label drops to `--text-muted` and the `[x]` to `--faint` (an ink change, never
+ *  opacity). See `LockedBesideEnabled` for the side-by-side proof.
  *  `title` gives the native tooltip explaining why — `play` proves it actually reaches the
  *  root element rather than being silently dropped by the component. */
 export const Locked: Story = {
@@ -50,13 +52,60 @@ export const Locked: Story = {
     },
 }
 
-/** `wrap`: a sentence-length label wraps instead of truncating with an ellipsis. */
+/** A locked row beside an enabled one, both checked — the pair a screenshot must tell apart. A locked
+ *  switch used to be pixel-identical to an enabled one (`cursor: default` was its only difference),
+ *  so a user could not see why it did not respond. `play` compares COMPUTED ink of the label and the
+ *  `[x]` between the two rows, and asserts neither row is dimmed by opacity. */
+export const LockedBesideEnabled: Story = {
+    render: () => (
+        <div style={{ width: '280px' }}>
+            <RowList>
+                <ToggleRow label="Status (editable)" checked onToggle={() => {}} />
+                <ToggleRow
+                    label="Title (always visible)"
+                    checked
+                    locked
+                    title="At least one column must stay visible"
+                />
+            </RowList>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const [on, locked] = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[data-testid="toggle-row"]'),
+        ] as [HTMLElement, HTMLElement]
+        const name = (r: HTMLElement) => r.querySelector('span') as HTMLElement
+        const glyph = (r: HTMLElement) => r.querySelector('span[aria-hidden="true"]') as HTMLElement
+        expect(getComputedStyle(name(locked)).color).not.toBe(getComputedStyle(name(on)).color)
+        expect(getComputedStyle(glyph(locked)).color).not.toBe(getComputedStyle(glyph(on)).color)
+        // ink, not opacity
+        for (const r of [on, locked]) {
+            expect(getComputedStyle(r).opacity).toBe('1')
+            expect(getComputedStyle(name(r)).opacity).toBe('1')
+        }
+        // and the locked `[x]` is still an `x`: locked is not unchecked
+        expect(getComputedStyle(glyph(locked).querySelector('i')!, '::before').content).toBe('"x"')
+    },
+}
+
+/** `wrap`: a sentence-length label wraps instead of truncating with an ellipsis. `play` proves the
+ *  `[x]` sits on the FIRST line (it used to hang ~5px below it): its box matches the first line's. */
 export const Wrap: Story = {
     args: {
         label:
             'Bidirectional — also generate the reverse card, front and back swapped',
         checked: true,
         wrap: true,
+    },
+    decorators: [Story => <div style={{ width: '240px' }}><Story /></div>],
+    play: async ({ canvasElement }) => {
+        const name = canvasElement.querySelector('span') as HTMLElement
+        const glyph = canvasElement.querySelector('span[aria-hidden="true"]') as HTMLElement
+        const lh = parseFloat(getComputedStyle(name).lineHeight)
+        expect(name.getBoundingClientRect().height).toBeGreaterThan(lh * 1.5) // really wrapped
+        // the glyph box is the first line's box: same top, same height
+        expect(Math.abs(glyph.getBoundingClientRect().top - name.getBoundingClientRect().top)).toBeLessThan(1)
+        expect(Math.abs(glyph.getBoundingClientRect().height - lh)).toBeLessThan(1)
     },
 }
 

@@ -55,10 +55,14 @@
    own line → a centered single-icon column aligned with the tab icons; expanded (232px) they fit on
    one line as horizontal rows (nav = ‹ › side-by-side). Rows sit in a straight, centered icon column
    (no arc). */
-.tab-rail { position: relative; z-index: 100; }
+.tab-rail { position: relative; z-index: var(--z-shell); }
 .tab-rail-inner {
   position: absolute; top: 0; right: 0; bottom: 0;
   width: 46px;                       /* collapsed: icon column only (matches --rail-w) */
+  /* The flyout's depth cue. --lift throws RIGHT-and-down, which on the default RIGHT-edge rail lands
+     off the window; --lift-start is its mirror, so the cue falls inside it. A left rail restores
+     --lift (see `.side-left` below). Held in one custom property so the expanded rule reads a single name. */
+  --rail-lift: var(--lift-start);
   display: flex; flex-direction: column;
   background: var(--rail);
   border-left: 1px solid var(--border-soft);
@@ -79,11 +83,14 @@
 .tab-rail:focus-within .tab-rail-inner,
 .tab-rail.rail-pinned .tab-rail-inner {
   width: var(--tab-rail-width, 232px); /* expanded: icon + full name + close/pin — appearance.tabRailWidth, set by dragging the edge */
-  box-shadow: var(--lift);
 }
-/* Pinned, the rail is part of the layout rather than something floating over the editor, so it
-   drops the lift that says "this is temporarily covering your content". */
-.tab-rail.rail-pinned .tab-rail-inner { box-shadow: none; }
+/* The lift belongs to the UNPINNED flyout only: pinned, the rail is part of the layout rather than
+   something floating over the editor, so it carries none. Written as a `:not(.rail-pinned)` condition
+   instead of a later `box-shadow: none` override because the hover selector above out-ranks any
+   same-looking pinned rule ((0,4,0) vs (0,3,0)) — a pinned rail under the pointer used to grow the
+   lift back. Here the pinned rail simply never matches. */
+.tab-rail:not(.rail-pinned):not(.hover-off):hover .tab-rail-inner,
+.tab-rail:not(.rail-pinned):focus-within .tab-rail-inner { box-shadow: var(--rail-lift); }
 @media (prefers-reduced-motion: reduce) { .tab-rail-inner, .rail-edge { transition: none; } }
 
 /* THE EDGE HANDLE'S SLOT. A 6px band standing just OUTSIDE the surface's left border (on the editor
@@ -112,23 +119,23 @@
 /* LEFT RAIL (`side="left"`, TabRail's `side` prop): the mirror image. The surface anchors left and
    widens RIGHTWARD over the editor, its hairline moves to its right edge, and the edge strip rides
    just outside that right border (`left` tracks the surface's width exactly as `right` does above).
-   The collapsed icon column is nudged 1px right (row margin in TabRailRow.module.css, actions
-   padding here) because the border now eats the column's RIGHT side, and the icon axis must stay at
-   the same x as on the right rail. */
+   The collapsed icon column is nudged 1px right (row margin in TabRailRow.module.css, and the
+   actions band's `inset="rail"` from TabRail.tsx) because the border now eats the column's RIGHT
+   side, and the icon axis must stay at the same x as on the right rail. */
 .tab-rail.side-left .tab-rail-inner {
   right: auto; left: 0;
   border-left: none;
   border-right: 1px solid var(--border-soft);
+  --rail-lift: var(--lift);          /* widening RIGHTWARD, so the plain lift already falls inside the window */
 }
 .tab-rail.side-left .rail-edge {
   right: auto; left: 46px;
-  transition: left 0.22s var(--ease);
+  transition: left calc(0.22s * var(--motion-scale)) var(--ease);
 }
 .tab-rail.side-left:not(.hover-off):hover .rail-edge,
 .tab-rail.side-left:focus-within .rail-edge,
 .tab-rail.side-left.rail-pinned .rail-edge { left: var(--tab-rail-width, 232px); }
 .tab-rail.side-left.resizing .rail-edge { transition: none; }
-.tab-rail.side-left .tab-rail-inner > .tab-rail-actions { padding-left: calc(var(--sp-5) + 1px); }
 @media (prefers-reduced-motion: reduce) { .tab-rail.side-left .rail-edge { transition: none; } }
 
 /* Top action toolbar. Renders through `ui/IconBar` now (`band layout="wrap"`, toolbar-iconbar
@@ -139,14 +146,16 @@
    genuinely THIS container's concern: not shrinking inside `.tab-rail-inner`'s column layout, and
    the left-packed, single-line, non-wrapping layout the rail switches to once it is no longer
    collapsed. */
+/* THE BAND'S BOX IS NOT HERE: the vertical room above and below the stacked icons is Band's `padBlock`
+   and the left rail's one-pixel start nudge is its `inset="rail"`, both asked for by TabRail.tsx. A
+   stylesheet that wrote either one would be a second writer racing the band's own rule. */
 .tab-rail-actions { flex: 0 0 auto; }
-.tab-rail-inner > .tab-rail-actions { padding-block: var(--sp-4); }
 /* ONE ICON AXIS (rail-axis, 2026-10-03): the actions pack LEFT in both states instead of centring
    while collapsed. Band padding (--sp-5, 12px) + an 18px square button puts each glyph's left edge
    at 15px — exactly where TabRailRow puts every tab icon (5px margin + 10px padding). Centred, the
    stack sat 1.5px right of the tab icons in the 45px collapsed column. The active tab's brackets
    hang outside this axis into the row padding (TabRailRow.module.css). */
-.tab-rail-inner > .tab-rail-actions { justify-content: flex-start; }   /* breathing room above + below the stacked icons — the band itself only pads the sides */
+.tab-rail-inner > .tab-rail-actions { justify-content: flex-start; }
 /* LEFT-ALIGNED, NOWRAP ONLY WHILE EXPANDED (hover/focus-within) OR PINNED. IconBar's own
    `layout="wrap"` centres + wraps for the 46px collapsed strip; once the rail widens to 232px
    there is room for one row, and a left-packed row matches the tab rows' own left-aligned icons

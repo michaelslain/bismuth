@@ -1,0 +1,45 @@
+/* app/src/preview/CodePane.module.css — CodePane.tsx is the ONLY importer. Moved out of
+   PreviewView.module.css when the code body became its own component.
+
+   CO-RIDING STATE CLASS IS A LOCAL HERE: `is-active` on `.preview-find-match`, reached through
+   `styles` in `classList`. The component's scroll-into-view reads `data-find-match` +
+   `data-active` (attributes are never hashed), not these classes — they drive only the look.
+
+   `.preview-code` is passed to ui/CodeBlock as its `class`; CodeBlock's own defaults carry zero
+   specificity (`:where()`), so every property below wins regardless of stylesheet order. */
+
+/* Code/text: read-only monospace, own horizontal + vertical scroll. */
+.preview-code {
+  flex: 1 1 auto;
+  width: 100%;
+  margin: 0;
+  padding: var(--sp-5) var(--sp-6);
+  box-sizing: border-box;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--fg);
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+
+/* Nothing draws focus: the surface is focusable so Cmd+F reaches the keydown handler. */
+.preview-code:focus,
+.preview-code:focus-visible {
+  outline: none;
+}
+
+/* Match highlighting — an accent wash on every match, a stronger solid wash + ring on the active
+   one (the target of next/prev + scroll-into-view). `.is-active` is declared AFTER the base rule at
+   the same specificity-by-composition ((0,2,0) vs (0,1,0)), so it wins by specificity, not order. */
+.preview-find-match {
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 26%, transparent));
+  color: inherit;
+  border-radius: var(--r-0);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.preview-find-match.is-active {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 2px var(--accent);
+}

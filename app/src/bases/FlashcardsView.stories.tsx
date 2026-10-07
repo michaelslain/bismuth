@@ -7,8 +7,8 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { spyApi } from './_apiSpy'
-import { toasts, ToastHost } from '../Toast'
-import { dismissToast } from '../toastStore'
+import { toasts, ToastHost } from '../ui/ToastHost'
+import { dismissToast } from '../ui/toastStore'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { FlashcardsView } from './FlashcardsView'
 import { saveSession } from './flashcardsQueue'
@@ -257,9 +257,9 @@ export const SplitPane: Story = {
  *      non-throwing check, so it can pass against the pre-correction default before the narrow
  *      value ever lands — SETTLE (a fixed delay past one frame), THEN `waitFor`, not `waitFor`
  *      alone.
- *  (2) `.fcmeter` is `width: 100%` regardless of content and `.asc-meter` is `white-space: pre`
+ *  (2) `.fcmeter` is `width: 100%` regardless of content and the glyph run is `white-space: pre`
  *      (cannot wrap), so neither box reflects an oversized glyph run. Measure the glyph run's OWN
- *      box (`.asc-meter` inside `[data-testid="fc-progress"]`), not its container's, and check it
+ *      box (AsciiMeter's glyph run inside `[data-testid="fc-progress"]`), not its container's, and check it
  *      has real width — a zero-width box would make the "fewer than 30 cells" comparison
  *      vacuously true. */
 export const MeterShrinksNarrow: Story = {
@@ -269,10 +269,11 @@ export const MeterShrinksNarrow: Story = {
         </Pane>
     ),
     play: async ({ canvasElement }) => {
-        const meter = canvasElement.querySelector(
-            '[data-testid="fc-progress"]',
-        ) as HTMLElement
-        await expect(meter).not.toBeNull()
+        const meter = await waitFor(() => {
+            const el = canvasElement.querySelector('[data-testid="fc-progress"]') as HTMLElement | null
+            if (!el) throw new Error('progress meter not mounted yet')
+            return el
+        })
 
         // Settle past the ResizeObserver + font-ready correction before polling — see the trap
         // note above. 200ms is a hundred-plus frames of margin past a callback specified to run
@@ -280,14 +281,15 @@ export const MeterShrinksNarrow: Story = {
         await new Promise(resolve => setTimeout(resolve, 200))
 
         await waitFor(() => {
-            const glyphRun = meter.querySelector('.asc-meter') as HTMLElement
+            // AsciiMeter's root, by structure: its class is a hashed module class, so a literal never matches.
+            const glyphRun = meter.querySelector('[aria-hidden="true"] > *') as HTMLElement
             expect(glyphRun).not.toBeNull()
             const glyphBox = glyphRun.getBoundingClientRect()
             // Non-vacuity: a zero-width box would satisfy "fewer than 30 cells" for the wrong
             // reason (nothing rendered at all).
             expect(glyphBox.width).toBeGreaterThan(0)
             // One line — checked by Y-coordinate spread across the glyph run's own fragments, NOT
-            // by `getClientRects().length`. `.asc-meter` wraps a bracket text node, a `#`-filled
+            // by `getClientRects().length`. The glyph run wraps a bracket text node, a `#`-filled
             // span and a `.`-filled span, and Chrome fragments `getClientRects()` at every one of
             // those child-element boundaries even on a single visual line — this story's 0%-filled
             // meter (an empty `#` span) genuinely reports 4 rects at rest, which would make a

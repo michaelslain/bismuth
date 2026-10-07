@@ -1,9 +1,19 @@
 /* BracketToggle.module.css — was `.evm-modal .evm-toggle`. Literal brackets from the character
    grid, `[ ]` off / `[x]` on: the product's checkbox register. Content-sized: `[x]` is three
-   monospace cells. */
-.toggle { height: var(--h-control); border-radius: var(--r-0); position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 3ch; background: transparent; border: none; font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: 1; color: var(--faint); transition: color calc(.18s * var(--motion-scale)); }
+   monospace cells.
+
+   Three custom properties are the bridge a host composes it through (a CSS custom property, never a
+   reach into this hashed class): `--bracket-off` / `--bracket-on` are the two inks (faint and accent
+   by default) and `--bracket-height` the box (a control's height by default; a task row sets `auto`
+   so the glyph sits on the text's own line). `.doing` and `.cancelled` are the two extra marks of a
+   four-state box; `[/]` takes the on ink, `[-]` the off ink — a state is told by its glyph, never by
+   an opacity. */
+.toggle { height: var(--bracket-height, var(--h-control)); border-radius: var(--r-0); position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 3ch; background: transparent; border: none; font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: 1; color: var(--bracket-off, var(--faint)); transition: color var(--dur-fast) var(--ease); }
 .toggle::before { content: '['; }
 .toggle::after { content: ']'; }
-.toggle.on { background: transparent; border-color: transparent; color: var(--accent); }
+.toggle.on { background: transparent; border-color: transparent; color: var(--bracket-on, var(--accent)); }
 .toggle i { position: static; width: 1ch; height: auto; border-radius: 0; background: none; font-style: normal; text-align: center; transition: none; }
 .toggle.on i::before { content: 'x'; }
+.toggle.doing { color: var(--bracket-on, var(--accent)); }
+.toggle.doing i::before { content: '/'; }
+.toggle.cancelled i::before { content: '-'; }

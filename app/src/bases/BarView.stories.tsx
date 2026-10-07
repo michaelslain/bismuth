@@ -203,8 +203,8 @@ function labeledRows(labels: string[], values: number[]): Partial<Row>[] {
     }))
 }
 
-/** Negative values clamp to zero fill — a row with a negative amount draws no bar, only its
- *  label and value. */
+/** A negative amount draws its magnitude, like a positive one, in muted ink with the `-` in the
+ *  value column; only an exact 0 draws no `#`. play() counts the `#` per row. */
 export const NegativeValues: Story = {
     render: () => {
         const view = {
@@ -223,6 +223,19 @@ export const NegativeValues: Story = {
                 />
             </div>
         )
+    },
+    play: async ({ canvasElement }) => {
+        const hashes = (key: string): number => {
+            const row = canvasElement.querySelector<HTMLElement>(`[data-bucket="${key}"]`)
+            expect(row).not.toBeNull()
+            return (row!.textContent?.match(/#/g) ?? []).length
+        }
+        await waitFor(() => expect(canvasElement.querySelector('[data-bucket]')).not.toBeNull())
+        // categoryRows([-4, 2, -1, 7, 0]) -> Cat 1..5.
+        expect(hashes('Cat 1')).toBeGreaterThanOrEqual(1) // -4
+        expect(hashes('Cat 3')).toBeGreaterThanOrEqual(1) // -1
+        expect(hashes('Cat 2')).toBeGreaterThanOrEqual(1) // +2
+        expect(hashes('Cat 5')).toBe(0) // 0
     },
 }
 
@@ -246,6 +259,10 @@ export const SixtyCategories: Story = {
                 />
             </div>
         )
+    },
+    // Only some of the 60 rows fit; the readout must say so instead of passing the slice off as all.
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.textContent).toMatch(/showing \d+ of 60/))
     },
 }
 
@@ -277,6 +294,17 @@ export const LongLabelsNarrow: Story = {
                 />
             </div>
         )
+    },
+    // The bars keep room to compare: 340 and 275 must not draw the same length. Regression: the
+    // label column ate the row, the track collapsed to 2 cells, and both drew one `#`.
+    play: async ({ canvasElement }) => {
+        const fills = await waitFor(() => {
+            const rows = Array.from(canvasElement.querySelectorAll<HTMLElement>('[data-bucket]'))
+            if (rows.length < 4) throw new Error('rows not mounted yet')
+            return rows.map(r => (r.textContent ?? '').match(/#+/)?.[0].length ?? 0)
+        })
+        expect(new Set(fills).size).toBe(fills.length)
+        expect(Math.max(...fills)).toBeGreaterThanOrEqual(6)
     },
 }
 

@@ -1,7 +1,7 @@
 /* app/src/chat/ChatModelPicker.module.css — the ONE model dialog's body (ONE importer:
    ChatModelPicker.tsx). The frame, scrim, header and Esc/backdrop dismiss are FormModal's; this file
-   is only the two columns. Nothing here is uppercase or tracked, and every label is lowercase text —
-   no boxed badges. */
+   is only the two columns. Every pick row — connector, model, preset — is `ui/PickRow`, so the
+   whole dialog has ONE row pitch and the `▸` markers fall in one column; nothing here styles a row. */
 
 /* The ModalBody itself is the two-column row. ModalBody's own `.body` is a padded, gapped, scrolling
    column at the same specificity, so the doubled selector wins without depending on stylesheet
@@ -22,35 +22,14 @@
 .connectors {
     display: flex;
     flex-direction: column;
-    flex: 0 0 clamp(124px, 30%, 150px);
+    /* The floor is 14ch of mono ink (a 2ch mark slot + the longest connector name, "openai codex" /
+       "hermes agent", 12ch) plus PickRow's own `--sp-5` gutters. 124px was ~5px short, so those two
+       wrapped onto a second line while "gemini cli" fitted. */
+    flex: 0 0 clamp(calc(14ch + 2 * var(--sp-5) + var(--sp-2)), 30%, 150px);
     min-width: 0;
     padding: var(--sp-3) 0;
     border-right: var(--rule-soft);
     overflow-y: auto;
-}
-.connector {
-    display: block;
-    min-width: 0;
-    /* Hanging indent: a wrapped second line aligns under the name, not under the ▸ marker. */
-    padding: var(--sp-3) var(--sp-5) var(--sp-3) calc(var(--sp-5) + 2ch);
-    text-indent: -2ch;
-    text-align: left;
-    /* Wraps at the narrow floor instead of clipping a connector's name. */
-    overflow-wrap: anywhere;
-    color: var(--text-muted);
-}
-.connector:hover {
-    color: var(--fg);
-}
-.connector--current {
-    color: var(--fg);
-}
-/* A fixed two-character slot, so labels align whether or not the ▸ marker is present. */
-.mark {
-    display: inline-block;
-    width: 2ch;
-    text-indent: 0;
-    color: var(--accent);
 }
 
 /* ── right: models + effort + provider manager ── */
@@ -62,7 +41,6 @@
 }
 .empty {
     padding: var(--sp-3) var(--sp-5);
-    color: var(--faint);
 }
 .group {
     display: flex;
@@ -70,34 +48,6 @@
 }
 .group-head {
     padding: var(--sp-3) var(--sp-5) var(--sp-2);
-}
-/* Three columns on every row: the marker slot, the name, the price badge — so the current model's
-   `▸` sits in one column (the same marker the connector and preset rows use for "current"), names
-   align, and `free` right-aligns. */
-.model {
-    display: grid;
-    /* 2ch then no gap: the marker slot of the connector rows' hanging indent, so `▸ name` reads
-       the same in both columns. */
-    grid-template-columns: 2ch minmax(0, 1fr) auto;
-    align-items: center;
-    padding: var(--sp-2) var(--sp-5);
-    text-align: left;
-    color: var(--text-muted);
-}
-.model:hover,
-.model--current {
-    color: var(--fg);
-}
-.label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.badge {
-    padding-left: var(--sp-2);
-    color: var(--faint);
-    text-align: right;
 }
 .effort {
     display: flex;

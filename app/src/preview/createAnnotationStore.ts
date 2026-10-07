@@ -20,7 +20,7 @@ import {
 import type { Accessor } from 'solid-js'
 import { api } from '../api'
 import { emptyDoc, parseDoc, type DrawingDoc } from '../../../core/src/drawing/model'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 import { registerSidecarFlush } from '../editorRegistry'
 import type { AnnotationLoadState, AnnotationStore } from './annotationTypes'
 

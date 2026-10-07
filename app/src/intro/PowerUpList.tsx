@@ -37,7 +37,6 @@ const PowerUpList: Component<PowerUpListProps> = props => {
                                 </Text>
                             }
                             checked={props.selected.includes(p.id)}
-                            muted={!props.selected.includes(p.id)}
                             onToggle={() => props.onToggle(p.id)}
                         />
                     </Card>

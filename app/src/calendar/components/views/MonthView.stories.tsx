@@ -74,9 +74,12 @@ export const Default: Story = {
             ...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-day-name"]'),
         ]
         expect(names).toHaveLength(7)
-        names.forEach(nm =>
-            expect(nm.parentElement!.querySelector('[data-heavy~="bottom"]')).toBeTruthy(),
-        )
+        names.forEach(nm => {
+            expect(nm.parentElement!.querySelector('[data-heavy~="bottom"]')).toBeTruthy()
+            // mixed case like the week header's `Mon 10/5`: no all-caps, from the source or from CSS
+            expect(getComputedStyle(nm).textTransform).toBe('none')
+            expect(nm.textContent).not.toBe(nm.textContent!.toUpperCase())
+        })
         expect(canvasElement.querySelectorAll('[data-heavy~="bottom"]')).toHaveLength(7)
         expect(n('top', 'left')).toBe(7 + 7 * (rows - 1))
         expect(n('top', 'right')).toBe(rows)
@@ -130,6 +133,16 @@ export const DenseDay: Story = {
         await new Promise(r => setTimeout(r, 100)) // the story seeds state on a 50ms timer
         assertChipsWhole(canvasElement, '[data-testid="event-chip"]')
         assertHeaderAligned(canvasElement)
+        // event chips sit one --sp-1 apart in the month, the same 2px as the all-day row and the
+        // tasks register (they used to sit 4px apart: the cell's gap on top of the chip's own margin)
+        const sp1 = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sp-1'))
+        const box = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell-events"]')].find(
+            b => b.querySelectorAll('[data-testid="event-chip"]').length >= 2,
+        )!
+        expect(box, 'a day with stacked chips').toBeTruthy()
+        const chips = [...box.querySelectorAll<HTMLElement>('[data-testid="event-chip"]')].map(c => c.getBoundingClientRect())
+        for (let i = 1; i < chips.length; i++)
+            expect(chips[i].top - chips[i - 1].bottom, `gap above chip ${i}`).toBeCloseTo(sp1, 1)
     },
 }
 
@@ -276,9 +289,14 @@ export const QuietTasks: Story = {
         // leading/trailing-month spillover) — never a hardcoded day-of-month that could collide with
         // today's own real date.
         const numbers = cells.map(c => c.firstElementChild as HTMLElement)
+        const rowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-h'))
+        // the disc is the one number with a painted background, and it is one --row-h row, square
         const todayCircle = numbers.find(
-            n => Math.round(n.getBoundingClientRect().width) === 20,
+            n => getComputedStyle(n).backgroundColor !== 'rgba(0, 0, 0, 0)',
         )!
+        expect(todayCircle, "today's number draws a disc").toBeTruthy()
+        expect(todayCircle.getBoundingClientRect().width).toBeCloseTo(rowH, 0)
+        expect(todayCircle.getBoundingClientRect().height).toBeCloseTo(rowH, 0)
         const other = numbers.find(
             n => n !== todayCircle && getComputedStyle(n).opacity === '1',
         )!
@@ -695,17 +713,15 @@ export const ComposerBelowChips: Story = {
         // the composer is LAST — proves it never displaces the chips above it
         const composer = children[2]
         expect(
-            composer.querySelector('[data-testid="task-cell-composer-marker"]'),
+            composer.querySelector('[role="checkbox"]'),
         ).not.toBeNull()
         expect(
             composer.querySelector('[data-testid="task-chip-title"]'),
         ).toBeNull()
         // the colour reaches the marker itself, as an inline style carrying the exact design
         // token, not a hardcoded stand-in colour
-        const marker = composer.querySelector<HTMLElement>(
-            '[data-testid="task-cell-composer-marker"]',
-        )!
-        expect(marker.style.color).toBe('var(--blue)')
+        const marker = composer.querySelector<HTMLElement>('[role="checkbox"]')!
+        expect(marker.style.getPropertyValue('--task-check-color')).toBe('var(--blue)')
     },
 }
 

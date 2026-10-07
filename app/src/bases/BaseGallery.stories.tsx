@@ -334,6 +334,12 @@ async function mapPinLands({ canvasElement }: { canvasElement: HTMLElement }) {
     await addPinByMouse(pane, 'Harbor Lookout')
     await editPinByMouse(pane, 'Tokyo', 'Tokyo Office')
     await placeUnplacedByMouse(pane, 'Cairo', 2, false)
+    // Rest where the other gallery plays do (`allTilesResolved` asserts scrollY 0): the
+    // scrollIntoView above parks the page at the map. No assertion follows the scrollTo, on
+    // purpose: `scrollY === 0` right after `scrollTo(0, 0)` is true by construction. What guards
+    // the parked-page capture (scrollY 3408 photographed a flat band) is the audit's clip maths,
+    // unit-tested in bench/clipBox.test.ts.
+    canvasElement.ownerDocument.defaultView!.scrollTo(0, 0)
 }
 
 /** Same gallery, isolated to prove the map's writes stick — see `mapPinLands`. */
@@ -343,7 +349,7 @@ export const MapPinsLand: Story = {
 }
 
 /** A table tile has no optimistic state — a cell only changes once a refetch re-resolves the
- *  store — so ticking `done` and seeing the cell flip to `x` proves the write stuck.
+ *  store — so ticking `done` and seeing the cell flip to checked proves the write stuck.
  *
  *  A kanban drag is deliberately NOT a step here, though it was checked the same way: the drop
  *  batches `status` plus an `order` key onto every card in the column (`setProperties`), and the
@@ -366,9 +372,12 @@ async function editsStick({ canvasElement }: { canvasElement: HTMLElement }) {
         )!
         return tr.querySelectorAll<HTMLElement>('td')[doneIdx]!
     }
-    expect((doneCell().textContent ?? '').trim()).toBe('')
+    // A boolean cell is the `[ ]` / `[x]` bracket glyph (bases/BooleanValue, drawn by CSS, so its text
+    // is empty in BOTH states); its state is the `role="img"` mark's aria-label — 'no' / 'yes'.
+    const mark = () => doneCell().querySelector('[role="img"]')?.getAttribute('aria-label')
+    expect(mark()).toBe('no')
     doneCell().querySelector<HTMLElement>('button')!.click()
-    await waitFor(() => expect((doneCell().textContent ?? '').trim()).toBe('x'))
+    await waitFor(() => expect(mark()).toBe('yes'))
 }
 
 /** Same gallery, proving a table boolean toggle sticks — see `editsStick`. */

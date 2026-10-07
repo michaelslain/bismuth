@@ -5,6 +5,6 @@
    controls do, so a host (CardEditModal) zeroes all of them at once. */
 .area {
     box-sizing: border-box;
-    margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1)));
+    margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) 0);
     overflow: hidden;
 }

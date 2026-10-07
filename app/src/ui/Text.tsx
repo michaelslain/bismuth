@@ -4,7 +4,14 @@ import styles from './Text.module.css'
 
 export type TextTag = 'p' | 'span' | 'div'
 export type TextSize = 'micro' | 'ui' | 'body' | 'body-lg' | 'lead' | 'title' | 'inherit'
-export type TextTone = 'default' | 'muted' | 'faint' | 'inherit'
+export type TextTone =
+    | 'default'
+    | 'muted'
+    | 'faint'
+    | 'danger'
+    | 'accent'
+    | 'warning'
+    | 'inherit'
 export type TextWeight = 'regular' | 'medium' | 'bold' | 'inherit'
 /** Which typeface family a Text renders in — see DESIGN.md's register rule: prose is what a
  *  person WROTE (note bodies, a card title), mechanism/data stays mono (--ui-font-stack). */
@@ -18,8 +25,10 @@ export type TextProps = {
      *  panels) is the default and adds no class. 'inherit' emits no font-size/line-height at
      *  all, leaving both to whatever ancestor rule already set them. */
     size?: TextSize
-    /** Text color: 'default' reads --fg, 'muted' --text-muted, 'faint' --faint. 'inherit'
-     *  emits no color, leaving it to whatever ancestor rule already set it. */
+    /** Text color: 'default' reads --fg, 'muted' --text-muted, 'faint' --faint, 'danger'
+     *  --danger (an error message — prefer `ErrorText`, which also sets role="alert"), 'accent'
+     *  --accent, 'warning' --warning. 'inherit' emits no color, leaving it to whatever ancestor
+     *  rule already set it. */
     tone?: TextTone
     /** Font weight (--fw-*). 'regular' (400) is the default; it still emits its own class
      *  (font-weight inherits, so an unset weight would otherwise pick up a bold/medium
@@ -34,6 +43,13 @@ export type TextProps = {
      *  `tone` alongside it; see Text.module.css for why eyebrow itself stays silent on
      *  tone/weight. */
     eyebrow?: boolean
+    /** One line, cut off with an ellipsis: `white-space: nowrap; overflow: hidden;
+     *  text-overflow: ellipsis; min-width: 0`. The `min-width: 0` is what makes it work in a
+     *  flex row — a bare text child there is an anonymous flex item whose automatic min-width
+     *  is its full content width, so without it the overflow clips mid-character and no "…" is
+     *  drawn. It needs a box that can overflow: a flex/grid item or `as="div"`/`"p"`; a `span`
+     *  in ordinary inline flow has no box to clip. */
+    truncate?: boolean
     /** `font-style: italic` — replaces a bare `<em>`. Weight stays its own prop. */
     italic?: boolean
     /** 'chrome' (default) emits no class — the ambient --ui-font-stack applies as normal.
@@ -55,6 +71,7 @@ function textClass(props: TextProps): string {
         weight !== 'inherit' ? styles[`text--${weight}`] : '',
         props.eyebrow ? styles['text--eyebrow'] : '',
         props.italic ? styles['text--italic'] : '',
+        props.truncate ? styles['text--truncate'] : '',
         props.register === 'prose' ? styles['text--prose'] : '',
         props.class,
     ]
@@ -78,6 +95,7 @@ const Text: Component<TextProps> = props => {
         'inherit',
         'eyebrow',
         'italic',
+        'truncate',
         'register',
         'class',
         'children',

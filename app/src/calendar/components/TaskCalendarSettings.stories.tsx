@@ -15,6 +15,7 @@ import { createSignal, Show } from 'solid-js'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import TaskCalendarSettings from './TaskCalendarSettings'
 import { taskCategoryColors, type TaskCategory } from '../taskCategory'
+import TextButton from '../../ui/TextButton'
 
 const meta = {
     title: 'Calendar/TaskCalendarSettings',
@@ -179,12 +180,9 @@ export const Interactive: Story = {
             <Show
                 when={open()}
                 fallback={
-                    <button
-                        type="button"
-                        onClick={() => setOpen(true)}
-                    >
-                        Open task calendar settings
-                    </button>
+                    <TextButton onClick={() => setOpen(true)}>
+                        open task calendar settings
+                    </TextButton>
                 }
             >
                 <TaskCalendarSettings
@@ -210,7 +208,7 @@ export const Interactive: Story = {
     },
     play: async () => {
         const canvas = within(document.body)
-        const trigger = canvas.getByText('Open task calendar settings')
+        const trigger = canvas.getByText('open task calendar settings')
         await userEvent.click(trigger)
         await waitFor(() =>
             expect(

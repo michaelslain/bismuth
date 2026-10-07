@@ -1,40 +1,27 @@
 /* ── Native task line ─────────────────────────────────────────────────────────
-   Moved verbatim out of bases/BaseView.module.css when <TaskRow> was extracted from
-   ListView. Now in the compact register calendar/components/TaskChip.module.css established:
-   mono type, muted unboxed fields, no card frame — not the editor's inline `- [ ]` lines
-   (editor/livePreview.ts is untouched, see the scope ruling). The checkbox itself lives in
-   TaskCheck.module.css — the table renders it without the row.
+   Now in the compact register calendar/components/TaskChip.module.css established: mono type, muted
+   unboxed fields, no card frame. The checkbox lives in TaskCheck.module.css — the table renders it
+   without the row. The row itself is ui/ListRow (`baseline` + `reveal`): the leading mark stays on
+   line one of a wrapping description, and the trailing edit pencil is hidden until hover/focus on a
+   pointer device but ALWAYS shown under `(hover: none)` — it was `opacity: 0` with no touch fallback,
+   so it did not exist on an iPad.
 
    NOTHING HERE MAY BE NAMED `bismuth-*` — those are GLOBAL classes for runtime-generated HTML
-   strings. This component's fields are styled entirely by the module-local `.field` in
-   TaskFieldChips.module.css. app/src/cssLayering.test.ts guards the distinction. */
+   strings. app/src/cssLayering.test.ts guards the distinction. */
 .taskItem {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-6);
+  padding: var(--sp-1) var(--view-gutter);
   /* --fs-ui in the list view's own gutter; a `card` (bullets/cards/kanban) drops to
      --fs-micro below, TaskChip's own size, since it already sits inside a tighter frame. */
-  font-size: var(--fs-ui);
-  font-family: var(--ui-font-stack);
   line-height: 1.45;
-  color: var(--fg);
   cursor: text;
 }
+/* Two classes so these beat ListRow's own single-class type rules whatever the sheet order. */
+.taskItem .line { font-size: var(--fs-ui); line-height: inherit; }
 .taskBody { flex: 1; min-width: 0; word-break: break-word; }
-.taskBody.done { text-decoration: line-through; opacity: 0.55; color: color-mix(in srgb, var(--fg) 52%, transparent); }
+/* Done is told by the strikethrough plus a quieter ink — `--text-muted`, still readable text.
+   It was `opacity: .55` AND a 52% colour mix: dimmed twice, measured 2.3:1. */
+.taskBody.done { text-decoration: line-through; color: var(--text-muted); }
 /* Inside a kanban card or a masonry card the row supplies its own padding, so drop the
    list's gutter — the card already has one — and drop to --fs-micro, TaskChip's size. */
-.inCard { padding-left: 0; padding-right: 0; font-size: var(--fs-micro); }
-
-/* The trailing edit pencil: invisible until the row is hovered/focused, but never removed
-   from layout or the tab order — opacity, not display, so it stays keyboard-reachable
-   (Tab lands on it, which then reveals it via :focus-visible) and never causes a reflow. */
-.editBtn {
-  flex-shrink: 0;
-  opacity: 0;
-}
-.taskItem:hover .editBtn,
-.taskItem:focus-within .editBtn {
-  opacity: 1;
-}
+.inCard { padding-left: 0; padding-right: 0; }
+.inCard .line { font-size: var(--fs-micro); }

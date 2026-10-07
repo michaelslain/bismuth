@@ -8,13 +8,13 @@
 // (value/size/class/style/fallback), so the ~100 existing call sites are
 // unchanged; only the rendering moved underneath it.
 //
-// The 140 canonical names resolve synchronously (see registry.ts). Any other
+// The 142 canonical names resolve synchronously (see registry.ts). Any other
 // name — a note's `icon: Books`, picked from the full Phosphor library — resolves
 // once iconLibrary.ts has loaded that library; until then it draws an EMPTY box of
 // the same size (never the fallback), and re-renders when the load lands. Cases:
 //   1. `value` (or `fallback`) is a known name -> its Phosphor SVG (or a
 //      hand-authored custom mark).
-//   1b. A name outside the 140 while the library is loading -> an empty box.
+//   1b. A name outside the 142 while the library is loading -> an empty box.
 //   2. It LOOKS like an icon name but isn't mapped at all (e.g. a legacy icon
 //      name from old vault frontmatter) -> the same generic fallback, never
 //      the literal name text (which would just read as a typo on screen).
@@ -34,7 +34,7 @@
 // only remaining multi-character case is raw pass-through text (case 3), and
 // per the migration decision it simply sits inside the same fixed box as
 // everything else rather than carrying its own widening logic forward.
-import { type Component, type JSX } from 'solid-js'
+import { splitProps, type Component, type JSX } from 'solid-js'
 import {
     resolveIcon,
     looksLikeIconName,
@@ -65,6 +65,16 @@ export interface IconProps {
 const PENDING_ART: IconArt = { kind: 'glyph', text: '' }
 
 export const Icon: Component<IconProps> = props => {
+    // Anything not named above (a `data-*` runtime hook) rides onto the wrapping span, so a caller can
+    // mark ITS icon for a test or a production selector without a hashed class.
+    const [, hooks] = splitProps(props, [
+        'value',
+        'size',
+        'strokeWidth',
+        'class',
+        'style',
+        'fallback',
+    ])
     const spec = () => {
         const v = props.value?.trim()
         return v ? v : (props.fallback ?? '')
@@ -75,7 +85,7 @@ export const Icon: Component<IconProps> = props => {
         const library = iconLibraryState()
         const known = resolveIcon(s)
         if (known) return known
-        // A name outside the 140 while the full library is still loading: an empty box of the
+        // A name outside the 142 while the full library is still loading: an empty box of the
         // right size, not a flash of the dashed "?" (see iconLibrary.ts).
         if (library !== 'failed' && isPendingIconName(s)) {
             void loadIconLibrary()
@@ -107,6 +117,7 @@ export const Icon: Component<IconProps> = props => {
             class={props.class}
             aria-hidden="true"
             style={boxStyle()}
+            {...hooks}
         >
             {(() => {
                 const a = art()

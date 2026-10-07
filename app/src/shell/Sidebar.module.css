@@ -42,7 +42,22 @@
    collapse clips them from the left, in lockstep with GraphFloater's dock-right clip. */
 .sidebar.right { border-right: 0; border-left: 1px solid var(--border-soft); align-items: flex-end; }
 .sidebar > * { width: var(--sidebar-width, 266px); box-sizing: border-box; }
-.sidebar-files { flex: 1; overflow: auto; padding: 0 var(--sp-4) var(--sp-4); min-height: 0; }
+/* A right-hand column paints its content one pixel inside the border-left, so the full-width pin above
+   would push the toolbar and tree one pixel under that border while the graph section (already pinned
+   `- 1px`) starts after it — three bands on two axes. Pin every child the graph section's width. */
+.sidebar.right > * { width: calc(var(--sidebar-width, 266px) - 1px); }
+/* THE LEFT AXIS IS MEASURED AT THE INK, NOT AT THE BOX. The shell's bands share one axis at 12px (the
+   wordmark, the status text, the graph header's `[3d]`); the two bands between them used to carry
+   their own further insets inside a box that already sat on 12, so their ink landed at 16.5 and 17.5.
+   The tree's leftmost painted pixel is the closing-row backtick of its ASCII prefix, which sits 1.5px
+   into its character cell, and the row itself pads --sp-4: --sp-1 here puts that backtick at 11.5.
+   (The tree's `|` stems sit 1.5px further right than the backtick by the glyph's own design.) */
+.sidebar-files { flex: 1; overflow: auto; padding: 0 var(--sp-1) var(--sp-4); min-height: 0; }
+/* The toolbar's first glyph is drawn 4.5px inside its 18px button, so the button steps back by
+   --sp-2 and the glyph's ink lands at 12.5 beside the wordmark's 12. `[data-sidebar-toolbar]` is the
+   runtime hook Sidebar.tsx already passes to the band; `margin-inline-start` is logical, so the
+   mirrored sidebar steps back the same way from its own start edge. */
+.sidebar [data-sidebar-toolbar] > :first-child { margin-inline-start: calc(-1 * var(--sp-2)); }
 /* Pinned one pixel narrower than `.sidebar > *` — the sidebar's content width, not its box — so
    the graph floater that App.tsx snaps onto `.sidebar-graph` (position: fixed, z-index 2) stops
    at the sidebar's 1px border-right instead of painting over it. Still a fixed width rather than

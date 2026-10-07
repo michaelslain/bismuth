@@ -1,20 +1,37 @@
-/* app/src/ui/Popover.module.css — the floating surface behind Popover.tsx. Moved OUT of
+/* app/src/ui/Popover.module.css — THE floating surface behind Popover.tsx. Moved OUT of
    ui/ui.css (one-global-stylesheet Task 7) as the primitive that file's own header comment
    named as missing: `.asc-popover` was written bare by graph/GraphView.tsx, with no owning
-   component. Popover.tsx is now its owner and its sole caller — GraphView.tsx already composes
-   `<Popover>` (its find panel + HUD stats readout), so `.asc-popover` is Popover's own hashed
-   local (ds-bridges Task 4), no longer a `:global()` bridge.
+   component. Popover.tsx is now its owner, so `.asc-popover` is its own hashed local
+   (ds-bridges Task 4), no longer a `:global()` bridge.
 
    Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1): no blur, radius 0. Has no
    scrim of its own — it floats directly over live content (a note, the graph field), so it keeps
    ONE depth cue: --lift, a zero-blur hard-offset "TUI drop-shadow" (2px 2px 0 var(--shadow-hard))
    instead of the old blur(6px) + --shadow-popup. Sanctioned exception per §9.3 ("no blur, but one
    hard-offset lift... where a depth cue is genuinely needed") — probed against a same-tone
-   background via storyAudit. */
+   background via storyAudit.
+
+   OPAQUE, both tones (ds-improve-r1 Task 8). The fill used to be the translucent --pop-bg, which
+   let live content ghost through behind a menu's text; the menu recipe measured from the
+   ui-popover-popoverlist frames was always opaque --bg. The tone selectors below are (0,2,0) so
+   they beat the global `.bismuth-popover` (0,1,0) that PopoverList also carries, whatever the
+   stylesheet order. */
 
 .asc-popover {
-  background: var(--pop-bg);
   border: var(--rule);
   border-radius: var(--r-0);
-  box-shadow: var(--lift);
+  color: var(--fg);
 }
+
+/* A list of rows: the page's own ground, and the 4px inset the rows sit inside. */
+.asc-popover.menu {
+  background: var(--bg);
+  padding: var(--popover-pad);
+}
+/* A box whose caller owns the content and its padding. */
+.asc-popover.panel { background: var(--surface-1); }
+
+.asc-popover.lift { box-shadow: var(--lift); }
+/* On the right edge --lift would throw off the pane, so the shadow throws left instead. */
+.asc-popover.lift-start { box-shadow: var(--lift-start); }
+.asc-popover.flat { box-shadow: none; }

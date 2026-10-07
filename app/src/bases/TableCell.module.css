@@ -14,7 +14,7 @@
     cursor: pointer;
 }
 .cell:hover {
-    background: color-mix(in srgb, var(--fg) 5%, transparent);
+    background: var(--state-hover-bg);
 }
 /* A boolean cell commits on click immediately — there is no "open editor" state to justify the
    text-cell hover/active/focus affordance, so it reads exactly like its read-only x/blank at

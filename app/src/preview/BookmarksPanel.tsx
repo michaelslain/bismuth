@@ -1,7 +1,7 @@
 // app/src/preview/BookmarksPanel.tsx
-// The PDF preview's right-hand navigation column, styled like the file tree: BOOKMARKS (the
+// The PDF preview's right-hand navigation column, styled like the file tree: bookmarks (the
 // user's own page marks, stored in the binary's `.draw` sidecar through the annotation store)
-// above OUTLINE (the document's embedded table of contents, resolved by PdfPages' `onOutline`).
+// above outline (the document's embedded table of contents, resolved by PdfPages' `onOutline`).
 // Every bookmark edit goes through `store.edit` with the pure ops in
 // core/src/drawing/pageBookmarks.ts, so it shares the sidecar's one debounce and one undo stack
 // with ink and highlights.
@@ -46,13 +46,12 @@ function BookmarksPanel(props: BookmarksPanelProps) {
             <section class={styles['bookmarks-section']} aria-label="Bookmarks">
                 <div class={styles['bookmarks-head']}>
                     <Text as="span" size="micro" tone="muted" eyebrow>
-                        BOOKMARKS
+                        bookmarks
                     </Text>
                     <IconButton
                         icon="Plus"
                         label="Bookmark this page"
                         size="sm"
-                        class={styles['bookmarks-add']}
                         disabled={!ready()}
                         onClick={() =>
                             props.store.edit(d =>
@@ -73,7 +72,7 @@ function BookmarksPanel(props: BookmarksPanelProps) {
                     fallback={
                         <Text
                             size="ui"
-                            tone="faint"
+                            tone="muted"
                             class={styles['bookmarks-empty']}
                         >
                             No bookmarks yet.
@@ -106,7 +105,7 @@ function BookmarksPanel(props: BookmarksPanelProps) {
             <section class={styles['bookmarks-section']} aria-label="Outline">
                 <div class={styles['bookmarks-head']}>
                     <Text as="span" size="micro" tone="muted" eyebrow>
-                        OUTLINE
+                        outline
                     </Text>
                 </div>
                 <Show
@@ -114,7 +113,7 @@ function BookmarksPanel(props: BookmarksPanelProps) {
                     fallback={
                         <Text
                             size="ui"
-                            tone="faint"
+                            tone="muted"
                             class={styles['bookmarks-empty']}
                         >
                             This document has no outline.

@@ -135,3 +135,27 @@ export const SaveClickAwayCancels: Story = {
         await expect(canvasElement.querySelectorAll('[aria-label^="Delete preset"]').length).toBe(2)
     },
 }
+
+/** The revealed `[x]` clears the column's right edge by `--sp-3`: the row's own right padding must
+ *  beat ListRow's `padding: 0` whichever sheet loads later (equal-specificity cascade). */
+export const DeleteClearsTheRule: Story = {
+    render: hosted(PRESETS, { provider: 'claude', model: 'opus', effort: 'max' }),
+    play: async ({ canvasElement }) => {
+        const btn = within(canvasElement).getByLabelText('Delete preset quick')
+        // the ListRow root is the nearest ancestor that carries any right padding
+        let el: HTMLElement | null = btn
+        while (el && getComputedStyle(el).paddingRight === '0px') el = el.parentElement
+        await expect(el).not.toBeNull()
+        const probe = document.createElement('span')
+        probe.style.width = 'var(--sp-3)'
+        probe.style.display = 'block'
+        canvasElement.appendChild(probe)
+        const gutter = probe.getBoundingClientRect().width
+        probe.remove()
+        await expect(parseFloat(getComputedStyle(el as HTMLElement).paddingRight)).toBe(gutter)
+        // the button's right edge sits that far inside the row's right edge
+        const inset =
+            (el as HTMLElement).getBoundingClientRect().right - btn.getBoundingClientRect().right
+        await expect(Math.abs(inset - gutter)).toBeLessThan(1.5)
+    },
+}

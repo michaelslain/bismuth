@@ -7,9 +7,7 @@
 // above it instead of sitting in a card of its own.
 import { createSignal, For, type Component, type JSX } from 'solid-js'
 import type { Category } from '../types'
-import ColorChip from '../../ui/ColorChip'
-import StatusDot from '../../ui/StatusDot'
-import { resolvePaletteColor } from '../../ui/palette'
+import CategoryColorChip from './CategoryColorChip'
 import PlainButton from '../../ui/PlainButton'
 import Text from '../../ui/Text'
 import InlineTextInput from '../../ui/InlineTextInput'
@@ -40,14 +38,8 @@ const CategoryList: Component<CategoryListProps> = props => {
                     <ListRow
                         reveal
                         leading={
-                            <ColorChip
+                            <CategoryColorChip
                                 color={c.color}
-                                trigger={
-                                    <StatusDot
-                                        size="md"
-                                        color={resolvePaletteColor(c.color) || 'var(--accent)'}
-                                    />
-                                }
                                 open={picker() === c.name}
                                 onToggle={() =>
                                     setPicker(p => (p === c.name ? null : c.name))

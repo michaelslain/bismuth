@@ -1,5 +1,6 @@
 import { Show, createMemo, type Component } from 'solid-js'
 import Label from '../ui/Label'
+import CardTitle from './CardTitle'
 import { coverNoise } from './coverFingerprint'
 import styles from './CardCover.module.css'
 
@@ -33,9 +34,9 @@ const CardCover: Component<CardCoverProps> = props => {
                 {noise()}
             </pre>
             <div class={styles.band}>
-                <Label as="div" tone="default" lines={2} class={styles.title}>
+                <CardTitle lines={2} class={styles.title}>
                     {props.title}
-                </Label>
+                </CardTitle>
                 <Show when={props.author}>
                     <Label as="div" tone="muted" class={styles.author}>
                         {props.author}

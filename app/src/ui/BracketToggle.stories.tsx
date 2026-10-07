@@ -55,3 +55,26 @@ export const Both: Story = {
         )
     },
 }
+
+/** Four-state box (a task's): `[ ]` `[x]` `[/]` `[-]`. A state is told by its glyph and ink, never
+ *  by an opacity — `[/]` takes the on ink, `[-]` stays on the off ink. */
+export const FourStates: Story = {
+    render: () => (
+        <div style={{ display: 'flex', gap: '12px', 'align-items': 'center' }}>
+            <BracketToggle checked={false} />
+            <BracketToggle checked={true} />
+            <BracketToggle checked={false} state="doing" />
+            <BracketToggle checked={false} state="cancelled" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const toggles = [...canvasElement.querySelectorAll<HTMLElement>('[aria-hidden="true"]')]
+        const glyph = (el: HTMLElement) =>
+            getComputedStyle(el.querySelector('i')!, '::before').content
+        expect(toggles.slice(1).map(glyph)).toEqual(['"x"', '"/"', '"-"'])
+        expect(glyph(toggles[0]!)).not.toBe('"x"')
+        expect(toggles.map(t => Number(getComputedStyle(t).opacity))).toEqual([1, 1, 1, 1])
+        expect(getComputedStyle(toggles[2]!).color).toBe(getComputedStyle(toggles[1]!).color)
+        expect(getComputedStyle(toggles[3]!).color).toBe(getComputedStyle(toggles[0]!).color)
+    },
+}

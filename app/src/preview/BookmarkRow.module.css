@@ -15,13 +15,15 @@
     user-select: none;
     position: relative;
 }
+/* A clickable row never paints a background on hover (DESIGN.md hover rule, ui/ListRow.tsx): the
+   pointer lifts the ink only. */
 .bookmark-row:hover {
-    background: var(--state-hover-bg);
     color: var(--fg);
 }
-.bookmark-row:focus-visible {
-    outline: var(--focus-ring);
-    outline-offset: -2px;
+/* Nothing draws focus (DESIGN.md Focus bullet, Buttons section): no ring, and no replacement cue. `outline: none` is stated
+   explicitly — without it the browser's own :focus-visible ring would show in its place. */
+.bookmark-row {
+    outline: none;
 }
 
 .bookmark-label {
@@ -60,13 +62,4 @@
 .bookmark-row:focus-within .bookmark-actions {
     opacity: 1;
     pointer-events: auto;
-}
-/* `:hover`'s tint layered opaquely OVER `--surface-1` (not `--state-hover-bg` alone, which is a
-   translucent `color-mix(... 8%, transparent)` — see tokens.css). Translucent here let the row's
-   own `p.N` page number show through the overlay it is meant to cover; the flat `--surface-1`
-   above already covers it for focus-within-without-hover. */
-.bookmark-row:hover .bookmark-actions {
-    background:
-        linear-gradient(var(--state-hover-bg), var(--state-hover-bg)),
-        var(--surface-1);
 }

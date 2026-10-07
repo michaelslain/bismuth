@@ -28,7 +28,7 @@ export type DaemonSectionProps = {
     /** Makes the whole box open the section full screen: a click anywhere in it that is not on an
      *  item of its own, and the heading (a real button, for the keyboard). */
     onOpen?: () => void
-    /** The faint one-liner shown under the heading while `isEmpty`. */
+    /** The muted one-liner shown under the heading while `isEmpty`. */
     empty: string
     isEmpty: boolean
     /** Always rendered, after the empty line when `isEmpty`. */
@@ -76,7 +76,7 @@ function DaemonSection(props: DaemonSectionProps) {
                         <Text
                             as="span"
                             size="ui"
-                            tone="faint"
+                            tone="muted"
                             class={styles.count}
                         >
                             {countText()}
@@ -85,7 +85,7 @@ function DaemonSection(props: DaemonSectionProps) {
                 </div>
             </div>
             <Show when={props.isEmpty}>
-                <Text as="div" size="ui" tone="faint" class={styles.empty}>
+                <Text as="div" size="ui" tone="muted" class={styles.empty}>
                     {props.empty}
                 </Text>
             </Show>

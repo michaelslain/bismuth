@@ -6,7 +6,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import TaskEditModal from './TaskEditModal'
 import { setTransport, type Transport } from '../api'
-import { toasts, dismissToast } from '../toastStore'
+import { toasts, dismissToast } from '../ui/toastStore'
 import { fakeTransport } from '../ui/_fakeTransport'
 import {
     taskToRow,

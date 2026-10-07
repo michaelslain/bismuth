@@ -3,7 +3,8 @@ import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import Select, { type SelectOption } from '../ui/Select'
 import { TextInput } from '../ui/TextInput'
 import { IconButton } from '../ui/IconButton'
-import RemoveRowButton from '../ui/RemoveRowButton'
+import SettingsHint from '../ui/SettingsHint'
+import EditableRow from './EditableRow'
 import { columnLabel } from './columnLabel'
 import {
     DATE_PRESETS,
@@ -15,7 +16,12 @@ import {
     tagValues,
 } from './filterOps'
 import { withCurrent } from './selectOptions'
-import type { CondRow, FilterRow, RawRow } from './filterForm'
+import {
+    isIncomplete,
+    type CondRow,
+    type FilterRow,
+    type RawRow,
+} from './filterForm'
 import type { NotesOp } from './queryGen'
 import styles from './FilterConditionRow.module.css'
 
@@ -82,14 +88,19 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
                     value={val()}
                     options={withCurrent(tagValues(props.rows).map(opt), val())}
                     placeholder="pick a tag"
+                    label="value"
                     onChange={setVal}
                 />
             </Match>
             <Match when={editorKind() === 'folder'}>
                 <Select
                     value={val()}
-                    options={withCurrent(folderValues(props.rows).map(opt), val())}
+                    options={withCurrent(
+                        folderValues(props.rows).map(opt),
+                        val(),
+                    )}
                     placeholder="pick a folder"
+                    label="value"
                     onChange={setVal}
                 />
             </Match>
@@ -97,6 +108,7 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
                 <Select
                     value={val() || 'today'}
                     options={dateOptions()}
+                    label="value"
                     onChange={setVal}
                 />
             </Match>
@@ -112,41 +124,47 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
                     placeholder={
                         cond()?.op === 'date_within' ? 'days' : 'value'
                     }
+                    aria-label="value"
                     onInput={setVal}
                 />
             </Match>
         </Switch>
     )
 
+    // A fresh condition has no value yet and is left out of the saved filter — say so under it.
+    const hint = () =>
+        isIncomplete(props.row) ? (
+            <SettingsHint>
+                incomplete // not saved until it has a value
+            </SettingsHint>
+        ) : undefined
+
     return (
         <Show
             when={cond()}
             fallback={
-                <div class={`${styles.row} ${styles.raw} ${props.class ?? ''}`}>
+                <EditableRow
+                    noun="condition"
+                    class={props.class}
+                    onRemove={() => props.onRemove()}
+                >
                     <TextInput
                         class={styles.expr}
                         value={(props.row as RawRow).text}
                         placeholder="expression, e.g. price > 5 && !done"
+                        aria-label="expression"
                         onInput={text => props.onPatch({ text })}
                     />
-                    <RemoveRowButton label="Remove condition" onClick={() => props.onRemove()} />
-                </div>
+                </EditableRow>
             }
         >
             {c => (
-                <div class={`${styles.row} ${props.class ?? ''}`}>
-                    <Select
-                        value={c().prop}
-                        options={propOptions()}
-                        onChange={setProp}
-                    />
-                    <Select
-                        value={c().op}
-                        options={opsFor(c().type, c().op)}
-                        onChange={v => props.onPatch({ op: v as NotesOp })}
-                    />
-                    <div class={styles.val}>{valueEditor()}</div>
-                    <div class={styles.actions}>
+                <EditableRow
+                    noun="condition"
+                    class={props.class}
+                    onRemove={() => props.onRemove()}
+                    hint={hint()}
+                    actions={
                         <Show when={props.onToRaw}>
                             <IconButton
                                 icon="Code"
@@ -154,9 +172,24 @@ const FilterConditionRow: Component<FilterConditionRowProps> = props => {
                                 onClick={() => props.onToRaw?.()}
                             />
                         </Show>
-                        <RemoveRowButton label="Remove condition" onClick={() => props.onRemove()} />
+                    }
+                >
+                    <div class={styles.row}>
+                        <Select
+                            value={c().prop}
+                            options={propOptions()}
+                            label="property"
+                            onChange={setProp}
+                        />
+                        <Select
+                            value={c().op}
+                            options={opsFor(c().type, c().op)}
+                            label="operator"
+                            onChange={v => props.onPatch({ op: v as NotesOp })}
+                        />
+                        <div class={styles.val}>{valueEditor()}</div>
                     </div>
-                </div>
+                </EditableRow>
             )}
         </Show>
     )

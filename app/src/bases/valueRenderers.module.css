@@ -1,7 +1,5 @@
 /* Dates render mono at the chrome type size (not the inherited prose size). */
 .dateCell { font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
-/* Typed boolean glyph: "x" for true, blank for false — no SVG check. */
-.boolCell { font-family: var(--ui-font-stack); color: var(--fg); }
 /* A comma-separated row of ui/Tag — `#alpha, #beta`, the tags field's own spelling. The tags own
    their teal; the commas are plain text in the same UI face. */
 .tagRow { font-family: var(--ui-font-stack); color: var(--fg); }

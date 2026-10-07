@@ -14,7 +14,7 @@ import Text from '../ui/Text'
 import Select from '../ui/Select'
 import { TextButton } from '../ui/TextButton'
 import { api } from '../api'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 import type { DeviceEntry } from '../../../core/src/daemon'
 import { relTimeISO } from '../relTime'
 

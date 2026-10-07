@@ -12,6 +12,8 @@ import { BaseSettings } from './BaseSettings'
 import { sampleBaseConfig, SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { setTransport } from '../api'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
+import { fakeTransport } from '../ui/_fakeTransport'
+import type { Transport } from '../api'
 import type { ViewConfig } from '../../../core/src/bases/types'
 import { parseBaseFile } from '../../../core/src/bases/parse'
 
@@ -25,6 +27,22 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const noop = () => {}
+
+/** A declared-property row's disclosure head. Found by `aria-expanded` WITHOUT `aria-haspopup`:
+ *  every SettingsField label now names its control, so the summaries section's select for a
+ *  column reads "priority none" and a bare `/^priority/` button query matches it too. */
+async function propertyHead(
+    canvas: ReturnType<typeof within>,
+    name: RegExp,
+): Promise<HTMLElement> {
+    const all = await canvas.findAllByRole('button', { name })
+    const head = all.find(
+        (b: HTMLElement) =>
+            b.hasAttribute('aria-expanded') && !b.hasAttribute('aria-haspopup'),
+    )
+    if (!head) throw new Error(`no property row matching ${name}`)
+    return head
+}
 
 /** Table: a RECORD type that DOES show the Columns section (only kanban suppresses it — see
  *  `showColumns` in the component, which pushes column order into Properties instead). */
@@ -151,21 +169,62 @@ export const Heatmap: Story = {
     ),
 }
 
-/** No `basePath` — the sub-title (note label under "Table settings") is hidden, and SAVE is a
- *  no-op past `onSaved` (the component only calls `api.setProperty` `if (props.basePath)`).
- *  This is a real reachable state: settings opened for a view with no host note yet resolved. */
+/** No `basePath` — the sub-title (note label under "table settings") is hidden and there is NO
+ *  file to write to. SAVE used to stay live here and report success (`onSaved`) while discarding
+ *  every edit, so the user closed the panel believing their change had landed. It is now OFF, and
+ *  the footer says why. This is a real reachable state: settings opened for a view with no host note
+ *  yet resolved.
+ *
+ *  The play makes a REAL edit (a row limit) and then asserts the three things a screenshot cannot
+ *  show: SAVE is disabled, the footer states the reason, and clicking it writes nothing and never
+ *  fires `onSaved`. Without the fix the button is enabled and `onSaved` fires. */
 export const NoBasePath: Story = {
-    render: () => (
-        <BaseSettings
-            type="table"
-            config={sampleBaseConfig({
-                view: { type: 'table' },
-            })}
-            rows={SAMPLE_ROWS}
-            onClose={noop}
-            onSaved={noop}
-        />
-    ),
+    render: () => {
+        const spy = spiedTransport()
+        setTransport(spy.transport)
+        const g = globalThis as {
+            __noPathCalls?: unknown
+            __noPathSaved?: number
+        }
+        g.__noPathCalls = spy.calls
+        g.__noPathSaved = 0
+        return (
+            <BaseSettings
+                type="table"
+                config={sampleBaseConfig({
+                    view: { type: 'table' },
+                })}
+                rows={SAMPLE_ROWS}
+                onClose={noop}
+                onSaved={() => {
+                    g.__noPathSaved = (g.__noPathSaved ?? 0) + 1
+                }}
+            />
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        const limit = (await body.findByPlaceholderText(
+            'no limit',
+        )) as HTMLInputElement
+        await userEvent.type(limit, '5')
+        const save = body.getByText('save').closest('button') as HTMLButtonElement
+        await expect(save.disabled).toBe(true)
+        await expect(body.getByTestId('settings-save-note')).toHaveTextContent(
+            /no base file to save to/,
+        )
+        await userEvent.click(save)
+        await new Promise(r => setTimeout(r, 50))
+        const g = globalThis as {
+            __noPathCalls?: { path: string; body: unknown }[]
+            __noPathSaved?: number
+        }
+        // nothing was written, and nothing claimed it had been
+        await expect(
+            g.__noPathCalls!.filter(c => c.path === '/set-property'),
+        ).toHaveLength(0)
+        await expect(g.__noPathSaved).toBe(0)
+    },
 }
 
 /** No rows: `allCols()` falls back to the config's own declared properties, so the column
@@ -223,7 +282,7 @@ export const TypeIntoPropertyName: Story = {
     ),
     play: async () => {
         const canvas = within(document.body)
-        const doneRow = await canvas.findByRole('button', { name: /^done/i })
+        const doneRow = await propertyHead(canvas, /^done/i)
         await userEvent.click(doneRow)
         const nameInput = (await canvas.findByPlaceholderText(
             'property name',
@@ -255,7 +314,7 @@ export const TypeOptions: Story = {
     ),
     play: async () => {
         const canvas = within(document.body)
-        const tagsRow = await canvas.findByRole('button', { name: /^tags/i })
+        const tagsRow = await propertyHead(canvas, /^tags/i)
         await userEvent.click(tagsRow)
         const optionsField = (await canvas.findByPlaceholderText(
             /options —/,
@@ -288,9 +347,7 @@ export const DuplicatePropertyName: Story = {
     ),
     play: async () => {
         const canvas = within(document.body)
-        const priorityRow = await canvas.findByRole('button', {
-            name: /^priority/i,
-        })
+        const priorityRow = await propertyHead(canvas, /^priority/i)
         await userEvent.click(priorityRow)
         const nameInput = (await canvas.findByPlaceholderText(
             'property name',
@@ -326,9 +383,7 @@ export const ExpandPropertyRow: Story = {
     ),
     play: async () => {
         const canvas = within(document.body)
-        const statusRow = await canvas.findByRole('button', {
-            name: /^status/i,
-        })
+        const statusRow = await propertyHead(canvas, /^status/i)
         await userEvent.click(statusRow)
         const deleteButton = canvas.getByLabelText('Remove property')
         deleteButton.scrollIntoView()
@@ -527,5 +582,85 @@ export const SaveWritesTopLevelKey: Story = {
             g.__baseSettingsCalls!.filter(c => c.path === '/set-property'),
         ).toHaveLength(1)
         await expect(g.__baseSettingsSaved).toBe(1)
+    },
+}
+
+/** A transport whose writes never settle (`hang`) or always fail (`fail`), over the fake server. */
+function stuckTransport(mode: 'hang' | 'fail'): Transport {
+    const base = fakeTransport({ files: { [FULL_PATH]: FULL_BASE } })
+    const write: Transport['post'] = () =>
+        mode === 'hang'
+            ? new Promise<Response>(() => {})
+            : Promise.reject(new Error('disk is full'))
+    return { ...base, post: write, put: write }
+}
+
+/** SAVE fails on a LONG base. The failure used to be the last child of the scrolling body while
+ *  SAVE sat in the pinned footer, so on a base like this one the user clicked save, nothing visibly
+ *  happened, and the reason was scrolled out of sight. It is now in the footer beside SAVE.
+ *
+ *  Asserted by structure AND geometry: the alert is a `role="alert"` in the very row that holds
+ *  the SAVE button, and it is on screen without scrolling anything. Without the fix the alert is a
+ *  descendant of the body, not of the footer. */
+export const SaveFailure: Story = {
+    render: () => {
+        setTransport(stuckTransport('fail'))
+        return (
+            <BaseSettings
+                type="table"
+                config={fullConfig()}
+                basePath={FULL_PATH}
+                rows={SAMPLE_ROWS}
+                onClose={noop}
+                onSaved={noop}
+            />
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        const limit = (await body.findByPlaceholderText(
+            'no limit',
+        )) as HTMLInputElement
+        await userEvent.type(limit, '5')
+        const save = body.getByText('save').closest('button') as HTMLButtonElement
+        await userEvent.click(save)
+        const alert = await body.findByRole('alert')
+        await expect(alert).toHaveTextContent(/couldn't save \/\/ disk is full/)
+        await expect(save.parentElement!.contains(alert)).toBe(true)
+        const r = alert.getBoundingClientRect()
+        await expect(r.top).toBeGreaterThanOrEqual(0)
+        await expect(r.bottom).toBeLessThanOrEqual(window.innerHeight)
+        // the failure leaves SAVE usable again, so the user can retry
+        await expect(save.disabled).toBe(false)
+    },
+}
+
+/** SAVE in flight: the write has not settled yet. SAVE is off (a second click would double-write)
+ *  and the footer says "saving…" rather than leaving the user to wonder whether the click landed. */
+export const Saving: Story = {
+    render: () => {
+        setTransport(stuckTransport('hang'))
+        return (
+            <BaseSettings
+                type="table"
+                config={fullConfig()}
+                basePath={FULL_PATH}
+                rows={SAMPLE_ROWS}
+                onClose={noop}
+                onSaved={noop}
+            />
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        const limit = (await body.findByPlaceholderText(
+            'no limit',
+        )) as HTMLInputElement
+        await userEvent.type(limit, '5')
+        const save = body.getByText('save').closest('button') as HTMLButtonElement
+        await expect(save.disabled).toBe(false)
+        await userEvent.click(save)
+        await expect(await body.findByText('saving…')).toBeInTheDocument()
+        await expect(save.disabled).toBe(true)
     },
 }

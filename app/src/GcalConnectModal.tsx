@@ -24,7 +24,7 @@ import Text from './ui/Text'
 import TextInput from './ui/TextInput'
 import { TextButton } from './ui/TextButton'
 import { api, summarizeSync } from './api'
-import { pushToast } from './Toast'
+import { pushToast } from './ui/ToastHost'
 import { openExternalUrl } from './appWindow'
 import type { GcalStatus } from '../../core/src/gcal'
 

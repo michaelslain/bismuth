@@ -1,6 +1,7 @@
 /* app/src/daemon/DaemonLog.module.css — DaemonLog.tsx is the ONLY importer.
    One mono row per event: `time  who  what  duration`, tone colours per activityLine.ts's
-   ActivityTone (fail→--danger, live→--accent, quiet→--faint, ok→--text-muted). Deliberately
+   ActivityTone (fail→--danger, live→--accent, quiet+ok→--text-muted — the row spells the word "skipped" out, so colour is
+   never the only cue, and --faint never carries content a user must read (DESIGN.md)). Deliberately
    plain rows, not chips — a scrolling console read, not a table. The scroll + 16px bottom fade
    that used to live on the deleted DaemonPanel is now DaemonSection's own `fill` variant
    (DaemonSection.module.css) — this file owns only the row's own look, and `.log-duration`'s
@@ -16,11 +17,8 @@
     white-space: nowrap;
     color: var(--text-muted);
 }
-.log-row:hover {
-    background: var(--hover-bg);
-}
 .log-time {
-    color: var(--faint);
+    color: var(--text-muted);
     flex-shrink: 0;
     width: 4.5em;
 }
@@ -43,7 +41,7 @@
     text-align: right;
 }
 /* Tone colours only .log-what + .log-duration — .log-time and .log-who keep their own
-   faint/fg colours regardless of outcome; the timestamp and the actor never change with the
+   muted/fg colours regardless of outcome; the timestamp and the actor never change with the
    event's tone, only the event text itself does. */
 .log-row.tone-fail .log-what,
 .log-row.tone-fail .log-duration {
@@ -52,10 +50,6 @@
 .log-row.tone-live .log-what,
 .log-row.tone-live .log-duration {
     color: var(--accent);
-}
-.log-row.tone-quiet .log-what,
-.log-row.tone-quiet .log-duration {
-    color: var(--faint);
 }
 .log-row.tone-ok .log-what,
 .log-row.tone-ok .log-duration {
@@ -68,5 +62,5 @@
 }
 /* Opened log: cap the list so time, who, what and duration stay together. */
 .log-full {
-    max-width: 100ch;
+    max-width: var(--daemon-list-max);
 }

@@ -1,0 +1,16 @@
+/* Disclosure.module.css — Disclosure.tsx is the ONLY importer. The body indent is a component-scoped
+   custom property, not a literal: the chevron's width (`--icon`) plus the gap after it, so the body
+   hangs exactly under the summary text at any icon size. A caller that needs a different hang
+   overrides `--disclosure-indent` through `class`. */
+.disclosure { --disclosure-indent: calc(var(--icon) + var(--sp-3)); }
+.head {
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-width: 0;
+    min-height: calc(var(--row-h) + 2 * var(--sp-1)); text-align: left;
+    font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--text-muted);
+    transition: color var(--dur-fast) var(--ease);
+}
+.head:hover { color: var(--fg); }
+.chevron { flex: 0 0 auto; color: var(--faint); transition: transform var(--dur-fast) var(--ease); }
+.chevron.open { transform: rotate(90deg); }
+.summary { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); }
+.body { padding: var(--sp-1) 0 var(--sp-3) var(--disclosure-indent); }

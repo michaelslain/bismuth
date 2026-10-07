@@ -1,24 +1,22 @@
+/* The in-place editor for a value shown elsewhere (a table cell, a kanban chip). Its text must start
+   at the SAME x as the value it replaces: `.ui-input` has no inline padding, so any horizontal margin
+   here moves the value the instant it is clicked. (A `-5px` margin did exactly that: a TableCell value
+   measured 372 at rest and 367 in edit.) Only the VERTICAL margin is negative — the control is
+   `--h-control` tall and a line of text is not, so it overflows its slot evenly instead of growing the
+   row. `--kb-meta-margin` stays a host override (CardEditModal zeroes it). */
 .kbMetaInput {
-  /* max-width must clear a `datetime-local` value ("MM/DD/YYYY, HH:MM AM") plus its native
-     calendar-picker icon at this font-size — 180px let the icon overlap the AM/PM suffix.
-     Parameterized (not a bare 200px) so a full-width host — CardEditModal's one-field-per-row
-     layout — can widen it via `--kb-meta-max-width` without reaching this hashed class; the
-     card-face inline chip editor (KanbanCard) sets nothing and keeps this 200px default. */
-  max-width: var(--kb-meta-max-width, 200px); box-sizing: border-box;
-  margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1)));
-  /* Chrome (transparent, `--rule-soft` underline, accent underline + inset shadow on focus) now
-     comes from the shared `.ui-input` FormControl composes — this component no longer passes
-     `plain` (PropertyValueEditor.tsx), so it stopped hand-rolling a filled well here. Only sizing
-     stays local: card-face default is the shared `--h-control` unless a host — CardEditModal's
-     one-field-per-row layout — sets `--kb-meta-height` on an ancestor, the same CSS-custom-
-     property override `--kb-meta-max-width`/`--kb-meta-margin` above already use rather than a
-     `:global()` reach into this hashed class. */
+  /* No cap: a 200px max-width inside a 256px cell left the editor narrower than the value it
+     replaced. `--kb-meta-max-width` stays as a host bridge for a host that wants one. */
+  max-width: var(--kb-meta-max-width, none); box-sizing: border-box;
+  margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) 0);
+  /* Chrome (transparent, `--rule-soft` underline, firmed on focus) comes from the shared `.ui-input`
+     FormControl composes, including the number-spinner reset — only sizing stays local. */
   height: var(--kb-meta-height, var(--h-control));
 }
 /* DateFieldEditor's trigger, sized like `.kbMetaInput` so a date sits on the same baseline and
    edges as the text/number inputs beside it, and reading the same --kb-meta-* bridge. */
 .kbMetaDate {
-  max-width: var(--kb-meta-max-width, 200px); box-sizing: border-box;
-  margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) calc(-2.5 * var(--sp-1)));
+  max-width: var(--kb-meta-max-width, none); box-sizing: border-box;
+  margin: var(--kb-meta-margin, calc(-1.5 * var(--sp-1)) 0);
   height: var(--kb-meta-height, var(--h-control)); min-height: 0;
 }

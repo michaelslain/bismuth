@@ -526,8 +526,6 @@ export const PdfMarginInk: Story = {
                                 width: `${MARGIN_W}px`,
                                 height: `${p().rendered.h}px`,
                                 'box-sizing': 'border-box',
-                                'box-shadow': 'var(--lift)',
-                                'clip-path': 'inset(0 -8px -8px 0)',
                             }}
                         />
                     )}

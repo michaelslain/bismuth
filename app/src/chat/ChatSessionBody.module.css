@@ -15,12 +15,12 @@
   min-height: 0;
 }
 
-/* The pane variant's composer bar inset: the transcript's 40px side gutter, a small lead above and
-   a slightly larger breath below. No hairline — the outlined box is the only edge. A wrapper, not a
+/* The pane variant's composer bar inset: the transcript's side gutter (`--note-gutter`, the same token `.chat-list` pads with, so the outlined box lines up with the turn text), a small lead above and
+   a slightly larger breath below (`--sp-6`). No hairline — the outlined box is the only edge. A wrapper, not a
    class on the bar itself, so the bar's slash popover still anchors to the bar's own edge. */
 .paneComposer {
   flex: 0 0 auto;
-  padding: var(--sp-3) 40px 18px;
+  padding: var(--sp-3) var(--note-gutter) var(--sp-6);
 }
 
 /* The column variant's composer wrapper: mirrors ChatComposerBar's own `.bar { flex: 0 0 auto }` so

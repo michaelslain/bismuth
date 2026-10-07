@@ -7,7 +7,7 @@ import { PaletteModal, type PaletteItem } from './PaletteModal'
 import { api } from '../api'
 import { expandTemplate } from '../../../core/src/templates'
 import { insertIntoFocusedEditor } from '../editorRegistry'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 
 type Props = { onClose: () => void; title: string }
 

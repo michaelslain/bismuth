@@ -1,0 +1,30 @@
+/* app/src/ui/MarkdownField.module.css — MarkdownField.tsx is the ONLY importer. The host box for
+   the CodeMirror live-preview markdown field. It used to be chromeless: every caller (EventModal's
+   `.mdedit`, the stories' hand-built rounded box) supplied its own underline, border or padding.
+
+   The host is `<FormControl as="div">` (ui/FormControl.tsx), so the box is the same field idiom as
+   every other value control: transparent, an underline `--rule-soft` at rest that firms to `--rule`
+   on hover/focus (FormControl's :focus-within covers the inner editor), no fill, no accent, no ring.
+   `.field[data-control]` is (0,2,0), so the multi-line overrides below (FormControl's single-line
+   `height: var(--h-control)`) win over `.ui-input` whichever stylesheet loads first.
+
+   TYPE FACE — PROSE, set in MarkdownField.tsx's own CodeMirror theme (`--prose-font` at
+   `--prose-font-size`), and MilkdownField now matches it. A `bare` field (ScratchBlock: text pinned
+   on paper) skips FormControl and this class entirely. */
+
+.field[data-control='div'] {
+  height: auto;
+  box-sizing: border-box;
+  padding: 0;
+  cursor: text;
+}
+.field[data-control='div']:hover { border-bottom: var(--rule); }
+
+/* CodeMirror creates its own DOM — a third-party plain-DOM library, reached with :global(). The
+   content carries the vertical padding and the resting height (three control rows), so a click
+   anywhere in the empty part of the box lands in the editor. */
+.field :global(.cm-content) {
+  padding: var(--sp-2) 0;
+  min-height: calc(var(--h-control) * 3);
+  box-sizing: border-box;
+}

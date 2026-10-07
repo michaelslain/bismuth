@@ -1,21 +1,19 @@
-/* PropertyRowEditor.module.css — one declared-property row: a collapsed name/type/visibility line
-   that expands into its full editor. Rules are `.row .x` (two classes) so they beat the primitives'
-   own single-class rules regardless of stylesheet order. No focus ring — every button in the app
-   paints no focus indicator, mouse or keyboard, by user decision (2026-09-27). */
+/* PropertyRowEditor.module.css — one declared-property row: ui/Disclosure's head (chevron / name / faint
+   type) with the visibility eye as its TRAILING control, beside the toggle button rather than inside
+   it. The head's measurements, the chevron turn and the height animation are the Disclosure's; this
+   file only places the name + type in the summary and styles the expanded editor. Rules are
+   `.row .x` (two classes) so they beat the primitives' own single-class rules regardless of
+   stylesheet order. No focus ring — every button in the app paints no focus indicator, mouse or
+   keyboard, by user decision (2026-09-27). */
 
-/* collapsed line: chevron / name / faint type / eye toggle — the app's list row (DESIGN.md, Overlays:
-   lists in a modal; daemon/DaemonRow): 22px, --sp-3 gaps, no inline padding, no fill at rest, on
-   hover or when open (a clickable row never paints a background, user decision 2026-09-23). Open is
-   told by the chevron turning and taking the accent. */
-.row .head { width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: var(--sp-3); min-height: calc(var(--row-h) + 2 * var(--sp-1)); padding: 0; cursor: pointer; }
-.row .chev { flex: 0 0 auto; color: var(--faint); transition: transform calc(.16s * var(--motion-scale)), color calc(.16s * var(--motion-scale)); }
-.row .head:hover .chev { color: var(--fg); }
-.row.open .chev { transform: rotate(90deg); color: var(--accent); }
+/* The Disclosure hangs its body under the summary text by default; this body hangs off its own tree
+   line instead (below), so the default indent is zeroed through the Disclosure's documented
+   `--disclosure-indent` override. Doubled (`.row.row`) so it outranks Disclosure's own
+   `.disclosure { --disclosure-indent }` (0,1,0) on the same element regardless of stylesheet order. */
+.row.row { --disclosure-indent: 0px; }
 .row .nameTxt { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row .nameTxt.empty { color: var(--faint); font-style: italic; }
-.row .kind { flex: 0 0 auto; font-family: var(--ui-font-stack); font-size: var(--fs-ui); text-transform: lowercase; color: var(--faint); }
-/* Placement only — an IconButton draws its own `[icon]` brackets, size and colour. */
-.row .eye { flex: 0 0 auto; }
+.row .nameTxt.empty { color: var(--text-muted); font-style: italic; }
+.row .kind { flex: 0 0 auto; font-family: var(--ui-font-stack); font-size: var(--fs-ui); text-transform: lowercase; color: var(--text-muted); }
 
 /* expanded editor: no box — it hangs off a `--rule-soft` tree line dropped from the chevron's centre,
    indented so its fields start under the name, the way a nested block reads in a terminal tree. */

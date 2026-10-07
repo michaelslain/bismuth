@@ -4,6 +4,13 @@
 // dismissed on Escape or an outside pointerdown. Owns only positioning + the backdrop/panel
 // stacking pair (1090/1100) — the CONTENT (a list, a date picker) is the caller's, passed as
 // children, so this stays a pure anchoring primitive rather than another popover surface.
+//
+// FIRST FRAME: the panel is measured the moment it MOUNTS (a ref callback + a microtask — the
+// element is attached to the portal by then, and the microtask runs before the browser paints),
+// so the first painted frame is already beside the anchor. It used to start at 0,0 and rely on an
+// open effect that ran BEFORE the panel existed, so `reposition()` bailed out and the panel
+// painted in the page's top-left corner, far from its anchor. (Not hidden while unmeasured: a
+// `visibility: hidden` panel cannot take focus, and a child may focus itself on mount.)
 import {
     children as resolveChildren,
     createEffect,
@@ -49,12 +56,13 @@ export type AnchoredPopoverProps = {
 }
 
 const AnchoredPopover: Component<AnchoredPopoverProps> = props => {
-    const [pos, setPos] = createSignal<{ top: number; left: number }>({ top: 0, left: 0 })
+    // `undefined` until the mounted panel has been measured (the next microtask after mount).
+    const [pos, setPos] = createSignal<{ top: number; left: number } | undefined>()
     let panelEl: HTMLDivElement | undefined
 
     function reposition(): void {
         const anchorEl = props.anchor()
-        if (!anchorEl || !panelEl) return
+        if (!props.open || !anchorEl || !panelEl?.isConnected) return
         const panelRect = panelEl.getBoundingClientRect()
         const { top, left } = computeAnchorRect(
             anchorEl.getBoundingClientRect(),
@@ -75,7 +83,16 @@ const AnchoredPopover: Component<AnchoredPopoverProps> = props => {
     createEffect(() => {
         resolved() // track: re-measure when the content changes
         if (props.open) reposition()
+        else setPos(undefined) // a reopen must not flash the previous open's position
     })
+
+    // The panel does not exist when the effect above first runs on open, so the effect cannot
+    // place it. Measure once the element is actually mounted: the microtask runs after the
+    // portal has attached it and before the next paint (a timeout would race under load).
+    function onPanelMount(el: HTMLDivElement): void {
+        panelEl = el
+        queueMicrotask(reposition)
+    }
 
     function onWindowPointerDown(e: PointerEvent): void {
         if (!props.open) return
@@ -121,9 +138,12 @@ const AnchoredPopover: Component<AnchoredPopoverProps> = props => {
                     {...(props.backdropAttrs ?? {})}
                 />
                 <div
-                    ref={panelEl}
+                    ref={onPanelMount}
                     class={`${styles.panel}${props.class ? ` ${props.class}` : ''}`}
-                    style={{ top: `${pos().top}px`, left: `${pos().left}px` }}
+                    style={{
+                        top: `${pos()?.top ?? 0}px`,
+                        left: `${pos()?.left ?? 0}px`,
+                    }}
                     {...(props.panelAttrs ?? {})}
                 >
                     {resolved()}

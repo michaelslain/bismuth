@@ -84,8 +84,6 @@
 .chat-bubble h5 {
     font-size: var(--fs-h5);
     font-weight: var(--fw-h5);
-    text-transform: uppercase;
-    letter-spacing: var(--ls-label);
 }
 .chat-bubble h6 {
     font-size: var(--fs-h6);
@@ -128,6 +126,16 @@
        disables wrapping outright, so this is a no-op there and only affects inline code. */
     overflow-wrap: normal;
     word-break: keep-all;
+    /* `keep-all` only stops breaks INSIDE a CJK run — a Latin `--since` still split at its hyphen
+       (`-` / `-since`) in the 360px transcript. A code span is a token: it never wraps. */
+    white-space: nowrap;
+    /* ...but `nowrap` alone lets a long span (a path, a quoted 90-char command) push past the
+       column and grow the transcript a horizontal scrollbar. Cap the span at the column and let
+       IT scroll; a short span is unaffected (it is narrower than the cap). */
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    vertical-align: bottom;
 }
 .chat-bubble pre {
     margin: 0.55em 0;
@@ -141,30 +149,41 @@
     background: none;
     padding: 0;
     line-height: 1.5;
+    /* a fence keeps its own line structure — the inline-code `nowrap` above must not reach it */
+    white-space: pre;
+    /* ...and the inline-code cap above is for inline spans only: the `pre` already scrolls */
+    display: inline;
+    max-width: none;
+    overflow: visible;
 }
 .chat-bubble blockquote {
     margin: 0.4em 0;
     padding-left: var(--sp-4);
     border-left: 2px solid var(--border);
-    opacity: 0.85;
+    color: var(--text-muted);
 }
 .chat-bubble hr {
     border: none;
-    border-top: 1px solid var(--border-soft);
+    border-top: var(--rule-soft);
     margin: 0.8em 0;
 }
+/* TABLES ARE A TYPED GRID, not drawn (DESIGN.md's Typed Grid Rule): no `border` anywhere. Each cell
+   is the host of its own `+ - | =` edges (ui/ascii/AsciiCellEdges, mounted onto the cells by
+   typeBubbleTables.ts once the markdown string has landed), so it is `position: relative` and does
+   not clip. The glyphs overhang the cell by half a corner tile on every side, so the table gets that
+   much margin; content is inset about 1ch from a `|` and evenly above and below. */
 .chat-bubble table {
-    border-collapse: collapse;
-    margin: 0.55em 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: calc(0.55em + var(--ascii-tile-h, 1.5em) / 2) calc(var(--ascii-corner-w, 1ch) / 2);
 }
 .chat-bubble th,
 .chat-bubble td {
-    border: 1px solid var(--chat-border-soft, var(--border-soft));
-    padding: 0.32em 0.6em;
+    position: relative;
+    padding: var(--sp-3) var(--ascii-tile-w, 1ch);
     text-align: left;
 }
 .chat-bubble th {
-    background: var(--chat-surface-1, var(--surface-1));
     font-weight: var(--fw-bold);
 }
 .chat-bubble :global(.bismuth-tag) {
@@ -187,8 +206,16 @@
     font-size: var(--code-font-size);
 }
 
-/* ── Slash-command output (#28): the body inside ChatCommandOutputFrame's box. ── */
+/* A staged (queued) turn: ink, not a fade — no state is shown by opacity. */
+.muted {
+    color: var(--text-muted);
+}
+
+/* ── Slash-command output (#28): the body inside ChatCommandOutputFrame's box. It is mechanism, not
+   prose — a `/context` readout — so it returns to the mono face at --code-font-size, set here once. ── */
 .chat-command-output-body {
+    font-family: var(--ui-font-stack);
+    font-size: var(--code-font-size);
     padding: var(--sp-5) var(--sp-5);
     max-height: 460px;
     overflow: auto;

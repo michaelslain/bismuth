@@ -72,7 +72,10 @@
   white-space: nowrap; position: relative;
   transition: background calc(0.12s * var(--motion-scale)) var(--ease-std), color calc(0.12s * var(--motion-scale)) var(--ease-std);
 }
-.tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
+/* A clickable row never paints a background on HOVER (ui/ListRow, a standing decision) — hover is an
+   ink shift only. The one fill a row paints is PRESSED, on --state-active-bg. */
+.tab-rail-row:hover { color: var(--fg); }
+.tab-rail-row:active { background: var(--state-active-bg); }
 /* LEFT RAIL: the 1px border is on the rail's right, so the icon column needs one more pixel on its
    left to stay at the same x as on the right rail. Read off the rail root's own `data-rail-side`. The label
    margin, the close-X anchor (`right: 10px`, the row's own padding) and the active brackets are all
@@ -162,8 +165,10 @@
    `variant="selected"` instead of a hardcoded `--accent` here, so its accent tone comes from the
    button's own state prop rather than a class fighting it. */
 /* ANCESTOR REACHED VIA `[data-tab-rail]`/`[data-rail-pinned]` — see this file's header. */
+/* A pinned row keeps its pin visible, at FULL strength: it used to sit at 0.85, which is a state shown
+   by opacity (and a pin that is the row's only mark of being pinned should not be dimmer than the X). */
 [data-tab-rail]:not([data-hover-off]):hover .tab-rail-row.pinned .tab-pin,
-[data-tab-rail][data-rail-pinned] .tab-rail-row.pinned .tab-pin { opacity: 0.85; }
+[data-tab-rail][data-rail-pinned] .tab-rail-row.pinned .tab-pin,
 [data-tab-rail]:not([data-hover-off]):hover .tab-rail-row:hover .tab-x,
 [data-tab-rail]:not([data-hover-off]):hover .tab-rail-row:hover .tab-pin,
 [data-tab-rail][data-rail-pinned] .tab-rail-row:hover .tab-x,

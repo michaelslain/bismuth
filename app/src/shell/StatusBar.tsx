@@ -1,7 +1,9 @@
 import { Index, Match, Show, Switch, type JSX } from 'solid-js'
 import type { StatusSegment as StatusSegmentData } from '../../../core/src/statusBarEval'
 import { normalizeStatusBar } from '../../../core/src/statusBarItems'
+import Band from '../ui/Band'
 import Label from '../ui/Label'
+import PlainButton from '../ui/PlainButton'
 import Text from '../ui/Text'
 import Caret from '../ui/Caret'
 import { InboxIndicator } from './InboxIndicator'
@@ -78,22 +80,26 @@ export function StatusBar(props: {
 }) {
     const location = () => (
         <>
-        {/* No layout class of its own, deliberately: this is the one item in the row that can
-            shrink to zero (Label pairs `min-width: 0` with `overflow: hidden`), so it absorbs
-            every shortfall and yields entirely on a narrow bar. That is the intended
-            degradation — the alternative is clipping a live status value mid-character off the
-            right edge. Reasoned through with measurements in StatusBar.module.css.
-            Click-to-copy (issue #10) + `title` tooltip live directly on this Label, which is
-            why `.status-location` in StatusBar.module.css only adds `cursor: pointer` + the
-            hover colour shift — Label already owns the shrink/ellipsis behavior above. */}
-        <Label
-            tone="muted"
-            class={styles['status-location']}
-            title={props.location || undefined}
-            onClick={props.onCopyLocation}
-        >
-            {props.location}
-        </Label>
+        {/* A REAL BUTTON, not a Label with an onClick: the copy-to-clipboard has to be reachable and
+            operable from the keyboard, like the inbox readout beside it (PlainButton too). The
+            button owns the colour and the hover shift; the Label inside has no tone so it inherits
+            them, and still owns the shrink/ellipsis behaviour.
+            No layout class beyond what `.status-location` needs to let that Label shrink,
+            deliberately: this is the one item in the row that can shrink to zero (the button and its
+            Label both pair `min-width: 0` with `overflow: hidden`), so it absorbs every shortfall and
+            yields entirely on a narrow bar. That is the intended degradation — the alternative is
+            clipping a live status value mid-character off the right edge. Reasoned through with
+            measurements in StatusBar.module.css. Rendered only when there is a location, so an
+            empty one never leaves a nameless focus stop. `title` carries the full text. */}
+        <Show when={props.location}>
+            <PlainButton
+                class={styles['status-location']}
+                title={props.location}
+                onClick={props.onCopyLocation}
+            >
+                <Label>{props.location}</Label>
+            </PlainButton>
+        </Show>
         </>
     )
     const connection = () => (
@@ -148,7 +154,7 @@ export function StatusBar(props: {
             so colouring it spends the eye's attention on the one part of the string that
             carries no information, and at three different hues it made the bar look like it
             had three different KINDS of thing in it rather than one thing in three states.
-            Keeping the label --faint and tinting only the value also matches how the rest of
+            Keeping the label --text-muted and tinting only the value also matches how the rest of
             this bar already reads: `vault // path` is neutral chrome around a changing value.
 
             Tone is three explicit classList entries rather than
@@ -195,8 +201,11 @@ export function StatusBar(props: {
             </Match>
         </Switch>
     )
+    // A COMPACT BAND (ui/Band): one --row-h line with the band's own --sp-5 side padding and a
+    // --rule-soft hairline on its TOP edge, so its text starts on the same x as the top strip and
+    // the toolbars above it. It used to hand-write a 16px inset, a second left axis in the column.
     return (
-        <div class={styles['status-bar']}>
+        <Band compact rule="top" class={styles['status-bar']}>
             <Index each={segments().filter(s => s.align === 'left')}>
                 {renderSegment}
             </Index>
@@ -204,6 +213,6 @@ export function StatusBar(props: {
             <Index each={segments().filter(s => s.align === 'right')}>
                 {renderSegment}
             </Index>
-        </div>
+        </Band>
     )
 }

@@ -6,7 +6,7 @@ import type { BaseConfig, ViewConfig } from '../../../core/src/bases/types'
 import { newTaskVisible } from './taskScope'
 import { openRowEditor } from './openRowEditor'
 import { createRow } from './rowWrites'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import IconButton from '../ui/IconButton'
 
 export type AddRowActionProps = {

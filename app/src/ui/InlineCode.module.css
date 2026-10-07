@@ -1,13 +1,16 @@
 /* app/src/ui/InlineCode.module.css — the inline-code primitive (see InlineCode.tsx). A short
    code run sitting inside prose (a hint, an error message quoting a property path) — mono chrome
-   font, sized relative to the surrounding text, on a quiet surface one step off its container's
-   background (Callout.module.css's .callout sits on --surface-1; this uses --surface-2 so the
-   two are visibly distinct rather than one bleeding into the other). */
+   font, sized relative to the surrounding text, as a chip that has to read against the surface it
+   sits on. Callout.module.css's .callout sits on --surface-1 and --surface-2 was one 7-unit step
+   off it — a chip nobody could see, against "visibly distinct". So the fill steps to --surface-3
+   and the ink is --fg (a callout's own text is quieter), which is what makes the run read as code.
+   No token VALUE changed; only which existing tokens this chip picks. */
 
 .inline-code {
     font-family: var(--ui-font-stack);
     font-size: inherit;
-    background: var(--surface-2);
+    color: var(--fg);
+    background: var(--surface-3);
     padding: 0 var(--sp-2);
     border-radius: var(--r-0);
 }

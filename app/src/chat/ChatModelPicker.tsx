@@ -18,10 +18,10 @@ import type { ChatModelOption } from './chatSession'
 import FormModal from '../ui/FormModal'
 import ModalBody from '../ui/ModalBody'
 import ModalHeader from '../ui/ModalHeader'
-import PlainButton from '../ui/PlainButton'
+import PickRow from '../ui/PickRow'
 import SegmentedToggle from '../ui/SegmentedToggle'
 import SectionLabel from '../ui/SectionLabel'
-import Text from '../ui/Text'
+import EmptyState from '../ui/EmptyState'
 import OpencodeProviderManager from './OpencodeProviderManager'
 import ChatPresetList from './ChatPresetList'
 import { CHAT_PROVIDER_OPTIONS, modelPriceBadge } from './chatProvider'
@@ -133,18 +133,13 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
                             const current = () =>
                                 o.value === props.session.provider()
                             return (
-                                <PlainButton
-                                    class={`${styles.connector} ${current() ? styles['connector--current'] : ''}`}
-                                    aria-current={current() || undefined}
-                                    onClick={() =>
+                                <PickRow
+                                    marked={current()}
+                                    label={o.label.toLowerCase()}
+                                    onPick={() =>
                                         props.session.switchProvider(o.value)
                                     }
-                                >
-                                    <Text as="span" inherit class={styles.mark}>
-                                        {current() ? '▸' : ''}
-                                    </Text>
-                                    {o.label.toLowerCase()}
-                                </PlainButton>
+                                />
                             )
                         }}
                     </For>
@@ -153,9 +148,9 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
                     <Show
                         when={props.session.models().length > 0}
                         fallback={
-                            <Text as="div" inherit class={styles.empty}>
+                            <EmptyState compact class={styles.empty}>
                                 no models reported
-                            </Text>
+                            </EmptyState>
                         }
                     >
                         <For each={groups()}>
@@ -170,41 +165,16 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
                                     </Show>
                                     <For each={g.models}>
                                         {m => (
-                                            <PlainButton
-                                                class={`${styles.model} ${m.value === currentModel() ? styles['model--current'] : ''}`}
-                                                aria-current={
-                                                    m.value ===
-                                                        currentModel() ||
-                                                    undefined
+                                            <PickRow
+                                                marked={
+                                                    m.value === currentModel()
                                                 }
-                                                onClick={() => pickModel(m)}
-                                            >
-                                                <Text
-                                                    as="span"
-                                                    inherit
-                                                    class={styles.mark}
-                                                >
-                                                    {m.value === currentModel()
-                                                        ? '▸'
-                                                        : ''}
-                                                </Text>
-                                                <Text
-                                                    as="span"
-                                                    inherit
-                                                    class={styles.label}
-                                                >
-                                                    {m.shortLabel}
-                                                </Text>
-                                                <Text
-                                                    as="span"
-                                                    inherit
-                                                    class={styles.badge}
-                                                >
-                                                    {modelPriceBadge(
-                                                        m.free,
-                                                    )?.toLowerCase()}
-                                                </Text>
-                                            </PlainButton>
+                                                label={m.shortLabel}
+                                                detail={modelPriceBadge(
+                                                    m.free,
+                                                )?.toLowerCase()}
+                                                onPick={() => pickModel(m)}
+                                            />
                                         )}
                                     </For>
                                 </div>

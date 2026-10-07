@@ -7,8 +7,10 @@
 // Props: as ('span' default | 'div'), fill (flex: 1, for a primary value in a flex row), tone
 // ('default' | 'muted' | 'faint' — omit to inherit ambient color), lines (1 default | 2, a
 // -webkit-line-clamp variant), inline (display: inline-block, for a non-flex ancestor like a
-// table <th>), class, children.
+// table <th>), register ('ui' default | 'prose' — the serif, for text a person wrote), class,
+// children.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import Label from './Label'
 import { Row } from './_storyKit'
 
@@ -25,6 +27,7 @@ const meta = {
         },
         lines: { control: 'inline-radio', options: [1, 2] },
         inline: { control: 'boolean' },
+        register: { control: 'inline-radio', options: ['ui', 'prose'] },
         children: { control: 'text' },
     },
     args: {
@@ -33,6 +36,7 @@ const meta = {
         tone: 'default',
         lines: 1,
         inline: false,
+        register: 'ui',
         children: 'A label that truncates when its row runs out of room',
     },
 } satisfies Meta<typeof Label>
@@ -115,6 +119,25 @@ export const Tones: Story = {
     ),
 }
 
+/** `register` — 'prose' swaps ONLY the type family (--prose-font) for text a person wrote, so a
+ *  caller no longer needs a local class just to change it. It still truncates the same way. */
+export const Registers: Story = {
+    render: () => (
+        <Row label="register" column>
+            <FlexRow>
+                <Label fill register="ui">
+                    ui — the interface font, {LONG}
+                </Label>
+            </FlexRow>
+            <FlexRow>
+                <Label fill register="prose">
+                    prose — the serif, {LONG}
+                </Label>
+            </FlexRow>
+        </Row>
+    ),
+}
+
 /** `lines={2}` clamps to two lines instead of ellipsizing on one (bases/CardsView's cover
  *  title) — normal wrapping up to the second line, then an ellipsis. */
 export const TwoLineClamp: Story = {
@@ -156,28 +179,54 @@ export const InlineNonFlex: Story = {
             </thead>
         </table>
     ),
+    // The label must stay inside its 140px cell and ellipsize — it used to spill out of the cell
+    // and off the page, cut mid-glyph with no ellipsis.
+    play: async ({ canvasElement }) => {
+        const th = canvasElement.querySelector('th') as HTMLElement
+        const label = th.querySelector('span') as HTMLElement
+        const cell = th.getBoundingClientRect()
+        const box = label.getBoundingClientRect()
+        expect(box.right).toBeLessThanOrEqual(cell.right + 0.5)
+        expect(cell.width).toBeLessThanOrEqual(141)
+        expect(getComputedStyle(label).textOverflow).toBe('ellipsis')
+        expect(label.scrollWidth).toBeGreaterThan(label.clientWidth)
+    },
 }
 
 /** The exact trap this component exists to avoid: a bare text child of a flex container never
  *  truncates, no matter how narrow the row, because its automatic min-width is its full content
- *  width. `<Label>` (right) truncates at the same width a raw `<span>` (left) hard-clips at. */
+ *  width. The raw `<span>` (top) is genuinely raw — no `overflow`, no `text-overflow` of its own —
+ *  so it runs out of its 160px row; `<Label>` (bottom) ellipsizes at the same width. */
 export const TruncationProof: Story = {
     render: () => (
         <Row label="raw span vs Label, same 160px row" column>
             <FlexRow width="160px">
-                <span
-                    style={{
-                        overflow: 'hidden',
-                        'text-overflow': 'ellipsis',
-                        'white-space': 'nowrap',
-                    }}
-                >
-                    {LONG}
-                </span>
+                <span data-testid="raw-span">{LONG}</span>
             </FlexRow>
             <FlexRow width="160px">
-                <Label fill>{LONG}</Label>
+                <Label fill data-testid="label">
+                    {LONG}
+                </Label>
             </FlexRow>
         </Row>
     ),
+    // The two rows must DIFFER: the raw span is wider than its row, the Label fits inside its own.
+    play: async ({ canvasElement }) => {
+        const raw = canvasElement.querySelector(
+            '[data-testid="raw-span"]',
+        ) as HTMLElement
+        const label = canvasElement.querySelector(
+            '[data-testid="label"]',
+        ) as HTMLElement
+        const rawRow = raw.parentElement as HTMLElement
+        const labelRow = label.parentElement as HTMLElement
+        expect(getComputedStyle(raw).overflow).toBe('visible')
+        expect(raw.getBoundingClientRect().right).toBeGreaterThan(
+            rawRow.getBoundingClientRect().right,
+        )
+        expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(
+            labelRow.getBoundingClientRect().right,
+        )
+        expect(label.scrollWidth).toBeGreaterThan(label.clientWidth)
+    },
 }

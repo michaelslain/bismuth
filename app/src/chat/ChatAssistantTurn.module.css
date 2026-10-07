@@ -1,5 +1,5 @@
 /* ChatAssistantTurn.module.css — ChatAssistantTurn.tsx is the ONLY importer. Moved verbatim from
-   ChatTranscript.module.css. The 680px/centred reading column itself lives in ChatTurnColumn
+   ChatTranscript.module.css. The --chat-column reading column itself lives in ChatTurnColumn
    (composed in the .tsx) — this rule only adds the turn's own flex layout on top of it. */
 .chat-msg {
     display: flex;
@@ -15,6 +15,6 @@
 }
 .chat-turn-footer {
     font-size: var(--fs-micro);
-    color: var(--faint);
+    color: var(--text-muted);
     padding: var(--sp-1) 0 0;
 }

@@ -24,7 +24,7 @@ function ScratchHint(props: ScratchHintProps) {
             style={{ left: `${props.left}px`, top: `${props.top}px` }}
             data-testid="scratch-hint"
         >
-            <Text as="span" tone="faint" class={styles.label}>
+            <Text as="span" tone="muted" class={styles.label}>
                 click anywhere to write
             </Text>
         </div>

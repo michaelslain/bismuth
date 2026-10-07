@@ -5,6 +5,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { userEvent, within } from 'storybook/test'
 import { PaletteModal, type PaletteItem } from './PaletteModal'
+import { assertListboxStructure } from '../ui/_listboxAssertions'
 
 const meta = {
     title: 'Palette/PaletteModal',
@@ -71,6 +72,8 @@ export const Default: Story = {
             onClose={noop}
         />
     ),
+    play: ({ canvasElement }) =>
+        assertListboxStructure(canvasElement.ownerDocument.body),
 }
 
 /** Every optional row affordance at once: icon, description, and a Kbd shortcut hint. */
@@ -83,6 +86,8 @@ export const RichRows: Story = {
             onClose={noop}
         />
     ),
+    play: ({ canvasElement }) =>
+        assertListboxStructure(canvasElement.ownerDocument.body),
 }
 
 /** Typed query — fuzzy-filtered rows with matched characters highlighted (`.palette-match`,
@@ -102,6 +107,7 @@ export const FilteredWithHighlight: Story = {
         const canvas = within(canvasElement.ownerDocument.body)
         const input = canvas.getByPlaceholderText('Search...')
         await userEvent.type(input, 'road')
+        assertListboxStructure(canvasElement.ownerDocument.body)
     },
 }
 
@@ -116,4 +122,7 @@ export const Empty: Story = {
             onClose={noop}
         />
     ),
+    // The empty message is not an option, so no listbox may be left around it.
+    play: ({ canvasElement }) =>
+        assertListboxStructure(canvasElement.ownerDocument.body, 0),
 }

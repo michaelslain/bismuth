@@ -9,7 +9,7 @@ import { createSignal, createMemo } from 'solid-js'
 import { api } from '../api'
 import type { DaemonPage } from '../../../core/src/daemonPages'
 import { isDue, dueSorted } from './daemonInboxLogic'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 
 const [pages, setPages] = createSignal<DaemonPage[]>([])
 

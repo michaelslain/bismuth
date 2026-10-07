@@ -225,6 +225,95 @@ export const HoverAndDrill: Story = {
     },
 }
 
+/** What the legend promises is what the grid draws. Reads every square's glyph and every legend
+ *  swatch out of the DOM and requires the two sets to agree. Regression: a lone value of 400 drew
+ *  `#` while the legend read `- 400  + 401  # 402`, so no glyph the grid used matched its band. */
+async function expectLegendMatchesGrid(canvasElement: HTMLElement, expectedLegend: string[]) {
+    const legend = await waitFor(() => {
+        const entries = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('[class*="legendEntry"]'),
+        ).map(el => (el.textContent ?? '').replace(/\s+/g, ''))
+        if (entries.length === 0) throw new Error('legend not mounted yet')
+        return entries
+    })
+    expect(legend).toEqual(expectedLegend)
+    const legendGlyphs = new Set(legend.map(e => e[0]))
+    const gridGlyphs = new Set(
+        Array.from(canvasElement.querySelectorAll<HTMLElement>('[data-bucket]')).map(
+            el => (el.textContent ?? '').trim(),
+        ),
+    )
+    for (const glyph of gridGlyphs) expect(legendGlyphs.has(glyph)).toBe(true)
+}
+
+/** One day, one value: the single non-empty square is the top tier, so the legend is `none` plus
+ *  ONE `#` entry that names the value — not three invented neighbouring bands. */
+export const LoneValueLegend: Story = {
+    render: () => {
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
+        const rows: Row[] = [entryRow(0, todayISO(), 400)]
+        return (
+            <HeatmapView
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => expectLegendMatchesGrid(canvasElement, ['.none', '#400']),
+}
+
+/** A small peak: values 1..3 fill three single-value bands, and the legend says exactly that. */
+export const SmallPeakLegend: Story = {
+    render: () => {
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
+        const today = todayISO()
+        const rows: Row[] = [1, 2, 3].map(n => entryRow(n, addDaysISO(today, -n), n))
+        return (
+            <HeatmapView
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) =>
+        expectLegendMatchesGrid(canvasElement, ['.none', '-1', '+2', '#3']),
+}
+
+/** A hovered square shows on the grid itself, not only in the readout line: its ink steps up to
+ *  `--fg` (Bar recolours its row, Line drops an `@`). Regression: it used to change nothing. */
+export const HoveredSquareShowsOnGrid: Story = {
+    render: () => {
+        const view = { type: 'heatmap' as const, x: 'date', y: 'words' }
+        const today = todayISO()
+        const rows: Row[] = [
+            entryRow(0, today, 400),
+            entryRow(1, addDaysISO(today, -1), 10),
+        ]
+        return (
+            <HeatmapView
+                result={sampleViewResult(rows, { view })}
+                config={sampleBaseConfig({ view })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const key = addDaysISO(todayISO(), -1)
+        const cell = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(`[data-bucket="${key}"]`)
+            if (!el) throw new Error('cell not yet rendered')
+            return el
+        })
+        const resting = getComputedStyle(cell).color
+        expect(cell.hasAttribute('data-hovered')).toBe(false)
+        await userEvent.hover(cell)
+        await waitFor(() => expect(cell.hasAttribute('data-hovered')).toBe(true))
+        expect(getComputedStyle(cell).color).not.toBe(resting)
+        await userEvent.unhover(cell)
+        await waitFor(() => expect(cell.hasAttribute('data-hovered')).toBe(false))
+        expect(getComputedStyle(cell).color).toBe(resting)
+    },
+}
+
 /** The latest entry is a year ago — the grid ends there, not at today, so an idle dataset still
  *  reads as a year of ITS history rather than mostly-empty recent weeks. */
 export const OldDataOnly: Story = {

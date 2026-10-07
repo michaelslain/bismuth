@@ -10,7 +10,7 @@
 // — including this file, which had already dropped it — referenced the font it described). Both
 // replaced wholesale rather than patched, because both eras hit the same wall: a hand-maintained per-icon
 // asset (a path, a hand-picked codepoint) does not scale and does not swap cheaply. This era is
-// generated: icons/iconNames.ts declares the 140 canonical names (set-independent), icons/
+// generated: icons/iconNames.ts declares the 142 canonical names (set-independent), icons/
 // iconMap.ts maps each to a Phosphor Regular identifier or a hand-authored custom mark, and
 // `bun run icons:svg` (app/scripts/build-icon-svgs.ts) resolves that against @iconify-json/ph and
 // writes assets/icons/icon-manifest.json — the ONLY thing this file imports for art. Swapping
@@ -20,13 +20,13 @@
 // A MISSING NAME IS NOT A MISSING GLYPH. The Nerd Font era's defining trap was that an unmapped
 // codepoint drew ZERO pixels in Chrome — no `.notdef`, no console warning, an invisibly empty
 // button. SVG can't fail that way by accident (a bad body renders as literally nothing, which is
-// just as bad), so the manifest is built to have NO such gap: every one of the 140 names resolves
+// just as bad), so the manifest is built to have NO such gap: every one of the 142 names resolves
 // to either real Phosphor art or a hand-authored custom mark (Regex, WholeWord). iconMap.ts's
 // KNOWN_MISSING is where a genuine gap would be declared (and drawn as FALLBACK_ART below) — it is
-// empty. registry-svg.test.ts asserts this for all 140 names, so a name that slips through
+// empty. registry-svg.test.ts asserts this for all 142 names, so a name that slips through
 // ungenerated fails a test rather than shipping an empty button.
 //
-// Resolution of the 140 is entirely SYNCHRONOUS — the map is a static object built from a static
+// Resolution of the 142 is entirely SYNCHRONOUS — the map is a static object built from a static
 // JSON import — so chrome icons never have a pending state. The full ~1,500-icon library a PERSON
 // picks from is the one lazy part; see "The full icon library" below.
 //
@@ -64,7 +64,7 @@ type Manifest = {
 const manifest = manifestJson as unknown as Manifest
 
 /** Generic fallback: both for a value that LOOKS like an icon name (see `looksLikeIconName`) but
- *  resolves nowhere — not in the 140, not in the full library, not a known Lucide alias — AND for
+ *  resolves nowhere — not in the 142, not in the full library, not a known Lucide alias — AND for
  *  any canonical name iconMap.ts declares a genuine gap (none today). Both cases mean the same
  *  thing to a viewer — "no real icon here" — so they share one visual: a
  *  dashed square around a question mark. Hand-authored rather than any Phosphor icon, so it can
@@ -73,11 +73,14 @@ const manifest = manifestJson as unknown as Manifest
 export const FALLBACK_ART: IconArt = {
     kind: 'svg',
     viewBox: '0 0 256 256',
+    // Path art only: a dashed square (square corners, no radius) round a stroked question mark and
+    // its dot, at Phosphor Regular's 16-unit stroke. No <text> — a font-drawn "?" renders at a
+    // different size and weight per platform, and not at all where the stack is missing.
     body:
-        '<rect x="28" y="28" width="200" height="200" rx="24" fill="none" stroke="currentColor" ' +
-        'stroke-width="16" stroke-dasharray="24 20"/>' +
-        '<text x="128" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" ' +
-        'font-size="120" font-weight="700" text-anchor="middle" fill="currentColor">?</text>',
+        '<g fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M32 32H224V224H32Z" stroke-linecap="butt" stroke-linejoin="miter" stroke-dasharray="24 20"/>' +
+        '<path d="M100 108a28 28 0 1 1 40 25c-8 4-12 10-12 20"/></g>' +
+        '<circle cx="128" cy="188" r="10" fill="currentColor"/>',
 }
 
 const manifestArt: Record<string, IconArt> = Object.fromEntries(
@@ -102,10 +105,10 @@ export const resolveIcon = (spec: string | null | undefined): IconArt | null =>
     iconRegistry.resolve(spec) ?? resolveFromLibrary(spec)
 
 // ── The full icon library ───────────────────────────────────────────────────────────────────────
-// The 140 names above are the app's own chrome, and stay static + synchronous. Everything a PERSON
+// The 142 names above are the app's own chrome, and stay static + synchronous. Everything a PERSON
 // can pick — every Phosphor Regular icon, ~1,500 of them — lives in a second generated file,
 // assets/icons/icon-library.json, too big (~790 KB) to import statically. iconLibrary.ts loads it
-// on demand and hands it to `installIconLibrary`; until then a name outside the 140 is PENDING
+// on demand and hands it to `installIconLibrary`; until then a name outside the 142 is PENDING
 // (`isPendingIconName`), not missing, so <Icon> can draw an empty box instead of flashing the
 // dashed "?" for the few milliseconds the chunk takes. This half stays framework-free: the Solid
 // signal that re-renders on load lives in iconLibrary.ts.
@@ -115,7 +118,7 @@ export type IconLibraryRow = [string, string, string]
 export type IconLibraryJson = { icons: IconLibraryRow[] }
 
 /** A pickable library icon. `terms` is its slug, canonical aliases and the set's own tags. `core`
- *  = it is also one of the app's own 140 (same art), which the picker lists first on open. */
+ *  = it is also one of the app's own 142 (same art), which the picker lists first on open. */
 export type LibraryIcon = {
     name: string
     art: IconArt
@@ -198,13 +201,13 @@ export const libraryNameFor = (
 export const isIconName = (spec: string | null | undefined): boolean =>
     resolveIcon(spec) !== null
 
-/** Every canonical icon (name + art), sorted by name — the 140, not the picker's full library. */
+/** Every canonical icon (name + art), sorted by name — the 142, not the picker's full library. */
 export const allIcons = (): IconEntry<IconArt>[] => iconRegistry.all()
 
-/** All canonical icon names, sorted — the 140 the app's own chrome uses. */
+/** All canonical icon names, sorted — the 142 the app's own chrome uses. */
 export const iconNames = (): string[] => iconRegistry.names()
 
-/** Every nameable icon, sorted: the 140 canonical names plus the full library once installed.
+/** Every nameable icon, sorted: the 142 canonical names plus the full library once installed.
  *  For autocomplete (frontmatter + `.settings` `icon:` completion). */
 export const allIconNames = (): string[] => {
     const canonical = iconRegistry.names()

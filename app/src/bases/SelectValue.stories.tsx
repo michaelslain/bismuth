@@ -77,3 +77,44 @@ export const ClearCommitsNull: Story = {
         )
     },
 }
+
+/** UNSET. The empty value matches the `(clear)` row, which used to put "(clear)" in the trigger in
+ *  full `--fg` — an unset field reading like a chosen value. It reads the muted placeholder now. */
+export const Unset: Story = {
+    render: () => <Harness initial={null} />,
+    play: async ({ canvasElement }) => {
+        const trigger = canvasElement.querySelector<HTMLElement>('[data-select-trigger]')!
+        expect(trigger.textContent).not.toContain('(clear)')
+        expect(trigger.textContent).toContain('Select')
+        const text = trigger.firstElementChild as HTMLElement
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--text-muted)'
+        canvasElement.appendChild(probe)
+        expect(getComputedStyle(text).color).toBe(getComputedStyle(probe).color)
+        probe.remove()
+    },
+}
+
+/** A known status keeps its dot and its category colour while edited, as it has at rest. */
+export const StatusKeepsItsDot: Story = {
+    render: () => {
+        const [v, setV] = createSignal<unknown>('doing')
+        return (
+            <div style={{ width: '220px' }}>
+                <SelectValue
+                    options={['todo', 'doing', 'done']}
+                    value={v()}
+                    onCommit={setV}
+                    onCancel={() => {}}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const trigger = canvasElement.querySelector<HTMLElement>('[data-select-trigger]')!
+        const dot = trigger.parentElement!.firstElementChild as HTMLElement
+        expect(dot.tagName).toBe('SPAN')
+        expect(getComputedStyle(dot).width).toBe('6px')
+        expect(getComputedStyle(dot).backgroundColor).toBe(getComputedStyle(trigger).color)
+    },
+}

@@ -1,0 +1,57 @@
+/* app/src/preview/CodeFindBar.module.css — CodeFindBar.tsx is the ONLY importer. Moved out of
+   PreviewView.module.css when the find bar became its own component.
+
+   CO-RIDING STATE CLASS IS A LOCAL HERE: `is-empty` on `.preview-find-count`, reached through
+   `styles` in `classList` — a bare literal would match nothing once it hashes.
+
+   Overlaid top-right of the preview's scrolling body; visual twin of the editor's `.bismuth-find`
+   (global.css's CodeMirror theming section) but self-contained so a preview never depends on the
+   editor being loaded.
+   `.preview-find` is the floating popover CHROME around `ui/SearchBar`: position, background,
+   border, lift. SearchBar owns every visual of the field itself. `min-width` is a cell-count, not a
+   literal — `--cell-w` is the ASCII-grid character advance width defined in global.css — and stays a
+   floor rather than a fixed `width` so the bar's own content is never squeezed narrower than it
+   needs. No `display: flex` here: the code case has exactly one child (`ui/SearchBar`, itself a flex
+   row); the PDF note (several direct children) supplies its own flex layout on `.preview-find-note`,
+   which is declared AFTER `.preview-find` — equal specificity, so source order is what lets its
+   border/padding win. */
+.preview-find {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-5);
+  z-index: 5;
+  min-width: calc(var(--cell-w) * 40);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--pop-bg-strong, var(--bg));
+  border: none;
+  border-radius: var(--r-0);
+  box-shadow: var(--lift);
+  font-family: var(--ui-font-stack);
+  color: var(--fg);
+}
+
+.preview-find-count {
+  min-width: 30px;
+  margin: 0 var(--sp-2) 0 var(--sp-1);
+  font-size: var(--fs-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-align: right;
+}
+.preview-find-count.is-empty { color: var(--danger); }
+
+/* PDF variant: an informational note (no input) — the embedded viewer owns text search. */
+.preview-find-note {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5);
+  border: var(--rule);
+  color: var(--text-muted);
+  max-width: min(340px, 70vw);
+}
+.preview-find-note-text {
+  font-size: var(--fs-ui);
+  line-height: 1.3;
+}

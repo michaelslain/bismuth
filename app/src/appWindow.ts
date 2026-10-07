@@ -4,7 +4,7 @@
 // Both "New window" and "Open folder" go through here (the URL already carries the
 // ?api= that pins the new window to its backend).
 import { isTauri } from './platform'
-import { pushToast } from './Toast'
+import { pushToast } from './ui/ToastHost'
 import { isMacPlatform } from './platform'
 import { withWindowId } from './windowId'
 

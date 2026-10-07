@@ -47,7 +47,7 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: "the chat composer's slash-popover branch — its own navigation keymap, which must keep owning those keys first, same as the CM completion popup",
     },
     {
-        file: 'ContextMenu.tsx',
+        file: 'ui/ContextMenu.tsx',
         reason: "submenu ArrowLeft/ArrowRight — arrow-key navigation inside a menu is the surface's spatial contract, not a named command",
     },
     {
@@ -141,6 +141,10 @@ const ALLOWED_FILES: AllowEntry[] = [
     {
         file: 'ExportView.tsx',
         reason: 'PENDING SWEEP — a local path field\'s own Enter-to-commit, not yet migrated (see task-12 report)',
+    },
+    {
+        file: 'ui/PathField.tsx',
+        reason: 'PENDING SWEEP — the same local path field Enter-to-commit, lifted out of ExportView into the primitive (ds-improve-r1 Task 17); migrates with ExportView',
     },
     {
         file: 'ui/popover/createMenuNav.ts',

@@ -17,3 +17,5 @@
    zoom > 1 it overflows the stage horizontally, which scrolls. DrawingCanvas.toLocal
    divides by getBoundingClientRect().width, so pointer mapping stays correct. */
 .draw-page-zoom { margin: 0 auto; }
+/* Shown instead of the editor when the file failed to read — see DrawingPage's loadDrawing. */
+.draw-load-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-5); height: 100%; padding: var(--sp-7); }

@@ -1,2 +1,5 @@
-.gcal-status { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: var(--ui-font-stack); font-size: var(--fs-body); }
+/* One --h-band tall (36px), the chrome band's own height — it used to be 24px control + 2 x 12px
+   padding + the border, ~50px, off both the 36 and the 54 row bands. The block padding is gone: the
+   row centres its dot, account and disconnect button inside the band height instead. */
+.gcal-status { display: flex; align-items: center; gap: var(--sp-5); box-sizing: border-box; min-height: var(--h-band); padding: 0 var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: var(--ui-font-stack); font-size: var(--fs-body); }
 .gcal-status .gcal-acct { flex: 1; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

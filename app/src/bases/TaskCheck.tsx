@@ -1,4 +1,5 @@
 import { type Component } from 'solid-js'
+import BracketToggle from '../ui/BracketToggle'
 import { chipKeyAction } from '../ui/chipKeys'
 import Text from '../ui/Text'
 import styles from './TaskCheck.module.css'
@@ -31,22 +32,16 @@ export type TaskCheckProps = {
     label?: string
     /** CSS colour for the glyph (TaskChip's category colour). Wins over the status colours. */
     color?: string
-    /** Display only: dimmed, no toggle, no status menu, and not focusable — for a mark inside a
+    /** Display only: inked `--faint`, no toggle, no status menu, and not focusable — for a mark inside a
      *  surface that owns the click (a calendar chip). Pointer events bubble to that surface. */
     readOnly?: boolean
 }
 
-const MARK: Record<TaskCheckStatus, string> = {
-    todo: '[ ]',
-    done: '[x]',
-    doing: '[/]',
-    cancelled: '[-]',
-}
-
 /**
  * The task checkbox: a literal `[ ]` / `[x]` / `[/]` / `[-]` bracket marker, the same register
- * `calendar/components/TaskChip.tsx` renders for the tasks calendar — plain muted text, not a
- * drawn box.
+ * `calendar/components/TaskChip.tsx` renders for the tasks calendar. The glyph is `ui/BracketToggle`
+ * in its four-state form — one bracket recipe for every checkbox in the app, not a second one here;
+ * this component adds the gestures (toggle, status menu, keyboard) and the ARIA around it.
  *
  * Extracted from ListView's task row because the TABLE needs the mark WITHOUT the row — its
  * `status` column becomes a checkbox cell in tasks mode, and a description-plus-chips row does
@@ -120,7 +115,14 @@ const TaskCheck: Component<TaskCheckProps> = props => (
             if (!props.readOnly) e.stopPropagation()
         }}
     >
-        {MARK[props.status]}
+        <BracketToggle
+            checked={props.status === 'done'}
+            state={
+                props.status === 'doing' || props.status === 'cancelled'
+                    ? props.status
+                    : undefined
+            }
+        />
     </Text>
 )
 

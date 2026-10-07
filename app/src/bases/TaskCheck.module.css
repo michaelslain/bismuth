@@ -1,35 +1,36 @@
-/* The task checkbox glyph, moved verbatim out of bases/BaseView.module.css when <TaskCheck>
-   was extracted from ListView's task row. It now mirrors calendar/components/TaskChip.module.css's
-   `.marker` — a literal bracket mark in plain muted text. The note editor's own checkbox
-   (editor/TaskCheckbox.tsx, styled by livePreview's `.cm-task-checkbox` theme) renders the same
-   mark with the same colours; it lives inside CodeMirror, so the two are two implementations of
-   one look, not one shared stylesheet.
+/* The task checkbox's gestures and inks. The glyph itself is ui/BracketToggle (four-state); this file
+   drives it through its three custom properties — `--bracket-off`, `--bracket-on` and
+   `--bracket-height` — never by reaching into its hashed class. A state is told by its glyph and
+   ink: `[x]` and `[/]` take the accent, `[ ]` the muted ink, `[-]` the faint one. No opacity, and no
+   second accent for "doing".
 
    Its own file rather than TaskRow.module.css's because the TABLE renders the check WITHOUT
    the row — a `status` cell is a checkbox and nothing else — and two components importing one
    module is the house rule's definition of a component nobody extracted. */
 .taskCheck {
   flex: 0 0 auto;
+  display: inline-flex;
   font-family: var(--ui-font-stack);
   white-space: nowrap;
-  color: var(--text-muted);
   cursor: pointer;
+  /* The glyph sits on the text's own line, not in a control-height box. */
+  --bracket-height: auto;
+  --bracket-off: var(--text-muted);
 }
-.taskCheck:hover { color: var(--accent); }
+.taskCheck[data-status='cancelled'] { --bracket-off: var(--faint); }
+.taskCheck:hover { --bracket-off: var(--accent); }
 .taskCheck:focus-visible { outline: none; }
-.taskCheck[data-status='done'] { color: var(--accent); }
-.taskCheck[data-status='doing'] { color: var(--accent-purple); }
-.taskCheck[data-status='cancelled'] { opacity: 0.65; }
 /* `color` — a caller-supplied glyph colour (TaskChip's category colour). Declared after the
    status and :hover rules at equal specificity so it wins over all of them. */
 .taskCheck[data-colored],
 .taskCheck[data-colored]:hover,
-.taskCheck[data-colored][data-status] { color: var(--task-check-color, var(--text-muted)); }
-/* `readOnly` — display only: dimmed, no pointer affordance, no hover accent. */
-.taskCheck[data-readonly] { opacity: 0.55; cursor: default; }
-.taskCheck[data-readonly]:not([data-colored]):hover { color: var(--text-muted); }
-.taskCheck[data-readonly][data-status='done']:not([data-colored]):hover { color: var(--accent); }
-.taskCheck[data-readonly][data-status='doing']:not([data-colored]):hover { color: var(--accent-purple); }
+.taskCheck[data-colored][data-status] {
+  --bracket-off: var(--task-check-color, var(--text-muted));
+  --bracket-on: var(--task-check-color, var(--accent));
+}
+/* `readOnly` — display only: faint ink, no pointer affordance, no hover accent. */
+.taskCheck[data-readonly] { cursor: default; --bracket-off: var(--faint); }
+.taskCheck[data-readonly]:not([data-colored]):hover { --bracket-off: var(--faint); }
 
 /* A table `status` cell holds the check alone, so it has no flex row to sit in — center it
    the way the row's `align-items: baseline` does for <TaskRow>. */

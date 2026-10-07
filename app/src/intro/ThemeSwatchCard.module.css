@@ -2,8 +2,13 @@
    elevation shadow. The preview and its colour chips are Swatch statics; their sizes come from the
    single classes below (Swatch's base rule is :where(), so a lone class wins). */
 .card {
+  /* A standalone card is 32 cells wide too (not content-sized, which left an 80px sliver with the
+     colour row hanging out of it); in a picker the basis lets the four shrink together. min-content
+     is the theme name, so a card never narrows past its own label. */
   flex: 0 1 calc(32 * var(--cell-w));
-  min-width: 0;
+  width: calc(32 * var(--cell-w));
+  max-width: 100%;
+  min-width: min-content;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -15,6 +20,9 @@
   cursor: pointer;
   font: inherit;
   color: var(--fg);
+}
+.card > span {
+  white-space: nowrap;
 }
 .card:hover {
   border-color: var(--text-muted);
@@ -40,6 +48,7 @@
 .chips {
   position: absolute;
   left: var(--sp-3);
+  right: var(--sp-3);
   bottom: var(--sp-3);
   display: flex;
   gap: var(--sp-2);
@@ -48,9 +57,13 @@
   display: flex;
   gap: var(--sp-2);
   margin-left: var(--sp-3);
+  min-width: 0;
 }
+/* The chips shrink with the well (squares, via aspect-ratio) rather than running past it into the
+   neighbouring card. */
 .chip {
-  width: calc(2.5 * var(--cell-w));
-  height: calc(2.5 * var(--cell-w));
+  flex: 0 1 calc(2.5 * var(--cell-w));
+  min-width: 0;
+  aspect-ratio: 1;
   border: 1px solid var(--border);
 }

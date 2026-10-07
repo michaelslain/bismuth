@@ -13,7 +13,7 @@ import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { CategoryPanel } from './CategoryPanel'
 import { EventStore, MemoryBackend } from '../EventStore'
 import { categories, showCategoryPanel } from '../state'
-import { ToastHost } from '../../Toast'
+import { ToastHost } from '../../ui/ToastHost'
 
 // <Modal> (which <CategoryPanel> renders through) mounts via a Solid <Portal> straight onto
 // document.body — outside canvasElement/#storybook-root entirely (see Modal.tsx, and the same

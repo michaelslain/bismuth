@@ -445,7 +445,7 @@ export const Default: Story = {
         ).toBeGreaterThanOrEqual(4.5)
 
         // 5. The disabled header "+" visibly differs from its own enabled state — this story has
-        //    it enabled (opacity 1); NotReadyDisablesEdits proves the disabled side (~0.4).
+        //    it enabled (opacity 1); NotReadyDisablesEdits proves the disabled side (--faint ink).
         const plusBtn = canvasElement.querySelector(
             'button[aria-label="Bookmark this page"]',
         ) as HTMLButtonElement
@@ -627,16 +627,21 @@ export const NotReadyDisablesEdits: Story = {
         await expect(renameBtn.disabled).toBe(true)
         await expect(deleteBtn.disabled).toBe(true)
 
-        // Task 6 acceptance 5: the disabled "+" is visibly dimmed, not merely inert — the
-        // Default story's own plusBtn check proves the enabled side is opacity 1.
+        // Task 6 acceptance 5: the disabled "+" reads as disabled, not merely inert — by INK, the
+        // button family's one disabled recipe: `--faint` alone, no opacity (a dimmed --faint falls
+        // under the 3:1 floor). The Default story's plusBtn check proves the enabled side is
+        // opacity 1. `--faint` is resolved live, never a hardcoded rgb stand-in.
         const plusBtn = canvasElement.querySelector(
             'button[aria-label="Bookmark this page"]',
         ) as HTMLButtonElement
         await expect(plusBtn.disabled).toBe(true)
-        await expect(Number(getComputedStyle(plusBtn).opacity)).toBeCloseTo(
-            0.4,
-            1,
-        )
+        const faintProbe = document.createElement('span')
+        faintProbe.style.color = 'var(--faint)'
+        canvasElement.appendChild(faintProbe)
+        const faint = getComputedStyle(faintProbe).color
+        faintProbe.remove()
+        await expect(getComputedStyle(plusBtn).color).toBe(faint)
+        await expect(getComputedStyle(plusBtn).opacity).toBe('1')
 
         // A disabled button dispatches no click — prove the store is never even asked.
         renameBtn.click()

@@ -11,6 +11,12 @@
 // nine-slice mask (sprite, slice, width, round), and the ink of the sprite's own pixels — every
 // `+` is centred on its cell corner, the `|` stems share its x-centre and the `-`/`=` strokes
 // share its crossbar.
+//
+// The PITCH is asserted too (`pitchReport`): the dash repeat painted across a run and down a bar
+// must be one number on both axes — global.css says it is, and `mask-border-repeat: round` makes it
+// so only where the host's box is a whole number of pitches. Every host here is snapped to one
+// (width corner-w + n x pitch, height tile-h + m x pitch), and the typed rows of the mini grid are
+// one pitch of room, so a regression to an unsnapped host or a changed repeat fails these stories.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { For, type JSX } from 'solid-js'
 import { expect } from 'storybook/test'
@@ -18,9 +24,40 @@ import AsciiCellEdges, {
     type AsciiCellEdgesProps,
     type AsciiEdge,
 } from './AsciiCellEdges'
-import { whenAsciiGlyphTilesInstalled } from './asciiGlyphTiles'
+import { fitTiles, whenAsciiGlyphTilesInstalled } from './asciiGlyphTiles'
 import Text from '../Text'
 import { Row } from '../_storyKit'
+
+/** What `mask-border-repeat: round` paints on each axis of every overlay under `root` that has both
+ *  a run and a bar: it fits a WHOLE number of tiles into the run's room (the overlay's box less one
+ *  corner tile at each end) and stretches each to fill it (`fitTiles`). `across` is the dash pitch
+ *  along the top/bottom, `down` along the left/right, in CSS px. */
+async function pitchReport(root: HTMLElement) {
+    await whenAsciiGlyphTilesInstalled()
+    const cs = getComputedStyle(document.documentElement)
+    const cornerW = parseFloat(cs.getPropertyValue('--ascii-corner-w'))
+    const tileH = parseFloat(cs.getPropertyValue('--ascii-tile-h'))
+    const pitch = parseFloat(cs.getPropertyValue('--ascii-pitch'))
+    expect(pitch, 'the dash pitch is installed').toBeGreaterThan(0)
+    const rows = [...root.querySelectorAll<HTMLElement>('[data-edges]')]
+        .filter(el => /top|bottom/.test(el.dataset.edges!) && /left|right/.test(el.dataset.edges!))
+        .map(el => {
+            expect(getComputedStyle(el).webkitMaskBoxImageRepeat, 'the runs repeat with round').toBe('round')
+            const r = el.getBoundingClientRect()
+            const across = fitTiles(r.width - 2 * cornerW, pitch)
+            const down = fitTiles(r.height - 2 * tileH, pitch)
+            return { edges: el.dataset.edges!, pitch, across: across.pitch, down: down.pitch, gap: Math.abs(across.pitch - down.pitch) }
+        })
+    return rows
+}
+
+/** Asserts the dash pitch is the same across and down, within `tol` CSS px. */
+async function expectOnePitch(root: HTMLElement, tol: number) {
+    const rows = await pitchReport(root)
+    expect(rows.length, 'an overlay with both a run and a bar was measured').toBeGreaterThan(0)
+    for (const r of rows)
+        expect(r.gap, `[${r.edges}] dash pitch ${r.across.toFixed(2)} across vs ${r.down.toFixed(2)} down`).toBeLessThanOrEqual(tol)
+}
 
 const meta = {
     title: 'UI/Ascii/AsciiCellEdges',
@@ -48,8 +85,10 @@ function Host(props: {
             data-cell-host
             style={{
                 position: 'relative',
-                width: props.width ?? '132px',
-                height: props.height ?? 'calc(var(--cell-h) * 3)',
+                // snapped to whole pitches (corner tile + n x pitch each way) so `round` has nothing
+                // to stretch: the dash pitch is then exactly --ascii-pitch across AND down
+                width: props.width ?? 'calc(var(--ascii-corner-w, 1ch) + 8 * var(--ascii-pitch, 2ch))',
+                height: props.height ?? 'calc(var(--ascii-tile-h, var(--cell-h)) + 3 * var(--ascii-pitch, 2ch))',
                 margin: '18px',
                 padding: 'var(--sp-3) var(--sp-4)',
                 'box-sizing': 'border-box',
@@ -63,12 +102,20 @@ function Host(props: {
     )
 }
 
+/** A snapped host paints --ascii-pitch to the pixel on both axes: assert it, exactly (0.01px). */
+const onePitchPlay: Story['play'] = async ({ canvasElement }) => {
+    await expectOnePitch(canvasElement, 0.01)
+    for (const r of await pitchReport(canvasElement))
+        expect(r.across, `[${r.edges}] paints the token pitch, not a stretched one`).toBeCloseTo(r.pitch, 1)
+}
+
 const single = (edges: AsciiEdge[], extra: AsciiCellEdgesProps = {}): Story => ({
     render: () => (
         <Row label={edges.join(' + ')}>
             <Host edges={{ ...extra, edges }} />
         </Row>
     ),
+    play: onePitchPlay,
 })
 
 /** The default: top + left, the two edges every cell owns. */
@@ -120,6 +167,7 @@ export const WeightsAndInks: Story = {
             </Host>
         </Row>
     ),
+    play: onePitchPlay,
 }
 
 /** A header cell: `edgeWeight={{ bottom: 'heavy' }}` types the `=` underline in firm ink while
@@ -138,6 +186,7 @@ export const HeaderCell: Story = {
             </Host>
         </Row>
     ),
+    play: onePitchPlay,
 }
 
 /** A summary row's cell: `=` on top, `-` below. */
@@ -155,6 +204,7 @@ export const SummaryCell: Story = {
             </Host>
         </Row>
     ),
+    play: onePitchPlay,
 }
 
 /** `backdrop`: for a cell in a sticky header. The ring is an opaque `--bg` frame over the glyph
@@ -532,6 +582,9 @@ const miniGrid = (width: number): Story => ({
         expect(stats.runs).toBe(16)
         expect(stats.heavy).toBe(4)
         expect(problems.join(' // '), JSON.stringify(stats)).toBe('')
+        // fluid columns stretch the across-pitch by under 1/(2n) of a dash; the rows are one
+        // pitch of room, so down is exact — within a CSS px on every typed cell
+        await expectOnePitch(grid, 1)
     },
 })
 

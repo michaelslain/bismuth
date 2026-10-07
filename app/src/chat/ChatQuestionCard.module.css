@@ -1,15 +1,20 @@
-/* ChatQuestionCard.module.css — ChatQuestionCard.tsx is the ONLY importer. Moved verbatim from
-   ChatTurnParts.module.css. Shares the accent-rail look of ChatPermissionCard, but each option is
-   a clickable button; `--chat-*` custom properties carry a plain-token fallback (see
-   ChatTextBubble.module.css's header). */
+/* ChatQuestionCard.module.css — ChatQuestionCard.tsx is the ONLY importer. The surface is ui/Card
+   (proposal: bordered, accent left edge) — this used to be a third copy of that recipe, reading the
+   deprecated `--r-card` (a visible 4px corner on a system of square ones). The chat tint arrives
+   through Card's `--card-bg` seam. `--chat-*` custom properties carry a plain-token fallback (see
+   ChatTextBubble.module.css's header).
+
+   SETTLED IS INK AND EDGE, NEVER OPACITY (DESIGN.md: no state is shown by opacity). The answered
+   card used to fade to 0.7 and its disabled options faded AGAIN to 0.7 — compounding to ~0.49, so a
+   muted description measured 2.7:1 — and the outcome line, in --success, fell to 2.18:1 on the light
+   themes. Now nothing in here carries an opacity: the edge goes from accent to --border, the head
+   and the prompt go to --text-muted, a disabled option reads in --text-muted, and the OUTCOME line
+   stays at full --fg — it is the one thing a settled card exists to say. */
 .chat-question {
-    border-left: var(--accent-edge);
-    border-radius: 0 var(--r-card) var(--r-card) 0;
-    background: var(--chat-fg-mix, color-mix(in srgb, var(--fg) 4%, transparent));
-    padding: var(--sp-4) var(--sp-5) var(--sp-5);
+    --card-bg: var(--chat-surface-1, var(--surface-1));
+    --card-border: 1px solid var(--chat-border, var(--border));
 }
 .chat-question.answered {
-    opacity: 0.7;
     border-left-color: var(--border);
 }
 .chat-question-head {
@@ -20,17 +25,17 @@
 .chat-question-icon {
     color: var(--accent);
 }
-.chat-question.answered .chat-question-icon {
-    color: var(--faint);
-}
-.chat-question-title {
+.chat-question.answered .chat-question-icon,
+.chat-question.answered .chat-question-title,
+.chat-question.answered .chat-question-text {
+    color: var(--text-muted);
 }
 .chat-question-block {
     margin-top: var(--sp-5);
 }
 .chat-question-block + .chat-question-block {
     padding-top: var(--sp-5);
-    border-top: 1px solid var(--border-soft);
+    border-top: 1px solid var(--chat-border-soft, var(--border-soft));
 }
 .chat-question-prompt {
     display: flex;
@@ -41,35 +46,19 @@
     color: var(--fg);
     line-height: 1.45;
 }
-/* Was an uppercase filled pill (background + border-radius) — a different vocabulary from the
-   rest of chat's quiet, unfilled controls. Now the same lowercase, tracked "eyebrow" register as
-   ChatTurnLabel/DaemonPanel titles: no fill, no CSS case transform (the .tsx lowercases `q.header`
-   itself, same reasoning as ChatTurnLabel — a driver-supplied header may not arrive lowercase). */
 .chat-question-prompt .chat-question-chip,
 .chat-question-answer .chat-question-chip {
-    line-height: inherit;
     flex: 0 0 auto;
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-micro);
-    font-weight: var(--fw-bold);
-    letter-spacing: var(--ls-eyebrow);
-    color: var(--faint);
 }
 .chat-question-prompt .chat-question-text {
     line-height: inherit;
     flex: 1 1 auto;
 }
 .chat-question-prompt .chat-question-multi {
-    line-height: inherit;
     flex: 0 0 auto;
-    font-size: var(--fs-ui);
-    color: var(--faint);
-    font-style: italic;
 }
-/* Was individually-boxed "slabs" (own background + border + radius per option) — the vocabulary
-   fix (design #7) drops the box: options are now unfilled rows in one stack, divided only by a
-   `--border-soft` hairline (a border-top on every row but the first), matching how the rest of
-   chat's inline cards (ChatPermissionCard) read as text-on-transparent rather than UI chrome. */
+/* Unfilled rows in one stack, divided only by a `--rule-soft` hairline (a border-top on every row
+   but the first) — chat's quiet inline-card vocabulary, not individually boxed slabs. */
 .chat-question-options {
     display: flex;
     flex-direction: column;
@@ -82,11 +71,8 @@
     width: 100%;
     text-align: left;
     padding: var(--sp-3) var(--sp-1);
-    background: none;
-    border: none;
     border-top: 1px solid var(--chat-border-soft, var(--border-soft));
-    cursor: pointer;
-    transition: color calc(0.12s * var(--motion-scale)) var(--ease-std);
+    transition: color var(--dur) var(--ease-std);
     font: inherit;
     color: var(--fg);
 }
@@ -99,18 +85,19 @@
 .chat-question-option.picked {
     color: var(--accent);
 }
+/* Settled: ink, not fade. A disabled option that was NOT taken reads --text-muted; the taken one
+   keeps its accent so the card still says which way it went. */
 .chat-question-option:disabled {
     cursor: default;
-    opacity: 0.7;
+    color: var(--text-muted);
+}
+.chat-question-option.picked:disabled {
+    color: var(--accent);
 }
 .chat-question-option-main {
     display: flex;
     align-items: center;
     gap: var(--sp-4);
-}
-.chat-question-check {
-    flex: 0 0 auto;
-    color: var(--accent);
 }
 .chat-question-option .chat-question-option-label {
     line-height: inherit;
@@ -118,12 +105,12 @@
     font-weight: var(--fw-medium);
     color: inherit;
 }
+/* The description hangs under the label, past the `[x]` mark (3ch + the row gap). */
 .chat-question-option .chat-question-option-desc {
-    font-size: var(--fs-ui);
-    color: var(--text-muted);
     line-height: var(--lh-tight);
+    padding-left: calc(3ch + var(--sp-4));
 }
-.chat-question-option.picked .chat-question-option-desc {
+.chat-question-option.picked:not(:disabled) .chat-question-option-desc {
     color: var(--fg);
 }
 .chat-question-other {
@@ -136,22 +123,13 @@
     margin-top: var(--sp-5);
     flex-wrap: wrap;
 }
-/* Bracket action buttons — "[ submit ]" / "[ skip ]", the SAME idiom ChatPermissionCard's
-   "[ allow ]"/"[ deny ]" uses. Rendered by Button's own `bracket` prop (ui/Button.tsx) — the
-   underlying label text stays uppercase (SUBMIT/SKIP). Button.module.css now wins the
-   lowercase/uppercase specificity tie with a compound selector, so no override is needed here. */
 .chat-question-outcome {
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
     margin-top: var(--sp-5);
     font-size: var(--fs-body);
-    color: var(--success);
-}
-.chat-question-outcome.cancelled {
-    flex-direction: row;
-    align-items: center;
-    color: var(--faint);
+    color: var(--fg);
 }
 .chat-question-answer {
     display: flex;

@@ -33,6 +33,11 @@ import {
     scanDrawBlocks,
 } from '../../core/src/drawing/drawBlocks'
 import type { Stroke } from '../../core/src/drawing/model'
+// Aliased: this file already has a local regex-based `lineWith` helper further down.
+import {
+    lineWith as listLineWith,
+    markerRect as listMarkerRect,
+} from './editor/_listGeometry'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import type { Row } from '../../core/src/bases/types'
@@ -676,6 +681,44 @@ export const DenseTable: Story = {
         await expect(scroller.scrollWidth).toBeLessThanOrEqual(
             scroller.clientWidth + 1,
         )
+
+        // 4. It wrapped BETWEEN words, not inside them. Cells inherit CodeMirror's own
+        //    line-wrapping rule, whose `overflow-wrap: anywhere` breaks a word even when the word
+        //    would fit on a line of its own — which in a narrow column is every word, so this
+        //    exact fixture rendered `platfor/m`, `shippe/d`, `Anothe/r Note`, `Est/.`. The
+        //    MEASURED FROM THE LAID-OUT TEXT, not from the computed style, because the computed
+        //    style lies here: `overflow-wrap: break-word` alone reads as applied while the pixels
+        //    still split every word, since CodeMirror's inherited legacy `word-break: break-word`
+        //    means "overflow-wrap: anywhere" under another name. A word that was broken across
+        //    lines has MORE THAN ONE client rect, so that is the test — and a word genuinely too
+        //    wide for its own column (this fixture has a 40-character one on purpose) is allowed
+        //    to break, because `break-word` breaks exactly those.
+        const brokenWords: string[] = []
+        for (const c of cells) {
+            const avail = c.getBoundingClientRect().width
+            const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT)
+            let node: Node | null
+            while ((node = walk.nextNode())) {
+                const text = node.textContent ?? ''
+                for (const m of text.matchAll(/\S+/g)) {
+                    const r = document.createRange()
+                    r.setStart(node, m.index!)
+                    r.setEnd(node, m.index! + m[0].length)
+                    const rects = [...r.getClientRects()]
+                    if (rects.length < 2) continue
+                    const widest = Math.max(...rects.map(x => x.width))
+                    const total = rects.reduce((a, x) => a + x.width, 0)
+                    // Too wide to fit the column even on a line of its own: a legal break.
+                    if (total > avail || widest > avail) continue
+                    brokenWords.push(m[0])
+                }
+            }
+        }
+        await expect(brokenWords).toEqual([])
+        // And the pair of properties that together decide it, so a future edit that re-asserts
+        // either one is caught at the source rather than only in the pixels.
+        await expect(getComputedStyle(cell).overflowWrap).toBe('break-word')
+        await expect(getComputedStyle(cell).wordBreak).toBe('normal')
     },
 }
 
@@ -751,6 +794,167 @@ export const RevealedMarks: Story = {
 
         await revealAt('1. ordered one')
         assertMonoSize('.cm-list-marker')
+    },
+}
+
+const LIST_CARET_TEXT = [
+    '# List Marker Caret',
+    '',
+    '- bullet item',
+    '1. ordered item',
+    '- [ ] task item',
+    '- ',
+    '',
+].join('\n')
+
+/** THE CARET INSIDE THE REVEALED MARKER. `.cm-list-marker` is an `inline-block` with a
+ *  `min-width` floor and `text-align: right`, which is what puts the raw `- ` / `1. ` / `- [ ] `
+ *  in the same column as the glyph it stands in for — but it is also EDITABLE TEXT the user
+ *  clicks into and arrows across, and a right-shifted atomic box can move what
+ *  `coordsAtPos`/`posAtCoords` report. None of the other editor plays places or measures a
+ *  caret, so this is the one that would catch it.
+ *
+ *  Asserted for a bullet, an ordered item, a task AND an empty `- ` item — the last being the
+ *  case livePreview's own B2 comment says must keep the caret anchored, because there the caret
+ *  sits at end of line directly after the marker with no text to anchor against.
+ *
+ *  If this ever fails, the retreat is to drop `display: inline-block` from `.cm-list-marker`,
+ *  keep `text-indent: 0`, and shift the glyph with `padding-left` on a `::before` instead. */
+export const ListMarkerCaret: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'List Caret.md': LIST_CARET_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="List Caret.md"
+                    initialText={LIST_CARET_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+        // livePreview reveals the raw marker only on the line the caret is on, and only while
+        // the view has focus (see RevealedMarks).
+        view.focus()
+
+        // THE RENDERED COLUMN, measured first with the caret parked on the title so no list line
+        // is revealed. The revealed raw marker has to land in this same column — that is the
+        // whole point of its `min-width`/`text-align: right`, and the reason those are now sized
+        // off `--prose-font-size` rather than the marker's own (mono) em: at 2.2 of the WRONG em
+        // the column came out 26.4px against the rendered 29.7px and the text jumped 2.4px left
+        // as the caret arrived.
+        view.dispatch({ selection: { anchor: 0, head: 0 } })
+        await new Promise(r => setTimeout(r, 50))
+        const rendered: Record<string, DOMRect> = {}
+        for (const needle of ['- bullet item', '1. ordered item', '- [ ] task item'])
+            rendered[needle] = listMarkerRect(
+                listLineWith(
+                    dom as HTMLElement,
+                    needle.replace(/^(- \[ \] |- |1\. )/, ''),
+                ),
+            )
+
+        const probe = async (
+            needle: string,
+            markerLen: number,
+            fitsColumn: boolean,
+        ) => {
+            const at = LIST_CARET_TEXT.indexOf(needle)
+            if (at < 0) throw new Error(`fixture lost ${JSON.stringify(needle)}`)
+            const line = view.state.doc.lineAt(at)
+            view.dispatch({ selection: { anchor: line.from, head: line.from } })
+            await new Promise(r => setTimeout(r, 50))
+
+            const el = (dom as HTMLElement).querySelector('.cm-list-marker')
+            if (!el)
+                throw new Error(
+                    `${needle}: no .cm-list-marker revealed — nothing to measure`,
+                )
+            const box = el.getBoundingClientRect()
+            expect(box.width, `${needle}: marker box has no width`).toBeGreaterThan(0)
+            // THE LEFT EDGE IS THE ANCHOR FOR EVERY KIND. A revealed marker wider than the
+            // column (`- [ ] `, six mono advances) is meant to GROW RIGHTWARD off its
+            // `max-content` width rather than hang off the left, so only the markers that fit
+            // the column can be graded on their right edge as well.
+            expect(
+                Math.abs(box.left - rendered[needle].left),
+                `${needle}: the revealed marker column starts at x=${box.left} but the rendered glyph column started at x=${rendered[needle].left} — the marker jumps as the caret arrives`,
+            ).toBeLessThanOrEqual(0.5)
+            if (fitsColumn)
+                expect(
+                    Math.abs(box.right - rendered[needle].right),
+                    `${needle}: the revealed marker column ends at x=${box.right} but the rendered glyph column ended at x=${rendered[needle].right} — the text after it jumps as the caret arrives`,
+                ).toBeLessThanOrEqual(0.5)
+
+            let prev = -Infinity
+            for (let pos = line.from; pos < line.from + markerLen; pos++) {
+                const c = view.coordsAtPos(pos)
+                expect(c, `${needle}: no coords for pos ${pos - line.from}`).toBeTruthy()
+                const left = c!.left
+                expect(
+                    left,
+                    `${needle}: caret at marker offset ${pos - line.from} is at x=${left}, left of the marker box (${box.left})`,
+                ).toBeGreaterThanOrEqual(box.left - 1)
+                expect(
+                    left,
+                    `${needle}: caret at marker offset ${pos - line.from} is at x=${left}, right of the marker box (${box.right})`,
+                ).toBeLessThanOrEqual(box.right + 1)
+                expect(
+                    left,
+                    `${needle}: caret x went BACKWARDS at marker offset ${pos - line.from}`,
+                ).toBeGreaterThanOrEqual(prev - 0.01)
+                prev = left
+
+                // Hit-testing must agree with rendering: clicking where the caret is drawn has
+                // to land on the offset it was drawn for.
+                const back = view.posAtCoords({
+                    x: left,
+                    y: (c!.top + c!.bottom) / 2,
+                })
+                expect(
+                    back,
+                    `${needle}: posAtCoords returned null for marker offset ${pos - line.from}`,
+                ).not.toBeNull()
+                expect(
+                    Math.abs((back as number) - pos),
+                    `${needle}: round-trip at marker offset ${pos - line.from} came back as ${(back as number) - line.from}`,
+                ).toBeLessThanOrEqual(1)
+            }
+            return box
+        }
+
+        await probe('- bullet item', 2, true)
+        await probe('1. ordered item', 3, true)
+        await probe('- [ ] task item', 6, false)
+
+        // THE EMPTY ITEM. `- ` with the caret at end of line: there is no text after the marker,
+        // so the caret's only anchor is the marker's own right edge.
+        const emptyAt = LIST_CARET_TEXT.lastIndexOf('- ')
+        const emptyLine = view.state.doc.lineAt(emptyAt)
+        expect(emptyLine.text, 'fixture lost the empty list item').toBe('- ')
+        view.dispatch({
+            selection: { anchor: emptyLine.to, head: emptyLine.to },
+        })
+        await new Promise(r => setTimeout(r, 50))
+        const emptyEl = (dom as HTMLElement).querySelector('.cm-list-marker')
+        if (!emptyEl)
+            throw new Error('empty item: no .cm-list-marker revealed')
+        const emptyBox = emptyEl.getBoundingClientRect()
+        const endCoords = view.coordsAtPos(emptyLine.to)
+        expect(endCoords, 'empty item: no coords at end of line').toBeTruthy()
+        expect(
+            endCoords!.left,
+            `empty item: caret at end of line is at x=${endCoords!.left}, left of the marker's right edge (${emptyBox.right})`,
+        ).toBeGreaterThanOrEqual(emptyBox.right - 1)
     },
 }
 

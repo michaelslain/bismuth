@@ -39,9 +39,12 @@
 
 .title {
     flex: 0 1 auto;
-    /* Percentage, not a literal length — leaves the close control + trailing rule guaranteed room
-       regardless of panel width, while still letting a short title take only what it needs. */
-    max-width: 60%;
+    /* The title is the part of the header that says what the dialog DOES (a danger title's verb
+       is "delete"), so it keeps its width and the faint subtitle gives way first — see .sub's
+       shrink factor. It still ellipsizes as the last resort (min-width: 0), never pushing the
+       close control out. max-width: 100% (not the old 60%) because a 60% cap truncated "delete
+       recurrin…" while the subtitle beside it kept ~29 characters. */
+    max-width: 100%;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
@@ -62,7 +65,14 @@
     font-size: var(--fs-ui);
 }
 .sub {
-    flex: 0 1 auto;
+    /* The subtitle takes only what is LEFT. Flex basis 0 + a grow factor of 1000 (the rule-fill's
+       is 1) means it claims the free space ahead of the rule up to its own content width
+       (max-width: max-content), and contributes nothing when space runs short — so the title
+       (flex-shrink 1) is never squeezed while any subtitle width is left to give. A shrink-factor
+       ratio alone was not enough: even 1/1000th of a shortfall is a fraction of a pixel, and a
+       fraction of a pixel is enough to make a nowrap title ellipsize ("delete recurring eve…"). */
+    flex: 1000 1 0;
+    max-width: max-content;
     min-width: 0;
     margin-left: var(--sp-2);
     overflow: hidden;

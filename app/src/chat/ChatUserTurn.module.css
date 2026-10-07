@@ -1,16 +1,12 @@
 /* ChatUserTurn.module.css — ChatUserTurn.tsx is the ONLY importer. Moved verbatim from
-   ChatTranscript.module.css. The 680px/centred reading column itself lives in ChatTurnColumn
+   ChatTranscript.module.css. A QUEUED turn is not dimmed (no state is shown by opacity): its text
+   goes --text-muted through ChatTextBubble's `muted`, and its "queued" label is the eyebrow
+   register. The --chat-column reading column itself lives in ChatTurnColumn
    (composed in the .tsx) — this rule only adds the turn's own flex layout on top of it. */
 .chat-msg {
     display: flex;
     flex-direction: column;
     width: 100%;
-}
-.chat-msg.queued {
-    opacity: 0.55;
-}
-.chat-queued-note {
-    font-style: italic;
 }
 /* Placement only (button-family migration) — the look (`size="sm"` box, brackets, colour) comes
    from IconButton's own props at the call site; this class only nudges it off the "queued" label. */
@@ -27,6 +23,6 @@
     max-width: 180px;
     max-height: 180px;
     border-radius: var(--r-0);
-    border: 1px solid var(--border-soft);
+    border: var(--rule-soft);
     display: block;
 }

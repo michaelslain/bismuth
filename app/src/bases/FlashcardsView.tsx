@@ -10,20 +10,13 @@ import {
     For,
 } from 'solid-js'
 import { api } from '../api'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 import { pushUndoToast } from '../undoToast'
 import { restoreRowAt } from './restoreRow'
 import { storedNote } from './taskWrite'
-import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
-import { TextInput } from '../ui/TextInput'
 import Text from '../ui/Text'
-import FormModal from '../ui/FormModal'
-import ModalHeader from '../ui/ModalHeader'
-import ModalBody from '../ui/ModalBody'
-import ModalFooter from '../ui/ModalFooter'
-import SettingsGrid from '../ui/SettingsGrid'
-import SettingsField from '../ui/SettingsField'
+import Readout from '../ui/Readout'
 import { type ViewBarSlots } from '../ui/ViewBar'
 import { IconTextButton } from '../ui/IconTextButton'
 import BarLabel from '../ui/BarLabel'
@@ -31,6 +24,7 @@ import IconBar from '../ui/IconBar'
 import { parseCombo } from '../ui/ascii/parseCombo'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
+import FlashcardEditModal from './FlashcardEditModal'
 import FlipCard from './FlipCard'
 import GradeButton from './GradeButton'
 import FlashcardsSummary from './FlashcardsSummary'
@@ -140,25 +134,24 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
     return {
         locus: (
             <div class={styles['count']} data-testid="fc-count">
-                <Text as="span" inherit weight="bold" tone="default">
-                    {state.position()}
-                </Text>{' '}
-                / {state.total()}
-                <Show when={state.direction()}>
-                    {d => (
+                <Readout
+                    parts={[
                         <>
-                            {' // '}
-                            <Text
-                                as="span"
-                                inherit
-                                class={styles['card-dir']}
-                            >
-                                {d()}
-                            </Text>
-                        </>
-                    )}
-                </Show>
-                <Show when={state.cram()}> // cram</Show>
+                            <Text as="span" inherit weight="bold" tone="default">
+                                {state.position()}
+                            </Text>{' '}
+                            / {state.total()}
+                        </>,
+                        ...(state.direction()
+                            ? [
+                                  <Text as="span" inherit class={styles['card-dir']}>
+                                      {state.direction()}
+                                  </Text>,
+                              ]
+                            : []),
+                        ...(state.cram() ? ['cram'] : []),
+                    ]}
+                />
             </div>
         ),
         readouts: (
@@ -484,6 +477,7 @@ export function FlashcardsView(props: {
 
     // ── Per-card actions, on the card itself: edit this card / delete this card ──
     const [editingCard, setEditingCard] = createSignal(false)
+    // The card being edited, captured when the dialog opens — the dialog owns its own draft.
     const [cardFront, setCardFront] = createSignal('')
     const [cardBack, setCardBack] = createSignal('')
 
@@ -495,13 +489,13 @@ export function FlashcardsView(props: {
         setEditingCard(true)
     }
 
-    const saveCardEdit = async () => {
+    const saveCardEdit = async (front: string, back: string) => {
         const c = current()
         if (!c || !props.basePath) return
         await api.rowUpdate(props.basePath, c.index, {
             ...c.r.note,
-            [frontField()]: cardFront(),
-            [backField()]: cardBack(),
+            [frontField()]: front,
+            [backField()]: back,
         })
         setEditingCard(false)
         props.onReviewed()
@@ -781,44 +775,12 @@ export function FlashcardsView(props: {
             </div>
 
             <Show when={editingCard() && props.basePath}>
-                <FormModal
+                <FlashcardEditModal
+                    front={cardFront()}
+                    back={cardBack()}
+                    onSave={saveCardEdit}
                     onClose={() => setEditingCard(false)}
-                    label="edit card"
-                    width={420}
-                >
-                    <ModalHeader
-                        title="edit card"
-                        onClose={() => setEditingCard(false)}
-                    />
-                    <ModalBody>
-                        <SettingsGrid>
-                            <SettingsField label="front">
-                                <TextInput
-                                    multiline
-                                    value={cardFront()}
-                                    placeholder="Front / prompt…"
-                                    onInput={setCardFront}
-                                />
-                            </SettingsField>
-                            <SettingsField label="back">
-                                <TextInput
-                                    multiline
-                                    value={cardBack()}
-                                    placeholder="Back / answer…"
-                                    onInput={setCardBack}
-                                />
-                            </SettingsField>
-                        </SettingsGrid>
-                    </ModalBody>
-                    <ModalFooter>
-                        <TextButton onClick={() => setEditingCard(false)}>
-                            cancel
-                        </TextButton>
-                        <TextButton primary onClick={saveCardEdit}>
-                            save
-                        </TextButton>
-                    </ModalFooter>
-                </FormModal>
+                />
             </Show>
         </div>
     )

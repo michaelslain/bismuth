@@ -17,7 +17,7 @@ import Text from '../ui/Text'
 import Tex from '../ui/Tex'
 import { isActivateKey } from '../ui/widgetKeys'
 import ChartFrame from './ChartFrame'
-import ChartReadout from './ChartReadout'
+import Readout from '../ui/Readout'
 import ChartDrill from './ChartDrill'
 import type { ChartGrid } from './chartColumns'
 import type { ChartViewProps } from './chartViewProps'
@@ -147,7 +147,9 @@ export function LineView(props: ChartViewProps) {
                             ? styles.hover
                             : seg.kind === 'point' || seg.kind === 'line'
                               ? styles.accent
-                              : '',
+                              : seg.kind === 'trend'
+                                ? styles.trend
+                                : '',
                 })
                 col += seg.text.length
             }
@@ -160,7 +162,7 @@ export function LineView(props: ChartViewProps) {
             empty={data().points.length === 0}
             onGrid={setGrid}
             readout={
-                <ChartReadout parts={readoutParts()} active={hoverIdx() !== null} />
+                <Readout parts={readoutParts()} tone={hoverIdx() !== null ? 'default' : 'muted'} />
             }
             footer={
                 <div class={styles.footer}>
@@ -192,6 +194,7 @@ export function LineView(props: ChartViewProps) {
             }
         >
             <CodeBlock
+                bare
                 class={styles.linePlot}
                 ref={preRef}
                 tabIndex={0}
@@ -217,7 +220,7 @@ export function LineView(props: ChartViewProps) {
                         </div>
                     )}
                 </For>
-                <div>{plot().axisRule}</div>
+                <div class={styles.axisRule}>{plot().axisRule}</div>
                 <div>{plot().axisLabels}</div>
             </CodeBlock>
         </ChartFrame>

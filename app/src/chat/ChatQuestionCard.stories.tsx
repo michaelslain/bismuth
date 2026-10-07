@@ -128,6 +128,61 @@ export const Answered: Story = {
         // "app" appears both as the (now-disabled) option label and in the outcome line, so
         // getAllByText rather than getByText — this just proves the answer rendered at all.
         await expect(canvas.getAllByText('app').length).toBeGreaterThan(0)
+        // SETTLED IS INK, NOT OPACITY: neither the card nor any ancestor-level control fades, and
+        // the outcome line reads at full ink (--fg), not a dimmed one.
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--fg)'
+        canvasElement.appendChild(probe)
+        const fg = getComputedStyle(probe).color
+        probe.remove()
+        const outcome = within(canvasElement).getByTestId('chat-question-outcome')
+        await expect(getComputedStyle(outcome).color).toBe(fg)
+        for (let el: Element | null = outcome; el && el !== canvasElement.parentElement; el = el.parentElement)
+            await expect(getComputedStyle(el).opacity).toBe('1')
+        for (const opt of canvasElement.querySelectorAll('button'))
+            await expect(getComputedStyle(opt).opacity).toBe('1')
+    },
+}
+
+/** An option whose label contains a comma ("Yes, do it") still shows as the chosen one once
+ *  answered: the answer map holds `parts.join(', ')`, so recovering the pick by splitting on `, `
+ *  would cut the label in two and match nothing. */
+export const AnsweredCommaLabel: Story = {
+    render: () => (
+        <div style={{ width: '600px' }}>
+            <ChatQuestionCard
+                part={{
+                    ...singlePart,
+                    questions: [
+                        {
+                            ...singlePart.questions[0],
+                            options: [
+                                { label: 'Yes, do it', description: '' },
+                                { label: 'Yes', description: '' },
+                                { label: 'No', description: '' },
+                            ],
+                        },
+                    ],
+                    answered: { 'Which package should the fix land in?': 'Yes, do it' },
+                }}
+                onAnswer={fn()}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const mark = (label: string) => {
+            const button = Array.from(canvasElement.querySelectorAll('button')).find(b =>
+                b.textContent?.includes(label),
+            )!
+            return getComputedStyle(button.querySelector('i')!, '::before').content
+        }
+        await expect(mark('Yes, do it')).toBe('"x"')
+        // the neighbours that merely share a fragment of the label are not marked
+        await expect(mark('No')).not.toBe('"x"')
+        const bare = Array.from(canvasElement.querySelectorAll('button')).find(
+            b => b.textContent?.replace(/[\[\]\sx]/g, '') === 'Yes',
+        )!
+        await expect(getComputedStyle(bare.querySelector('i')!, '::before').content).not.toBe('"x"')
     },
 }
 
@@ -144,6 +199,19 @@ export const Skipped: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('Skipped')).toBeInTheDocument()
+        // SETTLED IS INK, NOT OPACITY: neither the card nor any ancestor-level control fades, and
+        // the outcome line reads at full ink (--fg), not a dimmed one.
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--fg)'
+        canvasElement.appendChild(probe)
+        const fg = getComputedStyle(probe).color
+        probe.remove()
+        const outcome = within(canvasElement).getByTestId('chat-question-outcome')
+        await expect(getComputedStyle(outcome).color).toBe(fg)
+        for (let el: Element | null = outcome; el && el !== canvasElement.parentElement; el = el.parentElement)
+            await expect(getComputedStyle(el).opacity).toBe('1')
+        for (const opt of canvasElement.querySelectorAll('button'))
+            await expect(getComputedStyle(opt).opacity).toBe('1')
     },
 }
 

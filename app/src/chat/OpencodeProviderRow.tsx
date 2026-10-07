@@ -13,6 +13,8 @@ import { Show, createEffect, createSignal, type Component } from 'solid-js'
 import styles from './OpencodeProviderRow.module.css'
 import Text from '../ui/Text'
 import TextInput from '../ui/TextInput'
+import ListRow from '../ui/ListRow'
+import ErrorText from '../ui/ErrorText'
 import { TextButton } from '../ui/TextButton'
 import { isConfirmKey } from '../ui/widgetKeys'
 import { api, type OpencodeAuthMethod } from '../api'
@@ -123,48 +125,63 @@ const OpencodeProviderRow: Component<OpencodeProviderRowProps> = props => {
         submit()
     }
 
+    const inputting = () => state().kind === 'key' || state().kind === 'code'
+
     return (
         <div class={`${styles.root} ${props.class ?? ''}`}>
-            <div class={styles.row}>
+            <ListRow
+                trailing={
+                    <Show
+                        when={inputting()}
+                        fallback={
+                            <>
+                                <Show when={state().kind === 'idle'}>
+                                    <TextButton
+                                        onClick={() =>
+                                            isOauth()
+                                                ? void signIn()
+                                                : (setText(''), setState({ kind: 'key' }))
+                                        }
+                                    >
+                                        {isOauth() ? 'sign in' : 'connect'}
+                                    </TextButton>
+                                </Show>
+                                <Show when={state().kind === 'connecting'}>
+                                    <Text as="span" inherit tone="muted">
+                                        connecting…
+                                    </Text>
+                                </Show>
+                                <Show when={state().kind === 'waiting'}>
+                                    <Text
+                                        as="span"
+                                        inherit
+                                        tone="muted"
+                                        title={(state() as { instructions?: string }).instructions}
+                                    >
+                                        waiting for sign-in…
+                                    </Text>
+                                </Show>
+                            </>
+                        }
+                    >
+                        <Show
+                            when={state().kind === 'key'}
+                            fallback={<TextButton onClick={submitCode}>submit</TextButton>}
+                        >
+                            <div class={styles.buttons}>
+                                <TextButton onClick={() => void saveKey()}>save</TextButton>
+                                <TextButton onClick={cancel}>cancel</TextButton>
+                            </div>
+                        </Show>
+                    </Show>
+                }
+            >
                 <Show
-                    when={state().kind === 'key' || state().kind === 'code'}
+                    when={inputting()}
                     fallback={
-                        <>
-                            <Text
-                                as="span"
-                                inherit
-                                tone="default"
-                                class={styles.name}
-                            >
-                                {props.provider.name}
-                            </Text>
-                            <Show when={state().kind === 'idle'}>
-                                <TextButton
-                                    onClick={() =>
-                                        isOauth()
-                                            ? void signIn()
-                                            : (setText(''), setState({ kind: 'key' }))
-                                    }
-                                >
-                                    {isOauth() ? 'sign in' : 'connect'}
-                                </TextButton>
-                            </Show>
-                            <Show when={state().kind === 'connecting'}>
-                                <Text as="span" inherit tone="muted">
-                                    connecting…
-                                </Text>
-                            </Show>
-                            <Show when={state().kind === 'waiting'}>
-                                <Text
-                                    as="span"
-                                    inherit
-                                    tone="muted"
-                                    title={(state() as { instructions?: string }).instructions}
-                                >
-                                    waiting for sign-in…
-                                </Text>
-                            </Show>
-                        </>
+                        <Text as="span" inherit tone="default" class={styles.name}>
+                            {props.provider.name}
+                        </Text>
                     }
                 >
                     <div ref={field} class={styles.field}>
@@ -186,30 +203,13 @@ const OpencodeProviderRow: Component<OpencodeProviderRowProps> = props => {
                             title={(state() as { instructions?: string }).instructions}
                             autocomplete="off"
                             spellcheck={false}
-                            onKeyDown={onEnter(
-                                state().kind === 'key' ? saveKey : submitCode,
-                            )}
+                            onKeyDown={onEnter(state().kind === 'key' ? saveKey : submitCode)}
                         />
                     </div>
-                    <Show
-                        when={state().kind === 'key'}
-                        fallback={
-                            <TextButton onClick={submitCode}>submit</TextButton>
-                        }
-                    >
-                        <div class={styles.buttons}>
-                            <TextButton onClick={() => void saveKey()}>
-                                save
-                            </TextButton>
-                            <TextButton onClick={cancel}>cancel</TextButton>
-                        </div>
-                    </Show>
                 </Show>
-            </div>
+            </ListRow>
             <Show when={error()}>
-                <Text as="div" inherit class={styles.error} role="alert">
-                    {error()}
-                </Text>
+                <ErrorText class={styles.error}>{error()}</ErrorText>
             </Show>
         </div>
     )

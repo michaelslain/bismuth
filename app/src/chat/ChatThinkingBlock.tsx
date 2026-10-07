@@ -1,11 +1,12 @@
 // app/src/chat/ChatThinkingBlock.tsx — ChatThinkingBlock.module.css is the ONLY importer.
-// A dim, collapsible one-liner for a turn's extended-thinking text. Collapsed by default.
-// Extracted verbatim (markup + behaviour) from ChatView.tsx's local `ThinkingBlock` closure.
-import { createSignal, Show, type Component } from 'solid-js'
+// A quiet, collapsible one-liner for a turn's extended-thinking text. Collapsed by default. The
+// collapse is `ui/Disclosure` (leading chevron, `aria-expanded`, body hung under the label), so it
+// opens exactly like a tool row. The text is the model's own reasoning — prose — so it is set in
+// the readable register, not mono micro.
+import { createSignal, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
-import PlainButton from '../ui/PlainButton'
-import CodeBlock from '../ui/CodeBlock'
+import Disclosure from '../ui/Disclosure'
 import type { ThinkingPart } from './chatTranscriptLogic'
 import styles from './ChatThinkingBlock.module.css'
 
@@ -17,23 +18,28 @@ export type ChatThinkingBlockProps = {
 const ChatThinkingBlock: Component<ChatThinkingBlockProps> = props => {
     const [open, setOpen] = createSignal(false)
     return (
-        <div class={`${styles['chat-thinking']} ${props.class ?? ''}`}>
-            <PlainButton
-                class={styles['chat-thinking-head']}
-                onClick={() => setOpen(!open())}
+        <Disclosure
+            class={props.class}
+            open={open()}
+            onToggle={() => setOpen(!open())}
+            summary={
+                <>
+                    <Icon value="Brain" />
+                    <Text as="span" inherit>
+                        Thinking
+                    </Text>
+                </>
+            }
+        >
+            <Text
+                as="div"
+                register="prose"
+                tone="muted"
+                class={styles['chat-thinking-body']}
             >
-                <Icon value={open() ? 'ChevronDown' : 'ChevronRight'} />
-                <Icon value="Brain" />
-                <Text as="span" size="ui" tone="faint">
-                    Thinking
-                </Text>
-            </PlainButton>
-            <Show when={open()}>
-                <CodeBlock class={styles['chat-thinking-body']}>
-                    {props.part.text}
-                </CodeBlock>
-            </Show>
-        </div>
+                {props.part.text}
+            </Text>
+        </Disclosure>
     )
 }
 

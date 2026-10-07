@@ -42,7 +42,7 @@ import {
     resetActiveOnChange,
     scrollSelectedIntoView,
 } from './paletteNav'
-import PaletteRow, { Highlight } from './PaletteRow'
+import PaletteRow, { Highlight } from '../ui/PaletteRow'
 import { rankItems, type Match } from './rankItems'
 import { vaultFileItems } from './vaultFileItems'
 import { refreshVaultTree, vaultTree } from '../treeStore'
@@ -385,24 +385,30 @@ export function SwitcherBar(props: Props) {
                 ref={listRef}
             >
                 <Show when={aiPhase() === 'idle'}>
-                    <For each={fileRows()}>
-                        {(r, i) => (
-                            <PaletteRow
-                                icon={r.item.icon}
-                                selected={selected() === i()}
-                                testid={`palette-row-${r.item.id}`}
-                                onMouseMove={e => onRowPointerMove(i(), e)}
-                                onClick={() => commitFile(r.item)}
-                                label={
-                                    <Highlight
-                                        text={r.item.label}
-                                        indices={r.indices}
-                                    />
-                                }
-                                sublabel={r.item.sublabel}
-                            />
-                        )}
-                    </For>
+                    {/* A listbox holds ONLY options (PaletteRow is role=option) — the section header, the
+              sentinel and the AI button below are not options, so they stay outside it. */}
+                    <Show when={fileRows().length > 0}>
+                        <div role="listbox" aria-label="files and notes">
+                        <For each={fileRows()}>
+                            {(r, i) => (
+                                <PaletteRow
+                                    icon={r.item.icon}
+                                    selected={selected() === i()}
+                                    testid={`palette-row-${r.item.id}`}
+                                    onMouseMove={e => onRowPointerMove(i(), e)}
+                                    onPick={() => commitFile(r.item)}
+                                    label={
+                                        <Highlight
+                                            text={r.item.label}
+                                            indices={r.indices}
+                                        />
+                                    }
+                                    sublabel={r.item.sublabel}
+                                />
+                            )}
+                        </For>
+                        </div>
+                    </Show>
                     {/* Keyword content matches, under the file-name rows — the old Search tab's
               full-text results folded into this one list. Selection indices continue from
               the file rows (the nav walks the whole list). */}
@@ -414,14 +420,16 @@ export function SwitcherBar(props: Props) {
                         >
                             {`in note text // ${plural(contentAll().length, 'note')}`}
                         </Text>
-                        <SearchResultRows
-                            results={contentRows()}
-                            onOpen={openPath}
-                            selected={selected() - fileRows().length}
-                            onRowPointerMove={(i, e) =>
-                                onRowPointerMove(fileRows().length + i, e)
-                            }
-                        />
+                        <div role="listbox" aria-label="in note text">
+                            <SearchResultRows
+                                results={contentRows()}
+                                onOpen={openPath}
+                                selected={selected() - fileRows().length}
+                                onRowPointerMove={(i, e) =>
+                                    onRowPointerMove(fileRows().length + i, e)
+                                }
+                            />
+                        </div>
                         {/* Sentinel: scrolling this into view (root = the list element) grows the
                         rendered page just like reaching it via the keyboard (see the
                         contentRenderLimit effect above) — a mouse-scrolling user reaches rows
@@ -463,7 +471,7 @@ export function SwitcherBar(props: Props) {
                                 <Icon
                                     value="Sparkles"
                                     /* icon-size-exempt: the empty-results illustration mark, not chrome */
-                                    size={22}
+                                    size={24}
                                     class={switcherStyles['search-empty-icon']}
                                 />
                                 <Text
@@ -479,8 +487,8 @@ export function SwitcherBar(props: Props) {
                                     class={switcherStyles['search-empty-hint']}
                                 >
                                     Press{' '}
-                                    <kbd class={switcherStyles['search-kbd']}>Enter</kbd> to
-                                    ask Bismuth AI about your vault
+                                    <Kbd combo="Enter" /> to ask Bismuth AI about your
+                                    vault
                                 </Text>
                             </PlainButton>
                         </Show>
@@ -532,12 +540,14 @@ export function SwitcherBar(props: Props) {
                             <EmptyState title="Bismuth AI found nothing relevant" />
                         }
                     >
-                        <SearchResultRows
-                            results={aiState().results}
-                            onOpen={openPath}
-                            selected={selected()}
-                            onRowPointerMove={onRowPointerMove}
-                        />
+                        <div role="listbox" aria-label="ai results">
+                            <SearchResultRows
+                                results={aiState().results}
+                                onOpen={openPath}
+                                selected={selected()}
+                                onRowPointerMove={onRowPointerMove}
+                            />
+                        </div>
                     </Show>
                 </Show>
             </div>

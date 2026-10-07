@@ -28,7 +28,11 @@ export const AllSegments: Story = {
         expect(canvas.getByText('Ann B').tagName).toBe('A')
         expect(canvas.getByText('Plan').tagName).toBe('A')
         expect(canvas.getByText('#ops/now')).toBeTruthy()
-        expect(canvas.getByText('docs').tagName).toBe('BUTTON')
+        // An external link is a NoteLink `external` — a real anchor, the same kind as the wikilinks.
+        expect(canvas.getByText('docs').tagName).toBe('A')
+        expect(getComputedStyle(canvas.getByText('docs')).textDecorationLine).toBe(
+            getComputedStyle(canvas.getByText('Plan')).textDecorationLine,
+        )
         expect(getComputedStyle(canvas.getByText('must')).fontWeight).not.toBe(
             getComputedStyle(canvas.getByText('email')).fontWeight,
         )

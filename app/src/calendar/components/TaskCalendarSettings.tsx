@@ -27,9 +27,7 @@ import SuggestInput from '../../ui/SuggestInput'
 import SettingsHint from '../../ui/SettingsHint'
 import { TextButton } from '../../ui/TextButton'
 import Label from '../../ui/Label'
-import ColorChip from '../../ui/ColorChip'
-import StatusDot from '../../ui/StatusDot'
-import { resolvePaletteColor } from '../../ui/palette'
+import CategoryColorChip from './CategoryColorChip'
 import RowList from '../../ui/RowList'
 import ListRow from '../../ui/ListRow'
 
@@ -169,18 +167,8 @@ const TaskCalendarSettings: Component<TaskCalendarSettingsProps> = props => {
                             {name => (
                                 <ListRow
                                     leading={
-                                        <ColorChip
+                                        <CategoryColorChip
                                             color={props.colors.get(name) ?? ''}
-                                            trigger={
-                                                <StatusDot
-                                                    size="md"
-                                                    color={
-                                                        resolvePaletteColor(
-                                                            props.colors.get(name) ?? '',
-                                                        ) || 'var(--accent)'
-                                                    }
-                                                />
-                                            }
                                             open={openPicker() === name}
                                             onToggle={() =>
                                                 setOpenPicker(p =>

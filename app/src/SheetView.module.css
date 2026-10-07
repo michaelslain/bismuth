@@ -2,8 +2,7 @@
    mounted into a full-size container, or a parse/read error shown in its place). */
 
 .sheet-error {
-  padding: 16px;
-  color: var(--danger, #c00);
+  padding: var(--sp-6);
 }
 
 .sheet-container {

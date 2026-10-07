@@ -127,23 +127,69 @@ export const Danger: Story = {
     },
 }
 
+/** Every CSSStyleRule in the live CSSOM whose selector matches `test`. CSS `:hover` and `:active`
+ *  follow the REAL pointer; a story's `play` only dispatches synthetic events, so it cannot hold a
+ *  row hovered or pressed. This proves the rule ships and names the right token; the state itself
+ *  was exercised with a real pointer (see the task report). */
+function rulesMatching(test: RegExp): CSSStyleRule[] {
+    const out: CSSStyleRule[] = []
+    const walk = (list: CSSRuleList) => {
+        for (const r of Array.from(list)) {
+            if (r instanceof CSSStyleRule && test.test(r.selectorText)) out.push(r)
+            else if ('cssRules' in r) walk((r as CSSGroupingRule).cssRules)
+        }
+    }
+    for (const sheet of Array.from(document.styleSheets)) {
+        try {
+            walk(sheet.cssRules)
+        } catch {
+            /* a cross-origin sheet: not ours */
+        }
+    }
+    return out
+}
+
+/** HOVER + PRESSED. Hover lifts the LABEL to the tone — `--accent` on the default row, `--danger` on
+ *  the destructive one — so the two rows differ at the moment you are about to act, not only by the
+ *  hue of a bare icon at rest; pressed is the one fill the row paints, `--state-active-bg`. Both
+ *  are pointer states `play` cannot hold, so this asserts the shipped rules name the right tokens
+ *  and that the two tones really differ. */
+export const HoverAndPressed: Story = {
+    render: () => (
+        <div style={shell}>
+            <RowList>
+                <OptionRow icon="Calendar" label="this event" sublabel="Aug 12, 2026" onClick={() => {}} />
+                <OptionRow icon="Trash2" label="this event" sublabel="Aug 12, 2026" danger onClick={() => {}} />
+            </RowList>
+        </div>
+    ),
+    play: async () => {
+        const hover = rulesMatching(/option-row.*:hover.*option-lab/)
+        const tone = (danger: boolean) =>
+            hover.find(r => /danger/.test(r.selectorText) === danger)?.style.color ?? ''
+        expect(tone(false)).toContain('--accent')
+        expect(tone(true)).toContain('--danger')
+        const pressed = rulesMatching(/option-row[^ ]*:active/)
+        expect(pressed.some(r => r.style.background.includes('--state-active-bg'))).toBe(true)
+    },
+}
+
 /** The keyboard path. No focus ring — every button in the app paints no focus indicator, mouse or
- *  keyboard, by user decision (2026-09-27): OptionRow is a bare `<button>` and gets the same
- *  treatment as every other button family member, even though a keyboard user tabbing the delete
- *  dialog loses the visual cue for which irreversible scope is about to be committed.
+ *  keyboard, by user decision (2026-09-27), so the frame of a focused row is identical to a resting
+ *  one BY RULE. This story renders the DEFAULT row (it used to be a copy of the Danger row's
+ *  markup, which made it a duplicate frame of `Danger`) and proves the keyboard path from state:
+ *  a real Tab reaches the row, it matches `:focus-visible`, and it draws no outline.
  *
- *  `play` reaches the row with a real Tab rather than `.focus()`. That is not fussiness — a
- *  programmatic focus on a button does not satisfy `:focus-visible` in Chrome, so this would prove
- *  nothing about the keyboard path specifically. */
+ *  `play` reaches the row with a real Tab rather than `.focus()`: a programmatic focus on a button
+ *  does not satisfy `:focus-visible` in Chrome, so that would prove nothing about the keyboard. */
 export const Focused: Story = {
     render: () => (
         <div style={shell}>
             <RowList>
                 <OptionRow
-                    icon="Calendar"
-                    label="all events"
-                    sublabel="the entire series"
-                    danger
+                    icon="CircleCheck"
+                    label="this event"
+                    sublabel="Aug 12, 2026"
                     onClick={() => {}}
                 />
             </RowList>

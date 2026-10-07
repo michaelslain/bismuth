@@ -1,5 +1,11 @@
-/* app/src/intro/IntroHero.module.css — the hero fills the art box and centres its art. */
+/* app/src/intro/IntroHero.module.css — the hero fills the art box and centres its art.
+   `--glyph-scale-cap` is the one hook ui/ascii's GlyphCanvas reads to cap how far a host's art may
+   grow; this is the only host that sets it, from the `--intro-glyph-scale` token, so every other
+   GlyphArt stays at the primitive's own MAX_SCALE. (The token stays a `:root` token, not a value
+   declared here: a vault's `appearance.tokens` override lands on `:root` and a declaration on this
+   element would shadow it.) */
 .intro-hero {
+  --glyph-scale-cap: var(--intro-glyph-scale);
   width: 100%;
   height: 100%;
   display: flex;

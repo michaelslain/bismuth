@@ -12,6 +12,7 @@ import { FileView } from './FileView'
 import { PaneContent } from './PaneContent'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import TextButton from './ui/TextButton'
 import { refreshDaemonPages } from './daemon/daemonInboxApi'
 import { sampleDaemonPages } from './ui/_daemonFixtures'
 import { start as startServerVersion } from './serverVersion'
@@ -166,27 +167,24 @@ function RemountSwitcher() {
     return (
         <div>
             <div>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="remount-note"
                     onClick={() => setPath(REMOUNT_NOTE_PATH)}
                 >
-                    Note
-                </button>
-                <button
-                    type="button"
+                    note
+                </TextButton>
+                <TextButton
                     data-testid="remount-a"
                     onClick={() => setPath(REMOUNT_BASE_A_PATH)}
                 >
-                    Base A
-                </button>
-                <button
-                    type="button"
+                    base a
+                </TextButton>
+                <TextButton
                     data-testid="remount-b"
                     onClick={() => setPath(REMOUNT_BASE_B_PATH)}
                 >
-                    Base B
-                </button>
+                    base b
+                </TextButton>
             </div>
             <FileView path={path()} {...baseProps} />
         </div>
@@ -294,27 +292,24 @@ function PaneContentSwitcher() {
     return (
         <div>
             <div>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="pc-note"
                     onClick={() => setPath(REMOUNT_NOTE_PATH)}
                 >
-                    Note
-                </button>
-                <button
-                    type="button"
+                    note
+                </TextButton>
+                <TextButton
                     data-testid="pc-a"
                     onClick={() => setPath(REMOUNT_BASE_A_PATH)}
                 >
-                    Base A
-                </button>
-                <button
-                    type="button"
+                    base a
+                </TextButton>
+                <TextButton
                     data-testid="pc-b"
                     onClick={() => setPath(REMOUNT_BASE_B_PATH)}
                 >
-                    Base B
-                </button>
+                    base b
+                </TextButton>
             </div>
             <PaneContent
                 path={path()}

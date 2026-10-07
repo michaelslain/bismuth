@@ -11,7 +11,7 @@ import { bucketReadout, formatValue, propName } from '../../../core/src/bases/ch
 import { binLabel, todayISO } from '../../../core/src/dates'
 import Text from '../ui/Text'
 import ChartFrame from './ChartFrame'
-import ChartReadout from './ChartReadout'
+import Readout from '../ui/Readout'
 import ChartDrill from './ChartDrill'
 import HeatCell from './HeatCell'
 import HeatmapDayEditor from './HeatmapDayEditor'
@@ -149,14 +149,14 @@ export function HeatmapView(props: HeatmapViewProps) {
         return [caption, `peak ${formatValue(p.value)} (${binLabel(p.date, 'day')})`, hint]
     })
 
-    const footerText = createMemo(() => {
+    const footerParts = createMemo(() => {
         const s = streakInfo()
         const day = (n: number) => (n === 1 ? 'day' : 'days')
         return [
             `${s.entries} ${day(s.entries)} logged`,
             `current streak ${s.current} ${day(s.current)}`,
             `longest streak ${s.longest} ${day(s.longest)}`,
-        ].join(' // ')
+        ]
     })
 
     const drillRows = createMemo<Row[]>(() => {
@@ -247,13 +247,9 @@ export function HeatmapView(props: HeatmapViewProps) {
             emptyHint="set an x date column in view settings"
             onGrid={g => setColumns(g.columns)}
             readout={
-                <ChartReadout parts={readoutParts()} active={hovered() !== null} />
+                <Readout parts={readoutParts()} tone={hovered() !== null ? 'default' : 'muted'} />
             }
-            footer={
-                <Text as="div" inherit size="ui" tone="muted">
-                    {footerText()}
-                </Text>
-            }
+            footer={<Readout parts={footerParts()} />}
             drill={
                 selected() ? (
                     <div class={styles.drillWrap}>
@@ -310,6 +306,7 @@ export function HeatmapView(props: HeatmapViewProps) {
                                             level={level(cell())}
                                             glyph={glyphOf(level(cell()))}
                                             selected={selected() === cell().date}
+                                            hovered={hovered() === cell().date}
                                             label={`${dayLabel(cell().date)}: ${formatValue(effectiveValue(cell().date) ?? 0)}`}
                                             onHover={entered =>
                                                 setHovered(prev =>

@@ -7,11 +7,11 @@
 //
 // Three kinds of entry, deliberately not silently conflated:
 //   - { kind: 'slug' } — resolved against @iconify-json/ph's icons.json by build-icon-svgs.ts.
-//     138 of these, each verified present (`!!data.icons[slug]`) before this file was written.
+//     142 of these, each verified present (`!!data.icons[slug]`) before this file was written.
 //   - { kind: 'custom' } — a hand-authored inline SVG body, for the two names Phosphor genuinely
 //     has no concept for but the app cannot leave blank: Regex ('.*') and WholeWord ('[W]'), both
-//     visible controls in the editor find panel. A monospace-text-mark approach, at Phosphor's
-//     native 0-256 viewBox so they sit at the same visual weight as their mapped neighbours.
+//     visible controls in the editor find panel. Stroked paths (never text) at Phosphor's native
+//     0-256 viewBox and 16-unit stroke so they sit at the same visual weight as their neighbours.
 //   - absent from this file entirely — see KNOWN_MISSING below (empty today). A GENUINE gap only.
 //
 // PROVENANCE. Each slug was chosen by kebab-casing the canonical name, and where that missed,
@@ -55,6 +55,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     CaseSensitive: { kind: 'slug', slug: 'text-aa' },
     ChartColumn: { kind: 'slug', slug: 'chart-bar' },
     ChartLine: { kind: 'slug', slug: 'chart-line' },
+    ChatSlash: { kind: 'slug', slug: 'chat-slash' },
     Check: { kind: 'slug', slug: 'check' },
     ChevronDown: { kind: 'slug', slug: 'caret-down' },
     ChevronLeft: { kind: 'slug', slug: 'caret-left' },
@@ -66,7 +67,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     Clipboard: { kind: 'slug', slug: 'clipboard' },
     ClipboardList: { kind: 'slug', slug: 'clipboard-text' },
     Code: { kind: 'slug', slug: 'code' },
-    Columns2: { kind: 'slug', slug: 'columns' },
+    Columns2: { kind: 'slug', slug: 'square-split-horizontal' },
     Columns3: { kind: 'slug', slug: 'columns' },
     Combine: { kind: 'slug', slug: 'intersect' },
     Copy: { kind: 'slug', slug: 'copy' },
@@ -76,6 +77,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     Eraser: { kind: 'slug', slug: 'eraser' },
     ExternalLink: { kind: 'slug', slug: 'arrow-square-out' },
     Eye: { kind: 'slug', slug: 'eye' },
+    EyeSlash: { kind: 'slug', slug: 'eye-slash' },
     File: { kind: 'slug', slug: 'file' },
     FilePlus: { kind: 'slug', slug: 'file-plus' },
     FileText: { kind: 'slug', slug: 'file-text' },
@@ -111,7 +113,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     Lock: { kind: 'slug', slug: 'lock' },
     Map: { kind: 'slug', slug: 'map-trifold' },
     Megaphone: { kind: 'slug', slug: 'megaphone' },
-    Menu: { kind: 'slug', slug: 'hamburger' },
+    Menu: { kind: 'slug', slug: 'list' },
     MessageSquare: { kind: 'slug', slug: 'chat-circle' },
     MessagesSquare: { kind: 'slug', slug: 'chats' },
     Minus: { kind: 'slug', slug: 'minus' },
@@ -129,7 +131,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     Play: { kind: 'slug', slug: 'play' },
     Plus: { kind: 'slug', slug: 'plus' },
     Power: { kind: 'slug', slug: 'power' },
-    PowerOff: { kind: 'slug', slug: 'power' },
+    PowerOff: { kind: 'slug', slug: 'plugs' },
     Redo2: { kind: 'slug', slug: 'arrow-clockwise' },
     RefreshCw: { kind: 'slug', slug: 'arrows-clockwise' },
     Repeat: { kind: 'slug', slug: 'repeat' },
@@ -139,7 +141,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     Scissors: { kind: 'slug', slug: 'scissors' },
     Search: { kind: 'slug', slug: 'magnifying-glass' },
     Send: { kind: 'slug', slug: 'paper-plane-tilt' },
-    SeparatorHorizontal: { kind: 'slug', slug: 'line-segment' },
+    SeparatorHorizontal: { kind: 'slug', slug: 'square-split-vertical' },
     Server: { kind: 'slug', slug: 'hard-drives' },
     Settings: { kind: 'slug', slug: 'gear' },
     Settings2: { kind: 'slug', slug: 'sliders' },
@@ -152,7 +154,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     SquareCheck: { kind: 'slug', slug: 'check-square' },
     SquareKanban: { kind: 'slug', slug: 'kanban' },
     SquarePlus: { kind: 'slug', slug: 'plus-square' },
-    SquareSlash: { kind: 'slug', slug: 'prohibit-inset' },
+    SquareSlash: { kind: 'slug', slug: 'square-half' },
     SquareTerminal: { kind: 'slug', slug: 'terminal-window' },
     SquareX: { kind: 'slug', slug: 'x-square' },
     Star: { kind: 'slug', slug: 'star' },
@@ -170,15 +172,25 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     Zap: { kind: 'slug', slug: 'lightning' },
     ZoomIn: { kind: 'slug', slug: 'magnifying-glass-plus' },
     ZoomOut: { kind: 'slug', slug: 'magnifying-glass-minus' },
+    // Both are STROKED PATHS on the 256 grid at Phosphor Regular's own 16-unit stroke with round
+    // caps and joins — never <text>. They used to be a retyped mono stack, which a font can render
+    // smaller, lighter and differently from every neighbour (and not at all where it is missing).
+    // Regex = a period at the baseline beside a three-armed asterisk; WholeWord = a W between
+    // square brackets (a word, bounded).
     Regex: {
         kind: 'custom',
         viewBox: '0 0 256 256',
-        body: '<text x="128" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="120" font-weight="600" text-anchor="middle" fill="currentColor">.*</text>',
+        body:
+            '<g fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M156 33v168M83 75l146 84M229 75L83 159"/></g>' +
+            '<circle cx="40" cy="213" r="18" fill="currentColor"/>',
     },
     WholeWord: {
         kind: 'custom',
         viewBox: '0 0 256 256',
-        body: '<text x="128" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="84" font-weight="600" text-anchor="middle" fill="currentColor">[W]</text>',
+        body:
+            '<g fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M64 32H28v192h36M192 32h36v192h-36M92 84l18 88 18-56 18 56 18-88"/></g>',
     },
 }
 

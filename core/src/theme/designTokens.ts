@@ -117,6 +117,8 @@ const SURFACE: TokenDef[] = [
     surface('border-soft', 'color', '#282B34', 'A hairline one notch softer than border.', { field: 'borderSoft' }),
     surface('term-bg', 'color', '#101116', 'Terminal background (a dark panel in every theme).', { field: 'termBg' }),
     surface('color-scheme', 'scheme', 'dark', 'light or dark: the browser color-scheme and the light/dark branch of derived surfaces.', { field: 'isLight' }),
+    surface('skeleton-ink', 'color', 'color-mix(in srgb, var(--faint) 22%, transparent)', 'Loading placeholder ink: the bars and blocks of a skeleton.'),
+    surface('skeleton-ink-faint', 'color', 'color-mix(in srgb, var(--faint) 16%, transparent)', 'The quieter second step of placeholder ink, for a skeleton\'s secondary blocks.'),
 ]
 
 const text = grp('text')
@@ -179,11 +181,11 @@ const SEMANTIC: TokenDef[] = [
 const state = grp('state')
 const STATE: TokenDef[] = [
     state('state-hover-bg', 'color', 'color-mix(in srgb, var(--fg) 8%, transparent)', 'Row or button under the pointer.'),
-    state('state-active-bg', 'color', 'color-mix(in srgb, var(--fg) 14%, transparent)', 'Row or button being pressed. (no consumer yet)'),
+    state('state-active-bg', 'color', 'color-mix(in srgb, var(--fg) 14%, transparent)', 'Row or button being pressed: the one pressed fill for list rows and chips.'),
     state('state-selected-bg', 'color', 'var(--accent-soft)', 'Selected row or tab fill.'),
     state('state-selected-fg', 'color', 'var(--accent)', 'Selected row or tab text. (no consumer yet)'),
     state('state-focus-ring', 'shadow', 'inset 0 0 0 1px var(--accent)', 'Keyboard focus drawn inside a control. (no consumer yet)'),
-    state('state-disabled-op', 'number', '0.45', 'Opacity of a disabled control. (no consumer yet)'),
+    state('state-disabled-op', 'number', '0.45', 'The one sanctioned opacity-as-state: it dims the sidebar toolbar while the switcher is active (`shell/AppFrame.module.css`), a whole non-interactive region. The text of a disabled control is still `--faint` ink alone, because any opacity over `--faint` falls under the 3:1 UI floor. No other state is shown by opacity.'),
     state('focus-ring', 'border', '2px solid var(--accent)', 'Keyboard focus outline.'),
     state('focus-ring-offset', 'length', '1px', 'Gap between a control and its focus outline. (no consumer yet)'),
 ]
@@ -194,10 +196,18 @@ const EFFECT: TokenDef[] = [
     effect('glow-text', 'shadow', 'none', 'Text bloom; only cathode uses it.', { field: 'glowText' }),
     effect('shadow-hard', 'color', 'rgba(0,0,0,.45)', 'The flat shadow colour that lift composites against.'),
     effect('lift', 'shadow', '2px 2px 0 var(--shadow-hard)', 'Hard-offset drop shadow under menus, popups and cards.'),
+    effect('lift-start', 'shadow', '-2px 2px 0 var(--shadow-hard)', 'The mirror of lift for a panel on the right edge, so its depth cue falls inside the window.'),
     effect('hud-fps-good', 'color', '#3fb950', 'FPS meter: healthy frame rate. Theme-independent.'),
     effect('hud-fps-ok', 'color', '#d29922', 'FPS meter: borderline frame rate. Theme-independent.'),
     effect('hud-fps-bad', 'color', '#f85149', 'FPS meter: slow frame rate. Theme-independent.'),
     effect('field-noise-op', 'number', '.45', 'Opacity of the graph field texture.'),
+    effect('intro-glyph-scale', 'number', '1.3333', "Largest scale the first-run intro's glyph art is drawn at. A 24-row art box over an 18-row scene is exactly 4/3; GlyphCanvas caps its fit here, then snaps down onto whole device pixels."),
+    effect('z-local', 'number', '1', 'Stacking inside one component: a handle over its sibling.'),
+    effect('z-overlay', 'number', '20', 'Pane overlays: the chat panel, the switcher, drop cues.'),
+    effect('z-shell', 'number', '100', 'Shell chrome over the panes: the tab rail and the sidebar edge.'),
+    effect('z-modal', 'number', '1000', 'The modal band: scrim and panel, shared with the drag ghost. A modal sits over the shell.'),
+    effect('z-toast', 'number', '1050', 'Toasts: above a modal, because a notification must be seen, and below a popover, so a toast never covers an open menu.'),
+    effect('z-popover', 'number', '1100', 'Popovers and menus: tops the stack, because a menu can open inside a modal and must sit over it.'),
 ]
 
 const callout = grp('callout')
@@ -298,7 +308,14 @@ const SIZE: TokenDef[] = [
     size('h-row', 'length', '18px', 'Height of a list row.'),
     size('h-control', 'length', '24px', 'Height of a button or field.'),
     size('h-band', 'length', '36px', 'Height of a header band.'),
+    size('inset-traffic-lights', 'length', '78px', 'Start inset of a band that clears the macOS traffic lights (Band inset).'),
     size('note-column', 'length', '620px', 'Reading width of a note.'),
+    size('note-gutter', 'length', '40px', 'Side padding of a note: the editor content inset that the title, frontmatter and chat transcript line up with.'),
+    size('chat-column', 'length', '680px', 'Reading width of a chat transcript and its composer.'),
+    size('daemon-list-max', 'length', '100ch', 'Widest an opened daemon section list (crons, services, inbox, log) grows, so all four end at one x.'),
+    size('view-gutter', 'length', 'var(--sp-5)', 'Side gutter of a Bases view body; matches the view bar.'),
+    size('rail-w-collapsed', 'length', '46px', 'Width of the tab rail when collapsed.'),
+    size('skeleton-bar-h', 'length', 'var(--sp-5)', 'Height of one placeholder bar in a skeleton.'),
     size('list-max-h', 'length', '320px', 'Tallest a dropdown list grows before scrolling.'),
     size('icon', 'length', '12px', 'Size of every icon, 11 to 20px. Legacy: appearance.iconSize.', { setting: 'appearance.iconSize' }),
     size('bar-icon-size', 'length', '18px', 'Size of icons in a view bar.'),
@@ -321,7 +338,8 @@ const RULE: TokenDef[] = [
     rule('rule', 'border', '1px solid var(--border)', 'The standard line.'),
     rule('rule-soft', 'border', '1px solid var(--border-soft)', 'A hairline.'),
     rule('rule-accent', 'border', '1px solid var(--accent)', 'An accent line. (no consumer yet)'),
-    rule('rule-dashed', 'border', '1px dashed var(--border)', 'A dashed line. (no consumer yet)'),
+    rule('rule-dashed', 'border', '1px dashed var(--border)', 'A dashed line. Dashed edges read this, or rule-drop for a drop cue, never a hand-written 1.5px dashed.'),
+    rule('rule-drop', 'border', '1.5px dashed var(--accent)', 'The outline of a place that takes the drop.'),
     rule('rule-soft-dashed', 'border', '1px dashed var(--border-soft)', 'A dashed hairline.'),
     rule('accent-edge', 'border', '2px solid var(--accent)', 'The accent bar on the edge of a selected block.'),
 ]

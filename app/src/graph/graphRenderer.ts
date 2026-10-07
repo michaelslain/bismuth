@@ -167,6 +167,11 @@ import type { DensityField } from './densityField'
 
 /** Live graph settings pushed by GraphView (mirrors settings.graph + appearance tokens). */
 export interface GraphConfig {
+    /** Cell rows held back along the bottom of the fit rect, so a graph fitted to its pane does not run
+     *  its lowest labels under an overlay on the canvas floor (the full pane's status line). Default 0:
+     *  the whole box is fitted. Both the fit scale and the origin honour it, so the graph is centred in
+     *  what is left. */
+    fitBottomRows?: number
     spin: boolean
     spinSpeed: number
     palette: number[]

@@ -1,10 +1,9 @@
 // Visual spec for <CommandButton> — the presentational half of App.tsx's configurable toolbar
 // button, shared by the sidebar header bar and the vertical tab rail.
 //
-// WHY THIS FILE EXISTS: `.toolbar-btn-wrap` and `.toolbar-badge` are CommandButton.module.css
-// classes, HASHED at build time. A name left behind as a string literal still compiles and still
-// renders, it just matches nothing — the badge loses its absolute positioning and lands inline
-// instead of pinned to the icon's corner. Nothing else in the repo can see that: typecheck reads
+// WHY THIS FILE EXISTS: `.toolbar-btn-wrap` is a CommandButton.module.css class, HASHED at build
+// time. A name left behind as a string literal still compiles and still renders, it just matches
+// nothing — the badge loses the wrap's inline row and its gap. Nothing else in the repo can see that: typecheck reads
 // no CSS, and Bun resolves `solid-js/web` to its server build so no unit test can mount a Solid
 // component at all. `bench/cssBaseline.ts` reads computed styles off Storybook, so these stories
 // ARE the gate.
@@ -15,7 +14,7 @@
 // rendered bare, with no IconBar, would just fall back to IconButton's own default and prove
 // nothing about this component's actual behaviour.
 //
-// FOUR STORIES: `Default` at rest. `WithBadge` — the only story rendering `.toolbar-badge` at a
+// FOUR STORIES: `Default` at rest. `WithBadge` — the only story rendering the badge at a
 // default size, on a dark surface so its `color: var(--bg)` on `background: var(--accent)` is
 // legible. `Disabled` — the unknown-command fallback path, which also wraps in
 // `.toolbar-btn-wrap`. `WithBadgeLarge` — the same badge at `iconSize` 20 (the schema's
@@ -46,8 +45,7 @@ export const Default: Story = {
     ),
 }
 
-/** The inbox's live due-count badge — one of the two stories that render `.toolbar-badge`
- *  (with WithBadgeLarge).
+/** The inbox's live due-count badge — one of the two stories that render a badge (with WithBadgeLarge).
  *  Rendered on a dark surface so the badge's `color: var(--bg)` on `background: var(--accent)`
  *  reads correctly. */
 export const WithBadge: Story = {

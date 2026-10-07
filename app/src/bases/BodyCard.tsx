@@ -2,6 +2,7 @@ import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { renderValue } from './valueRenderers'
 import { titleOf } from './kanbanMeta'
 import { CardEditor } from './CardEditor'
+import CardFrame from './CardFrame'
 import CardTitle from './CardTitle'
 import styles from './BodyCard.module.css'
 
@@ -25,15 +26,19 @@ export function BodyCard(props: {
     const titleText = (): string => titleOf(props.row, firstCol())
 
     return (
-        <div class={`${styles.bodyCard} ${props.class ?? ''}`}>
-            <CardTitle>
-                {renderValue(firstCol(), props.row)}
-            </CardTitle>
-            <CardEditor
-                path={props.row.file.path}
-                title={titleText()}
-                mode={props.mode === 'tasks' ? 'tasks' : 'body'}
-            />
-        </div>
+        // overflow visible: the embedded CodeMirror editor's completion popup must be able to
+        // leave the card.
+        <CardFrame overflow="visible" class={props.class}>
+            <div class={styles.bodyCard}>
+                <CardTitle>
+                    {renderValue(firstCol(), props.row)}
+                </CardTitle>
+                <CardEditor
+                    path={props.row.file.path}
+                    title={titleText()}
+                    mode={props.mode === 'tasks' ? 'tasks' : 'body'}
+                />
+            </div>
+        </CardFrame>
     )
 }

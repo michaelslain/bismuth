@@ -6,11 +6,12 @@
 //
 // Props: as ('p' default | 'span' | 'div'), size ('micro' | 'ui' | 'body' default | 'body-lg' |
 // 'lead' | 'title' — global.css's `ui/ui.css` section's fixed --fs-* scale), tone ('default' | 'muted' |
-// 'faint'), weight
-// ('regular' default | 'medium' | 'bold'), eyebrow (the uppercase/tracked section-label
-// register), class, children.
+// 'faint' | 'danger' | 'accent' | 'warning'), weight
+// ('regular' default | 'medium' | 'bold'), truncate (one line + ellipsis), eyebrow (the tracked
+// section-label register), class, children.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
+import { expect } from 'storybook/test'
 import Text from './Text'
 import { Row } from './_storyKit'
 
@@ -26,8 +27,9 @@ const meta = {
         },
         tone: {
             control: 'inline-radio',
-            options: ['default', 'muted', 'faint'],
+            options: ['default', 'muted', 'faint', 'danger', 'accent', 'warning'],
         },
+        truncate: { control: 'boolean' },
         weight: {
             control: 'inline-radio',
             options: ['regular', 'medium', 'bold'],
@@ -41,6 +43,7 @@ const meta = {
         tone: 'default',
         weight: 'regular',
         eyebrow: false,
+        truncate: false,
         children:
             'The quick brown fox jumps over the lazy dog — note prose in a panel.',
     },
@@ -80,15 +83,79 @@ export const Sizes: Story = {
     ),
 }
 
-/** The three tones at body size. */
+/** The six tones at body size. `muted` is for content a person reads, `faint` is structure
+ *  only; `danger` is an error message (use `ErrorText` for one — it also announces itself),
+ *  `accent` an emphasised or active value, `warning` something that needs attention but is not
+ *  an error. */
 export const Tones: Story = {
     render: () => (
-        <Row label="tone">
+        <Row label="tone" column>
             <Text tone="default">Default — --fg</Text>
             <Text tone="muted">Muted — --text-muted</Text>
             <Text tone="faint">Faint — --faint</Text>
+            <Text tone="danger">Danger — --danger</Text>
+            <Text tone="accent">Accent — --accent</Text>
+            <Text tone="warning">Warning — --warning</Text>
         </Row>
     ),
+    play: async ({ canvasElement }) => {
+        // Each new tone must resolve to its own token, not fall through to the default ink.
+        const want: Record<string, string> = {
+            Danger: '--danger',
+            Accent: '--accent',
+            Warning: '--warning',
+        }
+        const probe = document.createElement('span')
+        canvasElement.appendChild(probe)
+        for (const [word, token] of Object.entries(want)) {
+            probe.style.color = `var(${token})`
+            const expected = getComputedStyle(probe).color
+            const el = [...canvasElement.querySelectorAll('p')].find(p =>
+                p.textContent?.startsWith(word),
+            )!
+            expect(getComputedStyle(el).color).toBe(expected)
+        }
+        probe.remove()
+    },
+}
+
+const LONG_LINE =
+    'A genuinely long single line of text that cannot fit the row it sits in — supercalifragilistic-and-then-some-more'
+
+/** `truncate` — one line cut with an ellipsis, inside a flex row. The row is the point: a bare
+ *  text child of a flex container has an automatic min-width of its full content, so
+ *  `overflow: hidden` alone clips mid-character with no "…". `truncate` carries `min-width: 0`,
+ *  so the text shrinks to the row and the ellipsis is drawn. */
+export const Truncate: Story = {
+    render: () => (
+        <div
+            data-truncate-row
+            style={{
+                display: 'flex',
+                width: '200px',
+                border: '1px solid var(--border)',
+                padding: '6px 10px',
+                background: 'var(--panel)',
+            }}
+        >
+            <Text as="span" truncate>
+                {LONG_LINE}
+            </Text>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const row = canvasElement.querySelector<HTMLElement>('[data-truncate-row]')!
+        const text = row.querySelector<HTMLElement>('span')!
+        const cs = getComputedStyle(text)
+        expect(cs.textOverflow).toBe('ellipsis')
+        expect(cs.minWidth).toBe('0px')
+        // It shrank to the row (a text that kept its content width would overflow it) while
+        // its content is still wider than its box — i.e. it is genuinely being cut.
+        expect(text.getBoundingClientRect().right).toBeLessThanOrEqual(
+            row.getBoundingClientRect().right,
+        )
+        expect(text.scrollWidth).toBeGreaterThan(text.clientWidth)
+    },
 }
 
 /** The three weights at body size. */
@@ -116,18 +183,18 @@ export const Italic: Story = {
     ),
 }
 
-/** The uppercase/tracked "section label" register — the pattern already hand-rolled as
- *  DaemonList.module.css's .daemon-section-head (micro + faint + regular) and ui.css's own
- *  .ui-empty-block h2 (ui + bold). eyebrow only adds the transform/tracking; tone and weight
- *  stay explicit props. */
+/** The tracked "section label" register — the pattern already hand-rolled as
+ *  DaemonList.module.css's .daemon-section-head (micro + faint + regular). eyebrow adds ONLY the
+ *  letter-spacing — never uppercase, never bold (nothing in the system's eyebrow is bold); tone
+ *  and size stay explicit props. */
 export const Eyebrow: Story = {
     render: () => (
         <Stack>
             <Text eyebrow size="micro" tone="faint">
                 Section label
             </Text>
-            <Text eyebrow size="ui" tone="default" weight="bold">
-                Panel title, bold
+            <Text eyebrow size="ui" tone="muted">
+                Panel title, at ui size
             </Text>
         </Stack>
     ),
@@ -244,6 +311,9 @@ export const AllVariants: Story = {
                 <Text tone="default">default</Text>
                 <Text tone="muted">muted</Text>
                 <Text tone="faint">faint</Text>
+                <Text tone="danger">danger</Text>
+                <Text tone="accent">accent</Text>
+                <Text tone="warning">warning</Text>
             </Row>
             <Row label="weight">
                 <Text weight="regular">regular</Text>

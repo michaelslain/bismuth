@@ -16,7 +16,7 @@
 // The MAPPING TABLE is tested separately (iconMap.test.ts: every name covered exactly once,
 // no accidental slug collisions, counts match the plan record). This file tests what registry.ts
 // does with it — including the loud-failure guarantee item 8 of the migration required: every one
-// of the 140 canonical names resolves to either real art or a deliberate known-missing entry,
+// of the 142 canonical names resolves to either real art or a deliberate known-missing entry,
 // never to nothing.
 import { test, expect } from 'bun:test'
 import {
@@ -29,7 +29,7 @@ import {
 import { ICON_NAMES } from './iconNames'
 import { KNOWN_MISSING } from './iconMap'
 
-test('every one of the 140 canonical names resolves to real art or the deliberate fallback — never null, never empty', () => {
+test('every one of the 142 canonical names resolves to real art or the deliberate fallback — never null, never empty', () => {
     // The loud-failure guarantee: a name that slipped out of the manifest, or a manifest entry with
     // an empty body, would show up here as a name resolving to null/undefined/empty markup — a
     // silent blank in the old Nerd Font sense, just achieved a different way.
@@ -54,6 +54,18 @@ test('any declared gap resolves to FALLBACK_ART specifically, not to invented ar
         expect(resolveIcon(name)).toEqual(FALLBACK_ART)
 })
 
+test('the Enable/Disable and column pairs draw DIFFERENT pictures', () => {
+    // Power/PowerOff and Columns2/Columns3 once resolved to one body each, so the daemon's Enable
+    // and Disable buttons were indistinguishable. Pin the pairs the UI sets side by side.
+    for (const [a, b] of [
+        ['Power', 'PowerOff'],
+        ['Columns2', 'Columns3'],
+        ['Eye', 'EyeSlash'],
+        ['MessageSquare', 'ChatSlash'],
+    ])
+        expect(resolveIcon(a), `${a} vs ${b}`).not.toEqual(resolveIcon(b))
+})
+
 test('named icons resolve to real Phosphor art, not the fallback', () => {
     for (const name of ICON_NAMES) {
         if (KNOWN_MISSING.includes(name)) continue
@@ -69,12 +81,11 @@ test('named icons resolve to their mapped body, not merely to something', () => 
         viewBox: '0 0 256 256',
         body: '<path fill="currentColor" d="M224 128a8 8 0 0 1-8 8h-80v80a8 8 0 0 1-16 0v-80H40a8 8 0 0 1 0-16h80V40a8 8 0 0 1 16 0v80h80a8 8 0 0 1 8 8"/>',
     })
-    expect((resolveIcon('Regex') as IconArt & { kind: 'svg' }).body).toContain(
-        '.*',
-    )
-    expect(
-        (resolveIcon('WholeWord') as IconArt & { kind: 'svg' }).body,
-    ).toContain('[W]')
+    for (const name of ['Regex', 'WholeWord']) {
+        const body = (resolveIcon(name) as IconArt & { kind: 'svg' }).body
+        expect(body, name).toContain('<path')
+        expect(body, name).not.toContain('<text')
+    }
 })
 
 test('the fallback does NOT impersonate a real icon', () => {
@@ -85,11 +96,14 @@ test('the fallback does NOT impersonate a real icon', () => {
     // pin it directly anyway, against the two icons most likely to be confused with a generic mark.
     expect(FALLBACK_ART).not.toEqual(resolveIcon('Folder'))
     expect(FALLBACK_ART).not.toEqual(resolveIcon('CircleHelp'))
-    // The fallback's own body is distinctive (dashed box + literal "?"), not blank.
+    // The fallback's own body is distinctive (a dashed square round a question mark), not blank,
+    // and is PATH art: no <text>/font (a retyped mono stack drew a 5.6px "?"), no corner radius.
     expect(FALLBACK_ART.kind).toBe('svg')
     if (FALLBACK_ART.kind === 'svg') {
-        expect(FALLBACK_ART.body).toContain('?')
         expect(FALLBACK_ART.body).toContain('dasharray')
+        expect(FALLBACK_ART.body).not.toContain('<text')
+        expect(FALLBACK_ART.body).not.toContain('font')
+        expect(FALLBACK_ART.body).not.toMatch(/\brx=/)
     }
 })
 
@@ -117,6 +131,6 @@ test('allIcons exposes the whole set with unique names, all SVG', () => {
     expect(new Set(all.map(e => e.art.kind))).toEqual(new Set(['svg']))
 })
 
-test('iconNames matches the canonical 140-name list exactly', () => {
+test('iconNames matches the canonical 142-name list exactly', () => {
     expect([...iconNames()].sort()).toEqual([...ICON_NAMES].sort())
 })

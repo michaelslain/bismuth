@@ -55,10 +55,10 @@ const BaseSourceEditor: Component<BaseSourceEditorProps> = props => {
                 </div>
             </Show>
             <div class={styles.sourceBar}>
+                <TextButton onClick={props.onClose}>cancel</TextButton>
                 <TextButton primary onClick={save}>
                     save
                 </TextButton>
-                <TextButton onClick={props.onClose}>cancel</TextButton>
             </div>
         </div>
     )

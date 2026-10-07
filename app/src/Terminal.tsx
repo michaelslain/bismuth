@@ -9,6 +9,7 @@ import { resolveAppearance } from './themes'
 import { customThemeOverrides } from './customThemes'
 import { api, wsBase } from './api'
 import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
+import { ensureContrast } from './terminalAnsi'
 
 // --- ANSI palette, DERIVED from the live theme tokens (never hand-authored) -------------
 // xterm.js wants 16 named colors. Rather than author 64 hex values across the four ASCII
@@ -135,19 +136,24 @@ function cachedExtendedAnsi(baseHex: string[]): string[] {
 // moves the terminal with everything else — nothing here is hand-picked per scope.
 function buildTerminalTheme(): ITheme {
     const fg = cssVar('--fg')
+    const termBg = cssVar('--term-bg')
+    const termFg = cssVar('--term-fg')
     const base = {
-        black: cssVar('--rail'),
+        // Derived for MINIMUM CONTRAST against the terminal's own ground, the way the bright eight are
+        // derived by mixing toward ink: `--rail` IS `--term-bg` in ink and cathode, so black text was
+        // 1.00:1 against its background and invisible. See terminalAnsi.ts.
+        black: ensureContrast(cssVar('--rail'), termFg, termBg),
         red: cssVar('--danger'),
         green: cssVar('--green'),
         yellow: cssVar('--gold'),
         blue: cssVar('--blue'),
         magenta: cssVar('--violet'),
         cyan: cssVar('--teal'),
-        white: cssVar('--term-fg'),
+        white: termFg,
     }
     return {
-        background: cssVar('--term-bg'),
-        foreground: cssVar('--term-fg'),
+        background: termBg,
+        foreground: termFg,
         // Native cursor stays fully invisible — .xterm-custom-cursor (global.css's `Terminal.css` section) draws the
         // actual caret, since xterm's native cursor can't CSS-transition between cells.
         // cursorAccent = fg keeps the underlying character rendering in its normal color.

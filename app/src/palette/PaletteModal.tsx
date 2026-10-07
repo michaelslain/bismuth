@@ -3,7 +3,7 @@
 // a fuzzy-filtered, keyboard-navigable list. Knows nothing about commands or files —
 // callers pass `items` and an `onSelect`. See CommandPalette.tsx (the in-window Cmd+O
 // switcher is SwitcherBar.tsx, which reuses the shared ranking + Highlight from PaletteRow.tsx).
-import { createSignal, createMemo, For, Show, onMount } from 'solid-js'
+import { createSignal, createMemo, createUniqueId, For, Show, onMount } from 'solid-js'
 import Kbd from '../ui/ascii/Kbd'
 import { createMenuNav } from '../ui/popover/createMenuNav'
 import {
@@ -13,14 +13,14 @@ import {
 } from './paletteNav'
 import { rankItems, type Match, type PaletteItem } from './rankItems'
 import PaletteFrame, { PaletteEmpty } from './PaletteFrame'
-import PaletteRow, { Highlight, paletteRowClass } from './PaletteRow'
+import PaletteRow, { Highlight, paletteRowClass } from '../ui/PaletteRow'
 import styles from './PaletteModal.module.css'
 
 // Re-exported so existing importers (CommandPalette, and SwitcherBar) keep resolving
 // PaletteItem from here; the canonical definition now lives in rankItems.ts.
 export type { PaletteItem }
 // Re-exported so existing importers (SwitcherBar) keep resolving Highlight from here; the
-// canonical definition now lives in PaletteRow.tsx alongside the styles it needs.
+// canonical definition now lives in ui/PaletteRow.tsx alongside the styles it needs.
 export { Highlight }
 
 type Props = {
@@ -42,6 +42,10 @@ export function PaletteModal(props: Props) {
     const [query, setQuery] = createSignal('')
     let inputRef: HTMLInputElement | undefined
     let listRef: HTMLDivElement | undefined
+    // Row ids hang off one per-instance prefix so the listbox's `aria-activedescendant` can
+    // name the keyboard-selected row (DOM focus stays in the search input).
+    const listId = createUniqueId()
+    const rowId = (i: number) => `${listId}-opt-${i}`
 
     // Fuzzy rank + frecency blend live in the shared pure helper (see rankItems.ts).
     const results = createMemo<Match[]>(() =>
@@ -74,9 +78,9 @@ export function PaletteModal(props: Props) {
     )
 
     // Keep the highlighted row scrolled into view. `[data-selected]` is a `data-*` runtime hook
-    // (see PaletteRow.module.css's header for why it isn't a hashed class); `palette-row` still
+    // (see ui/PaletteRow.module.css's header for why it isn't a hashed class); `palette-row` still
     // needs the module lookup (via PaletteRow's exported class, so this file never imports
-    // PaletteRow.module.css itself).
+    // ui/PaletteRow.module.css itself).
     scrollSelectedIntoView(
         () => {
             selected()
@@ -99,34 +103,49 @@ export function PaletteModal(props: Props) {
             inputRef={el => (inputRef = el)}
             prompt={props.prompt}
         >
-            <div class={styles['palette-list']} ref={listRef}>
-                <For each={results()}>
-                    {(r, i) => (
-                        <PaletteRow
-                            icon={r.item.icon}
-                            selected={selected() === i()}
-                            onMouseMove={e => onRowPointerMove(i(), e)}
-                            onClick={() => props.onSelect(r.item)}
-                            label={
-                                <Highlight
-                                    text={r.item.label}
-                                    indices={r.indices}
-                                />
-                            }
-                            desc={r.item.description}
-                            sublabel={r.item.sublabel}
-                            shortcut={
-                                r.item.shortcut ? (
-                                    <Kbd combo={r.item.shortcut} muted />
-                                ) : undefined
-                            }
-                        />
-                    )}
-                </For>
-                <Show when={results().length === 0}>
-                    <PaletteEmpty>{props.emptyText ?? 'No matches'}</PaletteEmpty>
-                </Show>
-            </div>
+            <Show when={results().length > 0}>
+                <div
+                    class={styles['palette-list']}
+                    ref={listRef}
+                    role="listbox"
+                    aria-label={props.placeholder}
+                    aria-activedescendant={
+                        results().length > 0 && selected() >= 0
+                            ? rowId(selected())
+                            : undefined
+                    }
+                >
+                    <For each={results()}>
+                        {(r, i) => (
+                            <PaletteRow
+                                id={rowId(i())}
+                                icon={r.item.icon}
+                                selected={selected() === i()}
+                                onMouseMove={e => onRowPointerMove(i(), e)}
+                                onPick={() => props.onSelect(r.item)}
+                                label={
+                                    <Highlight
+                                        text={r.item.label}
+                                        indices={r.indices}
+                                    />
+                                }
+                                detail={r.item.description}
+                                sublabel={r.item.sublabel}
+                                shortcut={
+                                    r.item.shortcut ? (
+                                        <Kbd combo={r.item.shortcut} muted />
+                                    ) : undefined
+                                }
+                            />
+                        )}
+                    </For>
+                </div>
+            </Show>
+            {/* Not inside the listbox: an empty-state message is not an option, so the listbox only
+                exists while it has options. */}
+            <Show when={results().length === 0}>
+                <PaletteEmpty>{props.emptyText ?? 'No matches'}</PaletteEmpty>
+            </Show>
         </PaletteFrame>
     )
 }

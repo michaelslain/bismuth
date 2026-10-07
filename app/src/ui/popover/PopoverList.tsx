@@ -1,11 +1,12 @@
 // app/src/ui/popover/PopoverList.tsx
-// The popover SURFACE: the .bismuth-popover container + a list of <MenuRow>s with
-// separators. Pure presentation — no positioning, no dismiss, no keyboard (the
+// The popover SURFACE: ui/Popover (tone "menu" — opaque --bg, hairline, hard lift, 4px inset)
+// carrying the .bismuth-popover class, + a list of <MenuRow>s with separators. Pure presentation — no positioning, no dismiss, no keyboard (the
 // parent owns those, e.g. ContextMenu adds cursor placement + outside-click +
 // createMenuNav). This is the one Solid surface every menu-style popover renders,
 // so the chrome can't drift. The autocomplete can't use it (CodeMirror owns its
 // list DOM) — it matches via the shared tokens in popover.css instead.
 import { For, type JSX } from 'solid-js'
+import Popover from '../Popover'
 import MenuRow from './MenuRow'
 
 export type PopoverRow = {
@@ -40,7 +41,8 @@ function PopoverList(props: {
     ref?: (el: HTMLDivElement) => void
 }) {
     return (
-        <div
+        <Popover
+            tone="menu"
             ref={props.ref}
             class={`bismuth-popover ${props.class ?? ''}`}
             style={props.style}
@@ -70,7 +72,7 @@ function PopoverList(props: {
                     </>
                 )}
             </For>
-        </div>
+        </Popover>
     )
 }
 

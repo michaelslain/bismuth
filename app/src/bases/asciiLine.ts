@@ -245,12 +245,18 @@ export function buildLinePlot(
             : Math.max(1, Math.ceil((maxLabelLen + 1) / slotWidth))
     const totalLen = gutter + plotWidth
     const labelChars = Array(totalLen).fill(' ')
+    // `step` thins by slot width, but real-time spacing (`xs`) and the edge clamp below can still
+    // push two labels onto the same columns ("Aug 10Aug 12"). So also track where the previous
+    // label ENDED and skip any label that would touch it — one blank column always separates two.
+    let prevEnd = -2
     for (let i = 0; i < n; i += step) {
         const label = visible[i].label
         const center = colOf(i)
         let start = center - Math.floor(label.length / 2)
-        start = clamp(start, 0, totalLen - label.length)
+        start = clamp(start, 0, Math.max(0, totalLen - label.length))
+        if (start <= prevEnd + 1) continue
         for (let k = 0; k < label.length; k++) labelChars[start + k] = label[k]
+        prevEnd = start + label.length - 1
     }
     const axisLabels = labelChars.join('').replace(/\s+$/, '')
 

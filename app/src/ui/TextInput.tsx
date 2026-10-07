@@ -5,9 +5,9 @@ import styles from './TextInput.module.css'
 export type TextInputProps = {
     value: string
     onInput: (value: string) => void
-    /** Drop the `.ui-input` chrome entirely — not just the border. This strips the surface
-     *  fill, the padding/box-sizing, AND the shared accent focus ring; the call site owns its
-     *  own focus treatment (e.g. `.evm-titlein:focus { border-bottom-color: var(--accent) }`).
+    /** Drop the `.ui-input` chrome entirely — not just the border. This strips the underline and
+     *  the native padding (so its text starts at the same x as the default field's); the call
+     *  site owns any treatment of its own (e.g. a state colour) via `class`.
      *  For a field that reads as text rather than as a control — a modal's large title field,
      *  an inline rename — where the call site supplies its own typography AND focus state via
      *  `class`. */
@@ -34,8 +34,7 @@ export type TextInputProps = {
 
 /**
  * The standard single- or multi-line text field. Composes FormControl's shared chrome
- * (transparent, an underline rule, accent underline + inset shadow on focus, no fill and no
- * box) — the same chrome Select's trigger composes — so inputs/selects look identical. Pass
+ * (transparent, an underline rule that firms on focus — no accent, no fill, no box) — the same chrome Select's trigger composes — so inputs/selects look identical. Pass
  * `type="date"`/`"time"` etc. through `rest`.
  */
 function TextInput(props: TextInputProps) {

@@ -15,8 +15,9 @@
 // `sidebarEdge` is the sidebar's `<EdgeHandle>`, placed on the sidebar's own inner line (the line
 // moves with `sidebarSide`, and with the rail sitting between sidebar and editor).
 //
-// `hasRail` stays a REAL prop (App.tsx passes `true` today) because the `--rail-w` transition and
-// the switcher override hang off the `data-has-rail` state. `railPinned` lets the frame reserve the
+// `hasRail` stays a REAL prop (App.tsx passes `true` today): it gates the rail slot itself (a false
+// one renders no rail at all, not a 0px track with a panel overflowing it) and the `--rail-w`
+// transition and the switcher override hang off the `data-has-rail` state. `railPinned` lets the frame reserve the
 // full pinned width in the grid, not just widen the overlay.
 //
 // The side/status props are optional with defaults (left / right / visible) so callers that do not
@@ -95,7 +96,10 @@ export function AppFrame(props: {
                     data-shell-cell="rail"
                     style={{ 'grid-area': 'rail' }}
                 >
-                    {props.rail}
+                    {/* No rail, no rail slot: with `hasRail` false the cell's track is 0px, but the
+                        rail's inner panel is absolutely positioned and would still paint its 46px
+                        over the editor — so `NoRail` looked identical to the default. */}
+                    <Show when={props.hasRail}>{props.rail}</Show>
                 </div>
                 <Show when={props.sidebarEdge}>
                     <div

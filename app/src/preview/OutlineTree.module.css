@@ -12,13 +12,19 @@
     cursor: pointer;
     user-select: none;
 }
-.outline-row:hover {
-    background: var(--state-hover-bg);
+/* A clickable row never paints a background on hover (DESIGN.md hover rule, ui/ListRow.tsx), so the
+   pointer lifts the INK only. Gated on live, non-current rows: this selector is (0,3,0), which would
+   otherwise beat `--current` and `--dead` (0,1,0) and replace the selected row's accent ink, or turn
+   an inert row `--fg` under the pointer. */
+.outline-row:hover:not(.outline-row--current):not(.outline-row--dead) {
     color: var(--fg);
 }
-.outline-row:focus-visible {
-    outline: var(--focus-ring);
-    outline-offset: -2px;
+/* Nothing draws focus (DESIGN.md Focus bullet, Buttons section): no ring, and no replacement cue. `outline: none` is stated
+   explicitly — without it the browser's own :focus-visible ring would show in its place. The roving
+   row is reached by keyboard and read by its own state ladder (hover / current), never by a ring. */
+.outline-tree,
+.outline-row {
+    outline: none;
 }
 /* A destination that didn't resolve: still listed (it's part of the document's structure), but
    reads as inert. Only the title inherits this dimming — the connector and page column below set

@@ -13,6 +13,7 @@ import { EditorView } from '@codemirror/view'
 import MarkdownField from './MarkdownField'
 import type { NoteCandidate } from '../editor/wikilink'
 import { settings, setSettings } from '../settings'
+import TextButton from './TextButton'
 
 const meta = {
     title: 'UI/MarkdownField',
@@ -23,16 +24,10 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// The host owns the visible box (border/background/padding/min-height); MarkdownField
-// itself is chromeless. This mirrors how a real call site (e.g. EventModal) would style it.
-const fieldBoxStyle = {
-    width: '360px',
-    'min-height': '90px',
-    padding: '10px 12px',
-    border: '1px solid var(--border)',
-    'border-radius': '8px',
-    background: 'var(--surface-1)',
-} as const
+// MarkdownField owns its own chrome (FormControl's underline field, MarkdownField.module.css);
+// the story only fixes a width. There is no hand-built box here — the rounded border/fill this
+// used to wrap it in was one no real caller produces.
+const fieldWidthStyle = { width: '360px' } as const
 
 function Controlled(props: {
     initial?: string
@@ -44,7 +39,7 @@ function Controlled(props: {
 }) {
     const [v, setV] = createSignal(props.initial ?? '')
     return (
-        <div style={fieldBoxStyle}>
+        <div style={fieldWidthStyle}>
             <MarkdownField
                 value={v()}
                 onInput={setV}
@@ -66,6 +61,25 @@ const NOTE_NAMES: NoteCandidate[] = [
 /** Empty field showing the placeholder. */
 export const Placeholder: Story = {
     render: () => <Controlled placeholder="Add a description…" />,
+    // The field's OWN chrome, not a caller's: an underline (no box), transparent, and a resting
+    // height of three control rows. The placeholder reads in --text-muted.
+    play: async ({ canvasElement }) => {
+        const host = canvasElement.querySelector(
+            '[data-control="div"]',
+        ) as HTMLElement
+        expect(host).not.toBeNull()
+        const cs = getComputedStyle(host)
+        expect(parseFloat(cs.borderBottomWidth)).toBeGreaterThan(0)
+        expect(cs.borderTopWidth).toBe('0px')
+        expect(cs.borderLeftWidth).toBe('0px')
+        expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+        expect(host.getBoundingClientRect().height).toBeGreaterThanOrEqual(72)
+        const ph = canvasElement.querySelector(
+            '.cm-placeholder',
+        ) as HTMLElement
+        expect(ph).not.toBeNull()
+        expect(ph.textContent).toBe('Add a description…')
+    },
 }
 
 /** Filled with live-preview markdown: bold/italic render inline, a checkbox is
@@ -249,12 +263,12 @@ export const RebindTogglesBoldOnlyAfterRemount: Story = {
         const [generation, setGeneration] = createSignal(0)
         return (
             <div>
-                <button
+                <TextButton
                     data-testid="remount"
                     onClick={() => setGeneration(g => g + 1)}
                 >
                     remount
-                </button>
+                </TextButton>
                 {generation() % 2 === 0 ? <Controlled /> : <Controlled />}
             </div>
         )

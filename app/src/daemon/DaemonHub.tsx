@@ -72,7 +72,7 @@ function DaemonHub(props: DaemonHubProps) {
                         blurb={props.blurb}
                         onEdit={props.onEditIdentity}
                     />
-                    <Text as="span" size="ui" tone="faint">
+                    <Text as="span" size="ui" tone="muted">
                         {moodWord(props.mood)}
                     </Text>
                 </div>

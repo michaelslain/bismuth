@@ -21,19 +21,12 @@ export type ChatUserTurnProps = {
 
 const ChatUserTurn: Component<ChatUserTurnProps> = props => {
     return (
-        <ChatTurnColumn
-            class={`${styles['chat-msg']} ${props.class ?? ''}`}
-            classList={{ [styles['queued']]: !!props.item.queued }}
-        >
+        <ChatTurnColumn class={`${styles['chat-msg']} ${props.class ?? ''}`}>
             <ChatTurnLabel
                 label="you"
                 trailing={
                     <Show when={props.item.queued}>
-                        <Text
-                            as="span"
-                            tone="faint"
-                            class={styles['chat-queued-note']}
-                        >
+                        <Text as="span" eyebrow size="micro" tone="muted">
                             queued
                         </Text>
                         <IconButton
@@ -51,6 +44,7 @@ const ChatUserTurn: Component<ChatUserTurnProps> = props => {
             <ChatTextBubble
                 text={props.item.text}
                 role="user"
+                muted={!!props.item.queued}
                 onContextMenu={e =>
                     props.onBubbleContextMenu(e, props.item.text)
                 }

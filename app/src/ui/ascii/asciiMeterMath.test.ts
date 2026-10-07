@@ -3,6 +3,7 @@ import {
     chartFill,
     chartLabelPad,
     chartMax,
+    chartValueWidth,
     fitMeterWidth,
     meterFill,
 } from './asciiMeterMath'
@@ -30,6 +31,16 @@ describe('meterFill', () => {
     it('scales with an arbitrary width', () => {
         expect(meterFill(0.25, 20)).toBe(5)
         expect(meterFill(0.75, 4)).toBe(3)
+    })
+    it('a non-zero value never reads as empty: it floors at one cell', () => {
+        expect(meterFill(0.04, 10)).toBe(1) // 0.4 rounds to 0
+        expect(meterFill(0.001, 10)).toBe(1)
+        expect(meterFill(0.04, 10)).toBeGreaterThan(meterFill(0, 10))
+    })
+    it('still leaves zero and below empty, and a zero width empty', () => {
+        expect(meterFill(0, 10)).toBe(0)
+        expect(meterFill(-0.001, 10)).toBe(0)
+        expect(meterFill(0.3, 0)).toBe(0)
     })
 })
 
@@ -75,9 +86,32 @@ describe('chartFill', () => {
     it('handles a zero width', () => {
         expect(chartFill(5, 10, 0)).toBe(0)
     })
-    it('rounds like the reference implementation', () => {
+    it('rounds a mid value like the reference implementation', () => {
         expect(chartFill(118, 118, 16)).toBe(16)
-        expect(chartFill(3, 118, 16)).toBe(0) // rounds down from 0.4
+        expect(chartFill(40, 118, 16)).toBe(5)
+    })
+    it('a non-zero value draws one bar at least — 3 against 118 is NOT zero', () => {
+        // round(3 / 118 * 16) is 0: the old code drew no bar and the row read as zero
+        expect(chartFill(3, 118, 16)).toBe(1)
+        expect(chartFill(0.2, 1, 16)).toBe(3)
+        expect(chartFill(0.01, 1, 16)).toBe(1)
+    })
+    it('only an actual zero (or less) draws nothing', () => {
+        expect(chartFill(0, 118, 16)).toBe(0)
+        expect(chartFill(-4, 118, 16)).toBe(0)
+    })
+    it('never exceeds the width', () => {
+        expect(chartFill(200, 118, 16)).toBe(16)
+    })
+})
+
+describe('chartValueWidth', () => {
+    it('is 0 for an empty series', () => {
+        expect(chartValueWidth([])).toBe(0)
+    })
+    it('is the widest printed value', () => {
+        expect(chartValueWidth([{ value: 3 }, { value: 118 }, { value: 40 }])).toBe(3)
+        expect(chartValueWidth([{ value: 0.5 }])).toBe(3)
     })
 })
 

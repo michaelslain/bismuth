@@ -16,6 +16,7 @@ import { CalendarSettings } from './CalendarSettings'
 import { showCalendarSettings } from '../state'
 import { setTransport, type Transport } from '../../api'
 import { fakeTransport } from '../../ui/_fakeTransport'
+import TextButton from '../../ui/TextButton'
 import type { ParsedBase, Row } from '../../../../core/src/bases/types'
 
 const meta = {
@@ -126,12 +127,11 @@ export const Interactive: Story = {
             <Show
                 when={showCalendarSettings.value}
                 fallback={
-                    <button
-                        type="button"
+                    <TextButton
                         onClick={() => (showCalendarSettings.value = true)}
                     >
-                        Open calendar settings
-                    </button>
+                        open calendar settings
+                    </TextButton>
                 }
             >
                 <CalendarSettings basePath={BASE_PATH} />
@@ -140,7 +140,7 @@ export const Interactive: Story = {
     },
     play: async () => {
         const canvas = within(document.body)
-        const trigger = canvas.getByText('Open calendar settings')
+        const trigger = canvas.getByText('open calendar settings')
         await userEvent.click(trigger)
         await waitFor(() =>
             expect(

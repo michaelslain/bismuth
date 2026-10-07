@@ -10,7 +10,7 @@
 //   useRowEditor(props: { config, view, columns?, onChanged?, siblingValues? }): { editable, open }
 import type { BaseConfig, Row, ViewConfig } from '../../../core/src/bases/types'
 import { isStoredPlaceholder } from './taskWrite'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 
 export type RowEditorProps = {
     config: () => BaseConfig

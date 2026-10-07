@@ -6,9 +6,7 @@
 import { createSignal, type Component } from 'solid-js'
 import type { Category } from '../types'
 import { settings } from '../../settings'
-import ColorChip from '../../ui/ColorChip'
-import StatusDot from '../../ui/StatusDot'
-import { resolvePaletteColor } from '../../ui/palette'
+import CategoryColorChip from './CategoryColorChip'
 import { TextInput } from '../../ui/TextInput'
 import { IconTextButton } from '../../ui/IconTextButton'
 import { isConfirmKey } from '../../ui/widgetKeys'
@@ -39,14 +37,8 @@ const NewCategoryForm: Component<NewCategoryFormProps> = props => {
         <ListRow
             class={props.class}
             leading={
-                <ColorChip
+                <CategoryColorChip
                     color={color()}
-                    trigger={
-                        <StatusDot
-                            size="md"
-                            color={resolvePaletteColor(color()) || 'var(--accent)'}
-                        />
-                    }
                     open={pickerOpen()}
                     onToggle={() => setPickerOpen(o => !o)}
                     onPick={c => {

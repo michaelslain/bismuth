@@ -13,7 +13,7 @@
  */
 
 .graph-block-root {
-  border: 1px solid var(--border-soft);
+  border: var(--rule-soft);
   border-radius: var(--r-0);
   background: var(--panel);
   overflow: hidden;
@@ -24,7 +24,7 @@
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: var(--rule-soft);
   flex-wrap: wrap;
 }
 
@@ -43,12 +43,12 @@
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
-  border-top: 1px solid var(--border-soft);
+  border-top: var(--rule-soft);
   flex-wrap: wrap;
 }
 
 .graph-block-input {
-  height: 24px;
+  height: var(--h-control);
   font-size: var(--fs-ui);
   width: 140px;
 }
@@ -60,7 +60,7 @@
   padding: var(--sp-2) var(--sp-5);
   font-size: var(--fs-ui);
   color: var(--text-muted);
-  border-top: 1px solid var(--border-soft);
+  border-top: var(--rule-soft);
   flex-wrap: wrap;
 }
 
@@ -69,5 +69,5 @@
   font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
   color: var(--danger);
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: var(--rule-soft);
 }

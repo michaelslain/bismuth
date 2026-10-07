@@ -1,12 +1,6 @@
-/* One task description: inline runs that wrap with the surrounding line. */
+/* One task description: inline runs that wrap with the surrounding line. An external `[label](url)`
+   is a ui/NoteLink `external` — the same ink and hover-only underline as a wikilink in the same
+   line — so this file carries no link rule of its own. */
 .taskText {
   overflow-wrap: anywhere;
-}
-/* An external `[label](url)` — a PlainButton that reads as a link, not a control. */
-.link {
-  display: inline;
-  text-align: inherit;
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
 }

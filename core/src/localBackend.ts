@@ -186,7 +186,16 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
             case 'GET /templates':
                 return [] // listTemplates needs a dir walk — follow-up
             case 'GET /file': {
-                return (await readOrNull(q('path'))) ?? ''
+                const p = q('path')
+                try {
+                    return await (await fa()).readNote(vault, p)
+                } catch (e) {
+                    // absent = empty body; present-but-unreadable must fail, or a
+                    // caller treats it as a blank doc and autosave overwrites it
+                    if ((await (await fa()).statNote(vault, p)) === null)
+                        return ''
+                    throw e
+                }
             }
             case 'GET /meta': {
                 const text = (await readOrNull(q('path'))) ?? ''

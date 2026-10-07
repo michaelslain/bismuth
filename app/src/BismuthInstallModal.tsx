@@ -15,7 +15,7 @@ import Text from './ui/Text'
 import { TextButton } from './ui/TextButton'
 import InlineCode from './ui/InlineCode'
 import { api } from './api'
-import { pushToast } from './Toast'
+import { pushToast } from './ui/ToastHost'
 import type { BismuthStatus } from '../../core/src/bismuthInstall'
 
 function describeAction(action: string): string {

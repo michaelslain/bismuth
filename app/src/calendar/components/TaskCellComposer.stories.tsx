@@ -78,6 +78,15 @@ export const NoDestination: Story = {
         expect(destination.textContent?.trim()).toBe(
             '→ no destination note // set one in settings',
         )
+        // The hint (277px of text in a 220px cell) must END IN AN ELLIPSIS inside its line, not run
+        // past the cell edge and clip mid-glyph at "set one": the text box stays within the
+        // destination line, and it really is truncated.
+        const text = canvas.getByTestId('task-cell-composer-destination-text')
+        expect(getComputedStyle(text).textOverflow).toBe('ellipsis')
+        expect(text.scrollWidth).toBeGreaterThan(text.clientWidth)
+        expect(text.getBoundingClientRect().right).toBeLessThanOrEqual(
+            destination.getBoundingClientRect().right + 1,
+        )
         // The composer stays open and usable — this is a hint in place, not a refusal to open.
         expect(
             canvas.getByTestId('task-cell-composer-input'),
@@ -100,8 +109,10 @@ export const WithCategoryColour: Story = {
         ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const marker = canvas.getByTestId('task-cell-composer-marker')
-        expect(marker.style.color).toBe('var(--teal)')
+        const marker = canvas.getByRole('checkbox')
+        expect(marker.style.getPropertyValue('--task-check-color')).toBe(
+            'var(--teal)',
+        )
     },
 }
 
@@ -144,8 +155,11 @@ export const LongDestination: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         const destination = canvas.getByTestId('task-cell-composer-destination')
-        // (a) truncated — scrollWidth (the full text) exceeds what actually renders
-        expect(destination.scrollWidth).toBeGreaterThan(destination.clientWidth)
+        const text = canvas.getByTestId('task-cell-composer-destination-text')
+        // (a) truncated — scrollWidth (the full text) exceeds what actually renders, on the
+        // inner block span that carries the ellipsis (text-overflow does nothing on a flex box)
+        expect(getComputedStyle(text).textOverflow).toBe('ellipsis')
+        expect(text.scrollWidth).toBeGreaterThan(text.clientWidth)
         // (b) no wrap onto a second line — one line's worth of height only
         const lineHeight = parseFloat(getComputedStyle(destination).lineHeight)
         expect(destination.getBoundingClientRect().height).toBeLessThanOrEqual(
@@ -186,7 +200,11 @@ export const NarrowColumn: Story = {
         expect(composer.getBoundingClientRect().right).toBeLessThanOrEqual(
             container.getBoundingClientRect().right + 1,
         )
-        expect(destination.scrollWidth).toBeGreaterThan(destination.clientWidth)
+        const text = canvas.getByTestId('task-cell-composer-destination-text')
+        expect(text.scrollWidth).toBeGreaterThan(text.clientWidth)
+        expect(text.getBoundingClientRect().right).toBeLessThanOrEqual(
+            destination.getBoundingClientRect().right + 1,
+        )
 
         // the input still got real room — not squeezed to nothing by the marker + padding
         expect(input.getBoundingClientRect().width).toBeGreaterThan(40)
@@ -224,8 +242,13 @@ export const AlignedWithChips: Story = {
         ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const chipMarkers = canvas.getAllByRole('checkbox')
-        const composerMarker = canvas.getByTestId('task-cell-composer-marker')
+        const composerMarker = within(
+            canvas.getByTestId('task-cell-composer'),
+        ).getByRole('checkbox')
+        const chipMarkers = canvas
+            .getAllByRole('checkbox')
+            .filter(m => m !== composerMarker)
+        expect(chipMarkers).toHaveLength(2)
         const composerLeft = composerMarker.getBoundingClientRect().left
         for (const marker of chipMarkers) {
             expect(marker.getBoundingClientRect().left).toBeCloseTo(
@@ -326,14 +349,18 @@ export const TargetPicker: Story = {
         expect(trigger.textContent?.trim()).toBe('Work▾')
         // the marker picked up the CURRENT target's colour, same contract as the plain `color`
         // prop — see WithCategoryColour above.
-        const marker = canvas.getByTestId('task-cell-composer-marker')
-        expect(marker.style.color).toBe('var(--blue)')
+        const marker = canvas.getByRole('checkbox')
+        expect(marker.style.getPropertyValue('--task-check-color')).toBe(
+            'var(--blue)',
+        )
 
         await userEvent.click(trigger)
         const body = within(document.body)
         await userEvent.click(await body.findByText('Personal'))
         expect(trigger.textContent?.trim()).toBe('Personal▾')
-        expect(marker.style.color).toBe('var(--rose)')
+        expect(marker.style.getPropertyValue('--task-check-color')).toBe(
+            'var(--rose)',
+        )
         const input = canvas.getByTestId(
             'task-cell-composer-input',
         ) as HTMLInputElement

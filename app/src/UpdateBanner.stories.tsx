@@ -26,6 +26,7 @@ import type { UpdateStatus } from '../../core/src/selfUpdate'
 import ViewBar, { Crumb } from './ui/ViewBar'
 import { IconButton } from './ui/IconButton'
 import { SegmentedToggle } from './ui/SegmentedToggle'
+import Text from './ui/Text'
 
 function status(behind: number): UpdateStatus {
     return {
@@ -74,18 +75,19 @@ function Column(props: { children: JSX.Element; w?: string }) {
             }}
         >
             {props.children}
-            <div
+            <Text
+                as="div"
+                size="body"
+                tone="muted"
                 style={{
                     height: '120px',
                     display: 'flex',
                     'align-items': 'center',
                     'justify-content': 'center',
-                    color: 'var(--faint)',
-                    'font-size': 'var(--fs-body)',
                 }}
             >
                 (view content)
-            </div>
+            </Text>
         </div>
     )
 }

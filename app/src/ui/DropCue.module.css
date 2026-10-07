@@ -7,5 +7,5 @@
   border-radius: var(--r-0);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   pointer-events: none;
-  z-index: 20;
+  z-index: var(--z-overlay);
 }

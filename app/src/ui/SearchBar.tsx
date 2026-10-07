@@ -23,6 +23,9 @@ export type SearchBarProps = {
     /** Accessible name for the input, when the placeholder alone isn't enough (e.g. a find-in-file
      *  bar whose placeholder is the terse "find"). Passed straight through to the `<input>`. */
     'aria-label'?: string
+    /** The id of the list row the keyboard cursor is on, for a search box that drives a listbox
+     *  (the input keeps focus; this names the active option). Passed straight to the `<input>`. */
+    'aria-activedescendant'?: string
     /** Trailing adornments (toggles, buttons) rendered after the input. */
     children?: JSX.Element
     /** Class on the outer `.search-bar` wrapper. Layout only (position, width, margin) — never
@@ -43,6 +46,7 @@ function SearchBar(props: SearchBarProps) {
         'autofocus',
         'inputRef',
         'aria-label',
+        'aria-activedescendant',
         'children',
         'class',
     ])
@@ -65,6 +69,7 @@ function SearchBar(props: SearchBarProps) {
                 class={styles['search-bar-input']}
                 placeholder={local.placeholder}
                 aria-label={local['aria-label']}
+                aria-activedescendant={local['aria-activedescendant']}
                 value={local.value}
                 autofocus={local.autofocus}
                 onInput={e => local.onInput(e.currentTarget.value)}

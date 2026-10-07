@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test'
 import { pushUndoToast } from './undoToast'
-import { toasts, dismissToast } from './toastStore'
+import { toasts, dismissToast } from './ui/toastStore'
 
 const find = (id: number) => toasts().find(t => t.id === id)
 

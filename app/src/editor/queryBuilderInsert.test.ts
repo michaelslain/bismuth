@@ -171,7 +171,7 @@ describe('insertViaQueryBuilder', () => {
     })
 
     test('the default notifyLost pushes a real toast when no override is given', async () => {
-        const { toasts } = await import('../toastStore')
+        const { toasts } = await import('../ui/toastStore')
         const view = mountView('/query')
         let bridge!: QueryBuilderBridge
         insertViaQueryBuilder(view, 0, view.state.doc.length, b => {

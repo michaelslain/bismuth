@@ -18,15 +18,19 @@
   --flip-caption-img-max: 200px;
   --flip-img-max: 320px;
   /* The flip's one duration — `data-flipping`'s window (FlipCard.tsx) ends on animationend, so
-     nothing else needs to know it. */
-  --flip-dur: calc(200ms * var(--motion-scale));
+     nothing else needs to know it. A whole card turning is --dur-grow's "a surface moving", and
+     --dur-grow already carries --motion-scale. */
+  --flip-dur: var(--dur-grow);
   position: relative; width: 100%;
 }
 
-/* Per-card actions pinned to the card's top-right. Faint at rest, firm on card hover. Position and
-   opacity only — the button spacing comes from IconBar (ui/IconBar.tsx). */
-.card-actions { position: absolute; top: var(--sp-4); right: var(--sp-5); z-index: 3; opacity: 0.4; transition: opacity calc(0.15s * var(--motion-scale)); }
-.host:hover .card-actions { opacity: 1; }
+/* Per-card actions pinned to the card's top-right. QUIET AT REST BY INK, never by opacity: a control
+   held at opacity .4 was ~1.7:1 and no state is ever shown by opacity (DESIGN.md). They rest in
+   --text-muted and take --fg when the card is hovered OR when focus is anywhere inside the actions,
+   so a keyboard user gets the same firm state a pointer does. Position and ink only — the button
+   spacing comes from IconBar (ui/IconBar.tsx). */
+.card-actions { position: absolute; top: var(--sp-4); right: var(--sp-5); z-index: 3; color: var(--text-muted); transition: color var(--dur) var(--ease); }
+.host:hover .card-actions, .card-actions:focus-within { color: var(--fg); }
 
 /* The card is a PlainButton: doubled so it out-ranks PlainButton's own reset whatever the sheet
    order. No focus ring, by decision. */
@@ -59,7 +63,7 @@
 /* Entrance: a NEW card remounts (keyed by row index+dir) and plays a crisp scale+fade in. The flip
    (rotateY) is a separate animation on the persistent element, so switching cards never flips
    backward — it just appears. */
-.card-appear { animation: card-appear calc(180ms * var(--motion-scale)) var(--ease) both; }
+.card-appear { animation: card-appear var(--dur-grow) var(--ease) both; }
 @keyframes card-appear {
   from { opacity: 0; transform: translateX(40px) scale(0.97); }
   to { opacity: 1; transform: translateX(0) scale(1); }
@@ -109,7 +113,7 @@
 .card-md :global(h2) { font-size: var(--fs-h2); font-weight: var(--fw-h2); line-height: var(--lh-tight); }
 .card-md :global(h3) { font-size: var(--fs-h3); font-weight: var(--fw-h3); line-height: var(--lh-tight); }
 .card-md :global(h4) { font-size: var(--fs-h4); font-weight: var(--fw-h4); line-height: var(--lh-tight); }
-.card-md :global(h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); text-transform: uppercase; letter-spacing: var(--ls-label); }
+.card-md :global(h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); }
 .card-md :global(h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); }
 /* The prompt, alone on the front face, is the card's one headline: the display size, never below
    the prose it would otherwise be (a large editor size wins), and larger than the answer body's
@@ -121,7 +125,7 @@
 .card-md p:last-child { margin-bottom: 0; }
 .card-md ul, .card-md ol { text-align: left; margin: var(--sp-3) 0; padding-left: var(--sp-7); display: flex; flex-direction: column; gap: var(--sp-5); }
 .card-md li { margin: 0; }
-.card-md li::marker { color: var(--faint); }
+.card-md li::marker { color: var(--text-muted); }
 /* Headings are part of the prose face too (they inherit .card-md's --prose-font), only their margin
    is card-specific. */
 .card-md h1, .card-md h2, .card-md h3 { margin: var(--sp-2) 0 var(--sp-4); }

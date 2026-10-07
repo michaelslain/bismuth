@@ -53,7 +53,7 @@ import { initZoom, zoomIn, zoomOut, zoomReset } from './zoom'
 import { lastChange, currentConnectionState, serverVersion } from './serverVersion'
 import { serverErrorText } from './serverError'
 import { debounce } from './debounce'
-import { ToastHost, pushToast, dismissToast, updateToast } from './Toast'
+import { ToastHost, pushToast, dismissToast, updateToast } from './ui/ToastHost'
 import { applyUpdateAndRelaunch } from './updateCheck'
 import GalleryHost from './ui/gallery/GalleryHost'
 import { FolderPrompt } from './FolderPrompt'
@@ -196,7 +196,7 @@ import {
     embedFor,
 } from './dnd/noteRef'
 import { insertTextAtCoords, insertIntoFocusedEditor } from './editorRegistry'
-import { ContextMenu, type MenuItem, type QuickAction } from './ContextMenu'
+import { ContextMenu, type MenuItem, type QuickAction } from './ui/ContextMenu'
 import { isTauri } from './platform'
 import { plural } from './plural'
 import './global.css'
@@ -3011,14 +3011,9 @@ export default function App() {
             sidebarEdge={
                 <Show when={!switcherOpen()}>
                     <EdgeHandle
-                        buttonSide={sidebarSide() === 'left' ? 'right' : 'left'}
-                        label="sidebar edge"
-                        action={sidebarVisible() ? 'hide sidebar' : 'show sidebar'}
-                        direction={
-                            sidebarVisible() === (sidebarSide() === 'left')
-                                ? 'left'
-                                : 'right'
-                        }
+                        panel="sidebar"
+                        edge={sidebarSide()}
+                        open={sidebarVisible()}
                         combo={settings.keybindings['toggle-sidebar']}
                         resizable={sidebarVisible()}
                         reveal={!sidebarVisible() && sidebarSide() !== tabRailSide()}
@@ -3230,14 +3225,9 @@ export default function App() {
                         side={tabRailSide()}
                         edge={
                             <EdgeHandle
-                                buttonSide={tabRailSide() === 'right' ? 'left' : 'right'}
-                                label="tab rail edge"
-                                action={tabRailPinned() ? 'unpin tab rail' : 'pin tab rail'}
-                                direction={
-                                    tabRailPinned() === (tabRailSide() === 'right')
-                                        ? 'right'
-                                        : 'left'
-                                }
+                                panel="tab rail"
+                                edge={tabRailSide()}
+                                open={tabRailPinned()}
                                 combo={settings.keybindings['toggle-tab-rail']}
                                 onResizeStart={() => startEdgeResize('tabRailWidth')}
                                 onResize={dx =>

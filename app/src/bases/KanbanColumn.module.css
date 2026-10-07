@@ -3,8 +3,10 @@
    columns are divided by one hairline vertical rule instead — `.kanbanColumnLast` (the last
    REAL column, set from the `<For>` index in KanbanView.tsx, not a CSS :last-child — the
    add-column ghost and the trailing drop-gap placeholder are later DOM siblings so a
-   structural selector would land on the wrong element) drops it. */
+   structural selector would land on the wrong element) drops it.
+   `position: relative` is the containing block for the `ui/DropCue` laid over the lane. */
 .kanbanColumn {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: var(--kanban-col-min, 248px);
@@ -17,13 +19,14 @@
   border-right: 1px solid var(--border-soft);
   border-radius: var(--r-0);
   overflow: hidden;
-  transition: background calc(160ms * var(--motion-scale)) var(--ease-std);
+  transition: background var(--dur) var(--ease);
 }
 .kanbanColumnLast { border-right: none; }
-/* "Card is over this column" cue — a subtle wash on the lane, no border (Task 1 ruling). */
-.kanbanColumnOver {
-  background: var(--surface-2);
-}
+/* "A card (or another column) is over this lane" is `ui/DropCue` laid over it by KanbanColumn.tsx —
+   the same dashed `--rule-drop` ring and wash every drop host in the app draws; this file no longer
+   paints a second recipe for it. The cue hugs the lane's own edge (`inset: 0`) — DropCue's default
+   inset would run its ring through the header's dot and title, which sit inside the lane's gutter. */
+.kanbanDropCue.kanbanDropCue { inset: 0; }
 /* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
    cards when the column is taller than the board — the header above stays put (it's a separate,
    non-scrolling flex sibling, not `position: sticky`, so there's no double-scroll to coordinate). */
@@ -55,51 +58,40 @@
    scrollbar with nothing to scroll (round-2 item 8). A negative margin-top pulls the box up into
    the space already laid out, so it never pokes past the end — and overflow toward the top is
    never scrollable. Spacing between cards is identical either way.
+   The slot's outline is `--rule-drop` — the one drop-outline recipe — drawn as an OUTLINE, which
+   takes no layout space: the box is exactly the flex gap net of its negative margin when collapsed,
+   so there is no border to compensate for and no phantom pixel of scroll. It fades in by colour
+   (transparent -> accent), not by opacity.
    Acceptance: "Kanban card enter/leave does not animate height/margin-bottom" — those two flip
-   instantly (a card's own layout, not this component's), only opacity/border/background ease. */
+   instantly (a card's own layout, not this component's); only the outline colour eases. */
 .kanbanPlaceholder {
   height: 0;
-  opacity: 0;
-  /* Exactly the list's flex gap plus this box's own 2px of border, so a collapsed placeholder
-     nets ZERO height: it sits flush on the card above instead of overlapping it by 1px (the old
-     -9px), which on a read-only board left the last card 1px past the list's end — a 1px
-     phantom scroll. */
-  margin-top: calc(-1 * (var(--sp-3) + 2px));
-  border: 1px solid transparent;
+  margin-top: calc(-1 * var(--sp-3));
+  outline: var(--rule-drop);
+  outline-color: transparent;
   border-radius: var(--r-0);
-  background: transparent;
   pointer-events: none;
-  transition: opacity calc(170ms * var(--motion-scale)) var(--ease-std), border-color calc(170ms * var(--motion-scale)) var(--ease-std);
+  transition: outline-color var(--dur) var(--ease);
 }
-/* A 1px solid outline, no fill (Acceptance 12) — was a dashed border + a tinted fill. */
 .kanbanPlaceholderActive {
   height: var(--kb-drag-h, 46px);
-  opacity: 1;
   margin-top: 0;
-  border-color: var(--bismuth-accent-border);
-  background: transparent;
+  outline-color: var(--accent);
 }
 
-/* Column reorder feedback */
-.kanbanColDragging { opacity: 0.5; }
-.kanbanColReorder { box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset; }
+/* The column being dragged: the pressed fill (`--state-active-bg`), never a dimmed lane — opacity
+   is not a state cue. */
+.kanbanColDragging { background: var(--state-active-bg); }
 /* Add-card affordance — an IconButton (bare "+"); this file only places it. It sits in normal flow
    right after the cards (the trailing placeholder above it, both plain `.kanbanCards` flex
    children), so its spacing off the last card is the same `--sp-3` flex `gap` every card uses —
    never pinned to the column's bottom edge. The look (colour/hover) is Button's own. */
 .kbAddBtn { align-self: flex-start; }
-/* The composer gets a text caret + real text selection back (a dragged card sets
-   user-select:none via CardFrame's `draggable` variant). Both declaration blocks target the
-   same `.kbComposer` element — kept as one merged rule (the source file had them as two
-   selector blocks under this same class name, which CSS just cascades together). Square,
-   hairline `--border`, mono `--fs-ui` text (Acceptance 10) — accent only on focus. */
+/* The composer is `ui/TextInput`'s own underline field — the chrome every other field in the app
+   wears. This file adds only what a card's lane needs: a text caret + real text selection back (a
+   dragged card sets user-select:none via CardFrame's `draggable` variant), full lane width, no
+   resize grip. */
 .kbComposer {
   cursor: text; user-select: text; -webkit-user-select: text;
-  width: 100%; box-sizing: border-box; padding: var(--sp-4) var(--sp-5);
-  border: var(--rule); border-radius: var(--r-0);
-  background: var(--surface-1, var(--panel)); color: var(--fg);
-  font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: 1.35; resize: none; outline: none;
-  transition: border-color calc(120ms * var(--motion-scale)) var(--ease-std);
+  width: 100%; box-sizing: border-box; resize: none;
 }
-.kbComposer:focus { border-color: var(--accent); }
-

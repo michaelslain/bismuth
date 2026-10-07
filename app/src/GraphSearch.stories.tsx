@@ -6,7 +6,7 @@
 // of the component. `play` types into the real input via the DOM (`storybook/test`'s
 // userEvent), the same way a user would, to actually exercise the filtered list.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { GraphSearch, type SearchItem } from './GraphSearch'
 
 const ITEMS: SearchItem[] = [
@@ -46,6 +46,50 @@ export const Default: Story = {
         const input =
             within(canvasElement).getByPlaceholderText('nodes')
         await userEvent.type(input, 'e')
+        // The rows are ui/PaletteRow: options in a listbox, exactly one carrying the cursor.
+        const rows = await waitFor(() => {
+            const found = within(canvasElement).getAllByRole('option')
+            expect(found.length).toBeGreaterThan(1)
+            return found
+        })
+        expect(rows.filter(r => r.hasAttribute('data-selected'))).toHaveLength(1)
+        expect(rows[0].getAttribute('aria-selected')).toBe('true')
+    },
+}
+
+/** The real app's register: GraphView's find panel always passes `embedded`, which switches on the
+ *  ASCII node glyph before each name. The glyph follows the cursor row's ink. */
+export const Embedded: Story = {
+    render: () => (
+        <div style={{ width: '260px' }}>
+            <GraphSearch
+                embedded
+                items={ITEMS}
+                onPreview={noop}
+                onFly={noop}
+                onClose={noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await userEvent.type(
+            within(canvasElement).getByPlaceholderText('nodes'),
+            'e',
+        )
+        const rows = await waitFor(() => {
+            const found = within(canvasElement).getAllByRole('option')
+            expect(found.length).toBeGreaterThan(1)
+            return found
+        })
+        const glyph = (row: HTMLElement) =>
+            [...row.querySelectorAll('span')].find(
+                s => s.textContent === 'o',
+            ) as HTMLElement
+        // Selected row's glyph takes the accent; every other row's stays structural (--faint) —
+        // read off the computed colour, so a rule that stopped matching shows as equal colours.
+        const selectedInk = getComputedStyle(glyph(rows[0])).color
+        const restingInk = getComputedStyle(glyph(rows[1])).color
+        expect(selectedInk).not.toBe(restingInk)
     },
 }
 
@@ -63,5 +107,8 @@ export const NoMatches: Story = {
         const input =
             within(canvasElement).getByPlaceholderText('nodes')
         await userEvent.type(input, 'zzz-no-match')
+        // Sentence case, as written — the old line was forced to uppercase by CSS.
+        const empty = await within(canvasElement).findByText('No matches')
+        expect(getComputedStyle(empty).textTransform).toBe('none')
     },
 }

@@ -1,11 +1,30 @@
-/* CodeBlock.module.css — CodeBlock.tsx is the ONLY importer. A `<pre>` reset: no margin, the
-   app's mono token (same one `.chat-tool-pre` / `.chat-thinking-body` use), and wrapping so a
-   long unbroken token doesn't blow out its container. Everything else — border, padding,
-   background, color, max-height/overflow — comes from the caller's class. The reset is wrapped in
-   :where() so it has zero specificity and a caller's class always wins regardless of stylesheet order. */
+/* CodeBlock.module.css — CodeBlock.tsx is the ONLY importer. A `<pre>` with a token-built default
+   look: a quiet --surface-1 fill, a --rule-soft hairline, --sp-4/--sp-5 padding, the app's mono
+   token (the same one `.chat-tool-pre` / `.chat-thinking-body` use) at --code-font-size, and
+   wrapping so a long unbroken token doesn't blow out its container. It used to be a bare reset
+   (no fill, no border, no padding), which read as loose text and is why PreviewView and three chat
+   sites kept a raw `<pre>` or their own skin instead.
+   `bare` drops the .chrome class. Everything is wrapped in :where() so it has zero specificity: a caller that still carries its own
+   border/padding/background/color/max-height/overflow wins regardless of stylesheet order, so
+   adopting this default never fights an existing caller. */
 :where(.code-block) {
     margin: 0;
+    box-sizing: border-box;
+    max-width: 100%;
+    color: var(--fg);
     font-family: var(--ui-font-stack);
+    font-size: var(--code-font-size);
+    line-height: var(--lh-ui);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+}
+
+/* The box chrome — omitted entirely when the caller passes `bare`, so a caller's own class never has
+   to reset what it did not ask for (a caller that measures the element's box, like LineView's hover
+   column, would otherwise be shifted by the padding). */
+:where(.chrome) {
+    padding: var(--sp-4) var(--sp-5);
+    background: var(--surface-1);
+    border: var(--rule-soft);
+    border-radius: var(--r-0);
 }

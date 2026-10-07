@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { barHeader, layoutBars } from './barRows'
+import { MIN_BAR_CELLS, barHeader, layoutBars } from './barRows'
 
 describe('layoutBars', () => {
     test('widths add up to columns', () => {
@@ -14,14 +14,36 @@ describe('layoutBars', () => {
         }
     })
 
-    test('negative values clamp fill to 0', () => {
+    test('a non-zero value always draws at least one cell, negative or not; only 0 draws none', () => {
         const points = [
-            { key: 'a', label: 'a', value: -5 },
-            { key: 'b', label: 'b', value: 10 },
+            { key: 'a', label: 'a', value: -1 },
+            { key: 'b', label: 'b', value: -4 },
+            { key: 'c', label: 'c', value: 1 },
+            { key: 'd', label: 'd', value: 0 },
+            { key: 'e', label: 'e', value: 400 },
         ]
-        const rows = layoutBars(points, 40)
-        expect(rows[0].fill).toBe(0)
+        const [m1, m4, p1, zero, big] = layoutBars(points, 40)
+        expect(m1.fill).toBeGreaterThanOrEqual(1)
+        expect(m4.fill).toBeGreaterThanOrEqual(1)
+        expect(p1.fill).toBeGreaterThanOrEqual(1)
+        expect(zero.fill).toBe(0)
+        expect([m1.negative, m4.negative, p1.negative, zero.negative]).toEqual([true, true, false, false])
+        // Scaled on magnitude: -4 draws no fewer cells than -1, and the largest value fills the bar.
+        expect(m4.fill).toBeGreaterThanOrEqual(m1.fill)
+        expect(big.track).toBe(0)
+    })
+
+    test('a negative that is the largest magnitude fills the bar', () => {
+        const rows = layoutBars(
+            [
+                { key: 'a', label: 'a', value: -10 },
+                { key: 'b', label: 'b', value: 5 },
+            ],
+            40,
+        )
+        expect(rows[0].track).toBe(0)
         expect(rows[1].fill).toBeGreaterThan(0)
+        expect(rows[1].fill).toBeLessThan(rows[0].fill)
     })
 
     test('all-zero values give fill 0 with no NaN', () => {
@@ -72,6 +94,23 @@ describe('layoutBars', () => {
             expect(row.fill).toBeGreaterThanOrEqual(0)
             expect(row.track).toBeGreaterThanOrEqual(0)
             expect(row.label.length + row.value.length + row.fill + row.track + 4).toBeLessThanOrEqual(columns)
+        }
+    })
+
+    // Regression: at ~40 columns two long labels ate the whole row, the track collapsed to 2 cells,
+    // and 340 and 275 both drew the same length — the chart compared nothing.
+    test('long labels cannot squeeze the bars: close values still draw different lengths', () => {
+        const points = [
+            { key: 'a', label: 'Waiting on review from legal', value: 120 },
+            { key: 'b', label: 'Blocked on design sign-off', value: 340 },
+            { key: 'c', label: 'Needs a follow-up call', value: 275 },
+            { key: 'd', label: 'Ready to ship', value: 512 },
+        ]
+        for (const columns of [36, 40, 44, 52]) {
+            const rows = layoutBars(points, columns)
+            for (const row of rows) expect(row.fill + row.track).toBeGreaterThanOrEqual(MIN_BAR_CELLS)
+            const fill = (key: string) => rows.find(r => r.key === key)!.fill
+            expect(fill('b')).not.toBe(fill('c'))
         }
     })
 

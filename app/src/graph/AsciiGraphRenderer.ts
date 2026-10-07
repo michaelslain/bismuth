@@ -160,6 +160,7 @@ export interface AsciiGraphStats {
     edgesTransitingDropped: number // real member edges the locality gate dropped: at least one endpoint's
     // cluster has nothing on screen, so the line merely transits the viewport on its
     // way between two places the user cannot see. See `inViewClusters`.
+    edgeLabelsDrawn: number // edge captions (GraphEdge.label) painted at their midpoints this frame
     edgesStroked: number // line segments actually issued to the canvas this paint, all three tiers
     // (group lines + intra-cluster mesh + member edges)
     backbonePairsDropped: number // connected community pairs the MAX_LEVEL_PAIRS cap threw away, summed over
@@ -551,6 +552,8 @@ interface EdgeView {
     a: NodeView
     b: NodeView
     kr: number
+    /** The edge's caption (GraphEdge.label) — drawn at its midpoint by paint(). */
+    label?: string
 }
 /** One LOD aggregate entity on the field — a hierarchy-level community rendered as a single ASCII
  *  mass. Built once per graph build (structure) with per-frame screen scratch, mirroring NodeView. */
@@ -833,6 +836,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
      *  tier that early-returns on alpha contributes nothing. Reset by strokeEdges(), not rasterize():
      *  it counts paint work, and paint() runs after rasterize(). */
     private edgesStrokedFrame = 0
+    /** Edge captions painted by the last paint() — see the caption pass at its end. */
+    private edgeLabelsDrawnFrame = 0
     /** Points handed to `buildBloom` this frame, and their total PRE-NORMALISATION weight (see
      *  emitBloom). Both are deliberately measured on the INPUT, not the emitted field: `buildBloom`
      *  normalises its peak cell to exactly 1, so an emitted field is equally "bright" whether it was
@@ -1170,7 +1175,25 @@ export class AsciiGraphRenderer implements GraphRenderer {
         return this.m.padX + (this.m.cols / 2) * this.m.cellW + panPx
     }
     private originY(panPx: number) {
-        return this.m.padY + (this.m.rows / 2) * this.m.cellH + panPx
+        return (
+            this.m.padY +
+            (this.m.rows / 2) * this.m.cellH -
+            this.fitBottomReserve() / 2 +
+            panPx
+        )
+    }
+    /** Px held back along the BOTTOM of the field's fit rect. The full-pane graph's status line
+     *  (GraphStatusLine) is an overlay across the canvas floor, so a graph fitted to the whole box ran its
+     *  lowest labels under that rule and cut them. One cell row is that strip's height plus the label's
+     *  own ascent; the fit box shrinks by it and the origin moves up by half of it, so the graph is
+     *  centred in what is left, not merely shortened. */
+    private fitBottomReserve(): number {
+        return this.fitBottomRows() * this.m.cellH
+    }
+    /** `GraphConfig.fitBottomRows`, defaulting to none: only the full-pane graph has a status line over its
+     *  floor (GraphView sets 1), while the sidebar mini-graph and an embedded diagram fill their whole box. */
+    private fitBottomRows(): number {
+        return Math.max(0, this.cfg.fitBottomRows ?? 0)
     }
 
     // ---- data ----------------------------------------------------------------
@@ -1362,6 +1385,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
                     a,
                     b,
                     kr: (hashKey(e.from + '\0' + e.to) % 1000) / 1000,
+                    label: e.label,
                 })
         }
 
@@ -1963,13 +1987,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const raw = is2d
             ? fitScaleForBox(
                   this.m.cols * this.m.cellW,
-                  this.m.rows * this.m.cellH,
+                  this.m.rows * this.m.cellH - this.fitBottomReserve(),
                   this.half2.hx,
                   this.half2.hy,
               )
             : fitPxPerWorld(
                   this.m.cols,
-                  this.m.rows,
+                  this.m.rows - this.fitBottomRows(),
                   this.m,
                   Math.max(1e-6, this.radius3),
               )
@@ -2495,7 +2519,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.zoomStepAnchored(
             pct,
             m.padX + (m.cols * m.cellW) / 2,
-            m.padY + (m.rows * m.cellH) / 2,
+            this.originY(0),
         )
     }
 
@@ -4343,6 +4367,31 @@ export class AsciiGraphRenderer implements GraphRenderer {
         }
         ctx.lineJoin = prevJoin
         ctx.lineCap = prevCap
+        // EDGE CAPTIONS (` a -> b: manages `), centred on each captioned edge's midpoint on the cell grid.
+        // After the node names so a caption never paints under one; same ground halo so the line it sits
+        // on reads as behind it. Counted in `edgeLabelsDrawn` — canvas text is not in the DOM, so the
+        // stats hook is how a story or test proves a caption actually drew.
+        this.edgeLabelsDrawnFrame = 0
+        const edgeInk = this.resolveFillColor(C_MUTED)
+        ctx.globalAlpha = 0.9
+        for (const e of this.edges) {
+            if (!e.label || !e.a.projValid || !e.b.projValid) continue
+            const mx =
+                m.padX +
+                ((e.a.col + e.b.col) / 2) * m.cellW +
+                m.cellW / 2
+            const my =
+                m.padY +
+                ((e.a.row + e.b.row) / 2) * m.cellH +
+                m.cellH / 2
+            const x = mx - (e.label.length * m.cellW) / 2
+            ctx.strokeStyle = this.groundColor
+            ctx.strokeText(e.label, x, my)
+            ctx.fillStyle = edgeInk
+            ctx.fillText(e.label, x, my)
+            this.edgeLabelsDrawnFrame++
+        }
+        ctx.globalAlpha = 1
         ctx.lineWidth = prevW
         if (this.letterSpacingSupported)
             ctxLS.letterSpacing = this.pinnedLetterSpacing
@@ -4518,7 +4567,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
             ay = e.clientY - r.top
         if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
             ax = this.m.padX + (this.m.cols * this.m.cellW) / 2
-            ay = this.m.padY + (this.m.rows * this.m.cellH) / 2
+            ay = this.originY(0)
         }
         this.wheelAccum += e.deltaY
         while (Math.abs(this.wheelAccum) >= WHEEL_NOTCH_PX) {
@@ -4972,6 +5021,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
             edgesIntraVisible: this.edgesIntraVisibleFrame,
             edgesCrossVisible: this.edgesCrossVisibleFrame,
             edgesTransitingDropped: this.edgesTransitingDroppedFrame,
+            edgeLabelsDrawn: this.edgeLabelsDrawnFrame,
             edgesStroked: this.edgesStrokedFrame,
             backbonePairsDropped: this.levelPairsDropped.reduce(
                 (a, b) => a + b,

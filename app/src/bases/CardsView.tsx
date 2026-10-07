@@ -1,4 +1,4 @@
-import { For, Index, Show } from 'solid-js'
+import { For, Index, Show, createMemo } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { api } from '../api'
@@ -8,7 +8,7 @@ import TaskRow from './TaskRow'
 import CardFrame from './CardFrame'
 import CardBodyInner from './CardBodyInner'
 import CardCover from './CardCover'
-import { autoGroupColor } from './groupHue'
+import { autoGroupColor, claimedSlots } from './groupHue'
 import { useRowEditor } from './useRowEditor'
 import GroupHeader from '../ui/GroupHeader'
 import EmptyState from '../ui/EmptyState'
@@ -100,10 +100,17 @@ export function CardsView(props: {
     // A generated cover is coloured only when the base is grouped — the category ramp means
     // category, never decoration — with the same key→colour rule (and per-view `groupColors`
     // overrides) as a kanban column, so one group reads as one hue across views.
+    const claimed = createMemo(() =>
+        claimedSlots(
+            props.result.groups.map(g => g.key),
+            props.result.view.groupColors,
+        ),
+    )
     const groupHue = (key: string): string | undefined =>
         key === ''
             ? undefined
-            : (props.result.view.groupColors?.[key] ?? autoGroupColor(key))
+            : (props.result.view.groupColors?.[key] ??
+              autoGroupColor(key, claimed()))
 
     // A stored row has no note to open, so it never gets a link.
     const linkable = (row: Row) => !Number.isInteger(row.index)

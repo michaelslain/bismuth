@@ -12,6 +12,8 @@ import { StatusText } from '../ui/StatusDot'
 import Tag from '../ui/Tag'
 import Text from '../ui/Text'
 import EmptyValue from '../ui/EmptyValue'
+import BooleanValue from './BooleanValue'
+import { formatDateValue, isEmptyValue, looksLikeDatetime } from './valueDisplay'
 import NoteLink from '../ui/NoteLink'
 import styles from './valueRenderers.module.css'
 
@@ -54,7 +56,7 @@ export function renderStars(n: number): JSX.Element {
 /** The undeclared-value renderer: status dots, tags, stars, links, dates and plain values. */
 export function renderValue(id: string, row: Row): JSX.Element {
     const v = resolveProperty(id, row)
-    if (v === null || v === undefined) return <EmptyValue />
+    if (isEmptyValue(v)) return <EmptyValue />
 
     // A Link value (from file.asLink(...), the link() function, or a link-typed column)
     // renders as a clickable note link, not "[object Object]".
@@ -76,12 +78,14 @@ export function renderValue(id: string, row: Row): JSX.Element {
         )
     }
 
-    // Typed glyph, not an SVG check — "x" when true, blank when false (per the ASCII
-    // system's renderValue rule: booleans render as text, never an icon asset).
-    if (typeof v === 'boolean') {
+    // One boolean spelling everywhere: the `[ ]` / `[x]` glyph (BooleanValue).
+    if (typeof v === 'boolean') return <BooleanValue value={v} />
+
+    // A stored datetime reads `2026-09-14 14:00`, as the date editor's trigger does.
+    if (looksLikeDatetime(v)) {
         return (
-            <Text as="span" inherit class={styles.boolCell}>
-                {v ? 'x' : ''}
+            <Text as="span" inherit class={styles.dateCell}>
+                {formatDateValue(v, true)}
             </Text>
         )
     }

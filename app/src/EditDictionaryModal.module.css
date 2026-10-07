@@ -1,17 +1,7 @@
 /* app/src/EditDictionaryModal.module.css
    The Edit-Dictionary modal's own content — the frame, header rule and footer rule now come from
-   FormModal + ModalHeader + ModalFooter (ui/), so this file only supplies the word-list rows and
-   the add-a-word row that are specific to this modal. */
-
-/* word list — plain rows at --row-h, divided by a soft rule; no filled well (the old
-   background + outer border read as a heading-weight card, which the redesign drops). */
-.dict-list { display: flex; flex-direction: column; }
-.dict-row { display: flex; align-items: center; gap: var(--sp-5); height: var(--row-h); }
-.dict-row + .dict-row { border-top: var(--rule-soft); }
-.dict-word { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* empty state — a small, quiet hint, not a heading (size/tone come from the Text primitive) */
-.dict-empty { padding: var(--sp-6) var(--sp-3) var(--sp-3); text-align: center; font-style: italic; line-height: 1.5; }
+   FormModal + ModalHeader + ModalFooter (ui/), so this file only supplies the add-a-word row that is specific to this modal. The word list is ui/RowList + ui/ListRow and
+   the empty line is ui/EmptyState compact — nothing here styles either. */
 
 /* add-a-word — one underline-input row, no card chrome */
 .dict-add { display: flex; gap: var(--sp-5); align-items: center; }

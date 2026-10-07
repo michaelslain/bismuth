@@ -8,8 +8,11 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  min-height: var(--h-band);
-  padding: var(--sp-5) var(--sp-6);
+  /* A fixed band, not min-height + vertical padding: that rendered ~48px and changed height as the
+     content swapped between states (buttons, a phrase, a warning). */
+  box-sizing: border-box;
+  height: var(--h-band);
+  padding: 0 var(--sp-6);
   border-top: var(--rule-soft);
 }
 .row {

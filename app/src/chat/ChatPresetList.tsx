@@ -1,9 +1,9 @@
 // app/src/chat/ChatPresetList.tsx
 // The model dialog's "presets" section — the top of ChatModelPicker's left column, above the
 // connectors, because a preset is a connector too (plus a model and an effort). Each saved preset is
-// one row in the connector rows' own shape: `▸` when it matches what the chat is running, its name,
-// a trailing `[x]` that deletes it — the same bracket `x` as the dialog's own close, but --faint
-// until the pointer is on it, then --danger, like every list row's remove `[x]`. What it holds
+// a `ui/PickRow` (the connector and model rows' own component): `▸` when it matches what the chat is
+// running, its name, in a `ui/ListRow` whose revealed trailing `[x]` deletes it — --danger on hover,
+// like every list row's remove `[x]`. What it holds
 // (`connector // model // effort`) is the row's tooltip; picking it shows the rest, since the
 // connector ▸ and the right column's model check and effort follow. A `+ save` control at the bottom turns into a name input (prefilled with a
 // suggestion, selected so typing replaces it).
@@ -15,10 +15,10 @@ import { createSignal, For, Show, type Component } from 'solid-js'
 import styles from './ChatPresetList.module.css'
 import { IconTextButton } from '../ui/IconTextButton'
 import InlineTextInput from '../ui/InlineTextInput'
-import PlainButton from '../ui/PlainButton'
+import PickRow from '../ui/PickRow'
+import ListRow from '../ui/ListRow'
 import TextButton from '../ui/TextButton'
 import SectionLabel from '../ui/SectionLabel'
-import Text from '../ui/Text'
 import {
     presetMatches,
     type ChatPreset,
@@ -49,28 +49,34 @@ const ChatPresetList: Component<ChatPresetListProps> = props => {
                 {(preset, i) => {
                     const current = () => presetMatches(preset, props.current)
                     return (
-                        <div class={styles.row}>
-                            <PlainButton
-                                class={`${styles.preset} ${current() ? styles['preset--current'] : ''}`}
-                                aria-current={current() || undefined}
+                        <ListRow
+                            reveal
+                            baseline
+                            class={styles.row}
+                            trailing={
+                                <TextButton
+                                    danger="hover"
+                                    aria-label={`Delete preset ${preset.name}`}
+                                    title={`Delete preset ${preset.name}`}
+                                    onClick={() => props.onDelete(i())}
+                                >
+                                    x
+                                </TextButton>
+                            }
+                        >
+                            {/* PickRow takes no `title`; the tooltip (what the preset holds) rides
+                                on this wrapper, which also gives the row its full width. */}
+                            <div
+                                class={styles.pick}
                                 title={`${preset.name} — ${props.describe(preset)}`}
-                                onClick={() => props.onApply(preset)}
                             >
-                                <Text as="span" inherit class={styles.mark}>
-                                    {current() ? '▸' : ''}
-                                </Text>
-                                {preset.name}
-                            </PlainButton>
-                            <TextButton
-                                class={styles.delete}
-                                danger="hover"
-                                aria-label={`Delete preset ${preset.name}`}
-                                title={`Delete preset ${preset.name}`}
-                                onClick={() => props.onDelete(i())}
-                            >
-                                x
-                            </TextButton>
-                        </div>
+                                <PickRow
+                                    marked={current()}
+                                    label={preset.name}
+                                    onPick={() => props.onApply(preset)}
+                                />
+                            </div>
+                        </ListRow>
                     )
                 }}
             </For>

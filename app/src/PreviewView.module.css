@@ -1,19 +1,11 @@
-/* app/src/PreviewView.module.css — read-only file preview tab (images / PDFs / code / binary).
-   Moved out of the global PreviewView.css verbatim (2026-08 CSS modularization). Consumed by
-   PreviewView.tsx only. No `:global()` reach anywhere in this file — the match-case toggle is now a
-   plain `ui/IconButton` (button-family task 5: `icon="CaseSensitive"`, `variant`
-   selected/unselected), so it carries no look of its own here at all; `.preview-find-case` (its old
-   ui/PlainButton local-class look) is gone.
+/* app/src/PreviewView.module.css — the read-only file preview tab's own chrome (the root, the
+   companion-tags strip, the scrolling body, the PDF column). Consumed by PreviewView.tsx only.
 
-   CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles` in `classList`:
-   `is-empty` on `.preview-find-count`, `is-active` on `.preview-find-match`. A bare
-   `classList={{ 'is-active': … }}` would silently match nothing once these hash.
-
-   THE JS CLASS-MATCH TRAP: PreviewView.tsx used to scroll the active match into view via
-   `codeRef.querySelector('.preview-find-match.is-active')` — a class-name string baked into JS,
-   which compiles fine and matches nothing once both names hash. Converted to a `data-find-match`
-   + `data-active` attribute pair on the `<mark>` (same idiom as `data-pane-leaf`/`data-chat-bubble`);
-   the CSS classes stay, driving only the visual styling below. */
+   Everything else moved out into the component that owns it, one stylesheet each:
+   preview/CodeFindBar (the find popover), preview/ImagePane (picture, stage, strip, overlay),
+   preview/CodePane (the code body + match marks) and preview/PreviewUnavailable (the "can't preview
+   this" block). Their state classes (`is-empty`, `is-active`) went with them; the JS that scrolls the
+   active match into view reads `data-find-match` + `data-active`, never a class. */
 
 .preview-app {
   display: flex;
@@ -57,94 +49,6 @@
   background: var(--editor);
 }
 
-/* Image + scratch strip (SCRATCH on): PreviewView.tsx's measureImage lays them out together, in
-   HOST px, as one unit (preview/imageScratchLayout.ts) — the same body-relative coordinate space
-   PageInk's `pages()` already use. This host and `.preview-image-overlay` below share one box
-   (the body's content origin, at least the body's size), so the image's rendered rect and the
-   strip beside it share the exact positioning PageInk/ScratchTextLayer paint into. Zoomed, both
-   are sized inline to the whole stage (PreviewView's `imageStage`) so the body scrolls to pan.
-   With SCRATCH off at the fit none of this exists — `.preview-image` below keeps its ordinary CSS
-   auto-centring alone.
-   `background: var(--editor)` (Task 4 — was `--surface-2`) matches PdfPages' `.pdf-scroll` desk
-   AND `.preview-body--desk` above: the desk is the `--editor` ground everywhere, and the strip
-   beside the image is the one thing raised onto `--surface-1` (Task 3) — the same two-surface
-   system a PDF page and its own strip already read as. */
-.preview-image-host {
-  position: absolute;
-  left: 0;
-  top: 0;
-  min-width: 100%;
-  min-height: 100%;
-  background: var(--editor);
-}
-
-/* The image's ScratchTextLayer + PageInk, over the same stage as the host above: the body's box at
-   the fit, the zoomed picture's full scroll content otherwise (width/height set inline from
-   PreviewView's `imageStage`). It takes no pointer events itself — its layers opt back in. */
-.preview-image-overlay {
-  position: absolute;
-  left: 0;
-  top: 0;
-  min-width: 100%;
-  min-height: 100%;
-  pointer-events: none;
-}
-
-/* The image's strip (ScratchPaper, passed this class via its `class` prop) — the same hard lift
-   and left-clip `.pdf-margin` gives a PDF page's strip (PdfPages.module.css), so an image's strip
-   reads as part of the same system rather than flat paper with no edge (final review, finding 5).
-   Positioning/sizing stay inline (PreviewView.tsx sets them from `imageScratchLayout.ts`'s
-   `rendered`+`marginW`); this class supplies only the chrome `.pdf-margin` already owns. */
-.preview-image-margin {
-  box-shadow: var(--lift);
-  clip-path: inset(0 -8px -8px 0);
-}
-
-/* Image: centered, contained, on a subtle checkerboard so transparency reads clearly. The inset
-   from the pane edge is done with `max-width`/`max-height` (not `padding`) so the element's own
-   box equals the picture's rendered rect exactly: with `padding: var(--sp-6)` the box was bigger
-   than the picture whenever the aspect ratio didn't fill it exactly (the common, letterboxed
-   case), so the checkerboard painted a 16px ring pressed against the pane edges on every opaque
-   photo — a busy frame, and a third background colour in the reading area — and the picture had
-   no edge of its own (only `.preview-image--scratch` below had one). With padding 0 and the inset
-   folded into max-width/max-height instead, the box IS the picture's rect (same as the scratch
-   variant), so the checker shows only through transparent pixels and a hairline `outline` lands
-   on the painted edge. */
-.preview-image {
-  margin: auto;
-  max-width: calc(100% - 2 * var(--sp-6));
-  max-height: calc(100% - 2 * var(--sp-6));
-  object-fit: contain;
-  padding: 0;
-  outline: var(--rule-soft);
-  box-sizing: border-box;
-  background-image:
-    linear-gradient(45deg, color-mix(in srgb, var(--fg) 6%, transparent) 25%, transparent 25%),
-    linear-gradient(-45deg, color-mix(in srgb, var(--fg) 6%, transparent) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--fg) 6%, transparent) 75%),
-    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--fg) 6%, transparent) 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
-}
-
-/* The scratch variant of `.preview-image`, applied ALONGSIDE it (kept AFTER `.preview-image` in
-   this file — equal specificity, so source order is what makes these win): JS now owns the box
-   (imageScratchLayout's `rendered`), so the ordinary auto-centring/object-fit machinery above is
-   turned off in favour of explicit left/top/width/height (set inline by PreviewView.tsx) — the
-   padding that machinery used to add moves to the AREA the whole unit centres inside (measureImage
-   reads `--sp-6` off the body itself) rather than the image's own box. Its box has no padding and
-   IS the picture's exact rendered rect, so — unlike `.preview-image` above — a hairline outline
-   here lands precisely on the painted edge; no `outline-offset` needed (there's no inset to
-   subtract). */
-.preview-image--scratch {
-  position: absolute;
-  margin: 0;
-  max-width: none;
-  max-height: none;
-  padding: 0;
-  outline: var(--rule-soft);
-}
-
 /* PDF: the page stack takes the flexible width of the body's row; `min-width: 0` lets it shrink
    when the bookmarks panel opens beside it instead of pushing the panel out of the pane. */
 .preview-pdf {
@@ -158,108 +62,9 @@
   min-width: 0;
 }
 
-/* Code/text: read-only monospace, own horizontal + vertical scroll. */
-.preview-code {
-  flex: 1 1 auto;
-  width: 100%;
-  margin: 0;
-  padding: var(--sp-5) var(--sp-6);
-  box-sizing: border-box;
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-body);
-  line-height: 1.5;
-  color: var(--fg);
-  white-space: pre;
-  overflow: auto;
-  tab-size: 2;
-}
-
-/* The root + code surface are focusable (tabindex) so Cmd+F reaches the keydown handler —
-   suppress the focus ring, matching the editor. */
+/* The root is focusable (tabindex) so Cmd+F reaches the keydown handler — nothing draws focus. */
 .preview-app:focus,
-.preview-app:focus-visible,
-.preview-code:focus,
-.preview-code:focus-visible {
+.preview-app:focus-visible {
   outline: none;
 }
 
-/* Binary / unsupported: centered "not available" block + an Open-with button. */
-.preview-external {
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-5);
-  padding: var(--sp-7);
-  text-align: center;
-}
-
-/* ── Find bar (Cmd/Ctrl+F over a code/text or PDF preview) ─────────────────────────────
-   Overlaid top-right of the scrolling body; visual twin of the editor's `.bismuth-find`
-   (global.css's CodeMirror theming section) but self-contained so PreviewView never depends on the editor being loaded. */
-/* `.preview-find` is this component's own `onKeyDown={e => e.stopPropagation()}` wrapper
-   `<div>` (that stopPropagation is load-bearing — see the comment at its call site) around
-   `ui/SearchBar`, not SearchBar's own `class` — SearchBar owns every visual of the field itself
-   now (see ui/SearchBar.module.css), so this rule supplies only the floating popover CHROME
-   around it: position, background, border, lift. `min-width` is a cell-count, not a literal —
-   `--cell-w` is the ASCII-grid character advance width defined in global.css — and stays a floor
-   rather than a fixed `width` so the bar's own content (icon, input, trailing buttons) is never
-   squeezed narrower than it needs and forced to overflow the popover's right edge. No `display:
-   flex` here: the code-find case has exactly one child (`ui/SearchBar`, itself a flex row) that
-   fills this box in normal block flow; the PDF note case (multiple direct children) supplies its
-   own flex layout on `.preview-find-note` below. */
-.preview-find {
-  position: absolute;
-  top: var(--sp-3);
-  right: var(--sp-5);
-  z-index: 5;
-  min-width: calc(var(--cell-w) * 40);
-  padding: var(--sp-2) var(--sp-4);
-  background: var(--pop-bg-strong, var(--bg));
-  border: none;
-  border-radius: var(--r-0);
-  box-shadow: var(--lift);
-  font-family: var(--ui-font-stack);
-  color: var(--fg);
-}
-
-.preview-find-count {
-  min-width: 30px;
-  margin: 0 var(--sp-2) 0 var(--sp-1);
-  font-size: var(--fs-ui);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  white-space: nowrap;
-  text-align: right;
-}
-.preview-find-count.is-empty { color: var(--danger); }
-
-/* PDF variant: an informational note (no input) — the embedded viewer owns text search. This is
-   the one `.preview-find` user with several direct children (icon, text, close button), so it
-   supplies its own row layout rather than relying on the code-find bar's single-child block flow. */
-.preview-find-note {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5);
-  border: var(--rule);
-  color: var(--text-muted);
-  max-width: min(340px, 70vw);
-}
-.preview-find-note-text {
-  font-size: var(--fs-ui);
-  line-height: 1.3;
-}
-
-/* Match highlighting inside the code preview — an accent wash on every match, a stronger
-   solid wash + ring on the active one (the target of next/prev + scroll-into-view). */
-.preview-find-match {
-  background: var(--accent-soft, color-mix(in srgb, var(--accent) 26%, transparent));
-  color: inherit;
-  border-radius: var(--r-0);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
-}
-.preview-find-match.is-active {
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
-  box-shadow: 0 0 0 2px var(--accent);
-}

@@ -35,3 +35,9 @@
     font-size: inherit;
     color: inherit;
 }
+
+/* The model word is a command like its siblings in the row (`bypass`, `[history]`), and they all
+   brighten under the pointer — this is the one that did not. */
+.model-menu .word:hover {
+    color: var(--fg);
+}

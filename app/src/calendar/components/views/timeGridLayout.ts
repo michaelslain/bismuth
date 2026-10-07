@@ -7,12 +7,15 @@ import type { CalendarEvent } from '../../types'
 import { clamp, minutesToStr, snap } from './timeGridDrag'
 
 export const MINUTES_PER_DAY = 24 * 60
-export const GRID_PX = 1200
+/** 72px an hour: four of the app's 18px rows (--row-h), so a quarter hour is 18px and every grid
+ *  line, half-hour row and 15-minute snap lands on the unit. Also tile-h + 4 x pitch, so each hour
+ *  block is a whole number of ASCII dash pitches and its typed `-` paints one pitch both ways. */
+export const GRID_PX = 1728
 
 /** A block shorter than this many px lays out on one line (time + title side by side). A 30-min
- *  block (~22px, one half-hour row) is that short; an hour block (~47px) has room for the time
+ *  block (33px, one half-hour row) is that short; a 45-min block (51px) has room for the time
  *  over a full-width title line. */
-const COMPACT_BELOW_PX = 30
+const COMPACT_BELOW_PX = 40
 /** Every chip trims this much so neighbours keep a hairline gap. */
 const CHIP_TRIM_PX = 3
 const MIN_HEIGHT_PX = 8
@@ -29,9 +32,17 @@ export function minutesToPx(min: number): number {
     return (min / MINUTES_PER_DAY) * GRID_PX
 }
 
-/** Timed events on one day, in source order. */
+/** A day's events in reading order: all-day first, then by start time. The sort is stable, so
+ *  events that start together (or are all-day) keep their stored order. Never mutates its input. */
+export function sortDayEvents(events: CalendarEvent[]): CalendarEvent[] {
+    const key = (e: CalendarEvent): number =>
+        e.startTime ? eventMinutes(e).startMin : -1
+    return [...events].sort((a, b) => key(a) - key(b))
+}
+
+/** Timed events on one day, earliest start first. */
 export function timedOn(events: CalendarEvent[], ds: string): CalendarEvent[] {
-    return events.filter(e => e.date === ds && e.startTime)
+    return sortDayEvents(events.filter(e => e.date === ds && e.startTime))
 }
 
 /** All-day (untimed) events on one day, in source order. */
@@ -52,7 +63,11 @@ export function eventMinutes(e: {
     )
         .split(':')
         .map(Number)
-    return { startMin, endMin: eh * 60 + em }
+    // An end BEFORE the start (typed backwards, or "23:00 to 01:00" across midnight) is a
+    // zero-length event at its start, not a swap: the start is what places the block, and swapping
+    // would invent a start the user never set (23:00-01:00 would jump to 01:00). Zero-length then
+    // gets the usual half-hour floor, capped at the next event.
+    return { startMin, endMin: Math.max(eh * 60 + em, startMin) }
 }
 
 export function yToMinutes(y: number, colHeight: number): number {
@@ -76,7 +91,11 @@ function blockHeight(duration: number, room = Infinity): number {
 export function computeLanes(
     items: { id: string; startMin: number; endMin: number }[],
 ): Map<string, { lane: number; lanes: number }> {
-    const sorted = [...items].sort(
+    // A reversed range counts as zero-length (see eventMinutes), and every event holds at least
+    // its own minute so two zero-length events at one time still take separate lanes.
+    const sorted = items
+        .map(it => ({ ...it, endMin: Math.max(it.endMin, it.startMin + 1) }))
+        .sort(
         (a, b) => a.startMin - b.startMin || a.endMin - b.endMin,
     )
     const out = new Map<string, { lane: number; lanes: number }>()
@@ -139,14 +158,17 @@ export function layoutDay(dayEvents: CalendarEvent[]): DayLayoutItem[] {
     )
     return dayEvents.map((event, i) => {
         const { startMin, endMin } = spans[i]
-        const height = blockHeight(
-            endMin - startMin,
-            nextStartAfter(startMin) - startMin,
+        const top = minutesToPx(startMin)
+        // The block's 30-min floor can reach past midnight (23:45 grows to 00:15); the grid ends
+        // at GRID_PX, so cut it there rather than spill over the closing rule.
+        const height = Math.min(
+            blockHeight(endMin - startMin, nextStartAfter(startMin) - startMin),
+            GRID_PX - top,
         )
         const li = lanes.get(event.id)
         return {
             event,
-            top: minutesToPx(startMin),
+            top,
             height,
             lane: li?.lane ?? 0,
             lanes: li?.lanes ?? 1,

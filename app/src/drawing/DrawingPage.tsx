@@ -16,9 +16,10 @@ import { createDrawingStore } from './store'
 import { DrawingCanvas, type ToolState } from './DrawingCanvas'
 import { Toolbar } from './Toolbar'
 import { IconTextButton } from '../ui/IconTextButton'
-import { Loading } from '../ui/EmptyState'
+import EmptyState, { Loading } from '../ui/EmptyState'
+import { TextButton } from '../ui/TextButton'
 import FilePicker from '../ui/FilePicker'
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 import { isImageFile } from '../fileIntake'
 import styles from './DrawingPage.module.css'
 
@@ -72,24 +73,60 @@ const DEFAULT_TOOLS: ToolState = {
 export const ZOOM_MIN = 0.25,
     ZOOM_MAX = 4
 
+// A drawing either loaded (`doc`) or did not (`error`). Never conflate the two: a doc built from a
+// FAILED read is saved over the real file by the next autosave, destroying it.
+// `path` rides with the result so a write can only ever target the file the doc was read FROM — the
+// page is reused across a pane navigation, so props.path may already name a different file by the
+// time a debounced save fires.
+type LoadResult =
+    | { path: string; doc: DrawingDoc }
+    | { path: string; error: string }
+
+async function loadDrawing(path: string): Promise<LoadResult> {
+    let text: string
+    try {
+        text = await api.read(path)
+    } catch (e) {
+        return { path, error: (e as Error).message || 'read failed' }
+    }
+    // GET /file answers a path that does not exist yet with an empty body, so a blank file is a
+    // brand-new drawing (nothing on disk to lose). Anything else that will not parse is NOT empty —
+    // it is someone's file, and we refuse to open (and so to overwrite) it.
+    if (text.trim() === '') return { path, doc: emptyDoc() }
+    try {
+        return { path, doc: parseDoc(text) }
+    } catch (e) {
+        return {
+            path,
+            error: (e as Error).message || 'unreadable drawing file',
+        }
+    }
+}
+
 export function DrawingPage(props: { path: string }) {
-    const [loaded] = createResource(
-        () => props.path,
-        async (p): Promise<DrawingDoc> => {
-            try {
-                return parseDoc(await api.read(p))
-            } catch {
-                return emptyDoc()
-            }
-        },
-    )
+    const [loaded, { refetch }] = createResource(() => props.path, loadDrawing)
     return (
         <Show
             when={loaded()}
             keyed
             fallback={<Loading>Loading drawing…</Loading>}
         >
-            {initial => <DrawingEditor path={props.path} initial={initial} />}
+            {result =>
+                'doc' in result ? (
+                    <DrawingEditor path={result.path} initial={result.doc} />
+                ) : (
+                    // No editor is mounted, so nothing can autosave: the file on disk stays exactly
+                    // as it was until a read succeeds.
+                    <div class={styles['draw-load-error']} role="alert">
+                        <EmptyState title="couldn't open this drawing">
+                            {`${result.path} did not load (${result.error}). The file has not been touched and saving is off until it loads.`}
+                        </EmptyState>
+                        <TextButton onClick={() => void refetch()}>
+                            retry
+                        </TextButton>
+                    </div>
+                )
+            }
         </Show>
     )
 }

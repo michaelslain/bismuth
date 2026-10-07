@@ -1,12 +1,10 @@
 /* app/src/chat/ChatHistoryModal.module.css — ChatHistoryModal.tsx is the only importer. The
-   dialog's SIZE only; the surface (fill, hairline, radius) is <Modal>'s own `.asc-modal`.
+   dialog's HEIGHT only; the surface and the 600px width (the palette family's dialog width) are
+   FormModal's.
 
    A FIXED height, not a max-height: switching the you/daemon/all scope or typing a search swaps
-   the list under the header, and a content-sized dialog would jump in size on every keystroke.
-   600px matches the palette family's dialog width (palette/PaletteFrame.module.css). */
+   the list under the header, and a content-sized dialog would jump in size on every keystroke. */
 .dialog {
-    width: 90%;
-    max-width: 600px;
     height: min(70vh, 560px);
     display: flex;
     flex-direction: column;

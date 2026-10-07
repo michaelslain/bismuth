@@ -270,9 +270,9 @@ export const BodyEditPersists: Story = {
 
 let failSpy: ReturnType<typeof spyApi>
 
-/** A read that fails leaves the card on "Loading…" and mounts NO editor. That is deliberate: an
- *  empty editor whose autosave fired would overwrite the note's frontmatter, so the failure state is
- *  a card that stays inert, never an empty one that can write. */
+/** A read that fails mounts NO editor — deliberate: an empty editor whose autosave fired would
+ *  overwrite the note's frontmatter — but it no longer sits on "Loading…" forever: the card says it
+ *  could not load and offers a retry. */
 export const ReadFails: Story = {
     beforeEach: () => {
         failSpy = spyApi(['read'], {
@@ -291,13 +291,17 @@ export const ReadFails: Story = {
         await waitFor(() => expect(failSpy.named('read').length).toBeGreaterThan(0))
         // Let the rejected read settle through the component's catch.
         await new Promise(r => requestAnimationFrame(() => r(null)))
-        expect(within(canvasElement).getByText(/loading/i)).toBeInTheDocument()
+        const c = within(canvasElement)
+        await waitFor(() => expect(c.getByRole('alert')).toHaveTextContent(/couldn't load/i))
+        expect(c.queryByText(/loading/i)).toBeNull()
+        expect(c.getByRole('button', { name: /retry/i })).toBeInTheDocument()
         expect(canvasElement.querySelector('.cm-editor')).toBeNull()
     },
 }
 
 /** A write that fails keeps the edit in the buffer — nothing is thrown away or reverted — and the
- *  note on disk is untouched, so the next edit (or the flush on close) retries. */
+ *  note on disk is untouched, so the next edit (or the flush on close) retries. The card says so
+ *  instead of failing silently. */
 export const WriteFails: Story = {
     beforeEach: () => {
         failSpy = spyApi(['write'], {
@@ -325,5 +329,11 @@ export const WriteFails: Story = {
         })
         expect(view.state.doc.toString()).toContain('UNSAVED ')
         expect(await api.read(path)).not.toContain('UNSAVED ')
+        // ...and the person is told it has not reached the note.
+        await waitFor(() =>
+            expect(within(canvasElement).getByRole('alert')).toHaveTextContent(
+                /couldn't save/i,
+            ),
+        )
     },
 }

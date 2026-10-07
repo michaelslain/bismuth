@@ -34,6 +34,9 @@
 .text--default { color: var(--fg); }
 .text--muted { color: var(--text-muted); }
 .text--faint { color: var(--faint); }
+.text--danger { color: var(--danger); }
+.text--accent { color: var(--accent); }
+.text--warning { color: var(--warning); }
 
 /* ── weight (--fw-*) — font-weight INHERITS, so a Text rendered inside a bold/medium ancestor
    (a button label, a heading row, a th) needs its own default pinned just like size/tone;
@@ -41,6 +44,13 @@
 .text--regular { font-weight: var(--fw-regular); }
 .text--medium { font-weight: var(--fw-medium); }
 .text--bold { font-weight: var(--fw-bold); }
+
+/* ── truncate — one line, ellipsis. `min-width: 0` is NOT optional: a bare text child of a flex
+   container is an anonymous flex item whose automatic min-width is its full content width, so
+   `overflow: hidden` alone hard-clips mid-character and never draws the "…" (the trap
+   shell/DragGhost.module.css documents). Needs a box that can overflow — a flex/grid item or
+   a block tag; a `span` in plain inline flow has none. ── */
+.text--truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 /* ── italic — replaces a bare <em>; weight stays its own prop ── */
 .text--italic { font-style: italic; }

@@ -11,15 +11,56 @@
 
    `min-height`, not `height`: a wrapping IconBar (the collapsed tab rail's stacked icons) grows
    past one row; a one-row bar is --h-band tall either way. `box-sizing` keeps the hairline inside
-   that height. Layout (flex, gaps, alignment) is NOT here — each composer owns its own. */
+   that height. Layout (flex, gaps, alignment) is NOT here — each composer owns its own.
+
+   A BAND NEVER SETS ITS OWN PADDING (DESIGN.md, Layout): a caller that needs a different one is a
+   missing prop, so the four ways eight callers used to hand-write their own are props here —
+     flush     no inline padding (the caller owns its own, e.g. BaseView's ViewBar).
+     inset     a NAMED extra start inset: `traffic-lights` (the macOS overlay-titlebar gap) or `rail`
+               (the mirrored tab rail's one-pixel nudge). Named, never a px value, so the number
+               exists once and a caller cannot re-create the drift by typing its own.
+     padBlock  vertical room for a wrapping IconBar's stacked icons.
+     rule      which edge carries the hairline, or none.
+   The cascade order below is load-bearing: `.flush` zeroes both inline sides, then an `.inset-*`
+   restores ONLY the start side, so `flush` + `inset` means "no padding except that inset". */
 .band {
   min-height: var(--h-band);
   padding: 0 var(--sp-5);
   border-bottom: var(--rule-soft);
   box-sizing: border-box;
 }
+/* `rule="none"`: no hairline at all (a band inside a surface that draws its own edge). */
+.rule-none {
+  border-bottom: 0;
+}
 /* `rule="top"`: the hairline moves to the top edge (a band that is the LAST row of a column). */
 .rule-top {
   border-top: var(--rule-soft);
   border-bottom: 0;
+}
+/* `flush`: no inline padding. The bottom hairline is untouched — it is a border, not padding. */
+.flush {
+  padding-inline: 0;
+}
+/* `inset="traffic-lights"`: clears the native macOS traffic lights floating over the top strip's
+   left edge (see shell/TopStrip.module.css). --inset-traffic-lights (78px) is the lights' footprint. */
+.inset-traffic-lights {
+  padding-inline-start: var(--inset-traffic-lights);
+}
+/* `inset="rail"`: the mirrored (right-side) tab rail's start nudge, one pixel past the band's own
+   side padding so its glyphs land on the same axis as the rows below. */
+.inset-rail {
+  padding-inline-start: calc(var(--sp-5) + 1px);
+}
+/* `padBlock`: vertical breathing room above and below a wrapping IconBar's stacked icons. */
+.pad-block {
+  padding-block: var(--sp-4);
+}
+/* `compact`: exactly one text row tall — the status bar's --row-h line instead of a --h-band header. A
+   fixed `height` (the line is meant to be that tall, however tall its text's own line-height is), with
+   `min-height: 0` releasing `.band`'s --h-band floor. Declared after `.band` in this one file, so it wins
+   by source order inside the module rather than by a second component's rule racing it. */
+.compact {
+  height: var(--row-h);
+  min-height: 0;
 }

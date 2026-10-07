@@ -30,10 +30,9 @@ const recordMenu = (e: MouseEvent) =>
         `menu:${e.type}:${Number.isFinite(e.clientX) && Number.isFinite(e.clientY)}`,
     )
 
-/** Every state at once: empty box, purple slash, filled check, grey dash. A single-state story
- *  would leave three rules with no visual coverage at all — they differ only by an opacity flip
- *  on a glyph that is always mounted, which is precisely the kind of rule a DOM count cannot
- *  tell apart from a missing one. */
+/** Every state at once: empty box, slash, filled check, dash — one four-state ui/BracketToggle.
+ *  A single-state story would leave three glyph rules with no visual coverage at all, which is
+ *  precisely the kind of rule a DOM count cannot tell apart from a missing one. */
 export const AllStates: Story = {
     render: () => (
         <div style={{ display: 'flex', gap: '18px', 'align-items': 'center' }}>
@@ -55,6 +54,15 @@ export const AllStates: Story = {
         // `data-status` is a RUNTIME hook — the stylesheet matches on it — so a rename would
         // silently unstyle every box while every element still rendered. Pin the values.
         expect(boxes.map(b => b.getAttribute('data-status'))).toEqual(STATES)
+        // TaskCheck owns the status -> glyph mapping (doing/cancelled -> `state`, done -> `checked`);
+        // BracketToggle's own story only proves the toggle. Swapping the two would pass `data-status`.
+        const glyphs = boxes.map(
+            b => getComputedStyle(b.querySelector('i')!, '::before').content,
+        )
+        expect(glyphs[STATES.indexOf('done')]).toBe('"x"')
+        expect(glyphs[STATES.indexOf('doing')]).toBe('"/"')
+        expect(glyphs[STATES.indexOf('cancelled')]).toBe('"-"')
+        expect(['"x"', '"/"', '"-"']).not.toContain(glyphs[STATES.indexOf('todo')])
 
         // `role="checkbox"` promises a keyboard path: the mark is tabbable, Space and Enter
         // toggle, Shift+F10 opens the status menu with real coordinates to anchor it at.
@@ -147,7 +155,9 @@ export const Colored: Story = {
     ),
     play: async ({ canvasElement }) => {
         const boxes = within(canvasElement).getAllByRole('checkbox')
-        const colors = boxes.map(b => getComputedStyle(b).color)
+        // The glyph is a ui/BracketToggle inside the root — its ink is what the box shows.
+        const glyph = (b: HTMLElement) => b.firstElementChild as HTMLElement
+        const colors = boxes.map(b => getComputedStyle(glyph(b)).color)
         expect(new Set(colors).size).toBe(1)
         const probe = document.createElement('span')
         probe.style.color = 'var(--accent-purple)'
@@ -157,7 +167,7 @@ export const Colored: Story = {
     },
 }
 
-/** `readOnly`: dimmed, not focusable, and neither click nor right-click reaches the callbacks. */
+/** `readOnly`: `--faint` ink, not focusable, and neither click nor right-click reaches the callbacks. */
 export const ReadOnly: Story = {
     render: () => {
         const [calls, setCalls] = createSignal(0)
@@ -178,7 +188,15 @@ export const ReadOnly: Story = {
         const canvas = within(canvasElement)
         const box = canvas.getByRole('checkbox')
         expect(box.hasAttribute('tabindex')).toBe(false)
-        expect(Number(getComputedStyle(box).opacity)).toBeLessThan(1)
+        // Inked `--faint`, never dimmed by opacity.
+        expect(getComputedStyle(box).opacity).toBe('1')
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--faint)'
+        canvasElement.appendChild(probe)
+        expect(getComputedStyle(box.firstElementChild!).color).toBe(
+            getComputedStyle(probe).color,
+        )
+        probe.remove()
         await userEvent.click(box)
         box.dispatchEvent(
             new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),

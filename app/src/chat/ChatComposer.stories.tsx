@@ -13,6 +13,7 @@ import { createSignal } from 'solid-js'
 import { ChatComposer, type ComposerHandle } from './ChatComposer'
 import { expectProseFace, expectFamilyReallyLoaded } from '../ui/_fontFace'
 import './ChatComposer.module.css'
+import ChatTextBubble from './ChatTextBubble'
 
 const meta = {
     title: 'Chat/ChatComposer',
@@ -106,4 +107,40 @@ export const MultiLine: Story = {
  *  left edge — this proves it doesn't. */
 export const TaskLine: Story = {
     render: () => <Composer initial={'- [ ] todo\n- [x] done'} />,
+}
+
+/** THE REFLOW A USER FEELS: the composer and the sent bubble must set the same text at the same
+ *  line pitch, or the message jumps the moment Enter is pressed. The composer's line-height was a
+ *  hardcoded 1.45 against the bubble's `--lh-prose` 1.6 — a visible 10% reflow. Both are rendered
+ *  here with the same words; the assertion compares what the browser COMPUTED, not the two source
+ *  values, so a third rule that overrides either one is caught too. */
+export const MatchesTheSentBubble: Story = {
+    render: () => {
+        const draft = 'What is still open in my daily note?'
+        return (
+            <div style={{ width: '640px', 'max-width': '100%' }}>
+                <Composer initial={draft} />
+                <ChatTextBubble role="user" text={draft} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const line = canvasElement.querySelector('.cm-content .cm-line')
+        const bubble = canvasElement.querySelector('[data-chat-bubble]')
+        if (!line || !bubble)
+            throw new Error('composer line and sent bubble must both mount')
+        const pitch = (el: Element) => {
+            const cs = getComputedStyle(el)
+            return { lh: parseFloat(cs.lineHeight), fs: parseFloat(cs.fontSize) }
+        }
+        const composer = pitch(line)
+        const sent = pitch(bubble)
+        expect(composer.fs).toBeCloseTo(sent.fs, 2)
+        expect(composer.lh).toBeCloseTo(sent.lh, 2)
+        // And it is the prose ratio, not merely two equal wrong numbers.
+        const ratio = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--lh-prose'),
+        )
+        expect(composer.lh / composer.fs).toBeCloseTo(ratio, 2)
+    },
 }

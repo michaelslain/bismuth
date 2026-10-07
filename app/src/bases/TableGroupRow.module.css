@@ -1,5 +1,5 @@
 /* TableGroupRow.tsx is the sole importer. Table keeps its tinted band as the row background. */
-.row { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.row { background: var(--surface-1); }
 /* The band is a host for its own top/left/right edges (see AsciiCellEdges): positioned, not
    clipping. It types no bottom — the row after it types its own top. */
 .cell {

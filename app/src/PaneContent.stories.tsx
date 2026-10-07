@@ -32,6 +32,17 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// Fixed px, not vh — the same reasoning as App.stories.tsx's `Frame`: a pane leaf is ALWAYS given a
+// definite height in the app, and two routed views depend on that contract. The daemon page is a
+// `container-type: size` box (it collapses to 0 under an auto-height parent) and Univer's grid host
+// is a percentage of its parent (0 under an auto-height one). A bare render gave both a story root
+// 0/141px high — the frame showed nothing while the play passed. This is the pane's height, restated.
+const PANE_H = '700px'
+
+const Pane = (props: { children: unknown }) => (
+    <div style={{ height: PANE_H, width: '100%' }}>{props.children as never}</div>
+)
+
 const noop = () => {}
 const noNames = () => []
 const baseProps = {
@@ -151,7 +162,11 @@ export const ChatSentinel: Story = {
  *  stories under Daemon/DaemonPage. What this proves is the route: the page root mounts, with the
  *  living face at its centre. */
 export const Daemon: Story = {
-    render: () => <PaneContent path={DAEMON_TAB} {...baseProps} />,
+    render: () => (
+        <Pane>
+            <PaneContent path={DAEMON_TAB} {...baseProps} />
+        </Pane>
+    ),
     play: async ({ canvasElement }) => {
         await waitFor(() =>
             expect(
@@ -160,9 +175,20 @@ export const Daemon: Story = {
             // A real lazy chunk load — give it more than waitFor's 1s default.
             { timeout: 5000 },
         )
-        expect(
-            canvasElement.querySelector('[data-testid="daemon-face"]'),
-        ).not.toBeNull()
+        const page = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-page"]',
+        )!
+        const face = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-face"]',
+        )
+        expect(face).not.toBeNull()
+        // MOUNTED is not LAID OUT: a `container-type: size` page under a parent with no height is
+        // 1280x0 with its face clipped away, and both nodes still exist. Assert the page fills the
+        // pane and the face has a real box, so a collapse regresses this story instead of passing it.
+        expect(page.getBoundingClientRect().height).toBeGreaterThan(400)
+        const fr = face!.getBoundingClientRect()
+        expect(fr.width).toBeGreaterThan(20)
+        expect(fr.height).toBeGreaterThan(20)
     },
 }
 
@@ -204,13 +230,22 @@ export const Export: Story = {
 export const Sheet: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        return <PaneContent path={SHEET_PATH} {...baseProps} />
+        return (
+            <Pane>
+                <PaneContent path={SHEET_PATH} {...baseProps} />
+            </Pane>
+        )
     },
     play: async ({ canvasElement }) => {
+        // The GRID's canvas, not any canvas: the formula bar paints its own (about 1072x27), which
+        // is what let this pass while the grid host was 0 high. The grid fills what is left of the
+        // 700px pane under the ribbon + formula bar (measured 1280x559), so demand a big one.
         await waitFor(
             () => {
-                const canvasEl = canvasElement.querySelector('canvas')
-                expect(canvasEl).not.toBeNull()
+                const grid = Array.from(
+                    canvasElement.querySelectorAll('canvas'),
+                ).find(c => c.clientWidth > 400 && c.clientHeight > 300)
+                expect(grid).toBeDefined()
             },
             { timeout: 5000 },
         )
@@ -226,7 +261,7 @@ export const Drawing: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(await canvas.findByText('ADD PAGE')).toBeInTheDocument()
+        await expect(await canvas.findByText('add page')).toBeInTheDocument()
     },
 }
 

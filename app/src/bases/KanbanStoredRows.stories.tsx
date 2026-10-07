@@ -19,7 +19,7 @@ import { fakeTransport } from '../ui/_fakeTransport'
 import { focusColumnHeaderButton, kanbanView } from '../ui/_kanbanProbes'
 import { spiedTransport } from '../ui/_kanbanSpiedTransport'
 import type { Transport } from '../api'
-import { toasts } from '../toastStore'
+import { toasts } from '../ui/toastStore'
 
 const meta = {
     title: 'Bases/KanbanView/Stored rows',

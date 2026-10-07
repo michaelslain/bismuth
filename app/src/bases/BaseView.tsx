@@ -37,7 +37,7 @@ import { todayISO } from '../../../core/src/dates'
 import { appendTaskLine } from './taskCreate'
 import { createTaskWrites } from './baseTaskWrites'
 import { openTaskStatusMenu } from '../taskStatusMenu'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import {
     planSetValue,
     planToggle,
@@ -667,7 +667,7 @@ export function BaseView(props: {
         <div class={styles.host}>
             <Show when={editPath() || props.embeddedSource}>
                 <ViewBar
-                    class={props.embeddedSource ? styles.embeddedBar : ''}
+                    flush={!!props.embeddedSource}
                     identity={
                         <>
                             <Show when={baseName()}>

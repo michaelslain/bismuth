@@ -75,6 +75,33 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         })
     })
 
+    test('GET /file rejects when the file exists but cannot be read', async () => {
+        const { fa } = memVault({})
+        setFileAccess({
+            ...fa,
+            readNote: async () => {
+                throw new Error('EIO unreadable')
+            },
+            statNote: async () => ({
+                size: 10,
+                mtimeMs: 0,
+                ctimeMs: 0,
+                birthtimeMs: 0,
+            }),
+        })
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(be.dispatch('GET', '/file?path=a.draw')).rejects.toThrow(
+            'EIO unreadable',
+        )
+    })
+
+    test('GET /file answers an empty body when the file is absent', async () => {
+        const { fa } = memVault({})
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        expect(await be.dispatch('GET', '/file?path=missing.draw')).toBe('')
+    })
+
     test('PUT /file writes through + bumps version + notifies subscribers', async () => {
         const { fa, files } = memVault({ 'n.md': 'old' })
         setFileAccess(fa)

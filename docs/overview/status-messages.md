@@ -1,7 +1,7 @@
 # Status messages
 
 This page explains Bismuth's messages and the action, if any, they call for. Short-lived pop-ups
-(top-right toasts) come from `pushToast` (`app/src/Toast.tsx`). The connection messages below use
+(top-right toasts) come from `pushToast` (`app/src/ui/ToastHost.tsx`). The connection messages below use
 the `ConnectionState` in `app/src/serverVersion.ts`: `app/src/App.tsx` renders the status-bar
 label, while `serverVersion.ts` pushes the toast.
 
@@ -127,6 +127,6 @@ status bar is app-scoped.
 
 Source: `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/shell/StatusBar.tsx`,
 `app/src/shell/InboxIndicator.tsx`, `app/src/ExportView.tsx`,
-`app/src/pickResult.ts`, `app/src/Toast.tsx`, `core/src/server.ts`,
+`app/src/pickResult.ts`, `app/src/ui/ToastHost.tsx`, `core/src/server.ts`,
 `core/src/schema/settingsSchema.ts`, `core/src/openFolder.ts`,
 `core/src/statusBarItems.ts`, `app/src/shell/StatusSegment.tsx`.

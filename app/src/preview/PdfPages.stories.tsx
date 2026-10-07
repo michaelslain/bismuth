@@ -17,6 +17,7 @@ import { pdfCache } from './pdfDocCache'
 import Text from '../ui/Text'
 import { jsPDF } from 'jspdf'
 import PdfPages from './PdfPages'
+import TextButton from '../ui/TextButton'
 import type { OutlineNode, PdfPagesController, PdfPosition } from './annotationTypes'
 import {
     anchorAt,
@@ -183,9 +184,9 @@ let errorActionMounts = 0
 function ErrorActionMarker() {
     errorActionMounts++
     return (
-        <button type="button" data-testid="pdfpages-error-action">
+        <TextButton data-testid="pdfpages-error-action">
             open in default app
-        </button>
+        </TextButton>
     )
 }
 
@@ -301,13 +302,12 @@ export const ZoomDoublesPageWidth: Story = {
             // horizontal scrollbar for the overflow either way; this only changes how big that
             // overflow reads against the story's OUTER frame, not PdfPages' real behavior.
             <div style={{ height: '640px', width: '480px' }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="pdfpages-zoom-2x"
                     onClick={() => setZoom(2)}
                 >
                     zoom 2x
-                </button>
+                </TextButton>
                 <div style={{ height: '600px' }}>
                     <PdfPages load={load} zoom={zoom()} onLayout={onLayout} />
                 </div>
@@ -498,20 +498,18 @@ export const ReflowKeepsRaster: Story = {
         const [zoom, setZoom] = createSignal(1)
         return (
             <div style={{ height: '640px', width: '600px' }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="pdfpages-margin-on"
                     onClick={() => setRatio(0.5)}
                 >
                     margin
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="pdfpages-zoom-half"
                     onClick={() => setZoom(0.5)}
                 >
                     zoom 0.5x
-                </button>
+                </TextButton>
                 <div style={{ height: '600px' }}>
                     <PdfPages
                         load={load}
@@ -593,13 +591,12 @@ export const ScrollToPage: Story = {
         scrollEl = undefined
         return (
             <div style={{ height: '640px', width: '640px' }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="pdfpages-jump-3"
                     onClick={() => controller?.scrollToPage(2)}
                 >
                     page 3
-                </button>
+                </TextButton>
                 <div style={{ height: '600px' }}>
                     <PdfPages
                         load={load}
@@ -725,20 +722,18 @@ export const CacheSurvivesRemount: Story = {
         const [mounted, setMounted] = createSignal(true)
         return (
             <div style={{ height: '640px' }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="pdfpages-cache-unmount"
                     onClick={() => setMounted(false)}
                 >
                     unmount
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="pdfpages-cache-remount"
                     onClick={() => setMounted(true)}
                 >
                     remount
-                </button>
+                </TextButton>
                 <Show when={mounted()}>
                     <PdfPages
                         load={loadCountingCacheRemount}
@@ -814,20 +809,18 @@ export const CacheRemountReportsLayout: Story = {
         const [mounted, setMounted] = createSignal(true)
         return (
             <div style={{ height: '640px' }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="pdfpages-relayout-unmount"
                     onClick={() => setMounted(false)}
                 >
                     unmount
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="pdfpages-relayout-remount"
                     onClick={() => setMounted(true)}
                 >
                     remount
-                </button>
+                </TextButton>
                 <Show when={mounted()}>
                     <PdfPages
                         load={load}
@@ -1046,20 +1039,18 @@ export const ReflowKeepsPlaceOnWidthChange: Story = {
         const [width, setWidth] = createSignal(640)
         return (
             <div style={{ height: '640px', width: `${width()}px` }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="reflow-width-narrow"
                     onClick={() => setWidth(400)}
                 >
                     narrow
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="reflow-width-wide"
                     onClick={() => setWidth(640)}
                 >
                     wide
-                </button>
+                </TextButton>
                 <div style={{ height: '600px' }}>
                     <PdfPages
                         load={loadSixPages}
@@ -1148,8 +1139,7 @@ export const ReflowKeepsPlaceOnHeightChange: Story = {
         const [height, setHeight] = createSignal(640)
         return (
             <div style={{ height: `${height()}px`, width: `${width()}px` }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="reflow-height-small"
                     onClick={() => {
                         setWidth(400)
@@ -1157,9 +1147,8 @@ export const ReflowKeepsPlaceOnHeightChange: Story = {
                     }}
                 >
                     small
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="reflow-height-large"
                     onClick={() => {
                         setWidth(640)
@@ -1167,7 +1156,7 @@ export const ReflowKeepsPlaceOnHeightChange: Story = {
                     }}
                 >
                     large
-                </button>
+                </TextButton>
                 <div style={{ height: `${height() - 40}px` }}>
                     <PdfPages
                         load={loadSixPages}
@@ -1249,20 +1238,18 @@ export const ReflowKeepsPlaceOnMarginToggle: Story = {
         const [ratio, setRatio] = createSignal(0)
         return (
             <div style={{ height: '640px', width: '640px' }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="reflow-margin-on"
                     onClick={() => setRatio(DEFAULT_MARGIN_RATIO)}
                 >
                     margin on
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="reflow-margin-off"
                     onClick={() => setRatio(0)}
                 >
                     margin off
-                </button>
+                </TextButton>
                 <div style={{ height: '600px' }}>
                     <PdfPages
                         load={loadSixPages}
@@ -1344,20 +1331,18 @@ export const ReflowKeepsPlaceOnZoom: Story = {
         const [zoom, setZoom] = createSignal(1)
         return (
             <div style={{ height: '640px', width: '640px' }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="reflow-zoom-up"
                     onClick={() => setZoom(1.5)}
                 >
                     zoom 1.5x
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="reflow-zoom-reset"
                     onClick={() => setZoom(1)}
                 >
                     zoom 1x
-                </button>
+                </TextButton>
                 <div style={{ height: '600px' }}>
                     <PdfPages
                         load={loadSixPages}
@@ -1442,27 +1427,24 @@ export const ReflowAtTopStaysAtTop: Story = {
         const [zoom, setZoom] = createSignal(1)
         return (
             <div style={{ height: '640px', width: `${width()}px` }}>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="reflow-top-narrow"
                     onClick={() => setWidth(400)}
                 >
                     narrow
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="reflow-top-wide"
                     onClick={() => setWidth(640)}
                 >
                     wide
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="reflow-top-zoom"
                     onClick={() => setZoom(1.5)}
                 >
                     zoom 1.5x
-                </button>
+                </TextButton>
                 <div style={{ height: '600px' }}>
                     <PdfPages
                         load={loadSixPages}

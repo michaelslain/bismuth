@@ -6,6 +6,7 @@
 // engine and the header's CSS read.
 import { createSignal, For, Show, type Component } from 'solid-js'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
+import DropCue from '../ui/DropCue'
 import IconButton from '../ui/IconButton'
 import TextInput from '../ui/TextInput'
 import { isConfirmKey, isDismissKey } from '../ui/widgetKeys'
@@ -72,8 +73,6 @@ const KanbanColumn: Component<KanbanColumnProps> = props => (
         class={styles.kanbanColumn}
         data-kbcol={props.columnKey}
         classList={{
-            [styles.kanbanColumnOver]: props.over,
-            [styles.kanbanColReorder]: props.reorderTarget,
             [styles.kanbanColDragging]: props.dragging,
             [styles.kanbanColumnLast]: props.last,
         }}
@@ -82,6 +81,10 @@ const KanbanColumn: Component<KanbanColumnProps> = props => (
         onPointerEnter={() => props.onHover(true)}
         onPointerLeave={() => props.onHover(false)}
     >
+        <DropCue
+            active={props.over || props.reorderTarget}
+            className={styles.kanbanDropCue}
+        />
         <KanbanColumnHeader {...props} />
 
         <div class={styles.kanbanCards}>
@@ -212,7 +215,6 @@ const KanbanColumn: Component<KanbanColumnProps> = props => (
                 >
                     <TextInput
                         multiline
-                        plain
                         class={styles.kbComposer}
                         value={props.draft}
                         placeholder="Card title…  (⏎ to add, Esc to close)"

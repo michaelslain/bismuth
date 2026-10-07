@@ -1,6 +1,7 @@
 /* BaseSettings.module.css — two small helpers: `.spaced` gives the kanban hide-labels toggle its
-   top margin, `.error` colours the save-failure hint. The Properties editor's rows live in
-   PropertyRowEditor.module.css / PropertiesFields.module.css. */
+   top margin, `.note` lays out the footer's status line (why save is off, "saving…", or the save
+   failure) so it wraps beside the buttons instead of pushing them. The editors' rows live in
+   EditableRows.module.css / EditableRow.module.css. */
 
 .spaced { margin-top: var(--sp-4); }
-.error { color: var(--danger); }
+.note { min-width: 0; text-align: right; }

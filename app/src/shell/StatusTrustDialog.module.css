@@ -27,7 +27,7 @@
 .mark {
     color: var(--warning);
     padding: 0 0.35ch;
-    font-weight: bold;
+    font-weight: var(--fw-bold);
     background: color-mix(in srgb, var(--warning) 18%, transparent);
 }
 

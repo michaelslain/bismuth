@@ -66,10 +66,9 @@ function SidebarDemo(props: { hidden?: boolean }) {
             {panel(visible() ? `${width()}px` : '0px', 'left', visible() ? `sidebar // ${width()}px` : '')}
             {editor(
                 <EdgeHandle
-                    buttonSide="right"
-                    label="sidebar edge"
-                    action={visible() ? 'hide sidebar' : 'show sidebar'}
-                    direction={visible() ? 'left' : 'right'}
+                    panel="sidebar"
+                    edge="left"
+                    open={visible()}
                     combo="Alt+S"
                     resizable={visible()}
                     reveal={!visible()}
@@ -91,10 +90,9 @@ function RailDemo() {
         <>
             {editor(
                 <EdgeHandle
-                    buttonSide="left"
-                    label="tab rail edge"
-                    action={pinned() ? 'unpin tab rail' : 'pin tab rail'}
-                    direction={pinned() ? 'right' : 'left'}
+                    panel="tab rail"
+                    edge="right"
+                    open={pinned()}
                     combo="Alt+Shift+S"
                     onResizeStart={() => (start = width())}
                     onResize={dx => setWidth(dragWidth('tabRailWidth', start, dx, -1))}
@@ -120,10 +118,9 @@ function SidebarRightDemo(props: { hidden?: boolean }) {
         <>
             {editor(
                 <EdgeHandle
-                    buttonSide="left"
-                    label="sidebar edge"
-                    action={visible() ? 'hide sidebar' : 'show sidebar'}
-                    direction={visible() ? 'right' : 'left'}
+                    panel="sidebar"
+                    edge="right"
+                    open={visible()}
                     combo="Alt+S"
                     resizable={visible()}
                     reveal={!visible()}
@@ -156,10 +153,9 @@ function RailLeftDemo() {
             )}
             {editor(
                 <EdgeHandle
-                    buttonSide="right"
-                    label="tab rail edge"
-                    action={pinned() ? 'unpin tab rail' : 'pin tab rail'}
-                    direction={pinned() ? 'left' : 'right'}
+                    panel="tab rail"
+                    edge="left"
+                    open={pinned()}
                     combo="Alt+Shift+S"
                     onResizeStart={() => (start = width())}
                     onResize={dx => setWidth(dragWidth('tabRailWidth', start, dx, 1))}

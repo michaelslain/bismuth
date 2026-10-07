@@ -16,35 +16,35 @@ export type TasksFilterPanelProps = {
 }
 
 const PRIORITY_OPTS: SelectOption[] = [
-    { value: 'any', label: 'Any priority' },
-    { value: 'highest', label: 'Highest' },
-    { value: 'high', label: 'High' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'low', label: 'Low' },
-    { value: 'lowest', label: 'Lowest' },
-    { value: 'none', label: 'None' },
+    { value: 'any', label: 'any priority' },
+    { value: 'highest', label: 'highest' },
+    { value: 'high', label: 'high' },
+    { value: 'medium', label: 'medium' },
+    { value: 'low', label: 'low' },
+    { value: 'lowest', label: 'lowest' },
+    { value: 'none', label: 'none' },
 ]
 const DUE_OPTS: SelectOption[] = [
-    { value: 'any', label: 'Any' },
-    { value: 'overdue', label: 'Overdue' },
-    { value: 'today', label: 'Due today' },
-    { value: 'week', label: 'Due this week' },
-    { value: 'has', label: 'Has a due date' },
+    { value: 'any', label: 'any' },
+    { value: 'overdue', label: 'overdue' },
+    { value: 'today', label: 'due today' },
+    { value: 'week', label: 'due this week' },
+    { value: 'has', label: 'has a due date' },
 ]
 const SORT_OPTS: SelectOption[] = [
-    { value: '', label: 'None' },
-    { value: 'priority', label: 'Priority' },
-    { value: 'due', label: 'Due date' },
-    { value: 'scheduled', label: 'Scheduled' },
-    { value: 'start', label: 'Start' },
-    { value: 'done', label: 'Done date' },
-    { value: 'created', label: 'Created' },
-    { value: 'cancelled', label: 'Cancelled' },
-    { value: 'description', label: 'Description' },
+    { value: '', label: 'none' },
+    { value: 'priority', label: 'priority' },
+    { value: 'due', label: 'due date' },
+    { value: 'scheduled', label: 'scheduled' },
+    { value: 'start', label: 'start' },
+    { value: 'done', label: 'done date' },
+    { value: 'created', label: 'created' },
+    { value: 'cancelled', label: 'cancelled' },
+    { value: 'description', label: 'description' },
 ]
 const DIR_OPTS: SelectOption[] = [
-    { value: 'ASC', label: 'Ascending' },
-    { value: 'DESC', label: 'Descending' },
+    { value: 'ASC', label: 'ascending' },
+    { value: 'DESC', label: 'descending' },
 ]
 
 /**
@@ -105,7 +105,7 @@ const TasksFilterPanel: Component<TasksFilterPanelProps> = props => (
                 <Select
                     value={props.value.sortKey}
                     options={SORT_OPTS}
-                    placeholder="None"
+                    placeholder="none"
                     onChange={sortKey => props.onChange({ sortKey })}
                 />
             </SettingsField>
@@ -127,10 +127,10 @@ const TasksFilterPanel: Component<TasksFilterPanelProps> = props => (
                 <Select
                     value={props.value.from ?? ''}
                     options={[
-                        { value: '', label: 'Whole vault' },
+                        { value: '', label: 'whole vault' },
                         ...props.bases,
                     ]}
-                    placeholder="Whole vault"
+                    placeholder="whole vault"
                     onChange={v => props.onChange({ from: v || undefined })}
                 />
             </SettingsField>

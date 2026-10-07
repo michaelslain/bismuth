@@ -1,5 +1,6 @@
-/* FiltersEditor.module.css — the condition list: an optional "match all / any of these" line,
-   the rows, then the add buttons. Row layout itself is FilterConditionRow's. */
+/* FiltersEditor.module.css — the condition list's frame: an optional "match all / any of these"
+   line above the rows. The rows, their gap and the add row are EditableRows'; a row's own layout is
+   FilterConditionRow's. */
 .editor {
     display: flex;
     flex-direction: column;
@@ -10,19 +11,4 @@
     display: flex;
     align-items: center;
     gap: var(--sp-4);
-}
-.rows {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-4);
-}
-.add {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--sp-4);
-}
-.item {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-2);
 }

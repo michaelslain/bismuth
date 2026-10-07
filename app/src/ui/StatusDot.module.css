@@ -5,7 +5,18 @@
    fully local now: no `:global()` reach left. See .claude/plans/ui-css-ownership.md. */
 .status-text { display: inline-flex; align-items: center; gap: var(--sp-3); }
 .status-text .status-dot { background: currentColor; }
-/* .status-dot sizing (6px round): the standalone rule other call sites (calendar's GcalSyncPanel,
-   bases' CardBody/ListView/KanbanView/renderValue, shell/StatusBar) see via <StatusDot>/<StatusText>. */
-.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: var(--r-dot); flex: 0 0 auto; }
+/* THE dot. `display: inline-block` is load-bearing: width/height do nothing on a bare inline span,
+   which is how chat's own colour dot rendered nothing at all. Size is the ONE place a dot's
+   diameter is decided — xs 5 / sm 6 / md 8 / lg 10 — so no caller sets one. Ring and glow both
+   paint box-shadow, so each sets a custom property and the one rule below layers whichever are on. */
+.status-dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: var(--r-dot); flex: 0 0 auto;
+  box-shadow: var(--dot-ring, 0 0 0 0 transparent), var(--dot-glow, 0 0 0 0 transparent);
+}
+.status-dot[data-size='xs'] { width: 5px; height: 5px; }
 .status-dot[data-size='md'] { width: 8px; height: 8px; }
+.status-dot[data-size='lg'] { width: 10px; height: 10px; }
+.status-dot[data-ring] { --dot-ring: inset 0 0 0 1px color-mix(in srgb, var(--fg) 18%, transparent); }
+/* A hollow dot has no fill to carry it, so its ring is the whole mark. */
+.status-dot[data-ring][data-hollow] { --dot-ring: inset 0 0 0 1.5px var(--text-muted); }
+.status-dot[data-glow] { --dot-glow: var(--glow-accent); }

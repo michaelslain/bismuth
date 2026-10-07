@@ -9,7 +9,7 @@
 
    `current` HASHES TOO, even though it rides as a second class on `.icon-picker-cell` via
    `classList`. It is a private state class with exactly one consumer (unlike `selected`, which is
-   an app-wide bare convention — see palette/PaletteRow.module.css's header for that one) —
+   an app-wide bare convention — see ui/PaletteRow.module.css's header for that one) —
    SymbolGallery.tsx reaches it as `classList={{ [styles.current]: active() === i() }}`.
 
    `.icon-picker-panel.icon-picker-panel` (self-doubled class, specificity (0,2,0)) is a DELIBERATE
@@ -32,4 +32,4 @@
 .icon-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: var(--sp-1); padding: var(--sp-4); overflow-y: auto; }
 .icon-picker-cell { aspect-ratio: 1; }
 .icon-picker-cell.current { opacity: 1; background: color-mix(in srgb, var(--accent) 30%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
-.icon-picker-more { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); opacity: 0.45; font-size: var(--fs-ui); }
+.icon-picker-more { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); color: var(--text-muted); font-size: var(--fs-ui); }

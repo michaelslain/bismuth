@@ -4,7 +4,8 @@
 // — exactly once either way, via widgetKeys.ts's isConfirmKey/isDismissKey. Extracted from EditableLabel
 // (the file tree's rename, which composes it and keeps its own move/flush logic) so a second
 // caller — the PDF bookmarks panel's row rename — reuses the behaviour and the look instead of
-// importing that component's stylesheet.
+// importing that component's stylesheet. Underline-only like every field (no fill, no box, no focus
+// ring — see InlineTextInput.module.css), sized to the label it replaces.
 import styles from './InlineTextInput.module.css'
 import { isConfirmKey, isDismissKey } from './widgetKeys'
 import { gestureStops } from './stopGestures'

@@ -1,9 +1,16 @@
+/* The one card title. Family, weight and colour come from Text (register="prose", medium, the
+   default tone); size and line-height are the card's own. `--card-title-lh` lets a host that sits
+   on the character grid (CardCover's band) set its own line-height without a competing rule. */
 .cardTitle {
-  font-family: var(--ui-font-stack);
-  font-size: calc(var(--editor-font-size, 13.5px) + 1.5px);
-  font-weight: var(--fw-bold);
-  color: var(--fg);
-  letter-spacing: var(--ls-display);
-  line-height: 1.25;
+  font-size: var(--prose-font-size);
+  line-height: var(--card-title-lh, 1.3);
   overflow-wrap: anywhere;
+}
+/* Two-line clamp (CardCover's title band). */
+.clamp {
+  overflow: hidden;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }

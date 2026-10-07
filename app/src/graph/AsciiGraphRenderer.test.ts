@@ -1790,8 +1790,8 @@ describe('tiny panel — an eyebrow label wider than the whole grid must not ove
         const [w0, h0] = [BOX.width, BOX.height]
         // Small enough that a tracked cluster name ("CLUSTER 0" etc.) is wider than the whole grid —
         // reproduces a graph pane shrunk into a small split/corner. gridMetrics with these dims and the
-        // default CELL_W/CELL_H yields well under ten columns.
-        BOX.width = 90
+        // compact cell (asciiGrid.ts compactScale) yields nine columns.
+        BOX.width = 70
         BOX.height = 260
         try {
             const { r } = mountRenderer('2d')
@@ -8288,5 +8288,31 @@ describe('the FLAT field ([clusters] off) is quieted by rank, density and fan', 
         const on = mountRenderer('2d', g, { showLodMasses: true })
         expect((on.r as unknown as FlatPriv).edgeFan.length).toBe(0)
         on.r.destroy()
+    })
+})
+
+
+describe('fitBottomRows — the fit rect leaves the floor clear', () => {
+    it('keeps every node row at least one cell above the grid floor when one row is reserved', () => {
+        const lowest = (rows: number) => {
+            const { r } = mountRenderer('2d', sampleGraph(), {
+                fitBottomRows: rows,
+            })
+            const p = r as unknown as {
+                m: { rows: number }
+                nodes: { row: number; onGrid: boolean }[]
+            }
+            const low = Math.max(
+                ...p.nodes.filter(n => n.onGrid).map(n => n.row),
+            )
+            const gridRows = p.m.rows
+            r.destroy()
+            return { low, gridRows }
+        }
+        const reserved = lowest(1)
+        const whole = lowest(0)
+        expect(reserved.low).toBeLessThanOrEqual(reserved.gridRows - 2)
+        // ...and the reservation is what did it: the unreserved fit runs lower.
+        expect(whole.low).toBeGreaterThan(reserved.low)
     })
 })

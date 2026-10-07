@@ -13,19 +13,19 @@
 }
 
 /* list + bullets: a mark then a text bar per line */
-.lines { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-5); }
+.lines { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-5) var(--view-gutter); }
 .line { display: flex; align-items: center; gap: var(--sp-4); }
-.lineMark { flex: none; width: var(--sp-5); height: var(--sp-5); }
-.lineText { flex: 1; max-width: 60%; height: var(--sp-5); }
+.lineMark { flex: none; width: var(--skeleton-bar-h); height: var(--skeleton-bar-h); }
+.lineText { flex: 1; max-width: 60%; height: var(--skeleton-bar-h); }
 
 /* kanban: three columns of a head bar over card bars */
-.columns { display: flex; gap: var(--sp-5); padding: var(--sp-5); height: 100%; box-sizing: border-box; }
+.columns { display: flex; gap: var(--sp-5); padding: var(--sp-5) var(--view-gutter); height: 100%; box-sizing: border-box; }
 .column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
-.columnHead { height: var(--sp-5); width: 50%; }
+.columnHead { height: var(--skeleton-bar-h); width: 50%; }
 .columnCard { height: var(--skeleton-card-h); }
 
 /* bar / line / stat / heatmap: columns rising from a baseline */
-.chart { display: flex; align-items: flex-end; gap: var(--sp-4); padding: var(--sp-6); height: 100%; box-sizing: border-box; }
+.chart { display: flex; align-items: flex-end; gap: var(--sp-4); padding: var(--sp-5) var(--view-gutter); height: 100%; box-sizing: border-box; }
 .chartBar { flex: 1; height: 50%; }
 .chartBar:nth-child(2n) { height: 80%; }
 .chartBar:nth-child(3n) { height: 35%; }

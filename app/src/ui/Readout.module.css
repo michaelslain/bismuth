@@ -1,0 +1,14 @@
+/* app/src/ui/Readout.module.css — the `a // b // c` line. Muted at rest, `--fg` when `tone` is
+   `default`. One line, ellipsis on overflow rather than wrapping. */
+.readout {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-muted);
+}
+
+.active {
+    color: var(--fg);
+}

@@ -22,16 +22,16 @@ export type ChartFieldsProps = {
 }
 
 const AGG_OPTS = [
-    { value: 'sum', label: 'Sum' },
-    { value: 'avg', label: 'Average' },
-    { value: 'count', label: 'Count' },
-    { value: 'min', label: 'Min' },
-    { value: 'max', label: 'Max' },
+    { value: 'sum', label: 'sum' },
+    { value: 'avg', label: 'average' },
+    { value: 'count', label: 'count' },
+    { value: 'min', label: 'min' },
+    { value: 'max', label: 'max' },
 ]
 const BIN_OPTS = [
-    { value: 'day', label: 'Day' },
-    { value: 'week', label: 'Week' },
-    { value: 'month', label: 'Month' },
+    { value: 'day', label: 'day' },
+    { value: 'week', label: 'week' },
+    { value: 'month', label: 'month' },
 ]
 
 /** A chart view's aggregation: how values combine, the date bucket (not for a heatmap) and the

@@ -21,3 +21,6 @@
 
 /* Table cell: declared markdown on ONE line, truncated. */
 .inlineMd { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A date reads in the chrome face at the chrome size, as a bare date always has (valueRenderers). */
+.date { font-family: var(--ui-font-stack); font-size: var(--fs-ui); }

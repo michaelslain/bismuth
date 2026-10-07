@@ -130,14 +130,36 @@ export const Editing: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await fireEvent.click(
-            await canvas.findByRole('button', { name: /Page 3 of 12/ }),
-        )
+        const restBtn = await canvas.findByRole('button', {
+            name: /Page 3 of 12/,
+        })
+        const wrap = canvasElement.querySelector(
+            '[data-testid="page-readout"]',
+        ) as HTMLElement
+        const restBox = wrap.getBoundingClientRect()
+        await fireEvent.click(restBtn)
         const input = await canvas.findByLabelText('Go to page (1–12)')
+        // Nothing moves when editing starts: the readout keeps its width, and its `p.` and `/ 12`
+        // stay where the rest text had them (it reflowed ~10px wider and ~16px left before).
+        const editBox = wrap.getBoundingClientRect()
+        await expect(Math.abs(editBox.width - restBox.width)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(editBox.left - restBox.left)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(editBox.right - restBox.right)).toBeLessThanOrEqual(1)
         const bar = canvasElement.querySelector('[data-viewbar]') as HTMLElement
         const b = bar.getBoundingClientRect()
         const r = input.getBoundingClientRect()
         await expect(r.top).toBeGreaterThanOrEqual(b.top)
         await expect(r.bottom).toBeLessThanOrEqual(b.bottom)
+        // The field GROWS with what is typed. Page 3 opens a one-digit field; "11" is one digit
+        // longer, so a field that kept its opening width would scroll its text (scrollWidth past
+        // clientWidth). An explicit `width` disables `field-sizing: content`, which is how it did.
+        const openWidth = input.getBoundingClientRect().width
+        await fireEvent.input(
+            Object.assign(input as HTMLInputElement, { value: '11' }),
+        )
+        await expect(
+            (input as HTMLInputElement).scrollWidth,
+        ).toBeLessThanOrEqual((input as HTMLInputElement).clientWidth + 1)
+        await expect(input.getBoundingClientRect().width).toBeGreaterThan(openWidth + 1)
     },
 }

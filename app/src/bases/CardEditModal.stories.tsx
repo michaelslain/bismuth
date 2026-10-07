@@ -587,8 +587,11 @@ export const EscapeTwoStep: Story = {
 }
 
 /** The status select lines up with its neighbours: its `▾` ends where the due field's calendar
- *  icon ends (right edge), and its value text starts where the priority input's text starts
- *  (left edge), each within 1px. Elements are found by tag / `data-*`, never a module class. */
+ *  icon ends (right edge), and its LEADING edge starts where the priority input's text starts
+ *  (left edge), each within 1px. A known status (the story's "Doing") keeps its dot while edited
+ *  (SelectValue, commit 78edd725), so the leading edge is the dot and the text sits one dot + gap
+ *  after it; the dot is asserted present so this cannot silently fall back to measuring the text.
+ *  Elements are found by tag / `data-*`, never a module class. */
 export const StatusChevronAligned: Story = {
     render: () => <Live />,
     play: async () => {
@@ -610,6 +613,11 @@ export const StatusChevronAligned: Story = {
         const caretRight = caret.getBoundingClientRect().right
         const iconRight = dueIcon.getBoundingClientRect().right
         expect(Math.abs(caretRight - iconRight)).toBeLessThanOrEqual(1)
-        expect(Math.abs(statusTextLeft - priorityTextLeft)).toBeLessThanOrEqual(1)
+        const dot = status.previousElementSibling as HTMLElement | null
+        expect(dot?.hasAttribute('data-size')).toBe(true)
+        const statusLeadLeft = dot!.getBoundingClientRect().left
+        expect(Math.abs(statusLeadLeft - priorityTextLeft)).toBeLessThanOrEqual(1)
+        // The text itself sits right of the dot, never left of it.
+        expect(statusTextLeft).toBeGreaterThan(statusLeadLeft)
     },
 }

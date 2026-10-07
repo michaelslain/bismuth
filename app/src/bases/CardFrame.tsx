@@ -1,5 +1,7 @@
 import type { Component, JSX } from 'solid-js'
 import { splitProps } from 'solid-js'
+import Card from '../ui/Card'
+import DropCue from '../ui/DropCue'
 import styles from './CardFrame.module.css'
 
 export type CardFrameProps = {
@@ -10,19 +12,23 @@ export type CardFrameProps = {
     interactive?: boolean
     /** KanbanView's pointer-drag look: grab cursor, no text-select, no scroll steal. */
     draggable?: boolean
-    /** KanbanView's image-file drop target: solid accent ring + soft accent wash. */
+    /** KanbanView's image-file drop target: an accent border plus the shared `DropCue`. */
     dropTarget?: boolean
+    /** 'hidden' (default) clips the frame's children to its box, which is what a book cover
+     *  needs. 'visible' lets a child overflow it — a body card hosts a CodeMirror editor whose
+     *  completion popup would otherwise be cut off at the card's edge. */
+    overflow?: 'visible' | 'hidden'
     class?: string
     classList?: Record<string, boolean | undefined>
     children?: JSX.Element
-} & JSX.HTMLAttributes<HTMLDivElement>
+} & Omit<JSX.HTMLAttributes<HTMLDivElement>, 'class' | 'classList' | 'children'>
 
 /**
- * The shared "card" frame — background/border/radius/overflow — reused by CardsView's book-cover
- * grid and KanbanView's board. Extracted because both views imported the SAME unqualified `.card`/
- * `.taskCard` rule out of the old bases/BaseView.module.css; the context-specific look (click-to-
- * open vs. draggable vs. drop-target) is now a prop on this component rather than a descendant
- * selector reaching into a class the caller doesn't own.
+ * The shared "card" frame, reused by CardsView's book-cover grid, BodyCard and KanbanView's board.
+ * It composes `ui/Card` (the flat bordered surface) and only adds what a bases card needs on top:
+ * no padding of its own (the cover runs edge to edge), the soft rule, the click-to-open /
+ * drag / drop looks, and the `overflow` choice. The context-specific look is a prop on this
+ * component rather than a descendant selector reaching into a class the caller doesn't own.
  */
 const CardFrame: Component<CardFrameProps> = props => {
     const [local, rest] = splitProps(props, [
@@ -30,23 +36,32 @@ const CardFrame: Component<CardFrameProps> = props => {
         'interactive',
         'draggable',
         'dropTarget',
+        'overflow',
         'class',
         'classList',
         'children',
     ])
+    const extra = () =>
+        Object.entries(local.classList ?? {})
+            .filter(([, on]) => on)
+            .map(([name]) => name)
+    const cls = () =>
+        [
+            local.kind === 'task' ? styles.task : styles.note,
+            local.overflow === 'visible' ? styles.overflowVisible : '',
+            local.interactive ? styles.interactive : '',
+            local.draggable ? styles.draggable : '',
+            local.dropTarget ? styles.dropTarget : '',
+            local.class,
+            ...extra(),
+        ]
+            .filter(Boolean)
+            .join(' ')
     return (
-        <div
-            class={`${local.kind === 'task' ? styles.taskCard : styles.card} ${local.class ?? ''}`}
-            classList={{
-                [styles.interactive]: !!local.interactive,
-                [styles.draggable]: !!local.draggable,
-                [styles.dropTarget]: !!local.dropTarget,
-                ...local.classList,
-            }}
-            {...rest}
-        >
+        <Card {...rest} class={cls()}>
             {local.children}
-        </div>
+            <DropCue active={!!local.dropTarget} />
+        </Card>
     )
 }
 

@@ -141,9 +141,10 @@ export const DenseNarrow: Story = {
                 expect(r.right, `chip in day ${i}`).toBeLessThanOrEqual(cb.right + 1)
             })
         })
-        // the busy last day is the user's screenshot case: every long title here must be fully
-        // visible (never clipped) and, this narrow, must wrap onto more than one line rather
-        // than reading as "W…"
+        // the busy last day is the user's screenshot case. A cell this narrow (under ~90px of chip
+        // content) COLLAPSES: each title is ONE line that ends in an ellipsis. It used to wrap
+        // one word per line and split words mid-letter (`passp/ort`); a chip's full title is in
+        // its accessible name and opens on click.
         const lastDayCell = cells[cells.length - 1]
         const lastDayTitles = [
             ...lastDayCell.querySelectorAll<HTMLElement>('[data-testid="task-chip-title"]'),
@@ -151,11 +152,11 @@ export const DenseNarrow: Story = {
         expect(lastDayTitles.length).toBeGreaterThan(0)
         lastDayTitles.forEach((t, i) => {
             const lineHeight = parseFloat(getComputedStyle(t).lineHeight)
-            expect(t.scrollWidth, `title ${i} clipped`).toBeLessThanOrEqual(t.clientWidth + 1)
+            expect(getComputedStyle(t).textOverflow, `title ${i} ellipsis`).toBe('ellipsis')
             expect(
                 t.getBoundingClientRect().height,
                 `title ${i} single line`,
-            ).toBeGreaterThanOrEqual(lineHeight * 2 - 1)
+            ).toBeLessThanOrEqual(lineHeight + 1)
         })
         // every cell in the row stretches to match the tallest (was content-sized with a blank
         // void below, before the min-width:0 fix). Checked directly on cell heights rather than
@@ -370,13 +371,11 @@ export const ComposerBelowChips: Story = {
         expect(children[1].querySelector('[data-testid="task-chip-title"]')).not.toBeNull()
         // the composer is LAST — proves it never displaces the chips above it
         const composer = children[2]
-        expect(composer.querySelector('[data-testid="task-cell-composer-marker"]')).not.toBeNull()
+        expect(composer.querySelector('[role="checkbox"]')).not.toBeNull()
         expect(composer.querySelector('[data-testid="task-chip-title"]')).toBeNull()
         // the colour reaches the marker itself, as an inline style carrying the exact design
         // token, not a hardcoded stand-in colour
-        const marker = composer.querySelector<HTMLElement>(
-            '[data-testid="task-cell-composer-marker"]',
-        )!
-        expect(marker.style.color).toBe('var(--blue)')
+        const marker = composer.querySelector<HTMLElement>('[role="checkbox"]')!
+        expect(marker.style.getPropertyValue('--task-check-color')).toBe('var(--blue)')
     },
 }

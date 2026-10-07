@@ -1,3 +1,0 @@
-/* PropertiesFields.module.css — the declared-property list is a RowList of PropertyRowEditor rows;
-   this file only spaces the add button under it. */
-.addProperty { margin-top: var(--sp-1); }

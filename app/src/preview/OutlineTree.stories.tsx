@@ -8,6 +8,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import OutlineTree from './OutlineTree'
 import type { OutlineNode } from './annotationTypes'
+import { hoverDeclarations, hoverProps } from '../ui/_hoverRules'
 
 const meta = {
     title: 'Preview/OutlineTree',
@@ -53,6 +54,14 @@ export const Nested: Story = {
         const tree = canvasElement.querySelector(
             '[role="tree"]',
         ) as HTMLElement
+        // A clickable row never paints a background on hover; the pointer lifts the ink only.
+        const liveRow = canvas
+            .getByText('Methods')
+            .closest('[role="treeitem"]') as HTMLElement
+        await expect(hoverProps(liveRow, 'background')).toEqual([])
+        await expect(
+            hoverDeclarations(liveRow).map(d => d.prop),
+        ).toContain('color')
         // Open by default: parent + both children + the sibling leaf all render.
         await expect(canvas.getByText('Introduction')).toBeInTheDocument()
         await expect(canvas.getByText('Background')).toBeInTheDocument()
@@ -61,6 +70,17 @@ export const Nested: Story = {
         await expect(
             tree.querySelectorAll('[role="treeitem"]').length,
         ).toBe(4)
+
+        // The three column gaps are margins set on `Label`/`Text` through this module's own classes.
+        // Both compose `Text`, whose `.text { margin: 0 }` has the same specificity — so which wins
+        // is stylesheet source order, which nothing else covers. Read the computed values.
+        const introRow = canvas
+            .getByText('Introduction')
+            .closest('[role="treeitem"]') as HTMLElement
+        const [prefixEl, slotEl, titleEl] = Array.from(introRow.children) as HTMLElement[]
+        await expect(parseFloat(getComputedStyle(prefixEl!).marginRight)).toBeGreaterThan(4)
+        await expect(parseFloat(getComputedStyle(slotEl!).marginRight)).toBeGreaterThan(4)
+        await expect(parseFloat(getComputedStyle(titleEl!).marginRight)).toBeGreaterThan(0)
 
         // Collapse "Introduction" — its two children leave the tree entirely.
         const toggle = canvas.getByLabelText('Collapse Introduction')
@@ -120,6 +140,10 @@ export const Nested: Story = {
                 'Introduction',
             ),
         )
+        // Nothing draws focus: the focused row and the tree itself carry no outline (the browser's
+        // own :focus-visible ring is suppressed too, and nothing replaces it).
+        await expect(getComputedStyle(document.activeElement!).outlineStyle).toBe('none')
+        await expect(getComputedStyle(tree).outlineStyle).toBe('none')
     },
 }
 
@@ -141,6 +165,11 @@ export const DeadDestination: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('p.?')).toBeInTheDocument()
+        // Inert stays inert under the pointer: no hover rule paints a fill or recolours a dead row.
+        const deadRow = canvas
+            .getByText('Broken link')
+            .closest('[role="treeitem"]') as HTMLElement
+        await expect(hoverDeclarations(deadRow)).toEqual([])
         await fireEvent.click(canvas.getByText('Broken link'))
         // Give any (wrongly) queued jump a tick to land before asserting it never did.
         await new Promise(r => queueMicrotask(r))
@@ -168,6 +197,9 @@ export const CurrentSection: Story = {
         const background = canvas
             .getByText('Background')
             .closest('[role="treeitem"]')
+        // The selected row keeps its background and accent ink under the pointer: no hover rule
+        // reaches it (a (0,2,0) hover rule used to replace both).
+        await expect(hoverDeclarations(scope as HTMLElement)).toEqual([])
         await expect(scope?.getAttribute('aria-current')).toBe('location')
         await expect(introduction?.getAttribute('aria-current')).toBeNull()
         await expect(background?.getAttribute('aria-current')).toBeNull()

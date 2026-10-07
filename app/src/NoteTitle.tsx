@@ -11,7 +11,7 @@
 // it — the title text is the only thing the user can edit.
 import { createMemo, createSignal, createEffect } from 'solid-js'
 import { api } from './api'
-import { pushToast } from './Toast'
+import { pushToast } from './ui/ToastHost'
 import { deriveTitle, renamedPath } from './noteTitleOps'
 import { flushEditorByPath } from './editorRegistry'
 import { isDismissKey, isConfirmKey } from './ui/widgetKeys'

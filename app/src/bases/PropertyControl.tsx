@@ -2,13 +2,15 @@
 // The control for ONE property row in CardEditModal (and any form that lists a row's
 // properties), dispatched by what the property is:
 //   • not writable → ReadonlyValue (a muted line; `file.folder`, formulas);
-//   • boolean      → a Yes/No ChipToggle, the same one the card face shows, flipping on click;
+//   • boolean      → the read-only BooleanValue glyph inside a toggle button, so the control has the
+//                    shape of the value it edits;
 //   • markdown     → the host's own rich surface (`markdown`), since the drafts, drop zone and
 //                    flush-on-close belong to the modal; falls back to the plain textarea;
 //   • else         → the shared PropertyValueEditor (text/number/date/select/multiselect).
 // The kind is read once by the caller, so a commit's optimistic row change never rebuilds this.
 import { Match, Switch, type Component, type JSX } from 'solid-js'
-import ChipToggle from '../ui/ChipToggle'
+import BooleanValue from './BooleanValue'
+import PlainButton from '../ui/PlainButton'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import ReadonlyValue from './ReadonlyValue'
 import type { PropertyEditKind } from './propertyEdit'
@@ -43,13 +45,13 @@ const PropertyControl: Component<PropertyControlProps> = props => {
                 <ReadonlyValue value={props.value} placeholder={props.emptyText} />
             </Match>
             <Match when={props.kind.kind === 'boolean'}>
-                <ChipToggle
-                    class={styles.bool}
-                    selected={props.value === true}
-                    onToggle={() => props.onCommit(flipped())}
+                <PlainButton
+                    class={styles.toggle}
+                    aria-pressed={props.value === true}
+                    onClick={() => props.onCommit(flipped())}
                 >
-                    {props.value === true ? 'Yes' : 'No'}
-                </ChipToggle>
+                    <BooleanValue value={props.value === true} />
+                </PlainButton>
             </Match>
             <Match when={props.kind.kind === 'markdown' && props.markdown}>
                 {render => render()()}

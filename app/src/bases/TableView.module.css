@@ -2,15 +2,26 @@
 /* --fs-ui cells, per bases-table.card.html; the grid is typed by AsciiCellEdges, not drawn. The header, group band and
    summary footer are their own components (TableHeader / TableGroupRow / TableSummaryRow), each
    with its own module — this file is the table shell and the data cell. */
-/* One root for the table + its empty state; a plain block, so the parent sees a single child. */
+/* One root for the table + its empty state, so the parent sees a single child. */
 .frame {
-  display: block;
+  /* A flex column that fills the pane, so the empty state (`fill`) centres in whatever room sits
+     under the header instead of padding itself down from it — the same placement every other view
+     kind gives its empty state. A populated table is unaffected (the table is `flex: none`). */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  box-sizing: border-box;
   /* The typed grid's outer glyphs straddle the table's edge — half a corner tile above the top
      run, half a glyph left of the left `|` — so the frame leaves that room, or a scroll container
-     around the table would cut the outer corners. */
-  padding: calc(var(--ascii-tile-h, var(--cell-h)) / 2) calc(var(--fs-ui) * 0.4);
+     around the table would cut the outer corners. The inline inset is `--view-gutter`, so the left
+     `|` stroke lands on the ViewBar's own text edge (the glyph's half-width spills into the gutter,
+     which is the room it needs). */
+  padding: calc(var(--ascii-tile-h, var(--cell-h)) / 2) var(--view-gutter);
 }
-.table { border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
+/* `fill` is min-height: 100% — as tall as the whole frame while the header sits above it, which overflows
+   the scroller by one header height. Under the header it only needs the room that is left. */
+.frame > .emptyFill { min-height: 0; }
+.table { flex: none; border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
 /* The cell is the typed grid's HOST (position: relative, no clipping — see AsciiCellEdges), so it
    carries no padding and no overflow of its own: the gutter and the ellipsis live on `.clip`,
    which spans the cell's whole box, so an open editor still overflows into the gutter as before. */
@@ -38,7 +49,10 @@
   text-overflow: ellipsis;
   min-width: 0;
 }
-.row:hover .cell { background: var(--hover-bg); }
+/* HOVER RULING (see ListView.module.css): the wash paints only on a row whose cells can be edited
+   in place — `.rowActionable`, set from `rowEditable` in TableView.tsx. A read-only table's rows
+   are inert and stay flat. */
+.rowActionable:hover .cell { background: var(--hover-bg); }
 
 /* Muted value cells (author / dates / counts). Declared AFTER `.cell` at equal specificity, so
    its position is what decides the colour. */
@@ -49,6 +63,3 @@
    table cell is not a chip, and reaching into TaskRow's module from TableView would be two
    components sharing one stylesheet. Declared after `.cell` for the same reason as `.cellMuted`. */
 .cellOverdue { color: var(--danger); }
-
-/* Air between the header rule and the empty-state block. */
-.empty { padding: var(--sp-7) 0; }

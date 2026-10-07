@@ -12,9 +12,9 @@ import { api, cacheScope } from './api'
 import { readCache, writeCache, scopedKey } from './viewCache'
 import { lastChange } from './serverVersion'
 import { refreshVaultTree } from './treeStore'
-import { ContextMenu, type MenuItem } from './ContextMenu'
+import { ContextMenu, type MenuItem } from './ui/ContextMenu'
 import { plural } from './plural'
-import { pushToast } from './Toast'
+import { pushToast } from './ui/ToastHost'
 import {
     renameEntries,
     removeEntries,
@@ -38,9 +38,9 @@ import { flushEditorsAtOrUnder, flushSidecarsAtOrUnder } from './editorRegistry'
 import { createRenameSettleRegistry } from './renameSettle'
 import { isTypingTarget } from './editableTarget'
 import { matchesKeybinding } from './keybindings'
-import Collapsible from './Collapsible'
+import Collapsible from './ui/Collapsible'
 import VisibilityBadge from './VisibilityBadge'
-import { EditableLabel } from './EditableLabel'
+import { EditableLabel } from './ui/EditableLabel'
 import { planTreeUploads, dropFolderFromAttrs } from './fileTreeDrop'
 import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 import { claimNativeDrop } from './nativeDropRouting'
@@ -49,6 +49,7 @@ import { claimNativeDrop } from './nativeDropRouting'
 import styles from './FileTree.module.css'
 import { treePrefix } from './ui/ascii/treePrefix'
 import Text from './ui/Text'
+import DropCue from './ui/DropCue'
 import { openNote } from './ui/openNote'
 
 import { buildTree, reconcileTree, type TreeNode } from './fileTreeModel'
@@ -258,7 +259,7 @@ export function FileTree(props: {
     // root, null when no OS drag is in flight. Separate from `props.dropHighlight` (the SIDEBAR
     // pointer-drag controller's own highlight, owned by App): the two drags never overlap, but
     // FileTree owns this one outright since App has no reach into an OS drag at all. Combined
-    // with `props.dropHighlight` at the render sites below so one `drop-target` class serves both.
+    // with `props.dropHighlight` at the render sites below so one ui/DropCue serves both.
     const [osDropFolder, setOsDropFolder] = createSignal<string | null>(null)
     const dropTargetFolder = (): string | null =>
         osDropFolder() ?? props.dropHighlight()
@@ -673,9 +674,9 @@ export function FileTree(props: {
 
     function visibilityMenuIcon(resolved: TreeNode['visibility']): string {
         return resolved === 'hidden'
-            ? 'EyeOff'
+            ? 'EyeSlash'
             : resolved === 'chat-only'
-              ? 'MessageSquareOff'
+              ? 'ChatSlash'
               : 'Eye'
     }
 
@@ -1099,9 +1100,6 @@ export function FileTree(props: {
     return (
         <div
             class={styles['ft-root']}
-            classList={{
-                [styles['drop-target']]: dropTargetFolder() === '',
-            }}
             data-drop-root="true"
             ref={el => {
                 rootEl = el
@@ -1153,9 +1151,13 @@ export function FileTree(props: {
                     void uploadDroppedFiles(folder, files)
             }}
         >
+            {/* Dropping on the vault root (the empty space below the last row) is a drop target
+          too — the one drop cue every host shares, laid over `.ft-root`. */}
+            <DropCue active={dropTargetFolder() === ''} />
             <Level
                 node={treeRoot()}
                 depth={0}
+                ancestorsLast={[]}
                 open={open()}
                 toggle={toggle}
                 onOpen={props.onOpen}
@@ -1206,6 +1208,9 @@ export function FileTree(props: {
 function Level(props: {
     node: TreeNode
     depth: number
+    /** `ancestorsLast[k]`: was the ancestor folder at depth `k` the last child of its parent? A last
+     *  ancestor draws a blank connector column, not a `|` running under its `` `-- `` terminator. */
+    ancestorsLast: boolean[]
     open: Set<string>
     toggle: (p: string) => void
     onOpen: (p: string) => void
@@ -1255,7 +1260,7 @@ function Level(props: {
     // "Components", ascii-tree.card.html); the connector string itself encodes indentation.
     const kids = createMemo(() => sortedChildren(props.node))
     const prefixFor = (i: number) =>
-        treePrefix(props.depth, i === kids().length - 1)
+        treePrefix(props.depth, i === kids().length - 1, props.ancestorsLast)
     return (
         <For each={kids()}>
             {(child, i) => {
@@ -1264,8 +1269,6 @@ function Level(props: {
                         <div
                             class={styles['ft-row']}
                             classList={{
-                                [styles['drop-target']]:
-                                    props.dropHighlight() === child.path,
                                 [styles['system']]: !!child.isSystemFolder,
                                 [styles['selected']]: props.selected.has(
                                     child.path,
@@ -1303,6 +1306,10 @@ function Level(props: {
                             }}
                             onContextMenu={e => props.onMenu(child, e)}
                         >
+                            <DropCue
+                                active={props.dropHighlight() === child.path}
+                                className={styles['ft-row-cue']}
+                            />
                             <Text as="span" inherit class={styles['ft-prefix']}>
                                 {prefixFor(i()).trimEnd()}
                             </Text>
@@ -1323,7 +1330,11 @@ function Level(props: {
                             <VisibilityBadge visibility={child.visibility} />
                             <Show
                                 when={props.editing === child.path}
-                                fallback={child.label ?? child.name}
+                                fallback={
+                                    <Text as="span" inherit truncate>
+                                        {child.label ?? child.name}
+                                    </Text>
+                                }
                             >
                                 <EditableLabel
                                     node={child}
@@ -1341,6 +1352,10 @@ function Level(props: {
                             <Level
                                 node={child}
                                 depth={props.depth + 1}
+                                ancestorsLast={[
+                                    ...props.ancestorsLast,
+                                    i() === kids().length - 1,
+                                ]}
                                 open={props.open}
                                 toggle={props.toggle}
                                 onOpen={props.onOpen}
@@ -1412,7 +1427,11 @@ function Level(props: {
                         <VisibilityBadge visibility={child.visibility} />
                         <Show
                             when={props.editing === child.path}
-                            fallback={child.label ?? displayName(child.name)}
+                            fallback={
+                                <Text as="span" inherit truncate>
+                                    {child.label ?? displayName(child.name)}
+                                </Text>
+                            }
                         >
                             <EditableLabel
                                 node={child}

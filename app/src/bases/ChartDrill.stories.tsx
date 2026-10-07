@@ -1,8 +1,8 @@
 // Visual spec for <ChartDrill> — the note list opened under a chart when a bucket is clicked.
 // "With opener" holds real state: clicking `[ clear ]` actually hides the drill, same as a bucket
-// click would in a real chart view. A row with a write target renders as a `NoteLink`, which opens
-// a note via the app-wide `bismuth-open` event (see NoteLink.tsx) rather than calling `onOpen`
-// directly — the stories below listen for that event to prove the click really fires.
+// click would in a real chart view. The rows are an `AsciiTree`; with a write target, selecting
+// one opens its note via the app-wide `bismuth-open` event (see ui/openNote.ts) rather than calling
+// `onOpen` directly — the stories below listen for that event to prove the click really fires.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor } from 'storybook/test'
 import { createSignal, onCleanup, Show } from 'solid-js'
@@ -30,7 +30,7 @@ const THREE_ROWS = [fileRow('Morning pages'), fileRow('Standup notes'), fileRow(
 const THIRTY_ROWS = Array.from({ length: 30 }, (_, i) => fileRow(`Note ${i + 1}`))
 
 /** Real state on both seams: clicking `[ clear ]` sets `open` false and the drill disappears;
- *  clicking a row's note link fires the app-wide `bismuth-open` event (see NoteLink.tsx), which
+ *  clicking a row fires the app-wide `bismuth-open` event (see NoteLink.tsx), which
  *  this harness captures into `opened` and prints. `onOpen` itself is only a presence check
  *  (has a write target?) — the link, not the callback, opens the note. */
 function WithOpenerHarness() {
@@ -61,8 +61,8 @@ export const WithOpener: Story = {
     render: () => <WithOpenerHarness />,
     play: async ({ canvasElement }) => {
         const link = await waitFor(() => {
-            const el = canvasElement.querySelector<HTMLElement>('a')
-            if (!el) throw new Error('no note link mounted yet')
+            const el = canvasElement.querySelector<HTMLElement>('[role="treeitem"]')
+            if (!el) throw new Error('no note row mounted yet')
             return el
         })
         await userEvent.click(link)
@@ -77,8 +77,7 @@ export const WithOpener: Story = {
     },
 }
 
-/** No `onOpen` (no write target/opener, Review Focus #5) — rows render as plain text, not
- *  buttons or links. */
+/** No `onOpen` (no write target/opener, Review Focus #5) — selecting a row opens nothing. */
 export const WithoutOpener: Story = {
     args: {
         title: 'Jul 20',

@@ -150,7 +150,9 @@ function OutlineTree(props: OutlineTreeProps) {
 
     return (
         <div
-            class={props.class}
+            class={[styles['outline-tree'], props.class]
+                .filter(Boolean)
+                .join(' ')}
             role={isRoot() ? 'tree' : 'group'}
             aria-label={isRoot() ? 'Outline' : undefined}
             tabindex={isRoot() ? '0' : undefined}

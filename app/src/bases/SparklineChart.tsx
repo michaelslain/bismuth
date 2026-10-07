@@ -48,7 +48,7 @@ const SparklineChart: Component<SparklineProps> = props => {
                     )}
                 </For>
             </Text>
-            <Text as="div" size="micro" tone="faint" class={styles.caption}>
+            <Text as="div" size="micro" tone="muted" class={styles.caption}>
                 {caption()}
             </Text>
         </Text>

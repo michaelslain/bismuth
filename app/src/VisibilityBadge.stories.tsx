@@ -5,6 +5,7 @@
 // job is to communicate a security-adjacent fact at a glance — which is exactly the kind of thing
 // that should be looked at rather than assumed.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import VisibilityBadge from './VisibilityBadge'
 import { Label } from './ui/_storyKit'
 
@@ -61,4 +62,16 @@ export const AllStates: Story = {
             </Row>
         </div>
     ),
+    // Both badges must draw REAL, DIFFERENT art. They once asked for Lucide names (EyeOff,
+    // MessageSquareOff) the Phosphor set does not carry, so every badged file-tree row drew the
+    // dashed "?" fallback — the fallback is the only icon with a stroke-dasharray.
+    play: async ({ canvasElement }) => {
+        const svgs = [...canvasElement.querySelectorAll('svg')]
+        expect(svgs.length).toBe(2)
+        for (const svg of svgs) {
+            expect(svg.innerHTML.trim()).not.toBe('')
+            expect(svg.innerHTML).not.toContain('dasharray')
+        }
+        expect(svgs[0].innerHTML).not.toBe(svgs[1].innerHTML)
+    },
 }

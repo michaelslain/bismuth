@@ -61,6 +61,15 @@ export const LabeledEdges: Story = {
             onChange={noop}
         />
     ),
+    // Canvas text is not in the DOM, so the renderer's own stats hook is the proof the three captions
+    // (`manages`, `mentors`, `peer of`) were PAINTED — a count of zero is exactly the defect this story
+    // used to show (the label died in graphBlockToGraphData and the story claimed labels it never drew).
+    // `dave -> alice` carries none, so 3 and not 4.
+    play: async () => {
+        await waitFor(() => expect(graphStats().edgeLabelsDrawn).toBe(3), {
+            timeout: 3000,
+        })
+    },
 }
 
 /**

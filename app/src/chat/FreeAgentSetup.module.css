@@ -15,6 +15,3 @@
   text-wrap: balance;
   font-variant-numeric: tabular-nums;
 }
-.error {
-  color: var(--danger);
-}

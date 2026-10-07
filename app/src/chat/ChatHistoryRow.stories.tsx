@@ -88,7 +88,7 @@ export const Active: Story = {
         summary: 'Restyle the daemon page',
         lastModified: Date.now() - 5 * MIN,
         origin: 'user',
-        active: true,
+        selected: true,
         onClick: () => {},
     },
 }

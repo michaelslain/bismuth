@@ -7,6 +7,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import BookmarkRow from './BookmarkRow'
 import type { Bookmark } from '../../../core/src/drawing/model'
+import { hoverProps } from '../ui/_hoverRules'
 
 const meta = {
     title: 'Preview/BookmarkRow',
@@ -53,6 +54,15 @@ export const Ready: Story = {
                     ?.textContent,
             ).toBe('4'),
         )
+        // Nothing draws focus — no ring on the focused row, and no replacement cue.
+        row.focus()
+        await expect(getComputedStyle(row).outlineStyle).toBe('none')
+        // A clickable row never paints a background on hover: no `:hover` rule that reaches the row
+        // (or the actions overlay it reveals) sets one. The overlay's flat --surface-1 covers the
+        // page number on its own.
+        await expect(hoverProps(row, 'background')).toEqual([])
+        const actions = canvas.getByLabelText('Rename bookmark').parentElement!
+        await expect(hoverProps(actions, 'background')).toEqual([])
     },
 }
 
@@ -74,6 +84,19 @@ export const NotReady: Story = {
         const canvas = within(canvasElement)
         await expect(canvas.getByLabelText('Rename bookmark')).toBeDisabled()
         await expect(canvas.getByLabelText('Delete bookmark')).toBeDisabled()
+        // A disabled delete reads as disabled — `--faint` ink, no opacity — not as the red,
+        // clickable `danger` control it paints as when enabled (it once did: the danger rule
+        // outranked the disabled one).
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--faint)'
+        canvasElement.appendChild(probe)
+        const faint = getComputedStyle(probe).color
+        probe.remove()
+        for (const label of ['Rename bookmark', 'Delete bookmark']) {
+            const btn = canvas.getByLabelText(label)
+            await expect(getComputedStyle(btn).color, `${label} ink`).toBe(faint)
+            await expect(getComputedStyle(btn).opacity, `${label} opacity`).toBe('1')
+        }
         const row = canvasElement.querySelector(
             '[data-bookmark-id="b1"]',
         ) as HTMLElement

@@ -33,7 +33,7 @@
   max-width: var(--note-column);
   margin: 0 auto;
   box-sizing: border-box;
-  padding: var(--sp-7) 40px var(--sp-3);
+  padding: var(--sp-7) var(--note-gutter) var(--sp-3);
   font-size: var(--editor-font-size, 16px);
 }
 
@@ -80,7 +80,10 @@
      `overflow: hidden` clips to the PADDING edge, and line-height 1.1 is tighter
      than the font's glyph box, so without this the tails get cut off. Top padding
      stays 0 so the `#` glyph (flex-start) still aligns to the first line. */
-  padding: 0 var(--sp-1) 0.22em;
+  /* Left padding is CodeMirror's own `.cm-line` inset (6px = --sp-3), so the title's text edge lands
+     on the body text's edge: the field used to carry --sp-1 (2px) and sat 4px left of every line
+     it heads. Right stays --sp-1. */
+  padding: 0 var(--sp-1) 0.22em var(--sp-3);
   border-radius: var(--r-0);
   /* textarea-specific: wrap freely, no manual resize handle, no scrollbar
      (height is driven from scrollHeight), render as a block heading. */

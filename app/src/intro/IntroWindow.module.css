@@ -12,22 +12,24 @@
   border: 1px solid var(--border);
   border-radius: 0;
 }
-/* Short windows: the art box drops to 16 rows so the footer stays on screen. 47rem = 752px: the
-   full window is ~692px tall plus the page's two --sp-7 margins, so below that there is no slack.
-   The app's default 1200x800 window keeps the full 24 rows. */
-@media (max-height: 47rem) {
+/* Short windows: the art box drops to 16 rows so the footer stays on screen. The full window is
+   ~692px tall, and a container query measures the nearest size container's CONTENT box: VaultIntro's
+   root pads its box by --sp-7 (24px) on each side, so 44rem = 704px of content is 752px of window,
+   and below that there is no slack. `max-height` is inclusive, so the threshold sits a hair UNDER
+   the app's default 1200x800 window (content box 752px = 47rem) and that window keeps the full 24
+   rows; writing it as 47rem, in viewport terms, dropped the default window to 16. A CONTAINER
+   query, not a viewport one: it reads the nearest size container (VaultIntro's root, or a story's
+   stage), so the 16-row state can be rendered by sizing that box. */
+@container (max-height: 44rem) {
   .intro-window {
     --intro-art-h: calc(16 * var(--row-h));
   }
 }
 .strip {
   flex: 0 0 auto;
-  height: var(--h-band);
   display: flex;
   align-items: center;
   gap: var(--bar-icon-gap);
-  padding: 0 var(--sp-6);
-  border-bottom: 1px solid var(--border-soft);
   -webkit-user-select: none;
   user-select: none;
 }

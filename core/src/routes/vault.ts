@@ -139,7 +139,17 @@ export default function vaultRoutes(
             // channel can't see this path is refused outright, never served empty-or-partial.
             const denyEntries = await denyEntriesForRequest(req)
             if (isDeniedPath(denyEntries, path)) return error('forbidden', 403)
-            const noteText = await readNoteOrEmpty(cfg.vault, path)
+            // Only a MISSING file is an empty body (a brand-new note/drawing). Any other read
+            // failure (EACCES, EIO, EISDIR) must surface as an error: an empty 200 reads to a
+            // client as "nothing here", and a drawing page then opens an editable blank doc whose
+            // next autosave overwrites the real file.
+            let noteText: string
+            try {
+                noteText = await readNote(cfg.vault, path)
+            } catch (e) {
+                if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+                noteText = ''
+            }
             return new Response(noteText, { status: 200 })
         },
 

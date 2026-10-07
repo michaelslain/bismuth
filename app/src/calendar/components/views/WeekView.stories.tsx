@@ -17,6 +17,7 @@ const STORY_H = '760px'
 
 import { expect, within } from 'storybook/test'
 import { placeRows } from '../../taskPlacement'
+import { GRID_PX } from './timeGridLayout'
 import { taskRow } from '../../../ui/_calendarAssertions'
 import { todayISO } from '../../../../../core/src/dates'
 
@@ -94,11 +95,11 @@ export const BusyWeek: Story = {
     render: () => {
         seedCalendarState({ date: new Date(2026, 0, 12), categories: WEEK_CATEGORIES, events: WEEK_EVENTS })
         let host!: HTMLDivElement
-        // The grid opens at midnight; scroll its body to 7:30am (50px per hour, GRID_PX / 24).
+        // The grid opens at midnight; scroll its body to 7:30am (72px per hour, GRID_PX / 24).
         onMount(() =>
             requestAnimationFrame(() => {
                 for (const el of host.querySelectorAll<HTMLElement>('*'))
-                    if (getComputedStyle(el).overflowY === 'auto') el.scrollTop = 7.5 * 50
+                    if (getComputedStyle(el).overflowY === 'auto') el.scrollTop = (7.5 * GRID_PX) / 24
             }),
         )
         return (

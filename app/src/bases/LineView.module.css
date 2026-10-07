@@ -9,12 +9,15 @@
   outline: none;
   font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
-  line-height: 15px;
-  color: var(--faint);
+  line-height: var(--cell-h);
+  /* The tick values and x-axis labels are read, so the block's own ink is muted; only structure
+     (the axis rule, the trend dots) drops to --faint. */
+  color: var(--text-muted);
   cursor: crosshair;
 }
 .linePlot .accent { color: var(--accent); }
 .linePlot .hover { color: var(--fg); }
+.linePlot .trend, .linePlot .axisRule { color: var(--faint); }
 
 .footer {
   display: flex;

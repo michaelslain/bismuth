@@ -1,9 +1,12 @@
 import { splitProps, type Component, type JSX } from 'solid-js'
-import { Dynamic } from 'solid-js/web'
+import Text from './Text'
 import styles from './Label.module.css'
 
 export type LabelTag = 'span' | 'div'
 export type LabelTone = 'default' | 'muted' | 'faint'
+/** 'ui' (default) leaves the ambient --ui-font-stack; 'prose' switches ONLY the family to
+ *  --prose-font — what a person WROTE (a note title, a search hit), not mechanism/data. */
+export type LabelRegister = 'ui' | 'prose'
 
 export type LabelProps = {
     /** Tag to render. 'span' (default) for an inline run inside a row, 'div' for a block
@@ -24,6 +27,9 @@ export type LabelProps = {
     /** 1 (default): single-line ellipsis. 2: a two-line `-webkit-line-clamp` clamp (the cards
      *  view's cover title) — wraps normally instead of `white-space: nowrap`. */
     lines?: 1 | 2
+    /** Type register: 'ui' (default) or 'prose' (the serif, for text a person wrote). Callers
+     *  pass this instead of a local class that swaps `font-family`. */
+    register?: LabelRegister
     /** `display: inline-block` for a label inside a non-flex ancestor (a table `<th>`) — a bare
      *  `<span>` is inline and `text-overflow: ellipsis` silently does nothing on an inline box.
      *  Every other call site is already a flex item (which blockifies it automatically), so this
@@ -34,13 +40,10 @@ export type LabelProps = {
 } & Omit<JSX.HTMLAttributes<HTMLElement>, 'class' | 'children'>
 
 function labelClass(props: LabelProps): string {
-    const tone = props.tone
     const lines = props.lines ?? 1
     return [
-        styles.label,
         props.fill ? styles['label--fill'] : '',
         props.inline ? styles['label--inline'] : '',
-        tone ? styles[`label--${tone}`] : '',
         lines === 2 ? styles['label--lines2'] : '',
         props.class,
     ]
@@ -51,12 +54,12 @@ function labelClass(props: LabelProps): string {
 /**
  * The truncating-label primitive: a value that must ellipsize instead of wrapping or blowing
  * out its container — a row's title, a secondary value pinned to the row's edge, a card's cover
- * text. `text-overflow: ellipsis` does not truncate a bare text child of a flex container (the
- * text becomes an anonymous flex item whose min-width defaults to its content width) — this
- * component always sets `min-width: 0` alongside `overflow: hidden` so truncation actually
- * fires; see Label.module.css and shell/DragGhost.module.css's header for the fuller trap
- * writeup. Variants are props (fill/tone/lines/inline), not separate components. Every other
- * HTML attribute and `ref` pass through untouched onto the rendered element.
+ * text. It composes `Text` (inheriting size and weight, so the label takes its look from the row)
+ * and reads Text's tone map and `truncate` — which carries the `min-width: 0` that makes
+ * `text-overflow: ellipsis` fire inside a flex row; see Text.module.css and
+ * shell/DragGhost.module.css's header for the trap writeup. Label keeps only its own layout
+ * (fill / inline / the two-line clamp). Variants are props (fill/tone/lines/inline/register),
+ * not separate components. Every other HTML attribute and `ref` pass through onto the element.
  */
 const Label: Component<LabelProps> = props => {
     const [local, rest] = splitProps(props, [
@@ -65,13 +68,22 @@ const Label: Component<LabelProps> = props => {
         'tone',
         'lines',
         'inline',
+        'register',
         'class',
         'children',
     ])
     return (
-        <Dynamic component={local.as ?? 'span'} class={labelClass(props)} {...rest}>
+        <Text
+            {...rest}
+            inherit
+            as={local.as ?? 'span'}
+            tone={local.tone}
+            register={local.register === 'prose' ? 'prose' : 'chrome'}
+            truncate={(local.lines ?? 1) !== 2}
+            class={labelClass(props)}
+        >
             {local.children}
-        </Dynamic>
+        </Text>
     )
 }
 

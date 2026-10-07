@@ -8,7 +8,7 @@
   color: var(--fg);
 }
 .statValue.accent { color: var(--accent); }
-.statValue.faint { color: var(--faint); }
+.statValue.faint { color: var(--text-muted); }
 .statLabel {
   font-size: var(--fs-ui);
   color: var(--text-muted);
@@ -17,7 +17,7 @@
 }
 .statDelta {
   font-size: var(--fs-micro);
-  color: var(--faint);
+  color: var(--text-muted);
   font-family: var(--ui-font-stack);
   margin-top: var(--sp-1);
 }
@@ -36,7 +36,7 @@
 }
 .statTex {
   font-size: var(--fs-micro);
-  color: var(--faint);
+  color: var(--text-muted);
   margin-top: var(--sp-1);
 }
 .statError {

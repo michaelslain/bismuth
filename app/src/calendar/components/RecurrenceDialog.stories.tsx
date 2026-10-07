@@ -15,8 +15,8 @@ import { RecurrenceDialog } from './RecurrenceDialog'
 import { EventStore, MemoryBackend } from '../EventStore'
 import { recurrenceAction, events, currentDate } from '../state'
 import { refreshEvents } from '../refresh'
-import { ToastHost } from '../../Toast'
-import { toasts, dismissToast } from '../../toastStore'
+import { ToastHost } from '../../ui/ToastHost'
+import { toasts, dismissToast } from '../../ui/toastStore'
 import { seedCalendarState } from '../../ui/_calendarFixtures'
 import type { CalendarEvent } from '../types'
 
@@ -28,6 +28,17 @@ const meta = {
 
 export default meta
 type Story = StoryObj<typeof meta>
+
+/** The scope picker is on screen. Plays that close it (choosing a scope) end by re-opening it, so
+ *  the shot shows the dialog instead of a blank 1200x800 frame — and a dialog that never appears
+ *  fails here instead of passing. */
+async function expectDialogOpen(): Promise<void> {
+    await waitFor(() =>
+        expect(
+            document.querySelector('[role="dialog"][aria-label="delete recurring event"]'),
+        ).not.toBeNull(),
+    )
+}
 
 const MASTER: CalendarEvent = {
     id: 'master-1',
@@ -113,11 +124,22 @@ export const Interactive: Story = {
         await userEvent.click(thisEvent)
         await waitFor(() => expect(dialog()).toBeNull())
         expect(recurrenceAction.value).toBeNull()
+
+        // End with the picker open again, so the frame shows the dialog.
+        recurrenceAction.value = {
+            type: 'delete',
+            masterId: MASTER.id,
+            occurrenceDate: '2026-08-19',
+        }
+        await expectDialogOpen()
     },
 }
 
 const standups = () =>
     events.value.filter(e => e.title === 'Standup' && e.date === '2026-08-19')
+
+/** The master's id once the render has stored it (the play re-opens the dialog on it). */
+let storedMasterId = ''
 
 /** Deleting one occurrence goes through deleteEventWithUndo: the occurrence is gone at once,
  *  `deleted Standup` appears with an `undo`, and undo brings the occurrence back. Real
@@ -130,6 +152,7 @@ export const DeleteOneWithUndo: Story = {
         const store = new EventStore(new MemoryBackend())
         const { id: _id, ...rest } = MASTER
         store.addEvent(rest).then(async master => {
+            storedMasterId = master.id
             await refreshEvents(store)
             recurrenceAction.value = {
                 type: 'delete',
@@ -154,5 +177,13 @@ export const DeleteOneWithUndo: Story = {
         await userEvent.click(await body.findByRole('button', { name: 'undo' }))
         await waitFor(() => expect(standups()).toHaveLength(1))
         expect(currentDate.value.getMonth()).toBe(7)
+
+        // End with the picker open again on the restored series, so the frame shows the dialog.
+        recurrenceAction.value = {
+            type: 'delete',
+            masterId: storedMasterId,
+            occurrenceDate: '2026-08-19',
+        }
+        await expectDialogOpen()
     },
 }

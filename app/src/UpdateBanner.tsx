@@ -14,7 +14,7 @@
 // pinned, exactly as a toolbar's lead does.
 import { createSignal, Show } from 'solid-js'
 import { updateStatus, applyUpdateAndRelaunch } from './updateCheck'
-import { pushToast } from './Toast'
+import { pushToast } from './ui/ToastHost'
 import type { UpdatePhase } from '../../core/src/selfUpdate'
 import { plural } from './plural'
 import ViewBar from './ui/ViewBar'
@@ -75,7 +75,7 @@ export function UpdateBanner(props: UpdateBannerProps) {
                 }
                 readouts={
                     <Show when={working()}>
-                        <Text as="span" size="micro" tone="faint">
+                        <Text as="span" size="micro" tone="muted">
                             {phaseLabel(phase())}
                         </Text>
                     </Show>
@@ -85,7 +85,7 @@ export function UpdateBanner(props: UpdateBannerProps) {
                         <TextButton
                             onClick={update}
                             disabled={working()}
-                            variant="selected"
+                            primary
                         >
                             {working() ? 'updating…' : 'update'}
                         </TextButton>

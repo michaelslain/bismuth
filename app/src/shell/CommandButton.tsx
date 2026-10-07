@@ -6,8 +6,8 @@ import styles from './CommandButton.module.css'
 // The purely-presentational rendering half of App.tsx's configurable toolbar button
 // (shared by the sidebar header bar and the vertical tab rail): an icon button
 // plus an optional numeric badge, wrapped so the two lay out as one inline row (Task 3 fix round
-// 2 — see CommandButton.module.css's `.toolbar-badge` comment for why this is in-flow rather than
-// an absolute corner overlay).
+// 2 — see CommandButton.module.css for why the badge is in-flow rather than an absolute corner
+// overlay).
 //
 // WHAT DELIBERATELY STAYED IN App.tsx (as the local `ToolbarButton` wrapper): resolving a
 // `{command}` / `{commands: [...]}` config to a live Command via `resolveButtonCommands`, hiding
@@ -23,7 +23,7 @@ import styles from './CommandButton.module.css'
 // to) — so this does not change the disabled button's own appearance; it only means a disabled
 // button could in principle host a badge too, which no caller currently passes.
 //
-// `.toolbar-btn-wrap` / `.toolbar-badge` are reached through the imported `styles` object —
+// `.toolbar-btn-wrap` is reached through the imported `styles` object —
 // bracket access, not `styles.toolbarBtnWrap`: Vite only exposes camelCase aliases under
 // css.modules.localsConvention, which app/vite.config.ts does not set.
 //
@@ -35,8 +35,8 @@ import styles from './CommandButton.module.css'
 // different glyph size than its bar) is still forwarded through and still wins, same as it always
 // has on `IconButton` itself.
 //
-// `class` forwards onto the inner IconButton/Button, same shape as every other primitive in
-// `ui/`. No caller passes it yet.
+// There is no `class` prop: nothing ever passed one, and a primitive that forwards a class nobody
+// uses is a seam waiting for a second writer.
 export function CommandButton(props: {
     icon: string
     label: string
@@ -45,8 +45,6 @@ export function CommandButton(props: {
     /** Rendered only when greater than 0. */
     badge?: number
     onClick?: (e: MouseEvent) => void
-    /** Forwarded onto the inner Button. No current caller sets this — see header comment. */
-    class?: string
 }) {
     return (
         <div class={styles['toolbar-btn-wrap']}>
@@ -56,12 +54,9 @@ export function CommandButton(props: {
                 disabled={props.disabled}
                 label={props.label}
                 onClick={props.onClick}
-                class={props.class}
             />
             <Show when={(props.badge ?? 0) > 0}>
-                <Badge variant="solid" class={styles['toolbar-badge']}>
-                    {props.badge}
-                </Badge>
+                <Badge variant="solid">{props.badge}</Badge>
             </Show>
         </div>
     )

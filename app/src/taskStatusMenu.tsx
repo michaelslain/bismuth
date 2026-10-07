@@ -2,7 +2,7 @@
 // the cards view (BodyCard) and the note editor (livePreview's CodeMirror checkbox widget).
 // `char` is the box char written between the brackets; the CURRENT status is filtered out so
 // the menu only ever offers the OTHER modes (per the spec).
-import { ContextMenu, type MenuItem } from './ContextMenu'
+import { ContextMenu, type MenuItem } from './ui/ContextMenu'
 import { mountModal } from './ui/mountModal'
 
 export interface TaskStatusOption {

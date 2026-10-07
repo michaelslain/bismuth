@@ -21,7 +21,7 @@ import { isBuilderRepresentable, parseQueryBlockBody } from '../bases/queryGen'
 import openQueryBuilder from './openQueryBuilder'
 import { replaceQueryBody } from './queryBuilderEdit'
 import { QUERY_BLOCK_LOST_MESSAGE } from './queryBuilderInsert'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 
 // The ONE embedded block: ```query — the view INTO a base/notes. There is no ```base,
 // ```view, or ```tasks block; everything that reads into a base/notes is a query (a

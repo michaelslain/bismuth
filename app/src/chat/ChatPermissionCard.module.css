@@ -1,17 +1,21 @@
-/* ChatPermissionCard.module.css — ChatPermissionCard.tsx is the ONLY importer. Moved verbatim from
-   ChatTurnParts.module.css. The ONE affordance that keeps chrome: .asc-callout's accent-edge left
-   rule, not a dialog box. Localised to `--chat-*` (with a plain-token fallback — see
-   ChatTextBubble.module.css's header for why) rather than the shared surface class, so a tinted
-   chat pane blends it. */
+/* ChatPermissionCard.module.css — ChatPermissionCard.tsx is the ONLY importer. The surface is
+   ui/Card (proposal: bordered, with the accent left edge); this file adds only what is chat's:
+     - the chat tint, through Card's `--card-bg` seam (a tinted chat pane blends it; in Storybook,
+       where no chat host localises `--chat-surface-1`, the plain --surface-1 fallback applies);
+     - the mechanism size, `--code-font-size` in mono, set ONCE here on the root;
+     - the SETTLED state, which is ink and edge, never opacity (DESIGN.md: no state is shown by
+       opacity). It used to fade the whole card to 0.65 — the title, the outcome and the summary
+       all dropped together, and the outcome line fell under 3:1 in the light themes. Now the edge
+       goes from accent to --border, the lock and title go to --text-muted, and the OUTCOME line
+       stays at full --fg: it is the one thing a settled card exists to say. */
 .chat-permission {
-    border-left: var(--accent-edge);
-    background: var(--chat-surface-1, var(--surface-1));
-    padding: var(--sp-5) var(--sp-5);
-    font-size: var(--fs-ui);
+    --card-bg: var(--chat-surface-1, var(--surface-1));
+    --card-border: 1px solid var(--chat-border, var(--border));
+    font-family: var(--ui-font-stack);
+    font-size: var(--code-font-size);
     line-height: var(--lh-ui);
 }
 .chat-permission.answered {
-    opacity: 0.65;
     border-left-color: var(--border);
 }
 .chat-permission-head {
@@ -22,21 +26,12 @@
 .chat-permission-icon {
     color: var(--accent);
 }
-.chat-permission.answered .chat-permission-icon {
-    color: var(--faint);
+.chat-permission.answered .chat-permission-icon,
+.chat-permission.answered .chat-permission-title {
+    color: var(--text-muted);
 }
 .chat-permission-summary {
-    margin: var(--sp-4) 0 0;
-    padding: var(--sp-2) 0 var(--sp-2) var(--sp-5);
-    border-left: 2px solid var(--border-soft);
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-ui);
-    line-height: 1.5;
-    color: var(--text-muted);
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 160px;
-    overflow: auto;
+    margin-top: var(--sp-4);
 }
 .chat-permission-actions {
     display: flex;
@@ -44,22 +39,10 @@
     margin-top: var(--sp-5);
     flex-wrap: wrap;
 }
-/* Bracket action buttons — "[ allow ]" / "[ always ]" / "[ deny ]", the CLI-confirm register the
-   design system reserves for a callout's own actions. Rendered by Button's own `bracket` prop
-   (ui/Button.tsx) — the underlying label text stays uppercase (ALLOW/DENY), `bracket` does the
-   lowercase-in-brackets look itself. Button.module.css now wins the lowercase/uppercase
-   specificity tie with a compound selector, so no override is needed here. */
 .chat-permission-outcome {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: var(--sp-2);
     margin-top: var(--sp-4);
-    font-size: var(--fs-body);
-    color: var(--success);
-}
-.chat-permission-outcome.deny {
-    color: var(--danger);
-}
-.chat-permission-outcome.cancelled {
-    color: var(--faint);
+    color: var(--fg);
 }

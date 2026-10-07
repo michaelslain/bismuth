@@ -1,6 +1,6 @@
 // app/src/icons/iconNames.ts
 //
-// The 140 canonical icon names every icon set must resolve — the NAME seam registry.ts:3 refers
+// The 142 canonical icon names every icon set must resolve — the NAME seam registry.ts:3 refers
 // to. This list is SET-INDEPENDENT: it does not change when the art behind a name does (Nerd Font
 // -> Phosphor -> whatever comes next), which is what keeps the ~100 real call sites (FileTree,
 // toolbar, palette, command catalog...) stable across a set swap. Only the MAPPING from these
@@ -40,6 +40,7 @@ export const ICON_NAMES: string[] = [
     'CaseSensitive',
     'ChartColumn',
     'ChartLine',
+    'ChatSlash',
     'Check',
     'ChevronDown',
     'ChevronLeft',
@@ -61,6 +62,7 @@ export const ICON_NAMES: string[] = [
     'Eraser',
     'ExternalLink',
     'Eye',
+    'EyeSlash',
     'File',
     'FilePlus',
     'FileText',

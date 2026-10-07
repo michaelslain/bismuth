@@ -1,5 +1,6 @@
 import { Show, type Component } from 'solid-js'
 import Text from '../ui/Text'
+import Readout from '../ui/Readout'
 import { plural } from '../plural'
 import fpsColor from './fpsColor'
 import { splitStatusPath } from './statusPath'
@@ -57,15 +58,33 @@ const GraphStatusLine: Component<GraphStatusLineProps> = props => {
                     )}
                 </Show>
             </Text>
-            <Text as="span" inherit class={styles.readout} data-testid="graph-status-readout">
-                {plural(props.nodes, 'node')} // {plural(props.edges, 'edge')} //{' '}
-                {props.mode} // {props.zoom}%
-                <Show when={props.fps != null}>
-                    {' '}//{' '}
-                    <Text as="span" inherit style={{ color: fpsColor(props.fps!) }}>
-                        {props.fps} fps
-                    </Text>
-                </Show>
+            {/* The `a // b // c` line is ui/Readout — one implementation of the separator, the muted ink and
+          the ellipsis; this wrapper only pins it to the strip's trailing edge and carries the test hook. */}
+            <Text
+                as="div"
+                inherit
+                class={styles.readout}
+                data-testid="graph-status-readout"
+            >
+                <Readout
+                    parts={[
+                        plural(props.nodes, 'node'),
+                        plural(props.edges, 'edge'),
+                        props.mode,
+                        `${props.zoom}%`,
+                        ...(props.fps != null
+                            ? [
+                                  <Text
+                                      as="span"
+                                      inherit
+                                      style={{ color: fpsColor(props.fps) }}
+                                  >
+                                      {props.fps} fps
+                                  </Text>,
+                              ]
+                            : []),
+                    ]}
+                />
             </Text>
         </div>
     )

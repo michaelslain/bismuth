@@ -4,6 +4,11 @@
 /* The page keeps the letter aspect ratio; the canvases inside fill it via inset:0 +
    100%. The width cap + centering live on the .draw-page-zoom wrapper (DrawingPage.module.css,
    which the zoom control scales), so the shadow simply fills its wrapper. */
-.draw-page-shadow { box-shadow: var(--lift); width: 100%; }
+/* A HAIRLINE RING, not `--lift`. `--lift` is the popover shadow (DESIGN.md:377) and a drawing
+   page does not float above anything — it is the ground the strokes sit on. C7's sibling finding
+   makes the PDF page stack flat for the same reason, so the two page surfaces now read alike.
+   A box-shadow ring rather than a border because the page's size is driven by `aspect-ratio` on
+   the child: a border here would add 2px to the box and shift every stroke's coordinate space. */
+.draw-page-shadow { box-shadow: 0 0 0 1px var(--border); width: 100%; }
 .draw-page { position: relative; width: 100%; aspect-ratio: 816 / 1056; }
 .draw-live { cursor: crosshair; }

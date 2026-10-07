@@ -17,7 +17,7 @@ import type { TransactionSpec } from '@codemirror/state'
 import { Compartment, StateEffect } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { queryFenceText } from './queryBuilderEdit'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 
 // Shared with QueryBlockWidget.editQuery in queryBlock.ts, which hits the same "the view is gone
 // by the time confirm fires" case through its own (DOM-position-based) relocation instead of this

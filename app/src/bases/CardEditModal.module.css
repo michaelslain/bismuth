@@ -1,7 +1,7 @@
 /* CardEditModal — the focused kanban-card edit modal (CardEditModal.tsx). Chrome (frame, header
    rule, footer rule) now comes from FormModal/ModalHeader/ModalFooter (modal-redesign Task 8);
    this file only holds what those shared components don't: the --kb-meta-* var bridge to
-   PropertyValueEditor and the Milkdown description surface. The DUE trigger, the boolean toggle
+   PropertyValueEditor and the description's drop zone. The DUE trigger, the boolean toggle
    and the read-only line are PropertyControl's / PropertyValueEditor's now. The no-editable-properties message is `<EmptyState>` now (ds-bridges Task 4)
    — no local override needed, so this file no longer carries an `.empty` class. */
 
@@ -13,14 +13,7 @@
    dropped `plain` on its TextInput calls, so PRIORITY/STATUS/TAGS now compose the same
    `.ui-input` underline chrome as TITLE/DUE; these vars still only govern sizing. */
 .metaVars {
-  /* One right edge for every field: PropertyValueEditor's shared `.kbMetaInput` (PRIORITY,
-     and any plain text/number property) caps at 200px by default for its OTHER host,
-     KanbanCard's card-face inline chip — too narrow for this one-field-per-row modal, where
-     TITLE/STATUS/TAGS already run edge to edge. `--kb-meta-max-width` is the var that class
-     reads (see PropertyValueEditor.module.css); this is a CSS custom property, not a reach
-     into the hashed class itself. */
-  --kb-meta-max-width: none;
-  /* Same reasoning as --kb-meta-max-width just above: KanbanCard's inline chip editor sets a
+  /* KanbanCard's inline chip editor sets a
      -3px -5px negative margin on `.kbMetaInput`/`.kbMetaSelect`/`.kbMetaMultiselect` to sit
      flush against its OWN compact chrome — here it just bulges PRIORITY/STATUS/TAGS 5px past
      TITLE/DUE's edges. Zeroed so every field measures to the same left/right edge. */
@@ -34,103 +27,13 @@
      local override needed — TextInput/FormControl already sets --h-control) and DUE reads the
      same var through PropertyValueEditor's `.kbMetaDate`. */
   --kb-meta-height: var(--h-control);
-  /* The status select's text starts at the same x as TITLE/PRIORITY/DUE: the trigger's default
-     left inset (kanban + table selects keep it) is zeroed here. */
-  --kb-meta-select-inset: 0;
   /* Likewise on the right: the trigger's chevron gutter is zeroed so the `▾` ends at the same x as
      the DUE field's calendar icon (both sit flush at the field's right edge). */
   --kb-meta-select-end: 0;
 }
 
-/* The rich Milkdown description surface — a neutral underline field, matching every other value
-   control in the modal (modal-redesign: Acceptance 5, neutral focus — no fill, no accent ring). */
-.mdField {
-  /* Layout sizes, not spacing: the field's resting height and the cap on an embedded picture. */
-  --md-min-height: 96px;
-  --md-image-max-height: var(--md-image-max-height);
-  box-sizing: border-box;
-  min-height: var(--md-min-height);
-  padding: var(--sp-2) 0;
-  border: none;
-  border-bottom: var(--rule-soft);
-  background: transparent;
-  transition: border-color calc(0.14s * var(--motion-scale)) var(--ease-std);
-  cursor: text;
-}
-.mdField:hover { border-bottom: var(--rule); }
-.mdField:focus-within { border-bottom: var(--rule); }
-
-/* Drop zone wrapping the rich description surface: an image dragged over it highlights the whole
-   field, so it's obvious the picture will land IN the description (and not "attach" invisibly). */
-.mdDropZone { display: block; border-radius: var(--r-0); }
-.mdDropActive .mdField {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  background: var(--accent-soft);
-}
-
-/* An image embedded in the description renders inline as the real picture (inlineNodes.ts draws
-   image embeds as <img>). Cap it to the field so a big photo can't blow out the modal. */
-.mdField :global(.bismuth-embed-image) { display: inline-block; max-width: 100%; vertical-align: top; }
-.mdField :global(.bismuth-embed-img) {
-  max-width: 100%;
-  max-height: var(--md-image-max-height);
-  height: auto;
-  border-radius: var(--r-0);
-  object-fit: contain;
-}
-
-/* Prose styling for the ProseMirror editable (Milkdown ships no CSS). The `attributes.class`
-   createDocEditor sets ("bismuth-doc-milkdown") lands on the contenteditable itself. */
-.mdField :global(.bismuth-doc-milkdown) {
-  outline: none;
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-body-lg);
-  line-height: 1.55;
-  color: var(--fg);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.mdField :global(.bismuth-doc-milkdown p) { margin: 0 0 var(--sp-4); }
-.mdField :global(.bismuth-doc-milkdown p:last-child) { margin-bottom: 0; }
-/* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, global.css's `styles/tokens.css`
-   section), not the
-   1.5em/1.3em/1.14em multipliers this file used to carry. Those were a third independent ramp —
-   relative to whatever font-size the field happened to inherit, so the same markdown rendered at a
-   different size here than in either editor. h4-h6 were absent entirely and fell through to UA
-   defaults. Do NOT reintroduce em multipliers: the ramp's whole invariant (a heading is never
-   smaller than the prose it heads) is unrepresentable in units relative to an inherited size. */
-.mdField :global(.bismuth-doc-milkdown h1) { font-size: var(--fs-h1); font-weight: var(--fw-h1); line-height: var(--lh-tight); margin: var(--sp-3) 0; }
-.mdField :global(.bismuth-doc-milkdown h2) { font-size: var(--fs-h2); font-weight: var(--fw-h2); line-height: var(--lh-tight); margin: var(--sp-3) 0; }
-.mdField :global(.bismuth-doc-milkdown h3) { font-size: var(--fs-h3); font-weight: var(--fw-h3); line-height: var(--lh-tight); margin: var(--sp-3) 0 var(--sp-2); }
-.mdField :global(.bismuth-doc-milkdown h4) { font-size: var(--fs-h4); font-weight: var(--fw-h4); line-height: var(--lh-tight); margin: var(--sp-3) 0 var(--sp-2); }
-.mdField :global(.bismuth-doc-milkdown h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); text-transform: uppercase; letter-spacing: var(--ls-label); margin: var(--sp-3) 0 var(--sp-2); }
-.mdField :global(.bismuth-doc-milkdown h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); margin: var(--sp-3) 0 var(--sp-2); }
-.mdField :global(.bismuth-doc-milkdown ul),
-.mdField :global(.bismuth-doc-milkdown ol) { margin: var(--sp-2) 0; padding-left: var(--sp-7); }
-.mdField :global(.bismuth-doc-milkdown li) { margin: var(--sp-1) 0; }
-.mdField :global(.bismuth-doc-milkdown li > p) { margin: 0; }
-.mdField :global(.bismuth-doc-milkdown strong) { font-weight: 700; }
-.mdField :global(.bismuth-doc-milkdown em) { font-style: italic; }
-.mdField :global(.bismuth-doc-milkdown code) {
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: var(--fs-rel-code);
-  /* 1px: an optical nudge so inline code sits level with the prose line, not a spacing step. */
-  padding: 1px var(--sp-2);
-  border-radius: var(--r-0);
-  background: var(--surface-3, var(--surface-2));
-}
-.mdField :global(.bismuth-doc-milkdown blockquote) {
-  margin: var(--sp-3) 0;
-  padding-left: var(--sp-5);
-  border-left: 2px solid var(--border);
-  color: var(--text-muted);
-}
-.mdField :global(.bismuth-doc-milkdown a) { color: var(--accent); text-decoration: none; }
-/* Empty-editable placeholder — ProseMirror keeps a lone <p><br></p> when empty. */
-.mdField :global(.bismuth-doc-milkdown p:only-child:empty)::before,
-.mdField :global(.bismuth-doc-milkdown > p:only-child > br:only-child)::before {
-  content: "Add a description…";
-  color: var(--faint);
-  pointer-events: none;
-}
+/* Drop zone wrapping the rich description surface (ui/MilkdownField owns the field's own chrome and
+   prose theming): an image dragged over it shows the shared DropCue over the whole field, so it is
+   obvious the picture will land IN the description (and not "attach" invisibly). `position:
+   relative` is what the cue positions itself against. */
+.mdDropZone { position: relative; display: block; }

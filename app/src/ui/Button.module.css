@@ -46,7 +46,13 @@
      side by side. A fixed height makes the padding purely horizontal breathing room. */
   height: var(--h-control);
 }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* ONE disabled recipe, both registers: `--faint` ink ALONE, no opacity (DESIGN.md: no state is shown
+   by opacity). Any opacity over --faint drops the control under the 3:1 UI-component floor (0.45
+   measures 1.89:1 on --bg; --faint alone is 4.53:1 against an enabled unselected --text-muted at
+   6.34:1 — a visible step, both legible). The register rules that actually WIN the colour live at
+   the END of this file (`.btn--text:disabled`, `.btn--icon:disabled`), after every variant rule of
+   equal specificity; this base line carries the shared ink + cursor. */
+.btn:disabled { color: var(--faint); cursor: not-allowed; }
 /* ── Keyboard focus ────────────────────────────────────────────────────────────
    No focus ring on buttons: removed at the user's request (2026-09-23) — the ring read as a stray
    "selected" outline on bracket buttons after a click or a programmatic focus. A focused button
@@ -96,12 +102,17 @@
 .btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); }
 .btn--text.btn--selected { color: var(--btn-accent, var(--accent)); font-weight: var(--fw-bold); }
 .btn--text.btn--primary { color: var(--accent); font-weight: var(--fw-bold); }
+/* primary vs selected: both are bold accent, and a second cue keeps them apart. `selected` is a
+   toggle member that is ON (a state a sibling can take away); `primary` is the view's one
+   emphasized action, so its label carries a rest-state underline — the same 1px / --sp-1 stroke the
+   hover rule below draws, held on permanently. No new colour; a disabled primary drops it. */
+.btn--text.btn--primary:not(:disabled) .textLabel {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: var(--sp-1);
+}
 .btn--text.btn--danger { color: var(--danger); }
-.btn--text:disabled { color: var(--faint); opacity: 1; }
-/* A disabled toggle member must read differently from an enabled-but-unselected one — both are
-   --faint text, so without this a disabled bracket segment is indistinguishable from an off one.
-   0.4 matches the opacity .btn:disabled already uses for every other disabled control. */
-.btn--text.btn--unselected:disabled { opacity: 0.4; }
+/* disabled: see the end of this file — it must follow every variant rule of equal specificity. */
 .btn--text:not(.btn--unselected):hover:not(:disabled) .textLabel {
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -198,22 +209,17 @@
 .btn--icon.btn--selected::before,
 .btn--icon.btn--selected::after { color: currentColor; }
 /* normal — standalone, full opacity; hover lifts the bare glyph to --accent (no brackets to light) */
-.btn--icon.btn--normal { opacity: 1; }
 .btn--icon.btn--normal:hover:not(:disabled) { color: var(--accent); }
-/* disabled must outrank .btn--normal's opacity:1 above — placed after it so this wins the cascade */
-.btn--icon:disabled { color: var(--faint); cursor: not-allowed; }
-.btn--icon:disabled::before,
-.btn--icon:disabled::after { color: var(--faint); }
-/* unselected — toggle member, off: full opacity, muted ink (design-pass finding: opacity is not a
-   state signal — it read as disabled, and dropped faint-bracketed icons below the 3:1 non-text
-   contrast floor). `--iconbar-unselected-opacity` is no longer read here; IconBar.module.css and
-   PreviewBar.module.css still set it, but that variable is now dead. */
-.btn--icon.btn--unselected { opacity: 1; color: var(--text-muted); }
+/* None of the icon variants sets `opacity`: they used to say `opacity: 1`, which at two classes
+   outranked `.btn:disabled` and made a disabled icon button read as enabled. No state is shown by opacity; disabled is
+   `--faint` ink alone (see the end of this file). */
+/* unselected — toggle member, off: muted ink (design-pass finding: opacity is not a state signal —
+   it read as disabled, and dropped faint-bracketed icons below the 3:1 non-text contrast floor). */
+.btn--icon.btn--unselected { color: var(--text-muted); }
 .btn--icon.btn--unselected:hover:not(:disabled) { color: var(--fg); }
-/* selected — toggle member, on: accent icon on an accent-soft fill */
-/* Icon toggles get the same treatment — no fill, so a selected icon button doesn't read as a
+/* selected — toggle member, on: accent icon, no fill, so a selected icon button doesn't read as a
    lighter tile against its container. */
-.btn--icon.btn--selected { opacity: 1; background: transparent; color: var(--accent); }
+.btn--icon.btn--selected { background: transparent; color: var(--accent); }
 /* danger tone — also under the pointer, where the normal-hover accent above would otherwise win */
 .btn--icon.btn--danger,
 .btn--icon.btn--danger:hover:not(:disabled) { color: var(--danger); }
@@ -309,3 +315,31 @@
    `.btn--text.btn--normal`, so it wins regardless of order. */
 .btn--text.btn--danger-hover:not(:disabled) { color: var(--faint); }
 .btn--text.btn--danger-hover:hover:not(:disabled) { color: var(--danger); }
+
+/* ── icon size lg ────────────────────────────────────────────────────────────
+   `lg` used to have no rule at all, so it rendered exactly like `md`. It is a larger TARGET: the
+   box grows by --sp-4 each way and the brackets draw at 1.25x, so `[▣]` scales with the box. The
+   glyph itself stays the app's one icon size (the Icon span carries its own px size — see
+   iconSize.ts), which keeps the mark's optical size constant while the hit area and bracket grow.
+   Declared after `.btn--icon.btn--sm`, whose height/min-width it replaces only when both classes
+   are present (sm and lg are mutually exclusive in buttonClass). */
+.btn--icon.btn--lg {
+  font-size: calc(var(--iconbar-glyph, var(--icon)) * 1.25);
+  height: calc(var(--h-control) + var(--sp-4));
+  min-width: calc(var(--h-control) + var(--sp-4));
+}
+
+/* ── disabled: ONE recipe for both registers ─────────────────────────────────
+   `--faint` ink alone, whatever the variant. This block is LAST on purpose: a
+   disabled selected / unselected / danger icon button is matched by `.btn--icon.btn--selected`
+   etc., which are two classes — the same specificity as `.btn--icon:disabled` (a class and a
+   pseudo-class) — so only source order lets disabled win, and it must follow every one of them.
+   (Every ink rule that is meant to yield to disabled above also carries `:not(:disabled)`.) The
+   brackets are repainted too: they carry their own colour, which `currentColor` would not reach. */
+.btn--text:disabled,
+.btn--icon:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+.btn--icon:disabled::before,
+.btn--icon:disabled::after { color: var(--faint); }

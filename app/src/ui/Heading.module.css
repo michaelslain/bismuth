@@ -38,11 +38,13 @@
   font-size: var(--fs-ui);
   font-weight: var(--fw-medium);
 }
+/* h5 vs h6, settled: neither is uppercase (DESIGN.md — UI text is never shouted). h5 is the
+   plain small heading (--fs-ui, full ink); h6 is the quieter step below it — micro, muted, with
+   label tracking — so the two still read as two levels. */
 .heading--h6 {
   font-size: var(--fs-micro);
   font-weight: var(--fw-medium);
   color: var(--text-muted);
-  text-transform: uppercase;
   letter-spacing: var(--ls-label);
 }
 

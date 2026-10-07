@@ -13,11 +13,11 @@ import type { ChartViewProps } from './chartViewProps'
 
 // `3 this week // 1 last week` — day bins read as `today`/`yesterday` instead of the generic
 // `this day`/`last day` phrasing (bases-stat.card.html).
-function periodLine(m: MetricResult): string | undefined {
+function periodLine(m: MetricResult): string[] | undefined {
     if (!m.hasTime || m.current === null || m.previous === null) return undefined
     const curWord = m.bin === 'day' ? 'today' : `this ${m.bin}`
     const prevWord = m.bin === 'day' ? 'yesterday' : `last ${m.bin}`
-    return `${formatValue(m.current)} ${curWord} // ${formatValue(m.previous)} ${prevWord}`
+    return [`${formatValue(m.current)} ${curWord}`, `${formatValue(m.previous)} ${prevWord}`]
 }
 
 // A metric that failed to parse/evaluate already carries `error`; re-deriving its LaTeX would

@@ -6,7 +6,7 @@
    <EmptyState>, and its `h2`/`p` pick up the italic prose styling below via `titleClass`/
    `bodyClass`. The emphasised numbers are `<Text weight="bold">`, not `<b>`.
 
-   Empty/all-done states: faint mono italic, matching the card prose tone (not the default mono
+   Empty/all-done states: muted mono italic, matching the card prose tone (not the default mono
    EmptyState). Doubled (`.fc-empty-title.fc-empty-title` etc.): EmptyState.module.css's remaining
    `:global(.ui-empty-block) h2`/`:global(.ui-empty)` bridge rules (kept for DaemonPanel) are a
    DESCENDANT selector off a foreign root class — (0,1,1)/(0,1,0) — which otherwise silently wins the
@@ -15,7 +15,7 @@
    `uppercase`/`var(--ls-eyebrow)` (the pre-existing eyebrow-style heading look). */
 
 .done { display: flex; flex-direction: column; align-items: center; gap: var(--sp-6); text-align: center; margin: auto; }
-.good-text { color: var(--blue); }
+.good-text { color: var(--success); } /* a status ("done well"), so the status token, not a category hue */
 
 .fc-empty.fc-empty { gap: var(--sp-2); }
 .fc-empty-title.fc-empty-title { font-family: var(--ui-font-stack); font-style: italic; font-weight: var(--fw-medium); font-size: var(--fs-lead); margin: 0; color: var(--text-muted); }

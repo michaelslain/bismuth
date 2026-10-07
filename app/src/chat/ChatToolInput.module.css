@@ -1,0 +1,22 @@
+/* ChatToolInput.module.css — ChatToolInput.tsx is the ONLY importer. The look is ui/CodeBlock's;
+   this owns only the caption gap, the scroll cap, and the two inks a tool block can take. */
+.chat-tool-input {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    min-width: 0;
+}
+.chat-tool-input-label {
+    margin: 0;
+}
+.chat-tool-input-body {
+    overflow: auto;
+    line-height: var(--lh-ui);
+}
+.chat-tool-input-body.muted {
+    color: var(--text-muted);
+}
+.chat-tool-input-body.error {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--border-soft));
+}

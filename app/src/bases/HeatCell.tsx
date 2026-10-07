@@ -14,6 +14,10 @@ export type HeatCellProps = {
     glyph: string
     /** The clicked/drilled square: drawn in `--fg` whatever its tier. */
     selected?: boolean
+    /** The pointer is over this square, or keyboard focus is on it — drawn in `--fg` on a hover wash
+     *  so the grid itself shows where the readout is pointing (Bar recolours its row, Line drops an
+     *  `@`; a heatmap square used to show nothing at all). */
+    hovered?: boolean
     /** Accessible name, e.g. `Tue Jul 8: 42` — a glyph alone names nothing. */
     label?: string
     /** Pointer enters (`true`) or leaves (`false`), or focus arrives/leaves the square. */
@@ -52,6 +56,7 @@ const HeatCell: Component<HeatCellProps> = props => {
                 class={`${styles.cell} ${styles.interactive} ${tier()} ${props.class ?? ''}`}
                 classList={{ [styles.selected]: props.selected }}
                 data-bucket={props.date}
+                data-hovered={props.hovered ? '' : undefined}
                 aria-label={props.label}
                 aria-pressed={props.selected === undefined ? undefined : props.selected}
                 onPointerEnter={() => props.onHover?.(true)}

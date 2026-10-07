@@ -1,0 +1,12 @@
+/* app/src/ui/PathField.module.css — a path input + its browse button on one row. Lifted from
+   ExportView.module.css's `.path-row` / `.path-input`, which the two path rows there shared. */
+.path-field {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: stretch;
+}
+.path-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-micro);
+}

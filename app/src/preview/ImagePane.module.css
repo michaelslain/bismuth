@@ -1,0 +1,95 @@
+/* app/src/preview/ImagePane.module.css — ImagePane.tsx is the ONLY importer. Moved out of
+   PreviewView.module.css when the picture became its own component.
+
+   CO-RIDING STATE CLASS IS A LOCAL HERE: `.preview-image--scratch` rides on `.preview-image` and is
+   reached through `styles`. It MUST stay AFTER `.preview-image` in this file — both are (0,1,0), so
+   source order is what makes the scratch variant win (the extraction kept them in one file for
+   exactly that reason). */
+
+/* Image + scratch strip (SCRATCH on): PreviewView.tsx's measureImage lays them out together, in
+   HOST px, as one unit (preview/imageScratchLayout.ts) — the same body-relative coordinate space
+   PageInk's `pages()` already use. This host and `.preview-image-overlay` below share one box
+   (the body's content origin, at least the body's size), so the image's rendered rect and the
+   strip beside it share the exact positioning PageInk/ScratchTextLayer paint into. Zoomed, both
+   are sized inline to the whole stage (PreviewView's `imageStage`) so the body scrolls to pan.
+   With SCRATCH off at the fit none of this exists — `.preview-image` below keeps its ordinary CSS
+   auto-centring alone.
+   `background: var(--editor)` (Task 4 — was `--surface-2`) matches PdfPages' `.pdf-scroll` desk
+   AND `.preview-body--desk` above: the desk is the `--editor` ground everywhere, and the strip
+   beside the image is the one thing raised onto `--surface-1` (Task 3) — the same two-surface
+   system a PDF page and its own strip already read as. */
+.preview-image-host {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 100%;
+  min-height: 100%;
+  background: var(--editor);
+}
+
+/* The image's ScratchTextLayer + PageInk, over the same stage as the host above: the body's box at
+   the fit, the zoomed picture's full scroll content otherwise (width/height set inline from
+   PreviewView's `imageStage`). It takes no pointer events itself — its layers opt back in. */
+.preview-image-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 100%;
+  min-height: 100%;
+  pointer-events: none;
+}
+
+/* The image's strip (ScratchPaper, passed this class via its `class` prop) — the same hard lift
+   and left-clip `.pdf-margin` gives a PDF page's strip (PdfPages.module.css), so an image's strip
+   reads as part of the same system rather than flat paper with no edge (final review, finding 5).
+   Positioning/sizing stay inline (PreviewView.tsx sets them from `imageScratchLayout.ts`'s
+   `rendered`+`marginW`); this class supplies only the chrome `.pdf-margin` already owns. */
+.preview-image-margin {
+  box-shadow: var(--lift);
+  clip-path: inset(0 -8px -8px 0);
+}
+
+/* Image: centered, contained, on a subtle checkerboard so transparency reads clearly. The inset
+   from the pane edge is done with `max-width`/`max-height` (not `padding`) so the element's own
+   box equals the picture's rendered rect exactly: with `padding: var(--sp-6)` the box was bigger
+   than the picture whenever the aspect ratio didn't fill it exactly (the common, letterboxed
+   case), so the checkerboard painted a 16px ring pressed against the pane edges on every opaque
+   photo — a busy frame, and a third background colour in the reading area — and the picture had
+   no edge of its own (only `.preview-image--scratch` below had one). With padding 0 and the inset
+   folded into max-width/max-height instead, the box IS the picture's rect (same as the scratch
+   variant), so the checker shows only through transparent pixels and a hairline `outline` lands
+   on the painted edge. */
+.preview-image {
+  margin: auto;
+  max-width: calc(100% - 2 * var(--sp-6));
+  max-height: calc(100% - 2 * var(--sp-6));
+  object-fit: contain;
+  padding: 0;
+  outline: var(--rule-soft);
+  box-sizing: border-box;
+  background-image:
+    linear-gradient(45deg, color-mix(in srgb, var(--fg) 6%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--fg) 6%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--fg) 6%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--fg) 6%, transparent) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+/* The scratch variant of `.preview-image`, applied ALONGSIDE it (kept AFTER `.preview-image` in
+   this file — equal specificity, so source order is what makes these win): JS now owns the box
+   (imageScratchLayout's `rendered`), so the ordinary auto-centring/object-fit machinery above is
+   turned off in favour of explicit left/top/width/height (set inline by PreviewView.tsx) — the
+   padding that machinery used to add moves to the AREA the whole unit centres inside (measureImage
+   reads `--sp-6` off the body itself) rather than the image's own box. Its box has no padding and
+   IS the picture's exact rendered rect, so — unlike `.preview-image` above — a hairline outline
+   here lands precisely on the painted edge; no `outline-offset` needed (there's no inset to
+   subtract). */
+.preview-image--scratch {
+  position: absolute;
+  margin: 0;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  outline: var(--rule-soft);
+}

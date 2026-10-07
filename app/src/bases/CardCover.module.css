@@ -48,7 +48,7 @@
   padding: 0 var(--sp-5) var(--cell-h) calc(var(--cell-w) * 3); /* text starts on a glyph column */
 }
 
-/* color/overflow/ellipsis/two-line clamp come from ui/Label.tsx; the cover's own type size and
-   weight (not on the fixed type scale) stay here. */
-.title { font-family: var(--ui-font-stack); font-size: var(--fs-body-lg); font-weight: var(--fw-bold); letter-spacing: var(--ls-display); line-height: var(--cell-h); }
+/* The title is CardTitle (the one card title: prose, medium, two-line clamp). The cover only sets
+   its line box to one grid row, so the band stays on the glyph grid. */
+.title { --card-title-lh: var(--cell-h); }
 .author { font-size: var(--fs-ui); line-height: var(--cell-h); }

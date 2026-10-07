@@ -3,7 +3,7 @@
 // test can drive it. Deps are injected so the test never touches the network.
 import type { DoctorReport } from '../../core/src/doctor/types'
 import { plural } from './plural'
-import { dismissToast, pushToast, updateToast } from './toastStore'
+import { dismissToast, pushToast, updateToast } from './ui/toastStore'
 
 export type DoctorToastDeps = {
     getDoctor: () => Promise<DoctorReport>

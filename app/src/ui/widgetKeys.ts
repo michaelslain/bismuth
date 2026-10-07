@@ -25,6 +25,22 @@ export function isConfirmKey(e: KeyboardEvent): boolean {
     return matchesKeybinding(e, settings.keybindings['ui-confirm'])
 }
 
+/** Does this event mean "confirm, in reverse" — the confirm chord with Shift added (Shift+Enter
+ *  under the default)? For a widget that steps through a list on confirm and wants the opposite
+ *  direction on the shifted chord (a find bar's previous match). Derived from `ui-confirm`, so a
+ *  rebinding moves both directions together; an empty setting means no reverse key either. */
+export function isConfirmBackKey(e: KeyboardEvent): boolean {
+    const confirm = settings.keybindings['ui-confirm']
+    if (!confirm) return false
+    const shifted = confirm
+        .split(',')
+        .map(c => c.trim())
+        .filter(c => c.length > 0 && !/(^|\+)shift(\+|$)/i.test(c))
+        .map(c => `Shift+${c}`)
+        .join(',')
+    return matchesKeybinding(e, shifted)
+}
+
 /** Does this event mean "open the context menu from the keyboard"? The platform's own
  *  convention — the dedicated ContextMenu key or Shift+F10 — not a rebindable command, the
  *  same pair ui/chipKeys.ts reads for a task chip. */

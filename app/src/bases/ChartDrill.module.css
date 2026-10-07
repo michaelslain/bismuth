@@ -11,20 +11,12 @@
     gap: var(--sp-3);
 }
 
+.title {
+    flex: 0 1 auto;
+}
+
+/* The tree is AsciiTree's; this only caps how many of its rows show before it scrolls. */
 .rows {
-    display: flex;
-    flex-direction: column;
-    max-height: calc(var(--cell-h) * 12);
+    max-height: calc(var(--row-h) * 12);
     overflow-y: auto;
-}
-
-.row {
-    display: flex;
-    align-items: baseline;
-    gap: var(--sp-1);
-}
-
-.prefix {
-    white-space: pre;
-    flex-shrink: 0;
 }

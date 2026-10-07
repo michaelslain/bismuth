@@ -2,26 +2,26 @@
    HASHED at build time: they are reachable only through the imported `styles` object, never as a
    string literal. Nothing outside CommandButton.tsx may target them.
 
-   TWO RULES, NEITHER OWNING THE ICON BOX. `.toolbar-btn-wrap` lays the badge out AFTER its button,
-   inline (see that rule's comment for why this is no longer an absolute overlay). Every button's
+   ONE RULE, NOT OWNING THE ICON BOX. `.toolbar-btn-wrap` lays the badge out AFTER its button,
+   inline (see that rule's comment for why this is no longer an absolute overlay). There was a second,
+   `.toolbar-badge {}`, that sat empty "as a reachable hook"; it is gone, and the badge takes no class
+   from this file (`ui/Badge` owns its own look, the wrap's `gap` its placement). Every button's
    actual toolzone box — size, glyph, brackets, hover/selected/disabled colour — comes from
    `ui/IconBar` (context) down through `IconButton`, not from anything in this file: this component
    never renders `.btn--icon` itself, that class lands on the `<IconButton>` it wraps.
 
-   NEITHER RULE HAS A `:hover` STATE OF ITS OWN, so both are fully reachable by the computed-style
-   baseline: `Default`/`Disabled` exercise `.toolbar-btn-wrap`, and `WithBadge`/`WithBadgeLarge` are
-   the only stories that render `.toolbar-badge` at all. */
+   THE RULE HAS NO `:hover` STATE OF ITS OWN, so it is fully reachable by the computed-style
+   baseline: `Default`/`Disabled` exercise `.toolbar-btn-wrap`, and `WithBadge`/`WithBadgeLarge`
+   render the badge beside it. */
 
 /* A toolbar button that carries a live count (the daemon inbox). INLINE ROW, NOT AN ABSOLUTE
-   ANCHOR (toolbar-iconbar plan, Task 3 fix round 2 — a decision, see `.toolbar-badge` below for
+   ANCHOR (toolbar-iconbar plan, Task 3 fix round 2 — a decision, see below for
    why two absolute-overlay attempts were abandoned). The badge is a flex sibling after the
    button, never stacked on top of it, so it can never cover a bracket glyph — its own or a
    neighbour's — regardless of `iconSize` (11–20) or digit count. */
 .toolbar-btn-wrap { display: inline-flex; align-items: center; gap: var(--sp-1); }
-/* Appearance (font-size/weight/line-height/color/background/border-radius/padding) moved to
-   ui/Badge.tsx (`<Badge variant="solid">`) — this class stays empty on purpose (kept as a
-   reachable hook per the header comment) rather than positioning the badge, which is this
-   component's layout, not the primitive's.
+/* The badge's appearance (font-size/weight/line-height/color/background/border-radius/padding) is
+   ui/Badge.tsx's (`<Badge variant="solid">`); its placement is this wrapper's `gap`.
 
    WHY NOT AN ABSOLUTE OVERLAY (Acceptance 6, two failed rounds). Round 1 anchored the badge's
    LEFT edge just inside the wrap's right edge (`left: calc(100% - …)`); the badge's own width
@@ -40,4 +40,3 @@
    "[icon] 3" rather than a corner pill. It costs row width when a badge is showing — the button
    after it shifts right by the badge's width plus the gap — which is the tradeoff for a
    positioning rule that holds at every icon size and inside the real, clipping sidebar band. */
-.toolbar-badge {}

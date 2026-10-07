@@ -1,4 +1,5 @@
 import type { Component } from 'solid-js'
+import Band from '../ui/Band'
 import Text from '../ui/Text'
 import TextButton from '../ui/TextButton'
 import { footerReadout, nextLabel } from './introFooterText'
@@ -22,7 +23,10 @@ export type IntroFooterProps = {
 const IntroFooter: Component<IntroFooterProps> = props => {
     const isLast = () => props.index >= props.count - 1
     return (
-        <div class={`${styles['footer']} ${props.className ?? ''}`}>
+        <Band
+            rule="top"
+            class={`${styles['footer']} ${props.className ?? ''}`}
+        >
             <Text size="ui" tone="muted">
                 {footerReadout(props.index, props.count, props.label)}
             </Text>
@@ -38,7 +42,7 @@ const IntroFooter: Component<IntroFooterProps> = props => {
                     {nextLabel(props.index, props.count, !!props.busy)}
                 </TextButton>
             </div>
-        </div>
+        </Band>
     )
 }
 

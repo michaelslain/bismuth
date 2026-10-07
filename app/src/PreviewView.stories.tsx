@@ -123,11 +123,9 @@ export const CodeFind: Story = {
         await fireEvent.input(input, { target: { value: 'return' } })
 
         await waitFor(() => expect(canvas.getByText('1/3')).toBeInTheDocument())
-        const marks = canvasElement.querySelectorAll(
-            `.${styles['preview-find-match']}`,
-        )
+        const marks = canvasElement.querySelectorAll('[data-find-match]')
         await expect(marks.length).toBe(3)
-        await expect(marks[0]).toHaveClass(styles['is-active'])
+        await expect(marks[0]).toHaveAttribute('data-active')
         // Match #1 is the one in the `// return a friendly…` comment — the text run immediately
         // before it ends in the comment opener. Pinned here so "find stops matching in comments"
         // can only ever show up as a failure, never as a quietly-decremented count.
@@ -135,7 +133,8 @@ export const CodeFind: Story = {
 
         await fireEvent.click(canvas.getByLabelText('Next match (Enter)'))
         await waitFor(() => expect(canvas.getByText('2/3')).toBeInTheDocument())
-        await expect(marks[1]).toHaveClass(styles['is-active'])
+        await expect(marks[1]).toHaveAttribute('data-active')
+        await expect(marks[0]).not.toHaveAttribute('data-active')
     },
 }
 
@@ -234,7 +233,7 @@ export const Image: Story = {
         )
         const img = await waitFor(() => {
             const el = canvasElement.querySelector(
-                `.${styles['preview-image']}`,
+                '[data-testid="preview-image"]',
             ) as HTMLImageElement | null
             expect(el).not.toBeNull()
             expect(el!.naturalWidth).toBeGreaterThan(0)
@@ -521,7 +520,7 @@ export const External: Story = {
 // the `imageSrc` data seam (above `PreviewView`'s props) to load a REAL image inside a real
 // `.preview-image` (real `padding: 0` + `max-width/max-height: calc(100% - 2 * var(--sp-6))` +
 // `margin: auto` — the inset moved off padding so the checkerboard no longer rings an opaque
-// picture, see `.preview-image`'s comment in PreviewView.module.css), then re-derives the SAME
+// picture, see `.preview-image`'s comment in preview/ImagePane.module.css), then re-derives the SAME
 // geometry from the SAME live DOM (not a hand-placed rect) and checks a seeded stroke paints
 // within 2px of that.
 //

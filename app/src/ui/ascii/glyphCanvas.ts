@@ -1,7 +1,10 @@
 // app/src/ui/ascii/glyphCanvas.ts
 // Paints a GlyphScene (pure: time -> characters) onto one transparent <canvas> filling a host, on
-// the SAME cell grid the ASCII graph uses (CELL_W/CELL_H/FONT_PX scaled by fitScale to fit the box, floored at COMPACT_FLOOR_SCALE and capped at MAX_SCALE, letter-spacing
-// pinned to the cell advance). Re-implemented to match AsciiGraphRenderer, not imported from it.
+// the graph's cell grid: CELL_W/CELL_H/FONT_PX scaled by fitScale to fit the box (floored at
+// COMPACT_FLOOR_SCALE, capped at MAX_SCALE or the host's `--glyph-scale-cap`), then snapped DOWN to
+// whole device pixels by snapCell, so the cell is up to 10% smaller than the graph's own grid (a
+// host sized exactly to scene x graph cell leaves a margin of about a cell). Letter-spacing is
+// pinned to the cell advance. Re-implemented to match AsciiGraphRenderer, not imported from it.
 // The ground is never painted: the page behind the canvas is the ground, so every theme just works.
 //
 // Colour names in a scene resolve to the theme's CSS vars (GLYPH_COLOR_VARS), re-read whenever
@@ -18,11 +21,13 @@ import {
     type GlyphScene,
 } from './glyphScene'
 import {
+    MAX_SCALE,
     fitScale,
     fitScene,
     frameInterval,
     rowRuns,
     shouldRun,
+    snapCell,
 } from './glyphPaint'
 
 type SpacedContext = CanvasRenderingContext2D & { letterSpacing?: string }
@@ -51,6 +56,10 @@ export default class GlyphCanvas {
 
     private fontStack = 'monospace'
     private baseCellH = CELL_H
+    /** `--glyph-scale-cap`: the largest scale a host lets the art be fitted to, before the
+     *  device-pixel snap. Unset = MAX_SCALE. A host opts in by setting it (IntroHero maps the
+     *  `--intro-glyph-scale` token onto it), so this primitive reads no feature-named token. */
+    private scaleCap = MAX_SCALE
     /** One CSS colour per GLYPH_COLORS entry. 'currentColor' is the unresolved fallback. */
     private colors: string[] = GLYPH_COLORS.map(() => 'currentColor')
 
@@ -251,17 +260,19 @@ export default class GlyphCanvas {
         if (stack) this.fontStack = stack
         const rowH = parseFloat(cs.getPropertyValue('--cell-h'))
         if (Number.isFinite(rowH) && rowH > 0) this.baseCellH = rowH
-        this.applyFont(this.scale)
+        const cap = parseFloat(cs.getPropertyValue('--glyph-scale-cap'))
+        this.scaleCap = Number.isFinite(cap) && cap > 0 ? cap : MAX_SCALE
+        this.applyFont(this.scale, this.cellW)
     }
 
-    /** Pin the character advance to the cell width (also disables ligatures, which would fuse
-     *  "//" and shear the drawing off its cells). Without letterSpacing, adopt the font's own
-     *  measured advance as the cell width instead. */
-    private applyFont(scale: number) {
+    /** Pin the character advance to `want`, the cell width already snapped to whole device pixels
+     *  (also disables ligatures, which would fuse "//" and shear the drawing off its cells).
+     *  Without letterSpacing, adopt the font's own measured advance as the cell width instead
+     *  (that fallback is unsnapped: it cannot move the advance). */
+    private applyFont(scale: number, want: number) {
         const ctx = this.ctx as SpacedContext | null
         if (!ctx) return
         ctx.font = `${FONT_PX * scale}px ${this.fontStack}`
-        const want = CELL_W * scale
         const supported = typeof ctx.letterSpacing === 'string'
         if (supported) ctx.letterSpacing = '0px'
         const natural = ctx.measureText('0'.repeat(64)).width / 64
@@ -282,23 +293,28 @@ export default class GlyphCanvas {
         if (!this.ctx) return false
         const r = host.getBoundingClientRect()
         if (!isUsableBox(r.width, r.height)) return false
-        const scale = fitScale(
+        const fit = fitScale(
             r.width,
             r.height,
             scene.cols,
             scene.rows,
             CELL_W,
             this.baseCellH,
+            Math.min(MAX_SCALE, this.scaleCap),
         )
-        this.scale = scale
         this.W = r.width
         this.H = r.height
-        this.cellH = this.baseCellH * scale
         this.dpr = clampDprToCanvasArea(
             Math.min(2, window.devicePixelRatio || 1),
             this.W,
             this.H,
         )
+        // The cell lands on whole device pixels (snapCell), or the art is resampled and reads soft
+        // beside the DOM text.
+        const cell = snapCell(fit, CELL_W, this.baseCellH, this.dpr)
+        const scale = cell.scale
+        this.scale = scale
+        this.cellH = cell.cellH
         // Assigning width/height clears the canvas AND resets the context state (font,
         // letterSpacing), so only touch them when they change, and re-apply the font after.
         const bw = Math.round(this.W * this.dpr)
@@ -307,7 +323,7 @@ export default class GlyphCanvas {
             canvas.width = bw
             canvas.height = bh
         }
-        this.applyFont(scale)
+        this.applyFont(scale, cell.cellW)
         // +0.05: calc(96 * 6.3px) lays out ~604.797 after 1/64px snapping, which floors to 95.
         this.cols = Math.floor(this.W / this.cellW + 0.05)
         this.rows = Math.floor(this.H / this.cellH + 0.05)
@@ -340,7 +356,8 @@ export default class GlyphCanvas {
         for (let row = 0; row < buf.rows; row++) {
             const boxRow = fit.row + row
             if (boxRow < 0 || boxRow >= this.rows) continue
-            const y = boxRow * this.cellH + this.cellH / 2
+            // middle baseline: round the centre onto a device pixel so an odd cellH cannot put it on a half
+            const y = Math.round((boxRow * this.cellH + this.cellH / 2) * this.dpr) / this.dpr
             for (const run of rowRuns(buf, row)) {
                 // Clip to the box grid: cells outside it are skipped, never drawn or thrown on.
                 const c0 = Math.max(0, fit.col + run.col)

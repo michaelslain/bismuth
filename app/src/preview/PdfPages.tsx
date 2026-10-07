@@ -74,8 +74,8 @@ const OVERSCAN = 1 // pages rendered beyond the viewport on each side
 // the raised `--surface-1` note surface, one step above the `--editor` desk, + hairline
 // (ScratchPaper.tsx — `var(--surface-1)` / `var(--rule-soft)`) rather than matching the PDF
 // page's own fixed white the way it used to. It still gets its
-// position, drop shadow and left-edge clipping from THIS file's `.pdf-margin` class below, since
-// those are page-stack layout concerns, not part of the reusable surface. PageInk resolves ink
+// position and sizing from THIS file's `.pdf-margin` class below (flat, like the page — no shadow),
+// since those are page-stack layout concerns, not part of the reusable surface. PageInk resolves ink
 // drawn on the page proper against the LIGHT theme bucket (dark ink on paper) and ink drawn on
 // this strip against the DARK bucket (note ink) — see PageInk.tsx's header for why.
 

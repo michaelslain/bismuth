@@ -1,6 +1,6 @@
 // app/src/icons/registry-library.test.ts
 //
-// The full Phosphor icon library (assets/icons/icon-library.json) layered under the 140 canonical
+// The full Phosphor icon library (assets/icons/icon-library.json) layered under the 142 canonical
 // names: every pickable icon resolves, legacy Obsidian `Li*` names land on real art, the picker's
 // ranking finds icons by meaning ("library" -> Books), and a stored canonical name highlights the
 // library icon it draws as.
@@ -19,7 +19,7 @@ import { LUCIDE_ALIASES } from './lucideAliases'
 import { rankIcons } from '../ui/gallery/sources'
 import libraryJson from '../assets/icons/icon-library.json'
 
-test('before install, a name outside the 140 is pending, not missing', () => {
+test('before install, a name outside the 142 is pending, not missing', () => {
     if (iconLibraryInstalled()) return // another file in this process installed it first
     expect(isPendingIconName('Books')).toBe(true)
     expect(isPendingIconName('Plus')).toBe(false) // canonical — never pending
@@ -113,7 +113,7 @@ test('the picker ranks by name first, then by meaning', () => {
     expect(names('house')[0]).toBe('House') // exact prefix first
     expect(names('map trifold')).toContain('MapTrifold')
     expect(names('')).toHaveLength(all.length)
-    // Empty query: the app's own icons (same art as one of the 140) lead, then the rest.
+    // Empty query: the app's own icons (same art as one of the 142) lead, then the rest.
     const firstNonCore = rankIcons(all, '').findIndex(i => !i.core)
     expect(firstNonCore).toBeGreaterThan(100)
     expect(

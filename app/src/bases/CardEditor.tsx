@@ -40,6 +40,8 @@ import {
     tasksChecklistTheme,
 } from '../editor/cardEditorExtensions'
 import { Loading } from '../ui/EmptyState'
+import ErrorText from '../ui/ErrorText'
+import TextButton from '../ui/TextButton'
 import styles from './CardEditor.module.css'
 import { cursor } from '../editor/cursorTheme'
 
@@ -66,9 +68,14 @@ export function CardEditor(props: {
     // Set once the component is torn down. Guards every post-await step (reconcile/mount) so an
     // in-flight read can't dispatch onto — or rebuild — a destroyed view.
     let disposed = false
-    // "Loading…" until a successful read builds the view. Staying in this state on a read failure is
-    // deliberate: an empty editor whose autosave fired would overwrite the note's frontmatter.
+    // "Loading…" until a successful read builds the view. A read failure never builds an (empty)
+    // editor — its autosave would overwrite the note's frontmatter — but it no longer sits on
+    // "Loading…" forever either: `loadFailed` swaps the spinner for an error with a retry.
     const [loading, setLoading] = createSignal(true)
+    const [loadFailed, setLoadFailed] = createSignal(false)
+    // The last write failed. The edit stays queued (`pendingSave`) and retries on the next edit or
+    // flush, but the person is told it has not reached the note.
+    const [saveFailed, setSaveFailed] = createSignal(false)
 
     // Captured HERE (synchronously, at component setup) because `buildView` below can run after an
     // await (onMount's cache-miss read, or reconcile()'s disk read) — by that point Solid's ambient
@@ -98,7 +105,9 @@ export function CardEditor(props: {
         try {
             await api.write(props.path, full)
             primeNoteCache(props.path, full) // keep the body cache warm for sibling cards / reopen
+            setSaveFailed(false)
         } catch {
+            setSaveFailed(true)
             return // write failed — leave pendingSave set so the next edit / flush retries
         }
         // Clear the pending flag only if nothing was typed during the write — otherwise a newer edit
@@ -196,24 +205,29 @@ export function CardEditor(props: {
         if (owner) runWithOwner(owner, () => cardKeymap.attach(view!))
         else cardKeymap.attach(view)
         setLoading(false)
+        setLoadFailed(false)
         // Persist the sunk order so the note on disk matches the card. We didn't go through the
         // editor's autosave (no docChanged fired for the initial doc), so write directly.
         if (sorted) void save()
     }
 
-    onMount(async () => {
+    async function load() {
+        setLoadFailed(false)
         let raw = peekNoteCache(props.path)
         if (raw === undefined) {
             try {
                 const r = readNoteCached(props.path)
                 raw = typeof r === 'string' ? r : await r
             } catch {
-                return // read failed — stay in "Loading…"; onServerChange retries via reconcile()
+                // read failed — say so (onServerChange also retries via reconcile())
+                if (!disposed && !view) setLoadFailed(true)
+                return
             }
         }
         if (disposed) return // unmounted while reading — don't build a detached, undestroyed view
         buildView(raw)
-    })
+    }
+    onMount(() => void load())
 
     // Reconcile an external change to this note (edited in a pane, a daemon write, an external sync)
     // in place — without reverting in-flight edits or looping on our own save echo.
@@ -229,6 +243,7 @@ export function CardEditor(props: {
         try {
             onDisk = await api.read(props.path)
         } catch {
+            if (!disposed && !view) setLoadFailed(true)
             return // file may have been deleted; tab cleanup handles that elsewhere
         }
         if (disposed) return // unmounted while reading — view is destroyed, do not dispatch
@@ -272,8 +287,20 @@ export function CardEditor(props: {
     return (
         <div class={styles.cardEditor}>
             <div ref={host} />
-            <Show when={loading()}>
+            <Show when={loading() && !loadFailed()}>
                 <Loading />
+            </Show>
+            <Show when={loadFailed()}>
+                <ErrorText class={styles.error}>
+                    couldn't load this note
+                    <TextButton onClick={() => void load()}>retry</TextButton>
+                </ErrorText>
+            </Show>
+            <Show when={saveFailed()}>
+                <ErrorText class={styles.error}>
+                    couldn't save your last edit
+                    <TextButton onClick={() => void save()}>retry</TextButton>
+                </ErrorText>
             </Show>
         </div>
     )

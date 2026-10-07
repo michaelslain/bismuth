@@ -71,9 +71,17 @@ const canvasIn = async (root: HTMLElement): Promise<HTMLCanvasElement> =>
 const Box = (props: {
     w: number
     h: number
+    /** Custom properties the host sets for its art (a cap, say). */
+    vars?: Record<string, string>
     children: import('solid-js').JSX.Element
 }) => (
-    <div style={{ width: `${props.w}px`, height: `${props.h}px` }}>
+    <div
+        style={{
+            width: `${props.w}px`,
+            height: `${props.h}px`,
+            ...props.vars,
+        }}
+    >
         {props.children}
     </div>
 )
@@ -156,6 +164,86 @@ export const Compact: Story = {
     play: async ({ canvasElement }) => {
         const canvas = await canvasIn(canvasElement)
         await waitFor(() => expect(inked(canvas)).toBeGreaterThan(0))
+    },
+}
+
+/** Only the word, no ambient mark, so the ink's bounding box IS the word's width. */
+const WORD_ONLY: GlyphScene = {
+    cols: 24,
+    rows: 5,
+    revealMs: 0,
+    frame(_t: number, out: GlyphFrame) {
+        clearFrame(out)
+        putText(out, 7, 1, WORD, 'fg')
+    },
+}
+
+/** Width in device pixels from the first inked column to the last. */
+const inkWidth = (canvas: HTMLCanvasElement): number => {
+    const { width, height } = canvas
+    const d = canvas.getContext('2d')!.getImageData(0, 0, width, height).data
+    let lo = width
+    let hi = -1
+    for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++)
+            if (d[(y * width + x) * 4 + 3] > 0) {
+                if (x < lo) lo = x
+                if (x > hi) hi = x
+            }
+    return hi < lo ? 0 : hi - lo + 1
+}
+
+/** The widest the 9-character word can ink when the cell is capped at the intro's 4/3: the snapped
+ *  cell is 8px (dpr 1) or 8.5px (dpr 2) wide, never more, so 9 cells is the ceiling. */
+const CAPPED_INK_CSS_PX = 9 * 8.5
+
+/** A host that sets `--glyph-scale-cap` (here, as IntroHero does, from the real `--intro-glyph-scale`
+ *  token) caps the art at that scale however big the box: 1200x600 would fit it at 2. The word's ink
+ *  stays within nine capped cells. */
+export const LargeBoxIsCapped: Story = {
+    render: () => (
+        <Box
+            w={1200}
+            h={600}
+            vars={{ '--glyph-scale-cap': 'var(--intro-glyph-scale)' }}
+        >
+            <GlyphArt
+                scene={WORD_ONLY}
+                at={WORD_ONLY.revealMs}
+                label="glyph art, large box capped"
+            />
+        </Box>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = await canvasIn(canvasElement)
+        await waitFor(() => expect(inked(canvas)).toBeGreaterThan(0))
+        const dpr = canvas.width / 1200
+        await expect(inkWidth(canvas)).toBeLessThanOrEqual(
+            CAPPED_INK_CSS_PX * dpr + 2,
+        )
+    },
+}
+
+/** The same box with NO cap set: the art grows to the primitive's own MAX_SCALE of 2, so the word is
+ *  wider than the capped ceiling. This is what proves the cap belongs to the host, not to every
+ *  GlyphArt. */
+export const LargeBoxIsUncapped: Story = {
+    render: () => (
+        <Box w={1200} h={600}>
+            <GlyphArt
+                scene={WORD_ONLY}
+                at={WORD_ONLY.revealMs}
+                label="glyph art, large box uncapped"
+            />
+        </Box>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = await canvasIn(canvasElement)
+        await waitFor(() => expect(inked(canvas)).toBeGreaterThan(0))
+        const dpr = canvas.width / 1200
+        await expect(inkWidth(canvas)).toBeGreaterThan(
+            CAPPED_INK_CSS_PX * dpr + 2,
+        )
     },
 }
 

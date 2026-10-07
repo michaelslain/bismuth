@@ -33,6 +33,8 @@ function Controlled(props: {
     options: SelectOption[]
     initial?: string
     placeholder?: string
+    disabled?: boolean
+    label?: string
 }) {
     const [value, setValue] = createSignal(props.initial ?? '')
     return (
@@ -42,9 +44,20 @@ function Controlled(props: {
                 options={props.options}
                 onChange={setValue}
                 placeholder={props.placeholder}
+                disabled={props.disabled}
+                label={props.label}
             />
         </div>
     )
+}
+
+const inkOf = (host: HTMLElement, token: string) => {
+    const probe = document.createElement('div')
+    probe.style.color = `var(${token})`
+    host.appendChild(probe)
+    const c = getComputedStyle(probe).color
+    probe.remove()
+    return c
 }
 
 function Field(props: { label: string; children: JSX.Element }) {
@@ -149,6 +162,76 @@ export const Focused: Story = {
         await expect(trigger).not.toBeNull()
         trigger.focus()
         await expect(trigger).toHaveFocus()
+    },
+}
+
+/** `disabled` reaches the trigger: it is a disabled <button>, reads `--faint` (never opacity), has no
+ *  pointer cursor, and a click does not open the list. */
+export const Disabled: Story = {
+    render: () => <Controlled options={THEME_OPTIONS} initial="ink" disabled />,
+    play: async ({ canvasElement }) => {
+        const trigger = canvasElement.querySelector('button') as HTMLButtonElement
+        await expect(trigger.disabled).toBe(true)
+        const cs = getComputedStyle(trigger)
+        await expect(cs.color).toBe(inkOf(canvasElement, '--faint'))
+        await expect(cs.opacity).toBe('1')
+        await expect(cs.cursor).toBe('default')
+        trigger.click()
+        await expect(document.querySelector('.bismuth-popover')).toBeNull()
+    },
+}
+
+/** `label` is the trigger's accessible name where no visible caption names it (FilterConditionRow's
+ *  three selects had NO name): it lands as `aria-label` on the button. */
+export const Labelled: Story = {
+    render: () => (
+        <Controlled options={THEME_OPTIONS} initial="ink" label="theme" />
+    ),
+    play: async ({ canvasElement }) => {
+        const trigger = canvasElement.querySelector('button') as HTMLButtonElement
+        await expect(trigger.getAttribute('aria-label')).toBe('theme')
+        await expect(trigger.getAttribute('aria-haspopup')).toBe('listbox')
+    },
+}
+
+/** An empty value reads as a PLACEHOLDER — `--text-muted`, never full ink — whether it is the
+ *  placeholder text or an option carrying the empty value (a "(clear)" row, which used to render in
+ *  full ink and read as a chosen value). A chosen value stays `--fg`. */
+export const EmptyReadsMuted: Story = {
+    render: () => (
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
+            <Controlled options={THEME_OPTIONS} placeholder="Choose a theme…" />
+            <Controlled
+                options={[{ value: '', label: '(clear)' }, ...THEME_OPTIONS]}
+                initial=""
+            />
+            <Controlled options={THEME_OPTIONS} initial="ink" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const values = [...canvasElement.querySelectorAll('button > span:first-child')]
+        const muted = inkOf(canvasElement, '--text-muted')
+        await expect(getComputedStyle(values[0]).color).toBe(muted)
+        await expect(values[1].textContent).toBe('(clear)')
+        await expect(getComputedStyle(values[1]).color).toBe(muted)
+        await expect(getComputedStyle(values[2]).color).not.toBe(muted)
+    },
+}
+
+/** Opened, EVERY row's label starts at one x: the chosen row's Check cell is reserved on the others
+ *  too (the chosen row's label used to start ~13px right of its siblings). */
+export const OptionLabelsAlign: Story = {
+    render: () => <Controlled options={THEME_OPTIONS} initial="paper" />,
+    play: async ({ canvasElement }) => {
+        const trigger = canvasElement.querySelector('button') as HTMLButtonElement
+        trigger.click()
+        const labels = await waitFor(() => {
+            const els = [...document.querySelectorAll('.bismuth-popover-label')]
+            if (els.length !== THEME_OPTIONS.length) throw new Error('not open')
+            return els
+        })
+        const lefts = labels.map(l => Math.round(l.getBoundingClientRect().left))
+        await expect(new Set(lefts).size).toBe(1)
     },
 }
 

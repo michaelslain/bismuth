@@ -26,7 +26,7 @@ const BaseSourcePanel: Component<BaseSourcePanelProps> = props => (
             <Select
                 value={props.baseRef ?? ''}
                 options={props.bases}
-                placeholder="Pick a base"
+                placeholder="pick a base"
                 onChange={baseRef => props.onChange({ baseRef })}
             />
         </SettingsField>

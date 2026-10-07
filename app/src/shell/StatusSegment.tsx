@@ -28,7 +28,7 @@ function toneVar(tone: string): string {
 /**
  * One non-builtin status bar segment — a templated readout, an untrusted `run:` awaiting
  * approval, or a failed query. Reads as one more `label: value` readout in the bar's row: the
- * whole text `--faint` (inherited from the bar) unless a `tone` is set, same size, no separator
+ * whole text `--text-muted` (inherited from the bar) unless a `tone` is set, same size, no separator
  * glyph and no box. Renders NOTHING for an empty text with no untrusted/error state, so an
  * emptied segment leaves no stray gap.
  */

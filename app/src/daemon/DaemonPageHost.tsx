@@ -39,7 +39,7 @@ import { armDaemonChat, armDaemonChatForDrop } from './daemonChatArm'
 import { createChatDropTarget } from '../chat/createChatDropTarget'
 import DropCue from '../ui/DropCue'
 import styles from './DaemonPageHost.module.css'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import DaemonChat from './DaemonChat'
 import DaemonOverview, {
     type DaemonOverviewProps,

@@ -10,11 +10,15 @@
   align-items: center;
   pointer-events: auto;
   cursor: pointer;
-  transition: transform calc(120ms * var(--motion-scale)) var(--ease-std);
+  /* Pins further NORTH (smaller y) stack above those to their south: a chip floats above its own
+     glyph, so it is the southern pin's chip that would otherwise cover a northern neighbour's `@`.
+     MapPin writes --map-pin-z from its y. */
+  z-index: var(--map-pin-z, 1);
+  transition: transform var(--dur) var(--ease);
 }
-.mapPin:hover { transform: translate(-50%, -100%) scale(1.08); }
+.mapPin:hover { transform: translate(-50%, -100%) scale(1.08); z-index: 100001; }
 /* A pin being dragged to a new spot. */
-.mapPinDragging { cursor: grabbing; }
+.mapPinDragging { cursor: grabbing; z-index: 100002; }
 /* While placement is armed, the next click belongs to the MAP: pins go click-through so a click
    beside (or on) a label still places there, instead of opening that pin's editor under a
    crosshair cursor. */

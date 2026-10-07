@@ -1,4 +1,5 @@
 import type { HeatCell } from '../../../core/src/bases/chart'
+import { formatValue } from '../../../core/src/bases/chartText'
 import { addDaysISO } from '../../../core/src/dates'
 
 // Density glyph per intensity tier — a year of activity, one character per day
@@ -10,10 +11,20 @@ import { addDaysISO } from '../../../core/src/dates'
 export const GLYPHS = ['-', '+', '#'] as const
 export const LEVEL_CLASS = ['lv0', 'lv1', 'lv2', 'lv3'] // index 0 = no data
 
+/** The two thresholds that split a data range into the three non-zero tiers: a value below the
+ *  first is tier 1, from the first up to (not including) the second is tier 2, from the second up
+ *  is tier 3. `levelOf` buckets with exactly these and `legendRanges` prints exactly these, so the
+ *  legend cannot describe a different split than the grid paints. */
+export function levelEdges(min: number, max: number): [number, number] {
+    const span = max - min
+    return [min + span / 3, min + (2 * span) / 3]
+}
+
 export function levelOf(v: number | null, min: number, max: number): number {
     if (v === null || v <= 0) return 0
-    const t = max === min ? 1 : (v - min) / (max - min)
-    return 1 + Math.min(GLYPHS.length - 1, Math.floor(t * GLYPHS.length))
+    const [e1, e2] = levelEdges(min, max)
+    // min === max puts both edges on the value itself, so a lone value is the top tier.
+    return v >= e2 ? 3 : v >= e1 ? 2 : 1
 }
 
 export function glyphOf(level: number): string {
@@ -24,39 +35,50 @@ export interface LegendEntry {
     level: number
     glyph: string
     levelClass: string
-    /** `"none"` for the no-data tier, else an inclusive `"lo–hi"` (or single value) band —
-     *  contiguous across the three non-zero tiers, so every number in [1, max] falls in exactly
-     *  one band. */
+    /** `"none"` for the no-data tier, else the inclusive band of values that paint this glyph
+     *  (a single value when the band is one wide). */
     range: string
 }
 
 /**
- * The legend's numeric meaning per glyph, computed from the SAME thresholds `levelOf` buckets a
- * value with (three equal bands over the data's [min, max]) — so the legend can never drift from
- * what a square's glyph actually means. `min` is floored at 1 for the band math: a day with no
- * rows never enters `byDate`, so every real bucket value driving `min`/`max` is >= 1 for a count
- * aggregate, and a sum/avg could be 0 or negative, which floors into the same lowest band as 1
- * rather than producing a nonsensical range.
+ * The legend's numeric meaning per glyph, derived from the SAME thresholds `levelOf` buckets a
+ * value with (`levelEdges`) — so the legend can never drift from what a square's glyph actually
+ * means. A tier no value can land in is left out rather than printed, and when `min === max` the
+ * single value paints the top tier, so the legend is `. none` and ONE `#` entry.
+ *
+ * Whole-number data (counts) prints exact inclusive integer bands, each located by asking
+ * `levelOf` itself; fractional data prints the band's edges.
  */
 export function legendRanges(min: number, max: number): LegendEntry[] {
     const none: LegendEntry = { level: 0, glyph: '.', levelClass: 'lv0', range: 'none' }
     if (max <= 0) return [none]
-    const lo = Math.max(1, Math.min(min, max))
-    const bands = GLYPHS.length
+    const entry = (level: number, range: string): LegendEntry => ({
+        level,
+        glyph: glyphOf(level),
+        levelClass: LEVEL_CLASS[level],
+        range,
+    })
+    if (min === max) return [none, entry(3, formatValue(max))]
+
+    const [e1, e2] = levelEdges(min, max)
     const entries: LegendEntry[] = [none]
-    let prevHi = lo - 1
-    for (let i = 1; i <= bands; i++) {
-        const hi = i === bands ? Math.round(max) : Math.round(lo + ((max - lo) * i) / bands)
-        const bandLo = prevHi + 1
-        const bandHi = Math.max(bandLo, hi)
-        entries.push({
-            level: i,
-            glyph: glyphOf(i),
-            levelClass: LEVEL_CLASS[i],
-            range: bandLo === bandHi ? String(bandLo) : `${bandLo}–${bandHi}`,
-        })
-        prevHi = bandHi
+    if (Number.isInteger(min) && Number.isInteger(max)) {
+        const floor = Math.max(1, min)
+        const starts = [floor, Math.ceil(e1), Math.ceil(e2)]
+        const ends = [Math.ceil(e1) - 1, Math.ceil(e2) - 1, max]
+        for (let level = 1; level <= 3; level++) {
+            let lo = Math.max(floor, starts[level - 1])
+            let hi = Math.min(max, ends[level - 1])
+            while (lo <= hi && levelOf(lo, min, max) < level) lo++
+            while (hi >= lo && levelOf(hi, min, max) > level) hi--
+            if (lo > hi) continue
+            entries.push(entry(level, lo === hi ? String(lo) : `${lo}–${hi}`))
+        }
+        return entries
     }
+    const edges = [Math.max(min, 0), e1, e2, max]
+    for (let level = 1; level <= 3; level++)
+        entries.push(entry(level, `${formatValue(edges[level - 1])}–${formatValue(edges[level])}`))
     return entries
 }
 

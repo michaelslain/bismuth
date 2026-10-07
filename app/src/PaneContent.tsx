@@ -1,7 +1,7 @@
 // app/src/PaneContent.tsx
 // Routes one pane's content id (a note path or a ::sentinel) to the right view.
 // Shared by single-pane tabs and split panes so routing lives in exactly one place.
-import { Switch, Match, Suspense, lazy } from 'solid-js'
+import { Switch, Match, lazy } from 'solid-js'
 // Lazy: FileView → Editor → @codemirror/* (+ harper.js glue) is ~117 KB gz. The home
 // tab on boot is the graph, so the editor is never needed at first paint — defer it
 // off the entry bundle until a note is actually opened.
@@ -31,6 +31,7 @@ const ChatView = lazy(() =>
 )
 
 import { EmptyPane } from './EmptyPane'
+import PaneSuspense from './PaneSuspense'
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() =>
     import('./ExportView').then(m => ({ default: m.ExportView })),
@@ -68,7 +69,7 @@ export function PaneContent(props: {
             fallback={
                 // FileView is lazy; the fallback keeps the pane's full box during the brief
                 // chunk load so a split/tab doesn't flash a collapsed pane.
-                <Suspense fallback={<div class="full" />}>
+                <PaneSuspense>
                     <FileView
                         path={props.path}
                         onSaved={props.onSaved}
@@ -77,15 +78,15 @@ export function PaneContent(props: {
                         memoryNames={props.memoryNames}
                         tagNames={props.tagNames}
                     />
-                </Suspense>
+                </PaneSuspense>
             }
         >
             {/* Export must win before the extension arms below so an export id is never
           mistaken for the file it targets. */}
             <Match when={props.path.startsWith(EXPORT_PREFIX)}>
-                <Suspense fallback={<div class={styles['export-fallback']} />}>
+                <PaneSuspense fallback={<div class={styles['export-fallback']} />}>
                     <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
-                </Suspense>
+                </PaneSuspense>
             </Match>
             {/* There is NO ::search route anymore (#8: search unified into the Cmd+O switcher) —
           persisted ::search tabs are migrated to ::graph on restore (panes.ts deserializeTabs);
@@ -95,14 +96,14 @@ export function PaneContent(props: {
             <Match when={props.path === DAEMON_TAB}>
                 {/* The page renders its daemon chat itself; that chat's session is retained by App
             like a chat tab's (chat/chatSessions.ts), once a trusted gesture arms it. */}
-                <Suspense fallback={<div class="full" />}>
+                <PaneSuspense>
                     <DaemonPageHost
                         onOpen={props.onOpen}
                         noteNames={props.noteNames}
                         memoryNames={props.memoryNames}
                         tagNames={props.tagNames}
                     />
-                </Suspense>
+                </PaneSuspense>
             </Match>
             <Match when={props.path === GRAPH_TAB}>
                 {/* Graph panes show a transparent placeholder. The real WebGL graph lives in
@@ -113,9 +114,9 @@ export function PaneContent(props: {
                 <div data-graph-host class="full" />
             </Match>
             <Match when={props.path.endsWith('.sheet')}>
-                <Suspense fallback={<div class="full" />}>
+                <PaneSuspense>
                     <SheetView path={props.path} onSaved={props.onSaved} />
-                </Suspense>
+                </PaneSuspense>
             </Match>
             {/* A base is a `type: base` md file — routed by FileView (the fallback), which
           reads its frontmatter and renders BaseView. There is no `.base` extension. */}
@@ -124,31 +125,31 @@ export function PaneContent(props: {
           now drawn in place. Must precede the `.draw`/preview Matches below: the sentinel ends in
           the source file's extension, which isPreviewPath would otherwise claim. */}
             <Match when={props.path.startsWith(ANNOTATE_PREFIX)}>
-                <Suspense fallback={<div class="full" />}>
+                <PaneSuspense>
                     <PreviewView
                         path={props.path.slice(ANNOTATE_PREFIX.length)}
                         tagNames={props.tagNames}
                         noteNames={props.noteNames}
                     />
-                </Suspense>
+                </PaneSuspense>
             </Match>
             <Match when={props.path.endsWith('.draw')}>
-                <Suspense fallback={<div class="full" />}>
+                <PaneSuspense>
                     <DrawingPage path={props.path} />
-                </Suspense>
+                </PaneSuspense>
             </Match>
             {/* Images, PDFs, and code/text open as a PREVIEW by default. Images/PDFs take ink in
           place (the toggle-draw-mode key); binary formats (PSD/Figma/…) show a "preview not
           available" state + "Open in default app". Placed AFTER the `.draw` Match so a
           `<file>.png.draw` sidecar opened directly still routes to DrawingPage. */}
             <Match when={isPreviewPath(props.path)}>
-                <Suspense fallback={<div class="full" />}>
+                <PaneSuspense>
                     <PreviewView
                         path={props.path}
                         tagNames={props.tagNames}
                         noteNames={props.noteNames}
                     />
-                </Suspense>
+                </PaneSuspense>
             </Match>
             <Match when={props.path.startsWith(TERMINAL_PREFIX)}>
                 {/* Terminal panes show a transparent placeholder. The real xterm view
@@ -158,7 +159,7 @@ export function PaneContent(props: {
                 <div data-terminal-host={props.path} class="full" />
             </Match>
             <Match when={props.path.startsWith(CHAT_PREFIX)}>
-                <Suspense fallback={<div class="full" />}>
+                <PaneSuspense>
                     <ChatView
                         chatId={props.path.slice(CHAT_PREFIX.length)}
                         tabName={props.tabName}
@@ -166,7 +167,7 @@ export function PaneContent(props: {
                         memoryNames={props.memoryNames}
                         tagNames={props.tagNames}
                     />
-                </Suspense>
+                </PaneSuspense>
             </Match>
             {/* Any other sentinel (e.g. a stale "::tasks" tab from before the global
           Tasks page was removed) falls back to an empty pane rather than trying

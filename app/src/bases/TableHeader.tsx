@@ -4,6 +4,7 @@
 import { For, Show, type Component } from 'solid-js'
 import type { BaseConfig } from '../../../core/src/bases/types'
 import { columnLabel } from './columnLabel'
+import DropCue from '../ui/DropCue'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import AsciiCellEdges, { type AsciiEdge } from '../ui/ascii/AsciiCellEdges'
@@ -44,7 +45,6 @@ const TableHeader: Component<TableHeaderProps> = props => (
                         classList={{
                             [styles.th]: true,
                             [styles.thDrag]: !!props.reorderable,
-                            [styles.thOver]: props.overIdx === i(),
                             [styles.thResizable]: !!props.resizable,
                             [styles.thAtEdge]: props.edgeIdx === i(),
                         }}
@@ -58,6 +58,7 @@ const TableHeader: Component<TableHeaderProps> = props => (
                             edgeWeight={{ bottom: 'heavy' }}
                             backdrop
                         />
+                        <DropCue active={props.overIdx === i()} />
                         <Label inline class={styles.thLabel}>
                             {columnLabel(c, props.config)}
                         </Label>

@@ -14,4 +14,12 @@
    modal focuses its first control on open and that would show the first row's `[x]` at rest. */
 .reveal .trailing { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
 .reveal:hover .trailing, .reveal .trailing:focus-within { opacity: 1; }
+/* TOUCH: no hover exists, so a control resting at opacity 0 is unreachable (bases/TaskRow had exactly
+   this defect on iPad). Under (hover: none) the trailing slot is simply always shown. */
 @media (hover: none) { .reveal .trailing { opacity: 1; } }
+/* The pressed fill — the one state a row paints a background for. Same height as the row, so it
+   reads as a bar across the list; no padding is added, the row's glyphs stay on the content edge. */
+.pressed { background: var(--state-active-bg); }
+/* `baseline`: a wrapping main slot keeps its leading mark and trailing control on line one. */
+.baseline { align-items: baseline; }
+.baseline .main { align-items: baseline; }

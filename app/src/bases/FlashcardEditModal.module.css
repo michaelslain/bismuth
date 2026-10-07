@@ -1,0 +1,6 @@
+/* FlashcardEditModal.tsx ONLY — the per-card edit dialog opened from the review stage. The panel,
+   header, footer and field grid are the shared modal parts; this owns the one thing they do not:
+   room for a prompt or an answer to be more than a single line. */
+.cardField {
+    min-height: calc(var(--cell-h) * 3);
+}

@@ -9,8 +9,9 @@
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { DaemonProcess } from '../../../core/src/daemonGraph'
-import { ContextMenu, type MenuItem } from '../ContextMenu'
+import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
 import { TextButton } from '../ui/TextButton'
+import Text from '../ui/Text'
 import DaemonSection from './DaemonSection'
 import DaemonRow, { type DaemonRowTone } from './DaemonRow'
 import DaemonMoreLine from './DaemonMoreLine'
@@ -179,7 +180,19 @@ function DaemonProcesses(props: DaemonProcessesProps) {
             when={!full()}
             fallback={
                 <>
-                    <Show when={props.processes.length > 0}>{listEl()}</Show>
+                    <Show
+                        when={props.processes.length > 0}
+                        fallback={
+                            <Text
+                                tone="muted"
+                                data-testid="daemon-processes-full-empty"
+                            >
+                                no services yet // ask the daemon
+                            </Text>
+                        }
+                    >
+                        {listEl()}
+                    </Show>
                     {menuEl()}
                 </>
             }

@@ -27,7 +27,7 @@
   display: inline-flex; align-items: center; gap: var(--sp-2);
   margin: 0; padding: 0 var(--sp-2); border: 0; background: none;
   font: inherit; font-size: inherit; line-height: 1;
-  color: var(--faint); cursor: pointer;
+  color: var(--text-muted); cursor: pointer;
   border-radius: var(--r-0);
   /* Restores the UA <button> default (text-align: center) that PlainButton's reset sets to
      `start` — this component owns its own look, so it restates what the bare button had. */
@@ -36,10 +36,8 @@
 /* Same treatment as `.status-location` — the status bar has no vertical padding to spare for a hover
    background, so hover buys contrast with colour alone (compare .tab:hover). */
 .status-inbox:hover { color: var(--fg); }
-/* No focus ring — every button in the app paints no focus indicator, mouse or keyboard, by user
-   decision (2026-09-27); this was the one button-family exception and is now consistent with the
-   rest. */
-.status-inbox:focus-visible { color: var(--fg); }
+/* No focus cue at all — nothing in the app draws focus (DESIGN.md), mouse or keyboard. This rule
+   used to recolour the readout to --fg on :focus-visible, which IS a cue; it is gone. */
 
 /* The alert state. Only the TEXT is promoted to --fg; the gold stays concentrated in the dot, so
    the signal is a discrete mark rather than a tinted word — a word in --gold would compete with

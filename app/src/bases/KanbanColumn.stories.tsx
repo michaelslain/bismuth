@@ -98,8 +98,52 @@ type Story = StoryObj<typeof meta>
 /** A lane with its cards, the colour underline and the `add a card` affordance. */
 export const Default: Story = { args: base }
 
-/** A card is being dragged over this lane: the wash, and the open drop slot above card 1. */
-export const DropTarget: Story = { args: { ...base, over: true, overIndex: 1 } }
+/** True when some element under `root` draws the named drop recipe: `dashed` is its border /
+ *  outline style, and the colour is the accent (not transparent). */
+const drawsDrop = (root: HTMLElement, side: 'border' | 'outline') =>
+    [...root.querySelectorAll<HTMLElement>('*')].some(el => {
+        const cs = getComputedStyle(el)
+        return side === 'border'
+            ? cs.borderTopStyle === 'dashed' &&
+                  parseFloat(cs.borderTopWidth) > 0 &&
+                  cs.borderTopColor !== 'rgba(0, 0, 0, 0)'
+            : cs.outlineStyle === 'dashed' &&
+                  parseFloat(cs.outlineWidth) > 0 &&
+                  cs.outlineColor !== 'rgba(0, 0, 0, 0)'
+    })
+
+/** A card is being dragged over this lane: the lane takes the drop (`ui/DropCue`'s dashed
+ *  `--rule-drop` ring + wash) and the open drop slot above card 1 is outlined in the same
+ *  recipe. The cue is the story's whole point, so it asserts both are actually drawn. */
+export const DropTarget: Story = {
+    args: { ...base, over: true, overIndex: 1 },
+    play: async ({ canvasElement }) => {
+        expect(drawsDrop(canvasElement, 'border')).toBe(true)
+        expect(drawsDrop(canvasElement, 'outline')).toBe(true)
+    },
+}
+
+/** Another COLUMN is being dragged over this lane (a reorder target): the same `DropCue` ring,
+ *  and no card slot is open. */
+export const ReorderTarget: Story = {
+    args: { ...base, reorderTarget: true, overIndex: null },
+    play: async ({ canvasElement }) => {
+        expect(drawsDrop(canvasElement, 'border')).toBe(true)
+        expect(drawsDrop(canvasElement, 'outline')).toBe(false)
+    },
+}
+
+/** The lane being dragged: the pressed fill, never a dimmed lane. */
+export const Dragging: Story = {
+    args: { ...base, dragging: true, overIndex: null },
+    play: async ({ canvasElement }) => {
+        const col = canvasElement.querySelector<HTMLElement>('[data-kbcol]')!
+        expect(getComputedStyle(col).opacity).toBe('1')
+        expect(getComputedStyle(col).backgroundColor).not.toBe(
+            'rgba(0, 0, 0, 0)',
+        )
+    },
+}
 
 /** No cards: just the header and the add affordance. */
 export const Empty: Story = {

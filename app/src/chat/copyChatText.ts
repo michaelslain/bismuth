@@ -2,7 +2,7 @@
 // Copies raw text (never rendered HTML) to the clipboard and toasts the result. Shared by
 // ChatCopyButton's hover-reveal control on every bubble, ChatTranscript's bubble right-click-menu
 // "Copy" item and ChatAuthPanel's "copy command" action (which passes its own toast wording).
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 
 export function copyChatText(
     text: string,

@@ -1,12 +1,15 @@
-/* ChatCommandOutputFrame.module.css — ChatCommandOutputFrame.tsx is the ONLY importer. */
-
-/* ── Slash-command output (#28): a boxed "command output" panel — reads like the Claude Code TUI,
-   not loose prose. The body (ChatTextBubble) carries `.chat-bubble`, so its content renders as real markdown. ── */
-.chat-command-output {
+/* ChatCommandOutputFrame.module.css — ChatCommandOutputFrame.tsx is the ONLY importer. The box is
+   ui/Card (its fill, rule and square corner); the chat tint arrives through Card's `--card-bg` seam
+   (`--chat-surface-1`, with the plain-token fallback Storybook needs). This file only zeroes the
+   card's padding — the caption and the body (ChatTextBubble, which carries `.chat-bubble` so the
+   content renders as real markdown) own their own insets — and draws the caption's hairline. */
+/* Doubled class: this `padding: 0` and `.card { padding }` are the same specificity, so without it
+   the winner is whichever sheet the bundler emits later (import order), not the intent. */
+.chat-command-output.chat-command-output {
+    --card-bg: var(--chat-surface-1, var(--surface-1));
+    --card-border: 1px solid var(--chat-border, var(--border));
     margin: var(--sp-1) 0;
-    border: 1px solid var(--chat-border-soft, var(--border-soft));
-    border-radius: var(--r-0);
-    background: var(--chat-surface-1, var(--surface-1));
+    padding: 0;
     overflow: hidden;
 }
 .chat-command-output-head {
@@ -15,8 +18,4 @@
     gap: var(--sp-3);
     padding: var(--sp-2) var(--sp-5);
     border-bottom: 1px solid var(--chat-border-soft, var(--border-soft));
-    font-size: var(--fs-micro);
-    text-transform: uppercase;
-    letter-spacing: var(--ls-label);
-    color: var(--faint);
 }

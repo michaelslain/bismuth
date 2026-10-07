@@ -13,7 +13,9 @@
 // story can meaningfully verify headlessly.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor, within } from 'storybook/test'
+import type { JSX } from 'solid-js'
 import { ExportView } from './ExportView'
+import { SHEET_PAPER, contrastRatio } from './export/sheetInk'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { buildLetterPdf, inkedPct } from './ui/_pdfStoryFixtures'
@@ -27,6 +29,21 @@ const meta = {
 
 export default meta
 type Story = StoryObj<typeof meta>
+
+/** A pane's bounded height. ExportView fills its host (`height: 100%`), so with no bound the panel
+ *  and the PDF stack grew past the frame: the [export] button fell off the bottom and page two was
+ *  cut mid-block. A real pane always bounds it; the stories now do too. */
+function Pane(props: { children: JSX.Element }) {
+    return <div style={{ height: '720px' }}>{props.children}</div>
+}
+
+/** `rgb(r, g, b)` / `#rrggbb` -> `#rrggbb`, for contrastRatio. */
+function toHex(css: string): string {
+    const v = css.trim()
+    if (v.startsWith('#')) return v.length === 4 ? `#${[...v.slice(1)].map(c => c + c).join('')}` : v
+    const [r, g, b] = (v.match(/\d+/g) ?? ['0', '0', '0']).map(Number)
+    return `#${[r, g, b].map(n => n.toString(16).padStart(2, '0')).join('')}`
+}
 
 const NOTE_PATH = 'projects/roadmap.md'
 const NOTE_BODY = [
@@ -45,13 +62,24 @@ const BASE_BODY = [
     'view: cards',
     '---',
 ].join('\n')
+// The base's rows are the vault's notes, so give it some — an empty vault rendered an empty
+// bordered rectangle, which proved nothing about the preview.
+const BASE_ROWS: Record<string, string> = {
+    'boards/Ship the export.md': '---\ntags: [work]\n---\n# Ship the export\n',
+    'boards/Write the docs.md': '---\ntags: [work]\n---\n# Write the docs\n',
+    'boards/Plan the trip.md': '---\ntags: [home]\n---\n# Plan the trip\n',
+}
 
 /** A plain note: the format picker (HTML/PDF/MD/PNG) defaults to HTML, no mode controls
  *  (those are base-only), and the preview iframe renders the note's own rendered markdown. */
 export const Note: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [NOTE_PATH]: NOTE_BODY } }))
-        return <ExportView path={NOTE_PATH} />
+        return (
+            <Pane>
+                <ExportView path={NOTE_PATH} />
+            </Pane>
+        )
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -71,8 +99,16 @@ export const Note: Story = {
  *  view kind and shows the Visual/Data toggle a plain note never gets. */
 export const Base: Story = {
     render: () => {
-        setTransport(fakeTransport({ files: { [BASE_PATH]: BASE_BODY } }))
-        return <ExportView path={BASE_PATH} />
+        setTransport(
+            fakeTransport({
+                files: { [BASE_PATH]: BASE_BODY, ...BASE_ROWS },
+            }),
+        )
+        return (
+            <Pane>
+                <ExportView path={BASE_PATH} />
+            </Pane>
+        )
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -92,17 +128,19 @@ export const NotePdfPreview: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [NOTE_PATH]: NOTE_BODY } }))
         return (
-            <ExportView
-                path={NOTE_PATH}
-                htmlToPdf={async () =>
-                    new Uint8Array(
-                        buildLetterPdf([
-                            { label: 'Page one', color: [200, 60, 60] },
-                            { label: 'Page two', color: [60, 140, 60] },
-                        ]),
-                    )
-                }
-            />
+            <Pane>
+                <ExportView
+                    path={NOTE_PATH}
+                    htmlToPdf={async () =>
+                        new Uint8Array(
+                            buildLetterPdf([
+                                { label: 'Page one', color: [200, 60, 60] },
+                                { label: 'Page two', color: [60, 140, 60] },
+                            ]),
+                        )
+                    }
+                />
+            </Pane>
         )
     },
     play: async ({ canvasElement }) => {
@@ -120,6 +158,39 @@ export const NotePdfPreview: Story = {
                 `.${styles['exp-paper']} canvas`,
             ) as HTMLCanvasElement
             expect(inkedPct(firstCanvas)).toBeGreaterThan(0.005)
+        })
+    },
+}
+
+/** The LIGHT export theme: the sheet is fixed print-cream, so its ink must come from the export
+ *  palette, never from the app's own tokens (the app's `--fg` is 1.18:1 on cream in the default
+ *  ink theme). The play measures the sheet's computed ink against its cream — all three ink tokens
+ *  the sheet re-scopes — and the floor is 4.5:1 for text. It fails with the override removed: the
+ *  sheet's `color` falls back to the app's cream-coloured `--fg`. */
+export const LightSheetInk: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { [NOTE_PATH]: NOTE_BODY } }))
+        return (
+            <Pane>
+                <ExportView path={NOTE_PATH} />
+            </Pane>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        canvas.getByText('Light').click()
+        await waitFor(() => {
+            const paper = canvasElement.querySelector(
+                `.${styles['exp-paper']}`,
+            ) as HTMLElement
+            const cs = getComputedStyle(paper)
+            expect(toHex(cs.getPropertyValue('--paper-bg'))).toBe(SHEET_PAPER)
+            const ink = toHex(cs.color)
+            const muted = toHex(cs.getPropertyValue('--text-muted'))
+            const faint = toHex(cs.getPropertyValue('--faint'))
+            expect(contrastRatio(ink, SHEET_PAPER)).toBeGreaterThanOrEqual(4.5)
+            expect(contrastRatio(muted, SHEET_PAPER)).toBeGreaterThanOrEqual(4.5)
+            expect(contrastRatio(faint, SHEET_PAPER)).toBeGreaterThanOrEqual(4.5)
         })
     },
 }

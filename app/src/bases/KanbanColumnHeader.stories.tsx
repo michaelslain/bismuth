@@ -59,6 +59,16 @@ type Story = StoryObj<typeof meta>
 /** An editable board's header at rest: dot, title, padded count. */
 export const Default: Story = { args: base }
 
+/** A column is named by the user and keeps the spelling they typed — the header does not
+ *  re-case it (the card chips and the stored value say `ios sprint 3` too). */
+export const UserCasedName: Story = {
+    args: { ...base, columnKey: 'ios sprint 3' },
+    play: async ({ canvasElement }) => {
+        const title = within(canvasElement).getByText('ios sprint 3')
+        expect(getComputedStyle(title).textTransform).toBe('none')
+    },
+}
+
 /** A read-only board (embedded query): the dot is a plain StatusDot, no picker, no actions. */
 export const ReadOnly: Story = {
     args: { ...base, editable: false, actions: false },

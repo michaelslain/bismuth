@@ -528,18 +528,21 @@ const embedTheme = EditorView.theme({
         'border-radius': '8px',
         display: 'block',
     },
+    // `--r-0` (square) rather than the hand-written 8px: the embedded note is a block of the
+    // document, in the same register as a callout, and the radius scale is the design system's.
     '.cm-embed-note': {
         border: '1px solid var(--border)',
         'border-left': '3px solid var(--accent)',
-        'border-radius': '8px',
+        'border-radius': 'var(--r-0)',
         padding: '2px 16px',
         background: 'var(--surface-2)',
     },
+    // Lowercase: the title is the embedded note's own name, and the no-all-caps rule applies to
+    // real UI text. The label register is the mono face, the smaller size and the tracking.
     '.cm-embed-note-title': {
         'font-family': MONO_FONT,
         'font-size': '0.72em',
         'letter-spacing': '0.04em',
-        'text-transform': 'uppercase',
         color: 'color-mix(in srgb, var(--fg) 45%, transparent)',
         margin: '0.4em 0 0',
     },

@@ -1,7 +1,7 @@
 /* app/src/daemon/DaemonCrons.module.css — DaemonCrons.tsx is the ONLY importer.
    The list is the grid DaemonRow's rows subgrid into: dot // name // schedule // status //
    actions. Name floors at 12ch and sizes to its own content (`minmax(12ch, max-content)`);
-   schedule is the ONE flexible track (`minmax(0, 1fr)`) and absorbs all the row's free space, so
+   schedule is the ONE flexible track (`minmax(8ch, 1fr)`, floored so it can never vanish) and absorbs all the row's free space, so
    it ellipsizes under pressure while name and status stay at their own content width — see
    DaemonRow.module.css's `.meta` for the truncation half of this. `column-gap` is uniform
    `--sp-3`, which is also the schedule→status minimum Acceptance 9 asks for.
@@ -18,7 +18,7 @@
    runtime attribute DaemonRow.tsx already sets) — never a class reached from outside its module. */
 .cronsList {
     display: grid;
-    grid-template-columns: auto minmax(12ch, max-content) minmax(0, 1fr) max-content;
+    grid-template-columns: auto minmax(12ch, max-content) minmax(8ch, 1fr) max-content;
     column-gap: var(--sp-3);
     row-gap: 0;
 }
@@ -49,7 +49,7 @@
    visible status — put the actions cell back into grid flow instead. */
 @media (hover: none) {
     .cronsList {
-        grid-template-columns: auto minmax(12ch, max-content) minmax(0, 1fr) max-content auto;
+        grid-template-columns: auto minmax(12ch, max-content) minmax(8ch, 1fr) max-content auto;
     }
     .cronsList > div > :nth-child(4) {
         margin-right: 0;
@@ -63,15 +63,9 @@
         visibility: visible;
     }
 }
-/* The opened section sits in a full-width takeover: bound every track (no 1fr) and cap the list
-   so name, schedule and status stay together instead of spreading across the screen. */
+/* The opened section sits in a full-width takeover: capped at the one daemon-list measure (the
+   same as services, inbox and log) with the schedule absorbing the slack, so the status column
+   ends at that measure's right edge in all four opened lists. */
 .cronsList[data-variant='full'] {
-    grid-template-columns: auto minmax(12ch, max-content) minmax(14ch, 40ch) max-content;
-    justify-content: start;
-    max-width: 100ch;
-}
-@media (hover: none) {
-    .cronsList[data-variant='full'] {
-        grid-template-columns: auto minmax(12ch, max-content) minmax(14ch, 40ch) max-content auto;
-    }
+    max-width: var(--daemon-list-max);
 }

@@ -51,7 +51,7 @@ export function ListView(props: {
     const linkable = (row: Row) => !Number.isInteger(row.index)
     const empty = () => props.result.groups.every(g => g.rows.length === 0)
 
-    /** The row's contents: title (+ faint author) and the right-hand meta column. Shared by the
+    /** The row's contents: title (+ muted author) and the right-hand meta column. Shared by the
      *  editable row (a button that opens the editor) and the plain row (whose title is a NoteLink
      *  — an anchor may not nest inside a button, so the two containers differ, the body does not). */
     const rowBody = (row: Row): JSX.Element => {
@@ -71,7 +71,7 @@ export function ListView(props: {
                         <Text
                             as="span"
                             size="inherit"
-                            tone="faint"
+                            tone="muted"
                             weight="inherit"
                         >
                             {' '}
@@ -101,7 +101,7 @@ export function ListView(props: {
         <Show
             when={!empty()}
             fallback={
-                <EmptyState title="no rows">
+                <EmptyState fill title="no rows">
                     nothing in this view matches its filters
                 </EmptyState>
             }
@@ -130,6 +130,7 @@ export function ListView(props: {
                                         return (
                                             <TaskRow
                                                 row={row}
+                                                class={styles.taskLine}
                                                 onToggle={toggle}
                                                 onSetStatus={setStatus}
                                             />
@@ -145,7 +146,7 @@ export function ListView(props: {
                                             }
                                         >
                                             <PlainButton
-                                                class={styles.lrow}
+                                                class={`${styles.lrow} ${styles.lrowAction}`}
                                                 onClick={() => editor.open(row)}
                                                 onContextMenu={e => {
                                                     e.preventDefault()

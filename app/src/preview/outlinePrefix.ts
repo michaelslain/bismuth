@@ -1,13 +1,11 @@
 // app/src/preview/outlinePrefix.ts
-// Pure connector-prefix builder for OutlineTree's fixed-width prefix column. Same ASCII
-// connector vocabulary as ui/ascii/treePrefix (plain ASCII only, never box-drawing characters),
-// but conditioned on each ANCESTOR'S OWN last-child status instead of assuming every ancestor
-// still has a sibling below it — treePrefix's `'|   '.repeat(depth)` draws a `|` under every
-// ancestor unconditionally, which is wrong the moment an ancestor is itself a last child (a real
-// file-tree ASCII listing leaves that column blank once nothing more will hang off it).
+// OutlineTree's connector prefix, in the shape its recursion already holds: the `last` flag of every
+// ancestor, outermost first. The glyphs themselves are ui/ascii/treePrefix's — the app's ONE tree
+// prefix builder — so a connector is drawn the same way in every tree. This wrapper only maps
+// OutlineTree's `ancestorsLast` array onto treePrefix's `(depth, isLast, ancestorsLast)` signature
+// (the depth IS the array's length).
+import { treePrefix } from '../ui/ascii/treePrefix'
+
 export function outlinePrefix(ancestorsLast: boolean[], last: boolean): string {
-    return (
-        ancestorsLast.map(l => (l ? '    ' : '|   ')).join('') +
-        (last ? '`-- ' : '|-- ')
-    )
+    return treePrefix(ancestorsLast.length, last, ancestorsLast)
 }

@@ -753,11 +753,11 @@ uses it). Do not "fix" this by converting an unrelated production import to a la
 on an error path, an unenforced "the caller's module graph already loaded X" assumption) for a
 test-only reason, and the module split above gets the same result without touching it.
 
-The same trap resurfaces anywhere a Toast-free module needs `pushToast`/`dismissToast` — `Toast.tsx`
-is itself a real Solid component (`ToastHost`). `app/src/toastStore.ts` is the split: the pure
-signal + `pushToast`/`updateToast`/`dismissToast` moved there, with `Toast.tsx` re-exporting them
-unchanged so none of its other ~25 importers had to change. Import from `./toastStore`, not
-`./Toast`, from any module you want to stay unit-testable (see `app/src/serverVersion.ts`).
+The same trap resurfaces anywhere a Toast-free module needs `pushToast`/`dismissToast` — `ui/ToastHost.tsx`
+is itself a real Solid component (`ToastHost`). `app/src/ui/toastStore.ts` is the split: the pure
+signal + `pushToast`/`updateToast`/`dismissToast`, with `ui/ToastHost.tsx` re-exporting them. Import from
+`ui/toastStore`, not `ui/ToastHost`, from any module you want to stay unit-testable (see
+`app/src/serverVersion.ts`).
 
 ### Deferring module-scope side effects so they can be tested
 

@@ -203,7 +203,7 @@ export function bindCommands(
         map.set(id, {
             id,
             label: `Create Daily Note: ${dn.label || dn.id}`,
-            icon: dn.icon || 'CalendarDays',
+            icon: dn.icon || 'Calendar',
             action: () => h.openDailyNote(dn.id),
         })
     }

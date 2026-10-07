@@ -20,8 +20,8 @@ export type FormControlProps =
       >)
 
 /**
- * The shared form-control chrome — transparent, an underline rule, accent underline + inset
- * shadow on focus, no fill and no box — behind both TextInput and Select's trigger. Polymorphic:
+ * The shared form-control chrome — transparent, an underline rule that firms from `--rule-soft`
+ * to `--rule` on focus, no accent, no fill, no box, no outline — behind both TextInput and Select's trigger. Polymorphic:
  * `as="input"`/`"textarea"` is what TextInput composes, `as="button"` is what Select's trigger
  * composes, `as="div"` hosts an embedded editor (TagsField's single-line CodeMirror) that must
  * read as the same field — its focus is the inner editor's, which `:focus-within` picks up. The chrome is `styles['ui-input']`, FormControl's own hashed local (see

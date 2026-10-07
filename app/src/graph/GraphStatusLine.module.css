@@ -45,7 +45,7 @@
   text-overflow: ellipsis;
   direction: rtl;
   text-align: left;
-  color: var(--faint);
+  color: var(--text-muted);
 }
 .name {
   flex: 0 1 auto;
@@ -55,9 +55,9 @@
   color: var(--fg);
 }
 
-/* Right: never shrinks, tabular so the digits don't jitter as the zoom steps. */
+/* Right: never shrinks, tabular so the digits don't jitter as the zoom steps. The ink is ui/Readout's
+   (--text-muted): a count the user reads is content, and --faint is for structure. */
 .readout {
   flex: 0 0 auto;
-  color: var(--faint);
   font-variant-numeric: tabular-nums;
 }

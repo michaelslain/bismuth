@@ -11,8 +11,8 @@
    `[data-select-caret]` (stamped by Select.tsx) are the hooks an OUTSIDE selector reaches
    instead — see the ds-bridges plan's hook table.
 
-   Positioning + stacking (the old `.ui-select-list`'s `position: fixed; z-index: 1100`) moved to
-   `ui/AnchoredPopover.module.css` — Select composes `<AnchoredPopover>` now instead of hand
+   Positioning + stacking (the old `.ui-select-list`'s `position: fixed; z-index: 1100`, now
+   `--z-popover`) moved to `ui/AnchoredPopover.module.css` — Select composes `<AnchoredPopover>` now instead of hand
    positioning its own list. `.ui-select-backdrop` carries no rules of its own anymore (the
    backdrop's fixed/inset/z-index live in AnchoredPopover too); it survives here only as the
    `data-select-backdrop` runtime hook's class marker, still needed by
@@ -24,6 +24,13 @@
    above the modal overlay; a transparent backdrop between the overlay and the list catches
    outside clicks. */
 .ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); cursor: pointer; text-align: left; font-family: var(--ui-font-stack); }
+/* Hover: the trigger answers the pointer the way the cursor promises — the rule firms to the
+   neutral --rule (the same step focus takes) and the caret lifts to --fg. No fill, no accent.
+   A disabled trigger has neither a hover nor a pointer: it reads --faint and does nothing. */
+.ui-select-trigger:hover:not(:disabled) { border-bottom: var(--rule); }
+.ui-select-trigger:hover:not(:disabled) .ui-select-caret { color: var(--fg); }
+.ui-select-trigger:disabled { cursor: default; }
+.ui-select-trigger:disabled .ui-select-placeholder { color: var(--faint); }
 .ui-select-caret { flex: none; color: var(--faint); line-height: 1; position: relative; top: var(--optical-nudge); }
 /* Select's trigger has no caret/box change on focus, so the rule-firming alone is near-invisible
    for keyboard focus (ink theme: #282B34 -> #3A3E4A, 1px). A second, NON-accent cue mirrors the
@@ -33,5 +40,8 @@
 .ui-select-trigger:focus-visible .ui-select-caret { color: var(--fg); }
 
 .ui-select-value { overflow: hidden; text-overflow: ellipsis; min-width: 0; white-space: nowrap; }
-.ui-select-placeholder { color: var(--faint); }
+.ui-select-placeholder { color: var(--text-muted); }
+/* The icon cell every option row reserves (the chosen row draws a Check in it): one icon wide, so
+   an unchosen row's label starts where the chosen row's does. `--icon` is THE icon size token. */
+.ui-select-gutter { display: block; width: var(--icon); height: var(--icon); }
 .ui-select-backdrop { /* data-select-backdrop lives on this element; see comment above */ }

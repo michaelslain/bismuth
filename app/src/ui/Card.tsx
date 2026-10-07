@@ -6,6 +6,10 @@
 import { splitProps, type JSX } from 'solid-js'
 import styles from './Card.module.css'
 
+// Two seams for a host that tints a surface without a third card recipe, both custom properties
+// set on the card or an ancestor (they INHERIT, so a Card nested under a tinted one takes the tint
+// too): `--card-bg` is the fill (default/proposal fall back to --surface-1, quiet to --editor) and
+// `--card-border` is the whole hairline shorthand (default `--rule`; `quiet` keeps its --rule-soft).
 export type CardVariant = 'default' | 'proposal' | 'quiet'
 
 export type CardProps = {

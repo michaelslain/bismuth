@@ -1,15 +1,14 @@
 import { Index, Show, createMemo, type Component, type JSX } from 'solid-js'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import Text from '../ui/Text'
-import SettingsHint from '../ui/SettingsHint'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { IconTextButton } from '../ui/IconTextButton'
 import FilterConditionRow from './FilterConditionRow'
+import EditableRows from './EditableRows'
 import { FILE_PSEUDO, inferType } from './filterOps'
 import {
     addRow,
     condRow,
-    isIncomplete,
     patchRow,
     rawRow,
     removeRow,
@@ -77,61 +76,45 @@ const FiltersEditor: Component<FiltersEditorProps> = props => {
                     </Text>
                 </div>
             </Show>
-            <Show
-                when={props.value.rows.length > 0}
-                fallback={
-                    <Show when={props.emptyHint}>
-                        <SettingsHint>{props.emptyHint}</SettingsHint>
-                    </Show>
+            <EditableRows
+                isEmpty={props.value.rows.length === 0}
+                empty={props.emptyHint}
+                add={
+                    <>
+                        <IconTextButton icon="Plus" onClick={addCondition}>
+                            add condition
+                        </IconTextButton>
+                        <IconTextButton
+                            icon="Code"
+                            onClick={() =>
+                                props.onChange(addRow(props.value, rawRow()))
+                            }
+                        >
+                            add expression
+                        </IconTextButton>
+                    </>
                 }
             >
-                <div class={styles.rows}>
-                    <Index each={props.value.rows}>
-                        {(row, i) => (
-                            <div class={styles.item}>
-                                <FilterConditionRow
-                                    row={row()}
-                                    properties={properties()}
-                                    rows={props.rows}
-                                    config={props.config}
-                                    onPatch={p =>
-                                        props.onChange(
-                                            patchRow(props.value, i, p),
-                                        )
-                                    }
-                                    onRemove={() =>
-                                        props.onChange(
-                                            removeRow(props.value, i),
-                                        )
-                                    }
-                                    onToRaw={() =>
-                                        props.onChange(toRawRow(props.value, i))
-                                    }
-                                />
-                                <Show when={isIncomplete(row())}>
-                                    <SettingsHint>
-                                        incomplete // not saved until it has a
-                                        value
-                                    </SettingsHint>
-                                </Show>
-                            </div>
-                        )}
-                    </Index>
-                </div>
-            </Show>
-            <div class={styles.add}>
-                <IconTextButton icon="Plus" onClick={addCondition}>
-                    add condition
-                </IconTextButton>
-                <IconTextButton
-                    icon="Code"
-                    onClick={() =>
-                        props.onChange(addRow(props.value, rawRow()))
-                    }
-                >
-                    add expression
-                </IconTextButton>
-            </div>
+                <Index each={props.value.rows}>
+                    {(row, i) => (
+                        <FilterConditionRow
+                            row={row()}
+                            properties={properties()}
+                            rows={props.rows}
+                            config={props.config}
+                            onPatch={p =>
+                                props.onChange(patchRow(props.value, i, p))
+                            }
+                            onRemove={() =>
+                                props.onChange(removeRow(props.value, i))
+                            }
+                            onToRaw={() =>
+                                props.onChange(toRawRow(props.value, i))
+                            }
+                        />
+                    )}
+                </Index>
+            </EditableRows>
         </div>
     )
 }

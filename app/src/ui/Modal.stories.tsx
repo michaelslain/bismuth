@@ -23,6 +23,14 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
+/** Alpha channel of a computed `rgb()`/`rgba()`/`color(srgb …)` colour — 1 when it has no alpha. */
+function alphaOf(color: string): number {
+    const m = color.match(/\/\s*([\d.]+%?)\s*\)|rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)/)
+    const raw = m?.[1] ?? m?.[2]
+    if (raw === undefined) return 1
+    return raw.endsWith('%') ? parseFloat(raw) / 100 : parseFloat(raw)
+}
+
 /** A representative dialog panel (the app passes classes like `.event-modal`; here we
  *  inline the equivalent chrome from theme tokens so the shell shows in context). */
 function DialogPanel(props: { onClose?: () => void; children?: JSX.Element }) {
@@ -100,6 +108,48 @@ export const Default: Story = {
         expect(border.borderBottomWidth).toBe(border.borderTopWidth)
         expect(border.borderLeftWidth).toBe(border.borderTopWidth)
         expect(border.borderRightWidth).toBe(border.borderTopWidth)
+        // OPAQUE: the panel's own fill is a solid colour (the 94% tint is a layer over it), so
+        // nothing behind the dialog ghosts through.
+        expect(alphaOf(border.backgroundColor)).toBe(1)
+        // The panel is a tabindex=-1 focus target; it must not paint the browser's default ring.
+        expect(border.outlineStyle === 'none' || border.outlineWidth === '0px').toBe(true)
+    },
+}
+
+/** Loud content behind the dialog — a block of high-contrast text under the panel. The panel must
+ *  read opaque in the frame: none of this text may show through its fill. (Regression: at 94%
+ *  alpha it ghosted through app-chatview--model-picker and the kanban card's edit dialog.) */
+export const OpaqueOverContent: Story = {
+    render: () => (
+        <>
+            <div
+                style={{
+                    position: 'fixed',
+                    inset: 0,
+                    'font-family': 'var(--ui-font-stack)',
+                    'font-size': 'var(--fs-h1)',
+                    'line-height': 1.2,
+                    color: 'var(--accent)',
+                    'font-weight': 700,
+                    overflow: 'hidden',
+                    'z-index': 0,
+                }}
+            >
+                {Array.from({ length: 24 }, () => (
+                    <div>
+                        GHOST GHOST GHOST GHOST GHOST GHOST GHOST GHOST GHOST
+                    </div>
+                ))}
+            </div>
+            <Modal onClose={noop} label="opaque dialog">
+                <DialogPanel />
+            </Modal>
+        </>
+    ),
+    play: async () => {
+        const panel = document.querySelector('[role="dialog"]') as HTMLElement
+        expect(panel).not.toBeNull()
+        expect(alphaOf(getComputedStyle(panel).backgroundColor)).toBe(1)
     },
 }
 

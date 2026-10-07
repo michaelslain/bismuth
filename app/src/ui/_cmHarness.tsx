@@ -45,6 +45,19 @@ const harnessTheme = EditorView.theme({
     '.cm-content ::selection': {
         backgroundColor: 'var(--selection)',
     },
+    // THE SAME TWO SELECTORS Editor.tsx:226-229 sets, for the same reason, because a story that
+    // drags a selection is otherwise grading CodeMirror's own defaults instead of this app's.
+    // CM's baseTheme paints the drawSelection layer at (0,2,0) and higher: `&light
+    // .cm-selectionBackground` is #d9d9d9 — against the ink theme's #15161A ground that is a
+    // 1.2:1 wash, i.e. a selection you cannot see — and the focused range is a pale lavender that
+    // belongs to no theme here. A bare `.cm-selectionBackground` only wins the unfocused tie on
+    // source order, so match CM's own specificity on both.
+    '.cm-selectionLayer .cm-selectionBackground': {
+        backgroundColor: 'var(--selection)',
+    },
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+        backgroundColor: 'var(--selection)',
+    },
 })
 
 export interface CmHarnessProps {

@@ -1,11 +1,12 @@
 /* ---------- bullets view (plain markdown-style list, no table chrome) ---------- */
 /* Reads like the note's own `- item` prose: group key as a small serif heading, then a
-   real <ul> of clickable links. No column header, no row borders, no per-row icons. */
-.bullets { padding: var(--sp-3) var(--sp-3) var(--sp-5); font-family: var(--ui-font-stack); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
+   real <ul> of clickable links. No column header, no row borders, no per-row icons.
+   Follows ListView.module.css's rulings: inline inset is `--view-gutter`, the gap between two
+   groups is one `--row-h`, and hover paints only on an ACTIONABLE bullet (`.bulletBtn`). */
+.bullets { padding: var(--sp-5) var(--view-gutter); font-family: var(--ui-font-stack); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
+.bulletGroup + .bulletGroup { margin-top: var(--row-h); }
 .bulletGroupHeadRow { font-size: var(--editor-font-size, 13.5px); padding-left: calc(1.125em - 10px); }
-.bulletGroupHead { margin: var(--sp-5) 0 var(--sp-2); }
-.bulletGroup:first-child .bulletGroupHeadRow { font-size: var(--editor-font-size, 13.5px); padding-left: calc(1.125em - 10px); }
-.bulletGroupHead { margin: var(--sp-5) 0 var(--sp-2); }
+.bulletGroupHead { margin: 0 0 var(--sp-2); }
 .bulletList { margin: 0; padding-left: 1.5em; list-style: disc; }
 .bulletItem { margin: var(--sp-2) 0; line-height: 1.55; }
 .bulletItem::marker { color: var(--text-muted); }
@@ -23,6 +24,8 @@
 
 /* Row-editing affordance (openRowEditor.tsx). An owned row's bullet becomes a plain button (no
    destination note to open); a note row keeps its renderTitle anchor. Right-click on `.bulletItem`
-   opens the property/row editor for any editable row — no hover-reveal icon. */
+   opens the property/row editor for any editable row — no hover-reveal icon. The button IS
+   actionable, so it takes the hover wash the anchor beside it does not need. */
 .bulletRowWrap { display: inline-flex; align-items: center; gap: var(--sp-3); }
-.bulletBtn { font: inherit; color: inherit; text-align: left; }
+.bulletBtn { font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.bulletBtn:hover { background: var(--hover-bg); }

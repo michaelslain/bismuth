@@ -2,7 +2,7 @@
 // taskStatusMenu.tsx's file header: it exports option data, pure filtering helpers, and an
 // IMPERATIVE opener, `openTaskStatusMenu`, that mounts the shared <ContextMenu> straight onto
 // `document.body` via `solid-js/web`'s `render()` for callers outside Solid's tree — the
-// CodeMirror live-preview checkbox widget). `app/src/ContextMenu.stories.tsx` already covers
+// CodeMirror live-preview checkbox widget). `app/src/ui/ContextMenu.stories.tsx` already covers
 // <ContextMenu>'s generic positioning/dismiss/submenu behaviour, so the story here has one job:
 // the task-specific CONTENT — `taskStatusItems()` filtering the current status out of the menu
 // (per `isCurrentStatus`'s `x`/`X` and `/`/`\` alias folding) — driven through the real

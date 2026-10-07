@@ -45,7 +45,9 @@
    is the SAME hairline (`--border`, 1px solid) the `.list` divider below uses, so the two read as
    one family. Text sits at the SAME weight as the presets (`--fg`, no override) — only the
    indicator glyph is dimmed, which is what actually carries the "lighter than the presets"
-   weighting now that the fill and border are no longer doing it. */
+   weighting now that the fill and border are no longer doing it.
+   NO `cursor: pointer` on the field itself: the segments are typed into, so a text caret is the
+   honest cursor there and the pointer belongs on the indicator that actually opens the overlay. */
 .dateInput,
 .timeInput {
     font-family: var(--popover-font);
@@ -74,17 +76,20 @@
 }
 
 /* The calendar/clock glyph is the one element still tinted down to --text-muted — it's what
-   makes the control read lighter than the bold preset rows, now that fill/border/text match. */
+   makes the control read lighter than the bold preset rows, now that fill/border/text match.
+   IT IS ALSO THE ONLY OPENER, and that is deliberate. Hiding it and routing the affordance to a
+   click anywhere on the field changed what the control DOES — a click on a segment is how you
+   put the caret in that segment to type — and it rested on `showPicker()`, which is unverified
+   in the shipped WKWebView and whose failure the call site swallows, so there the glyph would be
+   gone with nothing in its place. Unifying this control with the app's own icon set is a
+   redesign, raised separately; until then the engine's glyph stays.
+   The 0.6→1 hover pair this rule used to carry is NOT restored: a state told by opacity
+   (DESIGN.md:426-428). The glyph keeps its one muted tint. */
 .dateInput::-webkit-calendar-picker-indicator,
 .timeInput::-webkit-calendar-picker-indicator {
     color: var(--text-muted);
     opacity: 0.6;
     cursor: pointer;
-}
-
-.dateInput::-webkit-calendar-picker-indicator:hover,
-.timeInput::-webkit-calendar-picker-indicator:hover {
-    opacity: 1;
 }
 
 .dateInput {

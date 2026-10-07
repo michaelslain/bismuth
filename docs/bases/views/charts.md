@@ -358,7 +358,7 @@ aggregate: sum
 
 Bar, line and heatmap share the same interaction chrome, laid out by `ChartFrame` (`app/src/bases/ChartFrame.tsx`) around each view's own body: a `readout` slot above, the chart body (which measures its own live character grid via a hidden probe and reports `{ columns, cellWidth }` through `onGrid`), an optional `footer` slot below (the line/stat KaTeX, or the heatmap's streak line), and an optional `drill` slot under that.
 
-### Readout (`ChartReadout`, `app/src/bases/ChartReadout.tsx`)
+### Readout (`Readout`, `app/src/ui/Readout.tsx`)
 
 A single line above the chart, parts joined by ` // `:
 
@@ -528,4 +528,4 @@ Each declared `stats[]` entry is evaluated independently — a bad expression on
 - `core/src/bases/values.ts` — `toNumber` (value coercion)
 - `core/src/bases/parser.ts`/`ast.ts` — the expression grammar `exprToLatex` walks
 
-Source: `app/src/bases/BarView.tsx`, `app/src/bases/barRows.ts`, `app/src/bases/LineView.tsx`, `app/src/bases/asciiLine.ts`, `app/src/bases/StatView.tsx`, `app/src/bases/StatTiles.tsx`, `app/src/bases/sparkline.ts`, `app/src/bases/HeatmapView.tsx`, `app/src/bases/heatmapLayout.ts`, `app/src/bases/heatmapWrites.ts`, `app/src/bases/HeatmapDayEditor.tsx`, `app/src/bases/SparklineChart.tsx`, `app/src/bases/ChartFrame.tsx`, `app/src/bases/ChartReadout.tsx`, `app/src/bases/ChartDrill.tsx`, `app/src/bases/chartColumns.ts`, `app/src/bases/chartViewProps.ts`, `app/src/ui/Tex.tsx`, `core/src/bases/chart.ts`, `core/src/bases/metrics.ts`, `core/src/bases/trend.ts`, `core/src/bases/chartLatex.ts`, `core/src/bases/chartText.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `cli/src/commands/base.ts`, `core/src/dates.ts`, `core/test/bases/chart.test.ts`, `core/test/bases/metrics.test.ts`, `core/test/bases/trend.test.ts`, `core/test/bases/chartLatex.test.ts`, `core/test/bases/chartText.test.ts`
+Source: `app/src/bases/BarView.tsx`, `app/src/bases/barRows.ts`, `app/src/bases/LineView.tsx`, `app/src/bases/asciiLine.ts`, `app/src/bases/StatView.tsx`, `app/src/bases/StatTiles.tsx`, `app/src/bases/sparkline.ts`, `app/src/bases/HeatmapView.tsx`, `app/src/bases/heatmapLayout.ts`, `app/src/bases/heatmapWrites.ts`, `app/src/bases/HeatmapDayEditor.tsx`, `app/src/bases/SparklineChart.tsx`, `app/src/bases/ChartFrame.tsx`, `app/src/ui/Readout.tsx`, `app/src/bases/ChartDrill.tsx`, `app/src/bases/chartColumns.ts`, `app/src/bases/chartViewProps.ts`, `app/src/ui/Tex.tsx`, `core/src/bases/chart.ts`, `core/src/bases/metrics.ts`, `core/src/bases/trend.ts`, `core/src/bases/chartLatex.ts`, `core/src/bases/chartText.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `cli/src/commands/base.ts`, `core/src/dates.ts`, `core/test/bases/chart.test.ts`, `core/test/bases/metrics.test.ts`, `core/test/bases/trend.test.ts`, `core/test/bases/chartLatex.test.ts`, `core/test/bases/chartText.test.ts`

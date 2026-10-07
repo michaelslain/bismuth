@@ -14,11 +14,13 @@
 // measured alpha and got a flat 100% "inked" on a truly blank page. Distance from the background
 // COLOR (sampled from the canvas's own corner, never a hardcoded token) is what actually
 // distinguishes ink from paper.
+import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { DrawingPage } from './DrawingPage'
-import { setTransport } from '../api'
+import { setTransport, type Transport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
+import { TextButton } from '../ui/TextButton'
 import type { DrawingDoc } from '../../../core/src/drawing/model'
 import canvasStyles from './DrawingCanvas.module.css'
 
@@ -33,12 +35,18 @@ type Story = StoryObj<typeof meta>
 
 const EMPTY_PATH = 'sketches/blank.draw'
 const POPULATED_PATH = 'sketches/annotated.draw'
+const OTHER_PATH = 'sketches/other.draw'
 
 /** A truly flat page — `paper: { bg: "blank" }` (no grid/dot texture, unlike `emptyDoc()`'s own
  *  default of `"grid"`) and no strokes, so every pixel is provably the same paper-fill color and
  *  the inked-fraction assertion below has no ambiguity to account for. */
 function blankDoc(): DrawingDoc {
-    return { v: 1, kind: 'drawing', paper: { bg: 'blank' }, pages: [{ strokes: [] }] }
+    return {
+        v: 1,
+        kind: 'drawing',
+        paper: { bg: 'blank' },
+        pages: [{ strokes: [] }],
+    }
 }
 
 /** A pen swoop + a highlighter bar over blank paper (no grid texture, for the same reason as
@@ -112,7 +120,9 @@ function inkedFraction(canvas: HTMLCanvasElement, step = 6): number {
 export const Blank: Story = {
     render: () => {
         setTransport(
-            fakeTransport({ files: { [EMPTY_PATH]: JSON.stringify(blankDoc()) } }),
+            fakeTransport({
+                files: { [EMPTY_PATH]: JSON.stringify(blankDoc()) },
+            }),
         )
         return <DrawingPage path={EMPTY_PATH} />
     },
@@ -160,5 +170,202 @@ export const Populated: Story = {
             },
             { timeout: 5000 },
         )
+    },
+}
+
+// --- Read failures must never reach the file ---------------------------------------------
+// DrawingPage used to turn ANY read failure into an empty doc, and the next autosave wrote that
+// empty doc over the real file. These stories wrap the in-memory transport so every write the page
+// makes is RECORDED, then assert on the recording — an error banner alone would not prove the
+// data-loss fix, only that nothing was written does.
+
+/** Every `PUT /file` the page made, in order — what `api.saveDrawing` sends. */
+let writes: { path: string; contents: string }[] = []
+
+/** The in-memory transport, with writes recorded and reads of `failingPath` made to misbehave:
+ *  `fail` throws (a locked file, a permissions blip), `body` answers with that text instead, and
+ *  `failTimes` limits how many reads misbehave before the real file shows through (a transient
+ *  error that a retry gets past). */
+function recordingTransport(
+    files: Record<string, string>,
+    bad?: { path: string; fail?: string; body?: string; failTimes?: number },
+): Transport {
+    writes = []
+    const base = fakeTransport({ files })
+    let badReads = 0
+    return {
+        ...base,
+        getText: async (path: string) => {
+            if (
+                bad &&
+                path.includes(encodeURIComponent(bad.path)) &&
+                badReads < (bad.failTimes ?? Infinity)
+            ) {
+                badReads++
+                if (bad.fail !== undefined) throw new Error(bad.fail)
+                return bad.body ?? ''
+            }
+            return base.getText(path)
+        },
+        put: async (path: string, body: unknown) => {
+            if (path === '/file') writes.push(body as (typeof writes)[number])
+            return base.put(path, body)
+        },
+    }
+}
+
+/** Longer than DrawingEditor's 600ms autosave debounce, so a write that WOULD have been scheduled
+ *  has fired by the time the story reads `writes`. Waiting is the only way to assert an absence. */
+const PAST_AUTOSAVE_MS = 1000
+const settle = () =>
+    new Promise(resolve => setTimeout(resolve, PAST_AUTOSAVE_MS))
+
+/** The read throws. The page must say so — not render a blank drawing that looks new — and, with
+ *  no editor mounted, nothing can ever save over the real file. */
+export const ReadFailed: Story = {
+    render: () => {
+        setTransport(
+            recordingTransport(
+                { [POPULATED_PATH]: JSON.stringify(populatedDoc()) },
+                { path: POPULATED_PATH, fail: 'EACCES: file is locked' },
+            ),
+        )
+        return <DrawingPage path={POPULATED_PATH} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const alert = await canvas.findByRole('alert')
+        await expect(alert).toHaveTextContent("couldn't open this drawing")
+        await expect(alert).toHaveTextContent('EACCES: file is locked')
+        // Not an editor: no page stage to draw on, so no stroke or add-page can be committed.
+        await expect(canvas.queryByText('add page')).toBeNull()
+        expect(canvasElement.querySelector('canvas')).toBeNull()
+        await settle()
+        // The data-loss assertion: NOTHING was written over the file.
+        expect(writes).toEqual([])
+    },
+}
+
+/** The file exists but is not a drawing the parser accepts (a corrupted byte). Same contract: it is
+ *  someone's file, not an empty one, so refuse to open it and never write. */
+export const ReadCorrupt: Story = {
+    render: () => {
+        setTransport(
+            recordingTransport(
+                { [POPULATED_PATH]: JSON.stringify(populatedDoc()) },
+                {
+                    path: POPULATED_PATH,
+                    body: '{"v":1,"kind":"drawing","pages":[{"strokes":[',
+                },
+            ),
+        )
+        return <DrawingPage path={POPULATED_PATH} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(await canvas.findByRole('alert')).toBeInTheDocument()
+        await expect(canvas.queryByText('add page')).toBeNull()
+        await settle()
+        expect(writes).toEqual([])
+    },
+}
+
+/** A transient failure: the first read throws, the user presses retry, the second succeeds. The
+ *  drawing that opens is the REAL one, and the first save carries its original strokes forward —
+ *  so a blip no longer ends with an empty file on disk. */
+export const ReadFailedThenRetry: Story = {
+    render: () => {
+        setTransport(
+            recordingTransport(
+                { [POPULATED_PATH]: JSON.stringify(populatedDoc()) },
+                {
+                    path: POPULATED_PATH,
+                    fail: 'EAGAIN: try again',
+                    failTimes: 1,
+                },
+            ),
+        )
+        return <DrawingPage path={POPULATED_PATH} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(await canvas.findByRole('alert')).toBeInTheDocument()
+        expect(writes).toEqual([])
+        await userEvent.click(
+            await canvas.findByRole('button', { name: /retry/ }),
+        )
+        const addPage = await canvas.findByText('add page')
+        expect(canvas.queryByRole('alert')).toBeNull()
+        await userEvent.click(addPage)
+        await waitFor(() => expect(writes.length).toBe(1), { timeout: 5000 })
+        const saved = JSON.parse(writes[0].contents) as DrawingDoc
+        expect(writes[0].path).toBe(POPULATED_PATH)
+        expect(saved.pages.length).toBe(2)
+        // The original page's two strokes survived — the file was not replaced by an empty doc.
+        expect(saved.pages[0].strokes.length).toBe(2)
+    },
+}
+
+/** The ordinary new-drawing path, which the fix must not regress: the file does not exist yet, GET
+ *  /file answers an empty body, and that is a legitimate blank drawing that opens, edits and saves
+ *  normally. */
+export const NewDrawing: Story = {
+    render: () => {
+        setTransport(recordingTransport({}))
+        return <DrawingPage path="sketches/new.draw" />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const addPage = await canvas.findByText('add page')
+        expect(canvas.queryByRole('alert')).toBeNull()
+        await userEvent.click(addPage)
+        await waitFor(() => expect(writes.length).toBe(1), { timeout: 5000 })
+        const saved = JSON.parse(writes[0].contents) as DrawingDoc
+        expect(writes[0].path).toBe('sketches/new.draw')
+        expect(saved.kind).toBe('drawing')
+        expect(saved.pages.length).toBe(2)
+    },
+}
+
+/** The pane navigates from drawing A to drawing B (PaneContent reuses <DrawingPage> for any
+ *  `.draw`) while A's 600ms autosave debounce is still in flight. The write must land on A — the
+ *  file the edited doc was READ from — never on B. B's own read fails here, which is the worst case:
+ *  no editor ever mounts for B, so the load-error guard cannot protect it, and only the write's own
+ *  target decides whether B survives. */
+export const NavigateWithPendingSave: Story = {
+    render: () => {
+        setTransport(
+            recordingTransport(
+                {
+                    [POPULATED_PATH]: JSON.stringify(populatedDoc()),
+                    [OTHER_PATH]: JSON.stringify(populatedDoc()),
+                },
+                { path: OTHER_PATH, fail: 'EIO: read failed' },
+            ),
+        )
+        const [path, setPath] = createSignal(POPULATED_PATH)
+        return (
+            <>
+                <TextButton onClick={() => setPath(OTHER_PATH)}>
+                    open other
+                </TextButton>
+                <DrawingPage path={path()} />
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(await canvas.findByText('add page'))
+        // Navigate immediately: the debounce (600ms) has not fired yet.
+        expect(writes).toEqual([])
+        await userEvent.click(canvas.getByText('open other'))
+        await expect(await canvas.findByRole('alert')).toHaveTextContent(
+            OTHER_PATH,
+        )
+        await settle()
+        // B was never written, in whole or in part.
+        expect(writes.filter(w => w.path === OTHER_PATH)).toEqual([])
+        // A's edit was not lost either: it landed on A.
+        expect(writes.map(w => w.path)).toEqual([POPULATED_PATH])
     },
 }

@@ -1,0 +1,90 @@
+/* app/src/ui/PaletteRow.module.css — the selectable result row (icon + label/detail + sublabel +
+   shortcut), the ONE importer being ui/PaletteRow.tsx. Moved here from palette/ when the row was
+   promoted into the design system.
+
+   SELECTION IS `data-selected`, AND THE ROW PAINTS NO HOVER BACKGROUND. A clickable row never fills
+   on hover (the standing decision, ui/ListRow.tsx), and this row has a second reason: its cursor IS
+   `[data-selected]`, and every caller's pointer guard (createPointerGuard, on `onMouseMove`)
+   promotes the row under the pointer to selected. A hover fill would therefore only paint in the
+   instant before the selection caught up, then be replaced by the selected wash — redundant with
+   the selected state and against the decision. (It used to be `:hover:not([data-selected])`, added
+   when an equal-specificity `:hover` declared after `[data-selected]` stripped the selected row's
+   accent wash; removing the hover rule retires that bug class too.)
+
+   THIS DIFFERS FROM global.css's `.bismuth-popover-row:hover:not(.bismuth-popover-row--disabled)`,
+   a separate floating-menu family that keeps its own hover treatment. Two families, two stated
+   intents: never let one drift into the other by cascade accident.
+
+   ROW INSET is `var(--sp-4)` (8px). Floating menu rows were 8px in the popover and 12px in the
+   palette and search results; both are "a floating menu row", so they take the popover's 8px,
+   which ui/popover/MenuRow measures.
+
+   `:global(.switcher-list)` / SwitcherBar's own column gives the switcher's rows the same finish;
+   the values below are the consolidated result of the old Palette.module.css base rule + its
+   container overrides (CSS Modules cannot compound a selector across a module boundary). */
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: 0 var(--sp-4);
+  min-height: var(--h-row);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: var(--fs-ui);
+  line-height: var(--h-row);
+  color: var(--fg);
+  border-radius: 0;
+}
+.palette-row .palette-icon { color: var(--text-muted); }
+.palette-row[data-selected] {
+  background: var(--state-selected-bg);
+  color: var(--accent);
+}
+.palette-row[data-selected] .palette-icon { color: var(--accent); }
+/* Flex-center the glyph so an inline Lucide SVG (baseline-aligned by default, which
+   leaves it sitting a few px high against the label) is vertically centered in the
+   row; works for emoji text fallbacks too. */
+.palette-icon { opacity: 1; width: 1.2em; height: 1.2em; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+/* Column wrapper around label + optional detail so the detail sits on a second line.
+   .palette-label's flex/min-width/overflow/ellipsis live on ui/Label.tsx (`<Label fill>`); this
+   class stays for the `.palette-text .palette-label` flex override just below. */
+.palette-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.palette-text .palette-label { flex: 0 1 auto; font-family: var(--popover-font); }
+/* Detail second line. --text-muted, not --faint: --faint measured 4.35:1 on ink (the DEFAULT
+   theme) at this size, under the 4.5:1 floor. */
+.palette-desc {
+  font-family: var(--popover-font);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis; min-width: 0;
+  white-space: nowrap;
+}
+/* .palette-sub's color(--faint)/overflow/ellipsis live on ui/Label.tsx (`<Label tone="faint">`);
+   this class stays for its own placement (margin-left: auto pushes it to the row's far edge).
+   Label composes ui/Text, whose `.text { margin: 0 }` is (0,1,0) — the same weight as a bare
+   `.palette-sub`, so source order alone decided who won. Scoping under `.palette-row` makes it
+   (0,2,0) and outranks `.text` regardless of stylesheet order. */
+.palette-row .palette-sub { font-size: var(--fs-micro); margin-left: auto; padding-left: var(--sp-5); }
+/* Fuzzy-matched characters: accent color carries the emphasis — no bold-on-top-of-color. */
+.palette-match { color: var(--accent); font-weight: var(--fw-regular); }
+/* Shortcut: a layout slot only — the Kbd primitive types the chord, and the caller passes
+   `muted` so it recedes to --faint the way a menu row's keybinding does. */
+.palette-shortcut {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+/* When a sublabel is also present, the shortcut keeps its own right-edge spot and
+   the sublabel should not push to the far right via its own auto-margin. */
+.palette-shortcut + .palette-shortcut,
+.palette-row .palette-sub + .palette-shortcut {
+  margin-left: var(--sp-5);
+}

@@ -17,9 +17,17 @@
     top: 0;
     right: 0;
     opacity: 0;
-    transition: opacity calc(0.12s * var(--motion-scale)) var(--ease-std);
+    transition: opacity var(--dur) var(--ease);
 }
 [data-chat-bubble-wrap]:hover .chat-copy-btn,
 [data-chat-bubble-wrap]:focus-within .chat-copy-btn {
     opacity: 1;
+}
+/* TOUCH: no hover exists, so a control resting at opacity 0 is unreachable — under (hover: none) it
+   is simply always shown, the same fallback ui/ListRow's `reveal` carries. Same doubled selector as
+   the rule above, for the same specificity reason. */
+@media (hover: none) {
+    .chat-copy-btn.chat-copy-btn {
+        opacity: 1;
+    }
 }

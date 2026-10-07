@@ -8,7 +8,7 @@
   flex: 1 1 auto;
   overflow: hidden;
   cursor: grab;
-  background: var(--bismuth-surface);
+  background: var(--surface-1);
   border: var(--rule);
   border-radius: var(--r-0);
   user-select: none;
@@ -35,10 +35,17 @@
   pointer-events: none;
 }
 .mapScaleBar {
-  height: 5px;
-  border-left: 1px solid var(--text-muted);
-  border-right: 1px solid var(--text-muted);
-  border-bottom: 1px solid var(--text-muted);
+  display: flex;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  white-space: pre;
+  color: var(--text-muted);
+}
+.mapScaleRule {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 .mapScaleLabel {
   font-family: var(--ui-font-stack);
@@ -53,6 +60,15 @@
   align-items: center;
   justify-content: center;
   pointer-events: none;
+}
+/* The empty-state text sits on a plate: without one it is typed straight onto the continent
+   strokes and the two read as one tangle. */
+.mapEmptyPlate {
+  padding: var(--sp-6) var(--sp-7);
+  background: var(--surface-1);
+  border: var(--rule-soft);
+  border-radius: var(--r-0);
+  box-shadow: var(--lift);
 }
 /* Floating hint that follows the cursor while a row is armed for placement. */
 .mapPlacingLabel {

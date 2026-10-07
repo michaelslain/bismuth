@@ -191,7 +191,23 @@ const MEMORY_REF_LINE_RE = new RegExp(MEMORY_REF_RE.source, 'g')
 // This keeps the marker→text gap and per-level indent consistent regardless of how the
 // source happens to be spaced.
 // em added to the text indent per nesting level (shared leaf — see ./listLayout).
-const LIST_GUTTER = LIST_STEP // em — width of the marker gutter (== one step, so text aligns)
+// THE MARKER COLUMN IS ONE WIDTH FOR EVERY KIND OF LIST. It is WIDER than LIST_STEP because the
+// widest marker is the literal `[ ]` (3 mono advances, ~1.87em), which never fit a 1.6em gutter:
+// the task line used to carry a private `margin-left: 0.6em` to buy that room, so a task's text
+// started 0.6em right of a plain bullet's and the two kinds of list line never shared a column
+// (measured: task text x=86, bullet text x=73). Now the overhang is declared ONCE here and every
+// marker class below is this wide, so all list text lands on the same axis.
+// The per-level step is still LIST_STEP, and so is the hanging `text-indent`: the indent has to
+// cancel exactly ONE step so that row 1's text lands on the same axis as the wrapped rows
+// (row-1 text = margin + padding + text-indent + the marker's advance, and the marker's advance
+// is -LIST_OVERHANG + LIST_GUTTER = LIST_STEP). Indenting by the full LIST_GUTTER instead pulls
+// row 1 LIST_OVERHANG left of its own continuation rows AND hangs the marker box that far
+// outside the line box, which the chat composer's zero-padding scroller clips (see :2276).
+// foldBlocks.ts's triangle offsets (which read LIST_STEP too) are untouched.
+const LIST_GUTTER = 2.2 // em — width of the marker column (>= LIST_STEP; see above)
+// Rounded: the raw subtraction is 0.6000000000000001 in binary floating point, and that string
+// would be emitted into the stylesheet verbatim.
+const LIST_OVERHANG = Math.round((LIST_GUTTER - LIST_STEP) * 1000) / 1000
 const LIST_LINE_HEIGHT = '1.55' // tighter than prose (1.65) for a cleaner list rhythm
 const indentLineCache = new Map<string, Decoration>()
 /** A line decoration giving a list line a depth-based hanging indent. */
@@ -203,7 +219,7 @@ function indentLine(cls: string, depth: number): Decoration {
         d = Decoration.line({
             class: cls,
             attributes: {
-                style: `padding-left:${pad}em;text-indent:-${LIST_GUTTER}em;line-height:${LIST_LINE_HEIGHT}`,
+                style: `padding-left:${pad}em;text-indent:-${LIST_STEP}em;line-height:${LIST_LINE_HEIGHT}`,
             },
         })
         indentLineCache.set(key, d)
@@ -1383,11 +1399,13 @@ const calloutDomHandlers = EditorView.domEventHandlers({
 const calloutThemeSpec: Record<string, Record<string, string>> = {
     '.cm-callout-wrap': { display: 'block', margin: '0.3em 0' },
     // The .asc-callout register (bismuth-design/ascii patterns.css): flat --surface-1, a 2px accent LEFT
-    // EDGE (--accent-edge), 4px radius — no full border, no darker fill.
+    // EDGE (--accent-edge), square corners — no full border, no darker fill. The 4px literal that
+    // used to sit here was the one rounded card in the editor: every other callout surface in the
+    // app (global.css's rendered-note callout) is --r-0.
     '.cm-callout-wrap .callout': {
         margin: '0.4em 0',
         'border-left': '2px solid var(--accent)',
-        'border-radius': '4px',
+        'border-radius': 'var(--r-0)',
         background: 'var(--surface-1)',
         padding: '0.5em 0.8em',
     },
@@ -1397,8 +1415,6 @@ const calloutThemeSpec: Record<string, Record<string, string>> = {
         gap: '0.45em',
         'font-weight': '600',
         'font-size': 'var(--fs-ui)',
-        'text-transform': 'uppercase',
-        'letter-spacing': 'var(--ls-label)',
     },
     '.cm-callout-wrap .callout-icon': {
         display: 'inline-flex',
@@ -1418,6 +1434,9 @@ for (const [type] of Object.entries(CALLOUT_TYPES)) {
         'border-left-color': `var(--callout-${type})`,
     }
     calloutThemeSpec[`.cm-callout-wrap .callout-${type} > .callout-title`] = {
+        color: 'var(--fg)',
+    }
+    calloutThemeSpec[`.cm-callout-wrap .callout-${type} .callout-icon`] = {
         color: `var(--callout-${type})`,
     }
 }
@@ -1641,14 +1660,16 @@ export const livePreview = [
             'text-decoration': 'none',
             'border-bottom': '1px solid var(--accent-soft)',
         },
-        // Body #hashtags read gold (ASCII redesign: prose tags use --gold, not --teal), in the
-        // editor's mono face at the editor size — the same pair the chat transcript, the Milkdown
-        // chip and the in-table chip use, so a #tag reads identically on every surface (the user's
-        // call, 2026-09-03). --ui-font-stack rather than the MONO_FONT literal so appearance.uiFont
-        // still governs it, per the family-list note in global.css's CodeMirror theming section; the token's default IS MONO_FONT's
-        // stack, so this is a no-op under default settings. The SIZE comes from that section's size
-        // list (a class that sets font-family inline here needs an entry there — see that comment).
-        '.cm-tag': { color: 'var(--gold)', 'font-family': 'var(--ui-font-stack)' },
+        // Body #hashtags read --accent, in the editor's mono face at the editor size — the same pair
+        // ui/Tag, the chat transcript, the Milkdown chip and the in-table chip use (global.css's
+        // `.bismuth-tag`), so a #tag reads identically on every surface and in every theme (the
+        // user's call, 2026-09-03; --accent rather than a fixed hue so the four themes each keep
+        // their own tag colour). --ui-font-stack rather than the MONO_FONT literal so
+        // appearance.uiFont still governs it, per the family-list note in global.css's CodeMirror
+        // theming section; the token's default IS MONO_FONT's stack, so this is a no-op under default
+        // settings. The SIZE comes from that section's size list (a class that sets font-family
+        // inline here needs an entry there — see that comment).
+        '.cm-tag': { color: 'var(--accent)', 'font-family': 'var(--ui-font-stack)' },
         // `??slug` memory refs read VIOLET: they are links (they navigate, so they keep .cm-wikilink's
         // pointer + soft underline) but they point at the THIRD brain, not a vault note — blue stays
         // "vault link", teal stays "tag". Declared after .cm-wikilink so the hue override wins on
@@ -1700,17 +1721,24 @@ export const livePreview = [
             'font-size': 'var(--fs-h5)',
             'font-weight': 'var(--fw-h5)',
             // h5/h6 are the only levels that sit BELOW body size, and they earn it by changing
-            // register rather than just shrinking: caps + tracking reads as a label, not as a
-            // stunted heading. Drop these two declarations and h5 becomes small body text.
-            'text-transform': 'uppercase',
+            // register rather than just shrinking — a label, not a stunted heading. The register
+            // is TRACKING + MUTED INK, in lowercase: the no-all-caps rule applies to real UI text
+            // and a heading is real UI text, so `text-transform: uppercase` is gone from both
+            // levels. Neither --fs-h5 nor --fs-h6 moved, so the ramp is unchanged and
+            // `headingRamp.test.ts` now pins the register it actually carries (--ls-label plus a
+            // muted colour) instead of the case. Drop these two declarations and h5 becomes
+            // unjustified small body text.
             'letter-spacing': 'var(--ls-label)',
+            color: 'var(--text-muted)',
         },
         '.cm-h6': {
             'font-size': 'var(--fs-h6)',
             'font-weight': 'var(--fw-h6)',
-            opacity: '0.85',
-            'text-transform': 'uppercase',
+            // Same label register as h5 above. The muted ink replaces the old `opacity: 0.85`,
+            // which was a second dimming on top of a colour that already says "label"
+            // (DESIGN.md:426-428 wants ink, not opacity).
             'letter-spacing': 'var(--ls-label)',
+            color: 'var(--text-muted)',
         },
         '.cm-quote': {
             'border-left': '2px solid var(--border)',
@@ -1737,39 +1765,51 @@ export const livePreview = [
             'border-top':
                 '2px solid color-mix(in srgb, var(--fg) 45%, transparent)',
         },
-        '.cm-li': { 'padding-left': '2px', 'line-height': '1.55' },
+        // `margin-left` is the marker column's overhang past LIST_STEP, and it is the SAME on
+        // `.cm-li` and `.cm-task` — that is what puts a bullet's text and a task's text on one
+        // axis. Each marker box pulls itself back left by the same amount (below), so the column's
+        // right edge still lands on the step and nothing hangs outside the line box.
+        '.cm-li': {
+            'padding-left': '2px',
+            'line-height': '1.55',
+            'margin-left': `${LIST_OVERHANG}em`,
+        },
         // Bullet glyph sits in the hanging gutter (right-aligned, with a fixed gap to the text).
         '.cm-bullet': {
             display: 'inline-block',
-            width: '1.6em',
+            width: `${LIST_GUTTER}em`,
+            'margin-left': `-${LIST_OVERHANG}em`,
             'box-sizing': 'border-box',
             'text-align': 'right',
             'padding-right': '0.62em',
             color: 'color-mix(in srgb, var(--fg) 50%, transparent)',
         },
-        // Ordered marker: same 1.6em gutter as the bullet, so numbered and bulleted text align on the
-        // same column (1.6em == LIST_STEP == the hanging indent the line decoration applies).
+        // Ordered marker: the same LIST_GUTTER column as the bullet and the checkbox, so numbered,
+        // bulleted and task text all align on one column.
         //
-        // THE GAP IS 0.3em, NOT the bullet's 0.62em, and that is load-bearing arithmetic. The marker is
-        // right-aligned inside the gutter, so anything wider than (gutter - padding) hangs off the LEFT
-        // edge of the line box. Monaspace advances 0.622em per character, so a two-character marker
-        // ("1.", "9.") is 1.244em: with a 0.62em gap it needs 1.864em and overflows the 1.6em gutter by
-        // 0.264em. In the note editor that overhang merely spills into the surrounding chrome and looks
-        // like a hanging indent. In the chat composer the CodeMirror content box has ZERO horizontal
-        // padding and .cm-scroller clips at its edge, so it sliced 3.5px off the left of every numeral
-        // (measured: glyph starts x=311.5, clip edge x=315). At 0.3em the marker needs 1.544em and fits
-        // with room to spare, and the text column stays exactly on LIST_STEP.
+        // THE GAP IS THE BULLET'S 0.62em, and it only fits because the column is LIST_GUTTER wide.
+        // The marker is right-aligned inside the column, so anything wider than (column - gap) hangs
+        // off the LEFT edge of the line box. Monaspace advances 0.622em per character, so a
+        // two-character marker ("1.", "9.") is 1.244em and needs 1.864em with this gap — which
+        // overflowed the OLD 1.6em column by 0.264em. In the note editor that merely spilled into
+        // the surrounding chrome; in the chat composer the CodeMirror content box has ZERO
+        // horizontal padding and .cm-scroller clips at its edge, so it sliced 3.5px off the left of
+        // every numeral (measured: glyph starts x=311.5, clip edge x=315). That is why the gap used
+        // to be cut to 0.3em — a workaround for a column too narrow for the brackets next door. At
+        // 2.2em the number fits with 0.34em to spare, so the numeral run can carry the SAME gap as
+        // the bullets and the two kinds of list finally look alike.
         //
         // width:max-content (floored by min-width) is what handles "10." / "100.": those genuinely
-        // exceed the gutter, so the box grows rightward and pushes the text instead of clipping the
-        // number. min-width alone did NOT do this — the box stayed at 1.6em and overflowed.
+        // exceed the column, so the box grows rightward and pushes the text instead of clipping the
+        // number. min-width alone did NOT do this — the box stayed at its floor and overflowed.
         '.cm-ol-number': {
             display: 'inline-block',
-            'min-width': '1.6em',
+            'min-width': `${LIST_GUTTER}em`,
             width: 'max-content',
+            'margin-left': `-${LIST_OVERHANG}em`,
             'box-sizing': 'border-box',
             'text-align': 'right',
-            'padding-right': '0.3em',
+            'padding-right': '0.62em',
             'white-space': 'nowrap',
             color: 'color-mix(in srgb, var(--fg) 70%, transparent)',
         },
@@ -1918,15 +1958,17 @@ export const livePreview = [
             display: 'inline-flex',
             'align-items': 'center',
             'justify-content': 'center',
-            color: 'color-mix(in srgb, var(--fg) 45%, transparent)',
+            // Rest/hover is told by INK, not by opacity (DESIGN.md:426-428): the glyph was
+            // `--fg` at 45% AND 0.8 opacity, i.e. the same tint applied twice, lifting to 1 on
+            // hover. One colour step does the whole job.
+            color: 'var(--text-muted)',
             padding: '0',
             height: 'auto',
             'min-height': '0',
             'line-height': '1',
-            opacity: '0.8',
-            transition: 'color 120ms, opacity 120ms',
+            transition: 'color var(--dur) var(--ease)',
         },
-        '.cm-code-copy:hover': { color: 'var(--accent)', opacity: '1' },
+        '.cm-code-copy:hover': { color: 'var(--accent)' },
         // Frontmatter: monospace property rows at --code-font-size — the SAME size as a fenced code
         // block (global.css's size-reset list), not the --fs-ui chrome size it once sat at. Plenty of
         // notes are mostly frontmatter (a book note is a dozen property rows and one query), so it is
@@ -1982,6 +2024,17 @@ export const livePreview = [
             'border-collapse': 'collapse',
             'table-layout': 'auto',
         },
+        // `overflow-wrap: break-word`, NOT the `anywhere` a cell inherits from CodeMirror's own
+        // line-wrapping rule. `anywhere` lets the browser break INSIDE a word even when the word
+        // would fit on a line of its own, which is exactly what a narrow table column is: every
+        // cell came out as `platfor/m`, `shippe/d`, `Anothe/r Note`, `Est/.`
+        // (`editor-editor--dense-table`). `break-word` breaks a word only when it cannot fit
+        // alone — so a genuinely unbreakable token (a long URL, a hash) still wraps rather than
+        // blowing the column out, and ordinary words stay whole.
+        // `word-break: normal` IS REQUIRED WITH IT, and overriding overflow-wrap alone did
+        // nothing: CodeMirror's `.cm-lineWrapping` also sets the legacy `word-break: break-word`,
+        // which the spec defines as "overflow-wrap: anywhere" wearing another property's name — so
+        // the inherited value kept re-asserting exactly what the line above is trying to undo.
         '.cm-table-rendered th, .cm-table-rendered td': {
             border: '1px solid color-mix(in srgb, var(--fg) 18%, transparent)',
             padding: '0.32em 0.6em',
@@ -1989,6 +2042,8 @@ export const livePreview = [
             'vertical-align': 'top',
             'line-height': 'var(--cm-td-lh, 1.5)',
             'min-width': '2.5em',
+            'overflow-wrap': 'break-word',
+            'word-break': 'normal',
         },
         '.cm-table-rendered th': {
             'font-weight': '600',
@@ -2028,7 +2083,7 @@ export const livePreview = [
             'font-size': '0.85em',
             'line-height': '1',
             opacity: '0',
-            transition: 'opacity 120ms, background 120ms, color 120ms',
+            transition: 'opacity var(--dur), background var(--dur), color var(--dur)',
         },
         '.cm-table-wrap:hover .cm-table-edge': { opacity: '1' },
         '.cm-table-edge:hover': {
@@ -2041,14 +2096,14 @@ export const livePreview = [
             bottom: '0',
             right: '-0.95em',
             width: '0.8em',
-            'border-radius': '0 var(--r-panel) var(--r-panel) 0',
+            'border-radius': 'var(--r-0)',
         },
         '.cm-table-add-row': {
             left: '0',
             right: '0',
             bottom: '-0.95em',
             height: '0.8em',
-            'border-radius': '0 0 var(--r-panel) var(--r-panel)',
+            'border-radius': 'var(--r-0)',
         },
         // Drag-to-resize: an absolutely-positioned overlay of wide hit strips centered on each
         // COLUMN border (column WIDTH only — row height is auto, #52). Each strip contains a visible
@@ -2070,28 +2125,33 @@ export const livePreview = [
             cursor: 'col-resize',
             'pointer-events': 'auto',
         },
+        // The grip is a FULL-HEIGHT, SQUARE hairline sitting exactly on the column border, and it
+        // is invisible until the table is hovered. Before: a 2px-rounded bar inset to 80% of the
+        // row, painted at 0.55 opacity all the time — so every column border read as TWO borders,
+        // one of them stopping short at both ends. State is told by ink here, never by opacity
+        // (DESIGN.md:426-428): at rest the grip is fully transparent, on table hover it takes the
+        // same hairline ink the cell borders use, and under the pointer it takes the accent.
         '.cm-col-resize-grip': {
             position: 'absolute',
-            top: '10%',
-            height: '80%',
+            top: '0',
+            height: '100%',
             left: '50%',
             width: '3px',
             transform: 'translateX(-50%)',
-            'border-radius': '2px',
-            opacity: '0.55',
-            background: 'color-mix(in srgb, var(--fg) 30%, transparent)',
-            transition: 'background 120ms, opacity 120ms',
+            'border-radius': 'var(--r-0)',
+            background: 'transparent',
+            transition: 'background var(--dur) var(--ease)',
         },
-        '.cm-table-wrap:hover .cm-col-resize-grip': { opacity: '1' },
+        '.cm-table-wrap:hover .cm-col-resize-grip': {
+            background: 'color-mix(in srgb, var(--fg) 30%, transparent)',
+        },
         '.cm-col-resize:hover .cm-col-resize-grip': {
-            opacity: '1',
             background: 'color-mix(in srgb, var(--accent) 75%, transparent)',
         },
         '.cm-col-resize:hover': {
             background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
         },
         '.cm-col-resize--dragging .cm-col-resize-grip': {
-            opacity: '1',
             background: 'var(--accent)',
         },
         // ── #62 compact density: tighter padding + line-height, matching Claude-chat tables ────────
@@ -2132,7 +2192,7 @@ export const livePreview = [
             display: 'flex',
             gap: '3px',
             opacity: '0',
-            transition: 'opacity 120ms',
+            transition: 'opacity var(--dur)',
             'z-index': '5',
         },
         '.cm-table-wrap:hover .cm-table-toolbar': { opacity: '1' },
@@ -2147,11 +2207,11 @@ export const livePreview = [
             color: 'color-mix(in srgb, var(--fg) 55%, transparent)',
             background: 'color-mix(in srgb, var(--fg) 6%, transparent)',
             border: '1px solid color-mix(in srgb, var(--fg) 12%, transparent)',
-            'border-radius': 'var(--r-control)',
+            'border-radius': 'var(--r-0)',
             'font-family': 'var(--ui-font-stack)',
             'font-size': '0.9em',
             'line-height': '1',
-            transition: 'background 120ms, color 120ms',
+            transition: 'background var(--dur), color var(--dur)',
         },
         '.cm-table-tool:hover': {
             background: 'color-mix(in srgb, var(--accent) 18%, transparent)',
@@ -2180,7 +2240,7 @@ export const livePreview = [
             'pointer-events': 'auto',
             color: 'color-mix(in srgb, var(--fg) 45%, transparent)',
             opacity: '0',
-            transition: 'opacity 120ms, color 120ms',
+            transition: 'opacity var(--dur), color var(--dur)',
         },
         '.cm-col-drag': {
             width: '1.7em',
@@ -2222,53 +2282,95 @@ export const livePreview = [
         // `padding-left:(depth+1)*1.6em; text-indent:-1.6em` (1.6em = LIST_STEP, the hanging gutter),
         // so the first inline box starts at depth*1.6em and wrapped rows start one gutter further in.
         // A literal `[ ]` (3 mono advances, ~1.85em) plus its gap does not fit that gutter, so:
-        // - the checkbox column is 2.2em wide, and the whole task line is pushed
-        //   right by the overhang (0.6em) via margin-left while the column pulls itself back left by
-        //   the same 0.6em — so its right edge stays on the gutter and the marker's LEFT edge sits on the
+        // - the marker column is LIST_GUTTER wide, and the whole task line is pushed
+        //   right by the overhang via margin-left while the column pulls itself back left by
+        //   the same amount — so its right edge stays on the gutter and the marker's LEFT edge sits on the
         //   content origin (nothing hangs past the line box, which a zero-padding host such as the
         //   chat composer would clip), wrapped rows still hang exactly under the task text, and
         //   nested depths keep the per-level 1.6em step. All em, so it scales with any host's size.
+        // - `.cm-li` carries the IDENTICAL overhang, so a task's text and a plain bullet's text
+        //   start on the same column instead of 0.6em apart.
         // - `text-indent` is INHERITED, and an inline-block applies it to its own first line: the
         //   marker is in-flow text, so without `text-indent:0` it paints 1.6em LEFT of its own box
         //   while getBoundingClientRect still reads aligned. Hence text-indent:0 on both.
         '.cm-task': {
             'padding-left': '2px',
             'line-height': '1.55',
-            'margin-left': '0.6em',
+            'margin-left': `${LIST_OVERHANG}em`,
         },
         '.cm-checkbox': {
             display: 'inline-block',
-            width: '2.2em',
-            'margin-left': '-0.6em',
+            width: `${LIST_GUTTER}em`,
+            'margin-left': `-${LIST_OVERHANG}em`,
             'box-sizing': 'border-box',
             'text-align': 'left',
             'text-indent': '0',
             'white-space': 'nowrap',
         },
         // The checkbox itself: the literal `[ ]` / `[x]` / `[/]` / `[-]` bracket marker — the same
-        // register as bases/TaskCheck.tsx and the calendar TaskChip. Click toggles done⇄todo;
-        // doing/cancelled are display-only (set by typing [/] or [-]).
+        // register as bases/TaskCheck.tsx and the calendar TaskChip. A click toggles done ⇄
+        // not-done FROM ANY status (clicking a `[/]` or a `[-]` writes `x`); `doing` and
+        // `cancelled` are reached by the right-click status menu or by typing the char.
+        // The glyph itself is `ui/BracketToggle` (TaskCheckbox.tsx composes it) — ONE bracket
+        // recipe for every checkbox in the app, not a second copy of `[ ]`/`[x]`/`[/]`/`[-]` here.
+        // So these rules drive that primitive's three documented custom properties rather than
+        // setting `color`, and they are the SAME map `bases/TaskCheck.module.css` declares: `[x]`
+        // and `[/]` take the accent, `[ ]` the muted ink, `[-]` the faint one. Two changes fall
+        // out of sharing it: `doing` no longer invents a second accent (--accent-purple), and
+        // `cancelled` is told by its glyph and ink instead of 0.65 opacity (DESIGN.md:426-428).
         '.cm-task-checkbox': {
             display: 'inline-block',
             'font-family': 'var(--ui-font-stack)',
             'text-indent': '0',
             'white-space': 'nowrap',
-            color: 'var(--text-muted)',
             cursor: 'pointer',
+            '--bracket-height': 'auto',
+            '--bracket-off': 'var(--text-muted)',
         },
-        '.cm-task-checkbox:hover': { color: 'var(--accent)' },
-        ".cm-task-checkbox[data-status='done']": { color: 'var(--accent)' },
-        ".cm-task-checkbox[data-status='doing']": {
-            color: 'var(--accent-purple)',
+        // ORDER IS LOAD-BEARING: `[data-status='cancelled']` and `:hover` are both (0,2,0), so the
+        // LATER rule wins and the cancelled rule must come FIRST. Declared the other way round, a
+        // cancelled box — which is still clickable, a click toggles it to done — got no hover cue
+        // at all. The same order is mirrored in TaskCheckbox.stories.tsx's TASK_CHECKBOX_CSS.
+        ".cm-task-checkbox[data-status='cancelled']": {
+            '--bracket-off': 'var(--faint)',
         },
-        ".cm-task-checkbox[data-status='cancelled']": { opacity: '0.65' },
+        '.cm-task-checkbox:hover': { '--bracket-off': 'var(--accent)' },
+        // A completed task's text: struck through and dropped to the muted ink. The 0.55 opacity
+        // that used to ride along with the colour was a second, redundant way of saying the same
+        // thing, and state is never told by opacity.
         '.cm-task-done': {
             'text-decoration': 'line-through',
-            opacity: '0.55',
-            color: 'color-mix(in srgb, var(--fg) 52%, transparent)',
+            color: 'var(--text-muted)',
         },
-        // Raw "- " / "- [ ]" marker on the cursor line, shown in the mono font.
-        '.cm-list-marker': { 'font-family': MONO_FONT },
+        // Raw "- " / "- [ ]" marker on the cursor line, shown in the mono font — IN THE SAME
+        // COLUMN, right-aligned, as the glyph it replaces. Left as plain in-flow text it started at
+        // the line's content origin while the rendered bullet is right-aligned inside the marker
+        // column, so clicking onto a bullet made it jump ~10px to the left (and out from under its
+        // own selection wash) at the moment the caret arrived. `width: max-content` floored by
+        // `min-width` is the same trick `.cm-ol-number` uses: a marker WIDER than the column (a
+        // revealed `- [ ] `) grows its box instead of hanging off the left edge, so it keeps
+        // starting exactly where the rendered checkbox starts. `text-indent: 0` because the line's
+        // negative hanging indent is INHERITED and an inline-block would otherwise apply it again
+        // to its own first line.
+        // THE COLUMN IS SIZED IN THE LINE'S EM, NOT THE MARKER'S. The revealed marker renders in
+        // the mono face at --code-font-size while the glyph it stands in for renders at the line's
+        // own size, so `2.2em` here and `2.2em` on `.cm-bullet` were two different lengths: the
+        // column came out 26.4px against the rendered 29.7px and the text after it landed 2.4px
+        // left as the caret arrived (measured on `editor-editor--revealed-marks`). Multiplying the
+        // ratios by `--prose-font-size` — which is exactly the font-size every CodeMirror host
+        // gives `.cm-content` (Editor.tsx, ui/MarkdownField.tsx, chat/ChatComposer.tsx all set
+        // `fontSize: var(--prose-font-size)`) — makes both boxes the same absolute width. The
+        // `1em` fallback degrades to the old marker-em behaviour if a host ever omits the token.
+        '.cm-list-marker': {
+            'font-family': MONO_FONT,
+            display: 'inline-block',
+            'min-width': `calc(${LIST_GUTTER} * var(--prose-font-size, 1em))`,
+            width: 'max-content',
+            'margin-left': `calc(-${LIST_OVERHANG} * var(--prose-font-size, 1em))`,
+            'box-sizing': 'border-box',
+            'text-align': 'right',
+            'text-indent': '0',
+        },
         // text-indent:0 — list lines carry a negative hanging text-indent (it's inherited);
         // without resetting it the KaTeX content shifts left and, when math is the first thing
         // after a list marker, lands on top of (hides) the bullet/number.

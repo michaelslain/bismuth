@@ -16,10 +16,11 @@
 // promise. Stories that need `/search` or `/search-prompt` to actually resolve wrap the fake
 // with a small postJson override rather than fabricating a bespoke transport.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { SwitcherBar } from './SwitcherBar'
 import { setTransport, type Transport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
+import { assertListboxStructure } from '../ui/_listboxAssertions'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { SearchResult } from '../searchOpts'
 
@@ -87,6 +88,9 @@ export const Default: Story = {
         setTransport(fakeTransport({ tree: TREE }))
         return <SwitcherBar onClose={noop} openFile={noop} />
     },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => assertListboxStructure(canvasElement))
+    },
 }
 
 /** A fuzzy filename query narrows the list and highlights the matched characters — the same
@@ -109,6 +113,7 @@ export const FilteredFileMatches: Story = {
             )
             expect(row.textContent).toContain('Roadmap')
         })
+        assertListboxStructure(canvasElement)
     },
 }
 
@@ -146,6 +151,8 @@ export const ContentMatches: Story = {
                 ).toBeInTheDocument(),
             { timeout: 2000 },
         )
+        // The section header sits BETWEEN two listboxes, never inside one.
+        assertListboxStructure(canvasElement)
     },
 }
 
@@ -255,7 +262,7 @@ export const NoMatchesAskAiCta: Story = {
     },
     play: async ({ canvasElement }) => {
         await typeQuery(canvasElement, 'what did I decide about the lease')
-        // The hint text is split by an inline <kbd>Enter</kbd>, so it is never one contiguous
+        // The hint text is split by an inline <Kbd combo="Enter" /> (it renders ↵), so it is never one contiguous
         // text node — a getByText copy query can't see across the split (RTL's own node-text
         // extraction only looks at an element's direct text-node children). The button carries
         // a stable testid; assert on ITS textContent, which does concatenate every descendant,
@@ -263,7 +270,7 @@ export const NoMatchesAskAiCta: Story = {
         await waitFor(() => {
             const cta = within(canvasElement).getByTestId('switcher-ask-ai-cta')
             expect(cta.textContent).toContain(
-                'Press Enter to ask Bismuth AI about your vault',
+                'Press ↵ to ask Bismuth AI about your vault',
             )
         })
     },
@@ -279,13 +286,13 @@ export const NoMatchesShortQueryAskAiCta: Story = {
     },
     play: async ({ canvasElement }) => {
         await typeQuery(canvasElement, 'meetign')
-        // The hint text is split by an inline <kbd>Enter</kbd>, so a getByText copy query cannot
+        // The hint text is split by an inline <Kbd combo="Enter" /> (it renders ↵), so a getByText copy query cannot
         // see across the split — assert on the button's textContent, which concatenates every
         // descendant. Same reasoning as NoMatchesAskAiCta above.
         await waitFor(() => {
             const cta = within(canvasElement).getByTestId('switcher-ask-ai-cta')
             expect(cta.textContent).toContain(
-                'Press Enter to ask Bismuth AI about your vault',
+                'Press ↵ to ask Bismuth AI about your vault',
             )
         })
         // And the plain empty state it replaced is genuinely gone, not merely also present.
@@ -361,6 +368,7 @@ export const AskAiResults: Story = {
                 }),
             ).toBeInTheDocument(),
         )
+        assertListboxStructure(canvasElement)
     },
 }
 
@@ -391,5 +399,35 @@ export const AskAiError: Story = {
                 ),
             ).toBeInTheDocument(),
         )
+    },
+}
+
+// Fresh spies per render, read back by the play below (a render fn takes no args here).
+let pickOpenFile = fn()
+let pickOnClose = fn()
+
+/** Clicking a file row with the POINTER opens that file and closes the switcher. The other
+ *  stories only render rows — which is how a dropped `onClick` (PaletteRow's prop is `onPick`)
+ *  shipped: every row painted, none responded. This one presses a row the way a mouse user does
+ *  and asserts the commit, so a dead click fails it. */
+export const ClickFileRowOpensIt: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        pickOpenFile = fn()
+        pickOnClose = fn()
+        return <SwitcherBar onClose={pickOnClose} openFile={pickOpenFile} />
+    },
+    play: async ({ canvasElement }) => {
+        await typeQuery(canvasElement, 'road')
+        const row = await within(canvasElement).findByTestId(
+            'palette-row-projects/Project Roadmap.md',
+        )
+        await userEvent.click(row)
+        await waitFor(() =>
+            expect(pickOpenFile).toHaveBeenCalledWith(
+                'projects/Project Roadmap.md',
+            ),
+        )
+        expect(pickOnClose).toHaveBeenCalledTimes(1)
     },
 }

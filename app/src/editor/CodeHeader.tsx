@@ -3,7 +3,7 @@
 // The header shown in place of a code block's opening ```lang fence when the
 // cursor is outside the block: the dim ```lang fence text on the left and an icon-only
 // copy button on the right that fires a toast on success.
-import { pushToast } from '../Toast'
+import { pushToast } from '../ui/ToastHost'
 import { IconButton } from '../ui/IconButton'
 import Text from '../ui/Text'
 

@@ -1,6 +1,9 @@
 /* Ported from calendar/Calendar.module.css's .evm-foot family, shared by six components.
    A full-width --rule divider (not a --rail fill) meets the panel's own side borders — see
    Task 1's FormModal frame. No keybind hint: the footer is actions only. */
-.modal-foot { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-6); border-top: var(--rule); }
+/* Sibling bracket buttons sit --sp-4 apart (DESIGN.md), not the 12px this used to carry. The band is
+   two --row-h (36px, border included) rather than 12 + 24 + 12 = 48 + 1, which was not a multiple
+   of the 18px row the rest of the frame is built on: --h-control tall buttons centered in it. */
+.modal-foot { display: flex; align-items: center; gap: var(--sp-4); box-sizing: border-box; min-height: calc(var(--row-h) * 2); padding: 0 var(--sp-6); border-top: var(--rule); }
 .modal-foot-sp { flex: 1; }
-.modal-foot-leading { display: flex; align-items: center; gap: var(--sp-5); }
+.modal-foot-leading { display: flex; align-items: center; gap: var(--sp-4); }

@@ -15,13 +15,14 @@
   overflow: hidden;
 }
 
+/* Layout only. The BOX — height, side padding, hairline — is ui/Band's (PdfEmbed.tsx renders this
+   class through it), the same band ViewBar and PreviewBar render through, so the embed's header
+   and the preview tab's header cannot drift to two heights and two left axes again. */
 .pdf-embed-head {
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: 0 var(--sp-2) 0 var(--sp-4);
-  border-bottom: 1px solid var(--border-soft);
   font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
 }

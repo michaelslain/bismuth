@@ -298,6 +298,8 @@ export function GraphView(props: {
             ? ap.accentPalette
             : DEFAULT_ACCENT_PALETTE
         const cfg: GraphConfig = {
+            // The status line is an overlay across the full pane's floor — keep the fit clear of it.
+            fitBottomRows: props.mini ? 0 : 1,
             spin: gs.spin,
             spinSpeed: gs.spinSpeed,
             palette: paletteToInts(palette),

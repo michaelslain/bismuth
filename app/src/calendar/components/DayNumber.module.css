@@ -1,7 +1,10 @@
 /* DayNumber.module.css — was `.cal-today-circle` (shared by MonthView, TimeGrid, TaskAllDayStrip).
    `.root.today` is (0,2,0) ON PURPOSE: callers merge their own typography class (e.g. MonthView's
    `.month-cell-number { color: var(--text-muted) }`) onto this element, and at equal specificity the
-   winner would depend on which module's CSS loaded last. */
+   winner would depend on which module's CSS loaded last.
+   The disc is one --row-h row tall and wide (18px, the line box it sits in), not the old 20px that
+   overflowed that line box and, inline, ran into the `/` in `Tue 10/5` with a 0px gap. `.inline`
+   gives the inline disc its own breathing room from the `/` before it. */
 .root { display: inline; }
-.root.today { width: 20px; height: 20px; border-radius: var(--r-dot); background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: var(--fw-bold); }
-.root.today.inline { display: inline-grid; vertical-align: middle; }
+.root.today { width: var(--row-h); height: var(--row-h); border-radius: var(--r-dot); background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: var(--fw-bold); }
+.root.today.inline { display: inline-grid; vertical-align: middle; margin-inline-start: var(--sp-2); }

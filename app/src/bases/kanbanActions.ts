@@ -22,7 +22,7 @@ import {
     propertyType,
 } from '../../../core/src/bases/properties'
 import { api } from '../api'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 import { pushUndoToast } from '../undoToast'
 import { parentOf } from '../fileTreeOps'
 import { rowId } from './rowIdentity'

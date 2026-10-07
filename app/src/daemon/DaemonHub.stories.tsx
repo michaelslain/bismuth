@@ -1,13 +1,15 @@
 // app/src/daemon/DaemonHub.stories.tsx
 // Visual spec for <DaemonHub> — the daemon page's left box in isolation: header (identity +
 // mood word), the face, and its own chat slot. The composer LOOK itself is
-// DaemonPage.stories.tsx's `ChatStub` (the real ChatComposerBar) / `Host` story's concern; this
-// file only proves the column's own layout — resting vs conversing, blurb present/absent/long, off.
+// DaemonChat.stories.tsx's concern; the chat slot here is the real DaemonChat over a stub session,
+// and this file only proves the column's own layout — resting vs conversing, blurb present/absent/long, off.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import type { JSX } from 'solid-js'
 import DaemonHub from './DaemonHub'
-import Text from '../ui/Text'
+import DaemonChat from './DaemonChat'
+import { makeStubChatSession } from '../chat/_stubChatSession'
+import { CONVERSATION_ITEMS } from '../chat/_transcriptFixtures'
 
 const meta = {
     title: 'Daemon/DaemonHub',
@@ -72,26 +74,23 @@ async function expectRestingBox(canvasElement: HTMLElement) {
     await expect(within(canvasElement).getByText('resting')).toBeInTheDocument()
 }
 
-/** Stands in for the real composer (proven elsewhere, see the header note above) — just enough
- *  height to show the chat region actually gets space under the identity block. */
+/** The hub's chat slot: the REAL `DaemonChat` (composer bar, controls row and, once there are
+ *  messages, the real `ChatTranscript`) over a stub session — so the conversing frame holds a
+ *  genuine transcript above a genuine composer rather than a blank bordered box. `tall` seeds a
+ *  short conversation. */
 function ChatStub(props: { tall?: boolean }) {
     return (
-        <div
-            data-testid="chat-stub"
-            style={{
-                display: 'flex',
-                'flex-direction': 'column',
-                height: props.tall ? '100%' : 'auto',
-                'min-height': '0',
-                border: 'var(--rule)',
-                'border-radius': 'var(--r-0)',
-                padding: 'var(--sp-4)',
-            }}
-        >
-            <Text size="ui" tone="muted">
-                Message daemon…
-            </Text>
-        </div>
+        <DaemonChat
+            session={makeStubChatSession({
+                transcript: props.tall ? [...CONVERSATION_ITEMS] : [],
+                persona: 'daemon',
+            })}
+            name="daemon"
+            onGesture={noop}
+            noteNames={() => []}
+            memoryNames={() => []}
+            tagNames={() => []}
+        />
     )
 }
 
@@ -189,15 +188,29 @@ export const Conversing: Story = {
     play: async ({ canvasElement }) => {
         // No hero face, no blurb, no [ edit ] until hovered — the transcript carries the face.
         await expect(
-            canvasElement.querySelector('[data-testid="daemon-face"]'),
-        ).toBeNull()
-        await expect(
             canvasElement.querySelector('[data-testid="daemon-face-region"]'),
         ).toBeNull()
+        // The face that remains is the transcript's avatar, inside the chat — never the hero.
+        const avatar = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-face"]',
+        )
+        await expect(
+            canvasElement
+                .querySelector('[data-testid="daemon-page-chat"]')!
+                .contains(avatar),
+        ).toBe(true)
+        await expect(parseFloat(getComputedStyle(avatar!).fontSize)).toBeLessThan(26)
         const canvas = within(canvasElement)
         await expect(canvas.getByRole('button', { name: 'daemon' })).toBeInTheDocument()
         await expect(canvas.getByText('talking')).toBeInTheDocument()
         await expect(canvas.queryByRole('button', { name: 'edit' })).toBeNull()
+        // The chat is the real thing, not a bordered box: a transcript turn above the composer.
+        await expect(
+            canvas.getByText('What changed in the last release?'),
+        ).toBeInTheDocument()
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-chat-composer"]'),
+        ).not.toBeNull()
         const hub = canvasElement.querySelector<HTMLElement>(
             '[data-testid="daemon-page-hub"]',
         )!
@@ -310,7 +323,7 @@ export const Off: Story = {
         ).toBeInTheDocument()
         await expect(canvas.queryByRole('button', { name: 'edit' })).toBeNull()
         await expect(
-            canvasElement.querySelector('[data-testid="chat-stub"]'),
+            canvasElement.querySelector('[data-testid="daemon-chat-composer"]'),
         ).toBeNull()
     },
 }

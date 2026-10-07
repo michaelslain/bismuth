@@ -10,8 +10,8 @@
   cursor: pointer;
   text-align: left;
 }
-.placeholder { color: var(--faint); }
+.placeholder { color: var(--text-muted); }
 .icon { flex: none; color: var(--faint); }
-/* Positioning + stacking (fixed, z-index 1100, the backdrop, the 4px anchor gap) now live in
+/* Positioning + stacking (fixed, z-index --z-popover, the backdrop, the 4px anchor gap) now live in
    ui/AnchoredPopover.module.css — this composes <AnchoredPopover> instead of hand positioning
    its own layer. */

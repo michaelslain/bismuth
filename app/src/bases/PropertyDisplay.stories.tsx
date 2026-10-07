@@ -81,8 +81,13 @@ type Story = StoryObj<typeof meta>
 export const Block: Story = {
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await expect(c.getByTestId('boolean yes')).toHaveTextContent('Yes')
-        await expect(c.getByTestId('boolean no')).toHaveTextContent('No')
+        // A boolean is the one `[ ]` / `[x]` BooleanValue glyph — drawn for false too, never blank.
+        const yes = c.getByTestId('boolean yes').querySelector('[role="img"]')!
+        const no = c.getByTestId('boolean no').querySelector('[role="img"]')!
+        await expect(yes).toHaveAttribute('aria-label', 'yes')
+        await expect(yes).toHaveAttribute('data-checked')
+        await expect(no).toHaveAttribute('aria-label', 'no')
+        await expect(no).not.toHaveAttribute('data-checked')
         await expect(c.getByTestId('multiselect')).toHaveTextContent('sci-fi')
         await expect(c.getByTestId('multiselect tags')).toHaveTextContent('#a, #b')
         await expect(c.getByTestId('undeclared tags')).toHaveTextContent(

@@ -12,13 +12,16 @@
 //     check and the computed-style baseline alike.
 //   • The registry's own tests compare the map against itself, so they cannot see that problem.
 // (The Nerd Font era's other failure — a missing codepoint drawing ZERO pixels, silently — cannot
-// recur the same way for SVG: every one of the 140 names resolves to real art or the deliberate
+// recur the same way for SVG: every one of the 142 names resolves to real art or the deliberate
 // fallback marker, enforced by registry-svg.test.ts. But a WRONG mapping is still invisible to
 // automation, which is what this file is for.)
 // The `AllIcons` story below therefore exists to be LOOKED AT. It is not decoration.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Icon } from './Icon'
-import { iconNames, libraryIconList } from './registry'
+import { FALLBACK_ART, iconNames, libraryIconList } from './registry'
+import { ICON_MAP } from './iconMap'
+import iconSize from '../ui/iconSize'
+import { expect } from 'storybook/test'
 import { loadIconLibrary } from './iconLibrary'
 import { rankIcons } from '../ui/gallery/sources'
 import { Row } from '../ui/_storyKit'
@@ -49,6 +52,15 @@ const OBSIDIAN_NAMES = [
     'LiFence',
     'LiIdCard',
 ]
+/** What the browser serialises an <svg> holding `body` back to — the SAME round-trip a rendered
+ *  <Icon> goes through (`innerHTML = body`), so two renderings of one body compare equal even though
+ *  the source string and the serialised form differ (`<circle/>` vs `<circle></circle>`). */
+const serialised = (body: string): string => {
+    const holder = document.createElement('div')
+    holder.innerHTML = `<svg>${body}</svg>`
+    return holder.querySelector('svg')?.innerHTML ?? ''
+}
+
 const loadLibrary = async () => {
     await loadIconLibrary()
     return {}
@@ -66,6 +78,7 @@ type Story = StoryObj<typeof meta>
 function Labeled(props: { value: string; caption: string; size?: number }) {
     return (
         <div
+            data-testid={`labeled-${props.value}`}
             style={{
                 display: 'flex',
                 'flex-direction': 'column',
@@ -103,10 +116,15 @@ export const Default: Story = {
     ),
 }
 
-/** EVERY icon in the registry, with its name, sorted. The whole set on one surface, because the two
- *  failure modes that matter — a glyph that draws nothing, and a glyph that draws the wrong thing —
- *  are both invisible to every other check we have. An empty cell is a missing codepoint; a cell
- *  whose picture disagrees with its label is a bad mapping choice. */
+/** EVERY icon in the registry, with its name, sorted, at the REAL icon size (`iconSize()`, 12px by
+ *  default — what ships; a bigger frame flatters the set). The whole set on one surface, because the
+ *  failure modes that matter are invisible to every other check: a glyph that draws nothing, a glyph
+ *  that draws the wrong thing, and a glyph that draws the dashed "?" fallback. An empty cell is a
+ *  missing glyph; a cell whose picture disagrees with its label is a bad mapping choice.
+ *
+ *  The `play()` is only a smoke check: it confirms every key of `ICON_MAP` paints real art. It is
+ *  NOT the guard against a call site asking for a name that does not exist — those names are not
+ *  keys, so this loop cannot see them. That guard is `iconUsage.test.ts`. */
 export const AllIcons: Story = {
     render: () => (
         <div
@@ -119,6 +137,7 @@ export const AllIcons: Story = {
         >
             {iconNames().map(n => (
                 <div
+                    data-testid={`icon-${n}`}
                     style={{
                         display: 'flex',
                         'align-items': 'center',
@@ -126,7 +145,7 @@ export const AllIcons: Story = {
                         'min-width': 0,
                     }}
                 >
-                    <Icon value={n} size={18} />
+                    <Icon value={n} size={iconSize()} />
                     <span
                         style={{
                             'font-family': 'var(--ui-font-stack)',
@@ -144,13 +163,78 @@ export const AllIcons: Story = {
             ))}
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const fallback = serialised(
+            FALLBACK_ART.kind === 'svg' ? FALLBACK_ART.body : '',
+        )
+        const names = Object.keys(ICON_MAP)
+        const problems: string[] = []
+        for (const name of names) {
+            const svg = canvasElement.querySelector(
+                `[data-testid="icon-${name}"] svg`,
+            )
+            if (!svg) problems.push(`${name}: not rendered`)
+            else if (!svg.innerHTML.trim()) problems.push(`${name}: empty`)
+            else if (svg.innerHTML === fallback)
+                problems.push(`${name}: FELL BACK to the dashed "?"`)
+        }
+        // Every key was checked (a vacuous loop over zero names would pass), and nothing else was.
+        expect(names.length).toBeGreaterThan(100)
+        expect(problems).toEqual([])
+    },
+}
+
+/** The glyphs this set once drew wrongly, side by side at the real icon size: the Enable/Disable
+ *  pair (Power / PowerOff were ONE picture), the two column glyphs (Columns2 / Columns3 were one),
+ *  the visibility pair the file tree draws (EyeSlash / ChatSlash — once dashed "?"s), the find-bar
+ *  marks (Regex / WholeWord — once retyped text, lighter and smaller than every neighbour), and the
+ *  three remapped pictures (Menu, SeparatorHorizontal = page break, SquareSlash = in progress). */
+export const ChangedGlyphs: Story = {
+    render: () => (
+        <Row gap="24px">
+            {[
+                'Power',
+                'PowerOff',
+                'Columns2',
+                'Columns3',
+                'Eye',
+                'EyeSlash',
+                'MessageSquare',
+                'ChatSlash',
+                'Regex',
+                'WholeWord',
+                'CaseSensitive',
+                'Menu',
+                'SeparatorHorizontal',
+                'SquareSlash',
+            ].map(n => (
+                <Labeled value={n} caption={n} size={iconSize()} />
+            ))}
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const bodyOf = (n: string) =>
+            canvasElement
+                .querySelector(`[data-testid="labeled-${n}"] svg`)
+                ?.innerHTML.trim() ?? ''
+        for (const [a, b] of [
+            ['Power', 'PowerOff'],
+            ['Columns2', 'Columns3'],
+            ['Eye', 'EyeSlash'],
+            ['MessageSquare', 'ChatSlash'],
+        ]) {
+            expect(bodyOf(a), `${a} draws`).not.toBe('')
+            expect(bodyOf(a), `${a} vs ${b}`).not.toBe(bodyOf(b))
+        }
+    },
 }
 
 /** The same icon at the sizes real call sites actually use (12-32px). Real vector SVG again (after
  *  an interlude as a font glyph), so it scales by the viewBox rather than by font hinting — the
  *  small end is where a too-detailed icon turns to mush, so it is worth checking here and not only
- *  in the gallery. `--icon` (global.css's `styles/tokens.css` section) is 14px; there is no
- *  --icon-sm/--icon-lg. */
+ *  in the gallery. `--icon` (global.css's tokens section) is 12px, and the app's icons all
+ *  render at `iconSize()` (`appearance.iconSize`); there is no --icon-sm/--icon-lg, so the larger
+ *  sizes here are for oversized illustration marks only. */
 export const Sizes: Story = {
     render: () => (
         <Row gap="20px">
@@ -234,7 +318,7 @@ export const MissingIcons: Story = {
     ),
 }
 
-/** Icons from the FULL Phosphor library — outside the app's 140 canonical names — plus the
+/** Icons from the FULL Phosphor library — outside the app's 142 canonical names — plus the
  *  Obsidian `Li*` names an imported vault carries in `icon:` frontmatter. The library is a lazy
  *  chunk; the loader awaits it, so the story renders settled art rather than the empty boxes a
  *  cold <Icon> draws for the few milliseconds the chunk takes. Every cell must be real art: a

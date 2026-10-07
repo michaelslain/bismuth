@@ -1,7 +1,7 @@
 // Visual spec for <TopStrip> — the wordmark + platform titlebar strip that sits above `.layout`
 // (bismuth-design/ascii/README.md "App shell", §1).
 //
-// WHY THIS FILE EXISTS: `.top-strip`, `.top-strip--mac` and `.top-strip-spacer` moved from the
+// WHY THIS FILE EXISTS: `.top-strip` and `.top-strip-spacer` moved from the
 // global App.css into TopStrip.module.css, which HASHES every class name. A name left behind as a
 // string literal still compiles and still renders, it just matches nothing — the wordmark loses
 // its flex row, the spacer stops pushing WindowControls to the edge, and macOS loses its 78px
@@ -84,7 +84,7 @@ export const Default: Story = {
 }
 
 /** macOS Tauri build: the native Overlay titlebar draws its own traffic lights over the strip, so
- *  `top-strip--mac` reserves 78px of left padding for them and no WindowControls render (macOS
+ *  Band's `inset="traffic-lights"` reserves 78px of left padding for them and no WindowControls render (macOS
  *  never gets the typed `[-] [+] [x]` buttons). */
 export const Mac: Story = {
     render: () => (
@@ -92,6 +92,29 @@ export const Mac: Story = {
             <TopStrip mac={true} dragRegion={true} />
         </Wrap>
     ),
+    /** THE ONE PLACE "78px" IS PROVEN: Band's `.inset-traffic-lights` must win over the strip's own
+     *  inline padding, so the computed left padding is the lights' footprint (`--inset-traffic-lights`)
+     *  and NOT the plain strip inset (`--sp-5`) the non-Mac path gets. Both tokens are resolved
+     *  through a probe element, so the assertion survives either value being retuned. */
+    play: async ({ canvasElement }) => {
+        const strip = canvasElement.querySelector<HTMLElement>(
+            '[data-tauri-drag-region]',
+        )!
+        await expect(strip).not.toBeNull()
+        const resolve = (token: string) => {
+            const probe = document.createElement('div')
+            probe.style.width = `var(${token})`
+            canvasElement.appendChild(probe)
+            const px = parseFloat(getComputedStyle(probe).width)
+            probe.remove()
+            return px
+        }
+        const lights = resolve('--inset-traffic-lights')
+        const plain = resolve('--sp-5')
+        await expect(lights).toBeGreaterThan(plain)
+        await expect(parseFloat(getComputedStyle(strip).paddingLeft)).toBe(lights)
+        await expect(parseFloat(getComputedStyle(strip).paddingLeft)).not.toBe(plain)
+    },
 }
 
 /** Windows/Linux Tauri build: fully undecorated window, so the typed WindowControls render as

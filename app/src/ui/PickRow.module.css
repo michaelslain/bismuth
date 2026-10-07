@@ -1,0 +1,19 @@
+/* PickRow.module.css — PickRow.tsx is the ONLY importer. Three columns on every row: the mark slot,
+   the label, the detail. The mark slot is a fixed 2ch with no gap after it, so `▸ name` reads the
+   same on every row and a wrapped label hangs under the NAME, not under the marker (a grid column,
+   so no negative text-indent is needed). Rows are 22px (`--row-h` + `--sp-1` either side) like every
+   list row; a wrapped label grows the row. */
+.row {
+    display: grid; grid-template-columns: 2ch minmax(0, 1fr) auto; align-items: baseline;
+    width: 100%; min-width: 0; min-height: calc(var(--row-h) + 2 * var(--sp-1));
+    padding: var(--sp-1) var(--sp-5); text-align: left;
+    font-family: var(--ui-font-stack); font-size: var(--fs-ui); font-weight: var(--fw-regular);
+    color: var(--text-muted);
+    transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.row:hover, .marked { color: var(--fg); }
+/* PRESSED — the one fill a row paints, on --state-active-bg. */
+.row:active { background: var(--state-active-bg); }
+.mark { display: inline-block; width: 2ch; color: var(--accent); }
+.label { min-width: 0; overflow-wrap: anywhere; }
+.detail { padding-left: var(--sp-3); color: var(--faint); text-align: right; white-space: nowrap; }

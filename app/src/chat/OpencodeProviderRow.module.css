@@ -1,17 +1,10 @@
 /* app/src/chat/OpencodeProviderRow.module.css — one unconnected provider in the credentials
-   popover. Horizontal padding matches OpencodeProviderManager's connected rows so the right-hand controls
-   (`[ connect ]`, `[ save ]`, the kind badges above) all end on the same right edge. */
+   popover (ONE importer: OpencodeProviderRow.tsx). The row itself is `ui/ListRow` — the same 22px
+   pitch the connected rows above it have (they were ~31px against this one's 36px); the host's
+   RowList supplies the dialog gutter, so every right-hand control ends on one edge. */
 .root {
     display: flex;
     flex-direction: column;
-}
-.row {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-4);
-    padding: var(--sp-3) var(--sp-5);
-    font-size: var(--fs-ui);
-    min-height: calc(var(--h-control) + var(--sp-3) * 2);
 }
 .name {
     flex: 1;
@@ -35,10 +28,7 @@
     align-items: center;
     gap: var(--bar-icon-gap);
 }
-/* Inline failure — the same danger tone chat's per-turn error uses (ChatTranscript.module.css). */
+/* Inline failure under the row; ErrorText supplies the tone, size and role="alert". */
 .error {
-    padding: 0 var(--sp-5) var(--sp-3);
-    font-size: var(--fs-ui);
-    line-height: 1.45;
-    color: var(--danger);
+    padding-bottom: var(--sp-3);
 }

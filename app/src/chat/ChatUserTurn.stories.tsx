@@ -37,7 +37,7 @@ export const Default: Story = {
     },
 }
 
-/** A staged (not yet sent) message — dimmed, with a "queued" note and a cancel button that fires
+/** A staged (not yet sent) message — settled in muted INK, never faded (no state by opacity), with a "queued" note and a cancel button that fires
  *  `onCancelQueued` with the turn's queue id. */
 export const Queued: Story = {
     render: args => (
@@ -53,6 +53,17 @@ export const Queued: Story = {
     play: async ({ canvasElement, args }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('queued')).toBeInTheDocument()
+        // QUEUED IS INK, NOT OPACITY: the bubble and every ancestor up to the canvas paint at full
+        // opacity (it used to fade to .55), and its text reads in --text-muted.
+        const text = canvas.getByText('Also check the daemon logs for errors.')
+        for (let el: Element | null = text; el && el !== canvasElement.parentElement; el = el.parentElement)
+            await expect(getComputedStyle(el).opacity).toBe('1')
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--text-muted)'
+        canvasElement.appendChild(probe)
+        const muted = getComputedStyle(probe).color
+        probe.remove()
+        await expect(getComputedStyle(text).color).toBe(muted)
         await userEvent.click(
             canvas.getByRole('button', { name: 'Cancel queued message' }),
         )

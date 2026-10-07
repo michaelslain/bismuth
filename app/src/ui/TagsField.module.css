@@ -18,9 +18,9 @@
   flex: 1;
   min-width: 0;
 }
-/* A tag inside the field — drawn as ui/Tag draws one: `#name` in teal (the face is already the
+/* A tag inside the field — drawn as ui/Tag draws one: `#name` in --accent (the face is already the
    field's own UI font). */
 .tagToken,
-.tagTokenTypedHash { color: var(--teal); }
+.tagTokenTypedHash { color: var(--accent); }
 /* The tag's `#`, drawn — ui/Tag's `#name` — so the saved text stays the bare name. */
 .tagToken::before { content: '#'; }

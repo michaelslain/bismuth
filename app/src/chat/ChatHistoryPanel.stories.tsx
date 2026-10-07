@@ -200,9 +200,12 @@ export const KeyboardCursor: Story = {
         )!
         input.focus()
         await userEvent.keyboard('{ArrowDown}{ArrowDown}')
-        const active = canvasElement.querySelectorAll('[data-active]')
+        const active = canvasElement.querySelectorAll('[data-selected]')
         await expect(active.length).toBe(1)
         await expect(active[0].textContent).toContain('dream')
+        // the focused input names the cursor row, so assistive tech announces it
+        await expect(input.getAttribute('aria-activedescendant')).toBe(active[0].id)
+        await expect(active[0].id).toMatch(/^chat-history-row-\d+$/)
     },
 }
 
@@ -225,10 +228,43 @@ export const Search: Story = {
         )!
         await expect(input.value).toBe('quiet row')
         const canvas = within(canvasElement)
-        await expect(
-            canvas.getByText('the chat controls should be one quiet row…'),
-        ).not.toBeNull()
+        // the excerpt is re-windowed to start near the match (see LongExcerptKeepsTheMatch)
+        await expect(canvas.getByText('…be one quiet row…')).not.toBeNull()
         await expect(canvas.getByText('3 matches')).not.toBeNull()
+        // options sit inside a named group, not loose beside the group label
+        const group = canvasElement.querySelector('[role="group"]')!
+        await expect(group.querySelectorAll('[role="option"]').length).toBe(3)
+    },
+}
+
+/** A hit's excerpt sits on ONE ellipsised line, and core centers it on the match — so the matching
+ *  term is the part a plain ellipsis cuts. The row re-windows the excerpt so the match is on screen:
+ *  the match's own painted box ends inside the line's box. */
+export const LongExcerptKeepsTheMatch: Story = {
+    render: () => (
+        <Frame width="440px">
+            <ChatHistoryPanel
+                history={makeHistory({
+                    sessions: SESSIONS,
+                    searchHits: HITS,
+                    query: 'quiet row',
+                })}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const line = within(canvasElement).getByText(/quiet row of chips wraps/)
+        const text = line.firstChild as Text
+        const at = text.data.indexOf('quiet row')
+        await expect(at).toBeGreaterThanOrEqual(0)
+        const range = document.createRange()
+        range.setStart(text, at)
+        range.setEnd(text, at + 'quiet row'.length)
+        // the line really is clipped (the premise), yet the match is not what got cut
+        await expect(line.scrollWidth).toBeGreaterThan(line.clientWidth)
+        await expect(range.getBoundingClientRect().right).toBeLessThanOrEqual(
+            line.getBoundingClientRect().right,
+        )
     },
 }
 

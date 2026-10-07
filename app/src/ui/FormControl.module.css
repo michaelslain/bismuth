@@ -54,5 +54,21 @@
 .ui-input:focus, .ui-input:focus-within { border-bottom: var(--rule); }
 .ui-input:disabled { color: var(--faint); border-bottom: var(--rule-soft-dashed); }
 /* Multiline: the SAME underline sits under the last line, not a box around the whole field —
-   `border` stays `none`/`border-bottom` only, exactly as the single-line branch above. */
-textarea.ui-input { resize: none; min-height: 62px; height: auto; padding: var(--sp-2) 0; line-height: var(--lh-ui); }
+   `border` stays `none`/`border-bottom` only, exactly as the single-line branch above.
+   `resize: none` is the ONE place the UA's drag grip is removed — a grip is a native control
+   showing through an underline-only field. Min-height is three row units (`--h-control`), not a
+   bare pixel count; the top padding centres the first line in the same `--h-control` box a
+   single-line field centres its value in, so a label beside a textarea shares its first baseline. */
+textarea.ui-input {
+  resize: none;
+  min-height: calc(var(--h-control) * 3);
+  height: auto;
+  padding: calc((var(--h-control) - var(--fs-ui) * var(--lh-ui)) / 2) 0 var(--sp-2);
+  line-height: var(--lh-ui);
+}
+/* Native UA controls must not show through the underline-only look: the number spinner (a
+   stepper box the field never drew) is removed once here, for every `type="number"` field, rather
+   than per caller. Typing, arrow keys and the wheel-less value all still work. */
+.ui-input[type='number'] { appearance: textfield; -moz-appearance: textfield; }
+.ui-input[type='number']::-webkit-outer-spin-button,
+.ui-input[type='number']::-webkit-inner-spin-button { appearance: none; -webkit-appearance: none; margin: 0; }

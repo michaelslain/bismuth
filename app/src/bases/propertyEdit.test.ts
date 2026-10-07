@@ -397,6 +397,26 @@ describe('list properties — only what the field can round-trip is editable', (
     })
 })
 
+describe('a link value (an object) is read-only, never a text box', () => {
+    const noSchema = {}
+    const link = { path: 'Some Note.md', display: 'Some Note' }
+    test('undeclared, registry-typed and declared kinds all stay read-only', () => {
+        expect(propertyEditKind('related', link, noSchema, [])).toEqual({
+            kind: 'readonly',
+        })
+        expect(
+            propertyEditKind('related', link, noSchema, [], { kind: 'link' }),
+        ).toEqual({ kind: 'readonly' })
+        expect(
+            propertyEditKind('related', link, noSchema, [], { kind: 'text' }),
+        ).toEqual({ kind: 'readonly' })
+    })
+    test('its draft is the display text, never [object Object]', () => {
+        expect(propertyDraft({ kind: 'text' }, link)).toBe('Some Note')
+        expect(propertyDraft({ kind: 'readonly' }, link)).toBe('Some Note')
+    })
+})
+
 describe('propertyDraft', () => {
     test('null is empty, text passes through', () => {
         expect(propertyDraft({ kind: 'text' }, null)).toBe('')

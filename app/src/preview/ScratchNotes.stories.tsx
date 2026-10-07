@@ -28,6 +28,7 @@ import {
 import { DEFAULT_MARGIN_RATIO } from '../../../core/src/drawing/pageMargin'
 import { serializeScratch } from '../../../core/src/scratchNotes'
 import type { ScratchBlock } from '../../../core/src/scratchTypes'
+import TextButton from '../ui/TextButton'
 
 const meta = {
     title: 'Preview/ScratchNotes',
@@ -312,8 +313,7 @@ export const PdfBlocksSurviveReload: Story = {
                 <Show when={mounted()}>
                     <PdfStage path={PDF_PATH} load={bookLoad} />
                 </Show>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="reload"
                     onClick={() => {
                         setMounted(false)
@@ -321,7 +321,7 @@ export const PdfBlocksSurviveReload: Story = {
                     }}
                 >
                     reload
-                </button>
+                </TextButton>
             </div>
         )
     },

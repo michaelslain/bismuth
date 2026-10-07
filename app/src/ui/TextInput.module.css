@@ -9,5 +9,14 @@
    calendar/components/CategoryList.module.css, and written as a bare literal directly by graph/EmbeddedGraph.tsx,
    bases/CardEditModal.tsx and editor/DatePicker.tsx — hashing it would silently unstyle all of
    those. See .claude/plans/ui-css-ownership.md. */
-.ui-input-plain { width: 100%; border: none; outline: none; background: none; color: var(--fg); font: inherit; }
-.ui-input-plain::placeholder { color: var(--text-muted); }
+/* `plain` is a text-looking field: no chrome at all. It resets the UA's own padding/margin so its
+   text starts at the SAME x as the default field's (which is `padding: 0`) — before, it started ~2px
+   right. The placeholder is `--faint`, matching FormControl's and SearchBar's: a hint, not content.
+   The number-spinner and resize-grip resets repeat FormControl.module.css's, because this class is
+   a separate element family (one stylesheet, one importer — it cannot reach FormControl's). */
+.ui-input-plain { width: 100%; box-sizing: border-box; margin: 0; padding: 0; border: none; border-radius: var(--r-0); outline: none; background: none; color: var(--fg); font: inherit; resize: none; }
+.ui-input-plain::placeholder { color: var(--faint); }
+.ui-input-plain:disabled { color: var(--faint); }
+.ui-input-plain[type='number'] { appearance: textfield; -moz-appearance: textfield; }
+.ui-input-plain[type='number']::-webkit-outer-spin-button,
+.ui-input-plain[type='number']::-webkit-inner-spin-button { appearance: none; -webkit-appearance: none; margin: 0; }

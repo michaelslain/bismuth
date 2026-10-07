@@ -15,6 +15,18 @@ type Story = StoryObj<typeof meta>
 
 export const Default: Story = {
     args: { account: 'alex@example.com', onDisconnect: () => {} },
+    play: ({ canvasElement }) => {
+        // The row is exactly one chrome band tall (--h-band, 36px), not the ~50px it measured
+        // when 12px block padding stacked on the 24px button.
+        const row = canvasElement.querySelector<HTMLElement>('div')!
+        const probe = document.createElement('div')
+        probe.style.height = 'var(--h-band)'
+        canvasElement.appendChild(probe)
+        const band = probe.getBoundingClientRect().height
+        probe.remove()
+        expect(band).toBeGreaterThan(0)
+        expect(row.getBoundingClientRect().height).toBeCloseTo(band, 0)
+    },
 }
 
 /** A long account address truncates with an ellipsis instead of pushing disconnect out. */
@@ -23,6 +35,13 @@ export const LongAccount: Story = {
         account:
             'a.very.long.address.that.keeps.going@some-subdomain.example-company.com',
         onDisconnect: () => {},
+    },
+    play: ({ canvasElement }) => {
+        // The cut-off address is still reachable in full: the span carries it as its title.
+        const acct = within(canvasElement).getByTitle(
+            'a.very.long.address.that.keeps.going@some-subdomain.example-company.com',
+        )
+        expect(acct.scrollWidth).toBeGreaterThan(acct.clientWidth)
     },
     decorators: [
         Story => (

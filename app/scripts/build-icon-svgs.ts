@@ -2,13 +2,13 @@
 //
 // Generates the two SVG artifacts behind `<Icon>`:
 //
-//   * `app/src/assets/icons/icon-manifest.json` — the 140 canonical names the app's own chrome
+//   * `app/src/assets/icons/icon-manifest.json` — the 142 canonical names the app's own chrome
 //     uses, imported statically so every toolbar/menu icon resolves synchronously; and
 //   * `app/src/assets/icons/icon-library.json` — EVERY Phosphor Regular icon (~1,500), with its
 //     search tags, loaded lazily (a separate chunk) only when the icon picker opens or a note's
-//     `icon:` names something outside the 140. This is what a person picks from.
+//     `icon:` names something outside the 142. This is what a person picks from.
 //
-// The manifest is built by resolving every one of icons/iconNames.ts's 140 canonical names against icons/iconMap.ts
+// The manifest is built by resolving every one of icons/iconNames.ts's 142 canonical names against icons/iconMap.ts
 // (name -> Phosphor slug or a hand-authored custom mark) and @iconify-json/ph's icons.json
 // (~9161 icons), then writing out ONLY the names actually in use.
 //
@@ -41,7 +41,7 @@
 // from '@iconify-json/ph/…'` specifier. So swapping sets later really is "overwrite
 // iconMap.ts's entries + KNOWN_MISSING + SOURCE_PACKAGE for the new set, rerun
 // `bun run icons:svg`" — one data module, one unmodified script, nothing else. iconNames.ts (the
-// 140 canonical names) and registry.ts (which only ever sees the manifest's shape) do not change.
+// 142 canonical names) and registry.ts (which only ever sees the manifest's shape) do not change.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ICON_NAMES } from '../src/icons/iconNames'

@@ -38,6 +38,12 @@
     flex-shrink: 0;
 }
 
+/* A negative value draws its magnitude in muted ink; the value column carries the `-`. Declared
+   before .dim/.active so a selected or dimmed row still wins. */
+.fill.negative {
+    color: var(--text-muted);
+}
+
 .fill.dim {
     color: var(--text-muted);
 }

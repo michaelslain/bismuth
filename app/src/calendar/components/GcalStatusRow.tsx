@@ -16,7 +16,12 @@ export type GcalStatusRowProps = {
 const GcalStatusRow: Component<GcalStatusRowProps> = props => (
     <div class={styles['gcal-status']}>
         <StatusDot color="var(--green)" />
-        <Text as="span" inherit class={styles['gcal-acct']}>
+        <Text
+            as="span"
+            inherit
+            class={styles['gcal-acct']}
+            title={props.account}
+        >
             {props.account}
         </Text>
         <TextButton

@@ -89,13 +89,18 @@ export function TabRailRow(props: {
         collapsed icon-column is never empty for an unnamed note. */}
             <Icon
                 class={styles['tab-rail-icon']}
+                data-tab-rail-icon=""
                 value={props.icon}
                 style={props.color ? { color: props.color } : undefined}
             />
             <Show
                 when={props.renaming}
                 fallback={
-                    <Label fill class={styles['tab-rail-label']}>
+                    <Label
+                        fill
+                        class={styles['tab-rail-label']}
+                        data-tab-rail-label=""
+                    >
                         {props.label}
                     </Label>
                 }
@@ -153,6 +158,7 @@ export function TabRailRow(props: {
                     fallback={
                         <IconButton
                             class={styles['tab-x']}
+                            data-tab-rail-close=""
                             size="sm"
                             icon="X"
                             label="Close tab"

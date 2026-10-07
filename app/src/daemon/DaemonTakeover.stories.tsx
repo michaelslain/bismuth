@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { createSignal, For, Show, type JSX } from 'solid-js'
-import { ContextMenu } from '../ContextMenu'
+import { ContextMenu } from '../ui/ContextMenu'
 import DaemonTakeover from './DaemonTakeover'
 import Text from '../ui/Text'
 

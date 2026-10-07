@@ -799,6 +799,23 @@ test('GET /file with nonexistent file returns empty string with 200', async () =
     }
 })
 
+test('GET /file on an existing but unreadable path is an error, never an empty 200', async () => {
+    // A `.draw` the server cannot read must not look like a brand-new empty drawing: the client
+    // maps an empty body to a blank editable doc and the next autosave overwrites the real file.
+    // A directory at the path fails the read with EISDIR on every platform and as any user.
+    const { vault } = await makeSampleVault()
+    mkdirSync(join(vault, 'locked.draw'))
+    const server = createServer({ vault, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/file?path=locked.draw`)
+        expect(res.status).toBeGreaterThanOrEqual(400)
+        expect(await res.text()).not.toBe('')
+    } finally {
+        server.stop(true)
+    }
+})
+
 test('OPTIONS request returns CORS headers', async () => {
     const { vault } = await makeSampleVault()
     const server = createServer({ vault, port: 0 })

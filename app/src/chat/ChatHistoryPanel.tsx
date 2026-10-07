@@ -29,7 +29,8 @@ import ChatHistoryRow from './ChatHistoryRow'
 import Text from '../ui/Text'
 import { SegmentedToggle, type SegmentedOption } from '../ui/SegmentedToggle'
 import { TextButton } from '../ui/TextButton'
-import IconButton from '../ui/IconButton'
+import SectionLabel from '../ui/SectionLabel'
+import EmptyState from '../ui/EmptyState'
 import SearchBar from '../ui/SearchBar'
 import { createMenuNav } from '../ui/popover/createMenuNav'
 
@@ -99,10 +100,12 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
             nav.setActive(-1),
         ),
     )
-    const rowEls: HTMLButtonElement[] = []
+    // The cursor row is found by its `data-selected` hook (PaletteRow's), not a ref per row.
     createEffect(() => {
-        const i = nav.active()
-        if (i >= 0) rowEls[i]?.scrollIntoView({ block: 'nearest' })
+        if (nav.active() < 0) return
+        root
+            .querySelector<HTMLElement>('[data-selected]')
+            ?.scrollIntoView({ block: 'nearest' })
     })
 
     let root!: HTMLDivElement
@@ -131,9 +134,9 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
         </Show>
     )
     const state = (text: string) => (
-        <Text size="ui" tone="muted" class={styles.state}>
+        <EmptyState compact class={styles.state}>
             {text}
-        </Text>
+        </EmptyState>
     )
 
     return (
@@ -150,6 +153,11 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                     onKeyDown={nav.onKeyDown}
                     placeholder="conversations"
                     aria-label="Search conversations"
+                    aria-activedescendant={
+                        nav.active() >= 0
+                            ? `chat-history-row-${nav.active()}`
+                            : undefined
+                    }
                     autofocus
                 >
                     <Show when={!narrow()}>
@@ -168,11 +176,6 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                         </Show>
                         {newChat()}
                     </Show>
-                    <IconButton
-                        icon="X"
-                        label="Close history"
-                        onClick={props.history.close}
-                    />
                 </SearchBar>
                 <Show when={narrow()}>
                     <div class={styles.subhead}>
@@ -181,7 +184,7 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                     </div>
                 </Show>
             </div>
-            <div class={styles.body}>
+            <div class={styles.body} role="listbox" aria-label="Past conversations">
                 <Show
                     when={searching()}
                     fallback={
@@ -195,27 +198,26 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                             >
                                 <For each={groups()}>
                                     {group => (
-                                        <div class={styles.group}>
-                                            <Text
-                                                as="div"
-                                                size="ui"
-                                                tone="faint"
+                                        <div
+                                            class={styles.group}
+                                            role="group"
+                                            aria-label={group.label}
+                                        >
+                                            <SectionLabel
                                                 class={styles['group-label']}
                                             >
                                                 {group.label}
-                                            </Text>
+                                            </SectionLabel>
                                             <For each={group.items}>
                                                 {({ s, i }) => (
                                                     <ChatHistoryRow
-                                                        ref={el =>
-                                                            (rowEls[i] = el)
-                                                        }
+                                                        id={`chat-history-row-${i}`}
                                                         summary={s.summary}
                                                         lastModified={
                                                             s.lastModified
                                                         }
                                                         origin={s.origin}
-                                                        active={
+                                                        selected={
                                                             nav.active() === i
                                                         }
                                                         onClick={() =>
@@ -241,26 +243,26 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                                 'No conversations match that search.',
                             )}
                         >
-                            <div class={styles.group}>
-                                <Text
-                                    as="div"
-                                    size="ui"
-                                    tone="faint"
-                                    class={styles['group-label']}
-                                >
+                            <div
+                                class={styles.group}
+                                role="group"
+                                aria-label="Matches"
+                            >
+                                <SectionLabel class={styles['group-label']}>
                                     {props.history.searchHits().length === 1
                                         ? '1 match'
                                         : `${props.history.searchHits().length} matches`}
-                                </Text>
+                                </SectionLabel>
                                 <For each={props.history.searchHits()}>
                                     {(hit, i) => (
                                         <ChatHistoryRow
-                                            ref={el => (rowEls[i()] = el)}
+                                            id={`chat-history-row-${i()}`}
                                             summary={hit.summary}
                                             lastModified={hit.lastModified}
                                             origin={hit.origin}
                                             snippet={hit.snippet}
-                                            active={nav.active() === i()}
+                                            query={props.history.query()}
+                                            selected={nav.active() === i()}
                                             onClick={() => resumeAt(i())}
                                         />
                                     )}

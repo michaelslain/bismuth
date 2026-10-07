@@ -11,11 +11,10 @@
 // RECIPE for why the recording order is load-bearing. The `play` below now queries through `styles`
 // rather than bare class-name selectors, for the same reason the component itself does.
 //
-// TWO MODULES NOW (task 11 of ds-conformance split the formerly-shared `TabRail.module.css`):
-// `.tab-rail-inner`/`.tab-rail-actions` still come from `styles` (`TabRail.module.css`); `.tab-x`
-// moved to `TabRailRow.module.css`, imported below as `rowStyles` — querying it through the OLD
-// `styles` object would silently resolve to `undefined` and match nothing (the exact hashing trap
-// this comment used to warn about one level up).
+// ONE MODULE, THREE DATA HOOKS: `.tab-rail-inner`/`.tab-rail-actions` come from `styles`
+// (`TabRail.module.css`). The row's own parts are reached through `data-tab-rail-icon`,
+// `data-tab-rail-label` and `data-tab-rail-close` (set in TabRailRow.tsx), NOT by importing
+// `TabRailRow.module.css` — that stylesheet has exactly one importer, the row.
 //
 // THREE STORIES: `Collapsed` — resting, `.tab-rail-inner` at 46px, `.tab-rail-label` at
 // `visibility: hidden` + zero width (not merely `opacity: 0` — see TabRailRow.module.css's header
@@ -57,9 +56,32 @@ import EdgeHandle from './EdgeHandle'
 import { dragWidth } from '../edgeResize'
 import { createSignal } from 'solid-js'
 import styles from './TabRail.module.css'
-import rowStyles from './TabRailRow.module.css'
 
 const noop = () => {}
+
+/** The x of an element's centre. The action toolbar and the tab rows below it share ONE icon axis. */
+const centreX = (el: Element) => {
+    const r = el.getBoundingClientRect()
+    return r.left + r.width / 2
+}
+
+/** The first action button's glyph and the first tab row's icon — which must land on the same x. */
+const iconAxis = (root: HTMLElement) => {
+    const glyph = root.querySelector('[role="toolbar"] button svg')
+    const icon = root.querySelector('[data-tab-rail-icon]')
+    if (!glyph || !icon) throw new Error('action glyph or tab icon not found')
+    return [centreX(glyph), centreX(icon)]
+}
+
+/** A box-shadow token as the browser resolves it — the string a computed `box-shadow` reports. */
+const shadowOf = (token: string) => {
+    const probe = document.createElement('div')
+    probe.style.boxShadow = `var(${token})`
+    document.body.appendChild(probe)
+    const resolved = getComputedStyle(probe).boxShadow
+    probe.remove()
+    return resolved
+}
 
 const meta = {
     title: 'Shell/TabRail',
@@ -175,7 +197,7 @@ export const Collapsed: Story = {
     ),
     play: async ({ canvasElement }) => {
         const labels = canvasElement.querySelectorAll(
-            `.${rowStyles['tab-rail-label']}`,
+            '[data-tab-rail-label]',
         )
         expect(labels.length).toBe(2)
         for (const label of labels) {
@@ -185,7 +207,7 @@ export const Collapsed: Story = {
             expect(label.offsetWidth).toBe(0)
         }
         const icons = canvasElement.querySelectorAll(
-            `.${rowStyles['tab-rail-icon']}`,
+            '[data-tab-rail-icon]',
         )
         expect(icons.length).toBe(2)
         for (const icon of icons) {
@@ -193,6 +215,10 @@ export const Collapsed: Story = {
                 throw new Error('.tab-rail-icon not an HTMLElement')
             expect(icon.offsetWidth).toBeGreaterThan(0)
         }
+        // ONE ICON AXIS: the band's own padding (padBlock, no hand-written inset) puts the action glyphs
+        // exactly where the tab icons are.
+        const [glyph, icon] = iconAxis(canvasElement)
+        expect(glyph).toBe(icon)
     },
 }
 
@@ -206,7 +232,7 @@ export const Expanded: Story = {
         </Wrap>
     ),
     play: async ({ canvasElement }) => {
-        const closeBtn = canvasElement.querySelector(`.${rowStyles['tab-x']}`)
+        const closeBtn = canvasElement.querySelector('[data-tab-rail-close]')
         if (!(closeBtn instanceof HTMLElement))
             throw new Error('close button not found')
         closeBtn.focus()
@@ -218,8 +244,14 @@ export const Expanded: Story = {
         // `:focus-within` matches immediately; the 0.22s width transition it triggers does not.
         // Poll for the finished 232px rather than sampling the animation's 46px start value.
         await waitFor(() => expect(getComputedStyle(inner).width).toBe('232px'))
+        // The flyout of a RIGHT-edge rail carries the mirrored lift, so its depth cue falls inside the
+        // window instead of off its right edge — and that is a different shadow from the plain --lift.
+        await waitFor(() =>
+            expect(getComputedStyle(inner).boxShadow).toBe(shadowOf('--lift-start')),
+        )
+        expect(shadowOf('--lift-start')).not.toBe(shadowOf('--lift'))
         const labels = canvasElement.querySelectorAll(
-            `.${rowStyles['tab-rail-label']}`,
+            '[data-tab-rail-label]',
         )
         expect(labels.length).toBe(2)
         for (const label of labels) {
@@ -260,7 +292,7 @@ export const Pinned: Story = {
             throw new Error('.tab-rail-actions not found')
         await expect(getComputedStyle(bar).justifyContent).toBe('flex-start')
         const labels = canvasElement.querySelectorAll(
-            `.${rowStyles['tab-rail-label']}`,
+            '[data-tab-rail-label]',
         )
         expect(labels.length).toBe(2)
         for (const label of labels) {
@@ -317,12 +349,9 @@ export const WithEdge: Story = {
                     pinned={pinned()}
                     edge={
                         <EdgeHandle
-                            buttonSide="left"
-                            label="tab rail edge"
-                            action={
-                                pinned() ? 'unpin tab rail' : 'pin tab rail'
-                            }
-                            direction={pinned() ? 'right' : 'left'}
+                            panel="tab rail"
+                            edge="right"
+                            open={pinned()}
                             combo="Alt+Shift+S"
                             onResizeStart={() => (start = width())}
                             onResize={dx =>
@@ -386,12 +415,15 @@ export const CollapsedLeft: Story = {
         expect(cs.borderLeftWidth).toBe('0px')
         const box = inner.getBoundingClientRect()
         const icon = canvasElement.querySelector(
-            `.${rowStyles['tab-rail-icon']}`,
+            '[data-tab-rail-icon]',
         )
         if (!(icon instanceof HTMLElement))
             throw new Error('.tab-rail-icon not found')
         const r = icon.getBoundingClientRect()
         expect(Math.round(r.left + r.width / 2 - box.left)).toBe(22)
+        // The left rail's actions ride Band's `inset="rail"`; they must still share the rows' axis.
+        const [glyph, rowIcon] = iconAxis(canvasElement)
+        expect(glyph).toBe(rowIcon)
     },
 }
 
@@ -405,7 +437,7 @@ export const ExpandedLeft: Story = {
         </Wrap>
     ),
     play: async ({ canvasElement }) => {
-        const closeBtn = canvasElement.querySelector(`.${rowStyles['tab-x']}`)
+        const closeBtn = canvasElement.querySelector('[data-tab-rail-close]')
         if (!(closeBtn instanceof HTMLElement))
             throw new Error('close button not found')
         closeBtn.focus()
@@ -415,7 +447,10 @@ export const ExpandedLeft: Story = {
         if (!(inner instanceof HTMLElement))
             throw new Error('.tab-rail-inner not found')
         await waitFor(() => expect(getComputedStyle(inner).width).toBe('232px'))
-        expect(getComputedStyle(inner).boxShadow).not.toBe('none')
+        // A LEFT rail widens rightward, so it keeps the plain --lift (not the mirrored one).
+        await waitFor(() =>
+            expect(getComputedStyle(inner).boxShadow).toBe(shadowOf('--lift')),
+        )
         expect(Math.round(inner.getBoundingClientRect().left)).toBe(
             Math.round(
                 (inner.parentElement as HTMLElement).getBoundingClientRect()
@@ -469,12 +504,9 @@ export const WithEdgeLeft: Story = {
                     pinned={pinned()}
                     edge={
                         <EdgeHandle
-                            buttonSide="right"
-                            label="tab rail edge"
-                            action={
-                                pinned() ? 'unpin tab rail' : 'pin tab rail'
-                            }
-                            direction={pinned() ? 'left' : 'right'}
+                            panel="tab rail"
+                            edge="left"
+                            open={pinned()}
                             combo="Alt+Shift+S"
                             onResizeStart={() => (start = width())}
                             onResize={dx =>

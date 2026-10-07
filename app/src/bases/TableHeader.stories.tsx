@@ -16,7 +16,7 @@ type Story = StoryObj<typeof meta>
 
 const COLS = ['title', 'status', 'due', 'tags']
 
-/** Plain headers: uppercase micro eyebrow, no drag or resize affordance. */
+/** Plain headers: lowercase micro heads in the muted ink, no drag or resize affordance. */
 export const Static: Story = {
     render: () => (
         <table style={{ width: '100%', 'border-collapse': 'collapse' }}>
@@ -26,7 +26,7 @@ export const Static: Story = {
     play: async ({ canvasElement }) => {
         const ths = canvasElement.querySelectorAll('th')
         expect(ths.length).toBe(4)
-        expect(getComputedStyle(ths[0]).textTransform).toBe('uppercase')
+        expect(getComputedStyle(ths[0]).textTransform).toBe('none')
         expect(getComputedStyle(ths[0]).cursor).not.toBe('grab')
         expect(canvasElement.querySelector('th [class*="thResize"]')).toBeNull()
         // The typed grid: each header hosts its own overlay, and there is no border-bottom rule.
@@ -115,7 +115,14 @@ export const Interactive: Story = {
     play: async ({ canvasElement }) => {
         const ths = canvasElement.querySelectorAll('th')
         expect(getComputedStyle(ths[0]).cursor).toBe('grab')
-        expect(getComputedStyle(ths[1]).boxShadow).not.toBe('none')
+        // The header the drag is over takes the drop: `ui/DropCue`'s dashed ring, inside that <th> only.
+        const ring = (th: Element) =>
+            [...th.querySelectorAll('*')].some(
+                el => getComputedStyle(el).borderTopStyle === 'dashed',
+            )
+        expect(ring(ths[1])).toBe(true)
+        expect(ring(ths[0])).toBe(false)
+        expect(getComputedStyle(ths[0]).textTransform).toBe('none')
         expect(getComputedStyle(ths[2]).cursor).toBe('col-resize')
         ths[3].dispatchEvent(
             new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }),

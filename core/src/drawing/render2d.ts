@@ -96,11 +96,52 @@ function fillPolygon(ctx: Ctx2D, fill: number[][]) {
     ctx.fill()
 }
 
+/** The highlighter's wash strength. One number for both blends, so a highlighter is the same
+ *  weight of mark whatever it is drawn on. */
+const HL_ALPHA = 0.32
+
+/** sRGB relative luminance (0..1) of a `#rgb` / `#rrggbb` paper colour. Anything this cannot
+ *  parse reads as light, which keeps `multiply` — the historical behaviour — as the fallback.
+ *  Local to this module rather than imported: render2d runs headless (the PNG/PDF exporter) with
+ *  no DOM and no theme plumbing, and this is the only place a paper's lightness is asked about. */
+function paperLuminance(hex: string): number {
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim())
+    if (!m) return 1
+    const h =
+        m[1].length === 3
+            ? m[1]
+                  .split('')
+                  .map(c => c + c)
+                  .join('')
+            : m[1]
+    const lin = [0, 2, 4].map(i => {
+        const v = parseInt(h.slice(i, i + 2), 16) / 255
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+}
+
 export function drawStroke(ctx: Ctx2D, s: Stroke, t: ThemeColors) {
     const { color, fill } = strokeOutline(s, makeColorResolver(t))
     ctx.save()
-    ctx.globalAlpha = s.t === 'hl' ? 0.32 : 1
-    if (s.t === 'hl') ctx.globalCompositeOperation = 'multiply'
+    if (s.t === 'hl') {
+        // THE BLEND IS CHOSEN BY THE PAPER'S LUMINANCE, not fixed to `multiply`.
+        // `multiply` is what a real highlighter does on white paper: it can only darken, so the
+        // ink under it survives. On an OPAQUE DARK page it can only darken something already
+        // near-black, and the mark disappears — measured on the ink theme's #15161A page, a gold
+        // stroke composites to rgb(20,20,22), 1.02:1 against the paper it sits on: a near-black
+        // pill where the same stroke reads amber over the (transparent) note-ink layer, which
+        // has no backdrop to multiply with. `screen` is multiply's mirror — it can only lighten —
+        // so it does on a dark page exactly what multiply does on a light one, and the same
+        // stroke composites to rgb(81,74,62), 2.07:1.
+        // 0.18 is the perceptual midpoint of the sRGB luminance scale (mid-grey #808080 sits at
+        // 0.216), not 0.5 — a page has to be genuinely dark before the mark flips.
+        const dark = paperLuminance(t.bg) < 0.18
+        ctx.globalAlpha = HL_ALPHA
+        ctx.globalCompositeOperation = dark ? 'screen' : 'multiply'
+    } else {
+        ctx.globalAlpha = 1
+    }
     ctx.fillStyle = color
     fillPolygon(ctx, fill)
     ctx.restore()

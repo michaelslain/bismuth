@@ -1,0 +1,10 @@
+/* app/src/ui/ascii/AsciiMeter.module.css — the typed progress bar. Sole importer: AsciiMeter.tsx.
+   One inline glyph run that inherits its size and line height from the caller (it sits in chat
+   readouts and flashcard progress as well as on its own): `label  [####......] suffix`. The caller's colour arrives as
+   --meter-color (a prop, so it is the one inline custom property); the default is the accent. */
+.meter {
+    color: var(--text-muted);
+    white-space: pre; /* a padded label keeps its spaces */
+}
+.fill { color: var(--meter-color, var(--accent)); }
+.empty { color: inherit; }

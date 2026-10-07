@@ -143,10 +143,9 @@ const frame = (p: Partial<FrameProps> = {}) => {
                         }
                         edge={
                             <EdgeHandle
-                                buttonSide={tabRailSide === 'right' ? 'left' : 'right'}
-                                label="tab rail edge"
-                                action={railPinned ? 'unpin tab rail' : 'pin tab rail'}
-                                direction={tabRailSide === 'right' ? 'right' : 'left'}
+                                panel="tab rail"
+                                edge={tabRailSide}
+                                open={railPinned}
                                 onActivate={noop}
                             />
                         }
@@ -220,10 +219,9 @@ const frame = (p: Partial<FrameProps> = {}) => {
                 }
                 sidebarEdge={
                     <EdgeHandle
-                        buttonSide={sidebarSide === 'left' ? 'right' : 'left'}
-                        label="sidebar edge"
-                        action="hide sidebar"
-                        direction={sidebarSide}
+                        panel="sidebar"
+                        edge={sidebarSide}
+                        open={!sidebarHidden}
                         onActivate={noop}
                     />
                 }
@@ -257,6 +255,43 @@ export const Default: Story = {
         await waitFor(() =>
             expect(getComputedStyle(layout).getPropertyValue('--rail-w').trim()).toBe('46px'),
         )
+        // THE BAND CONTRACT: the shell column has ONE left axis. The top strip and the status bar used
+        // to hand-write a 16px inset while every other band (ui/Band) sat on 12px, so the wordmark and
+        // the status text started 4px right of the toolbar and the graph header between them. Measured
+        // from the rendered frame — the x where each band's CONTENT box starts — one number per band,
+        // then compared. Asserting only that each has "a padding-left" would pass with the two axes.
+        const shell = canvasElement.querySelector('[data-app-shell]') as HTMLElement
+        const contentLeft = (el: Element) => {
+            const cs = getComputedStyle(el)
+            return (
+                el.getBoundingClientRect().left +
+                parseFloat(cs.borderLeftWidth) +
+                parseFloat(cs.paddingLeft)
+            )
+        }
+        await waitFor(() => {
+            const bands = {
+                topStrip: shell.firstElementChild,
+                sidebarToolbar: canvasElement.querySelector('[data-sidebar-toolbar]'),
+                graphHeader: canvasElement.querySelector('[data-viewbar]'),
+                statusBar: shell.lastElementChild,
+            }
+            const xs = Object.fromEntries(
+                Object.entries(bands).map(([name, el]) => {
+                    if (!el) throw new Error(`band not found: ${name}`)
+                    return [name, contentLeft(el)]
+                }),
+            )
+            const first = xs.topStrip
+            expect(xs).toEqual({
+                topStrip: first,
+                sidebarToolbar: first,
+                graphHeader: first,
+                statusBar: first,
+            })
+            // ...and that axis is the band's own --sp-5, not some other number all four agree on.
+            expect(first).toBe(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sp-5')))
+        })
     },
 }
 
@@ -283,6 +318,12 @@ export const SwitcherActive: Story = {
  *  degrades sanely without `.layout[data-has-rail]`. */
 export const NoRail: Story = {
     render: () => frame({ sidebarHidden: false, switcherActive: false, hasRail: false, railPinned: false }),
+    play: async ({ canvasElement }) => {
+        // The rail slot is not rendered at all — not a 0px track with a 46px panel painting over the note.
+        const cell = canvasElement.querySelector('[data-shell-cell="rail"]') as HTMLElement
+        expect(cell.childElementCount).toBe(0)
+        expect(canvasElement.querySelector('[data-tab-rail]')).toBeNull()
+    },
 }
 
 /** THE BUG THIS PINS (queue item 2, 2026-09-01, user-reported as "when the sidebar is permanently

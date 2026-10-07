@@ -162,7 +162,7 @@ export const TasksSource: Story = {
         )
     },
     play: async () => {
-        await pick('Ascending', 'Descending')
+        await pick('ascending', 'descending')
         await userEvent.click(within(document.body).getByText('save'))
         await expect(confirmed).toBe(
             'tasks: |-\n  not done AND priority is high AND due before in 7 days\n  sort by due reverse\nview: bullets',

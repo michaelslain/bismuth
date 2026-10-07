@@ -7,5 +7,17 @@
 /* padding-top: the header above types its heavy `=` on its own bottom edge and, in a sticky header,
    rings that edge with a half-tile band of --bg that hangs DOWN into this cell — the chips start
    below it. `--add-task-top` is the same clearance already paid by this padding, so a
-   TaskDayCell `[data-add-task]` button inside (which reads it) does not add it twice. */
-.cell { flex: 1; min-width: 0; padding: calc(var(--ascii-tile-h, var(--cell-h)) / 2 + var(--sp-1)) var(--sp-3) var(--sp-2); position: relative; --add-task-top: var(--sp-2); }
+   TaskDayCell `[data-add-task]` button inside (which reads it) does not add it twice.
+   padding-inline: a chip must clear BOTH glyph overhangs on its sides — its own `|` (half a corner
+   tile into the cell) and, when the strip is `backdrop`ed, the NEXT cell's --bg ring, which hangs
+   half a corner tile back over this cell. At the old --sp-3 (6px) against a 7px ring the ring
+   painted over the chip's 1px right border in every column but the last (no next cell). So the
+   inset is the overhang plus a --sp-1 gap, from the same --ascii-corner-w that sizes the ring. */
+.cell { flex: 1; min-width: 0; padding: calc(var(--ascii-tile-h, var(--cell-h)) / 2 + var(--sp-1)) calc(var(--ascii-corner-w, 1ch) / 2 + var(--sp-1)) var(--sp-2); position: relative; --add-task-top: var(--sp-2); }
+/* The cell is the typed host (its glyphs overhang and must not be clipped), so the scrolling lives in
+   an inner box. A day full of all-day events caps at six rows of --row-h and scrolls inside its own
+   column, instead of growing the sticky strip until it pins more chrome than the pane holds and the
+   hour grid below can never scroll into view. The fill row (the tasks register) is the page itself:
+   it must grow, so its wrapper dissolves. */
+.content { max-height: calc(var(--row-h) * 6); overflow: hidden auto; overscroll-behavior: contain; }
+.row.fill .content { display: contents; }

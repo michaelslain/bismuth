@@ -6,7 +6,8 @@
 //
 // Props: as ('span' default | 'div'), variant ('inline' default — a plain de-emphasized run |
 // 'solid' — a filled pill chip), tone ('muted' | 'faint' | 'danger' — omit to inherit ambient
-// color; ignored by 'solid'), class, children.
+// color; ignored by 'solid'), size ('sm' | 'md' — omit to inherit; 'solid' defaults to 'sm'),
+// inline (keeps the count on its label's line), hue ('solid' only), class, children.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import Badge from './Badge'
 import { Row } from './_storyKit'
@@ -22,6 +23,8 @@ const meta = {
             control: 'inline-radio',
             options: [undefined, 'muted', 'faint', 'danger'],
         },
+        size: { control: 'inline-radio', options: [undefined, 'sm', 'md'] },
+        inline: { control: 'boolean' },
         children: { control: 'text' },
     },
     args: {
@@ -69,6 +72,37 @@ export const InlineWithLabel: Story = {
  *  sits inline to show the chip's own appearance. */
 export const Solid: Story = {
     args: { variant: 'solid', children: '5' },
+}
+
+/** `size` — 'sm' is --fs-micro, 'md' is --fs-ui; omit it and the badge inherits the ambient size
+ *  (the 'Inherited' sample inside the larger text below). */
+export const Sizes: Story = {
+    render: () => (
+        <Row label="size">
+            <Badge tone="muted" size="sm">sm — micro</Badge>
+            <Badge tone="muted" size="md">md — ui</Badge>
+            <span style={{ 'font-size': 'var(--fs-title)' }}>
+                Title text <Badge tone="muted">inherited</Badge>
+            </span>
+            <Badge variant="solid" size="sm">5</Badge>
+            <Badge variant="solid" size="md">5</Badge>
+        </Row>
+    ),
+}
+
+/** `inline` — the count stays in one piece. In a column too narrow for both, the plain badge
+ *  breaks mid-count ("12" / "hits"); `inline` moves the whole count down instead. */
+export const InlineNoWrap: Story = {
+    render: () => (
+        <Row label="plain vs inline, 150px wide" column>
+            <div style={{ width: '150px', 'font-size': 'var(--fs-ui)', color: 'var(--text-muted)' }}>
+                Recent searches <Badge tone="muted">12 hits</Badge>
+            </div>
+            <div style={{ width: '150px', 'font-size': 'var(--fs-ui)', color: 'var(--text-muted)' }}>
+                Recent searches <Badge tone="muted" inline>12 hits</Badge>
+            </div>
+        </Row>
+    ),
 }
 
 /** The full matrix at a glance. */

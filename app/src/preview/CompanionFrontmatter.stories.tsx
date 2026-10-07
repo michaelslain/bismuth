@@ -31,6 +31,7 @@ import { fakeTransport } from '../ui/_fakeTransport'
 import { settings } from '../settings'
 import styles from './CompanionFrontmatter.module.css'
 import foldedFenceStyles from './FoldedFence.module.css'
+import TextButton from '../ui/TextButton'
 
 /** Builds a real CompanionStore under this story's own Solid owner (createCompanionStore.ts) and
  *  hands it to CompanionFrontmatter as `store` — same "an already-owned store" path PreviewView
@@ -201,13 +202,12 @@ export const SwitchesBinaryPath: Story = {
         const [path, setPath] = createSignal('a.png')
         return (
             <div>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="switch-to-b"
                     onClick={() => setPath('b.png')}
                 >
                     switch to b.png
-                </button>
+                </TextButton>
                 <Host binaryPath={path} tagNames={NO_TAGS} />
             </div>
         )
@@ -566,20 +566,18 @@ export const FoldRememberedPerKey: Story = {
         const [key, setKey] = createSignal(keyA)
         return (
             <div>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="to-b"
                     onClick={() => setKey(keyB)}
                 >
                     switch to b
-                </button>
-                <button
-                    type="button"
+                </TextButton>
+                <TextButton
                     data-testid="to-a"
                     onClick={() => setKey(keyA)}
                 >
                     switch to a
-                </button>
+                </TextButton>
                 <Host
                     binaryPath={() => 'photo.png'}
                     tagNames={NO_TAGS}

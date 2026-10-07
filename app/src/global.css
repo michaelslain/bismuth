@@ -253,11 +253,15 @@
      changes). --rule-accent/--rule-dashed are NEW (§2.2) — no consumer yet; they exist so a
      later wave can replace the hand-written `1px solid var(--accent)` / ad-hoc dashed drop-cues
      (PaneTree.module.css, Terminal.css, ChatHeader.module.css) with a named rule instead of a
-     literal. */
+     literal. Dashed edges read --rule-dashed (or --rule-drop for a drop cue), never a
+     hand-written `1.5px dashed`. */
   --rule: 1px solid var(--border);
   --rule-soft: 1px solid var(--border-soft);
   --rule-accent: 1px solid var(--accent);
   --rule-dashed: 1px dashed var(--border);
+  /* The outline of a place that takes the drop (a pane edge, a card, a drop cue). One spelling
+     instead of four hand-written `1.5px dashed` rules. */
+  --rule-drop: 1.5px dashed var(--accent);
   /* --rule-soft-dashed: NEW (modal redesign Task 3) — a disabled field's underline: the
      --rule-soft border color, but dashed, so "disabled" reads distinctly from "resting". */
   --rule-soft-dashed: 1px dashed var(--border-soft);
@@ -336,10 +340,31 @@
      below --h-control (24px) and under WCAG 2.5.8's target minimum, which is a real cost for a
      rhythm change nobody asked for. Change the bar's `gap` instead. */
   --h-band: 36px;
+  /* Start inset that clears the macOS traffic lights floating over the top strip (Band `inset`). */
+  --inset-traffic-lights: 78px;
 
   /* The centred reading column of a note — .cm-content's max-width, the title and the inbox
      action bar all share this one number. */
   --note-column: 620px;
+  /* The side padding of a note — Editor.tsx's `.cm-content padding-inline`. The title, the
+     companion frontmatter and the chat transcript line up with it, so they read this one number
+     instead of each hand-syncing a 40px. */
+  --note-gutter: 40px;
+  /* The reading width of a chat transcript and its composer. */
+  --chat-column: 680px;
+  /* The widest an OPENED daemon section's list grows (crons, services, inbox, log), so their
+     rows end at one x and their trailing status/age/duration column sits in one place. */
+  --daemon-list-max: 100ch;
+  /* The side gutter of a Bases view body — the ViewBar's own 12px (ui/Band), so a view's rows
+     start where its header does. */
+  --view-gutter: var(--sp-5);
+  /* The tab rail's collapsed width, shared by the shell grid and the rail itself. */
+  --rail-w-collapsed: 46px;
+  /* Height of one loading-skeleton bar. */
+  --skeleton-bar-h: var(--sp-5);
+  /* Loading-skeleton ink: two steps, a primary and a quieter one. */
+  --skeleton-ink: color-mix(in srgb, var(--faint) 22%, transparent);
+  --skeleton-ink-faint: color-mix(in srgb, var(--faint) 16%, transparent);
 
   /* ── Icon size — ONE size for every icon in the app ("we should just have one size i feel no?";
      picked as 12px 2026-09-24). The live value is `appearance.iconSize`, projected over this by
@@ -387,6 +412,21 @@
      wave 1 — those surfaces belong to later waves (editor: wave 5, preview: wave 7, palette
      switcher: wave 3). */
   --lift: 2px 2px 0 var(--shadow-hard);
+  /* The mirror of --lift for a panel on the RIGHT edge: --lift throws right, so on the default
+     right-edge tab rail its depth cue lands off-window. */
+  --lift-start: -2px 2px 0 var(--shadow-hard);
+
+  /* ── Stacking ladder — six rungs, low to high: inside a component (1) → pane overlays (20) →
+     shell chrome (100) → modal scrim + panel + drag ghost (1000) → toast (1050) → popover (1100).
+     A popover tops the stack because a menu can open inside a modal; a toast sits above a modal
+     (a notification must be seen) but below a popover, so it never covers an open menu. A surface
+     reads a rung instead of guessing a number. */
+  --z-local: 1;
+  --z-overlay: 20;
+  --z-shell: 100;
+  --z-modal: 1000;
+  --z-toast: 1050;
+  --z-popover: 1100;
 
   /* ── Prose font ───────────────────────────────────────────────────────────────────────────
      The ONE proportional face. Mono stays the default for all chrome, labels, code, terminal
@@ -505,6 +545,8 @@
   /* Field noise opacity (bismuth-design/ascii/design-system/tokens/ascii.css): the noise
      layer under a GraphField's rasterized edges. Only consumer is ui/ascii/GraphField.module.css. */
   --field-noise-op: .45;
+  /* the largest scale the first-run intro's glyph art is fitted to, before GlyphCanvas snaps its cell onto whole device pixels */
+  --intro-glyph-scale: 1.3333;
 
   /* The character grid's cell metrics for the ASCII primitives (Glyph.tsx et al). A shared
      primitive (Glyph.tsx, consumed well outside the graph) depending on a single feature's
@@ -758,8 +800,6 @@ body { background: var(--bg); color: var(--fg); }
   gap: 0.45em;
   font-weight: 600;
   font-size: var(--fs-ui);
-  text-transform: uppercase;
-  letter-spacing: var(--ls-label);
 }
 .callout-icon {
   display: inline-flex;
@@ -788,10 +828,14 @@ details.callout > summary {
 details.callout > summary::-webkit-details-marker {
   display: none;
 }
-/* Title tint = the same inline --callout-color as the left bar. The 26 per-type hex rules
-   that used to live here are gone: editor/callout.ts (CALLOUT_TYPES) is the ONE source now,
-   emitting the color inline on each callout root. */
+/* The title reads --fg, NOT --callout-color: the per-type hue measures 1.86–3.69:1 against
+   --surface-1 on paper and riso, under the 4.5:1 floor for bold UI text. The hue stays where it is
+   decoration — the left bar above and `.callout-icon` below. editor/callout.ts (CALLOUT_TYPES) is
+   the ONE source of the colour, emitting it inline on each callout root. */
 .callout > .callout-title {
+  color: var(--fg);
+}
+.callout > .callout-title .callout-icon {
   color: var(--callout-color, var(--accent));
 }
 
@@ -1315,7 +1359,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   position: absolute;
   top: 8px;
   right: 14px;
-  z-index: 5;
+  z-index: 5; /* local: lifts the bar over the editor's own layers (.cm-scroller), inside one editor — not a shell rung */
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -1324,7 +1368,8 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   background: var(--pop-bg-strong, var(--bg));
 
   border-radius: var(--r-0);
-  box-shadow: var(--lift);
+  /* Anchored to the RIGHT edge, so it takes the mirrored lift — --lift throws right, off the pane. */
+  box-shadow: var(--lift-start);
   font-family: var(--ui-font-stack);
   color: var(--fg);
 }
@@ -1389,10 +1434,10 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background calc(0.1s * var(--motion-scale)) var(--ease-std), color calc(0.1s * var(--motion-scale)) var(--ease-std);
+  transition: background var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
 }
 .bismuth-find-btn:hover { background: var(--hover-bg); color: var(--fg); }
-.bismuth-find-btn:active { background: var(--border); }
+.bismuth-find-btn:active { background: var(--state-active-bg); }
 
 .bismuth-find-case {
   font-size: var(--fs-micro);
@@ -1409,16 +1454,17 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    to the app accent; !important beats the package's themed `.cm-searchMatch` rules.
    Every match gets a legible accent wash + a hairline ring so it reads against prose;
    the ACTIVE match (the one the selection sits on — typing/Enter/prev-next move it, see
-   findPanel.revealFrom) gets a strong solid wash + a full 2px accent ring so it's
+   findPanel.revealFrom) gets a stronger wash + a full 2px accent ring so it's
    unmistakable even while the find INPUT (not the editor) holds focus and the editor's
-   own selection layer is dimmed. Contrast here is what makes "where the match is" obvious. */
+   own selection layer is dimmed. The wash stays at 38%: at 58% the cream match text on the
+   mid-teal measured ~2.3:1, and the 2px ring — not the fill — is what marks the active match. */
 .cm-editor .cm-searchMatch {
   background: color-mix(in srgb, var(--accent) 26%, transparent) !important;
   border-radius: var(--r-0);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .cm-editor .cm-searchMatch-selected {
-  background: color-mix(in srgb, var(--accent) 58%, transparent) !important;
+  background: color-mix(in srgb, var(--accent) 38%, transparent) !important;
   box-shadow: inset 0 0 0 2px var(--accent);
   border-radius: var(--r-0);
 }
@@ -1437,7 +1483,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .cm-editor .cm-table-rendered mark.cm-table-find-match.cm-table-find-active {
-  background: color-mix(in srgb, var(--accent) 58%, transparent);
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
   box-shadow: inset 0 0 0 2px var(--accent);
   border-radius: var(--r-0);
 }
@@ -1567,10 +1613,11 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 }
 /* A #tag inside a rendered table cell. TABLES ARE PROSE (see the family-list note above) and this
    is the standing exception to that — it already was one, declaring a mono family while the cell
-   around it stays serif. It now uses the SAME token pair as .cm-tag, the chat transcript and the
-   Milkdown chip, so a tag does not change size depending on whether it sits inside a table. */
+   around it stays serif. A #tag reads one var(--accent) at all three drawing sites — this rule,
+   ui/Tag.module.css and the editor's livePreview decoration — and the editor face at
+   --code-font-size, so it does not change colour or size depending on whether it sits inside a table. */
 .cm-editor .cm-td .bismuth-tag {
-  color: var(--gold);
+  color: var(--accent);
   font-family: var(--ui-font-stack);
   font-size: var(--code-font-size);
 }
@@ -1717,11 +1764,11 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   content: "";
   position: absolute;
   inset: 4px;
-  border: 1.5px dashed var(--accent);
+  border: var(--rule-drop);
   border-radius: var(--r-0);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   pointer-events: none;
-  z-index: 6;
+  z-index: 6; /* local: the drop ring over xterm's canvas inside .term-host, nothing outside it */
 }
 
 /* Let xterm's own viewport sit transparently on the host bg so the padding
@@ -1756,7 +1803,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   transition: transform var(--cursor-glide) ease-out;
   animation: asc-blink var(--cursor-blink) step-end infinite;
   will-change: transform;
-  z-index: 5;
+  z-index: 5; /* local: the custom caret over xterm's rows inside .term-host */
 }
 
 /* Hide the custom cursor while the terminal is unfocused (xterm toggles `.focus` on
@@ -1885,7 +1932,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   border-radius: var(--popover-radius);
   padding: var(--popover-pad);
   min-width: var(--popover-min-width);
-  box-shadow: var(--popover-shadow);
+  box-shadow: var(--lift);
   font-family: var(--popover-font);
   font-size: var(--popover-font-size);
   color: var(--fg);
@@ -1916,7 +1963,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    without a hover. */
 .bismuth-popover-row--selected { background: var(--popover-selected-bg); color: var(--accent); }
 .bismuth-popover-row--danger { color: var(--danger); }
-.bismuth-popover-row--disabled { opacity: 0.55; cursor: default; }
+.bismuth-popover-row--disabled { color: var(--text-muted); cursor: default; }
 /* A plain mouse-over gets the LIGHT wash, not the heavy selected fill (visual-unification audit
    §7 wave 3, §4.10: "hovering a palette row currently reads exactly as loud as 'this file is
    open'"). Wins outright on SPECIFICITY, not source order: `:not(.bismuth-popover-row--disabled)`
@@ -1932,33 +1979,21 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 
 .bismuth-popover-icon,
 .bismuth-popover-prefix { display: inline-flex; flex-shrink: 0; }
-.bismuth-popover-icon { opacity: 0.85; }
+/* The icon takes the row's own ink (accent when selected, text-muted when disabled) — it used to be
+   dimmed to .85 opacity, which showed a state by opacity. */
 .bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.bismuth-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: var(--sp-5); }
+.bismuth-popover-detail { margin-left: auto; color: var(--text-muted); padding-left: var(--sp-5); }
 /* Right-aligned Kbd caps (a real keybinding — see PopoverRow.shortcut) — layout only, the
    Kbd primitive supplies the cap look. */
 .bismuth-popover-shortcut { margin-left: auto; flex-shrink: 0; padding-left: var(--sp-5); display: inline-flex; align-items: center; }
 /* Right-side chevron on a row that opens a nested submenu (label flex pushes it right). */
-.bismuth-popover-chev { display: inline-flex; flex-shrink: 0; opacity: 0.5; margin-left: var(--sp-2); }
+.bismuth-popover-chev { display: inline-flex; flex-shrink: 0; color: var(--faint); margin-left: var(--sp-2); }
 
 .bismuth-popover-sep {
   height: 1px;
   background: var(--border);
   margin: var(--sp-2) var(--sp-1);
 }
-
-/* Quick-action rail (#67) — a small icon strip hanging off a context menu's LEFT edge for
-   actions that must survive a long option list (the emoji library). Reuses .bismuth-popover
-   chrome so it reads as part of the same menu; only the list-shaped bits are overridden.
-   Geometry is mirrored by RAIL_WIDTH in ContextMenu.tsx — keep the two in sync. */
-.bismuth-popover-rail {
-  min-width: 0; /* the popover min-width (170px) is for lists; the rail is icon-width */
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-/* .bismuth-popover-rail-btn (+ :hover) removed (one-button Task 10) — Task 9 made the context
-   menu's rail buttons IconButtons, so nothing renders this class any more. */
 
 /* When an .bismuth-popover is hosted inside a CodeMirror hover tooltip (the YAML
    quick-fix on hover), strip CM's default tooltip chrome so the border/background
@@ -2030,30 +2065,28 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 /* Ribbon tabs (Start / Formulas / Data) → the ASCII system's own SegmentedToggle
    register (global.css's `ui/ui.css` section `.segmented` + `.btn--selected`/`.btn--unselected`, the ONE
    selected/unselected vocabulary the whole app now shares — graph mode, calendar view
-   switcher, BaseView tabs). Inactive tabs are `--faint`, hover lifts to `--text-muted`
-   + `--hover-bg`, and the ACTIVE tab is `--accent` text on `--accent-soft` — exactly
+   switcher, BaseView tabs). Inactive tabs are `--text-muted`, hover adds
+   `--hover-bg`, and the ACTIVE tab is `--accent` text on `--accent-soft` — exactly
    `.btn--selected`, not a neutral pill. We can't embed the Solid <SegmentedToggle>
    inside Univer's DOM, so this mirrors its CSS values 1:1. The ribbon header is the
    `select-none h-9` row; tabs carry `px-2`. */
 .bismuth-sheet .univer-select-none.univer-h-9 > div {
   background: color-mix(in srgb, var(--fg) 4%, transparent) !important; /* faint track */
-  border-radius: var(--r-control, 3px) !important;
+  border-radius: var(--r-0) !important;
   padding: 2px !important;
   gap: 2px !important;
 }
 .bismuth-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"] {
   background: transparent !important;
   box-shadow: none !important;
-  border-radius: var(--r-chip, 2px) !important;
+  border-radius: var(--r-0) !important;
   font-weight: 400 !important;
-  font-size: var(--fs-micro) !important; /* tiny uppercase, matching .btn--text.btn--sm */
+  font-size: var(--fs-micro) !important; /* tiny lowercase, matching .btn--text.btn--sm */
   letter-spacing: 0.04em !important;
-  text-transform: uppercase !important;
   padding: 2px 8px !important;
-  color: var(--faint) !important;
-}
-.bismuth-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"]:hover {
   color: var(--text-muted) !important;
+}
+.bismuth-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"]:hover:not([class*="univer-text-primary"]) {
   background: var(--hover-bg) !important;
 }
 /* the active tab carries a `text-primary*` utility → `.btn--selected`: accent text

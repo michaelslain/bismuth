@@ -14,7 +14,7 @@ export type ChartFrameProps = {
      *  heatmap's missing date column). The title itself is not overridable. */
     emptyHint?: JSX.Element
     class?: string
-    /** One line above the body — see ChartReadout. */
+    /** One line above the body — see ui/Readout. */
     readout?: JSX.Element
     /** Under the body — the KaTeX math/streak line a view supplies. */
     footer?: JSX.Element
@@ -80,7 +80,7 @@ const ChartFrame: Component<ChartFrameProps> = props => {
                 </Text>
                 <Show
                     when={!props.empty}
-                    fallback={<EmptyState class={styles.empty} title="no data to chart">{props.emptyHint}</EmptyState>}
+                    fallback={<EmptyState fill title="no data to chart">{props.emptyHint}</EmptyState>}
                 >
                     {props.children}
                 </Show>

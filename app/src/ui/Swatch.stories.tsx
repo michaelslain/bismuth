@@ -26,7 +26,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const TOKENS = ['--accent', '--rose', '--gold', '--jade', '--violet', '--faint']
+const TOKENS = ['--accent', '--rose', '--gold', '--green', '--violet', '--faint']
 
 /** A picker row (the default "md" size, 22px) plus the "sm" current-colour chip (20px) it sits
  *  beside in CategoryPanel's real composition — ColorChip (sm) opens Palette (md options).
@@ -86,6 +86,59 @@ export const Palette: Story = {
         expect(getComputedStyle(option).borderStyle).toBe('none')
         expect(getComputedStyle(chip).borderStyle).not.toBe('none')
         expect(getComputedStyle(chip).borderWidth).not.toBe('0px')
+        // Every swatch must actually PAINT. One of these once named `--jade`, a token defined
+        // nowhere: the swatch rendered invisible while the count above still passed.
+        for (const s of swatches)
+            expect(getComputedStyle(s).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+        // and they are distinct hues, not six copies of one fallback
+        const hues = new Set(
+            swatches
+                .filter(s => s !== chip)
+                .map(s => getComputedStyle(s).backgroundColor),
+        )
+        expect(hues.size).toBe(TOKENS.length)
+    },
+}
+
+/** No colour chosen (`color=""`): an empty dashed box, visibly NOT a swatch of some hue — it used
+ *  to paint solid accent, identical to a chosen teal. Sat beside a real swatch for contrast. */
+export const Empty: Story = {
+    render: () => (
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
+            <Swatch color="" label="Empty" onClick={() => {}} />
+            <Swatch color="" size="sm" label="Empty small" onClick={() => {}} />
+            <Swatch color="var(--accent)" label="Chosen" onClick={() => {}} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const at = (l: string) =>
+            canvasElement.querySelector(`button[aria-label="${l}"]`) as HTMLElement
+        for (const l of ['Empty', 'Empty small']) {
+            const cs = getComputedStyle(at(l))
+            expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+            expect(cs.borderStyle).toBe('dashed')
+        }
+        expect(getComputedStyle(at('Chosen')).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    },
+}
+
+/** The two sizes sit on the app's two control heights: md = --h-control (24px), sm = --row-h
+ *  (18px). `play` measures them, so a return to the old 22/20 fails. */
+export const Sizes: Story = {
+    render: () => (
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}>
+            <Swatch color="var(--accent)" size="sm" label="Small" onClick={() => {}} />
+            <Swatch color="var(--accent)" label="Medium" onClick={() => {}} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const box = (l: string) =>
+            canvasElement
+                .querySelector(`button[aria-label="${l}"]`)!
+                .getBoundingClientRect()
+        expect(Math.round(box('Small').width)).toBe(18)
+        expect(Math.round(box('Medium').width)).toBe(24)
+        expect(Math.round(box('Medium').height)).toBe(24)
     },
 }
 

@@ -9,6 +9,13 @@
 // overriding a ui/Button KIND class — see PageReadout.module.css.
 // The edit state composes ui/InlineTextInput, the app's one inline-edit input (Enter/blur commits
 // exactly once, Escape cancels).
+//
+// NOTHING MOVES WHEN EDITING STARTS. The two states are laid out on the same character grid: the
+// rest button has no side padding, the input is as wide as the current page number's digits
+// (`--readout-digits`, in `ch`; it grows with what is typed where the engine has `field-sizing`),
+// and the edit state's gap is one cell — the space the rest text has there. Before this the rest
+// button's own padding plus a 5ch input put the readout ~10px wider and the `p.` glyph ~16px left
+// the moment it was clicked.
 import { createSignal, Show } from 'solid-js'
 import PlainButton from '../ui/PlainButton'
 import InlineTextInput from '../ui/InlineTextInput'
@@ -54,6 +61,7 @@ function PageReadout(props: PageReadoutProps) {
     return (
         <div
             class={`${styles['page-readout']} ${props.class ?? ''}`}
+            style={{ '--readout-digits': String(String(props.current() + 1).length) }}
             data-testid="page-readout"
         >
             <Show

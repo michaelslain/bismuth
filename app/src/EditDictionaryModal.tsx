@@ -14,6 +14,9 @@ import { IconTextButton } from './ui/IconTextButton'
 import { TextButton } from './ui/TextButton'
 import { TextInput } from './ui/TextInput'
 import Text from './ui/Text'
+import EmptyState from './ui/EmptyState'
+import ListRow from './ui/ListRow'
+import RowList from './ui/RowList'
 import { loadHarperState, normalizeDictWord } from './editor/harperStore'
 import { addDictionaryWord, removeDictionaryWord } from './editor/harper'
 import { isConfirmKey } from './ui/widgetKeys'
@@ -54,34 +57,33 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                 <Show
                     when={words().length}
                     fallback={
-                        <Text as="div" size="ui" tone="faint" class={styles['dict-empty']}>
+                        <EmptyState compact>
                             no custom words yet — right-click a misspelled word,
                             or add one below
-                        </Text>
+                        </EmptyState>
                     }
                 >
-                    <div class={styles['dict-list']}>
+                    <RowList maxHeight="var(--list-max-h)">
                         <For each={words()}>
                             {w => (
-                                <div class={styles['dict-row']}>
-                                    <Text
-                                        as="span"
-                                        inherit
-                                        class={styles['dict-word']}
-                                    >
+                                <ListRow
+                                    trailing={
+                                        <IconButton
+                                            icon="Trash2"
+                                            label={`Remove “${w}”`}
+                                            danger
+                                            size="sm"
+                                            onClick={() => remove(w)}
+                                        />
+                                    }
+                                >
+                                    <Text as="span" inherit truncate>
                                         {w}
                                     </Text>
-                                    <IconButton
-                                        icon="Trash2"
-                                        label={`Remove “${w}”`}
-                                        danger
-                                        size="sm"
-                                        onClick={() => remove(w)}
-                                    />
-                                </div>
+                                </ListRow>
                             )}
                         </For>
-                    </div>
+                    </RowList>
                 </Show>
 
                 <div class={styles['dict-add']}>

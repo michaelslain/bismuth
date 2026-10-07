@@ -88,5 +88,10 @@ export const Scrolling: Story = {
         expect(cs.maxHeight).toBe('320px')
         expect(cs.overflowY).toBe('auto')
         expect(list.scrollHeight).toBeGreaterThan(list.clientHeight)
+        // rows never squeeze: 14 rows at 24px each overflow the 320px cap and scroll, instead of
+        // shrinking toward ~23px apiece until the list fits and never scrolls
+        const rows = [...list.children] as HTMLElement[]
+        for (const r of rows) expect(r.getBoundingClientRect().height).toBeGreaterThanOrEqual(24)
+        expect(list.scrollHeight).toBeGreaterThanOrEqual(rows.length * 24)
     },
 }

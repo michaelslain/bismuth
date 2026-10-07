@@ -130,3 +130,35 @@ export const LongTitleEllipsis: Story = {
         )
     },
 }
+
+/** A long title AND a long subtitle in a narrow panel: the faint subtitle gives way first, so the
+ *  title (the danger verb, here) is whole while the subtitle ellipsizes. It used to be the other
+ *  way round — "delete recurrin…" next to ~29 characters of subtitle. */
+export const LongSubtitleYieldsFirst: Story = {
+    render: () => (
+        <div style={{ width: '360px', border: '1px solid var(--border-soft)' }}>
+            <ModalHeader
+                tone="danger"
+                title="delete recurring event"
+                subtitle="weekly sync with the whole platform team and guests"
+                onClose={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector(
+            '[class*="title"]',
+        ) as HTMLElement
+        const sub = canvasElement.querySelector('[class*="sub"]') as HTMLElement
+        // The title shows in full… measured on the text itself, not scrollWidth: scrollWidth
+        // rounds to whole pixels, and a nowrap title squeezed by a FRACTION of a pixel already
+        // ellipsizes ("delete recurring eve…").
+        const text = document.createRange()
+        text.selectNodeContents(title)
+        expect(text.getBoundingClientRect().width).toBeLessThanOrEqual(
+            title.getBoundingClientRect().width,
+        )
+        // …and it is the subtitle that was cut.
+        expect(sub.scrollWidth).toBeGreaterThan(sub.clientWidth)
+    },
+}

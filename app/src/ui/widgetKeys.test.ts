@@ -1,6 +1,12 @@
 // app/src/ui/widgetKeys.test.ts
 import { describe, it, expect, afterEach } from 'bun:test'
-import { isDismissKey, isConfirmKey, isActivateKey, isTabKey } from './widgetKeys'
+import {
+    isDismissKey,
+    isConfirmKey,
+    isConfirmBackKey,
+    isActivateKey,
+    isTabKey,
+} from './widgetKeys'
 import { settings, setSettings } from '../settings'
 
 // Faithful synthetic KeyboardEvent — key AND code both set, matching what a real
@@ -103,5 +109,22 @@ describe('isTabKey', () => {
     it('Tab only', () => {
         expect(isTabKey({ key: 'Tab' } as KeyboardEvent)).toBe(true)
         expect(isTabKey({ key: 'a' } as KeyboardEvent)).toBe(false)
+    })
+})
+
+describe('isConfirmBackKey', () => {
+    it('is Shift+Enter under the default, and plain Enter is not it', () => {
+        expect(isConfirmBackKey(ev('Enter', { shift: true }))).toBe(true)
+        expect(isConfirmBackKey(ev('Enter'))).toBe(false)
+        expect(isConfirmBackKey(ev('Escape', { shift: true }))).toBe(false)
+    })
+    it('follows a rebound ui-confirm', () => {
+        setSettings('keybindings', 'ui-confirm', 'Mod+.')
+        expect(isConfirmBackKey(ev('Enter', { shift: true }))).toBe(false)
+        expect(isConfirmBackKey({ ...modPeriod(), shiftKey: true } as KeyboardEvent)).toBe(true)
+    })
+    it('is nothing when ui-confirm is empty', () => {
+        setSettings('keybindings', 'ui-confirm', '')
+        expect(isConfirmBackKey(ev('Enter', { shift: true }))).toBe(false)
     })
 })

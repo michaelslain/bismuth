@@ -3,9 +3,9 @@
    themselves are ChatHistoryRow's (its own stylesheet); this file owns only the frame, the age
    group labels and the empty/loading lines.
 
-   ONE COLUMN, TWO INSETS. Wide panes centre the chat's own 680px reading column (the width
+   ONE COLUMN, TWO INSETS. Wide panes centre the chat's own reading column (`--chat-column`, the width
    ChatTurnColumn and ChatComposerBar cap at), so opening history from a chat does not shift the
-   left edge: `--col-pad` leaves room for the rows' --sp-4 hover inset OUTSIDE those 680px, and the
+   left edge: `--col-pad` leaves room for the rows' --sp-4 hover inset OUTSIDE that column, and the
    header's prompt glyph, the group labels, the state lines and each row's icon all start exactly
    where the transcript's text did. No divider under the header: SearchBar's own underline is the
    header rule.
@@ -15,7 +15,7 @@
    a frame within the frame. */
 
 .panel {
-    --col-pad: max(var(--sp-2), calc((100% - 680px) / 2 - var(--sp-4)));
+    --col-pad: max(var(--sp-2), calc((100% - var(--chat-column)) / 2 - var(--sp-4)));
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;

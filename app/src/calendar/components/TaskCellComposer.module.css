@@ -14,33 +14,33 @@
     align-items: baseline;
     gap: var(--sp-1);
 }
-/* --text-muted is the fallback; a destination with a category overrides it with an inline
-   `color` (see TaskCellComposer.tsx). */
-.marker {
-    color: var(--text-muted);
-    flex-shrink: 0;
-    white-space: nowrap;
-}
 /* min-width: 0 lets the input actually shrink inside the flex row instead of forcing the row
    (and the destination line below it, via .composer's shared width) wider than the cell. */
 .input {
     flex: 1 1 auto;
     min-width: 0;
 }
-/* Truncates with an ellipsis rather than wrapping onto a second line or pushing the input wider
-   — a long destination path must never be the thing that changes the composer's width.
-   min-width: 0 matters here too: .composer is itself a flex container (column), so this is
-   also a flex item, and a flex item's default min-width:auto refuses to shrink below its own
-   content — which silently defeats text-overflow: ellipsis. */
+/* The destination line is a flex row (the arrow + an optional picker), so it only clips and
+   gives way to the composer's column — `min-width: 0` for the same flex-item reason as below.
+   The ellipsis lives on `.destinationText`: `text-overflow` does nothing on a flex container
+   (its text is an anonymous flex item), which is how a long destination used to clip mid-glyph. */
 .destination {
     display: flex;
     align-items: center;
     gap: var(--sp-1);
     min-width: 0;
     color: var(--text-muted);
-    white-space: nowrap;
+    overflow: hidden;
+}
+/* The text itself: a BLOCK that may shrink below its content (min-width: 0 — a flex item's default
+   min-width:auto refuses to, which silently defeats the ellipsis) and truncates on one line rather
+   than wrapping or pushing the composer wider. */
+.destinationText {
+    display: block;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 /* No destination configured reads as a problem to fix, not a rendering accident — the same
    danger register a broken state anywhere else in the app uses, instead of the ordinary

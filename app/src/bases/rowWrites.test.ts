@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import type { Row } from '../../../core/src/bases/types'
 import { placeholderFile } from '../../../core/src/bases/types'
 import { apiBase, httpTransport, setTransport, type Transport } from '../api'
-import { toasts } from '../toastStore'
+import { toasts } from '../ui/toastStore'
 import { commitDelete, safeFilename } from './rowWrites'
 
 const originalBase = apiBase()

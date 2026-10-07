@@ -29,6 +29,7 @@ import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { assertChipsWhole, assertHeaderAligned, taskRow } from '../ui/_calendarAssertions'
 import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
+import TextButton from '../ui/TextButton'
 
 const meta = {
     title: 'Bases/CalendarView',
@@ -160,20 +161,18 @@ function EventsCalendarSwitcher() {
     return (
         <div>
             <div>
-                <button
-                    type="button"
+                <TextButton
                     data-testid="events-a"
                     onClick={() => setBasePath(EVENTS_A_PATH)}
                 >
-                    Calendar A
-                </button>
-                <button
-                    type="button"
+                    calendar a
+                </TextButton>
+                <TextButton
                     data-testid="events-b"
                     onClick={() => setBasePath(EVENTS_B_PATH)}
                 >
-                    Calendar B
-                </button>
+                    calendar b
+                </TextButton>
             </div>
             <CalendarView basePath={basePath()} />
         </div>
@@ -479,9 +478,9 @@ function ReconcileStory() {
 
     return (
         <div>
-            <button type="button" data-testid="flip-bravo" onClick={flip}>
+            <TextButton data-testid="flip-bravo" onClick={flip}>
                 flip bravo
-            </button>
+            </TextButton>
             <CalendarView result={result()} config={TASKS_BASE_CONFIG} />
         </div>
     )

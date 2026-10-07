@@ -11,7 +11,7 @@ import type { CalendarEvent, Category } from './types'
 import { EventStore } from './EventStore'
 import { categories } from './state'
 import { pushUndoToast } from '../undoToast'
-import { pushToast } from '../toastStore'
+import { pushToast } from '../ui/toastStore'
 
 const inFlight = new Set<string>()
 

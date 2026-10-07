@@ -431,11 +431,11 @@ export const EditableBooleanAndSelect: Story = {
         // and the flip survives because the row store above is real.
         const boolBtn = () =>
             firstRowCells()[doneIdx]!.querySelector<HTMLElement>('button')!
-        expect((boolBtn().textContent ?? '').trim()).toBe('')
+        // The boolean is the `[ ]` / `[x]` BooleanValue glyph: false is drawn, not blank.
+        const checked = () => boolBtn().querySelector('[data-checked]') !== null
+        expect(checked()).toBe(false)
         boolBtn().click()
-        await waitFor(() =>
-            expect((boolBtn().textContent ?? '').trim()).toBe('x'),
-        )
+        await waitFor(() => expect(checked()).toBe(true))
         expect(canvasElement.querySelector('input')).toBeNull()
         expect(widths()).toEqual(before)
     },

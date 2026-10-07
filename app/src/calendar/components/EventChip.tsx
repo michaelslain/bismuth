@@ -6,11 +6,11 @@ import { deleteEventWithUndo, duplicateEvent } from '../eventActions'
 import { openableHref } from '../openableUrl'
 import CalendarChip from './CalendarChip'
 import { useOverflowHide } from './useOverflowHide'
-import { pushToast } from '../../toastStore'
+import { pushToast } from '../../ui/toastStore'
 import { formatTime } from '../dates'
 import { eventCategoryColors, categoryBands, categoryOverflow, MAX_BANDS } from '../categoryColor'
 import { EventStore } from '../EventStore'
-import { ContextMenu } from '../../ContextMenu'
+import { ContextMenu } from '../../ui/ContextMenu'
 import { IconButton } from '../../ui/IconButton'
 import Text from '../../ui/Text'
 import StatusDot from '../../ui/StatusDot'
@@ -101,7 +101,7 @@ export function EventChip(props: Props) {
     useOverflowHide(
         () => chipRef,
         () => metaRef,
-        () => setMetaVisible(false),
+        hidden => setMetaVisible(!hidden),
     )
 
     return (

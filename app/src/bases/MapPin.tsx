@@ -53,7 +53,11 @@ const MapPin: Component<MapPinProps> = props => {
         ]
             .filter(Boolean)
             .join(' ')
-    const pos = () => ({ left: `${local.x}px`, top: `${local.y}px` })
+    const pos = () => ({
+        left: `${local.x}px`,
+        top: `${local.y}px`,
+        '--map-pin-z': Math.max(1, 50000 - Math.round(local.y)),
+    })
     const glyph = (
         // Accent glyph marker — no drawn teardrop shape, per bases-map.card.html ("@ a record").
         <Text
