@@ -1134,13 +1134,13 @@ test('`export --format html` renders prose line-height from the vault\'s own edi
     const loose = await exportNoteHtml(1.5)
     const tightPx = lineHeightPxFromHtml(tight)
     const loosePx = lineHeightPxFromHtml(loose)
-    // 16px prose x (18 * lineHeight) / (editorFontSize 13.5 * proseScale 1.00), rounded to the
+    // 16px prose x (18 * lineHeight) / (editorFontSize 13.5 * proseScale 0.97), rounded to the
     // nearest px (htmlTemplate.ts's `rule`) — see cli/src/commands/export.ts's
     // buildPaletteOverride for the same arithmetic run headlessly. proseScale is exportTheme.ts's
-    // exported PROSE_SCALE (1.00, IBM Plex Serif's measured x-height ratio) — Lora's was 1.04,
-    // CMU Serif's 1.28.
-    expect(tightPx).toBe(26) // 16 * (18*1.2)/13.5 = 25.6 -> 26
-    expect(loosePx).toBe(32) // 16 * (18*1.5)/13.5 = 32
+    // exported PROSE_SCALE (0.97, Libron's measured x-height ratio) — IBM Plex Serif's was 1.00,
+    // Lora's 1.04, CMU Serif's 1.28.
+    expect(tightPx).toBe(26) // 16 * (18*1.2)/(13.5*0.97) = 26.39 -> 26
+    expect(loosePx).toBe(33) // 16 * (18*1.5)/(13.5*0.97) = 32.99 -> 33
     expect(tightPx).not.toBe(loosePx)
 })
 

@@ -31,10 +31,8 @@ describe('settingsToCssVars', () => {
         // The --editor-font alias is gone (deleted by Task 4): the emitted map must not carry
         // the key at all, not just an empty/undefined value.
         expect('--editor-font' in vars).toBe(false)
-        expect(vars['--prose-font']).toBe(
-            "'IBM Plex Serif', Georgia, serif",
-        ) // resolved through FONT_STACKS, from appearance.proseFont
-        expect(vars['--prose-scale']).toBe('1') // PROSE_SCALES, the default face's x-height parity
+        expect(vars['--prose-font']).toBe("'Libron', Georgia, serif") // resolved through FONT_STACKS, from appearance.proseFont
+        expect(vars['--prose-scale']).toBe('0.97') // PROSE_SCALES, the default face's x-height parity
     })
 
     it('derives the color tokens from the default theme (ink)', () => {
@@ -65,7 +63,7 @@ describe('settingsToCssVars', () => {
         const s = structuredClone(DEFAULTS)
         s.appearance.proseFont = 'Comic Sans'
         expect(settingsToCssVars(s)['--prose-font']).toBe(
-            FONT_STACKS['IBM Plex Serif'],
+            FONT_STACKS['Libron'],
         )
     })
 

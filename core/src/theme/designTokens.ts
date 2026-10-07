@@ -230,8 +230,8 @@ const CALLOUTS: TokenDef[] = [
 const font = grp('font')
 const FONT: TokenDef[] = [
     font('ui-font-stack', 'font-mono', 'Monaspace Xenon', 'UI + mono font family (all chrome, code, frontmatter, math, tags). Legacy: appearance.uiFont.', { setting: 'appearance.uiFont' }),
-    font('prose-font', 'font-prose', 'IBM Plex Serif', 'Prose font family (note body, headings, tables, chat). Legacy: appearance.proseFont.', { setting: 'appearance.proseFont' }),
-    font('prose-scale', 'number', '1', 'Size correction measured for the prose face, so prose reads at one optical size.'),
+    font('prose-font', 'font-prose', 'Libron', 'Prose font family (note body, headings, tables, chat). Legacy: appearance.proseFont.', { setting: 'appearance.proseFont' }),
+    font('prose-scale', 'number', '0.97', 'Size correction measured for the prose face, so prose reads at one optical size.'),
     font('mono-scale', 'number', '1', 'Optical-size factor for the mono font, 0.6 to 1. Legacy: appearance.monoScale.', { setting: 'appearance.monoScale' }),
     font('glyph-scale', 'number', '1.25', 'Size of glyph art relative to its cell.'),
     font('code-scale', 'number', '0.89', 'Mono text size relative to the prose around it.'),

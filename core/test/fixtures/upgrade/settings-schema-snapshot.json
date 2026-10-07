@@ -80,6 +80,7 @@
       "kind": "enum",
       "values": [
         "IBM Plex Serif",
+        "Libron",
         "Lora",
         "Monaspace Argon",
         "Monaspace Krypton",
@@ -88,7 +89,7 @@
         "Monaspace Xenon"
       ]
     },
-    "default": "IBM Plex Serif",
+    "default": "Libron",
     "min": null,
     "max": null,
     "required": false

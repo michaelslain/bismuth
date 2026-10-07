@@ -3,6 +3,22 @@
 This page lists bundled Bismuth assets with their own attribution requirements. Ordinary
 open-source dependencies remain covered by their package licenses and are not listed here.
 
+## Libron
+
+The default note prose face (`appearance.proseFont: Libron`), bundled because it is not published
+to npm.
+
+- **Source**: <https://github.com/nicoverbruggen/libron>, release `v0.30`, asset `Libron_Web.zip`
+  (the four static WOFF2 cuts: Regular, Italic, Bold, BoldItalic)
+- **Copyright**: Libron © 2026 Nico Verbruggen, derived from Readerly © 2026 Nico Verbruggen and
+  Newsreader © 2020 The Newsreader Project Authors; Reserved Font Name Libron
+- **License**: SIL Open Font License 1.1 — the full text is vendored at
+  `app/src/assets/fonts/libron/LICENSE-libron.txt`
+
+**Changes made.** None. The four files in `app/src/assets/fonts/libron/` are the release's WOFF2
+files byte for byte, under their upstream names; `global.css` declares them as family `'Libron'`,
+and an export embeds the same files (`app/src/export/docFontCss.ts`, `cli/src/docFontCss.ts`).
+
 ## Phosphor Icons
 
 Bismuth's interface icons (`<Icon>`, `app/src/icons/`) are drawn from Phosphor, the third and

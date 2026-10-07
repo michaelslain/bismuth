@@ -92,7 +92,7 @@ export const Filled: Story = {
     play: async ({ canvasElement }) => {
         const el = await editable(canvasElement)
         const cs = getComputedStyle(el)
-        expect(cs.fontFamily).toContain('Plex Serif')
+        expect(cs.fontFamily).toContain('Libron')
         expect(cs.fontFamily).not.toContain('Monaspace')
         expect(cs.outlineStyle).toBe('none')
         const h2 = el.querySelector('h2') as HTMLElement

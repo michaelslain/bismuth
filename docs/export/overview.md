@@ -229,7 +229,7 @@ colours `resolvePalette` already resolved:
 
 | | source | where |
 |---|---|---|
-| face | `--prose-font` (the proportional note face, IBM Plex Serif by default) | `:root`, `global.css` (tokens section) |
+| face | `--prose-font` (the proportional note face, Libron by default) | `:root`, `global.css` (tokens section) |
 | leading | the app's own `calc(var(--row-h) * var(--prose-line-height))`, read back as a **ratio of the type** | `--prose-line-height` = `editor.lineHeight` |
 | code size | `calc(100px * var(--code-scale) * var(--mono-scale, 1))`, read back as a **ratio** (`ThemePalette.codeScale`) | `--code-scale` (0.89) in `global.css`; `--mono-scale` = `appearance.monoScale` |
 | colours | `--bg`/`--fg`/`--accent`/the category tokens | probed — see "html2canvas and modern CSS colors" |
@@ -280,8 +280,8 @@ reads the vault's own `.settings` (via `readSettings`) and builds a `ThemePalett
   `proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * proseScale)`, where `ROW_H_PX = 18`
   (the app's `--row-h` row unit) and `proseScale` is the vault's prose face's own optical scale:
   `PROSE_SCALES[appearance.proseFont]` (falling back to `DEFAULT_PROSE_SCALE`) when the vault sets
-  `proseFont`, else `exportTheme.ts`'s exported `PROSE_SCALE` (`1`, the default IBM Plex Serif's
-  scale; it was 1.04 while Lora was the default). `ROW_H_PX` is a local constant, so a change to
+  `proseFont`, else `exportTheme.ts`'s exported `PROSE_SCALE` (`0.97`, the default Libron's
+  scale; it was 1.00 while IBM Plex Serif was the default and 1.04 under Lora). `ROW_H_PX` is a local constant, so a change to
   either token in the app is the only place this can drift from.
 - **`codeScale`** — `CODE_SCALE * (appearance.monoScale ?? 1)`, with `CODE_SCALE = 0.89`
   (`global.css`'s `--code-scale`), the same product the app's DOM probe reads back.
@@ -302,13 +302,13 @@ vault's own settings, including its prose face's scale and `monoScale`; only col
 
 An exported document is standalone — no `<link>` to the app's own stylesheets, and (for a PDF/PNG
 rasterizer, browser or headless) no access to whatever fonts the app loaded from `node_modules` at
-runtime. Without embedding the actual font files, a note's prose face (`IBM Plex Serif`, or `Lora Variable`) and mono face
+runtime. Without embedding the actual font files, a note's prose face (`Libron`, `IBM Plex Serif` or `Lora Variable`) and mono face
 (`Monaspace Xenon`) simply aren't resolvable in the exported document, and every browser silently
 falls through the CSS font stack to its next entry — measured directly on a real export before this
 existed (under the prior CMU-Serif-based prose face): a prose run painted 737.1px wide, identical to
 Georgia's 737.1px and nothing like CMU Serif's 677.2px, while KaTeX's own faces (embedded separately,
 see `katexCss`) rendered as real Computer Modern — two different serifs a few pixels apart in the
-same document. The prose face is IBM Plex Serif now (Lora Variable before it), but the fallback trap the measurement exposed
+same document. The prose face is Libron now (IBM Plex Serif before it, Lora Variable before that), but the fallback trap the measurement exposed
 is unchanged: an unresolvable family name still falls silently through to Georgia.
 
 The fix is split across three files because the two callers obtain font bytes by incompatible,
@@ -320,7 +320,8 @@ non-interchangeable means:
   this is the one place that fixes which weights get shipped and how they're written out. Its
   `proseFacesFor(faces, proseStack)` keeps every mono face but only the prose serif the document's
   own `--prose-font` stack names, so an export never ships a serif it does not paint.
-- **`app/src/export/docFontCss.ts`** — the browser embedder. It pulls the document faces (IBM Plex Serif
+- **`app/src/export/docFontCss.ts`** — the browser embedder. It pulls the document faces (Libron 400/700 in normal + italic, from the vendored
+  `app/src/assets/fonts/libron/`; IBM Plex Serif
   400/500/600/700 in normal + italic; Lora Variable regular/italic — two variable faces spanning
   weight range 400 700; plus Monaspace Xenon regular/italic/bold) in as base64 through Vite's
   `?inline` transform — the same mechanism `katexCss.ts` uses for KaTeX's glyphs — and calls

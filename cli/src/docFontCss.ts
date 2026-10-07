@@ -1,7 +1,7 @@
 // cli/src/docFontCss.ts
 //
 // The headless twin of app/src/export/docFontCss.ts: the same document faces (the note prose
-// serif — IBM Plex Serif or Lora Variable — and mono Monaspace Xenon) inlined as base64, but through Bun's import-attribute asset
+// serif — Libron, IBM Plex Serif or Lora Variable — and mono Monaspace Xenon) inlined as base64, but through Bun's import-attribute asset
 // embedding instead of Vite's `?inline`, because this module ships inside a `bun build --compile`
 // binary that runs on a machine with no `node_modules` anywhere near it.
 //
@@ -12,6 +12,10 @@
 //
 // The face LIST is shared with the browser build via faceCss(), so the two paths cannot drift in
 // which weights they ship — only in how the bytes are obtained.
+import libron400 from '../../app/src/assets/fonts/libron/Libron-Regular.woff2' with { type: 'file' }
+import libron400i from '../../app/src/assets/fonts/libron/Libron-Italic.woff2' with { type: 'file' }
+import libron700 from '../../app/src/assets/fonts/libron/Libron-Bold.woff2' with { type: 'file' }
+import libron700i from '../../app/src/assets/fonts/libron/Libron-BoldItalic.woff2' with { type: 'file' }
 import plex400 from '@fontsource/ibm-plex-serif/files/ibm-plex-serif-latin-400-normal.woff2' with { type: 'file' }
 import plex400i from '@fontsource/ibm-plex-serif/files/ibm-plex-serif-latin-400-italic.woff2' with { type: 'file' }
 import plex500 from '@fontsource/ibm-plex-serif/files/ibm-plex-serif-latin-500-normal.woff2' with { type: 'file' }
@@ -33,6 +37,10 @@ import {
 
 // One embedded file per DOC_FACES entry, in the same order.
 const PATHS = [
+    libron400,
+    libron400i,
+    libron700,
+    libron700i,
     plex400,
     plex400i,
     plex500,

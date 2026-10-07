@@ -33,7 +33,7 @@ test('loadSettings overlays stored values and keeps defaults for missing keys', 
     const s = loadSettings(raw)
     expect(s.appearance.theme).toBe('rose-gold') // taken from storage
     expect(s.appearance.uiFont).toBe('Monaspace Xenon') // default kept
-    expect(s.appearance.proseFont).toBe('IBM Plex Serif') // default kept
+    expect(s.appearance.proseFont).toBe('Libron') // default kept
     expect(s.graph.spin).toBe(false) // taken from storage
     expect(s.appearance.editorFontSize).toBe(13.5) // default kept
 })

@@ -13,9 +13,10 @@ export const MONO_FONTS: readonly string[] = [
     'Monaspace Radon',
 ]
 
-/** proseFont's valid values: the two proportional serifs — IBM Plex Serif (the default) and Lora —
- *  plus the same five Monaspace variants, for a user who wants an all-mono editor. */
+/** proseFont's valid values: the three proportional serifs — Libron (the default), IBM Plex Serif
+ *  and Lora — plus the same five Monaspace variants, for a user who wants an all-mono editor. */
 export const PROSE_FONTS: readonly string[] = [
+    'Libron',
     'IBM Plex Serif',
     'Lora',
     ...MONO_FONTS,

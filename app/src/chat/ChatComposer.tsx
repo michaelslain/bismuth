@@ -59,7 +59,7 @@ const composerTheme = EditorView.theme({
         // writing it and reading it back. Same optical-size compensation as every other prose
         // surface (see --prose-scale in the tokens section of global.css); at the mono size the serif reads
         // noticeably smaller.
-        fontFamily: "var(--prose-font, 'IBM Plex Serif', Georgia, serif)",
+        fontFamily: "var(--prose-font, 'Libron', Georgia, serif)",
         fontSize: 'var(--prose-font-size, 14px)',
         // --lh-prose, the bubble's own (ChatTextBubble.module.css), so a message does not reflow
         // by 10% the moment it is sent. This was a hardcoded 1.45 against the bubble's 1.6.

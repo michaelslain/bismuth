@@ -15,12 +15,17 @@ export interface DocFace {
 }
 
 /** Which faces an exported note document CAN ship, mirroring the app's own declarations:
- *  index.tsx's @fontsource imports for the two prose serifs and for the mono. IBM Plex Serif
- *  (the default appearance.proseFont) ships as static cuts, one file per weight × style, matching
+ *  global.css's vendored @font-face for Libron (the default appearance.proseFont, four static
+ *  cuts: 400/700 × normal/italic), and index.tsx's @fontsource imports for the other two prose
+ *  serifs and for the mono. IBM Plex Serif ships as static cuts, one file per weight × style, matching
  *  the weights the app loads. Lora ships as two VARIABLE files (one normal, one italic, each
  *  covering the whole 400-700 weight axis) rather than four static cuts — hence two faces.
  *  Only the prose serif the document actually names is embedded — see proseFacesFor. */
 export const DOC_FACES: Omit<DocFace, 'src'>[] = [
+    { family: 'Libron', style: 'normal', weight: 400 },
+    { family: 'Libron', style: 'italic', weight: 400 },
+    { family: 'Libron', style: 'normal', weight: 700 },
+    { family: 'Libron', style: 'italic', weight: 700 },
     { family: 'IBM Plex Serif', style: 'normal', weight: 400 },
     { family: 'IBM Plex Serif', style: 'italic', weight: 400 },
     { family: 'IBM Plex Serif', style: 'normal', weight: 500 },
@@ -37,7 +42,7 @@ export const DOC_FACES: Omit<DocFace, 'src'>[] = [
 ]
 
 /** The PROSE serif families DOC_FACES carries — the faces that are embedded only on demand. */
-const PROSE_FAMILIES = ['IBM Plex Serif', 'Lora Variable']
+const PROSE_FAMILIES = ['Libron', 'IBM Plex Serif', 'Lora Variable']
 
 /** The subset of `faces` a document whose prose is set in `proseStack` (a CSS font stack, as
  *  --prose-font / ThemePalette.proseFont carry it) needs: every non-prose face, plus a prose

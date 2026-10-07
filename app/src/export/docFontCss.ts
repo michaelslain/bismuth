@@ -1,6 +1,6 @@
 // app/src/export/docFontCss.ts
 //
-// The DOCUMENT faces — the note prose serif (IBM Plex Serif or Lora Variable, whichever the
+// The DOCUMENT faces — the note prose serif (Libron, IBM Plex Serif or Lora Variable, whichever the
 // document's prose stack names) and the mono face (Monaspace Xenon) — inlined
 // as base64 `data:` URIs for export, exactly as katexCss.ts already does for the maths glyphs.
 //
@@ -15,13 +15,17 @@
 // (the previous static serif, before the app's prose face moved to Lora) — exporters.test.ts proves the CURRENT
 // family actually resolves (a real rendered-width measurement), not just that it's named.
 //
-// The faces mirror the app's own declarations one for one — index.tsx's @fontsource imports for
-// the prose serifs (Plex as static cuts; Lora as two VARIABLE files covering the whole 400-700
+// The faces mirror the app's own declarations one for one — global.css's vendored @font-face for
+// Libron, index.tsx's @fontsource imports for the other prose serifs (Plex as static cuts; Lora as two VARIABLE files covering the whole 400-700
 // weight axis — see fontFaceCss.ts's DOC_FACES comment) and its @fontsource imports for the mono.
 //
 // Browser build only: `?inline` is a Vite transform. Headless/bun consumers get the same
 // stylesheet from cli/src/docFontCss.ts, which is why this is threaded through ExportDeps rather
 // than imported directly by exporters.ts.
+import libron400 from '../assets/fonts/libron/Libron-Regular.woff2?inline'
+import libron400i from '../assets/fonts/libron/Libron-Italic.woff2?inline'
+import libron700 from '../assets/fonts/libron/Libron-Bold.woff2?inline'
+import libron700i from '../assets/fonts/libron/Libron-BoldItalic.woff2?inline'
 import plex400 from '@fontsource/ibm-plex-serif/files/ibm-plex-serif-latin-400-normal.woff2?inline'
 import plex400i from '@fontsource/ibm-plex-serif/files/ibm-plex-serif-latin-400-italic.woff2?inline'
 import plex500 from '@fontsource/ibm-plex-serif/files/ibm-plex-serif-latin-500-normal.woff2?inline'
@@ -40,6 +44,10 @@ import { DOC_FACES, faceCss, proseFacesFor, type DocFace } from './fontFaceCss'
 // One inlined file per DOC_FACES entry, in the same order — the list is the shared half, only
 // how the bytes arrive differs from cli/src/docFontCss.ts.
 const SRCS = [
+    libron400,
+    libron400i,
+    libron700,
+    libron700i,
     plex400,
     plex400i,
     plex500,

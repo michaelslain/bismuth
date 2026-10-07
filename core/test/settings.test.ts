@@ -487,7 +487,7 @@ test('reconcile leaves a new-scheme .settings file untouched', async () => {
     const merged = await serializeSettingsForFrontend(vault)
     expect((merged.appearance as any).theme).toBe('ink')
     expect((merged.appearance as any).uiFont).toBe('Monaspace Xenon')
-    expect((merged.appearance as any).proseFont).toBe('IBM Plex Serif')
+    expect((merged.appearance as any).proseFont).toBe('Libron')
 
     await reconcileSettings(vault) // nothing to migrate, nothing to strip
     const after = readFileSync(join(vault, '.settings'), 'utf8')

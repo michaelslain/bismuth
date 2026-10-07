@@ -69,16 +69,16 @@ export const Drafting: Story = {
         // loaded — a stack that silently fell through to the Georgia fallback would still match
         // a family-name regex. expectProseFace follows the LIVE --prose-font token instead (so a
         // repointed token is honored rather than a literal being re-pinned), and
-        // expectFamilyReallyLoaded proves the default IBM Plex Serif face actually resolved —
+        // expectFamilyReallyLoaded proves the default Libron face actually resolved —
         // document.fonts.check cannot: it is true for a family that doesn't exist (the fallback
         // is usable) and false for a registered-but-not-yet-laid-out webface, so it stays green
         // when the face is absent and turns red the moment it is really present.
         expectProseFace(scroller as HTMLElement)
-        await expectFamilyReallyLoaded('IBM Plex Serif')
+        await expectFamilyReallyLoaded('Libron')
         // The composer sits at --prose-font-size = --editor-font-size * --prose-scale, pinned
         // exactly. It used to assert "bigger than the mono size", which only held while every
-        // prose face had a scale above 1 — IBM Plex Serif's is 1.00 (x-height parity with the
-        // mono), so the two sizes now legitimately coincide. getPropertyValue on
+        // prose face had a scale above 1 — Libron's is 0.97 (its x-height runs ~3% above the
+        // mono's), so prose now legitimately sits slightly BELOW the mono size. getPropertyValue on
         // --prose-font-size returns the unresolved calc() text, so multiply the two plain tokens.
         const root = getComputedStyle(document.documentElement)
         const editorPx = parseFloat(root.getPropertyValue('--editor-font-size'))
@@ -87,9 +87,9 @@ export const Drafting: Story = {
         // passing test. Fail loudly instead.
         await expect(Number.isFinite(editorPx) && editorPx > 0).toBe(true)
         await expect(Number.isFinite(proseScale) && proseScale > 0).toBe(true)
-        await expect(parseFloat(cs.fontSize)).toBe(
-            Math.round(editorPx * proseScale * 100) / 100,
-        )
+        // toBeCloseTo, not a 2-decimal round: Libron's 0.97 lands on 13.095px, which the
+        // browser keeps exact while Math.round(… * 100) / 100 makes 13.1.
+        await expect(parseFloat(cs.fontSize)).toBeCloseTo(editorPx * proseScale, 2)
     },
 }
 

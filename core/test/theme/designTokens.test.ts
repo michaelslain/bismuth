@@ -124,7 +124,7 @@ describe('checkTokenValue, one pass and one fail per kind', () => {
         expect(ok('font-mono', 'Lora').ok).toBe(false)
         expect(ok('font-prose', 'Lora').ok).toBe(true)
         expect(ok('font-prose', 'lora').ok).toBe(false)
-        expect(PROSE_FONTS).toEqual(['IBM Plex Serif', 'Lora', ...MONO_FONTS])
+        expect(PROSE_FONTS).toEqual(['Libron', 'IBM Plex Serif', 'Lora', ...MONO_FONTS])
     })
     it('scheme', () => {
         expect(ok('scheme', 'light')).toEqual({ ok: true, value: 'light' })

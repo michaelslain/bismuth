@@ -18,7 +18,7 @@ const CASES: [kind: string, key: string, good: string, bad: string, message: str
     ['border', 'focus-ring', '1px solid #3a3e4a', '@@', 'not a border: @@ (1px solid #3a3e4a)'],
     ['length', 'sp-3', '10px', '@@', 'not a length: @@ (6px, 0.5em, or a number of px)'],
     ['font-mono', 'ui-font-stack', 'Monaspace Neon', '@@', 'not a mono font: @@ (Monaspace Xenon, Monaspace Neon, Monaspace Argon, Monaspace Krypton, Monaspace Radon)'],
-    ['font-prose', 'prose-font', 'Lora', '@@', 'not a prose font: @@ (IBM Plex Serif, Lora, Monaspace Xenon, Monaspace Neon, Monaspace Argon, Monaspace Krypton, Monaspace Radon)'],
+    ['font-prose', 'prose-font', 'Lora', '@@', 'not a prose font: @@ (Libron, IBM Plex Serif, Lora, Monaspace Xenon, Monaspace Neon, Monaspace Argon, Monaspace Krypton, Monaspace Radon)'],
     ['duration', 'dur-fast', '120ms', '@@', 'not a duration: @@ (120ms, 0.2s, or a number of ms)'],
     ['easing', 'ease', 'linear', '@@', 'not an easing: @@ (ease, linear, or cubic-bezier(0.2, 0, 0, 1))'],
 ]

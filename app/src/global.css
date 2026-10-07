@@ -11,6 +11,42 @@
    byte-identical to the "ink" theme (the schema default) — themeGuard.test.ts asserts exactly that
    against this file, and its anti-drift lint points here too: a centralized hex may appear in
    tokens.ts and in this file, and nowhere else in app/src or core/src. */
+
+/* Libron — the default appearance.proseFont. Not on npm, so unlike the @fontsource faces fonts.ts
+   imports it is vendored: the four static woff2 cuts of release v0.30 from
+   github.com/nicoverbruggen/libron (OFL-1.1, app/src/assets/fonts/libron/LICENSE-libron.txt). Only
+   400/700 exist, so note headings asking for 500 (h4-h6) render at 400 and 600 (h1-h3) at 700 —
+   real cuts, never a synthesized bold. The family string 'Libron' is what FONT_STACKS, the export's
+   DOC_FACES and --prose-font below all name; a mismatch falls silently through to Georgia. */
+@font-face {
+  font-family: 'Libron';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/libron/Libron-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Libron';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/libron/Libron-Italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Libron';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/libron/Libron-Bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Libron';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/libron/Libron-BoldItalic.woff2') format('woff2');
+}
+
 :root {
   color-scheme: dark;
   /* Theme tokens are DERIVED in app/src/settingsCssVars.ts from the selected theme
@@ -447,25 +483,33 @@
      reset in the CodeMirror theming section (headings keep it, because livePreview.ts gives them their own absolute
      scale; a table has none, so leaving the size reset on would flatten it back to mono size).
 
-     IBM Plex Serif (via @fontsource/ibm-plex-serif, static 400/500/600/700 + italics) since
-     2026-09-28, replacing Lora as the default: a serif drawn beside IBM Plex Mono, so it keeps
+     LIBRON since 2026-10-07 (vendored, @font-face at the top of this section), replacing IBM Plex
+     Serif as the default: a revision of Readerly with reduced serifs, tuned for reading on screens
+     and e-readers. Plex and Lora stay selectable appearance.proseFont values.
+     Before that, IBM Plex Serif (via @fontsource/ibm-plex-serif, static 400/500/600/700 + italics)
+     from 2026-09-28, replacing Lora as the default: a serif drawn beside IBM Plex Mono, so it keeps
      the terminal-adjacent, engineered register of the Monaspace chrome while still reading as a
      proper text face. Lora stays a selectable appearance.proseFont. Lora itself repointed CMU
      Serif (Computer Modern), which is uninstalled; CMU replaced Newsreader 2026-08-29 from a
      21-candidate comparison. Each stack leads with the EXACT family its package declares —
-     'IBM Plex Serif'; for Lora 'Lora Variable', NOT bare 'Lora'. A name that does not resolve
+     'Libron'; 'IBM Plex Serif'; for Lora 'Lora Variable', NOT bare 'Lora'. A name that does not resolve
      falls silently through to the Georgia fallback with no error anywhere — this is the trap
      that let the CMU-era stack go unnoticed for weeks; see index.tsx / preview.ts for where the
      prose stylesheets are actually loaded. This is only the pre-hydration default:
      settingsCssVars.ts repoints it (and --prose-scale below) from appearance.proseFont. */
-  --prose-font: 'IBM Plex Serif', Georgia, serif;
+  --prose-font: 'Libron', Georgia, serif;
 
   /* Optical-size compensation. A serif and a mono at the same NOMINAL px do not read at the same
      size, so switching prose to a proportional face without this silently shrinks every note.
      The constant is x-height parity with Monaspace Xenon, re-derived per face rather than
      inherited, and lives per face in app/src/settings.ts's PROSE_SCALES — this line is the
      default face's entry, for the frame before settings hydrate:
-       IBM Plex Serif — x-height 531.25 vs mono 531.25 at a 1000px em (canvas, the real woff2
+       Libron         — ink x-height 531 vs mono 517 at a 1000px em (canvas, @napi-rs/canvas on
+                        the real files, the top row of ink above the baseline of an 'x') → 0.97.
+                        Its x-height runs ~3% LARGER than the mono's, so it is set slightly down.
+                        (The canvas actualBoundingBoxAscent reads 531.25 for all three faces —
+                        a font-metric value, not ink — so measure pixels.)
+       IBM Plex Serif — ink x-height 516 vs mono 517 at a 1000px em (canvas, the real woff2
                         files) → 1.00. Plex was drawn to the same vertical proportions as the
                         mono family, so it needs no compensation at all.
        Lora           — x-height 50.00 vs mono 51.75 at a 100px em (in-browser, bench/
@@ -474,7 +518,7 @@
        CMU Serif      — 43.10 vs 51.75 → 1.28, an unusually small x-height.
      DERIVED, never a literal font-size: --prose-font-size tracks appearance.editorFontSize, so the
      user's editor size still moves prose with it. */
-  --prose-scale: 1;
+  --prose-scale: 0.97;
   /* The sanctioned keyboard glyphs (⌘ ⌥ ↵ ↑ ↓) are not in Monaspace and fall back to a system
      face (Menlo on macOS) that draws ⌘ at ~73% of the letters' cap height. This scale brings it
      to ~90%, measured the way --prose-scale is — read by ui/ascii/Kbd.module.css only. */
@@ -496,6 +540,10 @@
      Picked by eye from a side-by-side of 13.5 / 12.5 / 12px (2026-09-23). Re-checked for IBM
      Plex Serif (2026-09-28, canvas ink on the same pangram): code/prose ink is 1.11 for Lora at
      14.04 → mono 12.5 and 1.10 for Plex at 13.5 → mono 12.0, so 0.89 carries over unchanged.
+     LIBRON (2026-10-07) is a heavier text face: at 13.1px prose against 11.66px mono, mono/prose
+     pangram ink is 0.75 where Plex measured 1.00 by the same @napi-rs/canvas script, so inline
+     code reads slightly lighter than the sentence around it. 0.89 is kept on purpose (the ratio
+     is picked by eye); re-derive here if code looks too faint beside Libron.
      DERIVED off --prose-font-size, so it follows appearance.editorFontSize; --mono-scale
      (appearance.monoScale, default 1) stays a personal multiplier on top. KaTeX output is NOT
      code and is not sized by this. */

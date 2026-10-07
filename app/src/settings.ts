@@ -238,10 +238,12 @@ export { MONO_FONTS, PROSE_FONTS } from '../../core/src/theme/fontFamilies'
 // Font choices → full CSS font stacks. The serifs are the proportional faces for note prose +
 // chat bodies; the five Monaspace variants cover both `uiFont` (chrome + in-note mono) and, as an
 // alternative, `proseFont` (an all-mono editor). Each stack leads with the EXACT family its
+// @font-face declares — 'Libron' for the vendored face in global.css, else what its
 // @fontsource package declares — 'Lora Variable' for @fontsource-variable/lora, NOT 'Lora' (that
 // resolves nothing and falls silently through to Georgia; see tokens.css's own warning on the
 // same trap with CMU).
 export const FONT_STACKS: Record<string, string> = {
+    Libron: "'Libron', Georgia, serif",
     'IBM Plex Serif': "'IBM Plex Serif', Georgia, serif",
     Lora: "'Lora Variable', Lora, Georgia, serif",
     'Monaspace Xenon': "'Monaspace Xenon', ui-monospace, monospace",
@@ -255,11 +257,13 @@ export const FONT_STACKS: Record<string, string> = {
 // tokens section). A serif and the mono chrome at the same NOMINAL px do not read at the same
 // size, so prose is set at editorFontSize × this, the face's x-height parity with Monaspace
 // Xenon. Measured, never guessed — the ratio differs per face:
-//   IBM Plex Serif 1.00 — x-height 531.25 vs mono 531.25 at a 1000px em (canvas, the real files)
+//   Libron         0.97 — ink x-height 531 vs mono 517 at a 1000px em (canvas, the real files)
+//   IBM Plex Serif 1.00 — ink x-height 516 vs mono 517 at a 1000px em (canvas, the real files)
 //   Lora           1.04 — x-height 50.00 vs mono 51.75 at a 100px em (in-browser)
 // A face absent here (the Monaspace variants, as an all-mono prose choice) keeps 1.04, the value
 // every face shared before the scale became per-face.
 export const PROSE_SCALES: Record<string, number> = {
+    Libron: 0.97,
     'IBM Plex Serif': 1,
     Lora: 1.04,
 }

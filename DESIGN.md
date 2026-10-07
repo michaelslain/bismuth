@@ -63,7 +63,7 @@ typography:
     fontWeight: 400
     lineHeight: 1.3
   prose:
-    fontFamily: "IBM Plex Serif, Georgia, serif"
+    fontFamily: "Libron, Georgia, serif"
     fontSize: "calc(var(--editor-font-size) * var(--prose-scale))"
     fontWeight: 400
     lineHeight: 1.6
@@ -212,7 +212,7 @@ only theme that glows) and **Riso** (cream paper and indigo ink, print-flat). Th
 records Ink. `core/src/theme/tokens.ts` holds all four and is the only source of colour defaults; a vault can override any token on top of them.
 
 **Key Characteristics:**
-- One monospace family (Monaspace, Xenon by default) for all chrome; one serif (IBM Plex Serif by default, Lora selectable) for note prose.
+- One monospace family (Monaspace, Xenon by default) for all chrome; one serif (Libron by default, IBM Plex Serif and Lora selectable) for note prose.
 - An 18px row unit (`--row-h`); controls are 24px, bands are 36px.
 - Three ink steps: read (`--fg`), scan (`--text-muted`), structure (`--faint`).
 - One accent per view. The six-hue ramp means *category*, never decoration.
@@ -272,8 +272,8 @@ only ever reads `var(--…)`.
 
 **Chrome Font:** Monaspace Xenon (with `ui-monospace, monospace`); the user may pick any of the
 five metric-compatible Monaspace variants (`appearance.uiFont`), so the grid never reflows.
-**Prose Font:** IBM Plex Serif (with `Georgia, serif`), via `appearance.proseFont`; Lora Variable
-stays selectable.
+**Prose Font:** Libron (with `Georgia, serif`), via `appearance.proseFont`; IBM Plex Serif and
+Lora Variable stay selectable.
 **Icons:** drawn as inline SVG, not set in a font (see Shapes).
 
 **Character:** a slab mono doing the work of a terminal, and an engineered, academic serif —

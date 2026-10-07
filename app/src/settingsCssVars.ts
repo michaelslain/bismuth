@@ -212,7 +212,7 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         '--ui-font-stack':
             FONT_STACKS[s.appearance.uiFont] ?? FONT_STACKS['Monaspace Xenon'],
         '--prose-font':
-            FONT_STACKS[s.appearance.proseFont] ?? FONT_STACKS['IBM Plex Serif'],
+            FONT_STACKS[s.appearance.proseFont] ?? FONT_STACKS['Libron'],
         '--prose-scale': String(
             PROSE_SCALES[s.appearance.proseFont] ?? DEFAULT_PROSE_SCALE,
         ),

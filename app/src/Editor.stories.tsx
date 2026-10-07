@@ -301,7 +301,7 @@ const styleOf = (el: Element | null) => (el ? getComputedStyle(el) : null)
 const lineWith = (root: ParentNode, re: RegExp) =>
     [...root.querySelectorAll('.cm-line')].find(l => re.test(l.textContent ?? ''))
 
-/** ONE ROW RHYTHM. A note sets prose in the proportional face (`--prose-font`, IBM Plex Serif) and pulls
+/** ONE ROW RHYTHM. A note sets prose in the proportional face (`--prose-font`, Libron) and pulls
  *  code/frontmatter back to the mono face — but every one of those rows must still sit on the same leading, or a code fence reads
  *  as a cramped patch pasted into the note. `.cm-codeblock` carried its own `line-height: 1.5`,
  *  which put its rows at 20px inside a document whose every other row was 27px. Asserts the
@@ -386,7 +386,7 @@ export const MixedTypography: Story = {
         // the face is absent and red when it is present. Measuring instead catches both.
         expectProseFace(canvasElement.querySelector('.cm-scroller') as HTMLElement)
         expectProseFace(canvasElement.querySelector('.cm-h1') as HTMLElement)
-        await expectFamilyReallyLoaded('IBM Plex Serif')
+        await expectFamilyReallyLoaded('Libron')
         await expect(styleOf(codeLine)!.fontFamily).toMatch(/Monaspace/)
         // Tables are PROSE. Asserted against --prose-font rather than a literal family name — see
         // the story doc comment above.
@@ -581,9 +581,9 @@ export const QueryBlockSizing: Story = {
         const proseScale = parseFloat(root.getPropertyValue('--prose-scale'))
         await expect(Number.isFinite(editorPx) && editorPx > 0).toBe(true)
         await expect(Number.isFinite(proseScale) && proseScale > 0).toBe(true)
-        await expect(parseFloat(queryFontSize)).toBe(
-            Math.round(editorPx * proseScale * 100) / 100,
-        )
+        // toBeCloseTo, not a 2-decimal round: Libron's 0.97 lands on 13.095px, which the
+        // browser keeps exact while Math.round(… * 100) / 100 makes 13.1.
+        await expect(parseFloat(queryFontSize)).toBeCloseTo(editorPx * proseScale, 2)
     },
 }
 

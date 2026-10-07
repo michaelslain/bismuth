@@ -79,7 +79,7 @@ Nothing that could escape a declaration is accepted: no `;`, braces, `<`, `>`, `
 | `border` | `none`, `<length> <solid\|dashed\|dotted\|double> <colour>`; a whole `var(--registered)` | `1px solid #3a3e4a` | `thick red` |
 | `gradient` | a `linear-gradient(...)` / `radial-gradient(...)` of at least two stops: plain colours, `var(--registered)`, angles and percentages | `linear-gradient(120deg, #c98ca8, #8296c6)` | `url(a.png)` |
 | `font-mono` | one bundled Monaspace family name | `Monaspace Neon` | `Comic Sans` |
-| `font-prose` | one of `IBM Plex Serif`, `Lora` or a Monaspace family | `Lora` | `Georgia` |
+| `font-prose` | one of `Libron`, `IBM Plex Serif`, `Lora` or a Monaspace family | `Lora` | `Georgia` |
 | `scheme` | `light` or `dark` | `light` | `auto` |
 
 Colour tokens come in two flavours:
@@ -237,8 +237,8 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | key | kind | default | what it paints |
 |---|---|---|---|
 | `ui-font-stack` | font-mono | `Monaspace Xenon` | UI + mono font family (all chrome, code, frontmatter, math, tags). Legacy: appearance.uiFont. |
-| `prose-font` | font-prose | `IBM Plex Serif` | Prose font family (note body, headings, tables, chat). Legacy: appearance.proseFont. |
-| `prose-scale` | number | `1` | Size correction measured for the prose face, so prose reads at one optical size. |
+| `prose-font` | font-prose | `Libron` | Prose font family (note body, headings, tables, chat). Legacy: appearance.proseFont. |
+| `prose-scale` | number | `0.97` | Size correction measured for the prose face, so prose reads at one optical size. |
 | `mono-scale` | number | `1` | Optical-size factor for the mono font, 0.6 to 1. Legacy: appearance.monoScale. |
 | `glyph-scale` | number | `1.25` | Size of glyph art relative to its cell. |
 | `code-scale` | number | `0.89` | Mono text size relative to the prose around it. |

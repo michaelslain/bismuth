@@ -17,8 +17,10 @@ import '@fontsource/monaspace-radon/400.css'
 import '@fontsource/monaspace-radon/500.css'
 import '@fontsource/monaspace-radon/700.css'
 // The proportional faces, for note prose and chat message bodies only — everything else stays on
-// the Monaspace grid. IBM Plex Serif is the default appearance.proseFont (static cuts: 400 body,
-// 500 h4-h6, 600 h1-h3, 700 strong, plus their italics); Lora stays selectable. Lora repointed
+// the Monaspace grid. The DEFAULT appearance.proseFont, Libron, is not here: it is not on npm, so
+// it is vendored (app/src/assets/fonts/libron/) and declared by @font-face in global.css's tokens
+// section. IBM Plex Serif (static cuts: 400 body, 500 h4-h6, 600 h1-h3, 700 strong, plus their
+// italics) and Lora stay selectable. Lora repointed
 // CMU Serif (Computer Modern), which is uninstalled; CMU itself replaced Newsreader 2026-08-29
 // from a 21-candidate comparison. Lora's package declares `font-family: 'Lora Variable'` (not
 // bare `'Lora'`) — see the --prose-font comment in global.css's tokens section for why that

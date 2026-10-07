@@ -30,7 +30,8 @@ comes from CSS custom properties. `preview.ts` + `preview-head.html` wire up wha
 normally provides:
 
 1. **Fonts** — `import '../src/fonts'`, the same module the app entry (`src/index.tsx`) imports
-   (Monaspace variants + IBM Plex Serif + Lora). Without them text falls back to browser defaults.
+   (Monaspace variants + IBM Plex Serif + Lora; Libron, the default prose face, is an `@font-face` in
+   `global.css`, imported next). Without them text falls back to browser defaults.
 
 2. **Stylesheet** — one import, `../src/global.css`: the global layer only (tokens, element reset,
    classes written into runtime-generated HTML). Component rules live in each component's own
