@@ -18,6 +18,11 @@ import { localUnreachableMessage } from '../../src/agentBackends/localModelProbe
 import { whichClaude } from '../../src/claudeWhich'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
+import {
+    startRequestRecorder,
+    type RecordedRequest,
+    type RequestRecorder,
+} from '../support/requestRecorder'
 import { shouldRunSlowTests } from '../slowGate'
 import { tempDir } from '../tempDirs'
 
@@ -44,6 +49,7 @@ for (const k of ENV_KEYS) savedEnv[k] = process.env[k]
 const tempDirs: string[] = []
 const chatIds: string[] = []
 let mock: MockLlmHandle | undefined
+let recorder: RequestRecorder | undefined
 
 async function vaultWith(settings: string): Promise<string> {
     const dir = tempDir('bismuth-claude-local-')
@@ -61,32 +67,30 @@ afterAll(async () => {
         if (savedEnv[k] === undefined) delete process.env[k]
         else process.env[k] = savedEnv[k]
     }
+    recorder?.stop()
     await mock?.stop()
     for (const dir of tempDirs.splice(0))
         await rm(dir, { recursive: true, force: true }).catch(() => {})
 })
 
-type JournalEntry = { path: string; body?: { model?: string } }
-async function journal(): Promise<JournalEntry[]> {
-    return (await fetch(`${mock!.url}/__aimock/journal`).then(r =>
-        r.json(),
-    )) as JournalEntry[]
-}
-const messageModels = (j: JournalEntry[]) =>
-    j.filter(e => e.path.startsWith('/v1/messages')).map(e => e.body?.model)
+// Bodies come from a recorder in front of the mock, not aimock's own journal: the journal swaps any
+// body over 64 KB for a truncation marker, and Claude Code's first turn is over it (see
+// requestRecorder.ts).
+const messageModels = (reqs: RecordedRequest[]) =>
+    reqs.filter(r => r.path.startsWith('/v1/messages')).map(r => r.body?.model)
 
 describeLive(
     'claude chat on a local model (mock server, zero account API calls)',
     () => {
         test('turns hit the local server on the configured model, the picker lists the server ids, and a picked id reaches the next turn', async () => {
-            // --metrics also exposes the request journal this test reads bodies from.
-            mock = await startMockLlm(undefined, ['--metrics'])
+            mock = await startMockLlm()
+            recorder = startRequestRecorder(mock.url)
             for (const k of ENV_KEYS) delete process.env[k]
             process.env.CLAUDE_CONFIG_DIR = tempDir('bismuth-claude-config-')
             tempDirs.push(process.env.CLAUDE_CONFIG_DIR)
 
             const cwd = await vaultWith(
-                `localModel:\n  enabled: true\n  url: ${mock.url}\n  model: mock-local\n`,
+                `localModel:\n  enabled: true\n  url: ${recorder.url}\n  model: mock-local\n`,
             )
             const chatId = newChatId()
             chatIds.push(chatId)
@@ -98,7 +102,7 @@ describeLive(
             await waitFor(f => f.type === 'done')
 
             // Every /v1/messages request went to the mock on the configured model.
-            const first = messageModels(await journal())
+            const first = messageModels(recorder.requests)
             expect(first.length).toBeGreaterThan(0)
             expect(new Set(first)).toEqual(new Set(['mock-local']))
 
@@ -115,7 +119,7 @@ describeLive(
 
             // A picked id reaches the next turn's request.
             const picked = served.find(id => id !== 'mock-local')!
-            const before = (await journal()).length
+            const before = recorder.requests.length
             setModel(chatId, picked)
             await sendMessage(chatId, 'hello', cwd, sink)
             await waitFor(
@@ -123,7 +127,7 @@ describeLive(
                     f.type === 'done' &&
                     frames.filter(x => x.type === 'done').length >= 2,
             )
-            const after = messageModels((await journal()).slice(before))
+            const after = messageModels(recorder.requests.slice(before))
             expect(after).toContain(picked)
         }, 120_000)
     },
