@@ -126,6 +126,21 @@ const cases: Record<string, Files> = {
         'a.md': '---\n- a\n- b\n---\nbody\n',
     },
     'unknown visibility literal fails closed': { 'a.md': fm('secret') },
+    'jsonl base hidden': {
+        'a.base.jsonl': '{"type":"base","visibility":"hidden"}\n{"r":1}\n',
+        'b.base.jsonl': '{"type":"base"}\n',
+    },
+    'jsonl base chat-only': {
+        'a.base.jsonl': '{"type":"base","visibility":"chat-only"}\n',
+    },
+    'jsonl base garbage line 1 fails closed': {
+        'a.base.jsonl': '{"type":"base","visibility":\nrow\n',
+    },
+    'jsonl base typeless + padded': {
+        'a.base.jsonl': '{"visibility":"hidden"}\n',
+        'b.base.jsonl':
+            ' '.repeat(2000) + '{"type":"base","visibility":"hidden"}\n',
+    },
     'malformed folderVisibility (non-map)': {
         '.settings': 'folderVisibility: hidden\n',
         'a.md': 'x',

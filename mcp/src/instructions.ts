@@ -8,7 +8,7 @@
 // unit-testable and its size stays pinned — every session on the machine loads this, so it stays
 // terse on purpose.
 export const SERVER_INSTRUCTIONS =
-    'EVERY time you create, edit or debug a Bismuth base (a `type: base` note, or a ```query ' +
+    'EVERY time you create, edit or debug a Bismuth base (a `.base.jsonl` file, a `type: base` note, or a ```query ' +
     'block), first read bases/authoring.md with bismuth_docs_read, then bases/authoring/<view ' +
     'kind>.md for the kind you are writing. Converting a vault between Obsidian and Bismuth: ' +
     'first read guides/converting-obsidian-to-bismuth.md or ' +

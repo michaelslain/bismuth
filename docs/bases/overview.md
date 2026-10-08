@@ -1,8 +1,8 @@
 # Bases overview
 
-A base is a markdown note whose frontmatter declares `type: base`. It names where rows come from (a `source`), which rows to keep (`filters`), any computed columns (`formulas`) and exactly one view that renders them: a table, board, calendar, chart and so on. The app opens such a note as a live view instead of text.
+A base is a file that declares `type: base`: a JSON Lines file named `<name>.base.jsonl`, or a markdown note. It names where rows come from (a `source`), which rows to keep (`filters`), any computed columns (`formulas`) and exactly one view that renders them: a table, board, calendar, chart and so on. The app opens such a file as a live view instead of text. New bases are `.base.jsonl` files; markdown bases keep working. See [where a base's rows are stored](#where-are-a-bases-own-rows-stored).
 
-This page is the map of a base file. To build one from scratch, follow [make your first base](./first-base.md). Agents writing a base start at [authoring bases](./authoring.md).
+This page is the map of a base file. The examples below write the config as markdown frontmatter; in a `.base.jsonl` file the same keys are the fields of the line-1 object. To build one from scratch, follow [make your first base](./first-base.md). Agents writing a base start at [authoring bases](./authoring.md).
 
 The smallest base is a note with only the type. It renders every note in the vault as a table:
 
@@ -34,7 +34,7 @@ summaries:
 
 ## What keys does a base file have?
 
-Every key sits at the top level of the frontmatter. The base-level keys below shape the rows; every other top-level key is read as a key of the one view.
+Every key sits at the top level of the frontmatter (markdown) or of the line-1 object (`.base.jsonl`). The base-level keys below shape the rows; every other top-level key is read as a key of the one view.
 
 | Key | Value | Effect |
 |---|---|---|
@@ -75,7 +75,7 @@ Agents writing a view read the matching `bases/authoring/<kind>.md` page first; 
 
 A base has exactly one view, written flat: `view: <kind>` plus the view's keys at the top level, beside `filters`, `source` and `formulas`. There is no view name and no per-view `filters` or `source`.
 
-For another view of the same rows, create a second base with `source: base` and `ref: "[[That Base]]"`. `Board.md`:
+For another view of the same rows, create a second base with `source: base` and `ref: "[[That Base]]"`. A `ref` finds `That Base.base.jsonl` as well as `That Base.md`. `Board.md`:
 
 ```markdown
 ---
@@ -105,7 +105,7 @@ sort:
 
 The referencing base receives the referenced base's rows only. Its `filters`, `formulas`, `properties`, `sort`, `groupBy`, `limit`, `columns` and other view keys are not applied, so `Task table` restates the `archived` filter and chooses its own sort. If the referenced base has no `source`, its rows are its own body rows, or every note in the vault when it has none. A cycle (A refs B refs A) resolves to zero rows.
 
-A file with a `views:` list is read through its first entry only: that entry's `type` is the kind, its `filters` combine with the base's, and its `source` replaces the base's. The first write from the app rewrites the file flat. A list with more than one entry cannot be rewritten, so writes fail with `BASE_VIEWS_FORMAT_ERROR` and `bismuth base validate` reports it. Give each extra view its own base as above.
+A markdown base with a `views:` list is read through its first entry only: that entry's `type` is the kind, its `filters` combine with the base's, and its `source` replaces the base's. The first write from the app rewrites the file flat. A list with more than one entry cannot be rewritten, so writes fail with `BASE_VIEWS_FORMAT_ERROR` and `bismuth base validate` reports it. Give each extra view its own base as above.
 
 ## Three axes: kind, mode, and origin
 
@@ -170,7 +170,31 @@ A property id is `file.<field>`, `note.<key>` or `formula.<name>`; a bare name s
 
 ## Where are a base's own rows stored?
 
-A base with a non-empty body stores its own rows there, and uses them when it has no `source`. The body is a YAML list of row objects, one per row:
+A base stores its own rows in the same file as its config, and uses them when it has no `source`. A base is in one of two formats, told apart by content: a file whose first non-whitespace character is `{` is JSON Lines, anything else is markdown. A base is read and written in its own format; saving never converts it.
+
+### A `.base.jsonl` file
+
+Line 1 is the config object, with the same flat keys as markdown frontmatter (`type`, `view`, `source`, `filters`, `categories`, and the rest). Every later line is one row, a JSON object. `Trips.base.jsonl`:
+
+```json
+{"type":"base","view":"calendar","schema":{"title":"text","date":"date"}}
+{"title":"Dentist","date":"2026-06-03"}
+{"title":"Flight","date":"2026-06-10"}
+```
+
+One row per line means `grep` returns whole rows, and editing a row changes one line of the file. A row edit leaves the config line and every other row line byte-for-byte as written; a config edit rewrites only line 1.
+
+| Situation | Result |
+|---|---|
+| A blank line | Ignored. |
+| A row line that is not a JSON object | Skipped when the base is read. A rewrite keeps the line verbatim, after the rows. |
+| A line 1 that is not a JSON object | The config reads as an empty table base. Config edits fail with a `PARSE_ERROR` until you fix the line. |
+
+A base's name drops `.base.jsonl`, so `Trips.base.jsonl` is the base `Trips`, and `[[Trips]]` finds it. When `Trips.md` and `Trips.base.jsonl` both exist, a `ref: "[[Trips]]"` picks the `.base.jsonl` file.
+
+### A markdown base
+
+A markdown base is a note with `type: base` in its frontmatter. A non-empty body holds its rows as a YAML list of row objects, one per row:
 
 ```markdown
 ---
@@ -183,7 +207,18 @@ schema: { title: text, date: date }
   date: 2026-06-03
 ```
 
-A GFM pipe table body (a header row followed by a `| --- | --- |` line) is read too, with numeric cells read as numbers. Row writes serialize the body as the YAML list. A row's `file.name` is empty because stored rows are not separate notes. Row commands such as `bismuth row update` address a row by its zero-based position; see [the CLI reference](../cli/reference.md).
+A GFM pipe table body (a header row followed by a `| --- | --- |` line) is read too, with numeric cells read as numbers. Row writes serialize the body as the YAML list.
+
+A row's `file.name` is empty in both formats because stored rows are not separate notes. Row commands such as `bismuth row update` address a row by its zero-based position; see [the CLI reference](../cli/reference.md).
+
+## How do I convert a markdown base to `.base.jsonl`?
+
+Run `bismuth base migrate <basePath>` for one base, or `bismuth base migrate --all` for every markdown base in the vault. Add `--dry-run` to print the plan and write nothing. The command refuses a target that already exists and a base whose body has text but no parseable rows. Flags and output are in [the CLI reference](../cli/reference.md).
+
+```bash
+bismuth base migrate Trips.md --dry-run --vault <vault>
+bismuth base migrate --all --vault <vault>
+```
 
 ## What happens when something is wrong?
 
@@ -197,14 +232,16 @@ Several mistakes fall back silently instead of raising an error.
 | No `source` and no body rows | Every note in the vault. Set `source` to narrow it. |
 | Body rows and no `source` | The base renders its own rows, not vault notes. |
 | Unquoted `from: [[X]]` | Read as a nested list, then rebuilt to `"[[X]]"`. Quote it anyway. |
-| Frontmatter that is not valid YAML | The config reads as an empty table base. |
+| Frontmatter that is not valid YAML, or a `.base.jsonl` line 1 that is not a JSON object | The config reads as an empty table base. |
 | Mistyped view key | Read as a view key and ignored. Validate does not flag it. |
 | `properties.<x>.hidden` with an explicit `order` | The column shows; `order` wins. |
 | `sort`, `groupBy` or `summaries` on flashcards, or on a calendar outside tasks mode | Ignored: these are full-pane views with their own field bindings. |
 
 ## How it works
 
-`FileView` (`app/src/FileView.tsx`) reads a note through the note-body cache, parses its frontmatter, and routes a note whose `type` is `base` to `BaseView` (`app/src/bases/BaseView.tsx`). It passes the already-read body only when `bodyForPath` proves the text belongs to that path; otherwise `BaseView` reads the file itself.
+`baseFormatOf` in `core/src/bases/baseFile.ts` decides a base's format from its text. `parseBaseJsonl` reads a JSON Lines base into a config object and rows. `reassembleBaseJsonl` rewrites it, reusing the original bytes of every unchanged row, and `mutateBaseConfig` edits line 1 only. A markdown base goes through the frontmatter and body parsers in `parse.ts` and `rows.ts`. `rowOps.ts` dispatches each row write on the format. `pickRefPath` in `sourceSpec.ts` resolves a `[[ref]]` to `<name>.base.jsonl` first, then an exact path, then a basename match across both kinds.
+
+`FileView` (`app/src/FileView.tsx`) reads a file through the note-body cache and routes a `.base.jsonl` path, or a note whose frontmatter `type` is `base`, to `BaseView` (`app/src/bases/BaseView.tsx`). It passes the already-read body only when `bodyForPath` proves the text belongs to that path; otherwise `BaseView` reads the file itself.
 
 `BaseView` renders from one of three inputs: a flat query block (`props.view`), a base file (`props.path`, parsed by `parseBaseFile`), or inline query-block config (`props.source`, parsed by `parseBase`). Which source feeds the view is then decided by `activeSpec()`: the base's `source`, else its own rows when it has body rows, else every note. A flat query block with neither `of:` nor `tasks:` gets no rows.
 
@@ -234,4 +271,4 @@ interface Row {
 
 `FileMeta.name` is the basename without extension, `path` is vault-relative, `folder` is empty at the root, `tags` have no leading `#`, and `links` are wikilink targets without `.md`, heading or alias.
 
-Source: `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/flattenViews.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `core/src/bases/taskRow.ts`, `core/src/bases/query.ts`, `app/src/FileView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/bases/prefetchedBody.ts`
+Source: `core/src/bases/types.ts`, `core/src/bases/baseFile.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/parse.ts`, `core/src/bases/flattenViews.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `core/src/bases/taskRow.ts`, `core/src/bases/query.ts`, `app/src/FileView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/bases/prefetchedBody.ts`

@@ -5,7 +5,7 @@ Obsidian has no stroke or ink format, so Bismuth drawings convert to pictures or
 ## Sources
 
 Bismuth:
-- `docs/drawing/overview.md`: the `.draw` file (`DrawingDoc` JSON), `<file>.draw` image and PDF sidecars, headless export.
+- `docs/drawing/overview.md`: the `.draw` file (JSON Lines), `<file>.draw` image and PDF sidecars, headless export.
 - `docs/editor/ink.md`: ink that lives inside a note as a ` ```draw ` fence, and the fence's two modes.
 - `docs/export/overview.md`: exporting a note with its ink rendered as pictures.
 - `docs/cli/reference.md`: `render` and `export`.
@@ -17,7 +17,7 @@ Obsidian:
 
 Ink lives in three places in Bismuth. The list orients you; where a linked live page disagrees, follow the live page and note the difference in the report.
 
-- A standalone `.draw` file is JSON `{v: 1, kind: "drawing", paper: {bg}, pages: [...]}`. It is a file in the tree with its own page, and `![[Sketch.draw]]` renders nothing.
+- A standalone `.draw` file is JSON Lines: a header line `{"v":1,"kind":"drawing","paper":{"bg":...},"pageCount":N}`, then one `{"page":i,...}` line per page that has ink. Read it line by line, never as one JSON document. It is a file in the tree with its own page, and `![[Sketch.draw]]` renders nothing.
 - A ` ```draw ` or ` ```draw block ` fence inside a note holds a base64 payload (a versioned, deflate-compressed stroke stream). ` ```draw ` attaches ink to the block above, and ` ```draw block ` is a standalone sheet. The mode is the info string only.
 - A `<file>.draw` sidecar sits next to an image or PDF (`photo.png.draw`). It is created only once something is drawn, and it holds strokes on a blank page background.
 
@@ -122,7 +122,7 @@ console.log(`removed=${removed}`)
 
 - All ` ```draw ` ink is lost from the output markdown (default) or reduced to a flat picture (opt-in). This is the one conversion with no equivalent.
 - Standalone `.draw` files keep their strokes only as a picture, and cannot be edited.
-- Sidecar ink renders on a blank background, not over its photo or PDF page, when the sidecar was written by in-place drawing (`paper.bg` blank, strokes only). A sidecar page that stores its source image or PDF page in `pages[i].images` renders that image too, so its PNG includes the photo or page (`docs/drawing/overview.md`, "Where sidecar ink sits on its source page").
+- Sidecar ink renders on a blank background, not over its photo or PDF page, when the sidecar was written by in-place drawing (`paper.bg` blank, strokes only). A sidecar page line that stores its source image or PDF page in `images` renders that image too, so its PNG includes the photo or page (`docs/drawing/overview.md`, "Where sidecar ink sits on its source page").
 - PDF annotations stored in a sidecar (highlights, margin, bookmarks) are not rendered by `render`.
 - Page backgrounds other than blank may differ slightly between `render --theme` and what the app showed.
 

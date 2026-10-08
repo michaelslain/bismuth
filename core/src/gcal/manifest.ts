@@ -10,7 +10,7 @@
 // calendars can never clobber each other's links (which the old single-base manifest's
 // retarget-guard papered over by wiping links whenever the bound base changed).
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, posix } from 'node:path'
 import {
     mkdirSync,
     readFileSync,
@@ -20,6 +20,8 @@ import {
     existsSync,
     realpathSync,
 } from 'node:fs'
+import { createError } from '../error'
+import { withSyncLock } from './lock'
 
 export interface SyncLink {
     bismuthId: string
@@ -187,4 +189,143 @@ export function clearManifest(home?: string): void {
     } catch {
         /* ignore */
     }
+}
+
+export type RekeyOpts = { claimLegacy?: boolean; home?: string }
+
+export type RekeyResult = {
+    moved: boolean
+    /** Put back exactly the entries this re-key changed (a snapshot, not a key swap). */
+    restore: () => void
+}
+
+/**
+ * Move each `[from, to]` pair's entry. The CALLER holds the sync lock. No manifest file → nothing
+ * moved, nothing created. Throws EEXIST, changing nothing, when a destination key already has its
+ * own entry (a pair's own source key does not count as occupied).
+ */
+export function rekeyPairsUnlocked(
+    vault: string,
+    pairs: Array<[string, string]>,
+    opts: RekeyOpts = {},
+): RekeyResult {
+    const none: RekeyResult = { moved: false, restore: () => {} }
+    if (pairs.length === 0 || !existsSync(manifestPath(opts.home))) return none
+    const m = readManifest(opts.home)
+    const before = { ...m.bases }
+    const sources = new Set<string>()
+    for (const [from] of pairs) {
+        sources.add(manifestKey(vault, from))
+        if (opts.claimLegacy) sources.add(from)
+    }
+    const touched = new Set<string>()
+    let moved = false
+    for (const [from, to] of pairs) {
+        const oldKey = manifestKey(vault, from)
+        const newKey = manifestKey(vault, to)
+        const src =
+            m.bases[oldKey] ?? (opts.claimLegacy ? m.bases[from] : undefined)
+        if (!src) continue
+        if (newKey in before && !sources.has(newKey))
+            throw createError(
+                'EEXIST',
+                `destination already has Google sync state: ${to} — run \`bismuth gcal forget ${to}\` if that calendar no longer exists`,
+                409,
+            )
+        m.bases[newKey] = src
+        touched.add(newKey).add(oldKey)
+        delete m.bases[oldKey]
+        if (opts.claimLegacy) {
+            touched.add(from)
+            delete m.bases[from]
+        }
+        moved = true
+    }
+    if (!moved) return none
+    writeManifest(m, opts.home)
+    return {
+        moved,
+        restore: () => {
+            const cur = readManifest(opts.home)
+            for (const k of touched) {
+                if (k in before) cur.bases[k] = before[k]
+                else delete cur.bases[k]
+            }
+            writeManifest(cur, opts.home)
+        },
+    }
+}
+
+/**
+ * `rekeyPairsUnlocked` for one base (a rename or a format migration). The CALLER holds the sync
+ * lock. The bare legacy key moves only with `claimLegacy`.
+ */
+export function rekeyBaseSyncUnlocked(
+    vault: string,
+    from: string,
+    to: string,
+    opts: RekeyOpts = {},
+): RekeyResult {
+    return rekeyPairsUnlocked(vault, [[from, to]], opts)
+}
+
+/** The `[old, new]` base paths a move of `from` (a base or a folder) to `to` re-keys. Read-only. */
+export function movedSyncPairs(
+    vault: string,
+    from: string,
+    to: string,
+    opts: RekeyOpts = {},
+): Array<[string, string]> {
+    if (!existsSync(manifestPath(opts.home))) return []
+    const m = readManifest(opts.home)
+    const prefix = manifestKey(vault, '')
+    const out: Array<[string, string]> = []
+    const consider = (path: string, key: string) => {
+        if (path === from || path.startsWith(`${from}/`)) {
+            if (key in m.bases) out.push([path, to + path.slice(from.length)])
+        }
+    }
+    for (const key of Object.keys(m.bases)) {
+        if (key.startsWith(prefix)) {
+            const path = key.slice(prefix.length)
+            consider(path, key)
+        } else if (opts.claimLegacy && !key.includes('::')) {
+            if (!out.some(([p]) => p === key)) consider(key, key)
+        }
+    }
+    return out
+}
+
+/** `./a//b/` and `a\b` all name `a/b`: the manifest is keyed by the normalised path. */
+export function normaliseBasePath(p: string): string {
+    const n = posix.normalize(p.replace(/\\/g, '/')).replace(/^(\.\/)+/, '')
+    return n.length > 1 ? n.replace(/\/+$/, '') : n
+}
+
+/**
+ * Drop the Google sync state kept for one base path, under the sync lock. Clears a stale entry
+ * (a deleted synced base) that would otherwise block moving or migrating onto that name. The bare
+ * legacy key goes only with `claimLegacy`. Returns whether anything was removed; with no manifest
+ * file nothing is created. Throws SyncLocked while another process syncs.
+ */
+export async function forgetBaseSync(
+    vault: string,
+    basePath: string,
+    opts: { claimLegacy?: boolean; home?: string } = {},
+): Promise<boolean> {
+    if (!existsSync(manifestPath(opts.home))) return false
+    const path = normaliseBasePath(basePath)
+    return withSyncLock(async () => {
+        const m = readManifest(opts.home)
+        let removed = false
+        const keys = [manifestKey(vault, path)]
+        if (opts.claimLegacy) keys.push(path)
+        for (const k of keys)
+            if (k in m.bases) {
+                delete m.bases[k]
+                removed = true
+            }
+        if (removed) writeManifest(m, opts.home)
+        return removed
+    }, opts.home)
 }

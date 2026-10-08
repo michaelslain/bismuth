@@ -12,16 +12,17 @@ import type { CommandMap } from '../types'
 import { fail, flag, out, parseJsonFlag, positionals, requireVault } from '../args'
 import {
     createEntry,
+    listBases,
     listMarkdown,
     readNote,
     writeNote,
 } from '../../../core/src/files'
-import { noteStem } from '../../../core/src/pathUtils'
+import { baseNameOf, isBasePath, BASE_EXT, readBaseConfigRaw, type BaseFormat } from '../../../core/src/bases/baseFile'
+import { resolveBasePath } from '../baseResolve'
 import {
     agentDenyEntries,
     isDeniedPath,
 } from '../../../core/src/visibilityFilter'
-import { parseFrontmatter } from '../../../core/src/frontmatter'
 import {
     parseCalendarFile,
     serializeCalendarFile,
@@ -48,19 +49,26 @@ import {
 } from '../../../core/src/calendar'
 
 /** Read + parse a calendar base file into its frontmatter + events. */
-async function readCalendar(vault: string, path: string) {
+async function readCalendar(vault: string, given: string) {
+    const path = resolveBasePath(vault, given)
     const text = await readNote(vault, path)
-    return parseCalendarFile(text)
+    return { ...parseCalendarFile(text), path }
 }
 
-/** Re-serialize (frontmatter preserved) + write the calendar back to disk. */
+/** Re-serialize (frontmatter preserved) + write the calendar back to disk, in the format it was
+ *  read in (`format` comes from `readCalendar`). */
 async function writeCalendar(
     vault: string,
     path: string,
     frontmatter: Record<string, unknown>,
     events: CalendarEvent[],
+    format: BaseFormat,
 ) {
-    await writeNote(vault, path, serializeCalendarFile(frontmatter, events))
+    await writeNote(
+        vault,
+        path,
+        serializeCalendarFile(frontmatter, events, format),
+    )
 }
 
 /** Parse an optional `--json '{...}'` flag into an object; fail on malformed JSON. */
@@ -111,11 +119,16 @@ export const commands: CommandMap = {
                 title: string
                 events: number
                 categories: string[]
+                error?: 'unparseable'
             }[] = []
             // Agents: a restricted base is dropped at the enumeration, before it is read, so
             // neither its path, title nor counts reach the output. Throws when undeterminable.
             const deny = await agentDenyEntries(vault)
-            for (const path of (await listMarkdown(vault)).sort()) {
+            const paths = [
+                ...(await listMarkdown(vault)),
+                ...(await listBases(vault)),
+            ].sort()
+            for (const path of paths) {
                 if (isDeniedPath(deny, path)) continue
                 let text: string
                 try {
@@ -123,19 +136,29 @@ export const commands: CommandMap = {
                 } catch {
                     continue
                 }
-                const { data } = parseFrontmatter(text)
+                const data = readBaseConfigRaw(text) ?? {}
                 if (!isCalendarBase(data)) continue
-                const { events } = parseCalendarFile(text)
-                const basename = noteStem(path)
-                result.push({
-                    path,
-                    title:
-                        typeof data.title === 'string' && data.title
-                            ? data.title
-                            : basename,
-                    events: events.length,
-                    categories: categoriesOf(data).map(c => c.name),
-                })
+                const title =
+                    typeof data.title === 'string' && data.title
+                        ? data.title
+                        : baseNameOf(path)
+                const categories = categoriesOf(data).map(c => c.name)
+                // A calendar with a broken line is still a calendar: list it, flagged, and
+                // carry on with the rest.
+                let events: CalendarEvent[]
+                try {
+                    events = parseCalendarFile(text).events
+                } catch {
+                    result.push({
+                        path,
+                        title,
+                        events: 0,
+                        categories,
+                        error: 'unparseable',
+                    })
+                    continue
+                }
+                result.push({ path, title, events: events.length, categories })
             }
             out(result, args)
         },
@@ -143,19 +166,21 @@ export const commands: CommandMap = {
 
     'calendar create': {
         summary:
-            'Create a new empty calendar base file (fails if the path exists)',
+            'Create a new empty calendar base (`<name>.base.jsonl`; an explicit `.md` path makes a markdown calendar). Fails if the path exists',
         usage: "<basePath> [--title '...']",
         run: async args => {
             const vault = requireVault(args)
             let [path] = positionals(args)
             if (!path) fail('<basePath> required')
-            if (!/\.md$/i.test(path)) path += '.md'
+            if (!/\.md$/i.test(path) && !isBasePath(path)) path += BASE_EXT
             createEntry(vault, path, 'file') // EEXIST guard
-            await writeNote(
-                vault,
-                path,
-                emptyCalendarFile({ title: flag(args, 'title') }),
-            )
+            // emptyCalendarFile returns JSONL; an explicit `.md` path keeps the markdown form.
+            let text = emptyCalendarFile({ title: flag(args, 'title') })
+            if (!isBasePath(path)) {
+                const parsed = parseCalendarFile(text)
+                text = serializeCalendarFile(parsed.frontmatter, parsed.events, 'md')
+            }
+            await writeNote(vault, path, text)
             out({ ok: true, path }, args)
         },
     },
@@ -271,12 +296,15 @@ export const commands: CommandMap = {
                 fields.recurrence = rec
                 fields.date = rec.startDate // normalized to the first valid occurrence (BYDAY off-day starts)
             }
-            const { frontmatter, events } = await readCalendar(vault, path)
+            const { frontmatter, events, format, path: file } = await readCalendar(
+                vault,
+                path,
+            )
             const { events: next, event } = addEvent(
                 events,
                 fields as Omit<CalendarEvent, 'id' | 'localUpdated'>,
             )
-            await writeCalendar(vault, path, frontmatter, next)
+            await writeCalendar(vault, file, frontmatter, next, format)
             out({ ok: true, event }, args)
         },
     },
@@ -293,13 +321,16 @@ export const commands: CommandMap = {
             const updates = eventFieldsFromArgs(args)
             if (Object.keys(updates).length === 0)
                 fail('nothing to update — pass --date/--start/--end/--json …')
-            const { frontmatter, events } = await readCalendar(vault, path)
+            const { frontmatter, events, format, path: file } = await readCalendar(
+                vault,
+                path,
+            )
             const next = moveEvent(
                 events,
                 id,
                 updates as Partial<CalendarEvent>,
             )
-            await writeCalendar(vault, path, frontmatter, next)
+            await writeCalendar(vault, file, frontmatter, next, format)
             out({ ok: true, event: findEvent(next, id) }, args)
         },
     },
@@ -312,9 +343,12 @@ export const commands: CommandMap = {
             const [path, id] = positionals(args)
             if (!path) fail('<basePath> required')
             if (!id) fail('<id> required')
-            const { frontmatter, events } = await readCalendar(vault, path)
+            const { frontmatter, events, format, path: file } = await readCalendar(
+                vault,
+                path,
+            )
             const next = deleteEvent(events, id)
-            await writeCalendar(vault, path, frontmatter, next)
+            await writeCalendar(vault, file, frontmatter, next, format)
             out({ ok: true }, args)
         },
     },
@@ -331,14 +365,17 @@ export const commands: CommandMap = {
             if (!date) fail('<date> (YYYY-MM-DD occurrence) required')
             const updates = eventFieldsFromArgs(args)
             delete updates.date // the occurrence date is the positional; a --date flag would be ambiguous
-            const { frontmatter, events } = await readCalendar(vault, path)
+            const { frontmatter, events, format, path: file } = await readCalendar(
+                vault,
+                path,
+            )
             const next = overrideOccurrence(
                 events,
                 id,
                 date,
                 updates as Partial<CalendarEvent>,
             )
-            await writeCalendar(vault, path, frontmatter, next)
+            await writeCalendar(vault, file, frontmatter, next, format)
             out({ ok: true }, args)
         },
     },
@@ -353,9 +390,12 @@ export const commands: CommandMap = {
             if (!path) fail('<basePath> required')
             if (!id) fail('<id> (recurring event) required')
             if (!date) fail('<date> (YYYY-MM-DD occurrence) required')
-            const { frontmatter, events } = await readCalendar(vault, path)
+            const { frontmatter, events, format, path: file } = await readCalendar(
+                vault,
+                path,
+            )
             const next = deleteOccurrence(events, id, date)
-            await writeCalendar(vault, path, frontmatter, next)
+            await writeCalendar(vault, file, frontmatter, next, format)
             out({ ok: true }, args)
         },
     },
@@ -381,12 +421,15 @@ export const commands: CommandMap = {
             const [path, name] = positionals(args)
             if (!path) fail('<basePath> required')
             if (!name) fail('<name> required')
-            const { frontmatter, events } = await readCalendar(vault, path)
+            const { frontmatter, events, format, path: file } = await readCalendar(
+                vault,
+                path,
+            )
             const next = addCategory(frontmatter, {
                 name,
                 color: flag(args, 'color') ?? 'accent',
             })
-            await writeCalendar(vault, path, next, events)
+            await writeCalendar(vault, file, next, events, format)
             out({ ok: true, categories: categoriesOf(next) }, args)
         },
     },
@@ -404,12 +447,15 @@ export const commands: CommandMap = {
             const color = flag(args, 'color')
             if (rename === undefined && color === undefined)
                 fail('nothing to update — pass --rename and/or --color')
-            const { frontmatter, events } = await readCalendar(vault, path)
+            const { frontmatter, events, format, path: file } = await readCalendar(
+                vault,
+                path,
+            )
             const next = updateCategory(frontmatter, events, name, {
                 ...(rename !== undefined ? { name: rename } : {}),
                 ...(color !== undefined ? { color } : {}),
             })
-            await writeCalendar(vault, path, next.frontmatter, next.events)
+            await writeCalendar(vault, file, next.frontmatter, next.events, format)
             out({ ok: true, categories: categoriesOf(next.frontmatter) }, args)
         },
     },
@@ -423,14 +469,17 @@ export const commands: CommandMap = {
             const [path, name] = positionals(args)
             if (!path) fail('<basePath> required')
             if (!name) fail('<name> required')
-            const { frontmatter, events } = await readCalendar(vault, path)
+            const { frontmatter, events, format, path: file } = await readCalendar(
+                vault,
+                path,
+            )
             const next = removeCategory(
                 frontmatter,
                 events,
                 name,
                 flag(args, 'reassign'),
             )
-            await writeCalendar(vault, path, next.frontmatter, next.events)
+            await writeCalendar(vault, file, next.frontmatter, next.events, format)
             out({ ok: true, categories: categoriesOf(next.frontmatter) }, args)
         },
     },

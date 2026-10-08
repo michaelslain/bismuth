@@ -15,6 +15,11 @@ import { formatsFor, ext } from './formats'
 import { defaultExportOptions } from './options'
 import { paletteFor } from './exportTheme'
 import { parseFrontmatter } from '../../../core/src/frontmatter'
+import {
+    baseNameOf,
+    isBasePath,
+    isBaseText,
+} from '../../../core/src/bases/baseFile'
 import { stripFrontmatter } from '../bases/cardBodySplit'
 import { pageSections } from './pageBreaks'
 import { whenMathReady } from '../editor/katexLoader'
@@ -31,12 +36,8 @@ import type {
 
 const TEXT = new TextEncoder()
 
-/** A base is a `type: base` md file — detected by frontmatter, not extension. */
-function isBaseText(text: string): boolean {
-    return parseFrontmatter(text).data?.type === 'base'
-}
-
 function stemName(path: string): string {
+    if (isBasePath(path)) return baseNameOf(path)
     const file = path.split('/').pop() ?? path
     const dot = file.lastIndexOf('.')
     return dot === -1 ? file : file.slice(0, dot)
@@ -64,7 +65,7 @@ async function bodyHtml(
             prose: false,
         }
     const text = await deps.read(path)
-    // A `type: base` md file renders as its chosen view: "visual" → the view AS ITS KIND
+    // A base (`type: base` md, or a `.base.jsonl`, detected by content) renders as its chosen view: "visual" → the view AS ITS KIND
     // (calendar grid / cards / kanban / list); "data" → the view's flat table. Any other
     // md is prose.
     if (isBaseText(text)) {

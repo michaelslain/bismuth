@@ -12,14 +12,12 @@ import {
     uniqueAssetPath,
 } from '../files'
 import { commitVault, scheduleBackup, snapshotMessage } from '../backup'
-import {
-    parseFrontmatter,
-    setFrontmatterKey,
-    deleteFrontmatterKey,
-} from '../frontmatter'
+import { parseFrontmatter } from '../frontmatter'
 import { AppError } from '../error'
+import { moveEntrySynced } from '../gcal/moveSynced'
+import { SyncLocked } from '../gcal/lock'
 import { fetchRemoteAsset, extForContentType } from '../assetFetch'
-import { flattenBaseViews } from '../bases/flattenViews'
+import { setBaseConfigKey, deleteBaseConfigKey } from '../bases/baseFile'
 import type { TreeEntry } from '../graph'
 import { invalidateChatVisibility } from '../chat'
 import { convertHeicToJpeg } from '../heic'
@@ -558,7 +556,17 @@ export function vaultMutatingRoutes(
                     from: string
                     to: string
                 }
-                await moveEntry(cfg.vault, from, to)
+                // Google sync state is keyed by base path: moveEntrySynced re-keys it with the
+                // move under one sync lock. The bare legacy key is claimed only by the installed app.
+                try {
+                    await moveEntrySynced(cfg.vault, from, to, {
+                        claimLegacy: !!process.env.BISMUTH_APP_PATH,
+                    })
+                } catch (e) {
+                    if (e instanceof SyncLocked)
+                        throw new AppError('EBUSY', e.message, 409)
+                    throw e
+                }
                 // Remap this path's cached layout seed id (or, for a renamed FOLDER, every id
                 // under it) from `from` to `to` — without this, a rename cold-starts the next
                 // layout build instead of warm-starting from the position the renamed node/
@@ -626,11 +634,7 @@ export function vaultMutatingRoutes(
                 if (raw === null) {
                     return error('note not found', 404)
                 }
-                const next = setFrontmatterKey(
-                    flattenBaseViews(raw),
-                    key,
-                    value,
-                )
+                const next = setBaseConfigKey(path, raw, key, value)
                 await writeNote(cfg.vault, path, next)
                 // A file's `visibility:` edit re-gates open chats — but ONLY that key: /set-property is
                 // also the Bases kanban drag-drop path, so invalidating on every property write would
@@ -652,7 +656,7 @@ export function vaultMutatingRoutes(
                 if (raw === null) {
                     return error('note not found', 404)
                 }
-                const next = deleteFrontmatterKey(flattenBaseViews(raw), key)
+                const next = deleteBaseConfigKey(path, raw, key)
                 await writeNote(cfg.vault, path, next)
                 if (key === 'visibility') invalidateChatVisibility() // clearing visibility re-gates open chats
                 return ok()
@@ -686,9 +690,9 @@ export function vaultMutatingRoutes(
                         skipped.push(path) // a note that vanished: reported, not fatal to the batch
                         continue
                     }
-                    let next = flattenBaseViews(raw)
+                    let next = raw
                     for (const op of ops)
-                        next = setFrontmatterKey(next, op.key, op.value)
+                        next = setBaseConfigKey(path, next, op.key, op.value)
                     await writeNote(cfg.vault, path, next)
                 }
                 return ok({ skipped })

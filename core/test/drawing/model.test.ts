@@ -4,6 +4,7 @@ import {
     roundDoc,
     serializeDoc,
     parseDoc,
+    parseDocOrEmpty,
     PAGE_W,
     PAGE_H,
 } from '../../src/drawing/model'
@@ -119,4 +120,86 @@ test('serialize then parse round-trips a doc that contains an image', () => {
         pts: [0, 0, 255, 10, 10, 255],
     })
     expect(parseDoc(serializeDoc(d))).toEqual(d)
+})
+
+const stroke = (x: number) => ({
+    t: 'pen' as const,
+    c: 'fg',
+    w: 4,
+    pts: [x, x, 255, x + 1, x + 1, 255],
+})
+
+function bigDoc() {
+    const d = emptyDoc()
+    d.pages = Array.from({ length: 69 }, () => ({ strokes: [] as any[] }))
+    for (const i of [3, 12, 40]) d.pages[i].strokes.push(stroke(i))
+    return d
+}
+
+test('serializeDoc writes a header plus one line per inked page', () => {
+    const lines = serializeDoc(bigDoc()).trimEnd().split('\n')
+    expect(lines.length).toBe(4)
+    const head = JSON.parse(lines[0])
+    expect(head.pageCount).toBe(69)
+    expect(head.kind).toBe('drawing')
+    expect('pages' in head).toBe(false)
+    expect(lines.slice(1).map(l => JSON.parse(l).page)).toEqual([3, 12, 40])
+    expect(serializeDoc(bigDoc()).endsWith('\n')).toBe(true)
+})
+
+test('JSON Lines round-trips bookmarks, margin, highlights, images and unknown keys', () => {
+    const d: any = bigDoc()
+    d.bookmarks = [{ id: 'b', page: 2, label: 'x' }]
+    d.margin = { right: 0.5 }
+    d.mystery = { a: [1, 2] }
+    d.pages[12].images = [{ src: 'data:image/png;base64,AA', x: 1, y: 2, w: 3, h: 4 }]
+    d.pages[40].highlights = [
+        { id: 'h', c: 'hl', rects: [{ x: 1, y: 2, w: 3, h: 4 }] },
+    ]
+    expect(parseDoc(serializeDoc(d))).toEqual(roundDoc(d))
+})
+
+test('a doc with no inked pages is a header-only file that round-trips', () => {
+    const d = emptyDoc()
+    d.pages = [{ strokes: [] }, { strokes: [] }]
+    const text = serializeDoc(d)
+    expect(text.trimEnd().split('\n').length).toBe(1)
+    expect(parseDoc(text)).toEqual(roundDoc(d))
+})
+
+test('parseDoc still reads the single-object form', () => {
+    const d = emptyDoc()
+    d.pages[0].strokes.push(stroke(5))
+    expect(parseDoc(JSON.stringify(d))).toEqual(d)
+})
+
+test('parseDoc throws on a bad page line, an out-of-range page and a non-drawing header', () => {
+    const good = serializeDoc(bigDoc()).trimEnd().split('\n')
+    expect(() => parseDoc([good[0], '{"page":3,'].join('\n'))).toThrow()
+    expect(() =>
+        parseDoc([good[0], '{"page":69,"strokes":[]}'].join('\n')),
+    ).toThrow()
+    const head = { ...JSON.parse(good[0]), kind: 'nope' }
+    expect(() => parseDoc([JSON.stringify(head), good[1]].join('\n'))).toThrow()
+})
+
+test('one new stroke changes exactly one line and a page greps to one line', () => {
+    const d = bigDoc()
+    const before = serializeDoc(d).trimEnd().split('\n')
+    d.pages[12].strokes.push(stroke(99))
+    const after = serializeDoc(d).trimEnd().split('\n')
+    expect(after.length).toBe(before.length)
+    expect(after.filter((l, i) => l !== before[i]).length).toBe(1)
+    expect(after.filter(l => l.includes('"page":40')).length).toBe(1)
+})
+
+test('parseDoc reads a pretty-printed old single-object file', () => {
+    const doc = emptyDoc()
+    expect(parseDoc(JSON.stringify(doc, null, 2))).toEqual(doc)
+})
+
+test('parseDocOrEmpty turns empty and whitespace into a blank doc, garbage still throws', () => {
+    expect(parseDocOrEmpty('')).toEqual(emptyDoc())
+    expect(parseDocOrEmpty('  \n\t')).toEqual(emptyDoc())
+    expect(() => parseDocOrEmpty('garbage')).toThrow()
 })

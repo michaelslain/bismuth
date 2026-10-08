@@ -21,7 +21,7 @@ import { DrawingPage } from './DrawingPage'
 import { setTransport, type Transport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { TextButton } from '../ui/TextButton'
-import type { DrawingDoc } from '../../../core/src/drawing/model'
+import { parseDoc, type DrawingDoc } from '../../../core/src/drawing/model'
 import canvasStyles from './DrawingCanvas.module.css'
 
 const meta = {
@@ -298,7 +298,7 @@ export const ReadFailedThenRetry: Story = {
         expect(canvas.queryByRole('alert')).toBeNull()
         await userEvent.click(addPage)
         await waitFor(() => expect(writes.length).toBe(1), { timeout: 5000 })
-        const saved = JSON.parse(writes[0].contents) as DrawingDoc
+        const saved = parseDoc(writes[0].contents)
         expect(writes[0].path).toBe(POPULATED_PATH)
         expect(saved.pages.length).toBe(2)
         // The original page's two strokes survived — the file was not replaced by an empty doc.
@@ -320,7 +320,7 @@ export const NewDrawing: Story = {
         expect(canvas.queryByRole('alert')).toBeNull()
         await userEvent.click(addPage)
         await waitFor(() => expect(writes.length).toBe(1), { timeout: 5000 })
-        const saved = JSON.parse(writes[0].contents) as DrawingDoc
+        const saved = parseDoc(writes[0].contents)
         expect(writes[0].path).toBe('sketches/new.draw')
         expect(saved.kind).toBe('drawing')
         expect(saved.pages.length).toBe(2)

@@ -17,6 +17,7 @@ import { stringify as yamlStringify } from 'yaml'
 import type { BaseConfig, ViewConfig, Row } from '../../../core/src/bases/types'
 import { placeholderFile } from '../../../core/src/bases/types'
 import { declaredDefaults } from '../../../core/src/bases/properties'
+import { baseNameOf } from '../../../core/src/bases/baseFile'
 import { fileBasename } from '../../../core/src/pathUtils'
 import { canWriteStoredRow, storedNote } from './taskWrite'
 import { restoreRowAt } from './restoreRow'
@@ -174,7 +175,7 @@ export async function commitDelete(
  *  for a base file at the vault root — a folder named after it. Same fallback as KanbanView's
  *  `boardFolder()` for a source with no rows yet. */
 function defaultFolder(basePath: string): string {
-    return parentOf(basePath) || basePath.replace(/\.md$/, '')
+    return parentOf(basePath) || baseNameOf(basePath)
 }
 
 /** Write `contents` to the first free `<folder>/<name>[ N].md`. `writeChecked` against an empty

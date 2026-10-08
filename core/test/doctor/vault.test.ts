@@ -300,3 +300,20 @@ describe('vaultSection', () => {
         expect(new Set(ids).size).toBe(ids.length)
     })
 })
+
+describe('vault: jsonl bases', () => {
+    test('reports a jsonl base with an unparseable first line, skips a good one', async () => {
+        const vault = vaultWith({
+            'good.base.jsonl': '{"type":"base"}\n{"a":1}\n',
+            'bad.base.jsonl': '{"type":"base",\n{"a":1}\n',
+        })
+        const f = (await run(vault)).find(x => x.id === 'vault.base-jsonl-config')
+        expect(f?.detail).toContain('bad.base.jsonl')
+        expect(f?.detail).not.toContain('good.base.jsonl')
+    })
+
+    test('a good jsonl base alone is clean', async () => {
+        const vault = vaultWith({ 'good.base.jsonl': '{"type":"base"}\n' })
+        expect((await run(vault)).some(x => x.id === 'vault.base-jsonl-config')).toBe(false)
+    })
+})

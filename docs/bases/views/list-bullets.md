@@ -6,37 +6,19 @@ The `list` and `bullets` views show a base's rows as a vertical sequence instead
 
 A grouped list of books:
 
-```yaml
----
-type: base
-source: notes where file.hasTag("book")
-view: list
-groupBy:
-  property: note.status
-sort:
-  - property: note.title
-    direction: ASC
----
+```json
+{"type":"base","source":"notes where file.hasTag(\"book\")","view":"list","groupBy":{"property":"note.status"},"sort":[{"property":"note.title","direction":"ASC"}]}
 ```
 
 A bullet list of quotes:
 
-```yaml
----
-type: base
-source: notes where file.hasTag("quote")
-view: bullets
-groupBy:
-  property: note.author
-sort:
-  - property: note.author
-    direction: ASC
----
+```json
+{"type":"base","source":"notes where file.hasTag(\"quote\")","view":"bullets","groupBy":{"property":"note.author"},"sort":[{"property":"note.author","direction":"ASC"}]}
 ```
 
 ## Config keys
 
-All keys sit at the top level of the base's frontmatter. `filters` and `source` apply as for every kind, as described in the [bases overview](../overview.md).
+All keys sit at the top level of the base's config (line 1 of a `.base.jsonl` file, or the frontmatter of a markdown base). `filters` and `source` apply as for every kind, as described in the [bases overview](../overview.md).
 
 | Key | Type | Allowed values | Default | Effect |
 |---|---|---|---|---|
@@ -54,14 +36,8 @@ Use `order`, not `columns`, to choose which properties show.
 
 Each `list` row is a title built from the first column, then an optional secondary label from the second column after an em dash (`Title — Author`), then an optional right-aligned value from the third column. The title falls back to the file name when the first column is empty. The secondary label is hidden when its value is empty or an object. Columns beyond the third are not displayed; use the [table view](table.md) for more.
 
-```yaml
----
-type: base
-view: list
-groupBy:
-  property: formula.urgency
-columns: [Overdue, This week, Later]
----
+```json
+{"type":"base","view":"list","groupBy":{"property":"formula.urgency"},"columns":["Overdue","This week","Later"]}
 ```
 
 A click on a row depends on whether the base is editable:

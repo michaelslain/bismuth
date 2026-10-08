@@ -11,6 +11,12 @@ import { parseRows, serializeRows } from './bases/rows'
 import type { Row } from './bases/types'
 import { isValidType } from './bases/types'
 import { legacyView } from './bases/parse'
+import {
+    baseFormatOf,
+    parseBaseJsonl,
+    serializeBaseJsonl,
+    type BaseFormat,
+} from './bases/baseFile'
 import { addDaysISO } from './dates'
 import { createError } from './error'
 import { parseRRule, firstOccurrence } from './gcal/recurrence'
@@ -47,6 +53,7 @@ export interface CalendarEvent {
 export interface ParsedCalendar {
     frontmatter: Record<string, unknown>
     events: CalendarEvent[]
+    format: BaseFormat
 }
 
 // ── ids + time ──────────────────────────────────────────────────────────────
@@ -140,6 +147,23 @@ function eventToRow(e: CalendarEvent): Row {
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 
 export function parseCalendarFile(text: string): ParsedCalendar {
+    const format = baseFormatOf(text)
+    if (format === 'jsonl') {
+        const { raw, rows, skipped } = parseBaseJsonl(text, {
+            name: '',
+            path: '',
+        })
+        if (skipped > 0)
+            throw createError(
+                'PARSE_ERROR',
+                `calendar has ${skipped} line(s) that are not valid JSON; fix or remove them before editing`,
+            )
+        return {
+            frontmatter: raw,
+            events: rows.map((r, i) => rowToEvent(r, i)),
+            format,
+        }
+    }
     const m = text.match(FM_RE)
     let frontmatter: Record<string, unknown> = {}
     let body = text
@@ -152,7 +176,7 @@ export function parseCalendarFile(text: string): ParsedCalendar {
         body = m[2]
     }
     const rows = parseRows(body, { name: '', path: '' })
-    return { frontmatter, events: rows.map((r, i) => rowToEvent(r, i)) }
+    return { frontmatter, events: rows.map((r, i) => rowToEvent(r, i)), format }
 }
 
 export function categoriesOf(frontmatter: Record<string, unknown>): Category[] {
@@ -172,7 +196,7 @@ export function isCalendarBase(frontmatter: Record<string, unknown>): boolean {
     return kind === 'calendar'
 }
 
-/** A fresh, empty calendar base file (`type: base` + `view: calendar`). */
+/** A fresh, empty calendar base file (`type: base` + `view: calendar`), as JSON Lines. */
 export function emptyCalendarFile(
     opts: { title?: string; categories?: Category[] } = {},
 ): string {
@@ -180,17 +204,24 @@ export function emptyCalendarFile(
     if (opts.title) fm.title = opts.title
     if (opts.categories && opts.categories.length)
         fm.categories = opts.categories
-    return serializeCalendarFile(fm, [])
+    return serializeCalendarFile(fm, [], 'jsonl')
 }
 
 /**
- * Re-emit the calendar base file: canonical YAML frontmatter (all original keys
- * preserved; categories written back only when non-empty) + the events table.
+ * Re-emit the calendar base file in `format`: markdown (canonical YAML frontmatter + the
+ * events table) or JSON Lines (config line + one event per line). All original config keys
+ * are preserved.
  */
 export function serializeCalendarFile(
     frontmatter: Record<string, unknown>,
     events: CalendarEvent[],
+    format: BaseFormat = 'md',
 ): string {
+    if (format === 'jsonl')
+        return serializeBaseJsonl(
+            frontmatter,
+            events.map(e => eventToRow(e).note),
+        )
     const fm = stringifyYaml(frontmatter).trimEnd()
     const body = serializeRows(events.map(eventToRow))
     return body ? `---\n${fm}\n---\n\n${body}\n` : `---\n${fm}\n---\n`

@@ -1,6 +1,6 @@
 # Converting Obsidian bases
 
-An Obsidian base is a `.base` YAML file with a list of views; a Bismuth base is a markdown note with `type: base` and exactly one view. Use this page to turn each `.base` file and each ` ```base ` fence into Bismuth form. The vault-wide procedure is in [the conversion guide](../converting-obsidian-to-bismuth.md).
+An Obsidian base is a `.base` YAML file with a list of views; a Bismuth base is a `type: base` markdown note or a `<name>.base.jsonl` file, with exactly one view. Use this page to turn each `.base` file and each ` ```base ` fence into Bismuth form. The vault-wide procedure is in [the conversion guide](../converting-obsidian-to-bismuth.md).
 
 ## Sources
 
@@ -11,7 +11,7 @@ An Obsidian base is a `.base` YAML file with a list of views; a Bismuth base is 
 
 The tables orient you; where a linked live page disagrees, follow the live page and note the difference in the report.
 
-An Obsidian base is a `.base` file of pure YAML with top-level `filters`, `formulas`, `properties`, `summaries` and a `views:` list. A Bismuth base is a `.md` note with `type: base` in its frontmatter and one view written flat: `view: <kind>` plus the view's keys at the top level. The Obsidian layouts are table, cards, list, kanban (the Views page names the Obsidian version it needs) and map (needs the Maps plugin).
+An Obsidian base is a `.base` file of pure YAML with top-level `filters`, `formulas`, `properties`, `summaries` and a `views:` list. A Bismuth markdown base is a `.md` note with `type: base` in its frontmatter and one view written flat: `view: <kind>` plus the view's keys at the top level. The Obsidian layouts are table, cards, list, kanban (the Views page names the Obsidian version it needs) and map (needs the Maps plugin).
 
 | Obsidian `.base` | Bismuth base note |
 |---|---|
@@ -34,6 +34,12 @@ An Obsidian base is a `.base` file of pure YAML with top-level `filters`, `formu
 The filter grammar is shared: operators `== != > < >= <= && || !` and `+ - * / %`; file fields `file.name path folder ext size ctime mtime tags links`; file methods `hasTag hasLink inFolder hasProperty asLink`. A bare name means `note.<name>`.
 
 Obsidian function names that `docs/bases/functions.md` does not list include `asFile containsAll containsAny escapeHTML html icon image isTruthy isType keys linksTo relative repeat time toString values`, plus the properties `file.backlinks`, `file.embeds` and `file.properties`. Recompute the list by diffing the function headings on https://obsidian.md/help/bases/functions against `docs/bases/functions.md`.
+
+## Which file format do I write?
+
+Write each converted base as a markdown note (`P/Name.md` with `type: base`), as the steps below show. A hand-written markdown base is read, rendered and edited like any other, and the steps can keep an Obsidian base's prose beside its config, which a `.base.jsonl` file cannot hold.
+
+To store converted bases as `.base.jsonl` files, run `bismuth base migrate --all --dry-run --vault "$OUT"` after the Validate checks pass, review the plan, then run it without `--dry-run`. Each `.md` moves to the vault's `.trash`. The command refuses a merged note from step 0 whose prose body holds text but no rows, and skips it with `skipped <path>: <reason>` under `--all`; leave those as markdown. Links such as `[[Name]]` and a `ref: "[[P/Name]]"` keep resolving after the move. [The CLI reference](../../cli/reference.md) lists the command's output.
 
 ## Convert
 
@@ -87,7 +93,7 @@ Obsidian function names that `docs/bases/functions.md` does not list include `as
 
 ## Validate
 
-- `bismuth base validate "P/Name.md" --vault "$OUT"` prints `"ok":true` for every converted base. It also reports a multi-entry `views:` list and an unresolvable `ref`.
+- `bismuth base validate "P/Name.md" --vault "$OUT"` (or `P/Name`, which also finds a migrated `.base.jsonl`) prints `"ok":true` for every converted base. It also reports a multi-entry `views:` list and an unresolvable `ref`.
 - `bismuth base render "P/Name.md" --vault "$OUT" --pretty | grep -c '"basename"'` is the row count; compare it with the row count Obsidian shows for that view.
 - After a merge (step 0), run both commands on `Name.md` and each `Name - V.md`. With `source: notes` and no filter, `Name.md`'s own rows include the base note itself and every other base note, and it drops out only if a filter rejects it. Expect a row count one higher than a prose-notes-only count, and report it.
 - For a converted ` ```base ` fence, copy its YAML between `---` lines into a scratch note under `$OUT` (with `type: base` and `source: notes` added), run the two commands above, then delete the scratch note.

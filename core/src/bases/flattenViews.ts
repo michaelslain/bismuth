@@ -1,5 +1,6 @@
 import { parse } from 'yaml'
 import { AppError } from '../error'
+import { baseFormatOf } from './baseFile'
 import { FRONTMATTER_REGEX, mutateFrontmatter } from '../frontmatter'
 import { normalizeSource } from './sourceSpec'
 import { isValidType } from './types'
@@ -19,6 +20,8 @@ import { isValidType } from './types'
  * (`bismuth base validate` says so) rather than silently dropped.
  */
 export function flattenBaseViews(md: string): string {
+    // a JSON Lines base is always flat: its config is one object on line 1
+    if (baseFormatOf(md) === 'jsonl') return md
     const m = md.match(FRONTMATTER_REGEX)
     if (!m) return md
     let data: Record<string, unknown>

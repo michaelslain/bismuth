@@ -1,5 +1,6 @@
 import { parseBaseFile, FRONTMATTER_RE } from './parse'
 import { serializeRows } from './rows'
+import { baseFormatOf, reassembleBaseJsonl } from './baseFile'
 import { placeholderFile } from './types'
 import type { Row } from './types'
 import type { BaseConfig } from './types'
@@ -8,7 +9,8 @@ import { createError } from '../error'
 type Meta = { name: string; path: string }
 
 /**
- * Rebuild the file: keep the frontmatter block verbatim, replace the body with the YAML rows.
+ * Rebuild the file in the format `text` is in. Markdown: keep the frontmatter block verbatim,
+ * replace the body with the YAML rows. JSONL: keep line 1 and every unchanged row line verbatim.
  * Preserves the column order defined in the base config's first view (or the original data).
  */
 export function reassemble(
@@ -16,6 +18,12 @@ export function reassemble(
     rows: Row[],
     config?: BaseConfig,
 ): string {
+    if (baseFormatOf(text) === 'jsonl')
+        return reassembleBaseJsonl(
+            text,
+            rows.map(r => r.note),
+            config?.view.order,
+        )
     const m = text.match(FRONTMATTER_RE)
     const fm = m ? m[1].replace(/\n*$/, '\n') : ''
 

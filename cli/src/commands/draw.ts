@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { CommandMap } from '../types'
 import { bool, flag, positionals, fail, out } from '../args'
-import { parseDoc } from '../../../core/src/drawing/model'
+import { parseDocOrEmpty } from '../../../core/src/drawing/model'
 import {
     renderDocToPng,
     renderDocToPdf,
@@ -20,7 +20,7 @@ export async function renderDrawFile(
     if (themeArg !== 'dark' && themeArg !== 'light')
         fail(`--theme must be "dark" or "light": ${themeArg}`)
     const theme = themeArg as 'dark' | 'light'
-    const doc = parseDoc(readFileSync(file, 'utf8'))
+    const doc = parseDocOrEmpty(readFileSync(file, 'utf8'))
     const bytes = pdf
         ? await renderDocToPdf(doc, theme)
         : await renderDocToPng(doc, theme)

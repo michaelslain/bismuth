@@ -13,6 +13,7 @@ import { parseFrontmatter } from './frontmatter'
 import { createError } from './error'
 import type { TreeEntry } from './graph'
 import { mapWithConcurrency } from './concurrency'
+import { isBasePath, readBaseConfigRaw } from './bases/baseFile'
 import {
     isTreeListedName,
     isCompanionable,
@@ -113,6 +114,14 @@ export async function listMarkdown(root: string): Promise<string[]> {
     return out
 }
 
+/** Every `*.base.jsonl` base under the vault (dot-dirs skipped, like listMarkdown). */
+export async function listBases(root: string): Promise<string[]> {
+    const glob = new Bun.Glob('**/*.base.jsonl')
+    const out: string[] = []
+    for await (const rel of glob.scan({ cwd: root, dot: false })) out.push(rel)
+    return out
+}
+
 // Per-note icon+visibility cache, keyed by absolute path → { mtime, icon, visibility }.
 // listTree otherwise reads + frontmatter-parses every .md just to pull the optional
 // `icon`/`visibility` fields; this skips that work for notes whose mtime is unchanged
@@ -172,7 +181,7 @@ export async function listTree(
             }
 
             // Include supported file types; .draw files get special icon marker.
-            // (A base is a `type: base` md file — no separate `.base` extension.)
+            // (A base is a `type: base` md file or a `<name>.base.jsonl` file.)
             // Images AND PDFs carry tags (a companion note) and ink drawn IN PLACE on their own
             // preview tab (a sidecar `<file>.draw` — no separate markup surface), so they surface
             // as openable rows too. (Their `.draw` sidecars match `.draw` above; export sidecars
@@ -197,7 +206,10 @@ export async function listTree(
     // rebuild). Async stat batched 32-wide keeps the loop free; NaN keeps the old stat-failed
     // semantics (deleted mid-walk → fresh read attempt below).
     const mdEntries = entries.filter(
-        e => !e.isDir && e.name.endsWith('.md') && e.rel !== '.settings',
+        e =>
+            !e.isDir &&
+            (e.name.endsWith('.md') || isBasePath(e.name)) &&
+            e.rel !== '.settings',
     )
     const mtimes = new Map<string, number>()
     await mapWithConcurrency(mdEntries, 32, async entry => {
@@ -231,7 +243,10 @@ export async function listTree(
     >()
     await mapWithConcurrency(misses, 32, async entry => {
         const abs = join(root, entry.rel)
-        const { data } = parseFrontmatter(await readNote(root, entry.rel))
+        const text = await readNote(root, entry.rel)
+        const data = isBasePath(entry.name)
+            ? (readBaseConfigRaw(text) ?? {})
+            : parseFrontmatter(text).data
         const icon = typeof data.icon === 'string' ? data.icon : null
         const visibility =
             data.visibility === 'all' ||
@@ -268,7 +283,7 @@ export async function listTree(
             } else {
                 out.push({ path: entry.rel, kind: 'dir' })
             }
-        } else if (entry.name.endsWith('.md')) {
+        } else if (entry.name.endsWith('.md') || isBasePath(entry.name)) {
             const abs = join(root, entry.rel)
             // Reuse the cached icon/visibility when the file's mtime is unchanged; only
             // re-read + parse frontmatter for notes that actually changed since the last

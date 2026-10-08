@@ -20,6 +20,8 @@ export interface FileStat {
 export interface FileAccess {
     /** All markdown files under the vault, vault-relative. */
     listMarkdown(root: string): Promise<string[]>
+    /** Every `*.base.jsonl` base under the vault, vault-relative; dot-dirs skipped like listMarkdown. */
+    listBases(root: string): Promise<string[]>
     /** The full file/folder tree (md + .base + .sheet + .draw + folders) for the sidebar. */
     listTree(root: string): Promise<TreeEntry[]>
     /** Read one note's UTF-8 contents (vault-relative path). */
@@ -53,6 +55,7 @@ export async function getFileAccess(): Promise<FileAccess> {
     const { join } = await import('node:path')
     access = {
         listMarkdown: files.listMarkdown,
+        listBases: files.listBases,
         listTree: files.listTree,
         readNote: files.readNote,
         writeNote: files.writeNote,

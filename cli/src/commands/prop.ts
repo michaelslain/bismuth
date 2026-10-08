@@ -21,9 +21,9 @@
 import type { CommandMap } from '../types'
 import { out, fail, parseValue, positionals, requireVault } from '../args'
 import {
-    setFrontmatterKey,
-    deleteFrontmatterKey,
-} from '../../../core/src/frontmatter'
+    setBaseConfigKey,
+    deleteBaseConfigKey,
+} from '../../../core/src/bases/baseFile'
 import { readNote, writeNote, fileExists } from '../../../core/src/files'
 import { isCompanionable, companionPathFor } from '../../../core/src/fileKinds'
 import { createError } from '../../../core/src/error'
@@ -62,7 +62,7 @@ export const commands: CommandMap = {
                 if (isCompanionable(file) && isEnoent(err)) md = ''
                 else throw err
             }
-            const next = setFrontmatterKey(md, key, parseValue(value))
+            const next = setBaseConfigKey(notePath, md, key, parseValue(value))
             await writeNote(vault, notePath, next)
             out({ ok: true, path: notePath }, args)
         },
@@ -91,7 +91,7 @@ export const commands: CommandMap = {
                 }
                 throw err
             }
-            const next = deleteFrontmatterKey(md, key)
+            const next = deleteBaseConfigKey(notePath, md, key)
             await writeNote(vault, notePath, next)
             out({ ok: true, path: notePath }, args)
         },

@@ -2,21 +2,11 @@
 
 A drawing is a `.draw` file in your vault: a multi-page vector sketch you draw with a pen, a highlighter and an eraser. The same pen and highlighter also ink directly on any image or PDF you open, saving the marks beside the file. This page is for anyone who draws in Bismuth, and for engineers who read or write `.draw` files.
 
-A `.draw` file is JSON. This one holds a single pen stroke on grid paper:
+A `.draw` file is JSON Lines: a header line, then one line per page that has anything on it. This one is a three-page drawing with a single pen stroke on its second page:
 
 ```json
-{
-  "v": 1,
-  "kind": "drawing",
-  "paper": { "bg": "grid" },
-  "pages": [
-    {
-      "strokes": [
-        { "t": "pen", "c": "fg", "w": 5, "pts": [50, 50, 255, 200, 200, 200] }
-      ]
-    }
-  ]
-}
+{"v":1,"kind":"drawing","paper":{"bg":"grid"},"pageCount":3}
+{"page":1,"strokes":[{"t":"pen","c":"fg","w":5,"pts":[50,50,255,200,200,200]}]}
 ```
 
 Ink inside a note (a ` ```draw ` fence) uses the same stroke format but has its own page; see [note ink](../editor/ink.md).
@@ -65,8 +55,8 @@ Mod+Z and Mod+Shift+Z undo and redo on the focused preview whether or not draw m
 Saving is debounced by 600 ms and flushes when you leave draw mode, click out of the pane, switch files or close the tab. Three cases protect existing data:
 
 - An empty sidecar means no ink yet, and nothing is written until you draw.
-- A sidecar that is not a drawing is left alone, and shows no ink, until your first stroke replaces it.
-- If reading the sidecar fails, drawing is disabled and a toast says so, rather than risk overwriting it.
+- A sidecar that cannot be read as a drawing, including one with a line that is not valid JSON, is never overwritten. Ink stays off for that file, its ink controls stay disabled, and trying to draw shows `Couldn't read this file's ink, so drawing is off`.
+- If reading the sidecar fails, ink stays off the same way, rather than risk overwriting it.
 
 A sidecar created by drawing in place holds strokes on blank paper, without a copy of the image or PDF page. A headless export of that sidecar therefore renders your ink on a blank page.
 
@@ -101,18 +91,40 @@ Because a block's text lives in the companion note and not in the `.draw` file, 
 
 ## The `.draw` file format
 
-A `.draw` file is one `DrawingDoc` JSON object, written compactly by `serializeDoc()` and read by `parseDoc()`. Parsing throws `not a drawing document` when `kind` is not `"drawing"` or `pages` is not an array.
+A `.draw` file is JSON Lines: line 1 is the header, and each later line is one page. The same format holds a standalone drawing and the `<file>.<ext>.draw` ink sidecar of an image or PDF. A page with no strokes, images or highlights has no line, so a PDF with ink on three pages is a four-line file. A stroke rewrites one line, and `grep '"page":40' book.pdf.draw` returns page 40 with its marks.
+
+The header line holds these keys.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `v` | `1` | Version discriminant |
 | `kind` | `"drawing"` | Literal checked on read |
 | `paper.bg` | `"blank" \| "lines" \| "grid" \| "dots"` | Background shared by every page |
-| `pages` | `Page[]` | At least one page; page `i` is index `i` |
+| `pageCount` | `number` | How many pages the drawing has, empty ones included. A non-negative integer |
 | `bookmarks` | `Bookmark[]?` | Image and PDF sidecars only |
 | `margin` | `{ right: number }?` | Image and PDF sidecars only |
 
-An empty drawing is `{ "v": 1, "kind": "drawing", "paper": { "bg": "grid" }, "pages": [{ "strokes": [] }] }`.
+Any other top-level key in the header is kept when the file is read and rewritten.
+
+A file that is one JSON object with a `pages` array (`{"v":1,"kind":"drawing","paper":{...},"pages":[...]}`) also opens. The next save rewrites it as JSON Lines.
+
+Each page line is `{"page": <index>, ...}` with a 0-based index below `pageCount`, followed by that page's `strokes`, `images?` and `highlights?`. Pages are written in ascending order. A page that has no line reads as empty.
+
+A drawing read from a file with no page lines is `pageCount` empty pages. An empty drawing, as the app creates it, is one grid page:
+
+```json
+{"v":1,"kind":"drawing","paper":{"bg":"grid"},"pageCount":1}
+```
+
+### Read a file that fails to parse
+
+A `.draw` file that is empty, or does not exist yet, is a new drawing and opens as one blank grid page. A file with any other problem does not open for editing: an unparseable line, a missing or invalid `pageCount`, a `page` index that is not an integer below `pageCount`, or a first line whose `kind` is not `"drawing"`.
+
+- On a standalone drawing, the drawing page shows `couldn't open this drawing` with the error and a **retry** button. Saving is off, so the file stays exactly as it was.
+- On an image or PDF, ink is switched off for that file and the sidecar is never overwritten.
+- `bismuth render` and `bismuth export` stop with the error. An empty file renders as one blank page there, as it does in the app's export pane.
+
+Fix or remove the bad line to open the file again.
 
 ### Pages and strokes
 
@@ -140,7 +152,7 @@ An image or PDF sidecar can carry three extra fields.
 
 | Field | Shape | Notes |
 |---|---|---|
-| `pages[i].highlights` | `{ id, c, rects, text? }[]` | `rects` are one `{x, y, w, h}` per line of selected text, in page units. `c` is a hex colour or `"hl"` for the default yellow |
+| A page line's `highlights` | `{ id, c, rects, text? }[]` | `rects` are one `{x, y, w, h}` per line of selected text, in page units. `c` is a hex colour or `"hl"` for the default yellow |
 | `bookmarks` | `{ id, page, label }[]` | `page` is 0-based; `label` defaults to `Page N` |
 | `margin` | `{ right }` | Strip width as a fraction of the page's rendered width, clamped to 0..2. Turning the strip on sets 0.4; turning it off removes the key |
 
@@ -221,6 +233,10 @@ Scratch notes: `createCompanionStore.ts` is the one owner of a binary's companio
 When `renderDocToPng` receives a `box` (`{ width, height }`), it takes the note-ink path: only `pages[0].strokes`, no paper or images, on a transparent canvas of the caller's size. A note's ` ```draw ` fences use this so the ink composites over the exported page's own text (`app/src/export/inkHtml.ts`). `cli/src/commands/draw.ts` never passes `box`.
 
 The browser export pane rasterises with `app/src/export/drawingRaster.ts`, which feeds the same `renderDocStacked` into a DOM canvas, so the preview and the CLI output agree apart from canvas rounding.
+
+### The file format code
+
+`serializeDoc()` in `core/src/drawing/model.ts` rounds the document with `roundDoc()`, writes every top-level key except `pages` plus `pageCount` as line 1, then one `{ page: i, ...page }` line for each page that `pageHasContent()` accepts. `parseDoc()` splits on newlines, ignores blank lines, and builds `pageCount` empty pages before laying each page line over its index. A file holding one JSON object with a `pages` array takes the single-object path. Every failure throws, and each caller refuses to write after a throw: `loadDrawing()` in `DrawingPage.tsx` returns an error result instead of a document (a zero-byte file short-circuits to `emptyDoc()` first), `createAnnotationStore.ts` sets its load state to `failed` and logs a `[page-ink]` warning, and `drawingRaster.ts` treats a zero-byte file as a blank page before calling `parseDoc()`. The CLI calls `parseDoc()` directly.
 
 ### Gotchas
 

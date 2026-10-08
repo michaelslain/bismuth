@@ -1,6 +1,6 @@
 # Make your first base
 
-A base is a note whose frontmatter describes a live view of other notes: a table, board, calendar or chart that updates as the notes change. This guide builds a reading list from book notes: you create the base, point it at the right notes, filter, sort and group the rows, check them, then switch the view to cards. It takes about ten minutes and needs a vault with a few notes that carry frontmatter properties.
+A base is a file whose config describes a live view of other notes: a table, board, calendar or chart that updates as the notes change. This guide builds a reading list from book notes: you create the base, point it at the right notes, filter, sort and group the rows, check them, then switch the view to cards. It takes about ten minutes and needs a vault with a few notes that carry frontmatter properties.
 
 ## What the sample notes look like
 
@@ -20,7 +20,7 @@ pages: 612
 
 ## 1. Create the base
 
-In the app, press the **Create new…** button in the sidebar toolbar, choose **New base**, then **Table**. Bismuth creates `Untitled Table.md` and lets you rename it; call it `Books`.
+In the app, press the **Create new…** button in the sidebar toolbar, choose **New base**, then **Table**. Bismuth creates `Untitled Table.base.jsonl` and lets you rename it; call it `Books`.
 
 From a shell, the same file with its source already set:
 
@@ -28,76 +28,60 @@ From a shell, the same file with its source already set:
 bismuth base create Books --view table --source 'notes where file.hasTag("book")'
 ```
 
-The file reads:
+The file `Books.base.jsonl` holds one line, the base's config as a JSON object:
 
-```markdown
----
-type: base
-view: table
-source: notes where file.hasTag("book")
----
+```json
+{"type":"base","view":"table","source":"notes where file.hasTag(\"book\")"}
 ```
 
-`type: base` makes the note open as a base instead of text. `view` picks the renderer. `source` says where the rows come from; a base made in the app starts with `source: notes`, which is every note in the vault.
+`type: base` makes the file open as a base instead of text. `view` picks the renderer. `source` says where the rows come from; a base made in the app starts with `source: notes`, which is every note in the vault. The format is described in [bases overview](./overview.md).
 
 ## 2. Point it at the right notes
 
-Click **Source** in the view bar to edit the file as text, set `source` to the books only, and press **save**:
+Set `source` to the books only:
 
-```yaml
-source: notes where file.hasTag("book")
+```bash
+bismuth prop set Books.base.jsonl source 'notes where file.hasTag("book")'
 ```
 
-`file.hasTag("book")` matches the exact tag `book` (not `book/fiction`), without a `#`. The play drops out of the table. Every later edit in this guide works the same way: **Source**, edit, **save**.
+`file.hasTag("book")` matches the exact tag `book` (not `book/fiction`), without a `#`. The play drops out of the table. Every later edit in this guide works the same way: `bismuth prop set <file> <key> <value>`, where the value is read as JSON and otherwise as a string. `prop set` changes only line 1 of the file.
 
-You can make the same edit in **Settings** in the view bar, under the **source** section. Both write the same frontmatter.
+You can make the same edit in **Settings** in the view bar, under the **source** section. Both write the same config key.
 
 ## 3. Add a filter
 
 A filter keeps only the rows where an expression is true. Hide the books you have not started:
 
-```yaml
-filters: 'status != "to-read"'
+```bash
+bismuth prop set Books.base.jsonl filters 'status != "to-read"'
 ```
 
-Quote the whole expression: an unquoted `#` after a space would start a YAML comment and silently cut the filter short. Several conditions combine with `&&` and `||` inside one string, or with an `and:` / `or:` / `not:` tree; see [filters](./filters.md).
+The expression is one string. Several conditions combine with `&&` and `||` inside one string, or with an `and:` / `or:` / `not:` tree; see [filters](./filters.md).
 
 ## 4. Choose columns, sort and group
 
 Add these keys beside the others:
 
-```yaml
-order: [file.name, note.author, note.status, note.rating]
-sort:
-  - { property: note.rating, direction: DESC }
-  - { property: file.name, direction: ASC }
-groupBy: status
+```bash
+bismuth prop set Books.base.jsonl order '["file.name","note.author","note.status","note.rating"]'
+bismuth prop set Books.base.jsonl sort '[{"property":"note.rating","direction":"DESC"},{"property":"file.name","direction":"ASC"}]'
+bismuth prop set Books.base.jsonl groupBy status
 ```
 
 `order` lists the columns, `sort` applies its keys in order, and `groupBy` splits the rows into one group per `status` value. Property ids start with `file.` (name, path, tags), `note.` (frontmatter) or `formula.` (computed); a bare name such as `status` means `note.status`.
 
 ## 5. See the rows
 
-The full file:
+The full file is still one line:
 
-```markdown
----
-type: base
-source: notes where file.hasTag("book")
-filters: 'status != "to-read"'
-view: table
-order: [file.name, note.author, note.status, note.rating]
-sort:
-  - { property: note.rating, direction: DESC }
-  - { property: file.name, direction: ASC }
-groupBy: status
----
+```json
+{"type":"base","view":"table","source":"notes where file.hasTag(\"book\")","filters":"status != \"to-read\"","order":["file.name","note.author","note.status","note.rating"],"sort":[{"property":"note.rating","direction":"DESC"},{"property":"file.name","direction":"ASC"}],"groupBy":"status"}
 ```
 
 Open `Books` in the app to see a table with a `finished` group and a `reading` group. To print the same rows from a shell:
 
 ```bash
-bismuth base render Books.md | jq -r '.groups[] | .key, (.rows[] | "  " + .file.name + "  " + (.note.rating|tostring))'
+bismuth base render Books | jq -r '.groups[] | .key, (.rows[] | "  " + .file.name + "  " + (.note.rating|tostring))'
 ```
 
 ```text
@@ -115,24 +99,24 @@ reading
 
 Change `view` to another kind and the same rows render differently:
 
-```yaml
-view: cards
-cardContent: properties
+```bash
+bismuth prop set Books.base.jsonl view cards
+bismuth prop set Books.base.jsonl cardContent properties
 ```
 
-Each kind reads its own extra keys, so delete the keys the old kind owned (a table's `columnWidths`, for example) when you switch. The kinds and their pages are listed in [bases overview](./overview.md#what-view-kinds-are-there).
+Each kind reads its own extra keys, so delete the keys the old kind owned (a table's `columnWidths`, for example) when you switch, with `bismuth prop delete Books.base.jsonl columnWidths`. The kinds and their pages are listed in [bases overview](./overview.md#what-view-kinds-are-there).
 
-To keep the table and add a card view, make a second base that reads the first one's rows. Create `Book cards.md`:
+To keep the table and add a card view, make a second base that reads the first one's rows. Create `Book cards.base.jsonl`:
 
-```markdown
----
-type: base
-source: base
-ref: "[[Books]]"
-filters: 'status != "to-read"'
-view: cards
-cardContent: properties
----
+```bash
+bismuth base create "Book cards" --view cards --source base
+bismuth prop set "Book cards.base.jsonl" ref '[[Books]]'
+bismuth prop set "Book cards.base.jsonl" filters 'status != "to-read"'
+bismuth prop set "Book cards.base.jsonl" cardContent properties
+```
+
+```json
+{"type":"base","view":"cards","source":"base","ref":"[[Books]]","filters":"status != \"to-read\"","cardContent":"properties"}
 ```
 
 A base that references another receives its rows only. Its `filters`, `sort` and `groupBy` do not carry over, so `Book cards` repeats the filter. A base holds exactly one view.
@@ -140,7 +124,7 @@ A base that references another receives its rows only. Its `filters`, `sort` and
 ## 7. Verify the base
 
 ```bash
-bismuth base validate Books.md
+bismuth base validate Books
 ```
 
 ```json
@@ -154,6 +138,6 @@ The command exits 0 when the base is sound and 1 otherwise. It catches an invali
 - If every note in the vault appears, then `source` is missing or misspelled. An unrecognised `source` falls back to all notes without an error.
 - If no rows appear, then a filter failed to parse and counts as false for every row. Run `bismuth base validate`.
 - If the base renders as a table when you asked for another kind, then `view` is misspelled; the app falls back to `table`. Validate names the bad value.
-- If a base opens as plain text, then `type: base` is missing or not in the frontmatter block at the top of the file.
+- If a base opens as plain text, then `type: base` is missing from its config: line 1 of a `.base.jsonl` file, or the frontmatter block at the top of a markdown base.
 
 Next, read [sources](./sources.md) to compose bases and scope tasks, and [bases overview](./overview.md) for every top-level key.

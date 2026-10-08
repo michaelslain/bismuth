@@ -153,7 +153,7 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 | Subdirectory | Holds | Open first |
 |---|---|---|
 | `core/src/routes/` | One route factory per area: `vault`, `graph`, `settings`, `bases`, `tasks`, `daemon`, `gcal`, `relay`, `agents`, `memory`, `system`, plus `context.ts` | `context.ts` |
-| `core/src/bases/` | The Bases engine: lexer, parser, evaluator, filters, functions, sources, query, chart data, task rows | `query.ts` |
+| `core/src/bases/` | The Bases engine: lexer, parser, evaluator, filters, functions, sources, query, chart data, task rows, and the base file format (`baseFile.ts`: `.base.jsonl` and markdown read and write) | `query.ts`, `baseFile.ts` |
 | `core/src/schema/` | The settings schema, validation, coercion, completion suggestions | `settingsSchema.ts` |
 | `core/src/theme/` | Theme tokens, the design-token registry, custom themes, font families | `tokens.ts`, `designTokens.ts` |
 | `core/src/srs/` | Flashcards: SM-2 scheduler, markdown card parser, row cards | `scheduler.ts` |

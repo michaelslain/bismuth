@@ -187,3 +187,49 @@ export const EditNoOpsWhenUnchanged: Story = {
         expect(store.doc()?.pages[0]?.highlights ?? []).toHaveLength(0)
     },
 }
+
+// ── CorruptSidecarIsNeverOverwritten ─────────────────────────────────────────────────────────
+
+const CORRUPT_SIDECAR = 'docs/corrupt.pdf.draw'
+let corruptPuts = 0
+let storeForCorruptTest: AnnotationStore | undefined
+
+function CorruptHost() {
+    const store = createAnnotationStore(() => CORRUPT_SIDECAR, () => 'docs/corrupt.pdf')
+    storeForCorruptTest = store
+    return (
+        <div data-testid="annotation-store-host">loadState: {store.loadState()}</div>
+    )
+}
+
+/** A sidecar with a bad JSON Lines line fails the load; an edit attempt must not write over it. */
+export const CorruptSidecarIsNeverOverwritten: Story = {
+    render: () => {
+        corruptPuts = 0
+        storeForCorruptTest = undefined
+        const t = fakeTransport({
+            files: { [CORRUPT_SIDECAR]: '{"v":1}\n{not json\n' },
+        })
+        const originalPut = t.put.bind(t)
+        t.put = (p, body) => {
+            corruptPuts++
+            return originalPut(p, body)
+        }
+        setTransport(t)
+        return <CorruptHost />
+    },
+    play: async () => {
+        await waitFor(
+            () => {
+                expect(storeForCorruptTest?.loadState()).toBe('failed')
+            },
+            { timeout: 5000 },
+        )
+        const store = storeForCorruptTest!
+        store.edit(d => ({ ...d, pages: [{ strokes: [], highlights: [] }] }))
+        await store.flush()
+        await settle()
+        expect(corruptPuts).toBe(0)
+        expect(store.doc()).toBeNull()
+    },
+}

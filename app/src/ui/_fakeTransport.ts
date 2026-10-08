@@ -29,12 +29,11 @@ import type {
 import type { ChatFrame } from '../../../core/src/chat'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
+import { parseFrontmatter } from '../../../core/src/frontmatter'
 import {
-    parseFrontmatter,
-    setFrontmatterKey,
-    deleteFrontmatterKey,
-} from '../../../core/src/frontmatter'
-import { flattenBaseViews } from '../../../core/src/bases/flattenViews'
+    setBaseConfigKey,
+    deleteBaseConfigKey,
+} from '../../../core/src/bases/baseFile'
 import {
     start as startServerVersion,
     serverVersion,
@@ -458,14 +457,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 if (raw === undefined && !rowIndex.has(w.path))
                     skipped.add(w.path)
                 if (raw !== undefined)
-                    files.set(
-                        w.path,
-                        setFrontmatterKey(
-                            flattenBaseViews(raw),
-                            w.key,
-                            w.value,
-                        ),
-                    )
+                    files.set(w.path, setBaseConfigKey(w.path, raw, w.key, w.value))
                 const row = rowIndex.get(w.path)
                 if (row) row.note[w.key] = w.value
             }
@@ -488,11 +480,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 value: unknown
             }
             const raw = files.get(p)
-            if (raw !== undefined)
-                files.set(
-                    p,
-                    setFrontmatterKey(flattenBaseViews(raw), key, value),
-                )
+            if (raw !== undefined) files.set(p, setBaseConfigKey(p, raw, key, value))
             const row = rowIndex.get(p)
             if (row) row.note[key] = value
             return new Response('ok')
@@ -500,8 +488,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         if (pathname === '/delete-property') {
             const { path: p, key } = body as { path: string; key: string }
             const raw = files.get(p)
-            if (raw !== undefined)
-                files.set(p, deleteFrontmatterKey(flattenBaseViews(raw), key))
+            if (raw !== undefined) files.set(p, deleteBaseConfigKey(p, raw, key))
             const row = rowIndex.get(p)
             if (row) delete row.note[key]
             return new Response('ok')

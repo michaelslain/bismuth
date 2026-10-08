@@ -30,14 +30,25 @@
 // vault happened to be the one that ran `gcal health` (found in review, Task 11 fix round 1).
 // "List all" (no <basePath>) therefore reports only entries namespaced to the given vault.
 import type { CommandMap } from '../types'
-import { flag, positionals, fail, out, requireVault } from '../args'
+import {
+    BOOLEAN_FLAGS,
+    bool,
+    flag,
+    positionals,
+    fail,
+    out,
+    requireVault,
+} from '../args'
 import { call, needsServer, resolveCore } from '../http'
 import { listGcalSyncTargets } from '../../../core/src/gcal/discover'
 import {
     readManifest,
     manifestKey,
+    forgetBaseSync,
+    normaliseBasePath,
     type BaseSync,
 } from '../../../core/src/gcal/manifest'
+import { SyncLocked } from '../../../core/src/gcal/lock'
 import { loadAppConfig } from '../../../core/src/settings'
 import {
     agentChannel,
@@ -239,6 +250,43 @@ export const commands: CommandMap = {
                 .map(k => k.slice(prefix.length))
                 .filter(path => !isDeniedPath(deny, path))
             out(nsPaths.map(summarize), args)
+        },
+    },
+
+    'gcal forget': {
+        summary:
+            'Delete the Google sync state kept for a base path in ~/.bismuth/gcal/sync.json. Clears a stale entry left by a deleted synced calendar, which otherwise blocks moving or migrating a base onto that name. Refuses while the base still exists as a synced calendar unless --force (headless: no server needed)',
+        usage: '--vault <dir> <basePath> [--force]',
+        run: async args => {
+            const vault = requireVault(args)
+            const [basePath] = positionals(args, [...BOOLEAN_FLAGS, 'force'])
+            if (!basePath) fail('usage: gcal forget <basePath> [--force]')
+            const path = normaliseBasePath(basePath)
+            if (!bool(args, 'force')) {
+                const targets = await listGcalSyncTargets(
+                    vault,
+                    await legacyConfig(vault),
+                )
+                if (targets.some(t => t.basePath === path))
+                    fail(
+                        `refused: ${path} still exists and is a synced calendar base — delete it or turn off its Google sync first (or pass --force)`,
+                    )
+            }
+            try {
+                const removed = await forgetBaseSync(vault, path, {
+                    claimLegacy: !!process.env.BISMUTH_APP_PATH,
+                })
+                out(
+                    removed
+                        ? `forgot sync state for ${path}`
+                        : `no sync state for ${path}`,
+                    args,
+                )
+            } catch (e) {
+                if (e instanceof SyncLocked)
+                    fail('a Google Calendar sync is running; try again')
+                throw e
+            }
         },
     },
 }

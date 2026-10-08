@@ -154,14 +154,69 @@ export function roundDoc(doc: DrawingDoc): DrawingDoc {
     }
 }
 
+const pageHasContent = (pg: Page) =>
+    pg.strokes.length > 0 || !!pg.images?.length || !!pg.highlights?.length
+
+/** JSON Lines: line 1 is the header (every top-level key but `pages`, plus `pageCount`), then
+ *  one `{"page": i, ...}` line per page that holds strokes, images or highlights. A small edit
+ *  changes one line, so diffs and sync stay small. */
 export function serializeDoc(doc: DrawingDoc): string {
-    return JSON.stringify(roundDoc(doc))
+    const r = roundDoc(doc)
+    const { pages, ...head } = r
+    const lines = [JSON.stringify({ ...head, pageCount: pages.length })]
+    pages.forEach((pg, i) => {
+        if (pageHasContent(pg)) lines.push(JSON.stringify({ page: i, ...pg }))
+    })
+    return lines.join('\n') + '\n'
 }
 
+function parseLine(line: string, n: number): any {
+    try {
+        return JSON.parse(line)
+    } catch {
+        throw new Error(`drawing line ${n}: not valid JSON`)
+    }
+}
+
+/** A 0-byte or whitespace-only `.draw` (what "new drawing" creates) is a blank page, not a parse error. */
+export function parseDocOrEmpty(text: string): DrawingDoc {
+    return text.trim() === '' ? emptyDoc() : parseDoc(text)
+}
+
+/** Reads JSON Lines and the older single-object form. Throws on any bad line so a caller
+ *  never overwrites a file it could not fully read. */
 export function parseDoc(text: string): DrawingDoc {
-    const o = JSON.parse(text)
-    if (!o || o.kind !== 'drawing' || !Array.isArray(o.pages)) {
+    const lines = text.split('\n').filter(l => l.trim() !== '')
+    if (lines.length > 1) {
+        // A pretty-printed single-object file spans many lines.
+        try {
+            const whole = JSON.parse(text)
+            if (whole?.kind === 'drawing' && Array.isArray(whole.pages)) {
+                return whole as DrawingDoc
+            }
+        } catch {}
+    }
+    const first = lines.length ? parseLine(lines[0], 1) : null
+    if (!first || first.kind !== 'drawing') {
         throw new Error('not a drawing document')
     }
-    return o as DrawingDoc
+    if (Array.isArray(first.pages)) {
+        if (lines.length > 1) throw new Error('not a drawing document')
+        return first as DrawingDoc
+    }
+    const { pageCount, ...head } = first
+    if (!Number.isInteger(pageCount) || pageCount < 0) {
+        throw new Error('drawing header has no valid pageCount')
+    }
+    const pages: Page[] = Array.from({ length: pageCount }, () => ({
+        strokes: [],
+    }))
+    for (let k = 1; k < lines.length; k++) {
+        const { page, ...pg } = parseLine(lines[k], k + 1)
+        if (!Number.isInteger(page) || page < 0 || page >= pageCount) {
+            throw new Error(`drawing line ${k + 1}: page out of range`)
+        }
+        pages[page] = { strokes: [], ...pg }
+    }
+    return { ...head, pages } as DrawingDoc
 }

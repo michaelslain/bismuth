@@ -220,3 +220,14 @@ test('theme files: an edit of an existing file leaves the tree clean; a create o
     expect(t.classify('.themes/dusk.yaml', false)).toBe(false) // a repeated delete event
     expect(t.classify('.themes/dusk.yaml', true)).toBe(true) // re-created
 })
+
+test('jsonl base: icon on line 1 changes the fingerprint, a row edit does not', () => {
+    const a = '{"type":"base","icon":"x"}\n{"a":1}\n'
+    const rowEdit = '{"type":"base","icon":"x"}\n{"a":2,"b":"[[Link]] #tag"}\n'
+    const iconEdit = '{"type":"base","icon":"y"}\n{"a":1}\n'
+    const hidden = '{"type":"base","icon":"x","visibility":"hidden"}\n{"a":1}\n'
+    const fp = extractFingerprint
+    expect(diffFingerprints(fp(a), fp(rowEdit))).toEqual({ graph: false, tree: false })
+    expect(diffFingerprints(fp(a), fp(iconEdit))).toEqual({ graph: false, tree: true })
+    expect(diffFingerprints(fp(a), fp(hidden))).toEqual({ graph: false, tree: true })
+})

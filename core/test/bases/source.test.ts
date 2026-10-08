@@ -294,6 +294,7 @@ describe('resolveBaseRows realPath rooting (FileAccess seam)', () => {
     test('resolveBaseRows canonicalizes an ABSOLUTE vault path, so its keys are vault-scoped', async () => {
         const asked: string[] = []
         const stub = (): FileAccess => ({
+            listBases: async () => [],
             listMarkdown: async () => ['A.md'],
             listTree: async () => [],
             readNote: async () => '---\ntype: base\n---\n',

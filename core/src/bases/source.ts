@@ -7,9 +7,9 @@ import { toContext, resolveProperty } from './query'
 import { translateTaskDsl, looksLikeTaskDsl, applyTaskSort } from './taskDsl'
 import { getFileAccess } from '../fileAccess'
 import { fileBasename } from '../pathUtils'
-import { refToPath } from './sourceSpec'
-import { pickByBase } from '../linkTarget'
+import { pickRefPath, refToPath } from './sourceSpec'
 import { todayISO } from '../dates'
+import { BASE_EXT, baseNameOf, isBasePath } from './baseFile'
 
 export interface SourceCtx {
     root: string
@@ -45,14 +45,22 @@ export async function resolveRefPath(
     root: string,
     ref: string,
 ): Promise<string> {
-    const exact = refToPath(ref)
-    if (!exact) return exact
     const fa = await getFileAccess()
-    if (await fa.statNote(root, exact).catch(() => null)) return exact
-    const bare = exact.replace(/\.md$/, '')
-    const ids = (await fa.listMarkdown(root)).map(p => p.replace(/\.md$/, ''))
-    const hit = pickByBase(bare, ids)
-    return hit === undefined ? exact : `${hit}.md`
+    const exact = refToPath(ref)
+    // An exact hit wins in pickRefPath, so stat the exact candidates before listing the vault
+    // twice. A bare name or a miss still falls through to the listings.
+    if (exact) {
+        const bare = ref.replace(/^\[\[/, '').replace(/\]\]$/, '')
+        const hasExt = bare.endsWith('.md') || bare.endsWith('.base') || isBasePath(bare)
+        const candidates = hasExt ? [exact] : [`${bare}${BASE_EXT}`, exact]
+        for (const c of candidates) {
+            if (await fa.statNote(root, c).catch(() => null)) {
+                return pickRefPath(ref, [c])
+            }
+        }
+    }
+    const paths = [...(await fa.listBases(root)), ...(await fa.listMarkdown(root))]
+    return pickRefPath(ref, paths)
 }
 
 /**
@@ -91,7 +99,7 @@ export async function resolveBaseRows(
     } catch {
         return []
     }
-    const name = fileBasename(path)
+    const name = isBasePath(path) ? baseNameOf(path) : fileBasename(path)
     // Keyed by content equality, NOT mtime: filesystem mtime resolution is commonly
     // 1s or coarser, so an edit-then-immediate-read within the same tick could
     // incorrectly serve a stale parse under an mtime check. Comparing the raw text

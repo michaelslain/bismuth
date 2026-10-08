@@ -481,10 +481,16 @@ export function decideCliGate(
         for (const candidate of pathCandidates(arg)) {
             const hit = findDeniedEntry(restricted, candidate)
             if (hit) return refusal(hit)
-            // `calendar create X` / `base create X` append `.md` AFTER this gate saw the token.
+            // `calendar create X` / `base create X` append `.base.jsonl` (an explicit `.md` stays `.md`) and
+            // `base read X` etc. resolve to `.base.jsonl` or `.md` AFTER this gate saw the token.
             if (!candidate.toLowerCase().endsWith('.md')) {
                 const twin = findDeniedEntry(restricted, `${candidate}.md`)
                 if (twin) return refusal(twin)
+            }
+            // The same extensionless token resolves to `<token>.base.jsonl` when that exists.
+            if (!candidate.toLowerCase().endsWith('.base.jsonl')) {
+                const jsonlTwin = findDeniedEntry(restricted, `${candidate}.base.jsonl`)
+                if (jsonlTwin) return refusal(jsonlTwin)
             }
         }
     }

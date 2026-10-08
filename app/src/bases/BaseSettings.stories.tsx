@@ -7,7 +7,7 @@
 // on a specific backend response. `SaveWritesTopLevelKey` swaps in a spied transport to
 // assert exactly what a save writes (one top-level key per changed field).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { BaseSettings } from './BaseSettings'
 import { sampleBaseConfig, SAMPLE_ROWS } from '../ui/_baseFixtures'
 import { setTransport } from '../api'
@@ -391,18 +391,23 @@ export const ExpandPropertyRow: Story = {
             '[data-testid="modal-body"]',
         ) as HTMLElement
         await expect(modalBody).not.toBeNull()
-        const bodyRect = modalBody.getBoundingClientRect()
-        const buttonRect = deleteButton.getBoundingClientRect()
-        await expect(buttonRect.top).toBeGreaterThanOrEqual(bodyRect.top)
-        await expect(buttonRect.bottom).toBeLessThanOrEqual(bodyRect.bottom)
-        // The rect check alone can't catch an inner `overflow: hidden` clipping the button —
-        // its bounding rect stays intact even while it's visually cut off. Confirm the button
-        // is actually the element painted at its own center point.
-        const cx = (buttonRect.left + buttonRect.right) / 2
-        const cy = (buttonRect.top + buttonRect.bottom) / 2
-        await expect(
-            deleteButton.contains(document.elementFromPoint(cx, cy)),
-        ).toBe(true)
+        // The Disclosure body opens with a height animation; rows below it overlap the button until
+        // it settles, so the geometry + paint checks retry until then (a real clip never settles).
+        await waitFor(async () => {
+            deleteButton.scrollIntoView()
+            const bodyRect = modalBody.getBoundingClientRect()
+            const buttonRect = deleteButton.getBoundingClientRect()
+            await expect(buttonRect.top).toBeGreaterThanOrEqual(bodyRect.top)
+            await expect(buttonRect.bottom).toBeLessThanOrEqual(bodyRect.bottom)
+            // The rect check alone can't catch an inner `overflow: hidden` clipping the button —
+            // its bounding rect stays intact even while it's visually cut off. Confirm the button
+            // is actually the element painted at its own center point.
+            const cx = (buttonRect.left + buttonRect.right) / 2
+            const cy = (buttonRect.top + buttonRect.bottom) / 2
+            await expect(
+                deleteButton.contains(document.elementFromPoint(cx, cy)),
+            ).toBe(true)
+        })
     },
 }
 

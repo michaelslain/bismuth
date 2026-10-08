@@ -72,7 +72,7 @@ function noteName(path: string): string {
     return path
         .split('/')
         .pop()!
-        .replace(/\.(md|draw|sheet|ya?ml)$/, '')
+        .replace(/\.(base\.jsonl|md|draw|sheet|ya?ml)$/, '')
 }
 
 // Human label for a pane/tab content id — used by both the tab bar and pane headers.

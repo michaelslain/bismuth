@@ -3,17 +3,32 @@ import { requireVault, flag, positionals, out, fail } from '../args'
 import {
     readNote,
     writeNote,
-    moveEntry,
     deleteEntry,
     createEntry,
     listTree,
 } from '../../../core/src/files'
+import { moveEntrySynced } from '../../../core/src/gcal/moveSynced'
+import { SyncLocked } from '../../../core/src/gcal/lock'
 import {
     agentChannel,
     agentDenyEntries,
     filterTree,
     folderRestricted,
 } from '../../../core/src/visibilityFilter'
+
+// Google sync state is keyed by base path, so a move carries it (the bare legacy key is claimed
+// only by the installed app, as core's sync does). A held sync lock is a clear CLI error.
+async function moveSynced(vault: string, from: string, to: string) {
+    try {
+        await moveEntrySynced(vault, from, to, {
+            claimLegacy: !!process.env.BISMUTH_APP_PATH,
+        })
+    } catch (e) {
+        if (e instanceof SyncLocked)
+            fail(`${e.message}; retry when the sync finishes`)
+        throw e
+    }
+}
 
 export const commands: CommandMap = {
     read: {
@@ -43,11 +58,11 @@ export const commands: CommandMap = {
     move: {
         summary: 'Move/rename a vault entry',
         usage: '<from> <to> [--vault <dir>]',
-        run: args => {
+        run: async args => {
             const vault = requireVault(args)
             const [from, to] = positionals(args)
             if (!from || !to) fail('move: <from> <to> required')
-            moveEntry(vault, from, to)
+            await moveSynced(vault, from, to)
             out({ ok: true }, args)
         },
     },
@@ -66,11 +81,11 @@ export const commands: CommandMap = {
     restore: {
         summary: 'Restore a trashed entry to a destination path',
         usage: '<trashPath> <to> [--vault <dir>]',
-        run: args => {
+        run: async args => {
             const vault = requireVault(args)
             const [trashPath, to] = positionals(args)
             if (!trashPath || !to) fail('restore: <trashPath> <to> required')
-            moveEntry(vault, trashPath, to)
+            await moveSynced(vault, trashPath, to)
             out({ ok: true }, args)
         },
     },

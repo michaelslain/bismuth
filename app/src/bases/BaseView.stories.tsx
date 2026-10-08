@@ -128,6 +128,44 @@ export const FromBaseFile: Story = {
     },
 }
 
+// The same own-rows table stored two ways: a markdown base (frontmatter + YAML list) and its
+// JSON Lines twin (line 1 = config, one row per line). Both render through the one parse path,
+// so the pair's screenshots are identical in content (crumb "twin", the same two rows).
+const TWIN_MD =
+    '---\ntype: base\nview: table\norder:\n  - title\n  - status\n---\n\n' +
+    '- title: Write docs\n  status: todo\n- title: Fix bug\n  status: doing\n'
+const TWIN_JSONL =
+    '{"type":"base","view":"table","order":["title","status"]}\n' +
+    '{"title":"Write docs","status":"todo"}\n' +
+    '{"title":"Fix bug","status":"doing"}\n'
+
+async function expectTwin(canvasElement: HTMLElement): Promise<void> {
+    const canvas = within(canvasElement)
+    await waitFor(() => {
+        expect(canvas.getByText('twin')).toBeInTheDocument()
+        expect(canvas.getByText('Write docs')).toBeInTheDocument()
+        expect(canvas.getByText('Fix bug')).toBeInTheDocument()
+    })
+}
+
+/** A `.base.jsonl` FILE with rows of its own — config on line 1, rows on the lines after. */
+export const OwnRowsJsonl: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'boards/twin.base.jsonl': TWIN_JSONL } }))
+        return <BaseView path="boards/twin.base.jsonl" body={TWIN_JSONL} />
+    },
+    play: async ({ canvasElement }) => expectTwin(canvasElement),
+}
+
+/** The markdown twin of `OwnRowsJsonl`: same view, same rows, stored as frontmatter + a list. */
+export const OwnRowsMarkdownTwin: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'boards/twin.md': TWIN_MD } }))
+        return <BaseView path="boards/twin.md" body={TWIN_MD} />
+    },
+    play: async ({ canvasElement }) => expectTwin(canvasElement),
+}
+
 /** A distinct row set for the DeclaredSource story below — deliberately NOT part of SAMPLE_ROWS,
  *  so a story assertion that finds this text can only have come from resolving the SECOND
  *  view's own `source: tasks`, never a stale render of the first view's `source: notes`. */
@@ -1144,12 +1182,14 @@ export const TaskShapedRowsInNormalMode: Story = {
                     .length,
             ).toBe(2)
         })
-        // …but NOT click-to-open: a task-LINE row's `file` is the note it sits in, so the shared
-        // row editor would rename or trash that whole note. Task-line rows never open it
-        // (`useRowEditor.editable`), so their cards carry no button role.
-        expect(
-            canvasElement.querySelectorAll('[role="button"][tabindex]').length,
-        ).toBe(0)
+        // …and each is click-to-open (CardsView keeps task-line cards linkable, `cardActive`),
+        // but opening one only navigates to the note: a task-LINE row's `file` is the note it
+        // sits in, so the shared row editor (rename / trash) must never open for it. Clicking a
+        // card therefore opens no `[role="dialog"]`.
+        const cards = canvasElement.querySelectorAll('[role="button"][tabindex]')
+        expect(cards.length).toBe(2)
+        await userEvent.click(cards[0] as HTMLElement)
+        expect(document.querySelector('[role="dialog"]')).toBeNull()
         // …and NOT a task line, which carries neither.
         expect(
             canvasElement.querySelectorAll(`.${taskRowStyles.taskItem}`).length,

@@ -5,10 +5,13 @@
  *  from server-only modules (daemon.ts, runRegistry.ts), while the pure helpers below are also
  *  imported straight into the browser bundle (FileTree.tsx, bases/*.tsx, export/baseTable.ts). */
 
-/** Extract the basename (filename without .md or .base extension) from a path. */
+/** Extract the basename (filename without .md, .base or .base.jsonl extension) from a path. */
 export function fileBasename(path: string): string {
     const name = path.split('/').pop() ?? ''
-    return name.replace(/\.md$/i, '').replace(/\.base$/i, '')
+    return name
+        .replace(/\.base\.jsonl$/i, '')
+        .replace(/\.md$/i, '')
+        .replace(/\.base$/i, '')
 }
 
 /**
@@ -19,7 +22,7 @@ export function fileBasename(path: string): string {
  * — a mismatch is how a note ends up titled "Grocery List.md" in one place and
  * "Grocery List" in another. Stateless (no `g` flag), so it is safe to share.
  */
-export const NOTE_EXT_RE = /\.(md|yaml|yml)$/i
+export const NOTE_EXT_RE = /\.(base\.jsonl|md|yaml|yml)$/i
 
 /**
  * A note's user-visible title: its basename with the hidden extension stripped.

@@ -9,6 +9,7 @@
 // This lets the server stay completely silent toward graph/tree consumers when a
 // file is rewritten without changing its connections — e.g. a bot status file
 // that gets stamped with a fresh timestamp every couple of seconds.
+import { baseFormatOf, readBaseConfigRaw } from './bases/baseFile'
 import { parseFrontmatter } from './frontmatter'
 import { extractTags } from './tags'
 import { extractWikilinks } from './wikilinks'
@@ -34,6 +35,17 @@ const norm = (xs: string[]): string => [...new Set(xs)].sort().join('\n')
 
 /** Derive the graph/tree-relevant fingerprint of a note from its raw content. */
 export function extractFingerprint(content: string): Fingerprint {
+    // A JSON Lines base: only line 1 (the config) shows in the tree; its rows feed neither
+    // the graph nor the tree, so a row-only edit fingerprints identically.
+    if (baseFormatOf(content) === 'jsonl') {
+        const cfg = readBaseConfigRaw(content) ?? {}
+        return {
+            links: '',
+            tags: '',
+            icon: typeof cfg.icon === 'string' ? cfg.icon : '',
+            visibility: typeof cfg.visibility === 'string' ? cfg.visibility : '',
+        }
+    }
     const { data, body } = parseFrontmatter(content)
     return {
         links: norm(extractWikilinks(content)),

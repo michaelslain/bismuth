@@ -1,6 +1,7 @@
 // app/src/export/formats.ts
 import type { ExportFormat, RenderMode } from './types'
 import { SETTINGS_FILE } from '../tabIds'
+import { isBasePath } from '../../../core/src/bases/baseFile'
 
 // Defined here (the pure leaf), not in ./exporters, and re-used by exporters.ts.
 // exporters.ts statically pulls in `marked` (../bases/markdown) + jspdf, and App.tsx
@@ -23,6 +24,8 @@ const MATRIX: Record<string, ExportFormat[]> = {
 export function formatsFor(path: string): ExportFormat[] {
     if (path.startsWith('::')) return []
     if (path === SETTINGS_FILE) return [] // settings is config, not a document
+    // A `.base.jsonl` is a base: same formats as a markdown base (the extension is `jsonl`).
+    if (isBasePath(path)) return MATRIX.md
     return MATRIX[ext(path)] ?? []
 }
 

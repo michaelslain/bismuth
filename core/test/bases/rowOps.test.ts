@@ -294,3 +294,12 @@ test('upsertRows addressing the same row twice keeps the LAST write', () => {
     ])
     expect(parseBaseFile(next, meta).rows[0].note.description).toBe('second')
 })
+
+test('reassemble writes back in the format of the input text', () => {
+    const jsonl = '{"type":"base","view":"table"}\n{"id":1,"title":"A"}\n'
+    const out = upsertRow(jsonl, META, null, { id: 2, title: 'B' })
+    expect(out).toBe(
+        '{"type":"base","view":"table"}\n{"id":1,"title":"A"}\n{"id":2,"title":"B"}\n',
+    )
+    expect(rows(out).map(r => r.note.title)).toEqual(['A', 'B'])
+})

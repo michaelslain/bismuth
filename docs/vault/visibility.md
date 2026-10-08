@@ -15,6 +15,8 @@ folderVisibility:
   drafts/wip: chat-only
 ```
 
+A `.base.jsonl` base carries the same key as a field of its line-1 config object: `{"type":"base","visibility":"hidden"}`.
+
 ## What do the three levels mean?
 
 | Level | Daemon (crons, memory) | In-app chat | You |
@@ -33,8 +35,9 @@ A note with no `visibility` key inherits from its folders. That is why an absent
   The active row has a check mark.
   Picking the first row clears the override; it does not write `visibility: all`.
   When an ancestor folder forces a stricter level, a disabled row at the top reads `Effective: Hidden — inherited from 'Private/'`.
-- By hand: add `visibility: hidden` or `visibility: chat-only` to a note's frontmatter.
+- By hand: add `visibility: hidden` or `visibility: chat-only` to a note's frontmatter, or `"visibility":"hidden"` to the line-1 object of a `.base.jsonl` base.
 - CLI: `bismuth prop set "Private/secret.md" visibility hidden` marks a note.
+  `bismuth prop set "Private/Trips.base.jsonl" visibility hidden` marks a `.base.jsonl` base by editing line 1 and leaving its rows as written.
   `bismuth folder-visibility Private hidden` marks a folder, and `bismuth folder-visibility Private --clear` removes the rule.
   An AI session cannot run these (see [rule files](#gate-rules-for-agents)).
 - Settings file: edit `folderVisibility` in `.settings` directly.
@@ -67,6 +70,7 @@ Three silent traps, all of which fail toward more restriction:
 
 - A `visibility:` value that is not exactly `all`, `chat-only` or `hidden` (`Hidden`, a list, a number) reads as `hidden`.
 - A closed frontmatter block whose YAML does not parse reads as `hidden`.
+- A `.base.jsonl` file whose line 1 is not valid JSON, is not a JSON object or is longer than 64 KiB reads as `hidden`, even when the file holds no `visibility` key. A line 1 without `visibility` inherits as usual, and a `visibility` value that is not exactly `all`, `chat-only` or `hidden` reads as `hidden`.
 - A `folderVisibility` entry with another value, such as `hiden`, or a `folderVisibility` that is not a map, makes the vault unavailable to AI sessions until you fix the file.
 
 An empty `visibility:` counts as absent and inherits.
@@ -171,7 +175,7 @@ These apply to the CLI's own dispatch and to the MCP `bismuth_cli` tool alike. T
   A folder that is an ancestor of a hidden note, an ancestor of a restricting `folderVisibility` key, or itself restricted is refused by path-scoped commands.
   `move "Vault Hidden" Pub` and `delete "Vault Hidden"` are refused.
   Moving a folder that holds nothing hidden is not.
-- The `.md` twin is checked. Every argument is checked as written and with `.md` appended, because `calendar create` and `base create` add the extension after the gate looks.
+- The extension twins are checked. Every argument is checked as written, with `.md` appended and with `.base.jsonl` appended, because `calendar create` and `base create` add `.base.jsonl` after the gate looks, and `base`, `row` and `calendar` commands resolve an extensionless path to either form.
 - `bismuth api` allows only GET for an agent, because a path inside a JSON body has no boundary for the gate to scan.
 - HTTP-routed commands (`api`, `chat`, `gcal`, `relay`, `update`) are gated against the vault of every running core, not only the one named.
 - Spellings are normalised. `..`, doubled slashes, symlinks, percent-encoding and case differences collapse to the real folder before the check.
@@ -229,7 +233,7 @@ isVisibleToChat(v)   // v !== 'hidden'
 isVisibleToDaemon(v) // v === 'all'
 ```
 
-A file's value is stored in its frontmatter, written through the generic `POST /set-property` and `POST /delete-property` routes.
+A file's value is stored in its frontmatter (line 1 for a `.base.jsonl` base), written through the generic `POST /set-property` and `POST /delete-property` routes.
 A folder's value is stored in `.settings` under `folderVisibility`, written by `POST /folder-visibility` (`setFolderVisibility` in `core/src/settings.ts`).
 A write through those routes re-gates open chats through `invalidateChatVisibility()`.
 `GET /tree` stamps each entry with its resolved `visibility` and its `ownVisibility`; the sidebar badge and the enforcement gate call the same resolver, so the badge cannot disagree with what is enforced.
@@ -249,6 +253,7 @@ A directory that cannot be read is undetermined too, except one that disappeared
 
 1. The folder cascade is resolved first with no file I/O, memoised per directory.
 2. A file's own frontmatter is read on every file, not only `.md`: a 512-byte head, re-read up to 64 KiB only when truncated without a closing fence. A file that does not start with `---` costs one small read. A fence still open at 64 KiB reads as `hidden`.
+   A `.base.jsonl` file is read as JSON instead: its own `visibility` comes from line 1, and a line 1 that is unparseable, not an object or longer than 64 KiB reads as `hidden`. Any other file that starts with `{` counts only when line 1 is an object with `type: base`; otherwise it has no value of its own.
 3. Stem inheritance: a file with no explicit value whose name before its first dot matches a restricted sibling in the same folder inherits the strictest such value.
    `sketch.draw.png` inherits from a hidden `sketch.draw`.
    It is deliberately over-inclusive, since a non-markdown file cannot opt back out.

@@ -24,7 +24,8 @@ import {
 import { api } from '../api'
 import { pushToast } from '../ui/toastStore'
 import { pushUndoToast } from '../undoToast'
-import { parentOf } from '../fileTreeOps'
+import { baseNameOf } from '../../../core/src/bases/baseFile'
+import { joinPath, parentOf } from '../fileTreeOps'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, isStoredPlaceholder, storedNote } from './taskWrite'
 import { writableKey } from './kanbanMeta'
@@ -751,7 +752,8 @@ export function createKanbanActions(deps: KanbanActionsDeps) {
     function boardFolder(): string {
         const first = deps.result().groups.flatMap(g => g.rows)[0]
         if (first) return parentOf(first.file.path)
-        return deps.basePath()?.replace(/\.md$/, '') ?? ''
+        const bp = deps.basePath()
+        return bp ? joinPath(parentOf(bp), baseNameOf(bp)) : ''
     }
     // Frontmatter shared by EVERY existing card (e.g. `board`, or a `tags` array the base filters
     // on) — copied onto new cards so they keep matching the base's source/filter. Compared by value

@@ -4,6 +4,8 @@
 import { previewKind } from '../preview/previewKind'
 import { matchTriggerPrefix } from './prefixMatch'
 import { pickByBase } from '../../../core/src/linkTarget'
+import { isBasePath } from '../../../core/src/bases/baseFile'
+import { pickRefPath } from '../../../core/src/bases/sourceSpec'
 
 // `label` is the basename (what gets inserted + shown in autocomplete); `path` is the
 // note's real vault path (the graph node id), needed to resolve a clicked wikilink to
@@ -202,10 +204,42 @@ export function resolveNotePath(
 export function wikilinkOpenPath(
     target: string,
     resolved: string | null,
+    basePaths: readonly string[] = knownBasePaths(),
 ): string {
-    if (resolved) return `${resolved}.md`
+    const base = isBasePath(target) ? null : pickBasePath(target, basePaths)
+    if (resolved) {
+        if (base && base.split('/').length <= resolved.split('/').length) return base
+        return `${resolved}.md`
+    }
     if (target.toLowerCase().endsWith('.md')) return target // already explicit — never double it
+    if (isBasePath(target)) return target
+    // A JSONL base is not a graph node, so it never reaches `resolved`: look the target up among
+    // the vault's `.base.jsonl` files by the same basename rule notes use. An unresolved target
+    // that names one opens it instead of creating a note with the same name.
+    if (base) return base
     return previewKind(target) ? target : `${target}.md`
+}
+
+/** The `.base.jsonl` path a wikilink target names among `basePaths`, or null. The tie-break
+ *  rule lives in core's `pickRefPath`; a `.md` target never names a base. */
+export function pickBasePath(
+    target: string,
+    basePaths: readonly string[],
+): string | null {
+    if (target.toLowerCase().endsWith('.md')) return null
+    const path = pickRefPath(target, basePaths.filter(isBasePath))
+    return isBasePath(path) ? path : null
+}
+
+// The vault's `.base.jsonl` paths, supplied by whoever owns the file tree (FileView registers
+// the tree cache). Kept as a registered getter so this module stays free of store imports and
+// runs under `bun test`.
+let basePathsGetter: () => readonly string[] = () => []
+export function registerBasePaths(get: () => readonly string[]): void {
+    basePathsGetter = get
+}
+function knownBasePaths(): readonly string[] {
+    return basePathsGetter()
 }
 
 // Text to insert when a note is chosen. Append the closing `]]` only when it isn't

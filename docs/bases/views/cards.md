@@ -4,28 +4,17 @@ The cards view shows each row of a base as a card. It has three faces for a note
 
 ## Minimal working base
 
-```yaml
----
-type: base
-source:
-  kind: notes
-  where: 'file.hasTag("book")'
-view: cards
-image: cover
-order: [file.name, note.author, note.status, note.rating, note.pages]
-groupBy:
-  property: note.status
-sort:
-  - property: note.rating
-    direction: DESC
----
+```json
+{"type":"base","source":{"kind":"notes","where":"file.hasTag(\"book\")"},"view":"cards","image":"cover","order":["file.name","note.author","note.status","note.rating","note.pages"],"groupBy":{"property":"note.status"},"sort":[{"property":"note.rating","direction":"DESC"}]}
 ```
+
+This is the one line of a `.base.jsonl` file. A markdown base holds the same keys as YAML frontmatter.
 
 Each card gets a cover from the `cover` property (a URL or a vault image path), the title and author from the first two columns, and a status word with gold stars beneath. Cards are grouped by status and sorted by rating within each group.
 
 ## Config keys
 
-All keys sit at the top level of the base's frontmatter. The shared keys `filters`, `source`, `order`, `sort`, `groupBy`, `limit` and `columns` work as in the [table view](table.md#config-keys).
+All keys sit at the top level of the base's config (line 1 of a `.base.jsonl` file, or the frontmatter of a markdown base). The shared keys `filters`, `source`, `order`, `sort`, `groupBy`, `limit` and `columns` work as in the [table view](table.md#config-keys).
 
 | Key | Type | Allowed values | Default | Effect |
 |---|---|---|---|---|
@@ -68,7 +57,7 @@ The generated text cover is simpler: it takes its author from the second column,
 `image` names a property, not a URL. Its value can be a full `http`, `data` or `blob` URL, or a vault path such as `covers/gatsby.jpg`. A row whose cover property is empty, or holds a list or link, falls back to the text cover. An image that fails to load is hidden.
 
 ```yaml
-image: cover        # a frontmatter property named cover
+image: cover        # a note property named cover
 imageFit: contain   # letterbox instead of cropping
 imageAspectRatio: 1 # square covers
 ```
@@ -92,16 +81,8 @@ Colour appears only when the view is grouped. Each card's glyphs take its group'
 
 With `cardContent: body` or `tasks`, cards form a masonry about 240 px wide per column. Each card has the first column as a title chip above a live editor of the note. The editor is the note editor's live preview, so a click places the cursor, typing edits the note, and task boxes toggle on click.
 
-```yaml
----
-type: base
-source:
-  kind: notes
-  where: 'file.hasTag("todo")'
-view: cards
-cardContent: tasks
-order: [file.name]
----
+```json
+{"type":"base","source":{"kind":"notes","where":"file.hasTag(\"todo\")"},"view":"cards","cardContent":"tasks","order":["file.name"]}
 ```
 
 - **`body`** edits the whole note body. The frontmatter and a leading `# Title` heading that repeats the card title stay out of the editor.

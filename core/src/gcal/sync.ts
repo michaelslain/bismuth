@@ -10,8 +10,8 @@
 // are skipped (recurrence is Phase 3). The base file stays clean; all sync state is external.
 import { randomUUID } from 'node:crypto'
 import { readNote, writeNote } from '../files'
-import { parseFrontmatter } from '../frontmatter'
 import { parseBaseFile } from '../bases/parse'
+import { readBaseConfigRaw } from '../bases/baseFile'
 import { reassemble } from '../bases/rowOps'
 import { categoryColorId } from './colors'
 import { isBuiltinTheme } from '../theme/tokens'
@@ -96,13 +96,13 @@ export interface SyncOpts {
 const DAY_MS = 86_400_000
 
 /** Build a category-name → Google colorId map from the base file's `categories` frontmatter. */
-function categoryColorMap(
+export function categoryColorMap(
     text: string,
     theme?: string,
     customAccents?: Record<string, string>,
     accentOverride?: string,
 ): Record<string, string> {
-    const cats = parseFrontmatter(text).data.categories // reuse the canonical FM parser (tolerates malformed YAML)
+    const cats = readBaseConfigRaw(text)?.categories // md frontmatter or JSONL config line
     const out: Record<string, string> = {}
     for (const c of Array.isArray(cats) ? cats : []) {
         const cc = c as { name?: unknown; color?: unknown }

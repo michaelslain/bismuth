@@ -1151,8 +1151,9 @@ export default function App() {
         window.dispatchEvent(
             new CustomEvent('bismuth-new', { detail: { kind: 'dir' } }),
         )
-    // A base is a `.md` seeded with `type: base` frontmatter — FileTree.doCreate handles
-    // the template + inline rename, same path as New note (just a different `kind`).
+    // A new base is a `.base.jsonl` seeded with its config on line 1 (an older base is a `.md`
+    // with `type: base` frontmatter) — FileTree.doCreate writes the template, same path as
+    // New note (just a different `kind`).
     const newBase = () =>
         window.dispatchEvent(
             new CustomEvent('bismuth-new', { detail: { kind: 'base' } }),

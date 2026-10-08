@@ -228,7 +228,7 @@ export const AddFilterRow: Story = {
         await expect(canvas.getByText(/generated query/i)).toBeInTheDocument()
         await userEvent.click(canvas.getByText('insert'))
         await expect(confirmed).toBe(
-            'source: notes\nviews:\n  - type: table\n    name: Table',
+            'source: notes\nview: table',
         )
     },
 }
@@ -261,7 +261,7 @@ export const NotesRawWhere: Story = {
         await expect(body.queryByText('add condition')).not.toBeInTheDocument()
         await userEvent.click(body.getByText('save'))
         await expect(confirmed).toBe(
-            'source: notes where priority > 1 && (status == "Todo" || done)\nviews:\n  - type: table\n    name: Table',
+            'source: notes where priority > 1 && (status == "Todo" || done)\nview: table',
         )
     },
 }
@@ -310,7 +310,7 @@ export const NotesFiltersAndSort: Story = {
         await waitFor(() => expect(preview()).toContain('direction: ASC'))
         await userEvent.click(within(document.body).getByText('save'))
         await expect(confirmed).toBe(
-            'source: notes where (file.inFolder("projects")) || (date(due) >= today() &&\n  date(due) < today() + "7d") || (file.hasTag("planning"))\nviews:\n  - type: cards\n    name: Cards\n    sort:\n      - property: priority\n        direction: ASC\n    groupBy:\n      property: status\n    limit: 5',
+            'source: notes where (file.inFolder("projects")) || (date(due) >= today() &&\n  date(due) < today() + "7d") || (file.hasTag("planning"))\nview: cards\nsort:\n  - property: priority\n    direction: ASC\ngroupBy:\n  property: status\nlimit: 5',
         )
     },
 }

@@ -2,17 +2,15 @@
 
 A base's `source` says where its rows come from: the notes in the vault, the checkbox tasks in them, or the rows of another base. Every other part of a base, from filters to the view, works on the rows the source produces. This page is for anyone writing a `source:`, and for the person debugging a base that shows too many, too few or the wrong rows.
 
-```yaml
----
-type: base
-source: notes where file.hasTag("book")
-view: table
----
+```json
+{"type":"base","source":"notes where file.hasTag(\"book\")","view":"table"}
 ```
+
+That line is the whole of `Books.base.jsonl`. A markdown base holds the same keys as YAML frontmatter, and the examples below use whichever reads better.
 
 ## What can a source be?
 
-A source has one of these kinds. In frontmatter it is a string, or an object with the same fields.
+A source has one of these kinds. In a base's config it is a string, or an object with the same fields.
 
 | Kind | Rows | Fields |
 |---|---|---|
@@ -28,7 +26,7 @@ A source has one of these kinds. In frontmatter it is a string, or an object wit
 
 These spellings are equivalent where they overlap:
 
-| Frontmatter | Means |
+| Config | Means |
 |---|---|
 | `source: notes` | Every note. |
 | `source: notes where folder == "Keep"` | Notes where the expression is true. |
@@ -41,31 +39,22 @@ In the string form, `from`, `ref` and `where` can also sit as top-level keys bes
 
 ## What happens when a base has no source?
 
-A base with no recognised `source` uses its own rows when its body has any, and otherwise every note in the vault. So the empty base `type: base` shows the whole vault, and a base with rows in its body shows only those rows. Set `source:` explicitly when you want to narrow the vault.
+A base with no recognised `source` uses its own rows when the file holds any, and otherwise every note in the vault. A JSONL base's own rows are the lines after line 1; a markdown base's are its body. So the empty base `type: base` shows the whole vault, and a base that holds rows shows only those rows. Set `source:` explicitly when you want to narrow the vault.
 
 ## How do I list tasks from one set of notes?
 
 `from` limits a `notes` or `tasks` source to the notes another base selects. A base that shows only the tasks inside the notes of a `Keep` base:
 
-`Keep.md`:
+`Keep.base.jsonl`:
 
-```yaml
----
-type: base
-source: notes
-where: file.hasTag("keep")
----
+```json
+{"type":"base","source":{"kind":"notes","where":"file.hasTag(\"keep\")"}}
 ```
 
-`Do Now.md`:
+`Do Now.base.jsonl`:
 
-```yaml
----
-type: base
-source: tasks
-from: "[[Keep]]"
-view: table
----
+```json
+{"type":"base","source":"tasks","from":"[[Keep]]","view":"table"}
 ```
 
 If `keep/x.md` is tagged `keep` and holds `- [ ] scoped task`, and `other/y.md` is not tagged and holds `- [ ] unscoped task`, the base shows only `scoped task`. The referenced base is resolved first through its own source, so `from: [[Keep]]` selects exactly the notes `Keep` would show. Without `from`, a `tasks` source reads every task in the vault. Task line syntax is in [tasks](../tasks/syntax.md).
@@ -87,9 +76,9 @@ Only rows carry over. The referenced base's `filters`, `formulas`, `properties`,
 
 ## How are wikilinks in `from` and `ref` found?
 
-A wikilink resolves the way a note link does. An exact vault path wins: `[[reading/List]]`, or a root-level `[[List]]` that exists. Otherwise the base name is searched across the vault and the match with the fewest path segments wins, then the smaller path, so `[[List]]` finds `reading/List.md`. If nothing matches, the source yields no rows, and `bismuth base validate` reports the path it looked for.
+A wikilink to a base resolves in two steps, and the same rule serves `from:`, `ref:`, the `of:` of an inline ` ```query ` block, and a wikilink clicked in a note. An exact vault path wins: `[[reading/List]]` or a root-level `[[List]]`, trying `List.base.jsonl` before `List.md`. Otherwise the base name is searched across the vault among both `.base.jsonl` and `.md` bases, and the match with the fewest path segments wins, then the smaller path. On a tie in segments, `.base.jsonl` wins over `.md`. So `[[List]]` finds `reading/List.base.jsonl` when no root-level `List` exists, and a root-level `List.md` beats `reading/List.base.jsonl`. Name a path with an extension (`[[reading/List.md]]`) to pick one file. If nothing matches, the source yields no rows, and `bismuth base validate` reports the path it looked for.
 
-Quote wikilinks in YAML. An unquoted `from: [[Keep]]` parses as a nested list, not a string. Bismuth rebuilds the string, so an unquoted link works, but quoting avoids relying on it.
+Quote wikilinks in a markdown base's YAML. An unquoted `from: [[Keep]]` parses as a nested list, not a string. Bismuth rebuilds the string, so an unquoted link works, but quoting avoids relying on it.
 
 ## What can go wrong with a tag filter?
 
@@ -126,7 +115,7 @@ Open **Settings** in the view bar and use the **source** section. Its "rows from
 | The whole vault shows. | The `source` is unrecognised, or a `#tag` was read as a comment. |
 | A composed base ignores the other base's filters. | Composition carries rows only; restate the filters. |
 | Zero rows from a `ref`. | A cycle, a missing base or no `ref`. |
-| Row `file.name` is empty. | The rows are stored in a base body; they are not separate notes. |
+| Row `file.name` is empty. | The rows are stored in the base file; they are not separate notes. |
 | Changing an upstream base's `source` changes a downstream base. | `from` and `ref` re-run the upstream base's own source. |
 
 ## How it works
@@ -140,7 +129,7 @@ type SourceSpec =
   | { kind: 'tasks'; where?: string; from?: string }
 ```
 
-A string is matched against `/^(base|notes|tasks)(?:\s+where\s+(.+))?$/i`, and the sibling keys `from`, `ref` and `where` come from the surrounding frontmatter. `wikiStr` rebuilds `"[[X]]"` from the nested array YAML produces for an unquoted link. `refToPath` turns a wikilink into a vault path by appending `.md`; `resolveRefPath` in `core/src/bases/source.ts` then applies the exact-path-then-basename rule above.
+A string is matched against `/^(base|notes|tasks)(?:\s+where\s+(.+))?$/i`, and the sibling keys `from`, `ref` and `where` come from the surrounding frontmatter. `wikiStr` rebuilds `"[[X]]"` from the nested array YAML produces for an unquoted link. `refToPath` turns a wikilink into a vault path by appending `.md` unless the name already ends in `.md`, `.base` or `.base.jsonl`. `resolveRefPath` in `core/src/bases/source.ts` lists the vault's `.base.jsonl` and `.md` files and passes them to `pickRefPath` in `sourceSpec.ts`, which applies the exact-path-then-name rule above. The app's `wikilinkOpenPath` in `app/src/editor/wikilink.ts` applies the same rule to a clicked wikilink.
 
 A `SourceSpec` also comes from a flat ` ```query ` block (`of:` becomes `base`, `tasks:` becomes `tasks`; see [the query block](./query-block.md)). `resolveSource(spec, ctx)` returns `Row[]`:
 
@@ -164,6 +153,8 @@ A `SourceSpec` also comes from a flat ` ```query ` block (`of:` becomes `base`, 
 
 `parseRows(body, meta)` in `core/src/bases/rows.ts` turns a base body into rows. The canonical body is a YAML list of objects; a GFM pipe table is read as well. An empty or prose-only body yields `[]`. Each row gets a synthetic `file` with an empty `name` and the base's `path` (kept for write-back), the object as `note`, and a zero-based `index` for write-back. `serializeRows(rows, columnOrder?)` writes the YAML list, drops undefined values so empty cells do not become `key: null`, and emits keys in `columnOrder` first, then alphabetically.
 
+A JSONL base's rows come from `parseBaseJsonl` in `core/src/bases/baseFile.ts` instead: each non-blank line after line 1 that parses as a JSON object becomes a row with the same synthetic `file`, and any other line is skipped.
+
 ```ts
 parseRows('- title: Capital\n  author: Marx\n  rating: 4', { name: 'Library', path: 'Library.md' })
 // rows[0].note.rating === 4 (a number), rows[0].file.name === '', rows[0].file.path === 'Library.md'
@@ -171,4 +162,4 @@ parseRows('- front: q\n  back: |-\n    line 1\n    line 2', meta)   // back === 
 parseRows('| title | rating |\n| --- | --- |\n| Capital | 4 |', meta) // rating === 4
 ```
 
-Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/source.ts`, `core/src/bases/rows.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/tasksData.ts`, `core/src/basesData.ts`, `core/src/asyncCache.ts`, `core/src/routes/bases.ts`, `app/src/api.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/SourceFields.tsx`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`
+Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/baseFile.ts`, `core/src/bases/source.ts`, `app/src/editor/wikilink.ts`, `core/src/bases/rows.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/tasksData.ts`, `core/src/basesData.ts`, `core/src/asyncCache.ts`, `core/src/routes/bases.ts`, `app/src/api.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/SourceFields.tsx`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`

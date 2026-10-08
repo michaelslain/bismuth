@@ -156,14 +156,15 @@ Registering Bismuth's MCP server with an agent CLI is `install --mcp`, not a bac
 
 ## base, row and rows
 
-Reads, validates and edits Bases, and resolves a source to rows. A base is a `type: base` note; the file format is in [bases overview](../bases/overview.md).
+Reads, validates and edits Bases, and resolves a source to rows. A base is a `<name>.base.jsonl` file or a `type: base` markdown note; the file formats are in [bases overview](../bases/overview.md).
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
-| `base create` | `<path> --view <kind> [--source <spec>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]` | Creates a base with one view. `.md` is appended when missing. Fails if the path exists. | no |
+| `base create` | `<path> --view <kind> [--source <spec>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]` | Creates a base with one view. A path with no `.md` or `.base.jsonl` extension gets `.base.jsonl` appended; an explicit `.md` path writes a markdown base. Fails if the path exists. | no |
 | `base read` | `<path>` | Prints the parsed config and the table rows. | no |
 | `base validate` | `<path>` | Checks view kind, property defaults, sources, filters, formulas and stat expressions. Prints `{ok, errors}` and exits `1` when `ok` is false. | no |
 | `base render` | `<path>` | Resolves the rows and runs the view's grouping, sorting and summaries. Chart kinds (`bar`, `line`, `stat`, `heatmap`) return a computed series. | no |
+| `base migrate` | `<basePath> \| --all [--dry-run]` | Converts a markdown base to `<name>.base.jsonl` and moves the `.md` to the vault trash. `--all` converts every markdown base in the vault. `--dry-run` prints the plan and writes nothing. | no |
 | `base migrate-queries` | `[--dry-run]` | Rewrites `query` blocks whose `tasks:` holds Tasks-query text into `tasks:` plus `where:` and `sort:`. | no |
 | `rows` | `[--of '[[Base]]' \| --where EXPR \| --tasks EXPR]` | Resolves one source to rows. Without a selector it returns every note. | no |
 | `row add` | `<basePath> --json '{...}'` | Appends a row to the base's table. | no |
@@ -173,18 +174,27 @@ Reads, validates and edits Bases, and resolves a source to rows. A base is a `ty
 
 `base create` writes a blank value and lists the key under `missing` when its view needs configuration it was not given: `kanban` needs `--group-by`, `map` needs `--lat` and `--lng`, and `bar`, `line`, `stat` and `heatmap` need `--x`. `source` defaults to `notes`.
 
-`base validate` reads the raw frontmatter, because the normal parser silently turns an unknown `view:` into `table`. It also reports a YAML comment that truncated a value (`#` after a space starts a comment inside a plain scalar) and a base that lists more than one view.
+A `<basePath>` or `<path>` argument to `base read`, `base validate`, `base render`, `base migrate`, every `row` command, every `calendar` command and `card review --file` is used as written when it ends in `.md` or `.jsonl`. With no extension it resolves to `<path>.base.jsonl` when that file exists, otherwise to `<path>.md`.
+
+`base migrate` prints one line per base, `migrated <from> -> <to> (<n> rows)`, or `would migrate …` under `--dry-run`. When the base held lines that are neither table rows nor list items, the parentheses read `(<n> rows, dropped <k> non-row lines)`. A markdown base whose table has a header and no rows migrates as an empty base, and the parentheses read `(0 rows, dropped the table header (no rows))`. It carries a base's Google Calendar sync settings and sync state onto the new file, including a `googleCalendar.basePath` setting written as `./Calendar.md` or `Calendar.md`. The write, the sync re-key and the trash of the markdown file run under one sync lock, and a failed write leaves no `.base.jsonl` behind. It refuses, with a non-zero exit, when the target `.base.jsonl` already exists, when the file is not a `type: base` markdown note, when the body has text but no parseable rows, and when the base has Google sync state and a sync is running. A base or target hidden from an agent is refused as `not available: <from>`. With `--all`, a refused base prints `skipped <path>: <reason>` and the run continues; with no markdown bases it prints `no markdown bases to migrate`.
+
+```bash
+bismuth base migrate Trips.md --dry-run --vault <vault>
+bismuth base migrate --all --vault <vault>
+```
+
+`base validate` reads the raw config (frontmatter or line 1), because the normal parser silently turns an unknown `view:` into `table`. It also reports a YAML comment that truncated a value (`#` after a space starts a comment inside a plain scalar) and a base that lists more than one view.
 
 A hidden `--of` base answers like a missing one: no rows, no refusal. `base migrate-queries` and `--dry-run` print `{changed, files, unconvertible, degraded, skipped}`; blocks that already carry their own `where:` or `sort:` are left alone and counted under `unconvertible`.
 
 ## calendar
 
-Edits a calendar base (`type: base`, `view: calendar`) without hand-editing YAML. Every write keeps the whole frontmatter and changes only events and categories. Event and recurrence fields are described in the [calendar overview](../calendar/overview.md).
+Edits a calendar base (`type: base`, `view: calendar`) without hand-editing YAML or JSON. Every write keeps the whole config and changes only events and categories, in the format the file already has. Event and recurrence fields are described in the [calendar overview](../calendar/overview.md).
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
-| `calendar bases` | none | Lists calendar bases: path, title, event count, category names. | no |
-| `calendar create` | `<basePath> [--title '...']` | Creates an empty calendar. Fails if the path exists. | no |
+| `calendar bases` | none | Lists calendar bases: path, title, event count, category names. A calendar with an unparseable line is listed with `events` `0` and `error` `unparseable`, and the listing continues. | no |
+| `calendar create` | `<basePath> [--title '...']` | Creates an empty calendar. A path with no `.md` or `.base.jsonl` extension gets `.base.jsonl` appended; an explicit `.md` path writes a markdown calendar. Fails if the path exists. | no |
 | `calendar list` | `<basePath> [--from YYYY-MM-DD --to YYYY-MM-DD]` | Lists stored events, recurring masters unexpanded, with real ids. | no |
 | `calendar range` | `<basePath> <from> <to>` | Lists concrete instances in a date range, recurrences expanded. | no |
 | `calendar day` | `<basePath> <date>` | Lists one day's instances. | no |
@@ -337,11 +347,13 @@ Creates, reads, moves and trashes vault entries. All need a vault.
 |---|---|---|---|
 | `read` | `<path>` | Prints a note's raw contents. | no |
 | `write` | `<path> [--content <text>]` | Writes a note from `--content`, or from stdin when omitted. Prints `{"ok":true}`. | no |
-| `move` | `<from> <to>` | Moves or renames an entry. | no |
+| `move` | `<from> <to>` | Moves or renames an entry. Carries the Google sync state of every synced calendar under it. | no |
 | `delete` | `<path>` | Moves an entry to the trash and prints `{trashPath}`. | no |
 | `restore` | `<trashPath> <to>` | Moves a trashed entry to a destination. | no |
 | `mkdir` | `<path>` | Creates a directory. | no |
 | `tree` | none | Prints the vault file tree as JSON. | no |
+
+`move` keeps the Google sync links of a synced calendar base, or of a folder that holds one, by re-keying the sync state under the sync lock. `./Cal.base.jsonl` and a trailing `/` on a folder name are normalised. While a sync runs, `move` fails with `a Google Calendar sync is already in progress; retry when the sync finishes` and nothing moves. A move onto a path that already has sync state fails with `destination already has Google sync state`; when no calendar exists at that path, clear the leftover state with `bismuth gcal forget <to>` and move again. Details are in [Google Calendar sync](../gcal/overview.md#what-happens-to-the-sync-links-when-i-rename-or-move-a-synced-calendar).
 
 `write` reads stdin whenever `--content` is absent, so a call with neither blocks waiting for input. For an agent, `tree` omits hidden files and any hidden folder that holds no visible file.
 
@@ -357,6 +369,7 @@ Syncs calendar bases with Google Calendar. The model, sign-in and conflict handl
 | `gcal disconnect` | `[--api <url>]` | Revokes the token and wipes local sync state. Event links are not recoverable. | yes |
 | `gcal targets` | none | Lists calendar bases with Google sync enabled, using the scan the auto-sync ticker runs. | no |
 | `gcal health` | `--vault <dir> [<basePath>]` | Prints each base's calendar id, last sync time, linked-event count and whether a sync token is held. | no |
+| `gcal forget` | `<basePath> [--force] --vault <dir>` | Deletes the stored sync state for a calendar path, printing `forgot sync state for <path>` or `no sync state for <path>`. Refuses while that path is still a synced calendar unless `--force` is given. | no |
 
 A person finishes `gcal connect` in a browser; the CLI cannot complete OAuth. Re-run `gcal status` afterwards. Passing only one of `--client-id` and `--client-secret` fails.
 
@@ -446,6 +459,7 @@ Sets and deletes frontmatter properties without disturbing YAML formatting.
 | `prop set` | `<file> <key> <value>` | Sets a property. The value is parsed as JSON, else kept as a string. | no |
 | `prop delete` | `<file> <key>` | Deletes a property. | no |
 
+On a `.base.jsonl` base both commands edit the config on line 1 and leave every row line as written; they need the full file name, because `prop` does not resolve an extensionless path.
 An image or PDF has no frontmatter of its own, so both commands route it to its companion note, `<file>.<ext>.md` (for example `paper.pdf.md`).
 `prop set` creates the companion on first use; `prop delete` on a missing companion succeeds without doing anything.
 Both fail with `ENOENT` when the binary itself does not exist, so a typo cannot create an orphan companion.
@@ -573,8 +587,9 @@ Each group lives in `cli/src/commands/<group>.ts` and exports a `CommandMap`; th
 The same registry backs `cli/test/mcpParity.test.ts`, which requires every MCP tool to have a CLI twin, and `cli/test/guideCommands.test.ts`, which checks that every `bismuth …` phrase in the agent guides resolves.
 
 Argument parsing is in `cli/src/args.ts`.
+`cli/src/baseResolve.ts` resolves an extensionless base path for `base`, `row`, `calendar` and `card review --file`.
 The visibility gate in `core/src/visibilityCliGate.ts` runs once in `index.ts` before any command, so no invocation skips it.
 Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `call` attaches the owner token and turns failures into messages.
 The run registry is `core/src/runRegistry.ts`.
 
-Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/http.ts`, `cli/src/commands/*.ts`, `core/src/visibilityCliGate.ts`
+Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/commands/*.ts`, `core/src/visibilityCliGate.ts`

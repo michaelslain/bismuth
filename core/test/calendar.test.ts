@@ -23,6 +23,7 @@ import {
     type CalendarEvent,
     type Recurrence,
 } from '../src/calendar'
+import { readBaseConfigRaw } from '../src/bases/baseFile'
 
 function baseFile(
     events: CalendarEvent[],
@@ -543,5 +544,64 @@ describe('category mutations', () => {
             'Home',
         ])
         expect(again.frontmatter.keep).toBe('me')
+    })
+})
+
+describe('calendar file formats', () => {
+    const ev = (id: string, date: string, over: Partial<CalendarEvent> = {}) =>
+        ({ id, title: `t-${id}`, date, ...over }) as CalendarEvent
+    const events = [
+        ev('a', '2026-05-04', { startTime: '09:00', category: 'Work' }),
+        ev('b', '2026-05-04', { recurrence: rec() }),
+        ev('c', '2026-05-05'),
+    ]
+    const fm = {
+        type: 'base',
+        view: 'calendar',
+        categories: [{ name: 'Work', color: '#f00' }],
+    }
+
+    for (const format of ['md', 'jsonl'] as const) {
+        test(`${format} round-trips byte-stably on a second pass`, () => {
+            const once = serializeCalendarFile(fm, events, format)
+            const parsed = parseCalendarFile(once)
+            expect(parsed.format).toBe(format)
+            expect(parsed.events.map(e => e.id)).toEqual(['a', 'b', 'c'])
+            const twice = serializeCalendarFile(
+                parsed.frontmatter,
+                parsed.events,
+                parsed.format,
+            )
+            expect(twice).toBe(once)
+        })
+    }
+
+    test('serializeCalendarFile defaults to markdown', () => {
+        expect(serializeCalendarFile(fm, events).startsWith('---')).toBe(true)
+    })
+
+    test('jsonl has one event per line, so a date greps to its event count', () => {
+        const out = serializeCalendarFile(fm, events, 'jsonl')
+        const hits = out
+            .split('\n')
+            .filter(l => l.includes('"date":"2026-05-04"'))
+        expect(hits).toHaveLength(2)
+    })
+
+    test('emptyCalendarFile is JSONL and discovered as a calendar base', () => {
+        const text = emptyCalendarFile({ title: 'X' })
+        expect(text.startsWith('{')).toBe(true)
+        expect(isCalendarBase(readBaseConfigRaw(text)!)).toBe(true)
+        expect(parseCalendarFile(text).format).toBe('jsonl')
+    })
+})
+
+describe('calendar jsonl refuses garbage lines', () => {
+    test('a garbage event line throws instead of being dropped', () => {
+        const src = '{"type":"base","view":"calendar"}\nnot json\n'
+        expect(() => parseCalendarFile(src)).toThrow('not valid JSON')
+    })
+    test('a garbage config line throws', () => {
+        expect(() => parseCalendarFile('{"type":\n')).toThrow('not valid JSON')
     })
 })

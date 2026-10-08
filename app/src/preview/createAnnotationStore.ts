@@ -144,11 +144,11 @@ export default function createAnnotationStore(
                         try {
                             setDoc(parseDoc(text))
                         } catch {
-                            // Present but not a drawing: paint nothing and write nothing —
-                            // the file is only replaced if the user actually draws.
-                            console.warn(
-                                `[page-ink] ${path} is not a drawing; left untouched until drawn on`,
-                            )
+                            // Present but unreadable: fail the load so edit() (which no-ops
+                            // unless 'ready') can never overwrite the sidecar with a fresh doc.
+                            console.warn(`[page-ink] ${path} is not a drawing; left untouched`)
+                            setLoadState('failed')
+                            return
                         }
                     }
                     setLoadState('ready')

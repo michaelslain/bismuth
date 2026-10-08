@@ -9,7 +9,7 @@ import { parseBaseFile } from '../../../core/src/bases/parse'
 import { runView, resolveProperty } from '../../../core/src/bases/query'
 import { isLink, type Link } from '../../../core/src/bases/values'
 import { fileBasename } from '../../../core/src/pathUtils'
-import { parseFrontmatter } from '../../../core/src/frontmatter'
+import { readBaseConfigRaw } from '../../../core/src/bases/baseFile'
 import { columnLabel } from '../bases/columnLabel'
 import type { ExportDeps } from './types'
 import type { Row, BaseConfig, ViewResult } from '../../../core/src/bases/types'
@@ -24,7 +24,7 @@ export interface ExportCategory {
 }
 
 function categoriesOf(text: string): ExportCategory[] {
-    const c = parseFrontmatter(text).data?.categories
+    const c = readBaseConfigRaw(text)?.categories
     return Array.isArray(c) ? (c as ExportCategory[]) : []
 }
 

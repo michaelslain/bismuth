@@ -1,6 +1,7 @@
 import { isEmbedWorker } from './embedWorkerBoot'
 import { join } from 'node:path'
-import { statSync, readdirSync } from 'node:fs'
+import { statSync, readdirSync, readFileSync } from 'node:fs'
+import { isBasePath, BASE_EXT } from './bases/baseFile'
 import { createSseRegistry } from './sse'
 import { createAsyncCache, type AsyncCache } from './asyncCache'
 import { createSelfWriteMarks } from './selfWriteMarks'
@@ -436,12 +437,33 @@ export function createServer(cfg: CoreConfig) {
     // without changing its connections — e.g. a bot status file restamped every
     // couple of seconds.
     const tracker = createChangeTracker()
+    // Fingerprints of `*.base.jsonl` line 1 (icon/visibility), seeded below at boot.
+    const baseTracker = createChangeTracker()
     // `.themes/*.yaml` files already present at boot, so the first autosave of one is an edit.
     const themeFileExists = (rel: string) => {
         try {
             return statSync(join(cfg.vault, rel)).isFile()
         } catch {
             return false
+        }
+    }
+    // `*.base.jsonl` files known at boot: a write to an existing one changes no link, tag or icon
+    // (a base is not a graph node), so only a create/delete/rename dirties the tree + graph.
+    const bootBases: string[] = (() => {
+        try {
+            return [
+                ...new Bun.Glob(`**/*${BASE_EXT}`).scanSync({ cwd: cfg.vault }),
+            ]
+        } catch {
+            return []
+        }
+    })()
+    const baseFiles = createThemeFileTracker(bootBases)
+    for (const rel of bootBases) {
+        try {
+            baseTracker.seed(rel, readFileSync(join(cfg.vault, rel), 'utf8'))
+        } catch {
+            /* unreadable at boot: its first edit counts as a first sighting */
         }
     }
     const themeFiles = createThemeFileTracker(
@@ -536,6 +558,7 @@ export function createServer(cfg: CoreConfig) {
         let graph = false
         let tree = false
         const notePaths: string[] = []
+        const basePaths: string[] = []
         for (const p of paths) {
             // settings.yaml (now under .settings/) is dot-hidden, so it must be matched
             // BEFORE the isWatchIgnored drop below.
@@ -594,6 +617,20 @@ export function createServer(cfg: CoreConfig) {
                 continue
             }
             if (isWatchIgnored(p)) continue
+            if (isBasePath(p)) {
+                if (baseFiles.classify(p, themeFileExists(p))) {
+                    // record (create) or clear (delete) the line-1 fingerprint too
+                    await baseTracker.classify([p], q =>
+                        readNoteOrNull(cfg.vault, q),
+                    )
+                    graph = true
+                    tree = true
+                    continue
+                }
+                // An edit of an existing base: only line 1's icon/visibility reach the tree.
+                basePaths.push(p)
+                continue
+            }
             if (!p.endsWith('.md')) {
                 graph = true
                 tree = true
@@ -604,7 +641,13 @@ export function createServer(cfg: CoreConfig) {
         const d = await tracker.classify(notePaths, p =>
             readNoteOrNull(cfg.vault, p),
         )
-        return { graph: graph || d.graph, tree: tree || d.tree }
+        const b = await baseTracker.classify(basePaths, p =>
+            readNoteOrNull(cfg.vault, p),
+        )
+        return {
+            graph: graph || d.graph || b.graph,
+            tree: tree || d.tree || b.tree,
+        }
     }
 
     // Single entry point for vault content/structure changes (API mutations +

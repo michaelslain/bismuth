@@ -272,6 +272,44 @@ async function readHeadBytes(
     }
 }
 
+/** A `.base.jsonl` base carries its config (incl. `visibility`) as JSON on line 1. Fails CLOSED
+ *  for a `.base.jsonl` path whose line 1 cannot be read or parsed; any other file that merely
+ *  starts with `{` is not a base and yields no explicit value. */
+async function readJsonlBaseVisibility(
+    absPath: string,
+    headText: string,
+    truncated: boolean,
+): Promise<FileVisibility> {
+    const isBase = absPath.endsWith('.base.jsonl')
+    const closed: FileVisibility = isBase ? 'hidden' : undefined
+    let text = headText.trimStart()
+    if (!text.includes('\n') && truncated) {
+        try {
+            const big = await readHeadBytes(absPath, MAX_FRONTMATTER_BYTES)
+            text = stripBOM(big.text).trimStart()
+            if (!text.includes('\n') && big.truncated) return closed
+        } catch {
+            return undefined
+        }
+    }
+    const nl = text.indexOf('\n')
+    const line = (nl === -1 ? text : text.slice(0, nl)).trim()
+    let data: unknown
+    try {
+        data = JSON.parse(line)
+    } catch {
+        return closed
+    }
+    if (data === null || typeof data !== 'object' || Array.isArray(data))
+        return closed
+    const o = data as Record<string, unknown>
+    // A `.base.jsonl` path is a base by name: a typeless line 1 still carries its visibility.
+    if (!isBase && o.type !== 'base') return undefined
+    const v = o.visibility
+    if (v === undefined || v === null || v === '') return undefined
+    return isVisibilityLiteral(v) ? v : 'hidden'
+}
+
 /**
  * A file's OWN explicit `visibility:` value, read as cheaply as possible: a 512-byte head
  * covers essentially every real note's frontmatter block; only when that head is BOTH truncated
@@ -300,6 +338,14 @@ async function readOwnVisibility(absPath: string): Promise<FileVisibility> {
         return undefined
     }
     let text = stripBOM(head.text)
+    const lead = text.trimStart()
+    // A `.base.jsonl` path always goes through the JSONL reader unless it opens a frontmatter
+    // fence: leading whitespace past the 512-byte head must not read as "visible".
+    if (
+        lead.startsWith('{') ||
+        (absPath.endsWith('.base.jsonl') && !lead.startsWith('---'))
+    )
+        return readJsonlBaseVisibility(absPath, text, head.truncated)
     if (!FRONTMATTER_OPEN_RE.test(text)) return undefined // not frontmatter-shaped — no more I/O
     if (head.truncated && !FRONTMATTER_CLOSED_RE.test(text)) {
         try {
@@ -307,7 +353,8 @@ async function readOwnVisibility(absPath: string): Promise<FileVisibility> {
             text = stripBOM(big.text)
             // Still no closing fence within the cap: parseFrontmatter (uncapped) may well see a
             // `visibility: hidden` that this bounded read cannot, so fail closed.
-            if (big.truncated && !FRONTMATTER_CLOSED_RE.test(text)) return 'hidden'
+            if (big.truncated && !FRONTMATTER_CLOSED_RE.test(text))
+                return 'hidden'
         } catch {
             return undefined
         }
@@ -614,15 +661,15 @@ async function walkDenyEntries(
     // folder, rule left behind). When nothing is restricted the trash adds nothing: non-Claude chat
     // backends refuse to start when any entry is restricted, so a rule-free vault must stay at zero
     // even with a non-empty trash.
-    const inTrash = (rel: string) => rel === '.trash' || rel.startsWith('.trash/')
+    const inTrash = (rel: string) =>
+        rel === '.trash' || rel.startsWith('.trash/')
     const folderRestricts = Object.values(folderVisibility).some(
         v => !isVisibleToChannel(v, channel),
     )
     if (
         folderRestricts ||
         resolved.some(
-            f =>
-                !inTrash(f.rel) && !isVisibleToChannel(f.visibility, channel),
+            f => !inTrash(f.rel) && !isVisibleToChannel(f.visibility, channel),
         )
     )
         for (const f of resolved) if (inTrash(f.rel)) f.visibility = 'hidden'

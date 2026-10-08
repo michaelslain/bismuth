@@ -13,7 +13,7 @@ import type { CommandMap } from '../types'
 import { flag, bool, positionals, requireVault, fail, today, out } from '../args'
 import { readNote } from '../../../core/src/files'
 import { resolveSource } from '../../../core/src/bases/source'
-import { parseDoc } from '../../../core/src/drawing/model'
+import { parseDocOrEmpty } from '../../../core/src/drawing/model'
 import { renderDocToPng } from '../../../core/src/drawing/export'
 import { renderDrawFile } from './draw'
 import {
@@ -181,7 +181,7 @@ async function run(args: string[]): Promise<void> {
         // transparent ground, for compositing over the exported page's own text; without it
         // this is the historical full-sheet `.draw` render. See ExportDeps.drawingToPng.
         drawingToPng: async (docText, theme, box) => {
-            const bytes = await renderDocToPng(parseDoc(docText), theme, box)
+            const bytes = await renderDocToPng(parseDocOrEmpty(docText), theme, box)
             return {
                 bytes,
                 dataUrl: `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`,

@@ -3497,7 +3497,7 @@ test('`calendar bases` lists only calendar-view bases (type:base + view:calendar
     ])
 })
 
-test('`calendar create <path-without-.md>` appends .md and writes a base the rest of the group can discover', async () => {
+test('`calendar create <path-without-ext>` appends .base.jsonl and writes a base the rest of the group can discover', async () => {
     const { readNote } = await import('../../core/src/files')
     const vault = makeVault({})
     const result = await runCli(
@@ -3509,12 +3509,14 @@ test('`calendar create <path-without-.md>` appends .md and writes a base the res
         'No Ext',
     )
     expect(result.code).toBe(0)
-    expect(result.json).toEqual({ ok: true, path: 'Bases/NoExt.md' })
+    expect(result.json).toEqual({ ok: true, path: 'Bases/NoExt.base.jsonl' })
 
-    expect(await readNote(vault, 'Bases/NoExt.md')).toContain('view: calendar')
+    expect(await readNote(vault, 'Bases/NoExt.base.jsonl')).toContain(
+        '"view":"calendar"',
+    )
     const bases = await runCli(vault, 'calendar', 'bases')
     expect(bases.json).toContainEqual({
-        path: 'Bases/NoExt.md',
+        path: 'Bases/NoExt.base.jsonl',
         title: 'No Ext',
         events: 0,
         categories: [],

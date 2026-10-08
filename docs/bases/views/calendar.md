@@ -2,47 +2,25 @@
 
 The calendar view draws a base's rows on a month, week, 3-day or day grid. It has two registers: the events register draws events stored in the base file, and the tasks register (`mode: tasks`) draws checkbox tasks on the same grid. Use this page to configure a calendar base. Event fields, recurrence rules and categories live in [calendar overview](../../calendar/overview.md); Google sync lives in [Google Calendar sync](../../gcal/overview.md).
 
-A calendar is an ordinary `type: base` file with `view: calendar`. This base holds its own events in the body:
+A calendar is an ordinary `type: base` file with `view: calendar`. This `Calendar.base.jsonl` holds its own events: line 1 is the config, every later line is one event.
 
-```yaml
----
-type: base
-view: calendar
-categories:
-  - name: Work
-    color: "#b00020"
-  - name: Personal
-    color: teal
----
-
-- id: a1
-  title: Standup
-  date: 2026-05-30
-  startTime: "09:00"
-  category: Work
-- id: b2
-  title: Weekly sync
-  date: 2026-05-25
-  startTime: "14:00"
-  endTime: "15:00"
-  category: Work
-  recurrence: '{"type":"weekly","daysOfWeek":[1],"startDate":"2026-05-25","seriesId":"s1"}'
+```json
+{"type":"base","view":"calendar","categories":[{"name":"Work","color":"#b00020"},{"name":"Personal","color":"teal"}]}
+{"id":"a1","title":"Standup","date":"2026-05-30","startTime":"09:00","category":"Work"}
+{"id":"b2","title":"Weekly sync","date":"2026-05-25","startTime":"14:00","endTime":"15:00","category":"Work","recurrence":"{\"type\":\"weekly\",\"daysOfWeek\":[1],\"startDate\":\"2026-05-25\",\"seriesId\":\"s1\"}"}
 ```
 
-This base shows every open task in the vault instead:
+This base shows every open task in the vault instead; it is a single config line:
 
-```yaml
----
-type: base
-source: tasks
-view: calendar
-mode: tasks
----
+```json
+{"type":"base","source":"tasks","view":"calendar","mode":"tasks"}
 ```
+
+A markdown calendar keeps working: the same keys sit in frontmatter and the events are a YAML list in the body. The [bases overview](../overview.md#where-are-a-bases-own-rows-stored) owns both formats, and the calendar keeps whichever one it is in on every save.
 
 ## Config keys
 
-A calendar reads these top-level frontmatter keys. The settings gear in the view bar writes the register-specific ones for you.
+A calendar reads these top-level config keys: line 1 of a `.base.jsonl` file, or the frontmatter of a markdown calendar. The settings gear in the view bar writes the register-specific ones for you.
 
 | Key | Type | Default | Effect |
 |---|---|---|---|
@@ -67,7 +45,7 @@ A calendar draws events when `mode` is absent or `normal`, and tasks when `mode:
 
 | | Events register | Tasks register |
 |---|---|---|
-| Rows | The base's own body rows | Task rows from `source: tasks`, or the base's own rows |
+| Rows | The base's own event rows | Task rows from `source: tasks`, or the base's own rows |
 | Time | Timed or all-day | All-day only |
 | Create | Click a cell or drag on the time grid | Click a cell and type |
 | View bar | Categories button and a new-event button | Date navigation and grid layout only |
@@ -80,13 +58,13 @@ The first grid shown is the `defaultView` setting. Switching the grid by hand wi
 
 ## Events register
 
-The events register reads and writes event rows in the base file's body. It writes them as a YAML list of row objects, one per event.
+The events register reads and writes the event rows stored in the base file itself, one per event. It writes them in the file's own format: one JSON object per line in a `.base.jsonl` calendar, a YAML list in a markdown one.
 
 ### Event columns
 
 The interactive grid reads events from the standard column names `id`, `title`, `date`, `startTime`, `endTime`, `location`, `link`, `description`, `category`, `categories` and `recurrence`. Only `id`, `title` and `date` are needed; an event with no `startTime` is all-day. The `dateField`, `startTimeField`, `endTimeField`, `recurrenceField` and `categoryField` keys rebind those columns where a calendar is rendered from its view config, which is the HTML export. Author event rows with the standard names so the grid and the export agree.
 
-`recurrence` is a JSON string in one field, not a nested YAML object. An event's `category` matches a `name` in `categories`; an undeclared name draws as an outline-only chip. The full field table is in [calendar overview](../../calendar/overview.md).
+`recurrence` is a JSON string in one field, not a nested object. An event's `category` matches a `name` in `categories`; an undeclared name draws as an outline-only chip. The full field table is in [calendar overview](../../calendar/overview.md).
 
 ### Create, edit and move events
 
@@ -102,7 +80,9 @@ The interactive grid reads events from the standard column names `id`, `title`, 
 
 A press that moves less than 4 pixels is a click, not a drag. A drag that ends shorter than 30 minutes is stretched to 30. Editing or deleting one occurrence of a recurring event asks whether the change applies to this one, this and following, or all.
 
-Every change rewrites the base file: the `categories` frontmatter key and the body rows change, and every other frontmatter key is kept as written.
+Every change rewrites the base file: the `categories` config key and the event rows change, and every other config key is kept. Before each save the calendar re-reads the file and merges its own changes into what is on disk, so an event that a CLI command or a Google sync added while the calendar was open is kept. A calendar whose file was moved or deleted after it loaded does not save; a toast says so, because writing would recreate the file at its old path.
+
+A `.base.jsonl` calendar with a line that is not valid JSON refuses to save as well: the calendar opens empty, and an edit shows a toast instead of dropping the line. Fix the line in a text editor and the open calendar reloads.
 
 ### Bind columns and sync from calendar settings
 
@@ -119,9 +99,9 @@ A tasks calendar works over either kind of base.
 | The base | Rows come from |
 |---|---|
 | `source: tasks` | Checkbox lines in the vault's notes; see [task syntax](../../tasks/syntax.md) |
-| no `source:` | The base file's own body rows |
+| no `source:` | The base file's own rows |
 
-A body row needs `description` and a `scheduled` or `due` date under those exact names. `status` defaults to `todo`. A row that uses `title` and `date` as an events base would draws nothing in this register, because nothing maps those names.
+A stored row needs `description` and a `scheduled` or `due` date under those exact names. `status` defaults to `todo`. A row that uses `title` and `date` as an events base would draws nothing in this register, because nothing maps those names.
 
 ### Where a task sits on the grid
 
@@ -157,7 +137,7 @@ A name declared in `categories` uses its declared colour. Every other name gets 
 
 A drag or an `Alt` shortcut rewrites the field that placed the task (`scheduled` or `due`, or `dateField`). For a checkbox line it always writes bracket form; see [task syntax](../../tasks/syntax.md#rescheduling-a-date-field). Keyboard focus follows the task to its new cell after a write.
 
-Only a task with a place to write is editable from the grid: a checkbox line in a note, or a row in the base's own body. Any other chip draws a dimmed checkbox and ignores toggling, dragging and the shortcuts, though `Enter` still opens it.
+Only a task with a place to write is editable from the grid: a checkbox line in a note, or a row in the base's own rows. Any other chip draws a dimmed checkbox and ignores toggling, dragging and the shortcuts, though `Enter` still opens it.
 
 ### Create a task
 
@@ -175,18 +155,12 @@ Under the input, a `→` line names where the task will be written. With two or 
 | The base | The picker offers | A new task is |
 |---|---|---|
 | `source: tasks` | Each note already on the grid, plus `taskFile` | A line `<text> [scheduled <date>]` appended to the chosen note |
-| no `source:` | Each category in play, plus "no category" | A body row `{description, status: todo, scheduled, <categoryField>}` |
+| no `source:` | Each category in play, plus "no category" | A stored row `{description, status: todo, scheduled, <categoryField>}` |
 
 `taskFile` accepts a wikilink (`[[Inbox]]`), a bare name or a path. A name resolves against the vault like a wikilink does, so a note in a subfolder is found rather than a stray copy created at the vault root. A `source: tasks` base with no `taskFile` and no task on the grid has nowhere to write: committing opens the task calendar settings and shows a toast asking you to set a destination note.
 
-```yaml
----
-type: base
-source: tasks
-view: calendar
-mode: tasks
-taskFile: "[[Inbox]]"
----
+```json
+{"type":"base","source":"tasks","view":"calendar","mode":"tasks","taskFile":"[[Inbox]]"}
 ```
 
 A task written outside the view's own filters is still written. A toast names the file it went to and says it will not appear in this view.
@@ -218,8 +192,9 @@ These `.settings` keys under `calendar:` change how every calendar looks. They a
 
 ## Failure modes
 
-- A calendar base with an empty body has no events, even when the frontmatter looks complete. Write event rows below the closing `---`.
-- `bismuth base create --view calendar` writes `source: notes`, which makes the base read vault notes instead of its own body. For an own-rows calendar, delete the `source:` line before adding event rows, or scaffold with `bismuth calendar create` instead.
+- A calendar base with only a config line has no events, even when the config looks complete. Add one event object per line below line 1 (in a markdown calendar, below the closing `---`).
+- `bismuth base create --view calendar` writes `source: notes` into the config, which makes the base read vault notes instead of its own rows. For an own-rows calendar, remove the `source` key before adding event rows, or scaffold with `bismuth calendar create` instead.
+- A `.base.jsonl` calendar with a line that is not a JSON object cannot be rewritten: `bismuth calendar` commands fail with `PARSE_ERROR` and the app refuses to save. Fix the line; nothing is dropped meanwhile.
 - Only one calendar renders at a time. Two calendar panes visible together share the same date and grid layout.
 - An own-rows tasks calendar whose rows lack `description` or the `scheduled` and `due` names draws nothing.
 - `taskFile` naming a note outside the base's `from:` scope writes tasks that never appear in the view. `bismuth base validate` reports it.
@@ -227,10 +202,10 @@ These `.settings` keys under `calendar:` change how every calendar looks. They a
 
 ## How it works
 
-`CalendarView` (`app/src/bases/CalendarView.tsx`) only chooses a register from `viewMode(view)`. `EventsCalendar` mounts an `EventStore` over a `BaseBackend`, which reads the base file with `parseCalendarFile`, applies edits, and writes the whole file back with `serializeCalendarFile`. The write is serialised through a promise chain, and the backend re-reads the file when the server reports a change to it, so a background Google sync is not overwritten. `TasksCalendar` has no store: it places the resolved rows of the view result on every render.
+`CalendarView` (`app/src/bases/CalendarView.tsx`) only chooses a register from `viewMode(view)`. `EventsCalendar` mounts an `EventStore` over a `BaseBackend`, which reads the base file with `parseCalendarFile`, applies edits, and writes the whole file back with `serializeCalendarFile` in the format the file is in. The write is serialised through a promise chain. Each write re-reads the file and merges the app's changes into it with `mergeEvents` (a three-way merge against what the app last read), and the backend also re-reads the file when the server reports a change to it, so a background Google sync or a CLI write is not overwritten. `TasksCalendar` has no store: it places the resolved rows of the view result on every render.
 
 The calendar contributes controls to the base's single view bar through `calendarSlots()`, which `BaseView` reads; the view renders no bar of its own. Grid state (current view, date, open dialogs) is module-level signals in `app/src/calendar/state.ts`, which is why one calendar renders at a time.
 
-Task placement, the overdue carry and category colours are pure functions in `app/src/calendar/taskPlacement.ts` and `taskCategory.ts`. The chip's writability, the drag payload and the reschedule target all come from `isWritableTask` and `taskRowRef`, so the marker, the drag and the shortcuts cannot disagree. Writes go through the same endpoints as the other task views: `POST /tasks/toggle`, `POST /tasks/reschedule` and `POST /tasks/create` for checkbox lines, and `POST /rows/update` and `POST /rows` for body rows; see [HTTP API reference](../../api/http-reference.md). `POST /tasks/create` resolves `taskFile` server-side in `resolveTaskFilePath`. An own-rows base runs each row through `normalizeStoredTaskRow` before the tasks register sees it.
+Task placement, the overdue carry and category colours are pure functions in `app/src/calendar/taskPlacement.ts` and `taskCategory.ts`. The chip's writability, the drag payload and the reschedule target all come from `isWritableTask` and `taskRowRef`, so the marker, the drag and the shortcuts cannot disagree. Writes go through the same endpoints as the other task views: `POST /tasks/toggle`, `POST /tasks/reschedule` and `POST /tasks/create` for checkbox lines, and `POST /rows/update` and `POST /rows` for a base's own rows; see [HTTP API reference](../../api/http-reference.md). `POST /tasks/create` resolves `taskFile` server-side in `resolveTaskFilePath`. An own-rows base runs each row through `normalizeStoredTaskRow` before the tasks register sees it.
 
 Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/EventsCalendar.tsx`, `app/src/bases/TasksCalendar.tsx`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/bases/tasksCalendarWrites.ts`, `app/src/calendar/state.ts`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskCategory.ts`, `app/src/calendar/taskCompose.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/components/TaskCellComposer.tsx`, `app/src/calendar/components/TaskCalendarSettings.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/ui/chipKeys.ts`, `core/src/bases/taskRow.ts`, `core/src/taskCreate.ts`, `core/src/schema/settingsSchema.ts`

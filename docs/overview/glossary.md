@@ -7,7 +7,7 @@ Bismuth's terms in one table, in alphabetical order. Each row gives a one-line d
 | 2nd brain | The vault: your markdown notes plus their tags, shown as the `2nd` graph mode. | [Graph overview](../graph/overview.md) |
 | 3rd brain | The daemon's memory graph, shown as the `3rd` graph mode; present only while the daemon is enabled. | [Memory store](../daemon/memory.md) |
 | backend | An agent CLI that Bismuth can drive, such as Claude Code, Codex or opencode; chat, terminal tabs, the daemon and MCP registration each read the same catalog of backends. | [Agent backends](../chat/backends.md) |
-| base | A markdown note with `type: base` in its frontmatter that declares a source, filters and one view over your notes. There is no `.base` extension. | [Bases overview](../bases/overview.md) |
+| base | A file that declares `type: base`, a source, filters and one view: a `<name>.base.jsonl` file (line 1 the config, each later line a row) or a markdown note with `type: base` in its frontmatter. | [Bases overview](../bases/overview.md) |
 | brain | One vault's slice of the daemon: its memory, crons, processes and conversation session, run by the single machine daemon. | [Daemon overview](../daemon/overview.md) |
 | companion note | The note `<file>.md` that carries the tags and properties of an image or PDF, such as `paper.pdf.md`; it is created on the first edit. | [Frontmatter](../vault/frontmatter.md) |
 | cron | A markdown file in `<vault>/.daemon/crons` that fires a Claude session on a time schedule or when a watched vault file changes. | [Crons and processes](../daemon/crons-and-processes.md) |

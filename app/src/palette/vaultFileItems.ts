@@ -5,12 +5,13 @@
 // icon exactly. Pure (entries in → items out, no store/DOM import) so it's unit-testable.
 import { contentLabel, contentIcon, isSettingsFile } from '../tabIds'
 import type { PaletteItem } from './rankItems'
+import { BASE_EXT } from '../../../core/src/bases/baseFile'
 import type { TreeEntry } from '../../../core/src/graph'
 
 // Every openable vault file — notes plus the "app" docs (settings, spreadsheets, drawings).
-// Folders (`kind === "dir"`) are excluded. `.yaml`/`.yml`/`.sheet`/`.draw` so the switcher
+// Folders (`kind === "dir"`) are excluded. `.yaml`/`.yml`/`.sheet`/`.draw`/`.base.jsonl` so the switcher
 // finds config buffers + spreadsheets + drawings too.
-const OPENABLE_EXTS = ['.md', '.yaml', '.yml', '.sheet', '.draw']
+const OPENABLE_EXTS = ['.md', '.yaml', '.yml', '.sheet', '.draw', BASE_EXT]
 function isFile(e: TreeEntry & { kind?: string }): boolean {
     if (e.kind === 'dir') return false
     // The REAL app-settings file is the hidden, extensionless `.settings` at the vault root

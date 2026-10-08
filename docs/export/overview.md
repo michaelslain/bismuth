@@ -103,7 +103,7 @@ bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE]
 | `--markdown-syntax` | Off | Print heading markers |
 | `--theme` | `dark` | Anything but `dark` or `light` fails |
 
-A `.draw` file needs no vault and exports to `png` or `pdf` only; any other format fails with `a .draw file exports to png or pdf`. A note, base or sheet needs a vault, from `--vault` or `BISMUTH_VAULT`. The command has no flag for PDF font size: a PDF always uses 12 pt. A page-broken PNG note writes one file per page and ignores `--out`.
+A `.draw` file needs no vault and exports to `png` or `pdf` only; any other format fails with `a .draw file exports to png or pdf`. A `.draw` file with a line that is not valid JSON fails with the parse error. An empty `.draw` file exports as a blank page from the app, and fails with `not a drawing document` from the command. A note, base or sheet needs a vault, from `--vault` or `BISMUTH_VAULT`. The command has no flag for PDF font size: a PDF always uses 12 pt. A page-broken PNG note writes one file per page and ignores `--out`.
 
 PNG and PDF of a note, base or sheet run a real headless Chrome that Bismuth launches for each call. That Chrome must be at `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`; there is no environment variable or `PATH` lookup. Without it the export fails at launch with `chrome debugger port never opened`. The other formats, and PNG and PDF of a `.draw`, need no Chrome.
 

@@ -41,7 +41,8 @@ import {
 } from './baseSettingsPlan'
 import { runOp } from './baseSettingsIO'
 import { filterToForm, formToFilter } from './filterForm'
-import { formToSource, sourceToForm, toWikilink } from './sourceForm'
+import { formToSource, sourceToForm } from './sourceForm'
+import { basePickerOptions } from './basePickerOptions'
 import {
     buildFormulas,
     duplicateFormulaNames,
@@ -244,10 +245,10 @@ export function BaseSettings(props: {
     // Base pickers (`from` / `ref`): every note, as `[[name]]`.
     const [tree] = createResource<TreeEntry[]>(() => api.tree())
     const baseOptions = createMemo<SelectOption[]>(() =>
-        (tree() ?? [])
-            .filter(e => e.kind !== 'dir' && e.path.endsWith('.md'))
-            .map(e => ({ value: toWikilink(e.path), label: noteLabel(e.path) }))
-            .sort((a, b) => a.label.localeCompare(b.label)),
+        basePickerOptions(
+            (tree() ?? []).filter(e => e.kind !== 'dir'),
+            props.basePath,
+        ),
     )
 
     // ---- properties form (#104: define the base's OWN declared property set) ----

@@ -24,11 +24,9 @@ import { attachLayout, computeViewLayouts } from './layout-cache'
 import { getFileAccess } from './fileAccess'
 import {
     parseFrontmatter,
-    setFrontmatterKey,
-    deleteFrontmatterKey,
 } from './frontmatter'
 import { parseBaseFile } from './bases/parse'
-import { flattenBaseViews } from './bases/flattenViews'
+import { setBaseConfigKey, deleteBaseConfigKey } from './bases/baseFile'
 import { resolveSource } from './bases/source'
 import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
 import { collectVaultTasks, applyTaskToggle } from './tasks'
@@ -247,11 +245,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 const raw = await readOrNull(b.path)
                 if (raw === null)
                     throw new AppError('ENOENT', 'note not found', 404)
-                const next = setFrontmatterKey(
-                    flattenBaseViews(raw),
-                    b.key,
-                    b.value,
-                )
+                const next = setBaseConfigKey(b.path, raw, b.key, b.value)
                 await access.writeNote(vault, b.path, next)
                 emit([b.path])
                 return 'ok'
@@ -282,9 +276,9 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                         skipped.push(path) // vanished: reported, not fatal to the batch
                         continue
                     }
-                    let next = flattenBaseViews(raw)
+                    let next = raw
                     for (const op of ops)
-                        next = setFrontmatterKey(next, op.key, op.value)
+                        next = setBaseConfigKey(path, next, op.key, op.value)
                     await access.writeNote(vault, path, next)
                     written.push(path)
                 }
@@ -295,7 +289,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 const raw = await readOrNull(b.path)
                 if (raw === null)
                     throw new AppError('ENOENT', 'note not found', 404)
-                const next = deleteFrontmatterKey(flattenBaseViews(raw), b.key)
+                const next = deleteBaseConfigKey(b.path, raw, b.key)
                 await access.writeNote(vault, b.path, next)
                 emit([b.path])
                 return 'ok'

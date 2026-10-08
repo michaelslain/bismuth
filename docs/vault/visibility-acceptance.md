@@ -57,6 +57,7 @@ Verified by `core/test/visibility.test.ts`, with the daemon's ported copy held t
 | Malformed rules read as `hidden`: unparseable closed YAML, a non-literal value | Yes |
 | An empty `visibility:` inherits; an unclosed opening fence is not frontmatter | Yes |
 | `.trash` is restricted whenever the channel restricts anything, including after a hidden folder is deleted | Yes |
+| A `.base.jsonl` base takes its own value from line 1; an unparseable line 1 reads as `hidden`. The daemon's copy matches core on hidden, `chat-only`, unparseable and whitespace-padded line-1 fixtures | Yes, as core-and-daemon agreement |
 | A memory note is gated by its own frontmatter and never by folder rules | Yes |
 | Path comparison folds case, Unicode form, `.` and `..`; a `..` that cannot reach a hidden file stays allowed | Yes |
 | The deny list also names the caller's own spelling of the vault root when it differs from the canonical one | Yes |
@@ -72,7 +73,8 @@ Every case below runs through both entry paths. Each is refused or filtered for 
 | A vault addressed by a subfolder | Yes | `visibilityLeakBypass.test.ts` |
 | Rewriting the rules (`folder-visibility`, settings writes) | Yes | `visibilityLeakBypass.test.ts` |
 | Folder tokens, respelled paths, doubled slashes, `--memory` used as a decoy | Yes | `visibilityLeakBypass.test.ts` |
-| Creators that append `.md` (`base create`, `calendar create`) | Yes | `visibilityLeakBypass.test.ts` |
+| An extensionless path given to `base create` or `calendar create` is refused when its `.md` twin is hidden | Yes | `visibilityLeakBypass.test.ts` |
+| An extensionless path whose `.base.jsonl` twin is hidden | No | The gate checks the twin; no spawned-CLI test covers it |
 | `.daemon/processes` and the `.daemon` folder itself, even in an unrestricted vault | Yes | `visibilityLeakBypass.test.ts` |
 | `api` as GET only, every running core's vault gated, percent-encoded paths | Yes | `visibilityLeakBypass.test.ts` |
 | `api` cannot approve a status-bar command or reach doctor routes | Yes | `apiTrustRefusal.test.ts` |

@@ -88,3 +88,70 @@ test('a single-category event does not gain a categories array on round-trip', (
     expect(round.events[0].category).toBe('Work')
     expect(round.events[0].categories).toBeUndefined()
 })
+
+test('format round-trips: jsonl stays jsonl, md stays md', () => {
+    const md = parseCalendarFile(FILE)
+    expect(md.format).toBe('md')
+    const jl = serializeCalendarFile(md.frontmatter, md.events, 'jsonl')
+    expect(jl.startsWith('{')).toBe(true)
+    const back = parseCalendarFile(jl)
+    expect(back.format).toBe('jsonl')
+    expect(back.events[0].title).toBe('Standup')
+    expect(back.frontmatter.schema).toEqual({ title: 'text', date: 'date' })
+})
+
+test('a jsonl calendar with an unparseable line throws PARSE_ERROR', () => {
+    const jl = serializeCalendarFile({ type: 'base' }, [], 'jsonl') + 'junk\n'
+    expect(() => parseCalendarFile(jl)).toThrow(/unparseable/)
+})
+
+test('unknown row fields survive an edit of that event and of another', () => {
+    const text =
+        [
+            '{"type":"base","view":"calendar"}',
+            '{"id":"a","title":"A","date":"2026-05-30","color":"red","x-custom":{"k":1}}',
+            '{"id":"b","title":"B","date":"2026-05-31","color":"blue"}',
+        ].join('\n') + '\n'
+    const { frontmatter, events } = parseCalendarFile(text)
+    const edited = events.map(e => ({ ...e, title: e.title + '2' }))
+    const out = serializeCalendarFile(frontmatter, edited, 'jsonl', text)
+    const rows = out
+        .trim()
+        .split('\n')
+        .slice(1)
+        .map(l => JSON.parse(l))
+    expect(rows[0]).toMatchObject({
+        title: 'A2',
+        color: 'red',
+        'x-custom': { k: 1 },
+    })
+    expect(rows[1]).toMatchObject({ title: 'B2', color: 'blue' })
+    const onlyA = serializeCalendarFile(
+        frontmatter,
+        [{ ...events[0], title: 'A3' }, events[1]],
+        'jsonl',
+        text,
+    )
+    expect(JSON.parse(onlyA.split('\n')[2]).color).toBe('blue')
+    expect(JSON.parse(onlyA.split('\n')[1]).color).toBe('red')
+})
+
+test('editing one event of a JSONL calendar changes exactly its line', () => {
+    const lines = [
+        '{"view":"calendar","type":"base"}',
+        '{"title":"A","date":"2026-05-30","id":"a","categories":["w"],"color":"red"}',
+        '{"id":"b","date":"2026-05-31","title":"B","recurrence":{"freq":"weekly"}}',
+        '{"id":"c","title":"C","date":"2026-06-01"}',
+    ]
+    const text = lines.join('\n') + '\n'
+    const { frontmatter, events } = parseCalendarFile(text)
+    const next = events.map(e => (e.id === 'b' ? { ...e, title: 'B!' } : e))
+    const out = serializeCalendarFile(frontmatter, next, 'jsonl', text).split(
+        '\n',
+    )
+    expect(out[0]).toBe(lines[0])
+    expect(out[1]).toBe(lines[1])
+    expect(out[2]).not.toBe(lines[2])
+    expect(JSON.parse(out[2]).title).toBe('B!')
+    expect(out[3]).toBe(lines[3])
+})

@@ -130,8 +130,9 @@ export function PaneContent(props: {
                     <SheetView path={props.path} onSaved={props.onSaved} />
                 </PaneSuspense>
             </Match>
-            {/* A base is a `type: base` md file — routed by FileView (the fallback), which
-          reads its frontmatter and renders BaseView. There is no `.base` extension. */}
+            {/* A base is a `.base.jsonl` file (line 1 = config) or a `type: base` md file — routed by
+          FileView (the fallback), which decides by path and content and renders BaseView. `jsonl`
+          is not a preview extension, so a `.base.jsonl` is never claimed by the code preview. */}
             {/* The retired ANNOTATE surface. A tab persisted from before it went away still carries
           "::annotate:<file>", so it opens that file's preview — where the same sidecar's ink is
           now drawn in place. Must precede the `.draw`/preview Matches below: the sentinel ends in

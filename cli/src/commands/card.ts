@@ -16,7 +16,8 @@ import { applyReviewToRow } from '../../../core/src/srs/reviewRow'
 import type { ReviewResponse } from '../../../core/src/srs/types'
 import { parseBaseFile } from '../../../core/src/bases/parse'
 import { upsertRow } from '../../../core/src/bases/rowOps'
-import { fileBasename } from '../../../core/src/pathUtils'
+import { baseNameOf } from '../../../core/src/bases/baseFile'
+import { resolveBasePath } from '../baseResolve'
 import { readNote, writeNote } from '../../../core/src/files'
 import { loadAppConfig } from '../../../core/src/settings'
 import type { Card } from '../../../core/src/srs/types'
@@ -99,7 +100,9 @@ export const commands: CommandMap = {
         usage: '<id> <response> | --file <base> --index <n> --response <hard|good|easy> [--dueField <c> --easeField <c> --intervalField <c>]',
         run: async args => {
             const vault = requireVault(args)
-            const file = flag(args, 'file')
+            const fileArg = flag(args, 'file')
+            const file =
+                fileArg != null ? resolveBasePath(vault, fileArg) : undefined
             const indexRaw = flag(args, 'index')
             const srs = (await loadAppConfig(vault)).srs
 
@@ -111,7 +114,7 @@ export const commands: CommandMap = {
                 if (isDeniedPath(await agentDenyEntries(vault), file))
                     fail(`not available: ${file}`)
                 const text = await readNote(vault, file)
-                const name = fileBasename(file)
+                const name = baseNameOf(file)
                 const { rows } = parseBaseFile(text, { name, path: file })
                 const row = rows[index]
                 if (!row) fail(`row not found: ${file}#${index}`)

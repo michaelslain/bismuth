@@ -1,4 +1,6 @@
 import type { SourceSpec } from './types'
+import { BASE_EXT, isBasePath } from './baseFile'
+import { pickByBase } from '../linkTarget'
 
 const KINDS = ['base', 'notes', 'tasks'] as const
 
@@ -78,5 +80,28 @@ function prune<T extends Record<string, unknown>>(o: T): T {
 export function refToPath(ref?: string): string {
     if (!ref) return ''
     const r = ref.replace(/^\[\[/, '').replace(/\]\]$/, '')
-    return r.endsWith('.md') || r.endsWith('.base') ? r : `${r}.md`
+    return r.endsWith('.md') || r.endsWith('.base') || isBasePath(r)
+        ? r
+        : `${r}.md`
+}
+
+/** Pick the file a `[[ref]]` names among vault paths: exact `<bare>.base.jsonl`, exact path, then basename over
+ *  both kinds (fewest segments; `.base.jsonl` before `.md` on a tie). */
+export function pickRefPath(ref: string | undefined, paths: Iterable<string>): string {
+    const exact = refToPath(ref)
+    if (!exact) return exact
+    const set = new Set(paths)
+    const bare = (ref ?? '').replace(/^\[\[/, '').replace(/\]\]$/, '')
+    const hasExt = bare.endsWith('.md') || bare.endsWith('.base') || isBasePath(bare)
+    if (!hasExt && set.has(bare + BASE_EXT)) return bare + BASE_EXT
+    if (set.has(exact)) return exact
+    const explicitJsonl = isBasePath(exact)
+    const stem = explicitJsonl ? exact.slice(0, -BASE_EXT.length) : exact.replace(/\.md$/, '')
+    const all = [...set]
+    const j = pickByBase(stem, all.filter(isBasePath).map(p => p.slice(0, -BASE_EXT.length)))
+    if (explicitJsonl) return j === undefined ? exact : j + BASE_EXT
+    const m = pickByBase(stem, all.filter(p => p.endsWith('.md')).map(p => p.slice(0, -3)))
+    if (j === undefined) return m === undefined ? exact : `${m}.md`
+    if (m !== undefined && m.split('/').length < j.split('/').length) return `${m}.md`
+    return j + BASE_EXT
 }

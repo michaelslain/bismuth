@@ -31,3 +31,10 @@ test('no match falls back to the root path', () => {
 test('non-markdown files are not candidates', () => {
     expect(resolveQueryBasePath('[[List]]', ['img/List.png'])).toBe('List.md')
 })
+
+test('a bare ref finds a jsonl base, root or nested', () => {
+    expect(resolveQueryBasePath('[[Cal]]', ['Cal.base.jsonl'])).toBe('Cal.base.jsonl')
+    expect(resolveQueryBasePath('[[Cal]]', ['sub/Cal.base.jsonl'])).toBe(
+        'sub/Cal.base.jsonl',
+    )
+})

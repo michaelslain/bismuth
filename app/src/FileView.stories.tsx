@@ -89,6 +89,51 @@ export const Base: Story = {
     },
 }
 
+// A base stored as JSON Lines (`.base.jsonl`, config on line 1) and its markdown twin: the path
+// alone routes the first to BaseView — never the text editor — and both render the same content.
+const JSONL_BASE_PATH = 'boards/twin.base.jsonl'
+const JSONL_BASE_BODY =
+    '{"type":"base","view":"table","order":["title","status"]}\n' +
+    '{"title":"Write docs","status":"todo"}\n' +
+    '{"title":"Fix bug","status":"doing"}\n'
+const TWIN_BASE_PATH = 'boards/twin.md'
+const TWIN_BASE_BODY =
+    '---\ntype: base\nview: table\norder:\n  - title\n  - status\n---\n\n' +
+    '- title: Write docs\n  status: todo\n- title: Fix bug\n  status: doing\n'
+
+async function expectTwinBase(canvasElement: HTMLElement): Promise<void> {
+    const canvas = within(canvasElement)
+    await waitFor(() => {
+        expect(canvas.getByText('twin')).toBeInTheDocument()
+        expect(canvas.getByText('Write docs')).toBeInTheDocument()
+        expect(canvas.getByText('Fix bug')).toBeInTheDocument()
+    })
+    expect(canvasElement.querySelector('.cm-editor')).toBeNull()
+}
+
+/** `X.base.jsonl` routes to `<BaseView>` by its path, never to the CodeMirror editor, and the
+ *  tab/crumb reads `twin`, not the filename. */
+export const JsonlBase: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { [JSONL_BASE_PATH]: JSONL_BASE_BODY } }),
+        )
+        return <FileView path={JSONL_BASE_PATH} {...baseProps} />
+    },
+    play: async ({ canvasElement }) => expectTwinBase(canvasElement),
+}
+
+/** The markdown twin of `JsonlBase`: the same table, stored as frontmatter + a YAML list. */
+export const JsonlBaseMarkdownTwin: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { [TWIN_BASE_PATH]: TWIN_BASE_BODY } }),
+        )
+        return <FileView path={TWIN_BASE_PATH} {...baseProps} />
+    },
+    play: async ({ canvasElement }) => expectTwinBase(canvasElement),
+}
+
 /** `type: daemon-page` frontmatter routes to `<InboxPageView>` — the same Editor
  *  body wrapped in an action-bar header, checked BEFORE the plain-note branch (isDaemonPage is
  *  its own Match, ahead of the `!isBase() && !isDaemonPage()` fallback). The header's actions

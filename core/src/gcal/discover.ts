@@ -4,9 +4,9 @@
 // the old single global `googleCalendar.basePath` the ticker used to sync.
 //
 // Cost: this walks the vault's markdown once per tick (default cadence 15 min) and only
-// frontmatter-parses each note — cheap. Only `type: base` notes are fully base-parsed.
-import { listMarkdown, readNote } from '../files'
-import { parseFrontmatter } from '../frontmatter'
+// frontmatter-parses each note — cheap. Only `type: base` notes (markdown or `.base.jsonl`) are fully base-parsed.
+import { listBases, listMarkdown, readNote } from '../files'
+import { isBaseText } from '../bases/baseFile'
 import { parseBaseFile } from '../bases/parse'
 import { resolveGcalConfig, type LegacyGcalConfig } from './config'
 
@@ -24,7 +24,7 @@ export async function listGcalSyncTargets(
     vault: string,
     legacy?: LegacyGcalConfig,
 ): Promise<GcalSyncTarget[]> {
-    const files = await listMarkdown(vault)
+    const files = [...(await listMarkdown(vault)), ...(await listBases(vault))]
     const targets: GcalSyncTarget[] = []
     for (const rel of files) {
         let raw: string
@@ -34,7 +34,7 @@ export async function listGcalSyncTargets(
             continue // deleted mid-walk
         }
         // Cheap gate: only `type: base` notes can be a calendar.
-        if (parseFrontmatter(raw).data?.type !== 'base') continue
+        if (!isBaseText(raw)) continue
         const { config } = parseBaseFile(raw, {
             name: rel.split('/').pop() ?? rel,
             path: rel,

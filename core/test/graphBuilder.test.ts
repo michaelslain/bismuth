@@ -8,6 +8,7 @@ import type { GraphNode } from '../src/graph'
 // stands in for on iPad. Only listMarkdown/readNote matter for graph building.
 function memAccess(vault: Record<string, string>): FileAccess {
     return {
+        listBases: async () => [],
         listMarkdown: async () => Object.keys(vault),
         listTree: async () =>
             Object.keys(vault).map(path => ({ path, kind: 'file' as const })),

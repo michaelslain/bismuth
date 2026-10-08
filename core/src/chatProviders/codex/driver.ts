@@ -231,7 +231,7 @@ export const CODEX_AGENTS_MD_CONTENT = [
     "[[wikilinks]] and #tags. Treat it as the user's second brain — read existing notes before",
     'creating new ones, and prefer linking to an existing note over duplicating its content.',
     '',
-    '**Every time you create, edit or debug a Bismuth base** (a `type: base` note or a ```query block),',
+    '**Every time you create, edit or debug a Bismuth base** (a `.base.jsonl` file whose first line is the `type: base` config; older markdown `type: base` notes still read; or a ```query block),',
     'first call the `bismuth_docs_read` MCP tool with `{path: "bases/authoring.md"}`, then',
     '`{path: "bases/authoring/<view kind>.md"}` for the kind you are writing.',
     '',

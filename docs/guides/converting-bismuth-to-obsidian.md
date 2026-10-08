@@ -7,7 +7,7 @@ Wikilinks, embeds, callouts, math, frontmatter, tags and attachments are the sam
 | Bismuth | Obsidian | Topic page |
 |---|---|---|
 | `.settings`, `.daemon/`, `.trash/` | `.obsidian/*.json`, nothing | `vault-and-settings` |
-| `type: base` markdown note (a flat view, or a `views:` list) | `.base` YAML file (many views) + a note for any prose body | `bases` |
+| `.base.jsonl` file, or `type: base` markdown note (a flat view, or a `views:` list) | `.base` YAML file (many views) + a note for any prose body of a markdown base | `bases` |
 | bracket task fields `[due 2026-09-14] [high]` | Tasks-plugin emoji `⏫ 📅 2026-09-14` | `tasks` |
 | `::`/`:::` cards, row-card bases | Spaced Repetition plugin cards | `flashcards` |
 | `.draw` files, ` ```draw ` ink fences | PNG pictures, or dropped | `drawings` |
@@ -70,6 +70,8 @@ Find out which features this vault uses, so you read only the topic pages you ne
 ```bash
 # bases: every type: base note, then how many use each view kind
 grep -rlE '^type:[[:space:]]*base[[:space:]]*$' --include='*.md' "$OUT"
+find "$OUT" -name '*.base.jsonl'   # JSONL bases: line 1 is the config, later lines are rows; Obsidian cannot open them
+find "$OUT" -name '*.base.jsonl' -exec head -qn1 {} + | jq -r '.view // "table"' | sort | uniq -c | sort -rn   # view kinds of JSONL bases
 grep -rhE '^view:' --include='*.md' "$OUT" | sort | uniq -c | sort -rn
 grep -rlE '^views:' --include='*.md' "$OUT"   # multi-entry views: lists: `base read` shows only the first
 grep -rlE '^type:[[:space:]]*base[[:space:]]*$' --include='*.md' "$SRC" | while read -r f; do echo "== $f"; bismuth base validate "${f#"$SRC"/}" --vault "$SRC"; done   # silent hazards: bad view kind, extra views, #-truncated filters, dangling ref; exit 1 per problem base
@@ -132,6 +134,7 @@ Every check has an expected result. A failure is a bug in your conversion: fix i
 # (a) nothing Bismuth-only left, each expected 0. The last one may hit a line whose date is not a
 # real day (`[due 2026-02-30]`, text to Bismuth); the `tasks` topic page has a filter that drops those.
 grep -rlE '^type:[[:space:]]*base[[:space:]]*$' --include='*.md' "$OUT" | wc -l
+find "$OUT" -name '*.base.jsonl' | wc -l
 grep -rcE '^[[:space:]]*```[[:space:]]*(draw|query)' --include='*.md' "$OUT" | grep -v ':0$' | wc -l
 grep -rnE '^[[:space:]]*[-*+] \[.\] .*\[((due|scheduled|start|done|created|cancelled) [0-9]{4}-[0-9]{2}-[0-9]{2}|highest|high|medium|low|lowest|every [^]]+)\]' --include='*.md' "$OUT" | wc -l
 
@@ -169,6 +172,7 @@ Write `$OUT.conversion-report.md` beside the vault (not inside it) and summarise
 ## Failure modes
 
 - If two Bismuth tags differ only by case, they merge silently in Obsidian (`#Book` and `#book` are two tags in Bismuth and one in Obsidian). List every case-variant pair in the report; do not rewrite them.
+- If a `.base.jsonl` file is left in `$OUT`, Obsidian shows it as an unopenable file, because it is neither markdown nor an Obsidian `.base`. The `bases` topic page converts each one to a `.base` and deletes the JSONL copy; check (a) below counts any that remain.
 - If a Bismuth base has a multi-entry `views:` list, convert it entry by entry (`bases`, B4). Bases that compose another (`source: base` + `ref`) over the same rows may be folded back into one `.base` with several views, which is optional. The default is one `.base` per Bismuth base, which is always correct.
 - If a note has ink in a ` ```draw ` fence, Obsidian cannot show it: Obsidian has no stroke format. The fence is stripped (or flattened to a picture of the whole note) and reported.
 - If a base's `ref` names no file, it resolves to zero rows; report it (`bismuth base validate` flags it). The other zero-row trap is a base that spells `source: base` with no `ref:`: `base render` and `rows --of` return nothing for it, though it has body rows. Read a body-row base's rows with `base read` (`bases`).

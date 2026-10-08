@@ -12,6 +12,9 @@ import { parseBasePropertyType } from './properties'
 import { parseRows } from './rows'
 import { normalizeSource } from './sourceSpec'
 import { combineFilters } from './filters'
+import { baseFormatOf, parseBaseJsonl, FRONTMATTER_RE } from './baseFile'
+
+export { FRONTMATTER_RE }
 
 const AGGREGATE_VALUES: readonly string[] = [
     'sum',
@@ -418,22 +421,18 @@ export function parseBase(text: string): BaseConfig {
 }
 
 /**
- * Single frontmatter-split regex shared by the base parser and the row rewriter (rowOps.ts)
- * so they slice the exact same boundary. Capture groups:
- *   [1] the whole frontmatter block including the `---` delimiters (rowOps keeps this verbatim)
- *   [2] the inner YAML between the delimiters (parseBaseFile feeds this to the YAML parser)
- *   [3] the body after the closing delimiter
- */
-export const FRONTMATTER_RE = /^(---\r?\n([\s\S]*?)\r?\n---\r?\n?)([\s\S]*)$/
-
-/**
- * Parse a `type: base` markdown file: YAML frontmatter (config) + optional GFM table (rows).
+ * Parse a base file in either format: JSON Lines (line 1 config, one row per line) or a
+ * `type: base` markdown file (YAML frontmatter config + YAML-list or GFM-table rows).
  * The base's one view is spelled flat — `view: <kind>` plus top-level view keys.
  */
 export function parseBaseFile(
     text: string,
     meta: { name: string; path: string },
 ): ParsedBase {
+    if (baseFormatOf(text) === 'jsonl') {
+        const { raw, rows } = parseBaseJsonl(text, meta)
+        return { config: parseBaseObject(raw), rows }
+    }
     const m = text.match(FRONTMATTER_RE)
     const fmText = m ? m[2] : ''
     const body = m ? m[3] : text

@@ -77,3 +77,16 @@ test('an rgb() custom accent falls back to the ink accent instead of throwing', 
         categoryColorId('accent', 'ink'),
     )
 })
+
+test('categoryColorMap reads categories from a JSONL base config line', async () => {
+    const { categoryColorMap } = await import('../../src/gcal/sync')
+    const jsonl =
+        JSON.stringify({
+            type: 'base',
+            views: [{ type: 'calendar' }],
+            categories: [{ name: 'Exams', color: '#d50000' }],
+        }) + '\n'
+    expect(categoryColorMap(jsonl)).toEqual({ Exams: '11' })
+    const md = `---\ntype: base\ncategories:\n  - name: Exams\n    color: '#d50000'\n---\n`
+    expect(categoryColorMap(md)).toEqual({ Exams: '11' })
+})

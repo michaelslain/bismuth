@@ -1,7 +1,10 @@
 import { createResource, Show, Switch, Match } from 'solid-js'
 import { readNoteCached, peekNoteCache } from './noteCache'
 import { parseFrontmatter } from '../../core/src/frontmatter'
+import { isBasePath, isBaseText } from '../../core/src/bases/baseFile'
 import { Editor } from './Editor'
+import { vaultTree } from './treeStore'
+import { registerBasePaths } from './editor/wikilink'
 import { BaseView } from './bases/BaseView'
 import { InboxPageView } from './InboxPageView'
 import { Loading } from './ui/EmptyState'
@@ -13,6 +16,13 @@ import {
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import styles from './FileView.module.css'
+
+// Wikilinks to a `.base.jsonl` resolve against the tree cache (a base is not a graph node).
+registerBasePaths(() =>
+    vaultTree()
+        .map(e => e.path)
+        .filter(isBasePath),
+)
 
 /**
  * Routes a `.md` file to the right view: a `type: base` file renders as a BaseView,
@@ -49,9 +59,13 @@ export function FileView(props: {
         },
     )
     const body = () => loaded()?.text
+    // A `.base.jsonl` path is always a base (never the text editor); a `.md` is a base when
+    // its frontmatter says `type: base`. `isBaseText` covers both formats by content.
     const isBase = () => {
         const text = body()
-        return text !== undefined && parseFrontmatter(text).data.type === 'base'
+        return (
+            text !== undefined && (isBasePath(props.path) || isBaseText(text))
+        )
     }
     // A daemon-authored inbox page (core/src/daemonPages.ts) — routes to InboxPageView, which
     // wraps the SAME Editor body in an action-bar header. Same idiom as isBase() above.

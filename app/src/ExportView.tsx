@@ -39,7 +39,7 @@ import type {
     RenderMode,
     CalSpan,
 } from './export/types'
-import { parseFrontmatter } from '../../core/src/frontmatter'
+import { isBaseText } from '../../core/src/bases/baseFile'
 import { parseBaseFile } from '../../core/src/bases/parse'
 import styles from './ExportView.module.css'
 
@@ -192,7 +192,7 @@ export function ExportView(props: {
     const [baseInfo] = createResource(srcPath, async p => {
         try {
             const text = await api.read(p)
-            if (parseFrontmatter(text).data?.type !== 'base') return null
+            if (!isBaseText(text)) return null
             const { config } = parseBaseFile(text, {
                 name: basename(p),
                 path: p,
@@ -310,7 +310,10 @@ export function ExportView(props: {
             defaultPath: vaultRoot() || undefined,
             title: 'Choose file to export',
             filters: [
-                { name: 'Notes & docs', extensions: ['md', 'sheet', 'draw'] },
+                {
+                    name: 'Notes & docs',
+                    extensions: ['md', 'jsonl', 'sheet', 'draw'],
+                },
             ],
         })
         if (!abs) return

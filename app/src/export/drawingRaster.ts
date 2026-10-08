@@ -1,8 +1,7 @@
 // app/src/export/drawingRaster.ts
 // Rasterizes a drawing doc to a PNG in the browser using the core (browser-safe) render2d.
 import {
-    parseDoc,
-    emptyDoc,
+    parseDocOrEmpty,
     PAGE_W,
     PAGE_H,
     type DrawingDoc,
@@ -16,14 +15,6 @@ import {
 import { themeColors } from '../../../core/src/drawing/theme'
 
 const SCALE = 2
-
-function parse(text: string): DrawingDoc {
-    try {
-        return parseDoc(text)
-    } catch {
-        return emptyDoc()
-    }
-}
 
 /** Pre-decode every distinct image src in the doc into HTMLImageElements so the synchronous
  *  render2d can blit them (placed images + image/markup backgrounds). Undecodable srcs are
@@ -86,7 +77,7 @@ export async function drawingToPng(
     theme: 'dark' | 'light' = 'light',
     box?: InkBox,
 ): Promise<{ bytes: Uint8Array; dataUrl: string }> {
-    const doc = parse(docText)
+    const doc = parseDocOrEmpty(docText)
     if (box) return inkLayerToPng(doc, theme, box)
     const images = await decodeImages(doc)
     const n = Math.max(1, doc.pages.length)

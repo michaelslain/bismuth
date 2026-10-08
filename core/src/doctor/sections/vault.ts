@@ -13,8 +13,9 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
+import { baseFormatOf, readBaseConfigRaw } from '../../bases/baseFile'
 import { flattenBaseViews } from '../../bases/flattenViews'
-import { listMarkdown } from '../../files'
+import { listBases, listMarkdown } from '../../files'
 import { FRONTMATTER_REGEX } from '../../frontmatter'
 import {
     LEGACY_SETTINGS_FILE,
@@ -172,6 +173,8 @@ function checkTaskSyntax(
 
 /** The `views` entry count of a `type: base` note whose frontmatter still has the legacy list. */
 function legacyViewCount(text: string): number | null {
+    // JSON Lines bases are always flat — there is no views: list to find
+    if (baseFormatOf(text) === 'jsonl') return null
     const m = text.match(FRONTMATTER_REGEX)
     if (!m) return null
     // cheap pre-check: only a frontmatter with a top-level `views:` key can be a legacy base
@@ -384,6 +387,35 @@ function checkBackupExclude(vault: string): Finding[] {
     ]
 }
 
+/** JSON Lines bases whose line 1 does not parse as a config object: the base cannot load. */
+async function checkJsonlBases(vault: string): Promise<Finding[]> {
+    let rels: string[]
+    try {
+        rels = await listBases(vault)
+    } catch {
+        return []
+    }
+    const broken: string[] = []
+    for (const rel of rels.sort()) {
+        try {
+            const text = readFileSync(join(vault, rel), 'utf8')
+            if (readBaseConfigRaw(text) === null) broken.push(rel)
+        } catch {
+            /* unreadable base — not this check's problem */
+        }
+    }
+    if (broken.length === 0) return []
+    const n = broken.length
+    return [
+        {
+            id: 'vault.base-jsonl-config',
+            severity: 'warn',
+            title: `${n} ${n === 1 ? 'JSON Lines base has' : 'JSON Lines bases have'} an unparseable first line`,
+            detail: itemLines(broken),
+        },
+    ]
+}
+
 export const vaultSection: DoctorSection = {
     id: 'vault',
     title: 'vault',
@@ -397,6 +429,7 @@ export const vaultSection: DoctorSection = {
             ...checkRetiredKeys(vault),
             ...checkTaskSyntax(vault, notes),
             ...checkBaseViews(vault, notes),
+            ...(await checkJsonlBases(vault)),
             ...checkInkDir(vault),
             ...checkDaemonMd(vault),
             ...checkVisibilityProfiles(vault, ctx.now),

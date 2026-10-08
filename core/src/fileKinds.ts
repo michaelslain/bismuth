@@ -69,7 +69,7 @@ export function binaryForCompanion(mdPath: string): string | null {
 
 /** listTree's name-based predicate: which files the tree considers at all, BEFORE the
  *  companion-hiding pass that drops a `.md`/`.draw` sidecar whose companionable sibling is
- *  present. Notes, drawings, sheets, settings-adjacent yaml, plus every companionable binary. */
+ *  present. Notes, drawings, sheets, settings-adjacent yaml, `.base.jsonl` bases, plus every companionable binary. */
 export function isTreeListedName(name: string): boolean {
     const ext = extOfPath(name)
     return (
@@ -78,6 +78,7 @@ export function isTreeListedName(name: string): boolean {
         ext === 'sheet' ||
         ext === 'yaml' ||
         ext === 'yml' ||
+        name.endsWith('.base.jsonl') ||
         isImagePath(name) ||
         isPdfPath(name)
     )

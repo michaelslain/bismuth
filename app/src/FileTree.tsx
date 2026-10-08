@@ -28,7 +28,11 @@ import type { TreeEntry } from '../../core/src/graph'
 import { SETTINGS_FILE } from './tabIds'
 import { Icon } from './icons/Icon'
 import { IconPicker } from './icons/IconPicker'
-import { BASE_VIEW_KINDS, baseTemplate, baseFileName } from './baseViews'
+import {
+    BASE_VIEW_KINDS,
+    baseTemplate,
+    uniqueBaseFileName,
+} from './baseViews'
 import { primeNoteCache } from './noteCache'
 import { settings } from './settings'
 import { applyNewNoteTemplate } from '../../core/src/newNoteTemplate'
@@ -54,8 +58,8 @@ import { openNote } from './ui/openNote'
 
 import { buildTree, reconcileTree, type TreeNode } from './fileTreeModel'
 
-// Every artifact the file tree can create in place. "base" is a `.md` seeded with
-// BASE_TEMPLATE; the rest map onto the backend's blank file/dir create. Shared with
+// Every artifact the file tree can create in place. "base" is a `.base.jsonl` seeded with
+// baseTemplate; the rest map onto the backend's blank file/dir create. Shared with
 // the toolbar "+" chooser via the `bismuth-new` event (see App.tsx).
 export type CreateKind = 'file' | 'dir' | 'base' | 'sheet' | 'draw'
 
@@ -579,7 +583,11 @@ export function FileTree(props: {
             kind === 'dir'
                 ? 'New Folder'
                 : kind === 'base'
-                  ? baseFileName(viewKind?.label ?? 'Base')
+                  ? uniqueBaseFileName(
+                        (files() ?? []).map(e => e.path),
+                        parentDir,
+                        viewKind?.label ?? 'Base',
+                    )
                   : kind === 'sheet'
                     ? 'Untitled.sheet'
                     : kind === 'draw'
@@ -593,7 +601,7 @@ export function FileTree(props: {
         const path = joinPath(parentDir, name)
         optimisticAdd(path, fsKind) // instant; reverted via refresh() on failure
         if (parentDir) setOpen(prev => new Set(prev).add(parentDir))
-        // A base must carry `type: base` frontmatter to render as a base, so create the
+        // A base is a `.base.jsonl` whose line 1 is its config, so create the
         // file (api.create is collision-safe — it errors instead of clobbering an existing
         // file, unlike api.write/PUT) then seed the view's template. Open it in a new tab so
         // the view shows immediately (like New spreadsheet/drawing) rather than sitting in

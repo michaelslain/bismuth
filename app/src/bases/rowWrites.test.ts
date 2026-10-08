@@ -3,7 +3,7 @@ import type { Row } from '../../../core/src/bases/types'
 import { placeholderFile } from '../../../core/src/bases/types'
 import { apiBase, httpTransport, setTransport, type Transport } from '../api'
 import { toasts } from '../ui/toastStore'
-import { commitDelete, safeFilename } from './rowWrites'
+import { commitDelete, createRow, safeFilename } from './rowWrites'
 
 const originalBase = apiBase()
 afterEach(() => setTransport(httpTransport(originalBase)))
@@ -108,4 +108,44 @@ test('commitDelete of a stored row names it in the toast when given a title', as
     }
     await commitDelete(stored, undefined, 'x')
     expect(toasts().at(-1)!.message).toBe('deleted x')
+})
+
+const sourced = { sources: [{ path: 'x' }] } as never
+
+test('createRow of a sourced base at the root targets a folder named after it, for .md and .base.jsonl', async () => {
+    for (const basePath of ['Board.md', 'Board.base.jsonl']) {
+        const writes: string[] = []
+        install([])
+        const t = (await import('../api')).api
+        const orig = t.writeChecked
+        t.writeChecked = (async (p: string) => {
+            writes.push(p)
+            return { conflict: false }
+        }) as never
+        try {
+            await createRow({ config: {} as never, basePath, ownsRows: false })
+        } finally {
+            t.writeChecked = orig
+        }
+        expect(writes).toEqual(['Board/Untitled.md'])
+    }
+})
+
+test('createRow of a nested sourced base lands in its own directory, for both forms', async () => {
+    for (const basePath of ['boards/Board.md', 'boards/Board.base.jsonl']) {
+        const writes: string[] = []
+        install([])
+        const t = (await import('../api')).api
+        const orig = t.writeChecked
+        t.writeChecked = (async (p: string) => {
+            writes.push(p)
+            return { conflict: false }
+        }) as never
+        try {
+            await createRow({ config: {} as never, basePath, ownsRows: false })
+        } finally {
+            t.writeChecked = orig
+        }
+        expect(writes).toEqual(['boards/Untitled.md'])
+    }
 })

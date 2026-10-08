@@ -15,6 +15,7 @@ function memVault(initial: Record<string, string>): {
 } {
     const files = { ...initial }
     const fa: FileAccess = {
+        listBases: async () => [],
         listMarkdown: async () =>
             Object.keys(files).filter(p => p.endsWith('.md')),
         listTree: async () =>
@@ -134,6 +135,37 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
                 value: 2,
             }),
         ).rejects.toThrow()
+    })
+
+    test('set-property / set-properties / delete-property on a jsonl base touch only line 1', async () => {
+        const rows = '{"title":"a","n":1}\n{"title":"b",  "n":2}\n'
+        const { fa, files } = memVault({
+            'Cal.base.jsonl': `{"type":"base","view":"table"}\n${rows}`,
+        })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        const path = 'Cal.base.jsonl'
+        await be.dispatch('POST', '/set-property', {
+            path,
+            key: 'icon',
+            value: 'y',
+        })
+        expect(files[path]).toBe(
+            `{"type":"base","view":"table","icon":"y"}\n${rows}`,
+        )
+        await be.dispatch('POST', '/set-properties', {
+            writes: [
+                { path, key: 'a', value: 1 },
+                { path, key: 'view', value: 'cards' },
+            ],
+        })
+        expect(files[path]).toBe(
+            `{"type":"base","view":"cards","icon":"y","a":1}\n${rows}`,
+        )
+        await be.dispatch('POST', '/delete-property', { path, key: 'icon' })
+        expect(files[path]).toBe(
+            `{"type":"base","view":"cards","a":1}\n${rows}`,
+        )
     })
 
     test('collects tasks from the vault', async () => {

@@ -52,7 +52,7 @@ async function collectByExt(root: string, ext: string): Promise<string[]> {
 
 // File types shown in the sidebar tree — mirrors core/src/files.ts's listTree, whose extension
 // set (md/draw/sheet/yaml/yml + images/PDFs) lives in fileKinds.ts's isTreeListedName. A base is a
-// `type: base` md file, not a distinct extension, so `.base` is deliberately absent.
+// `type: base` md file or a `.base.jsonl` file (listed by isTreeListedName); `.base` alone is absent.
 function isTreeFile(path: string): boolean {
     // Skip generated .draw export sidecars first, same as files.ts does near the top
     // of its own filter — otherwise isTreeListedName below would re-admit a
@@ -64,6 +64,7 @@ function isTreeFile(path: string): boolean {
 export function tauriFileAccess(): FileAccess {
     return {
         listMarkdown: root => collectByExt(root, '.md'),
+        listBases: root => collectByExt(root, '.base.jsonl'),
 
         listTree: async root => {
             const out: TreeEntry[] = []

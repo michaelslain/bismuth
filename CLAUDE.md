@@ -121,15 +121,24 @@ They override framework habits, and most violations compile, render and pass tes
 - **Commands and keybindings are pure data in `core/` plus a binding in `app/`**:
   `COMMAND_CATALOG` + `bindCommands`; `KEYBINDING_CATALOG` + `matchesKeybinding`. No key literal in
   an app command path (`keybindingCoverage.test.ts`).
-- **A base is a `type: base` md file with ONE flat view** (`view: <kind>`, keys top-level). There
-  is no `.base` extension. `parseBaseFile` silently turns an invalid `view:` into `table`, so
-  `bismuth base validate` reads raw frontmatter.
+- **A base has ONE flat view** (`view: <kind>`, keys top-level) and two on-disk forms: a
+  `<name>.base.jsonl` file (line 1 the config object, one row per line; what new bases use) or a
+  `type: base` md file. The format is sniffed from content (`core/src/bases/baseFile.ts`), so
+  text-in/text-out code dispatches; anything that lists, routes or names files must handle
+  `.base.jsonl` (`isBasePath`, `pickRefPath`). Config edits go through `setBaseConfigKey`, never
+  `setFrontmatterKey`. Obsidian's `.base` is a different format. `parseBaseFile` silently turns an
+  invalid `view:` into `table`, so `bismuth base validate` reads the raw config.
 - **Tasks parse only bracketed fields** (`[due 2026-09-14]`, `[high]`, `[every week]`).
 - **Flashcards collect only notes tagged `flashcards`**; perfect syntax in an untagged note yields
   nothing.
 - **A ` ```draw ` fence's mode is its info string** (` ```draw ` attached, ` ```draw block `
   standalone); never infer it from a blank line. Anything that renders a note must tell a draw fence
   from an ordinary one.
+- **A `.draw` file is JSON Lines** (header line, then one line per inked page). Read and write it only
+  through `parseDoc`/`serializeDoc` (`core/src/drawing/model.ts`); a raw `JSON.parse` breaks.
+- **Google sync state is keyed by base path** (`~/.bismuth/gcal/sync.json`). Anything that moves or
+  renames a base goes through `moveEntrySynced` (`core/src/gcal/moveSynced.ts`), never bare
+  `moveEntry`, or the next sync duplicates every event. Tests set `BISMUTH_GCAL_DIR` to a temp dir.
 - **A binary's tags live in its companion note `<file>.<ext>.md`**, created on first edit.
 - **The daemon session's MCP wiring is explicit** (`buildQueryOptions()`, `settingSources: []`);
   `inheritUserMcp` adds user scope only, because the session's cwd is the vault. `chat.ts` differs

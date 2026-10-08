@@ -27,7 +27,7 @@ import {
 import { api } from '../api'
 import type { Row, SortSpec, ViewType } from '../../../core/src/bases/types'
 import type { TreeEntry } from '../../../core/src/graph'
-import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
+import { basePickerOptions } from './basePickerOptions'
 import { columnLabel } from './columnLabel'
 import { columnsOf } from './propertyColumns'
 import { FILE_PSEUDO } from './filterOps'
@@ -120,22 +120,11 @@ export function QueryBuilder(props: {
         ...propOptions(),
     ])
 
-    // Base picker: every .md note (label by basename, ref as [[basename]]).
+    // Base picker: every note and base, as a distinct `[[wikilink]]`.
     const [tree] = createResource<TreeEntry[]>(() => api.tree())
-    const baseOptions = createMemo<SelectOption[]>(() => {
-        const out: SelectOption[] = []
-        for (const e of tree() ?? []) {
-            if (
-                (e as { kind?: string }).kind === 'dir' ||
-                !e.path.endsWith('.md')
-            )
-                continue
-            const name = noteLabel(e.path)
-            out.push({ value: `[[${name}]]`, label: name })
-        }
-        out.sort((a, b) => a.label.localeCompare(b.label))
-        return out
-    })
+    const baseOptions = createMemo<SelectOption[]>(() =>
+        basePickerOptions((tree() ?? []).filter(e => e.kind !== 'dir')),
+    )
 
     // --- live preview ---------------------------------------------------------------------
     const [previewBody, setPreviewBody] = createSignal(

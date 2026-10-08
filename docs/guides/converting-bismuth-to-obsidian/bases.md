@@ -1,6 +1,6 @@
 # Converting Bismuth bases to Obsidian `.base` files
 
-A Bismuth base is a `type: base` markdown note with one view; an Obsidian base is a `.base` YAML file with a list of views. This page converts each base note, its inbound links, its stored rows and its query blocks, and lists the view kinds and keys Obsidian cannot hold.
+A Bismuth base is a `<name>.base.jsonl` file or a `type: base` markdown note, with one view; an Obsidian base is a `.base` YAML file with a list of views. This page converts each base file, its inbound links, its stored rows and its query blocks, and lists the view kinds and keys Obsidian cannot hold.
 
 ## Sources
 
@@ -25,7 +25,9 @@ Obsidian:
 
 The tables orient you; where a linked live page disagrees, follow the live page and note the difference in the report.
 
-A Bismuth base is a `.md` note with `type: base` in its frontmatter, never a `.base` file. The frontmatter holds the config: `source`, `filters`, `formulas`, `properties`, `view: <kind>`, and that kind's keys flat at the top level. A base has one view. A `views:` list (several entries, each `{type, name, ...}`) can still be on disk, and `bismuth base read` returns only its first entry. A second view of the same rows is a second base with `source: base` + `ref: "[[First]]"`, which receives rows only: the referenced base's `filters`, `formulas`, sort and grouping are not inherited. The body is optional. It holds the base's own rows (a YAML list or a table) when the base has no `source`, and may also hold plain prose (a heading, a paragraph).
+A Bismuth base is one of two files, never an Obsidian `.base`. A `.base.jsonl` file holds the config as a JSON object on line 1 and one row per later line; it has no prose body. A `.md` note with `type: base` in its frontmatter holds the config there. Obsidian opens neither: its `.base` is YAML, a different format that shares only the word `base`. Both Bismuth forms carry the same keys, so the conversion below applies to either, and each section says where the two differ.
+
+In a markdown base the frontmatter holds the config: `source`, `filters`, `formulas`, `properties`, `view: <kind>`, and that kind's keys flat at the top level. A base has one view. A `views:` list (several entries, each `{type, name, ...}`) can still be on disk, and `bismuth base read` returns only its first entry. A second view of the same rows is a second base with `source: base` + `ref: "[[First]]"`, which receives rows only: the referenced base's `filters`, `formulas`, sort and grouping are not inherited. The body is optional. It holds the base's own rows (a YAML list or a table) when the base has no `source`, and may also hold plain prose (a heading, a paragraph).
 
 An Obsidian base is a `.base` file: pure YAML, with no `---` fences and no `type: base`. Top-level keys are `filters` (global, `and`/`or`/`not` trees of expression strings), `formulas`, `properties` (id to `displayName`), `summaries` (custom summary formulas) and `views:`, a list. Each view has `type`, `name`, optional `filters`, `order`, `groupBy` (`{property, direction}`), `limit` and `summaries` (property to summary name), plus view-specific keys. The layouts on the live Views page are table, cards, list, kanban (the page names the Obsidian version it needs) and map (needs the Maps plugin). Property ids are `file.*`, `note.*` and `formula.*`; a bare name in a filter or formula is a note property.
 
@@ -33,7 +35,7 @@ An Obsidian `.base` is embedded with `![[File.base]]` or `![[File.base#View name
 
 | Bismuth | `.base` |
 |---|---|
-| file `Name.md` + `type: base` | file `Name.base` (same folder, same basename) |
+| file `Name.md` + `type: base`, or file `Name.base.jsonl` | file `Name.base` (same folder, same basename) |
 | `filters` | top-level `filters` (same tree, same expression strings) |
 | `formulas` | `formulas` |
 | `properties` entry `displayName` | `properties` `<id>: {displayName}` (other Bismuth property options have no `.base` key) |
@@ -52,11 +54,15 @@ An Obsidian `.base` is embedded with `![[File.base]]` or `![[File.base#View name
 Work one base at a time, and run these first.
 
 1. Run `bismuth base validate "<rel path>" --vault "$SRC"`. It exits 1 with `{ok: false, errors: [...]}` on a problem, and it finds the silent hazards the other commands hide: an invalid `view:` kind that the parser downgrades to `table`, a `views:` list with more than one entry, a filter a YAML `#` comment truncated (item B3), a `source` or `ref` that resolves to no file (item B1), and filters or formulas that fail to parse. Report every error, and fix the ones that are the conversion's to fix (a truncated filter, item B3).
-2. Read the raw frontmatter for `views:`. This prints `null` for an ordinary base and the full entry list for a multi-view one (`view:` greps never find those):
+2. Read the raw config for `views:`. This prints `null` for an ordinary base and the full entry list for a multi-view one (`view:` greps never find those). For a markdown base:
    ```bash
    bun -e 'const t = require("fs").readFileSync(process.argv[1], "utf8"); console.log(JSON.stringify(Bun.YAML.parse(t.split(/^---$/m)[1]).views ?? null))' "$SRC/<rel path>"
    ```
-3. Get the normalised config with `bismuth base read "<rel path>" --vault "$SRC"`. It prints `{config: {filters, formulas, properties, view: {type, order, groupBy, ...}}, rows}`. `config.view` is the first `views:` entry only, with that entry's own `source` and `filters` already merged in, and `rows` is only the base's own body rows.
+   For a `.base.jsonl` base, read line 1:
+   ```bash
+   head -n 1 "$SRC/<rel path>" | jq -c '.views // null'
+   ```
+3. Get the normalised config with `bismuth base read "<rel path>" --vault "$SRC"`. It accepts both forms and prints `{config: {filters, formulas, properties, view: {type, order, groupBy, ...}}, rows}`. `config.view` is the first `views:` entry only, with that entry's own `source` and `filters` already merged in, and `rows` is only the base's own stored rows (the body of a markdown base, the later lines of a `.base.jsonl` file).
 4. For the rows of a body-row base, use `base read`'s `rows`, not `base render`. A base that spells `source: base` with no `ref:` is read by the app from its own body rows, but the CLI's source resolver returns `[]` for it, so `base render` and `bismuth rows --of "[[Name]]"` print zero rows (a one-row `source: base` note gives 1 row from `base read` and 0 from both others). A base with no `source:` at all is fine in both commands: with body rows they are its rows, and with none it resolves to every vault note. `base render` is right for a base that has a `ref` or a `notes` or `tasks` source.
 5. To measure what a filter selects, use `bismuth rows --where '<expression>' --vault "$SRC"`.
 
@@ -64,7 +70,7 @@ Work one base at a time, and run these first.
 
 ### B0. Is it really a base?
 
-Some `type: base` notes are ordinary notes with a query in the body (the example vault's `Tasks.md` is `type: base` plus a ` ```query ` fence). If the note's body holds ` ```query ` fences, keep it as a note: delete the `type: base` line and any base config keys from its frontmatter, convert its fences in item B8, and write a `.base` beside it only if the frontmatter carried real config (`source`, `filters`, `formulas`, `properties`, a non-default `view`). This command clears a frontmatter that held only that key:
+This item applies to markdown bases only, because a `.base.jsonl` file has no body and cannot hold a query fence; go to B1 for those. Some `type: base` notes are ordinary notes with a query in the body (the example vault's `Tasks.md` is `type: base` plus a ` ```query ` fence). If the note's body holds ` ```query ` fences, keep it as a note: delete the `type: base` line and any base config keys from its frontmatter, convert its fences in item B8, and write a `.base` beside it only if the frontmatter carried real config (`source`, `filters`, `formulas`, `properties`, a non-default `view`). This command clears a frontmatter that held only that key:
 
 ```bash
 perl -0pi -e 's/\A---\ntype: base\n---\n//' "<note>"
@@ -122,9 +128,10 @@ views:
       direction: ASC
 ```
 
-Write it to `<same folder>/<basename>.base`, then handle the `.md`:
+Write it to `<same folder>/<basename>.base`, then handle the source file in `$OUT`:
 
-- Body empty, or holding nothing but rows (body-row bases, B6): delete the `.md`. A `mode: tasks` base is the exception; B7 keeps its `.md` as the note that holds the task lines.
+- A `.base.jsonl` base: delete the `.base.jsonl`. It has no prose to keep, and Obsidian does not open it. Its stored rows are handled by B6.
+- Markdown base, body empty, or holding nothing but rows (body-row bases, B6): delete the `.md`. A `mode: tasks` base is the exception; B7 keeps its `.md` as the note that holds the task lines.
 - Body holds anything else (a heading, a paragraph): the prose cannot live in a `.base`, so keep it as a normal note. Drop the frontmatter and embed the base, after writing the `.base`. The command leaves `<basename>.md` as the body followed by `![[<basename>.base]]`, next to `<basename>.base`:
   ```bash
   perl -0pi -e 's/\A---\n.*?\n---\n//s' "<note>" && printf '\n![[<basename>.base]]\n' >> "<note>"
@@ -133,7 +140,7 @@ Write it to `<same folder>/<basename>.base`, then handle the `.md`:
 
 ### B5. Rewrite inbound links
 
-This applies only to a base whose `.md` you deleted (not one that kept a prose note, and not a note that stayed a note). A link `[[Name]]` that targeted the base needs the extension: `[[Name.base]]`, and `[[Name|alias]]` becomes `[[Name.base|alias]]`. A blanket `perl` or `sed` is wrong, because it must skip code spans and fences: a note that documents the link (`` `[[Name]]` ``) keeps its text. Save this as `rewriteLinks.ts` in your scratch directory and run `bun run rewriteLinks.ts "$OUT" "Name"` once per deleted base (it is idempotent):
+This applies only to a base whose `.md` or `.base.jsonl` you deleted (not one that kept a prose note, and not a note that stayed a note). A link `[[Name]]` that targeted the base needs the extension: `[[Name.base]]`, and `[[Name|alias]]` becomes `[[Name.base|alias]]`. A blanket `perl` or `sed` is wrong, because it must skip code spans and fences: a note that documents the link (`` `[[Name]]` ``) keeps its text. Save this as `rewriteLinks.ts` in your scratch directory and run `bun run rewriteLinks.ts "$OUT" "Name"` once per deleted base (it is idempotent):
 
 ```ts
 // rewriteLinks.ts
@@ -214,7 +221,7 @@ For any view option this page marks unverified, either confirm the key in a `.ba
 ## Validate
 
 - Every base note with a non-empty body that is not rows has a `<Name>.md` next to its `.base` containing `![[<Name>.base]]`, and the report lists it. A base with a multi-entry `views:` list has as many `views:` entries in its `.base` as the source list had.
-- No `type: base` note remains, and every `.base` parses as YAML and carries no `---` fence (guide step 5 a, b).
+- No `type: base` note and no `.base.jsonl` file remains, and every `.base` parses as YAML and carries no `---` fence (guide step 5 a, b).
 - Row parity, where you can measure it: `bismuth rows --where '<the filter expression you wrote>' --vault "$SRC" | jq length` counts the notes your filter selects. Compare it with the count of notes the original base's scope selects (for a body-row base, the length of `rows` from `bismuth base read`, not `base render`, which returns 0 for a `source: base` body-row base). `rows --where` takes the same expression language, so `file.hasTag("x")` and `file.inFolder("x")` work there.
 - Every inbound link resolves (guide step 5 c). A `[[Name]]` left pointing at a deleted base is the usual miss.
 - Open the result in Obsidian when possible; nothing headless validates a `.base` against Obsidian's own schema.

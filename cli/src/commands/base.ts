@@ -3,8 +3,11 @@
 // resolve a SourceSpec to a uniform Row[], or mutate a base's GFM table rows.
 // Mutating commands call core directly — the app's file watcher picks up the
 // writes live, no HTTP server required.
+import { rmSync } from 'node:fs'
+import { join } from 'node:path'
 import type { CommandMap } from '../types'
 import {
+    BOOLEAN_FLAGS,
     bool,
     fail,
     flag,
@@ -16,14 +19,13 @@ import {
 } from '../args'
 import {
     createEntry,
+    deleteEntry,
+    fileExists,
     listMarkdown,
     readNote,
     writeNote,
 } from '../../../core/src/files'
-import {
-    setFrontmatterKey,
-    parseFrontmatter,
-} from '../../../core/src/frontmatter'
+import { setFrontmatterKey } from '../../../core/src/frontmatter'
 import { parseBaseFile, FRONTMATTER_RE } from '../../../core/src/bases/parse'
 import {
     resolveSource,
@@ -35,13 +37,35 @@ import {
     type TruncatedScalar,
 } from '../../../core/src/bases/yamlComment'
 import { parseQueryBlock } from '../../../core/src/bases/queryBlock'
-import { looksLikeTaskDsl, translateTaskDsl } from '../../../core/src/bases/taskDsl'
+import {
+    looksLikeTaskDsl,
+    translateTaskDsl,
+} from '../../../core/src/bases/taskDsl'
 import {
     upsertRow,
     deleteRow,
     reorderRow,
 } from '../../../core/src/bases/rowOps'
-import { fileBasename } from '../../../core/src/pathUtils'
+import {
+    BASE_EXT,
+    baseNameOf,
+    convertMdBaseToJsonl,
+    baseFormatOf,
+    isBaseText,
+    isBasePath,
+    serializeBaseJsonl,
+    readBaseConfigRaw,
+    mutateBaseConfig,
+} from '../../../core/src/bases/baseFile'
+import { loadAppConfig } from '../../../core/src/settings'
+import { createError } from '../../../core/src/error'
+import {
+    readManifest,
+    manifestKey,
+    rekeyBaseSyncUnlocked,
+} from '../../../core/src/gcal/manifest'
+import { withSyncLock } from '../../../core/src/gcal/lock'
+import { resolveBasePath, normalizeVaultPath } from '../baseResolve'
 import {
     agentDenyEntries,
     filterByPath,
@@ -224,7 +248,9 @@ function migrateQueryBody(
     if (translated.where) replacement.push(`where: ${translated.where}`)
     if (translated.sort?.length) {
         const sortStr = translated.sort
-            .map(s => (s.direction === 'DESC' ? `${s.property} desc` : s.property))
+            .map(s =>
+                s.direction === 'DESC' ? `${s.property} desc` : s.property,
+            )
             .join(', ')
         replacement.push(`sort: ${sortStr}`)
     }
@@ -250,7 +276,7 @@ async function readBase(
     file: string,
 ): Promise<{ text: string; name: string }> {
     const text = await readNote(vault, file)
-    return { text, name: fileBasename(file) }
+    return { text, name: baseNameOf(file) }
 }
 
 /** Parse a required `--json '{...}'` flag into a note record (the row's fields). */
@@ -301,16 +327,6 @@ function collectExprErrors(
         )
 }
 
-/** Best-effort raw YAML frontmatter object, for checks that need to see what was
- *  ACTUALLY written before `parseBaseFile`'s malformed-tolerant normalizer silently
- *  downgrades a bad value — e.g. an unrecognized `view:` kind becomes "table"
- *  (parse.ts's `normalizeView`), which would hide exactly the mistake `base validate`
- *  exists to catch. `{}` when there's no frontmatter block or it isn't valid YAML
- *  (parseFrontmatter's own malformed-YAML tolerance — see frontmatter.ts). */
-function rawFrontmatter(text: string): Record<string, unknown> {
-    return parseFrontmatter(text).data
-}
-
 /** The raw frontmatter BODY between the `---` delimiters, unparsed. Needed for
  *  findCommentTruncations, which has to see exactly what was written before YAML parsing
  *  (or parseFrontmatter's own malformed-tolerance) has resolved a value — by the time a
@@ -350,7 +366,10 @@ function frontmatterLineOffset(text: string): number {
  *  exposes: `t.line` plus the same frontmatter body text locates the raw source line, and
  *  a plain YAML scalar has no escaping, so `kept` and `dropped` both appear in it
  *  byte-for-byte. Falls back to the lossy join only if that ever isn't true. */
-function reconstructTruncatedValue(frontmatterBody: string, t: TruncatedScalar): string {
+function reconstructTruncatedValue(
+    frontmatterBody: string,
+    t: TruncatedScalar,
+): string {
     const rawLine = frontmatterBody.split(/\r?\n/)[t.line - 1] ?? ''
     const keptAt = rawLine.indexOf(t.kept)
     const droppedAt = rawLine.lastIndexOf(t.dropped)
@@ -402,7 +421,7 @@ async function readsDeniedBase(
         return false
     }
     const { config } = parseBaseFile(text, {
-        name: fileBasename(refPath),
+        name: baseNameOf(refPath),
         path: refPath,
     })
     return readsDeniedBase(vault, config.source, entries, seen)
@@ -410,13 +429,17 @@ async function readsDeniedBase(
 
 export const commands: CommandMap = {
     'base create': {
-        summary: 'Create a new type:base note (a base has exactly one view)',
+        summary:
+            'Create a new base (a `.base.jsonl` file; an explicit `.md` path makes a markdown base). A base has exactly one view',
         usage: '<path> --view <kind> [--source <spec>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]',
         run: async args => {
             const vault = requireVault(args)
             const [path] = positionals(args)
             if (!path) fail('<path> required')
-            const rel = path.endsWith('.md') ? path : `${path}.md`
+            const rel =
+                /\.md$/i.test(path) || isBasePath(path)
+                    ? path
+                    : `${path}${BASE_EXT}`
 
             const view = flag(args, 'view')
             if (!view)
@@ -454,13 +477,21 @@ export const commands: CommandMap = {
                 if (!x) missing.push('x')
             }
 
-            // Build the frontmatter via the same yaml-preserving helper `prop set`/`row add`
-            // use, one key at a time, rather than hand-rolling YAML serialization here.
-            let text = setFrontmatterKey('', 'type', 'base')
-            text = setFrontmatterKey(text, 'view', view)
-            text = setFrontmatterKey(text, 'source', source)
-            for (const [key, value] of Object.entries(viewKeys))
-                text = setFrontmatterKey(text, key, value)
+            // JSONL: the config is line 1. Markdown (explicit `.md` path): build the frontmatter via
+            // the same yaml-preserving helper `prop set`/`row add` use, one key at a time.
+            let text: string
+            if (isBasePath(rel)) {
+                text = serializeBaseJsonl(
+                    { type: 'base', view, source, ...viewKeys },
+                    [],
+                )
+            } else {
+                text = setFrontmatterKey('', 'type', 'base')
+                text = setFrontmatterKey(text, 'view', view)
+                text = setFrontmatterKey(text, 'source', source)
+                for (const [key, value] of Object.entries(viewKeys))
+                    text = setFrontmatterKey(text, key, value)
+            }
 
             // Reserve the path first (throws EEXIST if a file is already there — no clobbering
             // an existing note), then write the real config.
@@ -486,8 +517,9 @@ export const commands: CommandMap = {
         usage: '<path>',
         run: async args => {
             const vault = requireVault(args)
-            const [path] = positionals(args)
-            if (!path) fail('<path> required')
+            const [given] = positionals(args)
+            if (!given) fail('<path> required')
+            const path = resolveBasePath(vault, given)
             const { text, name } = await readBase(vault, path)
             const { config, rows } = parseBaseFile(text, { name, path })
             out({ config, rows }, args)
@@ -500,8 +532,9 @@ export const commands: CommandMap = {
         usage: '<path>',
         run: async args => {
             const vault = requireVault(args)
-            const [path] = positionals(args)
-            if (!path) fail('<path> required')
+            const [given] = positionals(args)
+            if (!given) fail('<path> required')
+            const path = resolveBasePath(vault, given)
             // Throws when visibility cannot be determined: fail closed, never caught.
             const entries = await agentDenyEntries(vault)
             const { text, name } = await readBase(vault, path)
@@ -513,7 +546,7 @@ export const commands: CommandMap = {
             // mistake this command exists to surface. Read the raw YAML directly to see what
             // was actually written, before that normalizing happens. A base has ONE view; a
             // legacy `views:` list is read (first entry) but more than one entry is an error.
-            const raw = rawFrontmatter(text)
+            const raw = readBaseConfigRaw(text) ?? {}
             if (Array.isArray(raw.views)) {
                 if (raw.views.length > 1)
                     errors.push(
@@ -703,8 +736,9 @@ export const commands: CommandMap = {
         usage: '<path>',
         run: async args => {
             const vault = requireVault(args)
-            const [path] = positionals(args)
-            if (!path) fail('<path> required')
+            const [given] = positionals(args)
+            if (!given) fail('<path> required')
+            const path = resolveBasePath(vault, given)
 
             const entries = await agentDenyEntries(vault)
             const { text, name } = await readBase(vault, path)
@@ -805,8 +839,9 @@ export const commands: CommandMap = {
         usage: "<basePath> --json '{...}'",
         run: async args => {
             const vault = requireVault(args)
-            const [basePath] = positionals(args)
-            if (!basePath) fail('<basePath> required')
+            const [givenPath] = positionals(args)
+            if (!givenPath) fail('<basePath> required')
+            const basePath = resolveBasePath(vault, givenPath)
             const note = requireJson(args)
             const { text, name } = await readBase(vault, basePath)
             const next = upsertRow(text, { name, path: basePath }, null, note)
@@ -821,8 +856,9 @@ export const commands: CommandMap = {
         usage: "<basePath> <index> --json '{...}'",
         run: async args => {
             const vault = requireVault(args)
-            const [basePath, indexStr] = positionals(args)
-            if (!basePath) fail('<basePath> required')
+            const [givenPath, indexStr] = positionals(args)
+            if (!givenPath) fail('<basePath> required')
+            const basePath = resolveBasePath(vault, givenPath)
             const index = intArg(indexStr, '<index>')
             const note = requireJson(args)
             const { text, name } = await readBase(vault, basePath)
@@ -837,8 +873,9 @@ export const commands: CommandMap = {
         usage: '<basePath> <index>',
         run: async args => {
             const vault = requireVault(args)
-            const [basePath, indexStr] = positionals(args)
-            if (!basePath) fail('<basePath> required')
+            const [givenPath, indexStr] = positionals(args)
+            if (!givenPath) fail('<basePath> required')
+            const basePath = resolveBasePath(vault, givenPath)
             const index = intArg(indexStr, '<index>')
             const { text, name } = await readBase(vault, basePath)
             const next = deleteRow(text, { name, path: basePath }, index)
@@ -852,14 +889,178 @@ export const commands: CommandMap = {
         usage: '<basePath> <from> <to>',
         run: async args => {
             const vault = requireVault(args)
-            const [basePath, fromStr, toStr] = positionals(args)
-            if (!basePath) fail('<basePath> required')
+            const [givenPath, fromStr, toStr] = positionals(args)
+            if (!givenPath) fail('<basePath> required')
+            const basePath = resolveBasePath(vault, givenPath)
             const from = intArg(fromStr, '<from>')
             const to = intArg(toStr, '<to>')
             const { text, name } = await readBase(vault, basePath)
             const next = reorderRow(text, { name, path: basePath }, from, to)
             await writeNote(vault, basePath, next)
             out({ ok: true }, args)
+        },
+    },
+
+    'base migrate': {
+        summary:
+            'Convert a markdown base to a `.base.jsonl` file (the .md goes to the vault trash). <basePath> or --all; --dry-run prints the plan and writes nothing',
+        usage: '<basePath> | --all [--dry-run]',
+        run: async args => {
+            const vault = requireVault(args)
+            const dryRun = bool(args, 'dry-run')
+            const [given] = positionals(args, [...BOOLEAN_FLAGS, 'all'])
+            const all = bool(args, 'all')
+            if (!given && !all) fail('<basePath> or --all required')
+            if (given && all) fail('pass <basePath> or --all, not both')
+            const entries = await agentDenyEntries(vault)
+
+            // Converts one base: returns the report line. Throws an AppError on a refusal.
+            const migrateOne = async (rawFrom: string): Promise<string> => {
+                const from = normalizeVaultPath(rawFrom)
+                if (isDeniedPath(entries, from))
+                    throw createError('EACCES', `not available: ${from}`, 403)
+                if (!/\.md$/i.test(from))
+                    throw createError(
+                        'EINVAL',
+                        `${from} is not a markdown base — base migrate converts \`.md\` bases to \`${BASE_EXT}\``,
+                        400,
+                    )
+                const text = await readNote(vault, from)
+                if (baseFormatOf(text) !== 'md' || !isBaseText(text))
+                    throw createError(
+                        'EINVAL',
+                        `${from} is not a \`type: base\` markdown file`,
+                        400,
+                    )
+                const to = `${from.replace(/\.md$/i, '')}${BASE_EXT}`
+                if (fileExists(vault, to)) {
+                    // A hidden target must not be confirmed to exist by name.
+                    if (isDeniedPath(entries, to))
+                        throw createError(
+                            'EACCES',
+                            `not available: ${from}`,
+                            403,
+                        )
+                    throw createError(
+                        'EEXIST',
+                        `${to} already exists — move or delete it, then rerun \`bismuth base migrate ${from}\``,
+                        409,
+                    )
+                }
+                const jsonl = convertMdBaseToJsonl(text)
+                const rows = jsonl.split('\n').filter(l => l.trim()).length - 1
+                const bodyLines = (text.match(FRONTMATTER_RE)?.[3] ?? '')
+                    .split('\n')
+                    .filter(l => l.trim() !== '')
+                // A GFM table with a header and separator but no rows is a valid empty base.
+                const headerOnly =
+                    bodyLines.length === 2 &&
+                    /^\s*\|.*\|\s*$/.test(bodyLines[0]) &&
+                    /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(
+                        bodyLines[1],
+                    )
+                if (rows === 0 && bodyLines.length > 0 && !headerOnly)
+                    throw createError(
+                        'EINVAL',
+                        `${from} has body text but no parseable rows — fix the table/list first`,
+                        400,
+                    )
+                // Lines that are neither a table row nor a YAML list item or its continuation.
+                const dropped = bodyLines.filter(
+                    l => !/^(\||-|\s)/.test(l),
+                ).length
+                const droppedNote = headerOnly
+                    ? ', dropped the table header (no rows)'
+                    : dropped
+                      ? `, dropped ${dropped} non-row lines`
+                      : ''
+                // The legacy global Google sync setting names this base by path; carry it onto the
+                // migrated base so sync keeps matching after the rename.
+                const gc = (await loadAppConfig(vault)).googleCalendar
+                let outText = jsonl
+                if (gc?.basePath && normalizeVaultPath(gc.basePath) === from)
+                    outText = mutateBaseConfig(jsonl, raw => {
+                        if (raw.googleCalendarSync === undefined)
+                            raw.googleCalendarSync = !!gc.enabled
+                        if (!raw.googleCalendarId && gc.calendarId?.trim())
+                            raw.googleCalendarId = gc.calendarId.trim()
+                    })
+                if (!dryRun) {
+                    // Google sync state is keyed by base path: carry it onto the new path, or the
+                    // next sync starts with no links and duplicates every event on Google. The
+                    // bare legacy key is claimed only by the installed app, exactly as core's
+                    // sync does.
+                    const claimLegacy = !!process.env.BISMUTH_APP_PATH
+                    const oldKey = manifestKey(vault, from)
+                    const peek = readManifest()
+                    const linked = !!(
+                        peek.bases[oldKey] ??
+                        (claimLegacy ? peek.bases[from] : undefined)
+                    )
+                    createEntry(vault, to, 'file')
+                    try {
+                        // A held sync lock fails here, before anything is written; the lock then
+                        // covers the write AND the re-key.
+                        if (linked)
+                            await withSyncLock(async () => {
+                                await writeNote(vault, to, outText)
+                                const r = rekeyBaseSyncUnlocked(
+                                    vault,
+                                    from,
+                                    to,
+                                    {
+                                        claimLegacy,
+                                    },
+                                )
+                                // Trash inside the lock: a failure puts the key back, and no
+                                // queued sync can see Cal.md again under the old key.
+                                try {
+                                    deleteEntry(vault, from)
+                                } catch (e) {
+                                    r.restore()
+                                    throw e
+                                }
+                            })
+                        else await writeNote(vault, to, outText)
+                    } catch (err) {
+                        // Leave no half-made target behind, so a rerun succeeds.
+                        rmSync(join(vault, to), { force: true })
+                        throw err
+                    }
+                    if (!linked) deleteEntry(vault, from)
+                }
+                return `${dryRun ? 'would migrate' : 'migrated'} ${from} -> ${to} (${rows} rows${droppedNote})`
+            }
+
+            if (!all) {
+                const from = resolveBasePath(vault, given)
+                out(await migrateOne(from), args)
+                return
+            }
+            const lines: string[] = []
+            for (const rel of (await listMarkdown(vault)).sort()) {
+                if (isDeniedPath(entries, rel)) continue
+                let text: string
+                try {
+                    text = await readNote(vault, rel)
+                } catch {
+                    continue
+                }
+                if (baseFormatOf(text) !== 'md' || !isBaseText(text)) continue
+                try {
+                    lines.push(await migrateOne(rel))
+                } catch (err) {
+                    lines.push(
+                        `skipped ${rel}: ${err instanceof Error ? err.message : String(err)}`,
+                    )
+                }
+            }
+            out(
+                lines.length
+                    ? lines.join('\n')
+                    : 'no markdown bases to migrate',
+                args,
+            )
         },
     },
 
@@ -878,8 +1079,11 @@ export const commands: CommandMap = {
             )
             const files: Array<{ file: string; changed: number }> = []
             const unconvertible: Array<{ file: string; block: number }> = []
-            const degraded: Array<{ file: string; block: number; leaves: string[] }> =
-                []
+            const degraded: Array<{
+                file: string
+                block: number
+                leaves: string[]
+            }> = []
             const skipped: Array<{ file: string; error: string }> = []
             let changed = 0
             const todayIso = today()
@@ -899,8 +1103,7 @@ export const commands: CommandMap = {
                     if (text.includes('\r\n')) {
                         skipped.push({
                             file: rel,
-                            error:
-                                'CRLF line endings — the query-fence scanner only supports LF, so this file was not checked for legacy query blocks. Convert to LF to migrate.',
+                            error: 'CRLF line endings — the query-fence scanner only supports LF, so this file was not checked for legacy query blocks. Convert to LF to migrate.',
                         })
                         continue
                     }

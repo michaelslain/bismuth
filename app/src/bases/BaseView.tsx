@@ -89,8 +89,8 @@ function hostFileMeta(path: string): FileMeta {
  *  this stays keyed on the base's identity (path/source/view) alone. */
 interface Doc {
     config: BaseConfig
-    // The base's OWN inline rows — a `type: base` md file's own table body, parsed
-    // client-side. Empty for a flat ```query block or an inline ```query YAML fence,
+    // The base's OWN inline rows — a `.base.jsonl` base's row lines, or a `type: base` md
+    // file's own table body, parsed client-side. Empty for a flat ```query block or an inline ```query YAML fence,
     // neither of which has a table of its own to fall back to.
     rows: Row[]
     basePath?: string
@@ -121,7 +121,7 @@ const CHART_VIEW_TYPES = new Set(['bar', 'line', 'stat', 'heatmap'])
 
 /**
  * Unified view host. Renders any source (base / notes / tasks) as any view type.
- * Inputs (priority order): `view` (a flat ```query block spec), `path` (a `type: base` md file),
+ * Inputs (priority order): `view` (a flat ```query block spec), `path` (a `.base.jsonl` file or a `type: base` md file),
  * or `source` (inline ```query YAML).
  */
 export function BaseView(props: {
@@ -194,7 +194,7 @@ export function BaseView(props: {
             }
         }
         if (props.path) {
-            // A base file is a `type: base` md note (no `.base` extension). Reuse the body
+            // A base file is a `.base.jsonl` file or a `type: base` md note. Reuse the body
             // FileView already read on the first load; re-read on any subsequent refetch.
             const text = pendingBody ?? (await api.read(props.path))
             pendingBody = undefined
