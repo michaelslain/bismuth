@@ -33,7 +33,7 @@ Knowledge is a **three-brain** model: **2nd Brain** = the vault (markdown + wiki
 
 `docs/` (committed) is the exhaustive, code-anchored reference — bases/settings syntax, CLI, daemon, storage, HTTP API, MCP. Start at `docs/README.md`; keep it current.
 
-**The original ASCII design handoff is retired** — deleted in `8335a574`, so source comments citing `bismuth-design/ascii/…` name files readable only via `git show 8335a574^:design/ascii/<rest of path>`. The live design system is `DESIGN.md`, the tokens and `app/src/ui/`.
+**The original ASCII design handoff is retired** — deleted in `debe3b3a`, so source comments citing `bismuth-design/ascii/…` name files readable only via `git show debe3b3a^:design/ascii/<rest of path>`. The live design system is `DESIGN.md`, the tokens and `app/src/ui/`.
 
 ## Key Commands
 
