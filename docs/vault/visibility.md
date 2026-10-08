@@ -128,15 +128,14 @@ The gate classifies every command by name into four tiers, and a command nobody 
 |---|---|---|
 | Always safe | `backends` `doctor` `docs` `install` `uninstall` `app` `daemon` `agent-graph` `folder-icon` `backup` `page` `memory`, most of `settings`, `checkpoint advance` and `checkpoint ref` | Runs. None can return a note body. |
 | Path-scoped | `read` `write` `move` `delete` `restore` `mkdir` `prop` `render` | Runs unless an argument names a restricted path. |
-| Filtered | `tree` `templates` `graph` `search` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` | Runs with hidden notes left out; an explicit restricted path is still refused. |
-| Refused when the vault restricts anything | `api` `serve` `export` `chat` `update` `checkpoint` (other than `advance`, `ref`) `folder-visibility` `settings set` `settings unset` `settings status-bar`, and anything unclassified | Refused. |
+| Filtered | `tree` `templates` `graph` `search` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` `checkpoint diff` | Runs with hidden notes left out; an explicit restricted path is still refused. |
+| Refused when the vault restricts anything | `api` `serve` `export` `chat` `update` `checkpoint` (other than `diff`, `advance`, `ref`) `folder-visibility` `settings set` `settings unset` `settings status-bar`, and anything unclassified | Refused. |
 
 Why each refused command stays refused:
 
 - `api` passes through to any HTTP route, and many routes have no per-channel filter.
 - `serve` starts a second unauthenticated core that the session could query with `curl`.
 - `export` follows embeds and base sources, so a hidden note could be pulled in by an embed.
-- `checkpoint diff` prints raw git diff text, the plaintext of every changed note.
 - `chat` holds session transcripts, which have no single path to filter.
 - `folder-visibility`, `settings set` and `settings unset` rewrite the rules; a session that could clear a folder's `hidden` could read what it guarded.
 - `settings status-bar` runs shell output and counts notes by a filter, neither of which can be filtered.

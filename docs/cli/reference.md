@@ -87,8 +87,8 @@ Channel `chat` hides notes marked `hidden`; channel `daemon` hides `hidden` and 
 |---|---|---|
 | Always allowed | `backends`, `backup`, `daemon`, `docs`, `doctor`, `folder-icon`, `install`, `memory`, `page`, `uninstall`, `app`, `settings get`, `settings schema`, `settings deny-list`, `checkpoint advance`, `checkpoint ref` | Cannot print a note body. |
 | Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop`, `render` | Refused when an argument names a restricted note or folder. |
-| Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily` | Run, with restricted notes dropped before any count, group or summary. |
-| Refused | `api`, `serve`, `export`, `chat`, `update`, `checkpoint diff`, `settings set`, `settings status-bar`, `folder-visibility`, any unlisted command | Exit non-zero with a reason. |
+| Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily`, `checkpoint diff` | Run, with restricted notes dropped before any count, group or summary. |
+| Refused | `api`, `serve`, `export`, `chat`, `update`, `settings set`, `settings status-bar`, `folder-visibility`, any unlisted command | Exit non-zero with a reason. |
 
 Three rules apply on top of the tiers:
 
@@ -247,7 +247,7 @@ Bookmarks how far a periodic job has processed a git repository, using a ref nam
 
 The repository is `--dir`, else `--vault`, else `BISMUTH_VAULT`.
 `diff` and `advance` first commit pending changes with a `checkpoint snapshot` message so the result reflects what is on disk; `--no-commit` skips that.
-`checkpoint diff` is the only subcommand an agent is refused in a restricted vault, because it prints a raw diff.
+`checkpoint diff` prints paths and a status letter, never file contents; for an agent it leaves out every path the vault restricts.
 
 ## daemon
 

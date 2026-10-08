@@ -47,7 +47,7 @@
 //    core/src/visibilityFilter.ts (`agentDenyEntries` + `filterByPath` & co.), dropping restricted
 //    notes at the list's source, before any count or summary. This gate's part for that tier is the
 //    argv path scan only. Only commands that cannot be filtered per file (`api`, `serve`, `export`,
-//    `checkpoint diff`, `chat`, `settings status-bar`, `update`, anything unclassified) still refuse
+//    `chat`, `settings status-bar`, `update`, anything unclassified) still refuse
 //    wholesale whenever anything is restricted — a per-file deny cannot stop an unscoped passthrough
 //    from returning a hidden file's lines (docs/vault/visibility.md disables Grep/Glob outright for
 //    exactly this reason).
@@ -171,9 +171,8 @@ export function cliGateChannel(
  *
  * This started as a denylist of "content-scanning commands" and that was the wrong shape. A
  * red-team pass found the misses immediately: `rows`, `card all|due|note`, `task list`,
- * `calendar`, `graph`, `tree`, and most sharply **`checkpoint diff`** — a git diff, i.e. the full
- * plaintext of every changed hidden note, on a command the daemon's PATH shim exists to make
- * reachable. A denylist is only ever as good as the author's imagination, and it silently fails
+ * `calendar`, `graph`, `tree`, `checkpoint diff`. A denylist is only ever as good as the author's
+ * imagination, and it silently fails
  * open for every command added to the CLI afterwards.
  *
  * So: four tiers, and anything unclassified REFUSES. Re-checked against the CLI's full `--help`
@@ -269,14 +268,17 @@ const FILTERED_COMMANDS = new Set([
  * group's OWN subcommands disagree with each other on content risk — widening the whole group's
  * tier would be wrong in one direction or the other:
  *
- *  - `checkpoint diff` is a `git diff` — i.e. the full plaintext of every changed hidden note — so
- *    it stays in the refuse-by-default tail (bare `checkpoint`, or any subcommand this build
- *    doesn't recognize, is NOT in this map and so REFUSES, which is what we want).
+ *  - `checkpoint diff` prints `git diff --name-status` — paths and a status letter, never a line of
+ *    any note — so it is filtered: cli/src/commands/checkpoint.ts drops restricted paths from
+ *    `files` through `agentDenyEntries(<--dir>)`. Refusing it instead broke every cron that scopes
+ *    itself with it in any vault holding one hidden note. Bare `checkpoint`, or any subcommand
+ *    this build doesn't recognize, is NOT in this map and so REFUSES.
  *  - `checkpoint advance`/`checkpoint ref` touch only a git-ref pointer (a SHA, or nothing) and
  *    print no note content — the daemon's own crons legitimately call these (Feature #51
  *    change-scoping), and refusing them would brick that in any restricted vault.
  */
 const COMPOUND_OVERRIDES: Record<string, CommandTier> = {
+    'checkpoint diff': 'filtered',
     'checkpoint advance': 'always-safe',
     'checkpoint ref': 'always-safe',
     // The status bar preview can count notes by a `query` filter, which leaks counts of hidden notes.
@@ -296,8 +298,8 @@ const COMPOUND_OVERRIDES: Record<string, CommandTier> = {
  * the vault restricts anything, because nothing filters their output per file: `api` (a passthrough
  * to ANY server route, including the exact `GET /file?path=…` ambient-oracle read this feature
  * exists to close — it must never be in another tier), `serve` (a second ungated core), `export`
- * (follows embeds and base sources through readers that were never audited), `checkpoint diff` (raw
- * git diff text), `chat` (transcripts have no single path), `settings status-bar` (runs shell
+ * (follows embeds and base sources through readers that were never audited), `chat` (transcripts
+ * have no single path), `settings status-bar` (runs shell
  * output), `update`, and whatever the CLI grows next.
  *
  * The groups that DO filter their own output moved to {@link FILTERED_COMMANDS}. `note` and `daily`
@@ -332,7 +334,7 @@ export function commandTier(args: string[]): CommandTier {
 
 /** Named in the refuse-tier message so an agent knows which commands that tier means. */
 const REFUSED_COMMAND_NAMES =
-    '`api`, `serve`, `export`, `checkpoint diff`, `chat`, `settings status-bar`, `settings set`, `folder-visibility` and `update`'
+    '`api`, `serve`, `export`, `chat`, `settings status-bar`, `settings set`, `folder-visibility` and `update`'
 
 export interface GateDecision {
     /** True when the CLI may run. */

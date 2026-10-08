@@ -131,11 +131,12 @@ test('the SAME command with BISMUTH_AGENT_CHANNEL=daemon is refused before it ev
     expect(err).toContain('Private/secret.md')
 })
 
-test('`checkpoint diff` refuses under an agent channel against a REAL git repo, via --dir', async () => {
+test('`checkpoint diff` drops hidden paths for an agent against a REAL git repo, via --dir', async () => {
     const vault = makeVault(
         {
             'Private/secret.md':
                 '---\nvisibility: hidden\n---\nTHE-SECRET-STRING-42\n',
+            'open.md': '# open\n',
         },
         'bismuth-checkpoint-vis-',
     )
@@ -176,13 +177,16 @@ test('`checkpoint diff` refuses under an agent channel against a REAL git repo, 
             env: { ...process.env, BISMUTH_AGENT_CHANNEL: 'daemon' },
         },
     )
-    const [, daemonErr, daemonCode] = await Promise.all([
+    const [daemonOut, , daemonCode] = await Promise.all([
         new Response(daemon.stdout).text(),
         new Response(daemon.stderr).text(),
         daemon.exited,
     ])
-    expect(daemonCode).toBe(1)
-    expect(daemonErr).toContain('checkpoint')
+    expect(daemonCode).toBe(0)
+    expect(daemonOut).not.toContain('THE-SECRET-STRING-42')
+    const agentPaths = JSON.parse(daemonOut).files.map((f: any) => f.path)
+    expect(agentPaths).toContain('open.md')
+    expect(agentPaths).not.toContain('Private/secret.md')
 
     // The owner (channel unset) still gets the real diff.
     const owner = Bun.spawn(

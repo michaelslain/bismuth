@@ -130,7 +130,6 @@ describe('decideCliGate', () => {
             expect(d.allowed).toBe(false)
             expect(d.reason).toContain(cmd)
             // The message names the commands this tier covers.
-            expect(d.reason).toContain('`checkpoint diff`')
             expect(d.reason).toContain('`settings status-bar`')
         }
     })
@@ -152,12 +151,19 @@ describe('decideCliGate', () => {
     test('allows `bismuth serve` when nothing is restricted', () => {
         expect(decideCliGate(['serve'], []).allowed).toBe(true)
     })
-    test('refuses `checkpoint diff` — a git diff is the plaintext of every changed hidden note', () => {
-        // The denylist this gate started with MISSED this one, and the daemon's PATH shim exists partly
-        // to make `checkpoint` reachable. Found by red-teaming, not by writing more denylist entries.
+    test('`checkpoint diff` is filtered, not refused — it prints paths only, which the command filters', () => {
+        // `git diff --name-status` carries no note body; checkpoint.ts drops restricted paths itself.
+        expect(commandTier(['checkpoint', 'diff'])).toBe('filtered')
         expect(decideCliGate(['checkpoint', 'diff'], RESTRICTED).allowed).toBe(
-            false,
+            true,
         )
+        // An explicit restricted path in argv still refuses, as for every filtered command.
+        expect(
+            decideCliGate(
+                ['checkpoint', 'diff', 'r', '--dir', 'Private/secret.md'],
+                RESTRICTED,
+            ).allowed,
+        ).toBe(false)
     })
     test('allows `checkpoint advance`/`checkpoint ref` even when restricted — no content leaves either', () => {
         // Unlike `checkpoint diff`, these touch only a ref pointer. The daemon's own crons
@@ -212,9 +218,6 @@ describe('decideCliGate', () => {
             expect(commandTier([cmd, 'x'])).toBe('refuse-when-restricted')
             expect(decideCliGate([cmd, 'x'], RESTRICTED).allowed).toBe(false)
         }
-        expect(decideCliGate(['checkpoint', 'diff'], RESTRICTED).allowed).toBe(
-            false,
-        )
         expect(
             decideCliGate(['settings', 'status-bar'], RESTRICTED).allowed,
         ).toBe(false)
@@ -506,10 +509,9 @@ describe("gateCliInvocation (the CLI's own dispatch-point gate)", () => {
         expect(d.allowed).toBe(false)
     })
 
-    test('`checkpoint diff` refuses under an agent channel, resolving the vault from --dir alone (no --vault/env)', async () => {
-        // checkpoint.ts's own flag is --dir, not --vault (it's generic over any tracked repo — the
-        // dream cron points it at the memory dir). A gate that only checked --vault/BISMUTH_VAULT would
-        // be a no-op for the exact invocation shape `bismuth checkpoint diff <ref> --dir <path>` uses.
+    test('`checkpoint diff` runs under an agent channel in a restricted vault, --dir only', async () => {
+        // checkpoint.ts's own flag is --dir, not --vault (it's generic over any tracked repo). The
+        // command filters its own path list, so a hidden note elsewhere in the vault does not refuse it.
         const root = makeVault()
         const d = await gateCliInvocation(
             ['checkpoint', 'diff', 'some-ref', '--dir', root],
@@ -517,8 +519,7 @@ describe("gateCliInvocation (the CLI's own dispatch-point gate)", () => {
                 BISMUTH_AGENT_CHANNEL: 'daemon',
             },
         )
-        expect(d.allowed).toBe(false)
-        expect(d.reason).toContain('checkpoint')
+        expect(d.allowed).toBe(true)
     })
 
     test('`checkpoint diff` is NOT refused for the owner (channel unset), --dir only', async () => {

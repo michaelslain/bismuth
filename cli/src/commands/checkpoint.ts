@@ -15,6 +15,10 @@ import {
     checkpointRef,
     snapshotMessage,
 } from '../../../core/src/backup'
+import {
+    agentDenyEntries,
+    filterByPath,
+} from '../../../core/src/visibilityFilter'
 
 /** The repo to operate on: --dir wins, then --vault, then BISMUTH_VAULT. */
 function repoDir(args: string[]): string {
@@ -42,12 +46,20 @@ export const commands: CommandMap = {
             'List files changed in a repo since a checkpoint ref (refs/bismuth/<ref>)',
         usage: '<ref> --dir <path> [--no-commit]',
         run: async args => {
+            const dir = repoDir(args)
+            const delta = await checkpointDelta(
+                dir,
+                refName(args, 'diff'),
+                commitMsg(args),
+            )
+            // The delta is paths only (`git diff --name-status`), so an agent gets it filtered per
+            // file like `tree`; the owner's own hand gets every path.
+            const entries = await agentDenyEntries(dir)
             out(
-                await checkpointDelta(
-                    repoDir(args),
-                    refName(args, 'diff'),
-                    commitMsg(args),
-                ),
+                {
+                    ...delta,
+                    files: filterByPath(delta.files, entries, f => f.path),
+                },
                 args,
             )
         },
