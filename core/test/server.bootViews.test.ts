@@ -5,7 +5,12 @@
 // instant. It is speculative, so a graph invalidation cancels it while it runs. It used to share ONE
 // AbortController for the life of the process: an invalidation landing BEFORE the warm-up even started
 // (on a daemon-enabled vault, an early memory write) aborted that controller up front, and the warm-up
-// then never ran at all, not even for the fresh graph the chain re-reads.
+// then never ran at all, not even for the fresh graph the chain re-reads. It also ran ONCE: an edit landing
+// during the pass aborted it for good, and one landing after it dropped the views from the rebuilt graph.
+// Which of the three this test's create hit depended on how fast boot was (a cold layout worker in a
+// single-file run vs a warm one after other server tests in the same process), so it failed at the 20 s
+// deadline about half the time in a full `bun test core`. The warm-up now re-runs after every graph
+// invalidation, so all three orderings end with views for the fresh graph.
 //
 // Gated with shouldRunSlowTests: it boots a real server and waits on the watcher and the layout worker.
 import { test, expect } from 'bun:test'
@@ -108,4 +113,59 @@ t(
         }
     },
     30_000, // outlasts the 20 s poll, so a failure reports the assertion rather than the test timeout
+)
+
+t(
+    'a structural edit AFTER the views are warm re-warms them for the rebuilt graph',
+    async () => {
+        const vault = makeVault(
+            {
+                '.settings': 'daemon:\n  enabled: true\n',
+                'a.md': '# a\n[[b]]',
+                'b.md': '# b',
+                '.daemon/memory/m.md': 'A memory about [[a]].\n',
+            },
+            'bismuth-bootviews-rewarm-',
+        )
+        await reconcileSettings(vault)
+        await waitForFsQuiet(vault)
+        process.env.BISMUTH_NO_TASK_MIGRATE = '1'
+        let server: ReturnType<typeof createServer>
+        try {
+            server = createServer({ vault, port: 0 })
+        } finally {
+            delete process.env.BISMUTH_NO_TASK_MIGRATE
+        }
+        const base = `http://localhost:${server.port}`
+        const viewsCover = async (id: string): Promise<Graph | undefined> => {
+            let g: Graph | undefined
+            const deadline = Date.now() + 20_000
+            while (Date.now() < deadline) {
+                g = (await (await fetch(`${base}/graph`)).json()) as Graph
+                if (g.views?.second?.pos3d[id]) return g
+                await Bun.sleep(100)
+            }
+            return g
+        }
+        try {
+            // The boot pass finishes first, with nothing else going on.
+            expect((await viewsCover('b'))?.views?.second?.pos3d['b']).toBeDefined()
+
+            // Only then a structural edit: the rebuilt graph starts without views, and nothing here asks
+            // for /graph/views, so views covering `d` can only come from the warm-up running again.
+            const created = await fetch(`${base}/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: 'd.md', kind: 'file' }),
+            })
+            expect(created.status).toBe(200)
+            const g = await viewsCover('d')
+            expect(g?.nodes.map(n => n.id)).toContain('d')
+            expect(g?.views?.second?.pos3d['d']).toBeDefined()
+            expect(g?.views?.third?.pos3d['mem:m']).toBeDefined()
+        } finally {
+            server.stop(true)
+        }
+    },
+    50_000, // outlasts both 20 s polls, so a failure reports the assertion rather than the test timeout
 )

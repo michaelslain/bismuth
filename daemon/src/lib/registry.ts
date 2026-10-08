@@ -1,5 +1,6 @@
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { isDevVaultRoot } from '../../../core/src/devVaultRoot.ts'
 import { parseFrontmatter } from './frontmatter.ts'
 import { atomicWriteJson } from './atomicJson.ts'
 import { readVaultSettingsDoc, SETTINGS_SHAPES } from './vaultSettings.ts'
@@ -245,6 +246,7 @@ export async function refreshVaultsSeen(
  *  set: the cron/process/session loops iterate this. Built on {@link loadAllVaults} — the two
  *  differ only in the `enabled` filter and in this one also refreshing the "seen" sidecar. */
 export async function loadEnabledVaults(): Promise<VaultContext[]> {
+    // Dev vaults (.dev-vault*) are dropped by loadAllVaults, even if an older core registered one.
     const out = (await loadAllVaults())
         .filter(v => v.enabled)
         .map(v => v.ctx)
@@ -261,6 +263,8 @@ export async function loadAllVaults(): Promise<
 > {
     const out: Array<{ ctx: VaultContext; enabled: boolean }> = []
     for (const root of await knownVaultRoots()) {
+        // Dev vaults never reach the machine daemon — not the cron tick, not reconcile.
+        if (isDevVaultRoot(root)) continue
         const s = await readDaemonSettingsCached(root)
         out.push({
             ctx: vaultPaths(

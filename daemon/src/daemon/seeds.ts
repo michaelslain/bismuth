@@ -3,7 +3,7 @@
 // online (boot or runtime-enable) and:
 //   • writes any seed that's entirely MISSING (a fresh vault gets the full set; an already-set-up
 //     vault that predates a NEW seedable gets JUST that new piece on next boot), and
-//   • for the small set of seeds that opt into VERSIONED REFRESH (currently the two default crons
+//   • for the small set of seeds that opt into VERSIONED REFRESH (currently the default cron
 //     — see `refreshKey` below), UPGRADES an existing file in place IF AND ONLY IF it still matches
 //     a known PRIOR stock version byte-for-byte. A file that doesn't match any known version (the
 //     user edited it, even by one character) is left alone, always — this is how "dream" and
@@ -15,12 +15,13 @@
 // To add a new seeded artifact later, append ONE entry to seedsFor() below. To ship a content
 // change to an EXISTING versioned seed, see the instructions on PRIOR_SEED_HASHES.
 import { existsSync } from 'node:fs'
-import { writeFile, mkdir, readFile } from 'node:fs/promises'
+import { writeFile, mkdir, readFile, rename } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import type { VaultContext } from '../lib/config.ts'
 import { DEFAULT_DAEMON_IDENTITY } from './persona.ts'
-import { DEFAULT_CRONS } from './defaultCrons.ts'
+import { DEFAULT_CRONS, RETIRED_CRONS } from './defaultCrons.ts'
+import { logActivity } from '../lib/activityLog.ts'
 import { PAGES_GUIDE } from './pagesGuide.ts'
 
 export interface Seed {
@@ -69,19 +70,24 @@ export const PRIOR_SEED_HASHES: Record<string, string[]> = {
     // no `incremental: true` frontmatter, no `{{changedSinceLastRun}}`; the prompt itself ran `bismuth
     // checkpoint diff/advance` as its first/last Bash step, which quietly degraded to a full
     // re-survey every run whenever the bismuth CLI wasn't resolvable on PATH (Bug #105). v3 moved
-    // that scoping into the daemon. v4 (the current DEFAULT_CRONS content) stopped dream writing a
-    // memory note about its own runs, fixed its bloat gate to measure notes instead of .git, and
-    // made both prompts forbid dated snapshot notes.
+    // that scoping into the daemon. v4 stopped dream writing a memory note about its own runs, fixed
+    // its bloat gate to measure notes instead of .git, and made both prompts forbid dated snapshot
+    // notes. v5 (the current DEFAULT_CRONS content) is the fused dream that absorbed vault-review;
+    // vault-review is no longer seeded (RETIRED_CRONS), its list stays so an old copy is still
+    // recognised as stock.
     dream: [
         '751039390e12c74e9bb98044b97eb7bf508e5ec2a73dc71a42942eb61121e870', // v1 — 2026-06-28
         '302a7a4eafa8a5ba956ebb278462d47adf57daa8ad12bb7c098a2b7587c2aa63', // v2 — 2026-07-06
         'd324876622fd7a3453217a90605521f13f17e538ac10da8cbf36464e7c559a1c', // v3 — 2026-07-27, incremental scoping
+        'ee00c96f7c8c68f4c788d8c973c6ce4071d6e66bcde39edc629a21696fd6ee22', // v4 — the body shipped at 86473737, before the fuse
+        '450a9250911c557215194b8d72e4fe0590d24488f94cde488822d6aa1f591d8b', // v5 — the fused vault+memory dream, before its heading-spacing fix
     ],
     'vault-review': [
         '355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39', // v1 — 2026-06-28 (unchanged through f48076b)
         '7cd2b6ddef11d432b17510271e952830ac58f9ca0c53f0c261d7494ca7e0c060', // v2 — 2026-07-06, vault-visibility note
         'fade0b08ac5c1bc2dbf4b702e310b5348716dc3d5ad5f7c43db8d74459c1292d', // v3 — 2026-07-27, incremental scoping
         'ab20715e82555d796fa6c46e20b4544e9d260e361a1c77cfe1d3a80d6a2815fa', // v4 — 2026-08-06, still never named the memory dir
+        'ab96b273fa6e81fcc8238308f8e1b14d98fc3b4e760d4e5a270ac64b718bb4fb', // v5 — the last body shipped (7fe804c8), before vault-review was retired
     ],
 }
 
@@ -115,6 +121,9 @@ export interface SeedReconcileResult {
     /** Existing seed files left untouched because they don't match the current OR any known prior
      *  stock version — the user customized them, so a content change here never clobbers it. */
     customized: string[]
+    /** Retired crons (RETIRED_CRONS) whose `<name>.md` was renamed to `<name>.md.disabled` because
+     *  the vault's dream.md is the current stock, i.e. the work now lives there. */
+    retired: string[]
 }
 
 /**
@@ -135,6 +144,7 @@ export async function reconcileSeeds(
         written: [],
         refreshed: [],
         customized: [],
+        retired: [],
     }
     for (const seed of seedsFor(ctx)) {
         try {
@@ -168,5 +178,48 @@ export async function reconcileSeeds(
             // best-effort: a seed that fails to write/refresh is retried on the next brain-start
         }
     }
+    await retireMergedCrons(ctx, result)
     return result
+}
+
+/** The first free `<path>.disabled`, `<path>.disabled-2`, `-3` … */
+function disabledPath(path: string): string {
+    let candidate = `${path}.disabled`
+    for (let n = 2; existsSync(candidate); n++)
+        candidate = `${path}.disabled-${n}`
+    return candidate
+}
+
+/** Retire the crons that were merged into dream — but only once this vault's dream.md IS the
+ *  current stock: a customized dream.md means the user owns that behaviour, so the old cron keeps
+ *  running beside it. Renamed (never deleted), so the user can restore it; best-effort per cron. */
+async function retireMergedCrons(
+    ctx: VaultContext,
+    result: SeedReconcileResult,
+): Promise<void> {
+    const dream = DEFAULT_CRONS.find(c => c.name === 'dream')
+    if (!dream || RETIRED_CRONS.length === 0) return
+    try {
+        const onDisk = await readFile(join(ctx.cronsDir, 'dream.md'), 'utf-8')
+        if (onDisk !== dream.content) return
+    } catch {
+        return
+    }
+    for (const name of RETIRED_CRONS) {
+        const path = join(ctx.cronsDir, `${name}.md`)
+        if (!existsSync(path)) continue
+        try {
+            await rename(path, disabledPath(path))
+            result.retired.push(path)
+            console.log(`[seeds] retired "${path}" (merged into dream)`)
+            await logActivity(ctx, {
+                kind: 'daemon',
+                name: ctx.name,
+                event: 'cron-retired',
+                detail: `${name} merged into dream`,
+            })
+        } catch {
+            // best-effort: retried on the next brain-start
+        }
+    }
 }

@@ -3,7 +3,7 @@
 // schedule-based cron parsing exactly as before while accepting the new `on: file-change` + `watch` shape. No sendMessage/session
 // plumbing is touched here — see fileWatch.test.ts for the debounce/matching harness.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -20,6 +20,10 @@ import {
     retryCooldownMs,
     getIntervalMs,
     buildCronPrompt,
+    lastReportLine,
+    notifyNewPages,
+    announcesNewPages,
+    listPageSlugs,
     type FailureCause,
     type LastFiredEntry,
     type ScheduleCronJob,
@@ -170,10 +174,7 @@ test('loadCronJobs treats any checkpointDir value other than "memory" as the vau
 // loadCronJobs must resolve `job.file` to that slug even though `name` is the display string —
 // while `name` stays the human-readable frontmatter value untouched.
 test('loadCronJobs keys a display-named cron by its file slug, not its display name', async () => {
-    cronFile(
-        'answer-emails',
-        'name: "Answer Emails!"\nschedule: 0 9 * * *',
-    )
+    cronFile('answer-emails', 'name: "Answer Emails!"\nschedule: 0 9 * * *')
     const jobs = await loadCronJobs(ctx)
     expect(jobs).toHaveLength(1)
     expect(jobs[0]).toMatchObject({
@@ -977,4 +978,99 @@ test('buildCronPrompt keeps the file-change trigger context, and still appends t
     })
     expect(p).toContain('Triggered by change to: notes/inbox.md')
     expect(p).toContain('/v/.daemon/memory')
+})
+
+// ── checkpointDirs, report line, page notifications ───────────────────────────
+
+test('checkpointDirs: comma list parses; legacy checkpointDir maps to [that]; neither -> [vault]', async () => {
+    cronFile(
+        'a',
+        'name: a\nschedule: 0 * * * *\nincremental: true\ncheckpointDirs: vault, memory',
+    )
+    cronFile(
+        'b',
+        'name: b\nschedule: 0 * * * *\nincremental: true\ncheckpointDir: memory',
+    )
+    cronFile('c', 'name: c\nschedule: 0 * * * *\nincremental: true')
+    cronFile(
+        'd',
+        'name: d\nschedule: 0 * * * *\nincremental: true\ncheckpointDirs: memory, bogus, memory',
+    )
+    const jobs = Object.fromEntries(
+        (await loadCronJobs(ctx)).map(j => [j.file, j]),
+    )
+    expect(jobs.a!.checkpointDirs).toEqual(['vault', 'memory'])
+    expect(jobs.b!.checkpointDirs).toEqual(['memory'])
+    expect(jobs.c!.checkpointDirs).toEqual(['vault'])
+    expect(jobs.d!.checkpointDirs).toEqual(['memory'])
+})
+
+test('lastReportLine: last non-empty line, trimmed, capped, ignoring the CRON_RESULT marker', () => {
+    expect(
+        lastReportLine(
+            'work\n\n  vault=3 memory=1  \n[CRON_RESULT: success]\n',
+        ),
+    ).toBe('vault=3 memory=1')
+    expect(lastReportLine('')).toBeUndefined()
+    expect(lastReportLine('x'.repeat(500))!.length).toBe(300)
+})
+
+test('notifyNewPages: one notification per NEW page, titled from frontmatter else slug; none when nothing new', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-pages-'))
+    try {
+        const pagesDir = join(root, 'pages')
+        mkdirSync(pagesDir)
+        writeFileSync(join(pagesDir, 'old.md'), '---\ntitle: "Old"\n---\nx')
+        const pctx = { pagesDir, name: 'm' } as unknown as VaultContext
+        const before = await listPageSlugs(pagesDir)
+        const calls: [string, string][] = []
+        const send = (t: string, b: string) => void calls.push([t, b])
+
+        await notifyNewPages(pctx, before, send)
+        expect(calls).toEqual([])
+
+        writeFileSync(join(pagesDir, 'foo.md'), '---\ntitle: "Bar"\n---\nbody')
+        writeFileSync(join(pagesDir, 'untitled.md'), 'no frontmatter')
+        await notifyNewPages(pctx, before, send)
+        expect(calls).toEqual([
+            ['m: Bar', 'New in your inbox'],
+            ['m: untitled', 'New in your inbox'],
+        ])
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+test('notifyNewPages: a page is announced once across concurrent runs; another cron\'s page is skipped', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-pages-'))
+    try {
+        const pagesDir = join(root, 'pages')
+        mkdirSync(pagesDir)
+        const pctx = {
+            pagesDir,
+            name: 'm',
+            root,
+        } as unknown as VaultContext
+        const before = await listPageSlugs(pagesDir)
+        const calls: [string, string][] = []
+        const send = (t: string, b: string) => void calls.push([t, b])
+        writeFileSync(
+            join(pagesDir, 'mine.md'),
+            '---\ntitle: "Mine"\nsource: cron:dream\n---\nx',
+        )
+        writeFileSync(
+            join(pagesDir, 'theirs.md'),
+            '---\ntitle: "Theirs"\nsource: cron:other\n---\nx',
+        )
+        await notifyNewPages(pctx, before, send, 'dream')
+        await notifyNewPages(pctx, before, send, 'dream')
+        expect(calls).toEqual([['m: Mine', 'New in your inbox']])
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+test('announcesNewPages: a notify:true cron leaves page announcements to its own notice', () => {
+    expect(announcesNewPages({ notify: true })).toBe(false)
+    expect(announcesNewPages({ notify: false })).toBe(true)
 })

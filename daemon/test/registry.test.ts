@@ -187,3 +187,59 @@ test('loadAllVaults reuses unchanged settings, sees an mtime bump, and defaults 
         legacyEdited: { enabled: true, name: 'daemon' }, // legacy-shape-only edit seen
     })
 })
+
+// ── dev vaults are never served ───────────────────────────────────────────────────────────────
+
+test('loadEnabledVaults skips an enabled dev vault that an older core registered', async () => {
+    const dev = join(dir, '.dev-vault', 'vault')
+    const real = join(dir, 'real')
+    for (const r of [dev, real]) {
+        mkdirSync(r, { recursive: true })
+        writeFileSync(join(r, '.settings'), 'daemon:\n    enabled: true\n')
+    }
+    writeFileSync(join(dir, 'vaults.json'), JSON.stringify([dev, real]))
+    const proc = Bun.spawn(
+        ['bun', join(import.meta.dir, 'registryDevProbe.ts')],
+        {
+            env: { ...process.env, BISMUTH_DAEMON_DIR: dir },
+            stdout: 'pipe',
+            stderr: 'pipe',
+        },
+    )
+    const [out, err] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+    ])
+    expect(await proc.exited, err).toBe(0)
+    const roots = JSON.parse(out.trim().split('\n').pop()!) as string[]
+    expect(roots.map(r => r.replace(/^\/private/, ''))).toEqual([
+        real.replace(/^\/private/, ''),
+    ])
+})
+
+test('loadAllVaults omits a dev vault so reconcile never starts it', async () => {
+    const dev = join(dir, '.dev-vault', 'vault')
+    const real = join(dir, 'real')
+    for (const r of [dev, real]) {
+        mkdirSync(r, { recursive: true })
+        writeFileSync(join(r, '.settings'), 'daemon:\n    enabled: true\n')
+    }
+    writeFileSync(join(dir, 'vaults.json'), JSON.stringify([dev, real]))
+    const proc = Bun.spawn(
+        ['bun', join(import.meta.dir, 'registryDevProbe.ts'), 'all'],
+        {
+            env: { ...process.env, BISMUTH_DAEMON_DIR: dir },
+            stdout: 'pipe',
+            stderr: 'pipe',
+        },
+    )
+    const [out, err] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+    ])
+    expect(await proc.exited, err).toBe(0)
+    const roots = JSON.parse(out.trim().split('\n').pop()!) as string[]
+    expect(roots.map(r => r.replace(/^\/private/, ''))).toEqual([
+        real.replace(/^\/private/, ''),
+    ])
+})

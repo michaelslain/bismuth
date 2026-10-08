@@ -40,6 +40,7 @@ import {
     vaultSessionIdsFile,
     parseSessionIds,
     isEphemeralVaultRoot,
+    isDevVaultRoot,
     vaultRootPresence,
 } from '../src/daemon'
 import { daemonSnapshot } from '../src/daemonGraph'
@@ -1259,4 +1260,32 @@ test('vaultSessionIdsFile points at <vault>/.daemon/session-ids', () => {
 test("parseSessionIds matches the daemon writer's format (order preserved, deduped)", () => {
     expect(parseSessionIds('a\nb\na\n')).toEqual(['a', 'b'])
     expect(parseSessionIds('')).toEqual([])
+})
+
+// ── dev vaults never reach the machine registry ───────────────────────────────────────────────
+
+test('isDevVaultRoot matches a .dev-vault* path segment and nothing lookalike', () => {
+    expect(isDevVaultRoot('/x/bismuth/.dev-vault/vault')).toBe(true)
+    expect(isDevVaultRoot('/x/wt/.dev-vault-alex/vault')).toBe(true)
+    expect(isDevVaultRoot('/Users/a/Documents/library of alexandria')).toBe(
+        false,
+    )
+    expect(isDevVaultRoot('/x/dev-vault/v')).toBe(false)
+    expect(isDevVaultRoot('/x/.dev/vault')).toBe(false)
+    expect(isEphemeralVaultRoot('/x/bismuth/.dev-vault/vault')).toBe(true)
+})
+
+test('registerVaultRoot declines a dev vault and prunes an existing one with a log line', () => {
+    const home = realHome('devvault')
+    const base = realHome('devvault-repo')
+    const dev = join(base, '.dev-vault', 'vault')
+    const real = join(base, 'real')
+    mkdirSync(dev, { recursive: true })
+    mkdirSync(real, { recursive: true })
+    registerVaultRoot(dev, home)
+    expect(existsSync(join(home, 'vaults.json'))).toBe(false)
+    writeFileSync(join(home, 'vaults.json'), JSON.stringify([dev, real]))
+    registerVaultRoot(real, home)
+    expect(readVaultPaths(home)).toEqual([real])
+    expect(readFileSync(vaultRegistryLogFile(home), 'utf-8')).toContain(dev)
 })

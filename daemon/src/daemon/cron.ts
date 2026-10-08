@@ -1,10 +1,5 @@
 import { join } from 'node:path'
-import {
-    readdir,
-    readFile,
-    writeFile,
-    unlink,
-} from 'node:fs/promises'
+import { readdir, readFile, writeFile, unlink } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { sendMessage, composeBackendRefusalNote } from './session'
@@ -12,8 +7,9 @@ import { atomicWriteJson } from '../lib/atomicJson.ts'
 import { processPageTriggers } from './pages'
 import {
     resolveIncrementalRun,
-    advanceIncrementalCheckpoint,
+    advanceIncrementalCheckpoints,
     type CheckpointDirKind,
+    type IncrementalRunPlan,
 } from './incrementalCron'
 
 const execFileAsync = promisify(execFile)
@@ -64,11 +60,14 @@ interface CronJobBase {
      *  `refs/bismuth/cron-<name>` against the job's checkpoint repo and SKIPS the session entirely
      *  when nothing relevant changed since the last successful run, instead of spinning up a
      *  session that just re-reads everything. Off by default — an ordinary cron parses exactly as
-     *  before. The two seeded crons (dream, vault-review) opt in — see defaultCrons.ts. */
+     *  before. The seeded dream cron opts in — see defaultCrons.ts. */
     incremental: boolean
     /** Which repo `incremental`'s checkpoint lives against: "vault" (ctx.root, the default) or
      *  "memory" (ctx.memoryDir). Ignored when `incremental` is false. */
     checkpointDir?: CheckpointDirKind
+    /** Every repo an incremental run checkpoints, from `checkpointDirs: vault, memory` (comma
+     *  list). Legacy `checkpointDir: memory|vault` -> [that]; neither -> ['vault']. */
+    checkpointDirs: CheckpointDirKind[]
 }
 
 /** Fires on a cron-expression schedule — the original, still-default trigger. */
@@ -123,6 +122,17 @@ function parseTimeoutSecs(raw: string | undefined): number {
     return Number.isFinite(n) && n > 0 ? n : DEFAULT_CRON_TIMEOUT
 }
 
+function parseCheckpointDirs(
+    frontmatter: Record<string, string>,
+): CheckpointDirKind[] {
+    const listed = (frontmatter.checkpointDirs ?? '')
+        .split(',')
+        .map(s => s.trim())
+        .filter((s): s is CheckpointDirKind => s === 'vault' || s === 'memory')
+    if (listed.length > 0) return [...new Set(listed)]
+    return [frontmatter.checkpointDir?.trim() === 'memory' ? 'memory' : 'vault']
+}
+
 function parseCronFrontmatter(
     name: string,
     frontmatter: Record<string, string>,
@@ -143,6 +153,7 @@ function parseCronFrontmatter(
             frontmatter.checkpointDir?.trim() === 'memory'
                 ? ('memory' as const)
                 : undefined,
+        checkpointDirs: parseCheckpointDirs(frontmatter),
     }
 
     // `on: file-change` is opt-in and explicit — everything else (including the absence of `on`)
@@ -342,6 +353,7 @@ export function cronActivityEvent(
         result: LastFiredEntry['result']
         cause?: FailureCause
         detail?: string
+        summary?: string
         startedAt?: number
         endedAt?: number
     },
@@ -354,6 +366,7 @@ export function cronActivityEvent(
     }
     if (outcome.cause !== undefined) event.cause = outcome.cause
     if (outcome.detail !== undefined) event.detail = outcome.detail
+    if (outcome.summary) event.summary = outcome.summary
     if (
         outcome.result !== 'skipped' &&
         outcome.startedAt !== undefined &&
@@ -1024,6 +1037,84 @@ async function waitForProcessPattern(
     }
 }
 
+/** The last non-empty line of a session's output, trimmed and capped at 300 chars - the run's own
+ *  closing report. The `[CRON_RESULT:...]` marker line is not a report, so it is skipped. */
+export function lastReportLine(output: string): string | undefined {
+    const lines = output
+        .split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => l && !/^\[CRON_RESULT:/.test(l))
+    const last = lines[lines.length - 1]
+    return last ? last.slice(0, 300) : undefined
+}
+
+/** Slugs (file stems) of the inbox pages currently in `.daemon/pages/`. Never throws. */
+export async function listPageSlugs(pagesDir: string): Promise<Set<string>> {
+    try {
+        const names = await readdir(pagesDir)
+        return new Set(
+            names.filter(n => n.endsWith('.md')).map(n => n.slice(0, -3)),
+        )
+    } catch {
+        return new Set()
+    }
+}
+
+/** Title for a page notification: frontmatter `title`, else the slug. */
+export async function pageNoticeTitle(
+    pagesDir: string,
+    slug: string,
+): Promise<string> {
+    try {
+        const { frontmatter } = parseFrontmatter(
+            await readFile(join(pagesDir, `${slug}.md`), 'utf-8'),
+        )
+        return frontmatter.title?.trim() || slug
+    } catch {
+        return slug
+    }
+}
+
+/** Pages already announced, keyed `${root}::${slug}`, so two crons running at once in one vault
+ *  (each diffing against its own before-set) never announce the same page twice. */
+const announcedPages = new Set<string>()
+
+/** Does this cron's run announce the inbox pages it filed? Not when it is `notify: true` — that
+ *  cron already sends its own per-run notice, and a second one per page is noise. */
+export function announcesNewPages(job: Pick<CronJob, 'notify'>): boolean {
+    return !job.notify
+}
+
+/** One OS notification per inbox page created since `before`. The daemon, not the model, decides
+ *  this: a run that filed nothing is silent. A page whose frontmatter `source` names a DIFFERENT
+ *  cron is left to that cron's run; with no `source` it is announced. */
+export async function notifyNewPages(
+    ctx: VaultContext,
+    before: Set<string>,
+    send: (title: string, body: string) => void = notify,
+    jobFile?: string,
+): Promise<void> {
+    const after = await listPageSlugs(ctx.pagesDir)
+    for (const slug of [...after].sort()) {
+        if (before.has(slug)) continue
+        const key = `${ctx.root}::${slug}`
+        if (announcedPages.has(key)) continue
+        let title = slug
+        try {
+            const { frontmatter } = parseFrontmatter(
+                await readFile(join(ctx.pagesDir, `${slug}.md`), 'utf-8'),
+            )
+            const source = frontmatter.source
+            if (jobFile && typeof source === 'string' && source.trim()) {
+                if (source.trim() !== `cron:${jobFile}`) continue
+            }
+            title = frontmatter.title?.trim() || slug
+        } catch {}
+        announcedPages.add(key)
+        send(`${ctx.name}: ${title}`, 'New in your inbox')
+    }
+}
+
 /**
  * Start a cron job for a vault: marks it as running (in-memory + on-disk)
  * synchronously, then runs the session in the background. Callers should await
@@ -1035,7 +1126,8 @@ async function waitForProcessPattern(
  * (result "skipped") — no session, no PTY, no running-jobs entry, no cost. When there IS
  * something to review (or this is the first run), the job's `{{changedSinceLastRun}}` placeholder
  * is resolved before the prompt is sent, and — only after the session reports SUCCESS — the
- * checkpoint ref is advanced to HEAD so the next run only sees newer changes.
+ * checkpoint ref is advanced to a working-tree snapshot (vault: start of run, memory: end of run) so
+ * the next run only sees newer changes.
  */
 async function fireJob(
     ctx: VaultContext,
@@ -1044,7 +1136,7 @@ async function fireJob(
     opts?: { triggerContext?: string },
 ): Promise<void> {
     let promptOverride: string | undefined
-    let checkpoint: { dir: string; ref: string } | undefined
+    let checkpoint: IncrementalRunPlan | undefined
     if (job.incremental) {
         const plan = await resolveIncrementalRun(ctx, job)
         if (plan.skip) {
@@ -1062,7 +1154,7 @@ async function fireJob(
             return
         }
         promptOverride = plan.prompt
-        checkpoint = { dir: plan.dir, ref: plan.ref }
+        checkpoint = plan
     }
 
     const key = jobKey(ctx, job.file)
@@ -1083,6 +1175,7 @@ async function fireJob(
         ownCronContent = await readFile(ownCronFile, 'utf-8')
     } catch {}
     const procSnap = await snapshotDir(ctx.processesDir)
+    const pagesBefore = await listPageSlugs(ctx.pagesDir)
 
     // Run the actual session in the background (not awaited by caller)
     const sessionPromise = (async () => {
@@ -1132,16 +1225,15 @@ async function fireJob(
                     result,
                     startedAt,
                     endedAt: Date.now(),
+                    summary: lastReportLine(response.result),
                 }),
             )
+
             // Advance the checkpoint ONLY on a reported success — not "unknown" (the model may not have
             // actually finished reviewing) and not failed/killed (see the catch branch below). A missed
             // advance just means the next run re-diffs from the same base: over-inclusive, never lossy.
             if (checkpoint && result === 'success') {
-                await advanceIncrementalCheckpoint(
-                    checkpoint.dir,
-                    checkpoint.ref,
-                )
+                await advanceIncrementalCheckpoints(ctx, checkpoint)
             }
             if (job.notify) {
                 const status =
@@ -1214,6 +1306,16 @@ async function fireJob(
                 notify(`${ctx.name}: ${job.name}`, `Failed: ${err}`)
             }
         } finally {
+            // Inbox pages filed during the run notify whatever the outcome - a failed run's page
+            // would otherwise be in every later run's "before" set and never announced. Skipped
+            // for notify:true crons: those already send their own per-run notice.
+            if (announcesNewPages(job))
+                await notifyNewPages(
+                    ctx,
+                    pagesBefore,
+                    undefined,
+                    job.file,
+                ).catch(() => {})
             // Restore the running cron's own definition if it self-modified.
             // Other crons + external edits are NOT reverted (previous bug).
             if (ownCronContent !== null) {
@@ -1348,32 +1450,39 @@ export function startCronScheduler(): void {
         void safeTick('cron-triggers', processAllTriggers)
     }, TRIGGER_CHECK_INTERVAL_MS)
 
-    cronInterval = setInterval(() => void safeTick('cron', async () => {
-        // Heartbeat every tick — even when idle / not owner — so this device stays
-        // selectable in devices.json.
-        await heartbeatDevice()
-        // Not the owner device: idle. Skip firing crons entirely (still heartbeats).
-        // Unclaimed (no owner.json) => isOwner true => normal behavior unchanged.
-        if (!(await isOwner())) return
-        const now = new Date()
-        // One tick fans out across every enabled vault — the multiplex.
-        for (const ctx of await loadEnabledVaults()) {
-            const [jobs, lastFired] = await Promise.all([
-                loadCronJobs(ctx),
-                loadLastFired(ctx),
-            ])
-            for (const job of jobs) {
-                if (!job.enabled || runningJobs.has(jobKey(ctx, job.file)))
-                    continue
-                // Fire on schedule OR when overdue (catchup). The whole decision — including where the
-                // backoff is and, crucially, is NOT applied — lives in shouldFireOnTick, which the replay
-                // tests drive directly; do not re-add gates here.
-                if (shouldFireOnTick(job, lastFired, now)) {
-                    fireJob(ctx, job, lastFired)
+    cronInterval = setInterval(
+        () =>
+            void safeTick('cron', async () => {
+                // Heartbeat every tick — even when idle / not owner — so this device stays
+                // selectable in devices.json.
+                await heartbeatDevice()
+                // Not the owner device: idle. Skip firing crons entirely (still heartbeats).
+                // Unclaimed (no owner.json) => isOwner true => normal behavior unchanged.
+                if (!(await isOwner())) return
+                const now = new Date()
+                // One tick fans out across every enabled vault — the multiplex.
+                for (const ctx of await loadEnabledVaults()) {
+                    const [jobs, lastFired] = await Promise.all([
+                        loadCronJobs(ctx),
+                        loadLastFired(ctx),
+                    ])
+                    for (const job of jobs) {
+                        if (
+                            !job.enabled ||
+                            runningJobs.has(jobKey(ctx, job.file))
+                        )
+                            continue
+                        // Fire on schedule OR when overdue (catchup). The whole decision — including where the
+                        // backoff is and, crucially, is NOT applied — lives in shouldFireOnTick, which the replay
+                        // tests drive directly; do not re-add gates here.
+                        if (shouldFireOnTick(job, lastFired, now)) {
+                            fireJob(ctx, job, lastFired)
+                        }
+                    }
                 }
-            }
-        }
-    }), CRON_CHECK_INTERVAL_MS)
+            }),
+        CRON_CHECK_INTERVAL_MS,
+    )
 }
 
 export function stopCronScheduler(): void {

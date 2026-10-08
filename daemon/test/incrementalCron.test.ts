@@ -4,7 +4,13 @@
 // pure functions to checkpointRef.ts's git calls) is exercised at the end against a REAL scratch
 // git repo, covering the full "skip decision" path end to end.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+    mkdtempSync,
+    rmSync,
+    writeFileSync,
+    mkdirSync,
+    chmodSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $ } from 'bun'
@@ -17,9 +23,15 @@ import {
     checkpointDirFor,
     resolveIncrementalRun,
     advanceIncrementalCheckpoint,
+    advanceIncrementalCheckpoints,
+    legacyRefsFor,
     CHANGED_SINCE_PLACEHOLDER,
 } from '../src/daemon/incrementalCron.ts'
-import { checkpointDelta } from '../src/lib/checkpointRef.ts'
+import {
+    checkpointDelta,
+    checkpointRefSha,
+    snapshotWorkingTree,
+} from '../src/lib/checkpointRef.ts'
 import type { VaultContext } from '../src/lib/config.ts'
 
 // ── Pure functions ────────────────────────────────────────────────────────────
@@ -242,13 +254,181 @@ test('resolveIncrementalRun: a display-named cron resolves its ref from job.file
         file: 'answer-emails',
         prompt: CHANGED_SINCE_PLACEHOLDER,
     })
-    expect(plan.ref).toBe(incrementalRefName('answer-emails'))
+    expect(plan.areas[0]!.ref).toBe(incrementalRefName('answer-emails'))
 })
 
-test('advanceIncrementalCheckpoint moves the ref to HEAD and is reflected by a subsequent checkpointDelta', async () => {
+test('advanceIncrementalCheckpoint moves the ref to a snapshot and is reflected by a subsequent checkpointDelta', async () => {
     write('note.md', '# Note')
     await commit('init')
     const ref = incrementalRefName('dream')
     await advanceIncrementalCheckpoint(dir, ref)
     expect((await checkpointDelta(dir, ref)).files).toEqual([])
+})
+
+// ── Two areas (vault + memory) ────────────────────────────────────────────────
+
+test('incrementalRefName: multi-dir jobs keep memory at cron-<name> and put vault at cron-<name>-vault', () => {
+    const both = ['vault', 'memory'] as const
+    expect(incrementalRefName('dream', 'memory', [...both])).toBe('cron-dream')
+    expect(incrementalRefName('dream', 'vault', [...both])).toBe(
+        'cron-dream-vault',
+    )
+    expect(incrementalRefName('dream', 'vault', ['vault'])).toBe('cron-dream')
+    expect(incrementalRefName('dream', 'memory', ['memory'])).toBe('cron-dream')
+})
+
+test('legacyRefsFor: only the fused dream vault area inherits the retired vault-review refs', () => {
+    expect(legacyRefsFor('dream', 'vault')).toEqual([
+        'cron-vault-review',
+        'vault-review',
+    ])
+    expect(legacyRefsFor('dream', 'memory')).toEqual([])
+    expect(legacyRefsFor('other', 'vault')).toEqual([])
+})
+
+async function initRepo(path: string): Promise<void> {
+    mkdirSync(path, { recursive: true })
+    await $`git -C ${path} init -q`.quiet()
+    await $`git -C ${path} config user.email "test@local"`.quiet()
+    await $`git -C ${path} config user.name "Test"`.quiet()
+    writeFileSync(join(path, 'seed.md'), '# seed')
+    await $`git -C ${path} add -A`.quiet()
+    await $`git -C ${path} commit -q -m init`.quiet()
+}
+
+const dreamJob = {
+    name: 'dream',
+    file: 'dream',
+    prompt: `Scope:\n${CHANGED_SINCE_PLACEHOLDER}`,
+    checkpointDirs: ['vault', 'memory'] as ('vault' | 'memory')[],
+}
+
+// root (vault) is `dir`; memory is nested at dir/.daemon/memory and ignored by the vault repo,
+// as in a real vault where backup.ts excludes .daemon.
+async function twoRepos(): Promise<void> {
+    await initRepo(dir)
+    writeFileSync(join(dir, '.gitignore'), '.daemon\n')
+    await initRepo(ctx.memoryDir)
+}
+
+test('two areas, both unchanged after advancing -> skip, no session', async () => {
+    await twoRepos()
+    const first = await resolveIncrementalRun(ctx, dreamJob)
+    expect(first.skip).toBe(false)
+    expect(first.areas.every(a => a.firstRun)).toBe(true)
+    await advanceIncrementalCheckpoints(ctx, first)
+
+    const plan = await resolveIncrementalRun(ctx, dreamJob)
+    expect(plan.skip).toBe(true)
+    expect(plan.note).toMatch(/^skipped: no changes since /)
+})
+
+test('vault changed only -> runs; vault block lists the file, memory block says nothing changed', async () => {
+    await twoRepos()
+    await advanceIncrementalCheckpoints(
+        ctx,
+        await resolveIncrementalRun(ctx, dreamJob),
+    )
+    write('fresh.md', '# fresh')
+
+    const plan = await resolveIncrementalRun(ctx, dreamJob)
+    expect(plan.skip).toBe(false)
+    expect(plan.prompt).toContain('Vault notes changed since')
+    expect(plan.prompt).toContain('- A fresh.md')
+    expect(plan.prompt).toMatch(/Memory notes: nothing changed since/)
+})
+
+test('memory changed only -> runs; the reverse blocks', async () => {
+    await twoRepos()
+    await advanceIncrementalCheckpoints(
+        ctx,
+        await resolveIncrementalRun(ctx, dreamJob),
+    )
+    writeFileSync(join(ctx.memoryDir, 'm2.md'), '# m2')
+
+    const plan = await resolveIncrementalRun(ctx, dreamJob)
+    expect(plan.skip).toBe(false)
+    expect(plan.prompt).toContain('Memory notes changed since')
+    expect(plan.prompt).toContain('- A m2.md')
+    expect(plan.prompt).toMatch(/Vault notes: nothing changed since/)
+})
+
+test('vault ref absent but cron-vault-review present -> vault area is not firstRun, diffed from it', async () => {
+    await twoRepos()
+    await advanceIncrementalCheckpoint(dir, 'cron-vault-review')
+    write('after.md', '# after')
+
+    const plan = await resolveIncrementalRun(ctx, dreamJob)
+    const vault = plan.areas.find(a => a.kind === 'vault')!
+    expect(vault.firstRun).toBe(false)
+    expect(vault.files.map(f => f.path)).toEqual(['after.md'])
+    expect(plan.areas.find(a => a.kind === 'memory')!.firstRun).toBe(true)
+})
+
+test('advance: vault -> start snapshot (later edit is seen next time), memory -> end snapshot (run own write is not)', async () => {
+    await twoRepos()
+    await advanceIncrementalCheckpoints(
+        ctx,
+        await resolveIncrementalRun(ctx, dreamJob),
+    )
+    write('seen.md', '# seen')
+    const plan = await resolveIncrementalRun(ctx, dreamJob)
+    // the run: edits the vault mid-run and writes memory
+    write('midrun.md', '# mid')
+    writeFileSync(join(ctx.memoryDir, 'by-run.md'), '# by the run')
+    await advanceIncrementalCheckpoints(ctx, plan)
+
+    const next = await resolveIncrementalRun(ctx, dreamJob)
+    expect(next.skip).toBe(false)
+    expect(
+        next.areas.find(a => a.kind === 'vault')!.files.map(f => f.path),
+    ).toEqual(['midrun.md'])
+    expect(next.areas.find(a => a.kind === 'memory')!.files).toEqual([])
+    expect(await checkpointRefSha(dir, 'cron-dream-vault')).toBe(
+        plan.areas.find(a => a.kind === 'vault')!.snapshot,
+    )
+})
+
+test('resolveIncrementalRun never moves refs', async () => {
+    await twoRepos()
+    const first = await resolveIncrementalRun(ctx, dreamJob)
+    await advanceIncrementalCheckpoints(ctx, first)
+    const before = [
+        await checkpointRefSha(dir, 'cron-dream-vault'),
+        await checkpointRefSha(ctx.memoryDir, 'cron-dream'),
+    ]
+    write('x.md', '# x')
+    await resolveIncrementalRun(ctx, dreamJob) // fireJob resolved, then the run failed: no advance
+    expect([
+        await checkpointRefSha(dir, 'cron-dream-vault'),
+        await checkpointRefSha(ctx.memoryDir, 'cron-dream'),
+    ]).toEqual(before)
+    expect(await snapshotWorkingTree(dir)).not.toBeNull()
+})
+
+test('a failed snapshot skips with a note and never reads as a first run', async () => {
+    await twoRepos()
+    const bad = join(dir, 'locked.md')
+    writeFileSync(bad, '# locked')
+    chmodSync(bad, 0o000)
+    try {
+        const plan = await resolveIncrementalRun(ctx, dreamJob)
+        expect(plan.skip).toBe(true)
+        expect(plan.note).toMatch(/^skipped: could not snapshot /)
+        expect(plan.areas.some(a => a.firstRun)).toBe(false)
+    } finally {
+        chmodSync(bad, 0o644)
+    }
+})
+
+test('legacy single checkpointDir: memory keeps ref cron-<name>', async () => {
+    await twoRepos()
+    const plan = await resolveIncrementalRun(ctx, {
+        name: 'dream',
+        file: 'dream',
+        prompt: CHANGED_SINCE_PLACEHOLDER,
+        checkpointDir: 'memory',
+    })
+    expect(plan.areas).toHaveLength(1)
+    expect(plan.areas[0]).toMatchObject({ kind: 'memory', ref: 'cron-dream' })
 })

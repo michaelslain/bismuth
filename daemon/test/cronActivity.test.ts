@@ -95,6 +95,36 @@ test('cause and detail are omitted rather than sent as undefined keys', () => {
     expect('detail' in e).toBe(false)
 })
 
+test('the finished event carries the run summary; absent or empty summary adds no key', () => {
+    const e = cronActivityEvent('dream', {
+        result: 'success',
+        startedAt: 0,
+        endedAt: 1,
+        summary: 'vault=2 memory=0 transcripts=1',
+    })
+    expect(e.summary).toBe('vault=2 memory=0 transcripts=1')
+    const none = cronActivityEvent('dream', {
+        result: 'success',
+        startedAt: 0,
+        endedAt: 1,
+        summary: '',
+    })
+    expect('summary' in none).toBe(false)
+})
+
+test('a summary round-trips through the log', async () => {
+    await logActivity(
+        ctx,
+        cronActivityEvent('dream', {
+            result: 'success',
+            startedAt: 0,
+            endedAt: 5,
+            summary: 'ok line',
+        }),
+    )
+    expect(readAll()[0]!.summary).toBe('ok line')
+})
+
 test('a started event and its finished event round-trip through the log in order', async () => {
     await logActivity(ctx, { kind: 'cron', name: 'dream', event: 'started' })
     await logActivity(

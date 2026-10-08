@@ -60,7 +60,11 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_CRONS, type DefaultCron } from '../src/daemon/defaultCrons.ts'
+import {
+    DEFAULT_CRONS,
+    RETIRED_CRONS,
+    type DefaultCron,
+} from '../src/daemon/defaultCrons.ts'
 import { PRIOR_SEED_HASHES } from '../src/daemon/seeds.ts'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -410,22 +414,64 @@ test('PRIOR_SEED_HASHES entries are unique, lowercase hex sha256s, and cover eve
 // ---------------------------------------------------------------------------
 
 const DREAM = DEFAULT_CRONS.find(c => c.name === 'dream')!.content
-const VAULT_REVIEW = DEFAULT_CRONS.find(c => c.name === 'vault-review')!.content
 
-test('both prompts still carry the {{changedSinceLastRun}} placeholder the daemon substitutes', () => {
+test('dream still carries the {{changedSinceLastRun}} placeholder the daemon substitutes', () => {
     // incrementalCron.ts replaces this token before the session starts; losing it silently reverts
-    // both crons to re-surveying everything every run.
+    // the cron to re-surveying everything every run.
     expect(DREAM).toContain('{{changedSinceLastRun}}')
-    expect(VAULT_REVIEW).toContain('{{changedSinceLastRun}}')
 })
 
-test('both prompts keep their incremental frontmatter contract intact', () => {
+test('dream keeps its fused incremental frontmatter contract intact (two checkpoint areas, no notify)', () => {
     expect(DREAM).toStartWith(
-        '---\nname: dream\nschedule: 0 * * * *\ntimeout: 1800\ncatchup: true\nincremental: true\ncheckpointDir: memory\n---\n',
+        '---\nname: dream\nschedule: 0 * * * *\ntimeout: 1800\ncatchup: true\nincremental: true\ncheckpointDirs: vault, memory\n---\n',
     )
-    expect(VAULT_REVIEW).toStartWith(
-        '---\nname: vault-review\nschedule: 0 */4 * * *\ntimeout: 900\ncatchup: true\nnotify: true\nincremental: true\n---\n',
+    // The run report goes to the activity log; an OS notification fires only for a filed inbox page.
+    expect(DREAM.split('\n---\n')[0]).not.toContain('notify')
+    expect(DREAM).not.toContain('[NOTIFY:]\n') // never instructs a notify marker
+})
+
+test('dream is the only seeded cron; vault-review is retired, not seeded', () => {
+    expect(DEFAULT_CRONS.map(c => c.name)).toEqual(['dream'])
+    expect(RETIRED_CRONS).toEqual(['vault-review'])
+    // ...but its hash history survives so an old copy is still recognised as stock.
+    expect(PRIOR_SEED_HASHES['vault-review']!.length).toBeGreaterThan(0)
+    expect(PRIOR_SEED_HASHES['vault-review']).toContain(
+        'ab96b273fa6e81fcc8238308f8e1b14d98fc3b4e760d4e5a270ac64b718bb4fb',
     )
+})
+
+test('dream reads the per-area scope blocks: listed vault notes, listed memory notes, first-run lines', () => {
+    expect(DREAM).toContain('Vault notes changed since')
+    expect(DREAM).toContain('Memory notes changed since')
+    expect(DREAM).toContain('read ONLY those listed files')
+    expect(DREAM).toContain('first-run line')
+    expect(DREAM).toContain('full pass of the vault')
+    expect(DREAM).toContain('full pass of the whole memory graph')
+})
+
+test('dream folds every auto-* transcript on every run and forgets it, with the You/Claude attribution rule', () => {
+    expect(DREAM).toContain('processed on EVERY run')
+    expect(DREAM).toContain('whether or not it is listed')
+    expect(DREAM).toContain('**You:**')
+    expect(DREAM).toContain('do NOT record it as a user preference')
+    expect(DREAM).toContain('Then `forget` the auto note')
+})
+
+test('dream files inbox pages only when something needs the user, per PAGES.md, without duplicating or reporting the run', () => {
+    expect(DREAM).toContain('Read `.daemon/PAGES.md`')
+    expect(DREAM).toContain('source: "cron:dream"')
+    expect(DREAM).toContain('ONE inbox page per subject')
+    expect(DREAM).toContain('still-pending page on the same subject')
+    expect(DREAM).toContain('merely reports this run')
+    expect(DREAM).toContain('do not use `[NOTIFY:]`')
+})
+
+test("dream's report is ONE line with the fused counters and keeps the failed-run self-check", () => {
+    expect(DREAM).toContain(
+        '`vault=N memory=N transcripts=N snapshots-collapsed=N merged=N pages=N notes=N size=XKB`',
+    )
+    expect(DREAM).toContain('the run FAILED')
+    expect(DREAM).not.toContain('bloat-deleted=N')
 })
 
 test('dream forbids writing a memory note about its own runs, and tells it to delete one it inherits', () => {
@@ -565,28 +611,30 @@ test("Step 3's shipped command DOES collapse the two-file worked example, so the
     expect(stems).toEqual([{ stem: 'michael-quant-trading-status', count: 2 }])
 })
 
-test('vault-review names canonical notes and forbids dated ones as an instruction, not a preference', () => {
-    expect(VAULT_REVIEW).toContain('canonical notes ONLY')
-    expect(VAULT_REVIEW).toContain('`user-beliefs`')
-    expect(VAULT_REVIEW).toContain('`user-projects`')
-    expect(VAULT_REVIEW).toContain(
-        '**Never create a note whose name contains a date or a month.**',
-    )
-    expect(VAULT_REVIEW).toContain(
-        'michael-vault-review-july-27-evening-critical-update',
-    )
-    expect(VAULT_REVIEW).toContain('This is an instruction, not a preference')
-    expect(VAULT_REVIEW).toContain(
-        'Never write a note about this review itself',
-    )
-    // It must REWRITE the canonical note rather than create a sibling.
-    expect(VAULT_REVIEW).toContain(
+test("dream carries vault-review's rules: canonical user-* notes, fold into existing text, dated lines inside notes, visibility-denied is expected", () => {
+    for (const n of [
+        'user-beliefs',
+        'user-reading',
+        'user-writing',
+        'user-projects',
+        'user-routine',
+        'user-context',
+    ])
+        expect(DREAM).toContain(`\`${n}\``)
+    expect(DREAM).toContain('Fold the new material into that existing text')
+    expect(DREAM).toContain(
         '`remember` the SAME name with the full rewritten body',
     )
-    // The old soft wording is what failed; it must not survive.
-    expect(VAULT_REVIEW).not.toContain(
-        'Prefer updating one consolidated note per topic',
+    expect(DREAM).toContain(
+        '"YYYY-MM-DD: moved from X to Y") — never as a new file',
     )
+    expect(DREAM).toContain('This is an instruction, not a preference')
+    expect(DREAM).toContain(
+        'michael-vault-review-july-27-evening-critical-update',
+    )
+    expect(DREAM).toContain("That's expected and by design")
+    // Memory is written only through `remember`, never as a file.
+    expect(DREAM).toContain('`remember` tool is the ONLY way')
 })
 
 // Bug (observed 2026-08-06, a real vault): a cron run wrote two plain, frontmatter-less markdown
@@ -612,20 +660,18 @@ test('every default cron names the memory dir it is allowed to write to', () => 
     }
 })
 
-test('vault-review points memory writes at the graph, not at a path relative to its cwd', () => {
+test('dream points memory writes at the graph, not at a path relative to its cwd', () => {
     // The location, and the ONE mechanism that produces a well-formed note.
-    expect(VAULT_REVIEW).toContain('Your memory graph is `$BISMUTH_MEMORY_DIR`')
-    expect(VAULT_REVIEW).toContain(
+    expect(DREAM).toContain('Your memory graph is `$BISMUTH_MEMORY_DIR`')
+    expect(DREAM).toContain(
         'the `remember` tool is the ONLY way to put one there',
     )
-    // The specific wrong turn that produced the orphaned notes, named so the model can recognize it:
     // cwd is the vault, so a cwd-relative `memory/` is the user's vault, not the graph.
-    expect(VAULT_REVIEW).toContain(
+    expect(DREAM).toContain(
         'Your working directory is the VAULT, not the memory graph',
     )
-    expect(VAULT_REVIEW).toContain('NEVER create a memory note with Write/Edit')
-    // And the degrade path: no tools must mean "write nothing", never "improvise a location". This
-    // is the half that matters when the MCP block is absent entirely (session.ts's mcpBin() gate).
-    expect(VAULT_REVIEW).toContain('Do not improvise a location')
-    expect(VAULT_REVIEW).toContain('write nothing')
+    expect(DREAM).toContain('NEVER create a memory note with Write/Edit')
+    // No tools must mean "write nothing", never "improvise a location".
+    expect(DREAM).toContain('do not improvise a location')
+    expect(DREAM).toContain('write nothing')
 })

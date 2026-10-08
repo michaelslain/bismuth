@@ -56,6 +56,8 @@ export interface ActivityEvent {
     durationMs?: number
     /** Human-readable one-liner — the thing an agent quotes back to the user. */
     detail?: string
+    /** The run's own closing report line (a cron's last non-empty output line), on `finished`. */
+    summary?: string
 }
 
 const PREFIX = 'activity-'

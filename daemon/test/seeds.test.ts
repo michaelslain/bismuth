@@ -4,8 +4,8 @@
 // just brand-new ones), while never touching a file the user has since customized even slightly.
 //
 // Versions are named the way PRIOR_SEED_HASHES names them and nowhere else differently: v1 =
-// 2026-06-28, v2 = 2026-07-06, v3 = 2026-07-27 (incremental scoping), v4 = the current
-// DEFAULT_CRONS content. Every test below says which version it puts on disk, because "the old
+// 2026-06-28, v2 = 2026-07-06, v3 = 2026-07-27 (incremental scoping), v4 = the pre-fuse body, v5 = the current
+// fused DEFAULT_CRONS content. Every test below says which version it puts on disk, because "the old
 // one" is ambiguous across four of them — and that ambiguity is what let a whole version go
 // unlisted in the first place.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
@@ -16,6 +16,7 @@ import {
     writeFileSync,
     readFileSync,
     existsSync,
+    readdirSync,
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -27,6 +28,10 @@ import {
     seedsFor,
     PRIOR_SEED_HASHES,
 } from '../src/daemon/seeds.ts'
+import {
+    parseActivityLines,
+    type ActivityEvent,
+} from '../src/lib/activityLog.ts'
 import { vaultPaths, type VaultContext } from '../src/lib/config.ts'
 import { DEFAULT_CRONS, type DefaultCron } from '../src/daemon/defaultCrons.ts'
 import {
@@ -37,9 +42,6 @@ import {
 } from './fixtures/oldSeedContent.ts'
 
 const CURRENT_DREAM = DEFAULT_CRONS.find(c => c.name === 'dream')!.content
-const CURRENT_VAULT_REVIEW = DEFAULT_CRONS.find(
-    c => c.name === 'vault-review',
-)!.content
 
 /**
  * Load a default cron's body exactly as it shipped at a given commit, by writing that revision of
@@ -91,6 +93,14 @@ async function shippedCronAtCommit(
     }
 }
 
+/** Every activity event the reconcile logged for this vault (all day-files under logsDir). */
+function activityEvents(): ActivityEvent[] {
+    if (!existsSync(ctx.logsDir)) return []
+    return readdirSync(ctx.logsDir).flatMap(f =>
+        parseActivityLines(readFileSync(join(ctx.logsDir, f), 'utf-8')),
+    )
+}
+
 const sha256 = (s: string) =>
     createHash('sha256').update(s, 'utf-8').digest('hex')
 
@@ -106,7 +116,7 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true })
 })
 
-test('a fresh vault (nothing on disk) gets every seed written, including the two default crons', async () => {
+test('a fresh vault (nothing on disk) gets every seed written, including the one default cron (dream)', async () => {
     const result = await reconcileSeeds(ctx)
     expect(result.refreshed).toEqual([])
     expect(result.customized).toEqual([])
@@ -118,9 +128,9 @@ test('a fresh vault (nothing on disk) gets every seed written, including the two
     expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
         CURRENT_DREAM,
     )
-    expect(readFileSync(join(ctx.cronsDir, 'vault-review.md'), 'utf-8')).toBe(
-        CURRENT_VAULT_REVIEW,
-    )
+    // vault-review is retired: never seeded into a fresh vault.
+    expect(existsSync(join(ctx.cronsDir, 'vault-review.md'))).toBe(false)
+    expect(result.retired).toEqual([])
 })
 
 test("the v2 fixtures ARE PRIOR_SEED_HASHES' v2 entries — one version vocabulary, mechanically enforced", () => {
@@ -169,23 +179,6 @@ test('an existing vault stuck on stock v1 dream.md (2026-06-28) is upgraded — 
     )
 })
 
-test('an existing vault stuck on stock v1 vault-review.md (2026-06-28) is upgraded too', async () => {
-    const v1 = await shippedCronAtCommit('7e1ad46', 'vault-review')
-    if (!v1) return
-    expect(sha256(v1)).toBe(
-        '355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39',
-    )
-
-    mkdirSync(ctx.cronsDir, { recursive: true })
-    writeFileSync(join(ctx.cronsDir, 'vault-review.md'), v1, 'utf-8')
-
-    const result = await reconcileSeeds(ctx)
-    expect(result.refreshed).toContain(join(ctx.cronsDir, 'vault-review.md'))
-    expect(readFileSync(join(ctx.cronsDir, 'vault-review.md'), 'utf-8')).toBe(
-        CURRENT_VAULT_REVIEW,
-    )
-})
-
 test('a vault on stock v3 dream.md (2026-07-27, the incremental-scoping release) is upgraded to v4', async () => {
     // v3 shipped in 5991271 — the current version until this change, a prior version as of it.
     // Without appending its hash, every vault that took that release would freeze on prompts whose
@@ -206,8 +199,55 @@ test('a vault on stock v3 dream.md (2026-07-27, the incremental-scoping release)
     )
 })
 
-test('an existing vault whose vault-review.md still matches stock v2 (2026-07-06) is upgraded in place', async () => {
+test('a vault on the v4 stock dream (the pre-fuse body) plus a customized vault-review: dream is refreshed, vault-review is retired, one cron-retired event is logged', async () => {
+    const v4 = await shippedCronAtCommit('86473737', 'dream')
+    if (!v4) return
+    expect(sha256(v4)).toBe(
+        'ee00c96f7c8c68f4c788d8c973c6ce4071d6e66bcde39edc629a21696fd6ee22',
+    )
+    expect(PRIOR_SEED_HASHES.dream).toContain(sha256(v4))
+
     mkdirSync(ctx.cronsDir, { recursive: true })
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), v4, 'utf-8')
+    const mine =
+        '---\nname: vault-review\nschedule: 0 */4 * * *\n---\n\nmy hand-edited review\n'
+    writeFileSync(join(ctx.cronsDir, 'vault-review.md'), mine, 'utf-8')
+
+    const result = await reconcileSeeds(ctx)
+    expect(result.refreshed).toContain(join(ctx.cronsDir, 'dream.md'))
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
+        CURRENT_DREAM,
+    )
+    expect(result.retired).toEqual([join(ctx.cronsDir, 'vault-review.md')])
+    expect(existsSync(join(ctx.cronsDir, 'vault-review.md'))).toBe(false)
+    expect(
+        readFileSync(join(ctx.cronsDir, 'vault-review.md.disabled'), 'utf-8'),
+    ).toBe(mine) // renamed, never rewritten or deleted
+
+    const events = activityEvents().filter(e => e.event === 'cron-retired')
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+        kind: 'daemon',
+        detail: 'vault-review merged into dream',
+    })
+
+    // A second reconcile is a no-op: nothing retired again, no second event.
+    const again = await reconcileSeeds(ctx)
+    expect(again.retired).toEqual([])
+    expect(again.refreshed).toEqual([])
+    expect(
+        activityEvents().filter(e => e.event === 'cron-retired'),
+    ).toHaveLength(1)
+})
+
+test('a stock (v2) vault-review is retired too, and an existing .disabled is never overwritten (-> .disabled-2, then -3)', async () => {
+    mkdirSync(ctx.cronsDir, { recursive: true })
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), CURRENT_DREAM, 'utf-8')
+    writeFileSync(
+        join(ctx.cronsDir, 'vault-review.md.disabled'),
+        'older',
+        'utf-8',
+    )
     writeFileSync(
         join(ctx.cronsDir, 'vault-review.md'),
         VAULT_REVIEW_V2_CONTENT,
@@ -215,10 +255,42 @@ test('an existing vault whose vault-review.md still matches stock v2 (2026-07-06
     )
 
     const result = await reconcileSeeds(ctx)
-    expect(result.refreshed).toContain(join(ctx.cronsDir, 'vault-review.md'))
-    expect(readFileSync(join(ctx.cronsDir, 'vault-review.md'), 'utf-8')).toBe(
-        CURRENT_VAULT_REVIEW,
+    expect(result.retired).toEqual([join(ctx.cronsDir, 'vault-review.md')])
+    expect(
+        readFileSync(join(ctx.cronsDir, 'vault-review.md.disabled'), 'utf-8'),
+    ).toBe('older')
+    expect(
+        readFileSync(join(ctx.cronsDir, 'vault-review.md.disabled-2'), 'utf-8'),
+    ).toBe(VAULT_REVIEW_V2_CONTENT)
+
+    // The user restores it; the next boot retires it again into -3.
+    writeFileSync(join(ctx.cronsDir, 'vault-review.md'), 'again', 'utf-8')
+    await reconcileSeeds(ctx)
+    expect(
+        readFileSync(join(ctx.cronsDir, 'vault-review.md.disabled-3'), 'utf-8'),
+    ).toBe('again')
+})
+
+test('a CUSTOMIZED dream.md retires nothing: vault-review keeps running beside it, dream untouched', async () => {
+    mkdirSync(ctx.cronsDir, { recursive: true })
+    const mineDream =
+        '---\nname: dream\nschedule: 0 3 * * *\n---\n\nmy own dream\n'
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), mineDream, 'utf-8')
+    writeFileSync(join(ctx.cronsDir, 'vault-review.md'), 'review', 'utf-8')
+
+    const result = await reconcileSeeds(ctx)
+    expect(result.retired).toEqual([])
+    expect(result.customized).toContain(join(ctx.cronsDir, 'dream.md'))
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
+        mineDream,
     )
+    expect(readFileSync(join(ctx.cronsDir, 'vault-review.md'), 'utf-8')).toBe(
+        'review',
+    )
+    expect(existsSync(join(ctx.cronsDir, 'vault-review.md.disabled'))).toBe(
+        false,
+    )
+    expect(activityEvents().filter(e => e.event === 'cron-retired')).toEqual([])
 })
 
 test('a user-customized dream.md (matches NO stock version, v1 through v4) is left completely untouched', async () => {
@@ -299,10 +371,10 @@ test('running reconcileSeeds twice in a row is idempotent (second pass is a no-o
     expect(second.customized).toEqual([])
 })
 
-test('a missing crons dir (never seeded before) still yields written for both default crons with the CURRENT incremental content', async () => {
+test('a missing crons dir (never seeded before) still yields written for the default cron with the CURRENT incremental content', async () => {
     const result = await reconcileSeeds(ctx)
     expect(existsSync(join(ctx.cronsDir, 'dream.md'))).toBe(true)
-    expect(existsSync(join(ctx.cronsDir, 'vault-review.md'))).toBe(true)
+    expect(existsSync(join(ctx.cronsDir, 'vault-review.md'))).toBe(false)
     const dreamBody = readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')
     expect(dreamBody).toContain('incremental: true')
     expect(dreamBody).toContain('{{changedSinceLastRun}}')

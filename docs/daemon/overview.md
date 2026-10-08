@@ -41,7 +41,7 @@ Resolved by `MACHINE_DIR` (`daemon/src/lib/config.ts`) = `BISMUTH_DAEMON_DIR` en
 | `owner.json` | `{ ownerDeviceId, ownerLabel, updatedAt }` — which device owns the daemon (absent = unclaimed) |
 | `daemon.pid` | the running daemon's pid (presence + liveness ⇒ running) |
 | `logs/` | daemon stdout/stderr |
-| `vaults.json` | `VAULTS_FILE` — JSON array of vault roots the daemon knows about (written by Bismuth core). Frozen element shape: plain path strings |
+| `vaults.json` | `VAULTS_FILE` — JSON array of vault roots the daemon knows about (written by Bismuth core). Frozen element shape: plain path strings. A dev vault (any path segment starting `.dev-vault`) is never registered here — see [storage.md](storage.md) |
 | `vaults-seen.json` | `VAULTS_SEEN_FILE` — `{ "<vault root>": "<ISO>" }` last-seen sidecar feeding core's registry TTL (advisory; see [storage.md](storage.md)) |
 | `.claude-bot-migrated` | one-time legacy-migration marker (see Migration) |
 
@@ -93,10 +93,11 @@ A persistent personal-assistant daemon for this Bismuth vault…
 - The **frontmatter `name:`** drives the sidebar folder label, the daemon-graph hub label, and the bot's self-identity (`daemonIdentityName(vault)` in `core/src/daemon.ts`; the daemon-side registry → `ctx.name`). It defaults to `"daemon"` when the file is absent or has no name.
 - The **body** is the daemon's system prompt, read **fresh per session** and delivered to every daemon backend as `You are <name>.\n\n<body>` (`daemon/src/daemon/persona.ts` `buildDaemonPersona` + `DEFAULT_DAEMON_IDENTITY`; Claude appends it to its system prompt, Codex gets it as `developer_instructions`). Editing the body in the Bismuth editor takes effect on the next cron/message.
 
-`identity.md` and the default crons are seeded by `reconcileSeeds(ctx)` (`daemon/src/daemon/seeds.ts`) — the daemon's analog of core's `reconcileSettings`. It runs every time a vault's brain comes online: missing seeds are written, and the two default crons are additionally **version-upgraded** in place when the on-disk file still matches a known PRIOR stock version (never when it's been customized) — see [crons-and-processes.md](crons-and-processes.md#seeding-daemonseedsts--reconcileseedsctx). A new seedable added in a later version lands in already-set-up vaults on the next boot; user edits and deliberate `enabled: false` are always preserved. The shipped defaults (`daemon/src/daemon/defaultCrons.ts`, embedded string constants so they survive `bun build --compile`):
+`identity.md` and the default crons are seeded by `reconcileSeeds(ctx)` (`daemon/src/daemon/seeds.ts`) — the daemon's analog of core's `reconcileSettings`. It runs every time a vault's brain comes online: missing seeds are written, and the default cron is additionally **version-upgraded** in place when the on-disk file still matches a known PRIOR stock version (never when it's been customized) — see [crons-and-processes.md](crons-and-processes.md#seeding-daemonseedsts--reconcileseedsctx). A new seedable added in a later version lands in already-set-up vaults on the next boot; user edits and deliberate `enabled: false` are always preserved. The shipped defaults (`daemon/src/daemon/defaultCrons.ts`, embedded string constants so they survive `bun build --compile`):
 
-- **`dream`** — hourly (`0 * * * *`) consolidation of this vault's memory graph into an atomic, densely-linked zettelkasten.
-- **`vault-review`** — every 4 hours (`0 */4 * * *`); reviews the vault to keep a living model of the user in memory.
+- **`dream`** — the ONE seeded cron. Hourly (`0 * * * *`); in a single session it consumes the changed vault notes, the changed memory notes and the unprocessed `auto-*` session-transcript notes, and consolidates them into an atomic, densely-linked zettelkasten (it writes only memory, plus an inbox page when something genuinely needs the user). It is incremental over both the vault and the memory dir (`checkpointDirs: vault, memory`) and skips the session entirely when neither changed; it posts no per-run OS notification — its one-line report goes into the activity log (`summary`).
+
+`vault-review` (the earlier every-4-hours pass) is retired: it is no longer seeded, and an existing vault's copy is renamed `vault-review.md.disabled` once the fused `dream` is installed — see [crons-and-processes.md](crons-and-processes.md#seeding-daemonseedsts--reconcileseedsctx).
 
 Both ship `incremental: true`: before firing, the daemon diffs a git checkpoint ref (`refs/bismuth/cron-<name>`) against the cron's repo and **skips the session entirely** when nothing relevant changed since the last successful run, instead of re-reading an unchanged vault/memory graph every tick. See [crons-and-processes.md](crons-and-processes.md#incremental-crons) for the full mechanism.
 
@@ -161,7 +162,7 @@ Every reader in `daemon.ts` / `daemonGraph.ts` catches all errors and returns a 
 
 The daemon's memory is the pure `@bismuth/memory` graph (`memory/src/{index,graph,query,search}.ts`) — note CRUD + frontmatter + `[[backlinks]]`, keyword search, and a query DSL — stored per-vault under `<vault>/.daemon/memory`. The **same** graph and one note format is shared by three writers:
 
-- the **daemon** itself (the `dream`/`vault-review` crons and sessions),
+- the **daemon** itself (the `dream` cron and sessions),
 - the **MCP** `remember`/`recall`/`forget` tools (`mcp/src/memory.ts`), exposed only when `BISMUTH_MEMORY_DIR` is set,
 - the **relay** recall (`UserPromptSubmit`) + collect (`SessionEnd`) hooks (`relay/bin/{recall-hook,session-end-hook}.ts`, `relay/lib/memory.ts`).
 
@@ -188,7 +189,7 @@ On the first per-machine enable, `migrateDaemonState(vault)` (`core/src/daemon.t
 
 - [lifecycle.md](lifecycle.md) — the runtime: boot/shutdown, per-vault `startVault`/`stopVault`, the reconcile loop, the cron scheduler tick, the launchd/systemd service, install/update from the bundled binary.
 - [storage.md](storage.md) — the on-disk layout: the machine home (`~/.bismuth/daemon`) and a vault's `.daemon/` brain, file-by-file.
-- [crons-and-processes.md](crons-and-processes.md) — cron + background-process model: frontmatter, scheduling (time-based OR file-change), `.last-fired.json`/`.running.json`, triggers, the default `dream`/`vault-review` crons, and Bismuth's enable/disable/run controls.
+- [crons-and-processes.md](crons-and-processes.md) — cron + background-process model: frontmatter, scheduling (time-based OR file-change), `.last-fired.json`/`.running.json`, triggers, the default `dream` cron (and the retired `vault-review`), and Bismuth's enable/disable/run controls.
 - [pages.md](pages.md) — the daemon inbox: daemon-authored pages awaiting user approval/dismissal, the `.state` sidecar, delivery timing, the button-press → execution → completion lifecycle, and the inbox surfaces (now a section on the daemon page).
 - [memory.md](memory.md) — the per-vault memory graph (`@bismuth/memory`): note format, backlinks, query vs. search, the `dream` consolidation cycle.
 - [communication.md](communication.md) — memory injection + the relay recall/collect hooks + the MCP `remember`/`recall`/`forget` tools, and device ownership/heartbeat coordination.

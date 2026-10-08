@@ -11,6 +11,9 @@
 // at BEFORE a session is ever started (see docs/daemon/crons-and-processes.md).
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const execFileAsync = promisify(execFile)
 
@@ -28,6 +31,8 @@ export interface CheckpointDelta {
     base: string | null
     /** Current HEAD SHA, or null if the repo has no commits. */
     head: string | null
+    /** Commit whose tree is the working tree as seen by this delta (advance the ref to it). */
+    snapshot: string | null
     files: ChangedFile[]
 }
 
@@ -41,10 +46,12 @@ function refPath(ref: string): string {
 async function git(
     dir: string,
     args: string[],
+    env?: Record<string, string>,
 ): Promise<{ stdout: string; ok: boolean }> {
     try {
         const { stdout } = await execFileAsync('git', ['-C', dir, ...args], {
             maxBuffer: 64 * 1024 * 1024,
+            env: env ? { ...process.env, ...env } : process.env,
         })
         return { stdout, ok: true }
     } catch (err) {
@@ -102,37 +109,74 @@ export async function commitTimeIso(
 }
 
 /**
- * Files changed in `dir` since the checkpoint ref `refs/bismuth/<ref>`, UNIONED with whatever is
- * currently uncommitted (tracked modifications/deletions vs HEAD, plus untracked-but-not-ignored
- * new files). Deliberately NEVER commits anything itself (unlike core's checkpointDelta, which a
- * caller can ask to auto-commit first) — a cron pre-check has no business writing to the user's
- * vault/memory repo on its own. See incrementalCron.ts / advanceCheckpointRef for the edge this
- * implies: an uncommitted file reviewed this run but committed only later (by the app's own
- * autosave, or the user) will resurface on the NEXT diff too, because advancing the ref can only
- * ever mark committed history. Accepted trade-off — see cron.ts's fireJob doc comment.
- *
- * If the ref doesn't exist yet (first run), every tracked file at HEAD counts as the delta and
- * `base` is null. If the repo has no commits at all yet, returns an empty delta (head: null).
+ * A commit whose tree is the current working tree (tracked + untracked, ignore rules respected).
+ * Built through a THROWAWAY index file (GIT_INDEX_FILE), so the real index, HEAD, branches and
+ * `git status` are untouched; the commit is an unreferenced object. Null when `dir` is not a repo
+ * or has no HEAD.
+ */
+export async function snapshotWorkingTree(dir: string): Promise<string | null> {
+    if (!(await isGitRepo(dir))) return null
+    const head = await headSha(dir)
+    if (!head) return null
+    const tmp = await mkdtemp(join(tmpdir(), 'bismuth-snap-'))
+    try {
+        const env = {
+            GIT_INDEX_FILE: join(tmp, 'index'),
+            GIT_AUTHOR_NAME: 'bismuth',
+            GIT_AUTHOR_EMAIL: 'bismuth@local',
+            GIT_COMMITTER_NAME: 'bismuth',
+            GIT_COMMITTER_EMAIL: 'bismuth@local',
+        }
+        if (!(await git(dir, ['read-tree', 'HEAD'], env)).ok) return null
+        if (!(await git(dir, ['add', '-A', '--', '.'], env)).ok) return null
+        const tree = (await git(dir, ['write-tree'], env)).stdout.trim()
+        if (!tree) return null
+        const c = await git(
+            dir,
+            ['commit-tree', tree, '-p', head, '-m', 'bismuth snapshot'],
+            env,
+        )
+        const sha = c.stdout.trim()
+        return c.ok && sha ? sha : null
+    } finally {
+        await rm(tmp, { recursive: true, force: true })
+    }
+}
+
+/**
+ * Files that differ between the checkpoint's base and a snapshot of the working tree taken NOW.
+ * Base = the ref, else the first existing `fallbackRefs` entry, else null (every file in the
+ * snapshot counts as added). Never commits or moves anything; advance the ref to `snapshot` once
+ * the delta has been consumed, so the checkpoint records exactly what was seen.
  */
 export async function checkpointDelta(
     dir: string,
     ref: string,
+    opts: { fallbackRefs?: string[] } = {},
 ): Promise<CheckpointDelta> {
-    if (!(await isGitRepo(dir))) return { base: null, head: null, files: [] }
+    const empty = { base: null, head: null, snapshot: null, files: [] }
+    if (!(await isGitRepo(dir))) return empty
     const head = await headSha(dir)
-    if (!head) return { base: null, head: null, files: [] }
+    if (!head) return empty
+    const snapshot = await snapshotWorkingTree(dir)
+    if (!snapshot) return { ...empty, head }
 
-    const refSha = await checkpointRefSha(dir, ref)
-    let committed: ChangedFile[]
-    if (refSha === null) {
+    let base = await checkpointRefSha(dir, ref)
+    for (const fb of base === null ? (opts.fallbackRefs ?? []) : []) {
+        base = await checkpointRefSha(dir, fb)
+        if (base !== null) break
+    }
+
+    let files: ChangedFile[]
+    if (base === null) {
         const ls = await git(dir, [
             'ls-tree',
             '-r',
             '--name-only',
             '-z',
-            'HEAD',
+            snapshot,
         ])
-        committed = ls.stdout
+        files = ls.stdout
             .split('\0')
             .filter(Boolean)
             .map(path => ({ status: 'A', path }))
@@ -141,46 +185,27 @@ export async function checkpointDelta(
             'diff',
             '--name-status',
             '-z',
-            refSha,
-            'HEAD',
+            base,
+            snapshot,
         ])
-        committed = parseNameStatus(d.stdout)
+        files = parseNameStatus(d.stdout)
     }
-
-    const wt = await git(dir, ['diff', '--name-status', '-z', 'HEAD'])
-    const tracked = parseNameStatus(wt.stdout)
-    const untrackedOut = await git(dir, [
-        'ls-files',
-        '--others',
-        '--exclude-standard',
-        '-z',
-    ])
-    const untracked: ChangedFile[] = untrackedOut.stdout
-        .split('\0')
-        .filter(Boolean)
-        .map(path => ({ status: 'A', path }))
-
-    // Merge by path — working-tree status wins over the committed-range status for the same path
-    // (it's the freshest truth); iteration order gives committed entries first so a path present in
-    // both only shows up once, with the working-tree version.
-    const merged = new Map<string, ChangedFile>()
-    for (const f of committed) merged.set(f.path, f)
-    for (const f of [...tracked, ...untracked]) merged.set(f.path, f)
-
-    return { base: refSha, head, files: [...merged.values()] }
+    return { base, head, snapshot, files }
 }
 
 /**
- * Advance the checkpoint ref to current HEAD. Never commits (see checkpointDelta's doc comment).
- * Returns the new ref SHA, or null if `dir` isn't a repo yet / has no commits.
+ * Move the checkpoint ref to `to` (a snapshot sha from checkpointDelta / snapshotWorkingTree), or
+ * to a fresh snapshot of the working tree when omitted. Never commits to a branch. No-op when
+ * `dir` isn't a repo yet / has no commits.
  */
 export async function advanceCheckpointRef(
     dir: string,
     ref: string,
-): Promise<string | null> {
-    if (!(await isGitRepo(dir))) return null
-    const head = await headSha(dir)
-    if (!head) return null
-    await git(dir, ['update-ref', refPath(ref), 'HEAD'])
-    return head
+    to?: string,
+): Promise<void> {
+    const path = refPath(ref)
+    if (!(await isGitRepo(dir))) return
+    const target = to ?? (await snapshotWorkingTree(dir))
+    if (!target) return
+    await git(dir, ['update-ref', path, target])
 }

@@ -133,7 +133,7 @@ On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/inde
 | `session-ids` | newline-delimited session ids, oldest first, deduped, capped at 2000 | `daemon/sessionIds.ts` | `recordDaemonSessionId(ctx, id)` — the **durable set** of every session the daemon minted, appended from `saveSessionId`. Read by core (`readDaemonSessionIds`, `core/src/daemon.ts`) so the chat page lists only the user's own chats and a future surface can find the daemon's. Answers "did the daemon mint this session?" for ALL of them — which `session-id` cannot |
 | `session-ids-legacy` | same format as `session-ids` | **core** (`core/src/chatDaemonLegacy.ts`) | The **one-time backfill** of the durable set, for daemon sessions minted *before* `session-ids` existed. `backfillLegacyDaemonSessions(vault)` scans the SDK store once (first History open; gated on `.daemon` existing, bounded by reading only each transcript's first message) and records every session whose OPENING prompt the daemon itself composed — an exact match on `DAEMON_BOOT_PROMPT`, or the `[Cron: ` prefix **and** the cron result instruction together. `readDaemonSessionIds` unions this with `session-ids`. Its own existence is the done-marker (an empty file = "scanned, found nothing"); it is frozen once written, since it describes history. **A separate file on purpose**: its writer is a different OS process (core, not the daemon), so each file keeps a single writing process and the daemon's in-process lock stays sufficient. See [lifecycle.md](lifecycle.md) |
 | `memory/<name>.md` | markdown note: frontmatter `{ type, tags, created, updated }` + body with `[[backlinks]]`; single-level folders allowed | `@bismuth/memory` (`memory/src/graph.ts`) | The 3rd brain. Written by the daemon's bot, the relay collect hook, and the MCP `remember` tool — all against `<vault>/.daemon/memory` via `BISMUTH_MEMORY_DIR`. Full note format: [memory.md](memory.md) |
-| `crons/<name>.md` | cron def frontmatter, EITHER `{ name?, schedule, catchup?(default true) }` (time-based, the default) OR `{ name?, on: file-change, watch }` (fires on a vault file/glob change instead) — both share `{ enabled?(default true), notify?, model?, effort?, timeout?, waitFor?, incremental?(default false), checkpointDir?("vault"\|"memory", default "vault") }` + body (= prompt) | `daemon/cron.ts` | `daemon/cron.ts` CRUD; the two defaults (`dream`, `vault-review`) are seeded, both schedule-based and `incremental: true`. Full model incl. file-change crons and incremental scoping: [crons-and-processes.md](crons-and-processes.md#file-change-crons) |
+| `crons/<name>.md` | cron def frontmatter, EITHER `{ name?, schedule, catchup?(default true) }` (time-based, the default) OR `{ name?, on: file-change, watch }` (fires on a vault file/glob change instead) — both share `{ enabled?(default true), notify?, model?, effort?, timeout?, waitFor?, incremental?(default false), checkpointDirs?(comma list of vault\|memory, default vault; legacy singular checkpointDir still parses) }` + body (= prompt) | `daemon/cron.ts` | `daemon/cron.ts` CRUD; the one default (`dream`) is seeded, schedule-based and `incremental: true` with `checkpointDirs: vault, memory`; a retired `vault-review.md` is renamed `vault-review.md.disabled`. Full model incl. file-change crons and incremental scoping: [crons-and-processes.md](crons-and-processes.md#file-change-crons) |
 | `crons/.last-fired.json` | `{ "<name>": { timestamp: ISO, result: "success"\|"failed"\|"unknown"\|"killed"\|"skipped", detail?: string } }`, keyed by job name | `daemon/cron.ts` | `updateLastFired` (unique-tmp atomic write under a per-file serial queue). `loadLastFired` migrates a legacy plain-string value to `{ timestamp, result: "success" }`. `result: "skipped"` + `detail` (e.g. `"skipped: no changes since 2026-07-20T10:00:00Z"`) is written by an `incremental` cron's pre-fire check (see [crons-and-processes.md](crons-and-processes.md#incremental-crons)) instead of ever starting a session; `daemonGraph.ts` surfaces `detail` verbatim as the daemon graph's `lastResult` so a skip is visible, not silent |
 | `crons/.running.json` | `{ "<name>": { startedAt: ISO } }`, keyed by job name | `daemon/cron.ts` | `markRunning` / `markDone` (same serial-queue + atomic write) |
 | `crons/.triggers/<name>` | ISO-timestamp file (content unused; presence is the signal); filename = job name, **no** `.md` | `daemon/cron.ts` | core's `runCron`; consumed (unlinked) by `processTriggers` every 5s. Owner-gated — a non-owner daemon unlinks without firing |
@@ -173,19 +173,21 @@ interface ActivityEvent {
     cause?: string        // failure class, mirrors cron.ts's FailureCause: "environment" | "timeout" | "job"
     durationMs?: number   // wall-clock duration, on events that end a run
     detail?: string       // human-readable one-liner — the thing an agent quotes back to the user
+    summary?: string      // on a cron `finished` event: the run's final report line (last non-empty line of the result text, ≤ 300 chars)
 }
 ```
 
 | `kind` | `event` | Carries |
 | --- | --- | --- |
 | `cron` | `started` | — |
-| `cron` | `finished` | `outcome` (`success`/`failed`/`unknown`/`killed`), `cause` on failure, `durationMs`, `detail` |
+| `cron` | `finished` | `outcome` (`success`/`failed`/`unknown`/`killed`), `cause` on failure, `durationMs`, `detail`, `summary` — the run's one-line report (for `dream`: `vault=N memory=N transcripts=N merged=N pages=N …`) |
 | `cron` | `skipped` | `outcome: "skipped"`, `detail` — the incremental cron's pre-fire skip reason, verbatim (the same string written to `.last-fired.json`'s `detail`) |
 | `process` | `started` | `detail: "pid <n>"` |
 | `process` | `exited` | `outcome` (`success` on code 0, `failed` on a non-zero code, `killed` on a signal), `detail` |
 | `process` | `restarting` | `detail: "in <n>ms (restart #<n>)"` |
 | `process` | `reaped` | `detail` — an orphan from a previous daemon instance |
 | `daemon` | `brain-started` | — (no `detail`; see below) |
+| `daemon` | `cron-retired` | `detail: "<name> merged into dream"` — `reconcileSeeds` renamed a retired cron (`vault-review`) to `<name>.md.disabled` |
 
 **`daemon`/`brain-started` deliberately carries no `detail`.** An earlier draft put the vault's
 absolute filesystem root there; it was removed because `GET /daemon/logs` is ungated like its
@@ -220,15 +222,19 @@ user edits (or a deliberate `enabled: false`) are never overwritten. `seedsFor(c
 - **`identity.md`** — `---\nname: daemon\n---` + `DEFAULT_DAEMON_IDENTITY`.
 - **The default crons** (`daemon/src/daemon/defaultCrons.ts`, embedded as string constants so they
   survive `bun build --compile`):
-  - **`dream`** — `schedule: 0 * * * *` (hourly), `timeout: 1800`: consolidates this vault's
-    `memory/` graph into an atomic, densely-linked zettelkasten.
-  - **`vault-review`** — `schedule: 0 */4 * * *` (every 4h), `timeout: 900`, `notify: true`:
-    reviews the vault to maintain a living model-of-the-user in memory.
+  - **`dream`** — `schedule: 0 * * * *` (hourly), `timeout: 1800`, `incremental: true`,
+    `checkpointDirs: vault, memory`, no `notify`: consolidates changed vault notes, changed memory
+    notes and unprocessed `auto-*` transcripts into this vault's `memory/` graph, in one session.
+    It is the only seeded cron; `vault-review` was merged into it and is retired (below).
 - **`PAGES.md`** — the `PAGES_GUIDE` string constant (`daemon/src/daemon/pagesGuide.ts`), written
-  straight into `ctx.daemonDir`. Unlike the two crons above it has no `refreshKey` — like
+  straight into `ctx.daemonDir`. Unlike the cron above it has no `refreshKey` — like
   `identity.md` it is written once and never versioned/upgraded in place, only written when
   entirely absent. It documents the `pages/<slug>.md` format (above) for any page-authoring
   session; it is not itself a cron and nothing ever executes it.
+
+After seeding, `reconcileSeeds` **retires** each name in `RETIRED_CRONS` (`['vault-review']`) — but only when `crons/dream.md` equals the current stock `DREAM`. The retired `<name>.md` (stock or hand-edited) is renamed `<name>.md.disabled` (`<name>.md.disabled-2`, `-3`, … if that exists), its content kept; the result's `retired` array lists it and a `daemon`/`cron-retired` activity event is appended. A customized `dream.md` retires nothing.
+
+**Dev vaults never reach the machine registry.** `isDevVaultRoot(root)` (`core/src/daemon.ts`) is true when some path segment of `root` starts with `.dev-vault` (`.dev-vault`, `.dev-vault-alex`, …); `isEphemeralVaultRoot` returns true for it, so `registerVaultRoot` never adds such a root to `vaults.json` and prunes one already present with a log line. The daemon's `loadEnabledVaults()` independently skips those roots, even if an older core wrote them.
 
 Add a future seedable by appending one entry to `seedsFor()`.
 

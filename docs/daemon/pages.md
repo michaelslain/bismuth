@@ -115,13 +115,20 @@ The frontend evaluates this at two points: a cold-launch check (`App.tsx`'s `onM
 - **Toolbar inbox button** — `open-inbox` ships in the DEFAULT sidebar toolbar (`toolbar:` in `.settings` — removable/movable like any button), hidden entirely while the daemon is off; a badge overlays the due count (special-cased in App.tsx's toolbar render). It's also a palette command. Clicking opens/focuses the daemon page (`::daemon`). A toast fires on newly-due pages (batched to "N pages ready for review"), whose "Review" action opens the same page. The inbox is **never** auto-opened on cold launch.
 - **`open-inbox` command** (`core/src/commands.ts` + `app/src/commands.ts`) — palette + optional toolbar access.
 
+## How the user is told a page exists
+
+Two separate signals:
+
+- **In the app** — the toolbar badge and the batched "N pages ready for review" toast (see [Frontend surfaces](#frontend-surfaces)).
+- **OS notification, from the daemon** — `fireJob` (`daemon/src/daemon/cron.ts`) lists `.daemon/pages/*.md` before a cron's session starts and again once it settles. For every page file that is new, it calls `notify("<daemon name>: <page title>", "New in your inbox")` — `<page title>` from the page's frontmatter `title`, else its slug. One notification per new page, for **every** cron regardless of its `notify` flag; the model never has to ask for it. This is how `dream` (which has no `notify: true`) surfaces something that needs the user: its prompt files ONE page per such thing (`source: "cron:dream"`, per `.daemon/PAGES.md`), never a duplicate of a still-pending page on the same subject and never a page that only reports the run.
+
 ## Cleanup — no cron, no ticker
 
 Garbage collection runs **in the read path**: `listDaemonPages` (`core/src/daemonPages.ts`) deletes a page's `.md` + its `.state` sidecar, best-effort, whenever it's about to list a page that is BOTH terminal (`done`/`failed`/`dismissed`) AND whose `completedAt`/`pressedAt` is older than `daemon.inboxRetentionDays` (default 7, `core/src/schema/settingsSchema.ts`). Since the frontend polls `GET /daemon/pages` regularly while the daemon is enabled, GC happens on its own with no extra machinery. A resolved page could in principle be GC'd while open in a stale tab — the same accepted risk as any externally-deleted-while-open file.
 
 ## Execution is runtime code, not a cron
 
-Unlike `dream`/`vault-review`, page execution is NOT a seeded, user-deletable cron — it's runtime code (`processPageTriggers`) that always runs, so a user who deletes/disables a cron by mistake can never silently break the whole inbox feature.
+Unlike `dream`, page execution is NOT a seeded, user-deletable cron — it's runtime code (`processPageTriggers`) that always runs, so a user who deletes/disables a cron by mistake can never silently break the whole inbox feature.
 
 ---
 

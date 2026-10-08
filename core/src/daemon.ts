@@ -35,6 +35,7 @@ import { parse } from 'yaml'
 import { parseFrontmatter, setFrontmatterKey } from './frontmatter'
 import { isDaemonAlive, readFrontmatter, readJsonObj } from './daemonState'
 import { isTempPath } from './tempPath'
+import { isDevVaultRoot } from './devVaultRoot'
 import { writeFileAtomicSync } from './atomicWrite'
 import { SETTINGS_FILE } from './settings'
 import { AppError } from './error'
@@ -364,6 +365,8 @@ const EPHEMERAL_SEGMENT_PAIRS: ReadonlyArray<readonly [string, string]> = [
     ['.claude', 'jobs'],
 ]
 
+export { isDevVaultRoot }
+
 /**
  * Is this vault root throwaway scaffolding that must never reach the PERSISTENT machine registry?
  * PURE and total (string in, boolean out) — no IO, no clock — so the rule set is directly testable
@@ -372,13 +375,13 @@ const EPHEMERAL_SEGMENT_PAIRS: ReadonlyArray<readonly [string, string]> = [
  * Two sources of scaffolding today: the OS temp dir (mkdtemp sandboxes, a dev server pointed at
  * /tmp) via the shared {@link isTempPath} guard — reused rather than re-derived so the run registry
  * and this registry cannot grow drifting copies of the same rule — and agent scratch trees (see
- * {@link EPHEMERAL_SEGMENT_PAIRS}).
+ * {@link EPHEMERAL_SEGMENT_PAIRS}) — plus dev vaults ({@link isDevVaultRoot}: a `.dev-vault*` segment).
  *
  * Used in BOTH directions by {@link registerVaultRoot}: it declines to add such a root, AND prunes
  * any that an earlier build (or an earlier version of this guard) already persisted.
  */
 export function isEphemeralVaultRoot(root: string): boolean {
-    if (isTempPath(root)) return true
+    if (isTempPath(root) || isDevVaultRoot(root)) return true
     const segments = root.split(/[/\\]+/)
     return EPHEMERAL_SEGMENT_PAIRS.some(([first, second]) =>
         segments.some((seg, i) => seg === first && segments[i + 1] === second),

@@ -1,5 +1,5 @@
 // Pre-fire incremental-scoping for crons that opt in via `incremental: true` frontmatter (the
-// two seeded crons — dream, vault-review — see defaultCrons.ts). Moves the "what changed since
+// seeded dream cron — see defaultCrons.ts). Moves the "what changed since
 // last time" scoping OUT of the session (previously the model itself ran `bismuth checkpoint
 // diff/advance` as its first/last Bash step — see Bug #105 history in session.ts) and INTO the
 // daemon, so a cron with nothing new to look at never spins up a session at all.
@@ -21,9 +21,31 @@ import type { VaultContext } from '../lib/config.ts'
 /** The ref namespace prefix for incremental crons: `refs/bismuth/cron-<name>`. Distinct from any
  *  ref name a cron's OWN prompt might have driven by hand in the past (e.g. plain "dream") so a
  *  vault upgrading to this feature always starts from a clean "first incremental run" rather than
- *  inheriting a ref an LLM-authored bash step may have advanced under uncertain conditions. */
-export function incrementalRefName(cronName: string): string {
-    return `cron-${cronName}`
+ *  inheriting a ref an LLM-authored bash step may have advanced under uncertain conditions.
+ *
+ *  A job that checkpoints SEVERAL dirs (`checkpointDirs: vault, memory`) keeps the memory ref at
+ *  the plain `cron-<name>` (so an existing single-dir memory checkpoint carries over untouched)
+ *  and puts the vault one at `cron-<name>-vault`. A single-dir job is always `cron-<name>`. */
+export function incrementalRefName(
+    cronName: string,
+    kind?: CheckpointDirKind,
+    dirs?: CheckpointDirKind[],
+): string {
+    return kind === 'vault' && dirs && dirs.length > 1
+        ? `cron-${cronName}-vault`
+        : `cron-${cronName}`
+}
+
+/** Older refs a (cron, area) may inherit its base from when its own ref does not exist yet: the
+ *  fused dream's vault area continues from the retired vault-review cron's checkpoint (the new
+ *  `cron-` spelling, then the legacy bare one) so an existing vault is not re-surveyed. */
+export function legacyRefsFor(
+    cronName: string,
+    kind: CheckpointDirKind,
+): string[] {
+    return cronName === 'dream' && kind === 'vault'
+        ? ['cron-vault-review', 'vault-review']
+        : []
 }
 
 /** Which repo an incremental cron's checkpoint lives against. "vault" = the vault root
@@ -121,6 +143,17 @@ export function applyIncrementalPlaceholder(
         : prompt
 }
 
+export interface IncrementalArea {
+    kind: CheckpointDirKind
+    dir: string
+    ref: string
+    /** Commit whose tree is the working tree this area's delta was computed against. */
+    snapshot: string | null
+    files: ChangedFile[]
+    /** No checkpoint (own or inherited) existed — the whole area counts as new. */
+    firstRun: boolean
+}
+
 export interface IncrementalRunPlan {
     /** True when the job should be skipped entirely — no session, just a lastFired update. */
     skip: boolean
@@ -129,52 +162,128 @@ export interface IncrementalRunPlan {
     note?: string
     /** Present when skip=false: the prompt with {{changedSinceLastRun}} resolved. */
     prompt?: string
-    /** The repo dir this plan checked (for advanceIncrementalCheckpoint after a successful run). */
-    dir: string
-    /** The checkpoint ref name (refs/bismuth/<ref>) this plan checked. */
-    ref: string
+    /** Every area this plan checked (for advanceIncrementalCheckpoints after a successful run). */
+    areas: IncrementalArea[]
+}
+
+type IncrementalJob = {
+    name: string
+    file: string
+    prompt: string
+    checkpointDirs?: CheckpointDirKind[]
+    checkpointDir?: CheckpointDirKind
+}
+
+function dirsOf(job: IncrementalJob): CheckpointDirKind[] {
+    if (job.checkpointDirs && job.checkpointDirs.length > 0)
+        return job.checkpointDirs
+    return [job.checkpointDir ?? 'vault']
+}
+
+const AREA_LABEL: Record<CheckpointDirKind, string> = {
+    vault: 'Vault',
+    memory: 'Memory',
+}
+
+function areaBlock(area: IncrementalArea, since: string): string {
+    const label = AREA_LABEL[area.kind]
+    if (area.firstRun)
+        return `${label} notes: this is the first incremental run for this area - no prior checkpoint exists yet. Do a full pass of it (see the instructions below).`
+    if (area.files.length === 0)
+        return `${label} notes: nothing changed since ${since}.`
+    return `${label} notes changed since ${since}:\n${formatChangedList(area.files)}`
 }
 
 /**
- * The impure half: resolve an incremental cron's checkpoint delta against its repo, filter it,
- * and decide skip vs. run — plus (if running) the prompt with the placeholder resolved. Called
- * from cron.ts's fireJob BEFORE any of the running-state bookkeeping, so a skip is a true no-op
- * (no session, no PTY, no running-jobs entry).
+ * The impure half: resolve an incremental cron's checkpoint deltas against each of its repos,
+ * filter them, and decide skip vs. run - plus (if running) the prompt with the placeholder
+ * resolved. Called from cron.ts's fireJob BEFORE any of the running-state bookkeeping, so a skip
+ * is a true no-op (no session, no PTY, no running-jobs entry). Skip iff EVERY area is past its
+ * first run and has zero filtered files.
  */
 export async function resolveIncrementalRun(
     ctx: VaultContext,
-    job: { name: string; file: string; prompt: string; checkpointDir?: CheckpointDirKind },
+    job: IncrementalJob,
 ): Promise<IncrementalRunPlan> {
-    const dir = checkpointDirFor(ctx, job.checkpointDir)
-    const ref = incrementalRefName(job.file)
-    const delta = await checkpointDelta(dir, ref)
-    const filtered = filterCronPaths(delta.files)
-    const refCommitIso = delta.base
-        ? await commitTimeIso(dir, delta.base)
-        : null
-    const decision = decideIncrementalRun(
-        { base: delta.base, files: filtered },
-        { refCommitIso },
-    )
+    const kinds = dirsOf(job)
+    const areas: IncrementalArea[] = []
+    const sinces: string[] = []
+    for (const kind of kinds) {
+        const dir = checkpointDirFor(ctx, kind)
+        const ref = incrementalRefName(job.file, kind, kinds)
+        const delta = await checkpointDelta(dir, ref, {
+            fallbackRefs: legacyRefsFor(job.file, kind),
+        })
+        if (delta.head !== null && delta.snapshot === null)
+            return {
+                skip: true,
+                note: `skipped: could not snapshot ${kind}`,
+                areas,
+            }
+        const iso = delta.base ? await commitTimeIso(dir, delta.base) : null
+        sinces.push(iso ?? 'the last run')
+        areas.push({
+            kind,
+            dir,
+            ref,
+            snapshot: delta.snapshot,
+            files: filterCronPaths(delta.files),
+            firstRun: delta.base === null && delta.snapshot !== null,
+        })
+    }
 
-    if (decision.skip) return { skip: true, note: decision.note, dir, ref }
+    if (areas.every(a => !a.firstRun && a.files.length === 0))
+        return {
+            skip: true,
+            note: `skipped: no changes since ${sinces[0]}`,
+            areas,
+        }
+
+    let injected: string
+    if (areas.length === 1) {
+        // Single-area jobs keep their original wording (see decideIncrementalRun).
+        const d = decideIncrementalRun(
+            { base: areas[0]!.firstRun ? null : 'x', files: areas[0]!.files },
+            { refCommitIso: sinces[0] === 'the last run' ? null : sinces[0]! },
+        )
+        injected = d.skip ? '' : d.injected
+    } else {
+        injected = areas.map((a, i) => areaBlock(a, sinces[i]!)).join('\n\n')
+    }
     return {
         skip: false,
-        prompt: applyIncrementalPlaceholder(job.prompt, decision.injected),
-        dir,
-        ref,
+        prompt: applyIncrementalPlaceholder(job.prompt, injected),
+        areas,
     }
 }
 
-/** After a SUCCESSFUL incremental-cron session (never on failure/kill/unknown — see fireJob),
- *  advance its checkpoint ref to current HEAD. Best-effort: a failure here just means the next
- *  run re-diffs from the same base (over-inclusive, never data-losing), so it never throws. */
+/** After a SUCCESSFUL incremental-cron session (never on failure/kill/unknown - see fireJob),
+ *  advance each area's checkpoint ref. Vault -> the snapshot taken at the START of the run (an edit
+ *  made during the run is seen next time); memory -> a fresh END-of-run snapshot (the run's own
+ *  memory writes must not re-trigger it). Best-effort: a failure here just means the next run
+ *  re-diffs from the same base (over-inclusive, never data-losing), so it never throws. */
+export async function advanceIncrementalCheckpoints(
+    _ctx: VaultContext,
+    plan: IncrementalRunPlan,
+): Promise<void> {
+    for (const area of plan.areas) {
+        if (area.kind === 'vault' && !area.snapshot) continue
+        await advanceIncrementalCheckpoint(
+            area.dir,
+            area.ref,
+            area.kind === 'vault' ? (area.snapshot ?? undefined) : undefined,
+        )
+    }
+}
+
+/** Advance one ref (to `to`, or a fresh snapshot). Never throws. */
 export async function advanceIncrementalCheckpoint(
     dir: string,
     ref: string,
+    to?: string,
 ): Promise<void> {
     try {
-        await advanceCheckpointRef(dir, ref)
+        await advanceCheckpointRef(dir, ref, to)
     } catch (err) {
         console.error(
             `[cron] Failed to advance checkpoint ${ref} in ${dir}:`,

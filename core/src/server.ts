@@ -318,15 +318,20 @@ export function createServer(cfg: CoreConfig) {
         appConfig.daemon?.enabled
             ? join(cfg.vault, '.daemon', 'memory')
             : undefined
-    // The boot view warm-up (the end of createServer) is UNREQUESTED work — nothing awaits it — so a warm-up
+    // The view warm-up (warmViews, end of createServer) is UNREQUESTED work — nothing awaits it — so a pass
     // that is IN FLIGHT is cancelled the moment the graph is invalidated: its full settle must never hold the
     // one layout worker ahead of the rebuild that invalidation asks for. See the cancellation rule in
-    // layout-cache.ts's layoutFor. The warm-up step creates its OWN controller when it starts and clears it
-    // when it ends, so an invalidation that lands before it starts cancels nothing: one controller shared
-    // for the life of the process was already aborted by then (an early daemon memory write was enough),
-    // and the warm-up never ran even for the fresh graph. Aborted from graphCache.invalidate() itself, so
-    // no invalidation path can miss a running one.
-    let bootViewWarmup: AbortController | null = null
+    // layout-cache.ts's layoutFor. Each pass creates its OWN controller when it starts and clears it when it
+    // ends, so an invalidation that lands before a pass starts cancels nothing: one controller shared for the
+    // life of the process was already aborted by then (an early daemon memory write was enough), and the
+    // warm-up never ran even for the fresh graph. Aborted from graphCache.invalidate() itself, so no
+    // invalidation path can miss a running one; the same call wakes warmViews for its next pass.
+    let viewWarmup: AbortController | null = null
+    let wakeViewWarmup: () => void = () => {}
+    // Set by stop(): warmViews must not start (or keep) layout work for a server nobody can reach any
+    // more. The layout worker is ONE per process, fed FIFO, so a stopped server's leftover graph build +
+    // view warm-up would otherwise run ahead of every later server's jobs.
+    let stopped = false
     const graphLayoutCache = createAsyncCache<GraphData>(async signal => {
         // The rename epoch is captured BEFORE the vault walk: a POST /move landing while buildGraph reads
         // the old tree must void this build's seed write even when the build is a full settle, which
@@ -342,7 +347,8 @@ export function createServer(cfg: CoreConfig) {
         ...graphLayoutCache,
         invalidate() {
             graphLayoutCache.invalidate()
-            bootViewWarmup?.abort()
+            viewWarmup?.abort()
+            wakeViewWarmup()
         },
     }
     const treeCache = createAsyncCache<TreeEntry[]>(() =>
@@ -988,10 +994,41 @@ export function createServer(cfg: CoreConfig) {
     // feeds. Moving it last means the first brain-mode switch still finds it precomputed (instant
     // instead of a cold subgraph layout on click); it just no longer starves everything else on
     // the boot critical path to get there. Being unrequested, it is also `speculative` and carries a
-    // controller of its own (bootViewWarmup, created right here): a graph invalidation while it runs
-    // cancels it — even mid full settle — so it never holds the layout worker ahead of the rebuild a real
-    // edit needs. An invalidation BEFORE this step does not stop it: the chain re-reads the graph just
-    // above, which is then the fresh one, and this step starts with a fresh controller.
+    // controller of its own per pass (viewWarmup): a graph invalidation while it runs cancels it — even mid
+    // full settle — so it never holds the layout worker ahead of the rebuild a real edit needs, and the next
+    // pass runs on the rebuilt graph. After boot it keeps going: see warmViews below.
+
+    // Keeps the 2nd/3rd-brain view layouts warm for the graph as it is NOW: one pass after boot, then one
+    // more after every graph invalidation (a structural edit, a daemon memory write). Before this, views
+    // were computed once at boot and any later structural edit dropped them, so the next brain-mode switch
+    // paid a cold subgraph layout — and an edit landing DURING the boot pass aborted it for good. A pass is
+    // speculative, so it never holds the layout worker ahead of a requested rebuild; a burst of edits
+    // costs one aborted pass per invalidation and one completed pass once the graph settles.
+    const warmViews = async (): Promise<void> => {
+        while (!stopped) {
+            // Armed BEFORE reading the graph, so an invalidation during the read or the pass is never lost.
+            const invalidated = new Promise<void>(r => (wakeViewWarmup = r))
+            const g = await graphCache.get().catch(() => null)
+            if (stopped) return
+            if (g) {
+                const warmup = new AbortController()
+                viewWarmup = warmup
+                try {
+                    g.views = await computeViewLayouts(g, cfg.vault, {
+                        signal: warmup.signal,
+                        speculative: true,
+                    })
+                } catch {
+                    // Aborted by an invalidation (the next pass picks it up) or a failed layout (retried
+                    // on the next invalidation rather than spun on) — either way, wait below.
+                } finally {
+                    if (viewWarmup === warmup) viewWarmup = null
+                }
+            }
+            await invalidated
+        }
+    }
+
     void graphCache
         .get()
         .then(() =>
@@ -1001,21 +1038,7 @@ export function createServer(cfg: CoreConfig) {
                 tasksCache.get(),
             ]),
         )
-        .then(() => graphCache.get())
-        .then(g => {
-            const warmup = new AbortController()
-            bootViewWarmup = warmup
-            return computeViewLayouts(g, cfg.vault, {
-                signal: warmup.signal,
-                speculative: true,
-            })
-                .then(views => {
-                    g.views = views
-                })
-                .finally(() => {
-                    if (bootViewWarmup === warmup) bootViewWarmup = null
-                })
-        })
+        .then(() => warmViews())
         .catch(() => {})
 
     // The WS payload is discriminated by `kind`: terminal sockets pipe a PTY, chat sockets
@@ -1686,6 +1709,9 @@ export function createServer(cfg: CoreConfig) {
     // forwarded untouched, so `stop()` / `stop(true)` behave as before in every other respect.
     const stopHttp = server.stop.bind(server)
     const shutdown = (closeActiveConnections?: boolean): Promise<void> => {
+        stopped = true
+        // Aborts an in-flight graph build and the boot view warm-up, freeing the shared layout worker.
+        graphCache.invalidate()
         clearInterval(gcalTicker)
         for (const w of watchers.splice(0)) w.close()
         return stopHttp(closeActiveConnections)

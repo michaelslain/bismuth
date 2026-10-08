@@ -44,7 +44,7 @@ The boot sequence is **load-bearing** — each step depends on the side effects 
 3. Log `Daemon starting (PID …)`.
 4. **`heartbeatDevice()`** — upsert this device's `devices.json` entry immediately, so the device is selectable as owner before any other step.
 5. **`isOwner()`** — report ownership **once** for this boot pass. A non-owner logs `"Not the owner device — idling (heartbeating only, no sessions)"` and still proceeds (it supervises processes + heartbeats). The gate itself lives in `sendMessage`, which throws on a non-owner device — so ownership is enforced per session call rather than plumbed through `startVault`.
-6. **Per enabled vault — `startVault(ctx, { boot: true })`** — for each `ctx` from `loadEnabledVaults()`, bring that vault's brain fully online (reap → processes → triggers → cron recovery; detailed below).
+6. **Per enabled vault — `startVault(ctx, { boot: true })`** — for each `ctx` from `loadEnabledVaults()` (which skips any registered root for which `isDevVaultRoot(root)` is true — a path segment starting `.dev-vault` — even if an older core wrote it into `vaults.json`), bring that vault's brain fully online (reap → processes → triggers → cron recovery; detailed below).
 7. **`startCronScheduler()`** — start the single 60s tick loop (`CRON_CHECK_INTERVAL_MS`). The scheduler **self-multiplexes**: it re-reads `loadEnabledVaults()` each tick and fans out across every enabled vault, so a newly enabled vault's crons fire without a restart.
 8. **Reconcile loop** — `setInterval(reconcileVaults, CRON_CHECK_INTERVAL_MS)` so the set of running brains tracks `settings.daemon.enabled` across all vaults at runtime (detailed below).
 9. **Signal handlers** — bind `SIGTERM` and `SIGINT` to `shutdown(signal)`.
@@ -145,7 +145,7 @@ interface SendOptions {
 `seedsFor(ctx)` is the single declarative registry of what gets seeded:
 
 - **`<vault>/.daemon/identity.md`** — `---\nname: daemon\n---` + the `DEFAULT_DAEMON_IDENTITY` body. The `name:` frontmatter is the daemon's display name (drives `ctx.name` and the `"You are <name>"` prefix); the body is its editable personality/system prompt.
-- **The default crons** (`daemon/src/daemon/defaultCrons.ts`, `DEFAULT_CRONS`) — embedded as string constants (not files) so they survive `bun build --compile`: **`dream`** (hourly memory consolidation, `schedule: 0 * * * *`) and **`vault-review`** (every-4h model-of-the-user pass, `schedule: 0 */4 * * *`). To disable one, set `enabled: false` rather than deleting it (a deleted seed is re-written on next boot).
+- **The default crons** (`daemon/src/daemon/defaultCrons.ts`, `DEFAULT_CRONS`) — embedded as string constants (not files) so they survive `bun build --compile`: **`dream`** (the single fused hourly cron over vault + memory + session transcripts, `schedule: 0 * * * *`). To disable it, set `enabled: false` rather than deleting it (a deleted seed is re-written on next boot). `vault-review` is no longer seeded: `reconcileSeeds` retires it (renames `vault-review.md` to `vault-review.md.disabled`, then `-2`, `-3`, … on a clash) once the stock `dream.md` is in place, logging a `cron-retired` activity event.
 
 Adding a future seedable is one line: append an entry to `seedsFor()`.
 
