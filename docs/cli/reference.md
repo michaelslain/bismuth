@@ -952,7 +952,7 @@ The CLI twin of the MCP's `remember`/`recall`/`forget` tools, on the vault's 3rd
 
 **Which graph:** `--memory <dir>`, else `BISMUTH_MEMORY_DIR`, else the resolved vault's own `.daemon/memory` (`--vault`, else `BISMUTH_VAULT`, else the cwd walked up to a `.settings`) but only when that vault has `daemon.enabled: true`. Otherwise the command exits non-zero with `Memory is unavailable — the daemon is not enabled for this vault.`, the MCP's own refusal text (one shared constant, `MEMORY_UNAVAILABLE` in `mcp/src/memory.ts`).
 
-- **`memory remember --name <n> --content <md> [--type <t>] [--tags a,b] [--folder <f>]`** — save or overwrite by name (an existing note keeps its `type` and `created`). Prints `{ok, name}`.
+- **`memory remember --name <n> --content <md> [--type <t>] [--tags a,b] [--folder <f>] [--description <text>]`** — save or overwrite by name (an existing note keeps its `type`, `created` and `description`; `--description` is one line, ≤160 chars, shown in the session-start memory index). Prints `{ok, name}`.
 - **`memory recall <query…> [--folder <f>]`** — search; supports `tag:` `type:` `keyword:` `link:` `after:` `before:` filters. Prints `{ok, count, notes}`.
 - **`memory forget <name>`** — remove a note (the name may be folder-prefixed). Prints `{ok, name}`.
 

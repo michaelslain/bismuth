@@ -9,43 +9,81 @@ The current in-repo `@bismuth/daemon` model:
 
 ## Recall + collect live in the relay plugin
 
-The two memory hooks ship in the **`relay/` workspace** and load **per-session, only inside Bismuth terminals** — nothing is written to your global `~/.claude/settings.json`:
+The memory hooks ship in the **`relay/` workspace** and load **per-session, only inside Bismuth terminals** — nothing is written to your global `~/.claude/settings.json`:
 
 - `core/src/terminal.ts` spawns each terminal tab's PTY with a PATH shim (`relay/shim/claude`) that makes a bare `claude` run `claude --plugin-dir <relay>`, plus env: `CLAUDE_TERMINAL_ID` (the tab's pty id), `CLAUDE_RELAY_URL` (this app's core server), and — **only when `settings.daemon.enabled` for this vault** — `BISMUTH_MEMORY_DIR` (the vault's `.daemon/memory`).
 - The plugin's `hooks/hooks.json` binds the hooks; nothing is installed in `~/.claude`. Outside a Bismuth terminal the plugin isn't even present, and each hook additionally gates on `CLAUDE_TERMINAL_ID` (a cheap belt-and-suspenders guard via `relay/lib/report.ts`).
 
-So memory is recalled into prompts + collected from transcripts **strictly for vault-scoped Bismuth sessions**, never globally. Both hooks are best-effort: they read JSON from stdin, swallow every error, and `exit(0)` within a budget (`hook` in `lib/report.ts`) so they never block your session.
+So memory is recalled into prompts + collected from transcripts **strictly for vault-scoped Bismuth sessions**, never globally. All hooks are best-effort: they read JSON from stdin, swallow every error, and `exit(0)` within a budget (`hook` in `lib/report.ts`) so they never block your session.
 
 | Script | Hook event | Memory job (gated on `BISMUTH_MEMORY_DIR`) | Agent-graph job (always) |
 | --- | --- | --- | --- |
-| `relay/bin/recall-hook.ts` | `UserPromptSubmit` | Recall notes relevant to the prompt → inject as `additionalContext` | `POST /relay/session` (register/heartbeat this session node) |
+| `relay/bin/session-start-hook.ts` | `SessionStart` | `POST /memory/recall` `mode: session-start` → inject as `additionalContext` | `POST /relay/session` (register this session node) |
+| `relay/bin/recall-hook.ts` | `UserPromptSubmit` | `POST /memory/recall` `mode: prompt` → inject as `additionalContext` | `POST /relay/session` (register/heartbeat this session node) |
+| `relay/bin/tool-batch-hook.ts` | `PostToolBatch` | `POST /memory/recall` `mode: tool` with the batch's tool calls → inject as `additionalContext` | none |
+| `relay/bin/subagent-start-hook.ts` | `SubagentStart` | `POST /memory/recall` `mode: subagent` → inject as `additionalContext` | `POST /relay/subagent/start` (add the child node) |
 | `relay/bin/session-end-hook.ts` | `SessionEnd` | Collect the transcript into memory as one auto note (except on `compact`) | `POST /relay/session/end` (drop the node, except on `clear`/`compact`) |
 
-These two scripts each do **two** best-effort jobs concurrently (`Promise.all`): the memory job (this page) and an agent-graph job (the in-app "agents" graph — see [../terminal/overview.md](../terminal/overview.md) and [overview.md](overview.md)). The agent-graph job runs even when the daemon is disabled; the memory job no-ops without `BISMUTH_MEMORY_DIR`.
+Each hook script runs its jobs concurrently (`Promise.all`; PostToolBatch has no registry job): the memory job (this page) and an agent-graph job (the in-app "agents" graph — see [../terminal/overview.md](../terminal/overview.md) and [overview.md](overview.md)). The agent-graph job runs even when the daemon is disabled; the memory job no-ops without `BISMUTH_MEMORY_DIR`.
 
-### `recall-hook.ts` — `UserPromptSubmit` (memory context injection)
+### Recall injection points — all four call core
 
-Flow (`relay/bin/recall-hook.ts` + `relay/lib/memory.ts`):
+Four hooks inject memory, each by `POST`ing to core's `/memory/recall` (`relay/lib/recall.ts`'s `requestRecall`, against `CLAUDE_RELAY_URL`) and printing the reply:
+
+| Hook event | `mode` | Request carries | Timeout |
+| --- | --- | --- | --- |
+| `SessionStart` (`startup\|resume\|clear\|compact`) | `session-start` | `sessionId`, `source`, `transcriptPath` | 1500ms |
+| `UserPromptSubmit` | `prompt` | `sessionId`, `prompt`, `transcriptPath` (+ `agentId` when present) | 1500ms |
+| `PostToolBatch` (all tools) | `tool` | `sessionId`, `toolCalls` (each `tool_response` capped at 2000 chars), `agentId` inside a subagent | 700ms |
+| `SubagentStart` | `subagent` | `sessionId` (parent), `agentId`, `transcriptPath` | 1500ms |
+
+Flow, common to all four (`relay/bin/*-hook.ts`):
 
 1. No `CLAUDE_TERMINAL_ID` → return (not a Bismuth terminal tab).
-2. Read stdin; in parallel POST `/relay/session` (heartbeat, 2s budget) **and** — if `BISMUTH_MEMORY_DIR` is set and `prompt` is a string — call `recallMemory(dir, prompt)` (800ms budget).
-3. `recallMemory` runs `searchMemory(prompt, dir)` from `@bismuth/memory` — **pure keyword search, no LLM** (scoring detailed in [memory.md](memory.md)) — racing it against an 800ms timeout so a bloated graph degrades to "no recall" rather than stalling prompt submission. Empty/whitespace prompt or no matches → `null`.
-4. On a non-null result, write the `UserPromptSubmit` `additionalContext` payload to stdout:
+2. Read stdin; run the registry POST (`/relay/session`, `/relay/subagent/start`) and — only if `BISMUTH_MEMORY_DIR` is set — `requestRecall(...)` concurrently. `PostToolBatch` has no registry job.
+3. **Core owns ranking, dedup and settings**; the hooks only forward the payload. There is no in-hook fallback ranker: core unreachable, a non-2xx reply, a bad body or a timeout means `requestRecall` returns `null` and the hook prints nothing.
+4. On a non-null context, print exactly one JSON object, with `hookEventName` set to the firing event:
 
 ```json
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "<formatted notes>"
+    "additionalContext": "<context from core>"
   }
 }
 ```
 
-The hook calls **`recallMemory(dir, prompt, budgetMs?)`** from `@bismuth/memory` (`memory/src/recall.ts`) directly — the ONE shared recall implementation. Its `formatRecall()` emits a `# Memories` header, then per note a `## <name> (<type>) [<tags>]` line, the content, and a `Links: [[...]]` line when the note has backlinks.
+The request/response types (`RecallRequest`, `RecallResponse`) are redeclared in `relay/lib/recall.ts` because relay must not import core.
+
+### The semantic channel (`core/src/memoryEmbed.ts`)
+
+Ranking is BM25 first; when `daemon.recall.semantic` is true (the default) core also scores notes by meaning with **bge-small-en-v1.5, quantized (`q8`)**, run by `onnxruntime-node` through `@huggingface/transformers`, and `rankNotes` fuses the top cosines in additively. `semantic: false` means the model is never loaded. The iPad in-process backend never imports any of it (lexical only). The compiled `bismuth serve` CLI is BM25-only too: the embed worker runs only in the core sidecar, which is recognised by `BISMUTH_CORE_SIDECAR=1` on a binary whose exec name starts with `bismuth-core`. The semantic query text is capped at 1000 characters (`SEMANTIC_QUERY_CHARS`). In tool mode, at 12 or more notes, evidence is strict: a semantic-only hit never injects, since a cosine is only a bonus on top of lexical evidence.
+
+- **A child process, lazy.** Core boot imports nothing of the model (`core/test/memoryEmbed.test.ts` pins that the static import graph of `server.ts` never reaches `transformers`). The model lives in a separate process (`core/src/embedWorker.ts`), spawned by the first semantic query: in dev `bun run embedWorker.ts`, in the bundled app the sidecar binary re-executed with `--bismuth-embed-worker` (`embedWorkerBoot.ts`, the first import of `server.ts`, turns that process into the worker). Requests are newline-delimited JSON on its stdin/stdout, vectors as base64. That first query, being past the budget, is answered by BM25 alone while the child warms.
+- **Budget.** A query that throws or takes longer than 250 ms (a cold load, a download) gets BM25 for that request; the work continues in the background so the next query finds the model warm. A failed load, or a child that dies twice in a row, is not retried for an exponential backoff (30 s, 60 s, 120 s ... capped at 1 h, reset by a success), and a failed vector run does not re-arm itself: nothing retries until the next real sync; a request the child leaves unanswered for 30 s kills it and falls back.
+- **Idle exit.** After 10 minutes with no embed (`BISMUTH_RECALL_IDLE_MS` overrides, in ms) core ends the child, so the OS takes back everything the model held. (Disposing the model inside core was measured and does not lower RSS on macOS.) The next query respawns it, ~110 ms of model load from the disk cache plus process start. The child also exits when its stdin closes, so a core that is killed outright leaves no orphan.
+- **Vectors.** One `vectors.json` per memory dir under `~/.bismuth/cache/recall/<sha1(memoryDir)>/`, keyed by `noteHash`. Only notes whose hash changed are re-embedded, throttled to one run per 2 s; a restart embeds nothing already stored. Each note embeds name + description + tags + the first 1000 chars of the body; queries get bge's instruction prefix, documents do not. A reply that used the channel carries `"semantic": true`.
+- **Model files.** `Xenova/bge-small-en-v1.5` `model_quantized.onnx` (~33 MB) downloads on first use into `~/.bismuth/models`. Offline with no cache, recall stays lexical.
+- **Compiled sidecar.** `app/scripts/build-core-sidecar.ts` builds through the `Bun.build` API with three patches (stub `sharp`; a literal `require('onnxruntime-node')`; load the native binding from an `ort/` dir) and stages `onnxruntime_binding.node` plus `libonnxruntime*.dylib` as the `resources/ort` Tauri resource (~45 MB per platform; darwin-arm64 verified, the others untested). The binding is searched at `$BISMUTH_ORT_DIR`, `<sidecar dir>/ort`, then `Resources/resources/ort`.
+
+**Measured machine cost** (Apple arm64, bun 1.4.0, q8, threads capped at 2; 140 notes of ~1.4 KB, `BISMUTH_RECALL_IDLE_MS=3000`):
+
+| | |
+| --- | --- |
+| core RSS before the first semantic query | ~150 MB (dev) |
+| child RSS while loaded and indexing 140 notes | 260-280 MB (dev 262-278, bundled sidecar 282; the child also evaluates the sidecar's own code) |
+| core RSS while the child is loaded | +4 to +11 MB |
+| after idle: child | **gone** (pid absent, checked at 5.5 s with a 3 s idle) |
+| after idle: core RSS vs before first query | +17 to +22 MB, against +11 to +13 MB for the same traffic with `semantic: false`, so the feature itself costs core under 10 MB |
+| first query (spawn + load) | ~260 ms, past the 250 ms budget: answered by BM25 while the child warms |
+| query after an idle exit (respawn, vectors already on disk) | 126-161 ms, semantic |
+| warm `/memory/recall` | 4-5 ms (one embed ~1.8 ms) |
+| 140-note index (one run, once per change) | ~4 s |
+| core exit | child gone with it (SIGTERM, or stdin closing after SIGKILL) |
 
 ### The visual chat recalls too (SDK session, no relay plugin)
 
-The relay hooks only fire in **terminal-tab CLI** Claude sessions. The in-app **visual chat** (`core/src/chat.ts`) is an Agent-SDK session that never loads the relay plugin, so it wired recall in-process instead: when the chat session carries a `memoryDir` (daemon enabled), `spawnChatQuery` registers a programmatic `hooks.UserPromptSubmit` on the SDK `query()` that calls the same `recallMemory(memoryDir, prompt)` and returns the same `additionalContext` shape. So both the app's Claude surfaces — terminal tabs and the visual chat — auto-recall from one implementation. (The chat already **collected** transcripts into memory via `captureToMemory`; before this it collected but never recalled — the asymmetry that made memory feel "not auto-injecting" once work moved into the chat.)
+The relay hooks only fire in **terminal-tab CLI** Claude sessions. The in-app **visual chat** (`core/src/chat.ts`) is an Agent-SDK session that never loads the relay plugin, so it wired recall in-process instead: when the chat session carries a `memoryDir` (daemon enabled), `spawnChatQuery` registers a programmatic `hooks.UserPromptSubmit` on the SDK `query()` that calls the same recall service (`recallServiceFor(...)`, raced through `recallWithin(svc, req, ms)`) and returns the same `additionalContext` shape. So both the app's Claude surfaces — terminal tabs and the visual chat — auto-recall from one implementation. (The chat already **collected** transcripts into memory via `captureToMemory`; before this it collected but never recalled — the asymmetry that made memory feel "not auto-injecting" once work moved into the chat.)
 
 ### `session-end-hook.ts` — `SessionEnd` (transcript → auto note)
 
@@ -116,11 +154,11 @@ When this device is not the owner, `sendMessage()` throws immediately (`"This de
 
 | Claim | Status | Anchor |
 | --- | --- | --- |
-| Recall + collect are relay-plugin hooks loaded via `claude --plugin-dir <relay>` | EXISTS | `relay/bin/{recall-hook,session-end-hook}.ts`, `terminal.ts` |
+| Recall + collect are relay-plugin hooks loaded via `claude --plugin-dir <relay>` | EXISTS | `relay/bin/*-hook.ts`, `terminal.ts` |
 | Hooks gate on `CLAUDE_TERMINAL_ID` && `BISMUTH_MEMORY_DIR`; no `~/.claude/settings.json` write | EXISTS | `relay/lib/report.ts`, `relay/lib/memory.ts` |
-| `recall` injects via `additionalContext`, `# Memories` header, 800ms budget, keyword search | EXISTS | `recallMemory` / `formatNotes` / `searchMemory` |
+| Four hooks (`SessionStart`, `UserPromptSubmit`, `PostToolBatch`, `SubagentStart`) inject via `additionalContext` from core's `POST /memory/recall`; no in-hook fallback | EXISTS | `relay/lib/recall.ts` |
 | `collect` pairs user+assistant into `## Turn N` blocks, skips `[Cron: ` + `<50`-char sessions, 12000-char turn-aware truncation, `auto-` note | EXISTS | `CRON_PREFIX`, `MIN_BODY_CHARS`, `MAX_BODY_CHARS`, `extractTurns`, `renderTurns`, `trimToBudget`, `collectTranscript` |
-| `recall-hook` also POSTs `/relay/session`; `session-end-hook` POSTs `/relay/session/end` | EXISTS | the two hook scripts |
+| `recall-hook`/`session-start-hook` also POST `/relay/session`; `subagent-start-hook` POSTs `/relay/subagent/start`; `session-end-hook` POSTs `/relay/session/end` | EXISTS | the hook scripts |
 | `message_bot` MCP tool | DOES NOT EXIST (MCP exposes `remember`/`recall`/`forget`) | `mcp/src/{server,memory}.ts` |
 | Inter-agent / cross-machine / device-to-device message bus | DOES NOT EXIST | whole-repo |
 | `sendMessage()` is an in-process per-vault SDK session, cron/process/dream driven | EXISTS | `daemon/src/daemon/session.ts` |
@@ -128,6 +166,6 @@ When this device is not the owner, `sendMessage()` throws immediately (`"This de
 
 See the rest of the daemon docs: [overview.md](overview.md), [lifecycle.md](lifecycle.md), [storage.md](storage.md), [crons-and-processes.md](crons-and-processes.md), [memory.md](memory.md), and the docs root [../README.md](../README.md).
 
-Source: `relay/bin/recall-hook.ts`, `relay/bin/session-end-hook.ts`, `relay/lib/memory.ts`, `relay/lib/report.ts`, `memory/src/transcript.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/cron.ts`, `daemon/src/lib/owner.ts`, `daemon/src/lib/device.ts`, `daemon/src/lib/config.ts`, `memory/src/search.ts`, `memory/src/index.ts`, `mcp/src/memory.ts`, `mcp/src/server.ts`
+Source: `core/src/memoryEmbed.ts`, `relay/bin/recall-hook.ts`, `relay/bin/session-start-hook.ts`, `relay/bin/tool-batch-hook.ts`, `relay/bin/subagent-start-hook.ts`, `relay/lib/recall.ts`, `relay/bin/session-end-hook.ts`, `relay/lib/memory.ts`, `relay/lib/report.ts`, `memory/src/transcript.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/cron.ts`, `daemon/src/lib/owner.ts`, `daemon/src/lib/device.ts`, `daemon/src/lib/config.ts`, `memory/src/search.ts`, `memory/src/index.ts`, `mcp/src/memory.ts`, `mcp/src/server.ts`
 </content>
 </invoke>

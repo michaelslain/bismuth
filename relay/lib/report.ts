@@ -23,6 +23,15 @@ export interface HookInput {
     prompt?: string
     /** SessionEnd: path to the session transcript jsonl (used for memory collection). */
     transcript_path?: string
+    /** SessionStart: startup | resume | clear | compact. */
+    source?: string
+    /** PostToolBatch: the batch's tool calls (tool_response is serialized text). */
+    tool_calls?: {
+        tool_name: string
+        tool_input: unknown
+        tool_use_id?: string
+        tool_response?: unknown
+    }[]
     [k: string]: unknown
 }
 

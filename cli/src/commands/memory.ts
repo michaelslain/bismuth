@@ -89,7 +89,7 @@ function unconfinedMemoryDir(args: string[]): string {
 export const commands: CommandMap = {
     'memory remember': {
         summary: "Save a note to this vault's memory graph (the 3rd brain); overwrites by name",
-        usage: '--name <n> --content <md> [--type <t>] [--tags a,b] [--folder <f>] [--memory <dir>] [--vault <dir>]',
+        usage: '--name <n> --content <md> [--type <t>] [--tags a,b] [--folder <f>] [--description <text>] [--memory <dir>] [--vault <dir>]',
         run: async args => {
             const name = flag(args, 'name')
             const content = flag(args, 'content')
@@ -112,6 +112,7 @@ export const commands: CommandMap = {
                                   .filter(Boolean)
                             : undefined,
                         folder: flag(args, 'folder'),
+                        description: flag(args, 'description'),
                     },
                     dir,
                     { channel: agentChannel() },

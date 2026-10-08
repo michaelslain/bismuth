@@ -12,6 +12,7 @@ import {
     parseNoteRef,
     sanitizeFolder,
     isMemoryNoteVisibleToDaemon,
+    noteDescription,
     type NoteFrontmatter,
 } from '../src/graph.ts'
 
@@ -761,5 +762,60 @@ describe('MemoryGraph', () => {
             const note = await readNote('foo', tempDir, 'moltbook')
             expect(note!.content).toContain('in moltbook')
         })
+    })
+})
+
+describe('note description', () => {
+    let dir: string
+    beforeEach(() => {
+        dir = makeTempDir()
+    })
+    afterEach(async () => {
+        await Bun.spawn(['rm', '-rf', dir]).exited
+    })
+    const fm = (description?: string): NoteFrontmatter => ({
+        type: 'fact',
+        tags: [],
+        created: '2026-04-01',
+        updated: '2026-04-01',
+        ...(description !== undefined ? { description } : {}),
+    })
+
+    test('description round-trips through write/read, including awkward values', async () => {
+        for (const d of [
+            'Plain one line',
+            'Has: a colon and # a hash',
+            '[looks like an array]',
+            '"quoted" start',
+            "it's fine",
+        ]) {
+            await writeNote('D', fm(d), 'body', dir)
+            expect((await readNote('D', dir))!.frontmatter.description).toBe(d)
+        }
+    })
+
+    test('an empty description is omitted from the file', async () => {
+        await writeNote('D', fm(''), 'body', dir)
+        expect(await Bun.file(join(dir, 'D.md')).text()).not.toContain('description')
+        expect((await readNote('D', dir))!.frontmatter.description).toBeUndefined()
+    })
+
+    test('noteDescription prefers the field, else the first prose sentence', async () => {
+        await writeNote('A', fm('Explicit summary'), 'ignored body.', dir)
+        await writeNote(
+            'B',
+            fm(),
+            '# Title\n\n```\ncode here.\n```\n\n- **Bold** point about [[Other]] and `x`. Second sentence.',
+            dir,
+        )
+        expect(noteDescription((await readNote('A', dir))!)).toBe('Explicit summary')
+        expect(noteDescription((await readNote('B', dir))!)).toBe(
+            'Bold point about Other and x.',
+        )
+    })
+
+    test('noteDescription is capped at 160 chars', async () => {
+        await writeNote('L', fm(), 'word '.repeat(100), dir)
+        expect(noteDescription((await readNote('L', dir))!).length).toBeLessThanOrEqual(160)
     })
 })

@@ -195,3 +195,21 @@ describe('recallMemory (selection logic)', () => {
         await rm(gone, { recursive: true, force: true })
     })
 })
+
+describe('recallMemory (bounded packing)', () => {
+    test('an 80KB best match ships as a bounded excerpt and a small match behind it still ships', async () => {
+        const dir = makeTempDir()
+        const fm = { type: 'fact' as const, tags: [], created: today, updated: today }
+        try {
+            await writeNote('giant', fm, 'calendar overlap rules. '.repeat(3500), dir)
+            await writeNote('small', fm, 'calendar overlap: events stack in columns.', dir)
+            for (let i = 0; i < 8; i++) await writeNote(`other-${i}`, fm, `unrelated ${i}`, dir)
+            const ctx = await recallMemory(dir, 'calendar overlap')
+            expect(ctx).not.toBeNull()
+            expect(ctx!.length).toBeLessThanOrEqual(6000)
+            expect(ctx!).toContain('events stack in columns')
+        } finally {
+            await rm(dir, { recursive: true, force: true })
+        }
+    })
+})

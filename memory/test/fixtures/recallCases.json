@@ -1,0 +1,664 @@
+[
+ {
+  "prompt": "help me with my biol 214 lab write-up",
+  "expect": [
+   "biol-214-lab-policy"
+  ]
+ },
+ {
+  "prompt": "what are the late rules for biol 214 lab reports",
+  "expect": [
+   "biol-214-lab-policy"
+  ]
+ },
+ {
+  "prompt": "when is the ocng 305 seminar response due",
+  "expect": [
+   "ocng-305-seminar-policy"
+  ]
+ },
+ {
+  "prompt": "which fuel should i put in the smoker",
+  "expect": [
+   "smoker-fuel-only-natural"
+  ]
+ },
+ {
+  "prompt": "how should i name the photos from todays inspection",
+  "expect": [
+   "photo-naming-scheme"
+  ]
+ },
+ {
+  "prompt": "write a post for the beekeepers circle newsletter",
+  "expect": [
+   "club-posts-plain-language",
+   "club-newsletter"
+  ]
+ },
+ {
+  "prompt": "what torque for the crank bolts on the cargo trike",
+  "expect": [
+   "torque-in-newton-metres",
+   "tricycle-cargo-restoration"
+  ]
+ },
+ {
+  "prompt": "how do i format species names in my report",
+  "expect": [
+   "latin-names-first"
+  ]
+ },
+ {
+  "prompt": "walk me through a hive inspection",
+  "expect": [
+   "hive-inspection-routine"
+  ]
+ },
+ {
+  "prompt": "start taking the cargo trike apart",
+  "expect": [
+   "bicycle-teardown-checklist"
+  ]
+ },
+ {
+  "prompt": "which tide gauge station should i use for the headland transects",
+  "expect": [
+   "tide-station-ids"
+  ]
+ },
+ {
+  "prompt": "which hives are at the east meadow",
+  "expect": [
+   "hive-locations-and-codes",
+   "apiary-expansion-east-meadow"
+  ]
+ },
+ {
+  "prompt": "how is pickle doing",
+  "expect": [
+   "pet-pickle"
+  ]
+ },
+ {
+  "prompt": "what did tavish say about the raspberry fence",
+  "expect": [
+   "neighbor-greenhalgh"
+  ]
+ },
+ {
+  "prompt": "send brigitte some times for a thesis meeting",
+  "expect": [
+   "mentor-oyelaran"
+  ]
+ },
+ {
+  "prompt": "draft the invoice for the cooperative honey order",
+  "expect": [
+   "invoices-round-to-five",
+   "buyer-ines-marchetti"
+  ]
+ },
+ {
+  "prompt": "how do i run extraction day",
+  "expect": [
+   "honey-extraction-day"
+  ]
+ },
+ {
+  "prompt": "log the sample jars from the kelp trip",
+  "expect": [
+   "sample-jar-logging",
+   "kelp-sampling-grant"
+  ]
+ },
+ {
+  "prompt": "when does the kelp grant application close",
+  "expect": [
+   "grant-deadlines"
+  ]
+ },
+ {
+  "prompt": "what do foundation sheets cost",
+  "expect": [
+   "supplier-price-list"
+  ]
+ },
+ {
+  "prompt": "which queen did the swarm trap colony come from",
+  "expect": [
+   "queen-lineage-table",
+   "swarm-trap-network"
+  ]
+ },
+ {
+  "prompt": "redesign the honey jar label",
+  "expect": [
+   "honey-label-redesign"
+  ]
+ },
+ {
+  "prompt": "which mead batch had the ginger",
+  "expect": [
+   "mead-batch-recipes"
+  ]
+ },
+ {
+  "prompt": "when is the last frost for the orchard",
+  "expect": [
+   "frost-dates-orchard"
+  ]
+ },
+ {
+  "prompt": "do i have a spare derailleur hanger",
+  "expect": [
+   "bike-parts-inventory"
+  ]
+ },
+ {
+  "prompt": "rewire the workshop sockets",
+  "expect": [
+   "workshop-rewiring"
+  ]
+ },
+ {
+  "prompt": "reply to the cooperative text while i am out at the hives",
+  "expect": [
+   "reply-short-in-field"
+  ]
+ },
+ {
+  "prompt": "can we set up a call on sunday",
+  "expect": [
+   "sunday-is-workshop-day"
+  ]
+ },
+ {
+  "prompt": "what column order for the tidepool counts sheet",
+  "expect": [
+   "spreadsheet-column-order"
+  ]
+ },
+ {
+  "prompt": "what happened on the morning of the cold snap",
+  "expect": [
+   "daily-2027-03-19"
+  ]
+ },
+ {
+  "prompt": "how do i close an email to the grant officer",
+  "expect": [
+   "email-signoff"
+  ]
+ },
+ {
+  "prompt": "ok do it",
+  "context": "I will write each organism as the Latin binomial in italics first, with the common name in brackets after.",
+  "expect": [
+   "latin-names-first"
+  ]
+ },
+ {
+  "prompt": "yes go ahead",
+  "context": "I'll label the sample jar lid with the transect code, quadrat number and date.",
+  "expect": [
+   "sample-jar-logging"
+  ]
+ },
+ {
+  "prompt": "sounds good do that",
+  "context": "For the smoker I will use only untreated burlap and dried pine needles.",
+  "expect": [
+   "smoker-fuel-only-natural"
+  ]
+ },
+ {
+  "prompt": "continue",
+  "context": "Tighten the pedal spindles to the stated newton metres before the road test.",
+  "expect": [
+   "torque-in-newton-metres"
+  ]
+ },
+ {
+  "prompt": "go for it",
+  "context": "Hang a fifth bait box near the east meadow hedge and check it weekly.",
+  "expect": [
+   "swarm-trap-network"
+  ]
+ },
+ {
+  "prompt": "hello",
+  "expect": []
+ },
+ {
+  "prompt": "thanks",
+  "expect": []
+ },
+ {
+  "prompt": "what time is it",
+  "expect": []
+ },
+ {
+  "prompt": "ok",
+  "expect": []
+ },
+ {
+  "prompt": "what is the capital of mongolia",
+  "expect": []
+ },
+ {
+  "prompt": "write a haiku about rain",
+  "expect": []
+ },
+ {
+  "prompt": "what should i cook tonight",
+  "expect": []
+ },
+ {
+  "prompt": "tell me a joke about penguins",
+  "expect": []
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "mv IMG_2231.jpg photos/H07-20270314-002.jpg"
+    }
+   }
+  ],
+  "expect": [
+   "photo-naming-scheme"
+  ]
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Read",
+    "tool_input": {
+     "file_path": "thesis/tidepool/transect-4-counts.csv"
+    }
+   }
+  ],
+  "expect": [
+   "tidepool-survey-thesis"
+  ]
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Grep",
+    "tool_input": {
+     "pattern": "foundation sheets"
+    }
+   }
+  ],
+  "expect": [
+   "supplier-price-list"
+  ]
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Read",
+    "tool_input": {
+     "file_path": "workshop/cargo-trike/crank-notes.md"
+    }
+   }
+  ],
+  "expect": [
+   "tricycle-cargo-restoration"
+  ]
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "tideplot --station 4417 --month april"
+    }
+   }
+  ],
+  "expect": [
+   "tide-station-ids"
+  ]
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Read",
+    "tool_input": {
+     "file_path": "src/components/Button.tsx"
+    },
+    "tool_response": "export default function Button() { return null }"
+   }
+  ],
+  "expect": []
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "ls -la"
+    },
+    "tool_response": "total 48 drwxr-xr-x  12 user  staff  384 Oct  7 package.json README.md"
+   }
+  ],
+  "expect": []
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "npm test"
+    },
+    "tool_response": "Tests: 42 passed, 42 total"
+   }
+  ],
+  "expect": []
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Grep",
+    "tool_input": {
+     "pattern": "useState"
+    }
+   }
+  ],
+  "expect": []
+ },
+ {
+  "mode": "subagent",
+  "prompt": "Review the lab report I drafted for the tidepool unit and check that every species is written Latin name first. Report any exceptions. Do not edit anything.",
+  "expect": [
+   "latin-names-first"
+  ]
+ },
+ {
+  "mode": "subagent",
+  "prompt": "Plan the next honey extraction day: draft the checklist, the crew message to the neighbor and the invoice for the cooperative.",
+  "expect": [
+   "honey-extraction-day",
+   "neighbor-greenhalgh"
+  ]
+ },
+ {
+  "mode": "subagent",
+  "prompt": "Search the codebase for every place that renders a button and list the files. Summarize in a table. Do not change code.",
+  "expect": []
+ },
+ {
+  "mode": "subagent",
+  "prompt": "Investigate why the swarm trap colony failed to build comb and propose a fix; check the queen lineage and the east meadow records before concluding.",
+  "expect": [
+   "queen-lineage-table",
+   "swarm-trap-network"
+  ]
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Read",
+    "tool_input": {
+     "file_path": "/Users/odile/Documents/field/thesis/chapters/02-methods.md"
+    },
+    "tool_response": {
+     "type": "text",
+     "file": {
+      "filePath": "/Users/odile/Documents/field/thesis/chapters/02-methods.md",
+      "content": "# Chapter 2 — Methods\n\n## Study site\n\nTwelve permanent transects run seaward from the high-water mark along the north headland. Each transect is marked with a stainless bolt at both ends and photographed on every visit.\n\n## Sampling\n\nCounts are taken at every low spring tide between March and September. Along each transect a 0.25 m² quadrat is placed at two-metre intervals. Inside each quadrat I count grazing snails (periwinkles and limpets) and estimate percentage algae cover by eye against a reference card.\n\n## Grazing exclusion\n\nFour transects carry mesh cages that keep snails out, so algae cover inside and outside a cage can be compared. Cages are scrubbed of fouling every second visit.\n\n## Analysis\n\nSnail density against algae cover is modelled per transect with a mixed model, tide height as a covariate.\n",
+      "numLines": 18,
+      "startLine": 1,
+      "totalLines": 18
+     }
+    }
+   }
+  ],
+  "expect": [
+   "tidepool-survey-thesis"
+  ],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Read",
+    "tool_input": {
+     "file_path": "/private/var/folders/k2/x8f9q3vn5zs0b7c1l4m2r6t80000gn/T/tmp-4821-AbC9/kitchen/brewing-log.md"
+    },
+    "tool_response": "# brewing log\n\nBatch four started today. 1.2 kg of last summer's wildflower honey warmed in a pan of water, topped up to four litres, pitched with a sachet of dry wine yeast. Added a thumb of sliced ginger and the zest of one lemon because the ginger batch was the best one so far.\n\nThe airlock was bubbling about once a second by the evening. Demijohn sits in the corner of the kitchen away from the radiator. Plan to rack it off the lees in six weeks and bottle after eleven, same as last time.\n"
+   }
+  ],
+  "expect": [
+   "mead-batch-recipes"
+  ],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Grep",
+    "tool_input": {
+     "pattern": "extractor",
+     "path": "/Users/odile/Documents/apiary",
+     "output_mode": "content",
+     "-n": true
+    },
+    "tool_response": {
+     "mode": "content",
+     "numFiles": 2,
+     "filenames": [
+      "apiary/kit/inventory.md",
+      "apiary/season/2027-08.md"
+     ],
+     "content": "apiary/season/2027-08.md:12:Spun fourteen frames in the radial extractor, strained twice through the double mesh.\napiary/season/2027-08.md:13:Honey rested in the settling tank overnight, jarred at eight the next morning.\napiary/season/2027-08.md:27:Heated uncapping knife needs a new element before the next extraction day.\napiary/kit/inventory.md:4:radial extractor (9 frame), settling tank 50 kg, uncapping tray",
+     "numLines": 4
+    }
+   }
+  ],
+  "expect": [
+   "honey-extraction-day"
+  ],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "cat ~/workshop/trike/todo.txt",
+     "description": "Run command"
+    },
+    "tool_response": {
+     "stdout": "trike — what is left\n- strip the last of the old paint off the box corners\n- repaint frame and box in sage green (two coats + clear)\n- fit the crank once the new bottom bracket arrives\n- true the cargo box floor, two slats are warped\n- rear axle bearings: DONE\n- front wheel on the new rim: DONE, needs a final true\n- ask about a dutch-style kickstand",
+     "stderr": "",
+     "interrupted": false,
+     "isImage": false
+    }
+   }
+  ],
+  "expect": [
+   "tricycle-cargo-restoration"
+  ],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "ls -1 ~/Pictures/apiary/garden/H07",
+     "description": "Run command"
+    },
+    "tool_response": {
+     "stdout": "H07-20270314-001.jpg\nH07-20270314-002.jpg\nH07-20270314-003.jpg\nH07-20270402-001.jpg\nH07-20270402-002.jpg\nIMG_4471.jpg\nIMG_4472.jpg",
+     "stderr": "",
+     "interrupted": false,
+     "isImage": false
+    }
+   }
+  ],
+  "expect": [
+   "photo-naming-scheme"
+  ],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Read",
+    "tool_input": {
+     "file_path": "/home/odile/apiary/kit/smoker-checklist.md"
+    },
+    "tool_response": {
+     "type": "text",
+     "file": {
+      "filePath": "/home/odile/apiary/kit/smoker-checklist.md",
+      "content": "# smoker checklist\n\nBefore every inspection:\n\n- smoker cleaned of tar from last time, bellows not split\n- fuel in the tin: burlap offcuts and a fist of dried pine needles, egg trays as a starter\n- matches in the zip bag, not the lighter (it is out of gas)\n- bucket of water next to the stand, filled\n\nAfter: tip the embers into the bucket, never onto the grass. Cork the spout so it goes out.\n",
+      "numLines": 11,
+      "startLine": 1,
+      "totalLines": 11
+     }
+    }
+   }
+  ],
+  "expect": [
+   "smoker-fuel-only-natural"
+  ],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Read",
+    "tool_input": {
+     "file_path": "/Users/odile/dev/storefront/package.json"
+    },
+    "tool_response": {
+     "type": "text",
+     "file": {
+      "filePath": "/Users/odile/dev/storefront/package.json",
+      "content": "{\n  \"name\": \"storefront\",\n  \"version\": \"0.4.2\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite --port 5173\",\n    \"build\": \"tsc -b && vite build\",\n    \"lint\": \"eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0\",\n    \"preview\": \"vite preview\",\n    \"test\": \"vitest run\"\n  },\n  \"dependencies\": {\n    \"react\": \"^18.3.1\",\n    \"react-dom\": \"^18.3.1\",\n    \"react-router-dom\": \"^6.26.2\",\n    \"zustand\": \"^4.5.5\"\n  },\n  \"devDependencies\": {\n    \"@types/react\": \"^18.3.11\",\n    \"@types/react-dom\": \"^18.3.0\",\n    \"@typescript-eslint/eslint-plugin\": \"^8.8.1\",\n    \"@vitejs/plugin-react\": \"^4.3.2\",\n    \"eslint\": \"^9.12.0\",\n    \"typescript\": \"^5.6.3\",\n    \"vite\": \"^5.4.8\",\n    \"vitest\": \"^2.1.2\"\n  }\n}",
+      "numLines": 29,
+      "startLine": 1,
+      "totalLines": 29
+     }
+    }
+   }
+  ],
+  "expect": [],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Read",
+    "tool_input": {
+     "file_path": "/Users/odile/dev/storefront/package-lock.json"
+    },
+    "tool_response": {
+     "type": "text",
+     "file": {
+      "filePath": "/Users/odile/dev/storefront/package-lock.json",
+      "content": "{\n  \"name\": \"storefront\",\n  \"version\": \"0.4.2\",\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"node_modules/@babel/code-frame\": {\n      \"version\": \"7.25.7\",\n      \"resolved\": \"https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.25.7.tgz\",\n      \"integrity\": \"sha512-0xZJFNE5XMpENsgfHYTw8FbX4kv53mFLn2i3XPoq69LyhYSCBJtitaHx9QnsVTrsogI4Z3+HtEfZ2/GFPOtf5g==\",\n      \"dev\": true,\n      \"dependencies\": {\n        \"@babel/highlight\": \"^7.25.7\",\n        \"picocolors\": \"^1.0.0\"\n      },\n      \"engines\": {\n        \"node\": \">=6.9.0\"\n      }\n    },\n    \"node_modules/@esbuild/darwin-arm64\": {\n      \"version\": \"0.21.5\",\n      \"resolved\": \"https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.21.5.tgz\",\n      \"integrity\": \"sha512-DN2pGhiJ7rDXNPu3wiCF6C8RWzWwZyQCmQ5S7dchEqwHU0jSmgWWbYmeC1+Mx3uzo7dXWyz5ye9MiD7WVNsbA==\",\n      \"cpu\": [\"arm64\"],\n      \"dev\": true,\n      \"optional\": true,\n      \"os\": [\"darwin\"]\n    }\n  }\n}",
+      "numLines": 30,
+      "startLine": 1,
+      "totalLines": 30
+     }
+    }
+   }
+  ],
+  "expect": [],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Read",
+    "tool_input": {
+     "file_path": "/Users/odile/dev/storefront/src/components/ProductCard.tsx"
+    },
+    "tool_response": {
+     "type": "text",
+     "file": {
+      "filePath": "/Users/odile/dev/storefront/src/components/ProductCard.tsx",
+      "content": "import { useEffect, useState } from 'react'\nimport styles from './ProductCard.module.css'\n\nexport type ProductCardProps = {\n    id: string\n    title: string\n    price: number\n    onAdd?: (id: string) => void\n}\n\nexport default function ProductCard({ id, title, price, onAdd }: ProductCardProps) {\n    const [loading, setLoading] = useState(false)\n    const [stock, setStock] = useState<number | null>(null)\n\n    useEffect(() => {\n        let cancelled = false\n        setLoading(true)\n        fetch(`/api/products/${id}/stock`)\n            .then(r => r.json())\n            .then(j => { if (!cancelled) setStock(j.count) })\n            .finally(() => { if (!cancelled) setLoading(false) })\n        return () => { cancelled = true }\n    }, [id])\n\n    return (\n        <div className={styles.card}>\n            <h3 className={styles.title}>{title}</h3>\n            <span className={styles.price}>${price.toFixed(2)}</span>\n            {loading ? <span>Loading…</span> : <span>{stock ?? 0} left</span>}\n            <button onClick={() => onAdd?.(id)} disabled={!stock}>Add to cart</button>\n        </div>\n    )\n}",
+      "numLines": 33,
+      "startLine": 1,
+      "totalLines": 33
+     }
+    }
+   }
+  ],
+  "expect": [],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "npm install",
+     "description": "Run command"
+    },
+    "tool_response": {
+     "stdout": "npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it.\nnpm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported\n\nadded 312 packages, and audited 313 packages in 9s\n\n74 packages are looking for funding\n  run `npm fund` for details\n\nfound 0 vulnerabilities",
+     "stderr": "",
+     "interrupted": false,
+     "isImage": false
+    }
+   }
+  ],
+  "expect": [],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "bun test",
+     "description": "Run command"
+    },
+    "tool_response": {
+     "stdout": "bun test v1.2.21 (7c45ed97)\n\nsrc/cart.test.ts:\n(pass) cart > adds an item [0.41ms]\n(pass) cart > removes an item [0.08ms]\n(pass) cart > computes totals with tax [0.12ms]\n\nsrc/router.test.ts:\n(pass) router > resolves nested routes [0.33ms]\n(fail) router > redirects unknown paths [1.02ms]\n  error: expect(received).toBe(expected)\n  Expected: \"/404\"\n  Received: \"/\"\n\n 4 pass\n 1 fail\n 9 expect() calls\nRan 5 tests across 2 files. [61.00ms]",
+     "stderr": "",
+     "interrupted": false,
+     "isImage": false
+    }
+   }
+  ],
+  "expect": [],
+  "realistic": true
+ },
+ {
+  "tool": [
+   {
+    "tool_name": "Grep",
+    "tool_input": {
+     "pattern": "useEffect",
+     "path": "/Users/odile/dev/storefront/src",
+     "output_mode": "content",
+     "-n": true
+    },
+    "tool_response": {
+     "mode": "content",
+     "numFiles": 4,
+     "filenames": [
+      "src/components/CartDrawer.tsx",
+      "src/components/ProductCard.tsx",
+      "src/hooks/useDebounce.ts",
+      "src/pages/Checkout.tsx"
+     ],
+     "content": "src/components/ProductCard.tsx:13:    useEffect(() => {\nsrc/components/CartDrawer.tsx:22:    useEffect(() => {\nsrc/components/CartDrawer.tsx:41:    useEffect(() => window.addEventListener('keydown', onKey), [])\nsrc/pages/Checkout.tsx:18:    useEffect(() => {\nsrc/hooks/useDebounce.ts:7:    useEffect(() => {",
+     "numLines": 5
+    }
+   }
+  ],
+  "expect": [],
+  "realistic": true
+ }
+]

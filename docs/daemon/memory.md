@@ -1,6 +1,6 @@
 # Memory store
 
-The daemon's **memory** (the "3rd brain") is a flat tree of markdown notes on disk plus a handful of pure functions that read, parse, query, score, and consolidate them. There is no database, no search index, and no embeddings — "the graph" is just the `[[wikilink]]` edges between notes, and it is **recomputed on demand** every time something needs it by re-reading the whole store (`loadAllNotes`).
+The daemon's **memory** (the "3rd brain") is a flat tree of markdown notes on disk plus a handful of pure functions that read, parse, query, score, and consolidate them. There is no database and no search index or vectors inside the store itself — "the graph" is just the `[[wikilink]]` edges between notes, and it is **recomputed on demand** every time something needs it by re-reading the whole store (`loadAllNotes`).
 
 This page documents that store: where notes live, the note model and on-disk format, the two distinct retrieval paths (exact filtering vs. ranked lexical search), and the consolidation ("dream") cycle. Related: the dream cron in [crons-and-processes.md](crons-and-processes.md), the per-vault runtime in [overview.md](overview.md) and [lifecycle.md](lifecycle.md), the on-disk layout in [storage.md](storage.md), and the recall/collect hooks + MCP tools in [communication.md](communication.md). See also the [daemon README](../README.md).
 
@@ -25,9 +25,11 @@ So a missing dir fails loudly instead of silently reading the wrong place. Three
 
 This is why memory is recalled/collected strictly for vault-scoped sessions, never globally via `~/.claude/settings.json`.
 
-## There is NO index file
+## The session-start index is derived, not stored
 
-> **Do not go looking for a `MEMORY.md` index in the memory store — there isn't one.** The directory is a flat tree of `.md` notes; the link graph, search rankings, and consolidation batches are all derived live by scanning files (`loadAllNotes`). There is no persisted adjacency list, no manifest, no SQLite, and no vector store.
+> **There is still no index file on disk.** The directory is a flat tree of `.md` notes; the link graph, search rankings, consolidation batches **and the always-on memory index** are all derived live by scanning files (`loadAllNotes`). There is no persisted adjacency list, no manifest, no SQLite, and no vector store inside `.daemon/memory`. (Core's optional semantic recall keeps its vectors outside the store; see the paragraph under **Cross-cutting facts**.)
+
+At session start, core builds an index of every memory note in memory (`formatSessionStart` in `memory/src/pack.ts`), one line per note: `[[name]] (type) — description`. The description is the note's frontmatter `description`, or, when it has none, its first prose sentence (`noteDescription` in `memory/src/graph.ts`). Nothing is written back: edit or add a note and the next session's index reflects it. The `remember` tool's `description` parameter (one line, ≤160 chars, saying when the note matters) is how a writer, including the dream cron, fills it.
 
 (Claude Code, the host harness, separately keeps its own `MEMORY.md` index for *its* file-based memory. That is an unrelated host-level feature and is **not** part of this store. Don't conflate the two.)
 
@@ -63,6 +65,8 @@ interface NoteFrontmatter {
   tags: string[];
   created: string; // "YYYY-MM-DD"
   updated: string; // "YYYY-MM-DD"
+  description?: string; // one line: when this note matters (shown in the session-start index)
+  visibility?: "chat-only" | "hidden";
 }
 
 interface MemoryNote {
@@ -85,6 +89,7 @@ type: fact
 tags: [productivity, tools]
 created: 2026-06-08
 updated: 2026-06-08
+description: when the note matters, one line
 ---
 
 The body content goes here, with [[wikilinks]] to other notes.
@@ -95,7 +100,7 @@ Rules:
 | Rule | Detail |
 | --- | --- |
 | Delimiters | `---` on its own line, before and after the frontmatter |
-| Field order | **Fixed**: `type`, `tags`, `created`, `updated` |
+| Field order | **Fixed**: `type`, `tags`, `created`, `updated`, then `description` (only when set; double-quoted when a plain value would not parse) and `visibility` (only when set) |
 | Tags | Inline bracket array `[a, b]`; empty tags serialize as `[]` |
 | Body | `<frontmatter>` then a blank line then `<content>` then a trailing newline |
 
@@ -195,7 +200,7 @@ An empty query returns **all** notes. This is the path the MCP **`recall`** tool
 
 ### `memory/src/search.ts` — keyword scoring / ranking (the recall engine)
 
-This is a **different retrieval path** from `query.ts`: ranked lexical relevance, not exact boolean filtering. Don't conflate them. This is the path the relay **recall hook** uses to inject context into a prompt.
+This is a **different retrieval path** from `query.ts`: ranked lexical relevance, not exact boolean filtering. Don't conflate them. `searchMemory` is the keyword scorer; automatic prompt injection no longer calls it (see **Consumer** below).
 
 - `extractKeywords(text)`: lowercase, split on punctuation/whitespace, drop tokens shorter than 3 chars or in `STOP_WORDS` (a ~130-word list), then dedupe.
 - `scoreNote(note, keywords)`, per keyword:
@@ -218,9 +223,9 @@ This is a **different retrieval path** from `query.ts`: ranked lexical relevance
 
 - `searchMemory(prompt, dir?, maxResults = 10)`: extract keywords → score all notes → keep `score >= MIN_SCORE` (`1.0`) → sort descending → cap by `maxResults` **and** by `MAX_CONTEXT_BYTES` (`4096`) cumulative size (the byte cap only kicks in after at least one note is included). Returns `[]` when the prompt yields no keywords.
 
-The mechanism is lexical/substring matching + stemming + weighted scoring. **No embeddings, no TF-IDF, no external index.**
+The mechanism is lexical/substring matching + stemming + weighted scoring. **`search.ts` uses no embeddings, no TF-IDF, no external index.**
 
-**Consumer:** `recallMemory(dir, prompt, budgetMs?)` (`memory/src/recall.ts`) calls `searchMemory(prompt, dir)` under an 800ms `RECALL_BUDGET_MS` race (a bloated graph degrades to "no recall" rather than stalling prompt submission) and formats matches under a `# Memories` heading (`formatRecall`). It is the ONE shared recall path behind **both** auto-injectors: the relay `UserPromptSubmit` hook (`relay/bin/recall-hook.ts`, terminal-tab CLI sessions) **and** the visual chat (`core/src/chat.ts`, an SDK session that registers an in-process `hooks.UserPromptSubmit` calling the same function). Both inject the result as `additionalContext`. (See [communication.md](communication.md) for the hook plumbing.)
+**Consumer:** `recallMemory(dir, prompt, budgetMs?)` (`memory/src/recall.ts`) does not call `searchMemory`: it filters to daemon-visible notes, ranks them with `rankNotes(buildRecallIndex(notes), { primary: prompt })` (`memory/src/rank.ts`) and packs the result with `packRecall(ranked, 'prompt')` (`memory/src/pack.ts`), under an 800ms `RECALL_BUDGET_MS` race (a bloated graph degrades to "no recall" rather than stalling prompt submission), formatting under a `# Memories` heading inside the `<bismuth-memory>` envelope (`formatRecall`). The relay hooks do not call it directly: they `POST` to core's `/memory/recall`, which ranks and packs via `rank.ts`/`pack.ts`; the visual chat (`core/src/chat.ts`, an SDK session with an in-process `hooks.UserPromptSubmit`) calls `recallServiceFor(...)` through `recallWithin(svc, req, ms)`; `recallMemory` has no core callers. Both inject the result as `additionalContext`. (See [communication.md](communication.md) for the hook plumbing.)
 
 ## The dream consolidation cycle (the `dream` cron)
 
@@ -273,15 +278,16 @@ The three tools are **conditionally registered**: `mcp/src/server.ts` only appen
 
 | Tool | Delegates to | Behavior |
 | --- | --- | --- |
-| `remember` | `writeNote` | Create/overwrite a note; preserves an existing note's `type`/`created` when overwriting; defaults type `fact`, stamps `updated` = today |
+| `remember` | `writeNote` | Create/overwrite a note; preserves an existing note's `type`/`created`/`description` when overwriting (optional `description` param); defaults type `fact`, stamps `updated` = today |
 | `recall` | `query` (the query DSL above) | Run a query string → `{ count, notes }` |
 | `forget` | `deleteNote` | Delete a (possibly folder-prefixed) note → `{ ok, name }` |
 
 ## Cross-cutting facts
 
 - **One brain per vault; no machine-global memory.** `getMemoryDir()` throws when `BISMUTH_MEMORY_DIR` is unset; the live store is `<vault>/.daemon/memory`.
-- **No index, no DB, no embeddings.** The "graph" is markdown files re-scanned via `loadAllNotes` on every read / query / search / dream.
-- **Two distinct retrieval paths.** `query.ts` = exact boolean filters (MCP `recall`); `search.ts` = ranked lexical relevance (the relay recall hook). Keep them separate in your head.
+- **No index file or DB, and no vectors, inside the store.** The session-start index and the "graph" are derived live; the graph is markdown files re-scanned via `loadAllNotes` on every read / query / search / dream.
+- **Two distinct retrieval paths.** `query.ts` = exact boolean filters (MCP `recall`); `search.ts` = ranked lexical relevance (`recallMemory`); automatic injection goes through core's `POST /memory/recall` → `rank.ts`/`pack.ts`. Keep them separate in your head.
+- **Semantic recall lives in core, not in this package.** When `daemon.recall.semantic` is true (the default), core's `/memory/recall` also scores notes with a quantized bge-small embedder run in a lazy, idle-exiting child process; its vectors are cached outside the store, under `~/.bismuth/cache/recall/<sha1(memoryDir)>/vectors.json`. Details: [communication.md](communication.md#the-semantic-channel-coresrcmemoryembedts).
 - **Folders** are single-level, sanitized, AND-scoped in queries, hard boundaries during dreaming, and transparent to backlinks (which match by bare name across all folders).
 - **The frontmatter parser is hand-rolled and lenient** — first-colon splits, bracket-array tags, today-defaults for missing fields — not a YAML library.
 

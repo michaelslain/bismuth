@@ -5,8 +5,11 @@
 //   - the visual-chat session (SDK-driven) — core/src/chat.ts
 // Keeping it here (not duplicated per consumer) means the format `stripInjectedBlocks`
 // removes on collection stays in lockstep with the format produced here.
-import { searchMemory } from './search'
+import { isMemoryNoteVisibleToDaemon } from './graph'
 import type { MemoryNote } from './graph'
+import { loadAllNotesCached } from './noteCache'
+import { packRecall } from './pack'
+import { buildRecallIndex, rankNotes } from './rank'
 
 /** Hard budget for a recall on the prompt-submission critical path: recall loads + scans the
  *  whole memory graph, so a bloated graph must degrade to "no recall" rather than stall the
@@ -51,6 +54,14 @@ export function formatRecall(notes: MemoryNote[]): string {
     return lines.join('\n')
 }
 
+/** BM25 over the daemon-visible notes, packed in 'prompt' mode (excerpts, bounded, skip-not-break). */
+async function lexicalRecall(dir: string, prompt: string): Promise<string | null> {
+    // Visibility gate (docs/vault/visibility.md): chat-only/hidden notes never surface via recall.
+    const notes = (await loadAllNotesCached(dir)).filter(isMemoryNoteVisibleToDaemon)
+    const ranked = rankNotes(buildRecallIndex(notes), { primary: prompt })
+    return packRecall(ranked, 'prompt').text
+}
+
 /**
  * Recall memory relevant to `prompt`, formatted for injection as a UserPromptSubmit hook's
  * `additionalContext`. Returns null when the prompt is blank, nothing matches, or the search
@@ -64,13 +75,13 @@ export async function recallMemory(
 ): Promise<string | null> {
     if (!prompt.trim()) return null
     try {
-        const notes = await Promise.race([
-            searchMemory(prompt, dir),
-            new Promise<MemoryNote[]>(resolve =>
-                setTimeout(() => resolve([]), budgetMs),
+        const packed = await Promise.race([
+            lexicalRecall(dir, prompt),
+            new Promise<string | null>(resolve =>
+                setTimeout(() => resolve(null), budgetMs),
             ),
         ])
-        return notes.length ? formatRecall(notes) : null
+        return packed
     } catch {
         return null
     }

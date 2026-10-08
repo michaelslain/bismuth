@@ -2326,6 +2326,36 @@
     "max": null,
     "required": false
   },
+  "daemon.recall": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.recall.enabled": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.recall.midTurn": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.recall.semantic": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "dailyNotes": {
     "type": {
       "kind": "list",

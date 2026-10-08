@@ -12,7 +12,7 @@
 //    degradations the old per-turn subprocess had: real token-level streaming
 //    (`message.part.delta`), a genuine permission request/response cycle (`permission.asked` +
 //    `postSessionIdPermissionsPermissionId`), image attachments (`FilePartInput` with a `data:` URL),
-//    and per-turn memory injection (`session.prompt`'s `system` field, from recallMemory).
+//    and per-turn memory injection (`session.prompt`'s `system` field, from the recall service).
 //  - RUN mode (fallback): the ORIGINAL one `opencode run --format json` subprocess PER TURN,
 //    continued with `-s <sessionID>`. Used when `ensureOpencodeServer` reports the installed opencode
 //    can't serve (no `serve` subcommand, or the startup banner never appears within its timeout) —
@@ -56,7 +56,7 @@
 // sqlite-cold-start serialization note (run mode's `ensureOpenInfo`/first-turn spawns stay
 // sequential — irrelevant once a server is already up and warm).
 import type { ChatFrame, ChatImage, ChatSink } from '../../chat'
-import { recallMemory } from '@bismuth/memory'
+import { recallServiceFor, recallWithin } from '../../memoryRecall'
 import {
     detachSessionSink,
     emit,
@@ -633,10 +633,20 @@ async function runTurnServer(
         // (SessionPromptData.system), so this is real auto-recall, not a once-per-session digest.
         let system: string | undefined
         if (s.memoryDir) {
-            const recalled = await recallMemory(s.memoryDir, text).catch(
-                () => null,
-            )
-            if (recalled) system = recalled
+            // `system` is per-call (fresh every turn), so the session ledger would wrongly suppress
+            // notes on later turns: reset it before each recall.
+            const svc = recallServiceFor(s.cwd, s.memoryDir)
+            svc.reset(s.sessionId as string)
+            const recalled = await recallWithin(
+                svc,
+                {
+                    mode: 'prompt',
+                    sessionId: s.sessionId as string,
+                    prompt: text,
+                },
+                1500,
+            ).catch(() => null)
+            if (recalled?.context) system = recalled.context
         }
         if (slash) {
             const res = await server.client.session.command({

@@ -21,6 +21,16 @@
         ]
       }
     ],
+    "PostToolBatch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run ${CLAUDE_PLUGIN_ROOT}/bin/tool-batch-hook.ts"
+          }
+        ]
+      }
+    ],
     "SubagentStart": [
       {
         "hooks": [

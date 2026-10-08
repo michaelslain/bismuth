@@ -24,7 +24,8 @@
     "resources": [
       "resources/relay",
       "resources/bismuth-tools",
-      "resources/daemon"
+      "resources/daemon",
+      "resources/ort"
     ],
     "icon": [
       "icons/32x32.png",

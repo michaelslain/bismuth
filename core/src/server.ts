@@ -1,3 +1,4 @@
+import { isEmbedWorker } from './embedWorkerBoot'
 import { join } from 'node:path'
 import { statSync, readdirSync } from 'node:fs'
 import { createSseRegistry } from './sse'
@@ -121,6 +122,7 @@ import {
 import { default as agentsRoutes } from './routes/agents'
 import { default as basesRoutes, basesMutatingRoutes } from './routes/bases'
 import { default as daemonRoutes, daemonMutatingRoutes } from './routes/daemon'
+import memoryRoutes from './routes/memory'
 import { default as gcalRoutes, gcalMutatingRoutes } from './routes/gcal'
 import { default as graphRoutes } from './routes/graph'
 import { default as relayRoutes } from './routes/relay'
@@ -875,6 +877,7 @@ export function createServer(cfg: CoreConfig) {
         ...daemonRoutes(ctx),
         ...gcalRoutes(ctx),
         ...graphRoutes(ctx),
+        ...memoryRoutes(ctx),
         ...relayRoutes(ctx),
         ...settingsRoutes(ctx),
         ...systemRoutes(ctx),
@@ -1737,7 +1740,7 @@ export function createServer(cfg: CoreConfig) {
     return server
 }
 
-if (import.meta.main) {
+if (import.meta.main && !isEmbedWorker) {
     const vault = cliArg('vault') ?? process.env.BISMUTH_VAULT
     const memory = cliArg('memory') ?? process.env.BISMUTH_MEMORY
     if (!vault || !memory) {

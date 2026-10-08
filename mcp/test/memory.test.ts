@@ -280,3 +280,43 @@ describe('remember/forget and memory-note visibility', () => {
         expect(res.notes.map(n => n.name)).toEqual(['open'])
     })
 })
+
+// ── remember: the description field ────────────────────────────────────────────────────────────
+describe('remember description', () => {
+    let memDir: string
+    beforeEach(() => {
+        memDir = join(tempDir('mem-desc-'), 'memory')
+        mkdirSync(memDir, { recursive: true })
+    })
+
+    test('round-trips through remember + recall', async () => {
+        await remember(
+            { name: 'd1', content: 'body', description: 'when deploying: check the flag' },
+            memDir,
+        )
+        const raw = readFileSync(join(memDir, 'd1.md'), 'utf8')
+        expect(raw).toContain('description:')
+        const got = await recall({ query: '' }, memDir)
+        expect(got.notes.find(n => n.name === 'd1')?.frontmatter.description).toBe(
+            'when deploying: check the flag',
+        )
+    })
+
+    test('overwrite without a description keeps the old one; with one replaces it', async () => {
+        await remember({ name: 'd2', content: 'a', description: 'old one' }, memDir)
+        await remember({ name: 'd2', content: 'b' }, memDir)
+        expect((await recall({ query: '' }, memDir)).notes[0].frontmatter.description).toBe('old one')
+        await remember({ name: 'd2', content: 'c', description: 'new one' }, memDir)
+        expect((await recall({ query: '' }, memDir)).notes[0].frontmatter.description).toBe('new one')
+    })
+
+    test('the CLI twin takes --description and keeps it on a bare overwrite', async () => {
+        const { commands } = await import('../../cli/src/commands/memory')
+        const run = commands['memory remember'].run
+        const base = ['--name', 'cli1', '--content', 'x', '--memory', memDir]
+        await run([...base, '--description', 'from the cli'])
+        expect(readFileSync(join(memDir, 'cli1.md'), 'utf8')).toContain('description: from the cli')
+        await run(base)
+        expect(readFileSync(join(memDir, 'cli1.md'), 'utf8')).toContain('description: from the cli')
+    })
+})

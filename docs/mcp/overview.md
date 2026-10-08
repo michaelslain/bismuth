@@ -102,7 +102,7 @@ When the [daemon](../daemon/overview.md) is enabled for the active vault, the se
 
 | Tool | Args | Returns |
 |---|---|---|
-| `remember` | `name`, `content`, `type?`, `tags?`, `folder?` | saves/overwrites a note in the vault's memory graph (preserves an existing note's `type`/`created`) → `{ok, name}` |
+| `remember` | `name`, `content`, `type?`, `tags?`, `folder?`, `description?` | saves/overwrites a note in the vault's memory graph (preserves an existing note's `type`/`created`/`description`; `description` is one line, ≤160 chars, shown in the session-start memory index) → `{ok, name}` |
 | `recall` | `query`, `folder?` | searches the graph (supports `tag:`/`type:`/`keyword:`/`link:`/`after:`/`before:` filters) → `{ok, count, notes}` |
 | `forget` | `name` (may be folder-prefixed) | removes a note → `{ok, name}` |
 

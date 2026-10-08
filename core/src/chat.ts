@@ -15,13 +15,13 @@ import {
     type SessionMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import { whichClaude } from './claudeWhich'
+import { recallServiceFor, recallWithin } from './memoryRecall'
 import { loadSessionModel, saveSessionModel } from './chatModelStore'
 import { can } from './agentBackends/catalog'
 import { withoutCloudEnv } from './agentBackends/localModel'
 import {
     buildAutoNoteBody,
     extractText,
-    recallMemory,
     stripInjectedBlocks,
     writeAutoNote,
     type TranscriptEntry,
@@ -944,7 +944,13 @@ export async function sendMessage(
         return
     }
 
-    const session = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir)
+    const session = await getOrCreateSession(
+        chatId,
+        cwd,
+        sink,
+        undefined,
+        memoryDir,
+    )
     if (!session) return // no-claude / spawn error already pushed to the sink
 
     // BUG #39: same local "/mcp" interception for a chat's very FIRST turn.
@@ -1358,7 +1364,9 @@ function spawnChatQuery(
                 // supports it — passes `--chrome` (a boolean flag, hence `null`) so the spawned claude
                 // process can launch and control a Chromium browser. No client input decides this
                 // anymore; it is unconditional the moment the capability exists.
-                ...(can('claude', 'computerUse') ? { extraArgs: { chrome: null } } : {}),
+                ...(can('claude', 'computerUse')
+                    ? { extraArgs: { chrome: null } }
+                    : {}),
                 // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
                 // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
                 // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
@@ -1403,13 +1411,14 @@ function spawnChatQuery(
                 // plugin, so the relay's terminal-tab UserPromptSubmit recall hook never fires here — the
                 // app's PRIMARY Claude surface saw none of the 3rd brain. Mirror that hook in-process: when
                 // this vault's daemon is enabled (session.memoryDir is set), on every user turn recall the
-                // memory relevant to the prompt and inject it as `additionalContext`. recallMemory wraps the
+                // memory relevant to the prompt and inject it as `additionalContext`. the recall service wraps the
                 // block in a `<bismuth-memory>` envelope that demarcates the vault's 3rd brain from Claude's
                 // OWN memory, so an in-app chat never conflates the two stores. Read session.memoryDir via the
                 // closure so a respawnSession respawn keeps recall wired. captureToMemory already strips that
                 // injected `<bismuth-memory>` block (stripInjectedBlocks) before collecting, so recall never
-                // amplifies through the recall→collect→recall loop. recallMemory is budgeted + never
-                // throws, so a bloated/slow graph degrades to "no recall" rather than stalling the turn.
+                // amplifies through the recall→collect→recall loop. the recall service never throws and each call
+                // is raced through recallWithin (prompt 1500 ms, tool batch 700 ms), so a bloated/slow graph
+                // degrades to "no recall" rather than stalling the turn.
                 ...(session.memoryDir
                     ? {
                           hooks: {
@@ -1424,16 +1433,107 @@ function spawnChatQuery(
                                                       'UserPromptSubmit'
                                               )
                                                   return {}
-                                              const context =
-                                                  await recallMemory(
-                                                      dir,
-                                                      input.prompt,
+                                              const { context } =
+                                                  await recallWithin(
+                                                      recallServiceFor(
+                                                          session.cwd,
+                                                          dir,
+                                                      ),
+                                                      {
+                                                          mode: 'prompt',
+                                                          sessionId:
+                                                              input.session_id,
+                                                          ...(input.agent_id
+                                                              ? {
+                                                                    agentId:
+                                                                        input.agent_id,
+                                                                }
+                                                              : {}),
+                                                          prompt: input.prompt,
+                                                          transcriptPath:
+                                                              input.transcript_path,
+                                                      },
+                                                      1500,
                                                   )
                                               return context
                                                   ? {
                                                         hookSpecificOutput: {
                                                             hookEventName:
                                                                 'UserPromptSubmit' as const,
+                                                            additionalContext:
+                                                                context,
+                                                        },
+                                                    }
+                                                  : {}
+                                          },
+                                      ],
+                                  },
+                              ],
+                              // Compaction and /clear drop injected text from the model's context, so the
+                              // dedup ledger must reset or those notes would never be shown again.
+                              SessionStart: [
+                                  {
+                                      hooks: [
+                                          async (input: HookInput) => {
+                                              const dir = session.memoryDir
+                                              if (
+                                                  dir &&
+                                                  input.hook_event_name ===
+                                                      'SessionStart' &&
+                                                  (input.source === 'compact' ||
+                                                      input.source === 'clear')
+                                              )
+                                                  recallServiceFor(
+                                                      session.cwd,
+                                                      dir,
+                                                  ).reset(input.session_id)
+                                              return {}
+                                          },
+                                      ],
+                                  },
+                              ],
+                              // Mid-turn recall: once per tool batch, from what the agent just read,
+                              // searched or ran. The service dedups against what this session was
+                              // already shown and applies the stricter tool threshold.
+                              PostToolBatch: [
+                                  {
+                                      hooks: [
+                                          async (input: HookInput) => {
+                                              const dir = session.memoryDir
+                                              if (
+                                                  !dir ||
+                                                  input.hook_event_name !==
+                                                      'PostToolBatch'
+                                              )
+                                                  return {}
+                                              const { context } =
+                                                  await recallWithin(
+                                                      recallServiceFor(
+                                                          session.cwd,
+                                                          dir,
+                                                      ),
+                                                      {
+                                                          mode: 'tool',
+                                                          sessionId:
+                                                              input.session_id,
+                                                          ...(input.agent_id
+                                                              ? {
+                                                                    agentId:
+                                                                        input.agent_id,
+                                                                }
+                                                              : {}),
+                                                          toolCalls:
+                                                              input.tool_calls,
+                                                          transcriptPath:
+                                                              input.transcript_path,
+                                                      },
+                                                      700,
+                                                  )
+                                              return context
+                                                  ? {
+                                                        hookSpecificOutput: {
+                                                            hookEventName:
+                                                                'PostToolBatch' as const,
                                                             additionalContext:
                                                                 context,
                                                         },

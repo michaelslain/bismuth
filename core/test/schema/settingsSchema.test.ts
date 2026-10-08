@@ -173,13 +173,19 @@ test('calendar section mirrors the calendar defaults', () => {
     expect(cal.militaryTime.default).toBe(false)
 })
 
-test('daemon section is exactly { backend, enabled, inboxRetentionDays, inheritUserMcp }', () => {
+test('daemon section is exactly { backend, enabled, inboxRetentionDays, inheritUserMcp, recall }', () => {
     const daemon = objectFields(SETTINGS_SCHEMA.daemon)
     expect(Object.keys(daemon).sort()).toEqual([
         'backend',
         'enabled',
         'inboxRetentionDays',
         'inheritUserMcp',
+        'recall',
+    ])
+    expect(Object.keys(objectFields(daemon.recall)).sort()).toEqual([
+        'enabled',
+        'midTurn',
+        'semantic',
     ])
     expect(daemon.inheritUserMcp.type).toBe('boolean')
     expect(daemon.inheritUserMcp.default).toBe(false)

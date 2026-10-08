@@ -75,3 +75,6 @@ bench/token-lint.drift.txt
 # pattern stays as a backstop for anything that compiles with a different cwd.
 .bun-build/
 *.bun-build
+
+# onnxruntime native binding staged by app/scripts/build-core-sidecar.ts for the semantic recall channel — platform-specific, never committed
+app/src-tauri/resources/ort/

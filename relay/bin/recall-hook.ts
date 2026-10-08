@@ -2,32 +2,27 @@
 // UserPromptSubmit hook, two best-effort jobs run concurrently:
 //   1. Keep this session "awake" in the agents graph (a full register, so a session whose
 //      SessionStart was missed/dropped self-heals and still appears).
-//   2. When the daemon is enabled for this vault (BISMUTH_MEMORY_DIR set), recall memory
-//      relevant to the prompt and inject it as `additionalContext`. This is the per-session,
-//      vault-scoped replacement for claude-bot's old global ~/.claude recall hook.
+//   2. When the daemon is enabled for this vault (BISMUTH_MEMORY_DIR set), ask core's
+//      POST /memory/recall for context relevant to the prompt and print it as
+//      `additionalContext`. Core owns ranking; core unreachable → nothing is printed.
 import { hook, memoryDir, registerSession } from '../lib/report.ts'
-import { recallMemory } from '@bismuth/memory'
+import { PROMPT_TIMEOUT_MS, printContext, requestRecall } from '../lib/recall.ts'
 
 hook(async (input, tid) => {
-    const dir = memoryDir()
-
-    // Heartbeat + recall in parallel so recall never serializes behind the POST (both are
-    // budgeted: postRelay 2s, recallMemory 800ms — recall must not stall prompt submission).
     const [, context] = await Promise.all([
         registerSession(input, tid),
-        dir && typeof input.prompt === 'string'
-            ? recallMemory(dir, input.prompt)
+        memoryDir() && input.session_id && typeof input.prompt === 'string'
+            ? requestRecall(
+                  {
+                      mode: 'prompt',
+                      sessionId: input.session_id,
+                      ...(input.agent_id ? { agentId: input.agent_id } : {}),
+                      prompt: input.prompt,
+                      transcriptPath: input.transcript_path,
+                  },
+                  PROMPT_TIMEOUT_MS,
+              )
             : Promise.resolve(null),
     ])
-
-    if (context) {
-        process.stdout.write(
-            JSON.stringify({
-                hookSpecificOutput: {
-                    hookEventName: 'UserPromptSubmit',
-                    additionalContext: context,
-                },
-            }),
-        )
-    }
+    printContext('UserPromptSubmit', context)
 })

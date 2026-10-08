@@ -79,6 +79,7 @@ const EXPECTED = [
     'POST /gcal/disconnect',
     'POST /gcal/sync',
     'POST /list-dir',
+    'POST /memory/recall',
     'POST /move',
     'POST /open-folder',
     'POST /opencode/auth',

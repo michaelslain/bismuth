@@ -187,6 +187,11 @@ const memoryTools = [
                     description:
                         'Optional single-level subfolder (alphanumeric/dash/underscore). Omit for root.',
                 },
+                description: {
+                    type: 'string',
+                    description:
+                        'One line (≤160 chars) saying when this note matters; shown in the always-on memory index at session start. Overwriting without it keeps the existing one.',
+                },
             },
             required: ['name', 'content'],
         },
@@ -292,6 +297,7 @@ const memoryHandlers: Record<
                 tags?: string[]
                 content: string
                 folder?: string
+                description?: string
             },
             dir,
             { channel: mcpChannel() },

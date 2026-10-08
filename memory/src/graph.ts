@@ -28,6 +28,9 @@ export interface NoteFrontmatter {
      *  flat under `.daemon/memory`, so there is no folder-cascade tier here, only this explicit
      *  per-note value — a documented simplification vs. the vault's file+folder cascade. */
     visibility?: 'chat-only' | 'hidden'
+    /** One line saying what the note is about. Written by `remember`; recall prefers it over the
+     *  note's first sentence (`noteDescription`). Omitted when empty. */
+    description?: string
 }
 
 export interface MemoryNote {
@@ -157,12 +160,31 @@ function parseVisibilityValue(raw: string): ParsedVisibility {
     return v === 'all' || v === 'chat-only' || v === 'hidden' ? v : 'hidden'
 }
 
+/** Read a `description:` value: one pair of surrounding quotes is removed (JSON escapes honoured
+ *  for the double-quoted form `serializeFrontmatter` writes). */
+function parseDescriptionValue(raw: string): string {
+    const v = raw.trim()
+    if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+        try {
+            const parsed: unknown = JSON.parse(v)
+            if (typeof parsed === 'string') return parsed.trim()
+        } catch {
+            // fall through to the plain strip
+        }
+        return v.slice(1, -1).trim()
+    }
+    if (v.length >= 2 && v.startsWith("'") && v.endsWith("'"))
+        return v.slice(1, -1).replace(/''/g, "'").trim()
+    return v
+}
+
 function parseFrontmatter(raw: string): NoteFrontmatter {
     const lines = raw.split('\n')
     const data: Record<string, string | string[]> = {}
     // The strictest `visibility` seen on ANY line wins, so a duplicate key (or an indented one inside
     // a block) can only ever tighten the note, never relax it.
     let visibility: ParsedVisibility = 'all'
+    let description = ''
 
     for (const line of lines) {
         const colonIdx = line.indexOf(':')
@@ -176,6 +198,10 @@ function parseFrontmatter(raw: string): NoteFrontmatter {
             const v = parseVisibilityValue(value)
             if (VISIBILITY_STRICTNESS[v] > VISIBILITY_STRICTNESS[visibility])
                 visibility = v
+            continue
+        }
+        if (key === 'description') {
+            description = parseDescriptionValue(value)
             continue
         }
         if (key) {
@@ -192,14 +218,28 @@ function parseFrontmatter(raw: string): NoteFrontmatter {
               : [],
         created: (data['created'] as string) ?? todayISO(),
         updated: (data['updated'] as string) ?? todayISO(),
+        ...(description ? { description } : {}),
         ...(visibility !== 'all' ? { visibility } : {}),
     }
+}
+
+/** A description is one line. It is double-quoted (JSON, which is valid YAML) whenever a plain
+ *  scalar would be misread — by this parser's `[a, b]` array form or by core's real YAML reader. */
+function serializeDescription(description: string): string {
+    const one = description.replace(/\s+/g, ' ').trim()
+    if (!one) return ''
+    const needsQuote =
+        /^[\[\]{}"'&*!|>%@`#?:,-]/.test(one) || /: | #|\t/.test(one) || /:$/.test(one)
+    return `\ndescription: ${needsQuote ? JSON.stringify(one) : one}`
 }
 
 function serializeFrontmatter(fm: NoteFrontmatter): string {
     const tagsStr = fm.tags.length > 0 ? `[${fm.tags.join(', ')}]` : '[]'
     const visibilityLine = fm.visibility ? `\nvisibility: ${fm.visibility}` : ''
-    return `---\ntype: ${fm.type}\ntags: ${tagsStr}\ncreated: ${fm.created}\nupdated: ${fm.updated}${visibilityLine}\n---`
+    const descriptionLine = fm.description
+        ? serializeDescription(fm.description)
+        : ''
+    return `---\ntype: ${fm.type}\ntags: ${tagsStr}\ncreated: ${fm.created}\nupdated: ${fm.updated}${descriptionLine}${visibilityLine}\n---`
 }
 
 /** Memory notes are flat under `.daemon/memory` (no folder cascade) — a note is restricted from
@@ -209,6 +249,40 @@ export function isMemoryNoteVisibleToDaemon(note: MemoryNote): boolean {
         note.frontmatter.visibility !== 'chat-only' &&
         note.frontmatter.visibility !== 'hidden'
     )
+}
+
+const DESCRIPTION_MAX = 160
+
+/** The note's one-line description: its frontmatter `description`, else its first prose sentence
+ *  (headings, fences, tables and inline markup skipped), at most 160 chars. */
+export function noteDescription(note: MemoryNote): string {
+    const own = note.frontmatter.description?.replace(/\s+/g, ' ').trim()
+    if (own) return clipDescription(own)
+    let inFence = false
+    for (const raw of note.content.split('\n')) {
+        const line = raw.trim()
+        if (/^(```|~~~)/.test(line)) {
+            inFence = !inFence
+            continue
+        }
+        if (inFence || !line) continue
+        if (/^(#{1,6}\s|---+$|\*\*\*+$|\||>\s*$)/.test(line)) continue
+        const prose = line
+            .replace(/^([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?/, '')
+            .replace(/^>\s*/, '')
+            .replace(/!?\[\[([^\]|]+)(\|([^\]]+))?\]\]/g, (_m, a, _b, c) => c ?? a)
+            .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+            .replace(/[*_`~]+/g, '')
+            .trim()
+        if (!prose) continue
+        const end = prose.search(/[.!?](\s|$)/)
+        return clipDescription(end === -1 ? prose : prose.slice(0, end + 1))
+    }
+    return ''
+}
+
+function clipDescription(s: string): string {
+    return s.length <= DESCRIPTION_MAX ? s : `${s.slice(0, DESCRIPTION_MAX - 1).trimEnd()}…`
 }
 
 function parseNoteFile(name: string, raw: string): MemoryNote {

@@ -137,6 +137,11 @@ export interface Settings {
         inboxRetentionDays: number // days a resolved daemon-inbox page stays listed before GC
         backend: string // which agent CLI runs this vault's brain: "claude" (default) | "codex" — a REQUEST; resolveDaemonBackend gates it on the vault's visibility settings
         inheritUserMcp: boolean // daemon sessions also get the machine's own user-scope MCP servers + plugins (off: bismuth only)
+        recall: {
+            enabled: boolean // master switch for every automatic memory injection (prompt, mid-turn, session start, subagent); needs daemon.enabled
+            midTurn: boolean // one recall per agent tool batch
+            semantic: boolean // embedding search: loads a ~35MB model into core on first use, unloaded after 10 min idle; off = keyword-only
+        }
     }
     update: {
         autoUpdate: boolean // auto-apply Bismuth app updates on launch (auto-relaunch when ready)
@@ -309,6 +314,25 @@ export function mergeServerSettings(parsed: unknown): Settings {
         const tgt = target as Record<string, unknown>
         for (const key of Object.keys(tgt)) {
             const storedValue = (stored as Record<string, unknown>)[key]
+            const def = tgt[key]
+            // A nested section with fixed keys (daemon.recall) merges per key, so a file that
+            // sets one of them keeps the other defaults. Empty-default maps (appearance.tokens)
+            // are whole-leaf values and are taken as stored.
+            if (
+                def &&
+                typeof def === 'object' &&
+                !Array.isArray(def) &&
+                Object.keys(def).length > 0
+            ) {
+                if (storedValue && typeof storedValue === 'object') {
+                    const d = def as Record<string, unknown>
+                    for (const k of Object.keys(d)) {
+                        const v = (storedValue as Record<string, unknown>)[k]
+                        if (typeof v === typeof d[k]) d[k] = v
+                    }
+                }
+                continue
+            }
             if (typeof storedValue === typeof tgt[key]) tgt[key] = storedValue
         }
     }

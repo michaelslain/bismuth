@@ -123,6 +123,7 @@ export async function remember(
         tags?: string[]
         content: string
         folder?: string
+        description?: string
     },
     dir: string,
     opts?: MemoryCallOpts,
@@ -133,6 +134,8 @@ export async function remember(
     // here silently un-hid a hidden note; an agent may not overwrite a note it cannot see at all.
     const existing = await readNote(args.name, dir, folder)
     assertNoteVisible(existing?.frontmatter.visibility, opts?.channel)
+    // Like type/visibility, an overwrite without a description keeps the existing one.
+    const description = args.description?.trim() || existing?.frontmatter.description
     await writeNote(
         args.name,
         {
@@ -141,6 +144,7 @@ export async function remember(
             tags: args.tags ?? existing?.frontmatter.tags ?? [],
             created: existing?.frontmatter.created ?? date,
             updated: date,
+            ...(description ? { description } : {}),
             ...(existing?.frontmatter.visibility
                 ? { visibility: existing.frontmatter.visibility }
                 : {}),

@@ -370,7 +370,9 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<(u
         // Told to core/src/server.ts via ownerToken.ts's mint override — the sidecar uses
         // exactly this value instead of minting its own, so it agrees with what we're about to
         // inject into the webview below.
-        .env("BISMUTH_OWNER_TOKEN", &token);
+        .env("BISMUTH_OWNER_TOKEN", &token)
+        // Lets core re-exec this binary as the embedding worker (memoryEmbed.ts `workerAvailable`).
+        .env("BISMUTH_CORE_SIDECAR", "1");
     // Point the sidecar at bundled resources: relay/ (terminal-tab shim → relay auto-attach +
     // memory injection), bismuth-tools/ (compiled cli + mcp + docs → machine-wide install on
     // boot), and daemon/ (the compiled per-vault daemon → core copies it to ~/.bismuth/bin +

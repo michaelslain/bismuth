@@ -420,6 +420,15 @@ Two routes behind the one-click "free agent": Bismuth downloads opencode's offic
 - **Response:** `{ entries: { path: string, kind: "file" | "dir" }[] }` (dirs first, then alpha; capped client-side at 50). A missing/unreadable parent or relative `path` → `{ entries: [] }`.
 - **Cache/SSE:** none (read-only despite POST).
 
+### `POST /memory/recall`
+- **Body:** `{ mode: "prompt" | "tool" | "session-start" | "subagent", sessionId: string, agentId?, prompt?, transcriptPath?, toolCalls?: { tool_name, tool_input, tool_response? }[], source? }`. `source` is the SessionStart source (`startup`/`resume`/`clear`/`compact`); `toolCalls` is a `PostToolBatch` hook's `tool_calls`. A bad `mode`, a missing/empty `sessionId`, wrongly typed fields or invalid JSON → `400`.
+- **Action:** `recallServiceFor(vault).recall(req)` (`core/src/memoryRecall.ts`) — the one recall service the relay hooks, the visual chat and opencode share. It ranks the vault's memory graph (the `@bismuth/memory` BM25 index, rebuilt only when a note file's mtime/size changes), packs the best notes for the mode, and records them in a per-`sessionId` (+ `agentId`) dedup ledger kept in core memory, so a note already shown in the session is not injected again unless its content changed. The ledger is cleared by `session-start` with `source` `compact` or `clear`, and entries expire after 6 h idle. `transcriptPath` (an absolute `.jsonl`) only widens the ranking query; its contents are never returned.
+- **Settings:** `daemon.recall.{enabled,midTurn,semantic}` are read live from the vault's `.settings` on every call (absent = `true`). `enabled: false` disables every mode, `midTurn: false` disables `tool`, `semantic: false` never touches the embedder. The memory dir is read only when `daemon.enabled`.
+- **Response:** `{ context: string | null, injected: string[], reason?: "disabled" | "mid-turn-off" | "no-memory" | "no-match" }`. `context` is the `<bismuth-memory>` block to inject as `additionalContext`.
+- **Cross-origin guard:** any request carrying an `Origin` header → `403 { error: "cross-origin recall refused" }` (the route is tokenless with CORS `*`; relay hooks send no `Origin`, the visual chat calls the service in-process).
+- **Visibility:** not owner-gated. Recall only ever returns daemon-visible notes (`isMemoryNoteVisibleToDaemon`), the set the hooks injected before, so a tokenless caller learns nothing it could not already read from disk.
+- **Cache/SSE:** none (read table, no invalidate).
+
 ### `POST /backup`
 - **Body:** none.
 - **Action:** `scheduleBackup(vault, () => snapshotMessage())` (`core/src/backup.ts`) — **debounced/coalesced**, not a synchronous commit. The editor's autosave hits this on every save, so committing on each keystroke-save would bloat `.git` (and, in an iCloud-synced vault, drive sync-conflict forks). `scheduleBackup` resets a per-vault debounce timer (`BISMUTH_BACKUP_DEBOUNCE_MS`, default ~30s after the last call); a burst of saves collapses into one `commitVault(vault, message())` call once the quiet window elapses. A `BISMUTH_BACKUP_MAX_WAIT_MS` ceiling (default 5 min) forces a commit even under continuous editing so long sessions still snapshot periodically. (Checkpoint commits — e.g. daemon `dream`/`vault-review` — call `commitVault` directly and stay immediate; only this autosave path is coalesced.)
@@ -854,6 +863,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/gcal/credentials` | read | no |
 | POST | `/gcal/auth/start` | read | no |
 | POST | `/gcal/disconnect` | read | no |
+| POST | `/memory/recall` | read | no |
 | POST | `/relay/session` | read | no |
 | POST | `/relay/session/end` | read | no |
 | POST | `/relay/subagent/start` | read | no |
