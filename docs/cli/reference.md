@@ -321,6 +321,14 @@ Prose leading, code scale and fonts follow the vault's `editor.lineHeight` and `
 
 `export` is refused for an agent in a restricted vault. `render` is path-scoped.
 
+## feedback
+
+Sends feedback to Bismuth's developer through the hosted relay. Headless. Refused for an AI agent, which drafts feedback for the app's feedback page instead. What is sent and the failure messages are in [feedback](../overview/feedback.md).
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `feedback send` | `--title <t> --body <text> [--kind written\|interview] [--contact <email or handle>] [--pretty]` | Sends the feedback and prints `{sent, id}`. | no |
+
 ## File commands
 
 Creates, reads, moves and trashes vault entries. All need a vault.

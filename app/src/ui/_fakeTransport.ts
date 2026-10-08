@@ -649,6 +649,14 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 )
                 return { hits } as unknown as T
             }
+            // Mirrors core's POST /feedback: an id for a payload with a title and a body, else core's
+            // 400 text — so the feedback page's host story drives a real send round trip.
+            if (pathname === '/feedback') {
+                const { title, body: text } = body as { title?: string; body?: string }
+                if (!title?.trim()) throw new Error('title is required')
+                if (!text?.trim()) throw new Error('body is required')
+                return { id: 'fb_story' } as unknown as T
+            }
             if (pathname === '/delete') {
                 const { path: p } = body as { path: string }
                 await bump(pathname)

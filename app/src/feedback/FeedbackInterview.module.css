@@ -1,0 +1,10 @@
+/* app/src/feedback/FeedbackInterview.module.css — FeedbackInterview.tsx is the ONLY importer.
+   A flex column filling the height FeedbackPage gives it: the transcript grows, the composer stays
+   pinned to the bottom (the daemon page chat's shape). */
+.interview {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    gap: var(--sp-3);
+}

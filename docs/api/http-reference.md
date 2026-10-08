@@ -542,6 +542,7 @@ These routes act on the machine rather than the vault. They never invalidate vau
 | `POST /bismuth/install` | none | `{action, status, warnings}` | open; installs |
 | `GET /doctor` | none | A `DoctorReport` from a dry run. | owner only; none |
 | `POST /doctor/fix` | `{only?: string[]}` | The `DoctorReport` after repairs. | owner only; applies repairs |
+| `POST /feedback` | `{kind, title, body, contact?, meta?}` | `{id}` | owner only; sends the feedback to the hosted relay |
 | `GET /update/status` | none | `{available, behind, localSha, remoteSha, builtSha, dirty, reason?}` | open; none |
 | `POST /update/apply` | none | The initial `UpdateProgress`. | open; starts a rebuild |
 | `GET /update/progress` | none | `{phase, message?, log?}` | open; none |
@@ -551,6 +552,8 @@ These routes act on the machine rather than the vault. They never invalidate vau
 See [install](../overview/install.md).
 
 `GET /doctor` and `POST /doctor/fix` are owner only because findings carry paths and a fix deletes files. `POST /doctor/fix` with an `only` that is not an array of strings is `400`; a malformed list is never widened to fix everything. Findings and repair risks are in [doctor](../overview/doctor.md).
+
+`POST /feedback` validates the body and forwards it to the feedback relay. A failure is not reported in a `200` body: an invalid body is `400`, a build with no relay address `503`, a rate-limited send `429`, and an unreachable or failing relay `502`, each with the reason as text. See [feedback](../overview/feedback.md).
 
 `GET /update/status` fetches `origin/main` and compares it with `HEAD`.
 It reports `available: false` with a `reason` when this is not a source build (`not-a-source-build`), `not-a-git-repo`, `access-denied`, `repo-missing`, `git-not-found` or `no-upstream`.

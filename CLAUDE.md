@@ -161,6 +161,7 @@ They override framework habits, and most violations compile, render and pass tes
 | editor, ink | `docs/editor/markdown.md`, `docs/editor/ink.md` |
 | chat backends | `docs/chat/overview.md`, `docs/chat/backends.md` |
 | daemon | `docs/daemon/overview.md` |
+| feedback page, `bismuth feedback`, the hosted relay in `services/feedback/` | `docs/overview/feedback.md` |
 | visibility (what agents may read) | `docs/vault/visibility.md` |
 | mobile | `docs/mobile/overview.md` |
 | on-disk layout | `docs/overview/storage.md` |

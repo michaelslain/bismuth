@@ -57,6 +57,9 @@ export type ChatSessionBodyProps = {
     onGesture?: (e: PointerEvent | FocusEvent) => void
     /** The chat id ChatControls seeds its disabled (no-session) row from. */
     chatId?: string
+    /** Show ChatControls (model // mode // history // new chat) under the composer. Default true;
+     *  a single-purpose chat (the feedback interview) turns it off. */
+    controls?: boolean
     /** Test-only hook on the composer wrapper (column variant). */
     composerTestId?: string
 }
@@ -99,10 +102,12 @@ const ChatSessionBody: Component<ChatSessionBodyProps> = props => {
                 onGesture={props.onGesture}
                 onReady={setComposer}
                 below={
-                    <ChatControls
-                        session={props.session}
-                        chatId={props.chatId}
-                    />
+                    props.controls === false ? undefined : (
+                        <ChatControls
+                            session={props.session}
+                            chatId={props.chatId}
+                        />
+                    )
                 }
             />
         </div>

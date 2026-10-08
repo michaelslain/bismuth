@@ -28,6 +28,7 @@ export interface CommandHandlers {
     // Open the daemon page (the living face, crons + services, inbox + log, docked chat) as its
     // own tab. The inbox folded into that page, so `open-inbox` routes here too.
     openDaemon: () => void
+    openFeedback: () => void
     setMode: (mode: GraphMode) => void
     openDailyNote: (id: string) => void
     equalizePanes: () => void
@@ -138,6 +139,7 @@ export function bindCommands(
         'open-graph': h.openGraph,
         'open-daemon': h.openDaemon,
         'open-inbox': h.openDaemon,
+        'give-feedback': h.openFeedback,
         'open-folder': h.openFolder,
         'new-window': h.newWindow,
         'create-menu': h.openCreateMenu,

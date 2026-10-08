@@ -109,6 +109,7 @@ only when the [daemon](daemon/overview.md) is enabled.
 - [HTTP API reference](api/http-reference.md) — every core server route, its body, response and auth
 - [Status messages](overview/status-messages.md) — what each toast and banner means and what to do
 - [Doctor](overview/doctor.md) — `bismuth doctor`: find and repair version skew and leftovers
+- [Feedback](overview/feedback.md) — send feedback to Bismuth's developer, written or by an interview with your daemon
 - [Self-update](overview/self-update.md) — how the app updates itself in place
 - [Draggables](overview/draggables.md) — what each drag does on each drop surface
 - [Storage](overview/storage.md) — where everything lives on disk and in the browser

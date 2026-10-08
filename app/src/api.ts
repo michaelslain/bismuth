@@ -129,6 +129,7 @@ import type { Row, ParsedBase, SourceSpec } from '../../core/src/bases/types'
 import type { Schema } from '../../core/src/schema/types'
 import type { ThemesFeed } from '../../core/src/theme/customTheme'
 import type { DoctorReport } from '../../core/src/doctor/types'
+import type { FeedbackPayload } from '../../core/src/feedbackContract'
 import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
 import type { DaemonSnapshot } from '../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../core/src/daemonActivity'
@@ -752,6 +753,10 @@ export const api = {
     getDoctor: () => getJson<DoctorReport>('/doctor'),
     fixDoctor: (only: string[]) =>
         postJson<DoctorReport>('/doctor/fix', { only }),
+    // Feedback to Bismuth's developer (core/src/feedback.ts): owner-only, forwarded to the hosted
+    // relay. Throws the relay's or core's error text on failure.
+    sendFeedback: (payload: FeedbackPayload) =>
+        postJson<{ id: string }>('/feedback', payload),
     // Git-based self-update: auto-check status + start (background) + poll progress.
     updateStatus: () => getJson<UpdateStatus>('/update/status'),
     applyUpdate: () => postJson<UpdateProgress>('/update/apply', {}),

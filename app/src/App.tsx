@@ -95,6 +95,7 @@ import {
     GRAPH_TAB,
     DAEMON_TAB,
     DAEMON_CHAT_ID,
+    FEEDBACK_TAB,
     EXPORT_PREFIX,
     EMPTY_PANE,
     CHAT_PREFIX,
@@ -178,6 +179,10 @@ import {
 } from './daemon/daemonChatArm'
 import { stayArmed } from './daemon/daemonChatArming'
 import { retainChatSessions, deliverChatDrop } from './chat/chatSessions'
+import {
+    feedbackInterviewChatId,
+    endFeedbackInterview,
+} from './feedback/feedbackInterviewState'
 import { TabRail } from './shell/TabRail'
 import { TabRailRow } from './shell/TabRailRow'
 import { AppFrame } from './shell/AppFrame'
@@ -486,6 +491,9 @@ export default function App() {
     // survive tab/pane switches while the inline ChatView unmounts and remounts freely. An id leaving
     // this set (a real tab close) disposes its session, whose clean ws.close(1000) → the backend
     // tears the session down.
+    const feedbackLeafOpen = createMemo(() =>
+        tabs().some(t => leaves(t.root).some(l => l.content === FEEDBACK_TAB)),
+    )
     const chatContents = createMemo<string[]>(() => {
         const ids = new Set<string>()
         for (const t of tabs()) {
@@ -510,6 +518,9 @@ export default function App() {
         // new chat tab already holds the same id, so the session is never absent from the set.
         const quickId = quickAskChatId()
         if (quickId) ids.add(CHAT_PREFIX + quickId)
+        // The feedback page's interview, once a trusted click started one, while the page is open.
+        const feedbackId = feedbackInterviewChatId()
+        if (feedbackId && feedbackLeafOpen()) ids.add(CHAT_PREFIX + feedbackId)
         return [...ids]
     })
     createEffect(() =>
@@ -517,6 +528,11 @@ export default function App() {
             chatContents().map(c => c.slice(CHAT_PREFIX.length)),
         ),
     )
+
+    // End the feedback interview when the last feedback leaf closes, so a reopened page starts fresh.
+    createEffect(() => {
+        if (!feedbackLeafOpen()) endFeedbackInterview()
+    })
 
     // Disarm the daemon chat when the last daemon leaf closes (or the daemon turns off), so a
     // reopened page needs a fresh gesture. The armed flag is plain state, never persisted.
@@ -1446,6 +1462,7 @@ export default function App() {
     // one-sentinel-tab idiom as openGraph/openSearch/openSettings above. The inbox lives on that
     // page, so the inbox toast's "Review", the status-bar inbox readout and `open-inbox` land here.
     const openDaemon = () => openTool(DAEMON_TAB)
+    const openFeedback = () => openTool(FEEDBACK_TAB)
     // Deduped (inflight.ts): mount, the SSE-triggered refresh and the poll interval below can all
     // want a /daemon/pages round trip within the same tick at boot — share one in-flight request.
     const refreshInbox = dedupeInflight(() => refreshDaemonPages(openDaemon))
@@ -1556,6 +1573,7 @@ export default function App() {
                 openCreateMenu,
                 openGraph,
                 openDaemon,
+                openFeedback,
                 setMode,
                 openDailyNote,
                 equalizePanes,

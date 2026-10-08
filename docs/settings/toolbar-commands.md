@@ -80,6 +80,7 @@ These are the built-in commands, grouped by area. `COMMAND_CATALOG` in `core/src
 | `open-graph` | Open graph view | `Share2` |  |
 | `open-daemon` | Open daemon | `Bot` |  |
 | `open-inbox` | Open daemon inbox | `Inbox` |  |
+| `give-feedback` | Give feedback… | `Megaphone` |  |
 | `search` | Search | `Search` |  |
 | `terminal` | Open Terminal | `SquareTerminal` |  |
 | `new-window` | New window | `AppWindow` |  |

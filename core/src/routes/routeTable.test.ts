@@ -72,6 +72,7 @@ const EXPECTED = [
     'POST /delete',
     'POST /delete-property',
     'POST /doctor/fix',
+    'POST /feedback',
     'POST /folder-icon',
     'POST /folder-visibility',
     'POST /gcal/auth/start',

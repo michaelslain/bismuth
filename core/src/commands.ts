@@ -31,6 +31,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'open-graph', label: 'Open graph view', icon: 'Share2' },
     { id: 'open-daemon', label: 'Open daemon', icon: 'Bot' },
     { id: 'open-inbox', label: 'Open daemon inbox', icon: 'Inbox' },
+    { id: 'give-feedback', label: 'Give feedback…', icon: 'Megaphone' },
     { id: 'open-folder', label: 'Open folder…', icon: 'FolderOpen' },
     { id: 'new-window', label: 'New window', icon: 'AppWindow' },
     {

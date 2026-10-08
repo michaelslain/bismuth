@@ -21,6 +21,9 @@ export const DAEMON_TAB = '::daemon'
 // The daemon page's docked chat: content id CHAT_PREFIX +
 // DAEMON_CHAT_ID. Each arm (daemon/daemonChatArm.ts) starts a fresh conversation.
 export const DAEMON_CHAT_ID = 'daemon'
+// The feedback page — feedback for Bismuth's developer, written or drawn out by an interview
+// (app/src/feedback/). One tab, like DAEMON_TAB; its interview chat is retained by App while open.
+export const FEEDBACK_TAB = '::feedback'
 // RETIRED: the old ANNOTATE surface's content id, ANNOTATE_PREFIX + "<file path>". Nothing creates
 // one any more (images/PDFs are drawn on in place in their preview), but a tab persisted before
 // that change can still carry it, so PaneContent routes it to the file's preview and the label
@@ -78,6 +81,7 @@ function noteName(path: string): string {
 export function contentLabel(content: string, terminalIndex?: number): string {
     if (content === GRAPH_TAB) return 'New tab' // the graph IS the home/new tab; label reads as such (icon stays Share2)
     if (content === DAEMON_TAB) return 'Daemon'
+    if (content === FEEDBACK_TAB) return 'Feedback'
     if (content === EMPTY_PANE) return '' // blank header — an empty pane reads as truly empty
     if (content.startsWith(EXPORT_PREFIX))
         return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`
@@ -97,6 +101,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
 export function contentIcon(content: string): string | undefined {
     if (content === GRAPH_TAB) return 'Share2'
     if (content === DAEMON_TAB) return 'Bot'
+    if (content === FEEDBACK_TAB) return 'Megaphone'
     if (content.startsWith(EXPORT_PREFIX)) return 'Download'
     if (content.startsWith(CHAT_PREFIX))
         return chatIconProvider?.(content) ?? 'MessageSquare'

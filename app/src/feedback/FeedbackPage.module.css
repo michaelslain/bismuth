@@ -1,0 +1,53 @@
+/* app/src/feedback/FeedbackPage.module.css — FeedbackPage.tsx is the ONLY importer.
+   [ viewbar ] over a stage holding one centred column, a reading measure wide. Interview chat: the
+   column is the stage's full height — the conversation grows, and a one-line "draft ready" row
+   sits under it once there is a draft. Review: the form, under a heading row with [ back to interview ]. */
+
+.page {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.stage {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--sp-6) var(--sp-5);
+}
+
+.column {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+    max-width: 72ch;
+    margin: 0 auto;
+}
+
+.interviewColumn {
+    height: 100%;
+    min-height: 0;
+}
+
+.interview {
+    flex: 1;
+    min-height: 0;
+}
+
+.reviewHead,
+.ready {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-3);
+}
+
+.ready {
+    flex: none;
+    padding-top: var(--sp-4);
+    border-top: var(--rule-soft);
+}

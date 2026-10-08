@@ -19,6 +19,7 @@ Add a dependency with `cd <workspace> && bun add <package>`.
 | `memory/` | `@bismuth/memory` | The pure 3rd-brain memory graph, shared by the daemon, relay hooks and MCP | `memory/src/index.ts` |
 | `daemon/` | `@bismuth/daemon` | One machine process running every enabled vault's crons, processes and session | `daemon/src/daemon/index.ts` |
 | `relay/` | `@bismuth/relay` | A Claude Code plugin whose hooks report terminal sessions and inject memory | `relay/hooks/hooks.json` |
+| `services/feedback/` | none | The hosted feedback relay: a standalone Bun service, deployed on its own, that emails feedback on; see [Feedback](../overview/feedback.md) | `services/feedback/server.ts` |
 | `bench/` | none | Visual-check and benchmark scripts; see [Visual checks](visual-checks.md) | `bench/verify.ts` |
 | `scripts/` | none | The pre-commit gate, the docs check, the design-system gate, code generators | `scripts/gate.ts` |
 | `docs/` | none | This documentation tree | `docs/README.md` |
@@ -203,6 +204,7 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 | `chat/` | The chat UI and `chatSessions.ts`, the registry that keeps each chat's socket and transcript alive | `chatSessions.ts` |
 | `quickAsk/` | The `Mod+K` popover: a one-off daemon conversation with apply, anchored at the caret or the pane top | `QuickAskHost.tsx` |
 | `daemon/` | The daemon page, its docked chat, inbox, crons and processes | `DaemonPageHost.tsx` |
+| `feedback/` | The feedback page: the draft form and the daemon interview | `FeedbackPageHost.tsx` |
 | `preview/` | Image, PDF and code previews, annotation stores, outline and bookmarks | `previewKind.ts` |
 | `drawing/` | The `.draw` canvas, toolbar and input handling | `DrawingPage.tsx` |
 | `sheet/` | Univer workbook snapshot and sync, code-split | `univerSheet.ts` |
@@ -220,7 +222,7 @@ Component files are PascalCase with a colocated `.module.css` and `.stories.tsx`
 
 | Path | Holds | Open first |
 |---|---|---|
-| `cli/src/commands/` | One module per command group: `api`, `app`, `backends`, `base`, `calendar`, `card`, `chat`, `checkpoint`, `daemon`, `docs`, `doctor`, `draw`, `export`, `file`, `gcal`, `graph`, `install`, `memory`, `note`, `page`, `prop`, `relay`, `search`, `serve`, `settings`, `task`, `theme`, `update` | `cli/src/registry.ts` |
+| `cli/src/commands/` | One module per command group: `api`, `app`, `backends`, `base`, `calendar`, `card`, `chat`, `checkpoint`, `daemon`, `docs`, `doctor`, `draw`, `export`, `feedback`, `file`, `gcal`, `graph`, `install`, `memory`, `note`, `page`, `prop`, `relay`, `search`, `serve`, `settings`, `task`, `theme`, `update` | `cli/src/registry.ts` |
 | `cli/src/` | The dispatcher (`index.ts`, longest-match over the registry), argument helpers (`args.ts`), the loopback HTTP helper (`http.ts`) | `index.ts` |
 | `mcp/src/` | `server.ts` (tool list and dispatch), `docs.ts` (index, search and read of `docs/`), `cli.ts` (the CLI bridge), `memory.ts` and `daemon.ts` (daemon-gated tools), `instructions.ts` (the server instructions), `cliTwins.ts` | `server.ts` |
 | `memory/src/` | `graph.ts` (note CRUD, frontmatter, backlinks), `search.ts` and `rank.ts` (BM25), `recall.ts` and `pack.ts` (prompt to injected block), `query.ts`, `transcript.ts` | `index.ts` |

@@ -23,6 +23,8 @@ const PreviewView = lazy(() =>
 // The daemon page (living face + crons/services + inbox/log + an inline chat in its centre
 // column). Lazy: nothing on the graph home tab needs it at first paint.
 const DaemonPageHost = lazy(() => import('./daemon/DaemonPageHost'))
+// The feedback page (app/src/feedback/). Lazy, like the daemon page.
+const FeedbackPageHost = lazy(() => import('./feedback/FeedbackPageHost'))
 // The chat tab. Lazy: it pulls in the shared markdown renderer (marked + KaTeX). Rendered INLINE —
 // unmounting it on a tab/pane switch is harmless, because the chat's session (WS, transcript,
 // draft, streaming turn) lives in the registry App retains (chat/chatSessions.ts), not in the view.
@@ -45,6 +47,7 @@ import {
     CHAT_PREFIX,
     ANNOTATE_PREFIX,
     DAEMON_TAB,
+    FEEDBACK_TAB,
     isSentinel,
 } from './tabIds'
 import { isPreviewPath } from './preview/previewKind'
@@ -99,6 +102,15 @@ export function PaneContent(props: {
                 <PaneSuspense>
                     <DaemonPageHost
                         onOpen={props.onOpen}
+                        noteNames={props.noteNames}
+                        memoryNames={props.memoryNames}
+                        tagNames={props.tagNames}
+                    />
+                </PaneSuspense>
+            </Match>
+            <Match when={props.path === FEEDBACK_TAB}>
+                <PaneSuspense>
+                    <FeedbackPageHost
                         noteNames={props.noteNames}
                         memoryNames={props.memoryNames}
                         tagNames={props.tagNames}

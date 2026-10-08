@@ -2,6 +2,7 @@ import { formatEvent } from '../sse'
 import { getBismuthStatus, ensureBismuthInstalled } from '../bismuthInstall'
 import { doctorApply, doctorDryRun, doctorFixOptions } from '../doctor/routes'
 import { getUpdateStatus, startUpdate, getUpdateProgress } from '../selfUpdate'
+import { submitFeedback } from '../feedback'
 import { ok, error, type Handler, type RouteContext } from './context'
 
 const enc = new TextEncoder()
@@ -104,6 +105,15 @@ export default function systemRoutes(
 
         'GET /update/progress': async (_, __) => {
             return ok(getUpdateProgress())
+        },
+
+        // Feedback to Bismuth's developer (core/src/feedback.ts): validated here, forwarded to the
+        // hosted relay, emailed on from there. Owner-only — it sends text off the machine, so an
+        // agent channel must never reach it; the app's send button is the owner's approval.
+        'POST /feedback': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const r = await submitFeedback(await req.json().catch(() => null))
+            return r.ok ? ok({ id: r.id }) : error(r.error, r.status)
         },
     }
 }

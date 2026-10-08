@@ -1,0 +1,8 @@
+{
+    "name": "bismuth-feedback-service",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "start": "bun run server.ts"
+    }
+}
