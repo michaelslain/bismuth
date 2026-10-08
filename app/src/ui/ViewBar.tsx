@@ -4,10 +4,11 @@
 // (readouts · config · actions), composed through NAMED SLOTS rather than positional
 // children. Replaces per-view bespoke `.viewbar` markup so every header is
 // structurally identical.
-import { children, type JSX, onCleanup, Show } from 'solid-js'
+import { children, createSignal, type JSX, onCleanup, onMount, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Band from './Band'
 import IconButton from './IconButton'
+import leadOverflow from './leadOverflow'
 import { usePaneChrome } from './paneChrome'
 import styles from './ViewBar.module.css'
 
@@ -117,6 +118,36 @@ function ViewBar(props: ViewBarProps) {
         pane!.startDrag(e)
     }
 
+    // THE FADE IS EARNED. Below the floor tier the lead group scrolls and its right edge fades to
+    // say "more this way" — but only while there IS more that way. An unconditional mask faded the
+    // last control of any lead that merely fit (the sidebar mini graph's brain-mode icons, read as a
+    // dark band beside [clusters]). Re-measured on a resize of the lead or of anything in it, on a
+    // slot's content changing, and on scroll, so the fade also drops once scrolled to the end.
+    let lead!: HTMLDivElement
+    const [overflowing, setOverflowing] = createSignal(false)
+    onMount(() => {
+        const measure = () => setOverflowing(leadOverflow(lead))
+        const resize = new ResizeObserver(measure)
+        const observeAll = () => {
+            resize.disconnect()
+            resize.observe(lead)
+            for (const el of lead.children) resize.observe(el)
+        }
+        const mutation = new MutationObserver(() => {
+            observeAll()
+            measure()
+        })
+        observeAll()
+        mutation.observe(lead, { childList: true, subtree: true, characterData: true })
+        lead.addEventListener('scroll', measure, { passive: true })
+        measure()
+        onCleanup(() => {
+            resize.disconnect()
+            mutation.disconnect()
+            lead.removeEventListener('scroll', measure)
+        })
+    })
+
     // Every region wrapper below carries `styles.vbRegion` in addition to its own slot class —
     // purely so the collapse ladder (ViewBar.module.css) can find "any of the six regions" without
     // a `[class^='vb-']` prefix match, which breaks the moment these classes are hashed (a hashed
@@ -132,8 +163,10 @@ function ViewBar(props: ViewBarProps) {
             onPointerDown={onPointerDown}
         >
             <div
+                ref={lead}
                 class={cx(styles['vb-lead'], props.parts?.lead)}
                 data-testid="vb-lead"
+                data-overflowing={overflowing() ? '' : undefined}
             >
                 <Show when={filled(identity)}>
                     <div

@@ -359,8 +359,12 @@
      ships looking like the broken one. `.vb-lead` scrolls and `.vb-trail` stays pinned, so the
      primary action is never what gets scrolled away. The scrollbar is hidden (a 36px band cannot
      spare 15px) and the edge is masked so the cut reads as "more this way" rather than as a sliced
-     button. */
-  .viewbar .vb-lead { overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(to right, black calc(100% - 20px), transparent); }
+     button — but ONLY while there is more that way. `data-overflowing` is set by ViewBar.tsx
+     (ui/leadOverflow.ts) when the lead's content runs past its right edge, and dropped once it fits
+     or is scrolled to the end. Unconditional, the mask faded the last control of a lead that merely
+     fit — the sidebar mini graph's brain-mode icons, which read as a dark band beside [clusters]. */
+  .viewbar .vb-lead { overflow-x: auto; scrollbar-width: none; }
+  .viewbar .vb-lead[data-overflowing] { mask-image: linear-gradient(to right, black calc(100% - 20px), transparent); }
   .viewbar .vb-lead::-webkit-scrollbar { display: none; }
   /* THE ELASTIC THINGS GO RIGID HERE, and without this the tier above is inert. The crumb's title
      and DateNav's range date both shrink with ellipsis, so `.vb-lead` never overflows — it just

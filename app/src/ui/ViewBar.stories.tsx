@@ -366,6 +366,9 @@ export const BelowFloor: Story = {
         // The floor tier fired: the lead group scrolls rather than pushing the trail off the bar.
         expect(getComputedStyle(lead).overflowX).toBe('auto')
         expect(lead.scrollWidth).toBeGreaterThan(lead.clientWidth)
+        // …and because it really overflows, its right edge fades to say "more this way".
+        expect(lead.hasAttribute('data-overflowing')).toBe(true)
+        expect(getComputedStyle(lead).maskImage).not.toBe('none')
 
         // And the trail is still fully on the bar — the thing the floor tier exists to protect.
         // `clientWidth > 0` first: a right-edge comparison against a zero-width box is vacuously
@@ -380,6 +383,45 @@ export const BelowFloor: Story = {
          * to `auto` too, so a focused button's outline-offset inside `.vb-lead` gets clipped by
          * the scrolling band. Reported to the controller rather than fixed here — the rule lives in
          * ui/ViewBar.module.css, which is another task's file. */
+    },
+}
+
+/**
+ * Below the floor tier, but the lead FITS: no fade. The shape of the sidebar mini graph — a 266px
+ * bar whose lead is one button and a few icons, with two bracket buttons trailing. The floor tier's
+ * scroller is on, yet nothing is past the edge, so the lead's last control must not be masked (an
+ * unconditional mask read as a dark band between the icons and the trailing [clusters]).
+ */
+export const BelowFloorLeadFits: Story = {
+    render: () => (
+        <Frame w="266px">
+            <ViewBar
+                locus={<TextButton variant="unselected">3d</TextButton>}
+                facet={
+                    <>
+                        <IconButton icon="Notebook" label="2nd brain" />
+                        <IconButton icon="Brain" label="3rd brain" />
+                    </>
+                }
+                config={
+                    <>
+                        <TextButton variant="selected">clusters</TextButton>
+                        <TextButton variant="unselected">local</TextButton>
+                    </>
+                }
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        expect(bar.clientWidth).toBeLessThanOrEqual(266)
+        const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
+        // The floor tier is on (the lead would scroll if it had to)…
+        expect(getComputedStyle(lead).overflowX).toBe('auto')
+        // …but it fits, so no edge of it is faded.
+        expect(lead.scrollWidth).toBeLessThanOrEqual(lead.clientWidth + 1)
+        expect(lead.hasAttribute('data-overflowing')).toBe(false)
+        expect(getComputedStyle(lead).maskImage).toBe('none')
     },
 }
 
