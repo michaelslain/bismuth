@@ -169,9 +169,9 @@ const editorTheme = EditorView.theme({
     // `overflowAnchor: none` stops the browser's scroll-anchoring from bumping scrollTop when
     // live-preview widgets above the viewport change height (reveal/fold) — that drift is what
     // could nudge a restored position toward the bottom on a tab return; our scroll-restore owns it.
-    // Line-height is a multiple of the app's row unit (--row-h, global.css's `ui/ui.css` section :root), NOT of the
-    // font size — editor.lineHeight (--prose-line-height) defaults to 1.25, so prose lines land
-    // on a 1.25x multiple of --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
+    // Line-height is --prose-row (global.css :root): a multiple of the app's row unit (--row-h), NOT
+    // of the font size — editor.lineHeight (--prose-line-height) defaults to 1.25, so prose lines land
+    // on a 1.25x multiple of --row-h (18px). Chat messages and the terminal read the same token.
     '.cm-scroller': {
         // --prose-font (the prose face), NOT --ui-font-stack. This is the ANSWERED monospace-scope
         // decision from the visual-unification wave (global.css's `styles/tokens.css` section §9.1): mono stays the
@@ -189,7 +189,7 @@ const editorTheme = EditorView.theme({
         // the measurement). The mono exclusions in global.css's CodeMirror theming section reset BOTH family and size, so a code
         // fence or a heading is unaffected by this.
         fontSize: 'var(--prose-font-size)',
-        lineHeight: 'calc(var(--row-h, 18px) * var(--prose-line-height, 1))',
+        lineHeight: 'var(--prose-row)',
         overflow: 'auto',
         overflowAnchor: 'none',
         justifyContent: 'center',
@@ -260,7 +260,7 @@ const codeFontTheme = EditorView.theme({
     '.cm-scroller': {
         fontFamily: 'var(--ui-font-stack) !important',
         fontSize: 'var(--editor-font-size) !important',
-        lineHeight: 'calc(var(--row-h, 18px) * var(--prose-line-height, 1))',
+        lineHeight: 'var(--prose-row)',
     },
 })
 

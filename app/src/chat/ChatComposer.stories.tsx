@@ -111,7 +111,8 @@ export const TaskLine: Story = {
 
 /** THE REFLOW A USER FEELS: the composer and the sent bubble must set the same text at the same
  *  line pitch, or the message jumps the moment Enter is pressed. The composer's line-height was a
- *  hardcoded 1.45 against the bubble's `--lh-prose` 1.6 — a visible 10% reflow. Both are rendered
+ *  hardcoded 1.45 against the bubble's 1.6 — a visible 10% reflow. Both now take a note's row,
+ *  `--prose-row`, so a message also matches the note it was written beside. Both are rendered
  *  here with the same words; the assertion compares what the browser COMPUTED, not the two source
  *  values, so a third rule that overrides either one is caught too. */
 export const MatchesTheSentBubble: Story = {
@@ -137,10 +138,14 @@ export const MatchesTheSentBubble: Story = {
         const sent = pitch(bubble)
         expect(composer.fs).toBeCloseTo(sent.fs, 2)
         expect(composer.lh).toBeCloseTo(sent.lh, 2)
-        // And it is the prose ratio, not merely two equal wrong numbers.
-        const ratio = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue('--lh-prose'),
-        )
-        expect(composer.lh / composer.fs).toBeCloseTo(ratio, 2)
+        // And it is a note's row, not merely two equal wrong numbers. `--prose-row` is a calc(),
+        // so it is resolved through a probe element rather than read as a string off :root.
+        const probe = document.createElement('div')
+        probe.style.lineHeight = 'var(--prose-row)'
+        document.body.append(probe)
+        const noteRow = parseFloat(getComputedStyle(probe).lineHeight)
+        probe.remove()
+        expect(noteRow).toBeGreaterThan(0)
+        expect(composer.lh).toBeCloseTo(noteRow, 2)
     },
 }

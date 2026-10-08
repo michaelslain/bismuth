@@ -616,6 +616,20 @@ describe('reconcile prunes retired schema keys', () => {
         expect(appearance.editorFontSize).toBe(20)
     })
 
+    test('the terminal section is removed, its cursor keys moved to appearance first', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'terminal:\n  fontSize: 15\n  lineHeight: 1.8\n  cursorWidth: 3\n',
+        )
+        const wrote = await reconcileSettings(vault)
+        expect(wrote).toBe(true)
+        const { data } = (await readSettings(vault))!
+        expect((data as any).terminal).toBeUndefined()
+        expect((data.appearance as any).cursorWidth).toBe(3)
+    })
+
     test('a file that never had defaultMode is not rewritten by the prune step', async () => {
         const vault = await emptyVault()
         await reconcileSettings(vault) // absent -> writes the sparse seed (no defaultMode)

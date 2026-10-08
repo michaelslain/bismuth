@@ -61,9 +61,10 @@ const composerTheme = EditorView.theme({
         // noticeably smaller.
         fontFamily: "var(--prose-font, 'Libron', Georgia, serif)",
         fontSize: 'var(--prose-font-size, 14px)',
-        // --lh-prose, the bubble's own (ChatTextBubble.module.css), so a message does not reflow
-        // by 10% the moment it is sent. This was a hardcoded 1.45 against the bubble's 1.6.
-        lineHeight: 'var(--lh-prose)',
+        // --prose-row, the bubble's own (ChatTextBubble.module.css) and a note's, so a message does
+        // not reflow the moment it is sent. Inline runs inside a line are held to line-height 1 by
+        // global.css's CodeMirror section, so the row stays exactly this length.
+        lineHeight: 'var(--prose-row)',
         overflowY: 'auto',
         maxHeight: '200px',
         padding: '0',

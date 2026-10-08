@@ -56,6 +56,7 @@
     "--ui-font-stack": "'Monaspace Xenon', ui-monospace, monospace",
     "--prose-font": "'Libron', Georgia, serif",
     "--prose-scale": "0.97",
+    "--code-scale": "0.95",
     "--editor-font-size": "13.5px",
     "--icon": "12px",
     "--sidebar-width": "266px",

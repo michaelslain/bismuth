@@ -50,10 +50,7 @@ Each window runs its own backend on its own port, so a `claude` session reports 
 
 ## Which settings change the terminal?
 
-| Key | Default | Range | Effect |
-|-----|---------|-------|--------|
-| `terminal.fontSize` | `13` | 9 to 20 | Font size in px |
-| `terminal.lineHeight` | `1.5` | 1.2 to 2 | Line height multiplier |
+A terminal's text is the same size and row height as code in a note: [`appearance`](../settings/reference.md#appearance) `editorFontSize` and `monoScale` set its size, and [`editor`](../settings/reference.md#editor) `lineHeight` sets its row height.
 
 Colors follow the active theme: the terminal reads `--term-bg` and `--term-fg` (falling back to `--bg` and `--fg`) and builds the 16-color ANSI palette from the theme's accent palette.
 The text cursor is the app-wide cursor ([`appearance`](../settings/reference.md#appearance) `cursorWidth`, `cursorGlideMs`, `cursorBlinkSeconds`). The font stack starts with Monaspace Xenon, then common Nerd Font faces, then the system monospace.

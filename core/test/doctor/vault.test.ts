@@ -60,10 +60,10 @@ describe('vaultSection', () => {
     test('the interim .settings/settings.yaml folder is also found', async () => {
         const vault = tempDir('doctor-vault-')
         mkdirSync(join(vault, '.settings'))
-        writeFileSync(join(vault, '.settings', 'settings.yaml'), 'terminal:\n  fontSize: 15\n')
+        writeFileSync(join(vault, '.settings', 'settings.yaml'), 'editor:\n  autoSaveDelay: 900\n')
         const f = find(await run(vault), 'vault.settings-location')!
         await f.repair!.apply()
-        expect(readFileSync(join(vault, '.settings'), 'utf8')).toContain('fontSize: 15')
+        expect(readFileSync(join(vault, '.settings'), 'utf8')).toContain('autoSaveDelay: 900')
         expect(find(await run(vault), 'vault.settings-location')).toBeUndefined()
     })
 
@@ -71,7 +71,7 @@ describe('vaultSection', () => {
         const vault = tempDir('doctor-vault-')
         writeFileSync(
             join(vault, '.settings'),
-            '# my comment\nterminal:\n  fontSize: 15\ndaemon:\n  home: /x\n  autoUpdate: true\nupdate:\n  autoUpdate: true\n',
+            '# my comment\neditor:\n  autoSaveDelay: 900\ndaemon:\n  home: /x\n  autoUpdate: true\nupdate:\n  autoUpdate: true\n',
         )
         const f = find(await run(vault), 'vault.settings-retired-keys')!
         expect(f.severity).toBe('info')
@@ -83,7 +83,7 @@ describe('vaultSection', () => {
         const after = readFileSync(join(vault, '.settings'), 'utf8')
         expect(after).not.toContain('home:')
         expect(after).toContain('# my comment')
-        expect(after).toContain('fontSize: 15')
+        expect(after).toContain('autoSaveDelay: 900')
         // update.autoUpdate is live and must survive
         expect(after).toContain('update:')
         expect(find(await run(vault), 'vault.settings-retired-keys')).toBeUndefined()

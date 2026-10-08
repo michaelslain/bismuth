@@ -43,10 +43,12 @@ export const PROSE_SCALE = 0.97
 // for serif body text" that editor.lineHeight's own schema doc cites, at PROSE_SCALE's measured
 // value above.
 const DEFAULT_PROSE_LEADING = 22.5 / (13.5 * PROSE_SCALE)
-// Mirrors global.css's --code-scale (code size / prose size) at appearance.monoScale's default of
-// 1. A literal for the same reason as the mirrors above; app/test/settings.test.ts pins it to the
-// stylesheet.
-export const CODE_SCALE = 0.89
+// Mirrors global.css's --code-scale (code size / prose size) for the default face at
+// appearance.monoScale's default of 1 — settings.ts's CODE_SCALES entry for Libron. A literal for
+// the same reason as the mirrors above; app/test/settings.test.ts pins it to the stylesheet. A
+// headless export of a vault on another prose face reads that face's own scale out of CODE_SCALES
+// (cli/src/commands/export.ts).
+export const CODE_SCALE = 0.95
 
 // The app's note type scale: the fixed design STEPS from global.css's `styles/tokens.css` section,
 // not six resolved

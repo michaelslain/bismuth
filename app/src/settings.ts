@@ -146,10 +146,6 @@ export interface Settings {
     update: {
         autoUpdate: boolean // auto-apply Bismuth app updates on launch (auto-relaunch when ready)
     }
-    terminal: {
-        fontSize: number // px
-        lineHeight: number // multiplier
-    }
     chat: {
         provider: string // default provider for NEW chats: "claude" | "opencode"
         presets: ChatPreset[] // saved provider + model + effort combos (chat/chatPresets.ts)
@@ -273,6 +269,23 @@ export const PROSE_SCALES: Record<string, number> = {
     Lora: 1.04,
 }
 export const DEFAULT_PROSE_SCALE = 1.04
+
+// Monospace size inside prose, per prose face → --code-scale (code size / prose size; see
+// --code-font-size in global.css's tokens section). Measured as rendered pixels — ink x-height and
+// pangram ink of Monaspace Xenon against the face at its own prose size — never guessed:
+//   Libron         0.95 — one size for fences, the terminal and mono inside a sentence. Xenon at
+//                         13.5px (1.03) matched x-height (7.1 vs 7.1px) and ink, right for a fence
+//                         but oversized inline, where Monaspace runs ~29% wider; 0.89 read small in
+//                         a fence. Picked by eye between the two.
+//   IBM Plex Serif 0.89 — ink parity: code/prose pangram ink 1.10 at 1.00, 1.00 at 0.89
+//   Lora           0.89 — ink parity: Xenon at 12.5px puts down 733 ink against Lora's 743 at 14.04
+// A face absent here (the Monaspace variants, as an all-mono prose choice) keeps 0.89.
+export const CODE_SCALES: Record<string, number> = {
+    Libron: 0.95,
+    'IBM Plex Serif': 0.89,
+    Lora: 0.89,
+}
+export const DEFAULT_CODE_SCALE = 0.89
 
 // The fallback accent palette. Categories (graph nodes/clusters/tags, drawing ink
 // swatches, terminal ANSI) normally derive from the selected theme's accentPalette

@@ -111,7 +111,7 @@ Custom themes: parsing and validation are pure, in `core/src/theme/customTheme.t
 | Each Monaspace face | `'<name>', ui-monospace, monospace` | `1.04` (the default for a face with no entry) |
 
 The scales come from measured x-heights against Monaspace Xenon. `--prose-font-size` is `calc(var(--editor-font-size) * var(--prose-scale))`, never a literal.
-`--code-font-size` is the prose size times `--code-scale` (0.89) times `--mono-scale`, and it is the one size for monospace inside prose. `font-variant-ligatures: none` is set app-wide so Monaspace's coding ligatures do not break the character grid.
+`--code-font-size` is the prose size times `--code-scale` times `--mono-scale`; `--code-scale` is measured per prose face (0.95 for Libron, 0.89 for IBM Plex Serif and Lora) so code reads at the size of the sentence around it,, and it is the one size for monospace inside prose. `font-variant-ligatures: none` is set app-wide so Monaspace's coding ligatures do not break the character grid.
 
 A stack must lead with the family name the font package actually declares. Lora's is `Lora Variable`; plain `Lora` resolves nothing and falls silently through to Georgia.
 Libron is vendored in `app/src/assets/fonts/libron/` and declared by `@font-face` in `global.css`; the Monaspace families and IBM Plex Serif come from `@fontsource` imports in `app/src/fonts.ts`, and Lora from `@fontsource-variable/lora`.

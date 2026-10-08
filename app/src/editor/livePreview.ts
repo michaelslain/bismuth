@@ -208,7 +208,6 @@ const LIST_GUTTER = 2.2 // em — width of the marker column (>= LIST_STEP; see 
 // Rounded: the raw subtraction is 0.6000000000000001 in binary floating point, and that string
 // would be emitted into the stylesheet verbatim.
 const LIST_OVERHANG = Math.round((LIST_GUTTER - LIST_STEP) * 1000) / 1000
-const LIST_LINE_HEIGHT = '1.55' // tighter than prose (1.65) for a cleaner list rhythm
 const indentLineCache = new Map<string, Decoration>()
 /** A line decoration giving a list line a depth-based hanging indent. */
 function indentLine(cls: string, depth: number): Decoration {
@@ -219,7 +218,7 @@ function indentLine(cls: string, depth: number): Decoration {
         d = Decoration.line({
             class: cls,
             attributes: {
-                style: `padding-left:${pad}em;text-indent:-${LIST_STEP}em;line-height:${LIST_LINE_HEIGHT}`,
+                style: `padding-left:${pad}em;text-indent:-${LIST_STEP}em`,
             },
         })
         indentLineCache.set(key, d)
@@ -1769,9 +1768,11 @@ export const livePreview = [
         // `.cm-li` and `.cm-task` — that is what puts a bullet's text and a task's text on one
         // axis. Each marker box pulls itself back left by the same amount (below), so the column's
         // right edge still lands on the step and nothing hangs outside the line box.
+        // NO line-height of their own: a list or task row is a prose row and takes the host's
+        // pitch (the note editor's 22.5px row), so a list between two paragraphs sits on the same
+        // rhythm as the paragraphs.
         '.cm-li': {
             'padding-left': '2px',
-            'line-height': '1.55',
             'margin-left': `${LIST_OVERHANG}em`,
         },
         // Bullet glyph sits in the hanging gutter (right-aligned, with a fixed gap to the text).
@@ -1972,7 +1973,7 @@ export const livePreview = [
         // Frontmatter: monospace property rows at --code-font-size — the SAME size as a fenced code
         // block (global.css's size-reset list), not the --fs-ui chrome size it once sat at. Plenty of
         // notes are mostly frontmatter (a book note is a dozen property rows and one query), so it is
-        // sized as note content, one step below prose like every other mono run in a note. The
+        // sized as note content, at --code-font-size like every other mono run in a note. The
         // container chrome (flat surface) still comes from `.cm-block-mid` (always co-applied).
         '.cm-frontmatter': {
             'font-family': MONO_FONT,
@@ -2295,7 +2296,6 @@ export const livePreview = [
         //   while getBoundingClientRect still reads aligned. Hence text-indent:0 on both.
         '.cm-task': {
             'padding-left': '2px',
-            'line-height': '1.55',
             'margin-left': `${LIST_OVERHANG}em`,
         },
         '.cm-checkbox': {

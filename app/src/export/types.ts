@@ -57,8 +57,8 @@ export interface ThemePalette {
     // export document has no mono chrome to match, and the pt picker is already the intended
     // reading size — scaling it would silently turn a chosen 12pt into 15.36pt.
     proseLeading: number
-    // Code size as a ratio OF THE PROSE FONT SIZE: the app's --code-scale (0.89, measured as ink
-    // parity between Monaspace and the serif — see global.css) times --mono-scale
+    // Code size as a ratio OF THE PROSE FONT SIZE: the app's --code-scale (measured per prose face as
+    // x-height and ink parity between Monaspace and the serif — settings.ts CODE_SCALES) times --mono-scale
     // (appearance.monoScale). Without it an exported code block sat at the full prose size, and
     // at equal size the mono runs ~24% wider than the serif, so code read far bigger than in the
     // editor. Inline code takes the same ratio in em, as --fs-rel-code does in the app.

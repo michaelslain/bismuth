@@ -4,6 +4,7 @@ import {
     DEFAULTS,
     FONT_STACKS,
     PROSE_SCALES,
+    CODE_SCALES,
 } from '../src/settings'
 import { readFileSync } from 'node:fs'
 import {
@@ -55,6 +56,7 @@ test("the headless export's prose mirrors match the default prose face", () => {
     const face = DEFAULTS.appearance.proseFont
     expect(DEFAULT_PROSE_FONT).toBe(FONT_STACKS[face]!)
     expect(PROSE_SCALE).toBe(PROSE_SCALES[face]!)
+    expect(CODE_SCALE).toBe(CODE_SCALES[face]!)
 })
 
 test("the headless export's code scale mirrors global.css's --code-scale", () => {

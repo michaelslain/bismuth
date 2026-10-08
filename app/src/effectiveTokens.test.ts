@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { overridePx, overrideVars, tokenOverride } from './effectiveTokens'
-import { DEFAULTS, FONT_STACKS, PROSE_SCALES, type Settings } from './settings'
+import { DEFAULTS, FONT_STACKS, PROSE_SCALES, CODE_SCALES, type Settings } from './settings'
 
 const withTokens = (tokens: Record<string, string>, theme = 'ink'): Settings => ({
     ...DEFAULTS,
@@ -47,10 +47,16 @@ describe('overrideVars', () => {
         expect(v['--ui-font-stack']).toBe(FONT_STACKS['Monaspace Neon'])
         expect(v['--prose-font']).toBe(FONT_STACKS['Lora'])
         expect(v['--prose-scale']).toBe(String(PROSE_SCALES['Lora']))
+        expect(v['--code-scale']).toBe(String(CODE_SCALES['Lora']))
     })
 
     it('an explicit prose-scale wins over the derived one', () => {
         const v = overrideVars(withTokens({ 'prose-font': 'Lora', 'prose-scale': '1.2' }), {})
         expect(v['--prose-scale']).toBe('1.2')
+    })
+
+    it('an explicit code-scale wins over the derived one', () => {
+        const v = overrideVars(withTokens({ 'prose-font': 'Lora', 'code-scale': '1.1' }), {})
+        expect(v['--code-scale']).toBe('1.1')
     })
 })

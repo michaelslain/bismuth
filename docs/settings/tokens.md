@@ -243,7 +243,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `prose-scale` | number | `0.97` | Size correction measured for the prose face, so prose reads at one optical size. |
 | `mono-scale` | number | `1` | Optical-size factor for the mono font, 0.6 to 1. Also set by appearance.monoScale. |
 | `glyph-scale` | number | `1.25` | Size of glyph art relative to its cell. |
-| `code-scale` | number | `0.89` | Mono text size relative to the prose around it. |
+| `code-scale` | number | `0.95` | Mono text size relative to the prose around it. |
 
 ### type-scale
 
@@ -432,6 +432,7 @@ Each of these is set on `:root` but is a font metric, a formula over tokens, or 
 | `--prose-font-size` | constraint formula: editor size times the prose scale; set those instead |
 | `--code-font-size` | constraint formula: prose size times code scale times mono scale; set those instead |
 | `--fs-rel-code` | constraint formula: 1em times code scale times mono scale; set those instead |
+| `--prose-row` | constraint formula: the row unit times the prose line height; set those instead |
 | `--sidebar-width` | layout preference: .settings (appearance.sidebarWidth) owns it, and a theme would fight the drag |
 | `--sidebar-graph-height` | layout preference: .settings (appearance.sidebarGraphHeight) owns it |
 | `--tab-rail-width` | layout preference: .settings (appearance.tabRailWidth) owns it, set by dragging |

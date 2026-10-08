@@ -103,7 +103,7 @@ The settings routes (`GET /settings`, `GET /schema`, `GET /config`, `POST /set-s
 
 A 600 ms debounced effect diffs the store against its last snapshot (`diffLeaves` in `app/src/settingsDiff.ts`) and sends one `POST /set-setting` per changed leaf. Persistence starts after the first fetch, so the seed never overwrites your file.
 
-`app/src/settingsCssVars.ts` projects settings and the resolved theme onto `:root` custom properties. The terminal font size and line height are read directly by `app/src/Terminal.tsx`. The 2D/3D graph toggle is a per-window `localStorage` flag, never a setting.
+`app/src/settingsCssVars.ts` projects settings and the resolved theme onto `:root` custom properties. `app/src/Terminal.tsx` reads the terminal's font size and row height back from the projected `--code-font-size` and `--prose-row`. The 2D/3D graph toggle is a per-window `localStorage` flag, never a setting.
 
 ### Add a setting
 

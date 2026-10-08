@@ -170,7 +170,7 @@ A note export takes its look from the running app. `resolvePalette.ts` probes th
 |---|---|
 | `proseFont` | `--prose-font` |
 | `proseLeading` | The app's `calc(var(--row-h) * var(--prose-line-height))` read back as a ratio of the font size |
-| `codeScale` | `--code-scale` (0.89) times `--mono-scale`, read back as a ratio |
+| `codeScale` | `--code-scale` (measured per prose face) times `--mono-scale`, read back as a ratio |
 | `font`, `monoFont` | `--ui-font-stack` (`appearance.uiFont`) |
 | Colours | `--bg`, `--fg`, `--accent` and the category tokens |
 

@@ -19,7 +19,9 @@
 .chat-bubble {
     font-family: var(--prose-font);
     font-size: var(--prose-font-size);
-    line-height: var(--lh-prose);
+    /* A note's row (global.css --prose-row), as a LENGTH: every line of a message, prose or fence,
+       is the same height as a line of a note. */
+    line-height: var(--prose-row);
     color: var(--fg);
     text-wrap: pretty;
     word-wrap: break-word;
@@ -147,7 +149,6 @@
 .chat-bubble pre code {
     background: none;
     padding: 0;
-    line-height: 1.5;
     /* a fence keeps its own line structure — the inline-code `nowrap` above must not reach it */
     white-space: pre;
     /* ...and the inline-code cap above is for inline spans only: the `pre` already scrolls */
@@ -203,6 +204,15 @@
 .chat-bubble pre code {
     font-family: var(--ui-font-stack);
     font-size: var(--code-font-size);
+}
+
+/* THE LINE SETS THE ROW; AN INLINE RUN NEVER DOES — the same rule as the note editor's (global.css's
+   CodeMirror section). The bubble's line-height is a length, inherited as that length by every inline
+   element, and an inline box built around a different face or size (mono `code`, a #tag) lands off
+   the prose strut and stretches its line. line-height 1 keeps each one inside the strut. Zero
+   specificity, so any component class that sets its own line-height still wins. */
+:where(.chat-bubble) :where(a, code, span, strong, b, em, i, s, del, mark, kbd, sub, sup) {
+    line-height: 1;
 }
 
 /* A staged (queued) turn: ink, not a fade — no state is shown by opacity. */

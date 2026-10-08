@@ -24,7 +24,7 @@ import {
     completionStatus,
 } from '@codemirror/autocomplete'
 import { taskDescStart } from './editor/taskComplete'
-import { settings, setSettings } from './settings'
+import { settings, setSettings, CODE_SCALES, DEFAULT_CODE_SCALE } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
 import { expectProseFace, expectUiFace, expectCodeSize, expectBoundToUiFont, expectFamilyReallyLoaded, codeFontPx } from './ui/_fontFace'
 import { CONTENT_PAD_BOTTOM, SCROLL_PAD_VAR } from './editor/drawScrollSpace'
@@ -340,7 +340,7 @@ export const MixedTypography: Story = {
         // The regression this story exists for: a code fence on its own tighter leading.
         await expect(px(styleOf(codeLine)!.lineHeight)).toBe(rhythm)
         await expect(px(styleOf(fmLine)!.lineHeight)).toBe(rhythm)
-        // Every mono construct in a note takes ONE size, --code-font-size, a step below prose (the
+        // Every mono construct in a note takes ONE size, --code-font-size, the size it reads at beside prose (the
         // measurement is in global.css beside the token). The baseline is the token itself,
         // resolved through a probe — the independent source of truth — not codeLine, which is the
         // element under test: deriving "mono" from the thing being asserted on would let a shared
@@ -355,7 +355,12 @@ export const MixedTypography: Story = {
         await expect(bottoms.length).toBe(2)
         for (const el of [codeLine, fmLine, inlineCode, ...tops, ...bottoms])
             await expect(parseFloat(styleOf(el)!.fontSize)).toBeCloseTo(codePx, 3)
-        await expect(parseFloat(scroller.fontSize)).toBeGreaterThan(codePx)
+        // ...and that size is the prose face's measured code scale (settings.ts CODE_SCALES), so
+        // code reads at the size of the sentence it sits in rather than a fixed step under it.
+        await expect(codePx / parseFloat(scroller.fontSize)).toBeCloseTo(
+            CODE_SCALES[settings.appearance.proseFont] ?? DEFAULT_CODE_SCALE,
+            2,
+        )
         // The two fences are ONE style: a frontmatter `---` row and a code ```lang row open (and
         // close) their blocks with rows of the same height, padding and fence-text tone.
         const fenceText = (row: HTMLElement) =>
@@ -393,6 +398,68 @@ export const MixedTypography: Story = {
         const tableCell = canvasElement.querySelector('.cm-table, .cm-table-rendered') as HTMLElement
         await expect(tableCell).not.toBeNull()
         expectProseFace(tableCell)
+    },
+}
+
+const LINE_RHYTHM_TEXT = [
+    'Plain prose to hold the caret.',
+    'A line with **bold** and *italic* runs.',
+    'A line with `inline code` in it.',
+    'A link to [docs](https://example.com/docs) here.',
+    'A wikilink to [[Another Note]] here.',
+    'A body #demo tag here.',
+    'Inline math $x + y$ here.',
+    '- a bullet item',
+    '1. an ordered item',
+    '- [ ] an open task [due 2026-09-14] [high]',
+    '- [x] a done task',
+    '```js',
+    'const answer = 42',
+    '```',
+    'More prose after the block.',
+    '',
+].join('\n')
+
+/** Every row of a note is ONE pitch, whatever it contains. Lines holding a link, inline code or
+ *  bold grew to 27.5px (the hidden `**`/`](url)` marks carried the absolute row line-height at
+ *  font-size 0), lines with a #tag to 24.5px (mono metrics), and list/task rows sat at their own
+ *  20.3px. The prose looked like it had random gaps. This story puts each construct on its own
+ *  single-row line and asserts every one is exactly the scroller's pitch — fence rows excepted,
+ *  which carry deliberate padding. */
+export const LineRhythm: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Line Rhythm.md': LINE_RHYTHM_TEXT } }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Line Rhythm.md"
+                    initialText={LINE_RHYTHM_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            for (const sel of ['.cm-tag', '.cm-link', '.cm-inline-code', '.cm-math', '.cm-task-checkbox', '.cm-codeblock'])
+                if (!canvasElement.querySelector(sel)) throw new Error(`${sel} not rendered yet`)
+            return true
+        })
+        await document.fonts.ready
+        const pitch = px(styleOf(canvasElement.querySelector('.cm-scroller'))!.lineHeight)
+        await expect(pitch).toBeGreaterThan(0)
+        const lines = [...canvasElement.querySelectorAll('.cm-content > .cm-line')] as HTMLElement[]
+        const rows = lines.filter(
+            l => !l.classList.contains('cm-block-top') && !l.classList.contains('cm-block-bottom'),
+        )
+        await expect(rows.length).toBeGreaterThanOrEqual(12)
+        const off = rows
+            .map(l => ({ text: l.textContent!.slice(0, 40), h: Math.round(l.getBoundingClientRect().height * 100) / 100 }))
+            .filter(r => Math.abs(r.h - pitch) > 0.5)
+        await expect(off).toEqual([])
     },
 }
 

@@ -44,6 +44,43 @@ export const Assistant: Story = {
     },
 }
 
+const fenceText = [
+    'Run the migration, then restart:',
+    '',
+    '```sh',
+    'bun run db:migrate',
+    'bun run daemon restart',
+    'bun run daemon logs --since 5m',
+    '```',
+    '',
+    'Both steps are safe to repeat.',
+].join('\n')
+
+/** A fence's lines are the paragraph's pitch: the `pre` keeps the prose size so its row height is a
+ *  prose row, and the smaller mono run sits inside it. A fence on its own tighter leading read as a
+ *  cramped patch pasted into the message. */
+export const CodeFence: Story = {
+    render: () => (
+        <div style={{ width: '480px' }}>
+            <ChatTextBubble text={fenceText} role="assistant" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const pre = await waitFor(() => {
+            const el = canvasElement.querySelector('pre')
+            if (!el) throw new Error('fence not rendered yet')
+            return el as HTMLElement
+        })
+        const prosePitch = parseFloat(getComputedStyle(canvasElement.querySelector('p')!).lineHeight)
+        const cs = getComputedStyle(pre)
+        const lines = pre.textContent!.replace(/\n$/, '').split('\n').length
+        const fencePitch =
+            (pre.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / lines
+        await expect(lines).toBe(3)
+        await expect(Math.abs(fencePitch - prosePitch)).toBeLessThan(0.5)
+    },
+}
+
 /** A long inline span (a path, a quoted command) must not push the transcript sideways: it is
  *  capped at the column and scrolls inside itself, while a short span (`--since`) still never
  *  wraps. Without the cap `nowrap` alone grew the whole transcript a horizontal scrollbar under

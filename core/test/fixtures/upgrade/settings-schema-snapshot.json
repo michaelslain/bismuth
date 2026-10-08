@@ -3344,29 +3344,6 @@
     "max": null,
     "required": false
   },
-  "terminal": {
-    "type": {
-      "kind": "object"
-    },
-    "default": null,
-    "min": null,
-    "max": null,
-    "required": false
-  },
-  "terminal.fontSize": {
-    "type": "number",
-    "default": 13,
-    "min": 9,
-    "max": 20,
-    "required": false
-  },
-  "terminal.lineHeight": {
-    "type": "number",
-    "default": 1.5,
-    "min": 1.2,
-    "max": 2,
-    "required": false
-  },
   "toolbar": {
     "type": {
       "kind": "list",

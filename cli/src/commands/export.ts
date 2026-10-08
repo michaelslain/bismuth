@@ -34,6 +34,8 @@ import {
     FONT_STACKS,
     PROSE_SCALES,
     DEFAULT_PROSE_SCALE,
+    CODE_SCALES,
+    DEFAULT_CODE_SCALE,
 } from '../../../app/src/settings'
 import type {
     ExportFormat,
@@ -99,8 +101,11 @@ async function buildPaletteOverride(
     return {
         ...DEFAULT_PALETTE[theme],
         proseLeading,
-        // global.css's --code-scale times appearance.monoScale, as settingsCssVars.ts projects it.
-        codeScale: CODE_SCALE * (data.appearance?.monoScale ?? 1),
+        // the face's --code-scale times appearance.monoScale, as settingsCssVars.ts projects it;
+        // CODE_SCALE (the default face's) when the vault leaves proseFont unset.
+        codeScale:
+            (proseFont ? (CODE_SCALES[proseFont] ?? DEFAULT_CODE_SCALE) : CODE_SCALE) *
+            (data.appearance?.monoScale ?? 1),
         monoFont: stack(
             data.appearance?.uiFont,
             DEFAULT_PALETTE[theme].monoFont,

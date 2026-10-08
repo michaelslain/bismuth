@@ -465,3 +465,38 @@ export const AnsiPalette: Story = {
         )
     },
 }
+
+/** A TERMINAL LINE IS A NOTE'S CODE LINE: the same mono size (--code-font-size) on the same row
+ *  (--prose-row), read from the tokens a note's code block reads, not from terminal-only numbers.
+ *  The two are resolved through a probe element (both are calc()s) and compared with what xterm
+ *  actually drew. xterm snaps a row to whole device pixels, so the row is allowed one device pixel. */
+export const MatchesNoteCode: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <FakeSocketTerminal
+                id="story-terminal-note-code"
+                frames={['bun run db:migrate\r\n', 'bun run daemon restart\r\n', PROMPT]}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const row = await waitFor(() => {
+            const el = canvasElement.querySelector('.xterm-rows > div')
+            if (!el || !el.textContent?.trim()) throw new Error('no terminal row rendered yet')
+            return el as HTMLElement
+        })
+        const probe = document.createElement('div')
+        probe.style.fontSize = 'var(--code-font-size)'
+        probe.style.lineHeight = 'var(--prose-row)'
+        document.body.append(probe)
+        const note = getComputedStyle(probe)
+        const codePx = parseFloat(note.fontSize)
+        const rowPx = parseFloat(note.lineHeight)
+        probe.remove()
+        await expect(codePx).toBeGreaterThan(0)
+        await expect(parseFloat(getComputedStyle(row).fontSize)).toBeCloseTo(codePx, 2)
+        await expect(
+            Math.abs(row.getBoundingClientRect().height - rowPx),
+        ).toBeLessThanOrEqual(1 / window.devicePixelRatio + 0.01)
+    },
+}

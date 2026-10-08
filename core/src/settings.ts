@@ -470,6 +470,11 @@ const RETIRED_KEYS: readonly (readonly string[])[] = [
     // `appearance.tabFontSize` fed a `--tab-font-size` var that no stylesheet ever read; tab labels
     // are `--fs-ui` like the rest of the chrome.
     ['appearance', 'tabFontSize'],
+    // The whole `terminal` section (fontSize, lineHeight): a terminal's text is a note's code
+    // (--code-font-size on a --prose-row line), so it follows appearance.editorFontSize / monoScale
+    // and editor.lineHeight. Its cursor keys are moved to `appearance` by renameKeys, which runs
+    // before this prune.
+    ['terminal'],
 ]
 
 /** The pair for `key` in `map`, or undefined. */

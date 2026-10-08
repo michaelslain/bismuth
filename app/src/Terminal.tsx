@@ -390,6 +390,27 @@ export function TerminalTab(props: {
         if (term.rows > 0) cellH = rRect.height / term.rows
     }
 
+    // THE TERMINAL'S TEXT IS A NOTE'S CODE: --code-font-size on a --prose-row line, read back as px
+    // from the host's computed style (global.css's Terminal section sets both), so the grid follows
+    // appearance.editorFontSize / monoScale / proseFont and editor.lineHeight with every other
+    // surface. xterm's `lineHeight` is a multiplier of its OWN measured glyph height, not of the
+    // font size, so the multiplier that yields the row is derived from the grid it actually drew at
+    // lineHeight 1.
+    const applyTextMetrics = (): void => {
+        if (!term || !container) return
+        const cs = getComputedStyle(container)
+        const fontSize = parseFloat(cs.fontSize)
+        const row = parseFloat(cs.lineHeight)
+        if (!(fontSize > 0) || !(row > 0)) return
+        term.options.fontSize = fontSize
+        term.options.lineHeight = 1
+        const glyphRow = getRowsEl()?.firstElementChild?.getBoundingClientRect().height ?? 0
+        if (glyphRow > 0) term.options.lineHeight = row / glyphRow
+        fit?.fit()
+        sendResize()
+        recomputeCursorMetrics()
+    }
+
     const sendResize = () => {
         if (!ws || ws.readyState !== WebSocket.OPEN || !term) return
         ws.send(resizeFrame(term.cols, term.rows))
@@ -423,6 +444,11 @@ export function TerminalTab(props: {
     createEffect(() => {
         settings.appearance.theme // track
         settings.appearance.uiFont // track
+        // track: the four leaves --code-font-size and --prose-row are computed from
+        settings.appearance.editorFontSize
+        settings.appearance.monoScale
+        settings.appearance.proseFont
+        settings.editor.lineHeight
         resolveAppearance(settings.appearance) // track custom-theme edits under an unchanged name
         void Object.values(settings.appearance.tokens ?? {}) // track every token value: a token edit repaints the xterm theme
         customThemeOverrides() // track: so does a theme file's non-colour override
@@ -431,6 +457,7 @@ export function TerminalTab(props: {
         queueMicrotask(() => {
             try {
                 if (term) term.options.theme = buildTerminalTheme()
+                applyTextMetrics()
             } catch {
                 /* ignore during teardown */
             }
@@ -626,15 +653,15 @@ export function TerminalTab(props: {
             letterSpacing: 0,
             allowTransparency: false,
             fontFamily,
-            fontSize: settings.terminal.fontSize,
-            lineHeight: settings.terminal.lineHeight,
+            fontSize: parseFloat(getComputedStyle(container).fontSize) || 13,
+            lineHeight: 1,
             theme: buildTerminalTheme(),
         })
 
         fit = new FitAddon()
         term.loadAddon(fit)
         term.open(container)
-        fit.fit()
+        applyTextMetrics()
         term.focus()
 
         // Custom cursor overlay that glides smoothly between positions — xterm's native

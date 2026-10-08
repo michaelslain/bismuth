@@ -453,7 +453,7 @@ describe('terminal cursor settings moved to appearance', () => {
         expect(settings.appearance.cursorBlinkSeconds).toBe(1.8)
         expect(settings.appearance.cursorGlideMs).toBe(120)
         expect(settings.appearance.cursorWidth).toBeUndefined() // never set → stays absent (default)
-        expect(settings.terminal.cursorBlinkSeconds).toBeUndefined()
+        expect(settings.terminal).toBeUndefined() // the whole section is retired once its keys move
         expect(text).toContain('# slow blink please')
         expect(text).toContain('# floaty')
         const lines = text.split('\n')
@@ -487,7 +487,7 @@ describe('terminal cursor settings moved to appearance', () => {
         >
 
         expect(settings.appearance.cursorWidth).toBe(3)
-        expect(settings.terminal.cursorWidth).toBeUndefined()
+        expect(settings.terminal).toBeUndefined()
         rmSync(vault, { recursive: true, force: true })
     })
 })

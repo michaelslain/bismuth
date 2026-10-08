@@ -526,29 +526,30 @@
   --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale));
 
   /* THE ONE SIZE FOR MONO INSIDE PROSE — code blocks and both their fences, frontmatter, inline code,
-     #tags, task checkboxes and fields, list/syntax marks, raw table source. It used to be three sizes
-     from three competing sources (a reset to --editor-font-size, a legacy `1em * --mono-scale`
-     fallback of 0.85, and plain inheritance of the prose size).
-     WHY BELOW PROSE. --prose-scale above matches the two faces' x-heights, which is the right
-     constant for PROSE but the wrong one for code set beside it. Measured in-browser (canvas, the
-     real faces, a 39-char lowercase pangram), Lora at 14.04px against Monaspace Xenon at 13.5px:
-       x-height  — Lora 7.02, mono 6.99  (parity, as designed)
-       width     — Lora 263px, mono 326px (+24%)
-       ink       — Lora 743, mono 862     (+16%)
-     so at equal x-height every code run read visibly bigger and heavier than the sentence around
-     it. At 12.5px mono puts down 733 ink against Lora's 743 — ink parity — and 12.5 / 14.04 = 0.89.
-     Picked by eye from a side-by-side of 13.5 / 12.5 / 12px (2026-09-23). Re-checked for IBM
-     Plex Serif (2026-09-28, canvas ink on the same pangram): code/prose ink is 1.11 for Lora at
-     14.04 → mono 12.5 and 1.10 for Plex at 13.5 → mono 12.0, so 0.89 carries over unchanged.
-     LIBRON (2026-10-07) is a heavier text face: at 13.1px prose against 11.66px mono, mono/prose
-     pangram ink is 0.75 where Plex measured 1.00 by the same @napi-rs/canvas script, so inline
-     code reads slightly lighter than the sentence around it. 0.89 is kept on purpose (the ratio
-     is picked by eye); re-derive here if code looks too faint beside Libron.
+     #tags, task checkboxes and fields, list/syntax marks, raw table source, chat fences and the
+     terminal. Code is set at the size it READS beside the sentence around it, which is not the
+     prose's nominal px: the mono is wider and its x-height and stroke weight differ per prose face.
+     So --code-scale is MEASURED PER FACE, like --prose-scale, and lives in app/src/settings.ts's
+     CODE_SCALES (settingsCssVars.ts repoints this line from appearance.proseFont); this line is the
+     default face's entry, for the frame before settings hydrate:
+       Libron         0.95 — ONE size for every mono run, on its own line or inside a sentence. At
+                             13.1px prose, x-height parity (1.03, 13.5px) matched fences and the
+                             terminal but read oversized inline (Monaspace runs ~29% wider), and the
+                             0.89 the other faces take read small in a fence. Picked by eye between.
+       IBM Plex Serif 0.89 — ink parity on the same pangram (canvas, the real faces).
+       Lora           0.89 — Xenon at 12.5px puts down 733 ink against Lora's 743 at 14.04px.
      DERIVED off --prose-font-size, so it follows appearance.editorFontSize; --mono-scale
      (appearance.monoScale, default 1) stays a personal multiplier on top. KaTeX output is NOT
      code and is not sized by this. */
-  --code-scale: 0.89;
+  --code-scale: 0.95;
   --code-font-size: calc(var(--prose-font-size) * var(--code-scale) * var(--mono-scale, 1));
+
+  /* THE ONE ROW HEIGHT FOR TEXT YOU READ — a line of note prose, a code-block line, a chat message
+     line, a terminal row. The app row unit times editor.lineHeight (--prose-line-height, 1.25 ->
+     22.5px), so prose and code sit on one pitch everywhere they appear and four of these rows span
+     five tree rows. Read as a LENGTH, never a ratio: a ratio would compute a different row for the
+     mono at its own size, which is exactly how code once got tighter leading than the prose around it. */
+  --prose-row: calc(var(--row-h) * var(--prose-line-height));
 }
 
 /* Moved in from ui/ui.css (2026-09-12, CSS modules migration Task 7): these were the two `:root`
@@ -1725,7 +1726,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 
 /* Size reset: THE one place the editor says "mono inside prose = --code-font-size". A deliberately
    SHORTER list than the family reset above. The scroller carries the prose size (--prose-font-size),
-   and every mono construct sits a step below it — see --code-font-size in the tokens for the
+   and every mono construct takes --code-font-size, the size it reads at beside the prose — see the tokens for the
    measurement. livePreview.ts sets NO font-size on any class listed here: two rules of equal
    specificity (`.cm-editor .x` vs the theme's `.ͼN .x`) race on source order, which is exactly how
    code blocks, frontmatter and checkboxes drifted to three different sizes.
@@ -1760,6 +1761,23 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   font-size: var(--fs-rel-code);
 }
 
+/* THE LINE SETS THE ROW HEIGHT; AN INLINE RUN NEVER DOES. The note editor's line-height is an
+   absolute length (Editor.tsx: --row-h * --prose-line-height), and an absolute line-height is
+   inherited as that length by every span inside the line. Each span then builds its own 22.5px
+   inline box around ITS font's metrics, and any span whose metrics differ from the prose strut
+   pushes the line box taller:
+     - the hidden markdown marks (.cm-hidden-syntax, font-size 0) put a 22.5px box centred on the
+       baseline, hanging ~11px below it: every line with a link, a wikilink, inline code or bold
+       grew from 22.5px to 27.5px;
+     - mono runs (#tags, inline code, task fields, the checkbox) centre the box on the mono face's
+       ascent/descent, which sits lower than the prose face's: +2px.
+   line-height 1 keeps every inline box inside the line's own strut, so a row is exactly the
+   pitch whatever it contains. :where() drops the rule to (0,0,1), so any class rule that sets a
+   span's line-height on purpose (the code header, an embed, KaTeX's own .katex) still wins. */
+:where(.cm-editor .cm-line) span {
+  line-height: 1;
+}
+
 /* KaTeX OUTPUT (.cm-math is the rendered widget, .cm-inline-math the table-cell rendering) is not
    code: it keeps its own size, --editor-font-size under KaTeX's built-in 1.21em. Compared by eye
    at 1x / 1.1x / 1.21x prose (2026-09-23) and deliberately left where it was. */
@@ -1787,7 +1805,10 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
  * ============================================================================ */
 /* Terminal host — ASCII redesign.
    Full-pane terminal on the deep --term-bg, following the user's chosen UI face
-   (--ui-font-stack) at 13px/1.6, padded 16px 18px. xterm.js owns the grid + the ANSI
+   (--ui-font-stack) at the size and row height of code in a note (--code-font-size on a
+   --prose-row line), padded 16px 18px. Terminal.tsx reads both back from this element's computed
+   style and hands them to xterm, so a terminal line and a note line are one size and one pitch.
+   xterm.js owns the grid + the ANSI
    palette DERIVED from the scope's tokens (Terminal.tsx buildTerminalTheme — see
    bismuth-design/ascii-extended/PORTING.md §1a): prompt/errors/paths etc. move with the scope,
    not hand-picked here. We only theme the host container + the custom cursor. */
@@ -1800,8 +1821,8 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
   background: var(--term-bg, #08090e);
   color: var(--term-fg, var(--fg));
   font-family: var(--ui-font-stack, "Monaspace Xenon"), ui-monospace, monospace;
-  font-size: var(--fs-body);
-  line-height: 1.6;
+  font-size: var(--code-font-size);
+  line-height: var(--prose-row);
   padding: var(--sp-6) 18px;
   overflow: hidden;
 }

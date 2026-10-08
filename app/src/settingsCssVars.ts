@@ -7,6 +7,8 @@
 import {
     FONT_STACKS,
     PROSE_SCALES,
+    CODE_SCALES,
+    DEFAULT_CODE_SCALE,
     DEFAULT_PROSE_SCALE,
     DEFAULT_ACCENT_PALETTE,
     type Settings,
@@ -218,6 +220,9 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
             FONT_STACKS[s.appearance.proseFont] ?? FONT_STACKS['Libron'],
         '--prose-scale': String(
             PROSE_SCALES[s.appearance.proseFont] ?? DEFAULT_PROSE_SCALE,
+        ),
+        '--code-scale': String(
+            CODE_SCALES[s.appearance.proseFont] ?? DEFAULT_CODE_SCALE,
         ),
         '--editor-font-size': s.appearance.editorFontSize + 'px',
         '--icon': s.appearance.iconSize + 'px',

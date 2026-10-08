@@ -623,22 +623,6 @@ export const SETTINGS_SCHEMA: Schema = {
             doc: 'Auto-apply Bismuth app updates on launch in the background, then relaunch when the rebuild is ready (off = manual via the update banner).',
         },
     }),
-    terminal: object({
-        fontSize: {
-            type: 'number',
-            default: 13,
-            min: 9,
-            max: 20,
-            doc: 'Terminal font size (px).',
-        },
-        lineHeight: {
-            type: 'number',
-            default: 1.5,
-            min: 1.2,
-            max: 2,
-            doc: 'Terminal line height (multiplier).',
-        },
-    }),
     chat: object({
         // Derived from the agent-backend catalog — no hand-maintained copy to drift from BACKEND_IDS.
         provider: {

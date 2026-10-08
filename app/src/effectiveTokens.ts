@@ -4,7 +4,14 @@
 // NOT handled here — they arrive through resolveAppearance. Everything else projects straight
 // onto :root, so a token edit retargets the live app with no component change.
 import { tokenDef, type TokenMap } from '../../core/src/theme/designTokens'
-import { FONT_STACKS, PROSE_SCALES, DEFAULT_PROSE_SCALE, type Settings } from './settings'
+import {
+    FONT_STACKS,
+    PROSE_SCALES,
+    DEFAULT_PROSE_SCALE,
+    CODE_SCALES,
+    DEFAULT_CODE_SCALE,
+    type Settings,
+} from './settings'
 
 type ThemeOverrides = Readonly<Record<string, TokenMap>>
 
@@ -51,6 +58,10 @@ export function overrideVars(
                 if (!('prose-scale' in merged))
                     out['--prose-scale'] = String(
                         PROSE_SCALES[value] ?? DEFAULT_PROSE_SCALE,
+                    )
+                if (!('code-scale' in merged))
+                    out['--code-scale'] = String(
+                        CODE_SCALES[value] ?? DEFAULT_CODE_SCALE,
                     )
             }
         } else out[`--${key}`] = value
