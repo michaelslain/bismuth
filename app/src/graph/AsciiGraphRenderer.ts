@@ -4530,7 +4530,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
     private onPointerCancel = () => this.releaseDrag()
 
+    // Listens on `window` so a drag released off the field still ends, which means it also hears
+    // every release in the app. Only a press that began on the viewport counts: without this gate a
+    // click in a note or the chat composer over a laid-out graph hit-tests a node and opens it.
     private onPointerUp = (e: PointerEvent) => {
+        if (!this.pressed) return
         const wasDrag = this.dragging || this.movedFar
         this.releaseDrag()
         if (wasDrag) return

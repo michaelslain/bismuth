@@ -5929,6 +5929,24 @@ describe('interaction', () => {
         r.destroy()
     })
 
+    it('a release whose press began OUTSIDE the field opens nothing (a click in a note or the chat composer)', () => {
+        const { r, clicks } = mountRenderer('2d')
+        r.frameSubset(['n0'])
+        settle(200)
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        r.setSearchMatches(new Set())
+        frame(9999)
+        const p = nodeHit()
+        // The press lands on another pane laid out over the same coordinates, so the viewport never
+        // sees a pointerdown — only the window-level pointerup.
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: p.x, clientY: p.y }),
+        )
+        expect(clicks).toEqual([])
+        r.destroy()
+    })
+
     it('clicking an AGGREGATE ENTITY at fit expands it (zooms toward its members) instead of opening a note', () => {
         const { r, viewport, clicks, zooms } = mountRenderer('2d', lodGraph(), {
             showLodMasses: true,
