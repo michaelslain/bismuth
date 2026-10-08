@@ -12,9 +12,15 @@ import { server } from '../src/server'
 // every session about as much). Raised 150 → 160 for the one-sentence bismuth_doctor pointer.
 // Raised 160 → 200 for the visibility pointer: without it an agent asked "which notes are off
 // limits to ai" grepped invented frontmatter keys and never found the one command that answers.
+// Raised 200 → 240 for the task pointer: asked "when is my essay draft due", a chat grepped the
+// vault for "essay", a word no task used, before reading a task file by hand.
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(200)
+    expect(words).toBeLessThan(240)
+})
+
+test('SERVER_INSTRUCTIONS sends task and deadline questions to bismuth task list', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('bismuth task list --query')
 })
 
 test('SERVER_INSTRUCTIONS answers "what is hidden from AI" with the deny-list command', () => {

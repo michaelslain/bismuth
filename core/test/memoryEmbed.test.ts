@@ -636,6 +636,7 @@ test('a tool call the semantic channel scored says so even when nothing injects'
     await sleep(30)
     await channel.stores.get('/mem')!.flush()
     await svc.recall({ mode: 'tool', sessionId: 's-b', toolCalls }) // injects the cosine-1 note
+    await svc.recall({ mode: 'prompt', sessionId: 's-b', prompt: 'zzz' }) // a new turn, past the per-turn tool cap
     const r = await svc.recall({ mode: 'tool', sessionId: 's-b', toolCalls }) // already shown: nothing
     expect(r.injected).toEqual([])
     expect(r.reason).toBe('no-match')

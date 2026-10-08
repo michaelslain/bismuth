@@ -14,6 +14,10 @@ export const SERVER_INSTRUCTIONS =
     'first read guides/converting-obsidian-to-bismuth.md or ' +
     'guides/converting-bismuth-to-obsidian.md. ' +
     'Making or changing a colour theme: first read guides/custom-themes.md. ' +
+    "Asked about the user's tasks, deadlines or what is due: run `bismuth task list --query " +
+    "'not done and due before <date>'` and read the descriptions, never grep for the user's " +
+    'wording; tasks live in any note and a task names its deliverable, not its project ' +
+    '(tasks/syntax.md). ' +
     "An image or PDF has no frontmatter of its own — its tags/properties live in its companion " +
     'note <file>.<ext>.md (e.g. paper.pdf.md), a hidden file the app opens as the binary itself. ' +
     "To tag or set a property on a binary, run `bismuth prop set <file.pdf> tags '[\"a\",\"b\"]'` " +

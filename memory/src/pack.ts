@@ -41,11 +41,15 @@ export type PackLimits = {
     /** Tool payloads: a lone body hit never qualifies a note, and a note matched only on context
      *  terms that are not in its name/tags/description needs three of them (`rankNotes`). */
     strictEvidence?: boolean
+    /** Tool mode: how many tool batches may inject between two user prompts. Each batch's dedup
+     *  pushes the next one down to the next-best unseen notes, so an uncapped turn of many small
+     *  tool calls drips weaker and weaker matches. Unset = no cap. */
+    maxBatchesPerTurn?: number
 }
 
 export const PACK_LIMITS: Record<Exclude<RecallMode, 'session-start'>, PackLimits> = {
     prompt: { maxNotes: 5, perNoteChars: 900, budgetChars: 6000, pointers: 5, minScore: 0.08, semanticMinScore: 0.12, semanticMinCosine: 0.55 },
-    tool: { maxNotes: 2, perNoteChars: 600, budgetChars: 1800, pointers: 0, minScore: 0.21, semanticMinCosine: 0.65, contextWeight: 0.5, locationWeight: 0.3, maxQueryWeight: 3, strictEvidence: true },
+    tool: { maxNotes: 2, perNoteChars: 600, budgetChars: 1800, pointers: 0, minScore: 0.21, semanticMinCosine: 0.65, contextWeight: 0.5, locationWeight: 0.3, maxQueryWeight: 3, strictEvidence: true, maxBatchesPerTurn: 1 },
     subagent: { maxNotes: 4, perNoteChars: 700, budgetChars: 4000, pointers: 4, minScore: 0.08, semanticMinCosine: 0.55 },
 }
 

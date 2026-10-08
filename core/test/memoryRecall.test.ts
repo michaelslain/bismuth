@@ -120,13 +120,17 @@ test('a prompt-injected note is not re-injected by a tool call, until reset / co
     expect((await svc.recall(prompt())).injected).toEqual(['a'])
     expect((await svc.recall(tool())).reason).toBe('no-match')
 
+    // a prompt that matches nothing opens a new turn, so the per-turn tool cap stays out of the way
+    const nextTurn = () => svc.recall(prompt('s', { prompt: 'zzz' }))
     svc.reset('s')
     expect((await svc.recall(tool())).injected).toEqual(['a'])
 
+    await nextTurn()
     expect((await svc.recall(tool())).reason).toBe('no-match')
     await svc.recall({ mode: 'session-start', sessionId: 's', source: 'compact' })
     expect((await svc.recall(tool())).injected).toEqual(['a'])
 
+    await nextTurn()
     expect((await svc.recall(tool())).reason).toBe('no-match')
     setNotes([mkNote('a', 'alpha one changed'), mkNote('b', 'beta two')])
     expect((await svc.recall(tool())).injected).toEqual(['a'])
@@ -300,6 +304,30 @@ test('a compact while recall is disabled still clears the ledger', async () => {
     await svc.recall({ mode: 'session-start', sessionId: 's', source: 'compact' })
     state.settings.enabled = true
     expect((await svc.recall(tool())).injected).toEqual(['a'])
+})
+
+test('a prompt is ranked without the editor-context block the app prepends', async () => {
+    const { svc } = make()
+    const r = await svc.recall(
+        prompt('s', { prompt: '<editor-context>\nActive pane: beta\n</editor-context>\n\nalpha' }),
+    )
+    expect(r.injected).toEqual(['a'])
+})
+
+test('one tool batch injects per turn; the next prompt opens a new turn', async () => {
+    const { svc, setNotes } = make()
+    setNotes([mkNote('a', 'alpha one'), mkNote('b', 'beta two'), mkNote('c', 'gamma three')])
+    const call = (w: string, extra = {}) =>
+        tool('s', { toolCalls: [{ tool_name: 'Read', tool_input: w }], ...extra })
+    expect((await svc.recall(call('alpha'))).injected).toEqual(['a'])
+    expect((await svc.recall(call('beta'))).reason).toBe('turn-budget')
+    await svc.recall(prompt('s', { prompt: 'zzz' }))
+    // a batch that matched nothing does not spend the turn
+    expect((await svc.recall(call('zzz'))).reason).toBe('no-match')
+    expect((await svc.recall(call('beta'))).injected).toEqual(['b'])
+    expect((await svc.recall(call('gamma'))).reason).toBe('turn-budget')
+    // each subagent has its own turn
+    expect((await svc.recall(call('gamma', { agentId: 'w' }))).injected).toEqual(['c'])
 })
 
 test('the tokenless recall path never returns a visibility:hidden note', async () => {

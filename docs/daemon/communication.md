@@ -28,10 +28,14 @@ Memory is injected at these moments. Each is a request to core's `POST /memory/r
 |---|---|---|---|
 | A session starts, resumes, clears or compacts | `SessionStart` | A memory index: one line per note, `[[name]] (type) — description`, plus the full text of short `preference` notes | About 9,500 characters; the lowest-value types are dropped first, and a line says how many were left out |
 | You submit a prompt | `UserPromptSubmit` | Excerpts of the notes that best match the prompt | 5 notes, 900 characters each, 6,000 in total |
-| A batch of tool calls ends | `PostToolBatch` | Excerpts matching what the tools just did | 2 notes, 600 characters each, 1,800 in total, with a stricter match rule |
+| A batch of tool calls ends | `PostToolBatch` | Excerpts matching what the tools just did | 2 notes, 600 characters each, 1,800 in total, with a stricter match rule; one batch per prompt |
 | A subagent starts | `SubagentStart` | Excerpts matching the task given to the subagent | 4 notes, 700 characters each, 4,000 in total |
 
 Ranking is BM25 over each note's name, tags, description and body, with the name and tags counting most. Preference notes get a small boost and `daily` and `auto` notes a penalty. A note must clear a score floor to be injected, and in a vault of 12 or more notes a note whose only evidence is a single body word that is a small share of the prompt is dropped. An excerpt is the note's header, its file path, its description and its best-matching section, never the whole note. The prompt and subagent blocks end with up to 5 and 4 one-line pointers to related notes that did not fit.
+
+A prompt is matched on what you typed: the `<editor-context>` block the app puts in front of a chat prompt is removed before ranking.
+
+Tool-batch recall injects for at most one batch between two prompts, and each subagent counts its own. A turn of many tool calls would otherwise drip the next-best unsent notes, each weaker than the last, after every batch.
 
 A note is sent once per session. Core remembers what each session and subagent has seen and skips a note until its content changes. After a `compact` or `clear` the memory has left the agent's context, so the record resets and the session-start index is sent again.
 
@@ -110,7 +114,7 @@ The reranker judges each passage against `rerankQuery`. That is the prompt itsel
 
 ### One service behind every surface
 
-`createRecallService` in `core/src/memoryRecall.ts` is the single implementation. The relay hooks reach it through the route, and the visual chat (`core/src/chat.ts`) and opencode call `recallServiceFor` in-process, so all of them share one already-sent record per session. A recall that was abandoned (the caller timed out) never adds to the record, because the agent never saw the notes. The service rebuilds its index only when a note file's modification time or size changed, and reads `.settings` on every request. It answers `reason: disabled`, `mid-turn-off`, `no-memory` or `no-match` when it injects nothing.
+`createRecallService` in `core/src/memoryRecall.ts` is the single implementation. The relay hooks reach it through the route, and the visual chat (`core/src/chat.ts`) and opencode call `recallServiceFor` in-process, so all of them share one already-sent record per session. A recall that was abandoned (the caller timed out) never adds to the record, because the agent never saw the notes. The service rebuilds its index only when a note file's modification time or size changed, and reads `.settings` on every request. It answers `reason: disabled`, `mid-turn-off`, `no-memory`, `no-match` or `turn-budget` (a tool batch after this turn's one injection) when it injects nothing.
 
 ### Device files
 

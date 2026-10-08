@@ -48,7 +48,7 @@ export type RecallRequest = {
 export type RecallResponse = {
     context: string | null
     injected: string[]
-    reason?: 'disabled' | 'mid-turn-off' | 'no-memory' | 'no-match'
+    reason?: 'disabled' | 'mid-turn-off' | 'no-memory' | 'no-match' | 'turn-budget'
     /** True when the semantic channel contributed scores to this ranking. */
     semantic?: true
     /** True when the cross-encoder gate decided this request (injected or refused). */
@@ -217,7 +217,8 @@ async function rerankGate(
     }
 }
 
-type LedgerEntry = { lastSeen: number; injected: Map<string, string> }
+/** `toolBatches`: tool batches that injected since this key's last prompt (or subagent start). */
+type LedgerEntry = { lastSeen: number; injected: Map<string, string>; toolBatches: number }
 
 export function createRecallService(deps: RecallDeps): {
     recall(req: RecallRequest): Promise<RecallResponse>
@@ -345,6 +346,22 @@ export function createRecallService(deps: RecallDeps): {
             return context ? { context, injected: [] } : none('no-match')
         }
 
+        const key = keyOf(req.sessionId, req.agentId)
+        const ledger = ledgers.get(key) ?? {
+            lastSeen: t,
+            injected: new Map<string, string>(),
+            toolBatches: 0,
+        }
+        // A new prompt opens a new turn, whatever this recall goes on to inject.
+        if (req.mode !== 'tool') ledger.toolBatches = 0
+        const perTurn = mem.PACK_LIMITS.tool.maxBatchesPerTurn
+        if (req.mode === 'tool' && perTurn !== undefined && ledger.toolBatches >= perTurn) {
+            ledger.lastSeen = t
+            ledgers.set(key, ledger)
+            return none('turn-budget')
+        }
+        if (req.mode !== 'tool') ledgers.set(key, ledger)
+
         const eng = engine()
         const entries = req.transcriptPath
             ? await readTranscript(req.transcriptPath)
@@ -377,7 +394,9 @@ export function createRecallService(deps: RecallDeps): {
                 (entries.length ? eng.lastAgentPrompt(entries) : null) ??
                 ''
         } else {
-            primary = req.prompt ?? ''
+            // The app prepends an <editor-context> block to every chat prompt; ranked raw, its pane
+            // name outweighs a short question.
+            primary = mem.stripInjectedBlocks(req.prompt ?? '')
             if (entries.length) context = eng.contextFromTranscript(entries)
         }
         if (!primary.trim() && !context?.trim() && !location?.trim()) return none('no-match')
@@ -402,11 +421,6 @@ export function createRecallService(deps: RecallDeps): {
             mem.rankOptions(req.mode, semantic),
         )
 
-        const key = keyOf(req.sessionId, req.agentId)
-        const ledger = ledgers.get(key) ?? {
-            lastSeen: t,
-            injected: new Map<string, string>(),
-        }
         // A note already shown with this exact content is skipped; a changed hash counts as new.
         const exclude = new Set<string>()
         for (const n of notes)
@@ -444,6 +458,7 @@ export function createRecallService(deps: RecallDeps): {
         // The caller gave up on this recall, so the model never saw these notes: leave the ledger be.
         if (req.signal?.aborted) return none('no-match')
         for (const i of packed.injected) ledger.injected.set(i.name, i.hash)
+        if (req.mode === 'tool') ledger.toolBatches++
         ledger.lastSeen = t
         ledgers.set(key, ledger)
         return {
