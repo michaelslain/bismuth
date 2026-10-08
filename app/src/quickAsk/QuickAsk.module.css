@@ -1,0 +1,85 @@
+/* QuickAsk.module.css — QuickAsk.tsx is the ONLY importer. The box itself (opaque fill, hairline,
+   hard lift) is <Popover tone="panel">; this file is the padding, the header row, the rule
+   above the thread, and the right-aligned footer. */
+.quick-ask {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5);
+    box-sizing: border-box;
+    /* AnchoredPopover portals to <body>, outside .app-shell where the UI font is set. */
+    font: var(--fs-ui) / var(--lh-ui) var(--ui-font-stack);
+}
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    min-width: 0;
+}
+/* Face, 6px, name: one unit; the 8px row gap then separates it from the input. */
+.who {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+.input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: inherit;
+}
+/* The reply input sits under the thread at full width, ruled off from it, behind a faint `> `. */
+.reply {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    border-top: var(--rule);
+    padding-top: var(--sp-4);
+}
+.prompt {
+    flex: 0 0 auto;
+    font-size: var(--fs-body);
+    line-height: var(--lh-prose);
+}
+/* Name, inputs and user lines share one font, size and line box so the header row never jumps
+   on Enter. */
+.name,
+.input,
+.user {
+    font-family: inherit;
+    font-size: var(--fs-body);
+    line-height: var(--lh-prose);
+}
+.name {
+    color: var(--fg);
+    white-space: nowrap;
+}
+.user {
+    overflow-wrap: anywhere;
+}
+/* The thread: a rule above, then the turns, scrolling past 40vh. */
+.body {
+    border-top: var(--rule);
+    padding-top: var(--sp-4);
+    max-height: 40vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
+}
+/* One reply's parts stay close (paragraph rhythm); a user line binds to the reply under it. */
+.turn {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+}
+.user + .turn {
+    margin-top: calc(-1 * var(--sp-3));
+}
+.footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-5);
+    margin-top: var(--sp-3);
+}

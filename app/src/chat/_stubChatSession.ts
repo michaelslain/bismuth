@@ -214,6 +214,7 @@ export function makeStubChatSession(
         answerQuestion: (id, answers) => log('answerQuestion')(id, answers),
         cancelQueued: queueId => log('cancelQueued')(queueId),
         setPermissionMode: mode => log('setPermissionMode')(mode),
+        setPermissionModeLocal: mode => log('setPermissionModeLocal')(mode),
         switchModel: model => log('switchModel')(model),
         switchEffort: level => log('switchEffort')(level),
         applyPreset: preset => log('applyPreset')(preset),

@@ -35,10 +35,11 @@ import {
     type QuestionPart,
     type UserItem,
 } from './chatTranscriptLogic'
-import { getFocusedSelection } from '../editorRegistry'
+import { getAppSelection } from './appSelection'
 import {
     getEditorTabs,
     addChatReference,
+    getChatInstruction,
     getChatReferences,
     clearChatReferences,
 } from './chatContext'
@@ -78,7 +79,10 @@ import { restoreQueuedComposerState } from './chatQueueRestore'
 import { lastChange } from '../serverVersion'
 import { vaultTree, refreshVaultTree } from '../treeStore'
 import { gateDone, gateError, gateStop } from './chatTurnGate'
-import { reconcilePermissionMode } from './chatPermissionMode'
+import {
+    reconcilePermissionMode,
+    type PermissionMode,
+} from './chatPermissionMode'
 import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from './chatEffort'
 import {
     basename,
@@ -197,6 +201,8 @@ export type ChatSession = {
     answerQuestion: (id: string, answers: Record<string, string> | null) => void
     cancelQueued: (queueId: string) => void
     setPermissionMode: (mode: string) => void
+    /** Set this session's permission mode WITHOUT persisting it as the user's default (quick ask). */
+    setPermissionModeLocal: (mode: PermissionMode) => void
     switchModel: (model: string) => void
     switchEffort: (level: string) => void
     switchProvider: (provider: string) => void
@@ -233,16 +239,19 @@ const QUOTE_HEAD_MAX = 300
 function buildEditorContext(
     hiddenPaths: ReadonlySet<string>,
     referencedFiles: string[],
+    instruction: string | null,
 ): string {
-    const sel = getFocusedSelection()
-    const { openFiles, activeFile } = getEditorTabs()
+    const sel = getAppSelection()
+    const { openFiles, activeFile, activePane } = getEditorTabs()
     return buildEditorContextText({
         activeFile,
+        activePane,
         openFiles,
-        selection: sel?.selection ?? '',
+        selection: sel?.text ?? '',
         selectionPath: sel?.path,
         hiddenPaths,
         referencedFiles,
+        instruction,
     })
 }
 
@@ -928,7 +937,11 @@ export function createChatSession(chatId: string): ChatSession {
         // Editor context rides the WIRE only; skipped for slash commands (a preamble breaks them).
         const preamble = text.startsWith('/')
             ? ''
-            : buildEditorContext(hiddenPaths(), getChatReferences(chatId))
+            : buildEditorContext(
+                  hiddenPaths(),
+                  getChatReferences(chatId),
+                  getChatInstruction(chatId),
+              )
         const wire = preamble ? `${preamble}\n\n${text}` : text
         const bubbleImages = atts.map(
             a => `data:${a.mediaType};base64,${a.data}`,
@@ -1095,6 +1108,12 @@ export function createChatSession(chatId: string): ChatSession {
     const setPermissionMode = (mode: string) => {
         setPermMode(mode)
         persistMode(storage, mode)
+        sendJson({ type: 'set_permission_mode', mode })
+    }
+    // Session-local: sets the signal (which the first-manifest push and every later reconcile read, so
+    // it holds for this session) and tells the server, but never touches the persisted last mode.
+    const setPermissionModeLocal = (mode: PermissionMode) => {
+        setPermMode(mode)
         sendJson({ type: 'set_permission_mode', mode })
     }
 
@@ -1448,6 +1467,7 @@ export function createChatSession(chatId: string): ChatSession {
         answerQuestion,
         cancelQueued,
         setPermissionMode,
+        setPermissionModeLocal,
         switchModel,
         switchEffort,
         switchProvider,

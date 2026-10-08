@@ -2610,6 +2610,10 @@ export function extractEditorContextPaths(text: string): string[] {
                 .map(s => s.trim())
                 .filter(Boolean),
         )
+    // `Active pane:` names a path only in the export-screen form; every other label is ignored.
+    // Must match the producer: EXPORT_PANE_LABEL in app/src/chat/paneContextLabel.ts
+    const pane = block.match(/^Active pane: export options for (.+)$/m)
+    if (pane) out.push(pane[1]!.trim())
     const sel = block.match(/^Current selection \(from (.+)\):$/m)
     if (sel) out.push(sel[1]!.trim())
     return out

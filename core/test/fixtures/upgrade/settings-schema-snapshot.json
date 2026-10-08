@@ -2933,6 +2933,13 @@
     "max": null,
     "required": false
   },
+  "keybindings.quick-ask": {
+    "type": "keybind",
+    "default": "Mod+K",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.quick-switcher": {
     "type": "keybind",
     "default": "Mod+O",

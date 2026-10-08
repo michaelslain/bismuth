@@ -95,6 +95,9 @@ export interface CommandHandlers {
     openEmojiLibrary: () => void | Promise<void>
     // Open a fresh Claude Code chat session in its own tab.
     newClaudeChat: () => void
+    // Open the Cmd+K quick-ask popover at the caret (focused editor) or the focused pane's top.
+    // Opening creates no chat session — only a trusted Enter in the popover does.
+    quickAsk: () => void
     // Whole-app UI zoom (see app/src/zoom.ts) — step in/out or reset to 100%.
     zoomIn: () => void
     zoomOut: () => void
@@ -144,6 +147,7 @@ export function bindCommands(
         'new-spreadsheet': h.newSpreadsheet,
         'new-drawing': h.newDrawing,
         'new-claude-chat': h.newClaudeChat,
+        'quick-ask': h.quickAsk,
         export: h.exportActive,
         'archive-tasks': h.archiveTasks,
         'archive-all-tasks': h.archiveAllTasks,

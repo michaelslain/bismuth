@@ -10,7 +10,7 @@ appearance:
 layout:
   sidebarSide: right
 keybindings:
-  command-palette: Mod+K
+  command-palette: Mod+Shift+K
 ```
 
 Read this page to learn how `.settings` behaves. [Settings reference](reference.md) lists every section, key and default.

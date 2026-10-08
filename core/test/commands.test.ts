@@ -104,6 +104,10 @@ describe('ui control gate', () => {
         expect(isUiControlAllowed('daemon-update')).toBe(false)
     })
 
+    it('refuses quick-ask via app control', () => {
+        expect(isUiControlAllowed('quick-ask')).toBe(false)
+    })
+
     it('refuses an id that is not in the catalog at all', () => {
         expect(isUiControlAllowed('not-a-command')).toBe(false)
     })
@@ -159,7 +163,8 @@ describe('interactive commands', () => {
         const actual = COMMAND_CATALOG.filter(c => c.interactive)
             .map(c => c.id)
             .sort()
-        expect(actual).toEqual([...interactiveIds].sort())
+        // quick-ask is interactive AND blocklisted (a person must type; app control cannot start it).
+        expect(actual).toEqual([...interactiveIds, 'quick-ask'].sort())
     })
 
     it('still allows every interactive command via app control (opening it to show a person how is the point)', () => {

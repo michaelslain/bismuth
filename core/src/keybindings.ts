@@ -46,6 +46,12 @@ export const KEYBINDING_CATALOG = [
         doc: 'Open/close the command palette.',
     },
     {
+        id: 'quick-ask',
+        label: 'Ask the daemon',
+        default: 'Mod+K',
+        doc: 'Open the quick-ask popover above the caret (or at the top of a non-note pane) — one question to the daemon, answered inline.',
+    },
+    {
         id: 'quick-switcher',
         label: 'Toggle quick switcher',
         default: 'Mod+O',

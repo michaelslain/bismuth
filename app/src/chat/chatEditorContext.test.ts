@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { buildEditorContextText } from './chatEditorContext'
+import { paneContextLabel } from './paneContextLabel'
 
 describe('buildEditorContextText', () => {
     test("returns '' when there's no active file and no selection", () => {
@@ -138,5 +139,95 @@ describe('buildEditorContextText', () => {
             referencedFiles: ['a.md'],
         })
         expect(text).not.toContain('Referenced files:')
+    })
+})
+
+describe('buildEditorContextText activePane', () => {
+    test('emits Active pane and is non-empty with only a pane', () => {
+        const text = buildEditorContextText({
+            activeFile: null,
+            activePane: 'daemon page',
+            openFiles: [],
+            selection: '',
+            hiddenPaths: new Set(),
+        })
+        expect(text).toContain('Active pane: daemon page')
+    })
+    test('goes right after the Active file line', () => {
+        const text = buildEditorContextText({
+            activeFile: 'a.md',
+            activePane: 'terminal',
+            openFiles: [{ path: 'a.md', label: 'a' }],
+            selection: '',
+            hiddenPaths: new Set(),
+        })
+        const lines = text.split('\n')
+        expect(lines[1]).toBe('Active file: a.md')
+        expect(lines[2]).toBe('Active pane: terminal')
+    })
+    test('drops an export label naming a hidden path', () => {
+        const text = buildEditorContextText({
+            activeFile: null,
+            activePane: 'export options for secret.md',
+            openFiles: [],
+            selection: '',
+            hiddenPaths: new Set(['secret.md']),
+        })
+        expect(text).toBe('')
+    })
+    test('drops a real export label built by paneContextLabel for a hidden path', () => {
+        const text = buildEditorContextText({
+            activeFile: 'a.md',
+            activePane: paneContextLabel('::export:secret.md'),
+            openFiles: [],
+            selection: '',
+            hiddenPaths: new Set(['secret.md']),
+        })
+        expect(text).not.toContain('Active pane:')
+    })
+    test('a hidden folder named graph does not drop the graph label', () => {
+        const text = buildEditorContextText({
+            activeFile: null,
+            activePane: 'knowledge graph (2nd brain)',
+            openFiles: [],
+            selection: '',
+            hiddenPaths: new Set(['graph']),
+        })
+        expect(text).toContain('Active pane: knowledge graph (2nd brain)')
+    })
+})
+
+describe('buildEditorContextText instruction', () => {
+    const base = {
+        activeFile: null,
+        openFiles: [],
+        selection: '',
+        hiddenPaths: new Set<string>(),
+    }
+    test('is non-empty with only an instruction', () => {
+        expect(
+            buildEditorContextText({ ...base, instruction: 'answer briefly' }),
+        ).toBe('<editor-context>\nInstruction: answer briefly\n</editor-context>')
+    })
+    test('goes first, before the Active file line', () => {
+        const lines = buildEditorContextText({
+            ...base,
+            activeFile: 'a.md',
+            openFiles: [{ path: 'a.md', label: 'a' }],
+            instruction: 'be short',
+        }).split('\n')
+        expect(lines[1]).toBe('Instruction: be short')
+        expect(lines[2]).toBe('Active file: a.md')
+    })
+    test('collapses newlines to one line', () => {
+        const text = buildEditorContextText({
+            ...base,
+            instruction: 'one\ntwo \n\n three',
+        })
+        expect(text).toContain('Instruction: one two three\n')
+    })
+    test('null or blank instruction adds nothing', () => {
+        expect(buildEditorContextText({ ...base, instruction: null })).toBe('')
+        expect(buildEditorContextText({ ...base, instruction: '  \n ' })).toBe('')
     })
 })

@@ -606,7 +606,7 @@ One key per app-level shortcut, each a `keybind` combo string. The section is a 
 
 ```yaml
 keybindings:
-  command-palette: Mod+K
+  command-palette: Mod+Shift+K
   terminal: "Mod+`, Mod+J, Mod+Alt+T"
 ```
 

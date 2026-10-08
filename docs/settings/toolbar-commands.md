@@ -163,6 +163,12 @@ These are the built-in commands, grouped by area. `COMMAND_CATALOG` in `core/src
 | `gcal-sync` | Sync Google Calendar | `RefreshCw` |  |
 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` |  |
 
+### Ask the daemon
+
+| id | label | default icon | dialog |
+|---|---|---|---|
+| `quick-ask` | Ask the daemon… | `MessageSquare` | yes |
+
 Notes on individual commands:
 
 - `new-tab` and `open-graph`. `new-tab` always opens a fresh home tab, which is the knowledge graph. `open-graph` focuses an existing graph tab and opens one only if none is open.
@@ -171,6 +177,7 @@ Notes on individual commands:
 - `archive-tasks` and `archive-all-tasks`. They permanently remove completed and cancelled tasks, from the active note or from every note.
 - `detect-ai`. It estimates how AI-generated the active page reads and shows the score in a toast. The detector runs on your device with no network call, other than a one-time model download of about 34 MB on first use. It needs at least 40 words of prose.
   It was trained on a corpus without Claude text, so treat the score as a rough hint and not as proof.
+- `quick-ask`. It opens the [quick ask popover](../chat/overview.md#how-do-i-ask-a-quick-question), the same as its `Mod+K` shortcut, anchored at the caret in a note or at the top of another pane. It only opens the popover, so it counts as a dialog command. App control refuses it, because a person has to type the question.
 - `emoji-library`. It opens the emoji picker and inserts your pick at the cursor of the focused note.
 - `edit-dictionary`. It opens the list of words you added to the spellcheck dictionary, so you can remove them.
 - Graph modes. `graph-2nd` shows the vault, `graph-3rd` the memory graph, `graph-both` both with their cross-links, and `graph-local` the neighbourhood of the open note. See [graph overview](../graph/overview.md).
@@ -187,8 +194,8 @@ Notes on individual commands:
 `bismuth app run <id>` (and the matching MCP tool) runs a command in an open window. `bismuth app commands` lists the ids it accepts. [App control](../mcp/app-control.md) covers the routes and tools.
 
 - Dialog commands stay runnable. An agent can open the Google Calendar connect dialog to show you how. The reply says `interactive: true` with a note that a person needs to finish it, instead of implying the task is done.
-- Some commands are refused. `new-window`, `open-folder`, `update-app`, `daemon-update` and `new-claude-chat` return `command "<id>" is not allowed via app control`.
-  They are heavyweight, or open a live agent session, and an unattended caller should not trigger them blindly. Everything else in the catalog is allowed.
+- Some commands are refused. `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` and `quick-ask` return `command "<id>" is not allowed via app control`.
+  They are heavyweight, or open a live agent session or a quick ask, and an unattended caller should not trigger them blindly. Everything else in the catalog is allowed.
 
 ## How it works
 

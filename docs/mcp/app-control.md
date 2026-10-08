@@ -48,7 +48,7 @@ All of them take `--vault <dir>`. The format and lifecycle are in [pages](../dae
 
 `app run <commandId>` runs a command from the palette catalog and waits for it to finish before it replies, so an async command such as `gcal-sync` reports success only after it completes.
 
-Some commands only open a dialog that a person must finish: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `free-agent-setup` and `gcal-connect`. They stay available so an agent can open, for example, the Google Calendar connection dialog when you ask how to connect it. For these the reply says so:
+Some commands only open a dialog that a person must finish: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `free-agent-setup`, `gcal-connect` and `quick-ask`. All but `quick-ask` stay available so an agent can open, for example, the Google Calendar connection dialog when you ask how to connect it. For these the reply says so:
 
 ```json
 { "ok": true, "result": { "interactive": true, "label": "Connect Google Calendar…", "note": "Opened \"Connect Google Calendar…\" — this needs a person to finish it in the app." } }
@@ -60,7 +60,7 @@ An ordinary command replies `{ "ok": true }`. Read `result.interactive` to tell 
 
 | Refused | Why |
 |---|---|
-| `app run` with `new-window`, `open-folder`, `update-app`, `daemon-update` or `new-claude-chat` | Heavy or system-level actions an unattended caller should not fire blindly |
+| `app run` with `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` or `quick-ask` | Heavy or system-level actions, or a live agent session, that an unattended caller should not fire blindly. A person has to type a quick ask |
 | `app open` with any `::chat:` content | A chat is a live agent session, a different trust boundary from opening a note |
 
 Both refusals return HTTP 403 with a message. `app commands` lists the ids that remain. Opening the daemon page (`::daemon`) is allowed because its chat starts nothing until a person clicks or focuses the composer, and app control cannot produce that gesture.

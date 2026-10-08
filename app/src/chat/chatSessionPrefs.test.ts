@@ -10,6 +10,7 @@ import {
     rememberMode,
     rememberModel,
     rememberProvider,
+    forgetProvider,
     type StorageLike,
 } from './chatSessionPrefs'
 import { BACKEND_IDS } from '../../../core/src/agentBackends/catalog'
@@ -22,6 +23,7 @@ function memoryStorage(seed: Record<string, string> = {}) {
     const storage: StorageLike = {
         getItem: k => entries.get(k) ?? null,
         setItem: (k, v) => void entries.set(k, v),
+        removeItem: k => void entries.delete(k),
     }
     return { storage, entries }
 }
@@ -161,5 +163,18 @@ describe('effort', () => {
         rememberEffort(storage, '')
         expect(readLastEffort(storage)).toBe('medium')
         expect(() => rememberEffort(throwingStorage, 'high')).not.toThrow()
+    })
+})
+
+describe('forgetProvider', () => {
+    test('removes the chat key and leaves others', () => {
+        const { storage, entries } = memoryStorage()
+        rememberProvider(storage, 'c1', 'opencode')
+        rememberProvider(storage, 'c2', 'claude')
+        forgetProvider(storage, 'c1')
+        expect(entries.has(providerStorageKey('c1'))).toBe(false)
+        expect(entries.has(providerStorageKey('c2'))).toBe(true)
+        expect(() => forgetProvider(throwingStorage, 'c1')).not.toThrow()
+        expect(() => forgetProvider(null, 'c1')).not.toThrow()
     })
 })

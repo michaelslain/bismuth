@@ -41,7 +41,10 @@ export type DaemonChatProps = {
 
 export default function DaemonChat(props: DaemonChatProps): JSX.Element {
     return (
-        <div class={`${styles.chat} ${props.class ?? ''}`}>
+        <div
+            class={`${styles.chat} ${props.class ?? ''}`}
+            data-chat-surface
+        >
             {/* data-testid ONLY: a stable, test-only hook so a story can assert the composer's box
                 rect + placeholder are pixel-identical before and after the arming gesture, without
                 reaching into ChatComposerBar's own (foreign) module for a class name. */}

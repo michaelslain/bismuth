@@ -1,5 +1,6 @@
 // app/src/App.tsx
 import {
+    batch,
     createSignal,
     onMount,
     onCleanup,
@@ -113,6 +114,12 @@ import { createBootGate } from './bootGate'
 import { homeContent, retargetSeed } from './homePage'
 import { createStatusBarFeed } from './shell/statusBarFeed'
 import { publishEditorTabs } from './chat/chatContext'
+import { startAppSelectionTracking } from './chat/appSelection'
+import { EditorView } from '@codemirror/view'
+import QuickAskHost from './quickAsk/QuickAskHost'
+import { openQuickAsk, quickAskChatId, quickAskOpen } from './quickAsk/quickAskState'
+import { notePathFacet } from './editor/tableState'
+import { paneContextLabel } from './chat/paneContextLabel'
 import {
     connectUiControl,
     type UiControlHandle,
@@ -499,6 +506,10 @@ export default function App() {
                     ids.add(CHAT_PREFIX + DAEMON_CHAT_ID)
             }
         }
+        // The Cmd+K popover's one-off chat, once a trusted Enter minted its id. On hand-off the
+        // new chat tab already holds the same id, so the session is never absent from the set.
+        const quickId = quickAskChatId()
+        if (quickId) ids.add(CHAT_PREFIX + quickId)
         return [...ids]
     })
     createEffect(() =>
@@ -534,17 +545,39 @@ export default function App() {
     // chat can inject "what the user is looking at" onto its wire payload (never into the visible
     // message). Re-runs on any tab/pane open/close/focus change. Sentinels (graph/search/terminal/
     // chat/…) are dropped — only real note paths are useful context.
+    // The "context leaf" is the focused leaf, or — when that is a chat — the most recently focused
+    // non-chat leaf of the same tab, so clicking into a chat split beside a note keeps reporting
+    // that note. Plain per-tab memory (not reactive): the effect below re-runs on focus changes.
+    const lastNonChatLeaf = new Map<string, string>()
+    const contextContent = createMemo<string | null>(() => {
+        const t = activeTab()
+        if (!t) return null
+        const all = leaves(t.root)
+        const focused = all.find(l => l.id === t.focusId)
+        if (!focused) return null
+        if (!focused.content.startsWith(CHAT_PREFIX)) {
+            lastNonChatLeaf.set(t.id, focused.id)
+            return focused.content
+        }
+        const prev = all.find(l => l.id === lastNonChatLeaf.get(t.id))
+        return prev && !prev.content.startsWith(CHAT_PREFIX)
+            ? prev.content
+            : null
+    })
     createEffect(() => {
+        const c = contextContent()
         publishEditorTabs({
             openFiles: openContents()
                 .filter(c => !isSentinel(c))
                 .map(c => ({ path: c, label: contentLabel(c) })),
-            activeFile: (() => {
-                const c = focusedContent()
-                return c && !isSentinel(c) ? c : null
-            })(),
+            activeFile: c && !isSentinel(c) ? c : null,
+            activePane: c ? paneContextLabel(c, mode()) : null,
         })
     })
+
+    // Track the user's selection anywhere in the app (PDF preview, rendered markdown, graph…) for
+    // the chat preamble. Ignores selections inside chat surfaces — see chat/appSelection.ts.
+    onMount(() => onCleanup(startAppSelectionTracking()))
 
     // The editor body element — overlay positioning is relative to its rect.
     let editorBodyEl: HTMLDivElement | undefined
@@ -1419,6 +1452,47 @@ export default function App() {
     // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
     // invocation is a distinct conversation rather than re-focusing an old one).
     const newClaudeChat = () => openTool(CHAT_PREFIX + crypto.randomUUID())
+    // Cmd+K quick ask: anchored at the caret when the focus is inside a CodeMirror note editor,
+    // else at the top of the focused pane. Already open → focus its input instead of a second one.
+    const quickAsk = () => {
+        if (quickAskOpen()) {
+            document
+                .querySelector<HTMLInputElement>('[data-quick-ask] input')
+                ?.focus()
+            return
+        }
+        const active = document.activeElement
+        const view =
+            active instanceof HTMLElement
+                ? EditorView.findFromDOM(active) ??
+                  EditorView.findFromDOM(
+                      active.closest<HTMLElement>('.cm-editor') ?? active,
+                  )
+                : null
+        // Only the note Editor provides notePathFacet; the chat composer, Bases fields and table
+        // cell editors are CodeMirror too, and `[ insert ]` must never write into those.
+        const notePath = view?.state.facet(notePathFacet) ?? null
+        if (view && view.hasFocus && notePath !== null) {
+            openQuickAsk({
+                kind: 'caret',
+                view,
+                pos: view.state.selection.main.head,
+                notePath,
+            })
+            return
+        }
+        openQuickAsk({ kind: 'pane', leafId: activeTab()?.focusId ?? null })
+    }
+    // `[ open in chat ]`: the one-off chat continues in its own tab. The tab is added before the
+    // popover lets go of the id, so the retained set never loses it (no reconnect).
+    const openQuickAskInChat = (chatId: string) => {
+        const tab = makeTab(CHAT_PREFIX + chatId)
+        batch(() => {
+            setTabs(ts => [...ts, tab])
+            setActiveTabId(tab.id)
+        })
+        recordNav(tab.root.id, CHAT_PREFIX + chatId)
+    }
     // No empty state: if every tab ever closes (via any path — close, drag-detach, prune), reopen
     // the graph home tab. The close handler already swaps atomically; this is the catch-all.
     createEffect(() => {
@@ -1519,6 +1593,7 @@ export default function App() {
                 gcalSync,
                 gcalDisconnect,
                 newClaudeChat,
+                quickAsk,
                 openEmojiLibrary,
                 zoomIn,
                 zoomOut,
@@ -2510,6 +2585,13 @@ export default function App() {
             openTerminal()
             return
         }
+        // Quick ask (default Mod+K): fires from inside the note editor too (CodeMirror binds no
+        // Mod+K), so no editable-target guard. The binding is read from settings, rebindable.
+        if (matchesKeybinding(e, kb['quick-ask'])) {
+            e.preventDefault()
+            quickAsk()
+            return
+        }
         // New tab (default Mod+T): always a fresh graph home tab.
         if (matchesKeybinding(e, kb['new-tab'])) {
             e.preventDefault()
@@ -3496,6 +3578,10 @@ export default function App() {
                     </Show>
                     <ToastHost />
                     <GalleryHost />
+                    <QuickAskHost
+                        daemonEnabled={settings.daemon.enabled}
+                        onOpenChat={openQuickAskInChat}
+                    />
                 </>
             }
             statusBar={

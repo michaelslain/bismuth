@@ -90,6 +90,7 @@ It does not restrict:
 - your own terminal sessions, including a bare `claude` in a Bismuth terminal tab. They run as you and are never marked as an agent channel;
 - content copied elsewhere before a note was hidden, such as text already captured into a memory note, or a copy of the file with its `visibility` line removed;
 - the existence of a hidden file. Its name, size and modified time still show in a directory listing, a refusal message and the sidebar badge;
+- a selection made in a base view. Text you select there goes to the chat tagged with the base file's path, so a hidden note's row content that a base you can see displays can reach the chat if you select it. Selecting inside the hidden note itself is filtered;
 - a change made during a turn. A note hidden mid-turn is not covered until the turn ends.
 
 ## Which AI backends can honour hidden notes?

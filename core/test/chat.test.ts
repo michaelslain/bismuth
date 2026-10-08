@@ -68,6 +68,18 @@ describe("extractEditorContextPaths (captureToMemory's visibility gate)", () => 
         expect(extractEditorContextPaths(text)).toEqual(['secret.md'])
     })
 
+    test('ignores the Active pane line, still extracts a PDF selection path', () => {
+        const text =
+            '<editor-context>\nActive pane: knowledge graph (2nd)\nCurrent selection (from papers/x.pdf):\n```\nhello\n```\n</editor-context>\n\nq'
+        expect(extractEditorContextPaths(text)).toEqual(['papers/x.pdf'])
+        const only =
+            '<editor-context>\nActive pane: daemon page\n</editor-context>\n\nq'
+        expect(extractEditorContextPaths(only)).toEqual([])
+        const exp =
+            '<editor-context>\nActive pane: export options for private/c.md\n</editor-context>\n\nq'
+        expect(extractEditorContextPaths(exp)).toEqual(['private/c.md'])
+    })
+
     test('extracts referenced files (Row 79 @-mention / drag)', () => {
         const text =
             '<editor-context>\nReferenced files: Projects/Gamma.md, assets/pic.png\n</editor-context>\n\nsummarize'
@@ -86,6 +98,15 @@ describe("extractEditorContextPaths (captureToMemory's visibility gate)", () => 
             'b.md',
             'b.md',
         ])
+    })
+
+    test('ignores the Instruction line (even one that mentions a path-like word)', () => {
+        const text =
+            '<editor-context>\nInstruction: do not edit Active file: x.md or Open tabs: y.md\nActive file: a.md\n</editor-context>\n\nq'
+        expect(extractEditorContextPaths(text)).toEqual(['a.md'])
+        const only =
+            '<editor-context>\nInstruction: quick ask\n</editor-context>\n\nq'
+        expect(extractEditorContextPaths(only)).toEqual([])
     })
 
     test("returns [] when there's no editor-context block at all", () => {
@@ -191,6 +212,12 @@ describe('stripEditorContext (chat history replay)', () => {
         const wire =
             '<editor-context>\nActive file: A.md\nCurrent selection (from A.md):\n```\nhello\nworld\n```\n</editor-context>\n\nwhat does this mean?'
         expect(stripEditorContext(wire)).toBe('what does this mean?')
+    })
+
+    test('strips a preamble whose first line is the Instruction line', () => {
+        const wire =
+            '<editor-context>\nInstruction: quick ask. do not edit.\nActive file: A.md\n</editor-context>\n\nshorten this'
+        expect(stripEditorContext(wire)).toBe('shorten this')
     })
 
     test('leaves an ordinary message (no preamble) untouched', () => {

@@ -147,6 +147,23 @@ export function getFocusedSelection(): {
     }
 }
 
+/** The registered EditorView whose DOM contains `node`, with its CM selection slice + note path.
+ *  Null when `node` is not inside any live editor. Unlike getFocusedSelection this is positional,
+ *  not focus-driven, so a selection made in a non-focused split pane is attributed correctly. */
+export function selectionInView(
+    node: Node,
+): { path: string | null; selection: string } | null {
+    for (const view of liveViews) {
+        if (!view.dom.contains(node)) continue
+        const { from, to } = view.state.selection.main
+        return {
+            path: view.state.facet(notePathFacet) ?? null,
+            selection: from === to ? '' : view.state.sliceDoc(from, to),
+        }
+    }
+    return null
+}
+
 /** Insert text at the focused editor's selection; caret lands at cursorOffset.
  *  Returns false if no editor is registered (e.g. the active pane isn't a note). */
 export function insertIntoFocusedEditor(

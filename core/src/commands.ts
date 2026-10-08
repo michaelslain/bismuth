@@ -133,6 +133,12 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'zoom-in', label: 'Zoom In', icon: 'ZoomIn' },
     { id: 'zoom-out', label: 'Zoom Out', icon: 'ZoomOut' },
     { id: 'zoom-reset', label: 'Reset Zoom', icon: 'RotateCcw' },
+    {
+        id: 'quick-ask',
+        label: 'Ask the daemon…',
+        icon: 'MessageSquare',
+        interactive: true,
+    },
 ]
 
 /** All command ids, in catalog order. */
@@ -159,6 +165,7 @@ export const UI_CONTROL_BLOCKLIST: string[] = [
     'update-app',
     'daemon-update',
     'new-claude-chat',
+    'quick-ask',
 ]
 
 /** True if a command id may be run via app control (in the catalog and not blocklisted). */

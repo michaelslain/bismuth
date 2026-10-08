@@ -8,9 +8,11 @@
 export interface EditorTabsSnapshot {
     openFiles: { path: string; label: string }[]
     activeFile: string | null
+    /** Human label for a non-file pane the user is on, e.g. 'knowledge graph (2nd brain)'. */
+    activePane: string | null
 }
 
-let tabs: EditorTabsSnapshot = { openFiles: [], activeFile: null }
+let tabs: EditorTabsSnapshot = { openFiles: [], activeFile: null, activePane: null }
 
 /** App calls this whenever the open-tabs / active-file set changes. */
 export function publishEditorTabs(t: EditorTabsSnapshot): void {
@@ -54,4 +56,21 @@ export function getChatReferences(chatId: string): string[] {
  *  preamble) and when the chat is reset/replaced, so stale references don't ride future turns. */
 export function clearChatReferences(chatId: string): void {
     references.delete(chatId)
+}
+
+// ── Per-chat instruction (quick ask) ─────────────────────────────────────────────────────────
+// One line of guidance folded into a chat's <editor-context> preamble on every turn (the quick-ask
+// popover sets it; null clears it). Keyed by chat id like the references above.
+const instructions = new Map<string, string>()
+
+/** Set (or, with null/empty, clear) the instruction line for `chatId`. */
+export function setChatInstruction(chatId: string, text: string | null): void {
+    if (!chatId) return
+    if (text) instructions.set(chatId, text)
+    else instructions.delete(chatId)
+}
+
+/** The instruction line for `chatId`, or null. */
+export function getChatInstruction(chatId: string): string | null {
+    return instructions.get(chatId) ?? null
 }

@@ -76,8 +76,21 @@ The composer is a small markdown editor: live preview, `[[wikilink]]`, `#tag` an
 
 ### What does the agent know about my open notes?
 
-Every message that is not a slash command is prefixed, invisibly, with an `<editor-context>` block: the active file, the open tabs, any mentioned files, and your current editor selection. The transcript shows only what you typed.
+Every message that is not a slash command is prefixed, invisibly, with an `<editor-context>` block: the active file, the open tabs, any mentioned files, and your current selection. When the focused pane is not a note (the knowledge graph, the daemon page, a terminal, export options) the block names that pane too. The transcript shows only what you typed.
+
+The selection can come from anywhere in the app: a note, a PDF preview, rendered markdown, or text in the graph. It is capped at 8,000 characters. A chat split beside a note keeps reporting that note as the active file, and selecting text inside a chat does not replace or clear your selection.
 Notes whose visibility is `hidden` are left out of this block entirely ([visibility](../vault/visibility.md)); `chat-only` notes stay in.
+
+## How do I ask a quick question?
+
+Press `Mod+K` (the `quick-ask` keybinding, rebindable in `.settings`) to open a small popover for a short conversation with the daemon, without leaving what you are writing. In a note it opens at the caret; in any other pane it opens at the top of that pane. Type a question and press Enter. Press `Mod+K` again while it is open to focus the input.
+
+The header shows the daemon's face and name (`chat` when the daemon is off), then the input (`ask…`). The face follows the conversation: listening while you type, thinking until the first words arrive, talking while the reply streams, asleep when the daemon is off. After you send, the input moves to the bottom as `reply…` for follow-ups, and the thread above it shows your turns as muted `> ` lines and the replies as markdown. Permission cards appear in the thread.
+
+- **Asking does not edit your note.** The agent is told to answer briefly and not to edit until you press apply. On Claude, an attempted edit raises the normal permission card instead of running. The other backends (opencode, codex, the ACP ones) have no permission modes, so on them the instruction alone holds the agent back.
+- **`[ apply ]`** appears for a quick ask opened in a note, once a reply has finished. It saves the note's unsaved text, then asks the daemon to make the change; the daemon edits the file itself and your open editor reloads it. The popover never inserts text. After an apply, the next reply drops back to asking.
+- **`[ open in chat ]`** moves the conversation into a chat tab and keeps streaming, and **`[ esc ]`** closes it.
+- **Opening the popover starts nothing.** The session exists only after you press Enter yourself, and applying needs your own click. For the same reason an agent cannot open it through app control.
 
 ## How do I resume a past conversation?
 
@@ -180,11 +193,22 @@ It never touches the input queue or the transcript, so it does not appear in rep
 ### Editor context and memory recall
 
 `app/src/chat/chatContext.ts` holds the freshest list of open files, the active file and per-chat `@` references; `App.tsx` publishes it on every tab change, filtering out non-note tabs.
-`buildEditorContextText` (pure, in `chatEditorContext.ts`) renders the block and drops any path whose resolved visibility is `hidden`. `send()` prepends it to the wire text only, and skips it for a slash command, since Claude Code recognizes a command only at the start of a message.
+`buildEditorContextText` (pure, in `chatEditorContext.ts`) renders the block and drops any path whose resolved visibility is `hidden`. Its input is `{ activeFile, activePane?, openFiles, selection, selectionPath?, hiddenPaths, referencedFiles?, instruction? }`. `Active pane:` names a pane that is not a file, labelled by `paneContextLabel.ts` (`knowledge graph (<mode>)`, `daemon page`, `terminal`, `export options for <path>`); only the export form names a path, which `extractEditorContextPaths` in `core/src/chat.ts` reads for the daemon gate. `Instruction:` is always the first line of the block, newlines collapsed: one line of guidance set per chat with `setChatInstruction(chatId, text)` in `chatContext.ts` and read back with `getChatInstruction`. The result is `""` when there is no visible active file, pane, selection, reference or instruction.
+
+`App` publishes `activeFile`/`activePane` for the focused pane, or, when the focused pane is a chat, for the most recently focused non-chat pane of that tab. The selection comes from `app/src/chat/appSelection.ts`, which tracks document `selectionchange`: a CodeMirror selection (through `selectionInView`) carries its note path, and any other DOM selection carries the nearest `data-pane-content` path (null for sentinels). A collapsed selection outside a chat clears it; selections inside a chat surface (`[data-chat-surface]` or a `::chat:` pane) never replace or clear it, and selections in the export preview or outside any pane are never sent. `buildEditorContext()` in `chatSession.ts` gathers `getEditorTabs()`, `getAppSelection()` and `getChatReferences()` and delegates the string-building to `chatEditorContext.ts`. `send()` prepends it to the wire text only, and skips it for a slash command, since Claude Code recognizes a command only at the start of a message.
 `stripEditorContext` removes the block again when a session is replayed, so a past bubble shows only what you typed.
 
 When the vault's daemon is enabled, the driver passes two SDK hooks to `query()` that call the core recall service (`recallServiceFor`, `core/src/memoryRecall.ts`): `UserPromptSubmit` (mode `prompt`) and `PostToolBatch` (mode `tool`, once per batch of parallel tool calls).
 The service dedups per session, so a note shown at the prompt is not injected again unless its content changed. The `daemon.recall.{enabled,midTurn,semantic}` settings are read live on every call. opencode's per-turn `system` recall uses the same service in mode `prompt`.
+
+### Quick ask
+
+`app/src/quickAsk/` holds the popover: `QuickAskHost` is mounted by `App.tsx`, and `quickAskState.ts` owns its state. The popover is anchored at the caret when focus is inside a CodeMirror note editor (the key fires while typing; CodeMirror binds no `Mod+K`), otherwise at the top of the focused pane. The `quick-ask` command (interactive, and in `UI_CONTROL_BLOCKLIST`) opens it the same way.
+
+- **No session until a trusted Enter.** Only an `isTrusted` Enter in the input mints the one-off `quick-<uuid>` chat id (`beginQuickAsk`). `App`'s retained-chat set (`chatContents`) includes `quickAskChatId()`, so the registry creates the `ChatSession` at that point. A reply Enter and `[ apply ]` act on the existing session and never create one; `[ apply ]` also requires a trusted click.
+- **Asking is read-only on Claude.** Before the first send, the host sets the chat's instruction line (`setChatInstruction`: answer briefly, do not edit until the user presses apply) and puts the session in `default` permission mode with `ChatSession.setPermissionModeLocal(mode)`, so an edit attempt raises the permission card even though the app default is `bypassPermissions`. `setPermissionModeLocal` sets this session's mode, which the first-manifest push and every later manifest reconcile read, and sends `set_permission_mode`, but never writes the persisted last mode that `setPermissionMode` writes and every new chat reads. Backends with `permissionModes: false` in `core/src/agentBackends/catalog.ts` have no modes, so only the `Instruction:` line applies to them.
+- **Apply.** `[ apply ]` flushes the note's unsaved buffer (`flushEditorByPath`), switches the session to `acceptEdits` locally and sends an apply message; the daemon edits the file and the open editor picks the change up through its normal external-change reload. The next reply after an apply switches the session back to `default` before it sends.
+- **Hand-off.** `[ open in chat ]` clears the instruction and adds a `::chat:<id>` tab to the active window, then `handOffQuickAsk()` clears the popover's hold on the id; the session keeps its mode. `[ esc ]` clears the instruction and releases the session. The same `ChatSession` stays retained throughout, so the stream never reconnects.
 
 ### Connection lifecycle
 
@@ -241,4 +265,4 @@ The chat's rules sit in pure modules under `app/src/chat/`, each unit-tested, wi
 
 Messages render through `renderNoteBody`, the same markdown pipeline notes use, so math, code and wikilinks work; a `[[wikilink]]` in a bubble opens in the app. The daemon's face is the bot's avatar on the lowest assistant row, with a mood from `chatActivity.ts`.
 
-Source: `core/src/chat.ts`, `core/src/chatModelStore.ts`, `core/src/chatDaemonLegacy.ts`, `core/src/memoryRecall.ts`, `core/src/routes/agents.ts`, `core/src/server.ts` (the `/chat` WebSocket), `core/src/chatProviders/index.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `cli/src/commands/chat.ts`, `cli/src/http.ts`, `app/src/chat/` (`ChatView.tsx`, `ChatControls.tsx`, `ChatModelPicker.tsx`, `ChatSetupGate.tsx`, `ChatComposer.tsx`, `ChatHistoryModal.tsx`, `chatSession.ts`, `chatSessions.ts`), `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`
+Source: `core/src/chat.ts`, `core/src/chatModelStore.ts`, `core/src/chatDaemonLegacy.ts`, `core/src/memoryRecall.ts`, `core/src/routes/agents.ts`, `core/src/server.ts` (the `/chat` WebSocket), `core/src/chatProviders/index.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `cli/src/commands/chat.ts`, `cli/src/http.ts`, `app/src/quickAsk/`, `app/src/chat/` (`chatEditorContext.ts`, `appSelection.ts`, `paneContextLabel.ts`, `ChatView.tsx`, `ChatControls.tsx`, `ChatModelPicker.tsx`, `ChatSetupGate.tsx`, `ChatComposer.tsx`, `ChatHistoryModal.tsx`, `chatSession.ts`, `chatSessions.ts`), `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`

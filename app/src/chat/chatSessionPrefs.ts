@@ -19,6 +19,8 @@ import {
 export type StorageLike = {
     getItem: (key: string) => string | null
     setItem: (key: string, value: string) => void
+    /** Optional so Map-backed stand-ins stay valid; absent = forgetProvider is a no-op. */
+    removeItem?: (key: string) => void
 }
 
 // The last permission mode the user picked in ANY chat (FEATURE #35: "permissions keep resetting to
@@ -107,6 +109,18 @@ export function rememberProvider(
         storage?.setItem(providerStorageKey(chatId), provider)
     } catch {
         /* storage unavailable — the in-memory signal still drives the header */
+    }
+}
+
+/** Drop a chat's remembered provider choice (a one-off chat id must not leave a permanent key). */
+export function forgetProvider(
+    storage: StorageLike | null,
+    chatId: string,
+): void {
+    try {
+        storage?.removeItem?.(providerStorageKey(chatId))
+    } catch {
+        /* storage unavailable — nothing to forget */
     }
 }
 

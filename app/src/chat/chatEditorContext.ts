@@ -6,17 +6,26 @@
 // the user can see it fine in their own editor. "chat-only" files stay IN; that's the
 // whole point of that tier. See docs/vault/visibility.md.
 
+import { EXPORT_PANE_LABEL } from './paneContextLabel'
+
 export interface EditorContextInput {
     activeFile: string | null
     openFiles: { path: string; label: string }[]
     selection: string
     selectionPath?: string | null
+    /** Label of the non-file pane the user is on (graph, daemon page, terminal…) — see
+     *  paneContextLabel.ts. Names no path the visibility gate needs, except an export label,
+     *  which is dropped when it mentions a hidden path. */
+    activePane?: string | null
     /** Paths whose RESOLVED visibility is "hidden" (core/src/visibility.ts isVisibleToChat). */
     hiddenPaths: ReadonlySet<string>
     /** Files the user EXPLICITLY referenced in this chat (Row 79) — @-mentioned or dragged in.
      *  Listed in the preamble so their content is available to the model, visibility-filtered
      *  like everything else. Deduped against the active file / open tabs so nothing repeats. */
     referencedFiles?: string[]
+    /** One line of guidance for the agent (quick ask sets it) — emitted as the FIRST line of the
+     *  block, newlines collapsed to spaces. Not a path, so the visibility filter does not apply. */
+    instruction?: string | null
 }
 
 /** Build the `<editor-context>` preamble text, or "" when there's nothing visible worth
@@ -38,9 +47,27 @@ export function buildEditorContextText(input: EditorContextInput): string {
     const referencedFiles = (input.referencedFiles ?? []).filter(
         p => !input.hiddenPaths.has(p) && p !== activeFile && !openPaths.has(p),
     )
-    if (!activeFile && !selection && referencedFiles.length === 0) return ''
+    const EXPORT_LABEL = EXPORT_PANE_LABEL
+    const exportPath = input.activePane?.startsWith(EXPORT_LABEL)
+        ? input.activePane.slice(EXPORT_LABEL.length)
+        : null
+    const activePane =
+        input.activePane && !(exportPath && input.hiddenPaths.has(exportPath))
+            ? input.activePane
+            : null
+    const instruction = (input.instruction ?? '').replace(/\s*\n\s*/g, ' ').trim()
+    if (
+        !instruction &&
+        !activeFile &&
+        !activePane &&
+        !selection &&
+        referencedFiles.length === 0
+    )
+        return ''
     const lines: string[] = ['<editor-context>']
+    if (instruction) lines.push(`Instruction: ${instruction}`)
     if (activeFile) lines.push(`Active file: ${activeFile}`)
+    if (activePane) lines.push(`Active pane: ${activePane}`)
     if (openFiles.length)
         lines.push(`Open tabs: ${openFiles.map(f => f.path).join(', ')}`)
     if (referencedFiles.length)
