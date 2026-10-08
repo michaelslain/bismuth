@@ -329,10 +329,9 @@ export const InlinePrompts: Story = {
     },
 }
 
-/** A turn answering a SLASH COMMAND: the reducer flags the assistant turn as `command` when the
- *  preceding user bubble starts with "/", and its prose renders in the boxed monospace
- *  command-output container rather than as loose conversational prose (#28). */
-export const CommandOutput: Story = {
+/** A turn answering a SLASH COMMAND renders as ordinary chat prose — there is no separate
+ *  command-output box (it caught normal replies to skill invocations like `/transcript`). */
+export const SlashCommandReply: Story = {
     render: () => (
         <div style={{ height: STORY_H, width: '100%' }}>
             <FakeSocketChat

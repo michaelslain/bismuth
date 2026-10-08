@@ -1,8 +1,7 @@
 // Visual spec for <ChatTextBubble> — one turn's prose, rendered through the same note markdown
 // pipeline every note uses, so a message reads exactly like a note. Shared by ChatUserTurn's
 // bubble and ChatAssistantTurn's text parts (see their own stories for the composed shapes); this
-// one isolates the bubble itself, including the boxed "command output" register (#28) and the
-// empty-text no-render case.
+// one isolates the bubble itself, including the empty-text no-render case.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, fn, waitFor, within } from 'storybook/test'
 import ChatTextBubble from './ChatTextBubble'
@@ -90,27 +89,6 @@ export const User: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('Summarize the vault.')).toBeInTheDocument()
-    },
-}
-
-/** A slash-command result — the boxed monospace "Command output" panel instead of loose prose
- *  (#28); the body still renders through the same markdown pipeline (here, a table). */
-export const CommandOutput: Story = {
-    render: () => (
-        <div style={{ width: '600px' }}>
-            <ChatTextBubble
-                text={['| tokens | budget |', '| --- | --- |', '| 42,318 | 200,000 |'].join(
-                    '\n',
-                )}
-                role="assistant"
-                command
-            />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        await expect(canvas.getByText(/command output/)).toBeInTheDocument()
-        await expect(canvas.getByText('tokens')).toBeInTheDocument()
     },
 }
 

@@ -1,6 +1,5 @@
 /* ChatTextBubble.module.css — ChatTextBubble.tsx is the ONLY importer. The rendered-markdown prose
-   register (`.chat-bubble` + descendants) moved verbatim from ChatTranscript.module.css, plus the
-   slash-command output body (its surrounding box lives in ChatCommandOutputFrame.module.css).
+   register (`.chat-bubble` + descendants) moved verbatim from ChatTranscript.module.css.
    `--chat-*` custom properties carry a plain-token FALLBACK (`var(--chat-surface-1, var(--surface-1))`) so this renders correctly in Storybook too,
    where there is no ancestor chat host localising them (app/src/ChatView.module.css's `.host`) — inside
    the real chat view the ancestor's value wins as before; only the untinted default changes. */
@@ -209,14 +208,4 @@
 /* A staged (queued) turn: ink, not a fade — no state is shown by opacity. */
 .muted {
     color: var(--text-muted);
-}
-
-/* ── Slash-command output (#28): the body inside ChatCommandOutputFrame's box. It is mechanism, not
-   prose — a `/context` readout — so it returns to the mono face at --code-font-size, set here once. ── */
-.chat-command-output-body {
-    font-family: var(--ui-font-stack);
-    font-size: var(--code-font-size);
-    padding: var(--sp-5) var(--sp-5);
-    max-height: 460px;
-    overflow: auto;
 }

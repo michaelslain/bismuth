@@ -46,7 +46,6 @@ const ChatAssistantTurn: Component<ChatAssistantTurnProps> = props => {
                                 <ChatTextBubble
                                     text={part.text}
                                     role="assistant"
-                                    command={props.item.command}
                                     onContextMenu={e =>
                                         props.onBubbleContextMenu(e, part.text)
                                     }

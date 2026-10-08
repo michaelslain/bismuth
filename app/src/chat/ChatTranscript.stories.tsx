@@ -178,8 +178,8 @@ export const InlinePrompts: Story = {
     },
 }
 
-/** A slash-command result — boxed monospace panel, not loose prose. */
-export const CommandOutput: Story = {
+/** A slash-command result renders as ordinary chat prose — no command-output box. */
+export const SlashCommandReply: Story = {
     render: () => (
         <div style={{ width: '760px', height: '520px', display: 'flex' }}>
             <ChatTranscript

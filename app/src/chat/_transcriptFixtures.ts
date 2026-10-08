@@ -177,12 +177,11 @@ export const INLINE_PROMPT_ITEMS: readonly TurnItem[] = [
     },
 ]
 
-/** A slash-command result — the boxed monospace "Command output" panel, not loose prose (#28). */
+/** A slash-command result — plain chat prose like any other turn, no special box. */
 export const COMMAND_OUTPUT_ITEMS: readonly TurnItem[] = [
     { role: 'user', text: '/context' },
     {
         role: 'assistant',
-        command: true,
         footer: null,
         parts: [
             {

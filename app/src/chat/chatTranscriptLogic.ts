@@ -95,10 +95,6 @@ export interface AssistantItem {
     parts: AssistantPart[]
     /** Set from the turn's `result` frame — a muted footer (turns + cost). */
     footer: { numTurns: number; costUsd: number | null } | null
-    /** True when this turn answers a slash-command input (the preceding user bubble started with
-     *  "/"): its prose is a locally-produced command result (e.g. `/context`'s panel), so it renders
-     *  in a boxed monospace "command output" container — like the Claude Code TUI — not loose prose (#28). */
-    command?: boolean
 }
 /** A transient, non-error system notice (BUG #87) — confirms a client-side slash command actually
  *  DID something (e.g. `/chrome` toggling a setting with no other visible surface nearby), without
@@ -115,23 +111,14 @@ export type TurnItem = UserItem | AssistantItem | SystemItem
 // ── Reducer internals ─────────────────────────────────────────────────────────────────────
 
 /** Ensure the trailing item is an assistant turn (creating one if the transcript is empty or ends
- *  with a user/system item), then hand it to `fn`. A turn answering a slash-command input (the
- *  preceding user bubble starts with "/") is a command result — flagged so its prose renders as a
- *  boxed monospace panel, not prose (#28). */
+ *  with a user/system item), then hand it to `fn`. */
 function withAssistant(
     transcript: TurnItem[],
     fn: (a: AssistantItem) => void,
 ): void {
     let last: TurnItem | undefined = transcript[transcript.length - 1]
     if (!last || last.role !== 'assistant') {
-        const command =
-            !!last && last.role === 'user' && last.text.trim().startsWith('/')
-        const a: AssistantItem = {
-            role: 'assistant',
-            parts: [],
-            footer: null,
-            command,
-        }
+        const a: AssistantItem = { role: 'assistant', parts: [], footer: null }
         transcript.push(a)
         last = a
     }

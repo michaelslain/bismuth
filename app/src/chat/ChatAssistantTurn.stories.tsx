@@ -8,7 +8,6 @@ import { expect, fn, within } from 'storybook/test'
 import ChatAssistantTurn from './ChatAssistantTurn'
 import type { AssistantItem } from './chatTranscriptLogic'
 import {
-    COMMAND_OUTPUT_ITEMS,
     CONVERSATION_ITEMS,
     THINKING_ITEMS,
     TOOL_CALL_ITEMS,
@@ -32,7 +31,6 @@ const noop = {
 // Index [1] in each fixture is the assistant turn — [0] is the user turn that leads it.
 const proseItem = CONVERSATION_ITEMS[1] as AssistantItem
 const toolItem = TOOL_CALL_ITEMS[1] as AssistantItem
-const commandItem = COMMAND_OUTPUT_ITEMS[1] as AssistantItem
 const thinkingItem = THINKING_ITEMS[1] as AssistantItem
 
 /** Prose with a bulleted list and a bold run, plus a muted turns/cost footer. */
@@ -63,20 +61,6 @@ export const ToolCalls: Story = {
         await expect(canvas.getByText('Grep')).toBeInTheDocument()
         await expect(canvas.getByText('Bash')).toBeInTheDocument()
         await expect(canvas.getByText('Read')).toBeInTheDocument()
-    },
-}
-
-/** A slash-command result — the boxed monospace "Command output" panel, not loose prose (#28). */
-export const CommandOutput: Story = {
-    render: () => (
-        <div style={{ width: '760px' }}>
-            <ChatAssistantTurn item={commandItem} persona="bismuth" {...noop} />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        await expect(canvas.getByText(/command output/)).toBeInTheDocument()
-        await expect(canvas.getByText('tokens')).toBeInTheDocument()
     },
 }
 

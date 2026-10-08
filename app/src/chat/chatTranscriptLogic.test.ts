@@ -61,7 +61,6 @@ describe('applyChatFrame — streamed assistant prose', () => {
             role: 'assistant',
             parts: [{ kind: 'text', text: 'Hel' }],
             footer: null,
-            command: false,
         })
     })
 
@@ -115,34 +114,15 @@ describe('applyChatFrame — streamed assistant prose', () => {
         ])
     })
 
-    it('flags a turn answering a SLASH-COMMAND user turn as command output (#28)', () => {
+    it('renders a turn answering a slash command as an ordinary assistant turn', () => {
         const t: TurnItem[] = []
-        applyChatFrame(t, { type: 'user-message', text: '  /context  ' }) // leading space: trimmed before the test
-        applyChatFrame(t, { type: 'assistant-text', text: 'Context: 42%' })
-        expect(assistantTail(t).command).toBe(true)
-    })
-
-    it('does NOT flag a turn answering ordinary prose that merely mentions a slash', () => {
-        const t: TurnItem[] = []
-        applyChatFrame(t, {
-            type: 'user-message',
-            text: 'what does /context do?',
+        applyChatFrame(t, { type: 'user-message', text: '/transcript' })
+        applyChatFrame(t, { type: 'assistant-text', text: 'Transcript path: x' })
+        expect(assistantTail(t)).toEqual({
+            role: 'assistant',
+            parts: [{ kind: 'text', text: 'Transcript path: x' }],
+            footer: null,
         })
-        applyChatFrame(t, { type: 'assistant-text', text: 'It shows usage.' })
-        expect(assistantTail(t).command).toBe(false)
-    })
-
-    it('does NOT flag a turn that opens the transcript (no preceding user item)', () => {
-        const t: TurnItem[] = []
-        applyChatFrame(t, { type: 'assistant-text', text: 'hi' })
-        expect(assistantTail(t).command).toBe(false)
-    })
-
-    it('does NOT flag a turn following a system notice', () => {
-        const t: TurnItem[] = [{ role: 'system', text: '/chrome enabled' }]
-        applyChatFrame(t, { type: 'assistant-text', text: 'ok' })
-        expect(assistantTail(t).command).toBe(false)
-        expect(t.map(i => i.role)).toEqual(['system', 'assistant'])
     })
 })
 
@@ -397,7 +377,6 @@ describe('applyChatFrame — the result footer', () => {
             role: 'assistant',
             parts: [],
             footer: { numTurns: 1, costUsd: null },
-            command: false,
         })
     })
 })
@@ -527,7 +506,6 @@ describe('buildTranscript', () => {
         })
 
         const turn = t[1] as AssistantItem
-        expect(turn.command).toBe(false)
         expect(turn.footer).toEqual({ numTurns: 2, costUsd: 0.031 })
         expect(turn.parts.map(p => p.kind)).toEqual([
             'thinking',
@@ -565,7 +543,5 @@ describe('buildTranscript', () => {
         const stepwise: TurnItem[] = []
         for (const f of frames) applyChatFrame(stepwise, f)
         expect(buildTranscript(frames)).toEqual(stepwise)
-        // …and the slash-command flag really did survive the fold.
-        expect((buildTranscript(frames)[1] as AssistantItem).command).toBe(true)
     })
 })
