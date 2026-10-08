@@ -3,7 +3,7 @@ name: Bismuth
 description: A local-first markdown vault drawn on a monospace character grid
 colors:
   ground-charcoal: "#15161A"
-  editor-ground: "#191A1F"
+  editor-ground: "#121317"
   rail-ground: "#101116"
   surface-1: "#20222A"
   surface-2: "#272A33"
@@ -231,7 +231,7 @@ are for data that genuinely has categories.
 
 ### Neutral
 - **Charcoal Ground** (`--bg`): the canvas.
-- **Editor Ground** (`--editor`): the note surface, one step lifted from the canvas.
+- **Editor Ground** (`--editor`): the note surface. On dark themes it IS the graph canvas tone, so the note pane, the graph and the HUD strips share one ground; light themes lift it toward white as the page.
 - **Rail Ground** (`--rail`): the sidebar and terminal, one step sunk below it.
 - **Surfaces 1 / 2 / 3** (`--surface-1`, `--surface-2`, `--surface-3`): cards, panels, and
   nested fills, in that order of depth.
@@ -365,7 +365,7 @@ the field at a finer grid.
 
 ## Elevation & Depth
 
-Flat by default. Depth comes from tonal steps (rail → ground → editor → surfaces 1–3) and hairline
+Flat by default. Depth comes from tonal steps (rail → editor/canvas → ground → surfaces 1–3 on dark) and hairline
 borders, not shadows. Nothing in the app is blurred. Things that genuinely float get exactly one cue.
 
 ### Shadow Vocabulary

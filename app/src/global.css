@@ -67,9 +67,9 @@
   --rail: #101116;
   /* Structural surfaces that branch light/dark at runtime (settingsCssVars); the
      literals here are dark (ink) first-paint fallbacks. See LIGHT_THEMES.md Part B. */
-  --editor: #191A1F;
-  --pop-bg: rgba(25,26,31,.88);
-  --pop-bg-strong: rgba(25,26,31,.94);
+  --editor: #121317;
+  --pop-bg: rgba(18,19,23,.88);
+  --pop-bg-strong: rgba(18,19,23,.94);
   --scrim-bg: rgba(10,11,14,.6);
   --overlay-bg: rgba(10,11,14,.6);
   --label-halo: #15161A;

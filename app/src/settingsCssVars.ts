@@ -51,6 +51,9 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     // instead of hardcoding reds/greens or dark-only near-black shadows.
     const sem = semanticTokens(a)
     const shadow = shadowTokens(a)
+    // Dark themes have ONE ground under every pane: the graph canvas tone. The note pane and the
+    // floating HUD surfaces derive from it, so nothing paints a lighter band over the canvas.
+    const canvas = a.graphBg ?? mix(a.background, 86, '#000')
     return {
         '--color-scheme': light ? 'light' : 'dark',
         '--bg': a.background,
@@ -86,22 +89,22 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
             (light
                 ? mix(a.background, 70, a.border)
                 : mix(a.background, 88, '#000')),
-        // Editor / main pane (design's --editor): canvas on dark, lifted toward white on
-        // light. mix(surface 64%, bg) ≈ the design's #FAF8FD for oxide-light.
+        // Editor / main pane (design's --editor): the graph canvas tone on dark, lifted toward
+        // white on light. mix(surface 64%, bg) ≈ the design's #FAF8FD for oxide-light.
         '--editor':
             a.editor ??
-            (light ? mix(a.surface, 64, a.background) : a.background),
+            (light ? mix(a.surface, 64, a.background) : canvas),
         // Popover / floating-card surfaces (legends, graph cards, structure picker).
         '--pop-bg':
             a.popBg ??
             (light
                 ? mix(a.surface, 84, 'transparent')
-                : mix(a.background, 82, 'transparent')),
+                : mix(canvas, 82, 'transparent')),
         '--pop-bg-strong':
             a.popBgStrong ??
             (light
                 ? mix(a.surface, 90, 'transparent')
-                : mix(a.background, 88, 'transparent')),
+                : mix(canvas, 88, 'transparent')),
         // Modal scrim (command/quick/template overlays). Light: a soft lavender-grey veil
         // from the theme's neutral (design's rgba(120,110,150,.32) ≈ oxide-light neutral),
         // NOT the heavy near-black a foreground-tint gave. Dark: fg-tinted veil.

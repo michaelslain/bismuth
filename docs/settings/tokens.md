@@ -105,9 +105,9 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `surface-3` | color | `#31353F` | Third raised surface: pressed and selected fills. |
 | `panel` | color | `#20222A` | Panel fill (same as surface-1 in every built-in theme). |
 | `rail` | color | `#101116` | Sidebar and top strip, a notch under the canvas. |
-| `editor` | color | `#191A1F` | Main note pane. |
-| `pop-bg` | color | `rgba(25,26,31,.88)` | Floating cards: legends, graph cards, pickers. |
-| `pop-bg-strong` | color | `rgba(25,26,31,.94)` | Floating cards that must stay legible over busy content. |
+| `editor` | color | `#121317` | Main note pane. |
+| `pop-bg` | color | `rgba(18,19,23,.88)` | Floating cards: legends, graph cards, pickers. |
+| `pop-bg-strong` | color | `rgba(18,19,23,.94)` | Floating cards that must stay legible over busy content. |
 | `scrim-bg` | color | `rgba(10,11,14,.6)` | Veil behind command, quick and template overlays. |
 | `overlay-bg` | color | `rgba(10,11,14,.6)` | Backdrop behind modals. |
 | `hover-bg` | color | `rgba(232,227,214,.05)` | Hover tint on rows and buttons. |
