@@ -139,7 +139,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 266,
             min: 200,
             max: 600,
-            doc: "Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css).",
+            doc: "Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css). Set by dragging the sidebar's edge, which snaps onto this default within 12px.",
         },
         sidebarGraphHeight: {
             type: 'number',
@@ -153,7 +153,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 232,
             min: 160,
             max: 480,
-            doc: "Right tab rail's open width (px) — hovered or pinned; collapsed it is always the 46px icon column. Set by dragging the rail's left edge.",
+            doc: "Right tab rail's open width (px) — hovered or pinned; collapsed it is always the 46px icon column. Set by dragging the rail's edge, which snaps onto this default within 12px.",
         },
         uiFontSize: {
             type: 'number',
