@@ -1,15 +1,20 @@
 // Recall eval: run labelled cases against a memory dir and compare rankers on what the agent
 // would actually receive (rank + pack, scored on the injected note names).
-//   bun bench/recallEval.ts --dir <memoryDir> --cases <file> [--semantic <module>] [--sweep] [--json]
+//   bun bench/recallEval.ts --dir <memoryDir> --cases <file> [--semantic <module>] [--reranker <module>] [--sweep] [--json]
 // cases.json: [{ prompt, context?, expect: string[] }] or [{ tool: [{tool_name, tool_input,
 // tool_response?}], expect }]. `expect: []` means nothing should inject.
 // --semantic <module>: the module exports createEmbedder(opts) returning
-// { embed(texts: string[]): Promise<Float32Array[]>; dispose(): void }; enables the `hybrid` ranker.
+// { embed(texts: string[]): Promise<Float32Array[]>; dispose(): void }; enables the `hybrid` ranker,
+// which mirrors production: chunked note vectors (max-sim), the query prefix, a top-SCORES_KEPT map.
+// --reranker <module> (needs --semantic): default export createReranker({ cacheDir }) returning
+// { rerank(query, passages): Promise<number[]>; dispose(): void }; enables the `rerank` ranker
+// (hybrid, then the top RERANK_CANDIDATES reranked and gated; the query is `rerankQuery`, as in production). --sweep then also sweeps minLogit.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isMemoryNoteVisibleToDaemon, loadAllNotes } from '../memory/src/graph'
 import type { MemoryNote } from '../memory/src/graph'
-import { PACK_LIMITS, packRecall, rankOptions } from '../memory/src/pack'
+import { PACK_LIMITS, excerptText, packRecall, rankOptions } from '../memory/src/pack'
+import { RERANK_CANDIDATES, RERANK_MAX_DROP, RERANK_MIN_LOGIT, gateByRerank, rerankQuery } from '../memory/src/rerankGate'
 import { bismuthHome } from '../core/src/bismuthHome'
 import { buildRecallIndex, rankNotes } from '../memory/src/rank'
 import type { RecallIndex } from '../memory/src/rank'
@@ -28,7 +33,8 @@ export type EvalCase = {
     realistic?: boolean
     expect: string[]
 }
-export type RankerName = 'legacy' | 'bm25' | 'hybrid'
+export type RankerName = 'legacy' | 'bm25' | 'hybrid' | 'rerank'
+export type Reranker = { rerank(query: string, passages: string[]): Promise<number[]>; dispose(): void }
 export type Embedder = { embed(texts: string[]): Promise<Float32Array[]>; dispose(): void }
 
 // ---- legacy: the pre-plan searchMemory (memory/src/search.ts at c24b517a), copied verbatim -------
@@ -228,18 +234,46 @@ export type Prepared = {
     notes: MemoryNote[]
     index: RecallIndex
     embedder?: Embedder
-    noteVecs?: Float32Array[]
+    /** One vector per chunk of each note, parallel to `notes`. */
+    noteVecs?: Float32Array[][]
+    queryPrefix?: string
+    scoresKept?: number
+    reranker?: Reranker
+    /** `gateByRerank`'s minLogit for the `rerank` ranker; undefined = the production default. */
+    rerankMinLogit?: number
+    /** `gateByRerank`'s maxDrop for the `rerank` ranker; undefined = the production default. */
+    rerankMaxDrop?: number
+    /** logits by query + candidate names, so a threshold sweep scores the model once. */
+    rerankCache?: Map<string, number[]>
 }
 
 const noteText = (n: MemoryNote) =>
     `${n.name}\n${n.frontmatter.description ?? ''}\n${n.frontmatter.tags.join(' ')}\n${n.content.slice(0, 1500)}`
 
-export async function prepare(dir: string, embedder?: Embedder): Promise<Prepared> {
+export async function prepare(dir: string, embedder?: Embedder, reranker?: Reranker): Promise<Prepared> {
     const notes = (await loadAllNotes(dir)).filter(isMemoryNoteVisibleToDaemon)
     const prepared: Prepared = { notes, index: buildRecallIndex(notes) }
     if (embedder) {
+        // dynamic: the bm25-only unit suite never loads the embedding module
+        const mod: Record<string, any> = await import('../core/src/memoryEmbed')
         prepared.embedder = embedder
-        prepared.noteVecs = await embedder.embed(notes.map(noteText))
+        prepared.queryPrefix = mod.QUERY_PREFIX
+        prepared.scoresKept = mod.SCORES_KEPT
+        let chunks: string[][]
+        if (typeof mod.noteChunks === 'function') chunks = notes.map(n => mod.noteChunks(n) as string[])
+        else {
+            console.error('recallEval: memoryEmbed has no noteChunks, falling back to one chunk per note')
+            chunks = notes.map(n => [noteText(n)])
+        }
+        const flat = chunks.flat()
+        const vecs: Float32Array[] = []
+        for (let i = 0; i < flat.length; i += 64) vecs.push(...(await embedder.embed(flat.slice(i, i + 64))))
+        let at = 0
+        prepared.noteVecs = chunks.map(c => vecs.slice(at, (at += c.length)))
+    }
+    if (reranker) {
+        prepared.reranker = reranker
+        prepared.rerankCache = new Map()
     }
     return prepared
 }
@@ -276,13 +310,47 @@ export async function runCase(p: Prepared, ranker: RankerName, c: EvalCase): Pro
         return { injected: r.names, chars: r.chars, ms: performance.now() - t0 }
     }
     let semantic: Map<string, number> | undefined
-    if (ranker === 'hybrid') {
-        if (!p.embedder || !p.noteVecs) throw new Error('hybrid needs --semantic')
-        const [qv] = await p.embedder.embed([semanticQueryText(q)])
-        semantic = new Map(p.notes.map((n, i) => [n.name, cosine(qv!, p.noteVecs![i]!)]))
+    if (ranker === 'hybrid' || ranker === 'rerank') {
+        if (!p.embedder || !p.noteVecs) throw new Error(`${ranker} needs --semantic`)
+        const [qv] = await p.embedder.embed([`${p.queryPrefix ?? ''}${semanticQueryText(q)}`])
+        // max-sim over each note's chunks, then only the top scores are kept (as production does)
+        const scored = p.notes.map((n, i) => [n.name, Math.max(0, ...p.noteVecs![i]!.map(v => cosine(qv!, v)))] as const)
+        scored.sort((a, b) => b[1] - a[1])
+        semantic = new Map(scored.slice(0, p.scoresKept ?? scored.length))
     }
     const ranked = rankNotes(p.index, q, rankOptions(q.mode, semantic))
-    const packed = packRecall(ranked, q.mode)
+    if (ranker === 'rerank') {
+        if (!p.reranker) throw new Error('rerank needs --reranker')
+        const candidates = ranked
+            .filter(r => r.score >= (PACK_LIMITS[q.mode].semanticMinScore ?? PACK_LIMITS[q.mode].minScore))
+            .slice(0, RERANK_CANDIDATES)
+        let gated = candidates
+        if (candidates.length > 0) {
+            const rq = rerankQuery(q)
+            const key = `${q.mode}\n${rq}\n${candidates.map(r => r.note.name).join('|')}`
+            let logits = p.rerankCache?.get(key)
+            if (!logits) {
+                const passages = candidates.map(r => excerptText(r, PACK_LIMITS[q.mode].perNoteChars))
+                logits = await p.reranker.rerank(rq, passages)
+                p.rerankCache?.set(key, logits)
+            }
+            gated = gateByRerank(
+                candidates,
+                logits,
+                {
+                    ...(p.rerankMinLogit === undefined ? {} : { minLogit: p.rerankMinLogit }),
+                    ...(p.rerankMaxDrop === undefined ? {} : { maxDrop: p.rerankMaxDrop }),
+                },
+            )
+        }
+        const out = packRecall(gated, q.mode, undefined, { semantic: false })
+        return {
+            injected: out.injected.map(i => i.name),
+            chars: out.text?.length ?? 0,
+            ms: performance.now() - t0,
+        }
+    }
+    const packed = packRecall(ranked, q.mode, undefined, { semantic: !!semantic })
     return {
         injected: packed.injected.map(i => i.name),
         chars: packed.text?.length ?? 0,
@@ -357,7 +425,7 @@ async function main() {
     const dir = arg('dir')
     const casesFile = arg('cases')
     if (!dir || !casesFile) {
-        console.error('usage: bun bench/recallEval.ts --dir <memoryDir> --cases <file> [--semantic <module>] [--sweep] [--json]')
+        console.error('usage: bun bench/recallEval.ts --dir <memoryDir> --cases <file> [--semantic <module>] [--reranker <module>] [--sweep] [--json]')
         process.exit(2)
     }
     let embedder: Embedder | undefined
@@ -367,12 +435,22 @@ async function main() {
         const factory = mod.createEmbedder ?? mod.default
         embedder = await factory({ cacheDir: bismuthHome('models') })
     }
-    const p = await prepare(resolve(dir), embedder)
+    let reranker: Reranker | undefined
+    const rerankerModule = arg('reranker')
+    if (rerankerModule) {
+        if (!embedder) {
+            console.error('--reranker needs --semantic (the rerank ranker reranks the hybrid candidates)')
+            process.exit(2)
+        }
+        const mod = await import(resolve(rerankerModule))
+        reranker = await (mod.createReranker ?? mod.default)({ cacheDir: bismuthHome('models') })
+    }
+    const p = await prepare(resolve(dir), embedder, reranker)
     const all = loadCases(resolve(casesFile))
     const promptCases = all.filter(c => !isToolCase(c) && !isSubagentCase(c))
     const subagentCases = all.filter(isSubagentCase)
     const toolCases = all.filter(isToolCase)
-    const rankers: RankerName[] = ['legacy', 'bm25', ...(embedder ? (['hybrid'] as const) : [])]
+    const rankers: RankerName[] = ['legacy', 'bm25', ...(embedder ? (['hybrid'] as const) : []), ...(reranker ? (['rerank'] as const) : [])]
 
     const groups: { name: string; cases: EvalCase[]; rankers: RankerName[] }[] = [
         { name: 'prompt mode', cases: promptCases, rankers },
@@ -408,9 +486,39 @@ async function main() {
         result.sweep = Object.values(sweep).flat()
     }
 
+    if (argv.includes('--sweep') && reranker) {
+        const sweep: Summary[] = []
+        for (const [mode, cases] of [['prompt', promptCases], ['subagent', subagentCases]] as const) {
+            if (cases.length === 0) continue
+            const rows: Summary[] = []
+            for (let m = -10; m <= 4; m += 0.25) {
+                p.rerankMinLogit = m
+                const s = (await evaluate(p, 'rerank', cases)).summary
+                rows.push({ ...s, ranker: `lg${m}` })
+            }
+            p.rerankMinLogit = undefined
+            sweep.push(...rows)
+            const drops: Summary[] = []
+            for (const d of [3, 4, 6, 8, 12, 100]) {
+                p.rerankMaxDrop = d
+                const s = (await evaluate(p, 'rerank', cases)).summary
+                drops.push({ ...s, ranker: `drop${d}` })
+            }
+            p.rerankMaxDrop = undefined
+            out.push('', `== RERANK_MAX_DROP sweep at the default minLogit, ${mode} mode`, table(drops))
+            out.push(
+                '',
+                `== RERANK_MIN_LOGIT sweep, ${mode} mode (production default ${RERANK_MIN_LOGIT}, maxDrop ${RERANK_MAX_DROP})`,
+                table(rows),
+            )
+        }
+        result.rerankSweep = sweep
+    }
+
     if (argv.includes('--json')) console.log(JSON.stringify(result, null, 2))
     else console.log(out.join('\n'))
     embedder?.dispose()
+    reranker?.dispose()
 }
 
 if (import.meta.main) await main()

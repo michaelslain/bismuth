@@ -95,6 +95,7 @@ function splitSections(text: string, title: string): Section[] {
     const sections: Section[] = []
     let cur: Section = { heading: title, level: 1, anchor: '', text: '' }
     const buf: string[] = []
+    const seen = new Map<string, number>()
 
     const flush = () => {
         cur.text = buf.join('\n').trim()
@@ -107,10 +108,14 @@ function splitSections(text: string, title: string): Section[] {
         if (h) {
             flush()
             const heading = h[2].trim()
+            // GitHub-style: the second identical slug becomes slug-1, the third slug-2.
+            const base = slugify(heading)
+            const n = seen.get(base) ?? 0
+            seen.set(base, n + 1)
             cur = {
                 heading,
                 level: h[1].length,
-                anchor: slugify(heading),
+                anchor: n === 0 ? base : `${base}-${n}`,
                 text: '',
             }
             continue
@@ -241,14 +246,22 @@ export function searchDocs(
     return hits.slice(0, limit)
 }
 
+/** Above this, an MCP read of a whole page returns its intro plus a section outline instead: a
+ *  client caps tool output (Claude Code spills anything past ~25K tokens to a file the agent then
+ *  has to page through), and vault/visibility.md alone is 75K characters. */
+export const DOC_READ_MAX_CHARS = 20_000
+const OUTLINE_INTRO_CHARS = 3_000
+
 export function readDoc(
     docsRoot: string,
     relPath: string,
     section?: string,
+    opts: { maxChars?: number; full?: boolean } = {},
 ): string {
     const root = resolve(docsRoot)
 
-    // Strip a trailing #anchor from the relative path before resolving.
+    // A trailing #anchor (the shape bismuth_docs_search returns) selects that section.
+    const anchor = /#(.+)$/.exec(relPath)?.[1]
     const cleanRel = relPath.replace(/#.*$/, '')
 
     // Reject path traversal: the target must stay within docsRoot.
@@ -259,15 +272,52 @@ export function readDoc(
     }
 
     const text = readFileSync(target, 'utf8')
-    if (section === undefined) return text
-
-    const wanted = section.toLowerCase().trim()
     const title = docTitle(text, target)
-    for (const sec of splitSections(text, title)) {
-        if (sec.heading.toLowerCase().trim() === wanted) {
-            const prefix = `${'#'.repeat(sec.level)} ${sec.heading}\n\n`
-            return (prefix + sec.text).trim()
-        }
+    const sections = splitSections(text, title)
+    const wantedSection = section?.toLowerCase().trim()
+    const wantedAnchor = anchor?.toLowerCase().trim()
+    if (wantedSection === undefined && wantedAnchor === undefined) {
+        if (opts.full || opts.maxChars === undefined || text.length <= opts.maxChars) return text
+        return outline(cleanRel, title, sections, text.length)
     }
-    throw new Error(`Section not found in ${cleanRel}: ${section}`)
+
+    // An explicit section matches heading text OR anchor; a #anchor matches the anchor only.
+    const hit =
+        wantedSection !== undefined
+            ? sections.find(
+                  sec =>
+                      sec.heading.toLowerCase().trim() === wantedSection ||
+                      (sec.anchor !== '' && sec.anchor === wantedSection),
+              )
+            : sections.find(sec => sec.anchor !== '' && sec.anchor === wantedAnchor)
+    if (hit) {
+        const prefix = `${'#'.repeat(hit.level)} ${hit.heading}\n\n`
+        return (prefix + hit.text).trim()
+    }
+    throw new Error(`Section not found in ${cleanRel}: ${section ?? `#${anchor}`}`)
+}
+
+/** A too-long page as its intro plus every heading with its size, so the next call can ask for
+ *  exactly the section it needs. */
+function outline(rel: string, title: string, sections: Section[], total: number): string {
+    const [intro, ...rest] = sections
+    const lines = [
+        `# ${title}`,
+        '',
+        intro && intro.text.length > OUTLINE_INTRO_CHARS
+            ? `${intro.text.slice(0, OUTLINE_INTRO_CHARS).trimEnd()}…`
+            : (intro?.text ?? ''),
+        '',
+        `---`,
+        `This page is ${total.toLocaleString('en-US')} characters, too long to return whole. Call ` +
+            `bismuth_docs_read again with path "${rel}" and section set to one heading (or an anchor) ` +
+            `below, or path "${rel}#anchor" (the text before the next heading of any depth comes back). ` +
+            `Pass full: true to get the whole page.`,
+        '',
+        ...rest.map(s => {
+            const dup = /-\d+$/.test(s.anchor) && s.anchor !== slugify(s.heading)
+            return `${'  '.repeat(Math.max(0, s.level - 2))}- ${s.heading} (${dup ? `#${s.anchor}, ` : ''}${s.text.length} chars)`
+        }),
+    ]
+    return lines.join('\n')
 }

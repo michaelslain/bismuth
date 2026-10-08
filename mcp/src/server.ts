@@ -7,7 +7,7 @@ import {
     type CallToolRequest,
     type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js'
-import { listDocs, searchDocs, readDoc } from './docs'
+import { DOC_READ_MAX_CHARS, listDocs, searchDocs, readDoc } from './docs'
 import { SERVER_INSTRUCTIONS } from './instructions'
 import { runCli, cliHelp, cliToolResult } from './cli'
 import {
@@ -76,7 +76,12 @@ const tools = [
                 section: {
                     type: 'string',
                     description:
-                        'Optional heading to return just that section.',
+                        'Optional heading (or #anchor slug) to return just that section.',
+                },
+                full: {
+                    type: 'boolean',
+                    description:
+                        'Return the whole page even when it is over the length limit (default: long pages return an outline).',
                 },
             },
             required: ['path'],
@@ -333,7 +338,12 @@ export async function handleCallTool(
                 const section =
                     typeof args.section === 'string' ? args.section : undefined
                 return textResult(
-                    asText(await readDoc(docsRoot, path, section)),
+                    asText(
+                        await readDoc(docsRoot, path, section, {
+                            maxChars: DOC_READ_MAX_CHARS,
+                            full: args.full === true,
+                        }),
+                    ),
                 )
             }
             case 'bismuth_doctor':

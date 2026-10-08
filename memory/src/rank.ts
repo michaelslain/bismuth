@@ -103,6 +103,12 @@ export const STOP_WORDS = new Set([
     'never',
     'always',
     'yet',
+    'which',
+    'whose',
+    'whom',
+    'these',
+    'those',
+    'off',
 ])
 
 export type RecallIndex = {
@@ -139,6 +145,12 @@ const CONTEXT_WEIGHT = 0.35
 const SEMANTIC_TOP = 10
 const SEMANTIC_BONUS = 0.5
 export const SEMANTIC_MIN_COSINE = 0.55 // tuned by the eval
+/** bge-small cosines sit in a narrow band, so on a topical vault a query the vault knows nothing
+ *  about still finds ten notes above the fixed floor (all ~0.60). The tenth-best cosine is this
+ *  query's background level (core hands over exactly the top ten, the eval every note); a note earns a lift only when it clears that by this margin.
+ *  Measured on a real 135-note vault: unmatched prompts top out within ~0.04 to ~0.07 of their own
+ *  tenth cosine, matched ones clear it by 0.08 to 0.3. */
+export const SEMANTIC_BACKGROUND_MARGIN = 0.07
 const DEFAULT_LIMIT = 20
 /** Lone-hit skepticism: a note whose only evidence is ONE query term found in its body (not its
  *  name, tags or description) is dropped unless that term is at least this share of the prompt's
@@ -283,7 +295,13 @@ export function rankNotes(
     // fused score stays on the same 0..1 scale as the lexical coverage PACK_LIMITS' minScore reads.
     const semanticBonus = new Map<number, number>()
     const cosine = new Map<number, number>()
-    const floor = opts.semanticMinCosine ?? SEMANTIC_MIN_COSINE
+    let floor = opts.semanticMinCosine ?? SEMANTIC_MIN_COSINE
+    if (opts.semantic && opts.semantic.size >= SEMANTIC_TOP)
+        floor = Math.max(
+            floor,
+            [...opts.semantic.values()].sort((a, b) => b - a)[SEMANTIC_TOP - 1]! +
+                SEMANTIC_BACKGROUND_MARGIN,
+        )
     if (opts.semantic && opts.semantic.size > 0) {
         const byName = new Map(index.notes.map((note, i) => [note.name, i]))
         const top = [...opts.semantic]
@@ -300,6 +318,12 @@ export function rankNotes(
         })
     }
 
+    // With a full semantic map in hand, body-only lexical evidence must be seconded by meaning: a
+    // note none of whose names, tags or description the query touched, and that the embedder does
+    // not place above this query's background, matched on words, not on topic ("notes", "ai",
+    // "marked" in a course log for "which notes are marked off limits to ai").
+    const semanticVouches =
+        !opts.strictEvidence && !!opts.semantic && opts.semantic.size >= SEMANTIC_TOP && n >= SMALL_VAULT
     const docs = new Set([...lexical.keys(), ...semanticBonus.keys()])
     const ranked: RankedNote[] = []
     for (const i of docs) {
@@ -314,6 +338,8 @@ export function rankNotes(
             const coverage = primaryTerms.size ? (primaryTerms.has(hits[0]!) ? 1 : 0) / primaryTerms.size : 0
             if (coverage < LONE_HIT_MIN_COVERAGE) continue
         }
+        if (semanticVouches && !semanticBonus.has(i) && !hits.some(t => index.heads[i]!.has(t)))
+            continue
         // Strict mode applies to semantic hits too: a cosine is a bonus on lexical evidence there,
         // never a reason on its own.
         if (opts.strictEvidence && n >= SMALL_VAULT) {

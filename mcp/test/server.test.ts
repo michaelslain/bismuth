@@ -138,3 +138,24 @@ test('bismuth_doctor flags a failing doctor run as isError', async () => {
     const result = await callTool('bismuth_doctor', {})
     expect(result.isError).toBe(true)
 })
+
+test('bismuth_docs_read through the real handler outlines a page over 20000 chars and returns it whole with full', async () => {
+    const dir = tempDir('bismuth-mcp-bigdoc-')
+    writeFileSync(join(dir, 'big.md'), `# Big\n\nintro\n\n## Part One\n\n${'x'.repeat(21_000)}\n`)
+    const saved = process.env.BISMUTH_DOCS_DIR
+    process.env.BISMUTH_DOCS_DIR = dir
+    try {
+        const { handleCallTool: handle } = await import(`../src/server?bigdoc=${Date.now()}`)
+        const call = (args: Record<string, unknown>) =>
+            handle({ method: 'tools/call', params: { name: 'bismuth_docs_read', arguments: args } })
+        const outline = await call({ path: 'big.md' })
+        const outlineText = outline.content[0].text as string
+        expect(outlineText).toContain('- Part One (')
+        expect(outlineText.length).toBeLessThan(5_000)
+        const whole = await call({ path: 'big.md', full: true })
+        expect((whole.content[0].text as string).length).toBeGreaterThan(21_000)
+    } finally {
+        if (saved === undefined) delete process.env.BISMUTH_DOCS_DIR
+        else process.env.BISMUTH_DOCS_DIR = saved
+    }
+})

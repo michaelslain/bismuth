@@ -23,7 +23,10 @@ export const QUERY_TIMEOUT_MS = 250
 export const REEMBED_DEBOUNCE_MS = 2000
 /** Cosines kept per query: rankNotes only reads the top 10, so a bigger map is dead weight. */
 export const SCORES_KEPT = 10
-const NOTE_TEXT_CHARS = 1000
+/** One embedded window of a note: the model reads ~512 tokens, so a long note is split rather than
+ *  truncated, and a note scores as its best window. */
+export const CHUNK_CHARS = 600
+export const MAX_CHUNKS_PER_NOTE = 40
 const BATCH = 1
 
 /** What the pipeline hands back for a batch: a [n, dim] tensor with a flat `data`. */
@@ -316,19 +319,41 @@ export default function createEmbedder(opts: EmbedderOptions): LiveEmbedder {
     }
 }
 
-/** What recall shows of a note, as the text that gets embedded. */
-export function noteEmbedText(note: MemoryNote): string {
+/** The texts embedded for a note: windows of at most `CHUNK_CHARS` chars (breaking on whitespace,
+ *  never mid-word unless one word alone exceeds a window), each led by the note's name, description and
+ *  tags so a window knows what it belongs to. Capped at `MAX_CHUNKS_PER_NOTE`. Pure. */
+export function noteChunks(note: MemoryNote): string[] {
     const fm = note.frontmatter
-    return [note.name, fm.description ?? '', fm.tags.join(' '), note.content]
-        .filter(Boolean)
-        .join('\n')
-        .slice(0, NOTE_TEXT_CHARS)
+    const header = [note.name, fm.description, fm.tags.join(' ')].filter(Boolean).join('\n') + '\n'
+    const body = note.content
+    const size = Math.max(40, CHUNK_CHARS - header.length)
+    const out: string[] = []
+    let pos = 0
+    while (pos < body.length && out.length < MAX_CHUNKS_PER_NOTE) {
+        while (pos < body.length && /\s/.test(body[pos]!)) pos++
+        if (pos >= body.length) break
+        let end = Math.min(pos + size, body.length)
+        if (end < body.length && !/\s/.test(body[end]!)) {
+            let cut = end
+            while (cut > pos && !/\s/.test(body[cut - 1]!)) cut--
+            if (cut > pos) end = cut
+        }
+        const text = body.slice(pos, end).trim()
+        if (text) out.push(header + text)
+        pos = end
+    }
+    return out.length ? out : [header.trimEnd()]
 }
 
-const dot = (a: Float32Array, b: Float32Array): number => {
-    let s = 0
-    for (let i = 0; i < a.length; i++) s += a[i]! * b[i]!
-    return s
+/** A note scores as its best chunk. */
+const bestChunk = (q: Float32Array, s: Stored): number => {
+    let best = -Infinity
+    for (let o = 0; o + s.dim <= s.vecs.length; o += s.dim) {
+        let d = 0
+        for (let i = 0; i < s.dim; i++) d += q[i]! * s.vecs[o + i]!
+        if (d > best) best = d
+    }
+    return best
 }
 
 export type VectorStoreOptions = {
@@ -350,17 +375,21 @@ export type VectorStore = {
     flush(): Promise<void>
 }
 
-type Stored = { hash: string; vec: Float32Array }
+/** All of a note's chunk vectors, flat: `dim` floats per chunk, concatenated. */
+type Stored = { hash: string; dim: number; vecs: Float32Array }
 
-/** Vectors live under `<cacheDir>/<sha1(memoryDir)>/vectors.json`, so a restart embeds nothing the
- *  last process already had. */
+const CHUNKED_FORMAT = 'chunked-v1'
+
+/** Vectors live under `<cacheDir>/<sha1(memoryDir)>/vectors-chunked.json`, so a restart embeds nothing
+ *  the last process already had. The older single-vector `vectors.json` beside it belongs to older
+ *  builds sharing this cache: it is never read here and never rewritten. */
 export function createVectorStore(
     cacheDir: string,
     memoryDir: string,
     opts: VectorStoreOptions,
 ): VectorStore {
     const dir = join(cacheDir, createHash('sha1').update(memoryDir).digest('hex'))
-    const file = join(dir, 'vectors.json')
+    const file = join(dir, 'vectors-chunked.json')
     const debounceMs = opts.debounceMs ?? REEMBED_DEBOUNCE_MS
     let entries: Map<string, Stored> | null = null
     let latest: MemoryNote[] = []
@@ -376,15 +405,20 @@ export function createVectorStore(
         try {
             if (existsSync(file)) {
                 const j = JSON.parse(readFileSync(file, 'utf8')) as {
+                    format?: string
                     model: string
-                    vectors: Record<string, { hash: string; vec: string }>
+                    vectors: Record<string, { hash: string; dim: number; vecs: string }>
                 }
-                if (j.model === EMBED_MODEL)
+                if (j.format === CHUNKED_FORMAT && j.model === EMBED_MODEL)
                     for (const [name, v] of Object.entries(j.vectors)) {
-                        const b = Buffer.from(v.vec, 'base64')
+                        const b = Buffer.from(v.vecs, 'base64')
+                        // a zero or ragged dim would make bestChunk loop forever
+                        if (!Number.isInteger(v.dim) || v.dim <= 0 || b.byteLength % (4 * v.dim) !== 0)
+                            continue
                         entries.set(name, {
                             hash: v.hash,
-                            vec: new Float32Array(
+                            dim: v.dim,
+                            vecs: new Float32Array(
                                 b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength),
                             ),
                         })
@@ -397,15 +431,16 @@ export function createVectorStore(
     }
 
     const persist = () => {
-        const vectors: Record<string, { hash: string; vec: string }> = {}
+        const vectors: Record<string, { hash: string; dim: number; vecs: string }> = {}
         for (const [name, s] of read())
             vectors[name] = {
                 hash: s.hash,
-                vec: Buffer.from(s.vec.buffer, s.vec.byteOffset, s.vec.byteLength).toString('base64'),
+                dim: s.dim,
+                vecs: Buffer.from(s.vecs.buffer, s.vecs.byteOffset, s.vecs.byteLength).toString('base64'),
             }
         mkdirSync(dir, { recursive: true })
         const tmp = `${file}.${process.pid}.tmp`
-        writeFileSync(tmp, JSON.stringify({ model: EMBED_MODEL, vectors }))
+        writeFileSync(tmp, JSON.stringify({ format: CHUNKED_FORMAT, model: EMBED_MODEL, vectors }))
         renameSync(tmp, file)
     }
 
@@ -426,8 +461,17 @@ export function createVectorStore(
                 pruned = true
             }
         if (todo.length) {
-            const vecs = await opts.embedder.embed(todo.map(noteEmbedText))
-            todo.forEach((n, i) => e.set(n.name, { hash: noteHash(n), vec: vecs[i]! }))
+            const chunks = todo.map(noteChunks)
+            const vecs = await opts.embedder.embed(chunks.flat())
+            let at = 0
+            todo.forEach((n, i) => {
+                const mine = vecs.slice(at, at + chunks[i]!.length)
+                at += mine.length
+                const dim = mine[0]!.length
+                const flat = new Float32Array(dim * mine.length)
+                mine.forEach((v, k) => flat.set(v, k * dim))
+                e.set(n.name, { hash: noteHash(n), dim, vecs: flat })
+            })
             opts.onEmbed?.(todo.length)
         }
         if (todo.length || pruned) persist()
@@ -475,7 +519,7 @@ export function createVectorStore(
             const out: [string, number][] = []
             for (const n of notes) {
                 const s = e.get(n.name)
-                if (s && s.hash === noteHash(n)) out.push([n.name, dot(queryVec, s.vec)])
+                if (s && s.hash === noteHash(n)) out.push([n.name, bestChunk(queryVec, s)])
             }
             out.sort((a, b) => b[1] - a[1])
             return new Map(out.slice(0, SCORES_KEPT))

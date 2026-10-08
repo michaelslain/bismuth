@@ -10,9 +10,16 @@ import { server } from '../src/server'
 // the number rather than drifting past "terse" one clause at a time. Raised 120 → 150 when the
 // guide triggers moved here from the retired Claude Code skills (whose three descriptions cost
 // every session about as much). Raised 150 → 160 for the one-sentence bismuth_doctor pointer.
+// Raised 160 → 200 for the visibility pointer: without it an agent asked "which notes are off
+// limits to ai" grepped invented frontmatter keys and never found the one command that answers.
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(160)
+    expect(words).toBeLessThan(200)
+})
+
+test('SERVER_INSTRUCTIONS answers "what is hidden from AI" with the deny-list command', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('bismuth settings deny-list')
+    expect(SERVER_INSTRUCTIONS).toContain('vault/visibility.md')
 })
 
 test('SERVER_INSTRUCTIONS sends a misbehaving install to bismuth_doctor first', () => {

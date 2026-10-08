@@ -29,6 +29,16 @@ const rank = (notes: MemoryNote[], q: string) =>
     rankNotes(buildRecallIndex([...notes, ...fillers]), { primary: q })
 
 describe('packRecall', () => {
+    test('a semantic-scored request packs against the stricter semanticMinScore', () => {
+        const lim = PACK_LIMITS.prompt
+        expect(lim.semanticMinScore).toBeGreaterThan(lim.minScore)
+        const n = note('between', 'a note scored between the two bars')
+        const score = (lim.minScore + lim.semanticMinScore!) / 2
+        const ranked = [{ note: n, score, lexical: score }]
+        expect(packRecall(ranked, 'prompt').injected.map(i => i.name)).toEqual(['between'])
+        expect(packRecall(ranked, 'prompt', undefined, { semantic: true }).injected).toEqual([])
+    })
+
     test('a small note ranked behind two oversized ones is still injected', () => {
         const notes = [
             note('huge', `# Huge\n${'calendar overlap detail. '.repeat(3200)}`),

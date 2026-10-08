@@ -22,6 +22,12 @@ export type PackLimits = {
      *  `bun bench/recallEval.ts --sweep` on both eval suites: prompt/subagent keep the ranker's
      *  recall, tool is the highest value that still injects every labelled tool case. */
     minScore: number
+    /** `minScore` when the semantic channel scored the request. It is stricter because with
+     *  semantics in hand a real match carries a cosine lift, so a note still under this bar matched
+     *  on a word or a tag, not on topic. Set from `bun bench/recallEval.ts` on the synthetic suite
+     *  plus a real 135-note vault: 0.12 is the highest value keeping the synthetic recall@5 at 1.
+     *  Unset = `minScore`. */
+    semanticMinScore?: number
     /** Cosine below which a note gets no semantic lift in this mode (see `rankNotes`'s
      *  `semanticMinCosine`). Tool mode is stricter: mid-turn recall must not inject loose matches. */
     semanticMinCosine: number
@@ -38,7 +44,7 @@ export type PackLimits = {
 }
 
 export const PACK_LIMITS: Record<Exclude<RecallMode, 'session-start'>, PackLimits> = {
-    prompt: { maxNotes: 5, perNoteChars: 900, budgetChars: 6000, pointers: 5, minScore: 0.08, semanticMinCosine: 0.55 },
+    prompt: { maxNotes: 5, perNoteChars: 900, budgetChars: 6000, pointers: 5, minScore: 0.08, semanticMinScore: 0.12, semanticMinCosine: 0.55 },
     tool: { maxNotes: 2, perNoteChars: 600, budgetChars: 1800, pointers: 0, minScore: 0.21, semanticMinCosine: 0.65, contextWeight: 0.5, locationWeight: 0.3, maxQueryWeight: 3, strictEvidence: true },
     subagent: { maxNotes: 4, perNoteChars: 700, budgetChars: 4000, pointers: 4, minScore: 0.08, semanticMinCosine: 0.55 },
 }
@@ -162,6 +168,12 @@ function excerpt(r: RankedNote, perNoteChars: number, dir?: string): string {
     return defang(cut(room > 40 ? `${fixed}\n${cut(section, room)}` : fixed, perNoteChars))
 }
 
+/** The text a note would be shown as when injected (header, description, best section), cut at
+ *  `perNoteChars`: what the reranker judges, so it grades exactly what the agent would read. */
+export function excerptText(r: RankedNote, perNoteChars: number): string {
+    return excerpt(r, perNoteChars)
+}
+
 function envelope(parts: string[]): { open: string; close: string } {
     return {
         open: [`<${MEMORY_BLOCK_TAG}>`, MEMORY_BANNER, '', ...parts].join('\n'),
@@ -173,9 +185,10 @@ export function packRecall(
     ranked: RankedNote[],
     mode: Exclude<RecallMode, 'session-start'>,
     exclude?: Set<string>,
-    opts?: { dir?: string },
+    opts?: { dir?: string; semantic?: boolean },
 ): Packed {
     const limits = PACK_LIMITS[mode]
+    const minScore = (opts?.semantic && limits.semanticMinScore) || limits.minScore
     const { open, close } = envelope(['# Memories', ''])
     // open + "\n" + body + close
     let remaining = limits.budgetChars - open.length - 1 - close.length
@@ -189,7 +202,7 @@ export function packRecall(
 
     for (const r of ranked) {
         if (injected.length >= limits.maxNotes) break
-        if (r.score < limits.minScore || isExcluded(r)) continue
+        if (r.score < minScore || isExcluded(r)) continue
         const text = excerpt(r, limits.perNoteChars, opts?.dir)
         // +2: the blank line after each block
         if (text.length + 2 > remaining) continue
@@ -204,7 +217,7 @@ export function packRecall(
         const lines: string[] = []
         for (const r of ranked) {
             if (lines.length >= limits.pointers) break
-            if (r.score < limits.minScore || taken.has(r.note.name) || isExcluded(r)) continue
+            if (r.score < minScore || taken.has(r.note.name) || isExcluded(r)) continue
             const d = cut(noteDescription(r.note), POINTER_DESC_MAX)
             lines.push(defang(`- [[${r.note.name}]] (${r.note.frontmatter.type})${d ? ` — ${d}` : ''}`))
         }

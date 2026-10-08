@@ -1,15 +1,19 @@
 import { test, expect, afterAll } from 'bun:test'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import createEmbedder, {
     backoffFor,
     workerAvailable,
     createSemanticChannel,
     createVectorStore,
+    noteChunks,
+    CHUNK_CHARS,
+    MAX_CHUNKS_PER_NOTE,
     loadWorkerExtractor,
     type Extractor,
     type LiveEmbedder,
 } from '../src/memoryEmbed'
+import { createHash } from 'node:crypto'
 import { createRecallService, type Embedder } from '../src/memoryRecall'
 import { tempDir, sweepTempDirs } from './tempDirs'
 import type { MemoryNote } from '@bismuth/memory'
@@ -216,6 +220,138 @@ test('a deleted note is pruned from the persisted vectors', async () => {
     const reread = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
     const got = await reread.scores(Float32Array.from([1, 0]), [mkNote('a', 'x'), mkNote('b', 'y')])
     expect([...got.keys()]).toEqual(['a'])
+})
+
+// --- chunking ---------------------------------------------------------------------------------
+
+test('noteChunks: a short note is one chunk led by its name', () => {
+    const c = noteChunks(mkNote('alpha-note', 'x'.repeat(300)))
+    expect(c.length).toBe(1)
+    expect(c[0]!.startsWith('alpha-note')).toBe(true)
+})
+
+test('noteChunks: windows stay within size, start with the name, and break on whitespace', () => {
+    const words = Array.from({ length: 400 }, (_, i) => `word${i}`).join(' ')
+    const c = noteChunks(mkNote('long', words))
+    expect(c.length).toBeGreaterThan(1)
+    const seen = new Set(words.split(' '))
+    for (const ch of c) {
+        expect(ch.startsWith('long\n')).toBe(true)
+        expect(ch.length).toBeLessThanOrEqual(CHUNK_CHARS)
+        for (const w of ch.slice('long\n'.length).split(/\s+/)) expect(seen.has(w)).toBe(true)
+    }
+})
+
+test('noteChunks: an 80 KB note is capped at MAX_CHUNKS_PER_NOTE', () => {
+    const c = noteChunks(mkNote('big', 'lorem ipsum '.repeat(7000)))
+    expect(c.length).toBe(MAX_CHUNKS_PER_NOTE)
+})
+
+test('noteChunks: an empty note still yields its name', () => {
+    expect(noteChunks(mkNote('bare', ''))).toEqual(['bare'])
+})
+
+test('noteChunks: an empty body keeps the description and tags header', () => {
+    const n = mkNote('hollow', '  ')
+    n.frontmatter = { ...n.frontmatter, description: 'd', tags: ['t'] }
+    expect(noteChunks(n)).toEqual(['hollow\nd\nt'])
+})
+
+// --- chunked store ----------------------------------------------------------------------------
+
+test('a note scores as its best chunk, and only changed notes are re-embedded', async () => {
+    const dir = tempDir('vec-')
+    const { state, embedder } = countingEmbedder()
+    const store = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    // The "beta" chunk sits far past the first window; an alpha-only embed would score 0.
+    const long = `${'alpha filler text '.repeat(100)} beta ${'alpha filler text '.repeat(10)}`
+    const notes = [mkNote('a', long), mkNote('b', 'alpha short')]
+    await store.scores(Float32Array.from([0, 1]), notes)
+    await store.flush()
+    expect(state.embedded.length).toBe(noteChunks(notes[0]!).length + 1)
+    const s = await store.scores(Float32Array.from([0, 1]), notes)
+    expect(s.get('a')).toBe(1)
+    expect(s.get('b')).toBe(0)
+
+    const before = state.embedded.length
+    notes[1] = mkNote('b', 'alpha short edited')
+    await store.scores(Float32Array.from([0, 1]), notes)
+    await store.flush()
+    expect(state.embedded.length).toBe(before + 1) // only b
+})
+
+test('chunked vectors persist to vectors-chunked.json and survive a restart', async () => {
+    const dir = tempDir('vec-')
+    const notes = [mkNote('a', 'alpha one'), mkNote('b', `${'alpha '.repeat(300)} beta`)]
+    const first = countingEmbedder()
+    const s1 = createVectorStore(dir, '/mem', { embedder: first.embedder, debounceMs: 10 })
+    await s1.scores(Float32Array.from([0, 1]), notes)
+    await s1.flush()
+    const second = countingEmbedder()
+    const s2 = createVectorStore(dir, '/mem', { embedder: second.embedder, debounceMs: 10 })
+    const got = await s2.scores(Float32Array.from([0, 1]), notes)
+    expect(second.state.embedded.length).toBe(0)
+    expect(got.get('b')).toBe(1)
+})
+
+test('an old-format vectors.json is never read as chunked and never rewritten', async () => {
+    const dir = tempDir('vec-')
+    const sub = join(dir, createHash('sha1').update('/mem').digest('hex'))
+    mkdirSync(sub, { recursive: true })
+    const notes = [mkNote('a', 'alpha one')]
+    const { noteHash } = await import('@bismuth/memory')
+    const oldBody = JSON.stringify({
+        model: (await import('../src/embedModel')).EMBED_MODEL,
+        vectors: { a: { hash: noteHash(notes[0]!), vec: Buffer.from(Float32Array.from([1, 0]).buffer).toString('base64') } },
+    })
+    writeFileSync(join(sub, 'vectors.json'), oldBody)
+    // The old shape planted at the NEW name is not chunked either.
+    writeFileSync(join(sub, 'vectors-chunked.json'), oldBody)
+    const { state, embedder } = countingEmbedder()
+    const store = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    const s = await store.scores(Float32Array.from([1, 0]), notes)
+    expect(s.size).toBe(0) // nothing trusted yet
+    await store.flush()
+    expect(state.embedded.length).toBe(1) // re-embedded from scratch
+    expect(readFileSync(join(sub, 'vectors.json'), 'utf8')).toBe(oldBody)
+    expect(JSON.parse(readFileSync(join(sub, 'vectors-chunked.json'), 'utf8')).format).toBe('chunked-v1')
+})
+
+test('noteChunks: every window is led by name, description and tags', () => {
+    const note = {
+        ...mkNote('hdr', 'word '.repeat(600)),
+        frontmatter: { type: 'fact', tags: ['t1', 't2'], description: 'a short description' },
+    } as unknown as MemoryNote
+    const c = noteChunks(note)
+    expect(c.length).toBeGreaterThan(1)
+    for (const ch of c) {
+        expect(ch.startsWith('hdr\na short description\nt1 t2\n')).toBe(true)
+        expect(ch.length).toBeLessThanOrEqual(CHUNK_CHARS)
+    }
+})
+
+test('a corrupt stored entry (dim 0 or ragged) is skipped, not looped on', async () => {
+    const dir = tempDir('vec-')
+    const sub = join(dir, createHash('sha1').update('/mem').digest('hex'))
+    mkdirSync(sub, { recursive: true })
+    const notes = [mkNote('a', 'alpha one'), mkNote('b', 'beta two')]
+    const { noteHash } = await import('@bismuth/memory')
+    const vecs = Buffer.from(Float32Array.from([1, 0, 0]).buffer).toString('base64')
+    writeFileSync(
+        join(sub, 'vectors-chunked.json'),
+        JSON.stringify({
+            format: 'chunked-v1',
+            model: (await import('../src/embedModel')).EMBED_MODEL,
+            vectors: {
+                a: { hash: noteHash(notes[0]!), dim: 0, vecs },
+                b: { hash: noteHash(notes[1]!), dim: 2, vecs },
+            },
+        }),
+    )
+    const { embedder } = countingEmbedder()
+    const store = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    const got = await store.scores(Float32Array.from([1, 0]), notes)
+    expect(got.size).toBe(0)
 })
 
 // --- the channel inside recall ----------------------------------------------------------------

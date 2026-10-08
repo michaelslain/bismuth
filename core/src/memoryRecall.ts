@@ -12,6 +12,8 @@ import type {
     TranscriptEntry,
 } from '@bismuth/memory'
 import { sharedSemanticChannel } from './memoryEmbed'
+import { RERANK_TIMEOUT_MS, sharedReranker } from './memoryRerank'
+import type { Reranker } from './memoryRerank'
 import { SETTINGS_FILE, readDaemonEnabledSync } from './settings'
 
 /** The recall service: ONE long-lived owner of ranking, packing and the per-session dedup ledger,
@@ -49,6 +51,8 @@ export type RecallResponse = {
     reason?: 'disabled' | 'mid-turn-off' | 'no-memory' | 'no-match'
     /** True when the semantic channel contributed scores to this ranking. */
     semantic?: true
+    /** True when the cross-encoder gate decided this request (injected or refused). */
+    reranked?: true
 }
 
 export type RecallSettings = {
@@ -78,7 +82,7 @@ export type RecallEngine = Pick<
         ranked: RankedNote[],
         mode: Parameters<typeof mem.packRecall>[1],
         exclude?: Set<string>,
-        opts?: { dir?: string },
+        opts?: { dir?: string; semantic?: boolean },
     ) => Packed
 }
 
@@ -102,6 +106,10 @@ export type RecallDeps = {
         notes: MemoryNote[],
         memoryDir: string,
     ) => Promise<Map<string, number> | undefined>
+    /** The cross-encoder behind the relevance gate (prompt + subagent only). null/absent = today's
+     *  rules; a rejection or a slower answer than `rerankTimeoutMs` falls back the same way. */
+    reranker?: () => Reranker | null
+    rerankTimeoutMs?: number
     /** Called when a recall arrives with `semantic` off: stops background re-embedding. */
     semanticOff?: () => void
 }
@@ -166,6 +174,46 @@ async function readTranscriptTail(path: string): Promise<TranscriptEntry[]> {
         }
     } catch {
         return []
+    }
+}
+
+/** Rerank the top candidates (at the mode's lexical floor, ledger exclusions applied) against the
+ *  prompt and gate them. null = no verdict (no reranker, too slow, rejected, bad shape): the caller
+ *  keeps today's rules. A late answer is left to finish in the background. */
+async function rerankGate(
+    ranked: RankedNote[],
+    mode: 'prompt' | 'subagent',
+    query: string,
+    exclude: Set<string>,
+    reranker: Reranker | null,
+    timeoutMs: number,
+): Promise<RankedNote[] | null> {
+    if (!reranker) return null
+    try {
+        // the reranker only runs when semantics scored the request, so candidates clear the same bar the semantic path packs at; a note under it is a word or tag hit the cross-encoder should not get a chance to admit
+        const floor = mem.PACK_LIMITS[mode].semanticMinScore ?? mem.PACK_LIMITS[mode].minScore
+        const candidates = ranked
+            .filter(r => r.score >= floor && !exclude.has(r.note.name))
+            .slice(0, mem.RERANK_CANDIDATES)
+        if (!candidates.length) return null
+        const perNote = mem.PACK_LIMITS[mode].perNoteChars
+        const passages = candidates.map(r => mem.excerptText(r, perNote))
+        const work = reranker.rerank(query, passages)
+        work.catch(() => {})
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const late = new Promise<undefined>(res => {
+            timer = setTimeout(() => res(undefined), timeoutMs)
+        })
+        let logits: number[] | undefined
+        try {
+            logits = await Promise.race([work, late])
+        } finally {
+            clearTimeout(timer)
+        }
+        if (!logits || logits.length !== candidates.length) return null
+        return mem.gateByRerank(candidates, logits)
+    } catch {
+        return null
     }
 }
 
@@ -365,14 +413,33 @@ export function createRecallService(deps: RecallDeps): {
             if (ledger.injected.get(n.name) === eng.noteHash(n))
                 exclude.add(n.name)
 
-        const packed: Packed = eng.packRecall(ranked, req.mode, exclude, {
-            dir,
-        })
+        const scored = !!semantic && semantic.size > 0
+        // The relevance gate: with the semantic channel in hand, a cross-encoder reads the top
+        // candidates against the prompt and the weak ones are refused. Any failure = today's rules.
+        let gated: RankedNote[] | null = null
+        if (scored && (req.mode === 'prompt' || req.mode === 'subagent') && primary.trim())
+            gated = await rerankGate(
+                ranked,
+                req.mode,
+                mem.rerankQuery({ primary, ...(context ? { context } : {}) }),
+                exclude,
+                deps.reranker?.() ?? null,
+                deps.rerankTimeoutMs ?? RERANK_TIMEOUT_MS,
+            )
+
+        const packed: Packed = gated
+            ? gated.length
+                ? // the gate replaced the stricter semantic floor, and its order is the pack order
+                  eng.packRecall(gated, req.mode, exclude, { dir, semantic: false })
+                : { text: null, injected: [] }
+            : eng.packRecall(ranked, req.mode, exclude, { dir, semantic: scored })
         // `semantic: true` says the semantic channel scored this request, matched or not.
         if (!packed.text)
-            return semantic && semantic.size > 0
-                ? { ...none('no-match'), semantic: true }
-                : none('no-match')
+            return {
+                ...none('no-match'),
+                ...(scored ? { semantic: true as const } : {}),
+                ...(gated ? { reranked: true as const } : {}),
+            }
 
         // The caller gave up on this recall, so the model never saw these notes: leave the ledger be.
         if (req.signal?.aborted) return none('no-match')
@@ -382,7 +449,8 @@ export function createRecallService(deps: RecallDeps): {
         return {
             context: packed.text,
             injected: packed.injected.map(i => i.name),
-            ...(semantic && semantic.size > 0 ? { semantic: true as const } : {}),
+            ...(scored ? { semantic: true as const } : {}),
+            ...(gated ? { reranked: true as const } : {}),
         }
     }
 
@@ -415,6 +483,7 @@ export function recallServiceFor(
             embedder: () => sharedSemanticChannel().embedder(),
             semanticScores: (e, q, n, d) => sharedSemanticChannel().semanticScores(e, q, n, d),
             semanticOff: () => sharedSemanticChannel().pause(),
+            reranker: () => sharedReranker(),
         })
         shared.set(key, svc)
     }

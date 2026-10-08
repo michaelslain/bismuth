@@ -146,6 +146,40 @@ test('readDoc preserves the source heading depth (### stays ###)', () => {
     expect(section).toContain('must round-trip')
 })
 
+test('readDoc follows a search hit\'s #anchor to that section', () => {
+    const section = readDoc(root, 'getting-started.md#configuration')
+    expect(section.startsWith('## Configuration')).toBe(true)
+    expect(section).not.toContain('bun install')
+})
+
+test('readDoc with maxChars returns a too-long page as intro + outline, and a short one whole', () => {
+    expect(readDoc(root, 'getting-started.md', undefined, { maxChars: 10_000 })).toBe(GETTING_STARTED)
+    const out = readDoc(root, 'getting-started.md', undefined, { maxChars: 50 })
+    expect(out).toContain('Welcome to Bismuth')
+    expect(out).toContain('- Installation (')
+    expect(out).toContain('- Configuration (')
+    expect(out).not.toContain('flux-capacitor')
+    expect(out).toContain('section')
+})
+
+test('readDoc resolves slug-only and duplicate anchors, and throws for an unknown one', () => {
+    writeFileSync(
+        join(root, 'anchors.md'),
+        '# Anchors\n\nintro\n\n## Setup & Config (v2)\n\nslug body\n\n## Lifecycle\n\nfirst life\n\n## Lifecycle\n\nsecond life\n\n## Lifecycle\n\nthird life\n',
+    )
+    expect(readDoc(root, 'anchors.md#setup-config-v2')).toContain('slug body')
+    expect(readDoc(root, 'anchors.md#lifecycle')).toContain('first life')
+    expect(readDoc(root, 'anchors.md#lifecycle-1')).toContain('second life')
+    expect(readDoc(root, 'anchors.md', 'lifecycle-2')).toContain('third life')
+    expect(() => readDoc(root, 'anchors.md#nope')).toThrow(/Section not found/)
+    // the anchor selects by slug only, not by heading text
+    expect(() => readDoc(root, 'anchors.md#Setup & Config (v2)')).toThrow()
+    const out = readDoc(root, 'anchors.md', undefined, { maxChars: 10 })
+    expect(out).toContain('- Lifecycle (#lifecycle-1,')
+    expect(out).toContain('full: true')
+    expect(readDoc(root, 'anchors.md', undefined, { maxChars: 10, full: true })).toContain('third life')
+})
+
 test('readDoc rejects a path-traversal attempt', () => {
     // A secret living outside the docs root must stay unreachable.
     const secret = join(root, '..', 'bismuth-mcp-secret.md')

@@ -660,5 +660,179 @@
   ],
   "expect": [],
   "realistic": true
+ },
+ {
+  "prompt": "rename this file to something shorter",
+  "expect": []
+ },
+ {
+  "prompt": "list every hidden file in the vault",
+  "expect": []
+ },
+ {
+  "prompt": "write a function to parse dates in typescript",
+  "expect": []
+ },
+ {
+  "prompt": "which folders can the ai not see",
+  "expect": []
+ },
+ {
+  "prompt": "how do i center a div inside a flex container",
+  "expect": []
+ },
+ {
+  "prompt": "explain how a hash map handles collisions",
+  "expect": []
+ },
+ {
+  "prompt": "convert this csv column order into a json schema",
+  "expect": []
+ },
+ {
+  "prompt": "what is the difference between a policy and a rule in a linter",
+  "expect": []
+ },
+ {
+  "prompt": "write a regex that matches an email address",
+  "expect": []
+ },
+ {
+  "prompt": "summarize the history of the honey bee in popular culture",
+  "expect": []
+ },
+ {
+  "prompt": "what is a good name for a variable that holds a tide height in code",
+  "expect": []
+ },
+ {
+  "prompt": "how do i draft a formal letter to my landlord",
+  "expect": []
+ },
+ {
+  "prompt": "give me a calendar widget in react",
+  "expect": []
+ },
+ {
+  "prompt": "write a unit test for the invoice total function",
+  "expect": []
+ },
+ {
+  "prompt": "how do i add a thesis statement to an opinion essay",
+  "expect": []
+ },
+ {
+  "prompt": "which photo editing app is best for beginners",
+  "expect": []
+ },
+ {
+  "prompt": "set up a club website with a plain html page",
+  "expect": []
+ },
+ {
+  "prompt": "how do i format a number as a percentage in python",
+  "expect": []
+ },
+ {
+  "prompt": "what torque does a typical car wheel nut need",
+  "expect": []
+ },
+ {
+  "prompt": "explain what a queen is in chess openings",
+  "expect": []
+ },
+ {
+  "prompt": "write a bash loop that renames photos by date",
+  "expect": []
+ },
+ {
+  "prompt": "debug why my spreadsheet formula returns an error",
+  "expect": []
+ },
+ {
+  "prompt": "what are good habits for keeping a daily journal",
+  "expect": []
+ },
+ {
+  "prompt": "how do i sign off a cover letter",
+  "expect": []
+ },
+ {
+  "prompt": "what is the latin root of the word invoice",
+  "expect": []
+ },
+ {
+  "prompt": "translate this supplier contract clause into plain english",
+  "expect": []
+ },
+ {
+  "prompt": "how do i back up a workshop folder to an external drive",
+  "expect": []
+ },
+ {
+  "prompt": "recommend a route for a weekend cycling trip",
+  "expect": []
+ },
+ {
+  "prompt": "how do i price a freelance project",
+  "expect": []
+ },
+ {
+  "prompt": "what is the best way to organize a grant proposal outline",
+  "expect": []
+ },
+ {
+  "prompt": "make a checklist for moving to a new apartment",
+  "expect": []
+ },
+ {
+  "prompt": "how do i report a bug in an open source project",
+  "expect": []
+ },
+ {
+  "prompt": "what should i say in a reply to a recruiter message",
+  "expect": []
+ },
+ {
+  "prompt": "write a sql query that groups orders by month",
+  "expect": []
+ },
+ {
+  "prompt": "how do i learn marine biology as a hobby",
+  "expect": []
+ },
+ {
+  "prompt": "what is the weather pattern called a cold snap",
+  "expect": []
+ },
+ {
+  "prompt": "explain how a smoke detector sensor works",
+  "expect": []
+ },
+ {
+  "prompt": "how do i name git branches on a team",
+  "expect": []
+ },
+ {
+  "prompt": "draft a short newsletter intro about spring gardening",
+  "expect": []
+ },
+ {
+  "prompt": "what are the rules for a sunday league football team",
+  "expect": []
+ },
+ {
+  "mode": "subagent",
+  "prompt": "Prepare the pre-visit checklist for the east meadow hives and state which smoker fuel is allowed: only natural fuel, never treated material. Return plain text and do not modify any file. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. Background for this task: the notes are mostly bookkeeping around visits, jars and labels, so keep the answer short and plain. ",
+  "expect": [
+   "smoker-fuel-only-natural"
+  ]
+ },
+ {
+  "prompt": "ok do it",
+  "context": " burlap with dried pine needles, because treated cardboard and lawn clippings leave residue that the colony dislikes and that can taint the honey. I will fill the smoker with burlap first, add a layer of pine needles on top, light it from below and puff gently at the entrance before opening the lid. Once the brood boxes are open I will keep the smoke light so the bees stay calm, and I will refill the smoker whenever it dims. That means I will need the untreated burlap from the shed, the pine needles from the orchard bag and a fresh lighter from the van, and I will confirm them before we start.\nget the hive visit ready\n/Users/m/apiary/east-meadow/visit-plan.md\nburlap shed",
+  "expect": [
+   "smoker-fuel-only-natural"
+  ]
  }
 ]

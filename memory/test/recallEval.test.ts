@@ -20,7 +20,7 @@ describe('recall eval (synthetic graph)', () => {
         expect(Math.max(...p.notes.map(n => n.content.length))).toBeGreaterThan(50_000)
         expect(promptCases.length).toBeGreaterThanOrEqual(30)
         expect(promptCases.filter(c => c.context).length).toBeGreaterThanOrEqual(4)
-        expect(promptCases.filter(c => c.expect.length === 0).length).toBeGreaterThanOrEqual(5)
+        expect(promptCases.filter(c => c.expect.length === 0).length).toBeGreaterThanOrEqual(35)
         expect(toolCases.length).toBeGreaterThanOrEqual(4)
         // every expected name is a real note
         const names = new Set(p.notes.map(n => n.name))
@@ -61,5 +61,19 @@ describe('recall eval (synthetic graph)', () => {
         const bm25 = (await evaluate(p, 'bm25', realistic)).summary
         expect(bm25.recall5).toBe(1)
         expect(bm25.falseInject).toBe(0)
+    })
+
+    test('pinned bm25 rows (deterministic, no model): the numbers the docs quote', async () => {
+        const p = await prepare(DIR)
+        const prompt = (await evaluate(p, 'bm25', promptCases)).summary
+        expect(prompt.cases).toBe(promptCases.length)
+        expect(prompt.recall5).toBeCloseTo(1, 3)
+        expect(prompt.recall3).toBeCloseTo(0.986, 3)
+        // bm25 alone injects on most expect-nothing prompts: the gap the semantic channel and the
+        // reranker exist to close (docs/daemon/communication.md)
+        expect(prompt.falseInject).toBeCloseTo(0.646, 3)
+        const tool = (await evaluate(p, 'bm25', toolCases)).summary
+        expect(tool.recall5).toBe(1)
+        expect(tool.falseInject).toBe(0)
     })
 })

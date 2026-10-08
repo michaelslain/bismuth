@@ -27,7 +27,7 @@ An agent runs the same search with `bismuth_docs_search`, then `bismuth_docs_rea
 |---|---|---|
 | `bismuth_docs_list` | none | Every doc page as `{path, title}`; the index |
 | `bismuth_docs_search` | `query`, `limit?` (default 8) | Ranked `{path, heading, snippet}` hits; snippets only |
-| `bismuth_docs_read` | `path`, `section?` | One page, or one `##` section of it |
+| `bismuth_docs_read` | `path`, `section?`, `full?` | One page, or one section of it. A `path#anchor`, the form `bismuth_docs_search` returns, reads that section. A page over 20,000 characters (`DOC_READ_MAX_CHARS`) comes back as its intro plus an outline of every heading with its size, so the next call can name the section it needs; a repeated heading is addressed by its `-1`/`-2` anchor, shown in the outline. `full: true` returns the whole page |
 | `bismuth_doctor` | `fix?`, `safeOnly?`, `only?`, `section?`, `vault?` | The `bismuth doctor --json` report: leftovers from older builds, version skew, pending migrations. `fix: true` repairs |
 | `bismuth_cli` | `args: string[]` | stdout, stderr and exit code of the `bismuth` CLI, for example `["task","list","--vault","…"]` |
 | `bismuth_cli_help` | `group?` | The CLI reference, all commands or one group such as `daemon` |

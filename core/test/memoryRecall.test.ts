@@ -323,3 +323,151 @@ test('the tokenless recall path never returns a visibility:hidden note', async (
     expect(start.context ?? '').not.toContain('secret')
     expect(start.context ?? '').toContain('open')
 })
+
+// --- relevance gate (reranker) ---------------------------------------------------------------
+
+const fullNote = (name: string, content: string): MemoryNote =>
+    ({
+        name,
+        content,
+        backlinks: [],
+        frontmatter: { type: 'fact', tags: ['t'], description: `about ${name}` },
+    }) as unknown as MemoryNote
+const gateNotes = () => [fullNote('a', 'alpha one'), fullNote('b', 'alpha two')]
+const semOn = async () => new Map([['a', 0.9]])
+const rr = (logits: number[] | (() => Promise<number[]>)) => {
+    const calls: { query: string; passages: string[] }[] = []
+    const reranker = {
+        rerank: async (query: string, passages: string[]) => {
+            calls.push({ query, passages })
+            return typeof logits === 'function' ? logits() : logits
+        },
+        dispose() {},
+    }
+    return { calls, reranker }
+}
+const gateSvc = (reranker: any, over: Partial<RecallDeps> = {}) =>
+    make({
+        loadNotes: async () => gateNotes(),
+        embedder: () => ({ embed: async () => [], dispose() {} }),
+        semanticScores: semOn,
+        reranker: () => reranker,
+        ...over,
+    })
+
+test('rerank gate: candidates are judged against the prompt, packed in gate order, response says reranked', async () => {
+    const { calls, reranker } = rr([-5, 4])
+    const { svc } = gateSvc(reranker)
+    const r = await svc.recall(prompt())
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.query).toBe('alpha')
+    expect(calls[0]!.passages).toHaveLength(2)
+    expect(calls[0]!.passages[0]).toContain('## a (fact)')
+    expect(r.injected).toEqual(['b'])
+    expect(r.reranked).toBe(true)
+    expect(r.semantic).toBe(true)
+})
+
+test('rerank gate: a terse prompt reaches the reranker with the conversation tail', async () => {
+    const { calls, reranker } = rr([-5, 4])
+    const engine = {
+        ...(fakeEngine as any),
+        contextFromTranscript: () => 'we were tuning the ranker',
+    } as RecallEngine
+    const { svc } = gateSvc(reranker, {
+        engine,
+        readTranscript: async () => [{ type: 'user' }] as any,
+    })
+    await svc.recall({ mode: 'prompt', sessionId: 's', prompt: 'alpha', transcriptPath: '/t.jsonl' })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.query).toBe('alpha\nwe were tuning the ranker')
+})
+
+test('rerank gate: an empty gate injects nothing', async () => {
+    const { reranker } = rr([-9, -9])
+    const { svc } = gateSvc(reranker)
+    const r = await svc.recall(prompt())
+    expect(r).toMatchObject({ context: null, injected: [], reason: 'no-match', reranked: true })
+})
+
+test('rerank gate: subagent mode is gated too', async () => {
+    const { calls, reranker } = rr([3, -9])
+    const { svc } = gateSvc(reranker)
+    const r = await svc.recall({ mode: 'subagent', sessionId: 's', prompt: 'alpha' })
+    expect(calls).toHaveLength(1)
+    expect(r.injected).toEqual(['a'])
+    expect(r.reranked).toBe(true)
+})
+
+test('rerank gate: tool mode never calls the reranker', async () => {
+    const { calls, reranker } = rr([3, 3])
+    const { svc } = gateSvc(reranker)
+    const r = await svc.recall(tool())
+    expect(calls).toHaveLength(0)
+    expect(r.reranked).toBeUndefined()
+    expect(r.injected).toEqual(['a', 'b'])
+})
+
+test('rerank gate: without semantic scores the reranker is not asked', async () => {
+    const { calls, reranker } = rr([3, 3])
+    const { svc } = gateSvc(reranker, { semanticScores: async () => undefined })
+    const r = await svc.recall(prompt())
+    expect(calls).toHaveLength(0)
+    expect(r.injected).toEqual(['a', 'b'])
+})
+
+test('rerank gate: absent, null, or rejecting reranker = today behaviour', async () => {
+    const base = await gateSvc(null).svc.recall(prompt())
+    expect(base.injected).toEqual(['a', 'b'])
+    expect(base.reranked).toBeUndefined()
+    const { reranker } = rr(async () => {
+        throw new Error('boom')
+    })
+    const r = await gateSvc(reranker).svc.recall(prompt())
+    expect(r.injected).toEqual(['a', 'b'])
+    expect(r.reranked).toBeUndefined()
+    const wrong = await gateSvc(rr([1]).reranker).svc.recall(prompt())
+    expect(wrong.injected).toEqual(['a', 'b'])
+})
+
+test('rerank gate: a reranker slower than the timeout falls back, promptly', async () => {
+    const { reranker } = rr(() => new Promise<number[]>(() => {}))
+    const { svc } = gateSvc(reranker, { rerankTimeoutMs: 40 })
+    const t0 = performance.now()
+    const r = await svc.recall(prompt())
+    const took = performance.now() - t0
+    expect(r.injected).toEqual(['a', 'b'])
+    expect(r.reranked).toBeUndefined()
+    expect(took).toBeGreaterThanOrEqual(35)
+    expect(took).toBeLessThan(400)
+})
+
+test('rerank gate: notes already in the ledger are not candidates', async () => {
+    const { calls, reranker } = rr([3])
+    const { svc } = gateSvc(reranker)
+    await svc.recall(tool()) // ledger now holds a and b (tool mode, ungated)
+    const r = await svc.recall(prompt())
+    expect(calls).toHaveLength(0)
+    expect(r.reason).toBe('no-match')
+})
+
+test('rerank gate: a note between minScore and semanticMinScore is not a candidate and not injected', async () => {
+    const { calls, reranker } = rr([9, 9])
+    const real = await import('@bismuth/memory')
+    const engine = {
+        ...(fakeEngine as any),
+        // b at 0.1 sits above prompt minScore (0.08) and below semanticMinScore (0.12); a clears both
+        rankNotes: (index: any) =>
+            (index.notes as MemoryNote[]).map((note, i) => ({
+                note,
+                lexical: 1,
+                score: i === 0 ? 0.5 : 0.1,
+            })),
+        packRecall: real.packRecall,
+        noteHash: real.noteHash,
+    } as unknown as RecallEngine
+    const gated = await gateSvc(reranker, { engine }).svc.recall(prompt())
+    expect(calls[0]!.passages).toHaveLength(1)
+    expect(calls[0]!.passages[0]).toContain('## a (fact)')
+    expect(gated.injected).toEqual(['a'])
+})

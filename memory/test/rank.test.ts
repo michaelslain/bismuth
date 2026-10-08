@@ -23,6 +23,9 @@ describe('tokenize', () => {
     test('splits camelCase and drops stopwords and 1-char tokens', () => {
         expect(tokenize('ProjectAuth the x')).toEqual(['project', 'auth'])
     })
+    test('question filler is a stopword: "which" and "off" match nothing', () => {
+        expect(tokenize('which notes are marked off limits')).toEqual(['notes', 'marked', 'limits'])
+    })
 })
 
 describe('rankNotes', () => {
@@ -91,6 +94,42 @@ describe('semantic cosine floor', () => {
         expect(loose[0]!.semantic).toBe(0.65)
         const strict = rankNotes(idx, q, { ...sem, semanticMinCosine: 0.75 })
         expect(strict.map(r => r.note.name)).not.toContain('dinner-ideas')
+    })
+})
+
+describe('semantic background (a full top-ten map)', () => {
+    // 14 notes, so the vault is past the small-vault size where term statistics are switched off.
+    const filler = Array.from({ length: 12 }, (_, i) => note(`filler-${i}`, `unrelated words number ${i}`))
+    const notes = [
+        note('course-log', 'lecture notes marked done for the course'),
+        note('tide-tables', 'tide tables for the harbour', 'fact', ['tides']),
+        ...filler,
+    ]
+    const idx = buildRecallIndex(notes)
+    // Ten cosines in a flat band, the way bge-small scores a query the vault knows nothing about.
+    const flat = new Map(notes.slice(0, 10).map((n, i) => [n.name, 0.63 - i * 0.004]))
+
+    test('a flat band of cosines lifts nothing: the floor rises to the tenth cosine plus the margin', () => {
+        const ranked = rankNotes(idx, { primary: 'harbour schedule' }, { semantic: flat })
+        expect(ranked.every(r => r.semantic === undefined)).toBe(true)
+    })
+
+    test('a cosine standing clear of the band is still lifted', () => {
+        const sem = new Map(flat).set('tide-tables', 0.8)
+        const ranked = rankNotes(idx, { primary: 'when is high water' }, { semantic: sem })
+        expect(ranked[0]!.note.name).toBe('tide-tables')
+        expect(ranked[0]!.semantic).toBe(0.8)
+    })
+
+    test('body-only word hits the embedder does not second are dropped', () => {
+        const q = { primary: 'which notes are marked off limits' }
+        expect(rankNotes(idx, q).map(r => r.note.name)).toContain('course-log')
+        expect(rankNotes(idx, q, { semantic: flat }).map(r => r.note.name)).not.toContain('course-log')
+    })
+
+    test('a name, tag or description hit needs no semantic second', () => {
+        const ranked = rankNotes(idx, { primary: 'tides this week' }, { semantic: flat })
+        expect(ranked.map(r => r.note.name)).toContain('tide-tables')
     })
 })
 
