@@ -29,6 +29,7 @@ import {
     installDaemon,
     reloadDaemon,
     planEnsureInstalled,
+    binarySignature,
     pidAlive,
     readDaemonPid,
 } from '../lib/platform.ts'
@@ -38,6 +39,7 @@ import { safeTick } from '../lib/safeTick'
 import {
     MACHINE_DIR,
     MACHINE_PID_FILE,
+    MACHINE_BIN_SIG_FILE,
     MACHINE_LOGS_DIR,
     SHUTDOWN_TIMEOUT_MS,
     CRON_CHECK_INTERVAL_MS,
@@ -95,6 +97,10 @@ async function ensureVaultDirs(ctx: VaultContext): Promise<void> {
 
 async function writePid(): Promise<void> {
     await writeFile(MACHINE_PID_FILE, String(process.pid), 'utf-8')
+    // ensureInstalled compares this against the installed binary to tell a stale process apart
+    // from a current one; a missing file reads as stale, so one restart follows.
+    const sig = binarySignature(process.execPath)
+    if (sig !== null) await writeFile(MACHINE_BIN_SIG_FILE, sig, 'utf-8')
 }
 
 async function removePid(): Promise<void> {
@@ -309,10 +315,17 @@ async function ensureInstalled(): Promise<void> {
     } catch {
         /* absent or unreadable → null */
     }
+    let startedSig: string | null = null
+    try {
+        startedSig = readFileSync(MACHINE_BIN_SIG_FILE, 'utf8').trim()
+    } catch {
+        /* a daemon from before the signature file → treated as changed */
+    }
     const plan = planEnsureInstalled({
         existingConfig,
         desiredConfig: config,
         running: isDaemonRunning(),
+        binaryChanged: startedSig !== binarySignature(bin),
     })
     if (plan === 'skip') {
         console.log(

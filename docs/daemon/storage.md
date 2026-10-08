@@ -4,7 +4,7 @@ The daemon keeps its state in two places: one machine directory shared by every 
 
 ```
 ~/.bismuth/daemon/                 one per machine
-  device-id  devices.json  owner.json  daemon.pid
+  device-id  devices.json  owner.json  daemon.pid  daemon.bin-sig
   vaults.json  vaults-seen.json  logs/
 
 <vault>/.daemon/                   one per vault
@@ -23,6 +23,7 @@ The daemon keeps its state in two places: one machine directory shared by every 
 | `devices.json` | `{ "<deviceId>": { "label", "lastSeenISO" } }` | Every device that has heartbeated; `label` is the hostname |
 | `owner.json` | `{ "ownerDeviceId", "ownerLabel", "updatedAt" }` | The device allowed to run sessions. Absent means unclaimed, and every device is allowed |
 | `daemon.pid` | integer | The running daemon's pid; removed on a clean shutdown |
+| `daemon.bin-sig` | `<size>:<mtimeMs>` | The binary the running daemon started from; `--ensure-installed` restarts the service when the installed binary differs |
 | `vaults.json` | JSON array of absolute vault paths | The vaults the daemon may serve |
 | `vaults-seen.json` | `{ "<vault path>": "<ISO>" }` | When each vault was last in use |
 | `logs/bismuth-daemon.{stdout,stderr}.log` | text | The service's output |

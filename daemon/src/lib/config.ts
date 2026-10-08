@@ -13,6 +13,8 @@ import { bismuthHome } from './bismuthPaths'
 export const MACHINE_DIR =
     process.env.BISMUTH_DAEMON_DIR || bismuthHome('daemon')
 export const MACHINE_PID_FILE = join(MACHINE_DIR, 'daemon.pid')
+/** `<size>:<mtimeMs>` of the binary the running daemon started from, written at startup. */
+export const MACHINE_BIN_SIG_FILE = join(MACHINE_DIR, 'daemon.bin-sig')
 export const MACHINE_LOGS_DIR = join(MACHINE_DIR, 'logs')
 /** JSON array of absolute vault roots the daemon knows about (written by Bismuth core).
  *  FROZEN FORMAT: a plain array of path STRINGS. Bismuth core and this binary are versioned and

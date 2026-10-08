@@ -48,14 +48,14 @@ On every launch the bundled app runs `installDaemonFromBundle()` (`core/src/daem
 1. Compares the staged binary's size and modification time to the marker `~/.bismuth/.daemon-installed`, and copies only when they differ. The copy goes to a temp file and is renamed over `~/.bismuth/bin/bismuth-daemon`, because a direct write to a running binary fails with `ETXTBSY` on Linux; the old process keeps its inode until the next restart.
 2. Runs `<bin> --ensure-installed`.
 
-`--ensure-installed` renders the service definition and chooses an action. With no definition on disk it installs and loads one. With a changed definition it reloads. With an identical definition it reloads only if the daemon is not running; a healthy, current service is left alone, so opening the app never interrupts a running cron. `<bin> --status` prints `{ "installed", "running", "label" }`, where `running` means the pid in `daemon.pid` is alive. Every install function is best-effort and never throws, so a failed install cannot block the app.
+`--ensure-installed` renders the service definition and chooses an action. With no definition on disk it installs and loads one. With a changed definition it reloads. With an identical definition it reloads only if the daemon is not running, or if `~/.bismuth/bin/bismuth-daemon` differs from the binary the running daemon started from (its size and modification time, which the daemon writes to `daemon.bin-sig` at boot; a missing file counts as different). A healthy, current service is left alone, so opening the app never interrupts a running cron, and an update still restarts the daemon onto the new code. `<bin> --status` prints `{ "installed", "running", "label" }`, where `running` means the pid in `daemon.pid` is alive. Every install function is best-effort and never throws, so a failed install cannot block the app.
 
 ### Boot order
 
 `main()` in `daemon/src/daemon/index.ts` runs these steps in order; each depends on the one before.
 
 1. Create the machine directory and its `logs/` folder.
-2. Write `daemon.pid`.
+2. Write `daemon.pid` and `daemon.bin-sig`.
 3. Heartbeat this device into `devices.json`, so it can be chosen as owner.
 4. Log whether this device is the owner. A device that is not the owner idles: it heartbeats and supervises processes but runs no sessions.
 5. Start a brain for each enabled vault (`startVault` with `boot: true`).

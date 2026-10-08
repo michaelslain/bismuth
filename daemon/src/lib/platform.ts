@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import {
     LAUNCHD_LABEL,
@@ -185,7 +185,10 @@ export function unloadDaemon(configPath: string): {
 // The version gate in core's installDaemonFromBundle only guards the COPY of the binary; nothing
 // guarded the reload. This does. The rule: bounce the service only when there is an actual reason
 // to — the config changed, or the service is not running. An unchanged config plus a live daemon
-// means the running process is already exactly what we would install, so leave it alone.
+// means the running process is already exactly what we would install, so leave it alone —
+// unless the binary itself was swapped since that process started. An update copies the new
+// binary over the same path, so the plist is byte-identical and the old process keeps running
+// old code (and never re-runs reconcileSeeds) until something restarts it.
 export type EnsurePlan = 'install' | 'reload' | 'skip'
 
 /**
@@ -202,12 +205,24 @@ export function planEnsureInstalled(opts: {
     desiredConfig: string
     /** Is a daemon process actually alive right now (pid file + signal-0 probe, not mere presence)? */
     running: boolean
+    /** Does the binary on disk differ from the one the running daemon started from? */
+    binaryChanged: boolean
 }): EnsurePlan {
     if (opts.existingConfig === null) return 'install'
     if (opts.existingConfig !== opts.desiredConfig) return 'reload'
-    // Config is byte-identical to what we would write. Only bounce if nothing is actually running —
-    // that is the case where the service is installed but dead and genuinely needs kicking.
-    return opts.running ? 'skip' : 'reload'
+    // Config is byte-identical to what we would write. Only bounce if nothing is actually running,
+    // or the running process is an older binary than the one now installed.
+    return opts.running && !opts.binaryChanged ? 'skip' : 'reload'
+}
+
+/** `<size>:<mtimeMs>` of a binary, or null when it cannot be stat'd. */
+export function binarySignature(path: string): string | null {
+    try {
+        const st = statSync(path)
+        return `${st.size}:${Math.floor(st.mtimeMs)}`
+    } catch {
+        return null
+    }
 }
 
 export async function reloadDaemon(

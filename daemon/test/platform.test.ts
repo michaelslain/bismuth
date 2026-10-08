@@ -18,6 +18,7 @@ describe('planEnsureInstalled', () => {
                 existingConfig: null,
                 desiredConfig: CONFIG,
                 running: false,
+                binaryChanged: false,
             }),
         ).toBe('install')
     })
@@ -28,6 +29,7 @@ describe('planEnsureInstalled', () => {
                 existingConfig: null,
                 desiredConfig: CONFIG,
                 running: true,
+                binaryChanged: false,
             }),
         ).toBe('install')
     })
@@ -40,8 +42,22 @@ describe('planEnsureInstalled', () => {
                 existingConfig: CONFIG,
                 desiredConfig: CONFIG,
                 running: true,
+                binaryChanged: false,
             }),
         ).toBe('skip')
+    })
+
+    // An update swaps the binary at the same path, so the plist is identical while the running
+    // process is still the old build — it must be restarted to run the new code.
+    test('config unchanged, daemon running, binary swapped since it started → reload', () => {
+        expect(
+            planEnsureInstalled({
+                existingConfig: CONFIG,
+                desiredConfig: CONFIG,
+                running: true,
+                binaryChanged: true,
+            }),
+        ).toBe('reload')
     })
 
     test('config unchanged but daemon dead → reload (installed-but-not-running needs a kick)', () => {
@@ -50,6 +66,7 @@ describe('planEnsureInstalled', () => {
                 existingConfig: CONFIG,
                 desiredConfig: CONFIG,
                 running: false,
+                binaryChanged: false,
             }),
         ).toBe('reload')
     })
@@ -60,6 +77,7 @@ describe('planEnsureInstalled', () => {
                 existingConfig: '<plist>stale</plist>',
                 desiredConfig: CONFIG,
                 running: true,
+                binaryChanged: false,
             }),
         ).toBe('reload')
     })
@@ -70,6 +88,7 @@ describe('planEnsureInstalled', () => {
                 existingConfig: '<plist>stale</plist>',
                 desiredConfig: CONFIG,
                 running: false,
+                binaryChanged: false,
             }),
         ).toBe('reload')
     })
@@ -83,6 +102,7 @@ describe('planEnsureInstalled', () => {
                     existingConfig: null,
                     desiredConfig: CONFIG,
                     running,
+                    binaryChanged: false,
                 }),
             ).not.toBe('skip')
         }
@@ -94,6 +114,7 @@ describe('planEnsureInstalled', () => {
                 existingConfig: `${CONFIG}\n`,
                 desiredConfig: CONFIG,
                 running: true,
+                binaryChanged: false,
             }),
         ).toBe('reload')
     })
@@ -116,6 +137,7 @@ describe('planEnsureInstalled', () => {
                 existingConfig: a,
                 desiredConfig: b,
                 running: true,
+                binaryChanged: false,
             }),
         ).toBe('skip')
     })
