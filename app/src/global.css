@@ -1774,8 +1774,11 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
        ascent/descent, which sits lower than the prose face's: +2px.
    line-height 1 keeps every inline box inside the line's own strut, so a row is exactly the
    pitch whatever it contains. :where() drops the rule to (0,0,1), so any class rule that sets a
-   span's line-height on purpose (the code header, an embed, KaTeX's own .katex) still wins. */
-:where(.cm-editor .cm-line) span {
+   span's line-height on purpose (the code header, an embed, KaTeX's own .katex) still wins.
+   The placeholder is the exception: CodeMirror's base theme makes it an inline-block at
+   vertical-align: top, so at line-height 1 it pins its text to the top of the row. Keeping the
+   row's line-height makes its box fill the row and centres the text like a typed line. */
+:where(.cm-editor .cm-line) span:not(.cm-placeholder) {
   line-height: 1;
 }
 
