@@ -11,6 +11,7 @@
 import { test, expect } from 'bun:test'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
+import { runLayoutJob } from '../src/layoutRunner'
 import { reconcileSettings } from '../src/settings'
 import { makeVault, tempDir, waitForFsQuiet } from './helpers'
 import { shouldRunSlowTests } from './slowGate'
@@ -63,15 +64,30 @@ t(
             delete process.env.BISMUTH_NO_TASK_MIGRATE
         }
         const base = `http://localhost:${server.port}`
+        // Hold the one layout worker with a job that never ends on its own (no fixedIds, so no early
+        // exit), queued now, ahead of the first graph build, which starts only after its async vault
+        // walk. The warm-up waits on that build, so it cannot start until the hold is released. Without
+        // this the test leaned on the worker's cold start: with the worker already warm from an earlier
+        // file, the whole boot chain finished before /create landed.
+        const hold = new AbortController()
+        const held = runLayoutJob(
+            {
+                input: { nodes: [{ id: 'x' }, { id: 'y' }], edges: [] },
+                refineTicks: Infinity,
+            },
+            hold.signal,
+        ).catch(() => {})
         try {
-            // Invalidate at once, while the first graph build is still waiting on the layout worker —
-            // before the warm-up, which starts only after that graph and the tree + feeds are built.
+            // Invalidate while the first graph build is still waiting on the layout worker — before the
+            // warm-up, which starts only after that graph and the tree + feeds are built.
             const created = await fetch(`${base}/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path: 'c.md', kind: 'file' }),
             })
             expect(created.status).toBe(200)
+            hold.abort()
+            await held
 
             // Nothing here requests /graph/views, so view layouts that cover `c` can only come from the
             // boot warm-up having run on the post-invalidation graph.
@@ -87,6 +103,7 @@ t(
             expect(g?.views?.second?.pos3d['c']).toBeDefined()
             expect(g?.views?.third?.pos3d['mem:m']).toBeDefined()
         } finally {
+            hold.abort()
             server.stop(true)
         }
     },
