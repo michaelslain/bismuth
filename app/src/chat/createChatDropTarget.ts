@@ -15,7 +15,9 @@
 //    exactly as the note editor does.
 //
 // `beforeDrop` runs once a drop is accepted, before it is delivered — the daemon page arms its chat
-// there, and the drop waits in `deliverChatDrop`'s queue until the session exists.
+// there, and the drop waits in `deliverChatDrop`'s queue until the session exists. `capture` hears the
+// native event before every bubble-phase listener, so a surface floating OVER another drop target
+// (the Cmd+K popover over a note editor) claims a drop on itself first.
 import { createSignal, onCleanup, onMount, type Accessor } from 'solid-js'
 import { pointInDropRect, type NativeDragDetail } from '../nativeDrop'
 import { claimNativeDrop } from '../nativeDropRouting'
@@ -34,7 +36,7 @@ const ACCEPTED_TYPES = ['Files', 'text/uri-list', 'text/plain', 'text/html']
 export function createChatDropTarget(
     chatId: Accessor<string>,
     host: Accessor<HTMLElement | undefined>,
-    opts: { beforeDrop?: () => void } = {},
+    opts: { beforeDrop?: () => void; capture?: boolean } = {},
 ): {
     dragActive: Accessor<boolean>
     onDragOver: (e: DragEvent) => void
@@ -102,9 +104,14 @@ export function createChatDropTarget(
             }
             deliver(chatActionsFromPlan(planDrop(pb)))
         }
-        window.addEventListener('bismuth-native-drag', onNativeDrag)
+        const capture = opts.capture === true
+        window.addEventListener('bismuth-native-drag', onNativeDrag, capture)
         onCleanup(() =>
-            window.removeEventListener('bismuth-native-drag', onNativeDrag),
+            window.removeEventListener(
+                'bismuth-native-drag',
+                onNativeDrag,
+                capture,
+            ),
         )
     })
 

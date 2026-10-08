@@ -60,7 +60,7 @@ An ordinary command replies `{ "ok": true }`. Read `result.interactive` to tell 
 
 | Refused | Why |
 |---|---|
-| `app run` with `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` or `quick-ask` | Heavy or system-level actions, or a live agent session, that an unattended caller should not fire blindly. A person has to type a quick ask |
+| `app run` with `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` or `quick-ask` | Heavy or system-level actions, or a live agent session, that an unattended caller should not fire blindly. A quick ask opens a live agent session |
 | `app open` with any `::chat:` content | A chat is a live agent session, a different trust boundary from opening a note |
 
 Both refusals return HTTP 403 with a message. `app commands` lists the ids that remain. Opening the daemon page (`::daemon`) is allowed because its chat starts nothing until a person clicks or focuses the composer, and app control cannot produce that gesture.

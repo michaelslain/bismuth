@@ -94,7 +94,7 @@ Each id below is a key under `keybindings:`, with its default combo and the acti
 | id | default | action |
 |---|---|---|
 | `command-palette` | `Mod+P` | Toggle command palette |
-| `quick-ask` | `Mod+K` | Ask the daemon: open the quick ask popover above the caret, or at the top of a pane that is not a note. One question to the daemon, answered inline |
+| `quick-ask` | `Mod+K` | Ask the daemon: open the chat in a popover beside the caret, or at the top of a pane that is not a note. Reopens the same conversation for the same note |
 | `quick-switcher` | `Mod+O` | Toggle quick switcher |
 | `terminal` | `` Mod+`, Mod+J `` | Open terminal |
 | `new-tab` | `Mod+T` | New tab |

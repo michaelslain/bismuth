@@ -51,6 +51,9 @@ export type DropTarget =
     // Sidebar file-tree drop targets (Row 73): a folder row, or the tree root (move to vault root).
     | { kind: 'folder'; path: string }
     | { kind: 'root' }
+    // A floating chat surface (the Cmd+K popover) marked `data-chat-drop="<chatId>"`: the drop
+    // mentions the dragged file in that chat.
+    | { kind: 'chat'; chatId: string }
 
 // The pointer position at drop, handed to the drop handler so an editor can resolve the
 // exact caret to insert a wikilink at (posAtCoords), not just which pane (Row 74b).
@@ -124,6 +127,13 @@ export function createViewDrag(
     function resolveTarget(x: number, y: number): DropTarget | null {
         const el = document.elementFromPoint(x, y) as Element | null
         if (!el) return null
+
+        // A floating chat surface sits over everything else under the pointer.
+        const chat = el.closest('[data-chat-drop]')
+        if (chat) {
+            const chatId = chat.getAttribute('data-chat-drop')
+            if (chatId) return { kind: 'chat', chatId }
+        }
 
         // Sidebar file-tree targets first (a folder row wins over the enclosing root zone).
         const folder = el.closest('[data-drop-folder]')

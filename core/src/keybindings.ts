@@ -49,7 +49,7 @@ export const KEYBINDING_CATALOG = [
         id: 'quick-ask',
         label: 'Ask the daemon',
         default: 'Mod+K',
-        doc: 'Open the quick-ask popover above the caret (or at the top of a non-note pane) — one question to the daemon, answered inline.',
+        doc: 'Open the chat in a popover beside the caret (or at the top of a non-note pane); the same note reopens the same conversation.',
     },
     {
         id: 'quick-switcher',

@@ -178,7 +178,7 @@ Notes on individual commands:
 - `archive-tasks` and `archive-all-tasks`. They permanently remove completed and cancelled tasks, from the active note or from every note.
 - `detect-ai`. It estimates how AI-generated the active page reads and shows the score in a toast. The detector runs on your device with no network call, other than a one-time model download of about 34 MB on first use. It needs at least 40 words of prose.
   It was trained on a corpus without Claude text, so treat the score as a rough hint and not as proof.
-- `quick-ask`. It opens the [quick ask popover](../chat/overview.md#how-do-i-ask-a-quick-question), the same as its `Mod+K` shortcut, anchored at the caret in a note or at the top of another pane. It only opens the popover, so it counts as a dialog command. App control refuses it, because a person has to type the question.
+- `quick-ask`. It opens the [quick ask popover](../chat/overview.md#how-do-i-ask-a-quick-question), the same as its `Mod+K` shortcut, anchored at the caret in a note or at the top of another pane. It only opens the popover, so it counts as a dialog command. App control refuses it, because opening it starts or resumes a live agent session.
 - `emoji-library`. It opens the emoji picker and inserts your pick at the cursor of the focused note.
 - `edit-dictionary`. It opens the list of words you added to the spellcheck dictionary, so you can remove them.
 - Graph modes. `graph-2nd` shows the vault, `graph-3rd` the memory graph, `graph-both` both with their cross-links, and `graph-local` the neighbourhood of the open note. See [graph overview](../graph/overview.md).

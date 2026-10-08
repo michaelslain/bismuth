@@ -202,7 +202,7 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 | `calendar/` | Calendar state, `EventStore`, and the calendar and task-calendar components | `state.ts` |
 | `graph/` | The ASCII graph renderer, camera, layers and label selection | `graphRenderer.ts` |
 | `chat/` | The chat UI and `chatSessions.ts`, the registry that keeps each chat's socket and transcript alive | `chatSessions.ts` |
-| `quickAsk/` | The `Mod+K` popover: a one-off daemon conversation with apply, anchored at the caret or the pane top | `QuickAskHost.tsx` |
+| `quickAsk/` | The `Mod+K` popover: the chat in a popover beside the caret or at the pane top, one resumable conversation per note, with apply | `QuickAskHost.tsx` |
 | `daemon/` | The daemon page, its docked chat, inbox, crons and processes | `DaemonPageHost.tsx` |
 | `feedback/` | The feedback page: the draft form and the daemon interview | `FeedbackPageHost.tsx` |
 | `preview/` | Image, PDF and code previews, annotation stores, outline and bookmarks | `previewKind.ts` |

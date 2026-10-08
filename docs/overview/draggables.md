@@ -35,6 +35,7 @@ Where a drag starts does not change what it does. Dragging out of Finder while F
 
 - **Notes** accept every row of the matrix, including a drop on a table cell.
 - **A chat tab** and **the daemon page** share one drop target. The daemon page accepts a drop on the whole page, not only the composer.
+- **The quick ask popover** (`Mod+K`, see [quick ask](../chat/overview.md#how-do-i-ask-a-quick-question)) accepts everything a chat tab does. It floats over a note, and a drop on the popover goes to its chat, never to the note underneath.
 - **The daemon page** has no chat session until a person arms it, and a drop arms it: a drop is a real user gesture that app control cannot forge. The dropped item waits until the session exists. A disabled daemon (`daemon.enabled: false`) accepts no drops. See [daemon setup](../daemon/setup.md).
 - **Terminal tabs** accept an OS or browser file drop: the file is uploaded into the attachment folder and its shell-quoted absolute path is typed at the prompt.
 - **A Bases card** accepts an image file, which is uploaded and embedded in the card; see [Kanban](../bases/views/kanban.md).
@@ -58,10 +59,11 @@ One predicate, `editorReferencePath` in `noteRef.ts`, decides both the drop cue 
 |---|---|
 | Note | `handleNativeDrop` and the CodeMirror DOM drop handler in `Editor.tsx`, the table widget's cell drop, and `referenceOnPane` in `App.tsx` for sidebar rows |
 | Chat tab, daemon page | `chat/createChatDropTarget.ts` normalises every outside draggable to a `ChatDropAction` (`chat/chatDrop.ts`) and calls `deliverChatDrop` in `chatSessions.ts`; in-app draggables reach it from `referenceOnPane`, keyed by `chatIdForContent` (a chat tab's id, or `DAEMON_CHAT_ID` for `::daemon`) |
+| Quick ask popover | the same `createChatDropTarget`, registered with `capture: true` so its native listener claims first; in-app draggables resolve to a `{ kind: 'chat' }` target off the panel's `data-chat-drop` attribute in `viewDrag.ts`, and `App.tsx` delivers a `mention` |
 | Daemon arming | `daemon/daemonChatArming.ts` |
 | Terminal | upload helpers in `Terminal.tsx` |
 | Bases card | `bases/cardImageDrop.ts` |
 
-The drag-over cue on both chat surfaces is `ui/DropCue`.
+The drag-over cue on every chat surface is `ui/DropCue`.
 
-Source: `app/src/nativeDrop.ts`, `app/src/nativeDropRouting.ts`, `app/src/dropIntake.ts`, `app/src/dnd/viewDrag.ts`, `app/src/dnd/noteRef.ts`, `app/src/dnd/geometry.ts`, `app/src/chat/createChatDropTarget.ts`, `app/src/chat/chatDrop.ts`, `app/src/daemon/daemonChatArming.ts`, `app/src-tauri/src/lib.rs`
+Source: `app/src/nativeDrop.ts`, `app/src/nativeDropRouting.ts`, `app/src/dropIntake.ts`, `app/src/dnd/viewDrag.ts`, `app/src/dnd/noteRef.ts`, `app/src/dnd/geometry.ts`, `app/src/chat/createChatDropTarget.ts`, `app/src/chat/chatDrop.ts`, `app/src/quickAsk/QuickAsk.tsx`, `app/src/daemon/daemonChatArming.ts`, `app/src-tauri/src/lib.rs`

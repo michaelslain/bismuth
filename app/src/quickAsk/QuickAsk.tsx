@@ -1,50 +1,62 @@
 // app/src/quickAsk/QuickAsk.tsx — the only importer of QuickAsk.module.css; QuickAskHost.tsx is the only importer of this component.
-// The Cmd+K popover, a conversation: a header of the daemon face + its name + (until the first send)
-// the input; after that the thread (each user turn a muted `> ` line, each reply as markdown through
-// the chat's own renderer), a reply input under it, and a right-aligned `[ apply ] [ open in chat ]
-// [ esc ]` footer. It owns only presentation + placement: the session, the apply flow and the
-// hand-off are the host's (props). A permission or question from the agent renders inline with the
-// chat's own cards, so a turn can never hang invisibly. Placement is `popoverPlacement` (pure),
-// painted by <AnchoredPopover> through a virtual anchor — AnchoredPopover supplies the portal,
-// outside-click and Esc dismissal.
+// The Cmd+K popover: the chat itself, floating beside the caret. A header row (the daemon face + its
+// name, then `[ apply ]` once a reply exists in a note, `[ open in chat ] [ esc ]`) over the shared
+// chat/ChatSessionBody in its `column` layout — the same transcript (tool rows, thinking, permission and question cards), the
+// same composer (attachments, mentions, slash commands, paste) and the same ChatControls row
+// (model // mode // history // new chat) as the chat tab. It owns only presentation, placement and
+// dismissal: the session, the apply flow and the hand-off are the host's (props).
+//
+// The panel is NOT modal. It has no backdrop, so a drag can start anywhere in the app (a sidebar
+// row, a tab, a file from the OS) and land on it: HTML5 and native drops through
+// createChatDropTarget (capture phase, so the note editor underneath never claims a drop on the
+// popover), in-app pointer drags through the `data-chat-drop` hook dnd/viewDrag.ts resolves. A CLICK
+// in the app outside it dismisses (a press that moves past `CLICK_SLOP` is a drag, not a click); a
+// press inside another floating layer (the model menu, the history dialog) is that layer's own.
+// Escape dismisses unless something already consumed it (the composer's stop, an open menu) or focus
+// sits in another floating layer.
+// Placement is `popoverPlacement` (pure).
 import {
-    createEffect,
     createMemo,
     createSignal,
-    For,
     onCleanup,
     Show,
     type Component,
 } from 'solid-js'
+import { Portal } from 'solid-js/web'
 import type { ChatSession } from '../chat/chatSession'
-import type { AssistantItem } from '../chat/chatTranscriptLogic'
+import ChatSessionBody from '../chat/ChatSessionBody'
+import { createChatDropTarget } from '../chat/createChatDropTarget'
 import DaemonFace from '../daemon/DaemonFace'
-import Caret from '../ui/Caret'
-import ChatNote from '../chat/ChatNote'
-import ChatPermissionCard from '../chat/ChatPermissionCard'
-import ChatQuestionCard from '../chat/ChatQuestionCard'
-import ChatTextBubble from '../chat/ChatTextBubble'
-import AnchoredPopover from '../ui/AnchoredPopover'
+import type { NoteCandidate } from '../editor/wikilink'
+import type { MemoryCandidate } from '../../../core/src/memoryRef'
+import DropCue from '../ui/DropCue'
 import Popover from '../ui/Popover'
 import Text from '../ui/Text'
 import TextButton from '../ui/TextButton'
-import TextInput from '../ui/TextInput'
-import { isConfirmKey } from '../ui/widgetKeys'
+import { isDismissKey } from '../ui/widgetKeys'
 import type { QuickAskAnchor } from './quickAskState'
-import { faceMood, popoverPlacement, popoverWidth, quickAskTurns } from './quickAskLogic'
+import {
+    faceMood,
+    isClick,
+    popoverPlacement,
+    popoverWidth,
+} from './quickAskLogic'
 import styles from './QuickAsk.module.css'
 
 export type QuickAskProps = {
     anchor: QuickAskAnchor
+    /** The chat this popover shows (drops are delivered to it). */
+    chatId: string
     /** undefined until the registry creates it */
     session: ChatSession | undefined
     daemonEnabled: boolean
     /** The header name: the daemon's name when it is enabled, else `chat`. */
     name: string
-    /** The first question (the host mints the chat id from a trusted Enter). */
-    onSubmit: (question: string, e: KeyboardEvent) => void
-    /** A follow-up in the same conversation. */
-    onReply: (text: string, e: KeyboardEvent) => void
+    noteNames: () => NoteCandidate[]
+    memoryNames: () => MemoryCandidate[]
+    tagNames: () => string[]
+    /** An in-app drag (sidebar row, tab, pane) is over the popover — shows the drop cue. */
+    dragOver?: boolean
     /** Not offered at all without a note to edit (`anchor.kind === 'pane'`, or no note path). The
      *  event is handed over so the host can require a trusted click. */
     onApply?: (e: MouseEvent) => void
@@ -55,7 +67,8 @@ export type QuickAskProps = {
 
 type Rect = { left: number; top: number; width: number; height: number }
 
-/** Viewport geometry for the anchor: the caret line (note editors) and the pane it lives in. */
+/** Viewport geometry for the anchor: the caret line (note editors), the pane it lives in, and the
+ *  element whose top-level subtree is "the app" for outside-click purposes. */
 function anchorGeometry(anchor: QuickAskAnchor): {
     caret: { left: number; top: number; bottom: number } | null
     /** The rect the popover is clamped inside: the pane, narrowed to the editor's content column
@@ -63,6 +76,7 @@ function anchorGeometry(anchor: QuickAskAnchor): {
     pane: Rect
     /** The whole pane's width, which sizes the popover. */
     paneWidth: number
+    host: Element | null
 } {
     const fallback: Rect = {
         left: 0,
@@ -77,322 +91,218 @@ function anchorGeometry(anchor: QuickAskAnchor): {
     }
     if (anchor.kind === 'caret') {
         const c = anchor.view.coordsAtPos(anchor.pos)
-        const pane = rectOf(anchor.view.dom.closest('[data-pane-leaf]') ?? anchor.view.dom)
+        const leaf =
+            anchor.view.dom.closest('[data-pane-leaf]') ?? anchor.view.dom
+        const pane = rectOf(leaf)
         const col = anchor.view.contentDOM.getBoundingClientRect()
         return {
             caret: c ? { left: c.left, top: c.top, bottom: c.bottom } : null,
-            pane: col.width > 0 ? { ...pane, left: col.left, width: col.width } : pane,
+            pane:
+                col.width > 0
+                    ? { ...pane, left: col.left, width: col.width }
+                    : pane,
             paneWidth: pane.width,
+            host: leaf,
         }
     }
     const leaf = anchor.leafId
-        ? document.querySelector(`[data-pane-leaf="${CSS.escape(anchor.leafId)}"]`)
+        ? document.querySelector(
+              `[data-pane-leaf="${CSS.escape(anchor.leafId)}"]`,
+          )
         : null
     const pane = rectOf(leaf)
-    return { caret: null, pane, paneWidth: pane.width }
+    return { caret: null, pane, paneWidth: pane.width, host: leaf }
 }
 
-/** The assistant turn being streamed: the transcript's last item when it is an assistant turn. */
-function lastAssistant(session: ChatSession | undefined): AssistantItem | undefined {
-    const t = session?.transcript
-    const last = t?.[t.length - 1]
-    return last?.role === 'assistant' ? last : undefined
+/** The direct child of <body> holding `el` — the app's mount, or a portaled floating layer. */
+function layerOf(el: Node | null): Node | null {
+    let n = el
+    while (n && n.parentNode && n.parentNode !== document.body) n = n.parentNode
+    return n && n.parentNode === document.body ? n : null
 }
 
 const QuickAsk: Component<QuickAskProps> = props => {
-    const [value, setValue] = createSignal('')
-    // Set locally on a TRUSTED Enter; otherwise the question is whatever the session's first user
-    // turn says (a restored / story-fed session), so the popover never claims a send that did not
-    // happen.
-    const [sent, setSent] = createSignal<string | null>(null)
-    const question = (): string | null => {
-        const local = sent()
-        if (local !== null) return local
-        const first = props.session?.transcript.find(i => i.role === 'user')
-        return first && first.role === 'user' ? first.text : null
-    }
-    const [reply, setReply] = createSignal('')
     const [size, setSize] = createSignal({ width: 0, height: 0 })
     const [viewport, setViewport] = createSignal(0)
-    const onResize = () => setViewport(v => v + 1)
-    window.addEventListener('resize', onResize)
-    onCleanup(() => window.removeEventListener('resize', onResize))
+    const bump = () => setViewport(v => v + 1)
+    window.addEventListener('resize', bump)
+    window.addEventListener('scroll', bump, true)
+    onCleanup(() => {
+        window.removeEventListener('resize', bump)
+        window.removeEventListener('scroll', bump, true)
+    })
 
     const geometry = createMemo(() => {
         viewport()
         return anchorGeometry(props.anchor)
     })
     const width = () => popoverWidth(geometry().paneWidth)
-    // The side picked at open, latched once the popover has a measured height, so streaming
-    // growth never flips it.
-    const [latched, setLatched] = createSignal<'above' | 'below' | null>(null)
     const place = createMemo(() =>
         popoverPlacement({
             caret: geometry().caret,
             pane: geometry().pane,
             size: { width: width(), height: size().height },
-            latched: latched(),
         }),
     )
-    createEffect(() => {
-        const p = place()
-        if (latched() === null && size().height > 0 && p.side !== 'pane-top') setLatched(p.side)
-    })
-    // AnchoredPopover places a panel `below` an element with a 4px gap; a virtual anchor whose
-    // bottom edge sits 4px above the wanted top puts the panel exactly where popoverPlacement says.
-    const virtualAnchor = {
-        getBoundingClientRect: () => {
-            const p = place()
-            return { top: p.top - 4, bottom: p.top - 4, left: p.left, width: 0 }
-        },
-    } as unknown as HTMLElement
 
+    let panel: HTMLDivElement | undefined
     let observer: ResizeObserver | undefined
     function onRoot(el: HTMLDivElement): void {
-        const measure = () => setSize({ width: el.offsetWidth, height: el.offsetHeight })
+        panel = el
+        const measure = () =>
+            setSize({ width: el.offsetWidth, height: el.offsetHeight })
         // Before first paint, so the first frame is already beside the caret.
         queueMicrotask(measure)
         observer = new ResizeObserver(measure)
         observer.observe(el)
+        // The composer takes focus on open (the Cmd+K press was the person's own gesture).
+        // `.cm-content` is CodeMirror's own class (a third-party editor, never hashed).
+        requestAnimationFrame(() =>
+            el
+                .querySelector<HTMLElement>('.cm-content')
+                ?.focus({ preventScroll: true }),
+        )
     }
     onCleanup(() => observer?.disconnect())
 
-    const turn = () => lastAssistant(props.session)
-    const streaming = () => props.session?.streaming() ?? false
-    const hasPrompt = () =>
-        !!turn()?.parts.some(
-            p => (p.kind === 'permission' || p.kind === 'question') && !p.answered && !p.cancelled,
-        )
-    const hasText = () => !!turn()?.parts.some(p => p.kind === 'text' && p.text.trim())
-    // The question is still queued for send while the session's draft holds it.
-    const queued = () => (props.session?.draft().trim() ?? '') !== ''
-    const waiting = () =>
-        !props.session?.setupError() &&
-        !props.session?.gateRefusal() &&
-        !!question() &&
-        !hasPrompt() &&
-        !hasText() &&
-        (props.session === undefined || queued() || props.session.awaitingReply() || streaming())
-    const busy = () => streaming() || waiting()
-    const started = () => question() !== null
-    // The thread, with the typed-but-not-yet-echoed first question standing in until the session
-    // reports its own user turn.
-    const turns = createMemo(() => quickAskTurns(props.session?.transcript ?? []))
-    const finishedReply = () => {
-        const last = turns()[turns().length - 1]
-        return last?.role === 'assistant' && last.text.trim() !== '' && !busy()
+    // ── dismissal: a click (not a drag) in the app outside the panel, or an unconsumed Escape ──
+    let press: { x: number; y: number } | null = null
+    const onPointerDown = (e: PointerEvent) => {
+        press = null
+        const target = e.target as Node | null
+        if (!target || panel?.contains(target)) return
+        const appLayer = layerOf(geometry().host)
+        if (appLayer && layerOf(target) !== appLayer) return
+        press = { x: e.clientX, y: e.clientY }
     }
-    const canApply = () => props.anchor.kind === 'caret' && props.anchor.notePath !== null
+    const onPointerUp = (e: PointerEvent) => {
+        const p = press
+        press = null
+        if (p && isClick(p, { x: e.clientX, y: e.clientY })) props.onClose()
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+        if (e.defaultPrevented || !isDismissKey(e)) return
+        const active = document.activeElement
+        // Escape in another floating layer (the history dialog, a menu) is that layer's; anywhere in
+        // the panel or the app itself (the note's editor included) it closes the popover.
+        if (
+            active &&
+            active !== document.body &&
+            !panel?.contains(active) &&
+            layerOf(active) !== layerOf(geometry().host)
+        )
+            return
+        e.preventDefault()
+        props.onClose()
+    }
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('pointerup', onPointerUp, true)
+    window.addEventListener('keydown', onKeyDown)
+    onCleanup(() => {
+        window.removeEventListener('pointerdown', onPointerDown, true)
+        window.removeEventListener('pointerup', onPointerUp, true)
+        window.removeEventListener('keydown', onKeyDown)
+    })
+
+    const drop = createChatDropTarget(
+        () => props.chatId,
+        () => panel,
+        { capture: true },
+    )
+
+    const streaming = () => props.session?.streaming() ?? false
+    const busy = () => streaming() || (props.session?.awaitingReply() ?? false)
+    const lastReplyText = () => {
+        const t = props.session?.transcript
+        const last = t?.[t.length - 1]
+        if (last?.role !== 'assistant') return ''
+        return last.parts.map(p => (p.kind === 'text' ? p.text : '')).join('')
+    }
+    // Offered only in a note, and only once there is a reply to apply.
+    const canApply = () =>
+        props.anchor.kind === 'caret' &&
+        props.anchor.notePath !== null &&
+        !!props.session?.transcript.some(i => i.role === 'assistant')
     const mood = () =>
         faceMood({
             daemonEnabled: props.daemonEnabled,
             streaming: busy(),
-            hasReplyText: hasText(),
-            typing: (started() ? reply() : value()).trim() !== '',
+            hasReplyText: lastReplyText().trim() !== '',
+            typing: (props.session?.draft() ?? '').trim() !== '',
         })
-
-    let thread: HTMLDivElement | undefined
-    let replyInput: HTMLInputElement | undefined
-    // Pinned to the bottom while the reply streams in.
-    createEffect(() => {
-        turns()
-        for (const t of props.session?.transcript ?? [])
-            if (t.role === 'assistant') for (const p of t.parts) if (p.kind === 'text') void p.text
-        waiting()
-        queueMicrotask(() => {
-            if (thread) thread.scrollTop = thread.scrollHeight
-        })
-    })
-    // The reply input takes focus each time a reply finishes.
-    createEffect(prev => {
-        const done = started() && !busy()
-        if (done && !prev) queueMicrotask(() => replyInput?.focus({ preventScroll: true }))
-        return done
-    }, false)
-
-    function onKeyDown(e: KeyboardEvent): void {
-        if (!isConfirmKey(e)) return
-        const q = value().trim()
-        if (!q) return
-        e.preventDefault()
-        props.onSubmit(q, e)
-        // A synthetic Enter is dropped by the host (no session is minted), so it must not look sent.
-        if (e.isTrusted) setSent(q)
-    }
-
-    function onReplyKeyDown(e: KeyboardEvent): void {
-        if (!isConfirmKey(e)) return
-        e.preventDefault()
-        const q = reply().trim()
-        // Typeable while a reply streams, but Enter does nothing until it finishes.
-        if (!q || busy()) return
-        props.onReply(q, e)
-        if (e.isTrusted) setReply('')
-    }
-
-    const body = (
-        <Popover
-            tone="panel"
-            ref={onRoot}
-            class={`${styles['quick-ask']} ${props.class ?? ''}`}
-            style={{ width: `${width()}px` }}
-        >
-            <div class={styles.row}>
-                <div class={styles.who}>
-                    <DaemonFace mood={mood()} size="avatar" label={props.name} />
-                    <Text as="span" class={styles.name}>
-                        {props.name}
-                    </Text>
-                </div>
-                <Show when={!started()}>
-                    <TextInput
-                        plain
-                        class={styles.input}
-                        value={value()}
-                        onInput={setValue}
-                        onKeyDown={onKeyDown}
-                        placeholder="ask…"
-                        aria-label="ask"
-                        ref={(el: HTMLInputElement) =>
-                            queueMicrotask(() => el.focus({ preventScroll: true }))
-                        }
-                    />
-                </Show>
-            </div>
-            <Show when={started()}>
-                <div class={styles.body} ref={thread}>
-                    <Show when={turns().length === 0 && question()}>
-                        <Text as="div" tone="muted" class={styles.user}>
-                            {`> ${question()}`}
-                        </Text>
-                    </Show>
-                    <For each={props.session?.transcript ?? []}>
-                        {item => {
-                            const s = props.session
-                            if (item.role === 'user')
-                                return (
-                                    <Text as="div" tone="muted" class={styles.user}>
-                                        {`> ${quickAskTurns([item])[0].text}`}
-                                    </Text>
-                                )
-                            if (item.role !== 'assistant') return null
-                            return (
-                                <div class={styles.turn}>
-                                    <For each={item.parts}>
-                                        {part => {
-                                            if (part.kind === 'text')
-                                                return (
-                                                    <ChatTextBubble
-                                                        text={part.text}
-                                                        role="assistant"
-                                                    />
-                                                )
-                                            if (part.kind === 'permission' && s)
-                                                return (
-                                                    <ChatPermissionCard
-                                                        part={part}
-                                                        onAnswer={(behavior, always) =>
-                                                            s.answerPermission(
-                                                                part.id,
-                                                                behavior,
-                                                                always,
-                                                            )
-                                                        }
-                                                    />
-                                                )
-                                            if (part.kind === 'question' && s)
-                                                return (
-                                                    <ChatQuestionCard
-                                                        part={part}
-                                                        onAnswer={answers =>
-                                                            s.answerQuestion(part.id, answers)
-                                                        }
-                                                    />
-                                                )
-                                            return null
-                                        }}
-                                    </For>
-                                </div>
-                            )
-                        }}
-                    </For>
-                    <Show when={waiting()}>
-                        <ChatNote>
-                            working
-                            <Caret />
-                        </ChatNote>
-                    </Show>
-                    <Show when={props.session?.gateRefusal()}>
-                        {r => (
-                            <ChatNote icon="TriangleAlert" tone="danger">
-                                {r().message}
-                            </ChatNote>
-                        )}
-                    </Show>
-                    <Show when={props.session?.setupError()}>
-                        <ChatNote icon="TriangleAlert" tone="danger">
-                            no agent set up — open in chat to set one up
-                        </ChatNote>
-                    </Show>
-                    <Show when={!queued() && props.session?.turnError()}>
-                        {msg => (
-                            <ChatNote icon="TriangleAlert" tone="danger">
-                                {msg()}
-                            </ChatNote>
-                        )}
-                    </Show>
-                </div>
-                <div class={styles.reply}>
-                    <Text as="span" tone="faint" class={styles.prompt} aria-hidden="true">
-                        {'>'}
-                    </Text>
-                    <TextInput
-                        plain
-                        class={styles.input}
-                        value={reply()}
-                        onInput={setReply}
-                        onKeyDown={onReplyKeyDown}
-                        placeholder="reply…"
-                        aria-label="reply"
-                        ref={(el: HTMLInputElement) => (replyInput = el)}
-                    />
-                </div>
-                <div class={styles.footer}>
-                    <Show when={canApply() && props.onApply}>
-                        {apply => (
-                            <TextButton
-                                primary
-                                disabled={busy() || !finishedReply()}
-                                onClick={e => apply()(e)}
-                            >
-                                apply
-                            </TextButton>
-                        )}
-                    </Show>
-                    <TextButton onClick={() => props.onOpenInChat()}>open in chat</TextButton>
-                    <TextButton onClick={() => props.onClose()}>esc</TextButton>
-                </div>
-            </Show>
-        </Popover>
-    )
 
     return (
-        <AnchoredPopover
-            open
-            anchor={() => virtualAnchor}
-            placement="below"
-            onDismiss={() => props.onClose()}
-            panelAttrs={{
-                'data-chat-surface': '',
-                'data-quick-ask': '',
-                role: 'dialog',
-                'aria-label': 'ask the daemon',
-            }}
-        >
-            {/* Reading place()/size() here re-runs AnchoredPopover's measure effect when the popover
-                grows, so the box stays glued to its anchor edge while the answer streams. */}
-            {(place(), body)}
-        </AnchoredPopover>
+        <Portal>
+            <div
+                ref={onRoot}
+                class={`${styles.layer} ${props.class ?? ''}`}
+                style={{
+                    left: `${place().left}px`,
+                    top: `${place().top}px`,
+                    width: `${width()}px`,
+                    'max-height': `${place().maxHeight}px`,
+                }}
+                data-chat-surface=""
+                data-quick-ask=""
+                data-chat-drop={props.chatId}
+                role="dialog"
+                aria-label="ask the daemon"
+                onDragOver={drop.onDragOver}
+                onDragLeave={drop.onDragLeave}
+                onDrop={drop.onDrop}
+            >
+                <Popover tone="panel" class={styles['quick-ask']}>
+                    <DropCue active={drop.dragActive() || !!props.dragOver} />
+                    <div class={styles.row}>
+                        <div class={styles.who}>
+                            <DaemonFace
+                                mood={mood()}
+                                size="avatar"
+                                label={props.name}
+                            />
+                            <Text as="span" class={styles.name}>
+                                {props.name}
+                            </Text>
+                        </div>
+                        <div class={styles.actions}>
+                            <Show when={canApply() && props.onApply}>
+                                {apply => (
+                                    <TextButton
+                                        primary
+                                        disabled={
+                                            busy() ||
+                                            lastReplyText().trim() === ''
+                                        }
+                                        onClick={e => apply()(e)}
+                                    >
+                                        apply
+                                    </TextButton>
+                                )}
+                            </Show>
+                            <TextButton onClick={() => props.onOpenInChat()}>
+                                open in chat
+                            </TextButton>
+                            <TextButton onClick={() => props.onClose()}>
+                                esc
+                            </TextButton>
+                        </div>
+                    </div>
+                    <div class={styles.chat}>
+                        <ChatSessionBody
+                            variant="column"
+                            session={props.session}
+                            placeholder={`Message ${props.name}`}
+                            persona={props.name}
+                            avatarMood={mood()}
+                            noteNames={props.noteNames}
+                            memoryNames={props.memoryNames}
+                            tagNames={props.tagNames}
+                            chatId={props.chatId}
+                        />
+                    </div>
+                </Popover>
+            </div>
+        </Portal>
     )
 }
 

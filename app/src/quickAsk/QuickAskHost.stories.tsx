@@ -1,28 +1,32 @@
-// Visual + behavioural spec for <QuickAskHost>. A fake session (a Solid store the play() pushes
-// transcript items into on demand, no timers) is fed through the host's `sessionFor` seam, so the
-// whole open -> send -> stream -> done -> reply -> apply flow runs deterministically.
-//   - A SYNTHETIC Enter must mint no chat id (the trust gate); this is asserted.
-//   - A real Enter / click cannot be produced by a play() (userEvent is untrusted), so the trusted
-//     stories hand the host an `isTrusted` seam that says yes; the default-seam stories prove the
-//     gate refuses.
+// Visual + behavioural spec for <QuickAskHost>, as a surface a person can use: a pane with two notes
+// (switch with `[ fox.md ]` / `[ hen.md ]`) where Cmd/Ctrl+K opens the popover at the caret, exactly
+// as App wires it. Each chat id gets its own fake session (fed through the host's `sessionFor` seam),
+// so switching notes shows a different conversation and coming back resumes the first. A fake
+// session answers whatever is sent with a canned reply after a short delay, so typing in the
+// composer and pressing Enter works by hand. Each play() runs its flow and leaves the result open.
+//   - A real click cannot be produced by a play() (userEvent is untrusted), so the apply stories
+//     hand the host an `isTrusted` seam that says yes; the default-seam story proves the gate refuses.
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { createSignal, onCleanup, onMount, type JSX } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
-import { setChatInstruction, getChatInstruction } from '../chat/chatContext'
+import type { ChatManifest } from '../../../core/src/chat'
+import { getChatInstruction } from '../chat/chatContext'
 import { makeStubChatSession } from '../chat/_stubChatSession'
 import type { ChatSession } from '../chat/chatSession'
 import { applyChatFrame, type TurnItem } from '../chat/chatTranscriptLogic'
+import Text from '../ui/Text'
+import TextButton from '../ui/TextButton'
 import QuickAskHost from './QuickAskHost'
 import { applyMessage, QUICK_ASK_INSTRUCTION } from './quickAskLogic'
 import {
-    beginQuickAsk,
     closeQuickAsk,
     openQuickAsk,
     quickAskChatId,
     quickAskOpen,
+    type QuickAskAnchor,
 } from './quickAskState'
 
 const meta = {
@@ -34,83 +38,177 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const DOC = 'the quick brown fox'
+const NOTES = {
+    'notes/fox.md': 'the quick brown fox',
+    'notes/hen.md': 'the little red hen',
+} as const
+type NotePath = keyof typeof NOTES
+
+const MANIFEST: ChatManifest = {
+    model: 'claude-opus-4-8',
+    permissionMode: 'default',
+    slashCommands: ['compact', 'clear'],
+    tools: ['Read', 'Write', 'Bash'],
+    mcpServers: [{ name: 'bismuth', status: 'connected' }],
+}
+
+const MODELS = [
+    {
+        value: 'opus',
+        label: 'Opus 4.8',
+        description: 'Most capable',
+        effortLevels: ['low', 'medium', 'high'],
+    },
+    {
+        value: 'sonnet',
+        label: 'Sonnet 4.8',
+        description: 'Fast',
+        effortLevels: ['low', 'medium', 'high'],
+    },
+]
 
 /** The seam: push transcript items / flip streaming on demand. `order` records, in call order,
  *  the mode changes and sends the host makes (with the instruction as seen at send time). */
 type Fake = {
     session: ChatSession
-    calls: Record<string, unknown[][]>
     order: string[]
     ask: (text: string) => void
     token: (text: string) => void
     done: () => void
 }
 
-function makeFake(getId: () => string | null): Fake {
+function makeFake(id: string, auto: boolean): Fake {
     const [transcript, setTranscript] = createStore<TurnItem[]>([])
     const [streaming, setStreaming] = createSignal(false)
     const [awaitingReply, setAwaitingReply] = createSignal(false)
-    const stub = makeStubChatSession()
+    const stub = makeStubChatSession({
+        chatId: id,
+        manifest: MANIFEST,
+        models: MODELS,
+        displayModel: 'opus',
+        displayModelValue: 'opus',
+    })
     const order: string[] = []
-    const [modeSig, setModeSig] = createSignal('bypassPermissions')
-    const mode = (): string => modeSig()
+    const [mode, setMode] = createSignal('bypassPermissions')
     const ask = (text: string): void => {
         setTranscript(produce(t => void t.push({ role: 'user', text })))
         setStreaming(true)
         setAwaitingReply(true)
     }
+    const token = (text: string): void => {
+        setAwaitingReply(false)
+        setTranscript(
+            produce(
+                t => void applyChatFrame(t, { type: 'assistant-text', text }),
+            ),
+        )
+    }
+    const done = (): void => void setStreaming(false)
     return {
-        calls: stub.calls,
         order,
         session: {
             ...stub,
             transcript,
             streaming,
             awaitingReply,
-            permMode: modeSig,
+            permMode: mode,
             setPermissionModeLocal: m => {
-                setModeSig(m)
+                setMode(m)
                 order.push(`mode:${m}`)
-                stub.setPermissionModeLocal(m)
             },
             // Like the real session: a send takes the draft, echoes it as a user turn and streams.
             send: () => {
-                const text = stub.draft()
-                const id = getId()
+                const text = stub.draft().trim()
+                if (!text || streaming()) return
                 order.push(
-                    `send:${text}|instruction=${id && getChatInstruction(id) ? 'on' : 'off'}|mode=${mode()}`,
+                    `send:${text}|instruction=${getChatInstruction(id) ? 'on' : 'off'}|mode=${mode()}`,
                 )
-                stub.send()
                 stub.setDraft('')
                 ask(text)
+                if (!auto) return
+                setTimeout(() => {
+                    token(
+                        `A canned story reply. Press Esc, then ⌘K: this conversation comes back.`,
+                    )
+                    done()
+                }, 400)
             },
         },
         ask,
-        token: text => {
-            setAwaitingReply(false)
-            setTranscript(produce(t => void applyChatFrame(t, { type: 'assistant-text', text })))
-        },
-        done: () => setStreaming(false),
+        token,
+        done,
     }
 }
 
-let fake: Fake | undefined
+const fakes = new Map<string, Fake>()
+/** The fake behind the open popover. */
+const fake = (): Fake => fakes.get(quickAskChatId()!)!
 let view: EditorView | undefined
+let showNote: ((p: NotePath) => void) | undefined
 const onOpenChat = fn()
 
-function stage(trusted = false): JSX.Element {
-    fake = makeFake(quickAskChatId)
+const caret = (notePath: NotePath | null): QuickAskAnchor => ({
+    kind: 'caret',
+    view: view!,
+    pos: view!.state.doc.length,
+    notePath,
+    key: notePath,
+})
+
+/** Close the way the host does: a chat nobody wrote in is forgotten. */
+function closeLikeHost(): void {
+    const id = quickAskChatId()
+    const empty =
+        !id || !fakes.get(id)?.session.transcript.some(i => i.role === 'user')
+    closeQuickAsk({ forget: empty })
+}
+
+function stage(opts: { trusted?: boolean; auto?: boolean } = {}): JSX.Element {
+    fakes.clear()
+    const [note, setNote] = createSignal<NotePath>('notes/fox.md')
     const [mounted, setMounted] = createSignal(false)
     let host!: HTMLDivElement
+    showNote = (p: NotePath) => {
+        if (quickAskOpen()) closeLikeHost()
+        setNote(p)
+        view?.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: NOTES[p] },
+        })
+        view?.focus()
+    }
+    // Cmd/Ctrl+K, the way App binds it: open at the caret, or focus the open popover's composer.
+    const onKey = (e: KeyboardEvent) => {
+        if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return
+        e.preventDefault()
+        if (quickAskOpen()) {
+            document
+                .querySelector<HTMLElement>('[data-quick-ask] .cm-content')
+                ?.focus()
+            return
+        }
+        openQuickAsk(caret(note()))
+    }
     onMount(() => {
-        view = new EditorView({ state: EditorState.create({ doc: DOC }), parent: host })
+        view = new EditorView({
+            state: EditorState.create({ doc: NOTES[note()] }),
+            parent: host,
+        })
+        window.addEventListener('keydown', onKey)
         onCleanup(() => {
+            window.removeEventListener('keydown', onKey)
             closeQuickAsk()
             view?.destroy()
         })
         setMounted(true)
     })
+    const notePick = (p: NotePath) => (
+        <TextButton
+            variant={note() === p ? 'selected' : 'unselected'}
+            onClick={() => showNote?.(p)}
+        >
+            {p.slice('notes/'.length)}
+        </TextButton>
+    )
     return (
         <div
             data-pane-leaf="story-pane"
@@ -127,158 +225,205 @@ function stage(trusted = false): JSX.Element {
                 color: 'var(--fg)',
             }}
         >
+            <div
+                style={{
+                    position: 'absolute',
+                    top: '16px',
+                    left: '24px',
+                    display: 'flex',
+                    gap: 'var(--sp-4)',
+                    'align-items': 'center',
+                }}
+            >
+                <Text as="span" tone="muted">
+                    click the note, press ⌘K // note:
+                </Text>
+                {notePick('notes/fox.md')}
+                {notePick('notes/hen.md')}
+            </div>
             <div ref={host} style={{ padding: '0 24px' }} />
             <QuickAskHost
                 daemonEnabled
                 onOpenChat={onOpenChat}
-                sessionFor={() => fake?.session}
-                isTrusted={trusted ? () => true : undefined}
+                noteNames={() => []}
+                memoryNames={() => []}
+                tagNames={() => []}
+                sessionFor={id => {
+                    if (!fakes.has(id))
+                        fakes.set(id, makeFake(id, opts.auto ?? true))
+                    return fakes.get(id)!.session
+                }}
+                isTrusted={opts.trusted ? () => true : undefined}
             />
         </div>
     )
 }
 
-/** The default trust gate: an untrusted Enter mints nothing, an untrusted [ apply ] click sends nothing. */
-export const UntrustedRefused: Story = {
-    name: 'untrusted enter and apply refused',
+const mounted = (el: HTMLElement) =>
+    waitFor(() => expect(el.querySelector('[data-mounted]')).not.toBeNull())
+
+const cmdK = () =>
+    window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+            key: 'k',
+            metaKey: true,
+            bubbles: true,
+        }),
+    )
+
+/** Send through the session the popover shows, as the composer's Enter does. */
+const say = (text: string) => {
+    const s = fake().session
+    s.setDraft(text)
+    s.send()
+}
+
+/** Cmd+K in a note resumes that note's chat; the other note has its own; a chat nobody wrote in
+ *  is not kept. Ends on the fox note's popover, its conversation resumed. Try it by hand: ask
+ *  something, Esc, Cmd+K again; switch notes and back. */
+export const ResumesPerNote: Story = {
+    name: 'resumes per note',
     render: () => stage(),
     play: async ({ canvasElement }) => {
         const body = within(document.body)
-        await waitFor(() => expect(canvasElement.querySelector('[data-mounted]')).not.toBeNull())
-        openQuickAsk({ kind: 'caret', view: view!, pos: DOC.length, notePath: 'notes/fox.md' })
+        await mounted(canvasElement)
+        showNote!('notes/fox.md')
+        cmdK()
+        await waitFor(() => expect(quickAskChatId()).not.toBeNull())
+        const fox = quickAskChatId()!
+        say('a sharper word for quick?')
+        await body.findByText(/A canned story reply/)
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(quickAskOpen()).toBeNull())
 
-        // Opening creates no session; the input has focus.
-        const input = await body.findByPlaceholderText('ask…')
-        await expect(quickAskChatId()).toBeNull()
-        await expect(input).toHaveFocus()
+        // Same note: the same chat, its conversation still there.
+        cmdK()
+        await waitFor(() => expect(quickAskChatId()).toBe(fox))
+        await body.findByText('a sharper word for quick?')
 
-        // An untrusted Enter mints nothing and the popover stays an idle row.
-        await userEvent.type(input, 'synonym for quick?{Enter}')
-        await expect(quickAskChatId()).toBeNull()
-        await expect(body.queryByText('working')).toBeNull()
-        await expect(fake!.order).toEqual([])
+        // The other note: its own chat. Leaving it empty forgets it.
+        showNote!('notes/hen.md')
+        cmdK()
+        await waitFor(() => expect(quickAskChatId()).not.toBeNull())
+        const hen = quickAskChatId()!
+        await expect(hen).not.toBe(fox)
+        await expect(body.queryByText('a sharper word for quick?')).toBeNull()
+        showNote!('notes/hen.md')
+        cmdK()
+        await waitFor(() => expect(quickAskChatId()).not.toBeNull())
+        await expect(quickAskChatId()).not.toBe(hen)
 
-        // A minted session with a finished reply: an untrusted click on apply does nothing.
-        await expect(beginQuickAsk({ isTrusted: true })).toMatch(/^quick-/)
-        fake!.ask('synonym for quick?')
-        fake!.token('**swift**')
-        fake!.done()
-        const apply = await body.findByRole('button', { name: 'apply' })
-        await waitFor(() => expect(apply).toBeEnabled())
-        const before = fake!.order.length
-        await userEvent.click(apply)
-        await new Promise(r => setTimeout(r, 150))
-        await expect(fake!.order.length).toBe(before)
-        await expect(fake!.order.some(o => o.startsWith('mode:'))).toBe(false)
-
-        // An untrusted Enter in the reply input sends nothing either.
-        const replyInput = await body.findByPlaceholderText('reply…')
-        await userEvent.type(replyInput, 'again{Enter}')
-        await new Promise(r => setTimeout(r, 150))
-        await expect(fake!.order.length).toBe(before)
+        // Back to the fox note: resumed.
+        showNote!('notes/fox.md')
+        cmdK()
+        await waitFor(() => expect(quickAskChatId()).toBe(fox))
+        await body.findByText('a sharper word for quick?')
     },
 }
 
-/** The trusted path: instruction + local mode set BEFORE the first send, a reply goes into the same
- *  session, and apply flushes -> acceptEdits -> sends the apply message (shown as `> apply`). */
-export const AskReplyApply: Story = {
-    name: 'ask, reply, apply',
-    render: () => stage(true),
+/** Opening frames the session (instruction + ask-first mode) before anything is sent; apply
+ *  flushes -> acceptEdits -> sends the apply message, keeps what was typed, and drops back to
+ *  `default` when that turn ends. Ends open, after the apply. */
+export const AskThenApply: Story = {
+    name: 'ask then apply',
+    render: () => stage({ trusted: true, auto: false }),
     play: async ({ canvasElement }) => {
         const body = within(document.body)
-        await waitFor(() => expect(canvasElement.querySelector('[data-mounted]')).not.toBeNull())
-        openQuickAsk({ kind: 'caret', view: view!, pos: DOC.length, notePath: 'notes/fox.md' })
-        const input = await body.findByPlaceholderText('ask…')
-        await userEvent.type(input, 'synonym for quick?{Enter}')
-
+        await mounted(canvasElement)
+        showNote!('notes/fox.md')
+        cmdK()
+        await waitFor(() => expect(fake()?.order).toEqual(['mode:default']))
         const id = quickAskChatId()!
-        await expect(id).toMatch(/^quick-/)
-        await waitFor(() => expect(fake!.order.length).toBe(2))
-        await expect(fake!.order).toEqual([
-            'mode:default',
-            'send:synonym for quick?|instruction=on|mode=default',
-        ])
         await expect(getChatInstruction(id)).toBe(QUICK_ASK_INSTRUCTION)
-        await body.findByText('working')
-        await expect(body.getByText('> synonym for quick?')).toBeInTheDocument()
-        await expect(body.getByRole('button', { name: 'apply' })).toBeDisabled()
 
-        fake!.token('**swift**')
-        await body.findByText('swift')
-        await expect(body.queryByText('working')).toBeNull()
-        fake!.done()
-        await waitFor(() => expect(body.getByRole('button', { name: 'apply' })).toBeEnabled())
+        say('synonym for quick?')
+        await expect(fake().order[1]).toBe(
+            'send:synonym for quick?|instruction=on|mode=default',
+        )
+        await expect(body.queryByRole('button', { name: 'apply' })).toBeNull()
+        fake().token('**swift** reads best: "the swift brown fox".')
+        fake().done()
+        await waitFor(() =>
+            expect(body.getByRole('button', { name: 'apply' })).toBeEnabled(),
+        )
 
-        // Reply: same session; Enter while streaming would do nothing, so finish first.
-        const replyInput = await body.findByPlaceholderText('reply…')
-        await waitFor(() => expect(replyInput).toHaveFocus())
-        await userEvent.type(replyInput, 'shorter{Enter}')
-        await waitFor(() => expect(fake!.order.length).toBe(3))
-        await expect(fake!.order[2]).toBe('send:shorter|instruction=on|mode=default')
-        await expect(quickAskChatId()).toBe(id)
-        fake!.token('swift')
-        fake!.done()
-        await waitFor(() => expect(body.getByRole('button', { name: 'apply' })).toBeEnabled())
-
-        // Apply: acceptEdits first, then the apply message, shown as `> apply`. No text is inserted.
+        fake().session.setDraft('half-typed follow-up')
         await userEvent.click(body.getByRole('button', { name: 'apply' }))
-        await waitFor(() => expect(fake!.order.length).toBe(5))
-        await expect(fake!.order[3]).toBe('mode:acceptEdits')
-        await expect(fake!.order[4]).toBe(
+        await waitFor(() => expect(fake().order.length).toBe(4))
+        await expect(fake().order[2]).toBe('mode:acceptEdits')
+        await expect(fake().order[3]).toBe(
             `send:${applyMessage('notes/fox.md')}|instruction=on|mode=acceptEdits`,
         )
-        await body.findByText('> apply')
-        await expect(view!.state.doc.toString()).toBe(DOC)
-        await expect(quickAskOpen()).not.toBeNull()
+        await expect(fake().session.draft()).toBe('half-typed follow-up')
+        await expect(view!.state.doc.toString()).toBe(NOTES['notes/fox.md'])
 
-        // After the apply turn, the next reply drops the session back to default BEFORE sending.
-        fake!.token('done')
-        fake!.done()
-        const again = await body.findByPlaceholderText('reply…')
-        await waitFor(() => expect(again).toHaveFocus())
-        // A synthetic Enter never clears the field (only a trusted one does), so clear by hand.
-        await userEvent.clear(again)
-        await userEvent.type(again, 'again{Enter}')
-        await waitFor(() => expect(fake!.order.length).toBe(7))
-        await expect(fake!.order[5]).toBe('mode:default')
-        await expect(fake!.order[6]).toBe('send:again|instruction=on|mode=default')
+        fake().token('Changed "quick" to "swift" in notes/fox.md.')
+        fake().done()
+        await waitFor(() => expect(fake().order[4]).toBe('mode:default'))
     },
 }
 
-/** Esc closes through closeQuickAsk() and releases the chat id. */
+/** The default trust gate: an untrusted [ apply ] click sends nothing and changes no mode. Ends
+ *  open, with the reply that apply was refused on. */
+export const UntrustedApplyRefused: Story = {
+    name: 'untrusted apply refused',
+    render: () => stage({ auto: false }),
+    play: async ({ canvasElement }) => {
+        const body = within(document.body)
+        await mounted(canvasElement)
+        showNote!('notes/fox.md')
+        cmdK()
+        await waitFor(() => expect(fake()?.order).toEqual(['mode:default']))
+        fake().ask('synonym for quick?')
+        fake().token('**swift**')
+        fake().done()
+        const apply = await body.findByRole('button', { name: 'apply' })
+        await waitFor(() => expect(apply).toBeEnabled())
+        await userEvent.click(apply)
+        await new Promise(r => setTimeout(r, 150))
+        await expect(fake().order).toEqual(['mode:default'])
+    },
+}
+
+/** Esc closes through closeQuickAsk() and releases the chat id. Cmd+K reopens it. */
 export const EscCloses: Story = {
     name: 'esc closes',
     render: () => stage(),
     play: async ({ canvasElement }) => {
-        const body = within(document.body)
-        await waitFor(() => expect(canvasElement.querySelector('[data-mounted]')).not.toBeNull())
-        openQuickAsk({ kind: 'caret', view: view!, pos: DOC.length, notePath: null })
-        await body.findByPlaceholderText('ask…')
+        await mounted(canvasElement)
+        cmdK()
+        await waitFor(() =>
+            expect(document.querySelector('[data-quick-ask]')).not.toBeNull(),
+        )
         await userEvent.keyboard('{Escape}')
         await waitFor(() => expect(quickAskOpen()).toBeNull())
         await expect(quickAskChatId()).toBeNull()
     },
 }
 
-/** open in chat: hands the id to the app and closes without disposing. */
+/** open in chat: hands the id to the app and closes without disposing; the note's next Cmd+K
+ *  starts fresh (and ends open on that fresh chat). */
 export const OpenInChat: Story = {
     name: 'open in chat',
     render: () => stage(),
     play: async ({ canvasElement }) => {
         const body = within(document.body)
-        await waitFor(() => expect(canvasElement.querySelector('[data-mounted]')).not.toBeNull())
-        openQuickAsk({ kind: 'caret', view: view!, pos: DOC.length, notePath: null })
-        await body.findByPlaceholderText('ask…')
-        const id = beginQuickAsk({ isTrusted: true })!
-        setChatInstruction(id, QUICK_ASK_INSTRUCTION)
-        fake!.ask('hello?')
-        fake!.token('hi')
-        fake!.done()
-        await userEvent.click(await body.findByRole('button', { name: 'open in chat' }))
+        await mounted(canvasElement)
+        showNote!('notes/hen.md')
+        cmdK()
+        await waitFor(() => expect(quickAskChatId()).not.toBeNull())
+        const id = quickAskChatId()!
+        say('hello?')
+        await body.findByText(/A canned story reply/)
+        await userEvent.click(
+            await body.findByRole('button', { name: 'open in chat' }),
+        )
         await expect(onOpenChat).toHaveBeenCalledWith(id)
         // The chat tab behaves like any chat: the quick-ask instruction is gone.
         await expect(getChatInstruction(id)).toBeNull()
         await expect(quickAskOpen()).toBeNull()
-        await expect(quickAskChatId()).toBeNull()
+        cmdK()
+        await waitFor(() => expect(quickAskChatId()).not.toBeNull())
+        await expect(quickAskChatId()).not.toBe(id)
     },
 }

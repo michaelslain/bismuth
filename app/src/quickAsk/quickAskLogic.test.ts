@@ -1,17 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import type { TurnItem } from '../chat/chatTranscriptLogic'
-import {
-    CONVERSATION_ITEMS,
-    INLINE_PROMPT_ITEMS,
-    MULTI_TURN_ITEMS,
-} from '../chat/_transcriptFixtures'
 import {
     applyMessage,
     faceMood,
-    isApplyMessage,
+    forgetQuickChatEntry,
+    isClick,
     popoverPlacement,
     popoverWidth,
-    quickAskTurns,
+    quickChatFor,
+    rememberQuickChat,
     sendWhenOpen,
 } from './quickAskLogic'
 
@@ -21,52 +17,50 @@ describe('applyMessage', () => {
         expect(m).toContain('notes/fox.md')
         expect(m).toContain('edit the file directly')
     })
-
-    test('isApplyMessage recognises exactly its own output', () => {
-        expect(isApplyMessage(applyMessage('a/b.md'))).toBe(true)
-        expect(isApplyMessage('apply')).toBe(false)
-        expect(isApplyMessage('please apply the change you suggested to x')).toBe(false)
-    })
 })
 
-describe('quickAskTurns', () => {
-    test('empty transcript gives no turns', () => {
-        expect(quickAskTurns([])).toEqual([])
+describe('remembered quick chats', () => {
+    test('a key finds its chat; an unknown key finds none', () => {
+        const { list } = rememberQuickChat([], 'a.md', 'quick-1')
+        expect(quickChatFor(list, 'a.md')).toBe('quick-1')
+        expect(quickChatFor(list, 'b.md')).toBeNull()
     })
 
-    test('users keep their text, assistants concatenate text parts, system is dropped', () => {
-        const t: TurnItem[] = [
-            { role: 'user', text: 'shorter?' },
-            { role: 'system', text: 'noted' },
-            {
-                role: 'assistant',
-                footer: null,
-                parts: [
-                    { kind: 'text', text: 'one ' },
-                    { kind: 'thinking', text: 'hmm' },
-                    { kind: 'text', text: 'two' },
-                ],
-            },
-        ]
-        expect(quickAskTurns(t)).toEqual([
-            { role: 'user', text: 'shorter?' },
-            { role: 'assistant', text: 'one two' },
+    test('one entry per key, most recent last', () => {
+        let list = rememberQuickChat([], 'a.md', 'quick-1').list
+        list = rememberQuickChat(list, 'b.md', 'quick-2').list
+        list = rememberQuickChat(list, 'a.md', 'quick-1').list
+        expect(list).toEqual([
+            { chatId: 'quick-2', key: 'b.md' },
+            { chatId: 'quick-1', key: 'a.md' },
         ])
     })
 
-    test('an apply message reads as `apply`', () => {
-        const t: TurnItem[] = [{ role: 'user', text: applyMessage('notes/fox.md') }]
-        expect(quickAskTurns(t)).toEqual([{ role: 'user', text: 'apply' }])
+    test('a key given a new chat evicts its old one', () => {
+        const first = rememberQuickChat([], 'a.md', 'quick-1').list
+        const r = rememberQuickChat(first, 'a.md', 'quick-9')
+        expect(r.list).toEqual([{ chatId: 'quick-9', key: 'a.md' }])
+        expect(r.evicted).toEqual(['quick-1'])
     })
 
-    test('multi-turn fixtures keep order and ignore non-text parts', () => {
-        const turns = quickAskTurns(MULTI_TURN_ITEMS)
-        expect(turns.length).toBeGreaterThan(1)
-        expect(turns.some(x => x.text.includes('undefined'))).toBe(false)
-        expect(quickAskTurns(INLINE_PROMPT_ITEMS).some(x => x.text.includes('undefined'))).toBe(
-            false,
-        )
-        expect(quickAskTurns(CONVERSATION_ITEMS)[0].role).toBe('user')
+    test('past the cap the oldest falls off and is reported', () => {
+        let list = rememberQuickChat([], 'a.md', 'quick-1', 2).list
+        list = rememberQuickChat(list, 'b.md', 'quick-2', 2).list
+        const r = rememberQuickChat(list, 'c.md', 'quick-3', 2)
+        expect(r.list.map(e => e.key)).toEqual(['b.md', 'c.md'])
+        expect(r.evicted).toEqual(['quick-1'])
+    })
+
+    test('forgetting drops the entry by chat id', () => {
+        const { list } = rememberQuickChat([], 'a.md', 'quick-1')
+        expect(forgetQuickChatEntry(list, 'quick-1')).toEqual([])
+    })
+})
+
+describe('isClick', () => {
+    test('a press that stays within 4px is a click; past it, a drag', () => {
+        expect(isClick({ x: 10, y: 10 }, { x: 13, y: 10 })).toBe(true)
+        expect(isClick({ x: 10, y: 10 }, { x: 20, y: 10 })).toBe(false)
     })
 })
 
@@ -89,7 +83,9 @@ describe('faceMood', () => {
     })
     test('thinking until reply text, then talking', () => {
         expect(faceMood({ ...on, streaming: true })).toBe('thinking')
-        expect(faceMood({ ...on, streaming: true, hasReplyText: true })).toBe('talking')
+        expect(faceMood({ ...on, streaming: true, hasReplyText: true })).toBe(
+            'talking',
+        )
     })
     test('listening while typing, idle otherwise', () => {
         expect(faceMood({ ...on, typing: true })).toBe('listening')
@@ -98,8 +94,8 @@ describe('faceMood', () => {
 })
 
 describe('popoverWidth', () => {
-    test('min(480, pane - 32)', () => {
-        expect(popoverWidth(1000)).toBe(480)
+    test('min(560, pane - 32)', () => {
+        expect(popoverWidth(1000)).toBe(560)
         expect(popoverWidth(400)).toBe(368)
     })
 })
@@ -108,40 +104,55 @@ const pane = { left: 100, top: 50, width: 800, height: 600 }
 const size = { width: 480, height: 40 }
 
 describe('popoverPlacement', () => {
-    test('below the caret line when there is room, 6px gap', () => {
+    test('below the caret line when there is room, 6px gap, as tall as the room allows', () => {
         const r = popoverPlacement({
             caret: { left: 300, top: 300, bottom: 320 },
             pane,
             size,
         })
-        expect(r).toEqual({ left: 300, top: 326, side: 'below' })
+        // room below: (50 + 600 - 16) - 326 = 308; above: 300 - 6 - 66 = 228
+        expect(r).toEqual({
+            left: 300,
+            top: 326,
+            side: 'below',
+            maxHeight: 308,
+        })
     })
 
-    test('above the caret line when there is no room below', () => {
+    test('above the caret line when there is less room below than above', () => {
         const r = popoverPlacement({
-            caret: { left: 300, top: 610, bottom: 630 },
+            caret: { left: 300, top: 500, bottom: 520 },
             pane,
             size,
         })
-        expect(r).toEqual({ left: 300, top: 610 - 6 - 40, side: 'above' })
+        expect(r).toEqual({
+            left: 300,
+            top: 500 - 6 - 40,
+            side: 'above',
+            maxHeight: 428,
+        })
     })
 
-    test('a latched side survives growth', () => {
-        const grown = { width: 480, height: 300 }
-        const below = popoverPlacement({
-            caret: { left: 300, top: 300, bottom: 320 },
+    test('the side depends on the room, never on the size, so growth never flips it', () => {
+        const caret = { left: 300, top: 300, bottom: 320 }
+        const small = popoverPlacement({ caret, pane, size })
+        const grown = popoverPlacement({
+            caret,
             pane,
-            size: grown,
-            latched: 'below',
+            size: { width: 480, height: 300 },
         })
-        expect(below).toEqual({ left: 300, top: 326, side: 'below' })
-        const above = popoverPlacement({
-            caret: { left: 300, top: 610, bottom: 630 },
-            pane,
-            size: grown,
-            latched: 'above',
+        expect(grown.side).toBe(small.side)
+        expect(grown.top).toBe(326)
+    })
+
+    test('maxHeight is capped at 560', () => {
+        const tall = { left: 0, top: 0, width: 800, height: 2000 }
+        const r = popoverPlacement({
+            caret: { left: 100, top: 10, bottom: 30 },
+            pane: tall,
+            size,
         })
-        expect(above).toEqual({ left: 300, top: 610 - 6 - 300, side: 'above' })
+        expect(r.maxHeight).toBe(560)
     })
 
     test('pane-top with no caret: centred, 48px from the top', () => {
@@ -150,6 +161,7 @@ describe('popoverPlacement', () => {
             left: 100 + (800 - 480) / 2,
             top: 98,
             side: 'pane-top',
+            maxHeight: 50 + 600 - 16 - 98,
         })
     })
 
@@ -166,13 +178,6 @@ describe('popoverPlacement', () => {
             size,
         })
         expect(left.left).toBe(116)
-        const bottom = popoverPlacement({
-            caret: { left: 300, top: 60, bottom: 640 },
-            pane,
-            size,
-        })
-        expect(bottom.side).toBe('below')
-        expect(bottom.top).toBe(50 + 600 - 16 - 40)
     })
 })
 

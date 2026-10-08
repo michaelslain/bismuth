@@ -514,8 +514,8 @@ export default function App() {
                     ids.add(CHAT_PREFIX + DAEMON_CHAT_ID)
             }
         }
-        // The Cmd+K popover's one-off chat, once a trusted Enter minted its id. On hand-off the
-        // new chat tab already holds the same id, so the session is never absent from the set.
+        // The Cmd+K popover's chat while it is open (resumed per note, see quickAskState). On
+        // hand-off the new chat tab already holds the same id, so the session is never absent.
         const quickId = quickAskChatId()
         if (quickId) ids.add(CHAT_PREFIX + quickId)
         // The feedback page's interview, once a trusted click started one, while the page is open.
@@ -1471,11 +1471,12 @@ export default function App() {
     // invocation is a distinct conversation rather than re-focusing an old one).
     const newClaudeChat = () => openTool(CHAT_PREFIX + crypto.randomUUID())
     // Cmd+K quick ask: anchored at the caret when the focus is inside a CodeMirror note editor,
-    // else at the top of the focused pane. Already open → focus its input instead of a second one.
+    // else at the top of the focused pane. Already open → focus its composer instead of a second one.
     const quickAsk = () => {
         if (quickAskOpen()) {
+            // `.cm-content` is the composer's CodeMirror (a third-party class, never hashed).
             document
-                .querySelector<HTMLInputElement>('[data-quick-ask] input')
+                .querySelector<HTMLElement>('[data-quick-ask] .cm-content')
                 ?.focus()
             return
         }
@@ -1496,12 +1497,18 @@ export default function App() {
                 view,
                 pos: view.state.selection.main.head,
                 notePath,
+                key: notePath,
             })
             return
         }
-        openQuickAsk({ kind: 'pane', leafId: activeTab()?.focusId ?? null })
+        // Keyed by what the focused pane shows, so Cmd+K over the same file resumes its chat too.
+        openQuickAsk({
+            kind: 'pane',
+            leafId: activeTab()?.focusId ?? null,
+            key: focusedContent(),
+        })
     }
-    // `[ open in chat ]`: the one-off chat continues in its own tab. The tab is added before the
+    // `[ open in chat ]`: the quick-ask chat continues in its own tab. The tab is added before the
     // popover lets go of the id, so the retained set never loses it (no reconnect).
     const openQuickAskInChat = (chatId: string) => {
         const tab = makeTab(CHAT_PREFIX + chatId)
@@ -2165,6 +2172,17 @@ export default function App() {
         (descriptor: DragDescriptor, target: DropTarget, point: DropPoint) => {
             // Sidebar file-tree targets (Row 73): physically MOVE the dragged note/folder (or a path-backed
             // tab/pane) into the folder / vault root. FileTree owns the optimistic move via bismuth-move-into.
+            // The Cmd+K popover (or any `data-chat-drop` surface): mention the dragged file there.
+            if (target.kind === 'chat') {
+                const refPath = descriptorChatRefPath(descriptor)
+                if (refPath)
+                    deliverChatDrop(target.chatId, {
+                        kind: 'mention',
+                        path: refPath,
+                        noteIds: noteCandidates().map(n => n.path),
+                    })
+                return
+            }
             if (target.kind === 'folder' || target.kind === 'root') {
                 const from = descriptorMovePath(descriptor)
                 if (from) {
@@ -3600,6 +3618,12 @@ export default function App() {
                     <QuickAskHost
                         daemonEnabled={settings.daemon.enabled}
                         onOpenChat={openQuickAskInChat}
+                        noteNames={noteCandidates}
+                        memoryNames={memoryCandidates}
+                        tagNames={tagCandidates}
+                        dragOver={
+                            drag().active && drag().target?.kind === 'chat'
+                        }
                     />
                 </>
             }
