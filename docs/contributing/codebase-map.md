@@ -144,7 +144,7 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 | Calendar | `calendar.ts`, `dates.ts`, and `gcal/` |
 | AI visibility | `visibility.ts`, `visibilityFilter.ts` (the one shared filter), `visibilityCliGate.ts`, `ownership.ts` |
 | Daemon read window | `daemon.ts`, `daemonGraph.ts`, `daemonState.ts`, `daemonViz.ts`, `daemonInstall.ts`, `daemonActivity.ts`, `daemonPages.ts`, `serviceUnit.ts` |
-| Memory recall | `memoryRecall.ts`, `memoryEmbed.ts`, `embedModel.ts`, `embedWorker.ts`, `memoryRef.ts` |
+| Memory recall | `memoryRecall.ts`, `memoryEmbed.ts`, `embedModel.ts`, `embedWorker.ts`, `embedWorkerBoot.ts`, `memoryRerank.ts`, `rerankWorker.ts`, `memoryRef.ts` |
 | Chat, agents and terminal | `chat.ts`, `chatModelStore.ts`, `agents.ts`, `freeAgent.ts`, `claudeWhich.ts`, `relay.ts`, `terminal.ts`, `uiControl.ts` |
 | Install, update and run state | `bismuthInstall.ts`, `bismuthHome.ts`, `selfUpdate.ts`, `openFolder.ts`, `runRegistry.ts`, `ownerToken.ts` |
 | Mobile | `localBackend.ts`, the in-process backend used where no HTTP server can run |
@@ -201,6 +201,7 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 | `calendar/` | Calendar state, `EventStore`, and the calendar and task-calendar components | `state.ts` |
 | `graph/` | The ASCII graph renderer, camera, layers and label selection | `graphRenderer.ts` |
 | `chat/` | The chat UI and `chatSessions.ts`, the registry that keeps each chat's socket and transcript alive | `chatSessions.ts` |
+| `quickAsk/` | The `Mod+K` popover: a one-off daemon conversation with apply, anchored at the caret or the pane top | `QuickAskHost.tsx` |
 | `daemon/` | The daemon page, its docked chat, inbox, crons and processes | `DaemonPageHost.tsx` |
 | `preview/` | Image, PDF and code previews, annotation stores, outline and bookmarks | `previewKind.ts` |
 | `drawing/` | The `.draw` canvas, toolbar and input handling | `DrawingPage.tsx` |

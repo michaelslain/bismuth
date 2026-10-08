@@ -53,7 +53,7 @@ These keys need `daemon.enabled`. [The settings reference](../settings/reference
 
 With `semantic` on, core also scores notes with a small embedding model (`Xenova/bge-small-en-v1.5`, quantized) and adds the closest few to the ranking as a bonus on top of the word match. The model runs in a separate helper process that core starts on the first semantic query and ends after 10 minutes without one, which returns its memory (about 35 MB of model files; the helper's own memory use is in the settings reference). The first query, and any query past 250 ms, is answered by word matching alone while the helper warms up. The model downloads on first use into `~/.bismuth/models`; offline with no cached copy, recall stays word-based.
 
-With semantics available, prompt and subagent recall add one more check. The few best candidates go to a small second model (`Xenova/ms-marco-MiniLM-L-6-v2`, quantized, downloaded on first use into `~/.bismuth/models`) that reads each note against what you asked and scores how well it answers it. A note is injected only when that score is high enough, so a prompt the vault knows nothing about injects nothing instead of the nearest-looking notes. The check has 700 ms; if the model is still loading, fails or runs late, that request uses the plain ranking. Mid-turn tool recall never uses it.
+With semantics available, prompt and subagent recall add a relevance check: a small second model reads each of the best few notes against your prompt, and a note is injected only when it answers it. A prompt the vault knows nothing about injects nothing. [How recall ranks notes](#how-recall-ranks-notes) has the thresholds.
 
 The compiled `bismuth serve` command and the iPad build match by words only.
 
@@ -100,33 +100,13 @@ Ranking is BM25 first. With `daemon.recall.semantic` on (the default), core also
 
 **Evidence rules.** In tool mode, at 12 or more notes, evidence is strict: a semantic-only hit never injects, because a cosine is only a bonus on top of lexical evidence. bge-small cosines sit in a narrow band, so the floor is relative per query: a note is lifted only when its cosine clears both the mode's `semanticMinCosine` and this query's tenth-best cosine plus `SEMANTIC_BACKGROUND_MARGIN` (0.07). A prompt the vault knows nothing about scores ten notes within a few hundredths of each other and lifts none. With that map in hand (prompt and subagent modes, 12 or more notes), a note matched only by words in its body, with no name, tag or description hit and no semantic lift, is dropped, and the prompt-mode bar rises from `minScore` 0.08 to `semanticMinScore` 0.12 (`memory/src/pack.ts`). Without semantics (the setting off, the model still warming, the iPad) the lexical rules and 0.08 apply. `which`, `whose`, `whom`, `these`, `those` and `off` are stop words.
 
-**Vectors, chunked.** One `vectors-chunked.json` per memory dir under `~/.bismuth/cache/recall/<sha1(memoryDir)>/`, keyed by `noteHash`; the single-vector `vectors.json` beside it is never read or rewritten. Only notes whose hash changed are re-embedded, throttled to one run per 2 s, and a restart embeds nothing already stored. A note is cut into windows of at most `CHUNK_CHARS` characters (`noteChunks`, up to `MAX_CHUNKS_PER_NOTE`), each led by the note's name, description and tags, and scores as its best chunk (max-sim), so a fact deep in a long note is not diluted by the rest. A stored entry whose dimension is 0 or does not divide its byte length is skipped as corrupt and re-embedded. Queries get bge's instruction prefix; documents do not.
+**Vectors, chunked.** One `vectors-chunked.json` per memory dir under `~/.bismuth/cache/recall/<sha1(memoryDir)>/`, keyed by `noteHash`; Only notes whose hash changed are re-embedded, throttled to one run per 2 s, and a restart embeds nothing already stored. A note is cut into windows of at most `CHUNK_CHARS` characters (`noteChunks`, up to `MAX_CHUNKS_PER_NOTE`), each led by the note's name, description and tags, and scores as its best chunk (max-sim), so a fact deep in a long note is not diluted by the rest. A stored entry whose dimension is 0 or does not divide its byte length is skipped as corrupt and re-embedded. Queries get bge's instruction prefix; documents do not.
 
 **The reranker gate** (`core/src/memoryRerank.ts`, `memory/src/rerankGate.ts`). With semantics in hand, prompt and subagent modes (never tool mode) send the top `RERANK_CANDIDATES` (5) ranked notes scoring at least `semanticMinScore` (0.12), as the excerpt the agent would read, to a cross-encoder in its own idle-exiting child process, the embedder's pattern. `gateByRerank` keeps a note only when its raw logit is at least `RERANK_MIN_LOGIT` and within `RERANK_MAX_DROP` (6) of the best candidate; an empty result injects nothing. The gated list is packed with `semantic: false`, so `semanticMinScore` never vetoes a note the reranker admitted. The budget is `RERANK_TIMEOUT_MS` (700 ms): a cold load, a failure, a timeout or a bad reply falls back to the rules above for that request, and the recall never waits longer.
 
 The reranker judges each passage against `rerankQuery`. That is the prompt itself, at most `RERANK_QUERY_CHARS` (1,000) characters, because the cross-encoder cuts the joined pair from the end at 512 tokens and a long subagent brief would otherwise leave no passage tokens. When the prompt has fewer than `RERANK_TERSE_TERMS` (4) content terms, it is the prompt followed by the first `RERANK_CONTEXT_CHARS` (400) of the context, which leads with the agent's last reply (the tool-input strings that trail it are noise). A terse follow-up such as "ok do it" or "continue" is therefore judged with that reply attached rather than on its own words, which score about -11 against anything.
 
-**Thresholds and their numbers.** Measured with `bun bench/recallEval.ts --semantic ./core/src/memoryEmbed.ts --reranker ./core/src/memoryRerank.ts --sweep`, prompt mode, at the shipped config. The synthetic suite is 85 prompt cases, 48 of them expect-nothing near-misses; the real one is a private 135-note vault with 19 cases. `RERANK_MIN_LOGIT` is **-6**.
-
-| suite | ranker | recall@5 | false-inject |
-|---|---|---|---|
-| synthetic | bm25 | 1.000 | 0.646 |
-| synthetic | hybrid (chunked, no reranker) | 1.000 | 0.625 |
-| synthetic | rerank at -6 | 0.959 | 0.104 |
-| real 135 notes | bm25 | 0.955 | 0.875 |
-| real 135 notes | hybrid (chunked, no reranker) | 0.955 | 0.500 |
-| real 135 notes | rerank at -6 | 0.955 | 0.125 |
-
-The logit sweep (-10 to +4 in 0.25 steps), prompt mode, recall@5 / false-inject:
-
-| logit | -10 | -8.5 | -7 | -6.5 | -6 | -5 | -3.5 | -1.5 | 0 |
-|---|---|---|---|---|---|---|---|---|---|
-| synthetic | .986 / .354 | .986 / .250 | .986 / .167 | .959 / .125 | .959 / .104 | .959 / .063 | .959 / .021 | .932 / .021 | .838 / 0 |
-| real | .955 / .250 | .955 / .125 | .955 / .125 | .955 / .125 | .955 / .125 | .955 / .125 | .864 / 0 | .773 / 0 | .727 / 0 |
-
-The rule: the largest threshold that keeps recall@5 at or above 0.95 on both suites is -5 (the real vault is the limit; it holds 0.955 from -10 to -5 and drops to 0.864 at -4.75, while the synthetic suite holds 0.959 down to -3.5). Subtracting 1.5 logits of safety margin gives -6.5, which measured 0.959 / 0.125 synthetic and 0.955 / 0.125 real. **-6** is what ships. -7 gains synthetic recall (0.986 against 0.959) at false-inject 0.167 against 0.104 on that suite, with the same real numbers, so it is not taken.
-
-The ship targets are not met together: synthetic recall@5 stays below 0.97 at -6 (it reaches 0.986 only at -7 and below), and false-inject there is 0.104. Subagent mode (5 cases, one with a brief over 1,500 characters) keeps recall 1.000 and false-inject 0.000 at -6 and at -7 (hybrid without the reranker: recall 1.000, false-inject 1.000). Without the reranker, chunking raises cosines, so on the original 44 prompt cases hybrid's false-inject is 0.250 at recall 1.000. Re-sweeping `semanticMinCosine` x `semanticMinScore` cannot bring it to 0.125 without dropping recall@5 below 1.000 (0.64 / 0.12 gives 0.125 at 0.944), so those two values stay at 0.55 / 0.12.
+**Choosing the threshold.** `RERANK_MIN_LOGIT` is -6. Measure a change with `bun bench/recallEval.ts --dir <memoryDir> --cases <file> --semantic ./core/src/memoryEmbed.ts --reranker ./core/src/memoryRerank.ts --sweep`, which scores each case in prompt mode and sweeps the logit threshold. Each row reports recall@5 and false-inject, the share of expect-nothing prompts that still inject a note. The shipped value sits just below the largest threshold that keeps recall@5 at or above 0.95 on both the synthetic suite and a real vault, which leaves margin for vaults the sweep did not see. Raising it lowers false-inject and eventually costs recall; lowering it does the reverse.
 
 ### One service behind every surface
 

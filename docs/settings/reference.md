@@ -296,7 +296,7 @@ When `enabled` is off the daemon is dormant: its state stays on disk and the `.d
 User-scope servers (`~/.claude.json`) and plugins (`~/.claude/settings.json`) are loaded; project and local scope never are, because the session's working directory is the vault and a `.mcp.json` in your notes would otherwise run on its own.
 
 `recall.midTurn` costs one extra lookup per tool batch. `recall.semantic` starts a helper process on first use that holds a roughly 35 MB embedding model (about 260 to 280 MB of RAM while it runs).
-The helper exits after 10 minutes idle and returns that memory. With it off, recall is keyword-only and the helper never starts. Both need `recall.enabled`.
+The helper exits after 10 minutes idle and returns that memory. Prompt and subagent recall also run a small relevance model in a second helper with the same idle exit. With the setting off, recall is keyword-only and neither helper starts. Both need `recall.enabled`.
 
 ```yaml
 daemon:

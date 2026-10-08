@@ -71,7 +71,7 @@ The exclusion rules live in `.git/info/exclude` and are kept current on every sn
 | `chat/models.json` | The model last used in each chat session | Yes; sessions fall back to their default model |
 | `tmp/` | Pasted files staged for chat | Yes; entries older than 24 hours are pruned at boot |
 | `trusted-commands.json` | Approved `run:` status-bar commands per vault | Yes; each command asks for approval again |
-| `models/`, `cache/recall/` | The embedding model and memory vectors for recall | Yes; they download or recompute |
+| `models/`, `cache/recall/` | The embedding and relevance models and the memory vectors for recall | Yes; they download or recompute |
 | `agents/bin/` | The free agent's binary | Yes; set it up again from the chat setup |
 | `.daemon-installed`, `.mcp-registrations.json` | Install markers and the MCP registration ledger | Avoid; the install logic reads them |
 
