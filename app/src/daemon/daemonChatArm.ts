@@ -5,8 +5,13 @@
 // reads it to decide whether `::chat:daemon` joins the retained chat-session set
 // (chat/chatSessions.ts), and disarms it when the last daemon leaf closes. Same module-level
 // singleton pattern as chatActivity.ts.
+//
+// Each arm starts a NEW conversation: the remembered session is forgotten first, so opening the
+// daemon page and clicking its bar never resumes the last daemon chat.
 import { createSignal } from 'solid-js'
 import { isArmingGesture, type ArmingEvent } from './daemonChatArming'
+import { forgetChatSession } from '../chat/chatSessionStore'
+import { DAEMON_CHAT_ID } from '../tabIds'
 
 const [armed, setArmed] = createSignal(false)
 
@@ -17,7 +22,7 @@ export const daemonChatArmed = armed
  *  non-arming event, or an already-armed chat, returns false). */
 export function armDaemonChat(e: ArmingEvent): boolean {
     if (armed() || !isArmingGesture(e)) return false
-    setArmed(true)
+    arm()
     return true
 }
 
@@ -31,5 +36,10 @@ export function disarmDaemonChat(): void {
  *  Tauri's webview (never the `/ui` channel), and an in-app pointer drag ends on a trusted
  *  pointerup. Callers are exactly those three paths. */
 export function armDaemonChatForDrop(): void {
-    if (!armed()) setArmed(true)
+    if (!armed()) arm()
+}
+
+function arm(): void {
+    forgetChatSession(DAEMON_CHAT_ID)
+    setArmed(true)
 }

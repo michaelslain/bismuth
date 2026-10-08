@@ -18,8 +18,8 @@ export const CHAT_PREFIX = '::chat:'
 // like GRAPH_TAB (not per-instance, unlike CHAT_PREFIX/TERMINAL_PREFIX). It replaced the old
 // `::inbox` tab, which persisted layouts migrate to this (LEGACY_CONTENT_IDS in panes.ts).
 export const DAEMON_TAB = '::daemon'
-// The daemon page's docked chat is ONE persistent conversation: content id CHAT_PREFIX +
-// DAEMON_CHAT_ID. chatSessionStore keys by chat id, so it resumes across closes and relaunches.
+// The daemon page's docked chat: content id CHAT_PREFIX +
+// DAEMON_CHAT_ID. Each arm (daemon/daemonChatArm.ts) starts a fresh conversation.
 export const DAEMON_CHAT_ID = 'daemon'
 // RETIRED: the old ANNOTATE surface's content id, ANNOTATE_PREFIX + "<file path>". Nothing creates
 // one any more (images/PDFs are drawn on in place in their preview), but a tab persisted before
