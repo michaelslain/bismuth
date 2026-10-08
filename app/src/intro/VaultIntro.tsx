@@ -19,6 +19,10 @@
    post-restart apply step wired in App.tsx. A picker that only live-previewed the intro's own
    text without actually seeding the vault would be misleading, so it's omitted rather than
    half-built. */
+// The global layer (tokens, element reset, @font-face) is otherwise imported only by App.tsx, and
+// index.tsx's first-run branch never loads App: without this the takeover renders with every
+// --sp-*/--row-h/--cell-w undefined. First, so it precedes every intro module's rules as in App.
+import '../global.css'
 import {
     Show,
     createEffect,
