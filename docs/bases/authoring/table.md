@@ -1,6 +1,6 @@
 # table
 
-Spreadsheet-style grid. The default/fallback view — used when no `view:` is set or an unknown `view:` is given (`type:` is the base marker, `type: base`, never the view kind).
+A spreadsheet grid: one row per note or stored row, one column per property, with sort, groups, a summary footer, and drag-to-resize and drag-to-reorder columns. It is also the kind a base gets when `view:` is missing or names an unknown kind.
 
 ## Working example
 
@@ -15,7 +15,6 @@ sort:
     direction: DESC
 groupBy:
   property: note.status
-  direction: ASC
 summaries:
   note.rating: Average
 limit: 200
@@ -26,20 +25,23 @@ limit: 200
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `order` | `string[]` | auto-derived from row data | Explicit column list (property ids: `file.name`, `note.price`, `formula.ppu`). Only these columns show when set. |
-| `sort` | `{ property, direction?: "ASC"\|"DESC" }[]` | none | Multi-key stable sort, applied in order. |
-| `groupBy` | `{ property, direction?: "ASC"\|"DESC" }` | none | Groups rows under a full-width header row per distinct value. |
-| `columns` (parses to `groupOrder`) | `string[]` | value-sorted | Explicit group display order for a grouped table. Unlike kanban, a declared group with zero rows is **not** shown. |
-| `summaries` | `Record<propertyId, string>` | none | Footer aggregate per column: `Sum`\|`Average`\|`Min`\|`Max`\|`Count`\|`Empty`\|`Filled`\|`Unique`. |
-| `columnWidths` | `Record<propertyId, number>` | none | Per-column pixel widths; normally written by drag-resize, safe to set by hand. |
-| `limit` | `number` | none | Max rows per group. |
-| `mode` | `"normal"` \| `"tasks"` | `"normal"` | `table` is the one row view that does NOT fold a task row into a `<TaskRow>` line — a checkbox, description and chips don't fit a cell. In `mode: tasks` the `status` column becomes a live checkbox cell and the `due` column paints overdue; every other column stays an ordinary cell. |
+| `order` | `string[]` | derived from the rows | The columns, in order (`file.name`, `note.price`, `formula.ppu`). Only these show. |
+| `sort` | `{ property, direction? }[]` | none | Stable multi-key sort; `direction` is `ASC` or `DESC`. |
+| `groupBy` | `{ property, direction? }` or a property string | none | One section per distinct value, ordered by value. |
+| `columns` | `string[]` | value order | Group order. A listed group with no rows is not shown. |
+| `summaries` | `{ propertyId: name }` | none | Footer values: `Sum` `Average` `Min` `Max` `Count` `Empty` `Filled` `Unique`. |
+| `columnWidths` | `{ propertyId: px }` | measured | Column widths; dragging a header edge writes this. |
+| `limit` | number | none | Maximum rows per group. |
+| `mode` | `"normal"` \| `"tasks"` | `"normal"` | `tasks` turns the `status` column into a checkbox and paints an overdue `due` red; the other columns stay ordinary cells. |
+
+`filters:` and `source:` are base-level keys, written beside `view:`, never inside a view.
 
 ## Failure modes
 
-- **There is no per-view `filters`.** `filters` is a base-level key (one filter for the base's one view); a legacy `views[0].filters` is only ANDed in when reading an old file. Write `filters:` at the top level beside `view:`.
-- **`order: []` (present but empty) means "show all," not "show nothing."** Only an *absent* `order` and an *empty* `order` behave identically — both auto-derive columns. There is no way to declare zero columns.
-- **Formula columns must be explicitly listed in `order`** — `formula.*` ids are never auto-derived, so a formula you don't reference in `order` never appears even though it computed successfully.
-- **Fixed-width layout requires every visible column to have a width in `columnWidths`.** Miss one (e.g. after adding a column post-save) and the whole table silently falls back to fluid 100% layout until the next drag-resize reseeds every width.
+- If `order: []` is present but empty, every derived column shows, as if `order` were absent. There is no way to declare zero columns.
+- If a formula computes but never appears, its `formula.<name>` id is missing from `order`; formula columns are never derived.
+- If a `summaries` name is misspelled or lowercase (`average`), the footer cell is empty with no error.
+- If `limit` is quoted (`"50"`), it is ignored; write a YAML number.
+- If `direction` is anything but `DESC` (any case), it reads as `ASC` without a warning.
 
-Full reference: `docs/bases/views/table.md`
+Full reference: [docs/bases/views/table.md](../views/table.md)

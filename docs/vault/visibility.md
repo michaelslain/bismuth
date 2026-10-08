@@ -1,520 +1,339 @@
-# Visibility Controls: Per-File/Folder AI Restrictions
+# Visibility controls
 
-Visibility marks a note or folder off-limits to Bismuth's own AI surfaces — the daemon and the in-app chat, across every backend Bismuth can drive — without changing your own access to it. This page covers the storage format, the discovery walk, per-backend/per-channel enforcement (including what's empirically verified and what isn't), the ambient surfaces closed before any per-backend mechanism could matter, the UI, and what this feature does and does not protect.
-
-A row below claiming "enforced" means the mechanism is wired **and** was verified live — not that it should work because it's "the same primitive" as a verified one. See "The recurring failure mode" in [../chat/backends.md](../chat/backends.md).
-
----
-
-## Threat model
-
-Visibility is an HONESTY boundary, not a security boundary. It stops Bismuth's own agent sessions — the daemon, and the in-app chat on whichever backend it's driving — from reading a marked file through their normal tool calls or through Bismuth's own local surfaces (the HTTP API, the `bismuth` CLI). It does NOT restrict: your own interactive terminal sessions, however you invoke them (a bare `claude`/`opencode`/… in a shell, or a Bismuth terminal tab) — they run as you, with full OS filesystem access, and are deliberately never signalled as an agent channel; you yourself using Bismuth's editor, file tree, graph, or the `bismuth` CLI **run as yourself**; or content already copied into a memory note before a file was hidden.
-
-**What changed since the first pass (Claude-only):** the original implementation gated exactly one backend (Claude Code) through one mechanism (the Claude Agent SDK's `managedSettings`/`sandbox`/`disallowedTools` triple), and a red-team pass found that the gate was weaker than it looked — not because the Claude-specific mechanism was wrong, but because of surfaces that had nothing to do with Claude at all: an unauthenticated local HTTP API that could be `curl`'d from inside a correctly-gated session, the `bismuth` CLI itself reachable as a plain subprocess, the vault's own git history holding a hidden note's plaintext from before it was hidden, a case-insensitivity bug in the path comparison, and an MCP tool gate with real coverage gaps. **Those are fixed first** (see "Ambient surfaces" below) — a per-backend mechanism is a lock on a door beside an open window until they are, and closing them is what makes it honest to say Claude's own gate was ever real. On top of that, Bismuth now drives ten backends, so `capabilities.visibilityGate` became a **per-channel, per-backend, mechanism-naming value** instead of a single boolean — see "Per-backend/per-channel enforcement" below for exactly which backend+channel pairs are enforced, wrapped, or refused, and how each was verified.
-
-**What this means day to day:** marking a note "Hidden from both" keeps it out of the daemon's crons, its memory recall, and the in-app chat's tool calls and editor-context preamble — **when the chosen backend can enforce that at all**; a backend that can't is refused outright rather than run unprotected (see below). It does NOT stop you from opening it in the editor, seeing it in the file tree or graph, or reading/editing it via `bismuth` CLI commands or your own terminal session. A residual gap also exists for content captured into a memory note *before* the file was marked hidden — visibility is resolved at read/gate time from current settings, not retroactively scrubbed from history.
-
-**What an agent sees through the `bismuth` CLI:** a hidden note costs the agent that one note, nothing more. When an agent (the daemon, or the in-app chat) runs a cross-note command (`search`, `tree`, `graph`, `task list`, `rows`, `base render`, `card`, `calendar`, …), the command returns its normal result with the notes hidden from that channel left out, instead of refusing for the whole vault as it did before. An explicit path to a restricted note (`read Private/secret.md`, `calendar list "Private/Cal Secret.md"`) is still refused. A short list of commands stays refused for agents because they cannot be filtered safely, and every command is classified by name, so an unclassified one refuses by default. The per-command list, with the reason for each refusal, is in [Agents and the `bismuth` CLI](#agents-and-the-bismuth-cli-filtered-not-refused) below. The owner's own shell is unchanged: no gate, every note.
-
----
-
-## Storage format
-
-**File level** — a frontmatter key on the note itself:
+Visibility marks a note or folder off-limits to Bismuth's own AI sessions, the daemon and the in-app chat, without changing your own access to it.
+Read this page to mark things, to learn what each level blocks and which AI backends can honour it, and to see where the boundary holds and where it does not.
 
 ```yaml
+# In a note's frontmatter
 ---
-visibility: hidden      # or "chat-only"
+visibility: hidden
 ---
-```
 
-- **Absent = INHERIT**, not "visible" — this is the semantic choice that makes folder inheritance work (see below).
-- An explicit `visibility: all` is also accepted (rare — see "explicit override" below) and means "always visible, regardless of any ancestor folder's setting."
-- Written via the **existing generic property routes**, no new file-side plumbing: `POST /set-property {path, key:"visibility", value}` / `POST /delete-property {path, key:"visibility"}` (`core/src/server.ts`), calling `setFrontmatterKey`/`deleteFrontmatterKey` (`core/src/frontmatter.ts`); client `api.setProperty`/`api.deleteProperty` (`app/src/api.ts`).
-
-**Folder level** — folders have no frontmatter, so their setting lives in `.settings`, a structural clone of `folderIcons`:
-
-```yaml
+# In the vault's .settings, for folders
 folderVisibility:
   Private: hidden
   drafts/wip: chat-only
 ```
 
-- Schema entry beside `folderIcons` (`core/src/schema/settingsSchema.ts`).
-- `readFolderVisibility`/`setFolderVisibility` in `core/src/settings.ts` (same `withSettingsMutex`, corrupt-file bail, YAMLMap get-or-create pattern as the folderIcons trio).
-- `POST /folder-visibility` (`core/src/server.ts`) — a structural copy of `POST /folder-icon`: same vault-relative traversal guard, same synchronous `appConfig` patch (avoids a stale-flash on the client's immediate `GET /tree` refetch), same `() => SETTINGS_FILE` cache invalidation. Client: `api.setFolderVisibility(path, visibility)`.
+## What do the three levels mean?
 
-**No third store**: `.daemon/memory/*.md` notes are ordinary vault files when read through the vault's own frontmatter path, but the shared `@bismuth/memory` package has its OWN note model (a fixed `NoteFrontmatter` struct, not raw YAML passthrough) — so memory notes carry their own `visibility?: "chat-only"|"hidden"` field, parsed/serialized by `memory/src/graph.ts` alongside `type`/`tags`/`created`/`updated`. Memory notes are flat under `.daemon/memory` (no subfolders in practice), so there is no folder-cascade tier for them — just the note's own explicit value. See "Memory recall" below.
-
----
-
-## Inheritance semantics: nearest-ancestor-wins + explicit-file-override
-
-Pure, unit-tested module: `core/src/visibility.ts` (mirrors `core/src/daemonViz.ts`'s pure-mapper shape), ported byte-for-byte into `daemon/src/lib/visibility.ts` (the daemon workspace has no dependency on `@bismuth/core`).
-
-```typescript
-type Visibility = "all" | "chat-only" | "hidden";
-
-resolveVisibility(path, fileVisibility, folderVisibility): Visibility
-// explicit file value wins; else walk ancestor folders DEEPEST → shallowest,
-// first entry wins; else "all"
-
-resolveFolderVisibility(path, folderVisibility): Visibility
-// same walk, but the folder's OWN entry counts as the deepest ancestor
-
-isVisibleToChat(v)   = v !== "hidden"
-isVisibleToDaemon(v) = v === "all"
-
-buildDenyPaths(root, channel): Promise<DenyEntry[]>
-// resolves EVERY note's effective visibility and returns the RESTRICTED subset for
-// `channel` as { rel, abs } pairs — per-file paths, not folder globs
-```
-
-**Worked example:**
-
-| Path | Own frontmatter | Nearest ancestor rule | Effective visibility |
+| Level | Daemon (crons, memory) | In-app chat | You |
 |---|---|---|---|
-| `Private/a.md` | (absent) | `Private` → `hidden` | `hidden` (inherited) |
-| `Private/exposed.md` | `visibility: all` | `Private` → `hidden` | `all` (explicit override wins) |
-| `Private/Drafts/b.md` | (absent) | `Private/Drafts` has no entry → falls back to `Private` → `hidden` | `hidden` (nearest ancestor that HAS a rule, not necessarily the immediate parent) |
-| `notes/c.md` | `visibility: chat-only` | (none) | `chat-only` (explicit, no folder involved) |
-| `d.md` | (absent) | (none) | `all` (nothing restricts it) |
+| `all` (the default) | reads | reads | full access |
+| `chat-only` | blocked | reads | full access |
+| `hidden` | blocked | blocked | full access |
 
-**Why nearest-wins over a "folder is a hard floor" policy:** the deny list is built by resolving each file individually and emitting per-file denies — since `buildDenyPaths` walks every note and computes its own effective visibility, a file's explicit `visibility: "all"` inside an otherwise-hidden folder is honored by simply NOT emitting a deny for it. Because the tree badge (`GET /tree`'s resolved `visibility` field) and the enforcement gate (`buildDenyPaths`) both call the exact same resolver, the UI can never disagree with what's actually enforced. The tradeoff: a stray `visibility: "all"` (e.g. copy-pasted from a template) re-exposes a file dropped into a hidden folder — the FileTree context menu's "Effective: … — inherited from '…'" row surfaces the ambiguity before it becomes a surprise.
+A level never restricts you. You can still open, edit and search a hidden note in the editor, the file tree, the graph and the `bismuth` CLI from your own shell.
 
-### The discovery walk — every extension, every directory, plus stem inheritance
+A note with no `visibility` key inherits from its folders. That is why an absent key means "inherit", not "visible". An explicit `visibility: all` always wins over a restricted folder.
 
-An earlier version of `buildDenyPaths` only opened files on a fixed extension allowlist (`.md`/`.draw`/`.sheet`/`.yaml`/a few image/PDF types) and skipped dot-directories. That was a real, verified hole: a `.txt`/`.csv`/`.json` file living in a folder marked `hidden` was invisible to the walk and therefore **unenforced on every channel**, even though the sidebar badged its folder as hidden — and a note stashed under `.stash/` was skipped entirely. The current walk (`listVisibilityFiles` in `core/src/visibility.ts`) fixes this:
+## How do I mark a note or folder?
 
-1. **Every file, every directory, including dot-directories.** Only two names are skipped: `.git` (handled as its own subtree deny — see "Ambient surfaces" below, not walked as vault content) and `.settings` (Bismuth's own config, never vault content).
-2. **The folder cascade is resolved first, with zero I/O** (memoized per directory) — this alone covers any extension inside a restricted folder, with no file open at all.
-3. **A file's own frontmatter is then checked on EVERY file the walk finds, not just `.md`** — a cheap 512-byte head read, re-read up to 64 KiB only when that head is truncated and doesn't already contain a closing `---` fence. A file that doesn't start with `---` costs exactly one small read no matter how large it is. This closes the "hidden note copied/renamed/hard-linked to an untracked extension" hole: the copy carries the identical frontmatter bytes, and the old `.md`-only assumption never saw them.
-4. **Stem inheritance**: a file with no explicit visibility of its own, whose pre-first-dot stem matches a restricted sibling's stem in the *same directory*, inherits the strictest such sibling's resolved visibility. This is what closes the export-sidecar gap — `sketch.draw.png`/`sketch.draw.pdf` share the stem `sketch` with a hidden `sketch.draw`, so the rendered exports of a hidden drawing are restricted too, rather than reachable under a name the old walk explicitly excluded as an "export artifact." It's deliberately over-inclusive (an unrelated `note.png` beside a hidden `note.md` becomes restricted too) because a non-markdown file has no frontmatter of its own with which to opt back out — over-restricting is the safe direction, and it's the only one available.
+- Sidebar: right-click a note or folder, choose **Visibility**, then pick **Visible to Daemon + Chat**, **Chat only** or **Hidden from both**.
+  The active row has a check mark.
+  Picking the first row clears the override; it does not write `visibility: all`.
+  When an ancestor folder forces a stricter level, a disabled row at the top reads `Effective: Hidden — inherited from 'Private/'`.
+- By hand: add `visibility: hidden` or `visibility: chat-only` to a note's frontmatter.
+- CLI: `bismuth prop set "Private/secret.md" visibility hidden` marks a note.
+  `bismuth folder-visibility Private hidden` marks a folder, and `bismuth folder-visibility Private --clear` removes the rule.
+  An AI session cannot run these (see [rule files](#gate-rules-for-agents)).
+- Settings file: edit `folderVisibility` in `.settings` directly.
 
-So the doc's older claim — "a hidden folder of non-`.md` files is enforced, not merely badged" — is now **actually true**, where before it wasn't (the red-team pass that found this hole is what's behind the "Ambient surfaces" note below on how these things tend to be found: by attacking the shipped code, not by reading it).
+A row in the sidebar shows a small badge for a restricted level, including a note that is restricted only by its folder. The tooltip says who it is hidden from.
 
-`buildDenyPaths` is **not cached**: visibility is resolved fresh from the file's current path on every call, so a note moved into or out of a restricted folder re-resolves instantly with no migration step. The daemon rebuilds its deny list fresh on every message (a separate process per turn). A chat session is long-lived, so its deny list is built at spawn and rebuilt whenever the vault's visibility settings change (`invalidateChatVisibility()` flags every open Claude session; the next turn respawns `query()`, resuming the same conversation, with a fresh gate — `managedSettings`/`sandbox` are fixed at spawn and can't be updated on a running session).
+The daemon builds its deny list again for every message, so it sees any edit on its next message.
+An open Claude chat builds its deny list when it starts.
+It re-reads the list on the next turn only after an edit that reaches the app's HTTP routes `POST /set-property`, `POST /delete-property` or `POST /folder-visibility`, which is what the sidebar menu calls.
+The chat then restarts its sandbox with the new rules and resumes the same conversation.
+A hand edit of a note or of `.settings`, a `bismuth prop set` or `bismuth folder-visibility` run, and a move into or out of a restricted folder do not re-gate an open chat; start a new chat to apply them.
 
----
+## How does inheritance work?
 
-## Ambient surfaces (closed before any per-backend mechanism could mean anything)
+A note's level is its own `visibility` value if it has one. Otherwise it is the setting of the nearest ancestor folder that has a rule, not necessarily the immediate parent. With no rule anywhere, it is `all`.
 
-These leak for **every** backend, including Claude, and none of them are about which agent CLI is running — they're about surfaces Bismuth itself exposes locally. A per-backend gate is a lock on a door beside an open window until these are shut. Each was found by a red-team pass **attacking the shipped code**, not by auditing it in the abstract — that distinction matters enough that it's recorded per row below.
-
-| Surface | The hole | The fix | How it was found |
+| Path | Own frontmatter | Folder rules | Effective |
 |---|---|---|---|
-| **The local HTTP API** | `GET /file`, `POST /search`, `POST /rows`, `GET /graph`, `GET /base`, `GET /tasks`, `GET /cards/*`, `POST /search-prompt`, `GET /vault-data`, `GET /abs-path`, `GET /meta` served vault content with **no auth at all** — reachable with `curl` from inside a Bash tool call in an otherwise correctly-gated session. | A per-boot random **owner token** (`core/src/ownerToken.ts`, `mintOwnerToken`/`resolveRequestChannel`), presented via `X-Bismuth-Token`. A request presenting it is the vault's own app/CLI, unfiltered — exactly today's behavior. Every other request resolves to a channel (`X-Bismuth-Channel: chat`, or the fail-safe default `daemon`) and gets the SAME per-path visibility filter that gates Claude's own tools — content routes drop restricted rows/nodes before serialization (`core/src/server.ts`'s `denyEntriesForRequest`). Three session-transcript routes (`GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`) have no per-path filter available (a transcript can quote any note, hidden or not) and are refused outright for a non-owner request instead. The token itself is folded into every channel's deny plan by `buildSandboxDenyPaths` (`core/src/visibility.ts`) — the single point all three agent spawns compose their read-deny list from (`chat.ts`'s `buildChatSandboxOption`, the daemon's `buildQueryOptions` via that workspace's ported mirror, and the Seatbelt wrapper for non-Claude backends) — so an agent process that's already gated can't read the token file to defeat the gate. Both absolute spellings of the record are emitted (`ownerTokenDenyPaths`): Seatbelt resolves symlinks before matching, so a deny naming the file through a linked directory is a silent no-op. | Live: a `python3 -c "urllib.request.urlopen(...)"` inside a Bash tool call, from a session whose OWN file-read tools were already correctly denied, returned a hidden note's contents. |
-| **The `bismuth` CLI as a subprocess** | `disallowedTools: ["mcp__bismuth__bismuth_cli"]` blocks the MCP *tool* calling convention, but the exact same binary invoked as a plain subprocess (`bismuth read Private/secret.md`, or `bismuth api GET '/file?path=...'`) isn't a tool at all — it's just a Bash command, and Bash is deliberately never disallowed (the daemon needs `bismuth checkpoint`). | The gate moved down to `core/src/visibilityCliGate.ts`, hooked at **two** chokepoints: `mcp/src/cli.ts` (the MCP path, keyed on `BISMUTH_MCP_CHANNEL`) and `cli/src/index.ts`'s single dispatch point (the CLI's own). An **agent** is either `BISMUTH_AGENT_CHANNEL` set (every place Bismuth spawns an agent stamps it) or an MCP-spawned CLI (`BISMUTH_MCP_CHANNEL` set) — the CLI's own gate treats both as agents, so the MCP path cannot reach an ungated CLI. **Neither set means the OWNER's own hand**, the one place in this file where "unset" is deliberately the *permissive* default, not the fail-safe one, because the same binary is also the owner's interactive tool. Command classification is an **allowlist with a refuse-by-default tail** (a denylist only ever covers what its author thought of), in four tiers: always-safe, path-scoped, **filtered**, and refuse. The first version refused every cross-note command (`search`, `task`, `base`, `rows`, `card`, `calendar`, `graph`, `tree`, …) for the whole vault the moment it hid a single note; those commands now filter their own output instead, through the shared `core/src/visibilityFilter.ts`, and only an explicit restricted path or a short unfilterable list is refused. See [Agents and the `bismuth` CLI](#agents-and-the-bismuth-cli-filtered-not-refused). | Live: `bismuth api GET '/file?path=secret.md'` from a Bash tool inside a fully sandboxed Claude session returned the hidden note. The denylist's gaps (`rows`, `card`, `task`, `calendar`, `graph`, and — sharpest — `checkpoint diff`, a `git diff` i.e. the full plaintext of every changed hidden note) were found the same way: trying commands the original list hadn't enumerated. |
-| **Git history** | `core/src/backup.ts` git-snapshots the vault on essentially every save, so a note hidden *today* was very likely committed in plaintext *yesterday* — `git show HEAD:Private/secret.md` or `git log -p -- Private/secret.md` reads it back out with no reference to the working-tree path any deny list covers. | `<vault>/.git` goes into every channel's deny plan (`sandboxDenyRead` in `core/src/visibility.ts`, reached through `buildSandboxDenyPaths` in the same file) — a **subtree** deny (`subpath`, not `literal`), verified to block `git show`/`git log -p` while `cat public.md` keeps working. Deliberately NOT solved by rewriting history: the owner's backups are theirs, and scrubbing them would destroy the reason they exist. The agent's *view* is restricted, not the owner's backup. | Live, from inside a sandboxed session: `git show HEAD:secret.md` and `git log -p -- secret.md` both returned the secret before the `.git` subtree deny existed. |
-| **Case-insensitive path comparison** | The shipped `canUseTool` checked `deniedPathSet.has(p)` — an exact byte comparison against a path a MODEL supplied. macOS filesystems are case-insensitive by default, so `Private/SECRET.md` opens exactly the same file as `Private/secret.md` while comparing unequal as a string, and walked straight through the gate. | `isDeniedPath()` (`core/src/visibility.ts`) replaces the exact-match `Set`: it normalizes (leading `./`, duplicate slashes, trailing slash) and **case-folds** before comparing, and also matches a path that lies *under* a restricted entry. It is now the only membership check in the codebase — the exact-match `Set` (`denyPathSet`) is kept only for building `managedSettings` deny-rule strings, never for a live comparison. Also backs `captureToMemory`'s Bash-command scan. | Found by red-teaming the shipped `denyPathSet(...).has(p)` check directly — not by reading it; a case-variant path was tried as one of several path-mangling probes. |
-| **`bismuth_cli` MCP tool coverage** | `mcp/src/visibilityGate.ts`'s original `CONTENT_SCANNING_COMMANDS` denylist missed `rows`, `card`, `task`, `calendar`, `graph`, and `checkpoint diff` — and `BISMUTH_MCP_CHANNEL` was never set by any spawner, so every session got the `"daemon"` default (fail-safe *by accident*, not by design). | Moved to `core/src/visibilityCliGate.ts` (re-exported from `mcp/src/visibilityGate.ts` unchanged, so `mcp/src/cli.ts` needed no edit) and rebuilt as the allowlist described above. Every spawner (`chat.ts`, `daemon/src/daemon/session.ts`, the codex/ACP drivers) now stamps `BISMUTH_MCP_CHANNEL` explicitly. | Same red-team pass as the CLI-subprocess row above — the MCP tool and the raw CLI subprocess share one gate now, so the same missed-command list applied to both. |
+| `Private/a.md` | none | `Private` is `hidden` | `hidden` |
+| `Private/exposed.md` | `visibility: all` | `Private` is `hidden` | `all` |
+| `Private/Drafts/b.md` | none | only `Private` is `hidden` | `hidden` |
+| `notes/c.md` | `visibility: chat-only` | none | `chat-only` |
+| `d.md` | none | none | `all` |
 
-> **Operational note, easy to miss:** `~/.bismuth/bin/bismuth-mcp` is a **compiled, installed copy** of the MCP server (`core/src/bismuthInstall.ts`), reinstalled only when a content hash of the bundled binaries changes. If you have an existing Bismuth install from before this gate existed, the binary on disk predates it — **install/relaunch the app (or run `bismuth install`) to pick up the fix**; until then, the MCP `bismuth_cli` tool on that machine is running the old, weaker gate regardless of what this source tree says. `bismuth install --status` reports the installed version.
+The explicit override has a cost: a `visibility: all` copied from a template into a note inside a hidden folder exposes it. The **Effective** row in the sidebar menu is where you see this.
 
----
+Moving a note into or out of a restricted folder changes its level, because levels are worked out from the current path whenever the deny list is built.
+
+Three silent traps, all of which fail toward more restriction:
+
+- A `visibility:` value that is not exactly `all`, `chat-only` or `hidden` (`Hidden`, a list, a number) reads as `hidden`.
+- A closed frontmatter block whose YAML does not parse reads as `hidden`.
+- A `folderVisibility` entry with another value, such as `hiden`, or a `folderVisibility` that is not a map, makes the vault unavailable to AI sessions until you fix the file.
+
+An empty `visibility:` counts as absent and inherits.
+
+## What does visibility protect, and what does it not?
+
+Visibility is an honesty boundary, not a security boundary.
+This is its threat model: it stops Bismuth's own agent sessions from reading a marked file through their normal tool calls and through the local surfaces Bismuth exposes (the HTTP API and the `bismuth` CLI).
+It does not defend against a process that is determined to get around it.
+
+It restricts:
+
+- the daemon's crons, its memory recall and its tool calls;
+- the in-app chat's tool calls and the editor-context text added to each message;
+- a `bismuth` command or HTTP request made by one of those sessions, which sees the vault minus the hidden notes;
+- the vault's git history, which holds earlier plaintext copies, because the agent's sandbox cannot read `.git`.
+
+It does not restrict:
+
+- you, in the editor, tree, graph or CLI;
+- your own terminal sessions, including a bare `claude` in a Bismuth terminal tab. They run as you and are never marked as an agent channel;
+- content copied elsewhere before a note was hidden, such as text already captured into a memory note, or a copy of the file with its `visibility` line removed;
+- the existence of a hidden file. Its name, size and modified time still show in a directory listing, a refusal message and the sidebar badge;
+- a change made during a turn. A note hidden mid-turn is not covered until the turn ends.
+
+## Which AI backends can honour hidden notes?
+
+Claude Code is the only backend that enforces visibility, on both channels. A vault that restricts nothing works with every backend.
+
+| Backend | In-app chat | Daemon | Verified |
+|---|---|---|---|
+| Claude Code | enforced | enforced | yes, [with live and unit tests](visibility-acceptance.md#claude-code) |
+| opencode | refused | cannot run the daemon | no; no live acceptance run is complete |
+| Codex | refused | falls back to Claude Code | no; Codex applies its own sandbox, so Bismuth cannot wrap it |
+| Other agents (ACP backends) | refused | cannot run the daemon | no |
+
+A refused chat does not start. The chat shows `<backend> can't honour this vault's hidden notes`, a message that gives only a count of restricted notes and never their names, and a **use claude code instead** button. Unhide the notes to use the backend you picked.
+
+The daemon never throws on this. When a vault has any restricted note and `daemon.backend` names another backend, the run uses Claude Code instead. The reason is written at the top of the inbox page the run produces and in the cron's desktop notification.
+
+The mechanism behind each value is described under [Per-backend/per-channel enforcement](#per-backendper-channel-enforcement).
+
+In a restricted vault the Claude chat and the Claude daemon also lose the Grep and Glob tools and the `bismuth_cli` MCP tool. A per-file rule cannot stop a vault-wide scan, so those tools are switched off whole.
 
 ## Agents and the `bismuth` CLI: filtered, not refused
 
-The CLI gate (`core/src/visibilityCliGate.ts`) used to answer "does this vault hide anything?" and, if so, refuse every command that reads across notes. That cost the agent far more than the hidden note: it could still open any other note by path, but could no longer search, list tasks, render bases or browse. The model now is: **hiding a note costs the agent that note, nothing more.**
+When an AI session runs a `bismuth` command, hiding a note costs it that one note and nothing more.
+A command that lists or aggregates notes (`search`, `tree`, `graph`, `task`, `rows`, `base render`, `card`, `calendar` and others) returns its normal result minus the notes hidden from that session's channel.
+An explicit path to a hidden note, such as `read Private/secret.md`, is refused.
+A short list of commands that cannot be filtered is refused whenever the vault restricts anything.
+Your own shell is never gated.
 
-- **Cross-note commands filter.** Under an agent channel they return their normal output with the notes hidden from that channel left out. The channel decides what is hidden: `daemon` loses `hidden` and `chat-only` notes, `chat` loses `hidden` only (the same rule as [Inheritance semantics](#inheritance-semantics-nearest-ancestor-wins--explicit-file-override)). A hidden folder hides everything under it.
-- **Explicit restricted paths are refused.** Before any command runs, the gate scans argv; a token naming a restricted path (`read Private/secret.md`, `calendar list "Private/Cal Secret.md"`, `card review "Private/secret.md::0::0" good`) is refused, for every tier except always-safe.
-- **A short list stays refused**, because filtering it safely is impossible or unaudited (table below).
-- **The owner is unchanged.** With neither `BISMUTH_AGENT_CHANNEL` nor `BISMUTH_MCP_CHANNEL` set there is no gate and no filtering.
+Which notes are hidden depends on the channel: the daemon loses `hidden` and `chat-only` notes, and chat loses `hidden` ones. A hidden folder hides everything under it.
 
-### Where the filter lives
+The gate classifies every command by name into four tiers, and a command nobody classified is refused.
 
-One shared module, `core/src/visibilityFilter.ts`, used by both the CLI and the core HTTP routes (`GET /graph` imports the same `filterGraph` and `filterByPath`, so the server gets the community-label and orphan-tag fixes below for free):
+| Tier | Commands | Agent behaviour |
+|---|---|---|
+| Always safe | `backends` `doctor` `docs` `install` `uninstall` `app` `daemon` `agent-graph` `folder-icon` `backup` `page` `memory`, most of `settings`, `checkpoint advance` and `checkpoint ref` | Runs. None can return a note body. |
+| Path-scoped | `read` `write` `move` `delete` `restore` `mkdir` `prop` `render` | Runs unless an argument names a restricted path. |
+| Filtered | `tree` `templates` `graph` `search` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` | Runs with hidden notes left out; an explicit restricted path is still refused. |
+| Refused when the vault restricts anything | `api` `serve` `export` `chat` `update` `checkpoint` (other than `advance`, `ref`) `folder-visibility` `settings set` `settings unset` `settings status-bar`, and anything unclassified | Refused. |
 
-- `agentDenyEntries(vault)` — the only way a CLI command learns what to hide. Returns `[]` for the owner and the channel's deny list for an agent. Never `buildDenyPaths` called directly from a command, and never a re-derived channel.
-- `filterByPath`, `filterGraph`, `filterTree` — the per-shape filters. `isDeniedPath` is the one membership check (case-folded, and a file under a restricted folder matches).
+Why each refused command stays refused:
 
-A command filters its **list at the source, before any aggregation**: rows, tasks, cards, search hits and graph nodes are dropped before they are grouped, counted, summarised, sorted or limited. Filtering the final output instead would leave restricted notes inside every count and summary.
+- `api` passes through to any HTTP route, and many routes have no per-channel filter.
+- `serve` starts a second unauthenticated core that the session could query with `curl`.
+- `export` follows embeds and base sources, so a hidden note could be pulled in by an embed.
+- `checkpoint diff` prints raw git diff text, the plaintext of every changed note.
+- `chat` holds session transcripts, which have no single path to filter.
+- `folder-visibility`, `settings set` and `settings unset` rewrite the rules; a session that could clear a folder's `hidden` could read what it guarded.
+- `settings status-bar` runs shell output and counts notes by a filter, neither of which can be filtered.
+- `update` rebuilds the installed app with owner-level rights.
 
-### Fail closed
+`memory` is always allowed and protects itself: `remember` and `forget` on a hidden memory note are refused for an agent, `recall` hides memory notes marked `chat-only` or `hidden` whatever the channel, and an agent's `--memory` must be exactly `<vault>/.daemon/memory`.
 
-If visibility cannot be determined for an agent (an unparseable `.settings`, an unreadable vault, any thrown error), `agentDenyEntries` throws and the command exits non-zero with no output. It never falls back to unfiltered results. This is the same stance as an unavailable sandbox: a vault that cannot be checked is not a vault that can be read. The result is memoised per (vault, channel) for the life of the process.
+### What counts as a leak
 
-### What counts as a leak: derived content
+Link text inside a visible note is visible content: `[[secret]]` written in `open.md` shows, because the agent can read `open.md`. What must not leak is anything derived from a hidden note.
 
-Link text inside a **visible** note is visible content: `[[secret]]` written in `open.md` is shown, because the agent can read `open.md` anyway. What must not leak is anything **derived from the hidden note**:
-
-| Derived surface | Rule for an agent |
+| Derived surface | What an agent gets |
 |---|---|
 | Graph nodes and edges | A hidden note's node, and every edge touching it, is dropped. |
-| Backlinks | A hidden note linking to a visible one does not appear as a backlink. |
-| Tag nodes and counts | A tag used only by hidden notes is dropped, and a tag shared with a visible note is kept. |
-| Community labels | Communities are re-stamped on the filtered graph, so no `communityLabel` or `communityPathLabels` is a hidden note's title. The input graph is never mutated. |
-| Tree entries | A hidden file is omitted. A folder is omitted when it is restricted, when it held a hidden file, or when an ancestor folder is omitted, unless a visible file still sits beneath it. An empty folder that never held a hidden file stays. |
-| Search hits, rows, tasks, flashcards, calendar events | Dropped before counting, grouping or sorting, so no total includes a hidden note. |
-| Aggregates | A base `summaries`/`chart`/`metrics` value, a deck total, a tag count and a match count cover visible notes only. |
-| Template bodies | A hidden template is never pulled in by name (`note new --template`, a configured default, `daily`). |
-| Existence | Reports never list a restricted note. A hidden or missing template gets the same message, `base validate` reports a hidden or missing `ref:` as `<not visible>`, and a hidden `ref:` in `rows`/`base render` behaves as if the ref did not exist. Some existence signals remain; see "Still not filtered". |
+| Backlinks | A hidden note's link to a visible one is not a backlink. |
+| Tag nodes and counts | A tag used only by hidden notes is dropped. A tag a visible note also uses stays. |
+| Community labels | Communities are computed again on the filtered graph, so no label is a hidden note's title. |
+| Tree entries | A hidden file is omitted. A folder is omitted when it is restricted, when it held a hidden file, or when an ancestor is omitted, unless a visible file sits beneath it. |
+| Search hits, rows, tasks, cards, calendar events | Dropped before counting, grouping or sorting, so no total includes a hidden note. |
+| Aggregates | Base summaries, charts, deck totals and match counts cover visible notes only. |
+| Template bodies | A hidden template is never pulled in by name. A hidden and a missing template give the same message. |
 
-### Every command group and its tier
-
-| Tier | Commands | Agent behaviour | Why this tier / why refused |
-|---|---|---|---|
-| **always-safe** | `backends` `doctor` `docs` `install` `uninstall` `app` `daemon` `agent-graph` `folder-icon` `settings` (except `status-bar` and the mutating `set`/`unset`) `backup` `page` `memory`, plus `checkpoint advance` and `checkpoint ref` | Runs. | No vault note body is returned. `settings deny-list` and `doctor` shape their own output for agents. `memory` is always allowed and protects itself: for an agent, `remember` and `forget` on a hidden memory note are refused, and `recall` filters by each memory note's own `visibility` (a malformed frontmatter head counts as hidden). An agent's `--memory` must be exactly `<vault>/.daemon/memory`, or the command is refused. |
-| **path-scoped** | `read` `write` `move` `delete` `restore` `mkdir` `prop` `render` | Runs unless an argv token names a restricted path. | Returns only the named path's content, so the argv scan is the whole check. |
-| **filtered** | `tree` `templates` `graph` `search` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` | Runs with hidden notes left out. An explicit restricted path is still refused. | Each command filters its own output through `visibilityFilter.ts`. Per-command behaviour is in [CLI reference](../cli/reference.md). |
-| **refused** | `api` | Refused whenever the vault restricts anything. | A passthrough to any HTTP route, and many routes have no per-channel filter. |
-| | `serve` | Refused. | Spawns another unauthenticated core the agent could `curl` from the same shell, a worse oracle than any subcommand. |
-| | `export` | Refused. | Follows embeds and base sources through injected readers that were never audited, so a hidden note could be pulled in by an embed. |
-| | `checkpoint` (except `advance`, `ref`) | Refused. | `checkpoint diff` emits raw git diff text, the full plaintext of every changed note, hidden ones included. |
-| | `chat` | Refused. | Holds session transcripts, which have no single path to filter; the server route is owner-only too. |
-| | `folder-visibility`, `settings set`, `settings unset` | Refused whenever the vault restricts anything. | Rewriting the rules is the bypass: an agent could clear a folder's `hidden` and read what it guarded. In a vault that restricts nothing they run. |
-| | `settings status-bar` | Refused. | Runs `run:` shell output and counts notes by a `query` filter, neither of which can be filtered. The server route is owner-only too. |
-| | `update` | Refused. | An owner-grade rebuild of the installed app. |
-| | anything unclassified | Refused. | The allowlist shape is deliberate: a denylist missed `checkpoint diff` once. A new command is refused until someone classifies it. |
-
-The "refused" tier is refused whenever the vault restricts anything, and runs normally in a vault that restricts nothing. "Restricts anything" includes a `folderVisibility` rule that restricts the channel, even when that folder is empty or absent. Protected paths (see "Gate rules for agents") are the exception: they are refused even in an unrestricted vault.
-
-### Per-command details worth knowing
-
-- **`tree`, `templates`, `graph`:** hidden notes (and their folders, tags used only by them, edges and community labels) are omitted. `graph --memory <dir>` must be exactly `<vault>/.daemon/memory` for an agent, since no other memory directory can be visibility-checked. The same confinement applies to `--memory` on every `memory` subcommand: any other directory is refused.
-- **`note new`:** an agent that names a hidden `--template` is refused, and a missing template gets the same message so names do not leak. A hidden configured default template yields a blank note plus a `warning:` line. It also refuses a target path inside a hidden folder or one that names a hidden note.
-- **`daily`:** a hidden target, or one in a hidden folder, is refused. A hidden template is skipped with a `warning:`.
-- **`search`, `replace`:** an agent sees only visible hits. `replace` skips restricted notes and never reports them.
-- **`rows`, `base render`:** restricted notes are dropped before grouping and summaries. A base whose `ref:` points at a hidden base behaves as if the ref did not exist, giving the same output as a missing ref. `base migrate-queries` skips restricted notes.
-- **`task`, `card`:** `task list` filters before `--query` and sort. `task archive` and `task migrate` skip restricted notes and report only visible ones. `card all`, `card due` and `card decks` count only visible cards, and `card review` on a hidden note's card id is refused.
-- **`calendar`, `gcal`, `relay`:** `calendar bases` and `gcal targets|health` omit hidden bases. `gcal sync` for an agent needs a resolvable vault and refuses a hidden base. `relay list` is redacted for an agent (no `lastMessage`).
-- **`memory`:** `remember` keeps an existing note's `visibility` (previously overwriting a hidden memory note silently un-hid it), and an agent cannot overwrite or forget a hidden memory note. An agent's `--memory` must be exactly `<vault>/.daemon/memory`, or the command is refused.
-
-### Still not filtered
-
-The core HTTP routes that have no per-channel filter of their own (`/tree`, `/templates`, `/graph/views`, `/daily-note`, `/settings`) are unchanged; the CLI filters in-process rather than through them, and `api` stays refused so an agent cannot reach them. `settings get` prints the `folderVisibility` map, which names hidden folders, and `app tabs` can list hidden note titles. Both are known gaps.
-
-Existence signals that remain are accepted, and listed under "Accepted existence signals" below.
+If visibility cannot be determined for an agent (an unparseable `.settings`, an unreadable subtree), the command exits non-zero with no output and never falls back to unfiltered results.
 
 ### Gate rules for agents
 
-These are enforced by the CLI gate (`core/src/visibilityCliGate.ts`) for both entry points: the CLI's own check and the MCP server's `gateCliArgs`. They share one decision function, so the same invocation gets the same answer on either path. The owner (neither `BISMUTH_AGENT_CHANNEL` nor `BISMUTH_MCP_CHANNEL` set) is never gated.
+These apply to the CLI's own dispatch and to the MCP `bismuth_cli` tool alike. They share one decision function. The owner, with neither `BISMUTH_AGENT_CHANNEL` nor `BISMUTH_MCP_CHANNEL` set, is never gated.
 
-- **Every candidate root is gated.** The gate collects each distinct value of `--dir`, `--vault` (both `--vault v` and `--vault=v`) and `BISMUTH_VAULT`, builds the deny list for each, and refuses if any root refuses or cannot be resolved. A command reads one of those flags and the gate does not know which, so the check is over-inclusive on purpose; pointing `--dir` at an empty directory no longer swaps which vault is checked.
-- **A subfolder cannot stand in for the vault.** Outside the always-safe tier, a root that sits inside a vault (the nearest ancestor holding `.settings`, or the legacy `settings.yaml`) is refused: `--vault "V/Vault Hidden"` would otherwise lose the vault's folder rules. The one exception is a root at or under `<vault>/.daemon/memory`, because memory notes ignore the folder cascade by design.
-- **Rule files and runnable definitions are off-limits, always.** `.settings`, `settings.yaml` and `.daemon/processes` (and anything under it) are refused to an agent for every command that is not always-safe, even when nothing is restricted. `.settings` is the rule file. A process definition is code: the daemon spawns its `command:` outside any agent sandbox, so an agent that could `write` one and then toggle it would escape both the visibility sandbox and the permission prompt.
-- **Rewriting the rules is refused in a restricted vault.** `folder-visibility`, `settings set` and `settings unset` are refused for an agent when the vault restricts anything. `settings get`, `settings schema` and `settings deny-list` stay always-safe.
-- **Folder arguments are checked, not just file arguments.** For path-scoped commands, a token that is an ancestor folder of any hidden note, an ancestor of any restricting `folderVisibility` key (even an empty hidden folder: moving its parent would orphan the rule), or a folder that is itself restricted (or inside a restricted one), is refused. So `move "Vault Hidden" Pub`, `delete "Vault Hidden"`, `write "Vault Hidden/new.md"` and `move Parent X` with `Parent/Empty: hidden` are refused, while moving a folder that holds nothing hidden is not. A folder named `..x` is inside the vault, not a climb out of it. Filtered commands (`tree Notes`, `search --path`) filter their own output instead.
-- **The `.md` twin is checked.** Every candidate is checked as written and with `.md` appended, because creators such as `calendar create` and `base create` add the extension after the gate has looked at the token.
-- **`.daemon` itself is protected.** The `.daemon` folder token is refused, not only `.daemon/processes`, so an agent cannot `move .daemon Stage`, stage a process definition and `move Stage .daemon` back.
-- **Protected paths are refused for every command that is not always-safe.** That includes `export` and `api`, and it holds even in a vault that restricts nothing. `export --out .daemon/processes/z.md` is refused.
-- **Agents may only GET through `bismuth api`.** Any other method is refused, because a path inside a JSON body has no `/` boundary for the gate to scan.
-- **HTTP-routed commands are gated against every running core's vault.** `api`, `chat`, `gcal`, `relay` and `update` send the owner token to whichever registered core they reach, so the gate checks the vault of every running core, not only `--vault`. A registered core whose vault no longer exists is ignored.
-- **Folder tokens are resolved before checking.** `..`, a doubled leading `/` (`//<vault>/Vault Hidden`), symlinks and case differences collapse to the on-disk folder, so a different spelling of a restricted folder is refused. The values of `--vault`, `--dir` and `--memory` are skipped by argv position, so repeating a folder name as a flag value does not disable the check.
-- **`.trash` follows the vault.** When the vault restricts anything, everything under `.trash/` is restricted for each channel that restricts anything, since a trashed copy (`.trash/<ms>-Vault Hidden/inner.md`) no longer sits under its folder rule. The trash is also restricted when a `folderVisibility` rule restricts the channel, even if the folder itself is gone (`.trash/<ms>-Private/a.md` stays hidden after `Private/` is deleted). A vault that restricts nothing stays at zero restricted entries, so a non-empty trash does not make non-Claude chat backends (which refuse to start when anything is restricted) refuse.
-- **Malformed rules fail closed.** A note whose frontmatter fence is closed but whose YAML does not parse is hidden. A `visibility:` value that is present but not exactly `all`, `chat-only` or `hidden` (`Hidden`, a list, a number) is hidden. Frontmatter longer than 64 KiB without a closing fence counts as hidden. An empty `visibility:` counts as absent and inherits, and an unclosed opening `---` is not frontmatter, both unchanged. In `.settings`, a `folderVisibility` entry whose value is not `chat-only`, `hidden` or `all`, or a `folderVisibility` that is not a map, makes the vault unavailable to agents with a reason naming the key (never the value), exactly like an unparseable `.settings`. `all` is accepted and restricts nothing.
-- **The daemon session's own deny walk applies the same rules.** The daemon workspace builds the deny list for its session sandbox with the same strict frontmatter parse, `.trash` rule, 64 KiB fail-closed and `folderVisibility` validation as core.
-- **Channel precedence.** When both `BISMUTH_AGENT_CHANNEL` (non-empty) and `BISMUTH_MCP_CHANNEL` are set, the stricter wins: `chat` only if both say `chat`, otherwise `daemon` (a garbled value counts as `daemon`). With only one variable set, it decides. With neither, the MCP gate uses `daemon` and the CLI's own gate treats the caller as the owner.
+- Every candidate vault is checked. The gate collects each value of `--dir`, `--vault` and `BISMUTH_VAULT`, builds the deny list for each, and refuses if any refuses. Pointing `--dir` at an empty folder does not swap which vault is checked.
+- A subfolder cannot stand in for the vault. Outside the always-safe tier, a root inside a vault that holds the `.settings` file is refused, because it would drop the vault's folder rules. A root at or under `<vault>/.daemon/memory` is exempt.
+- Rule files and runnable definitions are off-limits. `.settings`, `settings.yaml`, `.daemon/processes` and the `.daemon` folder itself are refused for every command that is not always-safe, even in a vault that restricts nothing. A process definition is code the daemon runs outside any sandbox.
+- Folder arguments are checked.
+  A folder that is an ancestor of a hidden note, an ancestor of a restricting `folderVisibility` key, or itself restricted is refused by path-scoped commands.
+  `move "Vault Hidden" Pub` and `delete "Vault Hidden"` are refused.
+  Moving a folder that holds nothing hidden is not.
+- The `.md` twin is checked. Every argument is checked as written and with `.md` appended, because `calendar create` and `base create` add the extension after the gate looks.
+- `bismuth api` allows only GET for an agent, because a path inside a JSON body has no boundary for the gate to scan.
+- HTTP-routed commands (`api`, `chat`, `gcal`, `relay`, `update`) are gated against the vault of every running core, not only the one named.
+- Spellings are normalised. `..`, doubled slashes, symlinks, percent-encoding and case differences collapse to the real folder before the check.
+- `.trash` follows the vault. When anything is restricted for a channel, everything under `.trash/` is too, because a trashed copy sits outside its original folder rule. A vault that restricts nothing keeps zero restricted entries, so a full trash never causes a refusal.
+- Channel precedence. With both variables set, the stricter wins: `chat` only if both say `chat`, otherwise `daemon`. A garbled value counts as `daemon`. An empty `BISMUTH_AGENT_CHANNEL` counts as unset, so a stray `export BISMUTH_AGENT_CHANNEL=` does not lock you out.
 
 ### Accepted existence signals
 
-Two places still let an agent tell whether a path it already guessed exists. Both are accepted, not bugs:
+An agent can still tell whether a path it already guessed exists.
+The gate answers `Refused` for a hidden path and `ENOENT` for a missing one, because the refusal must say why.
+`memory remember` and `memory forget` answer `refused` for a hidden memory note and `{ok:false}` for a missing one.
+Both reveal only a name the agent supplied itself.
 
-- **Gate `Refused` versus `ENOENT`.** An explicit hidden path is refused with a message saying it is hidden; a missing path cannot be refused without refusing every command. The refusal has to say why, because the agent is told to relay it to the user. The signal reveals only the existence of a name the agent supplied itself.
-- **Memory `refused` versus `{ok:false}`.** `memory remember` and `memory forget` answer `refused` for a hidden memory note and `{ok:false}` for a missing one, for the same reason.
-
-`memory recall` applies the daemon filter on every channel, including `chat`. That is stricter than the vault rule (a `chat-only` memory note is hidden from a chat agent's recall), which is intended: it is not a leak.
-
----
+Known gaps: `settings get` prints the whole merged settings, including the `folderVisibility` map that names hidden folders.
+The HTTP routes `/tree`, `/templates`, `/graph/views`, `/daily-note` and `/settings` have no per-channel filter of their own; the CLI filters in process and refuses `api`, so an agent cannot reach them through it.
 
 ## The deny-list preflight (`settings deny-list`)
 
-Every gate on this page answers one question — *may this read proceed* — by REFUSING when it can't. Until this command, an agent in a restricted vault had no way to learn *that* something was restricted except by triggering one of those refusals: run `task list`, get refused, infer the vault hides something. There was no direct answer to "does this vault restrict anything, and how much?"
+An agent in a restricted vault can ask whether and how much is restricted without triggering a refusal. `bismuth settings deny-list [--channel chat|daemon]` reports the vault's restricted set for a channel; the default is `daemon`, the stricter one.
 
-`bismuth settings deny-list [--channel chat|daemon]` (`cli/src/commands/settings.ts`) answers that directly, by calling the exact resolver every enforcement point calls — `resolveDenyPlan(vault, channel)` (`core/src/visibility.ts`, the same function `buildDenyPaths` wraps). Default channel is `daemon` (the stricter one); `--channel chat` reports the chat-channel plan instead (a `chat-only` note is restricted for `daemon` but not `chat` — see "Inheritance semantics" above).
+What it returns depends on who asks, so the command is never an enumeration oracle:
 
-**This is a new capability, so it gets its own threat model, not a footnote.** A command whose whole job is to describe what's hidden is, by construction, one bug away from becoming the very enumeration oracle this feature exists to prevent — printing 12 hidden paths to an agent is exactly as bad as the agent reading each one directly. So the output depends on **who is asking**, via `cliAgentChannel()` (`core/src/visibilityCliGate.ts`, keyed on `BISMUTH_AGENT_CHANNEL` — the same signal that decides "owner vs. agent" everywhere else on this page):
+- You, from your own shell: `{ "channel": "daemon", "determined": true, "count": 12, "entries": ["Private/secret.md", ...] }` with the full path list.
+- Any AI session (`chat` or `daemon` channel, or a CLI started by the MCP server): `{ "channel": "daemon", "determined": true, "count": 12 }`. The `entries` key is absent. It gives a count and never a path.
+- When the walk fails: `{ "channel": "daemon", "determined": false, "reason": "..." }`. The reason names why the walk failed, never a path, so it is shown in full to everyone.
 
-- **Owner** (`BISMUTH_AGENT_CHANNEL` unset and the CLI not spawned by the MCP server — their own shell, a dev script, CI): `{ channel, determined: true, count, entries: [<rel path>, …] }`. Full detail — the owner already knows what they hid; this is a convenience, not a leak.
-- **Any agent** (`chat` or `daemon` channel, or a CLI spawned by the MCP server): `{ channel, determined: true, count }`. **The `entries` key is omitted entirely** — a count, never a path, never a filename. This mirrors the existing rule for the chat-refusal panel (`visibilityRefusalMessage`, "UI" section below): *"a COUNT of restricted notes/folders only, never their names or paths."* An UNDETERMINED walk (`{ channel, determined: false, reason }`) is safe to show in full regardless of caller, because `reason` describes *why the walk failed* (an unreadable subtree, a broken `.settings`), never a path.
+`settings` is in the always-safe tier, so the gate lets this command through even in a heavily restricted vault; the count-only branch is what protects an agent caller.
+`settings status-bar`, `settings set` and `settings unset` are the exceptions: an agent is refused on them in a restricted vault.
+Every `settings` subcommand is in the [CLI reference](../cli/reference.md).
 
-**Why this doesn't need a new gate tier.** `settings` is already `ALWAYS_SAFE_COMMANDS` in `core/src/visibilityCliGate.ts` — by its command-classification design (`commandTier` keys on `args[0]`, the group's first token), `settings deny-list` inherits that tier automatically, the same way `settings get`/`folder-icon` already do (`settings set` is refused the same way in a restricted vault). The tier is not uniform across the whole group, though: `COMPOUND_OVERRIDES` in the same file classifies **`settings status-bar` as `refuse-when-restricted`**, checked before the group's first-token lookup in `commandTier`. Its `query` segments can count notes by a filter, which would leak the counts of hidden notes, so an agent channel (`BISMUTH_AGENT_CHANNEL=chat|daemon`) in a vault that restricts anything is refused on `settings status-bar` even though `settings get`/`set`/`deny-list` still run. So the OUTER gate (`gateCliInvocation`, checked once at `cli/src/index.ts`'s single dispatch point) never refuses this command wholesale, even in a heavily restricted vault — it always runs. That is deliberate, not an oversight: the count-only branch above is what actually protects a restricted caller, and it has to be — a coarse allow/refuse gate has no way to hand back "a number, but not the list," only "yes" or "no."
+## How it works
 
-Covered by `cli/test/cli.test.ts`: one test asserts the owner shape (full `entries`), and one — marked mandatory in this feature's own test plan — asserts the restricted-caller shape has no `entries` key AND that the raw stdout string never contains the hidden note's name, as a belt-and-suspenders check against a future regression that adds the field back by accident. Full flag reference: [`docs/cli/reference.md`](../cli/reference.md#settings-deny-list---channel-chatdaemon).
+### Per-backend/per-channel enforcement
 
----
+Each backend's `capabilities.visibilityGate` in the agent-backend catalog is an object with a value per channel, `{ chat, daemon }`. A value claims that a mechanism is wired and that it was verified live on that specific backend, never that it should work because it resembles one that does.
 
-## Per-backend/per-channel enforcement
+| Value | Meaning |
+|---|---|
+| `native` | The CLI's own policy and sandbox layers enforce it. Claude Code only. |
+| `wrapper-macos` | Bismuth wraps the spawned process in an OS read-deny sandbox (Seatbelt). Where that is unavailable, it refuses at run time. |
+| `none` | Nothing enforces it. A vault with any restricted note refuses this backend on this channel. |
 
-`capabilities.visibilityGate` (`core/src/agentBackends/catalog.ts`) is no longer a boolean — a single flag can't say "enforced for chat but not the daemon," "only on macOS," or "only because we wrap it, not because the CLI itself enforces anything." It's now `{ chat: VisibilityEnforcement, daemon: VisibilityEnforcement }`, where `VisibilityEnforcement` is `"native" | "wrapper-macos" | "none"`:
+Claude Code is `native` on both channels. Every other backend in the catalog is `none` on both, so a backend added to the catalog is refused until a recorded live acceptance run changes its entry. What each value rests on is in [Visibility acceptance](visibility-acceptance.md).
 
-- **`native`** — the CLI's own policy/sandbox layer enforces it. Claude Code only, today.
-- **`wrapper-macos`** — Bismuth wraps the spawned process in an OS-level read-deny sandbox (`core/src/agentBackends/sandboxWrapper.ts`, Seatbelt/`sandbox-exec`). The suffix is the precondition: off Darwin, or without `sandbox-exec`, or against a backend that self-sandboxes (below), this resolves to a **refusal at runtime**, never "probably fine anyway."
-- **`none`** — nothing enforces it. A vault with any restricted note MUST refuse that backend on that channel rather than run it unprotected.
+### Resolving a note's level
 
-The catalog's own doc comment states the honesty rule in these words: *"a value here is a claim that a mechanism is wired AND was verified live on that specific backend. 'It should work, it's the same OS primitive' is not sufficient."* That is the same failure mode `../chat/backends.md` tracks under "a signal claiming more than it knows" — see that page's closing section.
+`core/src/visibility.ts` is the pure core, ported into `daemon/src/lib/visibility.ts` because the daemon workspace does not depend on `@bismuth/core`; `daemon/test/visibilityParity.test.ts` pins the two together.
 
-| Backend | Chat | Daemon | `selfSandboxes` | Verified? |
-|---|---|---|---|---|
-| `claude` | **native** — `managedSettings.permissions.deny` + `sandbox.filesystem.denyRead` + `disallowedTools`, together, plus a live path-aware `canUseTool` auto-deny; `sandbox.failIfUnavailable` follows the deny list (see "Sandbox availability" below) so a restricted vault fails closed rather than silently running unsandboxed | **native** — the identical triple, rebuilt fresh every message | `true` (own Seatbelt — never a wrap target) | **Yes** — Step-0 spike (below) + `core/test/chat.test.ts`'s live "visibility" test, re-attacked by a red-team pass across absolute/relative paths, symlinks, hardlinks, case variants, `../` traversal, Grep/Glob, and Task-subagent delegation. All blocked. |
-| `opencode` | **none** — downgraded from `wrapper-macos`; a restricted vault refuses opencode for chat outright rather than run the per-turn `opencode run` subprocess (`chatProviders/opencode.ts`) wrapped or not | **none** — no opencode daemon integration exists in this codebase at all (`capabilities.daemon: false`); moot regardless of the visibility question | `false` (wrappable) | **No** — the third dated section of [visibility-acceptance.md](visibility-acceptance.md) recorded a real `opencode run --format json --auto` turn, wrapped, against `opencode/deepseek-v4-flash-free` ($0 cost): the structured read tool AND the Bash `cat` fallback both denied, but the turn never concluded and the two follow-up probes it was supposed to measure never dispatched before the run was killed. Two of three probes incomplete does not meet the catalog's live-acceptance bar, so this cannot stand at `wrapper-macos`; a `launchctl submit` bypass attempt also surfaced a real, unexercised escape shape (spawning outside the wrapped process tree) worth a dedicated rerun. |
-| `codex` | **none** | **none** | `true` (own Seatbelt, `codex-rs/sandboxing/src/seatbelt.rs` — confirmed from source; per-nesting rule below, can never be a wrap target) | **No.** Codex's own `[permissions.*].filesystem` layer is self-described *beta* and has had one upstream deny-read bypass already fixed (PR #23943); whether headless `codex exec` — Bismuth's actual invocation — honours a project `.codex/config.toml` profile at all is **unverified**, and codex was not installed on the machine this catalog was authored on. `daemon/src/daemon/session.ts`'s `resolveDaemonBackend` refuses codex for the daemon the moment any note is hidden, degrading to Claude with a logged reason. |
-| `cline` | **none** | **none** (`capabilities.daemon: false`) | `false` | **No.** Not installed on the machine this catalog was authored on; Cline's own docs say its `beforeTool` plugin pattern does not cover `execute_command`/`search_files`/`list_files`, and no OS sandbox exists in Cline itself. First graduation would require a recorded live wrapper run. |
-| `gemini` | **none** | **none** | `false` | **No.** Not installed here. Gemini CLI's shipped source (`grep.ts`/`ripGrep.ts`/`ls.ts`/`shell.ts`) bypasses the ACP `fs/*` capability entirely — confirmed by reading it, not guessed. |
-| `goose` | **none** | **none** | `false` | **No.** Not installed here; no mechanism confirmed either way. |
-| `openclaw` | **none** | **none** | `false` | **No** — installed on this machine, but never exercised under the OS wrapper. **The first graduation candidate**, should that live acceptance run ever happen and get recorded. |
-| `hermes` | **none** | **none** (`capabilities.daemon: false`) | `false` | **No.** Not installed on the machine this catalog was authored on — the entry rests on Hermes Agent's ACP docs alone; no mechanism confirmed either way, and it has never been exercised under the OS wrapper. |
-| `claude-code-acp` * | **none** | **none** (`capabilities.daemon: false`) | `true` (bridges Claude Code, which self-sandboxes) | **No** — and can never be `wrapper-macos` regardless of testing (R1 below forbids wrapping a self-sandboxing process). |
-| `codex-acp` * | **none** | **none** (`capabilities.daemon: false`) | `true` (bridges Codex, which self-sandboxes) | **No** — same reasoning as `claude-code-acp`. |
+```typescript
+type Visibility = 'all' | 'chat-only' | 'hidden'
 
-\* Hidden from the provider picker (`hidden: true`); a native driver supersedes each. Still selectable by id.
+resolveVisibility(path, fileVisibility, folderVisibility)   // own value, else nearest ancestor, else 'all'
+resolveFolderVisibility(path, folderVisibility)             // a folder's own entry counts as the deepest ancestor
+isVisibleToChat(v)   // v !== 'hidden'
+isVisibleToDaemon(v) // v === 'all'
+```
 
-### The wrapper mechanism (`wrapper-macos`)
+A file's value is stored in its frontmatter, written through the generic `POST /set-property` and `POST /delete-property` routes.
+A folder's value is stored in `.settings` under `folderVisibility`, written by `POST /folder-visibility` (`setFolderVisibility` in `core/src/settings.ts`).
+A write through those routes re-gates open chats through `invalidateChatVisibility()`.
+`GET /tree` stamps each entry with its resolved `visibility` and its `ownVisibility`; the sidebar badge and the enforcement gate call the same resolver, so the badge cannot disagree with what is enforced.
+Memory notes under `.daemon/memory` carry their own `visibility` field (`memory/src/graph.ts`), have no folder cascade, and are gated by that field alone.
 
-`core/src/agentBackends/sandboxWrapper.ts` wraps a backend's spawn argv in `/usr/bin/sandbox-exec` with a generated Seatbelt profile — a kernel-level VFS read-deny that needs zero cooperation from the wrapped CLI, so it protects the structured tool call AND any Bash-equivalent fallback identically. Four preconditions, all asserted rather than assumed (`checkSandboxWrapperAvailability`):
+`buildDenyPaths(root, channel)` resolves every file's level and returns the restricted subset as `DenyEntry` objects (`rel`, `abs`, and `aliases` for other absolute spellings).
+Entries are per file, so an explicit `all` inside a hidden folder is honoured by emitting no entry.
+`resolveDenyPlan` wraps it with a third state, `determined: false`, for a vault it could not read, which every fail-safe consumer treats as restricted.
+It is recomputed each time, with no cache.
 
-- **P1** `process.platform === "darwin"` and `sandbox-exec` exists on disk.
-- **P2** the backend must not apply its own Seatbelt profile (`selfSandboxes` in the catalog). Verified live: Seatbelt profiles do **not** nest — an inner profile that isn't byte-identical to the outer one fails the whole spawn with `sandbox_apply: Operation not permitted`, exit 71. Claude Code (`sandbox.enabled: true`) and Codex both self-sandbox, so wrapping either is a bug, not a stronger gate.
-- **P3** the wrapped process must be a dedicated per-session-or-per-turn process for ONE vault. opencode's shared `serve` process multiplexes every vault a core process hosts, so it can never carry a profile scoped to one vault — a restricted vault is forced onto the per-turn `run` path instead (`chatProviders/opencodeServer.ts`/`opencode.ts`); this is also why the daemon (one process, every enabled vault) can never use this mechanism at all.
-- **P4** exit code 71 from a wrapped spawn means Seatbelt itself failed to apply — treated as a refusal, never retried unwrapped.
+### The discovery walk
 
-The profile denies `file-read*` by `subpath` (not `literal`) for every restricted file/folder, `.git`, and the owner-token file (`buildSandboxDenyPaths`) — `subpath` is required for `.git` and any restricted folder (a `literal` deny only blocks a directory's own listing/stat, not the files inside it — verified live). A 3000-rule / 530 KB profile was verified to work with no practical size limit.
+`listVisibilityFiles` visits every regular file under the vault, any extension, in every directory including dot-directories.
+It skips only `.git` (denied as its own subtree) and `.settings`.
+Symlinked directories are followed, with the chain of canonical directory paths catching cycles and `MAX_WALK_ENTRIES` (200,000) bounding fan-out; a vault that hits the bound is undetermined, not empty.
+A directory that cannot be read is undetermined too, except one that disappeared mid-walk.
 
-### What stays refused, and why that's the honest answer
+1. The folder cascade is resolved first with no file I/O, memoised per directory.
+2. A file's own frontmatter is read on every file, not only `.md`: a 512-byte head, re-read up to 64 KiB only when truncated without a closing fence. A file that does not start with `---` costs one small read. A fence still open at 64 KiB reads as `hidden`.
+3. Stem inheritance: a file with no explicit value whose name before its first dot matches a restricted sibling in the same folder inherits the strictest such value.
+   `sketch.draw.png` inherits from a hidden `sketch.draw`.
+   It is deliberately over-inclusive, since a non-markdown file cannot opt back out.
+4. When anything is restricted for the channel, `.trash/` is restricted too. Memory notes skip the folder cascade.
 
-Beyond the table above: **every non-macOS host** stays refused for every non-Claude backend, for both channels — Landlock (Linux) is allowlist-only with no negation and needs a bundled syscall helper on kernel ≥5.13; bubblewrap needs unprivileged user namespaces and masks with a 0-byte file rather than a real permission error. **Neither was tested — there is no Linux machine in any spike.** Claiming Linux parity here would be inventing a result, so the wrapper's `checkSandboxWrapperAvailability` resolves to unavailable on any non-Darwin platform, full stop.
+### Closing the ambient surfaces
 
-### Things that stay uncovered even where a channel IS enforced
+A per-backend lock is useless beside an open window. These surfaces leak on every backend, so they are closed first.
 
-- **Existence and metadata leak.** A read-deny (Seatbelt or Claude's own) still lets `ls -la` show a hidden file's name, size, permissions, and mtime; `grep -r` prints `./secret.md: Operation not permitted`, which names it; `GET /tree` badges it. "Hidden" means the *content* is unreachable, not that the note's existence is secret.
-- **A stripped copy.** If the exact bytes are written to a new path with no `visibility:` key and no restricted stem or folder — by a human, or by an agent before a note was hidden — no path-based deny list can know. The widened walk and stem inheritance close the *organic* cases (export sidecars, hidden folders, copies that keep frontmatter); a deliberate strip of the frontmatter is out of reach of this design, and of any deny-list design.
-- **The within-turn window.** A note marked hidden *during* a turn is not covered until that turn ends, on every backend including Claude — a mid-turn rename was verified to defeat an already-built deny list. A `subpath` deny on an already-restricted *folder* closes the common case (a new file added to a folder that was already hidden is covered immediately), but a file restricted mid-turn for the first time is not retroactively gated within that same turn.
-- **A model-requested sandbox opt-out — addressed, not live-verified (Task 9).** See "Sandbox availability: fail closed, not open" below — `dangerouslyDisableSandbox` lets a Bash tool call skip the OS sandbox entirely; it used to be honored by default (`sandbox.allowUnsandboxedCommands` was never set to `false`). `chat.ts`'s `spawnChatQuery` (via the extracted `buildChatSandboxOption`) and `daemon/session.ts`'s `buildQueryOptions` now both set `allowUnsandboxedCommands: false` whenever anything is restricted (the same `denyEntries.length > 0` guard as every other gate here; an unrestricted vault is unaffected — `sandbox` stays omitted entirely, exactly as before). See "Sandbox availability" below for the exact SDK citation and for what the live re-verification did and did not establish — in short, five live haiku probes against a temp vault could not reproduce a model invoking `dangerouslyDisableSandbox: true` on its own initiative (nor even when explicitly instructed to), so this fix could not be exercised through a reproduced live leak-then-fixed round trip; it rests on unit tests (`core/test/chat.test.ts`, `daemon/test/session.test.ts`) plus the SDK's documented semantics for the field.
+- Local HTTP API.
+  A per-boot random owner token (`core/src/ownerToken.ts`), sent as `X-Bismuth-Token`, identifies the app and CLI.
+  A request without it resolves to a channel (`X-Bismuth-Channel: chat`, else `daemon`) and gets the same per-path filter as Claude's own tools.
+  Content routes drop restricted rows and nodes.
+  The transcript routes `GET /chat/sessions`, `GET /chat/session-messages` and `POST /chat/search` have no per-path filter and are owner-only.
+- The token file.
+  `~/.bismuth/run/<vault>.json` holds the token at mode `0600`, which does not stop an agent running as the same user.
+  `buildSandboxDenyPaths` adds it, in both its spellings, to every channel's read-deny list.
+- The `bismuth` CLI as a subprocess.
+  The gate in `core/src/visibilityCliGate.ts` is hooked at the CLI's single dispatch point (`cli/src/index.ts`) and at the MCP server (`mcp/src/cli.ts`).
+  An agent is a process with `BISMUTH_AGENT_CHANNEL` or `BISMUTH_MCP_CHANNEL` set, and every place Bismuth spawns an agent sets one.
+  With neither set the caller is the owner.
+- Git history.
+  `<vault>/.git` is a subtree entry in every channel's deny list, so `git show` and `git log -p` fail while a visible file still reads.
+  History is not rewritten, because it is the owner's backup.
+- Case, Unicode and `..` spellings.
+  `isDeniedPath` compares paths after resolving `.` and `..`, collapsing slashes, normalising Unicode to NFC and case-folding.
+  It also matches anything under a restricted entry.
+  A raw string comparison is never used for a live check.
+- MCP tool coverage.
+  The MCP `bismuth_cli` tool and the raw CLI share one gate.
+  Every spawner sets `BISMUTH_MCP_CHANNEL`, and an unset value defaults to `daemon`.
+
+An installed `bismuth-mcp` binary is a compiled copy (`core/src/bismuthInstall.ts`). If it predates a gate change, relaunch the app or run `bismuth install`; `bismuth install --status` shows the installed version.
+
+`GET /asset` applies the same per-channel filter to the bytes it serves. A native `<img>` or `<video>` element cannot send the owner token header, so a request from one resolves to the `daemon` channel.
+
+### Claude Code enforcement
+
+For a restricted vault, `spawnChatQuery` in `core/src/chat.ts` and `buildQueryOptions` in `daemon/src/daemon/session.ts` configure the session with all of these together.
+
+- `managedSettings.permissions.deny`: `Read`, `Edit`, `Grep` and `Glob` rules for each restricted file in both its relative and absolute form. Claude Code's Read does not consistently match a relative path against an absolute rule, so both are emitted.
+- `sandbox.filesystem.denyRead`: the OS-level deny for the same files, `.git` and the token file. This is what stops a Bash `cat`, `python3 -c` or `bismuth read`; `managedSettings` only covers the tool-call convention.
+- `sandbox.failIfUnavailable`: `true` whenever anything is restricted, so a sandbox that cannot start refuses the session instead of running it unprotected. An unrestricted vault omits the whole sandbox block.
+- `sandbox.allowUnsandboxedCommands: false`: the model cannot switch its sandbox off with the Bash tool's `dangerouslyDisableSandbox` parameter.
+- `disallowedTools`: `bismuth_cli`, `Grep` and `Glob`.
+- `canUseTool` (chat): an in-process check that denies, with no prompt and no "always allow", any tool whose `file_path`, `notebook_path` or `path` is restricted.
+- Environment: `BISMUTH_AGENT_CHANNEL` and `BISMUTH_MCP_CHANNEL` set to `chat` or `daemon`.
+
+The sandbox and `managedSettings` are fixed when the session starts, so a visibility change respawns the chat's `query()` with fresh rules and resumes the same conversation (`respawnSession`).
+If the new rules cannot be determined, the session ends with a `visibility-refused` error rather than continuing on the old list.
+The daemon builds its deny list again for every message.
+The daemon's persona also gets an advisory note naming off-limits notes; that is never counted as enforcement.
+
+### The OS-sandbox wrapper
+
+`core/src/agentBackends/sandboxWrapper.ts` wraps a backend's spawn arguments in `/usr/bin/sandbox-exec` with a generated Seatbelt profile.
+The kernel enforces the read-deny on the whole process tree, so the structured read tool and a Bash fallback are blocked alike.
+It is available only when all of these hold:
+
+- the host is macOS and `sandbox-exec` exists;
+- the backend does not apply its own Seatbelt profile (`selfSandboxes` in the catalog), because profiles do not nest and a nested spawn fails with `sandbox_apply: Operation not permitted` (exit 71). Claude Code and Codex both sandbox themselves;
+- the wrapped process serves one vault, which rules out opencode's shared `serve` process and the daemon, one process for every vault;
+- an exit code of 71 from a wrapped spawn is treated as a refusal, never retried unwrapped.
+
+The profile denies `file-read*` by `subpath` for each restricted file or folder, `.git` and the token file.
+A `literal` deny would not block the files inside a directory.
+No backend in the catalog holds `wrapper-macos`.
+Landlock and bubblewrap on Linux are untested, so `checkSandboxWrapperAvailability` reports the wrapper unavailable on every non-macOS host.
 
 ### The chokepoint, and why it lives in the router
 
-The wire and UI for a graceful refusal exist end to end (see "UI" below): a `"visibility-refused"`
-`ChatFrame` error code, and a dedicated ChatView panel. The decision that emits it lives in **one
-place** — `resolveVisibilityGate` (`core/src/agentBackends/visibilityGate.ts`), called from the chat
-router's session-creating verbs (`core/src/chatProviders/index.ts`).
+`resolveVisibilityGate(backendId, channel, root)` in `core/src/agentBackends/visibilityGate.ts` is the single decision: may this backend serve this channel for this vault?
+The chat router calls it from its session-creating verbs in `core/src/chatProviders/index.ts`.
+It allows everything when nothing is restricted, and refuses in three more cases: the walk is undetermined, the backend id is unknown (validated before `backendOf()` could substitute the default backend's answer), and the catalog says `none` for that channel.
 
-That location is the whole point. An earlier revision of this page had to record a genuine gap: the
-seven non-Claude drivers were written independently and **not one of them checked visibility**, so
-the catalog said `"none"` (honest data) while picking one of those backends against a restricted
-vault was silently permissive (dishonest behaviour). Seven drivers cannot be kept in agreement by
-review. One chokepoint can — and a **new** backend is refused by default, because its catalog entry
-starts at `"none"` and the router reads the catalog rather than trusting the driver.
+One chokepoint matters because separately written drivers cannot be kept in agreement by review, and a new backend is refused by default: its catalog entry starts at `none`, and the router reads the catalog rather than trusting the driver.
+`core/test/agentBackends/visibilityGate.test.ts` pins this.
+The refusal reaches the app as a `visibility-refused` `ChatFrame` error carrying the backend id and a count built by `visibilityRefusalMessage`; `app/src/chat/ChatSetupGate.tsx` renders it.
 
-- `claude` never reaches a refusal (native, both channels).
-- `opencode`, `codex`, and every ACP backend (`cline`/`gemini`/`goose`/`openclaw`/the two hidden
-  adapters) are refused by the router before their driver is ever spawned — none carries a verified
-  mechanism for chat today (see the table above). `chatProviders/opencode.ts` still carries its own
-  precondition-refusal path (`opencodePreconditionRefusal`, checking platform/`sandbox-exec`/shared-
-  server binding) from when its catalog entry was `wrapper-macos`; it stays dormant behind the
-  router's earlier refusal unless a future acceptance run restores that capability.
+For the daemon, `resolveDaemonBackend` in `daemon/src/daemon/session.ts` holds the matching rule: only backends in `DAEMON_BACKENDS_WITH_VISIBILITY_GATE` (a hand-kept copy of the catalog's `native` daemon column) keep their place; any other backend with a restricted vault degrades to Claude Code.
 
-Verified by `core/test/agentBackends/visibilityGate.test.ts`, which asserts all seven are refused,
-that an unknown backend id refuses rather than inheriting the default backend's answer, that an
-unreadable vault refuses, and that `chat-only` restricts the daemon channel but not chat. The
-end-to-end behaviour is recorded in [visibility-acceptance.md](visibility-acceptance.md).
+### Memory recall
 
----
+`searchMemory` (`memory/src/search.ts`) and the structured `query` (`memory/src/query.ts`) drop any memory note whose own `visibility` is `chat-only` or `hidden`, using `isMemoryNoteVisibleToDaemon` in `memory/src/graph.ts`.
+Recall is a daemon-facing operation, so the stricter rule applies on every channel.
+Memory frontmatter is parsed by hand; a duplicate `visibility` key resolves to the strictest value, and a malformed head counts as `hidden`.
 
-## Step 0 spike: what was actually verified (Claude, original pass)
-
-Before writing any enforcement code, two throwaway probe scripts (run against the installed `@anthropic-ai/claude-agent-sdk`, using the user's own `claude` login, haiku model, minimal prompts) checked the two load-bearing claims behind Claude's `native` row above:
-
-1. **Does `managedSettings.permissions.deny` survive `permissionMode: "bypassPermissions"` (the daemon's exact mode)?** — **Yes.** A session with `permissionMode: "bypassPermissions"`, `allowDangerouslySkipPermissions: true`, and `managedSettings.permissions.deny: ["Read(<path>)", …]` attempted a Read tool call against the denied file; the SDK returned a `tool_use_error` and the model never saw the file's contents.
-2. **Does `sandbox.filesystem.denyRead` block a Bash `cat`/`grep` of a denied file on this Darwin machine?** — **Yes**, confirmed at the OS level: an explicit `Bash: cat <path>` tool call failed with `cat: <path>: Operation not permitted` (exit code 1) — a real sandboxed filesystem denial, not just the model declining.
-
-**A real bug the spike process caught, fixed, and is worth knowing about:** an absolute-path-only deny rule is fragile in two ways that only showed up once the mechanism was wired into the real `chat.ts`/`session.ts` code paths and exercised live:
-
-- **Symlinks.** On macOS, `/tmp` and `/var` are symlinks to `/private/tmp`/`/private/var`. The SDK's own tools report the CANONICAL (symlink-resolved) path in their `file_path`. Fix: `buildDenyPaths` canonicalizes its root via `realpath` before constructing absolute deny paths.
-- **Relative vs. absolute tool-call paths.** Claude Code's Read tool does not consistently resolve a relative `file_path` against an absolute-only deny pattern. Fix: `buildManagedSettingsDeny` emits **both** the relative-to-cwd and the canonical-absolute form of every denied path, for each of `Read`/`Edit`/`Grep`/`Glob`.
-
-The lesson generalizes, and it's the same lesson the "Ambient surfaces" table above and the wrapper's seatbelt spike both re-learned independently: a deny list (or a claim about one) built from a single, half-considered representation is an easy way to *believe* a gate works while it silently doesn't in the exact shape production code hits it. `core/test/visibility.test.ts`, `daemon/src/lib/visibility.test.ts`, and `core/test/chat.test.ts` cover both fixes so a regression fails loudly.
-
----
-
-## Sandbox availability: fail closed, not open (2026-07-30 measurement)
-
-An earlier pass reasoned (without measuring) that `BISMUTH_AGENT_CHANNEL` — the env var
-`core/src/visibilityCliGate.ts` reads to gate the `bismuth` CLI/MCP subprocess path — was "the"
-enforcement mechanism, defeatable by unsetting it. That conclusion was wrong to reach by reasoning
-alone, and a live measurement corrects it:
-
-**What was actually measured**, against a real `claude` turn (haiku, the installed CLI, a temp
-vault, `BISMUTH_AGENT_CHANNEL=chat` set exactly as `chat.ts` sets it, `managedSettings.deny` +
-`sandbox.filesystem.denyRead` wired exactly as `spawnChatQuery` wires them):
-
-- A Bash `bismuth read <hidden-note>` failed at the **OS level** — `EPERM: operation not
-  permitted, open '<path>'` — before the CLI's own `visibilityCliGate.ts` ever got a chance to run.
-  That error comes from `sandbox.filesystem.denyRead`, not from `managedSettings`: the Bash tool
-  itself is never in the `managedSettings`/`disallowedTools` deny list (the daemon needs Bash for
-  `bismuth checkpoint`), so nothing about the tool-level deny would have stopped this call — the OS
-  sandbox is what actually did.
-- The model then retried the SAME command with the SDK's own `dangerouslyDisableSandbox: true`
-  Bash-tool parameter (honored by default — `sandbox.allowUnsandboxedCommands` defaults to `true`
-  and neither `chat.ts` nor `daemon/session.ts` overrides it). With the OS sandbox deliberately
-  skipped for that one call, the ONLY thing that still caught it was `visibilityCliGate.ts`'s
-  `BISMUTH_AGENT_CHANNEL` check refusing the `bismuth` subcommand itself.
-
-**So the corrected model is**: the OS sandbox (`sandbox.filesystem.denyRead`) is the layer that
-actually stops an arbitrary Bash read (`cat`, `python3 -c`, anything) — `managedSettings` cannot,
-because it is scoped to the Read/Edit/Grep/Glob tool *calling convention*, never to Bash's argv.
-`BISMUTH_AGENT_CHANNEL` is real, additional, defense-in-depth **specifically for the `bismuth`
-CLI/MCP subprocess path** — the one measured case above where it was the last thing standing
-between a Bash call and a hidden note. And the router chokepoint (`resolveVisibilityGate`,
-"The chokepoint, and why it lives in the router" above) is what covers every backend that has no
-sandbox mechanism at all, by refusing it outright before a session ever opens.
-
-**The hole this measurement found and closed**: `chat.ts` and `daemon/session.ts` both passed
-`sandbox: { enabled: true, failIfUnavailable: false, … }`. The SDK's own bundled type declarations
-(`@anthropic-ai/claude-agent-sdk`'s `sdk.d.ts`, checked directly in both versions the monorepo
-resolved at the time of this measurement — 0.3.186 for core, 0.2.141 for the daemon; the two have
-since been unified on `^0.3.186`, and the text below was word-for-word identical in both) actually contain **two different `sandbox.failIfUnavailable`
-fields on two unrelated types, with contradicting doc comments about the default**:
-
-- `Options.sandbox: SandboxSettings` — the type that governs `query({ prompt, options })`, i.e. the
-  ACTUAL call chat.ts's `spawnChatQuery` and session.ts's `sendMessage` make — says: *"When
-  `enabled: true` is passed via this option, `failIfUnavailable` defaults to `true` — if sandbox
-  dependencies are missing … or the platform is unsupported, `query()` will emit an error result and
-  exit rather than silently running commands unsandboxed. Set `failIfUnavailable: false` to allow
-  graceful degradation."*
-- `Settings.sandbox` — an unrelated, on-disk `settings.json`/managed-settings schema type, never
-  touched by either call site — says: *"Exit with an error at startup if sandbox.enabled is true but
-  the sandbox cannot start … When false (default), a warning is shown and commands run unsandboxed."*
-
-These disagree with each other on which way is the default. The type that actually governs this
-code path is `Options.sandbox`, whose documented default is **fail-closed (`true`)** — meaning the
-pre-fix code's explicit `failIfUnavailable: false` was not merely accepting a permissive default, it
-was **actively overriding a documented-safe one**. Practically, this contradiction is moot for
-correctness either way: both call sites always pass an explicit boolean and never rely on either
-type's default, so which "default" is right never mattered for what actually ran — only for how
-severe a fixed `false` reads. Under either type's semantics, a sandbox that cannot start at all
-(missing OS dependencies, an unsupported platform) with `failIfUnavailable: false` in force makes
-the CLI show a warning and **run the session anyway, fully unsandboxed** — for its entire lifetime,
-not just one command. In that state, `managedSettings.permissions.deny` is *all* that's left, and —
-as measured above — that layer does nothing to a raw Bash `cat`/`bismuth read`/`python3 -c`.
-`BISMUTH_AGENT_CHANNEL` still covers the `bismuth`-subprocess case, but a plain `cat` would go
-completely unguarded.
-
-**The fix** (`core/src/visibility.ts` + `daemon/src/lib/visibility.ts`'s ported twin,
-`sandboxFailIfUnavailable(denyEntries)`): `failIfUnavailable` is now `denyEntries.length > 0`
-instead of a fixed `false`. A restricted vault would rather refuse to open the session than open it
-silently unprotected; an unrestricted vault is unaffected — the whole `sandbox`/`managedSettings`
-block is still omitted entirely when nothing is restricted (as it always was), so a machine where
-sandboxing can't start at all keeps serving every vault that hides nothing exactly as before.
-Covered by `core/test/visibility.test.ts`, `daemon/src/lib/visibility.test.ts`,
-`core/test/chat.test.ts`, and `daemon/test/session.test.ts`.
-
-**What this measurement did NOT verify, stated plainly**: an actual "sandbox unavailable at
-startup" condition could not be forced on this machine without touching the host itself (macOS's
-`/usr/bin/sandbox-exec` is a fixed, no-override system path, present and working here, and there is
-no non-Darwin machine available in this pass) — genuinely attempted (env-var probes, and wrapping
-the harness in an outer Seatbelt jail, which produced a *different*, per-command failure — exit 71,
-`sandbox_apply: Operation not permitted` — not the session-wide graceful-degrade `failIfUnavailable`
-governs). So the corrected `failIfUnavailable: true` behavior (the session refusing to open at all)
-rests on `Options.sandbox`'s documented semantics (the type this code actually calls — see above)
-plus the code-level fact that `managedSettings` cannot cover Bash, not on a reproduced live
-leak-then-fixed round trip. That distinction is recorded here rather than glossed over, per this
-page's own standard.
-
-**A residual gap found by this same measurement, FIXED by Task 9 (2026-07-30)**:
-`dangerouslyDisableSandbox` is a documented, model-controlled Bash-tool parameter, honored whenever
-`sandbox.allowUnsandboxedCommands` isn't explicitly set to `false` (its default is `true`) — and
-neither `chat.ts` nor `daemon/session.ts` set it. The live probe above shows the model invoking it
-*on its own initiative* after a denied Read attempt. For the one command shape measured (`bismuth
-read`), `visibilityCliGate.ts` still caught the retry — but for a command with no equivalent second
-gate (a plain `cat`, `python3 -c`, `head`, …), asking the model to disable the sandbox for that one
-call would remove the ONLY layer that stops it, regardless of `failIfUnavailable` or whether the
-sandbox is otherwise fully available and working.
-
-**The fix**: both call sites now pass `allowUnsandboxedCommands: false` inside the same
-`sandbox: {…}` object, under the same `denyEntries.length > 0` guard as everything else in this
-section — `core/src/chat.ts`'s `spawnChatQuery` (via a small extracted pure helper,
-`buildChatSandboxOption`, so the shape is unit-testable without a real `query()`) and
-`daemon/src/daemon/session.ts`'s `buildQueryOptions`. An unrestricted vault is unaffected: `sandbox`
-is still omitted entirely when nothing is restricted, exactly as before this change.
-
-**The SDK citation, read directly rather than assumed** (learning from this same page's own
-`failIfUnavailable` miscitation above — quoting the wrong one of two structurally-similar types is
-exactly the mistake to avoid here too): `allowUnsandboxedCommands` is a field of the zod-derived
-`SandboxSettings` type that backs `Options.sandbox` — confirmed present at
-`sdk.d.ts` line 2596 (0.3.186, core) / line 2411 (0.2.141, the daemon's version at the time; both
-workspaces now resolve 0.3.186, and the line citations below are kept as the record of what was
-actually read) — but neither declaration site
-carries a doc comment of its own (the zod-schema-derived type has no per-field JSDoc at all). The
-**only** prose anywhere in either bundled `sdk.d.ts` describing what this field does or defaults to
-lives on the structurally-identical, same-named field of the separate, on-disk `Settings.sandbox`
-type (`export declare interface Settings`, line 4469 core / 3928 daemon) — the identical 3-line
-JSDoc block (open/text/close) sits at `sdk.d.ts` lines 5656–5659 (0.3.186 core, field on 5659) and
-lines 5008–5011 (0.2.141 daemon, field on 5011), word-for-word the same text in both versions:
-
-> Allow commands to run outside the sandbox via the dangerouslyDisableSandbox parameter. When false,
-> the dangerouslyDisableSandbox parameter is completely ignored and all commands must run sandboxed.
-> Default: true.
-
-Unlike the `failIfUnavailable` case above, this is **not** a contradiction between the two types —
-there is no competing statement anywhere else about `allowUnsandboxedCommands`'s behavior or
-default, on either type. The confidence that this prose describes `Options.sandbox`'s field (not
-just `Settings.sandbox`'s) rests on the two schemas being field-for-field, order-for-order identical
-(`SandboxSettingsSchema`, `sdk.d.ts` lines 2592–2630 core / 2407–2444 daemon, vs. the `Settings.sandbox`
-literal object starting at line 5649 core / 5001 daemon) across BOTH independently-resolved SDK
-versions — strong evidence they describe the same underlying sandbox-runtime field, not two
-unrelated ones that happen to share a name. That inference is recorded here explicitly rather than
-presented as a verbatim `Options`-side doc comment, which is the exact miscitation this page's
-`failIfUnavailable` section above had to correct.
-
-**What Step 5's live re-verification did and did not establish, stated plainly**: five live `claude`
-turns (haiku, the installed CLI 2.1.220, a fresh temp vault under `/private/tmp/…`, never the real
-vault) were run against a hidden `secret.md`, varying the prompt (instructed to `cat` it; left to
-choose its own tool; explicitly told to pass `dangerouslyDisableSandbox: true`) and the config (with
-and without `settingSources: []` to strip this machine's own ambient `~/.claude` config out of the
-picture). **In every one of the five, under the PRE-fix (`vulnerable`) sandbox shape, the model
-declined to invoke Bash with `dangerouslyDisableSandbox: true` at all** — even when directly
-instructed to — reasoning in its own words that the file was "explicitly in the sandbox's deny
-list" and that bypassing "would defeat that protection." **I could not verify this**: the original
-live escape (the model reaching for `dangerouslyDisableSandbox` unprompted, twice, that motivated
-this task) could not be reproduced on this CLI version/model combination, so there is no reproduced
-live leak-then-fixed round trip to report for this fix — unlike the Step-0 spike's `cat`/`grep`
-OS-level denial above, which WAS reproduced live. The fix therefore rests on: (1) the unit tests
-(`core/test/chat.test.ts`, `daemon/test/session.test.ts`) asserting the exact option shape reaches
-the SDK call, and (2) the SDK's own documented semantics for the field quoted above — not on a
-live-observed behavior change. A future model or CLI version that reintroduces the original
-willingness to bypass would now hit `allowUnsandboxedCommands: false` and have the parameter ignored
-outright, per that documented semantics — but that causal chain is asserted from the type's
-documentation, not demonstrated end-to-end live.
-
----
-
-## UI
-
-**Context menu** (`FileTree.tsx`, right-click a file or folder → "Visibility" submenu, next to "Set Icon…"):
-
-- **Visible to Daemon + Chat** — clears any override (file: `deleteProperty`; folder: `setFolderVisibility(path, null)`). This does NOT write an explicit `visibility: all` — it just removes the node's own setting, so a node under a still-restricted ancestor folder stays restricted (see the disabled row below).
-- **Chat only** — sets `visibility: "chat-only"`.
-- **Hidden from both** — sets `visibility: "hidden"`.
-
-The currently-active row is checkmarked (`✓`). When a node's own setting is absent but an ancestor folder forces a stricter effective value, a disabled row is prepended: `Effective: Hidden — inherited from 'Private/'` — computed client-side from the resolved `GET /tree` values, so the menu can never claim an action will do something it won't.
-
-**Tree badge**: a small glyph beside a row's icon — `EyeOff` for hidden, `MessageSquareOff` for chat-only — driven by the RESOLVED visibility (`TreeEntry.visibility`), so a plain file deep inside a hidden folder shows the badge without its own frontmatter. Native `title` tooltip names which tier it's in.
-
-**Chat refusal**: when a chat's backend+channel can't honour this vault's hidden notes, `core/src/chat.ts`'s `ChatFrame` error union carries a dedicated code, `"visibility-refused"`, alongside the existing `no-claude`/`no-opencode`/`no-binary` setup-failure codes. It carries `binary` (the refused backend's id) and a `message` built by `core/src/visibility.ts`'s `visibilityRefusalMessage(backendLabel, restrictedCount)` — **a COUNT of restricted notes/folders only, never their names or paths**, since naming a hidden note in an error message would defeat the point of hiding it. `app/src/chat/ChatView.tsx` renders it as its own panel (a `gateRefusal` signal, distinct from the existing `setupError` panel — a refused backend IS installed, it just can't be trusted with hidden notes, so the panel never tells the user to install anything), with a one-click "USE CLAUDE CODE INSTEAD" button reusing the existing `switchProvider` escape hatch. The composer is disabled exactly as it is for `setupError`. See "The chokepoint, and why it lives in the router" above for which backends actually reach this frame today.
-
-**Daemon refusal**: `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) degrades to Claude rather than throwing — the daemon is always-on and its crons must keep firing — and logs the reason via `console.error`. As of this page **that refusal is log-only**: there is no daemon inbox page or other user-visible surface for it yet, unlike the chat-side frame above.
-
-No settings-page UI beyond the schema doc string — `.settings`'s existing autocomplete/lint pick up `folderVisibility` automatically, same as every other schema-backed section.
-
----
-
-## Memory recall
-
-`@bismuth/memory`'s `NoteFrontmatter` gained an optional `visibility?: "chat-only" | "hidden"` field (`memory/src/graph.ts`), parsed/serialized alongside `type`/`tags`/`created`/`updated`. Both note-listing entry points used by recall filter it out:
-
-- `searchMemory` (`memory/src/search.ts`, the relay-facing keyword search)
-- `executeQuery`/`query` (`memory/src/query.ts`, the MCP `recall` tool's structured query)
-
-Memory frontmatter is parsed with YAML. A note whose frontmatter head is malformed counts as hidden (fail closed) and is omitted from recall, and `remember`/`forget` refuse it for an agent. Both exclude a note when its own `visibility` is EITHER `"chat-only"` OR `"hidden"` — stricter than the vault's `isVisibleToDaemon` semantics might suggest is required by a literal reading of "hidden only," but consistent with them: recall is fundamentally a daemon/3rd-brain-facing operation, so a `chat-only` memory note — explicitly meant to stay out of the daemon's view — is excluded here too. Memory notes are flat under `.daemon/memory` (no subfolders in practice), so there is no folder-cascade tier for them, only this per-note check — a documented simplification versus the vault's file+folder cascade.
-
----
-
-## Cross-References
-
-- [Frontmatter & properties](frontmatter.md) — the generic `set-property`/`delete-property` routes visibility reuses verbatim
-- [Structure](structure.md) — `folderIcons`'s structural precedent for `folderVisibility`
-- [Agent backends — the catalog, the capabilities, the six surfaces](../chat/backends.md) — how `visibilityGate` fits into the wider per-backend capability model, and the "signal claiming more than it knows" list this feature's own decorative-flag history joined
-- Daemon Integration (main `CLAUDE.md`) — the daemon's `bypassPermissions` session mode and per-vault `sendMessage`
-
-Source: `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/visibilityCliGate.ts`, `core/src/visibilityFilter.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/server.ts` (`POST /folder-visibility`, `GET /tree`, the owner-token gate + per-route filtering), `core/src/graph.ts` (`TreeEntry`), `core/src/files.ts` (`listTree`), `core/src/changeClassifier.ts`, `core/src/chat.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/runRegistry.ts`, `app/src/api.ts`, `app/src/fileTreeModel.ts`, `app/src/FileTree.tsx`, `app/src/chat/chatEditorContext.ts`, `app/src/chat/ChatView.tsx`, `daemon/src/lib/visibility.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/defaultCrons.ts`, `mcp/src/cli.ts`, `mcp/src/visibilityGate.ts`, `cli/src/index.ts`, `cli/src/commands/settings.ts` (`settings deny-list`), `memory/src/graph.ts`, `memory/src/search.ts`, `memory/src/query.ts`, `core/test/visibility.test.ts`, `core/test/chat.test.ts`, `core/test/server.test.ts`, `core/test/ownerToken.test.ts`, `core/test/visibilityCliGate.test.ts`, `core/test/agentBackends/sandboxWrapper.test.ts`, `daemon/src/lib/visibility.test.ts`, `daemon/test/session.test.ts`, `memory/test/{graph,search,query}.test.ts`, `cli/test/cli.test.ts`
+Source: `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/visibilityCliGate.ts`, `core/src/visibilityFilter.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/routes/vault.ts`, `core/src/settings.ts`, `daemon/src/lib/visibility.ts`, `daemon/src/daemon/session.ts`, `memory/src/graph.ts`, `memory/src/search.ts`, `memory/src/query.ts`, `mcp/src/cli.ts`, `cli/src/index.ts`, `cli/src/commands/settings.ts`, `app/src/FileTree.tsx`, `app/src/VisibilityBadge.tsx`, `app/src/chat/ChatSetupGate.tsx`

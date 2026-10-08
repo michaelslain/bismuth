@@ -1,406 +1,244 @@
-# Visual Claude Code Chat
+# Chat
 
-> Chats can also run on **opencode** instead of Claude Code — see [Chat providers](providers.md) for the provider seam (`core/src/chatProviders/`), the connector picker in the model dialog, and what degrades gracefully, and [opencode providers](opencode-providers.md) for connecting a provider (API key or OAuth) from the model dialog. The [controls row and model dialog](#the-controls-row-and-model-dialog) section below describes where those controls live. This page documents the default Claude Code driver.
+A chat tab is a conversation with an AI coding agent that runs against your vault and renders as a live transcript inside Bismuth: streamed markdown, collapsible thinking, tool calls with their results, and inline permission prompts.
+The agent is your own installed CLI (Claude Code by default) running under your own login, so there is no API key to enter.
 
-Bismuth's in-app **chat** tab is a visual front-end onto the user's own `claude` binary. Each chat is one long-lived [Claude Agent SDK](https://modelcontextprotocol.io) `query()` session, driven over a WebSocket at `/chat`, running the locally-installed Claude Code with the user's **machine-login auth** — there is **no API key by design**. The backend (`core/src/chat.ts`) translates the SDK's streaming message feed into a small `ChatFrame` wire union; the frontend (a session in `app/src/chat/chatSession.ts`, rendered by `app/src/chat/ChatView.tsx`) renders those frames as a live transcript that mirrors the Claude Code TUI: streamed assistant prose (markdown), collapsible extended-thinking, labeled tool-call chips with their results, inline permission prompts, and a per-turn manifest (model / permission mode / slash commands / tools / MCP servers). Everything is data-driven off the SDK, so new Claude Code features light up with zero code changes here.
+A chat needs an agent CLI installed; [connect an agent](connect-an-agent.md) walks through first-time setup, compares chat with a terminal tab, MCP and the daemon's session, and covers restricting what an agent can read.
 
-## What's in here
-
-This page follows one chat session end-to-end, for anyone touching `core/src/chat.ts`, `app/src/chat/chatSession.ts` or `app/src/chat/ChatView.tsx`:
-
-- **Spawning a session** — auth (no API key), the long-lived `query()` process, automatic browser/computer-use for a backend that supports it, and how chat sessions share a store with terminal sessions.
-- **The wire protocol** — the `ChatFrame` union over `/chat`, inline permission prompts, and AskUserQuestion.
-- **The header and controls** — the per-turn manifest, the controls row and model dialog, model/effort persistence, and the session history picker.
-- **The composer** — editor-context injection, image attachments, message rendering, and client-side slash commands.
-- **Supporting code** — the pure frontend modules behind the composer/header, and how a chat tab is routed, commanded, and keybound.
-
-## No API key by design
-
-The driver never makes an API call. `createSession()` (`core/src/chat.ts`) resolves the user's CLI with `whichClaude()` and passes it to the SDK as `pathToClaudeCodeExecutable`:
-
-```ts
-const bin = whichClaude();
-if (!bin) {
-  sink({ type: "error", code: "no-claude", message: "The `claude` CLI was not found. Install Claude Code to use chat." });
-  return null;
-}
+```text
+Mod+Shift+C     open a new chat in its own tab
+Enter           send            Shift+Enter    newline
+Escape          stop the reply  Up / Down      recall earlier messages
+/               commands        @              mention a note
 ```
 
-If `claude` is not on PATH the driver pushes a single `{ type: "error", code: "no-claude" }` frame and returns — it **never falls back to an API**. The session (`app/src/chat/chatSession.ts`) catches that frame and sets `setupError`; `app/src/chat/ChatSetupGate.tsx` (composed by both `ChatView` and the daemon page's `DaemonChat`) reads it and swaps the transcript for one backend-neutral, three-line setup state (`<agent> isn't installed` / `no agent installed`):
+## How do I open a chat?
 
-```ts
-case 'error':
-    setStreaming(false)
-    if (frame.code === 'no-claude') setSetupError('claude')
-    else if (frame.code === 'no-opencode') setSetupError('opencode')
-    else if (frame.code === 'no-binary') setSetupError(provider())
-    else if (frame.code === 'visibility-refused')
-        setGateRefusal({ binary: frame.binary ?? '', message: frame.message })
-    else setTurnError(frame.message || 'Something went wrong.')
-```
+Press `Mod+Shift+C` or run **New Claude Chat** from the command palette. The chat opens in its own tab, or in the focused pane when the tab is already split. Each press opens a new conversation.
+The daemon page also hosts an inline chat with the same composer and controls ([daemon](../daemon/overview.md)).
 
-The screen is the same for every backend and has no icon: line 1 is a heading (`no agent installed` for an `auto` chat with nothing installed, else `<label> isn't installed`, lowercased); line 2 is one row (`app/src/chat/AgentSwitchRow.tsx`) of a default-tone button per OTHER installed backend (from the agent-availability store, `app/src/chat/agentAvailability.ts`, each calling `session.switchProvider(id)`) followed by the **free agent** as a peer, `[free agent]` (`[set up free agent]` when it is the row's only button); line 3 is one muted footnote from `app/src/chat/FreeAgentSetup.tsx` (`runs opencode on free models: no account, about 45 MB, prompts may be kept`, prefixed `free agent ` on an explicit-provider chat). The row's free-agent button is the install trigger; FreeAgentSetup runs `buttonless` here and the palette modal uses its default mode, with its own button. Clicking it runs `runFreeAgentSetup` (`app/src/chat/freeAgentClient.ts`): `POST /agents/free/install`, then polling `GET /agents/free` until `ready` or `error`, with the line `downloading opencode  12 / 45 MB`, `checking the download…` or `installing…` shown meanwhile (error: `couldn't set up the free agent: <message>` and `[try again]`). The routes and the sha256-verified download are in `core/src/freeAgent.ts`. When it is ready, `completeFreeAgentSetup` seeds opencode's global last model with Zen Free (rotating) if unset (`freeAgentDefaults`; it never writes `chat.provider` — `auto` picks an installed opencode by itself, and writing it would override a user's own Codex), hands the fresh status to the agent-availability store (`setAgentStatus`), and re-opens the chat on opencode with no tab reopen: an `auto` chat parked on this screen starts on opencode the moment the store updates, and an explicit chat gets `session.switchProvider('opencode')` (or `retrySetup()` if it was already on opencode) — exactly one reconnect either way. A visibility refusal is its own screen and never offers the free agent.
+A reply keeps streaming when you switch tabs or panes: the connection and transcript live in a session that outlasts the view. Closing the tab ends the session.
 
-Because auth is the user's machine login, the SDK reports `apiKeySource: "none"` (read off the `init` event). In that case the SDK's `total_cost_usd` is a notional, *un-billed* API-equivalent figure, so the driver hides it — the `result` frame's `costUsd` is set to `null` unless `apiKeySource` is something other than `"none"` (real API-key billing):
+## What do I need installed?
 
-```ts
-costUsd:
-  session.apiKeySource === "none" || typeof msg.total_cost_usd !== "number"
-    ? null
-    : msg.total_cost_usd,
-```
+A chat runs a CLI you have installed. Claude Code is the default; any other backend in the catalog works too ([backends](backends.md)). The CLI uses your own login, so Bismuth stores no API key. Because of that, a turn's cost appears in the footer only when Claude Code bills an API key.
 
-## One long-lived session per chat
+If the chat's agent is not installed, the transcript is replaced by a three-line setup screen: a heading (`<agent> isn't installed`, or `no agent installed` for an `auto` chat with nothing installed), a row of one-click switches to every other installed agent plus `[free agent]`, and a footnote.
+`[free agent]` downloads opencode and runs it on free models with no account (about 45 MB, and prompts may be kept); see [opencode providers](opencode-providers.md).
+A vault that restricts notes shows a different screen when the chosen backend cannot enforce the restriction ([visibility](../vault/visibility.md#per-backendper-channel-enforcement)).
 
-The driver keeps a registry of sessions keyed by a client **chat id** (`const sessions = new Map<string, ChatSession>()`), mirroring `core/src/terminal.ts`. The session bundles the SDK `query()` handle, an input mailbox, the current frame sink, the in-flight permission map, and the always-allow set:
+The default for new chats is the `chat.provider` key in `.settings`: `auto` (the default) uses the first installed backend, Claude first, or you can name one. A named backend is never swapped for another.
 
-```ts
-interface ChatSession {
-  id: string;
-  cwd: string;            // the vault dir → query()'s cwd, so `claude` works against the user's notes
-  input: InputQueue;      // push-input mailbox feeding query() as the multi-turn `prompt`
-  q: Query;               // the live query() generator + control surface
-  sink: ChatSink;         // where ChatFrames go (the chat WebSocket)
-  pending: Map<string, PermissionResolver>;
-  alwaysAllow: Set<string>;
-  sessionId: string | null;
-  apiKeySource: string;
-  closeTimer?: ReturnType<typeof setTimeout>;
-}
-```
+## What does the controls row do?
 
-A single `query()` runs for the life of the chat. Its `prompt` is an **async-iterable mailbox** (`makeInputQueue()`): each user turn `push()`es one `SDKUserMessage` onto the queue, and `query()` consumes them in order. A slash command is just text — the CLI runs it. `close()` ends the stream. The query is started with the user's CLI, the user's resolved config, partial-message streaming, and the `claude_code` system-prompt preset:
+The controls row sits under the composer as one line of quiet text. At narrow widths the `history` and `new chat` words drop and only their icons remain.
 
-```ts
-q = query({
-  prompt: input,
-  options: {
-    pathToClaudeCodeExecutable: bin,
-    cwd,
-    includePartialMessages: true,
-    ...(resume ? { resume } : {}),
-    systemPrompt: { type: "preset", preset: "claude_code" },
-    canUseTool: canUseTool as unknown as CanUseTool,
-    allowDangerouslySkipPermissions: true,
-    ...(session.effort ? { effort: session.effort } : {}),
-  },
-});
-```
-
-`permissionMode` is intentionally **not** set — omitting it makes the SDK resolve the *starting* mode from the user's own Claude Code config (the user can still switch it live). The `claude_code` preset is what makes this a *visual Claude Code*: it injects the `<env>` context (working directory, platform, date), loads `CLAUDE.md`, skills, and the full tool guidance, and makes relative paths resolve against `cwd` exactly like the TUI.
-
-`allowDangerouslySkipPermissions: true` **enables** the bypass capability (BUG #60). `bypassPermissions` — whether set at spawn or via the runtime `setPermissionMode` control request — is gated behind this flag: the SDK only passes `--allow-dangerously-skip-permissions` to the CLI when it's true, and without it the CLI silently refuses to enter bypass mode, so `canUseTool` kept firing and every tool call still prompted even after the user selected **Bypass** in the permission-mode control. Enabling the capability does **not** change the starting mode (still resolved from config) — it only lets the client's `set_permission_mode` actually take effect. Visibility stays enforced under bypass because the `managedSettings` deny + `sandbox` `denyRead` are policy-tier and survive the permission mode.
-
-`effort` (reasoning-effort level, FEATURE #63) is applied **live** via `Query.applyFlagSettings({ effortLevel })` when the user picks one in the model dialog, and stashed on the session so a mid-conversation visibility respawn re-applies it through this spawn option. Omitted until a level is chosen.
-
-### Browser / computer-use (`--chrome`)
-
-`--chrome` is **always on** for a backend the catalog says supports it — no setting, no per-chat choice, no client input of any kind decides this. `createSession`'s `query()` options include:
-
-```ts
-...(can('claude', 'computerUse') ? { extraArgs: { chrome: null } } : {}),
-```
-
-`can(provider, capability)` (`core/src/agentBackends/catalog.ts`, imported into `core/src/chat.ts`) reads the capability straight off the backend's catalog entry — `computerUse: true` for the Claude Code backend, `false` for every ACP-based backend and opencode/codex, so unconditional here means "always on for Claude Code, never on for anything else." When it's true, `extraArgs: { chrome: null }` passes a bare `--chrome` boolean flag to `query()`, so the spawned `claude` process can launch and control a **Chromium browser** for Claude's browser/computer-use tools; it requires a Chromium-based browser on the system (Chrome/Edge/Brave). Because it's derived from the backend alone, it's also stable for the life of the session — there is nothing to reconcile or respawn for it, unlike the visibility deny-list or `effort` (see the mid-conversation visibility respawn just above).
-
-There is no `chat.computerUse` setting, no `/chrome` slash command, no header toggle, and no `computerUse` argument on `sendMessage`/`resumeSession`/`openSession` — all of that was deleted alongside this change (`app/src/chatComputerUse.ts` no longer exists).
-
-A background **drain loop** (`drain(session)`) iterates the `query()` generator and translates each SDK message into `ChatFrame`s. It runs until the generator ends (input queue closed or the CLI exited). On any throw — including `query()`'s "Reached maximum number of turns" — it surfaces a friendly `error` frame rather than crashing the server, and (if the session ended on its own) evicts the session so the next `sendMessage` re-spawns a fresh one.
-
-### sendMessage / resumeSession
-
-- **`sendMessage(chatId, text, cwd, sink)`** — the entry point for a user turn. The *first* call for a chatId creates the session and starts the drain loop; every call (first and subsequent) `push`es `text` into the input queue so the CLI runs it as the next turn. On an *existing* session a turn also cancels any pending grace-period teardown, refreshes the sink (a reconnect installs a new socket), and updates `cwd`.
-
-- **`resumeSession(chatId, sessionId, cwd, sink)`** — binds this chatId to an *existing* Claude Code session by passing `options.resume: sessionId` to `query()`. It pushes **no** initial turn: it opens the input queue and starts draining so the resumed session's `init` manifest streams in. If a session already exists for the chatId it is torn down first (`closeChat`) to cleanly re-bind. The next `sendMessage(chatId, …)` continues the resumed conversation normally.
-
-## Unification with terminal sessions
-
-The Agent SDK keeps **one session store per cwd**. Because the chat driver runs `claude` with `cwd: cfg.vault`, the user's *terminal* Claude Code sessions (run from the vault) and their *in-app chat* sessions land in the same store. Three read-only endpoints expose it, and **all three are owner-gated**: `requestChannel(req) !== "owner"` → 403, with no partial/filtered fallback for a non-owner caller. A past transcript has no single vault path to check visibility against — it may quote the contents of any number of notes, hidden or not, across its whole history — so there is no "safe subset" to return the way a row/search-hit list can; the routes refuse outright instead. See `core/src/server.ts` around `GET /chat/sessions` for the routes' own reasoning.
-
-- **`GET /chat/sessions?scope=<user|daemon|all>`** → `listChatSessions(cfg.vault, limit, scope)` → the SDK's `listSessions({ dir: cwd, … })`. Returns `{ sessionId, summary, lastModified, origin }[]`, newest first (the SDK sorts it). Tolerant: returns `[]` if the store can't be read.
-
-  **`scope` picks whose chats.** The vault's daemon runs Claude sessions when its crons fire, with `cwd` = the vault root — so they land in this *same* store and used to (unconditionally) fill the History picker with conversations the user never opened. `scope` defaults to `user` (`parseChatScope` coerces anything absent/unknown to it, never erroring): it subtracts the daemon's own sessions, identified by `readDaemonSessionIds` (`core/src/daemon.ts`) — the pre-daemon behavior. `scope=daemon` is the **dedicated place to access daemon chats**: it returns exactly the sessions the daemon minted (readable in the History picker's own filter, not a second surface). `scope=all` returns both, and every row's `origin` (`"user" | "daemon"`, from `resolveChatOrigin`) is what lets the client mark the daemon's visibly — the `Bot` vs `MessageSquare` icon in `app/src/chat/chatOrigin.ts` `chatOriginIcon`. Note origin/scope are a **membership test against every id the daemon ever minted**, not a comparison against the sibling `session-id` pointer (which names only the daemon's latest run, and so would leave every earlier cron session looking like a user chat).
-
-  That set is the **union of two files**, because the two halves of "every id the daemon ever minted" have different origins:
-
-  | file | written by | covers |
-  | --- | --- | --- |
-  | `<vault>/.daemon/session-ids` | the daemon, as it mints each session (`daemon/src/daemon/sessionIds.ts`) | everything from that mechanism forward |
-  | `<vault>/.daemon/session-ids-legacy` | **core**, once (`core/src/chatDaemonLegacy.ts`) | everything before it — recovered by a one-time scan |
-
-  The second file is what makes this fix *land* rather than merely be correct going forward: the durable set is empty on exactly the machines that have the problem, so on a real vault (the reporting one held 997 sessions — **129 daemon boot sessions + 759 cron sessions = 89% of the picker**) shipping only the set would leave every chat the user complained about listed, aging out over ~30 days. `backfillLegacyDaemonSessions` runs on the first History open and identifies those sessions by the prompts **the daemon itself composed** — not a "does this look automated" heuristic, but an exact match on daemon-authored constants anchored at the transcript's *opening* message (see `chatDaemonLegacy.ts` for the anchors and why they are frozen). It is bounded (reads only each transcript's first message: ~1s for ~1000 sessions), idempotent (the file's existence is the marker), gated on the vault actually having a `.daemon`, and never deletes anything.
-
-  The asymmetry that drives every rule there: a false positive **hides the user's own conversation**, which is far worse than leaving a daemon chat listed. So anything unjudgeable — an assistant-first transcript, an unreadable file, a user merely *discussing* crons — is treated as the user's.
-
-  Because the daemon can mint far more sessions than the user (one per cron fire), the scan **paginates** the store until it has `limit` sessions *of the requested scope* (bounded by a scan cap) — filtering a single fixed page would return an empty picker whenever the newest page happened to be entirely the other scope (e.g. `daemon` on a store where the user's chats are all newest).
-
-  ```ts
-  "GET /chat/sessions": async (_, url) => {
-    return ok({ sessions: await listChatSessions(cfg.vault, undefined, parseChatScope(url.searchParams.get("scope"))) });
-  },
-  ```
-
-- **`GET /chat/session-messages?id=<sessionId>&provider=<p>`** → replays a past session as `ChatFrame[]` *in order*. `provider` is dispatched by `core/src/chatProviders/index.ts`'s `sessionHistoryFrames(sessionId, cwd, provider)` to the matching backend's own store (each backend's session ids are its own namespace) — the default Claude Code path (`core/src/chat.ts`'s `sessionHistoryFrames`) goes through the same `translateSdkMessage` source of truth the live drain loop uses (`live: false`), so history and live render identically; `provider=opencode` replays from the opencode store (`opencode export`) instead. An empty `id` yields an empty replay.
-
-- **`POST /chat/search {query, scope}`** → `searchChatSessions(cfg.vault, query, undefined, parseChatScope(scope))` → `{ hits: ChatSearchHit[] }`. Content search over past sessions (title + message text) — the SDK has no native session search, so this filters the same store `GET /chat/sessions` lists. `scope` mirrors `GET /chat/sessions` so a search only ever searches the list the picker is already showing. An empty query returns no hits. Read-only despite the `POST` verb (the body carries the query) — it lives beside the other reads, not the mutating routes.
-
-The frontend reaches these through `api.chatSessions()`, `api.chatSessionMessages(id)`, and `api.chatSearch()` (`app/src/api.ts`), typed as `ChatSessionInfo { sessionId; summary; lastModified }` / `ChatSearchHit`.
-
-**Also reachable from the CLI**, owner-token-based (added alongside this history unification's HTTP surface): `cli/src/commands/chat.ts`'s `chat list` / `chat read` / `chat search` wrap these three routes. `cli/src/http.ts`'s `call()` attaches `X-Bismuth-Token` — the per-boot secret in `~/.bismuth/run/<vault>.json` (`core/src/runRegistry.ts`, `core/src/ownerToken.ts`) — whenever it can read a matching local run record, which is what makes the CLI present as `requestChannel(req) === "owner"` at all; without a token it 403s exactly like a bare curl. **This is an honesty boundary, not a hard one**: the header-attach logic itself doesn't check who is asking, only whether a token is readable — the separation between "the vault owner's own shell" and "an agent" is `BISMUTH_AGENT_CHANNEL`, an environment variable Bismuth stamps whenever *it* spawns an agent, not a cryptographic boundary. `chat` is deliberately left unclassified in `core/src/visibilityCliGate.ts`'s command tiers, so it refuses under a restricted vault + agent channel like `search`/`api`/`export` do — but a vault that restricts nothing gives that gate nothing to refuse, and the actual stop for a Bismuth-spawned agent is the OS-sandbox deny-read on the run-record file, not this env var. See [CLI reference § Owner identity for server-talking commands](../cli/reference.md#owner-identity-for-server-talking-commands-clisrchttpts) for the full mechanism.
-
-## The ChatFrame wire protocol over `/chat`
-
-The `/chat` WebSocket is a text-JSON protocol. Server → client is the `ChatFrame` union (exported from `core/src/chat.ts`, imported by `app/src/chat/chatSession.ts`, which owns the socket). Client → server is a small command set, discriminated by `type`:
-
-| Client → server | Effect |
-| --- | --- |
-| `{type:"user", text}` | Run a turn — `chatSend()`. Slash commands are just text, with one exception: `/mcp` is answered locally (see below). |
-| `{type:"resume", sessionId}` | Bind this chat to an existing session — `chatResume()`. Its `init` manifest streams back. |
-| `{type:"permission_response", id, behavior, always?}` | Answer a `permission` frame — `chatRespondPermission()`. |
-| `{type:"question_response", id, answers?, cancelled?}` | Answer an AskUserQuestion `question` frame — `chatRespondQuestion()`. `answers` maps each question's text → the chosen answer string (multi-select comma-joined); `cancelled`/no answers skips. |
-| `{type:"set_permission_mode", mode}` | Switch permission mode live — `chatSetPermissionMode()`. |
-| `{type:"set_model", model}` | Switch model live — `chatSetModel()` (the model dialog, populated by the `models` frame). |
-| `{type:"set_effort", effort}` | Switch reasoning-effort level live — `chatSetEffort()` → `Query.applyFlagSettings({ effortLevel })` (the model dialog's effort toggle; options come from the selected model's `effortLevels` in the `models` frame). |
-| `{type:"stop"}` | Interrupt the in-flight turn — `chatAbort()` (leaves the session resumable). |
-
-The `ChatFrame` union (server → client):
-
-- `{type:"manifest", manifest}` — a fresh per-turn manifest from each `system`/`init`.
-- `{type:"user-message", text, images?}` — a past user turn, emitted **only** during history replay (live user messages come from the client, not the wire). `images` carries persisted attachments as `data:` URLs so image(-only) turns survive replay.
-- `{type:"assistant-text", text}` — a delta of assistant prose, streamed from `content_block_delta` text deltas.
-- `{type:"thinking", text}` — a delta of extended-thinking text.
-- `{type:"tool-use", id, name, kind?, input}` — an assistant `tool_use` block. `name` is what the chip is **labelled** with; `kind` is an optional stable machine token for the same call, emitted only by backends that have one (ACP's `ToolCall.kind`: `read`/`edit`/`search`/`execute`/…). The frontend picks the chip's **icon** from `kind` when present and falls back to `name` when it isn't or when `kind` matches no rule — see `app/src/chat/chatToolIcon.ts`. ACP labels by `ToolCall.title`, the same field its permission prompt uses, so one tool is never named two ways in one turn.
-- `{type:"tool-result", id, content, isError}` — the matching user `tool_result` block.
-- `{type:"permission", id, toolName, input}` — `canUseTool` asking the user to approve/deny.
-- `{type:"question", id, questions}` — Claude called **AskUserQuestion**: 1–4 multiple-choice questions the user must answer for the turn to continue (see [Interactive questions](#interactive-questions-askuserquestion)).
-- `{type:"result", isError, numTurns, costUsd}` — a turn ended.
-- `{type:"models", models}` — the models this login can run (`Query.supportedModels()`, fetched once per session after the first init) — populates the model dialog's model list. Each entry also carries `effortLevels` (the model's `supportedEffortLevels`), which drives the dialog's **effort** toggle (FEATURE #63) so it offers exactly the *selected* model's levels — never a hardcoded list, and hidden when the model exposes none — and an optional `free` flag (set by opencode) that becomes the row's `free`/`paid` badge (`modelPriceBadge`).
-- `{type:"title", title}` — the session's conversation summary (`getSessionInfo`), emitted once a non-empty summary exists (retried at each turn-end) — names the chat tab.
-- `{type:"session", sessionId, origin}` — the SDK `session_id` this chat is bound to (`origin` is `"user" | "daemon"`, `ChatOrigin`, which picks the tab's glyph), emitted the moment the drain loop first learns it (and again if it ever changes, e.g. after a resume). The session (`app/src/chat/chatSession.ts`) persists it keyed by the chat **tab** id (`app/src/chat/chatSessionStore.ts`), so **Reopen closed tab** (Cmd+Shift+T) can resume the *same* conversation — a reopened `::chat:` tab reads the remembered `sessionId` on mount and calls `resumeSession()` instead of spawning a blank session. Durable (the CLI's on-disk session store), so it survives a relaunch too.
-- `{type:"context", percentage, totalTokens, maxTokens}` — context-window usage after each completed turn (`Query.getContextUsage()`) — the header's context meter (fill turns danger from 80%).
-- `{type:"done"}` — the turn is fully drained (pushed after `result`).
-- `{type:"auth", providers:[{name, kind}]}` — provider credential state (opencode only, from `opencode auth list`, re-sent per session open). The session stores it as `authProviders` (`setAuthProviders`), but no component renders it today: there is no auth pill, and credentials are managed in the model dialog (see [opencode providers](opencode-providers.md)).
-- `{type:"error", code, message, binary?, restrictedCount?}` — `code` is one of `no-claude` (the `claude` CLI is missing — shows the setup screen), `no-opencode` (the `opencode` CLI is missing — the opencode setup screen), `no-binary` (an ACP agent's or Codex's CLI is missing; `binary` names it — the same setup screen), `visibility-refused` (the vault restricts notes and the chosen backend+channel has no verified enforcement; `binary` names the refused backend, `restrictedCount` is a count only — the session sets a gate-refusal state, see [visibility](../vault/visibility.md#per-backendper-channel-enforcement)), `local-model-unreachable` (`localModel` is on but its server answered nothing — see [local-models.md](local-models.md)), `spawn`/`exit` (child failed), or `error` (an SDK/turn error).
-
-### Locally-answered slash commands: `/mcp` (BUG #39)
-
-Almost every slash command is "just text" — `sendMessage` pushes it into the input queue unmodified and the spawned `claude` CLI does its own detection/expansion, exactly like the TUI. The SDK is well-behaved about unrecognized or non-interactive input: a bogus command comes back as a synthetic assistant reply ("Unknown command: /x"), and a command that's genuinely TUI-only (`/help`, `/status`, `/permissions`, `/mcp`, …) comes back as a synthetic "`/x` isn't available in this environment." — never a crash, never silence. (This is also why `manifest.slashCommands` never lists these TUI-only commands: the SDK's own `init` event only advertises the subset that can do something useful headlessly.)
-
-`/mcp` is the one exception worth a real implementation, since Claude Code's own `/mcp` is genuinely useful (the connected/failed/needs-auth server list with tool counts) but the non-interactive stub throws that away. `isMcpCommand(text)` (`core/src/chat.ts`) matches a bare `/mcp` (no arguments) and, instead of forwarding it, `answerMcpCommand` calls `Query.mcpServerStatus()` directly — the same control-plane call `emitInitManifest` already uses for the header's connected/total count — and renders the result with `formatMcpStatus` (pure, unit-tested in `core/test/chat.test.ts`) as a normal `assistant-text` reply, followed by a synthetic `result`/`done` pair so the client's turn-end handling (including the mid-turn queued-message dispatch) needs no special case. It never touches the real input queue or session transcript: this is introspection of already-live session state, not a conversational turn, so it costs nothing, can't fail against the model, and simply won't appear if that session's history is ever replayed (like the synthetic init-time manifest itself).
-
-### Streaming and de-dup
-
-Assistant prose and thinking are emitted **live** off `stream_event` `content_block_delta` deltas (only present because `includePartialMessages: true`). When the *final* `assistant` message arrives, the drain loop skips its already-streamed text/thinking blocks and emits only its `tool_use` blocks (which have no delta form). The single `translateSdkMessage(msg, { live })` function is the source of truth for both live drain (`live: true`) and history replay (`live: false`).
-
-### Connection lifecycle and resilience
-
-The WS upgrade (`/chat`) enforces the same origin allow-list as `/terminal` (localhost / `tauri://` / `10.x` LAN) and reads a stable `chatId` query param so a reconnect resumes the same session. On WS `open` the server **rebinds the session's sink** to the new socket (`chatRebindSink`), so a reconnect mid-turn keeps the in-flight drain frames (including the turn's tail and `done`) flowing to the live socket. On WS `close`, a clean close (`1000`, intentional tab-close) tears the session down immediately (`closeChat`); an abnormal close (reload `1001`, drop `1006`) detaches the sink (frames buffer instead of firing into the dead socket) and, **only if that detach actually happened**, schedules a grace teardown (`scheduleChatClose`, default 30s, overridable via `BISMUTH_CHAT_GRACE_MS`) so a reconnect resumes the same `claude` conversation. The detach is identity-guarded (`sessionSink.ts`'s `detachSessionSink`, mirroring `uiControl.ts`'s `unregisterWindow`): on a half-open drop the client's new socket can already have reconnected and rebound the session to a newer sink before the stale socket's close event lands (the common ordering, not an edge case — the client session reconnects off its own `onclose` within seconds, while the server sets no WS `idleTimeout`), and a rejected guard skips the teardown too, so the still-live session under the newer sink is never killed out from under it. The client session (`app/src/chat/chatSession.ts`) reconnects with exponential backoff (capped at 8s), pinning `activeChatId`, and stashes a `pendingResume` if a session is picked before the socket is open (flushed on `onopen`). All chat sessions are torn down on process exit / SIGINT / SIGTERM so headless `claude` children don't outlive a backend restart.
-
-## Memory recall in the chat
-
-When the vault's daemon is enabled (`session.memoryDir` set), the chat is wired to the same core recall service that backs `POST /memory/recall` (`core/src/memoryRecall.ts`, `recallServiceFor(session.cwd, session.memoryDir)`), through two SDK hooks passed to `query()`:
-
-- **`UserPromptSubmit`** — mode `prompt`, with the SDK `session_id`, `agent_id` and `transcript_path` from the hook input; the returned context rides as `additionalContext`.
-- **`PostToolBatch`** — mode `tool`, once per batch of parallel tool calls, with the batch's `tool_calls`. The installed SDK (0.3.186) types `PostToolBatch`, so `PostToolUse` is not used. Recall mid-turn sees what the agent just read, searched or ran, so notes the prompt could not name surface while it works.
-
-The service dedups per session: a note shown at the prompt is not injected again by a tool batch unless its content changed. `daemon.recall.{enabled,midTurn,semantic}` in `.settings` are read live per call, so a toggle applies on the next prompt or batch. opencode's per-turn `system` recall calls the same service (mode `prompt`); it has no tool-batch hook.
-
-## Inline permission flow
-
-`canUseTool` fires only for tools **not** already allowed by the user's settings (pre-allowed tools run silently — correct Claude Code behavior). A tool the user chose to *always allow this session* short-circuits via the `alwaysAllow` set; everything else surfaces a `permission` frame and parks the SDK's `canUseTool` promise until the client answers:
-
-```ts
-if (session.alwaysAllow.has(toolName)) {
-  return Promise.resolve({ behavior: "allow", updatedInput: toolInput });
-}
-const id = opts.toolUseID ?? randomUUID();
-return new Promise((resolve) => {
-  session.pending.set(id, ({ behavior, always }) => {
-    if (behavior === "allow") {
-      if (always) session.alwaysAllow.add(toolName);
-      resolve({ behavior: "allow", updatedInput: toolInput });
-    } else {
-      resolve({ behavior: "deny", message: "Denied by the user" });
-    }
-  });
-  session.sink({ type: "permission", id, toolName, input: toolInput });
-});
-```
-
-The client renders an inline `ChatPermissionCard` (`app/src/chat/ChatPermissionCard.tsx`) with three actions — **allow** (`allow`, `always:false`), **allow always** (`allow`, `always:true`), and **deny** (`deny`) — and sends `{type:"permission_response", id, behavior, always}`. `respondPermission()` resolves the parked promise; `always` is remembered per session via `alwaysAllow`. The card then shows the outcome ("Allowed", "Allowed (always)", or "Denied"). On teardown, every pending permission is auto-denied so no `canUseTool` promise dangles.
-
-## Interactive questions (AskUserQuestion)
-
-Claude Code's **AskUserQuestion** tool (interactive multiple-choice questions) works in the visual chat: the assistant asks 1–4 questions with 2–4 options each, the user picks, and the assistant continues with the answer.
-
-**The channel is `canUseTool`, not `onUserDialog`.** AskUserQuestion is a permission-shaped tool: when the model calls it, the SDK delivers a `can_use_tool` control request for it (verified live — the SDK's `onUserDialog`/`request_user_dialog` path, which the interactive TUI uses for the `permission_ask_user_question` dialog, does **not** fire for a programmatic `query()` that supplies a `canUseTool` callback). The driver therefore intercepts the tool inside `canUseTool` (branch on `toolName === ASK_USER_QUESTION_TOOL`) rather than surfacing an "Allow AskUserQuestion?" prompt:
-
-- It normalizes the tool input's `questions` (`extractAskUserQuestions`, pure + tolerant) and emits a `{type:"question", id, questions}` frame, then **parks** the `canUseTool` promise in `session.pendingDialogs` (keyed by the tool-use id).
-- The client renders an interactive `ChatQuestionCard` (`app/src/chat/ChatQuestionCard.tsx`): each question shows its `header` chip, the question text, its options as buttons (with descriptions), an **Other…** free-text input, and **submit** / **skip**. A lone single-select question submits on option click; multi-select shows checkboxes and stages selections behind submit.
-- The client answers with `{type:"question_response", id, answers}` (or `{…, cancelled:true}` to skip). `answers` maps each question's **text** → the chosen answer string; a multi-select is comma-joined, and free-text "Other" rides in as its own answer.
-- `respondQuestion()` resolves the parked promise via `buildAskUserQuestionAnswer(toolInput, answers)` (pure + unit-tested): an answer resolves to `{behavior:"allow", updatedInput:{...input, answers}}` — the AskUserQuestion tool reads `answers` off its updated input to build the result the model sees. A **skip** (null answers) resolves to `{behavior:"allow", updatedInput:input}` **unchanged**, so the tool emits its own "no answer selected" result and the turn continues gracefully rather than erroring.
-
-A pending question naturally **blocks the turn from ending** (the `canUseTool` promise is unresolved, so no `result`/`done` arrives): a follow-up message the user sends meanwhile is staged (dimmed bubble) and dispatched on `done`, exactly like the mid-turn queue. **Stop** (or teardown) cancels every parked question with a deny so no promise dangles, and the card renders a muted "Skipped". Answers clicked while the socket is down queue in `pendingQuestionResponses` and flush on reconnect (the backend's parked promise survives the grace window), mirroring `pendingPermissions`.
-
-## The per-turn manifest
-
-Every `system`/`init` event emits a fresh `manifest` frame — the lists are sourced **entirely from the SDK init**, never hardcoded, so a manifest self-updates each turn and reflects the live CLI:
-
-```ts
-session.sink({
-  type: "manifest",
-  manifest: {
-    model: msg.model,
-    permissionMode: msg.permissionMode,
-    slashCommands: msg.slash_commands ?? [],
-    tools: msg.tools ?? [],
-    mcpServers: (msg.mcp_servers ?? []).map((m) => ({ name: m.name, status: m.status })),
-  },
-});
-```
-
-The header is its own component, **`app/src/chat/ChatHeader.tsx`** (with `ChatHeader.stories.tsx`), and it is deliberately small: it passes only an `identity` crumb (which chat this is, and whose — the daemon-vs-user glyph plus the title) and a `readouts` slot (**`app/src/chat/ChatReadouts.tsx`**) to a `ViewBar` (`app/src/ui/ViewBar.tsx`), taking the `ChatSession` whole rather than individual props. Config and actions are **not** in the header any more — they live in exactly one place, the quiet controls row under the composer (see [The controls row and model dialog](#the-controls-row-and-model-dialog)).
-
-What `ChatHeader` renders:
-
-| Header element | Shows |
-| --- | --- |
-| Identity | The pane title (the tab's custom name, else the session title, else the persona) behind the daemon-vs-user glyph. |
-| Context meter | `context [####......] 42%` — `ui/ascii/AsciiMeter`, fill danger-tinted from 80%. Waits for the first `context` frame; rendered only after the first manifest arrives. |
-| MCP warning | `N mcp server(s) down //` (danger tint), shown **only** while a configured MCP server is not connected (`mcpDownLabel`; "connected" matches `/connect\|ready\|ok/i` on each server's status). There is no standing MCP count and no tool count — `ChatReadouts.tsx` removed both ("nothing a person does changes" the tool count), so the corner is quiet unless something is wrong. |
-
-The manifest still carries `tools` and `mcpServers`; the header just no longer shows them as counts.
-
-The manifest's `slashCommands` drives the composer's `/`-prefix autocomplete: type `/` and the popover filters `manifest().slashCommands` by prefix (single-token only; a space turns it into an argument). Picking a command inserts `"/cmd "` into the draft so the user can add arguments before pressing Enter to send.
-
-## The controls row and model dialog
-
-Provider, model, effort, permission mode, history and new chat sit in **one quiet row of faint mono text directly under the composer** — `app/src/chat/ChatControls.tsx`, passed to `ChatComposerBar`'s `below` slot by `app/src/chat/ChatSessionBody.tsx`. `ChatSessionBody` is shared by the chat tab (`ChatView`) and the daemon page (`DaemonChat`), so both surfaces show one composer and one controls row. Before a session exists (the daemon page before its composer is armed) the same row renders disabled and `inert`, seeded from the same persisted preferences the real session will boot from (`buildDisabledSession`), so arming changes nothing on screen.
-
-The row holds, left to right:
-
-| Control | What it is |
-| --- | --- |
-| Model word | One lowercase word for what is answering (`modelWord()` in `app/src/chat/modelWord.ts`: a backend-supplied label lowercased with context notes shortened — "Opus (1M context)" becomes `opus (1m)`; a raw id is only lowercased; `default model` when none). It is `ChatModelMenu.tsx`'s trigger and opens the model dialog. |
-| Permission mode | A `Select` over the fixed protocol values: Default / Plan / Accept edits / Bypass (`PERMISSION_MODE_OPTIONS`). Rendered only when `providerCan(provider, 'permissionModes')`, never dropped by the narrow-width ladder, and tinted when Bypass is active — the only signal that the session can write to the vault unconfirmed. |
-| `history` | A bracket button (`RotateCcw`, title "Past conversations") that toggles the history dialog. Rendered only when `providerCan(provider, 'sessionPicker')`. See [Session history picker](#session-history-picker). |
-| `new chat` | A bracket button (`Plus`, title "New chat"), always present. |
-
-At narrow widths the row's own `@container chatrow` ladder (`ChatControls.module.css`) drops the `history` / `new chat` words and keeps only their icons.
+| Control | What it does |
+|---------|--------------|
+| Model word | A lowercase word for what is answering, such as `opus (1m)`, or `default model`. Click it to open the model dialog |
+| Permission mode | Default, Plan, Accept edits or Bypass. Shown only for backends with a mode picker |
+| `history` | Opens past conversations. Shown only for backends that can list sessions |
+| `new chat` | Starts a fresh conversation in this tab |
 
 ### The model dialog
 
-The model word opens **`app/src/chat/ChatModelPicker.tsx`** — the one panel for connector, model, effort and (for opencode) provider management, a `FormModal` portaled over the scrim, titled `model // <connector>`, 640px wide. Every pick **applies at once and keeps the dialog open**; only `[x]`, Esc or the backdrop close it.
+The model dialog (titled `model // <connector>`) is the one panel for connector, model, effort and presets. Every pick applies at once and keeps the dialog open; close it with `[x]`, Escape or the backdrop.
 
-- **Left column** — the saved presets (`ChatPresetList`, see the presets note below) above the **connectors** (`CHAT_PROVIDER_OPTIONS`, every non-`hidden` backend in catalog order). Clicking one calls the session's `switchProvider`, which acts like "New chat" on the other connector.
-- **Right column** — the current connector's models as rows, a `▸` on the active one, each with a `free`/`paid` badge when the backend reports one. Grouping is pure and lives in `app/src/chat/modelPickerGroups.ts`'s `groupModels`: opencode model values are `provider/model`, grouped under a lowercase heading by the part before the first `/` and shown with the rest; every other connector is one flat, unnamed list showing the model's own label. With no models reported the column shows `no models reported`.
-- **Effort** — a `SegmentedToggle` with lowercased labels, rendered only when the selected model offers more than one level (`effortOptions().length > 1`).
-- **opencode only** — `OpencodeProviderManager` hosts connect / sign-in rows and the terminal footer in the right column; the manager is documented in [opencode providers](opencode-providers.md).
+- Left column. Your saved presets above the connectors (every backend not hidden from the picker). Clicking a connector switches backend and acts like **new chat**, because a conversation cannot change drivers mid-stream.
+- Right column. The connector's models, `▸` on the active one, with a `free` or `paid` badge when the backend reports one. opencode models are grouped under their provider's name. With no models reported it shows `no models reported`.
+- Effort. A toggle (low, medium, high, extra high, max) listing exactly the levels the selected model offers; it is hidden when the model offers one or none.
+- opencode providers. With the opencode connector selected, the right column also hosts provider sign-in ([opencode providers](opencode-providers.md)).
 
-The model is switchable live from this dialog: the `models` frame (from `Query.supportedModels()`) populates the list, and picking a row sends `{type:"set_model"}`; before the list arrives (or for a single-model login) the word shows the active model and the column shows `no models reported`.
+A **preset** saves a connector, model and effort under a name. `[+ save]` names and saves the current combination (a same-named preset is replaced), and `[x]` on a row deletes it.
+Picking a preset on the same connector switches model and effort in place; on another connector it switches connector and starts a new conversation. Presets live in `.settings` as `chat.presets`, so they belong to the vault.
 
-### Model persistence — per SESSION, two namespaces (Bug #89)
+### Permission modes
 
-Two facts (both verified against a live CLI) shape the model plumbing:
+Every chat starts in **Bypass**, which lets the agent run tools, including writes to your vault, without asking. The Bypass label is tinted as the only warning that the agent is unconfirmed. Switch to Default to get an inline prompt for each tool not already allowed by your Claude Code config:
 
-1. **The picker values and the manifest model are different namespaces.** `Query.supportedModels()` returns short **aliases** (`"default"`, `"sonnet"`, `"haiku"`, `"opus[1m]"` — the `[1m]` suffix is the 1M-context variant, a *distinct* choice), while each `init` manifest reports the **fully-resolved id** the session actually runs (`"claude-haiku-4-5-20251001"`, `"claude-opus-4-8[1m]"`). Every comparison/display therefore goes through `app/src/chat/chatModelResolution.ts` (`modelsCorrespond` / `modelOptionFor` / `modelLabelFor`, pure + unit-tested): a persisted alias *corresponds to* its resolved id (same family, same `[1m]` suffix; `"default"` corresponds to anything), the model dialog's current-model mark is mapped into picker-space, and the effort toggle keys its levels off the mapped value. Without this, the first turn's manifest "adopted" the resolved id over the persisted alias — deselecting the dialog's current model and corrupting the saved choice on every chat.
-2. **A conversation OWNS its model.** `chatSetModel()` persists the choice under the SDK `session_id` in `core/src/chatModelStore.ts` (`~/.bismuth/chat/models.json`, `BISMUTH_CHAT_DIR` overridable, atomic temp+rename, capped) — keyed by the durable *conversation* identity, not the chat tab, and server-side so it survives the packaged app's WKWebView storage. On a resume, `createSession` preloads the saved model (re-applied via `q.setModel()` after spawn, belt-and-braces with the CLI's own per-session model restore) and reports it in the spawn-time synthetic manifest, so a resumed chat's header shows the conversation's own model *before any turn*. The drain loop re-persists the choice whenever the `session_id` changes (a resume can fork a new id).
+- **allow** approves this one call.
+- **allow always** approves that tool for the rest of the session.
+- **deny** refuses it, and the agent sees "Denied by the user".
 
-Client-side precedence (`resolveInitialModel(persisted, reported, resumed)` + `reconcileManifestModel`, both pure): a **resumed** session's manifest model is *adopted* (the tab/global fallback is never enforced over a session's own saved model); a **fresh** session *enforces* the user's persisted last-model over the spawn default (namespace-tolerant, so an alias is never "enforced" against its own resolved form); later manifests reconcile — the resolved form of the current choice is not drift, while a genuine change (a composer `/model` command) is adopted per-tab, mapped into picker-space. The per-chat/global localStorage keys (`bismuth.chat.model.<id>` / `bismuth.chat.lastModel`) remain as the instant header warm-up and the default for brand-new chats.
+Plan and Accept edits follow Claude Code's own meanings. Your last pick carries over to new chats. Closing a chat denies any prompt still open.
 
-> Reasoning effort is switchable the same way (FEATURE #63): the dialog's effort `SegmentedToggle` options are the selected model's `effortLevels` (carried on the `models` frame — never hardcoded), labeled low / medium / high / extra high / max (`EFFORT_LABELS` in `app/src/chat/chatEffort.ts`, lowercased by the dialog). Picking a level sends `{type:"set_effort"}` → `Query.applyFlagSettings({ effortLevel })`, and the choice persists (a transient `bismuth.chat.lastEffort` localStorage key, like the last model) so it's re-pushed to each new/resumed session on its first manifest and sticks across turns. The pure option/label/guard rules live in `app/src/chat/chatEffort.ts` (unit-tested); the toggle hides for a model that exposes no effort levels.
+## How do I write a message?
 
-> **Presets** save a connector + model + effort combination under a name, for the chat tab and the daemon chat alike. They sit at the top of the model dialog's left column, above the connectors (`app/src/chat/ChatPresetList.tsx`) — a preset is a connector plus a model and an effort, so it is picked the same way: each row is the preset's name (its `connector // model // effort` is the tooltip), `▸` marks the one matching what the chat runs now, `[x]` deletes one, and `[+ save]` names and saves the current combination (a same-named preset is replaced). Picking one moves the connector `▸` too, and the right column then shows the model and effort it set. They live in `.settings` as `chat.presets`, so they belong to the vault and can be edited as text. Picking one calls the session's `applyPreset` (`chat/chatSession.ts`): on the same connector it switches model + effort in place (an effort the model does not offer is skipped); on another connector it seeds that connector's model + effort where a fresh session reads them and switches connector — which starts a new conversation, as any connector switch does. The list rules (match, save-replaces-by-name, delete-by-index) are pure in `app/src/chat/chatPresets.ts`.
+The composer is a small markdown editor: live preview, `[[wikilink]]`, `#tag` and `:emoji:` autocomplete, and bold and italic toggles, the same as a note. What you send is the raw markdown source.
 
-## Session history picker
+- Send and stop: `Enter` (or `Mod+Enter`) sends, `Shift+Enter` adds a newline, and `Escape` stops a streaming reply. `Up` and `Down` at the draft's first or last line recall earlier messages, like a shell.
+  The keys are rebindable as `chat-send`, `chat-stop`, `chat-history-prev` and `chat-history-next` in [keybindings](../settings/keybindings.md).
+- Slash commands. Type `/` for the commands the backend reports; the agent runs them as it would in its own TUI. `/mcp` is answered by Bismuth itself and lists connected, failed and needs-auth MCP servers.
+  `/rename <name>` titles the tab (empty reverts to the automatic title), and `/color <swatch|hex|clear>` tints the pane; both stay in the app and never reach the model.
+- Mention a note. Type `@` to search vault files, or drag a note from the file tree onto the chat pane. A referenced file is listed in the message's context for that one send.
+- Attach images. Drop or paste an image. PNG, JPEG, GIF and WebP up to 10 MB each, about 12 MB per message, are sent to the model as images. A slash command cannot carry an image; if one is staged, the send is refused with an inline error.
+- Queue a follow-up. A message sent while a reply streams is staged as a dimmed bubble and sent when the reply finishes. **Stop** restores staged messages and their images into the composer instead of discarding them.
 
-The controls row's **history** button (a `RotateCcw` icon, titled "Past conversations"; rendered only when `providerCan(provider, 'sessionPicker')`) toggles `session.history.open()`, which opens **`ChatHistoryModal`** — the shared `ui/Modal` shell (scrim, focus trap, focus restore, the `ui-dismiss` key) around **`ChatHistoryPanel`** — as a dialog *over* the chat. The transcript and composer stay mounted underneath, so closing the dialog (`×`, the scrim, or Escape) returns to the chat with its scroll and draft untouched. The dialog lists existing Claude Code sessions for the vault — terminal *and* in-app, newest-first — fetched via `api.chatSessions(scope)`. Its single header line is the search prompt with a **you / daemon / all** `SegmentedToggle` (`historyScope`, default `you`), `// [new chat]` and close in the prompt's trailing slot (in a dialog narrower than 480px the scope and new chat drop to a second line). The scope toggle is the dedicated place to access the daemon's cron chats: flipping it re-fetches that scope from the server (see [Unification with terminal sessions](#unification-with-terminal-sessions)) rather than re-filtering the already-fetched list, and resets to `you` each time the dialog opens. The list is grouped under lowercase age labels — `today`, `yesterday`, `past 7 days`, `past 30 days`, `older`: rolling windows from the local calendar day (`app/src/chat/chatHistoryGroups.ts`), hence "past", never "this week". While a query is typed, the groups give way to the content-search hits under an `N matches` label, each hit showing its matching snippet under the title. List rows and hits are one component, `ChatHistoryRow.tsx`. Up/Down from the prompt walk the rows (`ui/popover/createMenuNav.ts`) and Enter resumes the highlighted one. Each row shows a **daemon-vs-user icon** (`chatOriginIcon(s.origin)` — `app/src/chat/chatOrigin.ts`: `Bot` for a daemon session, `MessageSquare` for the user's), the session summary (ellipsized, falling back to "Untitled session"), and a right-aligned relative time ("just now", "5m ago", "2h ago", "3d ago", then a short date). The same icon mirrors onto the chat's own tab/pane-header glyph once a session frame binds this tab to a conversation (`chatOrigin`/`publishChatOrigin`, wired into `tabIds.ts`'s chat icon provider by `App.tsx`). Picking a row calls `resumeSession(sessionId)`, which:
+### What does the agent know about my open notes?
 
-1. clears the transcript (`resetTranscript`),
-2. rehydrates the past turns by fetching `api.chatSessionMessages(sessionId)` and feeding every replayed frame through the **same** `onFrame` that handles live frames, then
-3. binds the live socket to resume that session (`{type:"resume", sessionId}`), or stashes it as `pendingResume` if the socket isn't open yet.
+Every message that is not a slash command is prefixed, invisibly, with an `<editor-context>` block: the active file, the open tabs, any mentioned files, and your current editor selection. The transcript shows only what you typed.
+Notes whose visibility is `hidden` are left out of this block entirely ([visibility](../vault/visibility.md)); `chat-only` notes stay in.
 
-The next message continues that conversation. The **new chat** button (`startNewChat`, the `Plus` icon) swaps to a fresh chat id (`crypto.randomUUID()`) — a brand-new Claude Code session on the next message — and clears the view, without touching the tab. Both reconnect via `reconnectOn(id)`, which detaches the old socket's handlers before closing it so a deliberate switch never leaks a duplicate socket.
+## How do I resume a past conversation?
 
-## Editor context injection
+Click `history` to open a dialog over the chat. It lists existing Claude Code sessions for the vault, terminal and in-app, newest first, grouped under `today`, `yesterday`, `past 7 days`, `past 30 days` and `older`. Type to search message text and titles instead.
+Enter or a click resumes the row, replaying the earlier turns; the next message continues that conversation.
 
-Every non-slash-command turn is prefixed with a compact `<editor-context>` preamble describing what the user is looking at — grounding for Claude, never something the user typed. Two pieces cooperate:
+A **you / daemon / all** toggle chooses whose chats to list; it resets to `you` each time the dialog opens. Chats the vault's daemon started carry a bot icon, and the same icon marks the tab once you resume one. `Mod+Shift+T` (reopen closed tab) on a closed chat resumes its same conversation.
 
-- **`app/src/chat/chatContext.ts`** is a tiny module-level **singleton** mirroring `editorRegistry`, but for "which files is the user looking at": `publishEditorTabs(t: EditorTabsSnapshot)` (`{ openFiles: {path,label}[], activeFile: string | null }`) and `getEditorTabs()`. Plain module state, not reactive — consumers only ever want the freshest value at send time. `App.tsx` calls `publishEditorTabs` from a `createEffect` that re-derives `openContents()`/`focusedContent()` on every tab/pane open/close/focus change, filtering out sentinel content ids (`::graph`, `::chat:…`, terminals, …) via `isSentinel()` so only real note paths count as "open" or "active". The same module also tracks **per-chat file references** (Row 79) — `addChatReference(chatId, path)` / `getChatReferences(chatId)` / `clearChatReferences(chatId)` — the files the user explicitly `@`-mentioned in the composer or dragged onto the chat pane, keyed by chat tab id (capped at 50), folded into the preamble at send time and cleared once the turn is sent.
-- **`app/src/chat/chatEditorContext.ts`** `buildEditorContextText(input)` is the **pure**, unit-tested core of the preamble builder (split out of the old `ChatView` so it's testable headlessly). It takes `{ activeFile, openFiles, selection, selectionPath?, hiddenPaths, referencedFiles? }` and renders the `<editor-context>…</editor-context>` block: an `Active file:` line, an `Open tabs:` line (comma-joined paths), a `Referenced files:` line (Row 79), and, only when there's a live selection, a `Current selection (from <path>):` line with the selected text fenced in a code block. It **drops any path whose resolved AI visibility is "hidden"** (`hiddenPaths`) — active file, open tabs, selection, and references alike — so a hidden note's path/content never reaches the model through this channel (chat-only files stay in; see `docs/vault/visibility.md`). Returns `""` when there's no visible active file, selection, or reference. The session's own `buildEditorContext()` (`app/src/chat/chatSession.ts`) gathers the live inputs (`getEditorTabs()`, the focused CodeMirror selection via `getFocusedSelection()`, `getChatReferences()`) and delegates the string-building here.
+`history` appears only for backends that can list sessions. opencode and Codex conversations still resume per tab but are not in this list. From a shell, `bismuth chat list`, `bismuth chat read <id>` and `bismuth chat search <query>` read the same history ([CLI reference](../cli/reference.md)).
 
-`send()` prepends this preamble to the **wire** text only (`preamble + "\n\n" + text`) — the transcript bubble stores and shows the user's raw typed text, so the context never clutters what the user sees (`app/src/chat/chatSession.ts`'s `send`). It's skipped entirely for a `/slash-command` turn, since Claude Code only recognizes a command at the very start of the message.
+## What does the header show?
 
-Because the SDK persists the literal wire text (preamble included) as the turn's message content, replaying a resumed session would otherwise show the preamble as if the user had typed it. `core/src/chat.ts`'s `stripEditorContext(text)` strips a single leading `<editor-context>\n…\n</editor-context>\n\n` block via regex; `userMessageText()` (used by `translateSdkMessage`'s history path) runs every replayed user message through it before emitting the `user-message` frame, so a replayed bubble shows only what the user actually typed — kept in sync with `buildEditorContext`'s exact shape (a lone `<editor-context>` line … `</editor-context>` then a blank line).
+The chat header names the chat (a `/rename` title, else the conversation's summary) behind a glyph that marks daemon chats.
+Two readouts appear on the right once data arrives: a `context [####......] 42%` meter, which turns danger-toned from 80%, and `N mcp servers down` when a configured MCP server is not connected. When all servers are connected the corner stays quiet.
 
-## Image attachments
+## What goes wrong?
 
-The composer accepts dropped or pasted images, sent alongside (or instead of) text as SDK image content blocks — no OCR/description step, the model sees the actual image.
+- `<agent> isn't installed`: Install the CLI, then reopen the chat, or switch with the row on the setup screen.
+- A refusal screen about hidden notes. The vault restricts notes and the chosen backend cannot enforce that. Switch to Claude Code or lift the restriction ([visibility](../vault/visibility.md#per-backendper-channel-enforcement)).
+- `No local model server answered at <url>`: `localModel` is on and the server is down or lists no models. Start it, or turn the setting off ([local models](local-models.md)).
+- Every tool call prompts, or none do. The permission mode decides: chats start in Bypass. Pick Default for prompts.
+- A reply stops after a reload. The session survives an abnormal disconnect for 30 seconds and the tab reconnects by itself. After that the session is closed; resume the conversation from `history`.
 
-- **Client** (`app/src/chat/ChatComposerBar.tsx` + `app/src/chat/chatSession.ts`): `onComposerDrop`/`onComposerPaste` intercept image `File`s (mirroring `Editor.tsx`'s own image handling) and hand them to `addImageFiles()`, which rejects anything over `MAX_IMAGE_BYTES` (10 MB) or outside `CHAT_IMAGE_MIME` (`image/png|jpeg|gif|webp` — deliberately narrower than the editor's attachment set: no svg/pdf, since those aren't valid SDK `image` blocks) and otherwise stages a base64 `Attachment` (`readImageFile()`, `FileReader.readAsDataURL` with the `data:<mime>;base64,` prefix stripped). Staged attachments render as removable thumbnail chips above the textarea (`chat-attachments`/`chat-attachment` with a remove button); a chat needs *some* content to send — text or ≥1 attachment.
-- **Send-time guards**: a slash command can't carry images — `send()` refuses with an inline error if `text` starts with `/` and attachments are staged (the CLI only expands `/command` for a plain string turn; an array-of-blocks shape would forward it as literal text and silently break the command). `MAX_TOTAL_IMAGE_BYTES` (~12 MB of combined base64) bounds one turn's payload, since Bun silently drops a `/chat` WS frame over ~16 MB, which would otherwise wedge the turn in `streaming()` forever with no reply.
-- **Wire shape**: `{type:"user", text, images?: {media_type, data}[]}` — `data` is base64 without the `data:` prefix. The server validates each entry's `media_type`/`data` are strings before forwarding to `chatSend` (`core/src/server.ts`).
-- **Backend** (`core/src/chat.ts`): `ChatImage { media_type: string; data: string }` flows through `sendMessage(chatId, text, cwd, sink, images?)` → the input queue's `push(text, images)` → `makeUserMessage(text, images)`, which shapes the SDK `SDKUserMessage.message.content`. With **no** images, content is a **plain string** (required so the spawned `claude` CLI still runs its own slash-command detection/expansion — an array-of-blocks shape would be forwarded to the model as literal text and never execute `/compact`, `/clear`, or a custom command). With images, content becomes an **array**: an optional leading `{type:"text", text}` block, then one `{type:"image", source:{type:"base64", media_type, data}}` block per attachment.
-- **Rendering**: the sent images are shown in the user bubble as `data:` URLs (`bubbleImages`) so an image-only turn isn't an empty-looking bubble — rendered via `UserItem.images` in a `chat-user-images` flex row of thumbnails (`app/src/chat/ChatUserTurn.tsx`), separate from the `renderNoteBody` markdown path used for text.
+## How it works
 
-## Rendering
+### One session per chat
 
-Both the user's messages and the assistant's replies render through `renderNoteBody` (`app/src/bases/markdown` — the same markdown pipeline notes use), so a chat reads exactly like the editor (Monaspace, math, code, wikilinks, tags):
+The Claude driver in `core/src/chat.ts` keeps a registry of sessions keyed by a client chat id, mirroring `core/src/terminal.ts`.
+Each session holds one long-lived Agent SDK `query()`, an input mailbox that feeds it turns, the current output sink, the in-flight permission map and the always-allow set. A user turn pushes one `SDKUserMessage` onto the mailbox; `close()` ends the stream.
+`query()` runs `claude` from `whichClaude()` as `pathToClaudeCodeExecutable`, with `cwd` set to the vault and the `claude_code` system-prompt preset, so relative paths and `CLAUDE.md` behave as in the TUI.
 
-```tsx
-<div class="chat-bubble user" innerHTML={renderNoteBody((item as UserItem).text)} />
-...
-<div class="chat-bubble assistant" innerHTML={renderNoteBody(p.part.text)} />
-```
+- No API. A missing `claude` sends `{type: "error", code: "no-claude"}` and returns. The driver never falls back to an API.
+- Cost. With machine-login auth the SDK reports `apiKeySource: "none"` and a notional cost, so the `result` frame sets `costUsd` to `null` unless the source is something else.
+- Permission mode: `permissionMode` is not set at spawn, so the SDK resolves the starting mode from your Claude Code config, and the client then enforces the app default (Bypass) or your last pick with `set_permission_mode`.
+  `allowDangerouslySkipPermissions: true` is required for that: without it the CLI silently refuses to enter bypass and every tool call still prompts. The visibility deny rules are policy-tier, so they hold under Bypass.
+- Effort is applied live with `Query.applyFlagSettings({ effortLevel })` and kept on the session so a visibility respawn re-applies it.
+- Browser use: `--chrome` is passed (as `extraArgs: { chrome: null }`) whenever the catalog says the backend supports computer use, which today means Claude Code. There is no setting or toggle for it, and it needs a Chromium-based browser on the machine.
+- The drain loop: `drain(session)` iterates the `query()` generator and translates each SDK message into frames. An error, including "Reached maximum number of turns", becomes an `error` frame rather than a crash, and a session that ended on its own is evicted so the next send respawns it.
+- `sendMessage` and `resumeSession`: The first `sendMessage` for a chat id creates the session and starts the drain loop; later calls push a turn, cancel any pending teardown, refresh the sink and update `cwd`.
+  `resumeSession` binds a chat id to an existing session with `options.resume`, pushing no turn, so the `init` manifest streams in; an existing session is closed first.
 
-`[[wikilinks]]` in a rendered bubble (emitted as `a.bismuth-wikilink` with a `data-href`) open in-app via a delegated click that dispatches the global `bismuth-open` event. An assistant turn is an ordered list of **parts** — prose (`ChatTextBubble`), collapsible thinking (`ChatThinkingBlock`, raw `<pre>`, not markdown), tool rows (`ChatToolRow`, with input/result detail and a pending spinner), permission cards (`ChatPermissionCard`), and interactive question cards (`ChatQuestionCard`, for AskUserQuestion) — plus an optional muted footer with the turn count and (only on API-key billing) the cost. A streaming turn with no parts yet shows a three-dot thinking indicator.
+On the frontend, `app/src/chat/chatSessions.ts` retains one `ChatSession` (`chatSession.ts`) per open chat id, in its own reactive root, holding the WebSocket, transcript, draft, queue and picker state. `ChatView` is a disposable view over it.
+Only a tab or pane close disposes a session, and its clean `ws.close(1000)` tears the backend session down. A chat tab is a pane content id `::chat:<chat id>` (`CHAT_PREFIX` in `tabIds.ts`) routed by `PaneContent.tsx`.
 
-### The bot's face
+### The /chat WebSocket
 
-The daemon's `.:[00]:.` face (`app/src/daemon/DaemonFace.tsx`, `size="avatar"`) is the bot's avatar in every chat transcript — the chat tab and the daemon page alike. It sits on the **lowest assistant row only**, leading the turn label with the persona name to its right (`chat/ChatTurnLabel.tsx`'s `avatar` slot); every earlier assistant turn shows just the name. While a reply is awaited, the transient `working_` row below the list is the lowest assistant row, so the face moves there. Which row carries it and a plain chat's mood are pure (`app/src/chat/chatAvatar.ts`: `avatarIndex`, `chatAvatarMood`). In the chat tab the mood follows that chat's liveness from `chat/chatActivity.ts` — `thinking` while busy with no text yet, `talking` while text streams, `listening` while a draft is typed, else `idle`; on the daemon page `DaemonChat` passes the daemon's full mood, so `hurt`/`alert`/`asleep` show on the transcript's face too. Once the daemon chat has messages the hub's own face goes, so there is one face on screen.
+`GET /chat?chatId=<id>[&rebind=1]` upgrades to a text-JSON protocol, behind the same origin allow-list as `/terminal`. The client sends commands discriminated by `type`.
+The `open`, `user` and `resume` messages also carry an optional `provider`, which the server resolves with `resolveBackendId` before routing.
 
-## The composer (`app/src/chat/ChatComposer.tsx`)
+| Client message | Effect |
+|----------------|--------|
+| `{type: "open"}` | Spawn the session now, so the manifest, model list and permission mode stream before the first message. No-op when a session exists |
+| `{type: "user", text, images?}` | Run a turn. `images` is `{media_type, data}[]`; entries with an unsupported MIME type or empty data are dropped |
+| `{type: "resume", sessionId}` | Bind to an existing session |
+| `{type: "permission_response", id, behavior, always?}` | Answer a `permission` frame |
+| `{type: "question_response", id, answers?, cancelled?}` | Answer a `question` frame; `answers` maps each question's text to the chosen string, multi-select comma-joined |
+| `{type: "set_permission_mode", mode}` | Switch permission mode live |
+| `{type: "set_model", model}` | Switch model live |
+| `{type: "set_effort", effort}` | Switch effort live |
+| `{type: "stop"}` | Interrupt the in-flight turn, leaving the session resumable |
 
-The message input is **not a plain textarea** — it's a single-purpose **CodeMirror** editor (`app/src/chat/ChatComposer.tsx`) that reuses the *same* shared markdown stack the note editor and table cells run (`markdownEditingExtensions` — live preview, markdown, math, `[[wikilink]]`/`#tag`/`:emoji:` autocomplete, bold/italic toggles), so the draft live-previews exactly like the note body while still round-tripping raw **markdown source** to the backend (never rendered HTML). It behaves as a plain input: **Enter** sends, **Shift+Enter** inserts a newline, paste/drop intake keeps working. Beyond the shared stack the composer adds only a highest-precedence keydown handler (delegated back to `app/src/chat/ChatComposerBar.tsx` so slash-command nav / stop-on-Escape / prompt-history stay owned there — but *deferred* to CodeMirror while the vault autocomplete popup is open so it owns Arrow/Enter/Escape/Tab), two-way `value`/`onInput` binding, an imperative `{ focus, scrollIntoView }` handle, and a composer-only **`@file` mention** switcher (Row 79a) over every vault file whose pick calls `onFileMention(path)` → `addChatReference`. It computes the caret's first/last-visual-line **boundary** via CodeMirror's wrap-aware `moveVertically` so prompt-history recall only fires at the composer's top/bottom edge. Staged image attachments render as removable thumbnail chips above it.
+The server answers with `ChatFrame` messages, exported from `core/src/chat.ts`:
 
-## Client-side slash commands
+| Frame | Meaning |
+|-------|---------|
+| `manifest` | Per-turn `{model, permissionMode, slashCommands, tools, mcpServers}` from each SDK `init`; drives `/` autocomplete and the MCP-down readout |
+| `assistant-text`, `thinking` | Streamed deltas |
+| `user-message` | A past user turn, sent only during history replay; carries persisted images as `data:` URLs |
+| `tool-use` | `{id, name, kind?, input}`; `name` labels the chip and the optional `kind` (`read`, `edit`, `search`, `execute`, from ACP) picks its icon |
+| `tool-result` | `{id, content, isError}` |
+| `permission` | `{id, toolName, input}`: asks the user to approve or deny |
+| `question` | `{id, questions}`: 1 to 4 multiple-choice questions |
+| `result`, `done` | A turn ended (`isError`, `numTurns`, `costUsd`), then fully drained |
+| `models` | The models this login can run, each with `effortLevels` and an optional `free` flag; sent once per session |
+| `title` | The conversation summary, which names the tab |
+| `session` | `{sessionId, origin}`; the client stores it by tab id so reopening resumes the conversation |
+| `context` | `{percentage, totalTokens, maxTokens}` after each turn |
+| `auth` | opencode credential state; stored, not rendered |
+| `error` | `{code, message, binary?, restrictedCount?}` with `code` one of `no-claude`, `no-opencode`, `no-binary`, `visibility-refused`, `local-model-unreachable`, `spawn`, `exit` or `error` |
 
-Two slash commands are **intercepted client-side** by the session (`app/src/chat/chatSession.ts`'s `applyLocalCommand`) before a turn is sent — they act on the chat tab and never reach the model. `app/src/chat/chatSlashCommands.ts` (pure, unit-tested) parses them:
+`visibility-refused` carries a count of restricted notes and never their names. `no-binary` names a missing Codex or ACP CLI; the chat session maps all three missing-binary codes to the setup screen.
 
-- **`/rename <name>`** — set a custom title on this chat tab (empty arg reverts to the auto label).
-- **`/color <swatch|hex|clear>`** — tint this chat's pane. The raw token is resolved by `resolveChatColorArg` in `app/src/chat/chatColors.ts` (a named swatch like `blue`, a `#rgb`/`#rrggbb` hex, or a clear keyword `none`/`clear`/`off`/`default`/`reset` → revert); an unknown token surfaces an error rather than silently doing nothing.
+Assistant prose and thinking stream from `content_block_delta` events (`includePartialMessages: true`). When the final `assistant` message arrives, the loop skips blocks already streamed and emits only its `tool_use` blocks.
+The single `translateSdkMessage(msg, { live })` function serves both the live loop (`live: true`) and history replay (`live: false`), so a replayed conversation renders like a live one.
 
-`withClientSlashCommands(commands)` splices these names into the composer's `/`-autocomplete list (appended after the backend manifest's own, deduped) so they're offered from the moment the chat opens — the client analogue of `core/src/chat.ts`'s `LOCAL_SLASH_COMMANDS`/`withLocalSlashCommands` (which is for backend-answered commands like `/mcp`).
+### Messages, permissions and questions
 
-## Supporting frontend modules (pure, unit-tested)
+`makeUserMessage` shapes the SDK message. With no images, the content is a plain string, which the CLI needs to run its own slash-command expansion; an array of blocks would reach the model as literal text and `/compact` would never run.
+With images, content is an array: an optional text block, then one base64 image block per attachment. Bun silently drops a `/chat` frame over about 16 MB, which would leave a turn waiting forever, so the client caps one message's images at about 12 MB.
 
-The chat's rules are factored into small pure modules so they're testable without a live session, CodeMirror, localStorage, or a Solid signal; the stateful half lives in `app/src/chat/chatSession.ts` and the markup in the `app/src/chat/` components (`ChatHeader`, `ChatControls`, `ChatTranscript`, `ChatComposerBar`, …), each covered by stories rather than unit tests. The controls are the biggest consumer of several of these, especially `chat/chatProvider.ts` and `chat/chatModelResolution.ts`:
+`canUseTool` fires only for tools your Claude Code settings do not already allow. A tool in the session's `alwaysAllow` set returns allow at once. Otherwise the driver emits a `permission` frame and parks the promise until `permission_response` arrives; teardown denies every parked prompt.
 
-- **`app/src/chat/chatProvider.ts`** — provider-choice helpers the model dialog, the controls row and the setup screen need: `CHAT_PROVIDER_OPTIONS` (every non-`hidden` backend from the catalog, in catalog order), `sanitizeChatProvider`/`providerStorageKey` (persist and guard a chat tab's chosen backend), `modelStorageKeys(provider, chatId)` (backend-scoped model-key namespacing — a Claude model id must never seed an opencode session's `-m` flag, so each backend keeps its own per-chat + global localStorage keys, with Claude and opencode kept on their original unsuffixed/`oc`-suffixed keys for backward compatibility), `providerCan(provider, cap)` (the generic capability lookup every gated control uses, replacing the old `provider === "claude"` check), `providerLabel`/`providerInstallHint`, and opencode-specific formatting (`modelPriceBadge` for the model dialog's free/paid badge).
-- **`app/src/chat/chatComposerKeys.ts`** — `classifyComposerKey(event, state)` decides what a composer keystroke *means* from the key + composer state, encoding the precedence: the slash popover owns nav first (`slash-nav`/`slash-select`), then a streaming-turn **Escape** interrupts (`stop`), then plain **Enter** sends (`send`), then ArrowUp/ArrowDown at the composer's top/bottom boundary recall prompt history (`history-up`/`history-down`), else `pass` (Shift+Enter newline, ordinary typing) falls through to CodeMirror.
-- **`app/src/chat/chatHistory.ts`** — shell-style prompt-history cursor: `buildHistoryEntries(sentTexts)` (oldest→newest, collapsing consecutive duplicates) plus `historyUp`/`historyDown` state-machine moves that stash the in-progress draft on first arrow-up and restore it on arrow-down past the newest entry (`HISTORY_BOTTOM` = resting state).
-- **`app/src/chat/chatQueueRestore.ts`** — `restoreQueuedComposerState(queued, current)`: when **Stop** is pressed mid-turn, still-queued follow-up messages (and their staged images) are restored *into the composer* — prepended above the current draft, blank-line separated — instead of discarded (Row 83).
-- **`app/src/chat/chatModelResolution.ts`** — `resolveInitialModel(persisted, reported)` keeps a session's spawn-default model from clobbering the user's persisted per-chat choice on the first manifest (Bug #89): `{adopt}` when nothing is persisted, `null` when already in sync, `{enforce}` to re-push the user's real choice.
-- **`app/src/chat/chatPermissionMode.ts`** — the permission modes (`default`/`plan`/`acceptEdits`/`bypassPermissions`), the app-level default (`bypassPermissions` — every chat starts in Bypass, BUG #14), `sanitizePermissionMode` (guard a persisted value), and `reconcilePermissionMode(desired, reported)` which stops a re-reported spawn default from reverting the user's chosen mode while still honoring a genuine server transition out of plan mode (FEATURE #35).
-- **`app/src/chat/chatEffort.ts`** — the reasoning-effort picker's data (FEATURE #63): `EFFORT_LABELS` (Low/Medium/High/Extra high/Max), `effortLabel`, `sanitizeEffort(raw, allowed)` (coerce a persisted level against what the selected model actually allows), and `effortOptionsForModel(modelValue, models)` (the picker's options are exactly that model's `effortLevels` from the `models` frame — never hardcoded; `[]` hides the picker).
-- **`app/src/chat/chatSessionStore.ts`** — `rememberChatSession`/`recallChatSession` persist each chat **tab** id → its SDK `session_id` in localStorage (via `createChatKeyedStore`'s `upsertEntry`/`lookupEntry`, capped 50), so **Reopen closed tab** (Cmd+Shift+T) resumes the *same* conversation instead of a blank one.
-- **`app/src/chat/chatColors.ts`** — per-chat pane tint keyed by tab id, persisted in localStorage and signal-backed for live re-tint: `CHAT_COLOR_SWATCHES` (8 preset hues), a `createChatKeyedStore` list (capped 200), `resolveChatColorArg` (for `/color`), and reactive `chatColor(chatId)`/`setChatColor(chatId, color)`. The value is washed into the pane's `--bg` via `color-mix`.
-- **`app/src/chat/chatTitles.ts`** — a signal-backed per-tab title registry (`chatTitle`/`publishChatTitle`, keyed by tab id) populated from the backend's `title` frames, plus `resolveChatHeaderTitle(rename, title, fallback)` which matches the tab-label precedence (an explicit `/rename` override wins, else the backend session summary, else the daemon-persona / "Chat" fallback) so the header crumb and the tab agree.
+AskUserQuestion arrives through the same `canUseTool` channel, not `onUserDialog`, which does not fire for a programmatic `query()`. The driver intercepts the tool, normalizes its questions (`extractAskUserQuestions`), emits a `question` frame and parks the promise.
+`buildAskUserQuestionAnswer` then returns `{behavior: "allow", updatedInput: {...input, answers}}`; a skip returns the input unchanged so the tool reports "no answer selected" and the turn continues.
+A pending question blocks the turn from ending, so a follow-up sent meanwhile is staged and dispatched on `done`. Stop cancels every parked question.
 
-## Tab routing, command, and keybinding
+`/mcp` is the one slash command answered locally. `isMcpCommand` matches a bare `/mcp`, and `answerMcpCommand` calls `Query.mcpServerStatus()`, formats it with `formatMcpStatus`, and emits an `assistant-text` reply followed by a synthetic `result` and `done`.
+It never touches the input queue or the transcript, so it does not appear in replayed history.
 
-A chat tab is a sentinel pane content id: `CHAT_PREFIX + "<chat id>"`, where `CHAT_PREFIX = "::chat:"` (`app/src/tabIds.ts`). It labels as **"Chat"** with a `MessageSquare` icon (`contentLabel` / `contentIcon`). `PaneContent.tsx` routes `path.startsWith(CHAT_PREFIX)` to a lazily-loaded `<ChatView chatId={path.slice(CHAT_PREFIX.length)} />`.
+### Editor context and memory recall
 
-**The session outlives the view.** App computes every open chat id (plus `::chat:daemon` once the daemon page's composer is armed by a trusted gesture) and hands the set to `retainChatSessions(ids)` (`app/src/chat/chatSessions.ts`) from an effect. Each retained id gets ONE `ChatSession` (`app/src/chat/chatSession.ts`) in its own `createRoot` — the `/chat` WebSocket, transcript store, draft, queue and picker state — and `ChatView` is a disposable view over `chatSession(id)`. So a tab or pane switch unmounts the inline `ChatView` while the socket, streaming turn and draft carry on; only an id leaving the set (a genuine tab/pane close) disposes its session, whose clean `ws.close(1000)` tears the backend session down. There is no chat overlay and no `data-chat-host` placeholder. The view is composed of `chat/ChatHeader.tsx`, `chat/ChatTranscript.tsx` and `chat/ChatComposerBar.tsx` — the same composer bar the daemon page uses.
+`app/src/chat/chatContext.ts` holds the freshest list of open files, the active file and per-chat `@` references; `App.tsx` publishes it on every tab change, filtering out non-note tabs.
+`buildEditorContextText` (pure, in `chatEditorContext.ts`) renders the block and drops any path whose resolved visibility is `hidden`. `send()` prepends it to the wire text only, and skips it for a slash command, since Claude Code recognizes a command only at the start of a message.
+`stripEditorContext` removes the block again when a session is replayed, so a past bubble shows only what you typed.
 
-The **`new-claude-chat`** command (catalog entry in `core/src/commands.ts`, label "New Claude Chat", icon `MessageSquare`; bound in `app/src/commands.ts`) runs `newClaudeChat` in `App.tsx`, which opens it in its own tab, or into the focused pane when the active tab is already split (`openTool`):
+When the vault's daemon is enabled, the driver passes two SDK hooks to `query()` that call the core recall service (`recallServiceFor`, `core/src/memoryRecall.ts`): `UserPromptSubmit` (mode `prompt`) and `PostToolBatch` (mode `tool`, once per batch of parallel tool calls).
+The service dedups per session, so a note shown at the prompt is not injected again unless its content changed. The `daemon.recall.{enabled,midTurn,semantic}` settings are read live on every call. opencode's per-turn `system` recall uses the same service in mode `prompt`.
 
-```ts
-const newClaudeChat = () => openTool(CHAT_PREFIX + crypto.randomUUID())
-```
+### Connection lifecycle
 
-Its default keybinding is **`Mod+Shift+C`** (`core/src/keybindings.ts`, id `new-claude-chat`: "Open a new Claude Code chat session in its own tab."), dispatched in `App.tsx` via `matchesKeybinding(e, kb["new-claude-chat"])`.
+A reconnect with the same `chatId` rebinds the session's sink (`chatRebindSink`), so frames from a turn in flight keep arriving. On socket close, code `1000` (an intentional tab close) tears the session down at once (`closeChat`).
+An abnormal close (reload `1001`, drop `1006`) detaches the sink, so frames buffer, and schedules a teardown after a grace period (`BISMUTH_CHAT_GRACE_MS`, default 30 s).
+The detach is identity-guarded: on a half-open drop the client's new socket may already have rebound the session, and the stale close must not kill it. The client reconnects with exponential backoff capped at 8 s and holds a `pendingResume` for a session picked before the socket opens.
+Every session is closed on process exit, so headless `claude` children do not outlive a backend restart.
 
----
+### Models and effort
 
-Source: `core/src/chat.ts`, `core/src/server.ts` (`/chat` WS + `GET /chat/sessions` + `GET /chat/session-messages` + `POST /chat/search`), `core/src/chatProviders/index.ts` (`sessionHistoryFrames` provider dispatch), `core/src/agentBackends/catalog.ts` (`can`/`computerUse`), `core/src/ownerToken.ts` + `core/src/runRegistry.ts` (the owner-token gate these three routes enforce), `app/src/chat/ChatView.tsx`, `app/src/chat/ChatHeader.tsx`, `app/src/chat/ChatReadouts.tsx`, `app/src/chat/ChatControls.tsx`, `app/src/chat/ChatModelMenu.tsx`, `app/src/chat/ChatModelPicker.tsx`, `app/src/chat/modelPickerGroups.ts`, `app/src/chat/modelWord.ts`, `app/src/chat/ChatSessionBody.tsx`, `app/src/chat/ChatSetupGate.tsx`, `app/src/chat/ChatPermissionCard.tsx`, `app/src/chat/ChatQuestionCard.tsx`, `app/src/chat/ChatHistoryModal.tsx`, `app/src/chat/ChatHistoryPanel.tsx`, `app/src/chat/ChatHistoryRow.tsx`, `app/src/chat/chatHistoryGroups.ts`, `app/src/chat/ChatComposer.tsx`, `app/src/chat/chatContext.ts`, `app/src/chat/chatEditorContext.ts`, `app/src/chat/chatComposerKeys.ts`, `app/src/chat/chatHistory.ts`, `app/src/chat/chatQueueRestore.ts`, `app/src/chat/chatSlashCommands.ts`, `app/src/chat/chatProvider.ts`, `app/src/chat/chatModelResolution.ts`, `app/src/chat/chatPermissionMode.ts`, `app/src/chat/chatEffort.ts`, `app/src/chat/chatSessionStore.ts`, `app/src/chat/chatColors.ts`, `app/src/chat/chatTitles.ts`, `app/src/chat/chatOrigin.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/commands.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `cli/src/commands/chat.ts`, `cli/src/http.ts`.
+Two namespaces matter. `Query.supportedModels()` returns short aliases (`default`, `sonnet`, `haiku`, `opus[1m]`), while each `init` manifest reports the fully resolved id the session runs.
+`chatModelResolution.ts` (`modelsCorrespond`, `modelOptionFor`, `modelLabelFor`) maps between them, so the resolved id is never mistaken for drift and never replaces your saved alias.
+
+A conversation owns its model. `chatSetModel()` stores the choice under the SDK `session_id` in `core/src/chatModelStore.ts` (`~/.bismuth/chat/models.json`, `BISMUTH_CHAT_DIR` overrides the directory, written atomically and capped), so it survives the packaged app's webview storage.
+On resume, `createSession` preloads that model and the spawn-time manifest reports it, so the header is right before any turn.
+On the client, a resumed session adopts its manifest's model; a fresh one enforces your last choice over the spawn default; a later genuine change, such as `/model`, is adopted per tab.
+The `bismuth.chat.model.<id>` and `bismuth.chat.lastModel` localStorage keys are the instant warm-up and the default for new chats.
+
+Effort works the same way: the toggle options are the selected model's `effortLevels` from the `models` frame (`chatEffort.ts`), and a pick sends `set_effort`. The last choice persists and is re-pushed to each new or resumed session on its first manifest.
+
+### Unification with terminal sessions
+
+The Agent SDK keeps one session store per `cwd`. The driver runs `claude` with `cwd` set to the vault, so terminal Claude Code sessions run from the vault and in-app chats share a store.
+Three routes, defined in `core/src/routes/agents.ts`, expose it, and all three are owner-only: any caller whose `requestChannel(req)` is not `owner` gets 403. A past transcript can quote any number of notes, hidden or not, so there is no filtered subset to return.
+
+- `GET /chat/sessions?scope=<user|daemon|all>` returns `{ sessionId, summary, lastModified, origin }[]`, newest first. `scope` defaults to `user`; `parseChatScope` coerces anything absent or unknown to it.
+- `GET /chat/session-messages?id=<sessionId>&provider=<p>` replays a session as ordered `ChatFrame[]`. `sessionHistoryFrames` dispatches by provider to that backend's own store; the Claude path uses `translateSdkMessage` with `live: false`, and opencode replays from its store.
+  An empty `id` returns an empty replay.
+- `POST /chat/search {query, scope}` returns `{ hits }`, matching title and message text over the same store the list shows. It is a read despite the verb. An empty query returns no hits.
+
+The daemon runs Claude sessions with the vault as `cwd`, so its sessions land in this store too. `scope=user` subtracts them and `scope=daemon` returns only them.
+The daemon's ids come from the union of two files: `<vault>/.daemon/session-ids`, written by the daemon as it mints each session, and `<vault>/.daemon/session-ids-legacy`, written once by core (`core/src/chatDaemonLegacy.ts`) from a scan that recognizes sessions by the exact prompts the daemon composed.
+A wrong match would hide your own conversation, so anything undecidable, such as an assistant-first transcript or a user merely discussing crons, counts as yours. The list paginates until it has `limit` sessions of the requested scope.
+
+The CLI's `chat list`, `chat read` and `chat search` (`cli/src/commands/chat.ts`) wrap these routes. `cli/src/http.ts` attaches the per-boot owner token from `~/.bismuth/run/<vault>.json` when it can read it, which is what makes the CLI count as the owner.
+The separation between your shell and an agent is `BISMUTH_AGENT_CHANNEL`, an environment variable Bismuth sets when it spawns an agent, not a cryptographic boundary. `chat` is left unclassified in `core/src/visibilityCliGate.ts`, so a restricted vault refuses it under an agent channel.
+For a Bismuth-spawned agent, the real stop is the OS-sandbox deny-read on the run-record file.
+
+### Frontend modules
+
+The chat's rules sit in pure modules under `app/src/chat/`, each unit-tested, with the stateful half in `chatSession.ts` and the markup in components covered by stories.
+
+| Module | Rule it owns |
+|--------|--------------|
+| `chatProvider.ts` | `CHAT_PROVIDER_OPTIONS`, `resolveChatProvider`, `providerCan`, per-backend model-key namespacing (a Claude model id must never seed an opencode `-m` flag) |
+| `chatComposerKeys.ts` | `classifyComposerKey`: slash popover first, then Escape-to-stop, then send, then history recall, else pass to CodeMirror |
+| `chatHistory.ts` | Prompt-history cursor that stashes the draft on the first Up |
+| `chatQueueRestore.ts` | Stop restores queued messages into the composer |
+| `chatPermissionMode.ts` | Mode values, the Bypass default, `reconcilePermissionMode` so a re-reported spawn default does not revert your pick |
+| `chatSessionStore.ts` | Tab id to SDK session id, so Reopen closed tab resumes |
+| `chatColors.ts`, `chatTitles.ts` | Per-tab tint and title precedence (rename, then summary, then fallback) |
+| `chatImageIntake.ts` | The image MIME whitelist and size limits |
+| `chatPresets.ts` | Preset list rules |
+
+Messages render through `renderNoteBody`, the same markdown pipeline notes use, so math, code and wikilinks work; a `[[wikilink]]` in a bubble opens in the app. The daemon's face is the bot's avatar on the lowest assistant row, with a mood from `chatActivity.ts`.
+
+Source: `core/src/chat.ts`, `core/src/chatModelStore.ts`, `core/src/chatDaemonLegacy.ts`, `core/src/memoryRecall.ts`, `core/src/routes/agents.ts`, `core/src/server.ts` (the `/chat` WebSocket), `core/src/chatProviders/index.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `cli/src/commands/chat.ts`, `cli/src/http.ts`, `app/src/chat/` (`ChatView.tsx`, `ChatControls.tsx`, `ChatModelPicker.tsx`, `ChatSetupGate.tsx`, `ChatComposer.tsx`, `ChatHistoryModal.tsx`, `chatSession.ts`, `chatSessions.ts`), `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`

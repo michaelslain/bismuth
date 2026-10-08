@@ -1,404 +1,115 @@
-# Flashcards View
+# Flashcards view
 
-The flashcards view is a spaced-repetition review UI over a base's rows. It is one of the twelve `ViewType` values (`"flashcards"`) and renders via `FlashcardsView.tsx`. Each row represents one card: a prompt side (front), an answer side (back), and three SM-2 scheduling columns (due date, ease factor, interval). The view handles due-card filtering, queue management, grading, bidirectional review, cram mode, in-session editing, and bulk card creation, all through standard base row operations.
+A flashcards view reviews a base's rows as spaced-repetition cards: each row is one card with a front, a back and three scheduling columns the reviewer fills in. How grades change the schedule (SM-2), and the separate markdown-card syntax, live in [Flashcards and spaced repetition](../../flashcards/srs.md).
 
-For the SM-2 scheduling algorithm and the markdown-card (`?`/`??`) code path see [../../../flashcards/srs.md](../../flashcards/srs.md).
-
-**In this doc:** view config fields → the row column schema a card deck needs → the review queue and its pure helper functions → grading, bidirectional mode, and cram mode → the session progress bar and card rendering → the single-card and deck-wide edit modals → the API calls a review makes → empty states → edge cases.
-
----
-
-## View Configuration
-
-Make a `type: base` file a flashcards deck by setting `view: flashcards`; the view keys sit at the top level of the frontmatter:
-
-```yaml
+```markdown
 ---
 type: base
-source: notes where file.hasTag("vocab")
 view: flashcards
-frontField: front
-backField: back
-dueField: due
-easeField: ease
-intervalField: interval
-bidirectional: false
 ---
+- front: hola
+  back: hello
+- front: casa
+  back: house
 ```
 
-All fields below are defined in `ViewConfig` (`core/src/bases/types.ts`).
+The rows sit in the base file's own body, as a YAML list. Both cards are new, so both are due now. Grading one writes `due`, `ease` and `interval` onto its row.
 
-### `frontField` (string, default `"front"`)
+## Flashcards config keys
 
-The row column used as the card's prompt (the side shown first). Any string value is rendered as markdown.
+Every key below is a top-level frontmatter key beside `view: flashcards`. Each names a row column; the base settings panel (the gear in the view bar) binds all of them without editing YAML.
 
-### `backField` (string, default `"back"`)
+| Key | Type | Allowed values | Default | Effect |
+|---|---|---|---|---|
+| `frontField` | string | any column name | `front` | Column shown first; rendered as markdown |
+| `backField` | string | any column name | `back` | Column revealed on flip; rendered as markdown |
+| `dueField` | string | any column name | `due` | Next review date, `YYYY-MM-DD` |
+| `easeField` | string | any column name | `ease` | Ease factor, written by the reviewer |
+| `intervalField` | string | any column name | `interval` | Interval in days, written by the reviewer |
+| `bidirectional` | boolean | `true`, `false` | `false` | Review every card both ways, each with its own schedule |
 
-The row column used as the answer (the side revealed after Space). Rendered as markdown.
+A card is due when its due column is missing, empty, or a date on or before today. A card with only `front` and `back` is new and due at once; you never write `due`, `ease` or `interval` yourself.
 
-### `dueField` (string, default `"due"`)
+## Review both directions
 
-The ISO-8601 date string column (`YYYY-MM-DD`) that stores when the card is next due. A card is included in the queue when:
+`bidirectional: true` puts every row in the queue twice: front → back and back → front. The reverse direction keeps its own schedule in companion columns named by appending `Back` to each scheduling column:
 
-- the column is missing or null → treated as a new card (always due)
-- the column value is `""` (empty string) → always due
-- the string value is `<= today` → due
-
-Cards with a future date string are excluded from the normal queue (but included in cram mode).
-
-### `easeField` (string, default `"ease"`)
-
-Integer percentage (e.g. `250` = 2.5×) tracking the card's difficulty multiplier in the SM-2 algorithm. Missing/empty on a new card; initialized on first review. Minimum value enforced by the scheduler is `130` (1.30×).
-
-### `intervalField` (string, default `"interval"`)
-
-Integer day count for the current review interval. Missing/empty on a new card.
-
-`frontField`, `backField`, `dueField`, `easeField` and `intervalField` are all bound in the view's settings panel (the gear in the view bar, under column mapping) — no YAML edit needed.
-
-### `bidirectional` (boolean, default `false`)
-
-When `true`, every row produces **two** queue entries: a forward entry (front → back) and a reverse entry (back → front). Each direction is scheduled independently using separate companion columns — see [Bidirectional Mode](#bidirectional-mode) below.
-
----
-
-## Column Schema for a Flashcards Base
-
-A minimal base file whose rows are cards needs these frontmatter columns. Only `front` and `back` are required to create cards; the scheduling columns are written by the reviewer on first grade.
-
-| Column | Type | Required | Description |
+| Direction | Due | Ease | Interval |
 |---|---|---|---|
-| `front` | text | yes | Prompt shown on card face. Markdown rendered. |
-| `back` | text | yes | Answer revealed after Space. Markdown rendered. |
-| `due` | date (`YYYY-MM-DD`) | no | Next review date. Empty = new card (always due). |
-| `ease` | number | no | SM-2 ease factor (integer %). Empty = new card. |
-| `interval` | number | no | SM-2 interval in days. Empty = new card. |
-| `dueBack` | date | bidirectional only | Due date for the reverse direction. |
-| `easeBack` | number | bidirectional only | Ease factor for the reverse direction. |
-| `intervalBack` | number | bidirectional only | Interval for the reverse direction. |
+| front → back | `due` | `ease` | `interval` |
+| back → front | `dueBack` | `easeBack` | `intervalBack` |
 
-The `*Back` column names are derived by appending `"Back"` to the configured field names via `backField(field)` in `flashcardsQueue.ts`. With defaults: `dueBack`, `easeBack`, `intervalBack`.
+The companion name always follows the configured name: `dueField: nextReview` gives `nextReviewBack`. Each direction is due on its own, so a row can be due one way and not the other. The view bar shows **front → back** or **back → front** for the card in front of you.
 
----
+## Review a deck
 
-## Review Queue
+The stage shows one card at a time and a progress meter. Flip the card, then grade it.
 
-### `buildQueue(rows, dueField, today, cram, bidirectional?)`
-
-Defined in `app/src/bases/flashcardsQueue.ts`. Pure function — no side effects, fully unit-tested.
-
-**Signature:**
-```ts
-buildQueue(
-  rows: Row[],
-  dueField: string,
-  today: string,     // "YYYY-MM-DD"
-  cram: boolean,
-  bidirectional?: boolean,
-): QueueItem[]
-```
-
-**`QueueItem` shape:**
-```ts
-type QueueItem = {
-  r: Row;           // the full row object
-  index: number;    // stable row index in the original rows array (NOT queue position)
-  dir: CardDir;     // "fwd" | "rev"
-  dueField: string; // which due column governs this entry's schedule
-};
-```
-
-**Normal mode** (`cram: false`): includes only rows where `row.note[dueField]` is null, `""`, or `<= today`. In bidirectional mode each direction is filtered against its own due column independently — a row can be due forward but not reverse or vice versa.
-
-**Cram mode** (`cram: true`): includes all rows in original order regardless of due date. Scheduling is never written in cram mode.
-
-**Bidirectional mode**: each row contributes two entries, `{dir: "fwd", dueField: dueField}` and `{dir: "rev", dueField: dueField + "Back"}`. Both entries share the same `index` but are filtered and scheduled independently.
-
-**Stable `index`**: the `index` field is the row's position in the original `rows` array, not its position in the queue. After a card is reviewed and dropped from the queue (its due date pushed forward), the queue shortens. The remaining cards keep their original indices, so callers can track a specific card across refetches without position arithmetic.
-
-```ts
-// From flashcardsQueue.test.ts — stable index survives queue shortening:
-const before = buildQueue([card("a", TODAY), card("b", TODAY), card("c", TODAY)], "due", TODAY, false);
-// before[0].index === 0, before[1].index === 1, before[2].index === 2
-
-const after = buildQueue([card("a", "2026-06-10"), card("b", TODAY), card("c", TODAY)], "due", TODAY, false);
-// after[0].index === 1  ← 'b' now at queue pos 0 but carries index 1
-// after[1].index === 2
-```
-
-### `nextPosAfterGrade(pos, opts)`
-
-Pure helper that returns the next queue position after grading. Avoids a subtle skip-one bug (regression B5) when the queue shrinks on refetch.
-
-```ts
-nextPosAfterGrade(pos: number, opts: { cram: boolean; persisted: boolean }): number
-```
-
-| Scenario | Behavior | Reason |
-|---|---|---|
-| `cram: true` | `pos + 1` | Standalone helper only — the view routes cram through `nextCramPos` (below). |
-| `cram: false, persisted: true` | stay at `pos` | Graded card leaves the queue at once as a pending grade (see below); next card shifts into `pos`. |
-| `cram: false, persisted: false` | `pos + 1` | Card stays due (no write); must advance to avoid showing it again. |
-
-```ts
-// The skip-one regression (fixed): grading card at pos 0 in a persisted queue
-// must NOT increment to 1, or the queue shift (a → future) would land on 'c',
-// skipping 'b' entirely.
-nextPosAfterGrade(0, { cram: false, persisted: true })  // → 0
-nextPosAfterGrade(0, { cram: true, persisted: false })   // → 1
-```
-
-### `nextCramPos(queue, pos, retired)` and `itemKey(item)`
-
-Cram traversal (cram-until-easy). After grading the card at `pos`, `nextCramPos` scans **forward, wrapping** for the next card not yet in `retired`, and returns `-1` when every card is retired (session complete).
-
-```ts
-nextCramPos(queue: QueueItem[], pos: number, retired: Set<string>): number
-itemKey(item: QueueItem): string  // "<rowIndex>:<dir>", e.g. "3:fwd" / "3:rev"
-```
-
-`retired` holds the `itemKey()`s of cards already graded **easy** this cram session. Grading a card **good** or **hard** leaves it in the pool, so it resurfaces on a later wrap and the user keeps re-reviewing it; only **easy** retires it. A bidirectional row's forward and reverse entries are retired independently (distinct `itemKey`s). Because the scan starts at `pos + 1`, the current round finishes before an unmastered card comes back around — the just-graded card is not immediately re-shown (unless it is the only card left in the pool).
-
-```ts
-const q = buildQueue([a, b, c], "due", today, /* cram */ true, false);
-nextCramPos(q, 2, new Set())                 // → 0  (wraps past the last card)
-nextCramPos(q, 0, new Set(["0:fwd", "1:fwd"])) // → 2  (skips the retired cards)
-nextCramPos(q, 0, new Set(["0:fwd","1:fwd","2:fwd"])) // → -1 (all easy → complete)
-```
-
----
-
-## Grading
-
-After revealing a card the user grades it with one of three responses:
-
-| Grade | Key | Behavior |
-|---|---|---|
-| `"hard"` | `1` | Decreases ease by `easeStep` (20 pts), multiplies interval by `lapsesIntervalChange` (0.5) |
-| `"good"` | `2` | Keeps ease, multiplies interval by `ease / 100` |
-| `"easy"` | `3` | Increases ease by `easeStep`, multiplies interval by `ease / 100 * easyBonus` (1.3) |
-
-Grades are posted to `POST /cards/review` via `api.reviewCardRow()`. The backend applies SM-2 via `applyReviewToRow` in `core/src/srs/reviewRow.ts` and writes the updated `due`, `ease`, and `interval` columns back to the base row. See [../../../flashcards/srs.md](../../flashcards/srs.md) for full scheduler details.
-
-**Cram mode never writes scheduling.** When `cram` is `true`, the grade is tracked in the session tally (HARD/GOOD/EASY counts) but no API call is made and no row is updated. In cram, an **easy** grade retires the card while **good**/**hard** keep it in the pool to be reviewed again (see `nextCramPos` above).
-
-### Keyboard Shortcuts
-
-While the flashcards view is active (and no modal or text field has focus):
-
-- **Space** — reveal the answer (flip the card)
-- **1** — grade Hard
-- **2** — grade Good
-- **3** — grade Easy
-
-Keys `1`/`2`/`3` are ignored until the card is revealed.
-
-These are not hardcoded literals — each is a rebindable keybinding-catalog entry (`flashcard-flip`, `flashcard-hard`, `flashcard-good`, `flashcard-easy` in `core/src/keybindings.ts`, defaults `Space`/`1`/`2`/`3`), matched via `matchesKeybinding(e, settings.keybindings[id])`. There is no on-card `SPACE to reveal answer` hint. Each grade button (`bases/GradeButton.tsx`) shows its key as a muted cap directly under its label, and its `title` (`hard (1)`, `good (2)`, `easy (3)`) names it too — both render `settings.keybindings[id]`, so a rebind updates the caps and the hover hint along with the match. See [Settings: Keybindings](../../settings/keybindings.md) for the full catalog and how to rebind.
-
----
-
-## Bidirectional Mode
-
-When `bidirectional: true`, each row's card is reviewed in both directions:
-
-- **Forward** (`"fwd"`): prompt = `frontField`, answer = `backField`
-- **Reverse** (`"rev"`): prompt = `backField`, answer = `frontField`
-
-The two directions are scheduled **independently** using separate column triples:
-
-| Direction | Due column | Ease column | Interval column |
-|---|---|---|---|
-| Forward | `dueField` (e.g. `due`) | `easeField` (e.g. `ease`) | `intervalField` (e.g. `interval`) |
-| Reverse | `dueField + "Back"` = `dueBack` | `easeField + "Back"` = `easeBack` | `intervalField + "Back"` = `intervalBack` |
-
-The `backField(field)` function (exported from `flashcardsQueue.ts`) computes the companion column name:
-
-```ts
-backField("due")         // → "dueBack"
-backField("nextReview")  // → "nextReviewBack"
-```
-
-When a reverse card is reviewed, `api.reviewCardRow()` receives the `*Back` field names as the `fields` override so the scheduler writes to `dueBack`/`easeBack`/`intervalBack` rather than the forward triple.
-
-A **new row with no scheduling columns** is due in both directions immediately:
-```ts
-// From flashcardsQueue.test.ts:
-const rows = [row({ front: "a", back: "b" })];  // no due / dueBack
-buildQueue(rows, "due", "2026-05-30", false, true);
-// → [{dir: "fwd", …}, {dir: "rev", …}]  — both directions due
-```
-
-A row can be due in one direction only:
-```ts
-// From flashcardsQueue.test.ts:
-const rows = [row({ front: "a", back: "b", due: "2026-12-01", dueBack: "2026-01-01" })];
-buildQueue(rows, "due", "2026-05-30", false, true);
-// → [{dir: "rev", …}]  — only reverse is due (dueBack is past, due is future)
-```
-
-The header strip shows a direction indicator (`"front → back"` / `"back → front"`) when `bidirectional` is on and a card is being reviewed.
-
----
-
-## Cram Mode
-
-Cram mode reviews every card in the deck regardless of due date and never modifies scheduling state. Activated by the CRAM button (Zap icon) in the header. The button shows as "selected" when cram is active.
-
-Toggling cram resets the session position to 0 and clears the HARD/GOOD/EASY tally and the mastered pool.
-
-When cram is active:
-- `buildQueue` returns all rows in original order
-- traversal is **cram-until-easy**: `nextCramPos` loops the deck, re-surfacing every card graded good/hard and retiring a card only when it is graded easy. The session completes when every card has been rated easy
-- no `api.reviewCardRow()` call is made on grade
-- `onReviewed()` is NOT called (no refetch needed)
-- the completion screen reads "Cram complete" ("Every card is easy — you mastered N cards in M reviews") instead of "Deck complete"
-
-The empty-state message in cram mode changes to "No cards in this deck" (as opposed to "No cards due" in normal mode), with a hint to add rows.
-
----
-
-## Session Progress Bar
-
-The progress meter is **not** in the header strip. `flashcardsSlots()` (`app/src/bases/FlashcardsView.tsx`) contributes four regions to the shared view bar — `locus` (the `n / total` position count, plus direction/cram suffix), `readouts` (the HARD/GOOD/EASY tally, one bucket per SM-2 grade — each press increments its bucket), `config` (the CRAM toggle), and `actions` (the CARDS button) — but progress is deliberately excluded: it is the `.fcmeter` `AsciiMeter` drawn on the deck's own **stage**, in the render body, not the bar. The meter renders as an ASCII glyph run (`[####......]`-style cells via `AsciiMeter`), not a gradient — it briefly became a 1px `.fcprogress` bar out of the bar's flow in 2026-08, but the user asked for the ASCII meter back (2026-09-02), so `.fcprogress` is gone and the meter lives on the stage again. The 30-cell default is sized from the deck's *measured* slot width (`ui/ascii/asciiMeterMath.ts`'s `fitMeterWidth`, driven by a `ResizeObserver` + a `ch`-unit font probe) rather than a `vw` fraction of the viewport — a fixed character count can't reflow, so it has to be picked against real available pixels. The wrapper carries `role="progressbar"` with the numeric `aria-valuenow`, and the glyph run itself is `aria-hidden`, so a screen reader hears "45%" instead of the meter spelled out character by character.
-
-- **Progress (normal mode)**: `graded / total` where `graded = hardCount + goodCount + easyCount` and `total = graded + queue.length` (anchored to the starting due count rather than the shrinking live queue)
-- **Progress (cram mode)**: `mastered / total` where `mastered` is the number of distinct cards rated easy and `total` is the deck size. Because cards loop until easy, mastery — not the raw grade count — drives the bar, so it fills toward "all easy" and never exceeds 100%. The `locus` count on the bar shows mastered-so-far rather than a card position in cram mode.
-
----
-
-## Card Rendering
-
-Both the front and back of a card render their content as markdown, in the same prose font the editor uses for note prose (`--prose-font`/`--prose-font-size`); inline `code` and code blocks stay the UI/mono stack at `--code-font-size`. The rendering is done by `renderMarkdown()` from `./markdown`.
-
-### Flip Animation
-
-The card uses a CSS 3D flip (`rotateY` transition):
-
-- **Same card, reveal**: clicking the card or pressing Space triggers the flip from front to back. The card element persists so the transition plays.
-- **New card**: the card element is keyed by `{index}:{dir}`. When the current card changes (different index or different direction), the old element is unmounted and a fresh one is created. The fresh element plays a scale+fade entrance animation (`card-appear`) instead of an unwanted backward flip.
-
-### Edit / Reset / Delete on Card Face
-
-Pencil, RotateCcw ("reset progress"), and Trash2 icon buttons appear on both the front and back faces, grouped as an `IconBar` (the same `--bar-icon-gap` spacing as the sidebar bar) rather than a bespoke button row. Pencil opens the single-card edit modal; Trash2 deletes the card immediately (without a confirmation prompt); RotateCcw resets the current card — see [Resetting Progress](#resetting-progress) below. `stopPropagation` prevents these clicks from also triggering the reveal flip.
-
----
-
-## Single-Card Edit Modal
-
-Accessible via the Pencil icon on the card face (not the deck-wide Cards modal). Provides two multiline `TextInput` fields labeled Front and Back. Saving calls `api.rowUpdate()` with the updated note and triggers `onReviewed()` to refresh the queue.
-
----
-
-## EditCardsModal
-
-The deck-wide card manager, opened by the CARDS button (Layers icon) in the header. It is only available when `basePath` is provided (i.e., the view is rendering a saved base file, not an inline query block). It has two modes toggled by a `SegmentedToggle`:
-
-### Cards (List) Mode
-
-A scrollable list of all cards in the deck. Each row shows a row number handle, an editable Front cell, an editable Back cell, a per-card "reset progress" button, and a delete button.
-
-**Inline editing**: each cell (`CardCell`) renders a markdown preview (driven by a `<div class="cell-md">`) with a transparent `<textarea>` layered over it. The preview drives the cell's height so there is no font-load or auto-grow race. Editing reveals the raw markdown on `:focus-within`; the textarea commits to the backend on `blur` via `api.rowUpdate()`.
-
-**Inline add (draft row)**: a fixed row at the bottom with `+` as the row number. Pressing Enter in the Front field moves focus to the Back field; pressing Enter in the Back field (or clicking ADD CARD) calls `api.rowCreate()` (which POSTs `POST /row/update` with `index: null`). After creation, the draft fields clear for fast successive entry.
-
-**Drag-to-reorder**: the row-number `#` handle is `draggable`. Dragging it and dropping onto another row calls `api.rowReorder(basePath, from, to)` (`POST /row/reorder`). A drop-indicator line (`dropbefore` CSS class) appears on the target row during drag.
-
-**Deletion**: Trash2 button calls `api.rowDelete()` (`POST /row/delete`). The local `cards` array is updated immediately (no full refetch during editing). `onChanged()` fires on modal close if any mutation occurred.
-
-**Local state mirroring**: the modal holds a local `cards: Note[]` array initialized from `props.rows`. Array position equals backend row index. All edits, additions, deletions, resets, and reorders update this array in sync with the backend calls so the modal UI stays consistent without triggering a refetch per keystroke.
-
-### Resetting Progress
-
-Without a way to clear a card's scheduling from the UI, the only way to make a card "new" again was hand-editing the base file's YAML — this closes that gap.
-
-"Reset progress" removes a card's `dueField`/`easeField`/`intervalField` columns (and, on a bidirectional deck, their `*Back` companions) from its note, so the next review treats it as a brand-new card. Front, back, and every other field are untouched.
-
-- **Per card** (list mode, RotateCcw icon button next to Delete): resets that one card immediately via `api.rowUpdate()` — no confirmation, same as Delete.
-- **Reset all** (`EditCardsModal`'s footer, next to the card count): resets every card in the deck via `api.rowUpdateMany()` in one request. This is an inline **two-step confirm** — the first click arms it (the label flips to "reset all — click again to confirm" and turns danger-toned, auto-disarming after 4 seconds); only the second click, while armed, actually writes. No native `confirm()` dialog.
-- **Current card during review** (`FlashcardsView`'s card face, RotateCcw icon next to Pencil/Trash2): resets the card currently being reviewed via `api.rowUpdate()`, then calls `onReviewed()` to refresh the queue — no confirmation.
-
-### Bulk Add Mode
-
-Paste many cards at once. One card per line; front and back separated by a delimiter.
-
-**Delimiter options** (shown as toggle chips):
-
-| ID | Label | Separator character |
-|---|---|---|
-| `auto` | AUTO | First matching separator in each line (auto-detect order below) |
-| `tab` | TAB | `\t` |
-| `tripcolon` | `:::` | `:::` |
-| `dblcolon` | `::` | `::` |
-| `colon` | `:` | `:` |
-| `pipe` | `\|` | `\|` |
-| `comma` | `,` | `,` |
-| `dash` | `–` | `–` (en dash) |
-
-**Auto-detect order**: `tab`, `:::`, `::`, `|`, `–`, `:`, `,` — probed most-specific first so `::` is preferred over `:`.
-
-**`parseBulk(text, delim)`** (exported from `EditCardsModal.tsx`): splits on `\r?\n`, strips blank lines, applies the chosen separator to produce `{front, back}[]`. Splitting takes the first occurrence of the separator:
-
-```ts
-parseBulk("hola : hello\ncasa :: house", "auto")
-// → [{front: "hola", back: "hello"}, {front: "casa", back: "house"}]
-
-parseBulk("What is hydrogen?\tH", "tab")
-// → [{front: "What is hydrogen?", back: "H"}]
-```
-
-Lines with no separator produce `{front: <line>, back: ""}`. Cards with an empty front are excluded from the add operation (the ADD button label shows the count of valid cards only).
-
-**Live preview**: a side-by-side preview pane renders parsed cards with markdown as they are typed, flagging cards with no back in red (`bad` class). The ADD button label updates live: `ADD {validCount} CARDS`.
-
-Clicking ADD creates each card in sequence via `api.rowCreate()`, then switches back to list mode.
-
----
-
-## API Calls Made by the Flashcards View
-
-| Operation | API call | Endpoint |
-|---|---|---|
-| Grade a card (normal mode) | `api.reviewCardRow(basePath, index, response, fields?)` | `POST /cards/review` |
-| Edit current card | `api.rowUpdate(basePath, index, note)` | `POST /row/update` |
-| Delete current card | `api.rowDelete(basePath, index)` | `POST /row/delete` |
-| Add card (inline/bulk) | `api.rowCreate(basePath, note)` | `POST /row/update` with `index: null` |
-| Edit card in modal | `api.rowUpdate(basePath, index, note)` | `POST /row/update` |
-| Reset progress (current card / one card in modal) | `api.rowUpdate(basePath, index, note)` (fields stripped) | `POST /row/update` |
-| Reset progress (whole deck, modal "reset all") | `api.rowUpdateMany(basePath, updates)` (fields stripped) | `POST /rows/update` |
-| Delete card in modal | `api.rowDelete(basePath, index)` | `POST /row/delete` |
-| Reorder cards | `api.rowReorder(basePath, from, to)` | `POST /row/reorder` |
-
-For grading, the `fields` parameter overrides which due/ease/interval columns are written. Forward reviews use the default (`due`/`ease`/`interval`); reverse reviews in bidirectional mode pass `{due: "dueBack", ease: "easeBack", interval: "intervalBack"}`. The `fields` object maps to `dueField`/`easeField`/`intervalField` query parameters in the `POST /cards/review` payload.
-
----
-
-## Empty States
-
-| Condition | Message |
+| Key | Action |
 |---|---|
-| Normal mode, queue empty | "No cards due" + hint to click CRAM to review everything anyway |
-| Cram mode, no rows at all | "No cards in this deck" + hint to add rows with `front`/`back` columns |
-| All cards reviewed (normal) | Completion screen: "Deck complete", graded count, REVIEW AGAIN button |
-| Every card rated easy (cram) | Completion screen: "Cram complete", mastered + review counts, REVIEW AGAIN button |
+| Space | Flip the card (also: click it) |
+| 1 | Grade **hard** |
+| 2 | Grade **good** |
+| 3 | Grade **easy** |
 
----
+The grade keys work only after the card is flipped. All four are rebindable keybindings (`flashcard-flip`, `flashcard-hard`, `flashcard-good`, `flashcard-easy`); see [Keybindings](../../settings/keybindings.md). The grade buttons show the current key under each label.
 
-## Edge Cases and Gotchas
+A grade moves the card out of the queue straight away and writes its new schedule to the row. The view bar shows your position (`n / total`) and a running **hard**, **good** and **easy** tally. When the queue empties, the stage shows **Deck complete**; **No cards due** means nothing is due today.
 
-**Cards modal requires `basePath`**: the CARDS and edit-card buttons are only rendered when `basePath` is defined. An inline `FlashcardsView` embedded in a query block without a file path cannot open the modal or persist grades. In practice this means the view must be a full base file, not an embedded block, to support editing.
+Your place in a deck (position, tally, cram state) survives switching tabs, but not reloading the app.
 
-**Cram never persists**: forgetting this means you can "review" a deck in cram mode and find all cards still due afterward — by design.
+## Cram a deck
 
-**Bidirectional column naming is positional, not configurable**: the `*Back` columns are always `dueField + "Back"` etc. If you rename `dueField` to `nextReview`, its companion column becomes `nextReviewBack` — while `easeField`'s companion stays `easeBack` (unchanged, since `easeField` still defaults to `"ease"`). Ensure your base's `schema:` section declares these columns if you use a non-default `dueField`.
+Click **cram** in the view bar to review every card regardless of due date. Cram never writes a schedule.
 
-**New card with null/empty due is always due**: this is intentional — when you add a card without scheduling columns it surfaces immediately for first review.
+- Cards loop until each one is graded **easy**; **good** and **hard** bring the card back on a later pass.
+- The progress meter and the position count show cards mastered so far.
+- When every card is easy, the stage shows **Cram complete**. An empty deck shows **No cards in this deck**.
+- Turning cram on or off restarts the session at the first card with an empty tally.
 
-**Queue position stays put on grade (non-cram, persisted)**: grading records the card as a **pending grade** (`flashcardsQueue.ts`'s `withoutPending`/`livePending`, keyed by `itemKey` → the due value it was graded at), which drops it from the queue in the same update that un-reveals it. The queue shrinks by one, so keeping `pos` at the same integer shows what was previously `pos + 1` — without incrementing, which would skip a card. The host refetch (`onReviewed()`) is NOT what advances: BaseView serves it from a cache that stays fresh until the SSE version bump, which lands after the write's response, so it can come back with the pre-write rows. Relying on it once turned the graded card back to its front and needed a second grade (and a second review write) to move on. The pending entry hides the card only while its row still carries the pre-grade due; the refetch that brings the new due prunes it. A failed write removes the entry, putting the card back.
+## Edit, reset and delete the current card
 
-**Drag-reorder uses native HTML5 drag-and-drop**: it fires on the row-number handle element only (`draggable={true}` on `.cards-num`). The row itself handles `onDragOver` + `onDrop`. `onDragEnd` clears state if the drop lands outside a valid target.
+Three buttons sit on both faces of the card under review:
 
-**`onChanged` is lazy**: `EditCardsModal` sets a `dirty` flag on any mutation but only calls `props.onChanged()` when the modal closes. This avoids a queue refetch per keypress during editing.
+- **Edit this card** opens a modal with **front** and **back** fields; saving writes the row.
+- **Reset this card's progress** removes its scheduling columns (and the `Back` companions on a bidirectional deck), so the card is new again. Front, back and every other column stay.
+- **Delete this card** removes the row at once, with an **Undo** toast.
 
----
+## Manage every card in the deck
 
-Source: `app/src/bases/FlashcardsView.tsx`, `app/src/bases/flashcardsQueue.ts`, `app/src/bases/EditCardsModal.tsx`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/bases/FlashcardsView.queue.test.ts`, `core/src/bases/types.ts`, `core/src/srs/reviewRow.ts`, `core/src/srs/scheduler.ts`, `app/src/api.ts`, `core/src/keybindings.ts`, `app/src/keybindings.ts`
+Click **cards** in the view bar to open the **edit cards** modal. It has two tabs.
+
+**cards** lists every card with editable front and back cells (markdown preview, raw text while focused). Drag the `#` handle, or use Up and Down on it, to reorder. Each row has reset and delete buttons, and a draft row at the bottom adds a card: Enter in front moves to back, Enter in back adds it. **reset all progress** in the footer resets every card after a second click within four seconds.
+
+**bulk add** creates many cards from pasted text, one card per line, front and back split at the first separator:
+
+| Separator | Splits on |
+|---|---|
+| auto | the first of tab, `:::`, `::`, `\|`, `–`, `:`, `,` found in the line |
+| tab | a tab |
+| `:::`, `::`, `:` | that run of colons |
+| `\|` | a pipe |
+| `,` | a comma |
+| `–` | an en dash |
+
+A line with no separator becomes a card with an empty back; a line with an empty front is skipped. A live preview marks cards with no back before you add them.
+
+The modal saves each edit as you make it and refreshes the review queue when it closes.
+
+## Silent failures
+
+- The view grades and edits rows in the base file's own body, addressed by position. A base with a `source:` lists its resolved rows, but a grade or edit then targets the base file's own body instead of the card's note: it fails with "row not found" when the body is empty, or writes a different row when it is not. Keep a deck's cards in the base file.
+- The view ignores the base's `filters`, `sort` and `limit`; every row is a card.
+- In an embedded ` ```query ` block nothing is written: grades are not saved, and the edit, reset and delete buttons and **cards** are hidden.
+- Cram never saves a schedule. A deck reviewed only in cram is still due afterwards.
+- The `flashcards` tag plays no part here. It only selects notes for markdown cards, described in [Flashcards and spaced repetition](../../flashcards/srs.md).
+
+## How it works
+
+`BaseView` renders flashcards full-pane: it hands `FlashcardsView` the base's resolved rows (`data().rows`) and skips `runView`, which is why filters, sort and limit do not apply. Field names come from the `ViewConfig` that `parse.ts`'s `normalizeView` builds.
+
+The queue is pure and unit-tested in `flashcardsQueue.ts`: `buildQueue` (due filter, cram, bidirectional), `backField` (the `Back` suffix), `nextPosAfterGrade`, `nextCramPos` and `itemKey` (`<rowIndex>:<dir>`, the cram retire key), the pending-grade overlay (`withoutPending`, `livePending`) that hides a graded card until the refetch brings its new due date, and the per-base-path session store (`loadSession`, `saveSession`). `flashcardsActions.ts` holds `scheduleColumns`, `resetKeys` and `stripSchedule`.
+
+Writes go to the base file by row index: a grade is `POST /cards/review` with `file` and `index` (`api.reviewCardRow`, which runs `applyReviewToRow` in `core/src/srs/reviewRow.ts`); edits and resets are `api.rowUpdate`, reset all is `api.rowUpdateMany`, adds are `api.rowCreate`, deletes `api.rowDelete`, reorders `api.rowReorder`. The bulk parser is `parseBulk` in `cardsEdit.ts`.
+
+Source: `app/src/bases/FlashcardsView.tsx`, `app/src/bases/flashcardsQueue.ts`, `app/src/bases/flashcardsActions.ts`, `app/src/bases/EditCardsModal.tsx`, `app/src/bases/CardsListEditor.tsx`, `app/src/bases/cardsEdit.ts`, `app/src/bases/BaseView.tsx`, `core/src/routes/bases.ts`, `core/src/srs/reviewRow.ts`

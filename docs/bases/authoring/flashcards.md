@@ -1,22 +1,24 @@
 # flashcards
 
-A spaced-repetition (SM-2) review UI over a base's rows. Each row is one card.
+A spaced-repetition (SM-2) review screen over a base's rows. Each row stored in the base file's own body is one card.
 
 ## Working example
 
-```yaml
+```markdown
 ---
 type: base
-source: notes where file.hasTag("vocab")
 view: flashcards
 frontField: front
 backField: back
-dueField: due
-easeField: ease
-intervalField: interval
 bidirectional: false
 ---
+- front: hola
+  back: hello
+- front: casa
+  back: house
 ```
+
+Write only `front` and `back`. The reviewer writes `due`, `ease` and `interval` onto each row when it is graded.
 
 ## Config keys
 
@@ -24,19 +26,19 @@ bidirectional: false
 |---|---|---|---|
 | `frontField` | `string` | `"front"` | Prompt column, rendered as markdown. |
 | `backField` | `string` | `"back"` | Answer column, rendered as markdown. |
-| `dueField` | `string` | `"due"` | ISO date column. Missing/empty/`""` = always due (new card). |
-| `easeField` | `string` | `"ease"` | SM-2 ease factor (integer %). Written by the scheduler on first grade. |
-| `intervalField` | `string` | `"interval"` | SM-2 interval in days. Written by the scheduler on first grade. |
-| `bidirectional` | `boolean` | `false` | Reviews each row both ways, with independent scheduling in `<field>Back` companion columns. |
+| `dueField` | `string` | `"due"` | `YYYY-MM-DD`. Missing or empty means a new card, due now. |
+| `easeField` | `string` | `"ease"` | SM-2 ease, written by the reviewer. |
+| `intervalField` | `string` | `"interval"` | Interval in days, written by the reviewer. |
+| `bidirectional` | `boolean` | `false` | Review each row both ways; the reverse schedule lives in `<field>Back` columns (`dueBack`, `easeBack`, `intervalBack`). |
 
-Only `front`/`back` need real values to start — `due`/`ease`/`interval` are populated by the reviewer, not by you.
-
-**The `flashcards` tag is NOT required here.** It only gates the separate markdown-cards deck model (notes scanned by `collectCards`/the `/cards/*` endpoints need `#flashcards` or `#flashcards/sub`). This Bases `flashcards` **view** is a different mechanism — any base with a `flashcards` view draws cards straight from its own rows via `frontField`/`backField`/etc., regardless of tags.
+The `flashcards` tag is not needed. It only selects notes for markdown cards (see `docs/flashcards/srs.md`).
 
 ## Failure modes
 
-- **The CARDS button and per-card edit modal require `basePath`** (a saved base file) — a `flashcards` view inside an embedded ` ```query ` block has no file path, so it cannot open the deck editor or persist grades at all.
-- **Bidirectional companion columns are always `<fieldName> + "Back"` positionally, not independently configurable.** Rename `dueField` to `nextReview` and its companion becomes `nextReviewBack`; `easeField`/`intervalField` (still their own defaults) get `easeBack`/`intervalBack`. Declare all the columns your `schema:` needs if you use non-default field names.
-- **Cram mode never writes scheduling** — reviewing a deck in cram mode and expecting due dates to advance is a no-op by design; only normal-mode grading calls `POST /cards/review`.
+- If the base has a `source:`, the view lists the resolved rows but writes grades and edits to the base file's own body by position: a grade fails with "row not found", or lands on a different row. Keep the cards in the base file's body and leave `source:` out.
+- The view ignores `filters`, `sort` and `limit`. Every row is a card.
+- In an embedded ` ```query ` block grades are not saved and the editing buttons are hidden. Use a saved base file.
+- Cram never writes a schedule, so a deck reviewed only in cram stays due.
+- A renamed scheduling column renames its companion too: `dueField: nextReview` pairs with `nextReviewBack`.
 
-Full reference: `docs/bases/views/flashcards.md`
+Full reference: [docs/bases/views/flashcards.md](../views/flashcards.md)

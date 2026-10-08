@@ -1,1435 +1,283 @@
 # Testing
 
-Use this reference before writing a test, running the suite, or changing the commit/push gates. It
-covers the test runner, file conventions, the suite across `core/` and `app/`, test filtering,
-adding tests, the `bun run typecheck` gate, and the key test-file patterns.
-
-**In this doc:** commit/push gates · upgrade-safety tests · running and filtering tests · the
-TypeScript gate · offline agent-CLI integration tests (mocked LLM) · file layout · the shared vault
-test helper · key test files · adding a test · the `bench/` visual-verification toolchain · what
-Bun does not test.
-
----
-
-## Test runner
-
-Bismuth uses **Bun's built-in test runner** (`bun:test`) for all tests — both backend (`core/`) and frontend (`app/`). There is no Jest, Vitest, or Mocha. Tests use the `bun:test` import:
-
-```ts
-import { test, expect, describe, it, beforeEach, afterEach } from "bun:test";
-```
-
-The full suite — every workspace, run with plain `bun test` from the repo root — spans 629 `*.test.ts(x)` files as of 2026-10-03 (counted with `find . \( -name node_modules -o -name target -o -name .git -o -name .claude -o -name .dev-vault \) -prune -o \( -name '*.test.ts' -o -name '*.test.tsx' \) -type f -print | wc -l`: 202 under `core/test/`, 6 under `core/src/`, 373 under `app/`, 23 in `daemon/`, 8 in `cli/`, 7 in `mcp/`, 5 in `memory/`, 3 in `scripts/`, and one each in `relay/` and `bench/`). The last measured TEST count (6,238 tests across 408 files in 143.9s on 2026-09-03, on a machine missing several of the mocked-CLI binaries — see the skip mechanism below; a machine with all of them installed runs more) is stale and has not been re-measured: the file count grew by more than half since, and the test count moves every time a test file is added, so run `bun test` and read its summary line rather than trusting any number written here.
-
-This is roughly 6-7x an earlier ~930-tests/~10s figure this file used to quote, and has kept growing past the ~2031 this file quoted after that. The growth is mostly the offline-testing branch's own mocked agent-CLI integration tests (below): several of them spawn a REAL CLI subprocess and wait for a real turn to complete, rather than exercising pure in-process logic, which costs real wall-clock seconds per test even though it costs zero API calls/dollars. A machine missing some of those CLI binaries runs fewer tests, faster, via the missing-binary skip described below.
-
----
-
-## The commit gate (tests are required to commit)
-
-Tests run automatically on every commit and every push. Both hooks live in `.githooks/`, which is
-already this repo's `core.hooksPath`; a fresh clone enables them with:
+Bismuth's tests run on Bun's built-in runner (`bun:test`) in every workspace, and git hooks run them for you: a fast gate on commit and the full suite on push.
+This page is for contributors.
+It covers running and filtering tests, what the hooks enforce, how to write a test, and which guard tests fail when a change leaves something out of sync.
+Browser-based checks of the UI have their own page, [Visual checks](visual-checks.md).
 
 ```bash
-bun run hooks:install     # git config core.hooksPath .githooks
+bun test core/test/vault.test.ts   # one file, exact path
+bun test vault                     # every file whose path contains "vault"
+bun run test:fast                  # everything except the slow suites
+bun test                           # everything, slow suites included
+bun run typecheck                  # tsc --noEmit in every workspace
+bun run gate                       # what the pre-commit hook runs, by hand
 ```
 
-| | hook | what runs | typical cost |
-|---|---|---|---|
-| **commit** | `.githooks/pre-commit` → `scripts/gate.ts` | typecheck (all workspaces) + **fast** tests for the workspaces your staged files touch | ~30s (one workspace), ~60s (all) |
-| **push** | `.githooks/pre-push` | docs link check + the **full** suite, slow suites included | ~3min |
+## Run one test file or a subset
 
-The split exists so the gate is one people don't route around. Two things narrow the commit gate:
-
-1. **Slow suites are skipped** via `BISMUTH_FAST_TESTS=1` (see `core/test/slowGate.ts`) — the
-   suites that spawn real agent binaries, PTYs or websockets, plus the layout benchmark. That is
-   ~130s of the runtime for the parts least likely to break on an ordinary edit. **Pre-push runs
-   them.** With the variable unset — plain `bun test`, and CI — everything runs, so nobody can
-   lose a suite by forgetting a flag.
-2. **Only affected workspaces are tested**, derived from staged paths (`affectedWorkspaces` in
-   `scripts/gate.ts`, unit-tested in `scripts/gate.test.ts`). Editing `app/` does not re-run
-   `daemon/`. Touching a shared root file (`package.json`, `bun.lock`, `tsconfig.base.json`,
-   `bunfig.toml`, `scripts/`, `.githooks/`) widens it to everything, since those can affect
-   everything. Docs-only commits skip tests entirely.
-
-Typecheck always runs across **all** workspaces regardless of what you staged — it is ~12s and is
-the only thing that catches a change in one workspace breaking another's types.
-
-Bypassing, when you genuinely mean it (a WIP commit on a branch — not how you land on `main`):
+Pass an exact path to run one file, or a bare pattern to run every file whose relative path contains it.
 
 ```bash
-BISMUTH_SKIP_GATE=1 git commit …    # skip just the gate
-git commit --no-verify              # skip all hooks
-BISMUTH_SKIP_GATE=1 git push        # skip pre-push's test run (docs check still runs)
-```
-
-Run the gate by hand any time with `bun run gate`, or the fast suite alone with `bun run test:fast`.
-
-### Quarantined suites
-
-None right now. The mechanism was introduced for `opencodeMocked.test.ts`, whose ~1-in-3 failure
-turned out to be a **real product bug** rather than a bad test — opencode server mode dropped
-streamed reply text whenever the SSE deltas lost the race against the HTTP response, so a chat could
-answer and render nothing. It is fixed (`reconcileOpencodeFinalParts`), the suite is back in both
-gates, and the quarantine helper was removed rather than left as dead scaffolding.
-
-If a suite ever genuinely needs quarantining, the bar is high, and the reason is that pre-push
-*blocks* on the full suite: a test failing a third of the time does not keep anyone honest, it
-teaches the team to reach for `--no-verify`, which disables the gate for everything else too. Add
-one only when the mechanism is understood, written down, and tracked — and prefer fixing the bug,
-which is what happened here.
-
-## Upgrade tests: what happens to an existing user's data on update
-
-`core/test/upgrade/` is the suite that answers "if a user updates Bismuth, do they lose anything?"
-Everything else in the repo tests a vault *this* era's code just created; these start from state an
-**older** Bismuth wrote. Run them alone with `bun run test:upgrade`.
-
-**`settingsUpgrade.test.ts`** drives the real open-path (`reconcileSettings` →
-`migrateSettingsLocation`) from each of the three historical settings layouts — vault-root
-`settings.yaml`, the interim `.settings/settings.yaml` directory, and today's `.settings` file —
-and pins the invariants that matter across a version jump:
-
-- the user's still-valid values survive, and their hand-written comments survive;
-- keys the current schema no longer knows are **preserved, never dropped** (they may belong to a
-  newer build, or a feature that is coming back) — silent data loss is the one unforgivable
-  upgrade outcome;
-- keys added to the schema since that version are not written; they read as their defaults
-  (every reader merges over `DEFAULTS`), so nothing reads `undefined`;
-- a pre-sparse full-defaults dump is stripped back to its non-default values
-  (`stripMaterializedDefaults`), while a sparse file's explicit default value is kept;
-- retired themes and fonts migrate to current-era values;
-- reconcile is idempotent, and a corrupt or hostile file is left alone for the user to repair
-  rather than silently replaced with defaults.
-
-**`schemaSnapshot.test.ts`** is the tripwire for silent behavior changes. A setting's `default` is
-what every user who never touched that key is running, so changing one changes behavior for the
-entire installed base on upgrade — invisibly, since nothing in their vault changed. The test pins
-every schema path, type, default, bound and enum member to a committed snapshot
-(`core/test/fixtures/upgrade/settings-schema-snapshot.json`). It does not forbid changes; it forces
-them to be deliberate and reviewable. After an intentional schema change:
-
-```bash
-bun run test:bless-schema     # regenerates the snapshot; commit the diff with your change
-```
-
-This is a real failure mode, not a hypothetical: `appearance.editorFontSize` once moved 11.5 → 13.5
-and the only symptom was unrelated tests failing later.
-
-## Running tests
-
-### Run all tests (recommended baseline)
-
-From the repo root:
-
-```bash
-bun test core
-```
-
-This discovers nearly every `*.test.ts` file in the repo. Not because `core` names a "workspace" —
-Bun has no such concept for `bun test`'s own argument — but because `core` is a plain substring
-match against every file's relative path (see "Filter by filename pattern" below for the full
-mechanism), and it happens to match every file under `core/test/` (the path prefix) plus the six
-`core/src/` test files whose paths also contain it (`core/src/assetFetch.test.ts` and the five
-`core/src/statusBar*.test.ts`) — 208 files total as of 2026-10-03, confirmed by exact count. Output (the shape to expect — test and `expect()` counts grow per
-commit and were last measured on 2026-09-03, so they are left as placeholders rather than quoted;
-expect a green `0 fail`):
-
-```
- <n> pass
- <n> skip
- 0 fail
- <n> expect() calls
-Ran <n> tests across 208 files. [<seconds>]
-```
-
-The skips are the mocked agent-CLI tests whose real binary (`opencode`/`gemini`/`openclaw`/
-`goose`/`cline`) isn't installed on this machine — see "Offline agent-CLI integration tests" below.
-
-### `bun test core` vs `bun test app`
-
-```bash
-bun test core   # matches nearly the whole suite — see the substring-match mechanism above
-bun test app    # the mirror image, from the other direction
-```
-
-These are NOT identical sets, and neither is scoped to a "workspace": `bun test core` matches
-every file under `core/test/` plus the six `core/src/` matches (as above) — 208 files.
-`bun test app` matches every file under `app/` (`app/src/`, `app/test/`, `app/scripts/`) plus one
-`core/test/` file that matches "app" by coincidence (`core/test/agentBackends/sandboxWrapper.test.ts`,
-matching inside "sandboxWr**app**er") — 374 files (file counts re-measured with `find`, 2026-10-03). `bun test core` is the conventional way to run "the full suite"
-only because `core/` happens to hold vastly more test files today, not because it is scoped to
-anything. (Neither is actually the full suite — see "Test runner" above for that number; several
-other workspaces, `cli/`/`daemon/`/`mcp/`/`memory`/`relay/`, carry their own test files too, and
-only plain `bun test` from the repo root runs literally everything.)
-
-### Run a single file directly
-
-Pass the file path as the argument:
-
-```bash
-bun test core/test/vault.test.ts
+bun test core/test/vault.test.ts   # exactly one file
 bun test app/src/panes.test.ts
+bun test bases/query               # every path containing "bases/query"
+bun test -t "wikilink"             # only tests whose NAME matches the regex
+bun test --watch core/test/vault.test.ts
 ```
 
-### Filter by filename pattern
+Check the file count in the summary line: a pattern is a substring match on the path, so `bun test bases/query` matches `query.test.ts`, `queryBlock.test.ts` and the app's `queryGen.test.ts`, not one file.
 
-**`bun test core -- <pattern>` does NOT filter — it silently runs at least the entire `core`-matched
-set, and sometimes more.** Bun's own positional arguments are OR'd substring matches against the
-relative file path (`bun test foo bar` runs every file matching `foo` OR `bar`), and `core` is
-itself one of those arguments here. Since every file under `core/test/` (plus the one `app/src/`
-coincidental match above) already has `core` as a substring of its own path, keeping `core` in the
-pattern list matches at minimum that same 208-file set no matter what you append after it —
-`bun test core -- wikilinks` still runs every `core`-matched file, because `wikilinks.test.ts`
-lives under `core/test/` and was already in the set. **It can also run MORE than that set**: appending a
-pattern that matches something outside `core/test/` widens the run rather than narrowing it —
-`bun test core -- bases/query` matches 210 files, two more than `bun test core` alone, because
-`app/src/bases/queryGen.test.ts` and `app/src/bases/queryBasePath.test.ts` match "bases/query" but not
-"core", so the OR adds them in (file counts from a 2026-10-03 `find`; the 2026-09-03 live run of the
-same command was 160 against 159). Either
-way, this has already cost one agent a full-suite-or-larger run it believed was scoped to one file.
+### Why `bun test core -- <pattern>` runs too much
 
-To actually filter, drop the `core`/`app` argument and pass either an exact path or a bare pattern:
+`bun test core -- <pattern>` does not filter.
+Bun's positional arguments are OR'd substring matches on the file path, and `core` is one of them.
+It matches every file under `core/test/`, so appending a pattern never narrows the run.
+It can widen it: a pattern that matches a file outside `core/` adds that file to the set.
+Drop the `core`/`app` argument and pass an exact path or a bare pattern instead.
+
+`core` and `app` are not workspace selectors. `bun test core` is the conventional "most of the suite" run only because `core/` holds the most test files. Plain `bun test` from the repo root is the only command that runs every workspace.
+
+### Tests that skip themselves
+
+Three kinds of test skip without failing.
+
+| Skipped when | Why | Applies to |
+|---|---|---|
+| `BISMUTH_FAST_TESTS=1` | The suite is slow: it spawns real agent binaries, PTYs or websockets, or runs the layout benchmark | The pre-commit gate sets it; plain `bun test` and CI leave it unset, so everything runs |
+| The agent binary is not installed | A mocked-CLI test has nothing to drive | `claude`, `opencode`, `codex`, `goose`, `gemini`, `cline`, `openclaw` |
+| `BISMUTH_LIVE_TESTS` is not `1` | The test spends a real account's quota | The live block in `core/test/chat.test.ts` |
+
+A skipped test is not a pass. Read the `skip` count in the summary when you expect a suite to run.
+
+## What do the commit and push hooks run?
+
+Both hooks live in `.githooks/`. A fresh clone enables them with `bun run hooks:install`, which sets `core.hooksPath`.
+
+| Hook | Runs | Scope |
+|---|---|---|
+| `pre-commit` | `scripts/gate.ts` | Typecheck of every workspace, then the fast tests for the workspaces your staged files touch |
+| `pre-push` | `scripts/check-docs.ts --pre-push`, then `bun test` | Docs check (links, anchors, history lint, cited commands, workspace parity), then the full suite with slow suites included |
+
+The commit gate runs these steps in order and stops at the first failure:
+
+1. **Typecheck** across all workspaces, whatever you staged. It is the only step that catches a change in one workspace breaking another's types.
+2. **Fast tests** (`BISMUTH_FAST_TESTS=1`) for the affected workspaces only. Editing `app/` does not re-run `daemon/`. Touching `package.json`, `bun.lock`, `tsconfig.base.json`, `bunfig.toml`, `scripts/` or `.githooks/` widens the run to every workspace.
+3. **Design-system gate and `tokenLint`** when a staged path is under `app/src/`, `design/` or `scripts/designSystem/`, or is `DESIGN.md`. See [Visual checks](visual-checks.md#how-do-the-design-system-gate-and-tokenlint-work).
+4. **`bench/moduleClassCheck.ts`** when a staged path is an `app/src/**/*.css` file. It builds the app, so it is the slowest step. A change to a `.tsx` file alone does not trigger it, so run it by hand after editing class names in TSX.
+
+A commit that stages only docs, or other files outside the workspaces, skips the gate. The gate reads the working tree, not the staged snapshot.
+
+Skip a gate deliberately, for example for a work-in-progress commit on a branch:
 
 ```bash
-bun test core/test/vault.test.ts   # exact path — the only unambiguous way to run ONE file
-bun test vault                     # a pattern with NO "core"/"app" argument alongside it — matches
-                                    # every path containing "vault": vault.test.ts and
-                                    # vaultFileItems.test.ts (2 files as of 2026-10-03; case-sensitive,
-                                    # so `app/src/intro/VaultIntro.test.ts` is NOT included)
-bun test daemonViz                 # matches exactly core/test/daemonViz.test.ts (1 file)
-bun test bases/query                # matches every path containing "bases/query": query.test.ts,
-                                    # queryBlock.test.ts, queryGen.test.ts, queryBasePath.test.ts
-                                    # (4 files as of 2026-10-03, not 1 — the
-                                    # substring match doesn't stop at the first path segment)
-bun test flashcards                 # matches every flashcard-related test file
+BISMUTH_SKIP_GATE=1 git commit …    # skip the commit gate (or the push test run)
+git commit --no-verify              # skip every hook
 ```
 
-The pattern is a substring match against the relative file path (not the test name), and it is
-easy to assume it is narrower than it is — check the file count in the summary line, don't assume
-one pattern means one file. Use an exact path when you genuinely want exactly one file. Verified
-by file count (2026-10-03): `bun test bases/query` alone matches 4 files; `bun test core -- bases/query`
-matches 210.
+`BISMUTH_SKIP_GATE=1 git push` skips only the full test run; the docs check still runs. A push that only deletes branches skips the test run.
 
-### Watch mode
+## Run the type checker
 
-```bash
-bun test core --watch
-```
-
-Reruns affected tests on file save. Useful when writing new tests interactively.
-
----
-
-## TypeScript type-check gate
-
-**Neither the test runner nor the build/test gate runs `tsc`.** `bun test` only executes test files; `bun run build:app` bundles without type-checking. Type errors are a *separate* gate you must run explicitly to catch type regressions — they will not show up in a green test run or a successful build.
-
-The canonical command is the root `typecheck` script:
+`bun test` and the production build do not run `tsc`. Type errors only show up in `bun run typecheck` and in the commit gate.
 
 ```bash
 bun run typecheck
+(cd core && bunx tsc --noEmit)     # one workspace
 ```
 
-From `package.json` this expands to a `tsc --noEmit` pass per workspace, each run from its own directory:
+`bun run typecheck` runs `tsc --noEmit` from inside each of `core`, `app`, `cli`, `mcp`, `relay`, `memory` and `daemon`, in that order, and stops at the first failure. Each workspace pins its own `typescript` in its `package.json`, so one compiler version never leaks into another.
 
-```json
-"typecheck": "(cd core && bunx tsc --noEmit) && (cd app && bunx tsc --noEmit) && (cd cli && bunx tsc --noEmit) && (cd mcp && bunx tsc --noEmit) && (cd relay && bunx tsc --noEmit) && (cd memory && bunx tsc --noEmit) && (cd daemon && bunx tsc --noEmit)"
-```
+Every workspace `tsconfig.json` extends `tsconfig.base.json`, which sets `strict`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`, bundler module resolution and `noEmit`.
+The `app` program also checks the `core/src/` files it imports, and it excludes `*.test.ts` so test stubs do not pollute production types.
+Because `app` excludes tests, a compile-time assertion has to live in a normal `src` module to be evaluated; `app/src/keybindingsCoverage.ts` is an example.
 
-All **seven** workspaces are checked in order — `core`, `app`, `cli`, `mcp`, `relay`, `memory`, `daemon` — and the `&&` chain stops at the first failure. Each step `cd`s into the workspace so `bunx tsc` picks up that workspace's own `tsconfig.json` and its own pinned TypeScript: `core`/`cli`/`mcp`/`memory`/`daemon` pin `typescript: 7.0.2`, `app`/`relay` pin `typescript: ~5.6.2` (see each workspace's own `package.json`), so a compiler version in one workspace never bleeds into another. `cli` now gets its own step in the chain — it used to ride along on the `core`/`app` passes with no separate step, and no longer does.
+## Where do tests live?
 
-Every workspace `tsconfig.json` `extends` the root **`tsconfig.base.json`**, which is where the shared strict lint flags actually live: `"strict": true`, `"noUnusedLocals": true`, `"noUnusedParameters": true`, and `"noFallthroughCasesInSwitch": true`, alongside `"moduleResolution": "bundler"`, `"types": ["bun", "node"]`, and `"noEmit": true`. Centralizing these there is what makes an unused local or a missing `break` fail the gate identically across all seven workspaces — each workspace's own `tsconfig.json` keeps only what genuinely differs: `target`/`module`/`lib`, JSX settings, and its `include`/`exclude` list. `daemon/tsconfig.json` layers on a stricter module posture of its own on top of the shared base — `"module": "Preserve"`, `"verbatimModuleSyntax": true`, `"noUncheckedIndexedAccess": true`, `"noImplicitOverride": true`.
+A test sits next to the module it covers, or one directory above it. There is no `__tests__` directory.
 
-The `app` pass is the broadest: because `app/` imports core source directly (`../../core/src/*.ts`), the app program type-checks `core/src/` too (the base's ambient `"types": ["bun", "node"]` covers both). Test files (`*.test.ts`) are excluded from the app pass via `"exclude": ["src/**/*.test.ts"]` so test-only stubs do not pollute the production types. `cli/tsconfig.json` reaches into the app program too — the `export` command reuses the app's exporter (`app/src/export/*`), which transitively pulls Solid JSX + Vite-resolved CSS modules — so `cli`'s own tsconfig carries the same `"jsx": "preserve"` / `"jsxImportSource": "solid-js"` setup plus `app/src/vite-env.d.ts` in its `include`.
-
-To type-check a single workspace, run its step directly:
-
-```bash
-(cd core && bunx tsc --noEmit)     # core only
-(cd app && bunx tsc --noEmit)      # app + core/src
-(cd cli && bunx tsc --noEmit)      # cli + the app/export bridge
-(cd mcp && bunx tsc --noEmit)      # mcp only
-(cd relay && bunx tsc --noEmit)    # relay plugin hooks
-(cd memory && bunx tsc --noEmit)   # memory only
-(cd daemon && bunx tsc --noEmit)   # daemon, plus its own stricter module posture
-```
-
-Every workspace `tsconfig.json` sets `"noEmit": true` (inherited from the shared base) — these passes only check, never compile.
-
----
-
-## Offline agent-CLI integration tests (mock LLM, zero account API calls)
-
-**The rule: `bun test core` never makes a real API call against anyone's account, full stop.** This
-applies to two distinct kinds of test that could otherwise spend real money or consume real quota:
-
-1. **Live model tests** (`core/test/chat.test.ts`'s `describe.skip`-by-default live block, and any
-   test file gated the same way) drive Bismuth's own Claude Code integration against the REAL
-   Anthropic API, using the developer's own logged-in account. These are opt-in via the
-   `BISMUTH_LIVE_TESTS=1` environment variable (see `core/test/liveGate.ts`) and skip by default —
-   running them costs real money/quota, so they must never run in CI or a default `bun test`.
-2. **Mocked agent-CLI integration tests** (`core/test/chatProviders/*Mocked.test.ts`,
-   `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`)
-   run by default in `bun test core` (no opt-in needed) precisely because they spend nothing, and skip
-   when the relevant CLI **binary** isn't installed (a portability/CI concern), never when an
-   **account** isn't logged in — a missing-binary skip and a missing-account skip must never be
-   conflated (see each test file's own header for why). They are NOT all the same shape, and the
-   difference matters (corrected here after an earlier version of this paragraph overstated it: this
-   item covers TEN files total — the seven `*Mocked.test.ts` files plus three fake-agent files,
-   `acpFakeAgent.test.ts`, `clineAuthFakeAgent.test.ts` and `acpPermissionFakeAgent.test.ts`, none of
-   which is a real CLI. The
-   `cline` and `openclaw` gaps this paragraph used to flag were both closed, in independent tasks that
-   landed around the same time — all seven `*Mocked.test.ts` files now drive a real CLI through at
-   least a partially mocked path):
-   - `claudeMocked`/`opencodeMocked`/`codexMocked`/`gooseMocked`/`geminiMocked`/`clineMocked`/
-     `openclawMocked.test.ts` drive a REAL agent CLI binary (`claude`/`opencode`/`codex`/`goose`/
-     `gemini`/`cline`/`openclaw`) through Bismuth's OWN production chat driver, pointed at a **local
-     mock LLM server** instead of the real provider API — see the verification table below for exactly
-     how far each one is confirmed (all seven are now full turn E2E). `clineMocked.test.ts` is two
-     describe blocks, not one: an original one proving the DEFAULT (no-bypass-configured) path fails
-     safely against an isolated, never-authenticated `CLINE_DIR`, plus a later "real E2E" block proving
-     a full turn completes once a real, source-cited env-var bypass (`CLINE_API_KEY`) is applied — see
-     the table's `cline` row. `openclawMocked.test.ts` is the heaviest of the seven: `openclaw acp` is
-     a thin bridge to a separate Gateway process, so this test also spawns a REAL
-     `openclaw gateway run` process (`core/test/support/openclawGateway.ts`) pointed at the mock, torn
-     down in `afterEach` with an owned-pid leak check.
-   - `acpFakeAgent.test.ts` drives a **fake ACP agent** (`core/test/support/fakeAcpAgent.ts`, a
-     hand-rolled stub speaking the wire protocol), not a real CLI at all — see "The fake ACP agent"
-     below for why a fake is the only way to cover the version-skew branch it exists for.
-   - `clineAuthFakeAgent.test.ts` drives the SAME fake ACP agent, in a mode that reproduces cline's
-     real ACP auth gate (cited from cline's own compiled source — see `fakeAcpAgent.ts`'s header) —
-     needs no `cline` binary at all, so unlike `clineMocked.test.ts`'s real-E2E block it never skips.
-     Proves Bismuth's driver both surfaces the auth-required refusal cleanly AND completes a full turn
-     once the fake's gate is satisfied — coverage that did not exist anywhere in this repo before.
-   - `acpPermissionFakeAgent.test.ts` drives the SAME fake ACP agent in its held-prompt mode
-     (`FAKE_ACP_PROMPT_HOLD=permission`) to cover the `session/request_permission` ROUND TRIP — the
-     one path where Bismuth writes bytes back INTO an agent rather than translating one-way, and the
-     one whose failure mode is a turn that never completes. Also needs no CLI at all.
-
-### The mock LLM server
-
-`core/test/support/mockLlm.ts`'s `startMockLlm()` spawns a real local HTTP server — the `llmock`
-binary from the `@copilotkit/aimock` devDependency — that answers Anthropic-, OpenAI-, and
-Gemini-shaped chat-completion requests from one small JSON fixture
-(`core/test/fixtures/llm/basic-turn.json`): a request whose last user message contains `"hello"`
-gets back the literal text `"Hello!"`. Every mocked test points its CLI's outbound base-URL env
-var(s) at this server (see `core/test/support/backendEnv.ts`'s per-backend mapping) instead of the
-real provider host, then asserts the fixture's exact text arrived — text no real model would ever
-reply with verbatim, which is what proves the mock (not a real API) served the turn.
-
-`startMockLlm()` **always** resolves the exact installed `@copilotkit/aimock` binary via
-`Bun.resolveSync`, anchored at its own module's directory — **never** `bunx llmock` / `npx llmock`.
-An unrelated npm package also happens to be named `llmock`; a bare-name lookup can silently resolve
-to it instead, with a different banner and different behavior and no error at all. If you're adding
-a new mocked test, always go through `startMockLlm()` — never spawn `llmock`/`aimock` yourself.
-
-### Per-backend verification status
-
-Not every backend's mapping in `backendEnv.ts` is verified to the same depth — the file's own
-per-case comments are the source of truth, and are updated every time a row is actually run live
-(never upgraded from a guess to "verified" without doing so). As of this writing:
-
-| Backend | Status | Notes |
-|---|---|---|
-| `claude` | **Verified**, full turn E2E | `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_API_KEY` |
-| `opencode` | **Verified**, full turn E2E | Needs an explicit `setModel("mock/mock")` after session-open (a real driver quirk — server mode doesn't consult the config's default model on a session's first turn) and a small mock `--latency` (a zero-latency reply can race past opencode's own event-stream subscription) |
-| `goose` | **Verified**, full turn E2E | `ANTHROPIC_HOST`/`GOOSE_PROVIDER=anthropic`, driven via `goose acp` |
-| `codex` | **Verified**, full turn E2E | Needs a `$CODEX_HOME/config.toml` (a custom `model_providers.*` block, `wire_api = "responses"`) — plain `OPENAI_BASE_URL` does **not** work for this codex version, confirmed live (see `backendEnv.ts`). Known cosmetic quirk: codex logs a benign "Model metadata not found" item for any model under a non-built-in provider, which the driver's own translator (correctly, per its own contract) surfaces as `result.isError === true` even though the assistant's text arrives correctly — `codexMocked.test.ts` asserts on the text, not on `isError`, and documents this inline |
-| `gemini` | **Verified**, full turn E2E | `GOOGLE_GEMINI_BASE_URL`/`GEMINI_API_KEY`, driven via `gemini --experimental-acp`. A real turn makes TWO model calls, not one: this gemini-cli's default model resolves to a Gemini-3-family model via its `"auto"` alias, which routes it through `NumericalClassifierStrategy` (a "rate this request's complexity 1-100" call with a strict `{complexity_reasoning, complexity_score}` JSON schema) BEFORE the user-facing turn — against the single generic text fixture used elsewhere, that call's response never parsed as JSON, so it silently burned all 5 retry attempts (~65-90s of exponential backoff, confirmed live: 90440ms end to end) before falling through, which is what looked like a permanent stall (it was a real ~90s completion, past the 30s test timeout, not a true hang). `checkNextSpeaker` was a separate early suspect but is confirmed unreachable: gemini-cli forces `skipNextSpeakerCheck: true` whenever ACP mode is active, which is the only mode Bismuth's driver uses. Fixed with one extra JSON-shaped fixture in `core/test/fixtures/llm-gemini/basic-turn.json` (kept separate from the shared fixture dir so no other backend's test is affected) — turn now settles in ~53ms. See `backendEnv.ts`'s `gemini` case and `geminiMocked.test.ts`'s header for the full root-cause and fix |
-| `cline` | **Verified, full turn E2E** (via a discovered bypass — corrected from an earlier "not mockable" finding) | ACP mode (`cline --acp`) gates `session/new` behind `-32000 "Authentication required"` UNLESS `process.env.CLINE_API_KEY` is set — a real, unconditional escape hatch found by reading cline 3.0.47's own compiled source (never `authenticate`, never OAuth; see `backendEnv.ts`'s `cline` case for the exact source citation). Combined with `CLINE_PROVIDER=openai-compatible` (a non-OAuth provider id the auth check never validates) and a hand-written `$CLINE_DIR/data/settings/providers.json` pointing its `baseUrl` at the mock, a real cline binary completes a full turn — `clineMocked.test.ts`'s newer "real E2E" block. The ORIGINAL default-path (no bypass configured) safe-failure test is unchanged and still passes: it proves the OTHER, honest fact that with no bypass applied, `session/new` still fails safely. One honest limit remains: the real "cline"/"openai-codex" OAuth providers are still genuinely closed (this routes around the gate via a third provider id, not through OAuth). A SECOND limit listed here until 2026-08-01 — that cline's `configOptions` mis-orders a "provider" selector ahead of the true "model" selector under the same category, so `detectModelShape` picks the wrong one — **was real but is now FIXED**, and the mechanism this table used to publish for it was **wrong**. It claimed the two selectors were separable because the model selector's options carried an `.id` the provider's lacked; driving real `cline` 3.0.48, `goose` and `openclaw` against a local mock showed **both** are `{value, name}`, as is every ACP select option in every SDK generation (`SessionConfigSelectOption` is `{value, name, description?}` in 0.20.0/0.24.0/0.29.0/1.3.0 alike). So the empty model picker was never cline-specific: `detectModelShape` filtered options on a field nothing emits, and its `configOptions` branch had never returned a model from any real binary — goose was equally affected. Fixed in `protocol.ts` by reading `value` (`id` kept only as a back-compat fallback), flattening grouped options, and ranking the several `category:"model"` candidates (`pickModelOption`) rather than taking the first — note that "first non-empty wins" is *disproven* by cline's own payload, since it selects the provider and yields a populated-but-wrong picker. `models`/`modelConfigId`/`currentModelId` are all correct for cline now, and goose's `effortLevels` populate. Covered by `acpProtocol.test.ts`'s `detectModelShape` block, written from the captured payloads |
-| `openclaw` | **Verified**, full turn E2E | `openclaw acp` is a thin bridge to a separate Gateway process (own `models.providers.*` config) — `openclawMocked.test.ts` spawns a REAL `openclaw gateway run` (`openclawGateway.ts`) against the mock, isolated via `OPENCLAW_CONFIG_PATH`/`OPENCLAW_STATE_DIR`. THREE real, pre-existing Bismuth-side bugs were found and fixed to get here (see `chatProviders/acp/agents.ts`'s openclaw entry and `driver.ts`'s `killWithEscalation`/`KILL_ESCALATION_GRACE_MS`): (1) Bismuth's old default spawn args (`openclaw acp`, no `--session`) failed the FIRST turn on any fresh Gateway — the bridge's own default `acp:<uuid>` session name collides with an unrelated OpenClaw feature that reserves that prefix; fixed with a PER-CHAT `--session agent:main:bismuth-<chatId>` (`AcpAgentSpec.sessionKeyArgs`). A first version of this fix used a FIXED constant session key instead — review caught that as an active cross-chat content-leak (one chat's text arriving inside another's upstream request, confirmed via `openclawMocked.test.ts`'s session-isolation test), not a mere isolation nicety, so it must stay per-chat. Known follow-up, decided ACCEPTED not fixed (task-15): each distinct session key is its own on-disk openclaw transcript (~1.6KB, scales with conversation length) PLUS an entry in a shared `sessions.json` index (~20KB per session, NOT per turn — dominated by a static skills-prompt snapshot), neither ever pruned — measured live, ~21-22KB of `~/.openclaw` growth per Bismuth chat a user ever opens against openclaw, forever. Deliberately NOT pruned on `closeChat`: `agentBackends/catalog.ts` declares `resume: true` for this backend, and `server.ts`'s WS `resume` message can reach it, so deleting openclaw's own session state at chat-close would silently break a real, reachable resume path — see `agents.ts`'s openclaw entry for the full reasoning (mirrors this repo's own "never delete in-use data on a heuristic" precedent from the daemon side). (2) On a machine with Bismuth's MCP tools installed, `session/new`'s usual non-empty `mcpServers` array is REJECTED by openclaw's ACP bridge outright ("does not support per-session MCP servers"); fixed via a new `AcpAgentSpec.supportsSessionMcpServers: false` flag — consequence: openclaw chats get no Bismuth MCP tools (bismuth_cli/docs/memory). (3) A real `openclaw acp` process does not exit on SIGTERM alone (its own shutdown handler never calls `process.exit()`) — `driver.ts`'s `closeChat()` AND `abortTurn()`'s grace-timeout fallback both used to leave it running indefinitely; fixed at both call sites with a shared grace-then-SIGKILL escalation (`killWithEscalation`/`KILL_ESCALATION_GRACE_MS`), the same pattern `openclawGateway.ts`'s own process teardown already used (`mockLlm.ts`'s own teardown does NOT escalate — a bare kill+await). CONFIRMED GAP (task-15, resolving the prior "open question, not verified either way"): this escalation's SIGKILL does NOT reach the real agent behind the two `npx`-spawned ACP adapters (`claude-code-acp`/`codex-acp`) — verified directly against both real published packages, not a stub. `npx` forks a genuine child distinct from its own pid in both cases, and `proc.kill(9)` against only the wrapper leaves that real child alive, every time. Currently unfixed — see `driver.ts:153-175`'s `KILL_ESCALATION_GRACE_MS` comment for the full finding and the recommended follow-up |
-
-The **version-skew branch** in `core/src/chatProviders/acp/protocol.ts`'s `detectModelShape` (an ACP
-agent's `session/new` reporting the OLD `models.availableModels`/`currentModelId` shape vs the NEW
-`configOptions` shape) cannot be covered by any single real CLI — nothing installed anywhere reports
-both. `core/test/support/fakeAcpAgent.ts` is a small, hand-rolled fake ACP agent (JSON-RPC over
-stdio, no network of any kind) used by `core/test/chatProviders/acpFakeAgent.test.ts` to drive both
-branches from one place, following the exact "write + chmod a stub binary, prepend it onto PATH"
-pattern `relay/test/wrap.test.ts` already established for testing a driver against a fake binary.
-
-The same fake agent also has a **cline auth-gate mode** (`FAKE_ACP_AUTH_GATE=cline`, opt-in and fully
-decoupled from the model-shape logic above — the three original `acpFakeAgent.test.ts` tests are
-unaffected), reproducing cline's real `initialize`/`session/new` auth surface cited from its own
-source (see `fakeAcpAgent.ts`'s header). `core/test/chatProviders/clineAuthFakeAgent.test.ts` drives
-it two ways: gate closed (no `FAKE_ACP_CLINE_AUTHED`) proves the driver surfaces the real
-`-32000`/"Authentication required" refusal as a clean `error` frame with no stray assistant-text or
-result frame anywhere in the transcript; gate open (`FAKE_ACP_CLINE_AUTHED=1`, mirroring the real
-`CLINE_API_KEY` bypass) proves a full turn completes — assistant-text, then `result.isError===false`,
-then `done`. This needs no `cline` binary at all, so it is the coverage guaranteed to run on every
-machine regardless of what's installed — `clineMocked.test.ts`'s real-E2E block is the (also real,
-also verified) belt-and-suspenders version that only runs where a real `cline` happens to be present.
-
-The fake also has a **held-prompt mode** (`FAKE_ACP_PROMPT_HOLD=permission`, opt-in and decoupled the
-same way), which makes `session/prompt` NOT settle synchronously: the fake streams a `tool_call`,
-calls `session/request_permission` back into the client, and withholds the prompt's JSON-RPC response
-until a reply lands on its own stdin. That one capability is deliberately built as a generic
-mechanism — an outbound `callClient()`, inbound response routing, and a `heldPrompts`/`settlePrompt`
-registry — because four separate coverage gaps (turn queue, abort, resume, never-terminating turn)
-all need the same "a turn is observably in flight" window and none of them can be written without it.
-`acpPermissionFakeAgent.test.ts` uses it to prove the permission round trip through the real driver:
-the `permission` ChatFrame's id (which is the agent's own outbound rpc id), the exact bytes written
-back (`{outcome:{outcome:"selected", optionId}}` for allow AND deny, `{outcome:{outcome:"cancelled"}}`
-when the agent offers no selectable options), and the ordering — no `result`/`done` frame exists while
-the prompt is parked, all of them arrive after. Nothing can settle that prompt except a real,
-correctly-addressed, parseable reply, so a wrong rpc id, a missing `pendingPermissions` entry, a
-malformed outcome, or no reply at all each surface as a test timeout rather than a false pass.
-
-### Recording a new fixture
-
-`llmock --record` is a **deliberate, manual act that makes REAL API calls** — it proxies unmatched
-requests to a real provider and saves the response as a new fixture. It is never run by `bun test`,
-never wired into CI, and never triggered as a side effect of anything in this repo:
-
-```bash
-# Proxies to the real OpenAI API using your own credentials — costs real money/quota.
-npx -p @copilotkit/aimock llmock --record --provider-openai https://api.openai.com \
-  -f core/test/fixtures/llm/my-new-fixture.json
-# ...then drive the CLI you're recording against this server as usual...
-```
-
-Only run this yourself, with your own account, when you actually need a new fixture — never assume
-a fixture can be regenerated as part of routine testing.
-
----
-
-## File layout and colocating tests
-
-Every test file is a `*.test.ts` colocated with (or adjacent to) the module it tests:
-
-| Location | Test files |
+| Location | Covers |
 |---|---|
-| `core/test/` | One `*.test.ts` per backend module in `core/src/` |
-| `core/test/bases/` | Tests for `core/src/bases/` (lexer, parser, evaluate, query, etc.) |
-| `core/test/srs/` | Tests for `core/src/srs/` (scheduler, cards, parser, reviewRow) |
-| `core/test/drawing/` | Tests for `core/src/drawing/` (model, geometry, render2d, paper, theme, etc.) |
-| `core/test/schema/` | Tests for `core/src/schema/` (settingsSchema, validate, coerce, integration, etc.) |
-| `app/src/` | Frontend tests colocated with their source modules (`panes.test.ts` next to `panes.ts`) |
-| `app/src/bases/` | Flashcards queue, row cache, calendar serialization tests |
-| `app/src/calendar/` | EventStore, date helpers, state tests |
-| `app/src/editor/` | CodeMirror extension unit tests (tableModel, wikilink, tag, autocomplete, etc.) |
-| `app/src/graph/` | Label selection, collision radius, agent graph, agent layout tests |
-| `app/src/export/` | Export format and renderer tests |
-
-There is no separate `__tests__` directory. The rule is: test lives next to (or one directory above) the source it covers.
-
----
-
-## The shared vault helper: `core/test/helpers.ts`
-
-Most backend tests need a throwaway on-disk vault and memory directory. The shared helper is:
-
-```ts
-// core/test/helpers.ts
-import { makeSampleVault } from "./helpers";
-
-const { vault, memory } = await makeSampleVault();
-```
-
-`makeSampleVault()` creates isolated directories in `$TMPDIR` and populates them with three notes (`essay.md`, `housing.md`, `internship.md`) and one memory note (`michael-profile.md` referencing `[[internship]]` and `[[essay]]`). Each call produces a fresh pair — tests that mutate files (writes, backups, settings) cannot bleed into one another.
-
-**Test dirs go through `core/test/tempDirs.ts`'s `tempDir(prefix)`, never a raw `mkdtempSync`.** A raw `mkdtempSync` call is untracked and leaks — that is exactly how this repo's `/var/folders` reached 9,255 leftover dirs (~106MB) before anyone noticed: 244 call sites across 52 test files each created a dir nothing ever removed. `tempDir()` allocates the same way but also pushes the path onto a shared registry; `sweepTempDirs()` empties that registry with `rmSync(..., { recursive: true, force: true })`, wrapped so a cleanup failure can never turn a green suite red. The sweep is registered as an `afterAll` from the **preload** (`core/test/setup.ts`, wired in the root `bunfig.toml`), not from `helpers.ts` — a module evaluates once per process, so a hook registered at `helpers.ts`'s module scope only fires for whichever test file happened to import it first; measured live, that placement still left 479 dirs behind on a full 157-file run. `process.on('exit')` alone was tried too and does not fire under `bun test` at all, so it's kept only as a backstop, not the mechanism. `registerTempDir(dir)` exists for a dir a subsystem creates lazily itself (e.g. one handed to the layout cache via an env var) so it still gets swept even though `tempDir()` never allocated it.
-
-`makeVault()`/`makeSampleVault()` in `helpers.ts` already call `tempDir()` internally — nothing to change there. For a custom vault, call `tempDir()` directly and use `writeNote(dir, "path.md", "content")` from `core/src/files.ts`:
-
-```ts
-import { tempDir } from "./tempDirs";
-import { writeNote } from "../src/files";
-
-const dir = tempDir("bismuth-vault-");
-await writeNote(dir, "note.md", "---\ntags: [book]\n---\n# Title\n\nBody");
-```
-
----
-
-## Key test files
-
-### `core/test/vault.test.ts`
-
-Tests `buildVaultGraph()` from `core/src/vault.ts`. Covers:
-
-- Node creation: every `.md` becomes a `kind: "note"` node; `id` is the path without extension; `label` is the basename; `folder` is the top-level directory segment (or `"(root)"` for root files)
-- Link edges: only created for targets that exist; wikilinks inside fenced code blocks produce no edge; duplicate links to the same target may yield multiple edges (implementation-defined); self-links are handled (check is present but behavior is not strictly asserted)
-- Path-style wikilinks: `[[reading/My Note]]` resolves exactly to `reading/My Note` before falling back to basename matching
-- Tag nodes: `kind: "tag"` nodes with `id: "tag:foo"` and `label: "#foo"`, deduped across notes
-- Edge kinds: `"link"` for wikilinks, `"tag"` for both frontmatter and inline tags
-- Malformed YAML frontmatter does not crash the graph builder
-
-### `core/test/engine.test.ts`
-
-Tests `buildGraph()` from `core/src/engine.ts`, which merges vault + memory and injects cross-brain `"about"` edges:
-
-```ts
-expect(g.edges).toContainEqual({
-  from: "mem:michael-profile", to: "internship", kind: "about",
-});
-```
-
-- Memory nodes use the `mem:` prefix (`mem:michael-profile`)
-- About edges are only created for vault files that actually exist — links to missing vault notes are silently dropped
-- Two disconnected clusters receive distinct `community` values (community detection is tested here)
-- `communityLabel` is stamped on every node
-
-### `core/test/server.test.ts`
-
-Integration tests against a live `createServer({ vault, memory, port: 0 })` (port 0 = OS-assigned free port). Exercises the full HTTP surface with real `fetch()` calls. Pattern:
-
-```ts
-const server = createServer({ vault, memory, port: 0 });
-const base = `http://localhost:${server.port}`;
-try {
-  const g = await (await fetch(`${base}/graph`)).json();
-  // assertions...
-} finally {
-  server.stop(true);
-}
-```
-
-- `GET /graph` returns merged brain graph with correct nodes and edges
-- `GET /config` returns `{ vault, memory }` launch paths
-- Relay ingest routes (`POST /relay/session`, `POST /relay/subagent/start`) return `400` when required fields are missing; a well-formed POST reaches the relay registry (asserted by reading `relay.ts`'s `snapshot()` directly — `GET /agent-graph`, which used to render this end-to-end, is gone along with the agents graph)
-- `GET /daemon/snapshot` always returns `200` with a snapshot shape (never throws, even with no daemon home) — this replaced `GET /daemon/graph`; `daemonGraph()`/`buildDaemonGraph()` (`core/src/daemonGraph.ts`) are unchanged and still tested directly, but the app no longer has a daemon graph mode to fetch them for (see `docs/graph/overview.md`)
-
-### `core/test/relay.test.ts`
-
-Tests the in-process relay registry (`core/src/relay.ts`) — session/subagent bookkeeping populated by the relay plugin's hooks; it used to power the now-removed agents graph and today has no reader at all. Uses `beforeEach(() => resetRelay())` for isolation. Covers the full session/subagent lifecycle:
-
-- `registerSession` + `snapshot` roundtrip
-- Re-registering the same `sessionId` is a heartbeat: bumps `lastSeen`, preserves subagents and `cwd`
-- Re-running claude in the same `terminalId` with a new `sessionId` evicts the old session and its subagents
-- `endSession` removes session and its subagents
-- Subagent `startSubagent`/`stopSubagent` stores `lastMessage`, sets `done: true`, records `doneAt`
-- Finished subagents are pruned after the `DONE_SUBAGENT_TTL_MS` (8s) linger — both via `snapshot()`/`prune()`'s own sweep and eagerly as a side effect of a later `stopSubagent` call, so a long-lived terminal tab that never closes doesn't accumulate done subagents indefinitely
-- `prune(openTabIds, now)` drops sessions whose terminal tab has closed, plus orphaned subagents
-
-### `core/test/terminal.test.ts`
-
-Tests `buildPtyEnv` (pure, no disk) and live PTY session creation:
-
-```ts
-const ENV_BASE = {
-  base: { PATH: "/usr/bin" },
-  relayUrl: "http://localhost:4321",
-  terminalId: "tab-1",
-  pluginDir: "/repo/relay",
-  shimDir: "/repo/relay/shim",
-  zdotDir: "/repo/relay/shim/zdotdir",
-};
-```
-
-- `ZDOTDIR` is set to the shim zdotdir only when `realClaude` resolves; absent otherwise
-- `CLAUDE_RELAY_URL` and `CLAUDE_TERMINAL_ID` are always set
-- The shim is prepended to `PATH` only when `realClaude` is not null; skipped entirely otherwise
-- No trailing colon when base has no `PATH`
-- `undefined` values in the base env are stripped from the result
-- Live PTY: `createTerminalSession` spawns a shell that echoes stdin; `resizeSession` propagates SIGWINCH; `killSession` removes the session from the registry
-
-### `core/test/daemonViz.test.ts`
-
-Tests `nodeVisualState()` from `core/src/daemonViz.ts`, the pure encoder for daemon node visual tokens:
-
-| State | `fill` | `border` | `opacity` |
-|---|---|---|---|
-| disabled (any) | `"base"` | `"none"` | `0.15` |
-| enabled, not running | `"bg"` | `"palette"` | `1` |
-| running | `"palette"` | `"none"` | `1` |
-
-`lastResult` and `lastFiredMs` are ignored — they no longer drive the encoding. The `now` parameter is optional and unused in the current implementation.
-
-### `core/test/daemonGraph.test.ts` and `core/test/daemon.test.ts`
-
-`daemon.test.ts` sets `BISMUTH_DAEMON_DIR` to a fresh tmp dir per test (via `makeHome(files)`) and cleans up in `afterEach`. Tests degrade-gracefully behavior with missing files, `listDevices`/`getOwner`/`setOwner` contract shapes, `setCronEnabled`/`setProcessEnabled` writes, and `daemonStatus.running` detection via `daemon.pid`.
-
-### `core/test/changeClassifier.test.ts`
-
-Tests `extractFingerprint` / `diffFingerprints` / `createChangeTracker`. Key behaviors:
-
-- Fingerprint is order-independent for links and tags (sorted before comparison)
-- A pure body edit (no link/tag/icon change) produces `{ graph: false, tree: false }`
-- Adding a wikilink produces `{ graph: true, tree: false }`
-- Adding a tag produces `{ graph: true, tree: false }`
-- Changing the icon produces `{ graph: false, tree: true }`
-- Tags/links inside fenced code blocks are stripped from fingerprints
-
-### `core/test/layout.test.ts`
-
-Tests `computeLayout` and `pivotMDS`:
-
-- Every node gets a finite `[x, y, z]` position
-- 2D mode (`dimensions: 2`) forces `z = 0` for all nodes
-- Community-tagged clusters separate far better under community-aware forces than without them (see "community-aware clustering" tests). The topology-only version of this assertion (two well-connected clusters joined by a bridge, no `community` field) was **removed** under the LinLog + degree-repulsion default — it no longer reliably holds (see the `REMOVED (Task 5)` comment in the test file for the measured ratios); this is the same known limitation documented for the ` ```graph ` embedded block (`docs/editor/graph-block.md`) and applies to the daemon graph too.
-
-### `core/test/layout-cache.test.ts`
-
-Tests `graphSig` (cache key):
-
-- Stable for identical graphs
-- Order-independent for nodes and edges
-- Busts when an edge is retargeted — same node set, same edge count, but different connectivity must change the key
-
-### `core/test/sse.test.ts`
-
-Tests `createSseRegistry` and `formatEvent`:
-
-- `formatEvent({ version: 7 })` → `"data: {\"version\":7}\n\n"`
-- `subscribe`/`publish` delivers formatted frames to all controllers
-- `unsubscribe` stops further deliveries
-- A broken controller (throws on `enqueue`) is auto-removed; other subscribers continue receiving
-
-### `core/test/settings.test.ts`
-
-Tests `readSettings`, `getVaultSchema`, and the schema suggestion/validation pipeline. Key:
-
-- `readSettings` returns `null` when `.settings` is absent
-- Returns `{ raw, data }` when present
-- Tolerates malformed YAML (returns `data: {}`)
-- `getVaultSchema` parses the `properties:` section into a type registry
-
-### `core/test/schema/settingsSchema.test.ts`
-
-Structural tests asserting the exact top-level sections of `SETTINGS_SCHEMA` — 24 of them (currently: `appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `keybindings`, `mcp`, `properties`, `server`, `srs`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`). **Adding a new top-level section requires updating the hardcoded list in this test.**
-
-### `core/test/bases/query.test.ts`
-
-Tests `runView()` with real `Row[]` data:
-
-```ts
-const base: BaseConfig = {
-  formulas: { ppu: "(price / age).toFixed(2)" },
-  filters: 'status != "done"',
-  view: { type: "table", order: [...], sort: [...], summaries: { "note.price": "Sum" } },
-};
-```
-
-Covers filter application, formula evaluation, sort direction, base filter application, and row grouping.
-
-### `core/test/srs/scheduler.test.ts`
-
-Tests the SM-2 implementation in `core/src/srs/scheduler.ts`:
-
-- New card + "good" → `interval: 1`, `ease: 250`, `due: +1 day`
-- New card + "easy" → `interval: 4`, `ease: 270`
-- Reviewing "easy" bumps ease and applies `easyBonus`
-- Reviewing "hard" halves interval and drops ease (floor 130); interval floored to 1
-- `formatScheduling` / `parseScheduling` round-trip: `"<!--SR:!2026-06-01,4,270-->"`
-- Interval clamped to `MAX_INTERVAL` (36525 days)
-
-### `core/test/drawing/model.test.ts`
-
-Tests `emptyDoc`, `roundDoc`, `serializeDoc`/`parseDoc`:
-
-- `emptyDoc()` has `v: 1`, `kind: "drawing"`, one page, no strokes
-- `roundDoc` rounds x/y to integers and clamps pressure to 0–255
-- `serializeDoc`/`parseDoc` round-trip identity
-- `parseDoc` throws `/not a drawing/i` for non-drawing JSON
-
-### `app/src/panes.test.ts`
-
-Tests the pure pane-tree model (`panes.ts`). All functions are pure over immutable trees. Key assertions:
-
-- `makeTab("a.md")` returns `{ root: Leaf, focusId }` focused on the single leaf
-- `splitLeaf(root, id, "row")` replaces the leaf with a `Split` whose two children both carry the original content; the new leaf gets a fresh `id`
-- `closeLeaf` on the last remaining leaf returns `null`; on an interior leaf collapses the parent split into the surviving sibling
-
-### `app/src/settings.parity.test.ts`
-
-A drift guard that enforces two invariants across the entire settings schema:
-
-1. Every settable leaf (scalar, non-`properties`) must have a materialized default in the `DEFAULTS` object in `app/src/settings.ts`
-2. Every settable leaf must carry a non-empty `doc` string (so Ctrl-Space can explain it)
-
-This test **fails immediately** when a new setting is added to `settingsSchema.ts` without a corresponding default in `DEFAULTS` or a `doc` field — it is the first line of defense against schema drift.
-
-### `app/src/graph/labelSelection.test.ts`
-
-Tests the pure label-ladder math the ASCII knowledge-graph renderer (`AsciiGraphRenderer.ts`) draws on:
-
-- `computeAlwaysOnSet` (top-N nodes by undirected edge degree, union'd with the active file): empty graph → empty set, active file always included if present, degree ties broken lexicographically by `id`, `hubCount` clamped to total node count, edge endpoints as either bare ids or `{ id }` objects
-- `fileLabelBudget`/`fileLabelAlpha`/`clusterLabelAlpha`: zero at/below the zoom-ladder reveal threshold, monotonically growing past it, file/cluster alpha sum to exactly 1 (a true crossfade)
-- `clusterLabelText`: upper-casing, word-boundary truncation at a character cap (never mid-word, never an ellipsis), determinism
-- `eyebrowWidthCells`, `levelBoundaries`, and the rest of the N-level cluster-name ladder math
-
-(`graph/collide.ts` and its test were deleted along with the old `CanvasGraphRenderer.ts` — the per-node collision-radius helpers they covered had no equivalent need in the character-grid renderer.)
-
-### `app/src/bases/flashcardsQueue.test.ts`
-
-Tests `buildQueue` (pure review-queue builder) for the flashcard SRS system:
-
-- Non-bidirectional: one `"fwd"` entry per row
-- Bidirectional cram: `"fwd"` then `"rev"` per row, using `due` and `dueBack` fields respectively
-- Due-date filter is per-direction: a card can be due in `"rev"` but not `"fwd"`
-- A new card (no scheduling columns) is due in both directions when bidirectional
-
-### `app/src/editor/tableModel.test.ts`
-
-Tests the GFM pipe-table parser/serializer:
-
-- `parseTableRow` strips outer rails, trims cells, unescapes `\|`
-- `serializeTable` re-escapes literal pipes
-- `parseAlign` maps separator patterns (`---`, `:--`, `--:`, `:-:`) to alignment names
-
-### `app/src/calendar/EventStore.test.ts`
-
-Tests `EventStore` with `MemoryBackend` (no disk). Covers non-recurring and recurring event expansion, `deleteOccurrence`, `editSeries`, and `editFollowing` semantics.
-
-### `app/src/cssComments.test.ts`
-
-Guards against a real, shipped bug class: a CSS comment that closes EARLY because its own prose contains a `*/` sequence. `ChatView.css`'s header comment once described the token families as `--r-*/--rule-*/--shadow-*` — the `*/` inside `--r-*/` ended the comment two lines early, the parser error-recovered by consuming the next `{…}` block (the entire `.chat-host` rule), and the result was invisible in review: valid UTF-8, a successful build, no console warning, every other rule still working. The chat pane silently lost `display:flex`/`height:100%` and six `--chat-surface-*`/`--chat-border-*` custom properties, so the composer rendered with no fill and no border. The same bug was separately live in `sheet/univer-theme.css`'s `--univer-gray-*/--univer-primary-*` comment. The test scans every `.css` file (via `Bun`'s `Glob`) for a comment-closing `*/` not preceded by whitespace or `*` — the invariant every deliberate closer in this codebase (`… */` or `…**/`) already satisfies.
-
-### `app/src/cssLayering.test.ts`
-
-Guards the rule that makes the CSS-Modules migration safe: a class name emitted as a runtime string literal (the markdown renderer, editor decorations, export) can never be DEFINED inside a CSS Module, because module class names are hashed at build time while those emitters keep writing the plain literal — a class that migrates by mistake makes every rendered note silently lose that styling, with no typecheck, no unit test, and no console warning to catch it. `RUNTIME_CLASS_PREFIXES` (`bismuth-`, `callout-`, `cm-`) names the literal-emitting prefixes (source of truth: `bases/markdown.ts`, `editor/livePreview.ts`, `editor/inlineMarkdown.ts`, `editor/bismuthWord.ts`, `editor/cellList.ts`, `editor/queryBlock.ts`, `export/`); the sanctioned escape hatch is `:global(...)`, which the check allows (e.g. a module styling `.cm-editor` from inside itself). The file also pins `MAX_APP_CSS_CLASS_RULES` — a RATCHET on how many class rules may still live in global.css's `App.css` section (9 today — the page-frame rules that own no single component and stay global on purpose) — so a new rule landing in that section instead of a component's own module fails the gate immediately rather than growing the pile back.
-
-### `app/src/ui/uiLint.test.ts`
-
-Tests the pure helpers behind `app/src/ui/uiLint.ts`'s all-caps button-label lint: `extractText` (flattens a JSX children value — strings, numbers, arrays — into plain text, contributing `""` for anything with no statically-known text, like a function child), `isUppercaseLabel` (true when the text contains no lowercase letter, vacuously true for empty text), and `uppercaseWarning` (returns a message naming the corrected all-caps form for a lowercase label, `null` for anything already uppercase/empty/non-text).
-
-### `app/src/PaneTree.cleanup.test.ts`
-
-Source-text assertions (quote-agnostic regexes, deliberately tolerant of `'`-vs-`"` reformatting) proving `PaneTree.tsx`'s divider-drag handler cannot leak its `window` pointer listeners if a split unmounts mid-drag: `startDrag` attaches `pointermove`/`pointerup` to `window` and only the `up` handler used to remove them, so a mid-drag unmount left both listeners attached to a disposed scope. Checks that `onCleanup` is imported from `solid-js`, that the in-flight teardown is hoisted into a `let endDrag` ref (`endDrag = up`, cleared back to `null` once `up` fires normally), that an `onCleanup(() => endDrag?.())` is registered, and that `up` still removes both listeners itself in the normal case.
-
-### `app/src/tabRailVisibility.test.ts`
-
-Tests `tabRailVisible({ switcherOpen })` — the sidebar tab rail is visible whenever the Cmd+O quick-switcher takeover is closed, and hides only while it's open. This is now the ONLY thing that hides the rail; there is no `ui.verticalTabs` opt-out any more, since there's no horizontal strip left to fall back to.
-
----
-
-## Adding a new test
-
-### Core module test
-
-1. Create `core/test/<module>.test.ts` (or a subdirectory file for `bases/`, `srs/`, `drawing/`, `schema/`)
-2. Import from `bun:test` and the module under test using a relative path from `core/test/` to `core/src/`
-3. Use `makeSampleVault()` from `./helpers` for tests that need a vault on disk; use `tempDir(prefix)` from `./tempDirs` directly for custom vaults — never a raw `mkdtempSync`, which leaks (see "The shared vault helper" above)
+| `core/test/` | Backend modules in `core/src/`, with subdirectories mirroring `core/src/` (`bases/`, `srs/`, `drawing/`, `schema/`, `gcal/`, `theme/`, `chatProviders/`) |
+| `core/src/` | A few colocated tests: `routes/routeTable.test.ts`, the `statusBar*` modules, `assetFetch`, `bismuthHome` |
+| `core/test/upgrade/` | What an update does to an existing user's data |
+| `core/test/support/` | Mock LLM server, fake ACP agent and other harness code |
+| `app/src/**` | Frontend tests colocated with their module (`panes.test.ts` beside `panes.ts`) |
+| `cli/test/`, `mcp/test/`, `daemon/test/`, `memory/test/`, `relay/test/` | One directory per workspace |
+| `scripts/`, `bench/` | The gate, the docs check and the pure halves of bench tools |
+
+## Write a test
+
+### A backend module
+
+1. Create `core/test/<module>.test.ts`, or a file in the matching subdirectory.
+2. Import from `bun:test` and from the module under test by relative path.
+3. Allocate directories with `tempDir(prefix)`, or use `makeSampleVault()`.
 
 ```ts
 // core/test/mymodule.test.ts
-import { test, expect } from "bun:test";
-import { myFunction } from "../src/mymodule";
+import { test, expect } from 'bun:test'
+import { myFunction } from '../src/mymodule'
 
-test("does the right thing", () => {
-  expect(myFunction("input")).toBe("expected");
-});
+test('does the right thing', () => {
+    expect(myFunction('input')).toBe('expected')
+})
 ```
 
-4. Run with `bun test core/test/mymodule.test.ts` (or `bun test mymodule` — never `bun test core -- mymodule`, which does not filter)
+Run it with `bun test core/test/mymodule.test.ts`.
 
-### Frontend module test
+### A frontend module
 
-1. Create `app/src/<path>/<module>.test.ts` colocated with the source
-2. Import from `bun:test` — the Bun runner discovers all `*.test.ts` files automatically
-3. Frontend tests must avoid DOM APIs unavailable in Bun (no `document`, `window`, `ResizeObserver`, etc.). Pure logic — parsers, state machines, pure functions — tests well. Tests that require a real browser cannot be run with Bun.
+Create `app/src/<path>/<module>.test.ts` beside the source. Keep the logic under test in a plain `.ts` module with no framework imports. Pure parsers, state machines and models test well. No test file mounts a Solid component; verify components through their Storybook stories instead.
+
+A test that needs a DOM can install `happy-dom` explicitly with `new GlobalWindow()`, as `app/src/graph/AsciiGraphRenderer.test.ts` does.
+
+### An HTTP endpoint
+
+Start the real server on a free port with `createServer({ vault, memory, port: 0 })` and call it with `fetch`. Always stop it in a `finally` block, or the port leaks between tests.
 
 ```ts
-// app/src/myutil.test.ts
-import { test, expect } from "bun:test";
-import { myUtil } from "./myutil";
+import { createServer } from '../src/server'
+import { makeSampleVault } from './helpers'
 
-test("returns the expected value", () => {
-  expect(myUtil(42)).toBe(84);
-});
+test('GET /my-route returns the right shape', async () => {
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    try {
+        const res = await fetch(`http://localhost:${server.port}/my-route`)
+        expect(res.status).toBe(200)
+    } finally {
+        server.stop(true)
+    }
+})
 ```
 
-4. Run with `bun test app/src/myutil.test.ts` (or `bun test myutil` — never `bun test core -- myutil`, which does not filter)
+### A new settings section
 
-### A cwd-dependent JSX-resolution trap
+After adding a top-level section to `core/src/schema/settingsSchema.ts`:
 
-If a new `app/src/*.test.ts` imports a module that — even indirectly, through an otherwise
-unrelated import — pulls in a real `.tsx` Solid component, `bun test` can fail with
-`Cannot find module 'react/jsx-dev-runtime'` instead of running your actual test. Cause: Bun's
-JSX-runtime resolution (which is supposed to read `app/tsconfig.json`'s
-`jsxImportSource: "solid-js"`) is **cwd-dependent** — it resolves correctly when Bun's working
-directory is inside `app/`, but falls back to its default (`react-jsx`, importing the `react`
-package, which this repo does not have) when run from the repo root. That matters because the
-commit/push gates (`scripts/gate.ts`) invoke `bun test app/` from the repo root, not from inside
-`app/`, so this is not just a local quirk of how you happen to run a file.
+1. Add the section name to the hardcoded key list in `core/test/schema/settingsSchema.test.ts`.
+2. Add the matching field to the `Settings` interface in `app/src/settings.ts`. `DEFAULTS` derives from the schema.
+3. Run `bun run test:bless-schema` and commit the snapshot diff, as [Upgrade tests](#what-do-the-upgrade-tests-protect) explains.
+4. `app/src/settings.parity.test.ts` then fails on any leaf that lacks a default or a `doc` string.
 
-Fix: keep the logic under test in a module with **zero `.tsx` imports** of its own — see
-`app/src/pickResult.ts`, split out of `app/src/appWindow.ts` for exactly this reason (the latter
-has an unrelated static `import { pushToast } from "./Toast"`, a real Solid component; a static
-ES import evaluates its target eagerly regardless of whether the test ever calls anything that
-uses it). Do not "fix" this by converting an unrelated production import to a lazy
-`await import(...)` purely to dodge a test — that changes real runtime behavior (an extra await
-on an error path, an unenforced "the caller's module graph already loaded X" assumption) for a
-test-only reason, and the module split above gets the same result without touching it.
+### Import a Solid component without breaking the test
 
-The same trap resurfaces anywhere a Toast-free module needs `pushToast`/`dismissToast` — `ui/ToastHost.tsx`
-is itself a real Solid component (`ToastHost`). `app/src/ui/toastStore.ts` is the split: the pure
-signal + `pushToast`/`updateToast`/`dismissToast`, with `ui/ToastHost.tsx` re-exporting them. Import from
-`ui/toastStore`, not `ui/ToastHost`, from any module you want to stay unit-testable (see
-`app/src/serverVersion.ts`).
+If a test imports a module that pulls in a `.tsx` Solid component, even indirectly, `bun test` can fail with `Cannot find module 'react/jsx-dev-runtime'` instead of running.
+Bun resolves the JSX runtime from the working directory: it reads `app/tsconfig.json` (`jsxImportSource: "solid-js"`) when run inside `app/` and falls back to React when run from the repo root.
+The gate runs from the repo root, so the failure appears there.
 
-### Deferring module-scope side effects so they can be tested
+The fix is to keep the code under test in a module with no `.tsx` imports.
+`app/src/pickResult.ts` is separate from `appWindow.ts` for this reason, and `app/src/ui/toastStore.ts` holds the toast state so modules can import it without importing `ui/ToastHost.tsx`.
+Import from `ui/toastStore`, not `ui/ToastHost`, in any module you want to unit test.
+Do not turn a production import into a lazy `await import(...)` only to dodge the problem.
 
-`app/src/serverVersion.ts` used to open its `EventSource` and start its fallback `setInterval`
-poll at **module scope** — the moment anything imported the file. That made it impossible to
-import headlessly: Bun has no global `EventSource`, and a module-scope `setInterval` leaks a live
-timer into every later test in the process. Two real regressions (github issues #3 and #8) shipped
-through exactly that blind spot with zero runtime coverage.
+### Make module-level side effects testable
 
-The fix: an exported `start(deps?: Partial<StartDeps>)` that performs those side effects
-explicitly and returns a disposer, called once at real app boot (`app/src/index.tsx`) instead of
-at import time. `StartDeps` injects the `EventSource` factory, the version-fetch function, and the
-timer functions, so a test drives the whole SSE + poll chain with fakes — no network, no real
-timer:
+A module that opens a connection or starts a timer at import time cannot be imported by a test: Bun has no `EventSource`, and a leaked timer outlives its test.
+Export a `start(deps?)` function that performs the side effects and returns a disposer, and call it once from the app boot.
+`app/src/serverVersion.ts` does this: `start()` accepts the `EventSource` factory, the version fetch and the timer functions, so `app/src/serverVersionStart.test.ts` drives the whole chain with fakes.
 
-```ts
-const mod = await import("./serverVersion");
-const dispose = mod.start({
-  eventSourceFactory: (url) => new FakeEventSource(url) as unknown as EventSource,
-  fetchVersion: async () => ({ version: 0 }),
-  setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
-  clearIntervalFn: () => {},
-});
-// ...drive the fake EventSource, assert on serverVersion()/lastChange()/currentConnectionState()...
-dispose();
-```
+## Test helpers
 
-`start()` is idempotent (a second call is a no-op, returning the same disposer) so it's safe to
-call unconditionally at boot. See `app/src/serverVersionStart.test.ts` for the full suite this
-seam makes possible.
+`core/test/helpers.ts` provides two builders.
 
-### Server endpoint test
+- `makeSampleVault()` returns `{ vault, memory }`: three notes (`essay.md`, `housing.md`, `internship.md`) and one memory note (`michael-profile.md`) in fresh temp directories. Each call is isolated, so tests that write cannot affect each other.
+- `makeVault(files, prefix?)` builds a vault from a `{ relativePath: content }` map.
 
-Follow the `core/test/server.test.ts` pattern:
+Allocate every temporary directory with `tempDir(prefix)` from `core/test/tempDirs.ts`, never a raw `mkdtempSync`.
+`tempDir` records the path, and the root `bunfig.toml` preloads `core/test/setup.ts`, which removes every recorded directory after the run.
+`core/test/noRawMkdtemp.test.ts` fails if a test file in `core`, `relay`, `memory` or `mcp` calls `mkdtemp` directly.
+Use `registerTempDir(dir)` for a directory a subsystem creates itself.
 
-```ts
-import { createServer } from "../src/server";
-import { makeSampleVault } from "./helpers";
+The preload also points `BISMUTH_LAYOUT_CACHE_DIR` at a temp directory, so the suite never writes to the real layout cache under `~/.bismuth`.
 
-test("GET /my-route returns correct shape", async () => {
-  const { vault, memory } = await makeSampleVault();
-  const server = createServer({ vault, memory, port: 0 });
-  const base = `http://localhost:${server.port}`;
-  try {
-    const res = await fetch(`${base}/my-route`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body.nodes)).toBe(true);
-  } finally {
-    server.stop(true);
-  }
-});
-```
+## What do the upgrade tests protect?
 
-Always call `server.stop(true)` in a `finally` block to avoid port leaks between tests.
+`core/test/upgrade/` answers one question: if a user updates Bismuth, do they lose anything? Every other test starts from a vault the current code just created; these start from state an older build wrote. Run them alone with `bun run test:upgrade`.
 
-### Adding a new top-level settings section
+- **`settingsUpgrade.test.ts`** moves each historical settings layout (a vault-root `settings.yaml`, a `.settings/settings.yaml` directory, the current `.settings` file) through the open path.
+  It asserts that valid values and hand-written comments survive, that keys the schema does not know are kept rather than dropped, that keys added later read as their defaults without being written, and that reconcile is idempotent.
+  A corrupt file is left alone for the user to repair.
+- **`schemaSnapshot.test.ts`** pins every schema path, type, default, bound and enum member to `core/test/fixtures/upgrade/settings-schema-snapshot.json`.
+  A setting's default is what every user who never touched the key is running, so changing it changes behaviour for the whole installed base.
+  The test does not forbid the change; it forces it into the diff.
+  After an intentional schema change, regenerate the snapshot and commit it with your change:
 
-After adding a section to `core/src/schema/settingsSchema.ts`:
+  ```bash
+  bun run test:bless-schema
+  ```
 
-1. Update the hardcoded key list in `core/test/schema/settingsSchema.test.ts` — this test asserts the exact set of top-level keys
-2. Add the matching field to the `Settings` interface in `app/src/settings.ts` and to `DEFAULTS`
-3. `app/src/settings.parity.test.ts` will catch any missing leaf defaults or `doc` strings automatically
+- **`taskSyntaxUpgrade.test.ts`** checks that task lines written with emoji signifiers migrate through `taskMigrate` with every field intact, that an impossible date is flagged and stays visible, and that migration is idempotent.
 
----
+## How do the offline agent tests work?
 
-## Visual verification (`bench/`)
+The default `bun test` never calls a real model API or spends anyone's quota. Two mechanisms provide that.
 
-`bench/` is a root-level directory, not a workspace — it holds a toolchain of standalone scripts
-(run with `bun bench/<file>.ts`, never imported by production code) that verify what `bun test`
-structurally cannot: what a component actually **renders** in a real browser. Storybook is the
-surface every tool in here drives — `cd app && bun run storybook` (`:6006`, Storybook 9 +
-`storybook-solidjs-vite`), **787 story exports across 186 `*.stories.tsx` files** (measured
-2026-09-14 — re-count with `find app/src -name "*.stories.tsx" | wc -l` and
-`grep -rhoE "^export const [A-Za-z0-9_]+" app/src --include="*.stories.tsx" | wc -l` since this
-grows with every new component). Every file in
-`bench/` opens with a substantial header comment explaining precisely why it exists and how it
-differs from its siblings — read the file before trusting a summary of it, this one included.
+**Live tests are opt-in.** The live block in `core/test/chat.test.ts` drives the real `claude` binary against the real API. It runs only when `BISMUTH_LIVE_TESTS=1` and the binary exists (`core/test/liveGate.ts`).
 
-### Resolving a story id (every `bench/` tool needs one)
+**Mocked-CLI tests run by default.** Each `core/test/chatProviders/<backend>Mocked.test.ts` (`claude`, `opencode`, `codex`, `goose`, `gemini`, `cline`, `openclaw`) drives a real agent binary through Bismuth's production chat driver, with the binary's base URL pointed at a local mock LLM server.
+The test asserts that the fixture's exact reply text arrives, which no real model would produce verbatim.
+A mocked test skips when its binary is missing or when `BISMUTH_FAST_TESTS=1` is set.
+It never skips because an account is not logged in.
 
-**A story's id comes from its `meta.title`, NOT its file path.**
-`calendar/components/EventChip.stories.tsx` declares `title: 'Calendar/EventChip'`, so its id is
-`calendar-eventchip--default` — the directory nesting contributes nothing. Title namespaces also
-drift from the source tree: `App` and `Calendar` are siblings, and there is no `App/Calendar`.
+Start the mock server only through `startMockLlm()` in `core/test/support/mockLlm.ts`.
+It runs the `llmock` binary from the `@copilotkit/aimock` dev dependency and answers Anthropic-, OpenAI- and Gemini-shaped requests from JSON fixtures (`core/test/fixtures/llm/`).
+It resolves that binary by its installed path.
+Never use `bunx llmock` or `npx llmock`: an unrelated npm package has the same name, and a bare-name lookup can silently start it.
+Per-backend environment wiring (base-URL variables, config files) lives in `backendMockEnv()` in `core/test/support/backendEnv.ts`, and each case's comments say how far it was verified.
 
-So resolve every id from the **running server** rather than deriving one from a path:
+A **fake ACP agent** (`core/test/support/fakeAcpAgent.ts`) covers behaviour no single installed CLI can show: both model shapes of `session/new`, an authentication gate, a held prompt with a permission round trip, session-load rejection, tool calls, crashes, noisy output and split chunks.
+Each is an opt-in mode selected by an environment variable (`FAKE_ACP_MODEL_SHAPE`, `FAKE_ACP_AUTH_GATE`, `FAKE_ACP_PROMPT_HOLD`, `FAKE_ACP_REJECT_SESSION_LOAD`, `FAKE_ACP_TOOL_CALL`, `FAKE_ACP_CRASH_AFTER`, `FAKE_ACP_NOISE`, `FAKE_ACP_CHUNK_SPLIT`).
+With none set, the fake behaves as a plain agent.
+The `acp*FakeAgent.test.ts` and `clineAuthFakeAgent.test.ts` files write the fake as a stub binary on `PATH`, so they need no real CLI.
 
-```
-curl -s :6006/index.json | jq -r '.entries|keys[]'
-```
+Recording a new fixture with `llmock --record` makes real API calls with your own credentials. Run it by hand only, and never from a test or CI.
 
-Each entry key already carries the `--<story>` suffix, kebab-cased from the **export name** — so
-`export const WrappingLocation` is `--wrapping-location`, never `--wrappinglocation`. Copy the key
-whole; never retype it. The browsable URL is `:6006/?path=/story/<entry-key>`.
+## Which guard tests fail when a change is incomplete?
 
-A hand-built path does not error — it renders a red "Couldn't find story matching" panel, which a
-tool screenshotting the page will happily record as if it were the component. That is the failure
-this section exists to prevent.
+Several tests exist to fail when two things that must agree drift apart. If one of these goes red after your change, you skipped a step.
 
-### Why these tools drive their own Chrome
-
-`GraphView` pauses its rAF animation loop when `document.visibilityState === "hidden"`
-(`setVisible(props.visible !== false && !docHidden())`). A browser-automation tab that is not
-foregrounded reports exactly that hidden state — Chrome itself also throttles timers/rAF in
-occluded windows — so the canvas never paints and samples as 0% inked, indistinguishable from a
-genuinely broken renderer. `bench/chromeSession.ts` is a one-line re-export
-(`export * from '../core/src/render/chromeSession'`) of `core/src/render/chromeSession.ts` — one
-launcher, two import paths: `bench/` tools import it as `./chromeSession`, the export pipeline as
-`core/src/render/chromeSession`, and the code (`launchChrome`, `newPage()`, the flags below) lives only
-in the `core/` file. It is the one place that launches headless Chrome
-and tears it down for every other tool in the directory; it passes three `--disable-*background*`
-flags specifically to keep rAF running with no foreground window. It also centralizes what three
-earlier, independent Chrome-launching tools (`cssBaseline.ts`, `probeStory.ts`, `appShots.ts`) each
-got wrong in a different way — one never deleted its profile dir, one deleted it after a SIGTERM
-that raced Chrome's own still-writing process into an `ENOTEMPTY` swallowed by a catch block, one
-shipped the same SIGTERM bug — which together had leaked 20 profiles / ~600MB before anyone
-measured it.
-
-### `bench/poolSize.ts` — how many concurrent Chrome targets a sweep should run
-
-The one place that answers this for every pooled sweep in the directory (`invariants.ts`,
-`playCheck.ts` and `cssBaseline.ts` call `poolSize(8)`, `storyAudit.ts` calls `poolSize(12)`). Before this existed, two of
-the three hardcoded a `6` and one didn't pool at all — a constant tuned for whichever machine the
-author had, which starves a big machine and thrashes a small one. `poolSize(max)` takes the
-**minimum** of two budgets and floors it at 2:
-
-- **CPU budget** — `cpus().length - 1`, one worker per core less one, so the pool doesn't fight the
-  browser's own compositor for the last core.
-- **Memory budget** — `Math.floor((freemem() * 0.5) / TAB_BYTES)`, where `TAB_BYTES` is ~120MB (the
-  rough resident cost of one headless Chrome target) and the budget spends at most half of what is
-  currently *free*, not total, so a sweep can never push the machine into swap — swapping is slower
-  than staying serial, so this is a floor on correctness, not just politeness.
-
-`--concurrency` on any of the three tools still overrides the derived value. The ceiling is
-deliberately not "all the cores": a CPU-starved story mounts LATE, and a late mount is exactly what
-produced mid-mount captures in the snapshot gate before pooling existed — see `playCheck.ts`'s own
-`UNSAFE` outcome below for the concrete failure mode this guards against. `storyAudit.ts` gets a
-higher ceiling (12 vs 8) than its siblings because it navigates-and-screenshots behind its own
-settle-and-converge loop rather than waiting on a `play()` function, so a late mount there costs it
-another iteration instead of a wrong capture.
-
-### The everyday commands (root `package.json` scripts)
-
-| Command | Runs | What it's for |
-|---|---|---|
-| `bun run visual` | `bench/checkChanged.ts` | **The habitual check.** Maps the current diff to only the stories it can affect (via `bench/affected.ts`) and runs the baseline-free invariant checks over just those — seconds, nothing to re-record. Prints "no scoping possible" and falls back to every story only when a genuinely global file changed (e.g. `global.css`, `theme/tokens.ts`) or nothing maps. |
-| `bun run visual:all` | `bench/invariants.ts` | The full baseline-free invariant sweep over every story, ignoring the diff. |
-| `bun run visual:affected` | `bench/affected.ts` | Maps changed files to the stories that can render them, and prints the mapping — the primitive `checkChanged.ts` builds on. |
-| `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (759 stories as of 2026-09-14, up from an older ~737 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
-| `bun run play` | `bench/playCheck.ts` | Actually RUNS every story's `play()` function and grades the outcome — the one thing none of the tools above do. `storyAudit.ts` and `invariants.ts` never execute a `play()` assertion; a story whose `play()` would throw looks identical to one that passes everywhere else in this table. Use `--story <prefix>` to scope. |
-| `bun run verify` | `bench/verify.ts` | **The one-shot an implementer runs before handing a task back.** Boots Storybook (or reuses one already listening on `--port`), runs `playCheck.ts` + `invariants.ts` + `storyAudit.ts` over each `--prefix`, hashes shots against an optional `--baseline`, and prints ONE summary block ending in `RESULT: PASS`/`RESULT: FAIL`. `--port` is REQUIRED — see its own section below for why. |
-| `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px `border-radius`/padding/margin/gap, a blurred `box-shadow`, any `backdrop-filter`, a hardcoded hex/`rgb()` colour) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Wired into `scripts/gate.ts` pre-commit alongside the design-system gate — see below; the two gates' colour/radius checks overlap deliberately rather than duplicating, detail below. |
-| `bun run tokens:lint:list` | `bench/tokenLint.ts --list` | Dumps every CURRENT violation grouped by file — a sweep's todo list. Add `--file <substr>` to scope to one surface, `--rule <name>` to one rule. |
-| `bun run tokens:bless` | `bench/tokenLint.ts --bless` | Overwrites the baseline with the current violation set — the deliberate end-of-sweep step, mirroring `test:bless-schema`. |
-| `bun test scripts/designSystem.test.ts` | `scripts/designSystem/gate.mjs --root .` | The design-system gate: component/story/token conformance against `DESIGN.md`'s `governance` block (bare-element composition, one-importer stylesheets, story coverage, literal hardcoded colour/radius/font-size, destructured Solid props, and `:global()` reach into classes a component does not own), ratcheted by `design/baseline.json`. Wired into `scripts/gate.ts` pre-commit — see below. |
-
-### `bench/invariants.ts` — the baseline-free everyday check
-
-Asserts properties that hold **regardless of design** — unreadably small text, invisible text, a
-control with no hit area, content escaping its container, a font-size off the project's own type
-scale — so it stays meaningful while the design is actively changing and never needs re-recording.
-`bun bench/invariants.ts --story ui-` scopes to a prefix; `--json` for machine-readable output.
-
-The type-scale check measures against the **mono chrome ladder** (the `--fs-*` tokens in global.css's `styles/tokens.css` section). Note
-prose is deliberately off that ladder — chrome is scanned, prose is read — and its sizes are
-*derived* (`--prose-font-size` = `--editor-font-size` × `--prose-scale`, plus em-relative children
-like `.bismuth-tag` at `0.88em`, plus `--code-font-size`, the one mono-in-prose size), so they are **resolved from the live page at runtime**, not listed
-as literals in `SCALE_EXEMPT`. That matters mechanically: `getPropertyValue('--prose-font-size')`
-returns the raw `calc(…)` token, so the check appends a hidden probe span and reads its computed
-`fontSize`. Hardcoding those numbers meant re-editing `invariants.ts` every time the prose face or
-its optical correction moved — which happened three times in one sitting. Only the base size and
-the one `0.88` ratio are exempted; any *other* derived size inside prose still reports.
-
-### `bench/cssBaseline.ts` — the maximally-sensitive computed-style baseline
-
-**The baseline is local, not committed** (`bench/css-baseline.json` is gitignored, since each re-record added 22 MB to history). Before a refactor that must change nothing visually, record one on the base commit with `bun run visual:baseline -- --update`, make the change, then run `bun run visual:baseline` to diff.
-
-Records what the browser actually resolved for every element in every story, for regression-proving
-a refactor whose whole promise is "nothing changed visually" (originally built for the ~330-rule
-migration out of the global stylesheet into CSS Modules). Four sources of nondeterminism it
-corrects for, each found by a full record-then-check cycle reporting drift with no CSS actually
-changed: keyframe animations sampled mid-flight (`animation: none` injected before reading;
-transitions are deliberately left alone since their computed duration is static); async webfont
-loading (awaits `document.fonts.ready`); wall-clock time (the calendar view's out-of-month cells
-render relative to `Date.now()`, so the clock and timezone are frozen before any story code runs —
-`performance.now()` is deliberately left real since rAF/transitions/editor measurement depend on it
-actually advancing); and async component settling (a fixed sleep loses under load — e.g.
-MilkdownField's dynamic `import()` was still in its loading state at 2000ms in one run and fully
-mounted in the next — so the harness re-probes until stable instead of guessing a delay).
-
-**Now POOLED** (`bench/poolSize.ts`, see above) — one Chrome (`bench/chromeSession.ts`), with
-`poolSize(8)` concurrent targets opened via `newPage()`, overridable with `--concurrency`
-(matching `invariants.ts`/`playCheck.ts` rather than `storyAudit.ts`'s 12 — this harness needs
-every element's computed style to be byte-identical across probes, and heavier contention is
-exactly what perturbs font/layout timing, so the ceiling stays lower as a deliberate hedge). Network
-quiescence — one of the signals convergence watches for — is tracked **in-page, per target**
-(`NET_WATCH`, read off `window.__cssbNet`) rather than off one shared browser-level listener, since
-pooling means several stories are in flight on the same CDP socket at once and a browser-scoped
-network event can no longer be attributed to the story that caused it. Output is sorted by story id
-before being written, so a pooled run (whose captures complete out of order) still produces a
-diffable, deterministically-ordered baseline file.
-
-**Known non-deterministic stories.** `app-chatview`, `editor-*`, `app-panecontent`,
-`chat-chatcomposer*`, `daemon-daemonchat`, `preview-*`, and `app-previewview` each carry one element
-that legitimately drifts between check runs: a height flip of 16↔18, 10↔12, 14↔16, or 15↔17 px with
-`top` ±1, always on the DOM suffix `…>div[1]>div[1]>div[0]` — CodeMirror's `.cm-cursor` caret overlay
-(root cause documented just below). Drift of only that shape, on only that DOM suffix, in one of those
-prefixes is this known flake, not a regression; any other drift is.
-
-**Two more cross-run flakes found chasing pooling's own contention (2026-09-18), on top of the known
-list above**: `app-terminal--drop-affordance-before-font-load` flips an xterm glyph `<span>`'s height
-21px↔22px (with sibling cells' width/letter-spacing shifting together) — the story is named for and
-deliberately captures a pre-font-load state (`app/src/Terminal.stories.tsx:279`), so it has no reason
-to converge on one value across separate loads; and `app-panecontent--chat-sentinel` flips a `<span>`
-width 108.95px↔94.70px, cause not yet root-caused.
-
-**A worker's target recovery is now attributed on double failure.** `recoverPage(id)` retries once on
-a fresh target after a dead-session error, and if that fresh target *also* fails to attach, the thrown
-error is prefixed with the in-flight story's id — before this it was the one failure path in the sweep
-that surfaced as a bare, unattributed CDP protocol error (see `recoverPage`'s own comment in
-`bench/cssBaseline.ts` for the full reasoning).
-
-**Root-caused (2026-09-18, not fixed): the "hint-row" element flip is CodeMirror's own cursor overlay,
-not a harness settle gap.** Two full pooled check runs on an unchanged tree independently reported a
-2px height flip (16↔18, 10↔12, 14↔16, 15↔17) with `top` ±1, always on the same relative DOM suffix
-`…>div[1]>div[1]>div[0]`, scattered across whichever stories happened to be running alongside heavy
-concurrent load that run (`app-chatview`, `chat-chatcomposer(bar)`, `app-panecontent`, `preview-*`,
-`app-previewview`, `editor-*`, `daemon-daemonchat`) — see **Known non-deterministic stories** above,
-which these prefixes are carried in). A CDP probe of the element (`editor-inkoverlay--attached-ink`,
-confirmed identically on `app-chatview--default`'s chat bubble) identifies it precisely:
-`<div class="cm-cursor cm-cursor-primary" style="top:…px; height:…px">`. CodeMirror's `EditorView`
-constructor (`app/node_modules/@codemirror/view/dist/index.js:7877`, third-party, not this repo's
-code) registers a **one-shot** `document.fonts.ready.then(() => { this.viewState.mustMeasureContent =
-"refresh"; this.requestMeasure() })`, and `requestMeasure()` (`dist/index.js:8272-8273`) schedules
-exactly one `requestAnimationFrame` to re-measure and rewrite the cursor's inline `top`/`height` from
-the line box's *actual* font metrics. Those two numbers are literal px written by CM's own JS, not a
-CSS rule, so they do **not** auto-correct when the browser silently swaps a loaded webface in for a
-fallback — nothing but that one callback ever moves them again for a given `EditorView` in a story
-that never updates the view after mount. Under light or
-homogeneous load (a single story cloned across many tabs) the relevant font is already warm from a
-previous load, so CM's callback fires and its rAF lands well inside `cssBaseline.ts`'s 1500ms `SETTLE`
-head start, and the recorded value is always the correct, post-swap one. Under heterogeneous pooled
-load (many *different* stories competing for one shared renderer's main thread and network stack) a
-font fetch — or CM's own rAF — can land late enough that the harness's convergence loop (four
-byte-identical captures 400ms apart) locks onto four consecutive **stale** captures and exits clean
-before CM's correction ever lands; the existing "growth escalation" safeguard doesn't see it because a
-cursor's height/top change never changes element `count`, the only signal that heuristic watches.
-
-**The fix attempted and rejected**: `PROBE`'s font wait (`document.fonts.ready` + two nested `rAF`s)
-was extended with a second `await document.fonts.ready` and two more `rAF`s, on the theory that the
-harness's own wait was one frame short of CM's callback under contention. Measured with
-`bun bench/cssBaseline.ts --base http://localhost:6261 --story editor-` (Storybook on a scratch port,
-not the shared 6006): two runs *before* the change drifted `editor-editor--settings-yaml` +
-`editor-inkoverlay--attached-ink` (run 1) and `editor-inkoverlay--attached-ink` alone (run 2), both
-the same 14px↔16px / 10px↔9px shape; two runs *after* the change drifted the identical two stories
-with the identical values (run 1), then zero (run 2) — no measurable reduction, so the change was
-reverted rather than shipped. The gap isn't "the harness looks too early" (it already re-checks
-`document.fonts.ready` fresh on every convergence probe); it's that a promise resolving inside the
-harness's own probe says nothing about whether CodeMirror's *separate*, one-shot internal callback —
-bound to a font-loading state captured back at `EditorView` construction — has already fired and
-finished its own independently-scheduled `requestAnimationFrame` write. No amount of additional
-waiting inside one `Runtime.evaluate` call can force a rewrite that has to come from CM's own code.
-**Not acted on further**: this is real CodeMirror-internal nondeterminism under contention, already
-covered by **Known non-deterministic stories** above (a small inline element flipping height 16↔18 or
-10↔12, top ±1, under parallel load) — treat drift of only that shape, on only that suffix, in one of
-those prefixes, as this known flake rather than a regression.
-
-### `bench/storyAudit.ts` — "is this visibly WRONG, right now?"
-
-Not a regression gate and has no history: it screenshots every story and flags what a component can
-be visibly broken, answering a question the baseline structurally cannot — a component clipped since
-the day it was written is invisible to `cssBaseline.ts` forever, because the clipped state IS the
-recording. Emits both DOM signals (cheap, run over every story, ranked as leads for where to look
-first) and screenshots (the actual evidence), because signals alone provably miss geometrically
-legal wrongness — this repo has already shipped three false passes where every metric looked fine
-while the render was visibly broken: a calendar clipping two week rows while still reporting 112
-cells and 48 chips, a data-fetching card rendering "Loading…" as 7 happy DOM elements, and a blank
-canvas with a perfect DOM. It never fails a build (no `exit(1)`, no ratchet) — it's read by a human
-or an agent, and a flag is a question, not a verdict. See the `story-audit-look` and
-`fix-audit-defects` skills for the read-and-fix workflow built on top of it.
-
-**Now POOLED** (`bench/poolSize.ts`, see above) — it used to walk every story through ONE page, one
-at a time, sleeping a fixed `SETTLE` after each navigate; its own comment records the before state as
-172 stories in 3m02s at 13% CPU, i.e. almost entirely waiting rather than computing. Its two
-siblings (`invariants.ts`, `playCheck.ts`) already pooled; this was the one that never got it. It
-now defaults to `poolSize(12)` concurrent Chrome targets, overridable with `--concurrency`.
-
-**Waits for the story to actually paint before it converges.** After navigating it polls
-`bench/storyReady.ts`'s `STORY_READY_EXPRESSION` (shared with `invariants.ts`) every 250ms until the
-story's own subtree is non-empty or `--ready-timeout` (default 6000ms) elapses, only then running the
-existing settle-and-converge loop — without this a heavy story could still be pre-mount when the
-converge loop's own "two identical probes" test was satisfied by that pre-mount state, and got
-flagged `empty-render` under pool contention. Anything still flagged `empty-render` once the pool
-finishes is re-checked ALONE with a doubled `--ready-timeout`, mirroring `invariants.ts`'s serial
-re-check: a non-empty retry replaces the pooled record outright, a still-empty one keeps its record
-but rewrites the flag's detail to say how long it waited alone, so "slow under load" reads
-differently from "renders nothing".
-
-### `bench/playCheck.ts` — actually running the `play()` functions
-
-Runs every matching story's `play()` function in a real Storybook preview and grades what happened,
-rather than merely rendering the story and moving on. **This is the one gap none of the tools above
-close**: `storyAudit.ts` screenshots and flags geometry; `invariants.ts` and `cssBaseline.ts` read
-computed styles. None of them execute a `play()` function's own `expect(...)` assertions, and this
-repo has no Storybook test runner (no `test-runner` script anywhere in `package.json` /
-`app/package.json` / `app/.storybook/`) — so before this tool existed, a story's `play()` throwing
-looked, to every existing gate, identical to one that passed. Stories rendered; nobody ever checked
-what their own assertions said.
-
-**The seam is Storybook's addons channel** (`window.__STORYBOOK_ADDONS_CHANNEL__`, reachable even
-with `iframe.html` loaded standalone with no manager window watching), subscribed to *before*
-navigating to the story so no event is missed. **Two things that look like a pass/fail signal are
-not, and cost a session each to learn:**
-- `StoryRender.phase` (the `storyRenderPhaseChanged` event's `newPhase`) ends at `"finished"`
-  whether `play()` passed or threw. Never read it for pass/fail — only whether it ever passed
-  through `"playing"` (proof that `play()` ran at all, the SKIP/not-SKIP signal).
-- `storyFinished`'s own `status` field also lies: measured live, a story whose `play()` threw a real
-  `AssertionError` still reported `status: "success"`, because Storybook's own internal try/catch
-  around the `play()` call swallows the throw before it ever reaches the `window`
-  `error`/`unhandledrejection` listeners that `status` is keyed on. The only reliable FAIL signal is
-  the `playFunctionThrewException` event itself, which carries the real `{name, message, stack}`.
-
-**Five outcomes, reported as five separate counts — SKIP and UNSAFE are never counted as PASS:**
-
-| Outcome | Meaning |
+| Test | Fails when |
 |---|---|
-| `PASS` | The story rendered, `play()` ran, nothing threw, and the tab was visible the whole time. |
-| `FAIL` | `play()` threw — an assertion failed. Printed with the real error message and the story id. |
-| `SKIP` | The story has **no** `play()` function at all — **nothing was asserted**. Not a pass; a story with no play function is simply invisible to this tool, the same way it always was. |
-| `ERROR` | The story never got as far as running `play()` at all — a broken import, a component that throws on mount (`storyThrewException`), or a genuine hang past `--timeout`. |
-| `UNSAFE` | `play()` ran and nothing threw — would otherwise be `PASS` — but `document.visibilityState` was caught `"hidden"` at some point during the run. See below; this should never actually fire. |
+| `core/src/routes/routeTable.test.ts` | The set of `METHOD /path` routes `createServer` serves differs from the expected list |
+| `app/src/settings.parity.test.ts` | A settable schema leaf has no default in the frontend store, or no `doc` string |
+| `core/test/schema/settingsSchema.test.ts` | The top-level section list, or the keybinding id set, differs from the schema |
+| `core/test/upgrade/schemaSnapshot.test.ts` | Any schema default, type, bound or enum changed without re-blessing |
+| `app/src/tokenRegistry.test.ts` | A `:root` token in `global.css` is not registered in `DESIGN_TOKENS`, or the registry and the projection disagree |
+| `core/test/theme/tokensDoc.test.ts` | `docs/settings/tokens.md` differs from the token registry |
+| `app/src/keybindingCoverage.test.ts` | A file outside the allow-list hardcodes a key literal instead of reading a `KEYBINDING_CATALOG` id |
+| `app/src/cssLayering.test.ts` | A class emitted as a runtime string (`bismuth-`, `callout-`, `cm-`) is defined inside a CSS module, or `global.css`'s page-frame section gains more class rules than its pinned ceiling |
+| `app/src/cssComments.test.ts` | A CSS comment contains `*/` early and swallows the next rule |
+| `app/src/ui/oneButton.test.ts` | Production code renders a raw `<button>` or imports `ui/Button` directly |
+| `app/src/ui/uiLint.test.ts` | The lowercase-label and icon-name lint helpers for `TextButton` and `IconButton` regress |
+| `app/src/ui/barDropLevels.test.ts` | A `data-bar-drop` tag on a view-bar control is not in the collapse ladder |
+| `core/test/guides.test.ts` | A Bases authoring page is missing for a view kind, lacks its three fixed sections, or cites a missing docs page |
+| `cli/test/guideCommands.test.ts` | A `bismuth …` command shown in a guide is not a real CLI command |
+| `cli/test/mcpParity.test.ts` | An MCP tool has no CLI twin in `CLI_TWINS`, or a twin names a missing command |
+| `mcp/test/serverInstructions.test.ts` | The MCP server instructions grow past their size pin or name a missing docs page |
+| `core/test/agentBackends/catalogParity.test.ts` | A backend's capability flag in `catalog.ts` is true but its `CHAT_BACKENDS` entry lacks the matching verb, or the reverse |
+| `core/test/noRawMkdtemp.test.ts` | A test calls `mkdtemp` instead of `tempDir` |
 
-Exits non-zero on any `FAIL`, `ERROR`, or `UNSAFE` (a `SKIP`-only run exits 0 — having nothing to
-assert is not itself a failure of this tool, though it may be a gap worth noticing in the story).
-**What this tool explicitly does not do: look at a single pixel.** `storyAudit.ts` remains the tool
-for "is this visibly broken" — a story can `PASS` here and still look wrong to a human eye, and a
-`SKIP` is not a defect, it just means there is nothing here to grade.
+## What does `bun test` not cover?
 
-**Canvas stories cannot be measured in a background tab, and this is why `UNSAFE` exists.**
-`playCheck.ts` grades up to `--concurrency` (default derived by `bench/poolSize.ts` — see above —
-`poolSize(8)`, so 8 unless the machine's CPU/memory budget is smaller) stories at once, each its own
-Chrome target in the same headless browser. Chrome runs **zero** `requestAnimationFrame` callbacks in a tab that
-isn't the foregrounded one — `document.visibilityState` reports `"hidden"` for every target but one
-— so a story that paints to canvas on a rAF loop (`InkOverlay`, `GraphView`, `DrawingCanvas`) would
-measure a permanently blank surface on any of the other targets, indistinguishable from a broken
-renderer, and in `InkOverlay`'s case would also latch its own `rafPending` flag so no later repaint
-fires either. This is the exact trap the `chromeSession` header (`core/src/render/chromeSession.ts`, re-exported by `bench/chromeSession.ts`) already documents for every
-other tool in this directory — `playCheck.ts` inherited the browser but, initially, not the lesson.
+- **Mounting components.** No test mounts a Solid component. Storybook stories and the [visual checks](visual-checks.md) cover rendering.
+- **CodeMirror editor interactions.** Pure helpers (parsers, completers) are tested; live view state needs a real DOM.
+- **Tauri APIs** (`@tauri-apps/api`, `@tauri-apps/plugin-*`). They are stubbed or skipped; only native builds exercise them.
+- **The spellchecker WASM** (`harper.js`). Its store and offset helpers are tested; the binary is not loaded.
+- **The spreadsheet** (Univer). It loads behind a code-split boundary; the snapshot and sync helpers are tested, not the workbook.
+- **Canvas output.** The graph renderer is tested headlessly with a recording 2D context; pixels need a browser check.
 
-The fix lives in `newPage()` in `core/src/render/chromeSession.ts` (reached from `bench/` through the `bench/chromeSession.ts` re-export), not in `playCheck.ts` itself, so every
-canvas story gets it for free: `Emulation.setFocusEmulationEnabled({enabled: true})` on every
-concurrent target. Measured directly — 6 concurrent targets navigated to the same canvas story —
-this takes `visibilityState` from "visible" on 1 of 6 to "visible" on 6 of 6, and a
-`requestAnimationFrame` loop from 0 ticks in 500ms on the backgrounded 5 to ~31 ticks (a normal
-~60fps clock) on all 6. It costs nothing — no serialization, no concurrency drop — unlike the three
-alternatives considered: running canvas stories serially via `Target.activateTarget` (correct, but
-only for the subset that needs it); dropping `--concurrency` to 1 for every story (correct, but
-roughly 6× slower overall); or Chrome launch flags like `--disable-renderer-backgrounding` (already
-applied, and insufficient here on their own — they throttle background *windows*, not backgrounded
-*tabs* within one window, which is what every target in this pool actually is).
+## How it works
 
-Because that fix should make a hidden-tab measurement impossible, `playCheck.ts` also carries its
-own guard rather than trusting the fix silently: the injected probe samples `document.visibilityState`
-on an interval for a story's whole run, and `classify()` downgrades what would otherwise be a `PASS`
-to `UNSAFE` if hidden was ever observed. `UNSAFE` should never appear in a real run — treat one as a
-regression in `chromeSession.ts`'s focus-emulation call, not as a flaky story, and fix it there.
+`scripts/gate.ts` decides what a commit runs.
+Three exported pure functions pin its routing and are unit-tested in `scripts/gate.test.ts`: `affectedWorkspaces` maps staged paths to workspaces, `touchesDesignSystem` and `touchesStylesheets` pick the design-system and `moduleClassCheck` steps, and `plan` combines them.
+The gate passes `<workspace>/` with a trailing slash to `bun test`, because a bare `cli` would also match `core/test/chatProviders/clineMocked.test.ts`.
+It strips git's repository-location variables (`sanitizeGitEnv`) from the children it spawns, so tests that run `git` against temp directories cannot write into the real repository.
 
-### `bench/verify.ts` — the one-shot an implementer runs
+`core/test/slowGate.ts` (`shouldRunSlowTests`) is opt-out: it returns false only when `BISMUTH_FAST_TESTS=1`, so a forgotten flag never drops a suite. `core/test/liveGate.ts` (`shouldRunLiveTests`) is the opt-in sibling.
 
-Everything above this line is a separate instrument you run and read by hand. `verify.ts` is the
-task-level proof: it boots Storybook if nothing answers `--port` (or reuses it, untouched, if
-something already does), runs `playCheck.ts`, `invariants.ts` and `storyAudit.ts` over each
-`--prefix` in order, hashes every shot in the audit's `--out` against an optional `--baseline`
-directory, and prints ONE summary block ending in a grep-able `RESULT: PASS` / `RESULT: FAIL` line
-before exiting 0/1 to match. Measured on this tool's own plan (2026-09-14): doing this by hand cost
-15-22 agent turns and 5-11 screenshot reads per implementer even though the three tools themselves
-finish in seconds — almost all of that was ritual (boot Storybook, remember three invocations and
-three output shapes, cross-reference a baseline dir by hand), not compute. This file is that ritual,
-run once.
+`.githooks/pre-push` runs `scripts/check-docs.ts --pre-push`, which checks relative `.md` links, `page.md#heading` anchors, the history-word lint, the `bun run` scripts CLAUDE.md cites, and workspace parity, then warns when source changed without docs.
+Run `bun run scripts/check-docs.ts` by hand to check a docs change.
 
-```
-bun bench/verify.ts --port <n> --prefix <story-id-prefix> [--prefix <p> ...]
-                     [--baseline <dir>] [--out <dir>] [--app <dir>] [--keep] [--boot-timeout <ms>]
-```
-
-**`--port` is REQUIRED and has no default.** Every sibling tool in this table defaults `--base` to
-`http://localhost:6006`, and that default is a trap the moment you're in a git worktree: 6006 is
-whatever Storybook the MAIN CHECKOUT happens to be running, not this worktree's, so a forgotten flag
-silently measures someone else's tree and reports it as this one's proof. `--prefix` is repeatable
-(at least one required) and uses the same `id === p || id.startsWith(p)` matching as the sibling
-tools' own `--story`. `--baseline <dir>` accepts either a `storyAudit.ts --out` directory (its
-`<dir>/shots` is used) or a shots directory directly; without it, no shot comparison is printed.
-`--out` defaults to the same `.claude/audit` `storyAudit.ts` itself defaults to; `--app` defaults to
-`app/`; `--boot-timeout` defaults to 120000ms; `--keep` leaves a Storybook `verify.ts` itself started
-running instead of stopping it on completion.
-
-**The verdict.** `RESULT: FAIL` on ANY of: Storybook failing to boot; any tool for any prefix
-producing non-JSON output (a `toolError` — e.g. `storyAudit.ts`'s own `no stories matched` when a
-`--prefix` matches nothing); `playCheck.ts` `fail + error + unsafe > 0` for any prefix;
-`invariants.ts` exiting non-zero for any prefix; or ANY `storyAudit.ts` flag in
-`HARD_AUDIT_FLAGS` (`empty-render`, `crashed`, `probe-failed` — the flag kinds that mean nothing
-rendered). Every other `storyAudit.ts` flag kind is a LEAD, listed under `leads:`, and never fails
-the run — the same "signal vs verdict" split `storyAudit.ts`'s own header draws. A `SKIP`-only
-prefix (`pass === 0 && skip > 0`) never fails either, but prints `(nothing asserted)` on its line so
-a reader notices nothing was actually checked. **Baseline differences (`changed`/`added`/`missing`
-shots) are information, never a failure** — `verify.ts` has no history of its own and cannot tell a
-deliberate restyle from a regression, exactly like `cssBaseline.ts` above; it just tells you what
-moved so a human decides whether that was intended.
-
-The pure half — arg parsing, the shot-hash diff, the verdict rule, and the exact summary text — lives
-in `bench/verifyReport.ts` and is unit-tested with zero Chrome, zero Storybook and zero filesystem
-involved (`bench/verifyReport.test.ts`); `verify.ts` itself is only the I/O that feeds it (spawn the
-three tools, read their output, hash shot files, write the summary). **How this differs from
-`checkChanged.ts`** (→ `bun run visual`, above): that tool derives ITS OWN prefixes from the current
-diff and runs only `invariants.ts` against whatever is already listening on the repo-default port —
-the everyday, seconds-fast loop for "did my edit break an invariant". `verify.ts` takes explicit
-`--prefix` arguments, runs all three tools, and owns Storybook's boot/reuse/stop lifecycle itself —
-the shape a task's *final* proof needs, not an everyday edit-save-check loop. (An `--affected`-style
-mode that derives prefixes from the diff the way `checkChanged.ts` does is deliberately out of scope
-for now — explicit prefixes are what the executor contract that drives this tool passes.)
-
-### `bench/probeStory.ts` — a one-story microscope
-
-Computed styles for ONE story in about five seconds, for the tight loop of "does THIS component's
-CSS still resolve" while migrating it — `cssBaseline.ts` costs several minutes over the full 608-story sweep (a smaller figure of ~247 stories was true at an earlier point in the migration; re-count via the command in the bench/ intro above), too
-slow to run on every edit. Keys every element by tag + nth-of-type structural path from the story
-root, never by class name, because a CSS-Modules migration is guaranteed to rename every class it
-touches (`.win-btn` → `._win-btn_jq4at_27`) and a class-keyed probe would report a successful
-migration as "element gone". Measures one story in its resting state only — nothing hovered,
-focused, or interacted with, and nothing the story doesn't itself render.
-
-### `bench/tokenLint.ts` — literal-value lint for stylesheets, checked against a committed baseline
-
-Greps every `app/src/**/*.css`/`*.module.css` declaration for a magic value that should have been a
-design token instead: a literal non-zero px `border-radius` (any longhand corner too, `50%`
-excepted), `padding`/`margin`/`gap` (and their longhands), a `box-shadow` with a non-zero blur
-radius, any `backdrop-filter` other than `none`, or a hardcoded hex/`rgb()`/`rgba()` colour. Only
-the colour rule reads inside custom-property (`--foo: …`) declarations — the rest exempt them,
-because the token layer itself (the tokens section of `global.css`) is who is allowed to write the literal a
-component later reads via `var(...)`.
-
-**The design-system gate below ALSO flags hardcoded colour, border-radius and font-size, and the
-two do not fully overlap** (reconciled 2026-09-18, ds-conformance final review Important #1, after
-task 24 first removed these rules on the false claim they were now redundant; updated again after
-task 2 the same day widened the design-system gate's own checks — see `checks.mjs`'s change log for
-the exact deltas). The design-system gate now scans the global layer too (`governance.global` — now the one file,
-`app/src/global.css`, with only its token definitions excepted),
-checks colour on the `border-top`/`-right`/`-bottom`/`-left` shorthands, `background-image` and any
-custom property in addition to its base allowlist, strips `var(--x, <fallback>)` calls before
-testing for a literal (so a literal *sibling* to a `var()` call is caught, though a literal *inside*
-that `var()`'s own fallback is still deliberately excused), and checks `border-radius` plus all four
-longhand corners. Even widened, it is still a fixed property allowlist — `mask-image` (`ui/ViewBar.module.css`)
-and `column-rule` stay outside it — and it still excuses a `var()` fallback literal on purpose.
-`tokenLint.ts` has neither gap for the rules it kept (radius, colour, spacing): it scans every
-property, custom properties included, has no `var()`-awareness (so it also flags a fallback literal
-the design-system gate now excuses), and covers every stylesheet including the global layer — but its
-baseline-ratchet model means a *pre-existing* literal stays silently green until someone sweeps that
-file, where the design-system gate's DESIGN.md-governance model does not. Both run: they disagree
-about what to skip, not about what a violation is, so a plain `color: #fff` in a component module, on
-a property both check, is reported by both, while a `mask-image` gradient, a `column-rule` colour, or
-a literal inside a `var()` fallback is caught by `tokenLint.ts` alone. **font-size is the one check
-that stayed removed here** — the design-system gate's font-size check is strictly broader for
-`.module.css` files, so keeping a second, narrower one would only produce a duplicate finding with
-no coverage of its own.
-
-**Scoped against a committed baseline (`bench/token-lint-baseline.json`), keyed per
-`(file, rule, exact literal text)` with a count** — not merely `(file, rule)`, so fixing 4 of a
-file's 6 `padding: 8px` literals can never mask a 7th, *different* literal in the same file/rule.
-A run only fails on a violation with no matching baseline entry, i.e. a genuinely NEW magic number;
-the pre-existing ones (this repo started the visual-unification audit with ~40 unswept
-stylesheets) stay green until their surface's own sweep wave lands and blesses a lower count.
-**Wired into `scripts/gate.ts` pre-commit**, as one combined step alongside the design-system gate,
-whenever a staged path touches `app/src/`, `DESIGN.md`, `design/` or `scripts/designSystem/`
-(`touchesDesignSystem` in `scripts/gate.ts`).
-
-```bash
-bun bench/tokenLint.ts                 # check: NEW violations only, exit 1 if any
-bun bench/tokenLint.ts --list          # every CURRENT violation, grouped by file
-bun bench/tokenLint.ts --rule spacing-literal  # scope either mode to one rule
-bun bench/tokenLint.ts --bless         # overwrite the baseline with the CURRENT violation set
-```
-
-### The design-system gate — `scripts/designSystem/gate.mjs`, tested by `scripts/designSystem.test.ts`
-
-Installed by the `design-system` skill's `install-gate` (`checks.mjs`, `gate.mjs` and `lib/` are
-**copies**, not an import from `~/.claude`, so the repo stays self-contained on any machine — each
-copy's first line records the skill-scripts version it was copied from). It parses `DESIGN.md`'s
-`governance:` frontmatter block (source roots, the component/stylesheet glob, the primitive-element
-map, the token file list, story-coverage rules and any `global`/exempt paths) and scans
-`app/src/**` for what it describes: a bare `<p>`/`<span>`/`<h1>`–`<h6>`/`<button>`/`<input>`/
-`<textarea>`/`<select>`/`<label>` where a primitive from `primitives.elements` should be used
-instead, a `.module.css` with more than one importer, a component with no sibling
-`{name}.stories.tsx`, a Solid component that destructures its props, and — narrower but overlapping
-`tokenLint.ts` above, not a replacement for it (see that section for exactly where they differ) — a
-literal hardcoded colour, border-radius or font-size instead of a token from `tokens.files`.
-
-**Ratcheted by `design/baseline.json`** (`{ "accepted": [{ "check",
-"path" }] }`, matched by `check`+`path`, **ignoring line**, so one entry silences a check across a
-whole FILE). `gate.mjs` reads that path on its own when it exists (an explicit `--baseline <file>`
-overrides it), so deleting the file runs the gate at zero. `DESIGN.md` stays at the root rather
-than joining it in `design/`: impeccable reads `DESIGN.md` only from the root, `.agents/context/`
-or `docs/`.
-
-Its history is the point. It was **emptied and deleted 2026-09-20** once its last three entries
-turned out to be checker false positives on the bare keyword `black` — not debt, and a baseline is
-for debt. It came **back the same day** holding 50 entries, when the `globalReach` check landed and
-found 156 real findings the audit had been blind to: component stylesheets reaching classes they do
-not own via `:global()`, 57 of them into `Button`'s own `.btn*` family from 50 different
-stylesheets. Each is a component nobody extracted or a prop nobody added, and the ratchet exists so
-the pile can only shrink — a NEW reach, in any file, fails the commit gate.
-
-It carried an `oneGlobalFile` entry too, for a stretch when the global layer was still split across
-13 files (`App.css`, `styles/{tokens,reset,content}.css`, `ui/ui.css`, `Editor.css`, `Terminal.css`,
-`ui/popover/popover.css`, `editor/datePicker.css`, `graph/asciiGraph.css`, `palette/switcher.css`,
-`sheet/univer-{theme,icons}.css`) — some unextracted components, the rest sections of one file filed
-as files. `@import` did not resolve it — still N files, and it hoists (see `cssLayering.test.ts`).
-That work landed, the global layer is now the target shape (one `app/src/global.css`, nothing
-else), and the baseline was pruned to match: it now holds 13 `globalReach` entries and no
-`oneGlobalFile` entry — down from 34, found by running the gate with an empty baseline and keeping
-exactly the findings that still fire. The ds-bridges run (2026-09-24) then cleared those too: every `:global()` bridge in `app/src/ui` became a hashed local reached from outside only through `data-*` hooks, so `accepted` is now empty; the only in-line `design-system-ignore globalReach` exemptions left are 7 document-level (`html.kb-dragging`/`html.view-dragging`) or pdf.js (`.markedContent`) rules.
-
-Prefer the two narrower mechanisms. A genuine, permanent exception belongs in `DESIGN.md`'s
-`governance` block (`stories.exempt`, `global`, or a documented `checks` change). For a single LINE,
-a `design-system-ignore <check-id>: <reason>` comment (in `//`, `/* */`, or `{/* */}`) on that line
-or the line directly above it exempts just that one finding; a directive with no reason is itself a
-finding (`ignoreReason`).
-
-```bash
-node scripts/designSystem/gate.mjs --root .    # picks up design/baseline.json
-bun test scripts/designSystem.test.ts    # the same check as a bun test (pre-push full suite); pre-commit calls gate.mjs directly
-```
-
-**Wired into `scripts/gate.ts` pre-commit**, as one combined step alongside `tokenLint.ts`, on the
-same trigger (see above) — so a change under `app/src/` runs both checks once each, never twice.
-
-### `bench/moduleClassCheck.ts` — emitted-CSS ↔ emitted-JS cross-check
-
-Reads the production bundle and compares class names between the compiled CSS Modules and the
-compiled JS template output, catching the one migration mistake nothing else in the toolchain can
-see: a call site left holding the old plain-string class literal (`class="ft-row"`), which still
-compiles and renders but matches nothing once the real rule's name is hashed. Needs no story at all
-— unlike `cssBaseline.ts`, it isn't blind to a `:hover`-only branch, a Tauri-only window control, or
-a component with no story. It compares NAMES only, not appearance or cascade order, and reports any
-module whose `styles` object is indexed by a runtime key as UNCHECKABLE rather than guessing.
-
-**Wired into `scripts/gate.ts` pre-commit**, as its own fourth step, whenever a staged path matches
-`app/src/**/*.css` (`touchesStylesheets` — narrower than `touchesDesignSystem` above). It builds the
-app to get real bundle output, which makes it the slowest gate step — **~11s measured** on this
-repo — so the trigger is narrowed to stylesheets only as a cost tradeoff, and only runs when a
-stylesheet is staged. This means a **`.tsx`-only** change that reintroduces a stale class literal
-(e.g. `class="my-local"`) is **NOT caught at pre-commit** — run `bun run bench/moduleClassCheck.ts` by
-hand for that case. Like every gate step, it reads the working tree, not the staged snapshot.
-
-### `bench/templateDiff.ts` — did a refactor change the emitted markup?
-
-Compiles both sides of a JSX extraction/CSS-Modules-conversion through the repo's own
-`babel-preset-solid` and diffs the STATIC template string the Solid compiler emits, which is
-immune to reindentation, renamed handlers, and how props are threaded — the exact byte-level
-comparison a human reading a diff cannot make. Two modes: default requires the templates be
-byte-equal (the markup-extraction half of a migration); `--modulo-class` requires equality after
-stripping every `class=…` attribute from both sides (the CSS half, where a static `class` that
-becomes a dynamic expression legitimately drops out of the template). Proves nothing about CSS
-itself or about the dynamic half of the tree outside the template string.
-
-### `bench/layoutmetrics.ts` + `bench/layoutquality.ts` — graph layout quality
-
-`layoutmetrics.ts` is pure, unit-testable layout-quality math (no vault, no I/O) shared by the bench
-harness and any regression test — e.g. the primary metric, the fraction of a node's graph neighbours
-that also appear among its k nearest DRAWN neighbours. `layoutquality.ts` runs that math over a real
-vault through the production cold path (`layout-cache.ts`'s `layoutFor()`), read-only, and is
-explicit about never being pointed at a real user vault (use the sandbox copy). It never lets a
-non-finite metric (from an empty measurement pool) silently `JSON.stringify` to `null`: any
-`NaN`/non-finite value is serialized as its own string, named in a `nanFields` list, logged loudly,
-and forces a nonzero exit code.
-
-### `bench/appShots.ts` — deterministic screenshots of the running app
-
-For verifying an actual render change against a running dev server (`--base http://localhost:1422`),
-not Storybook — waits for the canvas ink to stop changing before each shot so two runs of identical
-code produce comparable images, and deliberately does NOT freeze the clock or force reduced motion
-(unlike `cssBaseline.ts`) since its readiness loop waits for real animation to settle.
-
-### `bench/bench.ts` — backend hot-path benchmarks, not a visual tool
-
-The one `bench/` tool that measures the **backend**, not Storybook: wall time and max event-loop
-stall (a probe ticks every 5ms and records the worst observed lag) for `listTree`, a cold
-`searchVault` index build, a warm `searchVault` query, and `translateTaskDsl` + `passesFilter` +
-`applyTaskSort` over a synthetic vault (`--vault-size`, default 2000 notes) it generates itself —
-never a real one. Built to run identically on old commits via a git worktree for before/after
-tables, so it only imports long-stable public entry points.
-
-```bash
-bun bench/bench.ts --vault-size 2000 --label current
-```
-
-### `bench/basesPerfBench.ts` + `bench/basesPerfVault.ts` — Bases/tasks timing harness (`bun run bench:bases-perf`)
-
-Like `bench/bench.ts`, a **backend** timing tool, not a Storybook one — no Chrome, no server. It calls
-straight into `core/src/bases/` (`buildTaskRows`, `resolveBaseRows`, `runView`, `parseBaseFile`, and
-`patchTaskRows` when `tasksData.ts` exports it — loaded by dynamic import so the bench still runs
-against an older checkout, printing that row as `skipped`) against a synthetic vault from
-`basesPerfVault.ts`'s `buildPerfVault()`: 1200 notes by default (`noteCount`), about 40% carrying one to
-three checkbox tasks with due/scheduled dates spread across a year, plus a tasks-mode calendar base
-(a regex filter and a declared formula) and a second base composing over it (`source: { kind: base }`).
-The vault lives in a fresh directory under `os.tmpdir()` and `cleanup()` removes it. It prints one
-`console.table` of `label`, `ms` and `ms/call` rows: cold `buildTaskRows`, a full rebuild simulating one
-note edited, `patchTaskRows` on one changed path, `runView` ×20 on the calendar base, and
-`resolveBaseRows` ×20 on the composed base both with bare context and with the cached
-`vaultRows`/`vaultTasks` providers `core/src/server.ts` always passes. The row labels are the contract
-for before/after diffs — run it before and after a change and compare the tables — so rename one
-deliberately or not at all. (Its header cites `.claude/plans/2026-09-17-bases-perf.md`, a local scratch
-plan that is not in the repo.)
-
-```bash
-bun run bench:bases-perf     # = bun bench/basesPerfBench.ts
-```
-
-### `bench/pdfScroll.ts` — does a PDF page paint before the reader scrolls to it?
-
-Measures continuous scrolling of the `PdfPages` story (default id `preview-pdfpages--many-pages`) in its
-own Chrome: an in-page `requestAnimationFrame` sampler records frame gaps and, per frame, whether any
-`.pdf-page` box (found by its `data-pdf-page` attribute, never a class name) intersecting the scrollport
-is *blank* — no `<canvas>` child, a canvas whose four interior sample points are all transparent, or
-four pixel-identical points. The scroll is driven by CDP `Input.dispatchMouseEvent` wheel events, not a
-synthetic DOM `WheelEvent`, because the scroller has no wheel handler of its own and the browser ignores
-untrusted wheel events for native scrolling. Two passes run: continuous (120Δ per step) and fast-fling
-(400Δ), 3s each. Acceptance targets are checked against the continuous pass: longest sustained blank
-stretch ≤250ms, blank share <10% and max frame gap ≤100ms; the fling pass is held only to the
-≤100ms frame-gap check. Flags: positional story id, `--base <url>`
-(default `http://localhost:6006`), `--duration <ms>` (default 3000). It holds no baseline and no
-history — "before" and "after" are two runs a human compares — and it measures `PdfPages` in isolation,
-not `PreviewView.tsx`'s own wheel listener.
-
-```bash
-bun bench/pdfScroll.ts preview-pdfpages--many-pages --base http://localhost:6006
-```
-
-### `bench/tableRenderPerf.ts` — the Bases table's render and scroll gate
-
-A perf gate for the typed cell grid, on the `bases-tableview--large-table` story (2000 rows × 8
-columns). It reports **render** — the median of 5 cold loads of milliseconds from `Page.navigate` until
-the last row is in the DOM, the glyph tiles are installed (`--ascii-tile-w` set, overlay mask = the
-sprite) and one painted frame has passed (a double `requestAnimationFrame`) — and **fps**, frames per
-second over a 2s programmatic scroll of the table's scroller, top to bottom and back (headless Chrome
-caps at 60). Like `verify.ts`, `--port` is REQUIRED and the tool exits 2 without it, since defaulting to
-:6006 would silently measure the main checkout's Storybook from a worktree. It prints one line:
-`tableRenderPerf render=<ms> fps=<n>`.
-
-```bash
-bun bench/tableRenderPerf.ts --port 6312
-```
-
-### `bench/watch.sh`
-
-A live progress view for a running `cssBaseline.ts`/`storyAudit.ts` sweep, run in a second terminal
-(`bash bench/watch.sh`). Exists because Claude Code's status line only repaints on a callback, not on
-a timer — sitting idle it shows whatever it last printed, indistinguishable from a live reading, so a
-stalled sweep can look healthy. `watch.sh` has its own timer and polls the progress beacon those two
-tools write once per story (`/tmp/bismuth-bench.progress`: `"<label> <done> <total> <startEpochMs>"`)
-directly, so what it shows is always current.
-
----
-
-## What is not tested with Bun
-
-- **Knowledge graph rendering** (`graph/AsciiGraphRenderer.ts`) IS tested despite drawing to a `<canvas>`: `AsciiGraphRenderer.test.ts` runs it headlessly under happy-dom (which has no real canvas) by installing a RECORDING 2D context that captures every `fillText`/`stroke`/font assignment for assertions — 119 tests covering rasterization, hit-testing, drag-to-orbit vs. click, and the zoom-is-resolution law. The renderer this replaced, a WebGL/Three.js-based one (`graph/WebGLRenderer.ts`) and, later, a dot-and-line Canvas2D one (`graph/CanvasGraphRenderer.ts`), are both deleted — neither exists to test
-- **CodeMirror editor view interactions**: some extensions are tested for their pure logic (parsers, completers), but live editor state mutations require a real DOM
-- **Tauri APIs** (`@tauri-apps/api`, `@tauri-apps/plugin-*`): mocked out or skipped in tests; only native-app builds exercise them
-- **Spellchecker WASM** (`harper.js`): the store and offset helpers are tested, but the WASM binary is not loaded in Bun
-- **Spreadsheet (Univer)**: dynamically imported behind a code-split boundary; the snapshot/sync helpers are tested, not the full workbook
-
----
-
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `core/src/render/chromeSession.ts`, `bench/basesPerfBench.ts`, `bench/basesPerfVault.ts`, `bench/pdfScroll.ts`, `bench/tableRenderPerf.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/appShots.ts`, `bench/bench.ts`, `bench/watch.sh`, `DESIGN.md`, `design/baseline.json`, `scripts/designSystem/gate.mjs`, `scripts/designSystem/checks.mjs`, `scripts/designSystem.test.ts`
+Source: `scripts/gate.ts`, `scripts/check-docs.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `bunfig.toml`, `package.json`, `tsconfig.base.json`, `core/test/setup.ts`, `core/test/helpers.ts`, `core/test/tempDirs.ts`, `core/test/slowGate.ts`, `core/test/upgrade/`

@@ -1,6 +1,6 @@
 # list
 
-A compact, clickable horizontal-strip list — title, optional dimmed secondary label, optional right-aligned value. Task rows (from a `tasks:` source) render instead as native interactive checkbox lines. `list` is the automatic fallback for an embedded `tasks:` query block when `view:` is absent or unrecognized.
+A compact list: one line per row with a title, a muted second value and a right-hand value. Rows that are tasks render as checkbox lines. `list` is also what a ` ```query ` task block renders when it names no `view:`.
 
 ## Working example
 
@@ -9,15 +9,16 @@ A compact, clickable horizontal-strip list — title, optional dimmed secondary 
 type: base
 source: notes where file.hasTag("book")
 view: list
+order: [file.name, note.author, note.rating]
 groupBy:
   property: note.status
 sort:
-  - property: note.title
-    direction: ASC
+  - property: note.rating
+    direction: DESC
 ---
 ```
 
-Task-query variant (embedded block):
+Task-query variant, in a note:
 
 ````markdown
 ```query
@@ -28,22 +29,23 @@ view: list
 ```
 ````
 
-Bare `tasks:` says "task query"; the filter goes in `where:` (a Bases expression) and ordering in `sort:`. Add `from: [[Base]]` to scope the tasks to that base's notes. A legacy `tasks: not done` (Obsidian-Tasks DSL text after the colon) still reads through a translation shim, but do not author it; `bismuth base migrate-queries` rewrites old blocks into the form above.
+Bare `tasks:` makes it a task query; the filter goes in `where:` (a Bases expression) and the order in `sort:`. Add `from: [[Base]]` to scope the tasks to that base's notes.
 
 ## Config keys
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `order` | `string[]` | auto-derived | Only the **first three** resolved columns are ever displayed (title, secondary label, right value) — extras are resolved but not shown. |
-| `groupBy` | `{ property, direction? }` | none | Section headers with a colored dot + count. |
-| `columns` (→ `groupOrder`) | `string[]` | value-sorted | Controls **group order only**, not which data columns display. |
-| `mode` | `"normal"` \| `"tasks"` | `"normal"` | General mode axis. In `tasks` mode every row renders as a task line regardless of shape; in `normal` mode a row still renders as a task line if it merely has the shape a task query produces (`isTaskRow`) — `list` is the one view that checks shape as well as the declared mode. |
-| `sort`, `limit` | — | — | Standard fields. (`filters` and `source` are base-level keys, not view fields.) |
+| `order` | `string[]` | derived | Only the first three columns show: title, `— second`, right-hand value. |
+| `groupBy` | `{ property, direction? }` or a property string | none | A header per group: dot, value, `// N` count. |
+| `columns` | `string[]` | value order | Group order only, not which values show. A listed group with no rows is not shown. |
+| `mode` | `"normal"` \| `"tasks"` | `"normal"` | `tasks` renders every row as a task line. In `normal`, a row scanned from a note's checkbox line still renders as a task line. |
+| `sort`, `limit` | | | As for a table; `limit` is per group. |
 
 ## Failure modes
 
-- **Columns beyond index 2 are silently ignored** by the renderer (still resolved by the query engine, just never shown) — use `table` if you need more than three visible fields.
-- **Task rows bypass `order`/column logic entirely** — `TaskRow` reads `row.note.description`/`status`/`priority`/`due`/etc. directly, so declaring `order` has no effect on a tasks-sourced list.
-- **Group header colors resolve against a fixed status palette, unmatched keys fall back to plain accent color.** `groupColor(key)` normalizes the key itself (`.trim().toLowerCase()`) before lookup, so `"Done"`, `" done "`, and `"done"` all hit green — only a name genuinely absent from the palette (`reading`, `to read`/`toread`, `finished`/`done`/`complete`, `abandoned`/`dropped`) falls back.
+- If you need more than three values per row, use `table`; columns after the third are not shown.
+- If `order` seems ignored on a task list, that is expected: a task line reads the task's own fields (`description`, `status`, `priority`, dates), not the columns.
+- If the second value never shows, it is a list or link object; the list hides those.
+- If a group header has no colour, its value is not a known status (`reading`, `to read`, `todo`, `doing`, `done`, `finished`, `abandoned` and so on); unknown groups are muted.
 
-Full reference: `docs/bases/views/list-bullets.md`
+Full reference: [docs/bases/views/list-bullets.md](../views/list-bullets.md)

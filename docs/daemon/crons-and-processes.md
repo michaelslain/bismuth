@@ -1,110 +1,76 @@
-# Crons & Background Processes
+# Crons and background processes
 
-The daemon runs two kinds of recurring work off the same on-disk pattern: **crons** (markdown files that fire a Claude session, either on a time schedule or when a watched vault file changes — see [File-change crons](#file-change-crons)) and **background processes** (markdown files that supervise a long-lived child process). Both are plain `.md` files under `<vault>/.daemon` — crons in `.daemon/crons`, processes in `.daemon/processes` — parsed by the same frontmatter reader, driven through the same UNLINK-FIRST trigger discipline, but with deliberately different runtime semantics (a cron trigger *fires a run*; a process trigger *reconciles runtime to disk*).
+A cron is a markdown file that runs its body as a prompt in a fresh Claude session, on a schedule or when a vault file changes. A background process is a markdown file that keeps a long-lived command running and restarts it when it exits. Both live under `<vault>/.daemon/`, and the daemon page shows processes as "services". Read this page to write one, to schedule it, or to find out why it did not run.
 
-This page covers the shared frontmatter parser and filesystem layout, the cron model (schedule vs. file-change triggers, incremental skip-gating, firing, catch-up, recovery, run-now triggers, and the one shipped default), and the background-process model (spawn/restart, PID tracking, enable/disable, triggers), then ties both together with a keying summary. Bismuth's own enable/disable/run-now controls for these files are covered in [overview.md](overview.md) and [storage.md](storage.md).
+A cron that summarizes the journal each weekday at 8:00:
 
-There is **ONE machine runtime that multiplexes every enabled vault's brain**. The cron scheduler is a single tick loop that fans out across `loadEnabledVaults()` each tick; process supervision keeps one machine-global `managed` map. Every function takes a `VaultContext` (`loadCronJobs(ctx)`, `fireJob(ctx, job, lastFired)`, `processTriggers(ctx)`, `startProcess(name, ctx)`, …), and all paths come off that ctx (`ctx.cronsDir`, `ctx.processesDir`, `ctx.logsDir`, `ctx.lastFiredFile`, `ctx.runningFile`, `ctx.triggerDir`, `ctx.processTriggerDir` — all under `<vault>/.daemon`). In-memory runtime state is keyed `${ctx.root}::${name}` so two vaults can each own a cron or process of the same name without colliding.
-
-Bismuth core reads and minimally writes these same files to power the daemon page's crons + services panels (`::daemon`, `app/src/daemon/DaemonCrons.tsx` / `DaemonProcesses.tsx`, fed by `GET /daemon/snapshot`) — see [overview.md](overview.md) and [storage.md](storage.md). Boot/shutdown order is in [lifecycle.md](lifecycle.md); the dream cycle's memory mechanics are in [memory.md](memory.md).
-
-## Shared frontmatter parser (`lib/frontmatter.ts`)
-
-Every cron and process file is parsed by `parseFrontmatter(content)`. It is **not** a YAML parser — understanding its quirks is a prerequisite for everything below.
-
-- Fence regex: `/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/`. No fence at the top of the file → `{ frontmatter: {}, body: content.trim() }`.
-- Each frontmatter line is split on the **first `:` only** (`indexOf(":")`); lines without a colon are skipped.
-- **Every value is a raw, trimmed string.** There is no type coercion — `enabled: false` parses to the string `"false"`, not the boolean `false`. This is why the code keys everything off the sentinels `!== "false"` (opt-out, default true) and `=== "true"` (opt-in, default false).
-- `body` is everything after the closing `---` fence, trimmed. For crons the body is the prompt; for processes the body is unused.
-
-The memory graph has its own typed parser — this one is cron/process-only.
-
-## Filesystem layout (`lib/config.ts` → `vaultPaths(root, name)`)
-
-Every path is **per-vault**, resolved from the vault root by `vaultPaths()` into the `VaultContext`. There is no machine-wide crons/processes dir.
-
-| `VaultContext` field | Value |
-| --- | --- |
-| `ctx.daemonDir` | `<vault>/.daemon` |
-| `ctx.cronsDir` | `<vault>/.daemon/crons` |
-| `ctx.processesDir` | `<vault>/.daemon/processes` |
-| `ctx.logsDir` | `<vault>/.daemon/logs` |
-| `ctx.lastFiredFile` | `<vault>/.daemon/crons/.last-fired.json` |
-| `ctx.runningFile` | `<vault>/.daemon/crons/.running.json` |
-| `ctx.triggerDir` | `<vault>/.daemon/crons/.triggers` |
-| `ctx.processTriggerDir` | `<vault>/.daemon/processes/.triggers` |
-| Process pid files | `<vault>/.daemon/processes/.pids/<name>.pid` (`PIDS_SUBDIR = ".pids"`, in `process.ts`) |
-| Process logs | `<vault>/.daemon/logs/<name>.stdout.log`, `<vault>/.daemon/logs/<name>.stderr.log` (append) |
-
-Machine-level identity/runtime state (`daemon.pid`, `devices.json`, `owner.json`, logs, `vaults.json`) lives separately under `MACHINE_DIR` (`BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`) — see [lifecycle.md](lifecycle.md) and [storage.md](storage.md).
-
-| Timing constant (`lib/config.ts`) | Value | Meaning |
-| --- | --- | --- |
-| `DEFAULT_CRON_TIMEOUT` | `300` (s) | default per-cron session timeout |
-| `CRON_CHECK_INTERVAL_MS` | `60000` | scheduler tick (also the reconcile-loop tick) |
-| `TRIGGER_CHECK_INTERVAL_MS` | `5000` | both trigger polls (cron + process) |
-| `SHUTDOWN_TIMEOUT_MS` | `10000` | graceful shutdown budget for running jobs |
-| `SHUTDOWN_POLL_MS` | `500` | shutdown poll interval |
-| `RESTART_BACKOFF_RESET_MS` | `300000` | uptime past which a process restart resets backoff |
-| `RESTART_BACKOFF_MAX_MS` | `60000` | restart backoff ceiling |
-
-`FILE_WATCH_DEBOUNCE_MS` (`daemon/src/daemon/fileWatch.ts`, not `lib/config.ts`) = `2000` — how long the per-vault file watcher waits for quiet before flushing a batch of changed paths to file-change crons (see [File-change crons](#file-change-crons)).
-
+```markdown
+---
+name: morning-digest
+schedule: 0 8 * * 1-5
+timeout: 600
+notify: true
 ---
 
-## Crons (`daemon/cron.ts`)
-
-### Model
-
-`CronJob` is a discriminated union on `on` — a cron is EITHER schedule-triggered OR file-change-triggered, never both:
-
-```ts
-ScheduleCronJob {
-  on: "schedule", name, schedule, cron /* parsed CronExpression */, prompt /* = markdown body */,
-  catchup, enabled, notify, model?, effort?, timeout /* s; 0 = no timeout */, waitFor?,
-  incremental /* default false */, checkpointDirs /* ("vault" | "memory")[]; incremental only; default ["vault"] */
-}
-FileChangeCronJob {
-  on: "file-change", name, watch /* vault-relative path or Bun.Glob pattern */, prompt,
-  catchup: false /* always — see File-change crons below */, enabled, notify, model?, effort?,
-  timeout, waitFor?, incremental /* default false */, checkpointDirs
-}
+Read the notes I changed yesterday and write a five-line digest to the
+memory graph with `remember`. Skip anything under `private/`.
 ```
 
-`incremental`/`checkpointDirs` are shared by both shapes (see [Incremental crons](#incremental-crons) below) — a plain cron simply never sets them and fires exactly as before.
+A background process that serves a folder:
 
-### `parseCronFrontmatter`
+```markdown
+---
+name: preview-server
+command: python3
+args: ["-m", "http.server", "8090"]
+cwd: /Users/me/site
+restart: on-failure
+---
+```
 
-`on: file-change` is checked FIRST and is opt-in: any other value (including no `on` key at all) parses as the original schedule-based shape, so every cron already on disk is unaffected. A `file-change` cron with no `watch` → `null` (skipped). A schedule cron with **no `schedule`** → `null` (skipped); an **invalid** schedule (`parseCronExpression` returns null) → `null`.
+[Set up the daemon](setup.md) shows how to create these from the CLI. Frontmatter is one `key: value` per line. Inline comments, multi-line values and YAML lists are not supported, and every value is a string.
 
-| frontmatter key | mapping | default |
-| --- | --- | --- |
-| `on` | `"file-change"` selects the file-change shape; anything else (including absent) → schedule shape | `"schedule"` |
-| `schedule` | schedule crons only; required, parsed to `CronExpression` | (null if absent/invalid) |
-| `watch` | file-change crons only; required — a vault-relative path or Bun.Glob pattern | (null if absent) |
-| `name` | `frontmatter.name ?? filename-without-.md` | filename |
-| (body) | `prompt` | — |
-| `catchup` | schedule crons: `frontmatter.catchup !== "false"`; file-change crons: always `false` (no time-based catch-up concept — see below) | `true` (opt-out, schedule only) |
-| `enabled` | `frontmatter.enabled !== "false"` | `true` (opt-out) |
-| `notify` | `frontmatter.notify === "true"` | `false` (opt-in) |
-| `model` | passthrough | `undefined` (session defaults `haiku`) |
-| `effort` | passthrough → the SDK's `effort` option | `undefined` |
-| `timeout` | `parseTimeoutSecs` | `300` |
-| `waitFor` | passthrough — a `pgrep -f` pattern to wait on after the session ends | `undefined` |
-| `incremental` | `frontmatter.incremental === "true"` — opts into the pre-fire checkpoint-diff skip gate (see [Incremental crons](#incremental-crons)) | `false` (opt-in) |
-| `checkpointDirs` | comma list of `vault` / `memory` — which repos the incremental gate diffs (`vault` = `ctx.root`, `memory` = `ctx.memoryDir`). Ignored when `incremental` is false. The legacy singular `checkpointDir: memory\|vault` still parses, as a one-element list | `["vault"]` |
+## Cron keys
 
-`parseTimeoutSecs`: empty → `300`; `"none"` or `"0"` → `0` (explicit no-timeout); otherwise `parseInt` if finite and `> 0`, else `300`.
+| Key | Values | Default | Effect |
+|---|---|---|---|
+| `name` | text | the file name | Display name. It keys the cron's history, so renaming it orphans that history |
+| `schedule` | five-field cron expression | none | Required unless `on: file-change`. A missing or malformed value makes the daemon skip the file |
+| `on` | `file-change` | schedule | Fire when a watched file changes instead |
+| `watch` | path or glob, relative to the vault | none | Required with `on: file-change` |
+| `enabled` | `false` to disable | on | Only the exact text `false` disables; `False` does not |
+| `catchup` | `false` to turn off | on | Whether a missed schedule fires late. Schedule crons only |
+| `notify` | `true` | off | An OS notification per run, with the result |
+| `model` | model name | `haiku` | The session's model |
+| `effort` | `low`, `high`, any other value | the SDK default | `low` and `high` pass through; any other value becomes `medium` |
+| `timeout` | seconds, `none` or `0` | 300 | Aborts the session when exceeded; `none` or `0` means no limit |
+| `waitFor` | a `pgrep -f` pattern | none | After the session ends, wait for matching processes to exit, within `timeout` |
+| `incremental` | `true` | off | Skip runs when nothing relevant changed; see below |
+| `checkpointDirs` | `vault`, `memory`, or both comma-separated | `vault` | Which areas an incremental cron checks. `checkpointDir` takes a single value |
 
-`loadCronJobs(ctx)`: `readdir ctx.cronsDir`, keep only `*.md`, parse each, skip unreadable. Dotfiles (`.last-fired.json`, `.running.json`) and the `.triggers` dir are naturally excluded because they are not `*.md`. Returns `[]` if the dir doesn't exist.
+The body of the file is the prompt. The daemon appends to it: the memory directory and a rule to write memory only through `remember`, an instruction to end with `[CRON_RESULT:SUCCESS]` or `[CRON_RESULT:FAILURE]`, and, with `notify: true`, an instruction to print one `[NOTIFY: …]` line. A session that prints neither marker records the result `unknown`.
 
-### File-change crons
+A cron session cannot rewrite its own file or the process definitions. When the session ends, the daemon reverts a changed cron file, restores a deleted one, and removes any process file the session added.
 
-A cron can fire when a vault file changes instead of on a time schedule — useful for "whenever I edit X, do Y" workflows (e.g. re-summarize a note, sync a change elsewhere, validate a file's shape).
+## Schedule syntax
 
-**Authoring one** — set `on: file-change` and `watch: <vault-relative path or glob>` instead of `schedule`:
+A schedule has exactly five space-separated fields, evaluated in the machine's local time: minute, hour, day of month, month, day of week. A cron fires in a minute when all five fields match, so a day-of-month and a day-of-week together require both.
 
-```yaml
+| Syntax | Meaning |
+|---|---|
+| `*` | Every value |
+| `*/N` | Values divisible by N. `*/15` in the minute field is 0, 15, 30, 45; `*/2` in the day-of-month field is the 2nd, 4th, 6th… |
+| `A-B` | The range from A to B inclusive. `A-B-C` never matches, and a range inside a list is read as its first number: in `1-3,5` the `1-3` counts as `1` |
+| `A,B,C` | Any listed number |
+| `N` | That number |
+
+Sunday is 0 and `7` never matches. Names (`MON`, `JAN`), macros (`@hourly`) and `1-10/2` are not supported, and a field the daemon cannot read, such as `*/0`, never matches, with no error. An unsupported field count is the one failure that hides the cron entirely: a schedule with six fields, such as one carrying a trailing comment, is skipped.
+
+## Run a cron when a file changes
+
+A cron with `on: file-change` and a `watch` pattern fires when a matching vault file changes. `watch` is a Bun glob matched against each changed path relative to the vault: `inbox.md` matches one file, `journal/**` matches everything under `journal/`, `*.md` matches notes in the vault root.
+
+```markdown
 ---
 name: inbox-triage
 on: file-change
@@ -112,347 +78,125 @@ watch: inbox.md
 notify: true
 ---
 
-Read inbox.md (just changed). Triage any new items: file each under
-the right project note, or ask a clarifying question by appending a
-`> [!question]` callout directly below the item. Leave already-triaged
-items untouched.
+Read inbox.md (it just changed). File each new item under the right
+project note, or ask a question with a `> [!question]` callout below it.
 ```
 
-`watch` is matched with `Bun.Glob` against the vault-relative path of each changed file, so glob syntax works too: `journal/**` (anything under `journal/`), `*.md` (root-level notes only), `notes/*.md`, etc.
+The daemon appends `Triggered by change to: <paths>` to the prompt. It waits 2 seconds after the last change before firing, so a burst of autosaves fires once. A change while the cron is already running is dropped, not queued. A change made while the daemon was off does not fire anything: file-change crons have no catch-up.
 
-**Watcher architecture** — `daemon/src/daemon/fileWatch.ts` owns exactly ONE recursive `fs.watch(ctx.root)` per vault brain (started by `startVault`/stopped by `stopVault`, alongside the process-trigger loop), never one watcher per cron. Raw fs events are debounced per vault (`FILE_WATCH_DEBOUNCE_MS = 2000`) so a burst of rapid saves during an editing session collapses into ONE fire, not one per keystroke. When the debounce window closes, the batch of changed paths is matched against **every** enabled `file-change` cron's `watch` pattern in that vault (`loadCronJobs(ctx)` is re-read fresh each batch, so toggling `enabled` takes effect on the very next change — no restart, no trigger file needed). A cron with one or more matches in the batch fires via `fireFileChangeCron(ctx, job, matchedPaths)` — the exact same `fireJob` session/model/timeout/notify plumbing a scheduled fire uses, with the changed paths appended to the prompt: `\n\nTriggered by change to: <path1>, <path2>, …`. A cron that's already running when its watch matches is skipped, not queued — the next change after it finishes will fire it fresh.
+Changes under `.daemon/` never trigger a cron, so the daemon's own writes cannot loop. A cron whose prompt edits a file that matches its own `watch` fires itself again on its own edit. Watch a different file than the one the cron writes, or make the edit idempotent.
 
-**No time-based catch-up.** `shouldCatchUp` returns `false` immediately for `on: "file-change"` jobs — there is no "overdue" concept for a trigger that only fires on an actual change. A file edited while the daemon was stopped does not retroactively fire the cron; it fires on the *next* change after the daemon comes back up. `catchup` is hardcoded `false` on `FileChangeCronJob` for this reason (the frontmatter key does nothing for these).
+## Skip runs when nothing changed
 
-**Self-trigger loop hazard.** `.daemon/**` churn (the daemon's own `.last-fired.json`/`.running.json`/logs/memory/session-state writes) is UNCONDITIONALLY excluded from every batch (`isDaemonInternalPath`) — the daemon's own bookkeeping can never retrigger a file-change cron. This does **not** protect against a cron whose prompt edits an ordinary vault file that matches its own `watch` pattern: that cron will refire itself on its own edit (subject only to the debounce window), forever. If you author a cron that both watches and writes vault files, either point `watch` at a different file than the one it edits, or make the edit idempotent (a second identical write is a harmless no-op) so a self-retrigger costs a wasted run rather than compounding.
+An incremental cron (`incremental: true`) asks git whether anything relevant changed since its last successful run, and skips the session when nothing did. A skipped run costs nothing and records the result `skipped` with a reason such as `skipped: no changes since 2026-07-20T10:00:00Z`.
 
-### Incremental crons
+The check compares each area in `checkpointDirs` (the vault root, the memory directory) against a bookmark at `refs/bismuth/cron-<file name>` (`cron-<file name>-vault` for the vault when both areas are listed). Only `.md` files outside `.daemon/` count. The cron skips only when every area is past its first run and has no changed file.
 
-`incremental: true` opts a SCHEDULE cron into a pre-fire gate: before a session is ever started, the daemon itself checks whether anything relevant changed since the cron's last successful run and, if not, skips the session entirely. This replaces an older pattern where the model's OWN Bash step ran `bismuth checkpoint diff/advance` as the first/last thing it did in the session — that still paid for a full session every time (context load, tool calls, tokens) even when nothing had changed, and silently degraded to a full re-survey whenever the bundled `bismuth` CLI wasn't resolvable on the daemon's PATH (Bug #105). Moving the check into the daemon removes both problems: a no-op run now costs nothing, and the scoping no longer depends on a subprocess the daemon can't guarantee.
+If the prompt contains `{{changedSinceLastRun}}`, the daemon replaces it with a block per area that lists the changed files, or a first-run line when an area has no bookmark yet. A prompt without the placeholder runs unchanged.
 
-**Mechanism** (`daemon/src/daemon/incrementalCron.ts` + `daemon/src/lib/checkpointRef.ts`, called from `cron.ts`'s `fireJob` before ANY of the running-state bookkeeping):
+The daemon moves the bookmarks only when the session ends with `[CRON_RESULT:SUCCESS]`, never after a failure, a kill or an unknown result. The vault bookmark moves to a snapshot taken when the run started, so an edit made during the run is seen next time. The memory bookmark moves to a snapshot taken at the end, so the cron's own memory writes do not retrigger it.
 
-1. **Resolve the checkpoint areas.** One area per entry in `job.checkpointDirs`: `vault` → `ctx.root`, `memory` → `ctx.memoryDir`. Each is (or gets, on first touch) its own local git repo — same `refs/bismuth/<ref>` bookmark mechanism `core/src/backup.ts` and the `bismuth checkpoint` CLI already use, but reimplemented standalone here (plain `git` subprocesses) because the daemon workspace must not depend on `@bismuth/core` (see `lib/visibility.ts`/`lib/claudeWhich.ts` for the same constraint elsewhere). The ref name comes from `incrementalRefName(cronName, kind, dirs)`: a single-dir job keeps **`refs/bismuth/cron-<job.name>`**; a multi-dir job names its `memory` ref `cron-<name>` and its `vault` ref `cron-<name>-vault`. The `cron-` namespace is distinct from any ref a cron's own Bash step may have advanced by hand in the past, so a first incremental run never trusts an LLM-authored checkpoint of uncertain provenance. **Legacy fallback** (`legacyRefsFor(cronName, kind)`): for `dream`'s `vault` area only, when `cron-dream-vault` does not exist yet, the base is the first existing of `cron-vault-review`, then `vault-review` — so a vault that already ran the retired `vault-review` cron does not get a full first-run vault survey. Every other job has no legacy refs.
-2. **Snapshot, then diff.** `snapshotWorkingTree(dir)` builds a commit whose tree is the CURRENT working tree (tracked + untracked files, `.gitignore`/exclude respected) without touching the real index, `HEAD` or any branch; it returns `null` when `dir` is not a repo or has no `HEAD`. `checkpointDelta(dir, ref, { fallbackRefs })` then returns `{ base, head, snapshot, files }`, where `files` is the diff from the base tree (the ref, else the first existing fallback ref) to the **snapshot** tree — not to `HEAD`. No base at all (first run for that area) → every file in the snapshot counts, status `A`, and `base` is `null`. Nothing is ever committed to a branch.
-3. **Filter.** `filterCronPaths` narrows each raw delta to `*.md` files outside `.daemon/` — the only things the dream review cares about.
-4. **Decide** (`resolveIncrementalRun` → an `IncrementalRunPlan { skip, note?, prompt?, areas }`): the run is **skipped iff every area is not on its first run AND has an empty filtered list** — so a multi-dir job skips only when BOTH deltas are empty. A skip records `result: "skipped"` + `detail: "skipped: no changes since <ISO time of the ref's commit>"` into `.last-fired.json` (see [storage.md](storage.md)) and returns WITHOUT ever calling `sendMessage` — no PTY, no running-jobs entry, no cost; the activity log gets its `skipped` event as before. Any other combination runs, with the changed-file blocks formatted for injection.
-5. **Inject.** If the cron's prompt body contains the literal placeholder `{{changedSinceLastRun}}`, it is replaced by one block per area — headed `Vault notes changed since <iso>:` / `Memory notes changed since <iso>:`, or that area's first-run line — followed by the file list (`applyIncrementalPlaceholder`); a prompt without the placeholder is left byte-identical (silent no-op, so `incremental: true` on a cron that forgot the placeholder just never gets the injected text — it's not an error).
-6. **Advance on success only.** After the session completes, if it reported `[CRON_RESULT:SUCCESS]` (never on failure/kill/unknown/timeout), `advanceIncrementalCheckpoints(ctx, plan)` moves each area's ref to a **snapshot commit**, not to `HEAD` (`advanceCheckpointRef(dir, ref, to?)`; `to` omitted → a fresh `snapshotWorkingTree`). It never throws. Which snapshot differs by area, so a checkpoint records exactly what the run saw:
-   - the **vault** area advances to the snapshot taken at the START of the run — a vault edit made while the session was running is seen by the next run, not silently marked as reviewed;
-   - the **memory** area advances to a snapshot taken at the END of the successful run — the cron's own memory writes never re-trigger it. The cost is a window: a memory note that ANOTHER writer (an interactive `remember`, another cron) adds while the session is running is absorbed into that end snapshot and is not listed to the next run. Nothing is lost — `dream` processes every `auto-*` transcript and collapses snapshot clusters over the whole graph on every run regardless of scope — but such a note only gets scoped consolidation once it is edited again.
+An incremental cron needs a git repository with at least one commit in each area. An area with no repository or no commit reads as "nothing changed", so the cron is skipped without a warning. The vault's repository comes from Bismuth's local snapshots (`vault.backupOnSave`, on by default), and the memory repository comes from the snapshots core takes of that folder.
 
-   This replaces the earlier "advance to `HEAD`" behaviour, under which an uncommitted edit that a run had already read was reported as changed again by every following run until the next vault snapshot commit.
+## Run, enable, disable and delete
 
-**Visibility.** A skip is not silent: `daemonGraph.ts` composes a cron node's `daemon.lastResult` as the `detail` string verbatim when `result === "skipped"` (falling back to the bare `"skipped"` enum if `detail` is somehow absent), so `bismuth daemon graph` / the app's daemon sidebar show e.g. `"skipped: no changes since 2026-07-20T10:00:00Z"` instead of a bare enum value. `lastFiredMs` is updated on a skip exactly like a real run, so the sidebar's relative-time label ("5m", "2h", …) reflects "last checked" regardless of whether that check found anything.
+- Run now. `bismuth daemon cron run <name> --vault <vault>`, or **Run now** in the cron's row menu, drops a trigger file. The owner device's daemon picks it up within 5 seconds and ignores it if the cron is already running. An unknown name fails with `Cron "<name>" not found`. A trigger works only for a file name made of letters, digits, `_`, `-` and `.` (up to 100 characters); the daemon ignores any other name, so give a hand-made cron file a plain name.
+- Enable or disable. `bismuth daemon cron toggle <name> [--off] --vault <vault>` edits the cron's `enabled` line. The scheduler re-reads cron files every minute, and a file-change cron picks the change up at its next batch. Disabling does not stop a run in progress.
+- Create. `bismuth daemon cron create "<name>" --vault <vault>` writes a disabled template at `crons/<slug>.md`, where the slug is the lowercase name with other characters turned into dashes, up to 100 characters. A name with no letters or digits, or an existing slug, is refused.
+- Delete. `bismuth daemon cron delete <name> --vault <vault>` removes the file and refuses a cron that is running. A vault snapshot can restore it.
 
-**The one shipped default** (`dream` — see below) ships `incremental: true` with `checkpointDirs: vault, memory`. Existing vaults that already had a stock earlier version of it pick up the upgrade automatically via `seeds.ts`'s versioned refresh — see [Seeding](#seeding-daemonseedsts--reconcileseedsctx) below.
+`<name>` accepts either the file name or the `name:` value. The daemon page has no create control; ask the daemon in its chat, which runs these commands and asks you to approve each one.
 
-### Schedule parsing — hand-rolled, no library
+## What happens when a cron fails
 
-`parseCronExpression`: trim, split on whitespace, require **exactly 5 fields** or return null. Fields stored verbatim as strings: `minute hour dayOfMonth month dayOfWeek`.
-
-`matchesField` supports:
-
-| syntax | rule |
-| --- | --- |
-| `*` | always matches |
-| `*/N` (step) | `value % N === 0`; if `N <= 0` or `NaN` it **never** matches — so `*/0` and `*/abc` never fire |
-| `A-B` (range) | only if no comma and exactly 2 numeric parts; `value >= A && value <= B`. Backward range `5-2` matches nothing; malformed `1-2-3` → false |
-| `A,B,C` (list) | if a comma is present; matches if any part's `parseInt` equals `value`. Trailing comma `"5,"` → only `5` |
-| exact int | otherwise; non-numeric → false |
-
-**Not supported:** names (`MON`/`JAN`), `@hourly`-style macros, or combined range+step (`1-10/2`).
-
-`shouldFire(cron, now)`: ANDs all five fields using **local time** (`getMinutes` / `getHours` / `getDate` / `getMonth()+1` / `getDay()`); Sunday = 0.
-
-### `.last-fired.json` — exact shape
-
-```ts
-LastFiredEntry { timestamp: string, result: "success" | "failed" | "unknown" | "killed" | "skipped", detail?: string }
-```
-
-Object keyed by `job.name` (frontmatter name, fallback filename):
+Each run records one of these results in `crons/.last-fired.json`: `success`, `failed`, `unknown`, `killed` or `skipped`. A timeout is `killed` with cause `timeout`.
 
 ```json
-{ "dream": { "timestamp": "2026-06-08T14:00:03.123Z", "result": "success" } }
-{ "dream": { "timestamp": "2026-07-25T14:00:00.500Z", "result": "skipped", "detail": "skipped: no changes since 2026-07-20T10:00:00Z" } }
+{ "dream": { "timestamp": "2026-10-08T03:00:03.123Z", "result": "failed", "cause": "environment", "consecutiveFailures": 2 } }
 ```
 
-`loadLastFired(ctx)` **migrates legacy** data: a plain-string value becomes `{ timestamp: <string>, result: "success" }`. Missing/unreadable → `{}`. Written via `updateLastFired(ctx, name, entry)`: read-modify-write under a per-file serial queue (`enqueueWrite`, keyed by absolute file path — already vault-unique) plus `atomicWriteJson` (temp `${file}.${pid}.${ts}.${rand}.tmp`, then rename, `JSON.stringify(..., null, 2)`). `result: "skipped"` + `detail` is written by an `incremental` cron's pre-fire checkpoint-diff gate INSTEAD of ever starting a session — see [Incremental crons](#incremental-crons).
+A failed or killed cron with `catchup` on is retried before its next scheduled time, after a cooldown that grows with each consecutive failure:
 
-> **`.last-fired.json` only remembers the LATEST outcome per cron.** Every fire, skip, and stop
-> below is *also* appended to the per-vault activity log (`enqueueWrite`-shared, JSONL,
-> `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl`, via `logActivity`/`cronActivityEvent` in
-> `daemon/src/lib/activityLog.ts`), which is the durable history this file overwrites. Full event
-> vocabulary, retention, and how to read it back: [storage.md](storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
+- The base cooldown is the larger of 5 minutes and a twelfth of the cron's period. An hourly cron waits 5 minutes, a daily one 2 hours.
+- The cooldown doubles with each consecutive failure and never exceeds the cron's period.
+- A failure with cause `environment` (offline, API unreachable, rate or usage limit, provider overloaded) starts two doublings in, so an hourly cron waits 20 minutes after the first one.
+- Any other failure has cause `job`, and a timeout has cause `timeout`; both start at the base cooldown.
 
-### `.running.json` — exact shape
+The cooldown holds back only the extra retry. A scheduled fire is never suppressed, so a failing hourly cron still fires every hour. A success, an unknown result or a skip resets the count.
 
-```ts
-RunningEntry { startedAt: string /* ISO */ }
+A schedule cron is overdue, and fires late, when it has never run or its last non-failed run is more than 1.01 periods old. The period is estimated from the schedule's shape: `*/N` minutes or hours, then weekly, monthly, daily and hourly patterns. A laptop that sleeps through a daily 3:00 cron therefore runs it on wake.
+
+If the daemon dies while a cron runs, the cron stays in `.running.json` and the next boot re-fires it.
+
+## Seeded crons and files
+
+A vault's brain starts by writing any default file that is missing, so a new vault gets the full set and an older vault gets only what it lacks. The defaults are `identity.md`, `PAGES.md` and one cron, `dream`. A file that exists is never overwritten, except that a stock `dream.md` is upgraded in place: the daemon hashes the file, and when the hash matches any earlier stock version of `dream`, it replaces the file with the current one. A `dream.md` you edited, even by one character, is left alone for good. To turn `dream` off, set `enabled: false` in it; a deleted `dream.md` is written again at the next brain start.
+
+`dream` runs hourly with a 30-minute timeout, is incremental over both the vault and the memory directory, and has no `notify`. In one session it:
+
+1. Reads the vault notes and memory notes that changed, and every session transcript note (`auto-*`) in the memory graph.
+2. Folds what matters into a small set of canonical memory notes (`user-beliefs`, `user-reading`, `user-writing`, `user-projects`, `user-routine`, `user-context`, or one note named for a topic) with `remember`, merges duplicates, and deletes each transcript note after extracting from it.
+3. Collapses dated snapshot notes into one note that carries its history inside it, and cleans up oversized notes.
+4. Files an inbox page only for something that needs you, with `source: "cron:dream"`.
+
+It writes memory and pages only. Its prompt forbids it from editing crons, processes, `identity.md` or your notes, and from writing a memory note about its own runs. It ends by printing one report line, which the activity log stores as the `summary` of its `finished` event:
+
+```
+vault=3 memory=1 transcripts=2 snapshots-collapsed=0 merged=1 pages=0 notes=48 size=212KB
 ```
 
-Object keyed by `job.name`:
+Read the last reports with `bismuth daemon logs --vault <vault> --kind cron --name dream --limit 5 --pretty`. [Memory](memory.md) covers the graph `dream` maintains.
 
-```json
-{ "dream": { "startedAt": "2026-06-08T14:00:00.500Z" } }
-```
+## Background process keys
 
-`markRunning(ctx, name)` sets the key; `markDone(ctx, name)` deletes it (same serial-queue + atomic-temp-rename). `loadRunning(ctx)` → `{}` on missing. **No migration** (unlike last-fired).
+| Key | Values | Default | Effect |
+|---|---|---|---|
+| `command` | an executable | none | Required. Without it the daemon skips the file |
+| `name` | text | the file name | Display name |
+| `args` | a JSON array, or words separated by spaces | none | Arguments. A JSON array must be on one line |
+| `cwd` | a directory | your home directory | Working directory. It is not the vault |
+| `env` | a JSON object on one line | none | Variables added to the daemon's environment |
+| `restart` | `always`, `on-failure`, `never` | `on-failure` | When to restart after an exit. Any other value behaves like `never` |
+| `restartDelay` | milliseconds | 1000 | The base wait before a restart |
+| `enabled` | `false` to disable | on | Whether the daemon starts it |
 
-### Per-vault state keys
+The daemon starts each enabled process when a vault's brain starts and appends its output to `logs/<name>.stdout.log` and `.stderr.log`. After an exit that `restart` covers, it restarts the process after a wait that doubles on each quick restart, up to 60 seconds. A process that stays up for 5 minutes resets the wait to `restartDelay`. A signal counts as a failing exit. A command that cannot start, such as a missing binary, is logged as `spawn-failed` and never restarted, because it will not fix itself.
 
-In-memory runtime state — the `runningJobs` Set and the `jobAbortControllers` Map — is keyed `jobKey(ctx, name) = ${ctx.root}::${name}`. On-disk write queues stay keyed by absolute file path (each vault's last-fired/running file lives under its own `.daemon`, so the path is already vault-unique).
+When the daemon starts, it first kills processes left behind by a previous daemon instance, found by their pid files and then by a match on command line, so restarts do not pile up duplicates. Disabling a vault, or shutting the daemon down, stops its processes: `SIGTERM` to the process group, then `SIGKILL` after 3 seconds.
 
-### Enable / disable
+`bismuth daemon process toggle <name> [--off] --vault <vault>` edits `enabled` and tells the running daemon to start or stop the process. `daemon process create` and `daemon process delete` work like the cron commands; a created process is disabled and runs `echo` until you set `command`.
 
-`enabled` defaults true (`!== "false"`). Disabled jobs are skipped at four checkpoints:
+## How it works
 
-| Checkpoint | Behavior |
-| --- | --- |
-| Scheduler tick | `if (!job.enabled || runningJobs.has(jobKey(ctx, name))) continue` — schedule crons only; the tick also skips every `on: "file-change"` job outright (they never fire off the tick) |
-| File watcher's per-batch fan-out | `fileWatch.ts`'s `flush` skips any `job.on !== "file-change" || !job.enabled` — since `loadCronJobs(ctx)` is re-read fresh on every debounced batch, a file-change cron's enable/disable takes effect on the very next matching change, faster than a schedule cron's next-tick-or-so window |
-| Catch-up on start | only enabled jobs are considered; file-change jobs never catch up regardless — see above |
-| Recovery | only enabled jobs are re-fired; a disabled job recorded as running is cleaned up via `markDone` |
+### Frontmatter parsing
 
-Core writes cron files (`core/src/daemon.ts`); the daemon only reads them. Disabling a cron has **no live kill** — a job already running keeps running; it just will not fire again.
+Crons and processes are read by `daemon/src/lib/frontmatter.ts`, which is not a YAML parser. It matches the `---` fence, splits each line at the first `:`, and keeps every value as a trimmed string. A value wrapped in `"…"` is JSON-decoded and one wrapped in `'…'` is unwrapped. The daemon therefore tests the text: `enabled !== "false"` for opt-out keys, `=== "true"` for opt-in keys. A line with no colon is ignored. Core writes names in quotes whenever a bare value would not survive this parser.
 
-> **For Bismuth readers:** Bismuth core (`core/src/daemon.ts`) also creates and deletes cron/process DEFINITIONS directly, outside the daemon process — the daemon page's "delete" action, AND the `bismuth daemon cron create/delete` / `bismuth daemon process create/delete` CLI commands (see [CLI reference](../cli/reference.md#daemon-commands-commandsdaemonts)) — the latter exist so the daemon's OWN chat can supervise its crons/services through the CLI, with the user approving each tool call in chat. Creating is chat-only: the page has no create control, so a new cron or service is always asked of the daemon, which writes a real definition rather than a placeholder template. `name` here is a DISPLAY name, distinct from the FILE, which is always a slug: `createCron`/`createProcess(name, home)` slug the name (lowercase, `[a-z0-9-]` only, collapsed/trimmed dashes, capped at 100 chars with any trailing dash the cap exposes trimmed again) and write a template `<home>/{crons,processes}/<slug>.md` (disabled by default, with a placeholder prompt/command body, `name: <the display name, JSON-quoted>` in frontmatter — quoted unconditionally so it round-trips through this page's own `parseFrontmatter` even when it contains a `:`/`#`/leading space a bare value would mangle) — an empty slug is refused (400 EINVAL); a clash with an existing file is refused (409 EEXIST), decided by a single atomic `{ flag: 'wx' }` write rather than a separate existence check, so two concurrent creators of the same slug can't race each other into clobbering one file. `deleteCron`/`deleteProcess(name, home)` unlink the definition (resolved by file basename OR frontmatter `name`, whichever matches); `deleteCron` refuses a cron the daemon has recorded as currently running in `.running.json` (409), and `deleteProcess` drops the same reconcile trigger `setProcessEnabled` uses so a running daemon stops the process. The two HTTP routes (`POST /daemon/cron/delete`, `POST /daemon/process/delete`) are owner-only — `403` for any non-owner channel — since CORS is `*` and there is no per-path visibility check to fall back to; the CLI commands are gated instead by the CLI's own agent-channel classification, which allows the whole `daemon` command group through regardless of channel (see `core/src/visibilityCliGate.ts`) — the daemon's chat needs this reach, and none of these files are vault note content. All of the above are ordinary edits/unlinks of the same `.daemon/{crons,processes}` files this file documents — recoverable via the vault's own git snapshot, same as every other write here.
+### Firing a job
 
-### Firing — `fireJob(ctx, job, lastFired)`
+`fireJob` in `daemon/src/daemon/cron.ts` runs these steps; the scheduler does not wait for the session:
 
-0. **Incremental pre-check** (only when `job.incremental`, and BEFORE any of steps 1–3 below — see [Incremental crons](#incremental-crons)): resolve the checkpoint plan via `resolveIncrementalRun`. If it says skip, write the `"skipped"` `LastFiredEntry` and `return` immediately — no running-state bookkeeping ever happens, so a skip is a true no-op. Otherwise capture the resolved prompt (placeholder substituted) and the plan's `areas` (each with its start-of-run `snapshot`) to advance later.
-1. Compute `key = jobKey(ctx, job.name)`; create an `AbortController`; add `key` to the in-memory `runningJobs` Set and the `jobAbortControllers` Map.
-2. `await markRunning(ctx, job.name)` — so `.running.json` is on disk before the caller proceeds.
-3. Snapshot the job's **own** cron file (`<ctx.cronsDir>/<name>.md`) and the **entire** `ctx.processesDir` (self-modification guards — see below), and list `.daemon/pages/*.md` (so pages created during the run can be told apart afterwards — see step 8).
-4. Start a **background, not-awaited** session. The prompt is assembled by `buildCronPrompt` (pure, unit-tested): `[Cron: ${name}] ${prompt}` (the incremental-resolved prompt when step 0 ran) + (for a file-change fire only) `\n\nTriggered by change to: <path1>, <path2>, …` + **`cronMemoryInstruction(ctx.memoryDir)`** (see below) + `CRON_RESULT_INSTRUCTION` (the model must print exactly `[CRON_RESULT:SUCCESS]` or `[CRON_RESULT:FAILURE]` as its last line) + `CRON_NOTIFY_INSTRUCTION` if `notify`. Order is load-bearing: the result marker's own text claims to be the last thing printed, so nothing may be appended after it.
+1. For an incremental cron, resolve the checkpoint plan first. A skip records the result and returns before any bookkeeping.
+2. Add the job to the in-memory running set, write it to `.running.json`, and log `started`.
+3. Snapshot the cron's own file and the processes folder, and list the existing inbox pages.
+4. Build the prompt with `buildCronPrompt` and call `sendMessage` with `newSession: true`, the cron's `model`, `effort` and `timeout`.
+5. If `waitFor` is set, poll `pgrep -f` every 5 seconds until it stops matching or the time runs out.
+6. Parse the last result marker, write `.last-fired.json`, log `finished` with the report line, advance the incremental bookmarks on success, and send the `notify` notification.
+7. A timeout or shutdown abort records `killed`; any other error records `failed` with its classified cause.
+8. In every case: announce new inbox pages ([pages](pages.md#how-you-are-told-a-page-exists)), run the file guards, remove the job from `.running.json` and the running set.
 
-   **`cronMemoryInstruction` — why the runtime says this, not the prompt author.** It names `ctx.memoryDir` absolutely, states that `remember` is the ONLY way to write a memory note (it is what stamps `type`/`tags`/`created`/`updated` and files it into the graph), warns that a `cwd`-relative `memory/` is the user's vault rather than the graph, and — the half that is easy to drop and load-bearing — instructs a session **without** the `remember` tool to write nothing at all rather than improvise a location. That last clause covers the case where `session.ts`'s existsSync-gated `mcpBin()` omits the MCP block entirely, leaving the session with no memory tools; naming a directory without it would tell the model exactly where to aim a `Write`.
+### Scheduler, triggers and keys
 
-   This is appended by the **daemon**, not carried in prompt text, because a cron body is a user-owned file and [Seeding](#seeding-daemonseedsts--reconcileseedsctx)'s versioned refresh deliberately never touches a `.md` the user has edited. A template-only fix therefore reaches stock vaults and no others, leaving every hand-edited and user-authored cron exactly as uninformed. Appending here makes "the agent knows where memory is" a property of the runtime. The failure it closes, observed 2026-08-06 on a real vault: a cron session runs with `cwd` = the **vault root**, so an agent told to record something in memory with no location resolved a path against `cwd` and wrote two frontmatter-less notes into `<vault>/memory/` — outside the graph, outside its git repo, orphaned with no inbound links. `defaultCrons.ts`'s `dream` carries the same guidance in its own body; the two are belt-and-suspenders, and the daemon-side one is the one that cannot be edited away.
-5. `sendMessage(prompt, ctx, { model, effort, abortController, timeoutSecs: timeout, newSession: true })` — **each cron runs in a NEW session**, not the vault's persistent one. `sendMessage` supplies the per-call `cwd` = `ctx.root`, `env.BISMUTH_MEMORY_DIR` = `ctx.memoryDir`, and the vault's daemon identity, so concurrent vault sessions never race.
-6. If `waitFor` is set: after the session ends, poll `pgrep -f <pattern>` every 5 s until the pattern is gone or the remaining time is exhausted (`remaining = timeout*1000 - elapsed`, or `MAX_SAFE_INTEGER` if `timeout === 0`).
-7. `parseCronResult` finds the **last** marker in the output; if neither marker is present → `"unknown"`. Write the `LastFiredEntry` via `updateLastFired`. The `finished` activity event carries `summary` — the last non-empty line of the session's result text, trimmed, at most 300 chars (see [storage.md](storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl)); this is set for every cron, and is where a run's one-line report lives. If step 0 ran AND the result is `"success"` (never on `"failed"`/`"unknown"`), advance the checkpoints (`advanceIncrementalCheckpoints` — vault → the start-of-run snapshot, memory → a fresh end-of-run snapshot).
-8. **New inbox pages → OS notification, for every cron regardless of `notify`.** Once the session settles, `.daemon/pages/*.md` is listed again; for each page file that was not there before the session, the daemon (not the model) calls `notify("${ctx.name}: ${title}", "New in your inbox")` — `title` from the page's frontmatter, else its slug. One notification per new page. See [pages.md](pages.md#how-the-user-is-told-a-page-exists).
-9. If `notify`: parse the last `[NOTIFY: ...]` line and call `notify("${ctx.name}: ${name}", msg)`.
-10. `catch`: if the signal aborted → result `"killed"` (re-stamped with a fresh timestamp even on consecutive kills, so catch-up arithmetic isn't stuck on a stale time); otherwise `"failed"`. Neither branch advances the checkpoint.
-11. `finally`: revert the job's own cron file if the session modified or deleted it; `restoreDir(ctx.processesDir, …)` reverting any process-def changes; delete the abort controller; `await markDone(ctx, name)`; remove `key` from `runningJobs`.
+One scheduler tick every 60 seconds visits each enabled vault when this device is the owner. It skips a disabled or running job and a file-change job, and fires any other job whose schedule matches now or that is overdue. The same process polls trigger files every 5 seconds: it runs cron triggers, then page triggers, for each enabled vault. A device that is not the owner heartbeats but fires nothing, and deletes triggers unread.
 
-> **Self-modification guard:** only the running cron's OWN definition file is reverted — sibling crons and external edits are left alone (an earlier whole-directory snapshot wrongly reverted legitimate concurrent edits). Process definitions are still broadly guarded via `restoreDir` (rarely edited externally): modified files are restored, deleted files re-created, and any `.md` the session newly created is removed.
+In-memory state is keyed `<vault root>::<file slug>`, so two vaults can each have a cron of the same name. `.last-fired.json`, `.running.json` and the activity log are keyed by display name instead. Editing `name:` by hand changes the key and orphans the cron's history, which can make an overdue-looking cron fire again at the next tick.
 
-### Catch-up
+### The file watcher
 
-`getIntervalMs(cron)` estimates the schedule's period from its shape. `shouldCatchUp(job, lastFired)` evaluates, in order:
+Each vault has one recursive `fs.watch` (`daemon/src/daemon/fileWatch.ts`), never one per cron. It debounces raw events for 2 seconds, drops any path under `.daemon/`, re-reads the cron files, and fires each enabled file-change cron whose `watch` matches a path in the batch.
 
-| Condition | Result |
-| --- | --- |
-| `job.on === "file-change"` | `false`, always (checked first — file-change crons have no schedule to be overdue against; see [File-change crons](#file-change-crons)) |
-| `!catchup` | `false` |
-| never fired | `true` |
-| result `"killed"`/`"failed"` | catch up if `elapsed > retryCooldownMs(interval)`, where `retryCooldownMs = max(5min, floor(interval/12))` (daily ≈ 2 h, weekly ≈ 14 h, hourly → 5-min floor) |
-| result `"success"`/`"unknown"`/`"skipped"` | catch up if `elapsed > interval * 1.01` (tight multiplier so a daily cron fires on wake from sleep rather than waiting hours). A `"skipped"` run is treated exactly like a completed run here, not a failure — the pre-fire check DID run, it just found nothing to do, so there's nothing to retry sooner for |
+### Changing a default cron
 
-### Scheduler lifecycle — the multiplex
+The upgrade rule depends on `PRIOR_SEED_HASHES` in `daemon/src/daemon/seeds.ts`, an append-only list of the SHA-256 of every earlier stock body of each default cron. A hash missing from the list does not raise an error: the daemon treats that stock file as customized and never upgrades it. To change `dream`, append the SHA-256 of the outgoing body to `PRIOR_SEED_HASHES.dream`, then edit `defaultCrons.ts`. Never list the current body. `bun test daemon` walks the git history of `defaultCrons.ts` and fails, naming the hash to add, if any shipped body is neither current nor listed.
 
-`startCronScheduler()` is **idempotent** (process-global, started once on boot — NOT per vault):
-
-1. An immediate IIFE heartbeats the device; **returns early if `!isOwner()`**. Otherwise it iterates `loadEnabledVaults()` and, per vault, loads jobs + last-fired and **sequentially (awaited)** fires each enabled job where `shouldCatchUp && !running`.
-2. Starts `triggerInterval = setInterval(processAllTriggers, 5000)` — which loops every enabled vault and calls `processTriggers(ctx)`.
-3. Starts `cronInterval = setInterval(tick, 60000)`. Each `tick` heartbeats; if `!isOwner()` it returns (still heartbeats — **a non-owner never fires**); otherwise it fans out across `loadEnabledVaults()`, and per job skips if `!enabled || runningJobs.has(jobKey(ctx, name))` **or `on === "file-change"`** (file-change crons never fire off this tick — see below), else fires (**not awaited** on the tick) when `shouldFire(now) || shouldCatchUp(...)`.
-4. Independently, `fileWatch.ts`'s per-vault `fs.watch` (started/stopped alongside each vault's brain, not by `startCronScheduler`) fires `file-change` crons directly on a debounced batch match — see [File-change crons](#file-change-crons).
-
-`stopCronScheduler()` clears both intervals. `waitForRunningJobs(timeoutMs = 10000)` polls `runningJobs.size` every 500 ms and aborts every job's controller on timeout (used during graceful shutdown — see [lifecycle.md](lifecycle.md)).
-
-### Recovery — `recoverInterruptedCrons(ctx)`
-
-Per vault, **must run before that vault's brain starts ticking under the scheduler** (it's called from `startVault` on boot only). If `!isOwner()` it returns. Loads `ctx.runningFile`; for each still-recorded `name`: if the job exists, is enabled, and is not already in `runningJobs` → `await fireJob` (re-fire); otherwise `markDone` (clean up the stale entry). Boot order matters — see [lifecycle.md](lifecycle.md).
-
-### Run-now triggers
-
-There are two paths because the **MCP server is a separate process from the daemon** and cannot fire a job directly:
-
-- The trigger writer is core (`runCron` drops `<ctx.triggerDir>/<name>` with content `new Date().toISOString()`). The content is unused — **presence is the signal**. Filename is the job name, **no `.md`**.
-- `processTriggers(ctx)` (driven every 5 s by `processAllTriggers` over every enabled vault): `listTriggers(ctx.triggerDir, isOwner)` (`lib/drainTriggers.ts`, shared with the process and page trigger loops): readdir and filter dotfiles; if `!isOwner()` it unlinks them all and returns `[]` (consume-but-idle). Otherwise per returned trigger: `consumeTrigger` it first (so a throw mid-batch loses only the current one), then skip if already running, skip if the job is unknown, else `await fireJob`. The trigger is consumed regardless.
-
-> **For Bismuth readers:** Bismuth's "run now" for a cron drops a trigger file the same way (see [overview.md](overview.md) and [storage.md](storage.md)). Cron enable/disable does **not** write a trigger — the scheduler re-reads cron files each tick.
-
-### Name validation & file ops
-
-`CRON_NAME_RE = /^[a-zA-Z0-9_-][a-zA-Z0-9_.\-]*$/`. `validateCronName(name, ctx)`: non-empty, `<= 100` chars, regex match, plus a path-containment check that `<ctx.cronsDir>/<name>.md` stays inside `ctx.cronsDir`. Files are `<name>.md`.
-
-Cron files are written by core, not the daemon.
-
-### The shipped default cron (`daemon/defaultCrons.ts`)
-
-The default is an **embedded string constant** (not a file), so it survives `bun build --compile` into the daemon binary, and is seeded — and, uniquely among seeds, **version-upgraded** — by `reconcileSeeds` (see [Seeding](#seeding-daemonseedsts--reconcileseedsctx) below). `DEFAULT_CRONS` holds exactly ONE entry, `dream`; there is no second seeded cron. It is adapted for Bismuth's per-vault model: memory is `$BISMUTH_MEMORY_DIR` (= `<vault>/.daemon/memory`, injected by the daemon), the vault is the working directory, and the memory tools are Bismuth's `recall`/`remember`/`forget` (there is **no** `dream_run` tool). It does not run `bismuth checkpoint diff/advance` itself; the daemon does that scoping BEFORE the session even starts (see [Incremental crons](#incremental-crons)).
-
-**`dream`** — the fused hourly cron. Frontmatter:
-
-```yaml
-name: dream
-schedule: 0 * * * *
-timeout: 1800
-catchup: true
-incremental: true
-checkpointDirs: vault, memory
-```
-
-Hourly at minute 0, 30-minute timeout, catch-up on, enabled, **no `notify`** (a run never posts a per-run OS notification), checkpointed against BOTH the vault and `ctx.memoryDir`. In one session it consumes the changed vault notes, the changed memory notes, and the unprocessed `auto-*` session-transcript notes in the memory graph; it consolidates what matters into memory and writes only memory — plus, when warranted, inbox pages under `.daemon/pages/`. Its "Scope for this run" section is the `{{changedSinceLastRun}}` placeholder: a `Vault notes changed since …` block and a `Memory notes changed since …` block on an incremental run, or that area's first-run line. It walks the memory directory file-by-file via Bash (deliberately defensive against a bloated / OOM graph — it must **not** call `recall` with empty/broad queries); the size/bloat triage always runs regardless of scope, as a safety net. Each `auto-*` transcript is read, its substance extracted into real memory notes, and then the transcript is deleted (the daemon's own activity logs are NOT deleted).
-
-**Inbox, not notifications.** The prompt tells dream to file ONE inbox page (per `.daemon/PAGES.md`) per thing that genuinely needs the user, with `source: "cron:dream"`; never a duplicate of a still-pending page on the same subject, and never a page that merely reports the run. The OS notification for a page is posted by the daemon, not the model (step 8 of [Firing](#firing--firejobctx-job-lastfired); [pages.md](pages.md#how-the-user-is-told-a-page-exists)).
-
-**Run report → activity log.** The run ends by printing a one-line report, e.g. `vault=N memory=N transcripts=N merged=N pages=N …`; the `finished` activity event stores it as `summary`. That line is the record of a quiet run — read it back with `bismuth daemon logs` ([storage.md](storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl)).
-
-> **Known divergence in the duplicate-cluster step.** The prompt ships a `sed` pipeline for finding duplicate clusters and a worked example it calls "ONE note, not seven". The pipeline only strips date/month tokens from the *right* of a filename — it never normalizes a leading qualifier — so `michael-vault-review-july-22-2026-final.md` reduces to the stem `michael-vault-review` while `vault-review-2026-07-24-checkpoint.md` reduces to `vault-review`, and that example actually comes back as **two** clusters. The prose after the command still covers the gap, so behavior is not broken — but the command does not produce the result its own example claims. `defaultCrons.test.ts` runs the shipped command against the shipped example and **pins** this, so the mismatch is tracked rather than folklore.
-
-> **Why the prompt opens by naming `$BISMUTH_MEMORY_DIR`.** An earlier cron that wrote findings never named the memory dir; combined with a working directory of the **vault root**, it produced plain, frontmatter-less notes in `<vault>/memory/` — outside the memory graph, outside its git repo, orphaned with no inbound links. The prompt now opens with a "Where your memory lives" section that names the dir, states that `remember` is the only way to write a memory note (it is what stamps `type`/`tags`/`created`/`updated`), warns that a `cwd`-relative `memory/` is the user's vault rather than the graph, and requires that a session **without** the `remember` tool write nothing at all instead of improvising a location — the case that arises whenever `session.ts`'s `mcpBin()` gate omits the MCP block. `defaultCrons.test.ts` asserts the invariant over **every** entry in `DEFAULT_CRONS`, so a cron added later inherits it.
-
-#### Retired crons — `vault-review`
-
-`vault-review` (every-4-hours model-of-the-user pass) was folded into `dream` and is **no longer seeded**. `defaultCrons.ts` exports `RETIRED_CRONS: string[] = ['vault-review']`; see [Seeding](#seeding-daemonseedsts--reconcileseedsctx) for how an existing vault's copy is retired.
-
-`DEFAULT_CRONS` (the `{ name, content }[]` array) is what `seedsFor` maps into `<vault>/.daemon/crons`.
-
-### Seeding (`daemon/seeds.ts` → `reconcileSeeds(ctx)`)
-
-`reconcileSeeds(ctx)` is the daemon's declarative analog of core's `reconcileSettings`. It runs every time a vault's brain comes online (boot or runtime-enable, via `ensureVaultDirs`) and, for each registered `Seed`:
-
-- **missing** → write it. `seedsFor(ctx)` returns the full set: the editable `identity.md` (`---\nname: daemon\n---` + the default personality body), one seed per `DEFAULT_CRONS` entry (written to `<ctx.cronsDir>/<name>.md`), and `PAGES.md`. So a fresh vault gets the full set, and an already-set-up vault that predates a newly-added default gets just that new piece on next boot.
-- **present + versioned** (`Seed.refreshKey` — currently only the default `dream` cron) → compare its on-disk SHA-256 against `PRIOR_SEED_HASHES[refreshKey]`, an append-only list of **every** PRIOR stock version's hash. It is written by hand but **enforced mechanically** — see [The `PRIOR_SEED_HASHES` git-history guard](#the-prior_seed_hashes-git-history-guard) below. A match → **upgrade it in place** to the current `DEFAULT_CRONS` content (this is how an existing vault's stock `dream` picks up a new default automatically, without ever touching a file the user customized). No match (and not byte-identical to the CURRENT version either) → leave it untouched, record it in `result.customized`.
-- **retire** (`RETIRED_CRONS`, after seeding): when `<cronsDir>/dream.md` equals the CURRENT stock `DREAM` content, each name in `RETIRED_CRONS` (today `vault-review`) whose `<name>.md` exists — stock OR hand-edited — is renamed to `<name>.md.disabled` (`<name>.md.disabled-2`, `-3`, … if that name is taken), and an activity event `{ kind: 'daemon', event: 'cron-retired', detail: '<name> merged into dream' }` is appended. The `.disabled` suffix means `loadCronJobs` (which keeps only `*.md`) no longer sees it, so the user's customized review prompt is preserved on disk but never fires. A **customized `dream.md` retires nothing** — the fused cron is not installed, so the old one keeps running. This is how the hand-edited `vault-review.md` of a real vault (which matched no stock hash and so was never upgraded) is removed from the schedule.
-- **present + not versioned** (`identity.md`, `PAGES.md`) → leave it untouched, exactly as before — these are never auto-upgraded.
-
-`reconcileSeeds` returns `{ written, refreshed, customized, retired }` (arrays of absolute paths); `daemon/index.ts`'s `ensureVaultDirs` logs `refreshed`/`customized`/`retired` via the boot log. Best-effort per file — one failure never blocks the rest, and is simply retried on the next brain-start. To add a future non-versioned seedable, append one entry to `seedsFor()`; to ship a content change to an EXISTING versioned seed, follow the checklist in the next section.
-
-### The `PRIOR_SEED_HASHES` git-history guard
-
-`daemon/test/defaultCrons.test.ts`.
-
-**The bug it exists to prevent.** `reconcileSeeds` can only upgrade an existing vault's cron file when that file's SHA-256 appears in `PRIOR_SEED_HASHES`. A hash that is missing does not produce an error, a warning, or a diff — the file is pristine stock, but `reconcileSeeds` classifies it as *user-customized* and **never touches it again, for the life of that vault**. This is not hypothetical: the first real install sat on stock **v1** of `dream` (2026-06-28) for a month because only **v2**'s hash had ever been listed, so the incremental-scoping upgrade could not reach it. Nothing about the failure is visible at review time — the code compiles, every unit test passes, and fresh vaults get the new prompt — which is why the discipline cannot be a doc comment alone.
-
-**What the guard checks.** It walks `defaultCrons.ts`'s own git history (`git log --follow`, resolving each commit's own path so a future rename cannot truncate the walk), reconstructs every version of `DEFAULT_CRONS` the repo ever shipped by importing that revision of the module, and asserts each historical body hashes to **either** the current `DEFAULT_CRONS` content **or** an entry in `PRIOR_SEED_HASHES`. Anything else fails the test, naming the cron, the commit, the hash, and the line to add. Alongside it: the specific hashes from the original incident are pinned literally, the current content must *not* appear in `PRIOR_SEED_HASHES`, and every entry must be a unique lowercase hex SHA-256.
-
-The guard is deliberately loud about its own blind spots, because a check that silently skips its work while reporting green is worse than no check. A revision that exists in git but cannot be reconstructed (e.g. `defaultCrons.ts` grew a **value** import and no longer loads standalone from a temp dir — `import type` is erased and stays harmless) is a hard failure, not a skip; if that fires, teach the loader to materialize what the module needs rather than relaxing the assertion. The **only** legitimate skip is a checkout with no usable git history at all (shallow clone, tarball export, CI without `.git`) — the guard is a regression net for developers, not a build requirement.
-
-**Changing a default cron's content — the checklist.**
-
-1. Compute the SHA-256 of the **outgoing** body (the current `DEFAULT_CRONS` entry, exactly as it is about to stop being current).
-2. **Append** it to `PRIOR_SEED_HASHES[<cron name>]` in `daemon/src/daemon/seeds.ts`, with a `// vN — <date>, <what changed>` comment. Never remove or reorder an existing entry — a vault still running an even older stock version must keep matching.
-3. Then edit `defaultCrons.ts`.
-4. Run `bun test daemon`. If you did step 2 wrong or skipped it, the guard fails with the exact hash to add.
-
-Never list the *current* content in `PRIOR_SEED_HASHES` — `reconcileSeeds` compares against the live `DEFAULT_CRONS` export directly for the "already up to date" case, and a current hash listed as a prior would make an up-to-date file look stale.
-
-**One version vocabulary.** Stock versions are numbered the way `PRIOR_SEED_HASHES` numbers them, everywhere — comments, test names, and the `daemon/test/fixtures/oldSeedContent.ts` fixtures (`DREAM_V2_CONTENT`, `VAULT_REVIEW_V2_HASH`, …). Today: **v1** = 2026-06-28 (the original ship), **v2** = 2026-07-06, **v3** = 2026-07-27 (incremental scoping moved into the daemon), **v4** = the `dream` body shipped at `86473737`, before the fuse (hash `ee00c96f…ee22`, appended to `PRIOR_SEED_HASHES.dream`), **v5** = the current fused `DEFAULT_CRONS` content. `seeds.test.ts` re-derives each fixture's hash and asserts it equals the corresponding `PRIOR_SEED_HASHES` entry, so the labels cannot drift from the bytes. Two competing names for the same body ("old" vs "prior") is the exact fog the original defect hid in — do not reintroduce one.
-
----
-
-## Background Processes (`daemon/process.ts`)
-
-### Model
-
-```ts
-ProcessDef {
-  name, command, args: string[], cwd, env: Record<string,string>,
-  restart: "always" | "on-failure" | "never", restartDelay: number /* ms */, enabled
-}
-```
-
-### `parseProcessFrontmatter`
-
-`command` is **required**; missing → `null` (def skipped). Process defs use **frontmatter only** — the body is never read.
-
-| key | mapping | default |
-| --- | --- | --- |
-| `command` | required | (null if absent) |
-| `name` | `frontmatter.name ?? filename` | filename |
-| `args` | `parseArgs` (JSON array if it starts with `[`, else whitespace-split). Must be a **single line**: the daemon's frontmatter parser is line-based, so a value wrapped onto a continuation line is read as empty. `daemon process toggle` preserves this from the build that includes core's `lineWidth: 0` change onward; an older installed `bismuth` CLI still folds long values, so with an old CLI edit the file by hand. | `[]` |
-| `cwd` | `frontmatter.cwd ?? homedir()` | `~` |
-| `env` | `parseEnv` (JSON object if it starts with `{`, else `{}`) | `{}` |
-| `restart` | string | `"on-failure"` |
-| `restartDelay` | `parseInt(... ?? "1000")` | `1000` (ms) |
-| `enabled` | `frontmatter.enabled !== "false"` | `true` |
-
-`loadProcessDefs(ctx)` returns **all** defs, including disabled ones.
-
-### Per-vault state keys
-
-The `managed` map and the per-vault trigger intervals are keyed `procKey(ctx, name) = ${ctx.root}::${name}`, so two vaults can each run a process with the same name without colliding. Each `ManagedProcess` also remembers its own `ctx`, so the exit-handler restart path and stop/list passes can locate the right `.pids/<name>.pid` + log dir and filter by vault.
-
-### Lifecycle / supervision
-
-In-memory state: machine-global `Map<procKey, ManagedProcess { def, proc, restarts, lastStart, backoff, stopping, ctx }>`.
-
-`startProcesses(ctx)`: `registerDef` each def; **auto-spawn only if `def.enabled && !wasRegistered`** (disabled defs are registered but not spawned; re-running won't relaunch live children).
-
-`spawnProcess(mp)`:
-
-1. Reap a stale pid-file orphan for this vault if alive, then remove the pid file; `scanPs()` + `matchOrphans` kill argv-matching orphans — **but never a pid in `managedPids()`** (another vault's legitimate child sharing the same argv must not be reaped, since `ps` shows argv only, not cwd).
-2. Open append logs under `ctx.logsDir`; `nodeSpawn(command, args, { cwd, env: { ...process.env, ...def.env }, stdio: ["ignore", out, err], detached: true })` then `unref()`; write `<ctx.processesDir>/.pids/<name>.pid`.
-3. A spawn that fails outright (`ENOENT` — the `command` path does not exist; `EACCES`) is caught either as a synchronous throw from `spawn()` (Bun, the shipped runtime) or on the child's `'error'` event (Node) — both routed through `markSpawnFailed`: the process is marked `status: "failed"` with the OS error in `error`, an activity event `spawn-failed` (outcome `failed`) is logged, and it is **not** restarted regardless of `restart:` — a missing binary does not fix itself. Before this the unhandled `'error'` event crashed the whole daemon and launchd crash-looped it.
-4. `on("exit")`: remove the pid file; if `stopping` return; clear `proc`. Restart decision: `restart === "always"` OR (`restart === "on-failure" && exitCode !== 0`) — a signal exit is treated as code 1. `backoff = restartDelay` if uptime `>= RESTART_BACKOFF_RESET_MS` (5 min), else `min(backoff * 2, RESTART_BACKOFF_MAX_MS)` (60 s). Re-spawn after `setTimeout(backoff)` unless `stopping`.
-
-Every start/exit/restart/reap below also appends to the per-vault activity log (`processActivityEvent`
-in `daemon/src/lib/activityLog.ts` via `daemon/process.ts`) — see
-[storage.md](storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl) for the exact event shapes.
-
-### PID tracking
-
-There is **no `.running.json` for processes**. Liveness = the in-memory `mp.proc` + `isAlive(pid)` (via `kill(pid, 0)`) + the on-disk `.pids/<name>.pid`. The pid file is the **cross-daemon link**: a fresh daemon reads it to find children orphaned by the previous instance. `readPidFile` / `writePidFile` / `removePidFile` operate on `<ctx.processesDir>/.pids/<name>.pid` (a bare integer).
-
-`scanPs()` runs `ps -ww -eo pid,command`. `reapOrphans(ctx)` runs on boot **before** `startProcesses` for that vault (pid-file pass, then ps argv-scan); it is **boot-only**, never at runtime-enable — a cross-vault reap could kill a sibling vault's identical-argv process. `listProcesses(ctx)` → `{ processes: ProcessInfo[], orphans: OrphanInfo[] }` filtered to that vault; a live `proc` whose pid is dead → status `"stale"` (and the stale ref is cleared on observe).
-
-```ts
-ProcessInfo { name, pid, running, enabled, restart, restarts, status: "running" | "stopped" | "stale" }
-```
-
-### Stop / enable / disable
-
-- `startProcess(name, ctx)`: synchronous; errors if there is no def or it is already running.
-- `stopProcess(name, ctx, timeoutMs = 3000)`: **async**. SIGTERM the process group, poll for exit, SIGKILL after the timeout (with a +2 s hard deadline), clear `proc`, remove the pid file. Returns only after the kernel confirms exit.
-- `stopProcesses(timeoutMs = 3000)`: stop **every** managed child across **all** vaults (full daemon shutdown) — mark all `stopping`, SIGTERM groups, poll, SIGKILL survivors, final 2 s confirm, remove pid files, `managed.clear()` (shared `stopAndClear` helper).
-- `stopProcessesForVault(ctx, timeoutMs = 3000)`: same, but only entries whose `mp.ctx.root === ctx.root` — used when one vault's daemon is disabled at runtime. NEVER deletes on-disk state.
-- `enableProcess(name, ctx)`: flip `enabled: true` on disk (preserving field order + body via `writeProcessFile`), register the def — does **not** spawn (the caller must `startProcess`).
-- `disableProcess(name, ctx)`: register the def, set `stopping`, `await stopProcess` if running (must await so the child dies), flip `enabled: false` on disk; keeps the entry in `managed` so `process_start` still works.
-
-Both `enable`/`disable` are idempotent and persist across restart. `stopAndClear` marks every entry `stopping` first — including ones mid restart-backoff — so a crash-looping process can't re-spawn as an untracked orphan after being deleted from `managed`.
-
-### Process trigger port — reconcile-to-disk
-
-This is the symmetric counterpart of cron triggers but with **different semantics**: a cron trigger *fires a run*; a process trigger *reconciles runtime to the already-edited on-disk `enabled` flag*.
-
-- `processProcessTriggers(ctx)` (every 5 s per vault, via a per-vault interval): `listTriggers(ctx.processTriggerDir, isOwner)` (readdir, filter dotfiles; unlinks all and returns `[]` if not owner). Otherwise per trigger: `consumeTrigger` it first, then reject names containing `/` or `\`; load `<ctx.processesDir>/<name>.md` fresh via `loadProcessDef` (skip if missing / no `command`); then reconcile:
-  - `enabled && !running` → `enableProcess` + `startProcess`,
-  - `!enabled && running` → `disableProcess`,
-  - else no-op.
-  The loop never throws out. `startProcessTriggers(ctx)` starts one idempotent `setInterval(5000)` per vault (keyed by `ctx.root`); `stopProcessTriggers()` clears all of them; `stopProcessTriggersForVault(ctx)` clears just one (e.g. that vault was disabled).
-
-> **For Bismuth readers:** Bismuth's process enable/disable writes **both** the `enabled` frontmatter **and** a reconcile trigger here (see [overview.md](overview.md) and [storage.md](storage.md)).
-
----
-
-## Keying summary
-
-- **Multiplex:** ONE machine runtime iterates `loadEnabledVaults()`; the cron scheduler is process-global, process supervision is one machine-global `managed` map, and the file watcher is ONE per vault (`fileWatch.ts`'s `watchers` map, keyed `ctx.root`).
-- **Two keys, split by who reads them.** A cron/process definition carries both a `file` (the `.md` basename — stable, filesystem-safe, what every external caller already addresses it by) and a `name` (the display value: frontmatter `name:` if set, else falling back to `file`). The two commonly match, but a definition can carry `name: "Web Search"` in `web-search.md`, and hand-editing `name:` never renames the file.
-- **Keyed by FILE slug:** all in-memory runtime state — `runningJobs`/`jobAbortControllers` (cron), the `managed` map + per-vault trigger intervals (process), the self-modification guard's own-file path, and the incremental cron's checkpoint ref — plus on-disk pid files (`.pids/<file>.pid`) and log files. `jobKey`/`procKey` are both `${ctx.root}::${file}`; every route, CLI command and MCP tool addresses a job/process by this same file basename.
-- **Keyed by NAME (display value):** `.running.json`, `.last-fired.json`, and the activity log — core's `daemonGraph.ts` snapshot reads these three by `name`, not `file`, so they stay display-keyed on purpose. Names are quoted on write (`frontmatterValue`) whenever they need it (e.g. `name: "Web Search"`), and unquoted back on read.
-- **The trap this creates:** hand-editing a cron's `name:` frontmatter changes the key `.last-fired.json` looks the job up under, so its fire history is orphaned under the old name — the cron reads as never-fired and a catch-up-eligible schedule cron fires again on the very next tick. Renaming through the app/CLI update path doesn't hit this, because it rewrites the same file in place; only a manual frontmatter edit does.
-- **Trigger files** (crons and processes) are named by the file basename (no extension); the trigger handler reads `<file>.md` and rejects path separators.
-- **Trigger consumption (both):** UNLINK-FIRST then act; dotfiles excluded; a non-owner consumes-without-acting.
-- **File-change crons:** no trigger file, no dedicated in-memory key of their own — matched fresh out of `loadCronJobs(ctx)` against each debounced batch from that vault's ONE `fileWatch.ts` watcher; still gated by the same `runningJobs` set as every other cron (keyed by file slug), so a file-change cron and a schedule cron can never share a file and both be "running" independently.
-
-## Cross-links
-
-- [overview.md](overview.md) — the daemon model + Bismuth's daemon controls.
-- [lifecycle.md](lifecycle.md) — boot / shutdown order, the reconcile loop, ownership.
-- [storage.md](storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl) — the activity log every cron
-  outcome and process lifecycle moment above is appended to, its event vocabulary, retention, and
-  how to read it back (`GET /daemon/logs`, `bismuth daemon logs`, the `daemon_logs` MCP tool).
-- [storage.md](storage.md) — on-disk file shapes under `<vault>/.daemon` and `MACHINE_DIR`.
-- [pages.md](pages.md) — the daemon inbox: reuses this same trigger-file port for one-shot approved actions instead of a recurring job, and how a page created during a cron run triggers its OS notification.
-- [memory.md](memory.md) — the dream cycle's memory mechanics + the 3rd-brain graph.
-- [communication.md](communication.md) — sessions, identity, and the MCP/relay surface.
-- [../README.md](../README.md) — the docs root.
-
-Source: `daemon/src/daemon/cron.ts`, `daemon/src/daemon/fileWatch.ts`, `daemon/src/daemon/process.ts`, `daemon/src/daemon/defaultCrons.ts`, `daemon/src/daemon/seeds.ts`, `daemon/src/daemon/incrementalCron.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/index.ts`, `daemon/src/lib/config.ts`, `daemon/src/lib/registry.ts`, `daemon/src/lib/frontmatter.ts`, `daemon/src/lib/checkpointRef.ts`, `core/src/backup.ts` (the byte-identical CLI-facing checkpoint mechanism), `core/src/daemonGraph.ts` (surfaces `lastResult`)
+Source: `daemon/src/daemon/{cron,fileWatch,incrementalCron,process,defaultCrons,seeds,pages}.ts`, `daemon/src/lib/{frontmatter,checkpointRef,config,drainTriggers,activityLog}.ts`, `core/src/daemon.ts`

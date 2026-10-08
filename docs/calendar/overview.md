@@ -1,132 +1,8 @@
-# Calendar Subsystem Overview
+# Calendar events, recurrence and categories
 
-Calendar is a **Bases view kind**, rendered when a `type: base` markdown file declares `view: calendar`, not a standalone page. This page covers the event and category data model, event storage and serialization, the recurrence rule engine, category-to-color mapping, reactive global state, view components, and user-facing settings. For configuring a calendar base file and wiring up column mappings, see [bases/views/calendar.md](../bases/views/calendar.md) (to be created).
+A calendar is a Bases view kind, not a standalone page: a `type: base` markdown file with `view: calendar` stores its events as rows in its body and its categories in its frontmatter. An event is a row with a date, optional times, an optional repeat rule and optional categories. The grid, column bindings and tasks register are configured in [the calendar view](../bases/views/calendar.md); two-way sync with Google is in [Google Calendar sync](../gcal/overview.md).
 
-There are **two write paths** to the same on-disk calendar file:
-
-1. **The app UI** — `CalendarView.tsx` → `EventStore` → `BaseBackend`, documented in the bulk of this page. This is the interactive, in-app path.
-2. **A headless CLI/API path** — `core/src/calendar.ts` (a pure module) driven by the `bismuth calendar …` CLI group, so the **daemon, agents, and scripts can edit a calendar by API instead of hand-editing raw YAML**. Hand-editing is fragile: the app rewrites the file (strips quotes, adds `localUpdated`) and can't remove a single recurring occurrence. Headless writes land on disk and the app's vault watcher picks them up live. See [Headless Write Path](#headless-write-path-coresrccalendarts) below.
-
-> **Google Calendar two-way sync.** A calendar base — the same `type: base` markdown file whose event rows this page describes — can be **two-way-synced with Google Calendar**, per-calendar: each base declares its own `googleCalendarSync` + `googleCalendarId` in its frontmatter, so a vault can sync several calendars each with a different Google calendar. A sync pass (`syncEvents` in `core/src/gcal/sync.ts`) pulls remote events into the base's rows, pushes new/changed local rows back to Google, and propagates deletions in both directions, under a configurable conflict policy (`lastWriteWins` / `googleWins` / `bismuthWins`). Sync state (per-event links, signatures, sync token) lives in an external, per-base-keyed manifest outside the vault, keeping the base file clean; a category's `categories:` frontmatter color maps to a Google `colorId`. The OAuth flow, the manifest/link model, change detection, and the HTTP/CLI surface are documented in [gcal/overview.md](../gcal/overview.md); this page does not duplicate them.
-
----
-
-## Architecture at a Glance
-
-```
-CalendarView.tsx (app/src/bases/)
-  └── EventStore  ←  CalendarStorage backend
-        ├── BaseBackend (app/src/bases/calendarBase.ts)  ← base .md file on disk
-        └── MemoryBackend                                ← ephemeral / test only
-  └── calendar/state.ts  — Solid signals for current view, date, events, categories
-  └── calendar/refresh.ts — derives the visible date-range and refills signals
-  └── components/
-        ├── Toolbar.tsx
-        ├── EventModal.tsx
-        ├── RecurrenceDialog.tsx
-        ├── CategoryPanel.tsx
-        ├── CalendarSettings.tsx
-        └── views/  MonthView, WeekView, ThreeDayView, DayView (via TimeGrid)
-```
-
----
-
-## Data Model
-
-### `CalendarEvent`
-
-Defined in `app/src/calendar/types.ts`:
-
-```typescript
-interface CalendarEvent {
-  id: string            // UUID, assigned by EventStore.addEvent
-  title: string
-  date: string          // "YYYY-MM-DD" — the canonical day for non-recurring events
-                        // and the base anchor date for recurring series masters
-  startTime?: string    // "HH:MM" — omit for all-day events
-  endTime?: string      // "HH:MM" — omit = no explicit end; TimeGrid adds 1h visually
-  location?: string
-  link?: string
-  description?: string  // markdown-enabled (rendered in EventModal on blur)
-  category?: string     // name of a Category; absent = no tint (ghost chip)
-  recurrence?: Recurrence
-  localUpdated?: string // ISO timestamp stamped on every local create/edit (EventStore);
-                        // Google Calendar sync's last-write-wins tiebreaker vs. remote `updated`
-}
-```
-
-All date/time fields are plain strings (`"YYYY-MM-DD"` / `"HH:MM"`). There is no `Date` object in the serialized model.
-
-**All-day events**: `startTime` is absent (or empty). The `EventModal` binds a toggle labelled "All day"; if turned on, `startTime`/`endTime` are stripped from the saved event. `TimeGrid` renders all-day events in a dedicated sticky row above the time columns.
-
-### `Category`
-
-```typescript
-interface Category { name: string; color: string }
-```
-
-`color` is either a **theme token** (one of `"accent" | "teal" | "blue" | "violet" | "green" | "gold" | "rose"`) or any CSS color string (typically a hex from the color picker, e.g. `"#8296C6"`). Storing the bare token — not the resolved hex — means the category recolors automatically when the theme changes.
-
-### `Recurrence`
-
-```typescript
-type RecurrenceType = 'daily' | 'weekly' | 'biweekly' | 'monthly'
-
-interface Recurrence {
-  type: RecurrenceType
-  daysOfWeek?: number[]  // 0–6, Sunday = 0; used by weekly + biweekly only
-  startDate: string      // "YYYY-MM-DD" — first possible occurrence
-  endDate?: string       // "YYYY-MM-DD" — inclusive last day; absent = open-ended (runs to 2100-01-01)
-  seriesId: string       // UUID shared across all master segments of the same logical series
-}
-```
-
-A recurring event is stored as one or more **master segments** in `data.events`, each with its own `Recurrence`. The `seriesId` ties segments together so "edit/delete all" and "edit/delete following" operations can target the right set.
-
-### `EventsFile`
-
-The container serialized to and from disk:
-
-```typescript
-interface EventsFile { events: CalendarEvent[]; categories: Category[] }
-```
-
----
-
-## Persistence: `EventStore` and Storage Backends
-
-`EventStore` (`app/src/calendar/EventStore.ts`) is the single write path for all calendar mutations. It holds the live in-memory `EventsFile` and delegates to a `CalendarStorage` backend for load/save.
-
-### `CalendarStorage` interface
-
-```typescript
-interface CalendarStorage {
-  load(): EventsFile | null
-  save(data: EventsFile): void
-}
-```
-
-### `MemoryBackend`
-
-Ephemeral in-process store. Used in tests and as the fallback when `CalendarView` has no `basePath`. `save` performs a `structuredClone` so the store's internal reference is never aliased.
-
-### `BaseBackend` (`app/src/bases/calendarBase.ts`)
-
-Backs the calendar with a `type: base` markdown file on disk. Lifecycle:
-
-1. **`init()`** — called once on mount; reads the file via `api.read`, passes the text through `parseCalendarFile`, and captures the full frontmatter object so subsequent saves can preserve all non-calendar frontmatter keys (e.g. `view:`, `source:`, custom fields).
-2. **`load()`** — returns the last-parsed snapshot synchronously (always available after `init`).
-3. **`save(data)`** — updates the snapshot, merges categories back into the frontmatter under `categories:`, then fires-and-forgets `api.write` with the re-serialized file. The version poll or SSE event will reflect the disk change on the next read.
-
-`BaseBackend` never throws; `init()` catches file-not-found and seeds an empty store.
-
-### File format: `calendarSerialize.ts`
-
-`app/src/bases/calendarSerialize.ts` handles the round-trip between the markdown file and `CalendarEvent[]`.
-
-**On-disk structure:**
-
-```markdown
+```yaml
 ---
 type: base
 view: calendar
@@ -137,613 +13,174 @@ categories:
     color: "#e06c75"
 ---
 
-| id | title | date | startTime | endTime | category | recurrence | ... |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| uuid | Stand-up | 2026-05-04 | 09:00 | 09:30 | Work | {"type":"weekly",...} | |
+- id: a1
+  title: Standup
+  date: 2026-05-04
+  startTime: "09:00"
+  endTime: "09:30"
+  category: Work
+  recurrence: '{"type":"weekly","daysOfWeek":[1,2,3,4,5],"startDate":"2026-05-04","seriesId":"s1"}'
 ```
 
-- The event table in the body is parsed by `parseRows` (the same row-table parser used by all Bases sources).
-- The `recurrence` column stores the full `Recurrence` object as a JSON string (`JSON.stringify`/`JSON.parse`); the parser falls back to `undefined` on malformed JSON.
-- `categories` in frontmatter is a YAML list of `{name, color}` objects, read by `categoriesOf(frontmatter)`.
-- Re-serialization uses `stringifyYaml` on the full frontmatter (original keys preserved) plus `serializeRows` on the event list; `categories` is only written if non-empty.
+This file holds one event that repeats every weekday from 2026-05-04, drawn in the `Work` colour. You can write events by hand like this, edit them in the app, or drive them from the shell with [`bismuth calendar`](#how-do-i-edit-a-calendar-from-the-shell).
 
----
+## What fields does an event have?
 
-## Headless Write Path (`core/src/calendar.ts`)
+An event is one row. Only `id`, `title` and `date` are needed; every other field is optional, and an empty field is left out of the file.
 
-`core/src/calendar.ts` is a **pure, headless module** — the API surface the daemon/agents/CLI drive instead of hand-editing raw YAML. It is ported from the app's `calendarSerialize.ts` + `calendar/{dates,EventStore}.ts`, but has no Solid, no `EventStore` class, and no I/O: every function is a plain array/string transform, and the caller (the CLI) does the read/parse/mutate/serialize/write. A calendar is the same `type: base` + `view: calendar` markdown file — events are the base's row table, categories are a frontmatter key — and **every write preserves the WHOLE frontmatter, touching only events + categories** (matching `BaseBackend`).
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | unique id, a UUID when the app or CLI creates it |
+| `title` | string | the event's name |
+| `date` | `YYYY-MM-DD` | the day of a single event, and the anchor day of a repeating one |
+| `startTime` | `HH:MM` | start time; an event without one is all-day |
+| `endTime` | `HH:MM` | end time; without it the event has no explicit end |
+| `location` | string | free text |
+| `link` | string | a URL |
+| `description` | markdown | notes about the event |
+| `category` | string | the name of one category |
+| `categories` | JSON list of names | several categories; takes precedence over `category` |
+| `recurrence` | JSON string | the repeat rule, described below |
+| `localUpdated` | ISO timestamp | stamped on every create or edit; Google sync uses it to decide which side changed last |
 
-### Types
+Dates and times are plain strings with no time zone. The app and the CLI write `recurrence` and `categories` as JSON strings in a single field; a `recurrence` that is not valid JSON is read as "does not repeat".
 
-`Recurrence`/`RecurrenceType` are **not** declared in `core/src/calendar.ts` — the module imports them
-from `core/src/bases/recurrence.ts` (the canonical recurrence model, shared with the Bases migration
-path and `app/src/export/calendarHtml.ts`) and re-exports both, so `calendar.ts`'s own public surface
-for `cli/src/commands/calendar.ts` is unchanged:
+The calendar view can bind other column names to the date, time, recurrence and category fields; see [the calendar view](../bases/views/calendar.md). Write rows with the standard names above so the grid, the export and the CLI all agree.
 
-```typescript
-// core/src/calendar.ts
-import { expandRecurrence } from './bases/recurrence'
-export { addDays, expandRecurrence } from './bases/recurrence'
-export type { Recurrence, RecurrenceType } from './bases/recurrence'
+## How do I make an event repeat?
+
+Put a `recurrence` JSON string on the event.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `type` | `daily`, `weekly`, `biweekly` or `monthly` | how the series repeats |
+| `daysOfWeek` | list of 0 to 6, Sunday is 0 | which weekdays; used by `weekly` and `biweekly`, defaults to the weekday of `startDate` |
+| `startDate` | `YYYY-MM-DD` | the first possible occurrence |
+| `endDate` | `YYYY-MM-DD` | the last day, inclusive; without it the series runs to 2100-01-01 |
+| `seriesId` | string | ties the pieces of one series together |
+
+```json
+{"type":"weekly","daysOfWeek":[1,3],"startDate":"2026-05-04","seriesId":"s1"}
 ```
 
-```typescript
-// core/src/bases/recurrence.ts — the canonical copy
-type RecurrenceType = "daily" | "weekly" | "biweekly" | "monthly"
+This is every Monday and Wednesday from 2026-05-04.
 
-interface Recurrence {
-  type: RecurrenceType
-  daysOfWeek?: number[]   // 0–6, Sunday = 0
-  startDate: string       // "YYYY-MM-DD"
-  endDate?: string        // "YYYY-MM-DD"
-  seriesId: string
-}
-```
-
-`core/src/bases/recurrence.ts` also exports `matchesRecurrence` and `splitRecurrence` (the split used
-by the Bases-side recurring-event editing paths) — `calendar.ts` does not re-export those two, since
-its own occurrence-split mutations (`overrideOccurrence`/`deleteOccurrence`, below) are implemented
-independently against the local `dayBefore`/`dayAfter` helpers rather than `splitRecurrence`. Only
-`parseLocalDate`, `dayBefore`, and `dayAfter` remain declared locally in `calendar.ts` — small
-day-arithmetic wrappers with no reason to live in the shared module. `Category` and `CalendarEvent`
-(unlike `Recurrence`) genuinely are re-declared independently of the app's
-`app/src/calendar/types.ts`, so backend code has no frontend dependency:
-
-```typescript
-interface Category { name: string; color: string }
-
-interface CalendarEvent {
-  id: string
-  title: string
-  date: string            // "YYYY-MM-DD"
-  startTime?: string      // "HH:MM" — undefined = all-day
-  endTime?: string
-  location?: string
-  link?: string
-  description?: string
-  category?: string
-  categories?: string[]   // multi-category form (JSON-encoded in the row)
-  recurrence?: Recurrence
-  localUpdated?: string    // ISO timestamp stamped on every local create/edit
-}
-
-interface ParsedCalendar {
-  frontmatter: Record<string, unknown>
-  events: CalendarEvent[]
-}
-```
-
-`newId()` is exported (`crypto.randomUUID()`); `now()` (internal) stamps `localUpdated` on every create/edit via the internal `stamp()` helper.
-
-### Parse / serialize
-
-| Function | Signature | Notes |
-|----------|-----------|-------|
-| `parseCalendarFile` | `(text: string) => ParsedCalendar` | Splits frontmatter (regex `FM_RE`) from body; `parseYaml` the frontmatter (falls back to `{}` on malformed), `parseRows` the body event table, `rowToEvent` each row |
-| `serializeCalendarFile` | `(frontmatter, events) => string` | `stringifyYaml` on the FULL frontmatter (all original keys preserved) + `serializeRows` on the events; emits `---\n<fm>\n---\n\n<body>\n`, or a bare frontmatter block when there are no events |
-| `categoriesOf` | `(frontmatter) => Category[]` | Reads the `categories` frontmatter key (array of `{name, color}`), else `[]` |
-| `rowToEvent` | `(row: Row, i: number) => CalendarEvent` | Row→event mapping mirroring `calendarSerialize.ts`; `recurrence`/`categories` are JSON-decoded from their string cells (malformed → `undefined`/single-element); missing `id` → `row-<i>` |
-| `isCalendarBase` | `(frontmatter) => boolean` | Is this frontmatter a calendar base? Mirrors `parseBaseFile`: a base has one view, so it is a calendar iff `view: calendar` — or, in a file still carrying a legacy `views:` list, iff that list's first entry has a valid `type` of `calendar` (which beats `view:`). Drives `bismuth calendar bases` discovery |
-| `emptyCalendarFile` | `(opts?: {title?, categories?}) => string` | A fresh, empty calendar base file (`type: base` + `view: calendar` frontmatter, no events). Drives `bismuth calendar create` |
-
-The row↔event mapping is JSON-string-based for the compound fields: `recurrence` is `JSON.stringify`d into its column, and `categories` (when non-empty) is likewise JSON-encoded; the single-valued `category` field stays a plain string.
-
-### Queries (recurrences expanded)
-
-| Function | Signature | Notes |
-|----------|-----------|-------|
-| `expandRecurrence` | `(recurrence, rangeStart, rangeEnd) => string[]` | Iterates one day at a time from `max(startDate, rangeStart)` to `min(endDate ?? 2100-01-01, rangeEnd)`, `matchesRecurrence` per day. The one engine: the app's `EventStore` and the export import it too (see [Recurrence Engine](#recurrence-engine-recurrencets)) |
-| `eventsForRange` | `(events, rangeStart, rangeEnd) => CalendarEvent[]` | Concrete instances in `[rangeStart, rangeEnd]`; each recurring master is expanded to one `{...event, date}` per matching date; sorted by `date` then `startTime` |
-| `eventsForDay` | `(events, date) => CalendarEvent[]` | `eventsForRange(events, date, date)` |
-| `detectOverlaps` | `(dayEvents) => OverlapPair[]` | Pairs of timed events (`startTime` + `endTime` both set) whose half-open `[start, end)` intervals intersect; all-day events don't participate; `"HH:MM"` strings compare lexicographically. `OverlapPair = { a: CalendarEvent; b: CalendarEvent }` |
-| `eventsInWindow` | `(events, from?, to?) => CalendarEvent[]` | RAW stored events (masters **not** expanded — real ids, so a caller can pick an id to edit) intersecting `[from, to]`: singles by `date`, masters by series-window `[startDate, endDate ?? ∞]` intersection. Both bounds optional (missing = open-ended) |
-| `searchEvents` | `(events, query) => CalendarEvent[]` | Case-insensitive substring search over `title` / `description` / `location` / `category` / `categories`. Works on raw events or expanded instances (the caller picks the input) |
-
-The date helpers (`addDays`, `todayISO` from `core/src/dates.ts`, internal `parseLocalDate`/`dayBefore`/`dayAfter`/`daysInMonth`/`matchesRecurrence`) use the same local-midnight convention as the app's `dates.ts` — `parseLocalDate(iso)` appends `"T00:00:00"` so nothing is UTC.
-
-### Mutations (pure transforms; caller re-serializes + writes)
-
-Each mutation returns a NEW `CalendarEvent[]` (or `{events, event}`); none touch disk. `findEvent(events, id)` is the shared lookup.
-
-| Function | Signature | Behavior |
-|----------|-----------|----------|
-| `findEvent` | `(events, id) => CalendarEvent \| undefined` | Lookup by `id` |
-| `addEvent` | `(events, event) => { events, event }` | `stamp()`s the input (fills `id` via `newId()` if absent, sets `localUpdated`), appends; returns both the new array and the created event |
-| `moveEvent` | `(events, id, updates) => CalendarEvent[]` | Merges `updates` (minus `id`) into the matching event + re-stamps `localUpdated`. Throws `CALENDAR_EVENT_NOT_FOUND` if the id is absent |
-| `deleteEvent` | `(events, id) => CalendarEvent[]` | Filters out the id. Throws `CALENDAR_EVENT_NOT_FOUND` if absent |
-| `overrideOccurrence` | `(events, masterId, occurrenceDate, updates) => CalendarEvent[]` | Splits a recurring master around `occurrenceDate` (truncate the head to the day before; re-add the tail as its own segment keeping the same `seriesId`) and inserts a standalone single event for that date carrying `updates` (its `recurrence`/`id` stripped). Editing the FIRST occurrence drops the master head entirely. Throws `CALENDAR_NOT_RECURRING` if the id isn't recurring. Ported from `EventStore.editOccurrence` |
-| `deleteOccurrence` | `(events, masterId, occurrenceDate) => CalendarEvent[]` | Same series split as `overrideOccurrence`, but with NO replacement single event. Throws `CALENDAR_NOT_RECURRING`. Ported from `EventStore.deleteOccurrence` |
-| `recurrenceFromRRule` | `(rrule, startDate) => Recurrence` | Parses an iCal/Google RRULE string (the same subset the gcal sync supports: `FREQ=DAILY\|WEEKLY\|MONTHLY`, `INTERVAL=2` only as weekly→biweekly, `BYDAY`, `UNTIL` — no `COUNT`/`YEARLY`/`RDATE`/`EXDATE`) into a `Recurrence` with a fresh `seriesId`. The `RRULE:` prefix is optional; `startDate` is normalized to the first VALID occurrence (Google DTSTART semantics — a weekly `BYDAY` rule never starts on an off-day). Throws `CALENDAR_RRULE_FORMAT_ERROR` on unsupported rules. Reuses `core/src/gcal/recurrence.ts` — one RRULE implementation |
-
-**Category mutations** mirror `EventStore` semantics but as pure transforms returning `CalendarPatch = { frontmatter, events }`:
-
-| Function | Signature | Behavior |
-|----------|-----------|----------|
-| `addCategory` | `(frontmatter, category) => frontmatter` | Appends `{name, color}` to the `categories` frontmatter key. Throws `CALENDAR_CATEGORY_EXISTS` on a duplicate name, `CALENDAR_CATEGORY_FORMAT_ERROR` on a blank one |
-| `updateCategory` | `(frontmatter, events, name, updates) => CalendarPatch` | Rename and/or recolor. A rename **cascades** into every event's `category`/`categories`; each event actually changed gets a fresh `localUpdated` stamp (category is part of the gcal sync signature — see below). Throws `CALENDAR_CATEGORY_NOT_FOUND` / `CALENDAR_CATEGORY_EXISTS` (rename collision) |
-| `removeCategory` | `(frontmatter, events, name, reassignTo?) => CalendarPatch` | Removes the category and clears it from events (or reassigns them to `reassignTo`, which must be another existing category). Changed events get a fresh `localUpdated` stamp |
-
-The error codes (`CALENDAR_EVENT_NOT_FOUND`, `CALENDAR_NOT_RECURRING`, `CALENDAR_CATEGORY_*`, `CALENDAR_RRULE_FORMAT_ERROR`) go through `createError` (`core/src/error.ts`); each maps to an `AppError` when surfaced.
-
----
-
-## The `bismuth calendar` CLI Group (`cli/src/commands/calendar.ts`)
-
-The `bismuth calendar …` command group is the headless driver over `core/src/calendar.ts`. Every command follows the same shape: **read the vault file → `parseCalendarFile` → mutate → `serializeCalendarFile` → `writeNote`**, and the app's vault watcher picks up the write live. All commands are headless (no running server). The group is bridged to the MCP as `bismuth_cli` (no new MCP tool), so `bismuth_cli_help` lists these — this is how the daemon/agents author calendar edits.
-
-Two internal helpers wrap the round-trip: `readCalendar(vault, path)` → `readNote` + `parseCalendarFile`, and `writeCalendar(vault, path, frontmatter, events)` → `serializeCalendarFile` + `writeNote`. Event fields are assembled by `eventFieldsFromArgs`: `--json '{...}'` provides a base object, then convenience flags overlay it (flags win) — `--title`, `--date`, `--start` (`startTime`), `--end` (`endTime`), `--location`, `--link`, `--description`, `--category`, and `--recurrence '{...}'` (a JSON `Recurrence`; a missing `seriesId` is auto-filled with a fresh UUID). Malformed `--json`/`--recurrence` `fail`s the command. `calendar add` additionally accepts `--rrule 'FREQ=WEEKLY;BYDAY=MO'` (an iCal RRULE, translated via `recurrenceFromRRule`; an explicit `--recurrence` wins).
-
-**Discovery & creation**
-
-| Command | Usage | Behavior |
-|---------|-------|----------|
-| `calendar bases` | *(none)* | Walks the vault's markdown, filters by `isCalendarBase`, prints `[{path, title, events, categories}]` — how an agent finds (or verifies) the calendar file to target |
-| `calendar create` | `<basePath> [--title '…']` | Writes `emptyCalendarFile` at `<basePath>` (`.md` appended if missing); fails with `EEXIST` if the path exists |
-
-**Reading & searching**
-
-| Command | Usage | Behavior |
-|---------|-------|----------|
-| `calendar list` | `<basePath> [--from … --to …]` | RAW stored events via `eventsInWindow` — masters unexpanded, real ids (use this to find an id to edit) |
-| `calendar range` | `<basePath> <from> <to>` | Concrete instances via `eventsForRange` (recurrences expanded) |
-| `calendar day` | `<basePath> <date>` | Prints the day's events (recurrences expanded to concrete instances) via `eventsForDay` — read-only |
-| `calendar get` | `<basePath> <id>` | One event by id, as stored |
-| `calendar search` | `<basePath> <text> [--from … --to …]` | `searchEvents` over raw events; with BOTH `--from` and `--to` it searches expanded instances in that window instead |
-| `calendar overlaps` | `<basePath> <date>` | `detectOverlaps(eventsForDay(...))` for the day; prints `{ date, overlaps }` — read-only |
-
-**Event mutations**
-
-| Command | Usage | Behavior |
-|---------|-------|----------|
-| `calendar add` | `<basePath> --date YYYY-MM-DD --title '…' [--start HH:MM --end HH:MM] [--rrule '…']` | `addEvent` with fields from `eventFieldsFromArgs`; `--date` required; prints `{ ok, event }`. With `--rrule`, the event date is normalized to the recurrence's first valid occurrence |
-| `calendar move` | `<basePath> <id> [--date … --start … --end …]` | `moveEvent(events, id, updates)`; fails if nothing to update; prints `{ ok, event }` |
-| `calendar delete` | `<basePath> <id>` | `deleteEvent(events, id)`; prints `{ ok }` |
-| `calendar override` | `<basePath> <id> <date> [--title/--start/--end/--json …]` | `overrideOccurrence(events, id, date, updates)` — the occurrence `<date>` is the positional, so any `--date` flag is dropped as ambiguous; prints `{ ok }` |
-| `calendar delete-occurrence` | `<basePath> <id> <date>` | `deleteOccurrence(events, id, date)`; prints `{ ok }` |
-
-**Category mutations**
-
-| Command | Usage | Behavior |
-|---------|-------|----------|
-| `calendar categories` | `<basePath>` | Prints the `[{name, color}]` list |
-| `calendar category add` | `<basePath> <name> [--color '#b00020']` | `addCategory`; `--color` is any CSS color or a theme token (`accent`/`teal`/…); defaults to `accent` |
-| `calendar category update` | `<basePath> <name> [--rename <new>] [--color <c>]` | `updateCategory`; a rename cascades into events |
-| `calendar category remove` | `<basePath> <name> [--reassign <other>]` | `removeCategory`; clears (or reassigns) the category on events |
-
-Vault is resolved by `requireVault` (`--vault` / `BISMUTH_VAULT`); output honors `--pretty` (via `out`).
-
-**Google-Calendar sync safety.** Headless edits are safe on a gcal-synced calendar: the sync bookkeeping (the Google-id → Bismuth-id manifest) lives OUTSIDE the vault in `~/.bismuth/gcal/sync.json`, so rewriting the base file can't corrupt it. The sync identifies events by their `id` column and detects local edits by a content signature + the `localUpdated` stamp — and every CLI mutation preserves ids and stamps `localUpdated` exactly like the app does. Consequences to be aware of: a locally deleted event **will be deleted from Google** on the next sync (by design), and edits win/lose conflicts per the configured policy (see [gcal overview](../gcal/overview.md)).
-
----
-
-## Recurrence Engine (`core/src/bases/recurrence.ts`)
-
-`expandRecurrence(recurrence, rangeStart, rangeEnd): string[]`
-
-This is the single copy — the app's `EventStore` imports it (there is no app-side duplicate in `dates.ts`). Given a `Recurrence` and a query window (ISO date strings, inclusive on both ends), returns every date in `[rangeStart, rangeEnd]` that matches the rule. The function iterates one day at a time from `max(recurrence.startDate, rangeStart)` to `min(recurrence.endDate ?? "2100-01-01", rangeEnd)`, calling `matchesRecurrence` on each.
-
-### Rule semantics
-
-| `type` | Match condition |
-|--------|----------------|
-| `daily` | Every day unconditionally |
-| `weekly` | Days in `daysOfWeek[]`; if `daysOfWeek` is absent, defaults to the day-of-week of `startDate` |
-| `biweekly` | Same day-of-week check as `weekly`, plus the week must be an even number of weeks from `startDate` |
-| `monthly` | The day-of-month of `startDate`, clamped to the last day of shorter months |
-
-**Monthly edge case**: a series starting on `2026-01-31` fires on `2026-02-28` (non-leap) and `2026-04-30` (30-day month) rather than skipping those months entirely. This is tested in `dates.test.ts`.
-
-**Biweekly detail**: the "even week" check computes `Math.floor(diffDays / 7) % 2 === 0` where `diffDays` is the integer number of days from `startDate`.
-
-### Date helpers
-
-| Function | Signature | Notes |
-|----------|-----------|-------|
-| `todayISO` | `(d?: Date) => string` | From `core/src/dates.ts` (the one formatter; `toDateStr` was folded into it). Produces `"YYYY-MM-DD"` in **local** time (not UTC) |
-| `addDays` | `(d: Date, n: number) => Date` | Returns a new `Date`; `n` may be negative |
-| `startOfWeek` | `(d: Date, mondayFirst: boolean) => Date` | Returns Monday (ISO) or Sunday (US) of the containing week |
-| `weekRange` | `(d: Date, mondayFirst: boolean) => [string, string]` | `[weekStart, weekStart+6]` as ISO strings |
-| `formatTime` | `(time: string, military: boolean) => string` | `"13:05"` → `"1:05"` (12h) or `"13:05"` (24h); no AM/PM suffix on times |
-| `formatGutterHour` | `(h: number, military: boolean) => string` | Hour `0` returns `""` (midnight label suppressed in gutter); otherwise `"9 AM"` / `"13:00"` |
-| `stepDate` | `(d: Date, view: ViewType, dir: -1 \| 1) => Date` | Moves `d` one step in `view`'s own unit — a month for `month`, else `VIEW_STEP_DAYS[view]` days (`week` 7, `3day` 3, `day` 1). Powers `DateNav`'s prev/next chevrons |
-| `rangeLabel` | `(d: Date, view: ViewType, mondayFirst: boolean) => RangeLabel` | The toolbar's date breadcrumb — see below |
-
-`todayISO` constructs via `getFullYear`/`getMonth`/`getDate` — always local, never UTC. Avoid passing `new Date("2026-05-10")` (UTC midnight) without a time zone suffix; prefer `new Date("2026-05-10T00:00:00")` to stay in local time.
-
-### `rangeLabel` for the date breadcrumb
-
-There is no `headerLabel()` function. `RangeLabel = { long: string; short: string }` — both forms are
-produced together because the toolbar collapses to `short` in a narrow pane through a container query,
-and CSS cannot rewrite text. For a day span, `spanLabel(a, b, withYear)` drops whatever component both
-ends already agree on (month, year) rather than concatenating two ISO dates:
-
-| View | Example input | `long` | `short` |
-|---|---|---|---|
-| `month` | `2026-05-27` | `"May 2026"` | `"May 2026"` |
-| `week` | week of `2026-05-27`, Monday-first | `"25 – 31 May 2026"` | `"25 – 31 May"` |
-| `3day` | `2026-05-27` | `"27 – 29 May 2026"` | `"27 – 29 May"` |
-| `day` | `2026-05-27` | `"Wed 27 May 2026"` | `"Wed 27 May"` |
-| `week` spanning a month boundary | `2026-01-29 – 2026-02-04` | `"29 Jan – 4 Feb 2026"` | `"29 Jan – 4 Feb"` |
-| `week` spanning a year boundary | `2025-12-29 – 2026-01-04` | `"29 Dec 2025 – 4 Jan 2026"` | `"29 Dec – 4 Jan"` |
-
-Before this existed the breadcrumb was built from `toDateStr`, so week and 3-day read as raw ISO
-ranges (`"2026-01-12 — 2026-01-18"`, 23 characters) and were the one reason the label routinely
-ellipsized at an ordinary split-pane width, while month read `"January 2026"` — two different
-vocabularies in the same slot.
-
----
-
-## Recurrence Split Operations (`EventStore`)
-
-All mutating methods are `async` and call `this.save()` after every change.
-
-### Single-occurrence operations
-
-**`deleteOccurrence(masterId, occurrenceDate)`**
-
-Removes exactly one occurrence. Implementation: truncates the master's `endDate` to the day before the target, then inserts a new continuation segment starting the day after — preserving the same `seriesId`. If the master already ended at or before the target, the continuation is omitted.
-
-```
-Before: [daily 2026-05-01 → ∞]
-deleteOccurrence(id, '2026-05-03')
-After:  [daily 2026-05-01 → 2026-05-02] + [daily 2026-05-04 → ∞]
-```
-
-Verified in `EventStore.test.ts`:
-```typescript
-const days = store.getEventsForRange('2026-05-01', '2026-05-05').map(e => e.date).sort()
-// → ['2026-05-01', '2026-05-02', '2026-05-04', '2026-05-05']  (03 is gone)
-```
-
-**`editOccurrence(masterId, occurrenceDate, updates)`**
-
-Same segment split as `deleteOccurrence` to carve out the target day; inserts a fresh non-recurring event for that single date with the merged `updates`. The `recurrence` field is stripped from the single-occurrence event.
-
-### Series-wide operations
-
-**`editSeries(seriesId, updates)`**
-
-Finds every master segment whose `recurrence.seriesId` matches and applies `updates` to each via `updateEvent`. Use this for changing the title, category, or time of an entire series.
-
-**`deleteSeries(seriesId)`**
-
-Removes all events whose `recurrence.seriesId` matches in one in-memory filter + save. No split needed.
-
-### "This and following" operations
-
-**`editFollowing(masterId, occurrenceDate, updates)`**
-
-Truncates the master at `occurrenceDate - 1`, then adds a new segment starting at `occurrenceDate` with a **fresh `seriesId`** (so the new tail is an independent series). The `updates.recurrence` is merged over the master's recurrence rule, which lets you change the rule type for the tail (e.g. daily → weekly-on-Mondays).
-
-```typescript
-// From 2026-05-04 onward, switch from daily to weekly-Mondays
-await store.editFollowing(masterId, '2026-05-04', {
-  recurrence: { type: 'weekly', daysOfWeek: [1], startDate: '2026-05-04', seriesId: 'ignored' }
-})
-// Before 05-04: still daily (3 days: 01, 02, 03)
-// From 05-04: only Mondays (04, 11, 18, 25)
-```
-
-**`deleteFollowing(masterId, occurrenceDate)`**
-
-Truncates the master's `endDate` to `occurrenceDate - 1`. No new segment created. The master's range simply ends.
-
----
-
-## `RecurrenceDialog`
-
-When the user edits or deletes a recurring event chip, the action is not executed immediately. Instead, the component sets `recurrenceAction.value` (a Solid signal from `state.ts`) with the pending operation details:
-
-```typescript
-{ type: 'edit' | 'delete'; masterId: string; occurrenceDate: string; updates?: Partial<CalendarEvent> }
-```
-
-`RecurrenceDialog` reads this signal and renders a modal with three choices: **JUST THIS ONE**, **THIS AND FOLLOWING**, **ALL**. On selection, it calls the appropriate `EventStore` method, reloads the store, calls `refreshEvents`, and clears `recurrenceAction.value`.
-
-This is the exclusive gate for recurring-event mutations — the `EventModal` and `EventChip` both set `recurrenceAction.value` and close themselves rather than calling `EventStore` directly for recurring events.
-
----
-
-## Category Color (`categoryColor.ts`)
-
-### Theme swatches
-
-```typescript
-const THEME_SWATCHES = ["accent", "teal", "blue", "violet", "green", "gold", "rose"] as const
-type ThemeSwatch = typeof THEME_SWATCHES[number]
-```
-
-Stored as bare token strings (e.g. `"teal"`), not as `var(--teal)`. This is the canonical form in `Category.color`.
-
-### `resolveCategoryColor(color)`
-
-Converts a stored color to a CSS value usable in `background` / `color` inline styles:
-
-- Theme token → `"var(--teal)"` (tracks the active theme automatically)
-- Any other string (hex, `rgb()`, named color) → passed through unchanged
-- `undefined` → `"var(--accent)"`
-
-Used by `EventChip` (via `eventCategoryColors`) to draw chips. A chip is an **even 1px frame in the category hue, over a 14% wash of that hue** (`color-mix(in srgb, <hue> 14%, var(--bg))`), with the time in `--text-muted` and the title in `--fg`, in the prose face (`<Text register="prose">`). The colours reach the stylesheet as custom properties (`--ev-c`, `--ev-frame`), never an inline `background`.
-
-**Multi-category events** keep ONE wash (the first category's — it is one event) but split the frame: `categoryBands(colors, 90)` returns hard-edged bands (coincident gradient stops, never a blend) that `border-image` paints, so the top and bottom rules show one band per category. The chip also shows a `StatusDot` per category at its first line's trailing edge — up to `MAX_BANDS` (3), then a `+n` from `categoryOverflow()`.
-
-Events with no matching category get class `ghost` (a `--border` outline over the bare ground, muted ink). The time-grid drag preview (`DragGhost`) takes the moved event's `colors` and draws the same frame + wash (accent for a create).
-
-### `categoryColorHex(color)`
-
-Used by the native `<input type="color">` element, which cannot display `var(...)`. For theme tokens, reads the live computed value off `:root` via `getComputedStyle`; falls back to `"#888888"`. Non-theme hex colors pass through unchanged.
-
-### `isThemeToken(color)`
-
-Type guard returning `true` iff `color` is a member of `THEME_SWATCHES`.
-
----
-
-## Reactive State (`state.ts`)
-
-All state is module-level Solid signals wrapped in a `createBox` helper (`{ get value(), set value(v) }`). There is no context provider — any component that imports from `state.ts` is reactive.
-
-| Export | Type | Purpose |
-|--------|------|---------|
-| `currentView` | `ViewType` | Active view: `'month' \| 'week' \| '3day' \| 'day'` |
-| `currentDate` | `Date` | The "anchor" date for navigation (not a range endpoint) |
-| `events` | `CalendarEvent[]` | The current visible window of events (filled by `refreshEvents`) |
-| `categories` | `Category[]` | All categories from the store — always a fresh array (required for Solid reactivity) |
-| `showEventModal` | `{...} \| null` | Non-null opens `EventModal`; payload seeds the form |
-| `showCategoryPanel` | `boolean` | Opens `CategoryPanel` |
-| `showCalendarSettings` | `boolean` | Opens `CalendarSettings` |
-| `dragState` | `DragState \| null` | Live drag state for create-by-drag or move-by-drag |
-| `recurrenceAction` | `{...} \| null` | Pending recurrence edit/delete, opens `RecurrenceDialog` |
-| `settings` | proxy | Thin adapter over the unified `appSettings.calendar` section (see Settings) |
-
-### `currentView` write-tracking
-
-Writing to `currentView.value` sets `userSwitchedView = true` (a module-level `let`). `CalendarView` uses `reconcileDefaultView` + `applyDefaultView` to sync the asynchronously-hydrated `defaultView` setting on first mount without overriding a manual user switch:
-
-```typescript
-// Pure decision: return new view to apply, or null for "leave it alone"
-reconcileDefaultView(savedDefault, current, switched): ViewType | null
-// Apply the saved default WITHOUT setting userSwitchedView
-applyDefaultView(v: ViewType): void
-```
-
-### `showEventModal` payload
-
-```typescript
-{
-  date?: string          // Pre-fill the date field when creating from a day click
-  event?: CalendarEvent  // Edit mode when present
-  masterId?: string      // Set alongside `event` for recurring occurrences
-  occurrenceDate?: string // The specific occurrence date (for recurring edits)
-  startTime?: string     // Pre-fill when created by a time-grid drag
-  endTime?: string       // Pre-fill only when the press counted as a drag (see below)
-}
-```
-
-### `DragState`
-
-```typescript
-type DragState =
-  | { type: 'create'; date: string; startMinutes: number; currentMinutes: number }
-  | { type: 'move'; event: CalendarEvent; masterId?: string; date: string;
-      startMinutes: number; currentMinutes: number; offsetMinutes: number }
-```
-
-`TimeGrid` manages this: mousedown on an empty cell → `'create'` drag with ghost preview; mousedown on an event chip → `'move'` drag showing the chip at 30% opacity. Snaps to 30-minute intervals (`SNAP_INTERVAL = 30`); grid height is fixed at `GRID_PX = 1728` (72px an hour, 18px a quarter hour).
-
-**Deciding click vs. drag.** The pure logic lives in `app/src/calendar/components/views/timeGridDrag.ts`, not inline in `TimeGrid.tsx`. `DRAG_DEADZONE_PX = 4` is a pointer-movement deadzone: a press must move MORE than 4px (`Math.hypot(dx, dy)` — Euclidean, so a diagonal wobble isn't measured as directional) before it counts as a drag rather than a click; the comparison is exclusive, so a press that moves exactly 4px still counts as a click. `TimeGrid`'s `onMouseMove` handler tracks the **running maximum** displacement (`movedPx = Math.max(movedPx, pointerDistance(...))`), not the live or final distance, so a press that wanders out past the deadzone and back to its origin is still a drag.
-
-On mouseup, `computeCreatePayload(date, startMinutes, currentMinutes, pointerMovedPx)` decides the payload:
-
-- Both endpoints are snapped independently to `SNAP_INTERVAL` (30 min), so a genuine drag of under one bucket-width nets to zero minutes and is indistinguishable from a click by duration alone — `pointerMovedPx` is what tells them apart.
-- If the press counted as a drag (`pointerMovedPx > DRAG_DEADZONE_PX`) and the snapped interval is under 30 minutes, `end` is floored up to a full `SNAP_INTERVAL`. A drag flush against the end of the day (`start` already at `MAX_MINUTES`) can't extend `end` any further — `clamp()` just caps it back to `start` — so in that case `start` is pulled back by `SNAP_INTERVAL` instead, backdating the interval rather than losing it.
-- A click (press never exceeded the deadzone) always yields `startTime` with no `endTime`, which is what opens `EventModal` at its default duration.
-
-**The bug this fixed**: before the deadzone existed, the drag/click distinction had a zero-pixel threshold — any pointer movement at all, including a trackpad wobble during an intended click, was treated as a drag and floored to a 30-minute event, while a perfectly still click correctly produced none. `DRAG_DEADZONE_PX = 4` matches the ~3–5px band most platforms use for this (Windows' `SM_CXDRAG`/`SM_CYDRAG` default to 4px, Chromium ~5px, macOS ~3px).
-
----
-
-## `refreshEvents`
-
-`refresh.ts` derives the visible date range from the current view mode + `currentDate` and calls `store.getEventsForRange(start, end)` to populate the `events` signal. Also refreshes `categories`.
-
-| View | Range |
-|------|-------|
-| `'month'` | First to last day of the calendar month |
-| `'week'` | Week containing `currentDate` (7 days, respects `weekStartsOnMonday`) |
-| `'3day'` | `currentDate` through `currentDate + 2` |
-| `'day'` | `currentDate` only |
-
-`CalendarView` calls `refreshEvents` on mount and in a `createEffect` that tracks `currentView.value`, `currentDate.value`, and `settings.value.weekStartsOnMonday` so any change re-derives the window automatically.
-
----
-
-## View Components
-
-### `CalendarView.tsx` (entry point)
-
-Located in `app/src/bases/CalendarView.tsx`. Receives `basePath?: string` and `onChange?: () => void`. Instantiates `EventStore` with a `BaseBackend` (when `basePath` is set) or `MemoryBackend` (fallback). Mounts all four view sub-components under a `<Switch>` and renders the modal/dialog overlays outside the switch so they are always available.
-
-All four view variants share the same global `events` / `categories` signals; there is no per-view refetch.
-
-### `Toolbar.tsx`
-
-`Toolbar.tsx` no longer brings its own bar or takes an `inline` prop. It exports
-`calendarSlots(): ViewBarSlots` — a **function that returns slots**, not a component — plus a
-`Toolbar()` wrapper that puts those same slots in a standalone `<ViewBar>` for a full-page calendar
-with no base chrome above it (nothing in the app takes that path today; a calendar is always a Bases
-view kind reached through `BaseView`).
-
-`ViewBar` (`app/src/ui/ViewBar.tsx`) is the canonical view header, with **six named regions**, not a
-`children`/spacer API:
-
-| Region | Question it answers |
+| Type | An occurrence falls on |
 |---|---|
-| `identity` | What am I looking at? (no interaction, at most one, leading) |
-| `locus` | Where am I inside it, and how do I move? |
-| `facet` | Which projection of the same thing? |
-| `readouts` | What is its state right now? (never clickable) |
-| `config` | Which settings govern this session? |
-| `actions` | Do a thing. (the primary action is last) |
+| `daily` | every day |
+| `weekly` | every listed weekday |
+| `biweekly` | a listed weekday in every second week, counted from `startDate` |
+| `monthly` | the day of the month of `startDate`; in a shorter month, the last day |
 
-A control's region is decided by **the question it answers, not its shape** — two segmented toggles
-can land in different regions (the calendar's period switcher is `locus`; a projection toggle is
-`facet`) because they answer different questions, even though both are `SegmentedToggle`s. `ViewBar`
-lays the six out as two flex groups — `identity`/`locus`/`facet` leading, `readouts`/`config`/`actions`
-trailing — pushed apart by `justify-content: space-between`; the leading group (`.vb-lead`) is the
-bar's only flexible child, so nothing needs its own `flex: 1` spacer and the two-`flex:1` hazard that
-used to strand the calendar's controls mid-bar can no longer be expressed.
+A monthly series that starts on 2026-01-31 fires on 2026-02-28 and 2026-04-30 instead of skipping those months. A biweekly series counts its weeks from its own `startDate`, so two biweekly series that start in different weeks fire in alternating weeks even with the same `daysOfWeek`. There is no yearly type and no interval other than two weeks.
 
-`calendarSlots()` returns:
+Repeating events are stored once and expanded at read time into one occurrence per matching day in the visible range. The stored `date` of a series is its anchor; the `startDate` and `endDate` in `recurrence` decide which days appear.
 
-- **`locus`** — `DateNav` (prev/next chevrons, Today, the range label) followed by the period
-  `SegmentedToggle` over `[Month, Week, 3 Day, Day]`. The switcher rides in `locus` rather than
-  `facet` because "which span of time is on screen" is the same question the prev/next/range label
-  answer; in a calendar base with its own multiple views, the base's own tabs hold `facet`.
-- **`config`** — the **Categories** button (`IconTextButton` with `icon="Tag"`, label `categories`),
-  toggling `showCategoryPanel`.
-- **`actions`** — the **+ Event** button (`IconTextButton` with `icon="Plus"`, label `event`, `primary`),
-  opening `EventModal` seeded with `date: todayISO(currentDate.value)`.
+## How do I change or delete one occurrence of a repeating event?
 
-The **Settings** gear that opens `CalendarSettings` is not part of `calendarSlots()` — `BaseView.tsx`
-renders it itself in the trailing `actions` group for every base type (calendar included), routing to
-`showCalendarSettings` when `activeType() === 'calendar'` instead of the generic `BaseSettings`
-overlay.
+Editing or deleting a repeating event in the app asks for a scope.
 
-`BaseView.tsx` reads `calendarSlots()` through a `createMemo` (`viewSlots`), not a plain function call
-— the memo is read from four separate slot props (`locus`, `readouts`, `config`, `actions`) on its one
-owned `<ViewBar>`, and since Solid's JSX builds DOM eagerly, a plain function would construct the
-calendar's whole control set four times per render and throw three away, each with its own live
-subscriptions to `currentView`/`currentDate`/`showCategoryPanel`. `CalendarView.tsx` deliberately
-renders **no** `<Toolbar>` of its own; a second call site is exactly how a calendar base used to show
-two stacked bars.
+| Choice | Effect |
+|---|---|
+| this event | only that day changes or disappears |
+| this and following events | that day and every later one change or end |
+| all events | every occurrence of the series changes or goes |
 
-`DateNav.tsx` is the `locus` cluster's own component — prev/next chevrons, Today, and the range label
-are one idea ("where am I, and how do I step") kept together rather than as four loose children.
+Under the hood a series is one or more segments that share a `seriesId`. Deleting one day cuts the series in two:
 
-- **Today** button — sets `currentDate.value = new Date()`
-- **← / →** chevrons — step `currentDate.value` via `stepDate(currentDate.value, currentView.value, dir)`, moving by 1 month / 7 days / 3 days / 1 day per `VIEW_STEP_DAYS`
-- **Date breadcrumb** — `rangeLabel(currentDate.value, currentView.value, weekStartsOnMonday)` (`app/src/calendar/dates.ts`); see [`rangeLabel` for the date breadcrumb](#rangelabel-for-the-date-breadcrumb) below for its real output, not ISO ranges
-- **View toggle** — `SegmentedToggle` over `[Month, Week, 3 Day, Day]`
-- **Categories** — opens `CategoryPanel`
-- **Settings** — opens `CalendarSettings` (rendered by `BaseView.tsx`, not by `calendarSlots()`)
-- **+ Event** button — opens `EventModal` with the current anchor date
-
-### `MonthView.tsx`
-
-Renders a CSS grid of day cells. The grid always starts at the Monday or Sunday (per `weekStartsOnMonday`) of the week containing the 1st of the month, and extends to cover complete rows. Leading/trailing cells from adjacent months are shown dimmed (class `out`). Today's cell gets class `today`. Clicking a cell opens `EventModal` to create an event on that date. Each day's events are rendered as `EventChip` components.
-
-### `WeekView.tsx` / `ThreeDayView.tsx` / `DayView.tsx`
-
-All three delegate to `TimeGrid`, passing the appropriate array of `Date` objects (7 / 3 / 1 day(s)). The only difference is the date array passed as `props.dates`.
-
-### `TimeGrid.tsx`
-
-The shared time-column renderer used by week, 3-day, and day views.
-
-- **Grid height**: `GRID_PX = 1728` px for the full 24-hour span: 72px an hour (four 18px `--row-h` rows), so a quarter hour is 18px.
-- **Snapping**: all dragged times snap to 30-minute intervals.
-- **Max minutes**: `MAX_MINUTES = 23 * 60 + 45` (23:45) to prevent overflow.
-- **Sticky header**: day headers + all-day row are position-sticky so they stay visible while scrolling.
-- **All-day row**: events with no `startTime` are rendered in the sticky all-day row via `EventChip`.
-- **Timed events**: positioned absolutely by `(startMin / 1440) * GRID_PX` px from top. Height is `minutesToPx(max(duration, min(SHORT_MIN, room))) - 3` (floor 8px), where `room` is the gap to the next event's start: anything shorter than 30 minutes grows to one half-hour row (33px after the 3px hairline trim), but never into the next event. The result is clamped to `GRID_PX - top`, so a 23:45 start is cut at midnight. A zero-length drag span floors to 15 minutes (`ZERO_SPAN_MIN`, the ghost only). There is no `+15` padding.
-- **Create drag**: mousedown on empty column area → ghost preview div with accent color; mouseup ≥15 min opens `EventModal` with pre-filled `startTime`/`endTime`; mouseup <15 min opens `EventModal` with only `startTime`.
-- **Move drag**: mousedown on an event chip (threshold 4 px of movement to distinguish from a click) → chip fades to 30% opacity, ghost follows mouse; mouseup calls `store.updateEvent` directly (no recurrence dialog for moves).
-- **Recurring event chips in TimeGrid**: `masterId` and `occurrenceDate` props are passed so `EventChip` can delegate to `RecurrenceDialog` on edit/delete.
-
-### `EventChip.tsx`
-
-The leaf component rendered in both month cells and time-grid columns.
-
-- Background: `color-mix(in srgb, <categoryColor> 85%, transparent)`. No category → class `ghost` (outline only, no fill).
-- Time display: `formatTime(startTime, military)`, optionally `— formatTime(endTime, military)`.
-- Location and link metadata: hidden via `ResizeObserver` if the chip is too short to fit them without overflow.
-- Right-click → `ContextMenu` portal (portaled to `document.body` to escape `overflow: hidden` on the chip).
-- Click → `showEventModal.value = { event, masterId, occurrenceDate }`.
-
-### `EventModal.tsx`
-
-Full create/edit form. Fields: title, date, all-day toggle, start/end time, location, link, description (markdown — rendered as HTML preview on blur, editable on click), category picker, recurrence rule.
-
-**Recurrence UI in EventModal:**
-
-- `SegmentedToggle` for `[None, Daily, Weekly, Biweekly, Monthly]`
-- When `weekly` or `biweekly`: day-of-week checkboxes `[Mon, Tue, Wed, Thu, Fri, Sat, Sun]` (Sunday = `0`). Defaults to the weekday of the event's date.
-- Optional end-date field (shown for any non-None type).
-- `seriesId` is preserved from the existing event when editing; a fresh UUID is generated when creating.
-
-**Keyboard shortcuts**: `Enter` (when not in textarea/select) → save; `Backspace` (when not in input/textarea/select) → delete; `Escape` → close (handled by `<Modal>`).
-
-**Saving a recurring occurrence**: if `modal.masterId` and `modal.occurrenceDate` are set, saving sets `recurrenceAction.value` instead of calling `store.updateEvent` directly, so `RecurrenceDialog` can ask the user for scope.
-
-### `CategoryPanel.tsx`
-
-Modal for managing the category list. Supports:
-
-- **Rename**: double-click a category name → inline `<input>` (Escape cancels, Enter/blur commits). Rename propagates to all events referencing the old name via `store.updateCategory`.
-- **Recolor**: click the color chip → palette popover with 7 theme swatches + a custom `<input type="color">` well. Clicking outside the chip/popover closes it.
-- **Delete**: `×` button; tries to reassign events to a category named `"Uncategorized"` or `"Default"` if one exists (the `CategoryPanel` passes this as `reassignTo`); otherwise clears the category field on affected events.
-- **Add**: text input + color chip for the new category; Enter key triggers add (when not renaming).
-
-Default new-category color seeded from `settings.calendar.defaultCategoryColor` (the `appSettings` unified store, not a local signal).
-
-### `CalendarSettings.tsx`
-
-Modal for mapping base note columns to calendar event fields. Reads the base config via `api.base(basePath)` and writes each mapping back via `api.setProperty(basePath, key, value)`. Column options are the union of the standard columns (`date`, `startTime`, `endTime`, `recurrence`, `category`, `title`, `location`, `link`) and any columns actually found in the base's rows.
-
-| Field key | Role | Required | Default column |
-|-----------|------|----------|----------------|
-| `dateField` | Date | Yes | `date` |
-| `startTimeField` | Start-time | No | `startTime` |
-| `endTimeField` | End-time | No | `endTime` |
-| `recurrenceField` | Recurrence | No | `recurrence` |
-| `categoryField` | Category | No | `category` |
-
----
-
-## Settings
-
-Calendar settings live in `.settings` (the single hidden vault-root settings file) under the `calendar:` section. They are read via the unified `appSettings` store (`app/src/settings.ts`) and proxied through the `settings` adapter in `calendar/state.ts` so existing calendar code retains the `settings.value.X` access shape.
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `calendar.defaultView` | `"month" \| "week" \| "3day" \| "day"` | `"week"` | View shown on first open |
-| `calendar.weekStartsOnMonday` | boolean | `true` | Week grid starts Monday (ISO) vs Sunday |
-| `calendar.militaryTime` | boolean | `false` | 24-hour clock in time labels |
-| `calendar.monthCellMinHeight` | number (px) | `80` | Min height of a day cell in month view |
-| `calendar.timeGutterWidth` | number (px) | `50` | Width of the hour-label gutter in week/day views |
-| `calendar.defaultCategoryColor` | string (hex) | `"#8296C6"` | Default color pre-filled for new categories |
-
-Settings are **not** stored in `localStorage` — they persist in `.settings` via `POST /set-setting` (the backend is the single writer).
-
----
-
-## Testing
-
-Tests use Bun's native test runner:
-
-```bash
-bun test calendar   # run calendar tests — NOT `bun test core -- calendar`, which silently runs the
-                     # entire suite instead of filtering (see docs/contributing/testing.md)
+```text
+before   daily  2026-05-01 to open-ended
+delete   2026-05-03
+after    daily  2026-05-01 to 2026-05-02
+         daily  2026-05-04 to open-ended        (same seriesId)
 ```
 
-Key test files:
+Editing one day does the same cut and adds a standalone single event for that day carrying your changes. If the day is the first of the series, the head segment is dropped instead of left empty. Editing "this and following" ends the old segment the day before and starts a new segment that gets a fresh `seriesId`, so you can change the rule of the tail: a daily series can become weekly-on-Mondays from a chosen date. Deleting "this and following" just sets `endDate` to the day before.
 
-- `app/src/calendar/EventStore.test.ts` — covers add/delete/edit for non-recurring events, daily recurrence expansion, `deleteOccurrence`, `editSeries`, `editFollowing` (including rule-type changes), and category delete reassignment.
-- `app/src/calendar/dates.test.ts` — covers `addDays`, `formatTime`, `expandRecurrence` for all four rule types, `endDate` truncation, monthly edge cases (31st → Feb 28/29, 30-day months), `startOfWeek` (both Sunday-first and Monday-first, including "on the boundary day" cases), and `weekRange`.
-- `app/src/calendar/state.defaultView.test.ts` — covers `reconcileDefaultView` pure logic.
-- `app/src/calendar/state.settings.test.ts` — covers the unified-settings adapter.
+## How do categories work?
 
----
+A category is a name and a colour, declared in the base's `categories` frontmatter list. An event refers to a category by name in `category`, or by several names in `categories`.
 
-## Gotchas and Edge Cases
+```yaml
+categories:
+  - name: Work
+    color: teal
+  - name: Personal
+    color: "#e06c75"
+```
 
-- **Global signals, one calendar at a time**: `currentView`, `currentDate`, `events`, `categories`, and `showEventModal` are module-level singletons. Opening two calendar panes simultaneously would race on shared state. In practice the UI routes one calendar at a time.
-- **`todayISO` is local time**: always suffix `"T00:00:00"` when constructing `new Date` from ISO strings to avoid UTC-midnight/timezone-offset mismatches. The internal `EventStore.ts` and `dates.ts` do this consistently.
-- **Recurring events are expanded at read time**: `getEventsForRange` iterates the master segments and calls `expandRecurrence`. There is no pre-expanded table. Each `EventChip` for a recurring occurrence carries its master's `id` as `masterId` and the specific occurrence date as `occurrenceDate`.
-- **`getCategories()` always returns a new array**: required because Solid signals skip updates when the reference is unchanged. The `categories.value = store.getCategories()` assignment after every mutation propagates reactivity.
-- **`save()` in `BaseBackend` is fire-and-forget**: a slow or failed write will not surface an error to the user. The next server version poll will show the last successfully-written state.
-- **`biweekly` week-parity**: the even/odd week is counted from `startDate`, not from any calendar epoch. Two series that start on different weeks will fire on alternating weeks relative to each other even if they share the same `daysOfWeek`.
-- **Category deletion with no `reassignTo`**: calling `store.deleteCategory(name)` (without a second argument) sets `category: undefined` on affected events (verified in test). In `CategoryPanel`, the code tries to find a `"Uncategorized"` or `"Default"` category as a stable reassignment target before passing it; there is no fallback beyond that.
+A `color` is either a palette token or any CSS colour. The tokens are `accent`, `teal`, `blue`, `violet`, `green`, `gold` and `rose`. Store the token rather than a hex value and the category recolours itself when the theme changes.
 
-Source: `core/src/calendar.ts`, `core/src/bases/recurrence.ts`, `cli/src/commands/calendar.ts`, `app/src/calendar/EventStore.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/types.ts`, `app/src/calendar/state.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/ui/ViewBar.tsx`, `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/dates.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/gcal/sync.ts`, `core/src/settings.ts`
+- **Chips.** An event chip draws a frame and a faint wash in its category colour. An event with several categories keeps one wash and splits its frame into one band per category, up to three, then shows `+n` for the rest. An event whose category is not declared in `categories` draws as an outline with no fill.
+- **Rename.** Renaming a category renames it on every event that uses it, in both `category` and `categories`.
+- **Recolor.** Pick a palette swatch or a custom colour in the category panel. New categories start from the `calendar.defaultCategoryColor` setting.
+- **Delete.** Deleting a category clears it from every event that carried it. If a category named `Uncategorized` or `Default` exists, the events move to it instead. The app offers undo after a delete.
+
+A duplicate or blank category name is refused.
+
+## How do I edit a calendar from the shell?
+
+The `bismuth calendar` commands read the base file, change events or categories, and write it back, so an agent or script never edits raw YAML by hand. They need no running server, and the app picks up each write live. Every command takes the calendar's path inside the vault as `<basePath>`; the vault comes from `--vault` or `BISMUTH_VAULT`.
+
+| Command | Does |
+|---|---|
+| `calendar bases` | lists every calendar base in the vault with its event count and category names |
+| `calendar create <basePath> [--title '...']` | creates an empty calendar, adding `.md` if missing; fails if the path exists |
+| `calendar list <basePath> [--from D --to D]` | lists stored events, with repeating events unexpanded and their real ids |
+| `calendar range <basePath> <from> <to>` | lists concrete occurrences in the range, with repeats expanded |
+| `calendar day <basePath> <date>` | lists one day's occurrences |
+| `calendar get <basePath> <id>` | prints one event as stored |
+| `calendar search <basePath> <text> [--from D --to D]` | searches title, description, location and category |
+| `calendar overlaps <basePath> <date>` | lists pairs of timed events that overlap that day |
+| `calendar add <basePath> --date D --title '...'` | adds an event |
+| `calendar move <basePath> <id> [--date D --start T --end T]` | changes an event's date or times |
+| `calendar delete <basePath> <id>` | deletes an event |
+| `calendar override <basePath> <id> <date> [fields]` | changes one occurrence of a repeating event |
+| `calendar delete-occurrence <basePath> <id> <date>` | removes one occurrence |
+| `calendar categories <basePath>` | lists the categories |
+| `calendar category add <basePath> <name> [--color C]` | adds a category; the colour defaults to `accent` |
+| `calendar category update <basePath> <name> [--rename N] [--color C]` | renames or recolours, cascading a rename into events |
+| `calendar category remove <basePath> <name> [--reassign OTHER]` | removes a category, clearing or reassigning it on events |
+
+`calendar add` takes its fields as `--title`, `--date`, `--start`, `--end`, `--location`, `--link`, `--description`, `--category`, `--recurrence '<json>'`, or all at once as `--json '{...}'`; flags override `--json`. `--rrule 'FREQ=WEEKLY;BYDAY=MO'` takes an iCalendar rule instead of `--recurrence` and moves the event's date to the first matching day. The rule subset is `FREQ=DAILY|WEEKLY|MONTHLY`, `INTERVAL=2` with weekly (biweekly), `BYDAY` and `UNTIL`; anything else, including `COUNT` and `YEARLY`, is refused with `CALENDAR_RRULE_FORMAT_ERROR`.
+
+Use `calendar list` to find an id, because `calendar range` and `calendar day` return occurrences of repeating events rather than the stored master. Changing a repeating master's `--start` or `--end` with `calendar move` changes every occurrence. The CLI has no "this and following" command; use `calendar override` and `calendar delete-occurrence` for single days. Every command is listed with its flags in the [CLI reference](../cli/reference.md).
+
+## How does a calendar edit interact with Google sync?
+
+Edits from the CLI are safe on a Google-synced calendar. Each command keeps event ids and stamps `localUpdated` the way the app does, and the sync bookkeeping lives outside the vault, so rewriting the base file cannot corrupt it. A locally deleted event is deleted from Google on the next sync. See [Google Calendar sync](../gcal/overview.md).
+
+## How it works
+
+### Storage
+
+The app edits events through `EventStore` (`app/src/calendar/EventStore.ts`), which holds the events and categories in memory and hands every change to a storage backend. `BaseBackend` (`app/src/bases/calendarBase.ts`) reads the base file, keeps its whole frontmatter, and writes the file back with only `categories` and the event rows changed; the write is not awaited, so a failed write is not shown to the user. `MemoryBackend` is the in-memory fallback for a calendar with no file, and for tests.
+
+The event rows are a YAML list, read and written through `parseRows` and `serializeRows` (`core/src/bases/rows.ts`). `app/src/bases/calendarSerialize.ts` maps rows to events. `recurrence` and `categories` are `JSON.stringify`d into their cells.
+
+### The headless module
+
+`core/src/calendar.ts` is the same model with no UI and no I/O, so the CLI, the daemon and agents can use it. Every function is a pure transform; the CLI in `cli/src/commands/calendar.ts` does the read, parse, mutate, serialize and write.
+
+| Group | Functions |
+|---|---|
+| Parse and write | `parseCalendarFile`, `serializeCalendarFile`, `categoriesOf`, `isCalendarBase`, `emptyCalendarFile` |
+| Read | `eventsForRange`, `eventsForDay`, `eventsInWindow`, `searchEvents`, `detectOverlaps`, `findEvent` |
+| Change events | `addEvent`, `moveEvent`, `deleteEvent`, `overrideOccurrence`, `deleteOccurrence`, `recurrenceFromRRule` |
+| Change categories | `addCategory`, `updateCategory`, `removeCategory` |
+
+`serializeCalendarFile` keeps every frontmatter key and writes `categories` only when the list is non-empty. `eventsForRange` expands repeats and sorts by date then start time; `eventsInWindow` returns stored events without expanding, matching a series by whether its `startDate` to `endDate` window overlaps the range. `detectOverlaps` compares only events that have both a start and an end, using half-open intervals, so back-to-back events do not overlap.
+
+`overrideOccurrence` and `deleteOccurrence` implement the same series cut as the app. Category renames cascade into events and re-stamp `localUpdated` on each event they change, because category is part of the Google sync signature. Failures use `createError` with `CALENDAR_EVENT_NOT_FOUND`, `CALENDAR_NOT_RECURRING`, `CALENDAR_CATEGORY_EXISTS`, `CALENDAR_CATEGORY_NOT_FOUND`, `CALENDAR_CATEGORY_FORMAT_ERROR` or `CALENDAR_RRULE_FORMAT_ERROR`.
+
+### Recurrence engine
+
+`core/src/bases/recurrence.ts` is the one recurrence implementation; the app, the CLI and the HTML export all import it. `expandRecurrence(recurrence, rangeStart, rangeEnd)` walks day by day from the later of `startDate` and `rangeStart` to the earlier of `endDate` (or 2100-01-01) and `rangeEnd`, asking `matchesRecurrence` of each day, so its cost follows the range, not the age of the series. The biweekly test is `floor(daysSinceStart / 7)` being even, and any day before `startDate` never matches. Date arithmetic uses local midnight, never UTC.
+
+The app's scope dialog (`RecurrenceDialog`) calls `EventStore`'s `editOccurrence`, `editFollowing`, `editSeries`, `deleteOccurrence`, `deleteFollowing` or `deleteSeries`. The dialog opens when a chip or the event form edits or deletes a repeating event.
+
+### Category colours
+
+`app/src/calendar/categoryColor.ts` resolves a stored colour: a palette token becomes `var(--<token>)`, anything else passes through, and a missing colour is `var(--accent)`. `eventCategoryNames` prefers the `categories` list over `category`, and `categoryBands` builds the hard-edged frame bands with `MAX_BANDS` (3) and `categoryOverflow` for the `+n`. Category writes go through `app/src/calendar/categoryActions.ts`.
+
+Source: `core/src/calendar.ts`, `core/src/bases/recurrence.ts`, `core/src/bases/rows.ts`, `cli/src/commands/calendar.ts`, `app/src/calendar/EventStore.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/categoryActions.ts`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`

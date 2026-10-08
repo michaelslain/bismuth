@@ -1,397 +1,186 @@
-# Vault Attachments & Embeds
+# Attachments and embeds
 
-Bismuth embeds and serves vault media through two syntaxes, an asset upload pipeline, and the `attachments:` settings that control where new files land. This page covers:
+An embed shows a vault file inside a note: an image, a PDF, audio, video, a live HTML page or another note.
+You write it as `![[file]]`, drag or paste files in to create attachments, and the `attachments:` settings choose where new files land.
+Read this page for the embed syntax, resizing, adding files, and the settings; the matching rules for plain links are on [Wikilinks and tags](wikilinks-tags.md).
 
-- The two embed syntaxes, `![[file]]` and `![](url)`
-- How each media kind renders: image, PDF, audio, video, live HTML artifact, `.md` transclusion
-- The drag-resize mechanism and the persisted `|WxH` size
-- How the backend resolves asset filenames via `resolveAsset`
-- The `POST /asset` upload endpoint, its size cap, and collision avoidance
-- The `attachments` settings section controlling where new files land
-
----
-
-## Embed Syntaxes
-
-The editor supports two embed patterns, both parsed by `embedBlock.ts`:
-
-```text
-EMBED_RE = /!\[\[([^\]\n]+?)\]\]|!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
+```markdown
+![[photo.png|300]]
+![[report.pdf#page=3]]
+![[clip.mp4]]
+![[viz.html#region=form]]
+![[Other Note]]
+![remote](https://example.com/photo.jpg)
 ```
 
-### Wikilink-style: `![[target#fragment|size]]`
+Each line sits on its own, so each renders as a block in the note. Click an embed or move the cursor onto its line to see and edit the raw text.
 
-- `![[photo.png]]` — embed image
-- `![[report.pdf#page=3]]` — embed PDF, opening on page 3
-- `![[clip.mp4]]` — embed video
-- `![[sound.mp3]]` — embed audio
-- `![[viz.html]]` — embed a live, interactive HTML artifact in a sandboxed iframe
-- `![[viz.html#region=form]]` — same, deep-linked via the artifact's `location.hash`
-- `![[Other Note]]` — transclude a markdown note (any target without a recognised media extension is treated as a note)
-- `![[photo.png|300]]` — image constrained to 300 px wide (aspect-locked)
-- `![[photo.png|300x200]]` — image constrained to 300×200 px
-- `![[report.pdf|800x600]]` — PDF iframe 800×600 px
+## Which embed syntaxes are supported?
 
-The `#fragment` and `|size` parts are parsed by `parseWikilink` and `parseSize`:
+Two forms exist. Both render the same way; only the wikilink form carries a size in a slot of its own.
 
-```text
-parseSize("300")    → { width: 300 }
-parseSize("300x200") → { width: 300, height: 200 }
-parseSize("text")   → {}           // non-numeric alias, ignored for sizing
-```
+| Form | Example | Notes |
+|---|---|---|
+| Wikilink embed | `![[photo.png]]` | The file is found by name anywhere in the vault. |
+| With size | `![[photo.png\|300]]`, `![[photo.png\|300x200]]` | Width, or width by height, in pixels. |
+| With a fragment | `![[report.pdf#page=3]]` | Opens a PDF on that page. For HTML, the fragment becomes the page's `location.hash`. |
+| Markdown image | `![alt](photo.png)` | A vault path or a URL. |
+| Remote image | `![](https://example.com/p.jpg)` | `https:`, `http:`, `data:` and `blob:` URLs always render as images. |
+| Markdown with width | `![alt\|300](photo.png)` | The width after the last `\|` in the alt text. |
 
-Only `![[...]]` wikilink embeds can be drag-resized and have their size persisted.
+Embed syntax inside a code span or fenced block is shown as text and not rendered. A size alias that is not a number (`![[photo.png|caption]]`) is ignored.
 
-### Markdown-style: `![alt](url)`
+## What kinds of file can I embed?
 
-- `![](https://example.com/photo.jpg)` — remote image (URL is used as-is)
-- `![](photo.png)` — vault image (classified by extension, resolved via `/asset`)
-- `![](clip.mp4)` — vault video
-- `![](doc.pdf#page=2)` — vault PDF, page 2
-- `![alt text](photo.png)` — image with alt text
+The extension decides how an embed renders.
 
-Remote URLs starting with `https?:`, `data:`, or `blob:` are treated as images regardless of extension. Vault paths are classified the same way as wikilinks (by extension). `![](url)` embeds are **not** resizable — only `![[...]]` wikilink embeds get the resize handle.
-
----
-
-## Media Classification
-
-Classification is done purely by file extension in `kindForTarget()`:
-
-| Extensions | Kind |
+| Extensions | Renders as |
 |---|---|
-| `png jpg jpeg gif webp svg avif bmp ico` | `image` |
-| `pdf` | `pdf` |
-| `mp3 wav ogg m4a flac aac opus` | `audio` |
-| `mp4 webm mov m4v ogv mkv` | `video` |
-| `html htm` | `html` (live sandboxed iframe) |
-| anything else (no extension, or `.md`, `.txt`, etc.) | `note` (transclusion) |
+| `png jpg jpeg gif webp svg avif bmp ico` | image |
+| `pdf` | PDF viewer |
+| `mp3 wav ogg m4a flac aac opus` | audio player |
+| `mp4 webm mov m4v ogv mkv` | video player |
+| `html htm` | live HTML page in a sandboxed frame |
+| `draw` | not embeddable; the line stays plain text |
+| anything else, or no extension | another note, shown inline |
 
-A bare `![[Note Name]]` with no extension always becomes a note transclusion. A `![[foo.xyz]]` with an unrecognised extension also falls through to note transclusion (and will fail to render if `foo.xyz` is not a markdown note).
+`![[Other Note]]` transcludes a note. A name with an unrecognised extension (`![[foo.xyz]]`) is also tried as a note, and shows `not found: foo.xyz` if no such note exists.
 
----
+## How does each kind render?
 
-## Rendering Behaviour per Kind
+- Image. With no size it shows at its natural width, up to the editor width. An unsized embed in the middle of a line is capped at 1.4 em tall so it flows like an icon.
+- PDF. The same page viewer as the PDF preview tab, in a card whose header names the file and carries a zoom group and a `p. N / M` readout. The default size is full width and 520 px tall. `#page=N` opens page N.
+- HTML. A live, interactive page: its inline scripts run. Default size is full width and 520 px tall. See [Security of HTML embeds](#security-of-html-embeds) for the isolation it runs under.
+- Audio. A player at most 420 px wide.
+- Video. A player that fits the editor width.
+- Note. The note's body, rendered as sanitised markdown without its frontmatter, under a small title bar with the note's name and an accent border. A missing note shows `note not found: <target>`, and a read failure shows `failed to load: <target>`.
+- Broken image. Shows `can't load image: <name>` in place.
 
-### Images
+An embed that is the only thing on its line, or follows a list marker (`- ![[photo.png]]`), renders as a block. An embed in the middle of text renders inline.
 
-Block (standalone line) images:
-- Wrapped in a `<div class="cm-embed-block">`
-- Sized on load: if no `|W` is set, defaults to `min(naturalWidth, editorWidth)`
-- Drag-resizable via a custom aspect-locked corner handle (see Resize section)
-- `![[icon|18]]` on a non-standalone line → inline `<span class="cm-embed-inline">`
+## How do I resize an embed?
 
-Inline images use `img.style.width/height` directly; block images use the wrapper `div` dimensions.
+Drag the bottom-right corner of an image, PDF, video or HTML embed that sits on its own line. The new size is written back into the note, so it survives a reload.
 
-### PDFs
+| Kind | Resize | Written as |
+|---|---|---|
+| Image | Keeps its aspect ratio; width only | `![[photo.png\|300]]` |
+| PDF, video, HTML | Free width and height | `![[report.pdf\|800x600]]` |
+| Markdown image | Keeps its aspect ratio; width only | `![alt\|300](photo.png)` |
 
-Block PDFs only (no inline PDF). An `<iframe>` is rendered with browser viewer controls suppressed:
+The resize handle is invisible; the pointer changes to a diagonal arrow over the corner. Audio and note embeds do not resize.
 
-```ts
-frame.src = `${assetUrl}#${[page, "toolbar=0", "navpanes=0", "view=FitH"].filter(Boolean).join("&")}`
-```
+## How do I add attachments?
 
-Default size: `100%` wide, `520px` tall. If `|WxH` is set: `W`px wide, `H`px tall. Free-resize (not aspect-locked) via native CSS `resize: both`.
+New files can come from a paste, a drop onto a note, a drop onto the file tree, or a drag from the tree into a note.
 
-### HTML Artifacts (live, interactive)
+- Paste an image. The image is saved to the attachments folder under the `attachments.naming` template and embedded as `![[name]]`.
+- Drop files onto a note. By default they are copied into the attachments folder and embedded. Hold Option/Alt while dropping, or set `attachments.onDrop` to `reference`, to link the file at its original place instead.
+- Drop things from other apps onto a note.
+  Images dragged out of a browser, Photos or Messages files, links and selected text are handled by what the drag carries.
+  Real file paths win over image bytes, then an image inside dragged HTML, then an image URL, then any other URL, then plain text.
+  A browser image is downloaded into the attachments folder and embedded.
+  A link with no image is inserted as plain text.
+  A drag that carries nothing readable shows one toast, `Couldn't read that drop`.
+  Dragging selected text within the editor moves it instead.
+- Drag a tree row into a note. Dropping an image or PDF row onto a note's centre inserts `![[name]]` at the drop point; a note row inserts a `[[link]]`. The name is path-qualified when another file shares it.
 
-`![[viz.html]]` (or `.htm`) renders the **live** HTML file in a sandboxed `<iframe class="cm-embed-html">` — its inline `<script>`s run, so a self-contained artifact (e.g. a force-directed SVG graph built entirely in JS, no network) stays fully interactive. An iframe is the **only** path: every other raw-HTML surface routes through `sanitizeHtml.ts` and DOMPurify strips `<script>`, which would kill the artifact. Modeled on the PDF branch (both `createElement("iframe")`, bypassing the sanitizer). Same chrome, default size, and free-resize as PDFs (`html` is in `RESIZABLE_KINDS`). A `#fragment` (`![[viz.html#region=form]]`) is appended to `frame.src` so the artifact can deep-link via `location.hash`.
+### Dropping files onto the file tree
 
-**Security — two required layers (see the comments in `embedBlock.ts` + `server.ts`):**
+Dropping files from outside the app onto the sidebar creates vault files in the folder under the cursor, or the vault root if you drop on empty tree space.
+Only file types the sidebar lists are accepted (images, PDFs, `.md`, `.draw`, `.sheet`, `.yaml`, `.yml`); the toast names anything skipped and counts what was created.
+A HEIC or HEIF photo is converted to JPEG first.
+Name collisions get a numeric suffix.
 
-1. **`sandbox="allow-scripts"` on the iframe, WITHOUT `allow-same-origin`.** The artifact's document gets an *opaque* origin, so it cannot script-read the app's DOM / `localStorage` / cookies. Adding `allow-same-origin` would hand it the app's real origin and full same-origin access — never do it.
-2. **A locked-down CSP on the served file.** Sandbox alone does **not** protect the vault: relative URLs inside the artifact resolve against the core server (its document URL), and the API is unauthenticated with `Access-Control-Allow-Origin: *` (`withCors`), so `fetch('/file?path=private.md')` from the artifact would succeed (`ACAO: *` matches the frame's null origin). `GET /asset` therefore stamps every `.html`/`.htm` response with:
+## Which settings control attachments?
 
-   ```http
-   Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'
-   ```
+The `attachments:` section of `.settings` holds three keys.
 
-   `connect-src 'none'` kills `fetch`/XHR/WebSocket/EventSource; `form-action 'none'` blocks form POSTs; `default-src 'none'` + the narrow allowances block every external subresource. A self-contained artifact still runs fully (inline `<script>`/`<style>`, inline SVG, `data:`/`blob:` images). Both layers are load-bearing; neither is optional.
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `attachments.folder` | string | `attachments` | Vault-relative folder for new pasted and dropped files. Created on first use. `""` is the vault root and `.` is the current note's folder. |
+| `attachments.onDrop` | `copy` or `reference` | `copy` | Whether a file dragged in from outside is copied into the vault or referenced in place. Pasted images always copy. |
+| `attachments.naming` | string | `Pasted image {timestamp}` | File name for pasted images; the extension is added from the image type. `{timestamp}` is a sortable date-time stamp. |
 
-### Audio
+`reference` is best-effort in the browser build: the file is outside the vault, so the embed only resolves on desktop.
+Embeds resolve by file name, so changing `attachments.folder` or moving a file later never breaks existing `![[name]]` embeds.
+Full key list: [Settings reference](../settings/reference.md).
 
-A `<audio controls>` element, `min(420px, 100%)` wide. Not resizable.
+## What goes wrong silently?
 
-### Video
+- Two files with one name. `![[photo.png]]` shows the first match found while walking the vault. Use `![[folder/photo.png]]` to pick one.
+- A replaced file looks stale. The app caches asset bytes for 60 seconds. Hard-reload to see a same-name replacement sooner.
+- An unknown extension tries a note. `![[data.csv]]` renders as a note embed and fails.
+- A drawing embed. `![[sketch.draw]]` stays plain text; drawings are not embeddable.
 
-A `<video controls>` element. Resizable (free, not aspect-locked) if the embed is `![[...]]` and standalone.
+## How it works
 
-### Note Transclusion (`.md` transclusion)
+### Resolving an embed target
 
-Fetches the note via `api.read(resolvedPath)`, strips YAML frontmatter, renders the body as sanitised markdown (via `renderMarkdown`). The widget shows:
+`resolveAsset(root, target)` in `core/src/files.ts` finds the file an embed names, filename first:
 
-- A small title bar with the bare filename (last path segment, no `.md` extension)
-- The rendered body below
+1. Strip any `#fragment` and `|size`.
+2. If the cleaned target is an existing vault-relative file, use it.
+3. Otherwise take the last path segment and return the first file anywhere in the vault with that name.
+4. If nothing matches, return `null`, which `GET /asset` turns into a 404.
 
-Styled with a left accent border (`var(--accent)`) and a surface-2 background. If the note is not found or read fails, shows `⚠ note not found: <target>` / `⚠ failed to load: <target>`.
+A target that escapes the vault in step 2 falls through to the name search rather than throwing, so a bad embed target cannot crash the server. The name search walks the vault on each miss; the 60-second browser cache avoids repeating it.
 
-Path resolution uses `resolveNotePath` (wikilink filename-first resolution) on the available notes list, then appends `.md` if needed.
+### The asset routes
 
----
+These routes live in `core/src/routes/vault.ts`.
 
-## Cursor-reveal Behaviour
+| Route | Purpose |
+|---|---|
+| `GET /asset?path=<target>` | Stream the file with a content type from its extension and `Cache-Control: private, max-age=60`. A miss is a 404 `asset not found` with `no-store`. |
+| `POST /asset?path=<dest>` | Upload raw bytes to a vault-relative destination. Returns `{ path }`, the path actually written. |
+| `POST /asset/fetch` | Owner only. Body `{ url, path }`. Downloads a remote image into the vault. |
+| `POST /convert/heic` | Converts HEIC or HEIF bytes to JPEG and writes nothing. |
 
-- **Standalone embed** (the only non-whitespace content on a line): when the cursor is anywhere on that line, the raw source is shown for editing. Moving the cursor off the line re-renders the widget.
-- **Inline embed** (mid-paragraph): when the cursor is anywhere within the `![[...]]` or `![](...)` span, the raw source is revealed. Moving the cursor outside re-renders.
+Rules each route applies:
 
-This is handled in `decorationsFor()` by skipping the `Decoration.replace` for tokens whose range contains the cursor.
+- `GET /asset` answers 403 `forbidden` to a request without the owner token when the file is restricted for that caller's channel; see [Visibility controls](visibility.md).
+- `POST /asset` rejects a destination with an empty, `.` or `..` segment, or any segment that starts with a dot, with `400 invalid attachment path`. The dot rule blocks `.git/hooks/pre-commit`, which the next git-backed save would run.
+- `POST /asset` and `POST /convert/heic` reject bodies over 100 MB (`MAX_ASSET_BYTES`) with 413, checking `Content-Length` before buffering and the real size after.
+- `uniqueAssetPath` picks the final name: the requested path if free, else ` 1`, ` 2`, up to ` 9999` appended to the stem, else a timestamp.
+- Uploads are not mutating routes, because attachments never enter the graph or search caches. The note edit that inserts the embed triggers its own invalidation, and the file watcher updates the sidebar.
 
----
+`POST /asset/fetch` (`core/src/assetFetch.ts`) follows at most five redirects and refuses loopback, private, link-local and carrier-grade-NAT addresses, re-checking each hop.
+A response whose content type is not `image/*` fails with `415 not an image`, and the file extension is corrected from the response's content type.
 
-## Resize and `|WxH` Persistence
+### Security of HTML embeds
 
-Only `![[...]]` wikilink embeds of kind `image`, `pdf`, `video`, or `html` (`RESIZABLE_KINDS`) are resizable. `![](url)` embeds are not resizable. (HTML uses the same free/`|WxH` resize as PDF/video.)
-
-### Image resize (aspect-locked)
-
-Images use a **custom corner handle** (`div.cm-embed-handle`, invisible 20×20 px bottom-right corner, `cursor: nwse-resize`). On drag:
-
-1. `pointerdown` on the handle captures the pointer.
-2. `pointermove` computes `newW = clamp(40, startW + dx, editorWidth)` and sets both `wrap.style.width = newW` and `wrap.style.height = newW / aspect` simultaneously — this eliminates native-resize/JS conflict and prevents flicker.
-3. On `pointerup`/`pointercancel`, if the width changed by more than 1 px, `commitEmbedSize(view, dom, `${w}`)` is called. The size is persisted as `|W` only (width only) since height is always derived from the aspect ratio.
-
-### PDF / video resize (free)
-
-PDF and video use native CSS `resize: both` (`overflow: hidden`, `.cm-embed-resizable` class). The native drag corner is invisible (`::-webkit-resizer { display: none }`) but functional. `pointerdown` records start dimensions; `pointerup` persists `|WxH` if either dimension changed by more than 1 px.
-
-### Commit mechanics (`commitEmbedSize`)
-
-Called with `(view, dom, size)` where `size` is either `"W"` (image) or `"WxH"` (pdf/video).
-
-1. `view.posAtDOM(dom)` locates the character position of the embed widget in the document.
-2. The line at that position is searched for `![[...]]` patterns.
-3. The embed whose range contains the position is chosen (falling back to the first embed on the line).
-4. The part before any existing `|` is kept (preserving the target and `#fragment`); the new size is appended: `![[target#frag|size]]`.
-5. A CodeMirror transaction replaces the old embed source with the new one.
-
-The result is that resize is always written back into the markdown, so it survives reload.
-
----
-
-## Asset Resolution (`resolveAsset`)
-
-The backend resolves embed targets **filename-first**, matching wikilink semantics. Called from `GET /asset`.
-
-### Algorithm (in order)
-
-1. Strip `#fragment` and `|size` suffixes from the target.
-2. Try an exact vault-relative path: `resolveInVault(root, clean)` + `existsSync` + `isFile`. If it exists, return it.
-3. Fall back to basename search: extract the last path segment as `base`, then `walkDir` the entire vault for a file with `d.name === base`. Return the first match.
-4. If nothing matches, return `null` → 404.
-
-```ts
-// 1. Exact match:  "attachments/photo.png" → resolves if that path exists
-// 2. Basename:     "photo.png"             → finds "projects/assets/photo.png" anywhere
-```
-
-Key properties:
-- Moving an attachment to a different subfolder **does not break** `![[photo.png]]` — the basename search still finds it.
-- Path traversal is blocked by `resolveInVault` (throws `EINVAL` if the resolved path escapes the vault root).
-- The walk is per-request on a cache miss; browser `Cache-Control: private, max-age=60` caches the served bytes for 60 seconds so repeated views of the same note don't re-walk the vault.
-
----
-
-## `GET /asset` Endpoint
+`![[viz.html]]` renders in an `<iframe sandbox="allow-scripts">` without `allow-same-origin`, so the page has an opaque origin and cannot read the app's DOM, storage or cookies.
+Sandboxing alone does not stop it fetching vault content from the core server, so `GET /asset` also stamps every `.html` and `.htm` response with a Content-Security-Policy:
 
 ```http
-GET /asset?path=<target>
+Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'
 ```
 
-- `path` (required): the raw embed target (e.g. `photo.png`, `attachments/photo.png`, `report.pdf`). URL-encoded.
-- Calls `resolveAsset(vault, path)`, returns the file via `Bun.file(abs)`.
-- Response headers: `Content-Type` inferred by `Bun.file` from the file's extension (falls back to `application/octet-stream`); `Cache-Control: private, max-age=60`.
-- Returns 404 `"asset not found"` if `resolveAsset` returns `null`.
-- **Read-only**, NOT a mutating route (no cache invalidation, no SSE broadcast).
+`connect-src 'none'` blocks fetch, XHR, WebSocket and EventSource; `form-action 'none'` blocks form posts; `default-src 'none'` blocks every other external resource.
+A self-contained page with inline scripts, styles, SVG and `data:` or `blob:` images still runs.
+Both layers are required.
+Raw HTML anywhere else in the app goes through `sanitizeHtml.ts`, which strips scripts, so an iframe is the only way to keep a page interactive.
 
-The frontend builds the URL via:
+### Rendering and resize code
 
-```ts
-api.assetUrl(target)  // → `${BASE}/asset?path=${encodeURIComponent(target)}`
-```
+`app/src/editor/embedBlock.ts` scans the document for `EMBED_RE`, which matches `![[...]]` and `![alt](url "title")`, after `stripCode` has masked code.
+A `StateField` caches the tokens and recomputes them only when the text changes; moving the cursor only re-derives which embeds to reveal.
+`app/src/editor/embedSpec.ts` holds the pure parts: `kindForTarget`, `parseSize`, `altSize`, `specForWikiEmbed`, `specForMarkdownImage`, `pageIndexFromFragment` and `computeSizeEdit`.
 
-This is used as the `src` of `<img>`, `<iframe>`, `<audio>`, and `<video>` elements in `EmbedWidget.toDOM()`.
+Image resize uses a custom 20 by 20 px corner handle (`div.cm-embed-handle`) that sets width and height together on every pointer move, clamped between 40 px and the editor width.
+PDF, video and HTML use native CSS `resize: both`.
+On release, `commitEmbedSize` locates the embed with `view.posAtDOM`, builds the edit with `computeSizeEdit` (keeping the target and fragment, replacing the part after `|`), and dispatches it as a transaction.
+If the widget's position cannot be found, the commit is skipped without error.
+A click on an embed's chrome moves the caret onto its source; audio, video, frames, links, the handle and the PDF controls keep their own clicks.
 
----
+### Drop handling
 
-## `POST /asset` Upload Endpoint
+`planDrop` in `app/src/dropIntake.ts` picks the actions, and `runDropActions` in `app/src/Editor.tsx` carries them out.
+A Photos or Messages file promise arrives through the macOS-only `read_drag_pasteboard` command, which writes it under `~/Library/Caches/bismuth-drop/`; subfolders older than an hour are swept on the next drop.
+The tree drop plan is `planTreeUploads` in `app/src/fileTreeDrop.ts`.
+On the desktop app a native OS drop arrives as the `bismuth-native-drag` window event (`app/src/nativeDrop.ts`) with absolute paths read through `@tauri-apps/plugin-fs`, and `claimNativeDrop` in `app/src/nativeDropRouting.ts` ensures only one surface takes each drop.
+The folder under the cursor comes from the nearest `data-drop-folder` or `data-drop-root` attribute.
+A tree row dragged into a note uses `descriptorEmbedPath` and `embedFor` in `app/src/dnd/noteRef.ts`.
 
-```http
-POST /asset?path=<desired-vault-relative-path>
-Content-Type: application/octet-stream
-<raw bytes>
-```
-
-- `path` (required query param): the desired vault-relative destination, e.g. `attachments/Pasted image 20240601.png`. URL-encoded.
-- Body: raw binary bytes (`ArrayBuffer`).
-- Returns `{ path: string }` — the **actual** path written (may differ from the requested path if a collision was resolved).
-
-### Size cap
-
-```ts
-const MAX_ASSET_BYTES = 100 * 1024 * 1024; // 100 MB
-```
-
-Two checks: `Content-Length` header (fast reject before buffering) and the actual body size. Either exceeding 100 MB returns `413 "attachment too large"`.
-
-### Path safety (`isSafeAssetTarget`)
-
-```ts
-function isSafeAssetTarget(rel: string): boolean {
-  const segs = rel.split("/");
-  return segs.length > 0 && segs.every(
-    (s) => s !== "" && s !== "." && s !== ".." && !s.startsWith(".")
-  );
-}
-```
-
-Rejects:
-- Empty segments (`//`)
-- `.` or `..` (traversal)
-- Any segment starting with `.` — this blocks `.git/hooks/pre-commit` (which the next git-backed vault save would execute, leading to RCE), `.obsidian/`, `.trash/`, etc.
-
-Paths that fail this check return `400 "invalid attachment path"`.
-
-### Collision handling (`uniqueAssetPath`)
-
-After safety validation, `uniqueAssetPath(root, target)` is called to find a free path:
-
-1. If the requested path does not exist in the vault, it is returned unchanged.
-2. Otherwise, the basename is split at the last `.` (dot): `stem` + `ext`. A leading-dot name is treated as an all-stem name with no extension.
-3. Attempts `"stem 1.ext"`, `"stem 2.ext"`, …, `"stem 9999.ext"` until a free path is found.
-4. Pathological fallback (> 9999 tries): `"stem <Date.now()>.ext"`.
-
-```text
-"attachments/photo.png" already exists
-→ tries "attachments/photo 1.png"   (free) → returned
-```
-
-The returned path is what the note editor should insert as `![[basename]]`. The frontend caller receives the `path` field from the JSON response and inserts only the basename portion into the note.
-
-### Why it is NOT a mutating route
-
-Attachments are invisible to the graph/search caches — the knowledge graph is built from `listMarkdown` (`.md` files only), so an uploaded image or PDF never touches it. `listTree` (the sidebar tree) is a separate story: it DOES include images and PDFs as first-class entries, alongside `.md`/`.draw`/`.sheet`/`.yaml`/`.yml`, via the shared `isTreeListedName` predicate (`core/src/fileKinds.ts` — every extension in `IMAGE_EXTS` — png, jpg/jpeg, gif, webp, avif, bmp, ico, svg, heic/heif, tif/tiff — plus pdf), since they can carry tags (a companion note) and ink (a `.draw` sidecar) like any other vault file. What it excludes is only the generated export sidecars, `*.draw.png` and `*.draw.pdf`, filtered out before the extension check runs. Either way, no cache invalidation or SSE broadcast is needed for the upload itself — `POST /asset` writes bytes that the tree cache picks up on its own next rebuild (triggered by the vault file watcher, same as any other new file), not because this route pushes one. The subsequent note edit that inserts the `![[...]]` embed triggers its own normal invalidation.
-
----
-
-## Dropping From Other Apps Onto A Note
-
-A drag that carries no OS file path — a browser image, a Photos/Messages file promise, a plain
-link, or selected text — no longer does nothing. `app/src/dropIntake.ts`'s `planDrop` reads
-whatever the drag actually carries (in priority order: real paths, then raw image bytes, then an
-`<img src>` found in dragged HTML, then an image URL, then any URL, then plain text) and
-`Editor.tsx`'s `runDropActions` carries out the result:
-
-- **A browser image** (dragged out of a page) is downloaded server-side (`POST /asset/fetch`,
-  owner-only, public `http:`/`https:` addresses only — loopback, private and link-local hosts
-  are refused, including via redirects, and only `image/*` responses are saved) into the
-  attachments folder and embedded as `![[name]]`, the same as a locally-uploaded image.
-- **A Photos/Messages file promise** is received via the native drag pasteboard
-  (`read_drag_pasteboard`, macOS-only), which receives it into `~/Library/Caches/bismuth-drop/`
-  first (subfolders older than an hour are swept on the next drop), then embedded the same way
-  as any other dropped file.
-- **A link with no image** inserts the bare URL as text at the drop point.
-- **Selected text** dragged in from elsewhere inserts that text at the drop point — a drag that
-  never left CodeMirror (an internal text selection) MOVES instead, same as any other editor.
-- **Anything `planDrop` can't read at all** — an empty pasteboard — shows one toast (`Couldn't read
-  that drop`) instead of doing nothing silently.
-
-## Dropping OS Files Onto The File Tree
-
-Dropping files from outside the app directly onto the sidebar's file tree (`app/src/FileTree.tsx`)
-creates vault files in the folder under the cursor — or the vault root, if dropped on empty tree
-space — via the same `POST /asset` upload described above, so it inherits de-collision
-(`uniqueAssetPath`) for free. Two drag sources feed one pure planning function,
-`planTreeUploads` (`app/src/fileTreeDrop.ts`):
-
-- **Browser build** — a native HTML5 `drop`, claimed only when the drag carries `Files` (so an
-  internal sidebar row-drag, which never fires a native HTML5 drag at all — it's a pointer-drag
-  controller, `dnd/viewDrag.ts` — never competes with it). Bytes come from `File.arrayBuffer()`.
-- **Desktop (Tauri) build** — the `bismuth-native-drag` window event (`app/src/nativeDrop.ts`).
-  Tauri intercepts the webview's own HTML5 `drop` for external OS files, so this is the *only*
-  signal for an OS drop on desktop. It carries real absolute on-disk paths, read via
-  `@tauri-apps/plugin-fs`'s `readFile` (the same route `Editor.tsx`'s native-drop handling uses).
-  The tree claims the drop like every other surface (`nativeDropRouting.ts`'s `claimNativeDrop`),
-  so a drop another surface already took — an overlay above the sidebar, a chat — is never *also*
-  uploaded into the vault. `d.x`/`d.y` are already page CSS px (the bridge scales them once via
-  `nativeDragScale`), so the folder lookup below uses them directly.
-
-Only file types the tree already lists (`isTreeListedName`, `core/src/fileKinds.ts` — images,
-PDFs, `.md`/`.draw`/`.sheet`/`.yaml`/`.yml`) are accepted; anything else is skipped, named in one
-toast alongside the created count. A HEIC/HEIF drop is renamed and transcoded to JPEG first
-(`api.convertHeic`), exactly like a paste/drop into a note. The drop's target folder is resolved
-by walking up from `document.elementFromPoint(x, y)` to the nearest ancestor carrying
-`data-drop-folder` (a folder row) or `data-drop-root` (the tree's own root) — `data-*` attributes,
-never a class name, since CSS Modules hash class names at build time and a stale class-string
-lookup would silently match nothing.
-
-## Dragging A Tree Image/PDF Into A Note
-
-Dragging an image or PDF row out of the sidebar and dropping it on a note pane's center inserts a
-`![[basename]]` embed at the drop point — the binary-file counterpart of dragging a *note* row in
-to get a `[[wikilink]]` (`app/src/dnd/noteRef.ts`'s `descriptorEmbedPath` + `embedFor`, wired into
-`App.tsx`'s `referenceOnPane`). Dragging a tree file into a **chat** pane already worked before
-this addition — `descriptorChatRefPath` accepts any file or folder, not just images/PDFs — and is
-unaffected.
-
----
-
-## Attachment Settings (`.settings`)
-
-All fields live under the `attachments:` top-level key in `.settings` (the vault's single hidden settings file).
-
-### `attachments.folder`
-
-**Type**: string  
-**Default**: `"attachments"`
-
-Vault-relative folder where new pasted/dropped attachments are saved. The folder is created automatically on first use (via `writeBinary` → `mkdirSync(dirname(full), { recursive: true })`).
-
-Special values:
-- `""` (empty string) — save at the vault root
-- `"."` — save in the same folder as the current note (the backend receives the resolved path from the frontend)
-
-Embeds always resolve by filename, not by path, so changing `folder` after files are already uploaded does not break existing `![[name]]` embeds.
-
-### `attachments.onDrop`
-
-**Type**: `"copy"` | `"reference"`  
-**Default**: `"copy"`
-
-Behaviour when dragging a file in from outside the vault:
-- `"copy"` — copy the file into the attachment folder (keeps the vault self-contained)
-- `"reference"` — insert a reference to the file at its original path (best-effort in the browser build; the embed only resolves on desktop)
-
-`⌥`-drop (Option/Alt) always references regardless of this setting. Clipboard pastes (Ctrl/Cmd+V) always copy in regardless of this setting.
-
-### `attachments.naming`
-
-**Type**: string  
-**Default**: `"Pasted image {timestamp}"`
-
-Filename template for pasted clipboard images. The file extension is appended automatically based on the clipboard content type.
-
-Substitutions:
-- `{timestamp}` → a sortable date-time stamp
-
-Name collisions after template expansion are resolved by `uniqueAssetPath` with a numeric suffix (`" 1"`, `" 2"`, …).
-
----
-
-## Code-masked Embeds
-
-`stripCode` (from `core/src/wikilinks.ts`) masks code spans and fenced code blocks before the `EMBED_RE` regex runs. This means embed syntax shown inside backtick code or fenced blocks is NOT rendered — it remains as raw text in the editor. The masking preserves character offsets, so `m.index` values from the regex are correct positions in the actual document.
-
----
-
-## Gotchas & Edge Cases
-
-- **Non-media extension treated as note**: `![[foo.xyz]]` — since `.xyz` is not in the recognised extension sets, this is classified as `"note"` and will try to transclude `foo.xyz` as markdown. It will show an error widget if `foo.xyz` is not found as a note.
-- **Fragment stripping in `resolveAsset`**: `resolveAsset` strips `#fragment` before searching. So `![[report.pdf#page=3]]` resolves `report.pdf` correctly.
-- **Resize only on `![[...]]` wikilink embeds**: `![](photo.png)` images have no resize handle even when standalone. Only wikilink-style embeds get the drag-resize handle.
-- **Size persisted as `|W` for images, `|WxH` for PDF/video**: after an image resize, the embed becomes `![[photo.png|300]]`; after a PDF/video resize it becomes `![[report.pdf|800x600]]`.
-- **`posAtDOM` fallback in `commitEmbedSize`**: if the widget's DOM position can't be found (e.g. the widget was removed), `commitResize` is silently skipped. No crash.
-- **Security — dot-segment rejection in `isSafeAssetTarget`**: uploading to `.git/hooks/pre-commit` would produce an executable that runs on the next git-backed save. The check is defence-in-depth on top of `resolveInVault`'s traversal guard.
-- **`listTree` does NOT exclude binary assets**: images and PDFs appear in the file tree as first-class entries, same as `.md`/`.draw`/`.sheet`/`.yaml`/`.yml`, via `isTreeListedName` (`core/src/fileKinds.ts`) — they carry tags through a companion note and ink through a `.draw` sidecar (`docs/vault/frontmatter.md`, `docs/drawing/overview.md`). What stays hidden is only the generated export sidecars `*.draw.png`/`*.draw.pdf`, plus a companion/`.draw` sidecar whose binary sibling still exists. The knowledge graph is unaffected either way, since it's built from `listMarkdown` (`.md` only), not `listTree`.
-- **`private, max-age=60` cache**: the browser caches asset bytes for 60 seconds. If a file is replaced (same name), the old version may serve for up to 60 seconds. Hard-reload clears this.
-
-`Source: app/src/editor/embedBlock.ts, app/src/nativeDropRouting.ts, core/src/files.ts, core/src/server.ts, core/src/schema/settingsSchema.ts, core/src/settings.ts, app/src/api.ts`
+Source: `app/src/editor/embedBlock.ts`, `app/src/editor/embedSpec.ts`, `app/src/editor/PdfEmbed.tsx`, `app/src/dropIntake.ts`, `app/src/fileTreeDrop.ts`, `app/src/nativeDropRouting.ts`, `app/src/dnd/noteRef.ts`, `app/src/attachmentPath.ts`, `core/src/files.ts`, `core/src/assetFetch.ts`, `core/src/routes/vault.ts`, `core/src/routes/context.ts`, `core/src/schema/settingsSchema.ts`

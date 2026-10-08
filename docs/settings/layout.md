@@ -1,6 +1,7 @@
-# Shell Layout
+# Shell layout
 
-The `layout:` group in `.settings` rearranges the window's big pieces: which edge the sidebar and the vertical tab rail sit on, which sidebar sections show and in what order, and whether the status bar is there. Every key is optional; with none set the window looks exactly as it always has. The pure helpers behind it are in `core/src/shellLayout.ts`; the schema is in `core/src/schema/settingsSchema.ts`.
+The `layout:` group in `.settings` rearranges the window's big pieces: which edge the sidebar and the vertical tab rail sit on, which sidebar sections show and in what order, and whether the status bar is there.
+Every key is optional; with none set, the sidebar is on the left, the tab rail on the right, and the status bar shows.
 
 ```yaml
 layout:
@@ -11,29 +12,34 @@ layout:
 ```
 
 | Key | Type | Default | Meaning |
-|-----|------|---------|---------|
-| `sidebarSide` | `left` \| `right` | `left` | Window edge the sidebar sits flush against. |
-| `tabRailSide` | `left` \| `right` | `right` | Window edge the tab rail sits flush against. |
-| `sidebar` | list of `toolbar` \| `files` \| `graph` | `[toolbar, files, graph]` | Sections top to bottom. Order and presence are both honoured. |
-| `statusBar` | boolean | `true` | `false` removes the 18px bottom bar; the editor and sidebar then reach the window's bottom edge. |
+|---|---|---|---|
+| `sidebarSide` | `left` or `right` | `left` | Window edge the sidebar sits flush against. |
+| `tabRailSide` | `left` or `right` | `right` | Window edge the tab rail sits flush against. |
+| `sidebar` | list of `toolbar`, `files`, `graph` | `[toolbar, files, graph]` | Sidebar sections from top to bottom. Order and presence both count. |
+| `statusBar` | boolean | `true` | `false` removes the bottom bar, and the editor and sidebar then reach the window's bottom edge. |
 
-## Same-side rule
+## Change the layout without editing the file
 
-The two side keys are independent. When both name the same edge, the **sidebar is outermost** and the tab rail sits between it and the editor: `sidebar | rail | editor` on the left, `editor | rail | sidebar` on the right. The tab rail's hover flyout opens over the editor and never covers the sidebar.
+Three palette commands flip these keys and write `.settings`: **Move sidebar to other side**, **Move tab rail to other side** and **Toggle status bar**. Each takes effect at once. They have no shortcuts; run them from the command palette or put them on a [toolbar button](toolbar-commands.md).
 
-## Sidebar sections
+## When both panels share an edge
 
-- `normalizeSidebarSections` reads the list: unknown ids are dropped (the schema also rejects them), a duplicate keeps its first occurrence, and a value that is not a list falls back to the default order.
+The two side keys are independent. When both name the same edge, the sidebar is outermost and the tab rail sits between it and the editor: `sidebar | rail | editor` on the left, `editor | rail | sidebar` on the right. The tab rail's hover flyout opens over the editor and never covers the sidebar.
+
+## Choose and order sidebar sections
+
+- An id the schema does not know is rejected by lint and dropped when read. A repeated id keeps its first occurrence. A value that is not a list gives the default order.
 - An empty list `[]` gives an empty sidebar column, which can still be toggled and resized. It is not an error.
-- **Parked graph rule:** leaving `graph` out removes the docked mini graph. While a note is open the always-mounted graph floater then parks, invisible and inert, instead of floating over nothing. The full-view graph tab, the home graph shown when no tab is open and the Cmd+O switcher backdrop are unaffected.
+- Leaving `graph` out removes the docked mini graph. While a note is open, the graph then waits out of sight instead of floating over nothing. The full graph tab, the home graph shown when no tab is open and the Cmd+O switcher backdrop are unaffected.
 
-## Palette commands
+## Widths and the top strip
 
-Settings have no GUI, so three palette commands change these keys and write `.settings`: `move-sidebar-side`, `move-tab-rail-side` and `toggle-status-bar`. Their labels are `Move sidebar to other side`, `Move tab rail to other side` and `Toggle status bar`; each flips one key live (the columns animate with the usual 0.26s ease where a width changes). They have no keybindings; reach them from the palette or a toolbar item.
+Widths are not part of `layout:`. The sidebar, mini graph and tab rail sizes are `appearance.sidebarWidth`, `appearance.sidebarGraphHeight` and `appearance.tabRailWidth` in the [settings reference](reference.md#appearance); dragging a panel's edge writes them.
+The top strip is fixed and cannot be moved or hidden.
 
-## Not here yet
+## How it works
 
-- **Widths** are not part of `layout:`; the sidebar, mini graph and tab rail sizes stay in `appearance:` (`sidebarWidth`, `sidebarGraphHeight`, `tabRailWidth`).
-- **The top strip is fixed**; it cannot be moved or hidden.
+`core/src/shellLayout.ts` holds the pure helpers: `SIDEBAR_SECTIONS` (the section ids, also the default order), `normalizeSidebarSections` (unknown ids dropped, first occurrence wins, non-list gives the default), and `otherSide`.
+The schema in `core/src/schema/settingsSchema.ts` derives the `sidebar` item enum from `SIDEBAR_SECTIONS`. The three palette commands flip the keys through the settings store in `app/src/App.tsx`.
 
-See the [full reference](reference.md#layout) and the [overview](overview.md).
+Source: `core/src/shellLayout.ts`, `core/src/schema/settingsSchema.ts`, `app/src/App.tsx`, `app/src/shell/GraphFloater.tsx`

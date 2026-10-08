@@ -1,254 +1,156 @@
-# Template Token Syntax
+# Template tokens and daily notes
 
-This page defines Bismuth's `{{...}}` template tokens. They expand when you insert a template with the palette / Option+T or create a daily note. Use it to author a template, add a token, or explain an unexpected expansion.
+A template is a markdown file whose `{{...}}` tokens expand to the date, the time, the note's title and a caret position when you insert it or create a note from it. Daily notes use the same tokens for both their file name and their starting content.
 
-It covers the recognized tokens (`{{date}}`, `{{time}}`, `{{title}}`, `{{cursor}}`), date/time offsets (`+1d`, `-30m`, …), moment-style formats (`:YYYY-MM`, `:h:mm A`, …), `expandTemplate`, malformed-token behavior, cursor offsets, format vocabulary, and the `folder`/`fileName`/`template` daily-note configuration behind `dailyNotePath` and `dailyNoteContent`. The reference follows `core/src/templates.ts`, `core/src/dailyNote.ts`, `core/src/files.ts`, and their tests.
+```markdown
+# {{title}}
+Created {{date:dddd, MMMM D}} at {{time:h:mm A}}
+Review on {{date+1w}}
 
-## Where templates are used
-
-Two code paths call the same pure `expandTemplate(raw, ctx)`:
-
-1. **Template insertion** (`app/src/palette/TemplatePalette.tsx`, Option+T) — a fuzzy picker of the vault's template `.md` files. Selecting one reads the file, calls `expandTemplate(raw, { now: new Date(), title })`, and inserts the result into the last-focused editor with the caret landing at `cursorOffset` (where `{{cursor}}` was). The template list comes from `GET /templates`, which lists `.md` files under the `templates.folder` setting (default `"Templates"` — see `core/src/files.ts` `listTemplates`).
-2. **Daily notes** (`core/src/dailyNote.ts`, `POST /daily-note`) — a configured daily-note type produces a filename via `expandTemplate(cfg.fileName, …)` and an initial body via `expandTemplate(templateRaw, …)`. See [Daily notes](#daily-notes) below.
-
-The shared autocomplete catalog `TEMPLATE_TOKENS` (in `core/src/templates.ts`) drives the editor's `{{`-token completion (`app/src/editor/autocomplete.ts`) and the daily-note `fileName` settings field completion (`app/src/editor/settingsComplete.ts`). The catalog and the parser are kept in sync by a test asserting that every catalog token is recognised (i.e. never survives verbatim).
-
-## Token grammar
-
-A token is `{{` … `}}`. The inner content follows this grammar (from `parseToken` in `core/src/templates.ts`):
-
-```
-{{ <name> [<offset>] [<format>] }}
-
-<name>   = date | time | title | cursor   (must be the literal prefix)
-<offset> = (+|-) <N> <unit>               (date units: d w m y; time units: h m)
-<format> = : <moment-style format string> (non-empty)
+{{cursor}}
 ```
 
-The parser follows these rules:
+Inserted into a note titled `Weekly plan` on Sunday 31 May 2026 at 14:09, this becomes:
 
-- The inner content **must start with** one of the four names: `date`, `time`, `title`, `cursor` (matched by `/^(date|time|title|cursor)/`). Anything else (e.g. `{{foo}}`) is unrecognised → emitted verbatim.
-- The **offset** is matched by `/^([+-])(\d+)([a-z])/` immediately after the name. Sign is required (`+` or `-`), amount is one-or-more digits, unit is exactly one lowercase letter.
-- The **format** is everything after a `:`, and must be non-empty. `{{date:}}` (colon with empty format) is **malformed** → left verbatim.
-- After consuming name + optional offset + optional format, the entire inner string must be consumed. Any leftover characters → `parseToken` returns `null` → the token is emitted verbatim. (E.g. `{{date foo}}`, `{{datex}}` are not recognised because the trailing text is not a valid offset/format.)
-- Offset and format may be combined, in that order: `{{date+1w:YYYY-MM-DD}}`.
-- `title` and `cursor` take **no** offset or format. Attaching one makes the whole token unparseable (leftover content) → verbatim. Only `date` and `time` honour offset/format.
-
-The token-matching regex is `/\{\{([^}]*(?:\}(?!\})[^}]*)*)\}\}/g`, which captures inner content allowing a lone `}` that is not followed by another `}`.
-
-## Exhaustive token table
-
-The four base tokens (from `TEMPLATE_TOKENS`):
-
-| Token        | Expands to                                              | Default format | Offset support | Format support |
-|--------------|--------------------------------------------------------|----------------|----------------|----------------|
-| `{{date}}`   | Current date                                            | `YYYY-MM-DD`   | yes (`d w m y`)| yes            |
-| `{{time}}`   | Current time                                            | `HH:mm`        | yes (`h m`)    | yes            |
-| `{{title}}`  | `ctx.title` verbatim (the note's title)                | n/a            | no             | no             |
-| `{{cursor}}` | Empty string; records caret position                   | n/a            | no             | no             |
-
-`TEMPLATE_TOKENS` one-line docs (used in autocomplete):
-
-- `{{date}}` — "Current date (YYYY-MM-DD). Offset/format: `{{date+1d}}`, `{{date:YYYY-MM}}`."
-- `{{time}}` — "Current time (HH:mm). Offset/format: `{{time+1h}}`, `{{time:h:mm A}}`."
-- `{{title}}` — "The note's title (its filename without .md)."
-- `{{cursor}}` — "Where the caret lands after the template is inserted."
-
-### `{{date}}`
-
-Current date, default format `YYYY-MM-DD`. With a fixed clock of local **Sunday May 31, 2026, 14:09:05** (the test clock, `new Date(2026, 4, 31, 14, 9, 5)`):
+```markdown
+# Weekly plan
+Created Sunday, May 31 at 2:09 PM
+Review on 2026-06-07
 
 ```
-{{date}}            → 2026-05-31
-{{date:YYYY/MM/DD}} → 2026/05/31
-{{date:dddd, MMMM D}} → Sunday, May 31
-{{date:MMMM}}       → May
-{{date:MM}}         → 05
+
+The caret lands where `{{cursor}}` was.
+
+## Which tokens exist?
+
+Four tokens expand. Anything else between `{{` and `}}` stays as typed.
+
+| Token | Expands to | Default format | Offset | Format |
+|---|---|---|---|---|
+| `{{date}}` | the current date | `YYYY-MM-DD` | `d` `w` `m` `y` | yes |
+| `{{time}}` | the current time | `HH:mm` | `h` `m` | yes |
+| `{{title}}` | the note's title (its file name without `.md`) | none | no | no |
+| `{{cursor}}` | nothing; marks where the caret lands | none | no | no |
+
+The editor offers these four as you type `{{`; see [Autocomplete](../editor/autocomplete.md#complete-template-tokens).
+
+## How do I shift a date or time?
+
+Put a sign, a whole number and a one-letter unit right after the name: `{{date+7d}}`, `{{time-30m}}`. Only `date` and `time` accept an offset.
+
+| Name | Unit | Meaning |
+|---|---|---|
+| `date` | `d` | days |
+| `date` | `w` | weeks |
+| `date` | `m` | months |
+| `date` | `y` | years |
+| `time` | `h` | hours |
+| `time` | `m` | minutes |
+
+`m` means months in `{{date}}` and minutes in `{{time}}`. A unit that does not belong to the name (`{{date+1h}}`, `{{time+1d}}`) leaves the whole token unexpanded.
+
+With the clock at Sunday 2026-05-31 14:09:05:
+
+```text
+{{date+7d}}   -> 2026-06-07
+{{date-1w}}   -> 2026-05-24
+{{date+1y}}   -> 2027-05-31
+{{time+2h}}   -> 16:09
+{{time-30m}}  -> 13:39
 ```
 
-### `{{time}}`
+Adding months moves by calendar month and rolls over when the target day does not exist: `{{date+1m}}` on May 31 gives `2026-07-01`, because June has no 31st. The same applies to any `+Nm` or `+Ny` from a day missing in the target month.
 
-Current time, default format `HH:mm`. Same test clock (14:09:05):
+## How do I change the format?
 
-```
-{{time}}            → 14:09
-{{time:h:mm A}}     → 2:09 PM
-{{time:HH:mm:ss}}   → 14:09:05
-```
+Add `:` and a format string after the name and any offset: `{{date+1w:YYYY-MM-DD}}`. The format must not be empty, so `{{date:}}` stays unexpanded.
 
-### `{{title}}`
+Letters in the format are replaced when they match a token below; every other character (separators, spaces, commas) is copied as typed. At each position the longest matching token wins.
 
-Expands to `ctx.title` verbatim — no offset/format. In the editor template palette, `title` is the focused note's title. For daily notes, `title` is set to the **filename base** (the expanded `fileName` without `.md`), so `{{title}}` inside a daily-note template echoes the generated filename.
+| Token | Meaning | Example |
+|---|---|---|
+| `YYYY` | four-digit year | `2026` |
+| `YY` | last two digits of the year | `26` |
+| `MMMM` | full month name | `May` |
+| `MMM` | short month name | `May` |
+| `MM` | month, two digits | `05` |
+| `M` | month, no padding | `5` |
+| `DD` | day of month, two digits | `31` |
+| `D` | day of month, no padding | `31` |
+| `dddd` | full weekday name | `Sunday` |
+| `ddd` | short weekday name | `Sun` |
+| `HH` | 24-hour, two digits | `14` |
+| `H` | 24-hour, no padding | `14` |
+| `hh` | 12-hour, two digits | `02` |
+| `h` | 12-hour, no padding | `2` |
+| `mm` | minutes, two digits | `09` |
+| `m` | minutes, no padding | `9` |
+| `ss` | seconds, two digits | `05` |
+| `s` | seconds, no padding | `5` |
+| `A` | `AM` or `PM` | `PM` |
+| `a` | `am` or `pm` | `pm` |
 
-```
-{{title}}                       → My Note          (ctx.title = "My Note")
-Note: {{title}} created on {{date}}  → Note: My Note created on 2026-05-31
-```
-
-### `{{cursor}}`
-
-Expands to the empty string and records a **zero-based character index** in the output (`cursorOffset`), where the caret should land after insertion. Rules (verified in tests):
-
-- The **first** `{{cursor}}` sets `cursorOffset`. Any additional `{{cursor}}` tokens are silently stripped (emit nothing) and do **not** move the offset.
-- If there is no `{{cursor}}`, `cursorOffset` defaults to `text.length` (caret at end).
-
-```
-a{{cursor}}b              → text "ab",  cursorOffset 1
-end{{cursor}}             → text "end", cursorOffset 3 (== text.length)
-{{cursor}}x{{cursor}}y    → text "xy",  cursorOffset 0 (first wins, second stripped)
-hello                     → text "hello", cursorOffset 5 (no cursor → end)
-```
-
-## Offset modifiers (`+N<unit>` / `-N<unit>`)
-
-Only `date` and `time` accept offsets. The offset is applied to a **clone** of `ctx.now` (the original is never mutated) via `applyOffset`.
-
-### Date units
-
-| Unit | Meaning | JS operation                         |
-|------|---------|--------------------------------------|
-| `d`  | days    | `setDate(getDate() + n)`             |
-| `w`  | weeks   | `setDate(getDate() + 7*n)`           |
-| `m`  | months  | `setMonth(getMonth() + n)`           |
-| `y`  | years   | `setFullYear(getFullYear() + n)`     |
-
-### Time units
-
-| Unit | Meaning | JS operation                         |
-|------|---------|--------------------------------------|
-| `h`  | hours   | `setHours(getHours() + n)`           |
-| `m`  | minutes | `setMinutes(getMinutes() + n)`       |
-
-Note that `m` means **months** for `date` but **minutes** for `time`. The valid unit set depends on the name; an out-of-set unit makes the offset invalid (see gotchas).
-
-Examples (test clock = 2026-05-31 14:09:05):
-
-```
-{{date+7d}}   → 2026-06-07   (add 7 days)
-{{date-1w}}   → 2026-05-24   (subtract 1 week)
-{{date+1y}}   → 2027-05-31   (add 1 year)
-{{date+1m}}   → 2026-07-01   (see month-rollover gotcha)
-{{time+2h}}   → 16:09        (add 2 hours)
-{{time-30m}}  → 13:39        (subtract 30 minutes)
+```text
+{{date:YYYY/MM/DD}}    -> 2026/05/31
+{{date:dddd, MMMM D}}  -> Sunday, May 31
+{{date:MMMM}}          -> May
+{{time:h:mm A}}        -> 2:09 PM
+{{time:HH:mm:ss}}      -> 14:09:05
 ```
 
-### Offset + format together
+Month and weekday names are always English. There is no escape syntax: every letter that is a format token is interpreted, so you cannot print a literal `M`, `D`, `H`, `h`, `m`, `s`, `A` or `a` inside a format. A lone `Y`, `d`, `T` or `Z` passes through unchanged, but `YY`, `ddd` and longer runs are tokens. Put other characters around the date parts instead.
 
-The format follows the offset (offset first, then `:format`):
+## What happens to a token that does not parse?
 
-```
-{{date+1w:YYYY-MM-DD}}  → 2026-06-07
-```
+A token that is not recognised is kept exactly as typed, so a mistake is visible in the result rather than silently dropped.
 
-## Format modifiers (moment-style)
-
-A `:` after the name (and after any offset) introduces a moment-style format string. Formatting is done by `formatDate`, which scans the pattern **left-to-right, matching the longest known token at each position**. Unrecognised characters in the pattern (separators, spaces, literal text like commas) are copied through verbatim.
-
-The locale is a **fixed en-US** for month/weekday names — there is no localization.
-
-### Full format token vocabulary
-
-Ordered by descending length (longest match wins). Values shown for the test clock 2026-05-31 (Sunday) 14:09:05.
-
-| Token  | Meaning                          | Example output |
-|--------|----------------------------------|----------------|
-| `YYYY` | 4-digit year (zero-padded to 4)  | `2026`         |
-| `YY`   | last 2 digits of year            | `26`           |
-| `MMMM` | full month name                  | `May`          |
-| `MMM`  | short month name                 | `May`          |
-| `MM`   | 2-digit month (01–12)            | `05`           |
-| `M`    | month, no padding (1–12)         | `5`            |
-| `DD`   | 2-digit day of month (01–31)     | `31`           |
-| `D`    | day of month, no padding (1–31)  | `31`           |
-| `dddd` | full weekday name                | `Sunday`       |
-| `ddd`  | short weekday name               | `Sun`          |
-| `HH`   | 2-digit 24-hour (00–23)          | `14`           |
-| `H`    | 24-hour, no padding (0–23)       | `14`           |
-| `hh`   | 2-digit 12-hour (01–12)          | `02`           |
-| `h`    | 12-hour, no padding (1–12)       | `2`            |
-| `mm`   | 2-digit minutes (00–59)          | `09`           |
-| `m`    | minutes, no padding (0–59)       | `9`            |
-| `ss`   | 2-digit seconds (00–59)          | `05`           |
-| `s`    | seconds, no padding (0–59)       | `5`            |
-| `A`    | uppercase AM/PM                  | `PM`           |
-| `a`    | lowercase am/pm                  | `pm`           |
-
-Notes from the implementation:
-
-- **Month names** come from fixed arrays. `MMMM` = January…December; `MMM` = Jan…Dec. (For May both are `May`.)
-- **Weekday names**: `dddd` = Sunday…Saturday; `ddd` = Sun…Sat. `getDay()` is used (0 = Sunday).
-- **12-hour** values use `getHours() % 12 || 12` (midnight/noon → 12).
-- **AM/PM** boundary: `getHours() < 12` → AM/am, otherwise PM/pm.
-- **`YYYY`** is `String(getFullYear()).padStart(4, "0")`.
-- **Longest-match** means there is no escape syntax for literals: if you want a literal `M` you cannot, since `M` is a token. Plain separators (`-`, `/`, `:`, `,`, spaces, and any char that isn't the start of a known token) pass through unchanged.
-
-### Format examples
-
-```
-{{date:YYYY-MM-DD}}    → 2026-05-31
-{{date:YYYY/MM/DD}}    → 2026/05/31
-{{date:dddd, MMMM D}}  → Sunday, May 31
-{{date:MMMM}}          → May
-{{date:MM}}            → 05
-{{time:h:mm A}}        → 2:09 PM
-{{time:HH:mm:ss}}      → 14:09:05
+```text
+{{foo}}               -> {{foo}}              unknown name
+{{date:}}             -> {{date:}}            empty format
+{{date foo}}          -> {{date foo}}         text the grammar does not allow
+{{DATE}}              -> {{DATE}}             names are lowercase
+{{ date }}            -> {{ date }}           no spaces inside the braces
+{{date+1d+1d}}        -> {{date+1d+1d}}       one offset only
+{{foo}} and {{date}}  -> {{foo}} and 2026-05-31
 ```
 
-The default formats when no `:format` is given: `date` → `YYYY-MM-DD`, `time` → `HH:mm`.
+The name must be the first thing inside the braces, and the whole inside must fit the grammar `name`, optional `+N<unit>` or `-N<unit>`, optional `:format`. Offset comes before format.
 
-## `expandTemplate` behavior
+`{{title}}` and `{{cursor}}` ignore an offset or format instead of rejecting it: `{{title+1d}}` and `{{title:YYYY}}` both expand to the plain title, and `{{cursor:YYYY}}` still marks the caret. Leave modifiers off these two tokens.
 
-`expandTemplate(raw: string, ctx: { now: Date; title: string }): { text: string; cursorOffset: number }`.
+## Where does the caret land?
 
-Algorithm (from `core/src/templates.ts`):
+`{{cursor}}` expands to nothing and sets the caret position. The first `{{cursor}}` wins and later ones are removed. A template with no `{{cursor}}` puts the caret at the end.
 
-1. Empty input short-circuits: `expandTemplate("", ctx)` → `{ text: "", cursorOffset: 0 }`.
-2. The token regex is scanned across the whole input. For each match, the literal text before it is appended, then the token is processed.
-3. `parseToken(inner)` is run. If it returns `null` (unknown name, malformed offset/format, leftover content, or empty format after `:`), the **raw matched token** (`{{...}}` literally) is appended.
-4. Otherwise:
-   - `cursor` → records `cursorOffset` (first only) and emits nothing.
-   - `title` → appends `ctx.title`.
-   - `date`/`time` → clones `ctx.now`, applies the offset if present (an invalid unit aborts and the raw token is emitted verbatim), then formats with the given or default format.
-5. Trailing literal text after the last token is appended.
-6. Returns `{ text, cursorOffset }` where `cursorOffset` is the recorded value or `text.length` if no `{{cursor}}` was seen.
-
-Multiple tokens and surrounding text are handled in one pass:
-
-```
-expandTemplate("# {{title}}\nCreated: {{date}}\nTime: {{time}}", ctx)
-→ "# My Note\nCreated: 2026-05-31\nTime: 14:09"
+```text
+a{{cursor}}b             -> ab, caret after "a"
+{{cursor}}x{{cursor}}y   -> xy, caret at the start
+hello                    -> hello, caret at the end
 ```
 
-### Unknown / malformed handling
+## How do I insert a template?
 
-Unrecognised or malformed tokens are emitted **verbatim** (the literal `{{...}}` survives), never dropped:
+Press `Alt+T` (Option+T on macOS), pick a template from the list, and Bismuth inserts it at the caret of the editor you last focused. Rebind it with the `insert-template` keybinding in `.settings`; see [Keybindings](../settings/keybindings.md).
 
-```
-{{foo}}              → {{foo}}            (unknown name)
-{{date:}}            → {{date:}}          (empty format after colon)
-{{foo}} and {{date}} → {{foo}} and 2026-05-31   (unknown left intact, valid expanded)
-```
+The list holds every `.md` file under the vault folder named by `templates.folder` (default `Templates`), searched recursively and sorted by path. Dotfiles are skipped, and a missing folder gives an empty list. Inside the template, `{{title}}` is the focused note's title. With no note open, the picker shows "Open a note to insert a template" and inserts nothing.
 
-An **invalid offset unit** for the name (e.g. `{{date+1h}}` — `h` is a time unit, not a date unit; or `{{time+1d}}` — `d` is a date unit, not a time unit) makes `applyOffset` return `null`, and the raw token is emitted verbatim (it is not silently treated as a no-op).
+## How do I start new notes from a template?
 
-## Daily notes
+Set `templates.newNote` to the vault path of a template file. A new note created with the New Note command or the file tree's New File action is filled from it. The note is created as `Untitled`, and the template is expanded after you finish naming it, so `{{title}}` is the name you typed and the caret goes to `{{cursor}}`.
 
-Daily notes are configured under the `dailyNotes:` list in `.settings`. Each entry registers a `daily-note:<id>` command you can put on the toolbar / use from the palette; pressing it opens today's note for that type, creating it from `template` the first time. The pure computation lives in `core/src/dailyNote.ts`; IO (existence check, reading the template, writing the note) is in `POST /daily-note` (`core/src/server.ts`).
-
-### `DailyNoteConfig`
-
-```ts
-interface DailyNoteConfig {
-  id: string;        // stable id → forms the command id daily-note:<id>
-  label: string;     // command-palette label and default button tooltip
-  icon: string;      // Lucide icon name (e.g. "BookOpen") or an emoji
-  folder: string;    // vault folder for entries ("" = vault root)
-  fileName: string;  // filename via {{...}} tokens, NO .md (e.g. "{{date}} journal")
-  template: string;  // vault path to a template .md to pre-fill (optional)
-}
+```yaml
+templates:
+  folder: Templates
+  newNote: Templates/Note.md
 ```
 
-Schema defaults (`core/src/schema/settingsSchema.ts`) seed a single `journal` type:
+An empty value (the default), a path that does not exist, or an empty template leaves the new note empty with no error.
+
+## How do daily notes work?
+
+Each entry in the `dailyNotes` list in `.settings` registers a `daily-note:<id>` command for the toolbar and palette. Running it opens today's note for that entry and creates the note from its template the first time. See [Toolbar commands](../settings/toolbar-commands.md) for placing the command on the toolbar.
+
+A fresh vault has this entry:
 
 ```yaml
 dailyNotes:
@@ -260,78 +162,51 @@ dailyNotes:
     template: Templates/Journal.md
 ```
 
-How the settings reader (`readDailyNotesFrom` in `core/src/settings.ts`) normalizes entries:
+| Field | Type | Required | Default | Effect |
+|---|---|---|---|---|
+| `id` | string | yes | none | Stable id; forms the command id `daily-note:<id>` |
+| `fileName` | string | yes | none | File name without `.md`, written with `{{...}}` tokens |
+| `label` | string | no | the `id` | Palette label and button tooltip |
+| `icon` | Lucide icon name or emoji | no | `CalendarDays` | Toolbar icon |
+| `folder` | vault folder | no | `""` (vault root) | Where the notes go; a trailing slash is ignored |
+| `template` | vault path | no | `""` | Template file used to fill a new note |
 
-- `id` and `fileName` are **required, non-empty strings**; malformed items (missing either) are dropped.
-- Defaults for the rest: `label` → `id`, `icon` → `CalendarDays`, `folder` → `""`, `template` → `""`.
-- A missing or non-array `dailyNotes` value falls back to the seeded default; an explicit empty array is honored (no daily notes).
+An entry missing `id` or `fileName` is dropped. If `dailyNotes` is absent or not a list, the seeded `journal` entry applies; an explicit empty list means no daily notes.
 
-### `dailyNotePath(cfg, now)`
+### How is the file name built?
 
-Computes the vault-relative `.md` path. It expands `cfg.fileName` with `{ now, title: "" }`, **trims** the result, appends `.md`, and joins with `folder` (a trailing slash on the folder is stripped; empty folder = vault root).
+Bismuth expands `fileName` with the current time, trims the result, appends `.md` and joins it to `folder`.
 
-```ts
-const NOON = new Date("2026-05-31T12:00:00"); // local noon, never tz-shifts the date
-
-dailyNotePath({ ...cfg, folder: "Journal",  fileName: "{{date}} journal" }, NOON)
-  → "Journal/2026-05-31 journal.md"
-dailyNotePath({ ...cfg, folder: "",         fileName: "{{date}} journal" }, NOON)
-  → "2026-05-31 journal.md"
-dailyNotePath({ ...cfg, folder: "Journal/", fileName: "{{date}} journal" }, NOON)
-  → "Journal/2026-05-31 journal.md"   (trailing slash tolerated)
+```text
+folder: Journal     fileName: "{{date}} journal"  -> Journal/2026-05-31 journal.md
+folder: ""          fileName: "{{date}} journal"  -> 2026-05-31 journal.md
+folder: Journal/    fileName: "{{date}} journal"  -> Journal/2026-05-31 journal.md
 ```
 
-The `fileName` field accepts the same `{{...}}` token syntax as templates (offsets/formats included). Note that during `fileName` expansion the `title` context is empty (`""`), so a `{{title}}` token inside `fileName` would expand to nothing — `fileName` is meant for date/time tokens.
+`{{title}}` is empty inside `fileName`, so use only date and time tokens there. The date comes from the local clock of the machine running the core server.
 
-### `dailyNoteContent(cfg, now, templateRaw)`
+### What goes into the note body?
 
-Computes the initial body:
+If `template` names an existing file, its content is expanded with `{{title}}` set to the generated file name (without `.md`). In a template used by the entry above, `# {{title}}` becomes `# 2026-05-31 journal`. If `template` is empty or the file does not exist, the new note is empty. If today's note already exists, it is opened as is and never overwritten.
 
-- If `templateRaw === null` → returns `""` (no template).
-- Otherwise expands `templateRaw` with `{ now, title: fileBase }`, where `fileBase` is the expanded, trimmed `fileName` (no extension). So inside the daily-note template, `{{title}}` echoes the note's generated filename base.
+## What goes wrong silently?
 
-```ts
-dailyNoteContent(cfg, NOON, null) → ""
-dailyNoteContent({ ...cfg, fileName: "{{date}} journal" }, NOON, "# {{title}}\n{{date}}\n")
-  → "# 2026-05-31 journal\n2026-05-31\n"
-```
+| Situation | Result |
+|---|---|
+| Token name misspelled or wrong case | The token stays in the note as typed |
+| Offset unit from the wrong family (`{{date+1h}}`) | Token stays as typed |
+| Offset or format on `{{title}}` or `{{cursor}}` | Ignored; the token still expands |
+| `{{date+1m}}` on the 29th to 31st | Rolls into the following month |
+| `{{title}}` in a daily note's `fileName` | Expands to nothing |
+| Daily-note `template` path does not exist | New note is empty; no error |
+| `id` passed to the daily-note route is unknown | The request fails with HTTP 400 |
 
-### `POST /daily-note` flow
+## How it works
 
-From `core/src/server.ts`:
+`expandTemplate(raw, { now, title })` in `core/src/templates.ts` scans the text with one regular expression for `{{...}}` and parses each match with `parseToken`, which accepts `^(date|time|title|cursor)`, an optional `^([+-])(\d+)([a-z])` offset and an optional `:format`. An unparsed match is appended unchanged. `date` and `time` clone `now`, apply the offset through `applyOffset` (which returns null for an invalid unit), then format with `formatDate`, a left-to-right scan that takes the longest matching token. The function returns the text and `cursorOffset`, which is the position of the first `{{cursor}}` or the text length.
 
-1. Look up the `DailyNoteConfig` by `id` (400 if unknown).
-2. `now = new Date()`; `path = dailyNotePath(config, now)`.
-3. If the file already exists → return `{ path, created: false }` (does not overwrite).
-4. Else, if `config.template` is set **and that file exists**, read it as `templateRaw`; otherwise `templateRaw = null`.
-5. Write `dailyNoteContent(config, now, templateRaw)` to `path`, return `{ path, created: true }`.
+`TEMPLATE_TOKENS` in the same file is the catalog the editor and the settings editor autocomplete from; a test asserts every catalog token parses.
 
-So a missing/blank `template`, or a `template` path that doesn't exist, yields an empty new note (no error).
+`dailyNotePath` and `dailyNoteContent` in `core/src/dailyNote.ts` are pure. `POST /daily-note` in `core/src/routes/vault.ts` reads the entry by `id` (HTTP 400 if unknown), returns `{ path, created: false }` when the file exists, and otherwise reads the template when it exists, writes the expanded body and returns `{ path, created: true }`. `readDailyNotesFrom` in `core/src/settingsSerialize.ts` normalises the list. `GET /templates` lists template files through `listTemplates` in `core/src/files.ts`, and `app/src/palette/TemplatePalette.tsx` does the insertion. `applyNewNoteTemplate` in `core/src/newNoteTemplate.ts` waits for the new note's rename to settle, then expands and writes the template on the final path.
 
-## Template files & the templates folder
-
-- `GET /templates` (server) lists `.md` files under the `templates.folder` setting (default `"Templates"`) via `listTemplates(root, folder)`.
-- `listTemplates` (`core/src/files.ts`) recursively walks the folder, **skips dotfiles**, includes only `*.md`, strips the `.md` from `name`, and returns `{ name, path }` entries sorted by `path`. A missing folder returns `[]`.
-- The template palette (Option+T) reads the selected template's raw text and runs `expandTemplate` with the current time and the focused note's title, then inserts at the caret (landing where `{{cursor}}` was).
-
-## Gotchas & edge cases
-
-- **`{{date+1m}}` month rollover**: from May 31, `setMonth(getMonth()+1)` lands on June 31, which JS rolls over to **July 1** (`2026-07-01`). This is native JS `setMonth` rollover, not special handling. Same caveat applies to any `+Nm` / `+Ny` on a day that doesn't exist in the target month (e.g. Jan 31 + 1 month).
-- **`m` is overloaded**: `m` = months for `{{date}}`, minutes for `{{time}}`. There is no minutes unit for `date`, no months unit for `time`.
-- **Invalid unit ≠ no-op**: an offset whose unit isn't valid for the name (e.g. `{{date+1h}}`, `{{time+1d}}`) leaves the whole token verbatim.
-- **Empty format is malformed**: `{{date:}}` survives verbatim; a colon must be followed by a non-empty format string.
-- **`title`/`cursor` reject modifiers**: `{{title+1d}}` or `{{cursor:YYYY}}` won't parse (leftover/invalid content) → verbatim.
-- **No literal escaping in formats**: every recognised letter token is always interpreted; you can't emit a literal `D`, `M`, `Y`, `H`, `h`, `m`, `s`, `A`, `a`, or `d` inside a `:format`. Use other separators around them.
-- **Fixed en-US locale**: month/weekday names are hard-coded English; there is no locale setting.
-- **`fileName` is trimmed**: leading/trailing whitespace from `fileName` expansion is stripped before the `.md` is appended (`dailyNotePath`).
-- **`fileName` has no `title`**: `{{title}}` in `fileName` expands to empty (the path computation uses `title: ""`); only the *body* template gets `title = fileBase`.
-- **Unknown daily-note id → 400**; **existing daily note → not overwritten** (`created: false`); **missing/absent template → empty body**.
-- **Day-precision tz note**: tests use a local-noon `Date` (`2026-05-31T12:00:00`) so the date never shifts across a timezone boundary; live use calls `new Date()` (local time), so the produced date/time reflect the server's local clock.
-
-## Related docs
-
-- [Daily notes](#daily-notes) above — the `dailyNotes:` settings list and toolbar wiring.
-- [Settings schema](../settings/reference.md) — the `templates.folder` and `dailyNotes` schema entries.
-- [Commands & toolbar](../settings/toolbar-commands.md) — how `daily-note:<id>` commands surface on the toolbar.
-
-Source: `core/src/templates.ts`, `core/src/dailyNote.ts`, `core/src/files.ts`, `core/test/templates.test.ts`, `core/test/dailyNote.test.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `app/src/palette/TemplatePalette.tsx`, `app/src/editor/autocomplete.ts`
+Source: `core/src/templates.ts`, `core/src/dailyNote.ts`, `core/src/newNoteTemplate.ts`, `core/src/files.ts`, `core/src/routes/vault.ts`, `core/src/settingsSerialize.ts`, `core/src/schema/settingsSchema.ts`, `app/src/palette/TemplatePalette.tsx`

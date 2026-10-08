@@ -1,4 +1,6 @@
-# Other syntax: callouts, math, templates, daily notes, plugin-only syntax
+# Converting callouts, math, templates and plugin syntax
+
+Callouts, math and core template tokens work in Bismuth as written; Dataview, Templater and Mermaid do not run. This page lists what to leave alone, what to report, and how to confirm nothing was lost.
 
 ## Sources
 
@@ -6,9 +8,9 @@
 - Obsidian: https://obsidian.md/help/callouts, https://obsidian.md/help/advanced-syntax, https://obsidian.md/help/syntax, https://obsidian.md/help/plugins/templates, https://obsidian.md/help/plugins/daily-notes
 - Plugins: Dataview https://blacksmithgu.github.io/obsidian-dataview/ , Templater https://silentvoid13.github.io/Templater/
 
-## Snapshot
+## Format differences
 
-Snapshot as of 2026-10-03 — verify against the sources above before relying on it.
+The table orients you; where a linked live page disagrees, follow the live page and note the difference in the report.
 
 | Feature | Obsidian | Bismuth | Action |
 |---|---|---|---|
@@ -26,14 +28,14 @@ Snapshot as of 2026-10-03 — verify against the sources above before relying on
 
 ## Convert
 
-1. Callouts and math need no change; check each custom callout type in the report.
-2. Templates: copy `Templates/` as is (done by the copy). `bismuth settings set templates.folder Templates --vault "$OUT"` is in `vault-and-settings.md`.
-3. Dataview and Templater: grep each flagged file, leave the text, list the file path and the first line of each block in the report. Never delete plugin syntax.
-4. For every plugin in `community-plugins.json` that this guide does not cover, add one line to the report ("plugin X: its syntax and data were left as is").
+1. Callouts and math need no change; list each custom callout type in the report.
+2. Templates: the copy already brought `Templates/` across. Setting `templates.folder` is part of `vault-and-settings.md`.
+3. Dataview and Templater: grep each flagged file, leave the text, and list the file path and the first line of each block in the report. Never delete plugin syntax.
+4. For every plugin in `community-plugins.json` that the conversion guide does not cover, add one line to the report: "plugin X: its syntax and data were left as is".
 
 ## Lossy
 
-- Dataview queries stop being live; Templater code stops expanding; mermaid diagrams show as code.
+- Dataview queries stop being live, Templater code stops expanding, and Mermaid diagrams show as code.
 - Custom callout styling, CSS snippets and plugin-provided syntax.
 
 ## Validate

@@ -1,386 +1,94 @@
-# Sheets Overview
+# Sheets
 
-Bismuth keeps spreadsheets in the vault as `.sheet` files: Univer workbook JSON snapshots. The `@univerjs/presets` v0.25 editor is code-split, so its large bundle loads only when a `.sheet` pane first opens. `SheetView.tsx` owns the Solid lifecycle; `sheet/univerSheet.ts` adapts Univer; `sheet/snapshot.ts` parses and serializes snapshots; and `sheet/sync.ts` guards external-edit reloads. `sheet/univer-theme.css` and `sheet/univer-icons.css` reskin Univer to match Bismuth.
+A sheet is a spreadsheet that lives in your vault as a `.sheet` file. You edit it in the app with the Univer spreadsheet editor, and the file on disk is plain JSON that diffs cleanly in git. This page is for anyone who keeps tables, budgets or calculations in a vault, and for engineers who read or write `.sheet` files.
 
----
+An empty `.sheet` file is a valid, blank workbook. A small one looks like this:
 
-## The `.sheet` File Format
-
-A `.sheet` file is a plain-text serialization of a Univer `IWorkbookData` object, pretty-printed with 2-space indentation so its diffs remain readable.
-
-### Structure overview
-
-The object is Univer's `IWorkbookData`. Key top-level fields (as seen in the wild and in `sheetHtml.ts`):
-
-| Field | Type | Description |
-|---|---|---|
-| `id` | `string` | Workbook identifier assigned by Univer |
-| `name` | `string` | Display name of the workbook |
-| `sheets` | `Record<sheetId, SheetData>` | Map of sheet-id → sheet object |
-| `sheetOrder` | `string[]` | Ordered list of sheet ids (determines tab order) |
-
-Each sheet object (`SheetData`) contains at minimum:
-
-| Field | Type | Description |
-|---|---|---|
-| `name` | `string` | Sheet tab name |
-| `cellData` | `Record<rowIndex, Record<colIndex, CellData>>` | Sparse cell map (row/col are numeric string keys) |
-
-Each cell (`CellData`) carries at minimum `{ v: <value> }` where `v` is the raw value (string, number, boolean, or null).
-
-### Empty / blank workbook
-
-An **empty or whitespace-only** `.sheet` file deserializes to `{}` (the empty object). Univer treats `{}` as a valid workbook and initializes a fresh blank sheet. This means "New Spreadsheet" creates an empty file on disk that becomes a fresh workbook on first open — no placeholder JSON is needed.
-
-### Serialization is stable and deterministic
-
-`serializeSnapshot` uses `JSON.stringify(data, null, 2)`. Given the same in-memory object, the output is identical across calls (no random keys, no timestamps injected by the serializer itself).
-
-### Round-trip guarantee
-
-```
-parseSnapshot(serializeSnapshot(data)) deepEquals data
-```
-
-Verified in `snapshot.test.ts`.
-
----
-
-## parse / serialize API (`sheet/snapshot.ts`)
-
-This module has no Univer, canvas, or DOM dependency, so Bun can test it directly.
-
-### `WorkbookSnapshot`
-
-```ts
-export type WorkbookSnapshot = Record<string, unknown>;
-```
-
-Opaque wrapper around Univer's `IWorkbookData`. The module deliberately avoids importing Univer types so the parse/serialize logic is testable in a headless environment.
-
-### `parseSnapshot(text: string): WorkbookSnapshot`
-
-Parses a `.sheet` file's text content.
-
-- Empty string or whitespace-only → returns `{}` (blank workbook, not an error)
-- Valid JSON → returns the parsed object
-- Invalid JSON → throws `SheetParseError`
-
-```ts
-parseSnapshot("")                         // → {}
-parseSnapshot("   \n  ")                  // → {}
-parseSnapshot('{"id":"wb1"}')             // → { id: "wb1" }
-parseSnapshot("{bad json")                // throws SheetParseError
-```
-
-### `serializeSnapshot(data: WorkbookSnapshot): string`
-
-Serializes a workbook snapshot to the text written to disk.
-
-```ts
-serializeSnapshot({ id: "wb1", sheets: { s1: { name: "A" } } })
-// → '{\n  "id": "wb1",\n  "sheets": {\n    "s1": {\n      "name": "A"\n    }\n  }\n}'
-```
-
-Output is always 2-space-indented JSON. This is intentionally human-readable so `.sheet` diffs in git are meaningful.
-
-### `SheetParseError`
-
-```ts
-export class SheetParseError extends Error {
-  constructor(cause: unknown);
-  name: "SheetParseError";
+```json
+{
+  "id": "wb1",
+  "name": "Budget",
+  "sheetOrder": ["s1"],
+  "sheets": {
+    "s1": {
+      "name": "Sheet1",
+      "cellData": { "0": { "0": { "v": "Item" }, "1": { "v": "Cost" } } }
+    }
+  }
 }
 ```
 
-Thrown only by `parseSnapshot` on invalid JSON. The `message` is `Invalid .sheet contents: <cause.message>`. `SheetView` catches this specifically and shows the message in the error state instead of a generic string.
+## Create and open a sheet
 
----
+Right-click a folder in the file tree and choose **New Spreadsheet** to make `Untitled.sheet` there, ready to rename. The **New spreadsheet** command (command palette, the `+` menu or a toolbar button) makes `Spreadsheet.sheet` at the vault root and opens it. If that name is taken the command adds a six-character suffix, as in `Spreadsheet-1a2b3c.sheet`. Click any `.sheet` file in the tree to open it. Its tab shows the file name without the extension, with a table icon.
 
-## How Sheets Mount (code-split, `sheet/univerSheet.ts`)
+## Edit a sheet
 
-The Univer library is large. It is never bundled into the main app chunk. The import is a **dynamic `import()`** inside `SheetView.tsx`, deferred until the first time a `.sheet` pane is actually rendered:
+The editor has the usual ribbon and formula bar, with cell editing, formulas, formatting, sorting and column filters. Cell text uses Monaspace Xenon, and the editor's colours follow your app theme, switching live when you change it.
 
-```ts
-const { mountSheet } = await import("./sheet/univerSheet");
-```
+Edits save by themselves 750 ms after you stop typing. Opening a sheet and clicking around without changing anything writes nothing.
 
-Vite splits `univerSheet.ts` (and all its `@univerjs/*` deps) into a separate JS chunk. The user only pays the bundle cost when they open a spreadsheet.
+If another program changes the file while you have it open and you have no unsaved edits, the sheet reloads from disk. The reload is skipped while you have edits in flight, so your changes are never overwritten. If the new content is not valid JSON, or the file is deleted, the sheet keeps showing the last good workbook.
 
-### `mountSheet(opts: MountOptions): SheetHandle`
+If the file cannot be read or is not valid JSON when you open it, the pane shows the error in red and the editor does not start.
 
-Creates a Univer instance inside a given container element.
+## Export a sheet
 
-#### `MountOptions`
+A sheet exports to `html`, `pdf` and `png` from the export pane (Mod+Shift+P) or with `bismuth export Budget.sheet --format html`. See [export](../export/overview.md). The export contains the first sheet only, as a plain table of raw cell values: formatting, formulas and any later sheets are not included. Cell text renders inline markdown and `$math$`, the same as it does on screen.
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `container` | `HTMLElement` | yes | Parent DOM element (stays stable across remounts) |
-| `data` | `WorkbookSnapshot` | no | Initial workbook data; omit or pass `{}` for a blank workbook |
-| `onChange` | `() => void` | yes | Fired on every data-mutating Univer command (caller debounces) |
-| `dark` | `boolean` | no | Initial dark mode state |
+## Where sheets show up
 
-#### Remount isolation
+A `.sheet` file is an ordinary vault file. The file tree lists it next to notes, and you can move, rename and delete it there. The change watcher picks up edits from other programs. A sheet is not a note, so it never becomes a node in the [knowledge graph](../graph/overview.md) and its text is not scanned for links.
 
-Univer **cannot** be disposed and re-created into the same DOM node — attempting it renders blank. `mountSheet` works around this by always creating a **fresh child `<div>`** inside `container`:
+## The `.sheet` file format
 
-```ts
-const root = document.createElement("div");
-root.className = "bismuth-sheet"; // scopes univer-theme.css
-root.style.width = "100%";
-root.style.height = "100%";
-opts.container.appendChild(root);
-```
+A `.sheet` file is a Univer `IWorkbookData` object written as JSON with 2-space indentation, which keeps git diffs readable. The fields Bismuth itself reads are these:
 
-On `dispose()` this child is removed. The stable `container` ref in the Solid component is never touched. This makes external-reload remounts reliable.
-
-#### Default font
-
-After `createWorkbook`, all sheets get `{ ff: "Monaspace Xenon" }` as the default cell style, matching the app's monospace. This is applied **before** wiring `onChange` so it is part of the post-mount baseline and does not count as a user edit — opening a sheet never triggers a spurious save.
-
-#### Univer presets loaded
-
-- `UniverSheetsCorePreset` — core spreadsheet editing (cells, formulas, formatting)
-- `UniverSheetsSortPreset` — sort ranges
-- `UniverSheetsFilterPreset` — column filters
-
-Locale is `LocaleType.EN_US`. (Important: using the wrong enum member `En_US` would silently register under a wrong key and produce raw `ui.ribbon.*` key strings in the toolbar — use exactly `LocaleType.EN_US`.)
-
-#### `SheetHandle`
-
-The object returned by `mountSheet`:
-
-| Method | Signature | Description |
+| Field | Type | Meaning |
 |---|---|---|
-| `getSnapshot` | `() => WorkbookSnapshot` | Calls `univerAPI.getActiveWorkbook().save()` — returns current in-memory state |
-| `setDark` | `(dark: boolean) => void` | Toggles dark mode at runtime without remounting |
-| `dispose` | `() => void` | Tears down the Univer instance and removes the child div; safe to call multiple times |
+| `sheets` | `Record<sheetId, SheetData>` | Map of sheet id to sheet |
+| `sheetOrder` | `string[]` | Sheet ids in tab order |
+| `sheets[id].name` | `string` | Tab name |
+| `sheets[id].cellData` | `Record<row, Record<col, { v }>>` | Sparse cells; row and column keys are numeric strings; `v` is the raw value |
 
----
+Univer writes more fields (`id`, `name`, styles and so on), and the file holds whatever Univer's `save()` returns.
 
-## `SheetView` Component (`SheetView.tsx`)
+`parseSnapshot("")` and whitespace-only text return `{}`, which Univer opens as a fresh blank workbook. Invalid JSON throws `SheetParseError` with the message `Invalid .sheet contents: <cause>`, and the pane shows that message. `serializeSnapshot` is `JSON.stringify(data, null, 2)`, so the same object always produces the same text, and `parseSnapshot(serializeSnapshot(data))` equals `data`.
 
-`SheetView` is the Solid component that wires together loading, mounting, saving, and external-reload.
+## How it works
 
-### Props
+`SheetView.tsx` owns the Solid lifecycle, `sheet/univerSheet.ts` adapts Univer, `sheet/snapshot.ts` parses and serialises, and `sheet/sync.ts` guards reloads. `snapshot.ts` has no Univer, canvas or DOM dependency, so Bun tests it directly.
 
-```ts
-{ path: string; onSaved?: () => void }
-```
+### Code-split bundle
 
-- `path` — vault-relative path to the `.sheet` file (e.g. `"Notes/Budget.sheet"`)
-- `onSaved` — optional callback fired after each successful write to disk
+The editor uses `@univerjs/presets` 0.25 and is large, so `SheetView` loads it with a dynamic `import("./sheet/univerSheet")` the first time a `.sheet` pane renders, and Vite puts it in its own chunk. `PaneContent.tsx` also lazy-loads `SheetView` for any path ending in `.sheet`. The presets are `UniverSheetsCorePreset`, `UniverSheetsSortPreset` and `UniverSheetsFilterPreset`, with the locale set to `LocaleType.EN_US`. The enum member must be exactly `EN_US`: the wrong casing registers the locale under a wrong key and the ribbon shows raw `ui.ribbon.*` strings.
 
-### Lifecycle
+### Mount and remount
 
-#### 1. Mount: read + mount Univer
+`mountSheet({ container, data?, onChange, dark? })` returns a `SheetHandle` with `getSnapshot()` (the active workbook's `save()`), `setDark(dark)` and `dispose()` (safe to call repeatedly). Univer rendered blank when it was disposed and re-created into the same node, so each mount creates a fresh child `<div class="bismuth-sheet">` inside the caller's stable container and removes it on dispose. External-reload remounts depend on this.
 
-`onMount` reads the file from disk via `api.read(path)`, parses it with `parseSnapshot`, then calls `mountSheet`. If the file is empty, Univer initializes a blank workbook.
+After `createWorkbook`, every sheet gets the default cell style `{ ff: "Monaspace Xenon" }`. This happens before `onChange` is wired, so it counts as part of the baseline and is not a user edit.
 
-After `mountSheet` returns, `lastWrittenText` is **immediately baseline'd** to `serializeSnapshot(handle.getSnapshot())`. This is the canonical snapshot after Univer's own mount-time commands (selection setup, render pass). The baseline ensures that Univer's internal initialization commands — which fire `onChange` — compare equal to `lastWrittenText` and do not trigger a disk write for an untouched sheet.
+### Load, save and reload
 
-#### 2. Edit: debounced save
+`SheetView` props are `{ path: string; onSaved?: () => void }`.
 
-Every data-mutating Univer command fires `onChange → dirty = true; save()`. The save is debounced at **750ms** so a burst of fast edits writes once. On fire:
+1. On mount it reads the file with `api.read`, parses it, and mounts. Right after mounting it sets `lastWrittenText` to `serializeSnapshot(handle.getSnapshot())`. Univer fires commands during its own mount (selection setup, render pass); with the baseline set, they compare equal and cause no write.
+2. Every data-mutating Univer command sets `dirty` and calls a 750 ms debounced `save()`. The save serialises the snapshot; if the text equals `lastWrittenText` it clears `dirty` and skips the write; otherwise it calls `api.write`, updates `lastWrittenText`, clears `dirty` and calls `onSaved`. Clearing `dirty` on a skipped write matters: a flag left `true` would block every later external reload.
+3. `onServerChange` is registered synchronously, not inside the async `onMount`, so the component's `onCleanup` owns its cleanup. On a change that names the file while clean, it reads the disk text and calls `isExternalChange`. A `true` result disposes the old instance and mounts a fresh one.
+4. A `createEffect` over `settings.appearance` calls `handle.setDark(!resolveAppearance(settings.appearance).isLight)`.
+5. Cleanup unsubscribes the listener, cancels the pending save and disposes Univer.
 
-1. `serializeSnapshot(handle.getSnapshot())` produces the current snapshot text.
-2. If it equals `lastWrittenText` (no real change — e.g. a selection change that Univer fires as a command), `dirty` is cleared and the write is skipped. This is essential: without clearing `dirty`, the flag would stay `true` and block all future external reloads.
-3. Otherwise, the text is written via `api.write(path, text)`, `lastWrittenText` is updated, `dirty` is cleared, and `onSaved?.()` is called.
+`isExternalChange({ path, changedPaths, isDirty, diskText, lastWrittenText })` in `sync.ts` is pure. It returns `true` only when `changedPaths` includes `path`, `isDirty` is `false`, and `diskText !== lastWrittenText` (or nothing has been written yet). The last test filters the echo: every `api.write` comes back over SSE, and without it the sheet would reload after each save.
 
-#### 3. External reload: SSE-driven
+### Theme
 
-`onServerChange` subscribes to the SSE event stream (via `serverVersion.ts`). On every change event, the handler runs `isExternalChange` (see below). If it returns `true`:
+The Univer theme is a section of `app/src/global.css`, scoped to `.bismuth-sheet`; it is global because Univer builds its own DOM. Univer's chrome reads `var(--univer-*)` properties with `!important`, so the theme overrides those variables and maps them onto Bismuth's tokens instead of fighting specificity: `--univer-primary-*` to `--accent` and mixes of it, `--univer-red-*` to `--danger`, and in dark mode (`.bismuth-sheet .univer-dark`) the gray ramp to `--rail`, `--surface-1`, `--surface-2`, `--border` and `--border-soft`. All chrome is forced to Monaspace Xenon. Cell text is drawn on Univer's canvas, so the font reaches it only through the default cell style above.
 
-1. The current on-disk content is fetched via `api.read(path)`.
-2. The snapshot is parsed with `parseSnapshot`.
-3. The old Univer instance is disposed and a fresh one is mounted with the new data.
-4. If the file has been deleted (read throws) or the text is invalid JSON (parse throws), the error is silently swallowed and the last good workbook stays visible.
+The toolbar icons are re-skinned with Lucide glyphs through a second, generated section of `global.css`: each rule masks a stable `univerjs-icon-*-icon` class with an SVG data URI and sets `background-color: currentColor`. `scripts/gen-univer-icons.ts` generates it; do not edit it by hand.
 
-The `onServerChange` subscription is registered **synchronously** (not inside the async `onMount`) so its cleanup is properly owned by the component's `onCleanup`.
+### HTML export
 
-#### 4. Theme sync
+`snapshotToHtmlTable()` in `export/sheetHtml.ts` picks the first id in `sheetOrder` that exists in `sheets` (falling back to key order), finds the largest populated row and column, and writes a `<table>` whose empty cells are empty `<td>`. Each value goes through `renderCellHtml` (inline markdown and math, sanitised).
 
-A `createEffect` tracks `settings.appearance` and calls `handle.setDark(dark)` reactively. The dark/light state is derived from `resolveAppearance(settings.appearance).isLight`. When the user switches the app theme, the sheet chrome updates without any remount.
-
-#### 5. Cleanup
-
-`onCleanup` calls:
-- `unsub()` — unsubscribes the SSE listener
-- `save.cancel()` — cancels any pending debounced write
-- `handle?.dispose()` — tears down Univer
-
-### Error states
-
-| Condition | Behavior |
-|---|---|
-| `api.read` fails at mount | Error message shown in red; Univer never mounts |
-| `parseSnapshot` throws `SheetParseError` | `SheetParseError.message` shown in red |
-| Any other mount error | `String(e)` shown in red |
-| File vanishes during external reload | Silently kept showing last workbook |
-| Invalid JSON during external reload | Silently kept showing last workbook |
-
----
-
-## External-Edit Reload Guard (`sheet/sync.ts`)
-
-### `isExternalChange(d: ChangeDecision): boolean`
-
-Pure function. Returns `true` only when ALL of the following hold:
-
-1. `changedPaths` includes `path` (the event touches our file)
-2. `isDirty` is `false` (no in-progress edits that would be clobbered)
-3. The on-disk text differs from what we last wrote (`diskText !== lastWrittenText`), **or** we have never written (`lastWrittenText === null`)
-
-Rule 3 filters out the **echo**: every `api.write` triggers an SSE event that arrives back at the client. Without the echo filter, the sheet would reload from disk after every save — causing a double-mount for no reason. The comparison is an exact string equality check (same 2-space JSON).
-
-#### `ChangeDecision` interface
-
-```ts
-interface ChangeDecision {
-  path: string;             // vault-relative path of the open sheet
-  changedPaths: string[];   // paths from the SSE event
-  isDirty: boolean;         // true while pane has unsaved edits
-  diskText: string;         // current on-disk text
-  lastWrittenText: string | null; // text from our last write, or null if never written
-}
-```
-
-#### Test cases (from `sync.test.ts`)
-
-```ts
-// change to a different file → false
-isExternalChange({ path: "Budget.sheet", changedPaths: ["other.md"], ... }) // false
-
-// pane is dirty → false (never clobber in-progress edits)
-isExternalChange({ ..., changedPaths: ["Budget.sheet"], isDirty: true }) // false
-
-// own echo: diskText === lastWrittenText → false
-isExternalChange({ ..., diskText: "A", lastWrittenText: "A" }) // false
-
-// external write while clean → true
-isExternalChange({ ..., diskText: "EXTERNAL", lastWrittenText: "A" }) // true
-
-// never written (lastWrittenText null) + disk changed → true
-isExternalChange({ ..., lastWrittenText: null, diskText: "B" }) // true
-```
-
----
-
-## Theme Integration
-
-### `univer-theme.css`
-
-Scoped entirely to `.bismuth-sheet` (the child div created by `mountSheet`). Never leaks to the rest of the app.
-
-**Strategy**: Univer's chrome uses `var(--univer-*)` CSS custom properties with `!important`. Re-theming is done by overriding these variables (not fighting specificity), mapping them onto Bismuth's own design tokens (`--accent`, `--fg`, `--border`, `--rail`, `--surface-1`, `--surface-2`, `--border-soft`, `--text-muted`, `--faint`, `--danger`). Since Bismuth's tokens already flip between light and dark, the sheet chrome tracks the app theme automatically.
-
-**Key mappings**:
-
-| Univer token | Bismuth token | Effect |
-|---|---|---|
-| `--univer-primary-300..600` | `var(--accent)` | Active ribbon tab, primary buttons, selection chrome |
-| `--univer-primary-50..200` | `color-mix(accent, transparent)` | Accent tints |
-| `--univer-primary-700` | `color-mix(accent 82%, black)` | Darker accent hover |
-| `--univer-primary-900` | `color-mix(accent 28%, transparent)` | Very faint accent |
-| `--univer-red-300..600` | `var(--danger)` | Error/danger states |
-| `--univer-gray-900` (dark only) | `var(--rail)` | Toolbar + formula-bar outer rail |
-| `--univer-gray-800` (dark only) | `var(--surface-1)` | Popovers, menus, dropdowns |
-| `--univer-gray-700` (dark only) | `var(--surface-2)` | Inputs, subtle hover |
-| `--univer-gray-600` (dark only) | `var(--border)` | Strong borders / hover |
-| `--univer-gray-500` (dark only) | `var(--border-soft)` | Hairline dividers |
-
-The gray-token remaps are scoped to `.bismuth-sheet .univer-dark` so light mode (Univer's white surfaces) is left untouched.
-
-**Font**: `.bismuth-sheet, .bismuth-sheet *` forces `font-family: "Monaspace Xenon", ui-monospace, monospace !important` across all chrome elements. Cell text is canvas-rendered by Univer and unaffected by this rule — that is intentional (canvas text is set separately via `ws.setDefaultStyle({ ff: "Monaspace Xenon" })`).
-
-**Ribbon tabs**: restyled to match Bismuth's `SegmentedToggle` (the 2D/3D graph control): a faint track, muted inactive tabs with small uppercase text, and a neutral "pill" for the active tab rather than an accent-colored one.
-
-**Formula bar**: pinned to `--rail` background with a `--border-soft` hairline below, using `--text-muted` text and `--faint` for the fx icon.
-
-### `univer-icons.css`
-
-Generated file — do not edit by hand. Regenerate with:
-
-```bash
-bun run gen:univer-icons
-```
-
-Re-skins Univer's toolbar SVG icons with Lucide equivalents using a CSS mask technique: each icon targets a stable `univerjs-icon-*-icon` class, applies a `mask`/`-webkit-mask` of the Lucide SVG as a data URI, sets `background-color: currentColor`, and hides the original SVG children with `display: none`. This approach survives Univer re-renders and requires no DOM manipulation.
-
----
-
-## Routing and Creation
-
-### Routing
-
-`PaneContent.tsx` routes any path ending in `.sheet` to `SheetView`:
-
-```ts
-// PaneContent.tsx (lazy-loaded)
-const SheetView = lazy(() => import("./SheetView").then(m => ({ default: m.SheetView })));
-
-<Match when={props.path.endsWith(".sheet")}>
-  <SheetView path={props.path} onSaved={props.onSaved} />
-</Match>
-```
-
-The `lazy()` wrapper means the entire Solid component (and by extension the `univerSheet.ts` dynamic import) is only evaluated when a `.sheet` pane is first rendered.
-
-### Creating a new spreadsheet
-
-Two entry points, both calling `newDoc("Spreadsheet", "sheet")` in `App.tsx`:
-
-1. **File tree right-click** → "New Spreadsheet" (creates in the right-clicked folder)
-2. **Command palette / toolbar** → `new-spreadsheet` command
-
-`newDoc` calls `api.create(path, "file")`, which writes an empty file. On collision it generates a UUID-suffixed fallback name. The empty file opens in a new tab; `parseSnapshot("")` returns `{}`, and Univer initializes a blank workbook.
-
-Default name: `Spreadsheet.sheet` (fallback: `Spreadsheet-<6-char-uuid>.sheet`).
-
-Tab label: the filename without the `.sheet` extension (from `tabIds.ts`). Tab icon: `Table` (Lucide).
-
----
-
-## Export
-
-`.sheet` files export to **HTML**, **PDF**, and **PNG** (from `export/formats.ts`):
-
-```ts
-formatsFor("budget.sheet") // → ["html", "pdf", "png"]
-```
-
-Export to HTML uses `sheetHtml.ts`'s `snapshotToHtmlTable(snap)`, which reads the first sheet in `sheetOrder` (falling back to `Object.keys(sheets)`) and renders a plain `<table>` from the sparse `cellData` map (rows × cols, null cells become empty `<td>`). Only raw cell values (`v` field) are exported — formatting, formulas, and multi-sheet tabs beyond the first are not reflected in the HTML export.
-
----
-
-## Persistence
-
-`.sheet` files are plain vault files. They:
-
-- Are tracked by the file tree (listed in the sidebar alongside `.md` notes)
-- Are watched by the backend's file-change watcher (SSE events propagate edits from external editors back to the open pane)
-- Can be moved, renamed, and deleted via the file tree with the same affordances as notes
-- Are committed by `POST /backup` (git snapshot) along with all other vault files
-- Are included in the mobile port's `TREE_EXTS` (`[".md", ".base", ".sheet", ".draw"]`)
-
-They are **not** processed by the vault graph builder — a `.sheet` file does not become a knowledge-graph node.
-
----
-
-## Gotchas and Edge Cases
-
-- **Remount into the same node renders blank.** Univer cannot be disposed and re-mounted into the same DOM element. `mountSheet` always creates a fresh child div per instance and removes it on `dispose`. The caller's stable `container` ref is never touched.
-
-- **The post-mount baseline is critical.** Univer fires `CommandExecuted` events during its own mount sequence (selection setup, render pass). If `lastWrittenText` is not immediately baselined to `serializeSnapshot(handle.getSnapshot())` after mount, those internal events would look like user edits and trigger a spurious disk write on every open, bumping the server version and potentially causing flicker.
-
-- **The snapshot-equality check also clears `dirty`.** When `save()` fires and `text === lastWrittenText`, `dirty` is explicitly set to `false`. If this were skipped, the `dirty` flag would remain `true` indefinitely after a no-op command, permanently blocking external reloads.
-
-- **`LocaleType.EN_US` not `En_US`.** The Univer enum member is `EN_US`. Passing `En_US` (wrong casing) silently registers the locale under the wrong key, causing raw `ui.ribbon.*` key strings to appear in the toolbar rather than translated labels.
-
-- **No `.sheet` graph nodes.** Unlike `.md` notes, `.sheet` files are not parsed by the vault graph builder and do not appear as nodes in the knowledge graph or generate wikilink edges.
-
-- **HTML export is first-sheet only.** `snapshotToHtmlTable` reads only the first sheet (by `sheetOrder` or key order) and only raw `v` values. Cell formatting, formulas, and additional sheets are not included.
-
----
-
-`Source: app/src/SheetView.tsx, app/src/sheet/snapshot.ts, app/src/sheet/sync.ts, app/src/sheet/univerSheet.ts, app/src/sheet/univer-theme.css, app/src/sheet/univer-icons.css, app/src/sheet/snapshot.test.ts, app/src/sheet/sync.test.ts, app/src/export/sheetHtml.ts, app/src/export/formats.test.ts, app/src/App.tsx, app/src/PaneContent.tsx`
+Source: `app/src/SheetView.tsx`, `app/src/sheet/snapshot.ts`, `app/src/sheet/sync.ts`, `app/src/sheet/univerSheet.ts`, `app/src/global.css`, `app/src/export/sheetHtml.ts`, `app/src/export/formats.ts`, `app/src/PaneContent.tsx`, `app/src/FileTree.tsx`, `app/src/App.tsx`, `scripts/gen-univer-icons.ts`

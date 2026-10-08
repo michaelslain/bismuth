@@ -1,940 +1,663 @@
-# Core HTTP API Reference
+# Core HTTP API reference
 
-This reference describes the Bismuth **core backend** HTTP API in
-[`core/src/server.ts`](../../core/src/server.ts). Use it when calling the server directly — from a
-frontend, script, integration, or debugging session — and you need a route's request and response
-shape, error behavior, or cache/SSE effect. Each route has its own entry, so use the index to jump
-to the one you need.
+The core server is the HTTP API behind the app, the `bismuth` CLI and the MCP server.
+It serves a vault's files, graph, bases, tasks, settings, daemon state and chat history on one port (default `4321`).
+Use this page when you call it from a script, an integration or a debugging session and need a route's request, response, access rule or side effect.
 
-The server is one `Bun.serve` instance created by `createServer({ vault, memory?, port? })`.
-Routes are dispatched by exact `"<METHOD> <pathname>"` keys in either `routes` (reads) or
-`mutatingRoutes` (writes), except for the `GET /terminal`, `GET /chat`, and `GET /ui` WebSocket
-upgrades.
+```bash
+curl -s http://localhost:4321/version
+# {"version":42}
 
-**In this reference:**
-- [Server fundamentals](#server-fundamentals) — dispatch, caching, error-code mapping, CORS
-- [Visibility gating](#visibility-gating) — the owner/chat/daemon channel layer enforced in front of most read routes
-- [GET reads](#get-reads-routes-table) — the `routes` table's read-only entries
-- [POST in the read table](#post-in-the-read-table-not-mutations) — POSTs that aren't vault mutations
-- [POST mutations](#post-mutations-mutatingroutes-table) — the `mutatingRoutes` table
-- WebSocket upgrades: [`/chat`](#websocket-get-chat), [`/ui`](#websocket-get-ui), [`/terminal`](#websocket-get-terminal)
-- [Quick route index](#quick-route-index) — one row per route: method, table, and invalidation behavior
+curl -s -X POST http://localhost:4321/search \
+    -H 'content-type: application/json' \
+    -H "X-Bismuth-Token: $TOKEN" \
+    -d '{"query":"neural net","opts":{"caseSensitive":false,"wholeWord":false,"regex":false}}'
+```
 
-## Server fundamentals
+`$TOKEN` is the running core's owner token, which makes you the vault owner instead of an agent; see [Who is calling](#who-is-calling-channels-and-visibility-gating). The CLI wraps many of these routes; see the [CLI reference](../cli/reference.md).
 
-### Dispatch and the two tables
-- The fetch handler builds `route = `${req.method} ${url.pathname}`` and looks it up as `routes[route] ?? mutatingRoutes[route]`. No match → `404 "not found"`.
-- **`routes`** (the read table) contains reads and POSTs that are not vault mutations: search,
-  row resolution, backup, open-folder, relay ingestion, and daemon writes. These handlers do not
-  automatically invalidate caches or publish SSE.
-- **`mutatingRoutes`** wraps each route with `mutatingHandler(run, pathOf?)`. After the handler
-  runs, it calls `invalidate(...paths)`, which bumps `version`, clears affected caches, and
-  publishes an SSE event. Do not bump `version` manually in a mutating route.
+This page covers server basics, who is calling, then the routes by area:
 
-### `mutatingHandler` mechanics
-`mutatingHandler(run, pathOf?)` clones the request, runs `run(req, url)`, then if `pathOf` is supplied it re-parses the cloned JSON body and passes the result to `pathOf(body)`:
-- `pathOf` returns `string` → invalidate that single path.
-- returns `string[]` → invalidate all of them.
-- returns `undefined` (or no `pathOf`, or body wasn't JSON) → `invalidate()` with **no paths** = full invalidation (`{graph:true, tree:true}`).
+- [Server basics](#server-basics): dispatch, errors, CORS, change events
+- [Visibility gating](#who-is-calling-channels-and-visibility-gating): the owner, chat and daemon channels
+- Routes by area:
+  [files and notes](#files-and-notes), [attachments](#attachments-and-uploads), [search](#search), [graph](#graph), [bases and rows](#bases-and-rows), [tasks](#tasks), [flashcards](#flashcards),
+  [settings and themes](#settings-and-themes), [daemon](#daemon), [memory recall](#memory-recall), [chat history and agents](#chat-history-and-agents), [Google Calendar](#google-calendar),
+  [relay and app control](#relay-and-app-control), [install, doctor and update](#install-doctor-and-update), [server state and change events](#server-state-and-change-events)
+- [WebSockets](#websockets): `/chat`, `/ui`, `/terminal`
 
-`invalidate(...paths)` decides dirtiness: with no paths, both graph and tree are dirty; with paths it calls `classifyVault(paths)` (re-fingerprints changed notes via wikilinks+tags+icon — a content-only edit that touches no link/tag/icon is dirty to neither graph nor tree). `applyDirty` then invalidates `graphCache`/`treeCache` (only the dirty ones), always invalidates the search index, nulls `cachedRows`/`cachedTasks`, increments `version`, and `sse.publish({ version, paths, dirty })`.
+## Server basics
 
-### Caches
-- `graphCache` / `treeCache` — deduped async caches (concurrent first requests share one build; a mid-build invalidation won't repopulate a stale value). Warmed on boot off the critical path.
-- `cachedRows` (vault feed for Bases) and `cachedTasks` (task rows) — plain lazy caches, nulled on any vault change, rebuilt on next read.
-- The search index is invalidated on every vault change.
+A request is routed by the exact key `<METHOD> <pathname>`.
+A key with no handler returns `404` with the body `not found`.
+The WebSocket upgrades `GET /chat`, `GET /ui` and `GET /terminal` are matched before the route tables.
+An `OPTIONS` request to any path returns an empty response with the CORS headers.
 
-### Response helpers
-- `ok(data?)` → `Response.json(data)` when `data !== undefined`, else the plain text body `"ok"` (status 200).
-- `error(message, statusCode = 400)` → plain-text body with the given status.
-- Thrown `AppError` is mapped to its `statusCode`; any other thrown `Error` → `500`. Error code → status mapping:
+Startup takes `--vault` (required), `--memory` (optional) and `--port` (default `4321`). A route handler runs under a 255-second idle timeout, the longest Bun allows, so slow routes such as `POST /daemon/setup` are not cut off.
 
-| Error code | HTTP status |
+### How errors look
+
+Most errors are a plain-text body with an HTTP status, such as `forbidden` or `note not found`. A few routes answer with JSON instead and say so in their table row.
+
+A thrown `AppError` carries its own status. The common codes:
+
+| Code | Status |
 |---|---|
 | `ENOENT`, `*_NOT_FOUND` | 404 |
 | `EACCES` | 403 |
 | `EEXIST`, `*_CONTENT_CHANGED` | 409 |
+| `EBUSY` | 409 |
 | `EINVAL`, `PARSE_ERROR`, `SCHEMA_ERROR`, `*_FORMAT_ERROR`, `BASE_CYCLE` | 400 |
-| `INTERNAL_ERROR` | 500 |
+| Any other thrown error | 500 |
+
+A missing required query parameter is `400` with the body `missing ?<param>=`.
 
 ### CORS
-Every response is post-processed by `withCors`, setting:
-- `Access-Control-Allow-Origin: *`
-- `Access-Control-Allow-Methods: GET,PUT,POST,OPTIONS`
-- `Access-Control-Allow-Headers: Content-Type, X-Bismuth-Token` (must name every custom header a real client attaches — see `core/src/ownerToken.ts` — or the browser's preflight refuses to ever send the real request)
-- `Access-Control-Max-Age: 600` — lets the browser cache a preflight instead of re-sending `OPTIONS` before every request to a new URL; 600s is also WebKit/Safari's hard cap on this header, so a larger value would be a no-op there anyway.
 
-A bare `OPTIONS` request to any path returns `204`-ish (`new Response(null)`) with the CORS headers. (Verified: `OPTIONS /graph` returns `Access-Control-Allow-Origin: *` and `Methods` containing `GET`.)
+Every response carries `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET,PUT,POST,OPTIONS`, `Access-Control-Allow-Headers: Content-Type, X-Bismuth-Token` and `Access-Control-Max-Age: 600`.
+Any local web page can therefore call the server, which is why routes that run commands, delete data or change credentials require the owner token.
 
-### Default port
-`cfg.port ?? 4321`. The CLI entrypoint reads `--vault`, `--memory` (both required) and optional `--port` (default 4321). Tests pass `port: 0` to bind an ephemeral port.
+### Cache invalidation and change events
 
-### Missing query param
-`requireQueryParam(url, param)` throws `AppError("EINVAL", "missing ?<param>=", 400)` when absent → surfaces as `400`. Used by `/base` (`file`), `/file` (`path`), `/asset` (`path`), `/meta` (`path`), `/cards/note` (`path`), `POST /asset` (`path`).
+Routes fall into three groups by what they do to caches and the event stream.
 
----
+| Effect | Meaning |
+|---|---|
+| none | Reads, and writes outside the vault (daemon state, credentials, relay registry). No cache change, no event. |
+| invalidates `<path>` | The route names the paths it wrote. The server re-fingerprints those notes, drops the caches they affect, bumps `version` and publishes an event on `GET /events`. |
+| full | The route cannot name its paths up front. Graph and tree are both marked dirty, then `version` bumps and an event publishes. |
 
-## Visibility gating
+A content-only edit that changes no link, tag or icon marks neither graph nor tree dirty. The event still carries the path, so editors reconcile and graph and tree consumers skip their refetch. Search, rows and tasks caches are patched in place for named paths and rebuilt after a full invalidation.
 
-An owner can mark a note `visibility: "chat-only"` or `"hidden"` in its frontmatter, or a whole folder the same way via `.settings`'s `folderVisibility` map (`core/src/settings.ts`). Most read routes enforce this against non-owner requests — an undocumented layer sitting in front of every route below. Full threat model + storage format: [`docs/vault/visibility.md`](../vault/visibility.md); the acceptance runs that verified it: [`docs/vault/visibility-acceptance.md`](../vault/visibility-acceptance.md). This section covers only the HTTP enforcement (`core/src/server.ts`, `core/src/visibility.ts`, `core/src/ownerToken.ts`).
+Routes that write a note mark the path as self-written first, so the file watcher does not publish a second event for the server's own write.
 
-### Channel resolution
-Every request resolves to a `RequestChannel` — `"owner" | "chat" | "daemon"` — via `resolveRequestChannel(req.headers, ownerToken)` (`core/src/ownerToken.ts`), wrapped by server.ts's `requestChannel(req)`:
-- **`owner`** — the request's `X-Bismuth-Token` header matches this server boot's token byte-for-byte. The token is minted fresh per boot (`mintOwnerToken()`, 32 random bytes hex via `node:crypto`), held only in memory + the vault's 0600 run record, and attached automatically by the app/CLI's own HTTP client (`app/src/api.ts`'s `ownerTokenHeaders()`) once resolved (or overridden via `BISMUTH_OWNER_TOKEN`, e.g. from the Tauri shell). An owner request is **never** filtered — every route behaves exactly as it did before this gate existed.
-- **`chat`** — no matching token, but header `X-Bismuth-Channel: chat`. (Not currently sent by any real cross-origin client — see the `CORS`/`Access-Control-Allow-Headers` comment in `server.ts` — so today this only appears in same-process/server-side callers.)
-- **`daemon`** — everything else: no headers, an unrecognized channel value, a bare `curl`. This is the **stricter** of the two non-owner channels (see below) and is the fail-safe default for any request that doesn't identify itself, mirroring `mcpChannel()`'s identical fail-safe default in `core/src/visibilityCliGate.ts`.
+## Who is calling: channels and visibility gating
 
-`isVisibleToChat(v)` = `v !== "hidden"` (a `chat-only` note **is** visible to chat — that's the tier's whole point); `isVisibleToDaemon(v)` = `v === "all"` (the daemon channel is also denied `chat-only` notes). Both are pure functions in `core/src/visibility.ts`.
+Every request resolves to one of three channels, and the channel decides how much of the vault a route returns.
 
-### The deny list
-`denyEntriesForRequest(req)` (server.ts) resolves the channel, then — for any non-owner channel — calls `buildDenyPaths(cfg.vault, channel)` (`core/src/visibility.ts`): a full vault walk (every file, every extension, following symlinked directories, INCLUDING dot-directories) that resolves each file's effective visibility — its own frontmatter value, else the nearest ancestor folder's `folderVisibility` entry, else a same-directory sibling's stricter value via stem inheritance (e.g. a restricted `sketch.draw` also restricts `sketch.draw.png`), else `"all"` — and returns one `DenyEntry` (`{ rel, abs, aliases? }`) per restricted note.
-- **Owner requests short-circuit to `[]`** before the walk ever runs.
-- **Memoized per vault `version`, per channel** (`denyPathsMemoVersion`/`denyPathsMemo`): the walk runs at most once per channel between mutations — dropped and rebuilt the instant `version` bumps, so a visibility edit (frontmatter or `.settings`) takes effect on the very next non-owner request. In-flight walks are shared across concurrent requests of the same channel; a rejected walk is evicted immediately rather than cached, so the next request gets a fresh attempt instead of a permanently-wedged failure.
-- **A walk that cannot enumerate the vault throws**, rather than degrading to an empty (falsely "nothing is restricted") list — `VisibilityUndeterminedError` (unreadable subtree, a `.settings` that fails to parse, an unresolvable vault-root symlink) propagates out of `denyEntriesForRequest` and surfaces as a `500` via the route dispatch's catch-all, never as a silent `[]`.
-
-### Which routes are gated, and how
-Three enforcement shapes appear across the route tables:
-
-| Shape | What happens | Routes |
+| Channel | How a request gets it | Sees |
 |---|---|---|
-| **A — list-filtering** | A restricted item is silently dropped from the response array — `200`, with no indication anything was hidden, indistinguishable from "there were none" (`GET /graph`'s `filterGraph` drops the node AND every edge touching it) | `GET /graph`, `GET /vault-data`, `GET /tasks`, `GET /tasks/migration`, `POST /rows`, `POST /search`, `POST /search-prompt`, `GET /cards/decks`, `GET /cards/all`, `GET /cards/due` |
-| **B — single-path refusal** | The whole request is refused with `403 "forbidden"` when the requested path (or, for filename-first routes, its resolved path) is restricted | `GET /base` (`?file=`), `GET /file` (`?path=`), `GET /meta` (`?path=`), `GET /cards/note` (`?path=`), `GET /abs-path` (`?path=`, checked against the resolved path — see below), `GET /asset` (`?path=`, checked against BOTH the resolved absolute path and the raw query, only once `resolveAsset` has found a match) |
-| **C — blanket owner-only** | No per-path filtering is possible (a past chat transcript can quote any number of notes, hidden or not, across its whole history), so the ENTIRE route refuses any non-owner request outright, regardless of query params | `GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`, `GET /status-bar`, `POST /status-bar/trust`, `GET /doctor`, `POST /doctor/fix`, `GET /opencode/providers`, `POST /opencode/auth`, `POST /opencode/oauth/authorize`, `POST /opencode/oauth/callback`, `POST /asset/fetch`, `POST /daemon/cron/toggle`, `POST /daemon/cron/run`, `POST /daemon/process/toggle`, `POST /daemon/cron/delete`, `POST /daemon/process/delete`, `POST /daemon/pages/archive` (the non-chat rows refuse for different reasons — run output, credential writes, SSRF, destructive daemon actions — each stated in its own section) |
-| **D — field redaction** | Unlike B/C, the route does NOT refuse a non-owner request — it returns `200` with the response's content field(s) omitted, while every bookkeeping field is returned to every channel unchanged. Possible here because, unlike a chat transcript, the only sensitive part of the response is one specific field, not the existence of any row | `GET /relay/snapshot` (a `RelaySubagent`'s `lastMessage` — its `SubagentStop` final output, free-text that can quote vault content the same way a chat transcript snippet can — is omitted for non-owner requests via `redactSnapshot()` in `core/src/relay.ts`; `sessionId`/`terminalId`/`cwd`/`backend`/`lastSeen`/`agentId`/`parentSessionId`/`agentType`/`workflowId`/`startedAt`/`done`/`doneAt` are all bookkeeping and returned to every channel) |
-| **Not gated at all** | `GET /tree` resolves and annotates each entry's effective `visibility` (feeding the sidebar's hidden/chat-only badge) but does **not** filter or hide any entry for a non-owner request — every path and filename is returned to any caller, by design (existence/naming isn't treated as secret; see `docs/vault/visibility.md`) | `GET /tree` |
+| `owner` | `X-Bismuth-Token` equals this boot's token | Everything. Never filtered. |
+| `chat` | No valid token, header `X-Bismuth-Channel: chat` | Everything except notes marked `hidden`. |
+| `daemon` | No valid token, any other header state | Only notes with no restriction. The default for a bare `curl`. |
 
-Writes (`mutatingRoutes`) are unaffected — this layer governs reads only.
+The app and the CLI attach the token automatically.
+A core started by a spawner can be handed a fixed token through `BISMUTH_OWNER_TOKEN`; otherwise it mints a random one on each boot and writes it to the vault's run record under `~/.bismuth/run` with mode `0600`.
+Notes are restricted by a `visibility` frontmatter value or a folder rule in `.settings`; see [visibility](../vault/visibility.md).
 
-### What a filtered/refused response looks like
-- **List routes (A):** `200`, array minus the restricted rows.
-- **Single-path / blanket routes (B/C):** `403`, plain-text body `"forbidden"` (server.ts's `error()` helper's default message for this gate).
-- **Field-redaction routes (D):** `200`, same response shape, content field(s) simply absent from the JSON (omitted, not blanked to `""` — an empty string would be indistinguishable from "there was no content").
-- `GET /asset`'s `403` (and its `404`) additionally carries `Cache-Control: no-store`, so a restricted or missing asset never gets pinned in a long-lived cache (a packaged app's WKWebView keeps one `NSURLCache` for the whole session).
+Routes use four access rules. The tables below name the rule in the access column.
 
----
+| Access | Behaviour for a non-owner request |
+|---|---|
+| open | Not gated. |
+| filtered | `200`, with restricted notes dropped from the result. Nothing in the response says a note was left out. |
+| path-gated | `403` with the body `forbidden` when the requested path (or its resolved path) is restricted. |
+| owner only | `403` for every non-owner request, because the route runs commands, changes credentials, deletes data or returns content with no single path to check. |
 
-## GET reads (`routes` table)
+`GET /relay/snapshot` is the one route that redacts a field instead of refusing: it drops each subagent's `lastMessage` for non-owners.
 
-These do not touch caches or SSE unless noted. All return `200` on success.
+An owner-only refusal is the plain body `forbidden`, except for the opencode and free-agent routes, which answer `{"error":"forbidden"}`. `GET /tree` annotates every entry with its resolved visibility but never hides one, because a file's existence is not treated as secret. Writes are not filtered.
 
-### `GET /version`
-- **Params:** none.
-- **Response:** `{ "version": <number> }`. Monotonically non-decreasing; bumped on every mutation/file-change. The dropped-SSE fallback poll hits this.
-- **Cache/SSE:** none.
+If the server cannot determine what is restricted (an unreadable folder, a `.settings` that fails to parse), a gated route returns `500` instead of an unfiltered result.
 
-### `GET /terminal/info`
-- **Params:** none.
-- **Response:** `{ vault: <absolute vault path> }`. The frontend uses it to turn a file dragged from the tree (a vault-relative path) into an absolute path to insert at the shell prompt.
-- **Cache/SSE:** none.
+## Files and notes
 
-### `GET /events`
-- **Params:** none.
-- **Response:** an SSE stream (`Content-Type: text/event-stream`, `Cache-Control: no-store`, `Connection: keep-alive`). On subscribe it first unconditionally enqueues a `: connected\n\n` comment frame (flushes the response immediately, even at `version === 0`), then, if `version > 0`, a snapshot frame `data: {"version":<n>,"paths":[]}\n\n` so a fresh client learns the current version without waiting. A `: keepalive\n\n` comment is sent every `server.sseHeartbeatMs` to keep the TCP connection past Bun's idle timeout.
-- **Event frame shape** (published by `applyDirty`): `data: {"version":<n>,"paths":[<changed paths>],"dirty":{"graph":<bool>,"tree":<bool>}}\n\n`. (The boot snapshot frame omits `dirty`.) Graph/tree consumers skip refetching when their `dirty` flag is `false`; the editor always reconciles on a version bump.
-- **Cache/SSE:** this IS the SSE stream. Cleans up the heartbeat interval + unsubscribes on cancel.
-- **Gotcha:** Bun does not flush response headers until the first `enqueue`. The unconditional `: connected` comment (enqueued before the optional snapshot) exists for exactly this: without it a client connecting at `version === 0` (no snapshot, no real event) received nothing until the next heartbeat tick (up to `sseHeartbeatMs`, 5s default). With it, `await fetch('/events')` resolves immediately on a brand-new server; clients must ignore comment lines (a line starting with `:`).
+These routes read, write and organise notes. Paths are vault-relative.
 
-### `GET /graph`
-- **Params:** none.
-- **Response:** `GraphData` — `{ nodes: GraphNode[], edges: GraphEdge[], views?: { second?: ViewLayout, third?: ViewLayout } }`. Served from `graphCache` (built via `attachLayout(buildGraph(vault, memory), vault)` — merged 2nd+3rd brain graph with precomputed `position`/`position2d`). `views` is present only after a prior `GET /graph/views` call (it mutates the cached object in place).
-  - `GraphNode`: `{ id, label, kind, state?, folder?, parent?, position?, position2d?, community?, communityLabel?, daemon? }`. `kind ∈ "note"|"memory"|"agent"|"tag"|"self"|"daemon"|"cron"|"process"`. The backend **never** emits a `self` node here (the "you" hub is injected client-side). `position` is `[x,y,z]`; `position2d` is `[x,y]`.
-  - `GraphEdge`: `{ from, to, kind }`. `kind ∈ "link"|"message"|"about"|"tag"|"open"|"supervises"`.
-  - Example edge: `{ from: "mem:michael-profile", to: "internship", kind: "about" }`.
-- **Visibility:** gated — a restricted node (and every edge touching it) is silently dropped from `nodes`/`edges` for a non-owner requester (`filterGraph`); the owner always sees the full graph. See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** read-only; concurrent requests deduped via the async cache.
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /file` | `?path=` required | The file's raw text. A missing file is an empty body with `200`. | path-gated; none |
+| `PUT /file` | `{path, contents, baseText?}` | `ok`. | invalidates `path` |
+| `GET /meta` | `?path=` required | The note's parsed frontmatter object. `{}` when the file is missing. | path-gated; none |
+| `GET /tree` | none | `TreeEntry[]`: `{path, kind, icon?, visibility?, ownVisibility?, isSystemFolder?, label?}`. | open; none |
+| `GET /vault-data` | none | `Row[]`, one `{file, note}` row per note. | filtered; none |
+| `GET /templates` | none | `[{name, path}]` for the templates folder (setting `templates.folder`, default `Templates`). `[]` when absent. | open; none |
+| `GET /terminal/info` | none | `{vault}`, the absolute vault path used as the terminal's working directory. | open; none |
+| `GET /abs-path` | `?path=` required, resolved filename-first | `{path}` as an absolute machine path. `404 not found` when unresolvable. | path-gated on the resolved path; none |
+| `POST /create` | `{path, kind: "file"\|"dir"}` | `ok`. `409` when the path exists. | invalidates `path` |
+| `POST /move` | `{from, to}` | `ok`. | invalidates both paths |
+| `POST /delete` | `{path}` | `{trashPath}` under `.trash/`. | invalidates `path` |
+| `POST /restore` | `{trashPath, to}` | `ok`. | invalidates `to` |
+| `POST /replace` | `{query, replacement, opts, scope}` | `{replaced, files}`. An invalid regex is `400` with the message. | invalidates `scope` for one note, full for the vault |
+| `POST /daily-note` | `{id}` | `{path, created}`. `400 unknown daily note: <id>`. | invalidates the new path only when `created` is true |
+| `POST /set-property` | `{path, key, value}` | `ok`. `404 note not found` when the note is missing. | invalidates `path` |
+| `POST /delete-property` | `{path, key}` | `ok`. `404 note not found`. | invalidates `path` |
+| `POST /set-properties` | `{writes: [{path, key, value}]}` | `{skipped: string[]}`: paths that did not exist. | invalidates every written path |
+| `POST /backup` | none | `{scheduled: true}`. | none |
+| `POST /open-folder` | `{folder, memory?}` | `{url, vault}` of a new core for that folder. `400` when no memory directory is configured. | none |
+| `POST /list-dir` | `{path?, only?: "dir"\|"file"}` | `{entries: [{path, kind}]}` for a partial filesystem path, used for path-valued settings. | none |
 
-### `GET /graph/views`
-- **Params:** none.
-- **Response:** `{ second?: ViewLayout, third?: ViewLayout }` where `ViewLayout = { pos3d: Record<id,[x,y,z]>, pos2d: Record<id,[x,y]> }`. Computed lazily (`computeViewLayouts`) on the brain-mode switch.
-- **Side effect:** attaches the computed `views` onto the live cached graph object **in place** (no cache invalidation), so a subsequent `GET /graph` also returns `views`. A genuine file change still rebuilds the graph fresh.
+### PUT /file and the `baseText` guard
 
-### `GET /templates`
-- **Params:** none.
-- **Response:** array of `{ name, path }` for `.md` files in the templates folder (`appConfig.templates.folder`, default `"Templates"`). Returns `[]` if the folder is absent. Example: `{ name: "Daily", path: "Templates/Daily.md" }`.
+`PUT /file` writes `contents` to `path`.
+When the body also carries `baseText`, the write proceeds only if the file still holds exactly that text.
+On a mismatch nothing is written and the response is `409` with the JSON body `{current}`, the file's text on disk, so the caller can merge.
+Without `baseText` the write is unconditional.
 
-### `GET /tree`
-- **Params:** none.
-- **Response:** `TreeEntry[]` — `{ path, icon?, kind: "file"|"dir" }`. Files carry their `icon` frontmatter if present; directories get an `icon` overlaid from `.settings`'s `folderIcons` map (applied per-request on a shallow copy so a folder-icon change shows without a structural tree change). Examples: `{ path: "fire.md", icon: "🔥", kind: "file" }`, `{ path: "plain.md", kind: "file" }`, `{ path: "projects", icon: "Folder", kind: "dir" }`.
-- Served from `treeCache`.
-- **Visibility:** NOT gated — every entry's path/name is returned to any caller regardless of channel. Each entry IS annotated with its resolved `visibility` (and, when it's the entry's own explicit setting, `ownVisibility`) so the sidebar can badge it — that's metadata surfaced by the same resolver `buildDenyPaths` uses, not filtering. See [Visibility gating](#visibility-gating).
+A `GET /file` for `.settings` first fills in any missing defaults, so a vault that never had settings returns a seeded file instead of an empty editor.
 
-### `GET /vault-data`
-- **Params:** none.
-- **Response:** `Row[]` — one row per note: `{ file: { name, path, tags, ... }, note: { ...frontmatter } }`. Served from `cachedRows` (lazy `buildVaultRows`). Example: a note `housing.md` yields `{ file: { name: "housing", tags: ["logistics", ...] }, note: { status: "in-progress", priority: 1, ... } }`.
-- **Visibility:** gated — rows whose note path is restricted for the requester's channel are silently omitted. See [Visibility gating](#visibility-gating).
+### Frontmatter and rename side effects
 
-### `GET /base`
-- **Params:** `?file=<vault-relative path>` (required).
-- **Response:** `{ config, rows }` from `parseBaseFile(text, { name, path })`. `config.view` is the base's single parsed view (e.g. `config.view.type === "calendar"`); `rows` is `Row[]` with `rows[i].note` carrying that row's data (e.g. `rows[0].note.title === "X"`).
-- **Errors:** `404 "not found"` if the file is missing/unreadable (uses `readNote`, which rejects traversal and throws on a missing file — surfaced as 404 with no separate existence probe).
-- **Visibility:** gated — checked BEFORE the read (like `/file` below): `403 "forbidden"` if `file` is restricted for the requester's channel. See [Visibility gating](#visibility-gating).
+`POST /set-property`, `/delete-property` and `/set-properties` preserve other keys and comments.
+Deleting a note's last key removes the whole frontmatter block.
+A property write to a base that lists more than one view in `views:` fails with `BASE_VIEWS_FORMAT_ERROR` (`400`) and writes nothing.
+A write to the `visibility` key also re-gates open chat sessions.
 
-### `GET /file`
-- **Params:** `?path=<vault-relative path>` (required).
-- **Response:** the raw file text (`200`, plain body). A missing file returns an empty string with `200` (not 404). Special case: requesting `path === .settings` (`SETTINGS_FILE`) first runs `reconcileSettings(vault)` so a never-initialized settings file is created as the comment-only `SETTINGS_SEED` (no keys; absent keys read as defaults) before the read, so the editor never shows a blank settings page.
-- **Errors:** `400` if `path` is missing.
-- **Visibility:** gated — `403 "forbidden"` if `path` is restricted for the requester's channel, checked before the read (the file is never served empty-or-partial as a fallback). This is the route the owner-token gate exists to close (`curl 'localhost:4321/file?path=Private/secret.md'`). See [Visibility gating](#visibility-gating).
+`POST /move` also remaps the cached graph layout positions of the moved note or folder, so a rename does not cold-start the layout.
 
-### `PUT /file`
-> Listed in the read `routes` table, NOT `mutatingRoutes`, but it explicitly calls `await invalidate(path)` itself.
-- **Body:** `{ path: string, contents: string, baseText?: string }`. `baseText` is an optional OPTIMISTIC-CONCURRENCY guard (bug #46 — an autosave racing an external writer to the same file silently clobbered whichever side wrote last): pass the content the caller's buffer was derived from, and the write only proceeds if the file still holds exactly that text.
-- **Action:** when `baseText` is present, first reads the current on-disk content (`readNoteOrEmpty`) and compares it byte-for-byte against `baseText`; on a mismatch the write is refused (see Errors) and `writeNote`/`invalidate` never run. Otherwise (or once the comparison passes), `writeNote(vault, path, contents)` then `invalidate(path)`. Omitting `baseText` preserves the historical unconditional-write behavior — every other `PUT /file` caller (sheets, drawings, bases, settings import, template creation, …) has no meaningful "expected prior content" to compare against.
-- **Response:** `"ok"` on success.
-- **Errors:** `409` with a JSON body `{ current: <on-disk contents> }` when `baseText` is supplied and doesn't match what's currently on disk — the caller (Editor.tsx's autosave, via `threeWayMerge` in `saveReconcile.ts`) uses `current` to merge the two edits instead of one silently discarding the other.
-- **Cache/SSE:** invalidates (bumps version, publishes SSE with the changed path) — equivalent to a mutation, except on the `409` conflict path, which returns before any write or invalidation. Used by the frontend to save .settings and arbitrary notes.
+`POST /replace` commits a git snapshot of the vault before it rewrites any file, so the change can be undone.
 
-### `GET /asset`
-- **Params:** `?path=<filename or vault-relative path>` (required).
-- **Action:** `resolveAsset(vault, path)` resolves **filename-first** (matches a file by basename anywhere in the vault), then streams the bytes. Used by `![[file]]` embeds (images/PDF/audio/video).
-- **Response:** the binary file with `Content-Type` inferred from the extension (`Bun.file`), `Cache-Control: private, max-age=60`. Falls back to `application/octet-stream` if the type is unknown.
-- **Errors:** `404 "asset not found"` if unresolvable; `400` if `path` missing.
-- **Visibility:** gated — `403 "forbidden"` (with `Cache-Control: no-store`) if the resolved path is restricted for the requester's channel, checked against both the resolved absolute path and the raw query. See [Visibility gating](#visibility-gating). (A stale comment directly above this route in `server.ts` still describes it as deliberately ungated — that was true before this check was added; the code that runs today gates it like every other content route.)
+`POST /backup` schedules a debounced snapshot commit: it runs after 30 seconds without another call, or after 5 minutes of continuous calls (tunable with `BISMUTH_BACKUP_DEBOUNCE_MS` and `BISMUTH_BACKUP_MAX_WAIT_MS`).
 
-### `GET /abs-path`
-- **Params:** `?path=<filename or vault-relative path>` (required).
-- **Action:** `resolveAsset(vault, path)` resolves **filename-first**, like `/asset` — the query `path` may be a bare basename that lives anywhere in the vault. Backs the preview tab's "Open in default app" / "Reveal in Finder" affordances, which need a real filesystem path to hand to the OS opener.
-- **Response:** `{ path: <absolute machine-local path> }`.
-- **Errors:** `404 "not found"` (`Cache-Control: no-store`) if unresolvable; `400` if `path` missing.
-- **Visibility:** gated — `403 "forbidden"` (`Cache-Control: no-store`) if the RESOLVED path is restricted for the requester's channel (checked after filename resolution, unlike `/asset` above which is unauthenticated by native `<img>`/`<embed>` loads — this route is only ever called from the frontend's own `fetch()`, which always attaches `X-Bismuth-Token`, so gating it costs the owner nothing). See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** none.
+## Attachments and uploads
 
-### `GET /meta`
-- **Params:** `?path=<vault-relative path>` (required).
-- **Response:** the note's parsed YAML frontmatter object (`parseFrontmatter(...).data`). Missing file → `{}` (empty object, 200). Example: `{ status: "in-progress", priority: 1, tags: ["logistics"] }`.
-- **Errors:** `400` if `path` missing.
-- **Visibility:** gated — `403 "forbidden"` if `path` is restricted for the requester's channel. See [Visibility gating](#visibility-gating).
+These routes move binary data. None of them invalidates caches, because attachments are not part of the graph, tree or search index.
 
-### `GET /config`
-- **Params:** none.
-- **Response:** `{ vault: <string>, memory: <string>|null }` — a read-only view of how core was launched. `memory` is `null` when not configured.
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /asset` | `?path=` required, resolved filename-first | The file's bytes with a `Content-Type` from its extension and `Cache-Control: private, max-age=60`. `404 asset not found`. | path-gated on both the resolved and raw path; none |
+| `POST /asset` | `?path=` target, raw bytes as the body | `{path}` actually used; a name clash gets a unique suffix. | open; none |
+| `POST /asset/fetch` | `{url, path}` | `{path}` actually used. | owner only; none |
+| `POST /convert/heic` | raw HEIC or HEIF bytes | JPEG bytes, `Content-Type: image/jpeg`. `400` when undecodable. | open; none |
+| `POST /tmp-file` | `?name=` required, raw bytes | `{path}`, an absolute path outside the vault. | open; none |
 
-### `GET /settings`
-- **Params:** none.
-- **Response:** parsed app settings (file merged over `DEFAULTS`) for frontend hydration, via `serializeSettingsForFrontend`. The `properties` registry is **omitted** from this payload (it lives at `/schema`). `appearance.tokens` is the vault's token overrides as a flat `{ <token key>: <value> }` map: only keys present in the file, each validated and normalized, with present legacy keys (`appearance.editorFontSize`, …) folded in and an explicit `tokens` entry winning; it is `{}` when the file sets none. The legacy `appearance.*` fields keep their merged-over-default values. Example fields: `appearance.theme` (default `"ink"`; one of `ink · paper · cathode · riso` or the name of a valid custom theme), `graph.nodeSize` (default `6`). `"oxide-duotone"` is a pre-redesign legacy theme name — `resolveTheme()` falls back to `ink` for it, and `migrateLegacyAppearance()` (`core/src/settings.ts`) actively rewrites it out of `.settings` on load.
+Uploads cap at 100 MB and return `413` above it. `POST /asset` and `POST /asset/fetch` reject a target with an empty, `.`, `..` or dot-prefixed segment (`400 invalid attachment path`), which keeps writes out of `.git/`.
 
-### `GET /themes`
-- **Params:** none. Read table, not cached (the `.themes/` folder is tiny). **Not owner-gated**, like `GET /settings`: any caller that can reach core gets the feed.
-- **Response:** a `ThemesFeed`:
-  ```ts
-  {
-      themes: {                      // valid custom themes
-          name: string
-          label: string              // the file's label, else the name
-          extends: 'ink' | 'paper' | 'cathode' | 'riso'   // the file's extends, else 'ink'
-          isLight: boolean
-          tokens: Record<string, string>   // the file's overrides only, normalized, keyed by token name
-          colors: ColorTokens        // the resolved colours: the extends built-in with tokens on top
-      }[]
-      invalid: { name: string; diagnostics: { field: string; severity: 'error' | 'warning'; message: string }[] }[]
-  }
-  ```
-  `themes` and `invalid` come from `<vault>/.themes/*.yaml`, sorted by name; a missing folder gives both empty. A symlinked file or one over 64 KB is `invalid`. A change to a `.themes/<name>.yaml` file lands in the SSE `paths` and bumps `version` and marks the tree dirty (the sidebar lists `.themes/*.yaml`), never the graph. The in-process mobile backend always answers `{ themes: [], invalid: [] }`. See [Custom themes](../settings/themes.md#custom-themes) and [Design tokens](../settings/tokens.md).
+`GET /asset` serves `.html` files with a Content Security Policy that blocks network access (`connect-src 'none'`), so an embedded page cannot read the vault through this API. A 403 or 404 from this route carries `Cache-Control: no-store`.
 
-### `GET /schema`
-- **Params:** none.
-- **Response:** the property registry parsed from `.settings`'s `properties:` block (`getVaultSchema`), for note validation + autocomplete. Read fresh on demand — editing `.settings` (via `PUT /file`) refreshes this without a restart. Example: `{ due: { type: "date" }, rating: { type: "number" } }`.
+`POST /asset/fetch` downloads a remote image into the vault.
+It accepts `http:` and `https:` URLs, follows up to 5 redirects, checks every hop's resolved address and refuses private, loopback and link-local ranges (`400 blocked address`), and requires an `image/*` content type (`415 not an image`).
+A fetch failure or too many redirects is `502`.
+If the extension in `path` disagrees with the content type, the extension is corrected.
 
-### `GET /status-bar`
-- **Params:** none.
-- **Action:** `evaluateStatusBar(normalizeStatusBar(settings.statusBar), ...)` over the vault's `.settings` `statusBar:` list (absent/invalid → the four builtin segments). Query segments read the shared `rowsCache`/`tasksCache`; `{files}`/`{folders}`/`{notes}` come from `listTree`. `run:` items go through ONE server-lifetime `createStatusRunner`, so a command's `every` cache spans requests; an unapproved command is reported as `untrusted` and never spawned.
-- **Response:** `{ segments: StatusSegment[] }` (`core/src/statusBarEval.ts`). Per-item failures become `error` on that segment, never a failed request.
-- **Visibility:** blanket owner-only — `403 "forbidden"` for any non-owner request (run output and vault-wide counts cannot be filtered per path). See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** none. The in-process (iPad) backend answers the same route with `run` segments reporting `shell segments are desktop-only`.
+`POST /tmp-file` stages bytes in `~/.bismuth/tmp` (override `BISMUTH_TMP_DIR`) under a sanitised name, so a pasted file gets a path without becoming a vault file. Files older than 24 hours are removed at boot.
 
-### `GET /chat/sessions`
-- **Params:** `?scope=<user|daemon|all>` (optional; absent/unknown → `user`, via `parseChatScope`).
-- **Action:** `listChatSessions(cfg.vault, undefined, scope)`. The SDK's session store unifies the user's **terminal Claude Code sessions AND in-app chat sessions** for the vault cwd — so this picker surfaces both. `scope` filters out (or, for `daemon`, filters IN) the sessions the vault's daemon minted — the dedicated place to access daemon chats.
-- **Response:** `{ sessions: [...] }` — each row `{ sessionId, summary, lastModified, origin }` (`origin: "user" | "daemon"`), for the chat history picker (the client resumes one by sending `{type:"resume",sessionId}` over the `/chat` WS).
-- **Visibility:** blanket owner-only — `403 "forbidden"` for any non-owner request, regardless of `scope`. A past transcript has no single vault path to check visibility against, so there's no partial "safe" subset to fall back to. See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** none.
+## Search
 
-### `GET /chat/session-messages`
-- **Params:** `?id=<sessionId>` (optional; absent/empty → empty replay); `?provider=<backend id>` (optional; resolved with `resolveBackendId` against the vault's `chat.provider` default, selecting which backend's session store to read — `bismuth chat read --provider` passes it).
-- **Action:** `sessionHistoryFrames(id, cfg.vault, provider)` when `id` is present, else `[]`.
-- **Response:** `{ frames: ChatFrame[] }` — one past session replayed **in order** as the same `ChatFrame`s the live `/chat` WS streams, so the client can rehydrate the transcript before binding/resuming it.
-- **Visibility:** blanket owner-only — `403 "forbidden"` for any non-owner request, same reasoning as `GET /chat/sessions` above. See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** none.
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `POST /search` | `{query, opts: {caseSensitive, wholeWord, regex}, snippetLimit?}` | `[{path, matchCount, snippets}]`, every matching note. `400` on an invalid regex. | filtered; none |
+| `POST /search-prompt` | `{query}`, a natural-language question | The `/search` shape plus a `reason` per hit. | filtered; none |
 
-### `GET /gcal/status`
-- **Params:** none.
-- **Action:** `gcalStatus()` — reads the durable Google Calendar store (kept **outside** the vault, `~/.bismuth/gcal`).
-- **Response:** `GcalStatus` = `{ connected: boolean, needsCredentials: boolean, account?: string, timeZone?: string, connectedAt?: string }`. `connected` = a refresh token is stored; `needsCredentials` = the OAuth client id/secret haven't been supplied yet.
-- **Cache/SSE:** none. (These `/gcal/*` reads are SYSTEM actions, not vault mutations — like `/daemon/*` they live in the read table.)
+`snippetLimit` caps the snippets per note (default 20) and does not change `matchCount`.
+Without `regex`, results are ranked in three tiers: full-text matches, then literal matches the index missed, then typo matches when `caseSensitive` is false.
+With `regex`, every note is scanned and results sort by match count.
 
-### `GET /gcal/callback`
-> The OAuth loopback redirect target. Google sends the user's browser here as a **top-level navigation** (not `fetch` → no CORS); `POST /gcal/auth/start` builds the redirect URI as `http://127.0.0.1:<this server's port>/gcal/callback`.
-- **Params:** `?code=<auth code>&state=<state>` on success, or `?error=<reason>` on cancel/denial.
-- **Action:** on `code`+`state`, `gcalCompleteAuth(code, state)` exchanges the code (Authorization Code + PKCE) and persists the refresh token.
-- **Response:** a small self-contained **HTML page** (`text/html`, status 200) — a green checkmark "Connected as `<account>`…" on success, or a red ✕ with the error/missing-code message. The message text is HTML-escaped. (Never JSON — it's rendered in the system browser.) Unless `gcalAutoSyncEnabled()` (the installed app, or `BISMUTH_GCAL_AUTOSYNC=1`) it is the same page with a refusal sentence and **status 403**, and no code is exchanged or token stored — see [gcal overview § Per-vault namespacing + auto-sync gating](../gcal/overview.md).
-- **Cache/SSE:** none.
+`POST /search-prompt` re-ranks candidates with one Haiku turn through the user's own `claude` binary. It returns `400` when `claude` is not on the path and `500` when the model call fails. The model may read restricted notes while ranking; only the returned list is filtered.
 
-### `GET /tasks`
-- **Params:** none.
-- **Response:** all vault tasks (`collectVaultTasks(vault)`) — extracted checkbox tasks with status/dates/recurrence/tags.
-- **Visibility:** gated — tasks whose note path is restricted for the requester's channel are silently omitted. See [Visibility gating](#visibility-gating).
+## Graph
 
-### `GET /tasks/migration`
-> What the boot-time task-syntax migration did, for the app to toast once on mount. A read, not a mutation — the rewrite already happened at boot (`runTaskMigration`, `core/src/taskMigrateRun.ts`), fire-and-forget from `createServer`; this route is the only way the app learns what it did.
-- **Params:** none.
-- **Response:** `{ ran: null }` while the boot-time pass is still walking the vault (the frontend treats that as "ask again in a moment", not "nothing happened"); once it finishes, the `MigrationReport` itself spread into the body: `{ ran: boolean, blocked: boolean, snapshotError?: string, changed: number, files: Array<{ file: string, changed: number }>, flagged: FlaggedLine[], skipped: SkippedFile[], snapshot: boolean }`. `blocked` (with `snapshotError`) means the pre-migration git snapshot couldn't be taken so NOTHING was rewritten — distinct from `ran: false`, which means there was nothing to migrate. `snapshot` is whether THIS run wrote a snapshot commit (`false` alongside `ran: true` means the vault's repo was already clean). `FlaggedLine = { file, line, text }` — legacy syntax the migration recognized but wouldn't safely rewrite. `SkippedFile = { file, reason: "not-snapshotted" | "unreadable" | ... }` — a note that still holds legacy syntax after this run.
-- **Visibility:** gated — filtered like every other list-filtering route (`denyEntriesForRequest` + `filterByPath`), even though migration itself is NOT gated by visibility (a hidden note is still converted on disk, or it would silently lose its dates — the deny list only decides who is TOLD). `files`/`flagged`/`skipped` are each filtered by path (`f.file`), and `changed` is re-summed from the filtered `files` rather than passed through unfiltered — the raw total would otherwise tell a denied caller how many converted lines live in a note it cannot see, even though the app displays `changed` beside `files.length`, which IS per-channel. See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** none.
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /graph` | none | `{nodes, edges, views?}` from the graph cache. | filtered; none |
+| `GET /graph/views` | none | `{second?, third?}`, each `{pos3d, pos2d}` keyed by node id. | open; attaches `views` to the cached graph |
 
-### `GET /cards/decks`
-- **Params:** none.
-- **Response:** decks with due counts (`collectDecks(vault, today)`). Example: `[{ name: "math", due: 1, ... }]`.
-- **Visibility:** gated — cards from a restricted note are excluded before the deck totals/due-counts are aggregated (recomputed here rather than delegating to `collectDecks`, so a restricted note's cards never leak through as a count). See [Visibility gating](#visibility-gating).
+A node is `{id, label, kind, state?, folder?, parent?, position?, position2d?, community?, communityLabel?, daemon?}`, where `kind` is `note`, `memory`, `agent`, `tag`, `self`, `daemon`, `cron` or `process`.
+`position` is `[x, y, z]` and `position2d` is `[x, y]`.
+An edge is `{from, to, kind}` with `kind` one of `link`, `message`, `about`, `tag`, `open`, `supervises`.
+A restricted node and every edge touching it are dropped for non-owners.
 
-### `GET /cards/all`
-- **Params:** none.
-- **Response:** every card regardless of due date (`collectCards(vault)`).
-- **Visibility:** gated — cards from a restricted note are silently omitted. See [Visibility gating](#visibility-gating).
+`GET /graph/views` computes the per-brain layouts when the user switches graph mode, and caches them on the live graph object, so a later `GET /graph` includes `views`.
 
-### `GET /cards/note`
-- **Params:** `?path=<vault-relative path>` (required).
-- **Response:** all cards parsed from one note (`noteCards(vault, path)`). Tagless notes are fine (cards still parse).
-- **Errors:** `400` if `path` missing.
-- **Visibility:** gated — `403 "forbidden"` if `path` is restricted for the requester's channel. See [Visibility gating](#visibility-gating).
+## Bases and rows
 
-### `GET /cards/due`
-- **Params:** `?deck=<name>` (optional; absent → all decks).
-- **Response:** due cards (`dueCards(vault, today, deck?)`). Each card has an `id` (used by `POST /cards/review`).
-- **Visibility:** gated — cards from a restricted note are silently omitted. See [Visibility gating](#visibility-gating).
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /base` | `?file=` required | `{config, rows}` from parsing the base. `404 not found`. | path-gated; none |
+| `POST /rows` | `{spec}` | `Row[]` | filtered; none |
+| `POST /row/update` | `{file, index, note}` | `ok` | invalidates `file` |
+| `POST /rows/update` | `{file, updates: [{index, note}]}` | `ok` | invalidates `file` |
+| `POST /row/delete` | `{file, index}` | `ok` | invalidates `file` |
+| `POST /row/reorder` | `{file, from, to}` | `ok` | invalidates `file` |
 
-### `GET /daemon/status`
-- **Params:** none.
-- **Response:** `DaemonStatus` = `{ running: boolean, thisDeviceId: string|null, owner: Owner|null }`. `running` = `daemon.pid` exists AND that pid is alive. `owner` = `{ ownerDeviceId, ownerLabel, updatedAt }` or `null` (unclaimed). Reads the daemon's machine-level identity state under `daemonMachineDir()` = `BISMUTH_DAEMON_DIR` (env wins) else `~/.bismuth/daemon` (device-id/devices.json/owner.json/daemon.pid). **Never throws** (degrades to defaults).
+`spec` in `POST /rows` is a source, one of:
 
-### `GET /daemon/devices`
-- **Params:** none.
-- **Response:** `DeviceList` = `{ devices: DeviceEntry[], ownerDeviceId: string|null }`. `DeviceEntry = { deviceId, label, lastSeenISO, isOwner, isThis }`. Reads `devices.json`.
+| Shape | Resolves to |
+|---|---|
+| `{kind: "base", ref}` | Another base's rows, recursively. |
+| `{kind: "notes", where?, from?}` | Vault notes filtered by a Bases expression. `from: "[[Base]]"` scopes to that base's notes. |
+| `{kind: "tasks", where?, from?}` | Checkbox tasks. `from` scopes extraction to a base's notes; without it the whole vault. |
 
-### `GET /daemon/snapshot`
-- **Params:** none.
-- **Response:** `DaemonSnapshot` (`daemonSnapshot(vaultDaemonDir(cfg.vault), daemonIdentityName(cfg.vault))` — **PER-VAULT**: crons/processes are read from THIS vault's `<vault>/.daemon/{crons,processes}` dir, while daemon liveness stays machine-level (`daemonMachineDir()/daemon.pid`)) = `{ daemon: { label, running, home }, crons: DaemonCron[], processes: DaemonProcess[], identity: { name, blurb } }`. `identity.name` mirrors `daemon.label`; `identity.blurb` is the first non-empty line of `<vault>/.daemon/identity.md`'s BODY (after frontmatter), `''` when absent. `DaemonCron = { name, file, schedule, on, watch, enabled, lastFired, running, startedAt }`; `DaemonProcess = { name, file, enabled, running }`. `name` is the frontmatter `name` (else the file basename) and is the key the toggle/run routes take; `file` is always the definition's basename without `.md` (`crons/<file>.md`, `processes/<file>.md`), so a client opening the definition uses `file`. A process's `running` is always `false` (no trustworthy per-process liveness). No layout attached — this is a plain data snapshot for the daemon page, not a graph. **Never throws** (degrades to `{ daemon, crons: [], processes: [], identity }`).
+`index: null` in `POST /row/update` appends a row; an integer replaces that row.
+`POST /rows/update` applies a batch to one file in a single parse and write: replacements apply in order, then appends in order, and any non-integer or out-of-range index fails the whole batch with `400` before anything is written.
+`POST /row/delete` and `POST /row/reorder` read the file first, so a missing file is `404`.
+Base format and sources are in the [bases overview](../bases/overview.md).
 
-### `GET /daemon/logs`
-- **Params:** `?limit=<n>` (default 100, max 1000) `&kind=cron|process|daemon|session&name=<cron-or-process-name>&since=<ISO instant>` — all optional.
-- **Response:** `ActivityEvent[]`, newest first — `{ ts, kind, name, event, outcome?, cause?, durationMs?, detail? }`. This vault's daemon activity log: cron outcomes (`started`/`finished`/`skipped`), background-process lifecycle (`started`/`exited`/`restarting`/`reaped`), and brain starts (`daemon`/`brain-started`, which carries no `detail` — see [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl)). A plain read of `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` (`readActivity`, `core/src/daemonActivity.ts`) — **PER-VAULT**, like `GET /daemon/snapshot`. This is what lets a chat session answer "what have you been doing?" with evidence instead of a guess. **Never throws** — degrades to `[]` when the daemon has never run here. Full event vocabulary + retention: [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
+## Tasks
 
-### `GET /daemon/install`
-- **Params:** none.
-- **Response:** `InstallStatus` = `{ installed: boolean, running: boolean, binPath: string }`. Read-only install probe (`installStatus`, `core/src/daemonInstall.ts`) — queries the installed daemon binary (`<binPath> --status`, where `binPath` = `BISMUTH_DAEMON_BIN` else `~/.bismuth/bin/bismuth-daemon`). **Never throws / never 500** — degrades to `{ installed:false, running:false, binPath }` when the binary is absent or doesn't respond.
+`line` is a 0-indexed line number in every task route, matching the `line` field of `GET /tasks`. Task syntax is in [task syntax](../tasks/syntax.md).
 
-### `GET /bismuth/install`
-- **Params:** none.
-- **Response:** `BismuthStatus` = `{ installed: boolean, version: string|null, cliPath: string|null, cliLinked: boolean, mcpRegistered: boolean }` — read-only status of the **machine-wide** `bismuth` CLI + MCP install (`getBismuthStatus`, `core/src/bismuthInstall.ts`). `installed` = a version marker exists at `~/.bismuth/.version`; `version` is its stored content hash; `cliPath`/`cliLinked` describe the CLI symlink on PATH; `mcpRegistered` = `claude mcp get bismuth` succeeds. **Never throws.** See [machine-wide install](../mcp/overview.md).
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /tasks` | none | Every checkbox task in the vault. | filtered; none |
+| `GET /tasks/migration` | none | `{ran: null}` while the boot-time pass runs; then the migration report. | filtered; none |
+| `POST /tasks/toggle` | `{path, line, status?}` | `ok` | invalidates `path` |
+| `POST /tasks/reschedule` | `{path, line, field: "due"\|"scheduled"\|"start", date}` | `ok` | invalidates `path` |
+| `POST /tasks/update` | `{path, line, patch}` | `ok` | invalidates `path` |
+| `POST /tasks/delete` | `{path, line}` | `ok` | invalidates `path` |
+| `POST /tasks/move` | `{path, line, to}` | `{path}` where the task now lives | full |
+| `POST /tasks/archive` | `{path?}` | `{removed, files}` | invalidates `path`, or full without it |
+| `POST /tasks/create` | `{file, body}` | `{path}` written | full |
 
-### `GET /doctor`
-- **Params:** none. **Owner-only** (`403` for any non-owner request: findings carry paths).
-- **Response:** `DoctorReport` = `{ ok, vault, findings, fixed, failed, pending: { safe, destructive }, unknownIds }` (`core/src/doctor/types.ts`) — a **dry run** of every doctor section over the server's vault; nothing is changed. Findings are sorted destructive-repair first. See [Doctor](../overview/doctor.md).
+A task line outside the file is `400 line out of range`; a line that is not a checkbox task is `400 not a task line`.
 
-### `GET /update/status`
-- **Params:** none.
-- **Response:** `UpdateStatus` = `{ available: boolean, behind: number, localSha: string|null, remoteSha: string|null, builtSha: string|null, dirty: boolean, reason?: string }` — the git-based self-update probe (`getUpdateStatus`, `core/src/selfUpdate.ts`). Best-effort `git fetch origin main`, then compares `HEAD..origin/main`. `available` = `behind > 0`. **Self-disables** (returns `available:false` + a `reason`) when this isn't a bundled source build: `"not-a-source-build"` (no `build-origin.json` / `BISMUTH_INSTALL_SRC` unset — e.g. `bun run dev:browser`), `"not-a-git-repo"`, or `"no-upstream"`. **Never throws.** See [self-update](../overview/self-update.md).
+`status` in `/tasks/toggle` sets the checkbox character exactly; without it the route flips done and not done. A recurring task inserts its next occurrence above the completed line, and resolved tasks sink below open ones in their list. CRLF files keep CRLF.
 
-### `GET /update/progress`
-- **Params:** none.
-- **Response:** `UpdateProgress` = `{ phase: "idle"|"pulling"|"building"|"ready"|"error", message?: string, log?: string }` — the in-memory state of the current/last self-update run (`getUpdateProgress`). Polled by `UpdateBanner.tsx` after `POST /update/apply`. `log` carries the tail of git/build stderr on failure. **Never throws.**
+`patch` in `/tasks/update` is `{description?, due?, scheduled?, start?, priority?}`. A key set to `null` clears that field and an absent key is untouched. `priority` is `highest`, `high`, `medium`, `low` or `lowest`. Edited lines re-emit their fields in canonical order.
 
----
+`/tasks/delete` removes the task line and its deeper-indented continuation lines. `/tasks/move` does the same and appends them to the destination note, creating it if needed; `to` is a note reference (a wikilink, a bare name or a path). Moving a task into its own note is a no-op that succeeds.
 
-## POST in the read table (NOT mutations)
+`/tasks/create` takes `file` as a note reference, never a literal path, and appends `- [ ] <body>`; `body` is the text after the checkbox. `/tasks/archive` permanently removes done and cancelled tasks, from one note or the whole vault.
 
-These are POSTs (or could be), but they are **not** vault mutations — they live in `routes`, so they do not auto-invalidate caches or publish SSE. The body carries the payload; the POST verb is used for request-body semantics, not because they write the vault.
+`GET /tasks/migration` reports what the boot-time bracket-syntax migration did: `{ran, blocked, snapshotError?, changed, files, flagged, skipped, snapshot}`.
+`blocked` means the pre-migration snapshot failed and nothing was rewritten.
+The `files`, `flagged` and `skipped` lists are filtered by path, and `changed` is re-summed from the filtered `files`, so a restricted caller cannot infer hidden counts.
 
-### `POST /rows`
-- **Body:** `{ spec: SourceSpec }` where `SourceSpec` is one of:
-  - `{ kind: "base", ref }` — render another base (recursive composition).
-  - `{ kind: "notes", where?, from? }` — vault notes filtered by a Bases expr; `from: "[[Base]]"` scopes to that base's notes.
-  - `{ kind: "tasks", where?, from? }` — checkbox tasks; `from: "[[Base]]"` scopes extraction to that base's notes (no `from` = global).
-- **Action:** `resolveSource(spec, { root: vault, today, vaultRows, vaultTasks })`. Providers are memoized per-call (`getCachedRows` / `getCachedTasks`, built at most once per `/rows`); scoped task extraction bypasses the cache and runs fresh.
-- **Response:** `Row[]`. Example: `{ spec: { kind: "tasks", from: "[[Keep]]" } }` → only the tasks inside the `Keep` base's scoped notes (`rows.map(r => r.note.description)` = `["scoped task"]`). `{ spec: { kind: "notes", where: 'file.hasTag("book")' } }` returns the matching note rows from the shared cache (invalidated by a file change so a newly-tagged note appears on the next call).
-- **Visibility:** gated — rows whose note path is restricted for the requester's channel are silently omitted. See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** none (read-only despite POST). See [bases overview](../bases/overview.md).
+## Flashcards
 
-### `POST /search`
-- **Body:** `{ query: string, opts: { caseSensitive: boolean, wholeWord: boolean, regex: boolean }, snippetLimit?: number }`. `snippetLimit` caps `snippets.length` per note (default 20) — it does not affect `matchCount`.
-- **Action:** `searchVault(vault, query, opts, { snippetLimit })`. Non-regex mode ranks in three tiers, concatenated: (1) literal hits MiniSearch also ranked, in MiniSearch's BM25 order; (2) literal hits MiniSearch missed (typically mid-word), sorted by match count descending; (3) — only when `caseSensitive` is false — typo hits from a second, `combineWith: 'AND'` fuzzy MiniSearch query. Regex mode is unchanged: every note is scanned and results are sorted by match count descending.
-- **Response:** `SearchResult[]` = `{ path, matchCount, snippets: MatchSnippet[] }[]`, **uncapped** — every matching note is returned, not just the top N. `matchCount` is always the note's true total occurrence count, independent of `snippetLimit`.
-- **Errors:** an invalid regex (etc.) is caught and returned as `400` with the error message (so the UI shows it inline) — NOT a 500.
-- **Visibility:** gated — hits on a restricted note are silently omitted from the results. See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** none.
+Card syntax and scheduling are in [flashcards](../flashcards/srs.md).
 
-### `POST /search-prompt`
-- **Body:** `{ query: string }` — a natural-language question, not a keyword string.
-- **Action:** `promptSearch(vault, query)` (`core/src/searchPrompt.ts`): ranks MiniSearch candidates for `query` (`rankCandidates`, same index as `/search`), bounds them into a context (≤30 notes, ≤1200 chars/note excerpt, ≤36K chars total), then runs ONE Haiku turn (`claude-haiku-4-5` via the Agent SDK, spawning the user's own `claude` binary — `pathToClaudeCodeExecutable`, discovered by `whichClaude()`, with a full env built by `claudeSpawnEnv()`) asking it to pick + quote the notes that answer the question. Every returned path is validated against the candidate set (hallucinated paths are hard-rejected); every snippet is re-derived byte-exact from the REAL note body (never the model's own text) via located-quote → keyword-anchor → first-line-preview fallback tiers.
-- **Response:** `SearchResult[]` (same shape as `/search`), each with an added `reason` — the model's one-line rationale.
-- **Errors:** `400` (`AppError("EINVAL", ...)`) when `claude` isn't on PATH. `500` when the model call fails to start, reports a non-success `result` subtype, when a `subtype: "success"` message carries `is_error: true` (BUG #8, 4th bounce — `claude` reports things like "Not logged in · Please run /login" as a completely normal-looking success message when its OWN spawn env is broken; see below), or when the SDK's message stream ends WITHOUT ever emitting a `result` message at all (an early `claude` exit: killed, crashed, unexpected output). Every one of these used to fall through to an empty `[]`, indistinguishable in the UI from "the AI ran and found nothing"; all are now a `500` with a diagnosable message instead (`consumeModelStream` in `searchPrompt.ts`).
-- **Packaged-app env (BUG #8, 4th bounce):** the Agent SDK's `env` option REPLACES the child's environment when set (never merged with `process.env`), so `runModelReal` builds a complete one via `claudeSpawnEnv()` (`core/src/claudeWhich.ts`) rather than just overriding `PATH`. Reproduced two independent env-only failures that both surface as `claude` reporting "Not logged in" even though the user genuinely is: (1) `$USER`/`$LOGNAME` missing — `claude`'s Keychain credential lookup (`security find-generic-password -a "$USER" ...` on macOS) misses the item, stored under the real account name; (2) `$PATH` missing `/usr/bin` — the `security` shellout itself can't be found. `claudeSpawnEnv` fills `USER`/`LOGNAME` (via `id -un`, NOT node:os's `userInfo()` — confirmed Bun's implementation returns the literal string `"unknown"` once both env vars are absent, unlike Node's) and `claudeLookupPath` now unconditionally appends `/usr/bin:/bin:/usr/sbin:/sbin` (previously only relied on inheriting them via `env.PATH`).
-- **Visibility:** gated, but only on the way OUT — `promptSearch` runs to completion first (so a restricted note can still be a Stage-1 candidate the Haiku call reads and reasons over), and only the returned `SearchResult[]` is then filtered by path (`filterByPath(results, denyEntries, r => r.path)`) before the response leaves the server. See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** none (read-only despite POST). The daemon is NOT involved — always-on per vault, gated only on Claude Code being installed. No setting gates this feature.
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /cards/decks` | none | Decks with total and due counts, recomputed over visible cards. | filtered; none |
+| `GET /cards/all` | none | Every card. | filtered; none |
+| `GET /cards/note` | `?path=` required | Every card parsed from one note. | path-gated; none |
+| `GET /cards/due` | `?deck=` optional | Cards due today, each with an `id`. | filtered; none |
+| `POST /cards/review` | row form or markdown form | `ok` | invalidates `file` for rows, full for markdown cards |
 
-### `POST /chat/search`
-- **Body:** `{ query?: string, scope?: string }`. `scope` mirrors `GET /chat/sessions`' `?scope=` (`user`/`daemon`/`all`, via `parseChatScope`) so search always searches the list the picker is showing.
-- **Action:** `searchChatSessions(vault, query ?? "", undefined, scope)` — filters the SDK's own session store (title + message text) for `query` and returns matches with a snippet; the SDK has no native session search. Read-only despite POST (the body carries the query), so it lives in `routes`, not `mutatingRoutes`. An empty query returns no hits.
-- **Response:** `{ hits: [...] }`.
-- **Visibility:** blanket owner-only — `403 "forbidden"` for any non-owner request, same reasoning as `GET /chat/sessions` below: a hit's snippet can quote any past turn's text, hidden-note-derived or not, with no single path to filter against. See [Visibility gating](#visibility-gating).
-- **Cache/SSE:** none.
+`POST /cards/review` takes one of two bodies:
 
-### opencode provider manager (`/opencode/*`)
-Four routes over the running `opencode serve` (the shared server in `core/src/chatProviders/opencode/opencodeServer.ts`), behind the opencode chat's credentials popover. Guide: [opencode providers](../chat/opencode-providers.md). All four are **blanket owner-only** (a connect writes a credential into the user's own opencode store) and live in the read table (no vault cache invalidation). Shared error shapes, every route:
+| Form | Body |
+|---|---|
+| Base row | `{file, index, response, dueField?, easeField?, intervalField?}` |
+| Markdown card | `{id, response, question?}`, where `id` is `notePath::cardIndex::subIndex` |
+
+`response` is `hard`, `good` or `easy`. The three field names choose which scheduling columns to advance; give all three or none. Errors: `400 missing cardId` when neither form is complete, `400 row not found: <file>#<index>`, and `404` for an unknown markdown card id.
+
+## Settings and themes
+
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /config` | none | `{vault, memory}`; `memory` is `null` when unset. | open; none |
+| `GET /settings` | none | Parsed settings merged over defaults. | open; none |
+| `GET /themes` | none | A `ThemesFeed` of custom themes. | open; none |
+| `GET /schema` | none | The property registry from `.settings`. | open; none |
+| `GET /status-bar` | none | `{segments}` from the `statusBar:` setting. | owner only; none |
+| `POST /set-setting` | `{path: string[], value}` | `{ok: true}`. `400 bad path` unless `path` is an array of strings. | invalidates `.settings` |
+| `POST /folder-icon` | `{path, icon?}` | `ok`. An empty or null `icon` clears it. | invalidates `.settings` |
+| `POST /folder-visibility` | `{path, visibility?}` | `ok`. | invalidates `.settings` |
+| `POST /status-bar/trust` | `{command}` | `{ok: true}` | owner only; none |
+
+`GET /settings` omits the `properties` registry (read it from `GET /schema`). `appearance.tokens` is the vault's token overrides as a flat map of token key to value, containing only keys the file sets. Settings keys and defaults are in the [settings reference](../settings/reference.md).
+
+`POST /set-setting` merges one value at a path such as `["appearance", "uiFont"]`, preserving comments, the property registry and unknown keys. A dotted string like `"appearance.theme"` is rejected.
+
+`POST /folder-icon` and `POST /folder-visibility` take a vault-relative folder path and reject an empty, absolute or `.`/`..` path with `400`.
+`visibility` is `chat-only`, `hidden`, `null` or absent; absent and `null` clear the rule, and anything else is `400 invalid visibility`.
+When `.settings` fails to parse, folder-visibility answers `409` and writes nothing.
+A successful change re-gates every open chat on its next turn.
+
+### GET /themes
+
+`GET /themes` returns every theme in `<vault>/.themes/*.yaml`, sorted by name, uncached and open to any caller.
+
+```ts
+{
+    themes: {
+        name: string
+        label: string
+        extends: 'ink' | 'paper' | 'cathode' | 'riso'
+        isLight: boolean
+        tokens: Record<string, string>   // the file's overrides only
+        colors: ColorTokens              // the built-in plus overrides, resolved
+    }[]
+    invalid: { name: string; diagnostics: { field: string; severity: 'error' | 'warning'; message: string }[] }[]
+}
+```
+
+A missing folder returns both lists empty.
+A symlinked file, or one over 64 KB, is listed under `invalid`.
+Editing a theme file publishes an event with its path; creating, deleting or renaming one also marks the tree dirty.
+A theme never dirties the graph.
+Writing a theme is in [custom themes](../guides/custom-themes.md).
+
+### GET /status-bar
+
+`GET /status-bar` evaluates the vault's `statusBar:` list; an absent or invalid list yields the built-in segments.
+A `run:` command that the owner has not approved is reported as `untrusted` and never spawned.
+A per-segment failure becomes an `error` on that segment instead of failing the request.
+The route is owner only because command output and vault-wide counts cannot be filtered per path.
+
+### POST /status-bar/trust
+
+`POST /status-bar/trust` approves a `run:` command, recording the approval per machine and per vault against the command's exact text. It is owner only, so an agent cannot approve its own command.
+
+The request is refused with `400` unless `command` equals a `run` entry in the vault's current `statusBar`, so an approval can cover only what `.settings` holds right now.
+A command containing a newline, a carriage return or a bidi control character (U+202A to U+202E, U+2066 to U+2069) is `400` and can never be approved.
+`bismuth api` refuses this path for agents as well.
+See [status bar](../settings/status-bar.md).
+
+## Daemon
+
+The daemon routes read and write the daemon's files.
+Machine-level state (`status`, `devices`, `install`) lives under `~/.bismuth/daemon`; crons, processes, pages and logs belong to the vault under `<vault>/.daemon`.
+None invalidates the vault caches except routes that write a page file; the app polls `GET /daemon/snapshot` and `GET /daemon/pages`.
+Concepts are in the [daemon docs](../daemon/setup.md).
+
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /daemon/status` | none | `{running, thisDeviceId, owner, name}`. `owner` is `{ownerDeviceId, ownerLabel, updatedAt}` or `null`. | open; none |
+| `GET /daemon/devices` | none | `{devices: [{deviceId, label, lastSeenISO, isOwner, isThis}], ownerDeviceId}` | open; none |
+| `GET /daemon/snapshot` | none | `{daemon, crons, processes, identity}` for this vault. | open; none |
+| `GET /daemon/logs` | `?limit=&kind=&name=&since=` | Activity events, newest first. | open; none |
+| `GET /daemon/install` | none | `{installed, running, binPath}` | open; none |
+| `POST /daemon/setup` | none | `{ok, binPath, error?}` | open; none |
+| `POST /daemon/update` | none | `{ok, binPath, error?}`, the same action as setup. | open; none |
+| `POST /daemon/owner` | `{deviceId}` | The new owner `{ownerDeviceId, ownerLabel, updatedAt}`. `400` for an unknown device. | open; writes `owner.json` outside the vault and publishes an event with a non-vault sentinel path |
+| `POST /daemon/cron/toggle` | `{name, enabled}` | `{ok: true}` | owner only; none |
+| `POST /daemon/cron/run` | `{name}` | `{ok: true}` | owner only; none |
+| `POST /daemon/cron/delete` | `{name}` | `{ok: true}` | owner only; none |
+| `POST /daemon/process/toggle` | `{name, enabled}` | `{ok: true}` | owner only; none |
+| `POST /daemon/process/delete` | `{name}` | `{ok: true}` | owner only; none |
+| `GET /daemon/pages` | none | `DaemonPage[]` | open; none |
+| `POST /daemon/pages` | `{slug, title?, body?, actions?, source?, deliverAt?}` | `{path, slug}` | invalidates the new page path |
+| `POST /daemon/pages/resolve` | `{path, actionId}` | `{status, alreadyResolved}` | open; none |
+| `POST /daemon/pages/mark-failed` | `{path}` | `{ok: true}` | open; none |
+| `POST /daemon/pages/archive` | `{path}` | `{ok: true}` | owner only; none |
+
+`GET /daemon/status` reports `running` when `daemon.pid` exists and the process is alive. `name` is the display name from the vault's daemon identity.
+
+`GET /daemon/snapshot` returns `daemon: {label, running, home}`, `crons`, `processes` and `identity: {name, blurb}`.
+A cron is `{name, file, schedule, on, watch, enabled, lastFired, running, startedAt}`, where `on` is `schedule` or `file-change` and `lastFired` is `{timestamp, result, detail?}` or `null`.
+A process is `{name, file, enabled, running}`, and its `running` is always `false` because the daemon exposes no per-process liveness file.
+`name` is the frontmatter name or the file basename and is the key the toggle, run and delete routes take; `file` is the definition's basename without `.md`.
+
+`POST /daemon/setup` runs the bundled daemon binary's self-install, which writes the launchd or systemd unit.
+It is idempotent, never throws, and reports failure in the body.
+There is no create route for crons or processes; the daemon creates them through `bismuth daemon cron create` and `bismuth daemon process create`.
+
+The cron and process routes return `400` for a missing field and `404` for an unknown name.
+`cron/delete` returns `409` while the daemon has the cron recorded as running.
+`process/delete` also tells a running daemon to stop that process.
+`cron/run` drops a trigger file the daemon polls, under `<vault>/.daemon/crons/.triggers/`.
+
+### GET /daemon/logs
+
+`GET /daemon/logs` reads `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` and returns events newest first as `{ts, kind, name, event, outcome?, cause?, durationMs?, detail?}`.
+All four query parameters are optional: `limit` defaults to 100 and is capped at 1000, `kind` is `cron`, `process`, `daemon` or `session`, `name` is a cron or process name, and `since` is an ISO instant.
+The route never fails; it returns `[]` when the daemon has never run in this vault.
+The event vocabulary and retention are in [daemon storage](../daemon/storage.md).
+
+### Daemon pages
+
+A page is a daemon-authored note at `<vault>/.daemon/pages/<slug>.md` that asks the user to approve or dismiss an action. Its changing state (status, prompt, model) lives in a JSON sidecar under `.daemon/pages/.state/`, so an editor save of the page can never race a daemon status write.
+
+A `DaemonPage` is `{path, slug, title, createdAt, deliverAt?, source?, actions, body, status, pressedAction?, pressedAt?, daemonNote?, completedAt?}`.
+`status` is `pending`, `working`, `done`, `failed` or `dismissed`, and is `pending` when no sidecar exists.
+`GET /daemon/pages` also deletes pages whose completion is older than the `daemon.inboxRetentionDays` setting (default 7), so the app's polling is what runs the cleanup.
+
+`POST /daemon/pages` validates the slug (`400` for dots or slashes; `409 page already exists`; it never overwrites) and stamps `type: daemon-page` and `createdAt`.
+
+`POST /daemon/pages/resolve` presses an action.
+An action with no `prompt` is a dismiss and resolves without the daemon; one with a `prompt` sets the page to `working` and drops a trigger file the daemon polls about every 5 seconds.
+A page already `done`, `dismissed` or `working` returns its status with `alreadyResolved: true`; `failed` is not final, so pressing again retries.
+Errors: `400 missing path/actionId`, `404 page not found: <path>`, `400 unknown action "<actionId>" on <path>`, `400 not a daemon page: <path>`.
+
+`POST /daemon/pages/mark-failed` sets a stuck `working` page to `failed`; it leaves a page already `done`, `failed` or `dismissed` unchanged. `POST /daemon/pages/archive` deletes the page and its sidecar whatever its status, and answers `409` while the page is `working`.
+
+## Memory recall
+
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `POST /memory/recall` | `{mode, sessionId, agentId?, prompt?, transcriptPath?, toolCalls?, source?}` | `{context, injected, reason?}` | open; none |
+
+`mode` is `prompt`, `tool`, `session-start` or `subagent`.
+`sessionId` is required and non-empty; `source` is the SessionStart source (`startup`, `resume`, `clear` or `compact`); `toolCalls` is `[{tool_name, tool_input?, tool_response?}]`.
+A bad mode, a missing `sessionId`, a wrongly typed field or invalid JSON is `400`.
+
+`context` is the block to inject as additional context, or `null`; `injected` lists the note names it contains; `reason` is `disabled`, `mid-turn-off`, `no-memory` or `no-match` when nothing was injected.
+Recall ranks the vault's memory graph and keeps a per-session ledger so a note already shown is not injected again unless it changed.
+The ledger clears on `session-start` with source `compact` or `clear` and expires after 6 hours idle.
+`transcriptPath` only widens the ranking query.
+
+The settings `daemon.recall.enabled`, `daemon.recall.midTurn` and `daemon.recall.semantic` are read on each call (absent means true), and the memory directory is read only when `daemon.enabled` is true.
+Any request carrying an `Origin` header is refused with `403 cross-origin recall refused`, since relay hooks send none.
+Recall returns only notes visible to the daemon channel, so the route needs no token.
+
+## Chat history and agents
+
+Chat history routes are owner only because a transcript has no single path to check. The chat itself runs over the [`/chat` WebSocket](#get-chat). Backends are covered in [chat backends](../chat/backends.md).
+
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /chat/sessions` | `?scope=` optional | `{sessions: [{sessionId, summary, lastModified, origin}]}` | owner only; none |
+| `GET /chat/session-messages` | `?id=&provider=` | `{frames: ChatFrame[]}`, empty without `id`. | owner only; none |
+| `POST /chat/search` | `{query?, scope?}` | `{hits}`, empty for an empty query. | owner only; none |
+
+`scope` is `user`, `daemon` or `all`; anything else, or absent, is `user`.
+`origin` is `user` or `daemon`.
+`provider` on `session-messages` selects which backend's session store to replay and defaults to the vault's `chat.provider` setting.
+Frames replay in order in the same shape the live socket streams.
+
+### OpenCode provider manager (`/opencode/*`)
+
+Four owner-only routes manage provider credentials over the running `opencode serve`. They change no vault file. Keys go straight to opencode's own store and are never logged or echoed. The guide is [opencode providers](../chat/opencode-providers.md).
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /opencode/providers` | none | `{connected: [{id, name, kind}], available: [{id, name, methods}]}` |
+| `POST /opencode/auth` | `{id, key}` | `{ok: true}`. Re-sends the models and auth frames to live opencode chats. |
+| `POST /opencode/oauth/authorize` | `{id, method}` | `{url, method: "auto"\|"code", instructions}` |
+| `POST /opencode/oauth/callback` | `{id, method, code?}` | `{ok: true}`. Re-sends the models and auth frames. |
+
+`kind` is `api`, `oauth` or `env`; `env` means one of the provider's environment variables is set.
+`available` lists every provider not connected, sorted by name, and each entry's `methods` is never empty.
+`method` is the index into the provider's methods.
+`code` is the pasted code for a `code` method and is omitted for `auto`.
+
+All four share these errors, as JSON:
 
 | Status | Body | When |
 |---|---|---|
-| `403` | `{ error: "forbidden" }` | non-owner request |
-| `409` | `{ error: "opencode-missing", message }` | the `opencode` binary is absent, or its server did not start |
-| `400` | `{ error: "bad-request", message }` | malformed body, or opencode rejected the request — `message` never contains the API key |
-
-- **`GET /opencode/providers`** → `{ connected: { id, name, kind: "api" | "oauth" | "env" }[], available: { id, name, methods: { type: "api" | "oauth", label }[] }[] }`. `available` is every provider NOT connected, sorted by name; `methods` is never empty (`[{type:"api",label:"API key"}]` when opencode reports none). `kind` is `env` when one of the provider's env vars is set in the server's environment, `oauth` when its only sign-in is OAuth, else `api`. The injected `local` provider (the [`localModel`](../settings/reference.md) setting) is in neither list.
-- **`POST /opencode/auth`** — body `{ id: string, key: string }` → `{ ok: true }`. Stores an API key through opencode's `auth.set`; Bismuth keeps nothing. Re-emits the `models` + `auth` chat frames to every live opencode chat.
-- **`POST /opencode/oauth/authorize`** — body `{ id: string, method: number }` (`method` = index into the provider's `methods`) → `{ url: string, method: "auto" | "code", instructions: string }`. The client opens `url`.
-- **`POST /opencode/oauth/callback`** — body `{ id: string, method: number, code?: string }` → `{ ok: true }`. `code` is the pasted code for a `code` method; an `auto` method omits it and the call resolves when the browser sign-in completes. Re-emits the `models` + `auth` frames on success.
+| 403 | `{error: "forbidden"}` | The request is not from the owner. |
+| 409 | `{error: "opencode-missing", message}` | The opencode binary is absent or its server did not start. |
+| 400 | `{error: "bad-request", message}` | A malformed body, or opencode refused it. `message` never contains the key. |
 
 ### Free agent (`/agents/free`)
-Two routes behind the one-click "free agent": Bismuth downloads opencode's official GitHub release into `~/.bismuth/agents/bin/opencode` so chat can run on opencode Zen's free models with no account. Both are **blanket owner-only** (the install downloads and installs an executable) and live in the read table (no vault cache invalidation). Non-owner → `403 { error: "forbidden" }`. Implementation: `core/src/freeAgent.ts`.
 
-- **`GET /agents/free`** → `FreeAgentStatus`:
-  ```ts
-  { opencode: { installed: boolean, path: string | null, managed: boolean }, // managed = path is under ~/.bismuth/agents/bin
-    claude: { installed: boolean },
-    // every picker-visible backend in AUTO_ORDER (catalog order, Claude first) — what
-    // chat.provider: auto resolves against, and the setup screen's switch row
-    backends: { id: BackendId, label: string, installed: boolean }[],
-    progress: FreeAgentProgress }
-  ```
-- **`POST /agents/free/install`** → `FreeAgentProgress`. Starts the install in the background and returns the current progress at once; poll `GET /agents/free`. **Idempotent while busy**: a second call (another click, another window) returns the running progress and starts no second download. If opencode is already on the machine (`which`), nothing is downloaded and the progress ends `{ phase: "ready", action: "already-installed" }`.
-  ```ts
-  { phase: "idle" | "downloading" | "verifying" | "installing" | "ready" | "error",
-    received?: number, total?: number,  // bytes, during "downloading"
-    message?: string,                   // human error text when phase is "error"
-    action?: "installed" | "already-installed", // when phase is "ready"
-    version?: string,                   // `opencode --version`, when ready
-    path?: string }                     // the existing binary, when action is "already-installed"
-  ```
-- **Fail-closed.** The download is sha256-hashed while it streams and compared with the `digest` GitHub publishes on the release asset. A mismatch, a missing digest, a non-2xx response, an archive with no `opencode` inside, or a platform with no build (`opencode has no build for this platform`) ends in `phase: "error"` and leaves nothing at the final path.
+Two owner-only routes manage the one-click opencode install, which downloads opencode's official release into `~/.bismuth/agents/bin/opencode` so chat can use free models. Non-owner requests get `403 {error: "forbidden"}`.
 
-### `POST /list-dir`
-- **Body:** `{ path?: string, only?: "dir" | "file" }`. `path` is the partial filesystem path the user is typing (absolute or `~`-relative); `only` narrows to dirs or files.
-- **Action:** `listFsPaths(path, only)` (`core/src/fsPaths.ts`) — `readdir`s the parent of `path` and returns matching children, display paths preserving the `~`/`/` form. Backs `scope: "fs"` settings autocomplete (filesystem-path settings).
-- **Response:** `{ entries: { path: string, kind: "file" | "dir" }[] }` (dirs first, then alpha; capped client-side at 50). A missing/unreadable parent or relative `path` → `{ entries: [] }`.
-- **Cache/SSE:** none (read-only despite POST).
+| Route | Request | Response |
+|---|---|---|
+| `GET /agents/free` | none | `{opencode: {installed, path, managed}, claude: {installed}, backends: [{id, label, installed}], progress}` |
+| `POST /agents/free/install` | none | The current `FreeAgentProgress`. |
 
-### `POST /memory/recall`
-- **Body:** `{ mode: "prompt" | "tool" | "session-start" | "subagent", sessionId: string, agentId?, prompt?, transcriptPath?, toolCalls?: { tool_name, tool_input, tool_response? }[], source? }`. `source` is the SessionStart source (`startup`/`resume`/`clear`/`compact`); `toolCalls` is a `PostToolBatch` hook's `tool_calls`. A bad `mode`, a missing/empty `sessionId`, wrongly typed fields or invalid JSON → `400`.
-- **Action:** `recallServiceFor(vault).recall(req)` (`core/src/memoryRecall.ts`) — the one recall service the relay hooks, the visual chat and opencode share. It ranks the vault's memory graph (the `@bismuth/memory` BM25 index, rebuilt only when a note file's mtime/size changes), packs the best notes for the mode, and records them in a per-`sessionId` (+ `agentId`) dedup ledger kept in core memory, so a note already shown in the session is not injected again unless its content changed. The ledger is cleared by `session-start` with `source` `compact` or `clear`, and entries expire after 6 h idle. `transcriptPath` (an absolute `.jsonl`) only widens the ranking query; its contents are never returned.
-- **Settings:** `daemon.recall.{enabled,midTurn,semantic}` are read live from the vault's `.settings` on every call (absent = `true`). `enabled: false` disables every mode, `midTurn: false` disables `tool`, `semantic: false` never touches the embedder. The memory dir is read only when `daemon.enabled`.
-- **Response:** `{ context: string | null, injected: string[], reason?: "disabled" | "mid-turn-off" | "no-memory" | "no-match" }`. `context` is the `<bismuth-memory>` block to inject as `additionalContext`.
-- **Cross-origin guard:** any request carrying an `Origin` header → `403 { error: "cross-origin recall refused" }` (the route is tokenless with CORS `*`; relay hooks send no `Origin`, the visual chat calls the service in-process).
-- **Visibility:** not owner-gated. Recall only ever returns daemon-visible notes (`isMemoryNoteVisibleToDaemon`), the set the hooks injected before, so a tokenless caller learns nothing it could not already read from disk.
-- **Cache/SSE:** none (read table, no invalidate).
+`FreeAgentProgress` is `{phase, received?, total?, message?, action?, version?, path?}`. `phase` is `idle`, `downloading`, `verifying`, `installing`, `ready` or `error`; `received` and `total` are bytes during `downloading`; `action` is `installed` or `already-installed` when `ready`.
 
-### `POST /backup`
-- **Body:** none.
-- **Action:** `scheduleBackup(vault, () => snapshotMessage())` (`core/src/backup.ts`) — **debounced/coalesced**, not a synchronous commit. The editor's autosave hits this on every save, so committing on each keystroke-save would bloat `.git` (and, in an iCloud-synced vault, drive sync-conflict forks). `scheduleBackup` resets a per-vault debounce timer (`BISMUTH_BACKUP_DEBOUNCE_MS`, default ~30s after the last call); a burst of saves collapses into one `commitVault(vault, message())` call once the quiet window elapses. A `BISMUTH_BACKUP_MAX_WAIT_MS` ceiling (default 5 min) forces a commit even under continuous editing so long sessions still snapshot periodically. (Checkpoint commits — e.g. daemon `dream`/`vault-review` — call `commitVault` directly and stay immediate; only this autosave path is coalesced.)
-- **Response:** `{ scheduled: true }` — the route only acknowledges scheduling; it does not report whether/when a commit actually happens.
-- **Cache/SSE:** none.
+The install starts in the background and returns at once, so poll `GET /agents/free`.
+A second call while an install runs returns the running progress and starts no second download.
+If opencode is already on the machine, nothing downloads and the progress ends `ready` with `already-installed`.
+The download is hashed while it streams and compared with the sha256 digest GitHub publishes; a mismatch, a missing digest, a failed response, an archive without the binary or an unsupported platform ends in `error` and leaves nothing at the final path.
 
-### `POST /open-folder`
-- **Body:** `{ folder: string, memory?: string }`. `memory` defaults to this server's `cfg.memory`.
-- **Action:** spawns a sibling core server pointed at `folder` (process-per-vault, like Obsidian) via `spawnVaultBackend`.
-- **Response:** `{ url: <new server URL>, vault: <resolved folder> }`. The frontend opens a window with `?api=<url>`.
-- **Errors:** `AppError("EINVAL", "no memory dir configured", 400)` if neither a body `memory` nor `cfg.memory` is set.
-- **Cache/SSE:** none (read-only w.r.t. THIS vault — only launches a new process).
+## Google Calendar
 
-### `POST /status-bar/trust`
-- **Body:** `{ command: string }`.
-- **Action:** `trustCommand(cfg.vault, command)` (per-machine approval file, `BISMUTH_TRUST_FILE` or `~/.bismuth/trusted-commands.json`, keyed by vault realpath + sha256 of the command). `400` unless `command` equals some `run` in the vault's current normalized `statusBar`, so an approval can only cover what `.settings` holds right now. `400` if the command contains `\n`, `\r`, U+202A–U+202E or U+2066–U+2069 (`hasHiddenChars`).
-- **Response:** `{ ok: true }`.
-- **Visibility:** blanket owner-only — `403` for any non-owner request (an agent must not be able to approve its own shell command). `NOT_SUPPORTED` on the in-process backend. The CLI enforces the same boundary one step earlier: `bismuth api` refuses any path starting `status-bar/trust` unless `BISMUTH_AGENT_CHANNEL` is `owner` ("refused: approving a status bar command is the user decision; ask them to click [ allow ] in the bar" — `cli/src/commands/api.ts`).
-- **Cache/SSE:** none.
+Google credentials, the token and the sync manifest live in `~/.bismuth/gcal`, outside any vault, and are shared by every core on the machine.
+For that reason the routes that call Google or change that state are refused with `403` and a JSON `{error}` unless the core is the installed app (`BISMUTH_APP_PATH` is set) or `BISMUTH_GCAL_AUTOSYNC=1` is set.
+The refusal happens before anything is read, written or sent.
+`GET /gcal/status` only reads, so it stays open.
+The model is in [Google Calendar sync](../gcal/overview.md).
 
-### Relay ingest (`POST /relay/*`)
-Posted by the relay plugin's hooks loaded per-session inside app terminals. They update the in-process agent registry — **not** the vault — so they live in the read table (no cache invalidation). All are best-effort; a `400` is silently swallowed client-side. All return `{ ok: true }` on success.
-
-- **`POST /relay/session`** — body `{ sessionId?, terminalId?, cwd?, backend? }`. `registerSession(...)`. `400 "missing sessionId/terminalId"` if either is absent. (`cwd` defaults to `""`; `backend` — the id of the agent CLI reporting, e.g. `"claude"`, `"codex"` — is stored on the session, and the registry defaults it to `claude` when omitted, as the original Claude-only hooks do.)
-- **`POST /relay/session/end`** — body `{ sessionId? }`. `endSession(sessionId)`. `400 "missing sessionId"` if absent.
-- **`POST /relay/subagent/start`** — body `{ parentSessionId?, agentId?, agentType?, workflowId? }`. `startSubagent(...)`; `agentType` defaults to `"agent"`; an empty/absent `workflowId` is stored as undefined. `400 "missing parentSessionId/agentId"` if either is absent.
-- **`POST /relay/subagent/stop`** — body `{ agentId?, lastMessage? }`. `stopSubagent(...)`. `400 "missing agentId"` if absent.
-
-### `GET /relay/snapshot`
-The read side of the registry above, powering the `bismuth relay list` CLI command. Also lives in the read table (no cache invalidation).
-- **Response:** `{ sessions: RelaySession[], subagents: RelaySubagent[] }` — `snapshot()` from `core/src/relay.ts`, for the owner. For any non-owner request, `redactSnapshot(snapshot())` instead: the same shape with each `RelaySubagent`'s `lastMessage` omitted.
-- **Visibility:** field redaction (shape D), not a blanket refusal — `200` for every channel. A `RelaySubagent`'s `lastMessage` (its `SubagentStop` final output) is free-text that can quote vault content, so it's dropped entirely for non-owner requests; every bookkeeping field (`sessionId`, `terminalId`, `cwd`, `backend`, `lastSeen`, `agentId`, `parentSessionId`, `agentType`, `workflowId`, `startedAt`, `done`, `doneAt`) is returned unchanged to every channel. This route deliberately does NOT follow `GET /chat/sessions`'s blanket-owner-only precedent: a chat transcript has no non-sensitive field to fall back to, but here only `lastMessage` is sensitive, and `bismuth relay list` (its main caller; the relay plugin's hooks only POST) must stay reachable with no token. The CLI's `call()` attaches `X-Bismuth-Token` on a loopback core with a run-registry token (`cli/src/http.ts`), so `relay list` from an owner shell gets the un-redacted snapshot with `lastMessage`; with no token available (non-loopback `--api`, no run record) it gets the redacted one — see the [CLI reference](../cli/reference.md#owner-identity-for-server-talking-commands-clisrchttpts). See [Visibility gating](#visibility-gating).
-
-### App control (`/ui/*`, read table)
-The core→frontend command channel (`core/src/uiControl.ts`). Both live in the read table (no vault-cache invalidation): `/ui/command` relays a request over the target window's `/ui` WebSocket and returns its reply; any vault mutation the window then performs runs its own invalidation. See [../mcp/app-control.md](../mcp/app-control.md).
-
-- **`GET /ui/windows`** — none. Returns `[{ id, label, activeTabId, tabCount }]` for every connected window (`[]` when none). Fed by each window's tab heartbeat over `/ui`.
-- **`POST /ui/command`** — body `{ windowId?, action, args? }`. Resolves the target window (`windowId`, else the single open one — **0 → `404 "no Bismuth window is open"`**, **many → `409`**), sends the command over its `/ui` WS, and returns its reply `{ ok, result?, error? }` (a window that never answers → `{ok:false}` after ~8s; never hangs). `action ∈ list-tabs | open-tab | close-tab | focus-tab | run-command`. **Guards run before dispatch:** `run-command` with a `UI_CONTROL_BLOCKLIST` id → `403`; `open-tab` with `::chat:` content → `403`. `400 "missing action"` if absent.
-
-### Daemon system actions / writes (read table)
-These mutate the daemon's shared on-disk files (NOT the vault) — either the machine-level install state or the active vault's `<vault>/.daemon/{crons,processes}` defs — so they live in the read table with **no vault-cache invalidation** (the frontend re-polls `/daemon/snapshot`).
-
-- **`POST /daemon/setup`** — body none. `runSetup()` (`core/src/daemonInstall.ts`) — runs the bundled daemon binary's self-install (`<binPath> --ensure-installed`, which writes the launchd/systemd unit pointing at the stable `~/.bismuth/bin/bismuth-daemon` path). Idempotent. Response `SetupResult` = `{ ok: boolean, binPath: string, error?: string }` — `ok:false` (with `error`) when the binary isn't staged or the subprocess fails. **Never throws** (best-effort); must NOT 404 and must NOT bump the vault version.
-- **`POST /daemon/update`** — body none. The daemon ships as a bundled binary that updates **WITH the app** (there is no git-pull self-update path), so "update" just re-runs the idempotent, adopt-only `runSetup()` to (re-)register the service. Response `SetupResult` = `{ ok, binPath, error? }`. System action, not a vault mutation.
-All five routes below are **owner-only** (`403 "forbidden"` for any non-owner channel) — CORS is `*`, so any local page could otherwise flip, run or delete a cron/process; the daemon itself never calls these routes (it acts through the headless CLI), so gating costs it nothing. There is **no create route**: crons and services are created by the daemon in chat, through `bismuth daemon cron create` / `bismuth daemon process create` (see the CLI reference), with the user approving each call.
-
-- **`POST /daemon/cron/toggle`** — body `{ name?, enabled? }`. `setCronEnabled(name, enabled, vaultDaemonDir(cfg.vault))` (rewrites the `enabled` frontmatter in `<vault>/.daemon/crons/<name>.md`). Response `{ ok: true }`. `400 "missing name/enabled"` if `name` absent or `enabled` not a boolean. Unknown name → `setCronEnabled` throws `AppError("ENOENT")` → `404` via the dispatch catch.
-- **`POST /daemon/cron/run`** — body `{ name? }`. `runCron(name, vaultDaemonDir(cfg.vault))` (drops a trigger file under `<vault>/.daemon/crons/.triggers/` the daemon polls). Response `{ ok: true }`. `400 "missing name"` if absent. Unknown name → `404`.
-- **`POST /daemon/process/toggle`** — body `{ name?, enabled? }`. `setProcessEnabled(name, enabled, vaultDaemonDir(cfg.vault))`. Response `{ ok: true }`. `400 "missing name/enabled"` on bad input; unknown name → `404`.
-- **`POST /daemon/cron/delete`** / **`POST /daemon/process/delete`** — body `{ name? }`. `deleteCron`/`deleteProcess(name, vaultDaemonDir(cfg.vault))`: unlinks the definition `.md` (a process delete also drops a reconcile trigger, mirroring `setProcessEnabled`, so a running daemon stops it). Response `{ ok: true }`. Unknown name → `404`; a cron listed as running in `<vault>/.daemon/crons/.running.json` → `AppError("EBUSY")` → `409`, leaving the file in place.
-
-Mobile/iPad (`core/src/localBackend.ts`'s in-process transport) has no notion of an owner channel at all, so it refuses every one of these five with `NOT_SUPPORTED` (`501`) rather than running them unauthenticated — see the mobile overview doc.
-
-### Daemon inbox pages (`core/src/daemonPages.ts`, read table)
-A "page" is a daemon-authored markdown note at `<vault>/.daemon/pages/<slug>.md` asking the user to approve/dismiss an action; its DYNAMIC state (status/prompt/model/…) lives in a separate JSON sidecar under `.daemon/pages/.state/<slug>.json`, never in the page's own frontmatter (so an editor autosave of the page body can never race a daemon status write). Read-only despite the GC side effect below, so these live in the read table like the other `/daemon/*` routes — the frontend just polls `GET /daemon/pages`. `POST /daemon/pages` (the page-authoring route) is a genuine vault mutation and lives in `mutatingRoutes` — see below.
-
-- **`GET /daemon/pages`** — no params. `listDaemonPages(cfg.vault, appConfig.daemon?.inboxRetentionDays ?? 7)`. Response: `DaemonPage[]` — each `{ path, slug, title, createdAt, deliverAt?, source?, actions: PageAction[], body, status, pressedAction?, pressedAt?, daemonNote?, completedAt? }` (`status ∈ "pending"|"working"|"done"|"failed"|"dismissed"`, defaulting to `"pending"` when no sidecar exists yet). As a side effect, any page whose `done`/`failed`/`dismissed` completion time is older than `inboxRetentionDays` is garbage-collected (page file + sidecar deleted, excluded from the result) — there is no separate GC cron/ticker; the frontend's own poll of this route is what makes it run. Never throws: a missing/unreadable pages dir just reads as `[]`.
-- **`POST /daemon/pages/resolve`** — body `{ path?, actionId? }`. `resolvePage(cfg.vault, path, actionId)` — looks up `actionId` in the page's frontmatter `actions[]`; an action with no `prompt` is a pure dismiss (writes `dismissed`, no daemon involvement), one with a `prompt` writes `working` (stamping the resolved prompt/model/timeout into the sidecar) and drops a trigger file the daemon's `processPageTriggers` polls (~5s). Idempotent: a page already `done`/`dismissed`/`working` returns its current status with `alreadyResolved: true` rather than re-firing (guards a double-click or a second window); `failed` is deliberately NOT terminal, so pressing again retries. Response: `ResolveResult` = `{ status: PageStatus, alreadyResolved: boolean }`. Errors: `400 "missing path/actionId"` if either is absent; `404 "page not found: <path>"` if the file doesn't exist; `400 "unknown action \"<actionId>\" on <path>"` if the id isn't one of the page's own actions; `400 "not a daemon page: <path>"` if `path` doesn't match `.daemon/pages/<slug>.md` (`DAEMON_PAGE_RE`, one segment, no dotfiles).
-- **`POST /daemon/pages/mark-failed`** — body `{ path? }`. `markPageFailed(cfg.vault, path)` — a belt-and-suspenders client escape hatch for a page stuck `working` implausibly long (the daemon process died mid-run, no writer left to ever settle it). Compare-and-swap against the live sidecar: a page already `done`/`failed`/`dismissed` is left untouched (the daemon is the authoritative writer — a genuinely-sent action must never be relabeled "failed" by a late click); otherwise writes `status: "failed"` with a default `daemonNote` ("Marked failed — no response from the daemon.") and `completedAt`. Response `{ ok: true }`. Errors: `400 "missing path"` if absent; `400 "not a daemon page: <path>"` for a malformed path.
-- **`POST /daemon/pages/archive`** — body `{ path? }`. `archivePage(cfg.vault, path)` — the daemon page inbox's `[ archive ]`: DELETES the page `.md` and its `.state` sidecar outright, whatever its status (the same removal the retention GC in `listDaemonPages` does, just now; recoverable from the vault backup, which includes `.daemon/pages/`). Response `{ ok: true }`. Errors: `400 "missing path"`; `400 "not a daemon page: <path>"` for a malformed path; `404` unknown page; `409` (`EBUSY`) while the page is `working` (the daemon is mid-run and will write the outcome back). **Owner-only** (`403 "forbidden"` for any non-owner channel) — CORS is `*`, so any local page could otherwise delete it.
-- **Visibility:** NOT gated — these are the daemon/MCP's own authored inbox notifications, not vault note content pulled in by reference (mirroring the CLI gate's `page` command, which is Tier A "always safe" for the same reason — see `core/src/visibilityCliGate.ts`).
-
-### Machine-wide install / self-update (read table)
-These run system actions (filesystem + git + `claude mcp` + a rebuild) but are **not** vault mutations, so they live in the read table with no vault-cache invalidation. All never throw.
-
-- **`POST /bismuth/install`** — body none. `ensureBismuthInstalled(process.env.BISMUTH_INSTALL_SRC)` — the idempotent, version-gated machine-wide install of the `bismuth` CLI + MCP from the bundled tools resource (`core/src/bismuthInstall.ts`). Response `InstallResult` = `{ action, status: BismuthStatus, warnings: string[] }`, where `action` ∈ `"up-to-date"` | `"installed"` | `"updated"` | `"would-install"` | `"would-update"` | `"skipped-no-src"`. A no-op (`"up-to-date"`) when the bundled-binary content hash matches `~/.bismuth/.version` AND the CLI symlink + MCP registration are present; `"skipped-no-src"` when `BISMUTH_INSTALL_SRC` is unset / incomplete (the dev case). See [machine-wide install](../mcp/overview.md).
-- **`POST /doctor/fix`** — body `{ only?: string[] }` (**owner-only**, `403` otherwise). Runs the doctor over the server's vault and applies every repair, both risks, or just the finding ids in `only` when given. `400` when `only` is present but not an array of strings (a malformed list is rejected rather than widened to "fix everything"). Response `DoctorReport`, whose findings carry each repair's `status`. The iPad/iOS in-process backend answers `501` for both doctor routes. See [Doctor](../overview/doctor.md).
-- **`POST /update/apply`** — body none. `startUpdate()` (`core/src/selfUpdate.ts`) — starts the git self-update and **returns immediately** with the initial `UpdateProgress` (the heavy `git pull` + `bun run tauri build` runs in the background; poll `GET /update/progress`). Idempotent while a run is in flight (returns the current `state`). Guards: returns `phase:"error"` when not a bundled source build, when the repo has uncommitted changes (`dirty`), and `phase:"idle"` when already up to date. See [self-update](../overview/self-update.md).
-
-### Google Calendar OAuth (read table)
-These drive the Google Calendar OAuth flow + connection lifecycle. All secrets and tokens live **outside** the vault (`~/.bismuth/gcal`), so these are SYSTEM actions, not vault mutations — they live in the read table with **no** cache-invalidation. That store is machine-wide and belongs to the installed app, so all three below (and `GET /gcal/callback` above) answer **`403`** with a JSON `{ error }` naming `BISMUTH_GCAL_AUTOSYNC=1` — making no Google call and writing nothing — unless `gcalAutoSyncEnabled()`; `GET /gcal/status` stays open. The single requested OAuth scope is `calendar.events` (events read+write only; no Gmail/Drive/contacts). The two-way *sync* itself (`POST /gcal/sync`) IS a vault mutation — see below.
-
-- **`POST /gcal/credentials`** — body `{ clientId, clientSecret }`. `gcalSetCredentials(...)` stores the OAuth client id + secret in the durable store outside the vault (the secret never enters `.settings`/git). Sent once from the connect modal. Response `{ ok: true }`. `400 "missing clientId/clientSecret"` if either is absent.
-- **`POST /gcal/auth/start`** — body none. Builds `redirectUri = http://127.0.0.1:<server.port>/gcal/callback` (Google desktop clients accept any 127.0.0.1 port, so the callback lands back on THIS backend) and returns `gcalStartAuth(redirectUri)`. Response `{ url: <Google consent URL> }` for the frontend to open in the system browser. A thrown error (e.g. credentials not set) → `400` with the message.
-- **`POST /gcal/disconnect`** — body none. `gcalDisconnect()` clears the stored tokens. Response `{ ok: true }`.
-
-### `POST /asset`
-> Listed in the read table — uploading an attachment is NOT a graph/tree/search mutation (attachments are excluded from those caches; the subsequent note edit that inserts the embed triggers its own invalidation).
-- **Params:** `?path=<desired vault-relative path under the attachments folder>` (required).
-- **Body:** the raw attachment bytes.
-- **Action:** validates the target with `isSafeAssetTarget` (rejects empty/`.`/`..`/dot-prefixed segments — blocks writing into `.git/`, `.obsidian/`, etc.), enforces a 100 MB cap (`MAX_ASSET_BYTES`, checked against both `Content-Length` and the actual byte length), de-collides the filename (`uniqueAssetPath`, never overwrites), and `writeBinary(...)`.
-- **Response:** `{ path: <final relative path actually used> }` so the caller inserts the right `![[basename]]`.
-- **Errors:** `400 "invalid attachment path"` (unsafe target) or `400 "missing ?path="`; `413 "attachment too large"` (over 100 MB).
-- **Cache/SSE:** none.
-
-### `POST /asset/fetch`
-> Listed in the read table — same reasoning as `POST /asset`: downloading an attachment is not a graph/tree/search mutation. **Owner-only** (`requestChannel(req) !== 'owner'` → `403`): this route makes the SERVER issue an HTTP request to an attacker-chosen URL and writes the response into the vault, so without the owner gate it's an open SSRF-with-read-back — any LAN host or malicious web page could make core fetch `127.0.0.1:<port>`, the cloud metadata address, or a router admin page and then read the result back via `GET /asset`.
-- **Params:** none.
-- **Body:** JSON `{ url: string, path: string }` — `path` is the desired vault-relative attachment path (as `POST /asset`'s `?path=`), `url` is the remote image to fetch.
-- **Action:** validates `path` with `isSafeAssetTarget` (same rejection rules as `POST /asset`), then `fetchRemoteAsset(url, { maxBytes: MAX_ASSET_BYTES })` (`core/src/assetFetch.ts`): only `http:`/`https:` URLs, a 20s timeout, and enforces the 100 MB cap against both the declared `Content-Length` and the actual streamed byte count (an oversized body is aborted mid-transfer even when `Content-Length` is absent or understates the truth). Redirects are followed manually, up to 5 hops — **every hop's host is resolved and checked before the request is made**, rejecting loopback, RFC1918, link-local, CGNAT, `0.0.0.0/8`, `fc00::/7`, and IPv4-mapped-IPv6 equivalents of those (`isBlockedAddress`), so a public host that redirects to a private address is refused rather than followed, and a hostname with multiple DNS records is refused if ANY of them is private. The response's `Content-Type` must start with `image/` or the fetch is rejected — no non-image body is ever written to the vault. If `path` has no extension, or its extension disagrees with the fetched response's `Content-Type` (`extForContentType`), the extension is corrected before writing. De-collides the filename (`uniqueAssetPath`, never overwrites) and `writeBinary(...)`.
-- **Response:** `{ path: <final relative path actually used> }`, same contract as `POST /asset`.
-- **Errors:** `403` (non-owner caller); `400 "missing url"` / `400 "missing path"`; `400 "invalid attachment path"` (unsafe target); `400 "invalid url"` / `400 "blocked address"` (not `http:`/`https:`, unparseable, or resolves to a private/loopback/link-local address); `415 "not an image"` (non-`image/*` content type); `502` when the remote fetch fails, returns non-2xx, or exceeds the redirect limit; `413` when the remote asset exceeds 100 MB.
-- **Cache/SSE:** none.
-
-### `POST /convert/heic`
-> Listed in the read table — a pure byte transform; nothing in the vault changes.
-- **Params:** none.
-- **Body:** the raw HEIC/HEIF bytes.
-- **Action:** `convertHeicToJpeg(...)` (`core/src/heic.ts`) transcodes to JPEG. Two engines with identical output: macOS `sips -s format jpeg` when `/usr/bin/sips` exists (no dependency, much faster on a full-size phone photo), otherwise — and whenever sips is absent or errors — the portable `heic-convert` (libheif wasm + jpeg-js), which is what Windows/Linux always take. A `looksLikeHeic` magic-byte pre-flight rejects non-HEIF input before it reaches a decoder.
-- **Response:** the JPEG bytes, `Content-Type: image/jpeg`, `Cache-Control: no-store`.
-- **Errors:** `400` (`AppError("HEIC_DECODE_ERROR")`) when the bytes aren't a decodable HEIC; `413 "image too large"` (over 100 MB).
-- **Why the backend:** WebKit decodes HEIC natively but Chromium does not, so an in-page conversion would work only in the packaged macOS app and fail silently in the browser dev build and on every non-macOS build.
-- **Callers:** the chat composer (a dropped/pasted photo is attached as JPEG) and the note editor (`uploadEmbed` converts before writing into the attachments folder).
-- **Cache/SSE:** none.
-
-### `POST /tmp-file`
-> Listed in the read table — writes OUTSIDE the vault, so no cache is affected.
-- **Params:** `?name=<basename>` (required).
-- **Body:** the raw bytes.
-- **Action:** `stageTmpFile(...)` (`core/src/tmpFiles.ts`) writes into `~/.bismuth/tmp` (overridable with `BISMUTH_TMP_DIR`), reducing the untrusted name to one safe path segment (`safeTmpName` — strips separators, leading dots and control characters, caps at 120 chars) and de-colliding rather than overwriting. `pruneTmpFiles()` runs once on server boot and deletes entries older than 24 h.
-- **Response:** `{ path: <absolute path> }`.
-- **Errors:** `400 "missing ?name="`; `413 "file too large"` (over 100 MB).
-- **Why it exists:** chat references dropped files by absolute path instead of base64-inlining them, but a PASTED file (and a browser-build drop) carries bytes with no path. Staging supplies one — deliberately not in the vault's attachments folder, so a file dropped into a chat never becomes a permanent tracked vault file.
-- **Cache/SSE:** none.
-
----
-
-## POST mutations (`mutatingRoutes` table)
-
-Every route here is wrapped by `mutatingHandler`. After the handler runs, the wrapper invalidates the path(s) returned by its `pathOf` (or fully, if `pathOf` is absent / returns `undefined`), bumping `version` and publishing an SSE event. The `pathOf` for each route is noted below. All return `200` on success (`"ok"` text or a JSON body).
-
-### `POST /replace`
-- **Body:** `{ query: string, replacement: string, opts: { caseSensitive, wholeWord, regex }, scope: string }`.
-- **Action:** takes a git snapshot FIRST (`commitVault`, the undo path), then `replaceInVault(...)`.
-- **Response:** the `replaceInVault` result JSON. An invalid regex etc. is returned as `400` with the message.
-- **`pathOf`:** `scope` when it's a single-file path (`scope && scope !== "vault"`); for a vault-wide replace it returns `undefined` → full invalidation.
-
-### `POST /move`
-- **Body:** `{ from: string, to: string }`.
-- **Action:** `moveEntry(vault, from, to)`.
-- **Response:** `"ok"`.
-- **`pathOf`:** `[from, to]` (both invalidated).
-- **Used for:** rename + move in the file tree.
-
-### `POST /delete`
-- **Body:** `{ path: string }`.
-- **Action:** `deleteEntry(vault, path)` (moves into `.trash/<timestamp>-<basename>`).
-- **Response:** `{ trashPath: string }` — the trash location, used by `/restore`.
-- **`pathOf`:** `path`.
-
-### `POST /restore`
-- **Body:** `{ trashPath: string, to: string }`.
-- **Action:** `moveEntry(vault, trashPath, to)` (move it back out of `.trash`).
-- **Response:** `"ok"`.
-- **`pathOf`:** `to`.
-
-### `POST /create`
-- **Body:** `{ path: string, kind: "file" | "dir" }`.
-- **Action:** `createEntry(vault, path, kind)`.
-- **Response:** `"ok"`.
-- **Errors:** `409` on collision (creating an existing path).
-- **`pathOf`:** `path`.
-
-### `POST /set-setting`
-- **Body:** `{ path: string[], value: unknown }` — `path` is an **array** of key segments (e.g. `["appearance", "uiFont"]`). The single backend write path for `.settings`: merges one value in place, preserving comments, the `properties` registry, and unknown keys. Serialized via a per-vault write mutex (concurrent writes to different keys don't clobber each other).
-- **Response:** `{ ok: true }`.
-- **Errors:** `400 "bad path"` if `path` is not an array of strings (e.g. passing the dotted string `"appearance.theme"` → 400).
-- **`pathOf`:** constant `SETTINGS_FILE` (`".settings"`) so subscribers re-hydrate.
-
-### `POST /set-property`
-- **Body:** `{ path: string, key: string, value: unknown }`.
-- **Action:** flips a single frontmatter key on a note (used by Bases kanban drag-drop and the base settings panel). Preserves other keys. A base's view keys are plain top-level keys, so there is no per-view addressing; a `type: base` note still carrying a legacy `views:` list is flattened (`flattenBaseViews`) first, so the write lands at the top level and the file leaves the legacy form.
-- **Response:** `"ok"`.
-- **Errors:** `404 "note not found"` if the path doesn't exist — it does NOT silently create the note. `400` `BASE_VIEWS_FORMAT_ERROR` when the base's legacy `views:` list has more than one entry (a base has one view; move each extra view into its own base with `source: base` + `ref:`); nothing is written.
-- **`pathOf`:** `path`.
-
-### `POST /delete-property`
-- **Body:** `{ path: string, key: string }`.
-- **Action:** removes a single frontmatter key (e.g. resetting a note's icon). Sibling keys preserved; a legacy `views:` list is flattened first, exactly as in `/set-property` (same `BASE_VIEWS_FORMAT_ERROR` on a multi-entry list). Removing the **last** frontmatter key drops the whole `---` block (no empty fence left).
-- **Response:** `"ok"`.
-- **Errors:** `404 "note not found"` if the path doesn't exist.
-- **`pathOf`:** `path`.
-
-### `POST /set-properties`
-- **Body:** `{ writes: Array<{ path: string, key: string, value: unknown }> }` — a BATCH of frontmatter writes across (possibly many) notes in one request.
-- **Action:** groups `writes` by `path` and folds each note's ops into a single read-modify-write (`setFrontmatterKey` applied in order, then one `writeNote`; each base is flattened first, as in `/set-property`) — so a kanban reorder that touches several cards fires ONE invalidation/SSE bump/view-refetch instead of a `/set-property` burst, each of which would otherwise re-resolve the base and remount the whole card grid (flicker). A note that's vanished mid-batch is skipped, not failed — the rest of the batch still writes.
-- **Response:** `{ skipped: string[] }` — the paths that did not exist and were not written (empty array when every note existed). Callers that ignore it are unaffected; the calendar settings modal treats its own base appearing in `skipped` as a failed save.
-- **`pathOf`:** the deduped list of every `write.path` in the batch — a non-array `writes` makes it return `undefined`, and an empty/all-vanished batch returns `[]`; both collapse to zero paths, which `invalidate()` treats as a full invalidation the same as no `pathOf` at all.
-
-### `POST /row/update`
-- **Body:** `{ file: string, index: number | null, note: Record<string, unknown> }`. `index === null` → **append** a new row; otherwise replace the row at `index`.
-- **Action:** `upsertRow(text, { name, path: file }, index ?? null, note)` then `writeNote`.
-- **Response:** `"ok"`.
-- **`pathOf`:** `file`.
-
-### `POST /rows/update`
-- **Body:** `{ file: string, updates: Array<{ index: number | null, note: Record<string, unknown> }> }` — a BATCH of row writes against ONE base file, applied as a single parse + rewrite. This is the row analogue of `POST /set-properties`, for the same reason: a kanban drop is inherently a batch (the dragged card's new status plus an `order` reindex across every sibling in the column), and looping `POST /row/update` would rewrite the file once per row, fire one invalidation/SSE bump each, and — if any write after the first failed — leave the base half-reordered on disk.
-- **Action:** `upsertRows(text, { name, path: file }, updates)` then `writeNote`. `index === null` → append; otherwise replace the row at `index`. Replacements are applied in call order, then appends in call order; two updates naming the same index are not an error — the last one wins. Any out-of-range or non-integer index throws BEFORE anything is applied, so the batch is all-or-nothing — nothing is written and the file is unchanged.
-- **Response:** `"ok"`.
-- **Errors:** `400 "updates must be an array"` if `updates` isn't an array; `400 "row index must be an integer or null to append, got …"` if any entry's `index` is present but not `null`/an integer; `400 "row index out of range: …"` if any integer `index` doesn't address an existing row.
-- **`pathOf`:** `file`.
-
-### `POST /row/delete`
-- **Body:** `{ file: string, index: number }`.
-- **Action:** `deleteRow(text, { name, path: file }, index)` then `writeNote`. (Reads the file with `readNote`, so a missing file → 404.)
-- **Response:** `"ok"`.
-- **`pathOf`:** `file`.
-
-### `POST /row/reorder`
-- **Body:** `{ file: string, from: number, to: number }`.
-- **Action:** `reorderRow(text, { name, path: file }, from, to)` then `writeNote`.
-- **Response:** `"ok"`.
-- **`pathOf`:** `file`.
-
-### `POST /folder-icon`
-- **Body:** `{ path: string, icon?: string | null }`. Folders have no frontmatter, so the mapping lives in `.settings`'s `folderIcons` and is overlaid onto `/tree` dir entries.
-- **Action:** `setFolderIcon(vault, path, icon ?? "")`. An empty/`null` icon **removes** a previously-set folder icon.
-- **Response:** `"ok"`.
-- **Errors:** `400 "missing path"` if `path` is empty/non-string; `400 "invalid path"` for absolute or traversal paths (`startsWith("/")`, or a `..`/`.` segment).
-- **`pathOf`:** constant `SETTINGS_FILE` (`".settings"`) → `classifyVault` marks both graph & tree dirty (so the sidebar refetches).
-
-### `POST /folder-visibility`
-- **Body:** `{ path: string, visibility?: "chat-only" | "hidden" | null }`. Folders have no frontmatter, so — like `/folder-icon` — the mapping lives in `.settings`'s `folderVisibility` map (`core/src/settings.ts`), overlaid onto `GET /tree`'s file+dir entries and read by `resolveVisibility`/`resolveFolderVisibility` (`core/src/visibility.ts`). See [Visibility gating](#visibility-gating).
-- **Action:** `setFolderVisibility(vault, path, visibility ?? null)`; `visibility: null`/absent clears a previously-set folder restriction. Only claims success — and only patches the in-memory `appConfig.folderVisibility` (so `GET /tree`'s badge updates before the watcher's own debounce catches up) — if the write actually PERSISTED; a corrupt `.settings` leaves the map untouched. On success, flags every open chat session to re-gate on its next turn (`invalidateChatVisibility()`) — spawn-fixed settings like `managedSettings`/the OS sandbox can't be hot-patched mid-session, so the next turn respawns `query()` with a fresh deny list instead.
-- **Response:** `"ok"`.
-- **Errors:** `400 "missing path"` if `path` is empty/non-string; `400 "invalid path"` for absolute or traversal paths; `400 "invalid visibility"` if `visibility` isn't `"chat-only"`, `"hidden"`, `null`, or absent; `409 "settings file is invalid — fix .settings before changing folder visibility"` if the underlying write didn't persist (a `.settings` that fails to parse).
-- **`pathOf`:** constant `SETTINGS_FILE` (`".settings"`) → `classifyVault` marks both graph & tree dirty.
-
-### `POST /tasks/toggle`
-- **Body:** `{ path: string, line: number, status?: string }` (`line` is 0-based). With an explicit `status` (the right-click status menu) the line's box char is set to exactly that value (`setTaskLineStatus(line, status, today)`); without it, it's the plain binary toggle (checkbox click — `toggleTaskLine(line, today)`).
-- **Action:** rewrites the markdown task line. For a recurring task, the rewrite returns TWO lines (the next occurrence inserted above the completed one, separated by `\n`), spliced back as a single array slot so order is preserved after `join(eol)` (`\r\n`/`\n` matched to the file's existing line endings). The whole file is then passed through `reorderTaskBlocks` so resolved (done/cancelled) tasks sink to the bottom of their list.
-- **Response:** `"ok"`.
-- **Errors:** `AppError("EINVAL", "line out of range", 400)` if `line < 0 || line >= lines.length`.
-- **`pathOf`:** `path`.
-
-### `POST /tasks/reschedule`
-- **Body:** `{ path: string, line: number, field: "due" | "scheduled" | "start", date: string }` (`line` is 0-based, `date` an ISO date). Calendar drag-to-reschedule: rewrite the ONE date field that placed the task to a new date. The caller must send the SAME field the task was placed on (`app/src/api.ts`'s `rescheduleTask` — `field` comes from `taskPlacement.ts`'s `placementField`) or the write lands on the wrong column.
-- **Action:** `setTaskLineDate(lines[line], field, date)` — strips any existing bracket field of that same name (`[<field> <date>]`, guarded against matching inside a wikilink/markdown link the way `FIELD_SCAN` is) and appends the new one in bracket form, always, regardless of what spelling was there before. A stale **emoji**-spelled date (`📅 2026-09-01`) has no reader any more and is left alone beside the new bracket field, since nothing can tell it apart from ordinary description text.
-- **Response:** `"ok"`.
-- **Errors:** `AppError("EINVAL", "line out of range", 400)` if `line < 0 || line >= lines.length`. `setTaskLineDate` itself throws a plain `Error("not a task line")` (→ `500`, not `400`) if the addressed line isn't a checkbox task at all — unlike `/tasks/toggle`'s bounds check, there's no dedicated `AppError` for that case.
-- **`pathOf`:** `path`.
-
-### `POST /tasks/update`
-- **Body:** `{ path: string, line: number, patch: { description?: string, due?: string | null, scheduled?: string | null, start?: string | null, priority?: "highest" | "high" | "medium" | "low" | "lowest" | null } }` (`line` 0-based). A `patch` key set to `null` clears that field; an absent key leaves it untouched. The UI counterpart to hand-editing a task line's text/dates/priority.
-- **Action:** `updateTaskLineFields(lines[line], patch)` (`core/src/taskEdit.ts`) rewrites the description and/or the `due`/`scheduled`/`start`/priority bracket fields, re-emitting every field it touches AND every field it doesn't (`done`, `created`, `cancelled`, `[every …]`, tags) in the canonical order `taskMigrate.ts` already uses — dates `due, scheduled, start, done, created, cancelled`, then priority, then recurrence — so repeated edits are idempotent in layout. Checkbox char, indentation, and CRLF are preserved.
-- **Response:** `"ok"`.
-- **Errors:** `AppError("EINVAL", "line out of range", 400)` if `line < 0 || line >= lines.length`. `updateTaskLineFields` itself throws a plain `Error("not a task line")` (→ `500`) if the addressed line isn't a checkbox task.
-- **`pathOf`:** `path`.
-
-### `POST /tasks/delete`
-- **Body:** `{ path: string, line: number }` (`line` 0-based).
-- **Action:** `removeTaskItem(content, line)` (`core/src/taskEdit.ts`) removes the task ITEM at `line` — the head line plus any deeper-indented, non-blank continuation/sub-task lines beneath it (mirrors the per-item rule `collectBlock`/`taskReorder.ts` uses while walking a whole block, restricted to just this one item so a sibling task below it is never swept up). Permanent; git history retains the prior state.
-- **Response:** `"ok"`.
-- **Errors:** `AppError("EINVAL", "line out of range", 400)`.
-- **`pathOf`:** `path`.
-
-### `POST /tasks/move`
-- **Body:** `{ path: string, line: number, to: string }` (`line` 0-based). `to` is a `taskFile`-style ref — a wikilink, bare name, or path — resolved exactly like `POST /tasks/create`'s `file`.
-- **Action:** resolves `to` via `resolveTaskFilePath` (`core/src/taskCreate.ts`) against the vault's live note list. If it resolves to the SAME path the task is already in, this is a no-op that still returns success. Otherwise removes the task item from `path` (`removeTaskItem`, same block rule as `/tasks/delete`) and appends its removed lines verbatim to the destination note (creating it if it doesn't exist yet), inserting the separating newline only when the destination doesn't already end in one.
-- **Response:** `{ path: string }` — the vault-relative path the task now lives in (the destination, or the original `path` unchanged on a same-file no-op).
-- **Errors:** `AppError("EINVAL", "line out of range", 400)`.
-- **`pathOf`:** none passed → full invalidation (two notes can change; the destination path isn't known until `resolveTaskFilePath` runs, which `pathOf` can't do — same reasoning as `/tasks/create`).
-
-### `POST /tasks/archive`
-- **Body:** `{ path?: string }` (a missing/non-JSON body is tolerated → treated as `{}`). With a `path`, only that note is archived; without one, the whole vault (`listMarkdown`, every `.md`).
-- **Action:** `archiveResolvedTasks(...)` strips completed/cancelled tasks from the note text, rewriting only files that actually changed (`removed > 0`). Removal is permanent (git history retains the prior state via the autosave snapshots).
-- **Response:** `{ removed: number, files: number }` — total tasks removed and the number of files touched. Single-`path` form returns `files: removed > 0 ? 1 : 0`.
-- **`pathOf`:** the body's `path` (single-note archive invalidates just that note; a vault-wide archive passes `undefined` → full invalidation).
-
-### `POST /tasks/create`
-- **Body:** `{ file: string, body: string }` — `file` is a `taskFile` REF (a wikilink, e.g. `[[General Tasks]]` — the same shape `source.from`/`source.ref` use), never a literal path. `body` is the task line's text after the checkbox (a description, bracket fields, or both), written verbatim.
-- **Action:** `appendTaskLine(vault, file, body)` (`core/src/taskCreate.ts`) resolves `file` against the vault's live note list via `resolveTaskFilePath` — an exact id match wins, then `pickByBase` (`core/src/linkTarget.ts`, settling a shared basename via `preferId`), else `${ref}.md` names a brand-new note — and appends `- [ ] <body>`, inserting the separating newline only when the file doesn't already end in one. This is the fix for `refToPath` turning any ref into a ROOT-level path regardless of where the real note lives.
-- **Response:** `{ path: string }` — the vault-relative path actually written.
-- **`pathOf`:** none passed → full invalidation. The written path isn't known until `resolveTaskFilePath` runs against the vault, which `pathOf` can't do (synchronous, sees only the raw body, before `run` executes).
-
-### `POST /cards/review`
-Dual-mode SRS review.
-- **Body (row-based, flashcard base):** `{ file: string, index: number, response: ReviewResponse, dueField?, easeField?, intervalField? }`. When `file != null && index != null`, advances the scheduling columns on row `index` of the base file via `applyReviewToRow(row.note, response, today, appConfig.srs, fields?)`. Pass the `*Back` triple (`dueField`/`easeField`/`intervalField`) for a bidirectional reverse review (each direction schedules independently); default is the forward columns. Errors: `AppError("EINVAL", "row not found: <file>#<index>", 400)` if the row index is out of range.
-- **Body (legacy markdown card):** `{ id: string, response: ReviewResponse, question? }`. `id` is `"${notePath}::${cardIndex}::${subIndex}"`. Calls `applyReview(vault, id, response, today, question, appConfig.srs)` — rewrites the inline `<!--SR:...-->` schedule comment.
-- **`response`** is a `ReviewResponse` (e.g. `"good"`).
-- **Response:** `"ok"`.
-- **Errors:** `400 "missing cardId"` if neither row coords nor `id` are supplied; `404` for an unknown markdown card id (e.g. `m.md::99::0`).
-- **`pathOf`:** `file` — row-based reviews invalidate the base file; legacy markdown reviews leave `pathOf` returning `undefined` → full invalidation.
-
-### `POST /daily-note`
-> Listed in the read `routes` table, NOT `mutatingRoutes` — so the no-op case (note already exists) doesn't bump version / broadcast SSE. It's a plain async function, not wrapped in `mutatingHandler`, so it has no `pathOf` at all; when it DOES create the note it calls `await invalidate(path)` itself, invalidating only that path.
-- **Body:** `{ id: string }` — the id of a daily-note config in `.settings`'s `dailyNotes:` list.
-- **Action:** computes today's path (`dailyNotePath(config, now)`). If it already exists, returns it **without** clobbering and invalidates nothing; otherwise creates it from the configured template (`dailyNoteContent`) and invalidates just the new note's path.
-- **Response:** `{ path: string, created: boolean }` — `created: true` on first creation, `false` when reopening an existing note. Example created path: `Journal/2026-06-07 journal.md`.
-- **Errors:** `400 "unknown daily note: <id>"` for an unknown id.
-- **Cache/SSE:** `created: false` → none. `created: true` → `invalidate(path)` for the new note's path only (not a full invalidation).
-
-### `POST /daemon/pages`
-- **Body:** `CreatePageInput` = `{ slug: string, title?, body?, actions?: PageAction[], source?, deliverAt? }`.
-- **Action:** `createDaemonPage(vault, input)` (`core/src/daemonPages.ts`) — authors a validated daemon inbox page at `.daemon/pages/<slug>.md` (stamps `type: daemon-page` + `createdAt`, serializes the nested `actions[]` via the `yaml` library, atomic temp+rename). Unlike the `/daemon/pages/{resolve,mark-failed}` sidecar writes (read table), the page `.md` IS a vault file that shows in the sidebar, so this is a **mutation**.
-- **Response:** `{ path: ".daemon/pages/<slug>.md", slug }`.
-- **Errors:** `400` for an invalid slug (dots/slashes); `409 "page already exists"` — never clobbers.
-- **`pathOf`:** `.daemon/pages/<slug>.md` → `classifyVault` marks it tree-dirty (`DAEMON_PAGE_RE`) so the inbox refreshes.
-
-### `POST /daemon/owner`
-- **Body:** `{ deviceId: string }`.
-- **Action:** `setOwner(deviceId)` — writes `owner.json` byte-compatibly with what the daemon reads. owner.json lives OUTSIDE the vault.
-- **Response:** the new `Owner` = `{ ownerDeviceId, ownerLabel, updatedAt }` (exactly these three keys). A follow-up `GET /daemon/status` reflects it.
-- **Errors:** `400` (with the message) when `deviceId` is missing/empty, or when `setOwner` throws because the device isn't a known, heartbeating device (e.g. `deviceId: "nope"`).
-- **`pathOf`:** constant `"::daemon-owner"` (a non-vault sentinel) so the path-derived invalidation is effectively a no-op for graph/tree.
-
-### `POST /gcal/sync`
-> Unlike the other `/gcal/*` routes (read table, system actions), the actual two-way sync **rewrites the calendar base file**, so it IS a vault mutation and lives in `mutatingRoutes`.
-- **Body:** `{ basePath?: string }` (missing/non-JSON body tolerated → `{}`). Sync is **per-calendar**: `basePath` is the calendar base to sync (falls back to the legacy `googleCalendar.basePath`).
-- **Action:** reads that base's frontmatter and resolves its OWN target Google calendar via `resolveGcalConfig(config.view, basePath, legacy)` — `googleCalendarId` (default `"primary"`), honoring the legacy global `calendarId` for the base the old mapping named. Connection-level args come from `gcalConnectionArgs(appConfig)`: `policy` (`conflictPolicy`, default `"lastWriteWins"`), `timeZone`, and the appearance `theme`. Then `gcalSync(...)` reconciles that base against its Google calendar in **both directions**. A thrown sync error → `400` with the message.
-- **Response:** the `gcalSync` result JSON.
-- **Errors:** `403` with a JSON `{ error }` naming `BISMUTH_GCAL_AUTOSYNC=1` unless `gcalAutoSyncEnabled()` (the installed app via `BISMUTH_APP_PATH`, or `BISMUTH_GCAL_AUTOSYNC=1`) — returned before the base is read, anything is marked self-written or any cache is invalidated, so a dev/test/agent core on a vault copy can never reach the user's real Google Calendar (see [gcal overview § Per-vault namespacing + auto-sync gating](../gcal/overview.md)); `404` when the targeted base file doesn't exist; `400 "no calendar base to sync — turn on Google sync in a calendar's settings first"` when neither the body nor the legacy `basePath` names a base.
-- **`pathOf`:** the resolved `basePath` (body override or `appConfig.googleCalendar?.basePath`) — invalidates the base file (graph/tree per `classifyVault` + SSE re-render of the open calendar).
-
-#### Auto-sync ticker
-Separately from the manual route, `createServer` installs an **unref'd 60s `setInterval`** that, when `gcalStatus().connected` is true and at least `max(1, syncIntervalMinutes || 15)` minutes have elapsed since the last run, enumerates **every** sync-enabled calendar base via `listGcalSyncTargets(vault, legacy)` (`core/src/gcal/discover.ts` — a frontmatter walk resolving each base's `googleCalendarSync`/`googleCalendarId`, honoring the legacy global mapping) and syncs each **sequentially** against its own Google calendar. A `gcalAutoSyncRunning` run-guard prevents overlap; per-base failures are logged (`[gcal] auto-sync failed for <base>: …`) and swallowed. It's a no-op until an account is connected (fresh test vaults never are) and the unref'd timer never keeps the process alive.
-
----
-
-## WebSocket: `GET /chat`
-
-A special-cased upgrade handled before the route tables (alongside `GET /terminal`). Drives the **headless chat driver** (`core/src/chat.ts`) — the in-app visual chat — over a text-JSON protocol. It is multi-backend: `open`/`user`/`resume` carry an optional `provider`, routed through `core/src/chatProviders` (Claude Code by default; see [chat backends](../chat/backends.md)).
-
-### Upgrade request
-- **Method/path:** `GET /chat`.
-- **Query params:** optional `?chatId=<stable id>`. A client passes a stable `chatId` to resume conversation continuity across reconnects; absent → one is generated (`newChatId()`). Optional `?rebind=1` marks the upgrade as a RECONNECT (the client had this chat open and lost the socket) rather than a first open, so the `open` handler can tell the client when the session it expects is already gone (grace window expired) instead of silently starting fresh.
-- **Origin policy:** the SAME allow-list as `/terminal` — allowed with no `Origin` header (same-origin / Tauri webview), or an origin matching `http(s)://localhost|127.0.0.1[:port]`, `tauri://...`, or `http(s)://10.x.x.x[:port]`; otherwise `403 "forbidden origin"`.
-- This is a read-path upgrade (not a vault mutation). On a failed `server.upgrade`, returns `400 "upgrade failed"`; success returns the Bun-managed `101`. The socket carries `{ kind: "chat", chatId, rebind }`.
-
-### Message protocol (client → server)
-Text JSON frames (`ChatFrame` inputs), discriminated by `type`:
-- **`{type:"open",provider?}`** — spawn the session eagerly (`chatOpen`, no turn) so the header's `init` manifest, `models` frame and permission mode stream back before the first message. A no-op if a session already exists for this `chatId` (never spawns a duplicate).
-- **`{type:"user",text,images?,provider?}`** — run a turn (slash commands are just text). On a brand-new chat this binds the session's sink via `chatSend(chatId, text, vault, sink, images, memoryDir, provider)`. `images` is an optional array of base64 `{media_type,data}` attachments; only well-formed entries whose `media_type` is `image/png`, `image/jpeg`, `image/gif` or `image/webp` and whose `data` is a non-empty string are kept — the rest are silently dropped.
-- **`{type:"resume",sessionId,provider?}`** — bind this chat socket to an existing session of that backend (`chatResume`); its init manifest streams back and the next `{type:"user"}` continues the resumed conversation. (Sessions come from `GET /chat/sessions`; transcript from `GET /chat/session-messages`.)
-- **`{type:"permission_response",id,behavior,always?}`** — answer a "permission" frame; `behavior` must be `"allow"` or `"deny"`, `always` defaults `false` (`chatRespondPermission`).
-- **`{type:"set_permission_mode",mode}`** — switch permission mode live (`chatSetPermissionMode`).
-- **`{type:"set_model",model}`** — switch model live (`chatSetModel`).
-- **`{type:"question_response",id,answers?,cancelled?}`** — answer an `AskUserQuestion` "question" frame (`chatRespondQuestion`). `cancelled: true` (or no usable `answers`) skips the question; otherwise `answers` maps each question's TEXT to the chosen answer string, and only string→string entries are forwarded.
-- **`{type:"set_effort",effort}`** — switch the reasoning-effort level live (`chatSetEffort`), mirroring `set_model`.
-- **`{type:"stop"}`** — interrupt the in-flight turn (`chatAbort`).
-
-Frames may arrive as text or binary (decoded UTF-8); a frame that doesn't parse as JSON, or whose `type`/fields don't match one of the above, is silently ignored. `provider` is resolved with `resolveBackendId(parsed.provider, chat.provider)`; a `chatId` with a live session stays on its backend.
-
-### Server → client
-`ChatFrame`s stream back via the session's sink — `ws.send(JSON.stringify(frame))` (each frame is the same shape `GET /chat/session-messages` replays). On `open`, the server **rebinds the sink** (`chatRebindSink`) to THIS socket: a reconnect (same `chatId`) mid-turn re-points the live session's sink here so in-flight drain frames (the turn's tail + `done`) flow to the new socket instead of the dead one. A brand-new chat has no session yet, so rebind is a no-op until the first `{type:"user"}`.
-
-### Lifecycle
-On `close`:
-- **Clean close** (code `1000`) — intentional tab-close → tear the session down now (`closeChat(chatId)`).
-- **Abnormal close** (reload `1001`, network drop `1006`, etc.) — keep the session alive for a grace window (`scheduleChatClose(chatId, chatGraceMs())`, default **30000ms**, overridable via `BISMUTH_CHAT_GRACE_MS` — the chat counterpart of `BISMUTH_TERMINAL_GRACE_MS` below) so a reconnect with the same `chatId` resumes the same `claude` conversation instead of spawning a fresh one. The next `sendMessage` cancels the pending close.
-
----
-
-## WebSocket: `GET /ui`
-
-A special-cased upgrade (alongside `/terminal` + `/chat`) — the per-window **app-control channel** backing `/ui/windows` + `/ui/command` (`core/src/uiControl.ts` ⇄ `app/src/uiControlClient.ts`). The app opens ONE at mount.
-
-### Upgrade request
-- **Method/path:** `GET /ui`. **Query:** `?w=<windowId>` (the stable per-window id, `windowId.ts`; absent → `"main"`).
-- **Origin policy:** the SAME allow-list as `/terminal`/`/chat`; otherwise `403 "forbidden origin"`. On `open` the window is registered (`registerWindow(windowId, send)`), keyed by `windowId`; a reconnect re-registers under the same id. The socket carries `{ kind: "ui", windowId }`.
-
-### Message protocol
-- **client → server:** `{type:"tabs", snapshot}` — the tab-layout heartbeat (`updateTabs`; powers `/ui/windows`), piggybacked on App's tab-persistence effect. `{type:"reply", reqId, ok, result?, error?}` — answers a command core pushed (`resolveReply`; an unknown/stale `reqId` is ignored).
-- **server → client:** `{type:"command", reqId, action, args?}` — sent by `sendCommand` (from `POST /ui/command`); the client dispatches to an App handler and replies. A command with no reply resolves `{ok:false}` after ~8s.
-
-### Lifecycle
-On `close`, `unregisterWindow(windowId, send)` — **identity-guarded**: a stale close after a reconnect already swapped in a new socket under the same `windowId` is a no-op, so the live window survives. No grace timer (unlike `/chat`): the client reconnects and re-heartbeats.
-
----
-
-## WebSocket: `GET /terminal`
-
-A special-cased upgrade handled before the route tables. Backs the in-app terminal tabs (xterm.js ↔ `bun-pty` via `core/src/terminal.ts`).
-
-### Upgrade request
-- **Method/path:** `GET /terminal`.
-- **Query params:** `?cols=<int>&rows=<int>` (required; both must be integers in `1..500`, otherwise `400 "bad cols/rows"`), plus an optional `?termId=<stable id>` used for reattach (see below).
-- **Origin policy:** allowed when there is **no** `Origin` header (same-origin / Tauri webview), or the origin matches `http(s)://localhost|127.0.0.1[:port]`, `tauri://...`, or `http(s)://10.x.x.x[:port]`. Otherwise `403 "forbidden origin"`.
-- **Session resolution (reattach / pool / spawn):**
-  - **Reattach** — if `termId` names a still-alive PTY (`getSessionByTermId`, within the post-disconnect grace window), the upgrade pipes to the SAME shell — preserving the running process, cwd, and env. Its pending kill timer is cancelled (`cancelSessionKill`) and it's resized to the new `cols`/`rows`.
-  - **Pooled** — otherwise a pre-warmed shell is claimed from the pool (`claimPooledSession`) so the tab paints its already-rendered prompt instantly.
-  - **Fresh** — falling back to `createTerminalSession({ cwd: vault, cols, rows, relayPort: server.port, termId, memoryDir: effectiveMemoryDir() })` (the session reports relay provenance to THIS server's port so in-tab Claude sessions reach the right core; `memoryDir` is injected as `BISMUTH_MEMORY_DIR` into the PTY's env only when the vault's daemon is enabled — see Daemon Integration).
-- On a failed `server.upgrade`, a freshly-created session is killed immediately; a reattached live shell is never hard-killed (its grace timer reclaims it if no socket reconnects) — either way `400 "upgrade failed"` is returned. Success returns the Bun-managed `101`.
-
-### Message protocol (client → server)
-Binary/text frames where the **first byte is a tag**:
-- **tag `0x00`** — terminal input: the remaining bytes (`subarray(1)`, UTF-8 decoded) are written to the PTY.
-- **tag `0x01`** (and length ≥ 5) — resize: bytes 1..4 are two little-endian `Uint16`s — `cols` (offset 0) then `rows` (offset 2) — passed to `resizeSession`.
-- Zero-length frames are ignored.
-
-### Server → client
-On `open`, the server attaches a switchable sink (`attachSink`) that first flushes any buffered output (a pre-warmed pool prompt, or bytes produced during a brief disconnect) so the prompt shows immediately, then streams live PTY bytes via `ws.send(encode(d))`. On `pty.onExit`, the socket is closed with code `1000` (`"exited"`) so the client treats it as a real exit (close the tab), not a dropped connection to reconnect.
-
-### Lifecycle
-On `close`, the live sink is detached (`detachSink` — output resumes buffering for a possible reattach) and the exit listener disposed. Then:
-- **Clean close** (code `1000`) — the shell process exited (server-side close after `pty.onExit`) or the client intentionally disposed the tab. The PTY is killed now (`killSession`).
-- **Abnormal close** (reload → `1001`, network drop → `1006`, etc.) — the PTY is kept alive for a grace window (`scheduleSessionKill(sessionId, reattachGraceMs())`, default **30000ms**, overridable via `BISMUTH_TERMINAL_GRACE_MS`) so a reconnecting client can reattach by `termId` and keep its running process.
-
-The server also pre-warms one login shell on boot (`prewarmPool(vault, server.port)`, cwd = vault) so the first tab paints instantly; best-effort (a spawn failure never takes the server down).
-
-### `idleTimeout`
-`Bun.serve` is configured with `idleTimeout: 255` (Bun's max). Bun's default 10s would drop a connection mid-request for the few slow handlers (notably `POST /daemon/setup`, which copies the bundled daemon binary into `~/.bismuth/bin` and registers the launchd/systemd service on first run).
-
----
-
-## Quick route index
-
-| Method | Path | Table | Invalidates / SSE |
+| Route | Request | Response | Access and effects |
 |---|---|---|---|
-| GET | `/version` | read | no |
-| GET | `/terminal/info` | read | no |
-| GET | `/events` | read | (is the SSE stream) |
-| GET | `/graph` | read | no |
-| GET | `/graph/views` | read | no (mutates cached graph in place) |
-| GET | `/templates` | read | no |
-| GET | `/tree` | read | no |
-| GET | `/vault-data` | read | no |
-| GET | `/base` | read | no |
-| GET | `/file` | read | no |
-| PUT | `/file` | read | **yes** (calls `invalidate(path)`) |
-| GET | `/asset` | read | no |
-| POST | `/asset` | read | no |
-| POST | `/asset/fetch` | read | no |
-| POST | `/convert/heic` | read | no |
-| POST | `/tmp-file` | read | no |
-| GET | `/abs-path` | read | no |
-| GET | `/meta` | read | no |
-| GET | `/config` | read | no |
-| GET | `/settings` | read | no |
-| GET | `/schema` | read | no |
-| GET | `/status-bar` | read | no |
-| POST | `/status-bar/trust` | read | no |
-| GET | `/chat/sessions` | read | no |
-| GET | `/chat/session-messages` | read | no |
-| POST | `/chat/search` | read | no |
-| GET | `/opencode/providers` | read | no |
-| POST | `/opencode/auth` | read | no |
-| POST | `/opencode/oauth/authorize` | read | no |
-| POST | `/opencode/oauth/callback` | read | no |
-| GET | `/gcal/status` | read | no |
-| GET | `/gcal/callback` | read | no |
-| POST | `/gcal/credentials` | read | no |
-| POST | `/gcal/auth/start` | read | no |
-| POST | `/gcal/disconnect` | read | no |
-| POST | `/memory/recall` | read | no |
-| POST | `/relay/session` | read | no |
-| POST | `/relay/session/end` | read | no |
-| POST | `/relay/subagent/start` | read | no |
-| POST | `/relay/subagent/stop` | read | no |
-| GET | `/relay/snapshot` | read | no |
-| GET | `/ui/windows` | read | no |
-| POST | `/ui/command` | read | no |
-| GET | `/tasks` | read | no |
-| GET | `/tasks/migration` | read | no |
-| POST | `/rows` | read | no |
-| POST | `/backup` | read | no |
-| POST | `/daily-note` | read | yes (path, only when it creates the note) |
-| POST | `/open-folder` | read | no |
-| POST | `/search` | read | no |
-| POST | `/search-prompt` | read | no |
-| POST | `/list-dir` | read | no |
-| GET | `/cards/decks` | read | no |
-| GET | `/cards/all` | read | no |
-| GET | `/cards/note` | read | no |
-| GET | `/cards/due` | read | no |
-| GET | `/daemon/status` | read | no |
-| GET | `/daemon/devices` | read | no |
-| GET | `/daemon/snapshot` | read | no |
-| GET | `/daemon/logs` | read | no |
-| GET | `/daemon/install` | read | no |
-| POST | `/daemon/setup` | read | no |
-| POST | `/daemon/update` | read | no |
-| POST | `/daemon/cron/toggle` | read | no |
-| POST | `/daemon/cron/run` | read | no |
-| POST | `/daemon/process/toggle` | read | no |
-| POST | `/daemon/cron/delete` | read | no |
-| POST | `/daemon/process/delete` | read | no |
-| GET | `/daemon/pages` | read | no |
-| POST | `/daemon/pages/resolve` | read | no |
-| POST | `/daemon/pages/mark-failed` | read | no |
-| POST | `/daemon/pages/archive` | read | no |
-| GET | `/bismuth/install` | read | no |
-| POST | `/bismuth/install` | read | no |
-| GET | `/doctor` | read | no |
-| POST | `/doctor/fix` | read | no |
-| GET | `/update/status` | read | no |
-| POST | `/update/apply` | read | no |
-| GET | `/update/progress` | read | no |
-| POST | `/replace` | mutating | yes |
-| POST | `/move` | mutating | yes (from+to) |
-| POST | `/delete` | mutating | yes |
-| POST | `/restore` | mutating | yes (to) |
-| POST | `/create` | mutating | yes |
-| POST | `/set-setting` | mutating | yes (.settings) |
-| POST | `/set-property` | mutating | yes |
-| POST | `/delete-property` | mutating | yes |
-| POST | `/set-properties` | mutating | yes (batch) |
-| POST | `/row/update` | mutating | yes |
-| POST | `/rows/update` | mutating | yes (batch) |
-| POST | `/row/delete` | mutating | yes |
-| POST | `/row/reorder` | mutating | yes |
-| POST | `/folder-icon` | mutating | yes (.settings) |
-| POST | `/folder-visibility` | mutating | yes (.settings) |
-| POST | `/tasks/toggle` | mutating | yes |
-| POST | `/tasks/reschedule` | mutating | yes |
-| POST | `/tasks/update` | mutating | yes |
-| POST | `/tasks/delete` | mutating | yes |
-| POST | `/tasks/move` | mutating | yes (full) |
-| POST | `/tasks/archive` | mutating | yes |
-| POST | `/tasks/create` | mutating | yes (full) |
-| POST | `/cards/review` | mutating | yes |
-| POST | `/daemon/pages` | mutating | yes (page path) |
-| POST | `/daemon/owner` | mutating | yes (no-op scope) |
-| POST | `/gcal/sync` | mutating | yes (base file) |
-| GET | `/terminal` | (WS upgrade) | n/a |
-| GET | `/chat` | (WS upgrade) | n/a |
-| GET | `/ui` | (WS upgrade) | n/a |
+| `GET /gcal/status` | none | `{connected, needsCredentials, account?, timeZone?, connectedAt?}` | open; none |
+| `POST /gcal/credentials` | `{clientId, clientSecret}` | `{ok: true}`. `400 missing clientId/clientSecret`. | app only; none |
+| `POST /gcal/auth/start` | none | `{url}`, the Google consent URL. `400` when credentials are not set. | app only; none |
+| `GET /gcal/callback` | `?code=&state=` or `?error=` | An HTML page, never JSON. | app only; none |
+| `POST /gcal/disconnect` | none | `{ok: true}` | app only; none |
+| `POST /gcal/sync` | `{basePath?}` | The sync result with pulled, pushed, deleted and conflict counts. | app only; invalidates the base |
 
-Source: `core/src/server.ts`, `core/src/sse.ts`, `core/test/server.test.ts`, `core/src/graph.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/search.ts`, `core/src/searchPrompt.ts`, `core/src/files.ts`, `core/src/tasks.ts`, `core/src/taskFields.ts`, `core/src/taskCreate.ts`, `core/src/linkTarget.ts`, `core/src/taskMigrateRun.ts`, `core/src/fsPaths.ts`, `core/src/selfUpdate.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/chat.ts`, `core/src/gcal/index.ts`, `core/src/gcal/sync.ts`, `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/settings.ts`, `cli/src/http.ts`, `cli/src/commands/api.ts`
+The sign-in uses authorisation code with PKCE and the single scope `calendar.events`.
+`POST /gcal/auth/start` builds the redirect `http://127.0.0.1:<port>/gcal/callback`, so Google's redirect lands on the core that started the flow.
+`GET /gcal/callback` is a browser navigation: it renders a small page with the outcome, a success message with the account, or an error message, and a refused request renders the same page with status `403`.
+
+`POST /gcal/sync` syncs one calendar base in both directions.
+The Google calendar comes from that base's own frontmatter (`googleCalendarId`, default `primary`); the conflict policy (`lastWriteWins` by default), time zone and theme come from the `googleCalendar` setting.
+Errors: `400 no calendar base to sync` when no base is named, `404 calendar base not found: <path>`, and `400` with the message when the sync itself fails.
+
+In the installed app (or with `BISMUTH_GCAL_AUTOSYNC=1`), while Google is connected, the core also runs a 60-second timer that syncs every sync-enabled calendar base one after another, once the `googleCalendar.syncIntervalMinutes` interval (default 15, minimum 1) has passed.
+Failures for one base are logged and do not stop the rest.
+
+## Relay and app control
+
+The relay routes keep an in-memory registry of agent sessions in the app's terminal tabs. The app-control routes drive a window's tabs. None invalidates vault caches. See [app control](../mcp/app-control.md).
+
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `POST /relay/session` | `{sessionId, terminalId, cwd?, backend?}` | `{ok: true}`. `400 missing sessionId/terminalId`. | open; registry only |
+| `POST /relay/session/end` | `{sessionId}` | `{ok: true}`. `400 missing sessionId`. | open; registry only |
+| `POST /relay/subagent/start` | `{parentSessionId, agentId, agentType?, workflowId?}` | `{ok: true}`. `400 missing parentSessionId/agentId`. | open; registry only |
+| `POST /relay/subagent/stop` | `{agentId, lastMessage?}` | `{ok: true}`. `400 missing agentId`. | open; registry only |
+| `GET /relay/snapshot` | none | `{sessions, subagents}` | redacted for non-owners; none |
+| `GET /ui/windows` | none | `[{id, label, activeTabId, tabCount}]`, `[]` when none. | open; none |
+| `POST /ui/command` | `{windowId?, action, args?}` | The window's reply `{ok, result?, error?}`. | open; none |
+
+The relay plugin's hooks post to the four ingest routes; they are best-effort and their errors are ignored.
+`backend` is the id of the reporting agent CLI and defaults to `claude`; `agentType` defaults to `agent`.
+For `GET /relay/snapshot`, a non-owner request gets the same shape with each subagent's `lastMessage` removed; every bookkeeping field is returned to everyone.
+
+`POST /ui/command` sends `action` to the target window over its `/ui` socket.
+The route requires only a non-empty `action`; the app handles `list-tabs`, `open-tab`, `close-tab`, `focus-tab`, `rename-tab`, `pin-tab`, `reorder-tab` and `run-command`.
+Without `windowId`, the single open window is used: none open is `404 no Bismuth window is open`, several is `409`.
+A window that never answers resolves `{ok: false}` after about 8 seconds.
+Two guards run first: `run-command` with an id outside the app-control allow-list is `403`, and `open-tab` with `::chat:` content is `403`.
+A missing `action` is `400 missing action`.
+
+## Install, doctor and update
+
+These routes act on the machine rather than the vault. They never invalidate vault caches and they never throw; a failure is reported in the body.
+
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /bismuth/install` | none | `{installed, version, cliPath, cliLinked, mcpRegistered}` | open; none |
+| `POST /bismuth/install` | none | `{action, status, warnings}` | open; installs |
+| `GET /doctor` | none | A `DoctorReport` from a dry run. | owner only; none |
+| `POST /doctor/fix` | `{only?: string[]}` | The `DoctorReport` after repairs. | owner only; applies repairs |
+| `GET /update/status` | none | `{available, behind, localSha, remoteSha, builtSha, dirty, reason?}` | open; none |
+| `POST /update/apply` | none | The initial `UpdateProgress`. | open; starts a rebuild |
+| `GET /update/progress` | none | `{phase, message?, log?}` | open; none |
+
+`POST /bismuth/install` runs the idempotent, version-gated install of the CLI and MCP server from `BISMUTH_INSTALL_SRC`.
+`action` is `up-to-date`, `installed`, `updated`, `would-install`, `would-update` or `skipped-no-src`; the last means the source is unset, as in a dev run.
+See [install](../overview/install.md).
+
+`GET /doctor` and `POST /doctor/fix` are owner only because findings carry paths and a fix deletes files. `POST /doctor/fix` with an `only` that is not an array of strings is `400`; a malformed list is never widened to fix everything. Findings and repair risks are in [doctor](../overview/doctor.md).
+
+`GET /update/status` fetches `origin/main` and compares it with `HEAD`.
+It reports `available: false` with a `reason` when this is not a source build (`not-a-source-build`), `not-a-git-repo`, `access-denied`, `repo-missing`, `git-not-found` or `no-upstream`.
+`POST /update/apply` starts `git pull` and a rebuild in the background and returns at once; poll `GET /update/progress`, whose `phase` is `idle`, `pulling`, `building`, `ready` or `error`.
+It answers with an error phase for a non-source build or a dirty working tree, and `idle` when already up to date.
+See [self-update](../overview/self-update.md).
+
+## Server state and change events
+
+| Route | Request | Response | Access and effects |
+|---|---|---|---|
+| `GET /version` | none | `{version}` | open; none |
+| `GET /events` | none | A server-sent event stream. | open; none |
+
+`version` starts at 0 and rises on every vault change, so a client can poll it when the stream drops. The frontend keeps one `EventSource` and falls back to polling `GET /version`.
+
+`GET /events` answers `text/event-stream` with `Cache-Control: no-store`.
+The server sends a `: connected` comment at once, so a client connecting at version 0 gets headers immediately.
+When `version` is above 0 it then sends a snapshot frame, and it sends a `: keepalive` comment every `server.sseHeartbeatMs`.
+Clients must ignore lines starting with `:`.
+
+Each change is one `data:` line followed by a blank line:
+
+```text
+data: {"version":42,"paths":["Notes/Idea.md"],"dirty":{"graph":false,"tree":false}}
+```
+
+The snapshot frame is `{"version":42,"paths":[]}` with no `dirty` field. `paths` lists the changed notes; an empty list means the extent is unknown. `dirty.graph` and `dirty.tree` tell consumers whether to refetch those views; editors reconcile on every version bump regardless.
+
+## WebSockets
+
+Three upgrades are handled before the route tables.
+All share one origin rule: a request is allowed with no `Origin` header, or with an origin matching `http(s)://localhost` or `127.0.0.1` on any port, `tauri://…`, or `http(s)://10.x.x.x` on any port.
+Any other origin gets `403 forbidden origin`.
+A failed upgrade is `400 upgrade failed`; success is the Bun-managed `101`.
+
+| Upgrade | Query | Purpose |
+|---|---|---|
+| `GET /chat` | `chatId?`, `rebind?` | The in-app visual chat. |
+| `GET /ui` | `w?` | The per-window app-control channel. |
+| `GET /terminal` | `cols`, `rows`, `termId?` | A terminal tab over a PTY. |
+
+### GET /chat
+
+`GET /chat` drives the chat driver over JSON text frames.
+`chatId` is a stable id that lets a reconnect resume the same conversation; if absent the server generates one.
+`rebind=1` marks a reconnect, so the server can send an error frame when the session it expects has already ended instead of silently starting fresh.
+
+Client to server frames, discriminated by `type`:
+
+| Frame | Effect |
+|---|---|
+| `{type: "open", provider?}` | Starts the session without a turn, so the header manifest, models and permission mode stream back first. A no-op when a session exists. |
+| `{type: "user", text, images?, provider?}` | Runs a turn. `images` is `[{media_type, data}]` in base64; only `image/png`, `image/jpeg`, `image/gif` and `image/webp` with non-empty data are kept. |
+| `{type: "resume", sessionId, provider?}` | Binds the socket to an existing session; the next `user` frame continues it. |
+| `{type: "permission_response", id, behavior, always?}` | Answers a permission frame. `behavior` is `allow` or `deny`. |
+| `{type: "question_response", id, answers?, cancelled?}` | Answers a question frame. `answers` maps each question's text to the chosen string. |
+| `{type: "set_permission_mode", mode}` | Switches permission mode live. |
+| `{type: "set_model", model}` | Switches model live. |
+| `{type: "set_effort", effort}` | Switches reasoning effort live. |
+| `{type: "stop"}` | Interrupts the running turn. |
+
+A frame that is not valid JSON, or whose fields do not match, is ignored.
+`provider` is resolved against the `chat.provider` setting; a `chatId` with a live session stays on its backend.
+The server streams `ChatFrame` JSON back, the same shape `GET /chat/session-messages` replays.
+A reconnect with the same `chatId` mid-turn re-points the running session to the new socket, so the rest of the turn arrives there.
+
+A clean close (code 1000) ends the session at once. Any other close keeps it alive for a grace period of 30 seconds (`BISMUTH_CHAT_GRACE_MS`), so a reload resumes the same conversation.
+
+### GET /ui
+
+`GET /ui` registers one window.
+`w` is the window's stable id and defaults to `main`.
+The client sends `{type: "tabs", snapshot}` as a tab-layout heartbeat that powers `GET /ui/windows`, and `{type: "reply", reqId, ok, result?, error?}` to answer a command.
+The server sends `{type: "command", reqId, action, args?}`.
+A reconnect re-registers under the same id, and a stale close after a reconnect does not drop the live window.
+
+### GET /terminal
+
+`GET /terminal` requires `cols` and `rows` as integers from 1 to 500, else `400 bad cols/rows`. The socket resolves to a shell in this order:
+
+1. If `termId` names a still-running PTY inside the grace window, the socket reattaches to the same shell, keeping its process, working directory and environment.
+2. Otherwise the server claims a pre-warmed login shell from its pool, so the prompt appears at once.
+3. Otherwise it spawns a fresh shell in the vault directory, reporting to this core's port.
+
+Frames from the client start with a tag byte.
+`0x00` followed by bytes is terminal input.
+`0x01` followed by two little-endian `Uint16` values (`cols`, then `rows`) resizes the PTY.
+The server sends PTY output as binary frames, flushing buffered output first.
+When the shell exits the server closes with code 1000 and the reason `exited`.
+
+A clean close kills the PTY. Any other close keeps it for 30 seconds (`BISMUTH_TERMINAL_GRACE_MS`) so a client can reattach by `termId`. The server pre-warms one shell at boot. Memory injection and relay variables are set in the PTY's environment; see [terminal](../terminal/overview.md).
+
+## How it works
+
+`createServer` in `core/src/server.ts` builds one `Bun.serve` instance.
+It owns the state: the graph, tree, rows and tasks caches, the file watcher, the SSE registry, the owner token, `version` and the self-write marks.
+It builds a single `RouteContext` and merges per-area route factories from `core/src/routes/`.
+Each area exports a read factory (`vault`, `graph`, `settings`, `bases`, `tasks`, `daemon`, `gcal`, `relay`, `agents`, `system`, `memory`) and, where it writes the vault, a mutating factory.
+
+The read table holds reads and the writes that do not touch the vault, such as daemon files and credentials.
+The mutating table wraps each handler in `mutatingHandler(run, pathOf?)`, which clones the request, marks the paths from `pathOf` as self-written before `run`, takes the marks back off on an error response, then calls `invalidate`.
+`invalidate` with no paths marks graph and tree dirty.
+With paths it fingerprints the changed notes (wikilinks, tags, icon) to decide which are dirty, patches the search, rows and tasks caches, increments `version` and publishes the event.
+
+`PUT /file`, `POST /daily-note` and `POST /gcal/sync` sit outside this wrapper's table but invalidate by hand, for the reasons given in their rows: a no-op daily note must not bump `version`, and a save should publish one event, not two.
+The route key set is pinned by `core/src/routes/routeTable.test.ts`, so a route moved between modules cannot appear, vanish or change method unnoticed.
+The in-process backend for mobile (`core/src/localBackend.ts`) answers the same keys without HTTP and refuses the machine-level ones, including doctor, status-bar trust and the daemon cron and process routes, with `501`; see the [mobile overview](../mobile/overview.md).
+
+Source: `core/src/server.ts`, `core/src/routes/*.ts`, `core/src/ownerToken.ts`, `core/src/sse.ts`

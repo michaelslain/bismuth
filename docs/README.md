@@ -1,180 +1,134 @@
-# Bismuth
+# Bismuth documentation
 
-**A local-first knowledge vault.** Bismuth keeps notes as plain Markdown on your disk, with
-wikilinks, tags, and YAML frontmatter. It builds a live graph from that vault and keeps related
-tools — queryable views, tasks, spaced repetition, calendar, drawing, spreadsheets, terminals, and
-AI access — in the same application.
-
-### The three-brain model
-
-Bismuth connects your notes with the memory its optional daemon keeps about your work:
+Bismuth is a local-first knowledge vault: your notes are plain markdown files in a folder you
+choose, with wikilinks, tags and YAML frontmatter, and the app builds a live graph and queryable
+views from them. There is no account, sync service or database. These docs serve three readers:
+people using the app, engineers working on it, and AI agents, which read them through Bismuth's MCP
+server.
 
 | | what it is | where it lives |
 |---|---|---|
-| **You** | the person at the centre | — |
-| **2nd brain** | your vault — markdown notes, links, tags | your chosen folder |
-| **3rd brain** | the daemon's memory — what the assistant has learned about your work, linked back into your notes | `<vault>/.daemon/memory` |
+| 2nd brain | your vault: notes, links, tags, properties | the folder you chose |
+| 3rd brain | the daemon's memory of your work, linked back to your notes | `<vault>/.daemon/memory` |
 
-The graph joins the vault and daemon memory, so a note and an agent memory about it are part of the
-same structure.
-
-### What's in the box
-
-- **Knowledge graph** — 2D/3D, rendered as a character grid; four modes including a *local* view of one note's neighbourhood
-- **Bases** — a `type: base` note is a query over your vault, rendered through any of 12 view kinds (table, cards, kanban, calendar, map, charts, flashcards, …)
-- **Tasks** (Obsidian-Tasks compatible) and **flashcards** (SM-2 spaced repetition) that read straight out of your notes
-- **Calendar** with two-way Google Calendar sync · **drawing** (`.draw`) · **spreadsheets** (`.sheet`) · **export** to md/html/png/pdf
-- **AI** — in-app terminals, visual chat through **ten** agent backends (Claude Code, opencode, Codex, and seven more over ACP), three agent **guides** served through the MCP server (a [bases authoring guide](bases/authoring.md) for writing Bases views, plus [Obsidian → Bismuth](guides/converting-obsidian-to-bismuth.md) and [Bismuth → Obsidian](guides/converting-bismuth-to-obsidian.md) for moving a vault between the two apps), and per-file/folder **visibility controls** for restricting agent access
-- **A daemon** — an optional background brain per vault: crons, processes, a memory graph, and an inbox of work awaiting your approval
-- **Drive it from anywhere** — the `bismuth` CLI, an MCP server, and an iPad build that runs the whole backend in-process
-
-Everything is local-first and file-based: no account, sync service, or database.
-
----
-
-## About this documentation
-
-Bismuth is a Bun monorepo with **seven workspaces**: `core` (backend), `app` (Solid + Tauri),
-`cli`, `relay`, `mcp`, `memory`, and `daemon`. Three top-level directories are not workspaces:
-`bench/` (visual verification that drives its own Chrome
-over the Storybook catalog — `bun run visual`; see [Testing](contributing/testing.md)), `scripts/`
-(the commit/push gate and the docs check) and `design/` (the design-system gate's baseline). The
-Storybook 9 component catalog for `app/src/` (`bun run storybook`, port `6006`) lives in
-`app/.storybook/`, inside the `app` workspace. This reference is code-anchored and its examples come from the implementation.
-
-## Get started (macOS)
-
-Build Bismuth from source and install it to `/Applications`.
-
-You need [Bun](https://bun.sh/docs/installation) 1.0+, Node.js 20+, and Rust (for the native build) installed.
-
-Then clone, install, and build — the last command builds the app and opens the installer for you:
-
-```bash
-git clone https://github.com/michaelslain/bismuth.git
-cd bismuth
-bun install
-bun run build:app     # builds the app (a few minutes), then opens the dmg
-```
-
-When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. First run: pick your vault folder.
-
-<details><summary>Notes</summary>
-
-- A Finder window may flash open and shut **during the build** — that's just the dmg being styled, not the installer. Ignore it.
-- Prefer to do it by hand? `cd app && bun run tauri build`, then open the dmg under `src-tauri/target/release/bundle/dmg/` and drag Bismuth into `/Applications`. (`bun run build:app` additionally deletes the staged `bundle/macos/Bismuth.app` afterwards, so macOS does not list a second Bismuth alongside your installed one — do the same by hand if you build this way.)
-- Full prerequisites, env vars, and dev-server details: [Install & run](overview/install.md).
-
-</details>
+The graph joins both, so a note and a memory about it sit in one structure. The 3rd brain exists
+only when the [daemon](daemon/overview.md) is enabled.
 
 ## Start here
 
-- [Architecture](overview/architecture.md) — workspaces, the three-brain model, how it all fits together
-- [Install & run](overview/install.md) — prerequisites, env vars, dev/build, multiple instances
-- [Storage](overview/storage.md) — where everything is stored on disk + in the browser
-- [Status messages](overview/status-messages.md) — what "connection lost — polling", "Open folder failed", and the rest actually mean
-- [Draggables](overview/draggables.md) — every draggable × every drop surface (notes, chat, daemon page) and what each drop does
-- [Data flow](overview/data-flow.md) — file-watch → SSE → frontend, caching, layouts
-- [Doctor](overview/doctor.md) — `bismuth doctor`: find and repair leftovers from older builds, version skew and pending migrations; the launch consent toast
-- [Self-update](overview/self-update.md) — the git-based in-place app updater (detect → pull → rebuild → swap)
+- [Getting started](overview/getting-started.md) — first run: pick a vault, write and link notes, open the graph
+- [Install and run Bismuth](overview/install.md) — install the macOS app, or build and run it from source
+- [Glossary](overview/glossary.md) — one-line definitions of every Bismuth term, linked to its page
+- [Troubleshooting](overview/troubleshooting.md) — symptom to fix, for the problems people actually hit
+- [Migrating from an older version](overview/migrating.md) — what an older vault or install contains and what to do
 
-## The vault
+## Use Bismuth
 
-- [Structure](vault/structure.md) — markdown tree, folders, how notes become graph nodes
-- [Frontmatter & properties](vault/frontmatter.md) — YAML frontmatter, the property registry
-- [Wikilinks & tags](vault/wikilinks-tags.md) — `[[links]]`, `#tags`, matching rules
-- [Attachments & embeds](vault/attachments.md) — `![[file]]` / `![](url)`, asset storage, sizing
-- [Visibility controls](vault/visibility.md) — per-file/folder AI restrictions on the daemon + in-app chat, inheritance, enforcement, threat model
-- [Visibility acceptance run](vault/visibility-acceptance.md) — the recorded adversarial pass: every route tried, what closed, what leaked, and what is explicitly NOT verified
+**Notes and the vault**
 
-## Editor
+- [Vault structure](vault/structure.md) — what a vault holds and how files become notes, nodes and tree rows
+- [Frontmatter and properties](vault/frontmatter.md) — YAML properties, their types, and companion notes for images and PDFs
+- [Wikilinks and tags](vault/wikilinks-tags.md) — `[[links]]` matched by file name, `#tags`, and how each resolves
+- [Attachments and embeds](vault/attachments.md) — `![[file]]` and `![](url)` embeds, sizing, and where pasted files go
 
-- [Markdown & live preview](editor/markdown.md) — every rendered block/inline kind
-- [Tables](editor/tables.md) — editable GFM pipe tables
-- [The ` ```graph ` block](editor/graph-block.md) — embedded editable graph (markdown ⇄ graph round-trip)
-- [Autocomplete](editor/autocomplete.md) — wikilink/tag/task/query/settings completion
-- [Note ink](editor/ink.md) — draw-anywhere mode: freehand strokes over any note (Mod+Shift+I)
+**The editor**
 
-## Bases (queries & views)
+- [Live preview](editor/markdown.md) — what each markdown construct looks like as you type, and when source shows
+- [Tables](editor/tables.md) — editing GFM tables cell by cell: rows, columns, merge, reorder
+- [Autocomplete](editor/autocomplete.md) — every completion trigger: links, tags, tasks, slash menu, emoji, settings
+- [Note ink](editor/ink.md) — draw over any note in draw mode; strokes live in ` ```draw ` fences
+- [The graph block](editor/graph-block.md) — a ` ```graph ` fence that renders an editable graph inside a note
+- [Template tokens and daily notes](templates/syntax.md) — `{{date}}`-style tokens, templates, and the daily note
 
-- [Overview](bases/overview.md) — what a `type: base` note is; the views array
-- [Per-base properties](bases/properties.md) — `properties:` map vs list form; declaring a base's own property set
-- [Sources & composition](bases/sources.md) — `SourceSpec`, `from:`, base composition
-- [Query syntax](bases/query-syntax.md) — the Bases expression grammar
-- [Filters](bases/filters.md) — `where:` expressions
-- [Functions reference](bases/functions.md) — every built-in function/method
-- [The ` ```query ` block](bases/query-block.md) — embedding a base/query in a note
+**Bases: queries and views**
 
-**View kinds**: [table](bases/views/table.md) · [cards](bases/views/cards.md) · [list & bullets](bases/views/list-bullets.md) · [kanban](bases/views/kanban.md) · [calendar](bases/views/calendar.md) · [flashcards](bases/views/flashcards.md) · [map](bases/views/map.md) · [charts](bases/views/charts.md)
+- [Make your first base](bases/first-base.md) — step by step: a base note, a source, a filter, a view
+- [Bases overview](bases/overview.md) — what a base is, its keys, and the list of view kinds
+- [Base sources](bases/sources.md) — where rows come from: notes, tasks, or another base
+- [Base filters](bases/filters.md) — `where:` filters, filter trees, and how values count as true
+- [Bases expression syntax](bases/query-syntax.md) — the expression grammar: operators, equality, dates, durations
+- [Bases functions and methods](bases/functions.md) — every built-in function and method, and footer summaries
+- [Base properties](bases/properties.md) — declaring a base's own property set and editors
+- [The query block](bases/query-block.md) — embed a base or a task query inside a note
+- View kinds: [table](bases/views/table.md) · [cards](bases/views/cards.md) · [list and bullets](bases/views/list-bullets.md) · [kanban](bases/views/kanban.md) · [calendar](bases/views/calendar.md) · [flashcards](bases/views/flashcards.md) · [map](bases/views/map.md) · [bar, line, stat, heatmap](bases/views/charts.md)
 
-## Tasks
+**Tasks, cards and time**
 
-- [Task syntax](tasks/syntax.md) — bracket fields (`[due 2026-09-14]`, `[high]`, `[every week]`); the legacy Obsidian-Tasks emoji signifiers no longer parse
-- [Query DSL (legacy)](tasks/query-dsl.md) — the old `tasks:` query language is gone; what replaced it and how to migrate
+- [Task syntax](tasks/syntax.md) — a task line and its bracket fields: due dates, priority, recurrence
+- [Tasks-plugin query text](tasks/query-dsl.md) — how `tasks:` values written for the Obsidian Tasks plugin are read
+- [Flashcards and spaced repetition](flashcards/srs.md) — writing cards in notes, decks, and review scheduling
+- [Calendar events](calendar/overview.md) — events, recurrence and categories in a calendar base
+- [Google Calendar sync](gcal/overview.md) — two-way sync between a calendar base and Google Calendar
 
-## Feature subsystems
+**Other surfaces**
 
-- [Flashcards / SRS](flashcards/srs.md) — markdown + row cards, SM-2, decks, bidirectional, cram
-- [Calendar](calendar/overview.md) — events, recurrence, categories
-- [Google Calendar sync](gcal/overview.md) — OAuth/PKCE two-way sync, conflict policies, recurrence, manifest
-- [Visual Claude chat](chat/overview.md) — in-app Claude Code chat (`/chat` WS, Agent-SDK sessions, unified with terminals)
-- [Chat providers](chat/providers.md) — the provider seam behind all ten backends: routing, the opencode/codex drivers, per-capability graceful degradation
-- [opencode providers](chat/opencode-providers.md) — the credentials popover that connects a model provider to opencode chats (API key or OAuth) without leaving the app
-- [Agent backends](chat/backends.md) — the backend catalog + capability model, the six integration surfaces, ACP, the MCP-registration policy, the daemon's visibility constraint
-- [Local models](chat/local-models.md) — run chats on LM Studio / Ollama through the existing connectors with one `localModel` setting: what it does, per-backend endpoints + versions, snippets, the tool-calling caveat
-- [Export](export/overview.md) — note/base/sheet/drawing → md|html|png|pdf, visual/data modes
-- [Drawing](drawing/overview.md) — the `.draw` vector format + export
-- [Sheets](sheets/overview.md) — the `.sheet` Univer workbook format
-- [Templates & daily notes](templates/syntax.md) — token syntax + daily-note config
+- [Knowledge graph](graph/overview.md) — the home tab: modes, 2D and 3D, zoom, and how layout works
+- [Drawing](drawing/overview.md) — `.draw` sketches, annotating images and PDFs, and the file format
+- [Sheets](sheets/overview.md) — `.sheet` spreadsheets inside the vault
+- [Export](export/overview.md) — notes, bases, sheets and drawings to markdown, HTML, PNG or PDF
 
-## Settings
+## Connect AI
 
-- [Overview](settings/overview.md) — `.settings` lifecycle (schema-driven, no GUI)
-- [Full reference](settings/reference.md) — every section + key + default
-- [Keybindings](settings/keybindings.md) — shortcut syntax + catalog
-- [Toolbar & commands](settings/toolbar-commands.md) — toolbar config + command catalog
-- [Themes](settings/themes.md) — theme/palette/fonts
-- [Shell layout](settings/layout.md) — which side the sidebar and tab rail sit on, sidebar section order, the status bar toggle
-- [Design tokens](settings/tokens.md) — every design token (key, kind, default, what it paints), the two places to set one (`appearance.tokens`, a theme's `tokens:`), precedence, and what is not a token
-- [Status bar & home page](settings/status-bar.md) — the configurable bottom bar (token text, query counts, approved shell commands) and the `homePage` setting (not yet applied by the app)
+- [Connect an AI agent](chat/connect-an-agent.md) — the ways an agent reaches your vault, and which to pick
+- [Chat](chat/overview.md) — the in-app chat: backends, controls, permissions, history
+- [Agent backends](chat/backends.md) — every chat backend and what each one supports
+- [opencode providers](chat/opencode-providers.md) — connect a model provider to opencode chats from the app
+- [Local models](chat/local-models.md) — run chats on LM Studio or Ollama models
+- [Terminal tabs and the relay](terminal/overview.md) — in-app terminals and how agent sessions report back
+- [MCP server](mcp/overview.md) — the tools any MCP client gets: docs, the CLI, memory
+- [MCP daemon tools](mcp/daemon-tools.md) — crons, processes and the inbox, for agents
+- [App control](mcp/app-control.md) — drive a running window's tabs from a shell or an agent
+- [Visibility controls](vault/visibility.md) — hide notes and folders from agents, per channel
+- [Visibility acceptance](vault/visibility-acceptance.md) — which routes are verified to honour visibility, and which are not
 
-## Graph & terminal
+**The daemon**
 
-- [Graph](graph/overview.md) — node/edge kinds, the graph modes, layout
-- [Terminal & relay](terminal/overview.md) — in-app terminals, the relay registry
+- [Set up the daemon](daemon/setup.md) — turn on the background brain, name it, approve its pages
+- [Daemon](daemon/overview.md) — what the daemon is, the machine and vault halves, its page
+- [Daemon pages](daemon/pages.md) — inbox pages awaiting your approval: format and lifecycle
+- [Crons and background processes](daemon/crons-and-processes.md) — scheduled jobs and long-running processes per vault
+- [Daemon memory](daemon/memory.md) — the markdown memory graph, recall, and the dream cycle
+- [Memory injection and device ownership](daemon/communication.md) — how memory reaches agent sessions, and which device runs the brain
+- [Daemon service and lifecycle](daemon/lifecycle.md) — the launchd or systemd service, boot, and the reconcile loop
+- [Daemon storage](daemon/storage.md) — the machine directory and each vault's `.daemon` folder
 
-## Daemon (`@bismuth/daemon`)
+## Configure
 
-The in-repo background runtime — **one machine process that multiplexes per-vault "brains"**. Machine identity lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session, `identity.md`) lives under `<vault>/.daemon`.
+- [Settings](settings/overview.md) — the `.settings` file: how it is read, edited, and validated
+- [Settings reference](settings/reference.md) — every settings key, its type and its default
+- [Themes and fonts](settings/themes.md) — pick a built-in theme and the two font settings
+- [Design tokens](settings/tokens.md) — every token, its default, and where to override it
+- [Keybindings](settings/keybindings.md) — rebind any shortcut; the full keybinding catalog
+- [Toolbar and commands](settings/toolbar-commands.md) — the sidebar toolbar and the command catalog
+- [Shell layout](settings/layout.md) — which side the sidebar and tab rail sit on
+- [Status bar and home page](settings/status-bar.md) — the bottom bar's segments, counts and shell commands
 
-- [Overview](daemon/overview.md) — what the daemon is, the machine-vs-vault split, the `daemon.enabled` switch, the daemon's own page
-- [Lifecycle](daemon/lifecycle.md) — the supervisor: boot order, reconcile loop, per-vault session, single-owner gating, install/service (launchd/systemd)
-- [Crons & processes](daemon/crons-and-processes.md) — per-vault crons + background processes: `VaultContext` keying, default crons, triggers, state files
-- [Pages (inbox)](daemon/pages.md) — daemon-authored pages awaiting approval/dismissal: format, `.state` sidecar, delivery, the button-press → execution → completion lifecycle, the inbox panel on the daemon page (`::daemon`)
-- [Memory store](daemon/memory.md) — the per-vault markdown memory graph: note format, backlinks, query vs search, the dream cycle
-- [Communication & hooks](daemon/communication.md) — the relay recall/collect hooks + single-owner device gating (no cross-machine messaging)
-- [Storage](daemon/storage.md) — the two-tier on-disk layout (`~/.bismuth/daemon` + `<vault>/.daemon`) and the legacy-state migration
+## Reference
+
+- [CLI reference](cli/reference.md) — every `bismuth` command, its flags, and whether it needs the app
+- [HTTP API reference](api/http-reference.md) — every core server route, its body, response and auth
+- [Status messages](overview/status-messages.md) — what each toast and banner means and what to do
+- [Doctor](overview/doctor.md) — `bismuth doctor`: find and repair version skew and leftovers
+- [Self-update](overview/self-update.md) — how the app updates itself in place
+- [Draggables](overview/draggables.md) — what each drag does on each drop surface
+- [Storage](overview/storage.md) — where everything lives on disk and in the browser
 
 ## Agent guides
 
-- [Authoring bases](bases/authoring.md) — read before creating, editing or debugging a `type: base` note or a ` ```query ` block; one page per view kind under `bases/authoring/`
-- [Obsidian → Bismuth](guides/converting-obsidian-to-bismuth.md) — turning an Obsidian vault into a Bismuth vault in a new folder, with topic pages under `guides/converting-obsidian-to-bismuth/`
-- [Bismuth → Obsidian](guides/converting-bismuth-to-obsidian.md) — the reverse, with topic pages under `guides/converting-bismuth-to-obsidian/`
-- [Custom themes](guides/custom-themes.md) — read before making or changing a colour theme: the `.themes/<name>.yaml` partial-override format (`extends` + `tokens:`), the create → validate → use workflow, coherence rules, and a worked example
+Agents read these before acting; the MCP server's instructions name each one.
 
-These are plain docs pages, not Claude Code skills: the MCP server's instructions name them and agents open them with `bismuth_docs_read` ([MCP server](mcp/overview.md)).
+- [Authoring bases](bases/authoring.md) — read before creating, editing or debugging a base or query block; one page per view kind under `bases/authoring/`
+- [Converting an Obsidian vault to Bismuth](guides/converting-obsidian-to-bismuth.md) — with topic pages under `guides/converting-obsidian-to-bismuth/`
+- [Converting a Bismuth vault to Obsidian](guides/converting-bismuth-to-obsidian.md) — with topic pages under `guides/converting-bismuth-to-obsidian/`
+- [Make a custom colour theme](guides/custom-themes.md) — the `.themes/<name>.yaml` format and its validate loop
 
-## Interfaces
+## Contribute
 
-- [CLI reference](cli/reference.md) — every `bismuth` command
-- [HTTP API reference](api/http-reference.md) — every core server route
-- [MCP server](mcp/overview.md) — auto-attaches to app-terminal Claude sessions; serves docs (incl. the agent guides) + CLI + (daemon-gated) memory tools
-- [Daemon MCP tools](mcp/daemon-tools.md) — the ten daemon-gated tools: crons, background processes, the inbox, status + device ownership
-- [App control](mcp/app-control.md) — driving a running window's tabs from a Claude session / the shell (`bismuth app …`), via the CLI (zero new MCP tools)
-- [Mobile (iPad/iOS)](mobile/overview.md) — the no-HTTP in-process backend + `FileAccess`/`Transport` seams that run the vault on-device
-
-## Contributing
-
-- [Codebase map](contributing/codebase-map.md) — module-by-module navigation
-- [Testing](contributing/testing.md) — how tests work, how to add them
-- [Third-party notices](overview/third-party-notices.md) — attribution for bundled assets (the CC BY 4.0 icon set)
+- [Architecture](overview/architecture.md) — the workspaces, what each owns, and how they talk
+- [Codebase map](contributing/codebase-map.md) — a directory-level map and where to add things
+- [Data flow](overview/data-flow.md) — file watch to caches to SSE to the frontend
+- [Testing](contributing/testing.md) — the test runner, the commit and push gates, guard tests
+- [Visual checks](contributing/visual-checks.md) — Storybook and the `bench/` tools that verify the UI
+- [Chat providers](chat/providers.md) — the provider seam behind every chat backend
+- [Mobile (iPad and iOS)](mobile/overview.md) — the in-process backend and its two seams
+- [Third-party notices](overview/third-party-notices.md) — attribution for bundled fonts and icons

@@ -1,296 +1,118 @@
-# Memory store
+# Daemon memory
 
-The daemon's **memory** (the "3rd brain") is a flat tree of markdown notes on disk plus a handful of pure functions that read, parse, query, score, and consolidate them. There is no database and no search index or vectors inside the store itself — "the graph" is just the `[[wikilink]]` edges between notes, and it is **recomputed on demand** every time something needs it by re-reading the whole store (`loadAllNotes`).
+The memory is a vault's "3rd brain": a folder of markdown notes at `<vault>/.daemon/memory` that the daemon and your AI agents read and write. Notes link to each other with `[[wikilinks]]`, and the graph view draws them as `mem:` nodes. It exists only while `daemon.enabled` is on. Read this page to learn the note format, the three tools that edit memory, and how to find a note; [communication](communication.md) covers how notes reach agent sessions on their own.
 
-This page documents that store: where notes live, the note model and on-disk format, the two distinct retrieval paths (exact filtering vs. ranked lexical search), and the consolidation ("dream") cycle. Related: the dream cron in [crons-and-processes.md](crons-and-processes.md), the per-vault runtime in [overview.md](overview.md) and [lifecycle.md](lifecycle.md), the on-disk layout in [storage.md](storage.md), and the recall/collect hooks + MCP tools in [communication.md](communication.md). See also the [daemon README](../README.md).
+A note, as `bismuth memory remember --name alice --type person --tags friend,climbing --description "Climbing partner; plans trips in the spring" --content "Alice climbs with me on weekends. See [[spring-trip]]." --vault ~/vault` writes it to `.daemon/memory/alice.md`:
 
-## One brain per vault — no machine-global memory
-
-> **There is no machine-global memory dir.** The daemon is **one machine process that multiplexes per-vault brains**, and each enabled vault's memory lives under its own **`<vault>/.daemon/memory`** (`vaultPaths(root).memoryDir` in `daemon/src/lib/config.ts`). `~/.claude-bot/memory` survives only as a one-time, copy-only legacy migration source.
-
-The `@bismuth/memory` package (`memory/src/`) is **pure** and takes the memory dir explicitly. Every public function's `dir` parameter defaults to `getMemoryDir()`, which reads the **`BISMUTH_MEMORY_DIR`** env var and **throws** when it is unset:
-
-```ts
-export function getMemoryDir(): string {
-  const dir = process.env.BISMUTH_MEMORY_DIR;
-  if (!dir) throw new Error("BISMUTH_MEMORY_DIR is not set — pass an explicit memory dir");
-  return dir;
-}
-```
-
-So a missing dir fails loudly instead of silently reading the wrong place. Three callers supply it:
-
-- The **daemon runtime** passes the active vault's `ctx.memoryDir` explicitly on every call — e.g. `buildQueryOptions` (`daemon/src/daemon/session.ts`) sets `BISMUTH_MEMORY_DIR: ctx.memoryDir` in the env of every daemon session it starts, cron or interactive, and `cronMemoryInstruction(ctx.memoryDir)` (`daemon/src/daemon/cron.ts`) appends the same directory, plus a warning against writing notes with Write/Edit, onto every cron's own prompt text regardless of what the cron body says.
-- The **per-session MCP** memory tools and the **relay** recall/collect hooks run inside Bismuth terminals where `core/src/terminal.ts` injects `BISMUTH_MEMORY_DIR` — **only when `settings.daemon.enabled` is true for that vault**.
-
-This is why memory is recalled/collected strictly for vault-scoped sessions, never globally via `~/.claude/settings.json`.
-
-## The session-start index is derived, not stored
-
-> **There is still no index file on disk.** The directory is a flat tree of `.md` notes; the link graph, search rankings, consolidation batches **and the always-on memory index** are all derived live by scanning files (`loadAllNotes`). There is no persisted adjacency list, no manifest, no SQLite, and no vector store inside `.daemon/memory`. (Core's optional semantic recall keeps its vectors outside the store; see the paragraph under **Cross-cutting facts**.)
-
-At session start, core builds an index of every memory note in memory (`formatSessionStart` in `memory/src/pack.ts`), one line per note: `[[name]] (type) — description`. The description is the note's frontmatter `description`, or, when it has none, its first prose sentence (`noteDescription` in `memory/src/graph.ts`). Nothing is written back: edit or add a note and the next session's index reflects it. The `remember` tool's `description` parameter (one line, ≤160 chars, saying when the note matters) is how a writer, including the dream cron, fills it.
-
-(Claude Code, the host harness, separately keeps its own `MEMORY.md` index for *its* file-based memory. That is an unrelated host-level feature and is **not** part of this store. Don't conflate the two.)
-
-## Where notes live
-
-The store lives at `<vault>/.daemon/memory`.
-
-- **One note = one markdown file** named `<name>.md`.
-- Notes live either at the **root** of the memory dir or in **single-level folders** (e.g. `moltbook/voting.md`).
-- **No deeper nesting.** `listNotes` silently drops anything more than one level deep — a file at `a/b/c.md` is invisible to the store (`slashCount > 1` is skipped).
-
-```
-<vault>/.daemon/memory/
-  alice.md              # root note,   name = "alice"
-  project-x.md          # root note,   name = "project-x"
-  moltbook/
-    voting.md           # folder note, name = "moltbook/voting"
-  people/
-    alice.md            # folder note, name = "people/alice"
-```
-
-## The note model
-
-Defined in `memory/src/graph.ts`:
-
-```ts
-type NoteType =
-  | "person" | "project" | "workflow"
-  | "fact" | "preference" | "daily" | "auto";
-
-interface NoteFrontmatter {
-  type: NoteType;
-  tags: string[];
-  created: string; // "YYYY-MM-DD"
-  updated: string; // "YYYY-MM-DD"
-  description?: string; // one line: when this note matters (shown in the session-start index)
-  visibility?: "chat-only" | "hidden";
-}
-
-interface MemoryNote {
-  name: string;             // "folder/name" for non-root, bare "name" for root
-  frontmatter: NoteFrontmatter;
-  content: string;          // body after the frontmatter block
-  backlinks: string[];      // [[targets]] referenced in content
-}
-```
-
-> **Footnote on undeclared types.** `search.ts` `TYPE_BOOST` references `feedback` and `reference` note types that are **not** in the declared `NoteType` union. They are still scored at runtime but never declared — treat the union as descriptive, not exhaustive. (There is no code-level restriction on which types a consolidation pass may write any more — the `dream` cron's prompt, covered below, is plain text with no schema behind it.)
-
-### On-disk format
-
-`serializeFrontmatter` + `writeNote` produce exactly:
-
-```md
+```markdown
 ---
-type: fact
-tags: [productivity, tools]
-created: 2026-06-08
-updated: 2026-06-08
-description: when the note matters, one line
+type: person
+tags: [friend, climbing]
+created: 2026-10-07
+updated: 2026-10-07
+description: Climbing partner; plans trips in the spring
 ---
 
-The body content goes here, with [[wikilinks]] to other notes.
+Alice climbs with me on weekends. See [[spring-trip]].
 ```
 
-Rules:
+## Note format
 
-| Rule | Detail |
-| --- | --- |
-| Delimiters | `---` on its own line, before and after the frontmatter |
-| Field order | **Fixed**: `type`, `tags`, `created`, `updated`, then `description` (only when set; double-quoted when a plain value would not parse) and `visibility` (only when set) |
-| Tags | Inline bracket array `[a, b]`; empty tags serialize as `[]` |
-| Body | `<frontmatter>` then a blank line then `<content>` then a trailing newline |
+| Key | Values | Effect |
+|---|---|---|
+| `type` | `person`, `project`, `workflow`, `fact`, `preference`, `daily`, `auto`; other text is accepted | Groups notes; recall ranks `preference` and `workflow` slightly higher and `daily` and `auto` lower. Defaults to `fact` |
+| `tags` | inline list `[a, b]` | Matched by `tag:` queries and ranked as a title field |
+| `created`, `updated` | `YYYY-MM-DD`, local date | `updated` drives `after:` and `before:` filters. Missing values default to today |
+| `description` | one line | Says when the note matters; shown in the session-start index, clipped to 160 characters. Falls back to the note's first sentence |
+| `visibility` | `chat-only` or `hidden` | Keeps the note away from agents; see below |
 
-### Parsing (lenient, hand-rolled — NOT a YAML library)
+Keep frontmatter simple: the parser is not YAML. It splits each line at the first colon, reads only the inline `[a, b]` list form for `tags`, and ignores a line with no colon.
 
-`parseNoteFile` and `parseFrontmatter` are bespoke string parsers, not a YAML dependency:
+Notes sit at the top of the memory folder or one folder down (`trips/spring-trip.md`). A file two folders down is invisible to every tool. Note names have `/`, `\` and `..` replaced or stripped so a name cannot leave the folder. A `[[link]]` matches a note by its bare name in any folder, so `[[spring-trip]]` links to `trips/spring-trip`.
 
-- `parseNoteFile` splits the file on `/^---\s*$/m`. If the **body itself** contains a `---` line, the content is re-joined via `slice(2).join("---")`, so dashes inside the note survive.
-- `parseFrontmatter` splits **each line on the FIRST colon** only. A value that starts with `[` and ends with `]` is parsed as a comma-split array (empty `[]` → empty array); a single scalar `tags` value is coerced into a one-element array.
-- **Missing/absent frontmatter defaults:** `type` → `"fact"`, `tags` → `[]`, `created`/`updated` → today.
+## Write, find and remove notes
 
-### Backlinks (the graph edges)
+These tools edit memory. Agents get them as MCP tools named `remember`, `recall` and `forget` whenever the daemon is on for the vault ([the MCP daemon tools](../mcp/daemon-tools.md#memory-tools)). You get the same operations as `bismuth memory …` commands, which work headlessly against `--vault`.
 
-`extractBacklinks` runs the regex `/\[\[([^\]]+)\]\]/g` over the content, trims each capture, **dedupes via a `Set`**, and drops empty/whitespace-only matches.
+| Tool | CLI | Effect |
+|---|---|---|
+| `remember` | `memory remember --name <n> --content <md> [--type] [--tags a,b] [--folder] [--description]` | Create or overwrite a note by name |
+| `recall` | `memory recall <query…> [--folder]` | Return notes matching a query |
+| `forget` | `memory forget <name>` | Delete a note; the name may be `folder/name` |
 
-Edges are **folder-agnostic and resolved by bare name.** `findBacklinks(name)` loads all notes and matches on `n.backlinks.includes(parseNoteRef(name).name)`. So a note in `moltbook/` can `[[alice]]`-link to `people/alice` — only the bare segment `alice` is compared. There is **no on-disk adjacency**; the graph is recomputed on each `findBacklinks` call.
+`remember` overwrites the whole body. When you overwrite a note and leave out `type`, `tags` or `description`, it keeps the existing values, and it always keeps the note's `created` date and any `visibility`. It sets `updated` to today. `remember` is the only supported way to write a note: it stamps the frontmatter and files the note where every reader looks. A note written with a plain file tool at another path is not part of the graph.
 
-### Names, folders, and safety
+The tools print JSON. This is `bismuth memory recall "type:person tag:climbing" --vault ~/vault --pretty`:
 
-| Function | Behavior |
-| --- | --- |
-| `sanitizeSegment` (via `sanitizeName`) | Replaces `/` and `\` with `-`, strips `..`, strips leading/trailing `.`/`-`, collapses repeated `-`. A name that fully sanitizes away (`"..."`, `"---"`, `""`) makes `notePath` throw `"Invalid note name"`. |
-| `parseNoteRef(ref)` | Strips a trailing `.md`, splits on the **first** `/` into `{ folder?, name }`. |
-| `sanitizeFolder(folder?)` | Same sanitization rules; returns `""` for missing or fully sanitized-away input. |
-| `notePath` | Builds the path, then does a final `resolve(full).startsWith(resolve(dir))` traversal guard. |
-
-## Public API by module
-
-### `memory/src/graph.ts` — CRUD + graph primitives
-
-No caching and no index: `loadAllNotes` re-reads the entire store on every call.
-
-| Function | Returns | Notes |
-| --- | --- | --- |
-| `getMemoryDir()` | `string` | Reads `BISMUTH_MEMORY_DIR`; **throws** if unset |
-| `sanitizeFolder(folder?)` | `string` | Sanitizes a folder segment |
-| `parseNoteRef(ref)` | `{ folder?, name }` | Strips `.md`, splits on first `/` |
-| `listNotes(dir?, folder?)` | `Promise<string[]>` | Glob `*.md` folder-scoped, or `**/*.md` recursive (single-level only); non-root names are folder-prefixed |
-| `readNote(name, dir?, folder?)` | `Promise<MemoryNote \| null>` | `null` if absent |
-| `writeNote(name, fm, content, dir?, folder?)` | `Promise<void>` | Serialize + `Bun.write`; create-or-overwrite |
-| `deleteNote(name, dir?, folder?)` | `Promise<boolean>` | |
-| `loadAllNotes(dir?, folder?)` | `Promise<MemoryNote[]>` | `listNotes` then `readNote` each in parallel, filters out nulls |
-| `findBacklinks(name, dir?)` | `Promise<string[]>` | Bare-name match across all folders |
-
-The package entrypoint `memory/src/index.ts` re-exports `./graph`, `./query`, and `./search` as `@bismuth/memory`.
-
-### `memory/src/query.ts` — structured filter queries (exact boolean, NOT ranked)
-
-`parseQuery(str)` produces a `ParsedQuery`:
-
-```ts
-interface ParsedQuery {
-  tags: string[];
-  types: string[];
-  keywords: string[];
-  links: string[];
-  after?: string;
-  before?: string;
-  keywordMode: "and" | "or";
+```json
+{
+  "ok": true,
+  "count": 1,
+  "notes": [
+    {
+      "name": "alice",
+      "frontmatter": {
+        "type": "person",
+        "tags": ["friend", "climbing"],
+        "created": "2026-10-07",
+        "updated": "2026-10-07",
+        "description": "Climbing partner; plans trips in the spring"
+      },
+      "content": "Alice climbs with me on weekends. See [[spring-trip]].",
+      "backlinks": ["spring-trip"]
+    }
+  ]
 }
 ```
 
-**Token grammar** (whitespace-tokenized, all lowercased):
+## Query syntax
 
-| Token | Effect |
-| --- | --- |
-| `tag:x` | Add `x` to `tags` (repeatable) |
-| `type:x` | Add `x` to `types` (repeatable) |
-| `link:x` | Add `x` to `links` (repeatable) |
-| `after:DATE` | Set `after` |
-| `before:DATE` | Set `before` |
-| `keyword:x` | Add `x` to `keywords` |
-| bare word | Add to `keywords` |
-| unknown `prefix:val` | Kept as a single keyword |
+A `recall` query is a list of space-separated filters, all lowercased. A note must satisfy every filter.
 
-`keywordMode` defaults to `"and"` and is only settable by callers — **no token sets it.**
+| Token | Matches |
+|---|---|
+| `tag:x` | Notes with tag `x`. Repeat for several; the note needs all of them |
+| `type:x` | Notes of type `x`. Repeat for several; the note may have any one |
+| `link:x` | Notes that contain `[[x]]`. Repeat to require several |
+| `after:2026-04-01` | Notes updated on or after that date |
+| `before:2026-04-08` | Notes updated before that date |
+| `keyword:x`, or a bare word | Text anywhere in the body, type, tags, dates or name. Several keywords must all appear |
 
-**`noteMatchesQuery` filter semantics:**
+An unknown prefix such as `owner:alice` is treated as a keyword. An empty query returns every visible note, which is slow on a large graph; give it a filter. This query filters exactly. The ranked search that picks notes to inject into a prompt is a different path; see [communication](communication.md#what-gets-injected).
 
-| Field | Combinator | Rule |
-| --- | --- | --- |
-| `types` | OR | note's type is in the list |
-| `tags` | AND | note has **every** requested tag |
-| `links` | AND, case-insensitive | note's backlinks include **every** requested target |
-| `after` | inclusive | `updated >= after` |
-| `before` | exclusive | `updated < before` |
-| `keywords` | AND (default) / OR | substring match over the joined+lowercased fields below |
+## Keep a note away from agents
 
-Date comparisons are lexicographic ISO-date string compares. The keyword haystack is `[content, type, ...tags, created, updated, name]` joined and lowercased; AND requires every keyword as a substring, OR requires any (when `keywordMode === "or"`).
+Add `visibility: hidden` or `visibility: chat-only` to a note's frontmatter. A restricted note never appears in `recall` results, in the session-start index or in injected context. An agent that tries to overwrite or delete it is refused: a `hidden` note is off limits to every agent, and a `chat-only` note is off limits to the daemon.
 
-| Function | Returns |
-| --- | --- |
-| `executeQuery(q, dir?, folder?)` | `loadAllNotes` then filter |
-| `query(str, dir?, folder?)` | parse + execute |
+The check fails closed. The strictest `visibility` line in the frontmatter wins, a value the parser cannot read counts as `hidden`, and a file that opens a `---` fence and never closes it counts as `hidden`. A restricted memory note is a per-note setting; there is no folder cascade inside the memory folder. [Visibility](../vault/visibility.md) covers the vault-wide controls.
 
-An empty query returns **all** notes. This is the path the MCP **`recall`** tool uses (see [communication.md](communication.md)).
+## How `dream` maintains the graph
 
-### `memory/src/search.ts` — keyword scoring / ranking (the recall engine)
+The seeded `dream` cron reads your changed notes and the session transcripts that your terminal sessions and chats save as `auto-*` notes, and folds them into a small set of canonical notes. It merges duplicates, collapses dated snapshots into one note, deletes transcripts it has processed, and files an inbox page only when something needs you. It writes memory only through `remember` and `forget`. See [crons and processes](crons-and-processes.md#seeded-crons-and-files).
 
-This is a **different retrieval path** from `query.ts`: ranked lexical relevance, not exact boolean filtering. Don't conflate them. `searchMemory` is the keyword scorer; automatic prompt injection no longer calls it (see **Consumer** below).
+## How it works
 
-- `extractKeywords(text)`: lowercase, split on punctuation/whitespace, drop tokens shorter than 3 chars or in `STOP_WORDS` (a ~130-word list), then dedupe.
-- `scoreNote(note, keywords)`, per keyword:
+### Storage
 
-| Field | Exact substring | Stemmed word-prefix (word len >= 4) |
-| --- | --- | --- |
-| name | +3 | +1.5 |
-| tag | +3 | +1.5 |
-| body | +1 | +0.5 |
+`@bismuth/memory` (`memory/src/`) is a pure package: no server, no index, no database. Every read lists the markdown files and parses them (`loadAllNotes` in `graph.ts`); `noteCache.ts` keeps parsed notes between recalls and re-reads only files whose modification time or size changed. The link graph, the query results and the rankings are all derived from the files at read time.
 
-  Then a **density bonus**: `score *= (1 + matchedKeywords / totalKeywords)`. Then a `TYPE_BOOST` multiplier:
+The package never picks a directory. Each caller passes one, or reads `BISMUTH_MEMORY_DIR`, and `getMemoryDir()` throws when that is unset, so a missing directory fails loudly instead of reading the wrong place. The daemon passes `<vault>/.daemon/memory` for each vault. Bismuth's terminal tabs set `BISMUTH_MEMORY_DIR` only when the vault's daemon is on, which is why memory is never active in a vault that has not enabled it.
 
-| Type | Boost | Type | Boost |
-| --- | --- | --- | --- |
-| feedback | 1.5 | fact | 1.0 |
-| preference | 1.4 | person | 1.0 |
-| workflow | 1.2 | reference | 0.9 |
-| project | 1.1 | daily | 0.5 |
-| | | auto | 0.3 |
+The memory folder is its own git repository, separate from the vault's. While the app runs, core commits it as notes change, which gives you revert and gives incremental crons a history to diff. The vault's own snapshots skip it.
 
-- `searchMemory(prompt, dir?, maxResults = 10)`: extract keywords → score all notes → keep `score >= MIN_SCORE` (`1.0`) → sort descending → cap by `maxResults` **and** by `MAX_CONTEXT_BYTES` (`4096`) cumulative size (the byte cap only kicks in after at least one note is included). Returns `[]` when the prompt yields no keywords.
+### Parsing
 
-The mechanism is lexical/substring matching + stemming + weighted scoring. **`search.ts` uses no embeddings, no TF-IDF, no external index.**
+`parseNoteFile` splits a file at `---` lines and parses the head with a hand-written parser rather than a YAML library: the first colon splits key from value, an `[a, b]` value becomes a list, and a bare `tags` value becomes a one-item list. Body text that itself contains a `---` line survives. `extractBacklinks` reads `[[…]]` with a regular expression, trims, and removes duplicates. Writing uses a fixed key order: `type`, `tags`, `created`, `updated`, then `description` (double-quoted when a plain value would misparse) and `visibility` when set.
 
-**Consumer:** `recallMemory(dir, prompt, budgetMs?)` (`memory/src/recall.ts`) does not call `searchMemory`: it filters to daemon-visible notes, ranks them with `rankNotes(buildRecallIndex(notes), { primary: prompt })` (`memory/src/rank.ts`) and packs the result with `packRecall(ranked, 'prompt')` (`memory/src/pack.ts`), under an 800ms `RECALL_BUDGET_MS` race (a bloated graph degrades to "no recall" rather than stalling prompt submission), formatting under a `# Memories` heading inside the `<bismuth-memory>` envelope (`formatRecall`). The relay hooks do not call it directly: they `POST` to core's `/memory/recall`, which ranks and packs via `rank.ts`/`pack.ts`; the visual chat (`core/src/chat.ts`, an SDK session with an in-process `hooks.UserPromptSubmit`) calls `recallServiceFor(...)` through `recallWithin(svc, req, ms)`; `recallMemory` has no core callers. Both inject the result as `additionalContext`. (See [communication.md](communication.md) for the hook plumbing.)
+### Retrieval modules
 
-## The dream consolidation cycle (the `dream` cron)
+| Module | Role |
+|---|---|
+| `graph.ts` | Note create, read, delete, list; backlinks; the visibility check |
+| `query.ts` | The filter syntax above, behind the `recall` tool |
+| `rank.ts` | BM25 ranking for injection |
+| `pack.ts`, `recall.ts` | Cut ranked notes into the bounded `<bismuth-memory>` block |
+| `transcript.ts` | Turn a finished conversation into an `auto-*` note |
+| `search.ts` | `searchMemory`, a ranked search that returns whole notes (up to 10) above the prompt-mode score floor |
 
-> **This module is gone.** `daemon/src/memory/dream.ts` was deleted in commit `be3bd5f7`, whose message records that it "had zero importers and zero uses of its exports, superseded by the dream cron." `daemon/src/memory/` does not exist at all any more — `daemon/src/` now holds only `daemon/` and `lib/` — and none of the symbols this section used to document (`dream(ctx)`, `groupByFolder`, `BATCH_SIZE`, `CONSOLIDATION_PROMPT`, `parseDreamResult`, `startDreaming`/`stopDreaming`, `getDreamConfig`/`updateDreamConfig`) exist anywhere in the repo any more (verified by grep). There is no TypeScript "dream cycle" module to document — consolidation is now entirely a **cron**, and this section documents that instead.
-
-**What runs instead: the `dream` cron.** It is a plain prompt — the `DREAM` string constant in `daemon/src/daemon/defaultCrons.ts` — seeded non-clobbering into `<vault>/.daemon/crons/dream.md` by `reconcileSeeds` (`daemon/src/daemon/seeds.ts`) on every fresh vault. Its frontmatter:
-
-```
-name: dream
-schedule: 0 * * * *
-timeout: 1800
-catchup: true
-incremental: true
-checkpointDirs: vault, memory
-```
-
-It is the vault's ONE seeded cron: `dream` is the fusion of the former memory-consolidation cron and the retired `vault-review` (the every-4-hours model-of-the-user pass). In a single session it consumes changed **vault** notes, changed **memory** notes and unprocessed `auto-*` session-transcript notes; it writes only memory, plus an inbox page when something genuinely needs the user. There is no `notify` — see [Run report and inbox](#run-report-and-inbox) below.
-
-- **Hourly** (`0 * * * *`), dispatched through the vault's own persistent daemon session (`sendMessage`, `daemon/src/daemon/session.ts`) — not a separate one-off model call. Cron scheduling, catchup and notify semantics are shared by every cron and are covered in full in [crons-and-processes.md](crons-and-processes.md); this page covers only what's specific to memory.
-- **`incremental: true` + `checkpointDirs: vault, memory`** — before firing, the daemon diffs TWO checkpoints (`resolveIncrementalRun`, `daemon/src/daemon/incrementalCron.ts`): the memory dir against `refs/bismuth/cron-dream` (the pre-existing ref, kept so an existing vault does not re-survey memory) and the vault against `refs/bismuth/cron-dream-vault`. When `cron-dream-vault` does not exist yet, the vault base falls back to `cron-vault-review`, then the legacy `vault-review` ref, so a vault that ran the retired cron is not fully re-surveyed. The session is skipped entirely — nothing starts, only the `skipped` bookkeeping — when BOTH deltas are empty. The deltas are measured against a snapshot of the working tree (not `HEAD`): the vault ref advances to the snapshot taken at the START of a successful run (an edit made mid-run is seen next time), the memory ref to a snapshot taken at its END (dream's own writes never re-trigger it). Mechanics: [crons-and-processes.md](crons-and-processes.md#incremental-crons).
-- **No JSON round-trip any more.** The deleted module's shape — one prompt in, a `DreamResult` (`merge`/`improve`/`delete`) JSON back out, applied by daemon-side code calling `writeNote`/`deleteNote` — went with the file. The cron session now calls the `remember`/`recall`/`forget` MCP tools **directly, live**, during its own run: every consolidation action is a tool call the model makes itself, and there is no `MergeOp`/`ImproveOp` type and no daemon-side code left that applies a merge.
-
-**What the prompt actually does**, at a high level (the full text lives in `defaultCrons.ts`; the vault side of the scope arrives through the `{{changedSinceLastRun}}` block, with a `Vault notes changed since …` section next to the `Memory notes changed since …` one):
-
-1. **Survey by size** — list every note with its byte size; measure total markdown bytes directly (`find` + `ls -l`, explicitly NOT `du` on the memory dir, since it's a git repo and `du` would be dominated by `.git`). Over 5 MB total or any single note over 100 KB means the graph is bloated and triage is the priority.
-2. **Triage oversized notes** (>100 KB) — `forget` broken `auto-*` bloat outright without reading it; for anything else, peek at the first 4 KB, split salvageable content into atomic notes via `remember`, then `forget` the original.
-3. **Collapse date-stamped snapshots into one canonical note** — runs over the whole graph on every fire regardless of scope, because duplicates can be spread across runs a scoped pass would never see. Any note whose name carries a date, a month, or a moment suffix (`-final`, `-checkpoint`, `-update`, `-snapshot`, `-status`, `-latest`, `-escalation`) is merged into one topic-named canonical note with an internal `## History` section — "it's a historical record" is explicitly rejected as a reason to keep the duplicates.
-4. **Process session transcripts (`auto-*`) — every run** — every `auto-*` note in the whole graph, whether or not it is listed in the scope block (those over 100 KB were already handled in step 2). Extract facts with the You/Claude attribution rule, fold them into canonical notes via `remember`, then `forget` the transcript; the run ends with zero `auto-*` notes.
-5. **Fold changed vault notes into canonical memory notes** — for the vault notes listed in `Vault notes changed since …` (or a full pass on the vault's first run), `recall` then rewrite in place the canonical `user-beliefs` / `user-reading` / `user-writing` / `user-projects` / `user-routine` / `user-context` notes (or one topic-named note). A change of view is a dated line inside the note, never a new file.
-6. **Targeted `recall` dedup** — `recall("type:fact")`, `recall("type:preference")`, `recall("type:project")` etc. to find and merge duplicates, tighten unclear notes via `remember`, and split notes covering more than one idea into their own atomic notes.
-7. **Delete stale isolated notes** — only on a first/full run, or when a scoped note looks abandoned: a note with no recent `updated:` frontmatter AND no inbound `[[backlinks]]` is a deletion candidate; connected notes survive regardless of age.
-
-The prompt explicitly forbids the session from writing a note about its own runs — a self-referential "dream-cycle"/"consolidation-log" note with an appended "Cycle N" block was itself once the largest file in a real graph — and instructs it to `forget` such a note on sight if one already exists. There is no enumerated list of allowed merged-note types any more; that was a property of the deleted module's `CONSOLIDATION_PROMPT`, not of the current prompt. The run ends by **printing** one report line (e.g. `vault=N memory=N transcripts=N merged=N pages=N …`) as session output, never as a memory note; the daemon reads it off the result text and stores it as `summary` on the cron's `finished` activity event, rather than the model writing it into the graph.
-
-### Run report and inbox
-
-Dream never posts a per-run OS notification (its frontmatter has no `notify: true`): the run's report line is in the activity log (`summary`; read it with `bismuth daemon logs`). When something genuinely needs the user, the prompt has dream file ONE inbox page per such thing under `.daemon/pages/` (format in `.daemon/PAGES.md`, `source: "cron:dream"`), never a duplicate of a still-pending page on the same subject and never a page that merely reports the run. The daemon, not the model, then notices the new page file and posts one OS notification titled `<daemon name>: <page title>` with body `New in your inbox` — see [pages.md](pages.md#how-the-user-is-told-a-page-exists).
-
-> **Where do `auto` notes come from?** The relay `SessionEnd` hook (`relay/bin/session-end-hook.ts` → `collectTranscript` in `relay/lib/memory.ts`) saves a finished terminal session's **whole conversation** — both the user's prompts and Claude's responses — as a `type: auto` note (`auto-<timestamp>-<sid>`), which the dream cron's step 4 above later consolidates (read, extracted into real memory notes, then deleted; the daemon's own activity logs are never deleted). The transcript→note logic is the shared pure module `memory/src/transcript.ts`: exchanges are **paired per logical turn** (`## Turn N` with `**You:**`/`**Claude:**` sides — tool round-trips collapse into their turn, tool payloads are never included), each message is capped at `PER_MESSAGE_CHARS` (1500) chars, and the whole body is budgeted at `MAX_BODY_CHARS` (12000) chars with turn-aware middle-elision (`_(N turns omitted)_`) so no turn is ever split. All mechanical — zero LLM tokens at collect time. Cron-fired and trivial sessions are dropped (the trivial check sums BOTH roles, so a "continue" prompt that made Claude do real work still counts), and `compact` is skipped (the same logical session continues). See [communication.md](communication.md).
->
-> **Refreshing an existing vault's dream prompt:** seeds never clobber a file the user has edited, so a stock `dream.md` upgrades automatically the next time the brain starts — `reconcileSeeds` (`daemon/src/daemon/seeds.ts`) hashes the on-disk file, and a match against any entry in `PRIOR_SEED_HASHES['dream']` (an append-only list of every past stock version, in `seeds.ts`) is replaced with the current `DEFAULT_CRONS` content in place. A hash that was never added to that list is misclassified as user-customized and left untouched forever — see [The `PRIOR_SEED_HASHES` git-history guard](crons-and-processes.md#the-prior_seed_hashes-git-history-guard) for the mechanism that is meant to prevent that.
-
-## MCP exposure — remember / recall / forget
-
-Memory is reachable over MCP via three tools defined in `mcp/src/memory.ts` and registered in `mcp/src/server.ts`: **`remember`**, **`recall`**, **`forget`**.
-
-> There are **no** `dream_run` / `dream_status` / `dream_config` MCP tools — those do not exist. The dream cycle is driven by the cron + the in-process timer, not by MCP.
-
-The three tools are **conditionally registered**: `mcp/src/server.ts` only appends them to the advertised tool list when `memoryDir()` (i.e. `process.env.BISMUTH_MEMORY_DIR`) is set — which `terminal.ts` does only when the daemon is enabled for the vault. They delegate to the shared `@bismuth/memory` graph, so the MCP tools, the daemon writer, and the relay collect hook all read/write **one** note format against `<vault>/.daemon/memory`.
-
-| Tool | Delegates to | Behavior |
-| --- | --- | --- |
-| `remember` | `writeNote` | Create/overwrite a note; preserves an existing note's `type`/`created`/`description` when overwriting (optional `description` param); defaults type `fact`, stamps `updated` = today |
-| `recall` | `query` (the query DSL above) | Run a query string → `{ count, notes }` |
-| `forget` | `deleteNote` | Delete a (possibly folder-prefixed) note → `{ ok, name }` |
-
-## Cross-cutting facts
-
-- **One brain per vault; no machine-global memory.** `getMemoryDir()` throws when `BISMUTH_MEMORY_DIR` is unset; the live store is `<vault>/.daemon/memory`.
-- **No index file or DB, and no vectors, inside the store.** The session-start index and the "graph" are derived live; the graph is markdown files re-scanned via `loadAllNotes` on every read / query / search / dream.
-- **Two distinct retrieval paths.** `query.ts` = exact boolean filters (MCP `recall`); `search.ts` = ranked lexical relevance (`recallMemory`); automatic injection goes through core's `POST /memory/recall` → `rank.ts`/`pack.ts`. Keep them separate in your head.
-- **Semantic recall lives in core, not in this package.** When `daemon.recall.semantic` is true (the default), core's `/memory/recall` also scores notes with a quantized bge-small embedder run in a lazy, idle-exiting child process; its vectors are cached outside the store, under `~/.bismuth/cache/recall/<sha1(memoryDir)>/vectors.json`. Details: [communication.md](communication.md#the-semantic-channel-coresrcmemoryembedts).
-- **Folders** are single-level, sanitized, AND-scoped in queries, hard boundaries during dreaming, and transparent to backlinks (which match by bare name across all folders).
-- **The frontmatter parser is hand-rolled and lenient** — first-colon splits, bracket-array tags, today-defaults for missing fields — not a YAML library.
-
-Source: `memory/src/{index`, `graph`, `query`, `search`, `recall`, `transcript}.ts`, `daemon/src/lib/config.ts`, `daemon/src/daemon/{seeds`, `defaultCrons`, `cron`, `session`, `incrementalCron}.ts`, `mcp/src/{server`, `memory}.ts`, `relay/lib/memory.ts`, `relay/bin/{recall-hook`, `session-end-hook}.ts`, `core/src/chat.ts`
-</content>
-</invoke>
+Source: `memory/src/{graph,query,rank,pack,recall,search,noteCache,transcript}.ts`, `mcp/src/memory.ts`, `cli/src/commands/memory.ts`, `core/src/{memoryRecall,backup}.ts`

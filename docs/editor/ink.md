@@ -1,198 +1,136 @@
-# Note ink — draw anywhere on a note
+# Note ink
 
-Every real `.md` note in the normal (CodeMirror) editor carries an optional **ink layer**: press
-the `toggle-draw-mode` keybinding (default **Mod+Shift+I**; Escape also exits) and draw freehand
-directly over the text — margins included. Toggling back returns to ordinary editing; the ink
-stays visible (paint-only) while you type.
+Every markdown note in the editor can carry freehand ink: handwriting, underlines and sketches drawn directly over the text, margins included. The ink is stored inside the note itself, so it travels with the file when you copy, sync or export it.
 
-## Surfaces & files
+This page is for anyone drawing on notes, for agents that read or write a note's raw markdown, and for engineers changing the overlay.
 
-| Piece | Where |
-| --- | --- |
-| Overlay component | `app/src/editor/InkOverlay.tsx` (+ `InkOverlay.module.css`, a CSS Module — not a plain `.css` file; story: `InkOverlay.stories.tsx`) — mounted by `Editor.tsx` inside its wrapper, gated to `.md` buffers. There is no `editor/ink/` subdirectory; all three files sit directly under `app/src/editor/`. |
-| Fence scan + read/write | `core/src/drawing/drawBlocks.ts` — locates ` ```draw ` fences, associates each with the block it decorates, reads/writes a note's ink without disturbing the rest of the document. Free of CodeMirror/DOM imports so it runs headless under `bun test`. |
-| Stroke codec | `core/src/drawing/inkCodec.ts` — encodes/decodes a fence's stroke payload (base64 + deflate); shares `Stroke` from `model.ts`. |
-| Commit | `app/src/editor/inkCommit.ts` — the pure half of "a stroke becomes markdown": given the note's text, a drawing session's strokes, and the note's block table, produces the new note text with each stroke cut at every seam it crossed and written into its owning block's fence. |
-| Block widget | `app/src/editor/drawBlock.ts` — the ` ```draw ` embedded block: hides the fence's raw source, reserves height for a standalone drawing, carries the standalone drag handle. |
-| Keybinding | `toggle-draw-mode` in `KEYBINDING_CATALOG` (`core/src/keybindings.ts`), rebindable via `keybindings:` in `.settings` |
-| Toolbar | Reuses `app/src/drawing/Toolbar.tsx` (paper/zoom/import groups are optional props and omitted here) |
-| Undo | Two independent stacks: CM `history()` for text (untouched); for ink, a session-scoped op log **inside `InkOverlay.tsx` itself** — Mod+Z/Mod+Shift+Z route to ink **only while draw mode is on**. Not the drawing store's snapshot undo: the overlay does not import that store at all, and a snapshot stack could restore a document state from before the user's typing. See **Mode mechanics** below for what the log holds and when it is dropped. |
+A note with one annotated paragraph and one standalone sketch looks like this in the file:
 
-There is no `.ink/<note path>.ink` sidecar. Ink lives **in the note itself**, inside ` ```draw `
-fences — a note's ink travels with the file on copy, sync, and export, and needs no server-side
-carry logic on rename/move/delete.
+````markdown
+Ink lives in the note, next to the text it marks.
 
-## Two fence shapes
+```draw
+AQAAACGLrlYqUbJSKkjNU9JRSgay0tKBjHIlK1MdpTwlK+PaWAAT0WhgsmFhsGFjAAA=
+```
 
-A fence's mode is written in the fence's own info string, never inferred from its surroundings:
+```draw block
+AQAAACGLrlYqUbJSKkjNU9JRSgay0tKBjHIlK1MdpTwlK+PaWAAT0WhgsmFhsGFjAAA=
+```
+````
 
-- ` ```draw ` — **attached**: ink decorating the block immediately above it. The widget that
-  replaces the fence reserves zero height, since the block above already occupies its own.
-- ` ```draw block ` — **standalone**: a drawing with no text to attach to. The widget reserves the
-  ink's own bounding-box height (`drawBlockGeometry.ts`'s `standaloneHeight`) so the document
-  still flows and text after the drawing has somewhere to sit.
+The editor hides both fences and paints their strokes instead.
 
-The fence never reveals its raw source when the cursor enters it (unlike `queryBlock.ts` /
-`graphBlock.ts`) — the block is atomic, so arrow keys step over it rather than landing a caret
-inside.
+## Draw on a note
 
-## Mode mechanics
+1. Open a `.md` note in the editor and press the `toggle-draw-mode` keybinding (default `Mod+Shift+I`). A drawing toolbar appears and the text stops accepting keystrokes.
+2. Draw with the pen. The toolbar also offers a highlighter, a stroke eraser, a lasso to select, move and resize ink, and the color, size and smoothing controls the [drawing page](../drawing/overview.md) describes.
+3. Press `Escape` (the `exit-draw-mode` keybinding) or the toggle key to leave draw mode. The ink stays visible while you type.
 
-- Entering draw mode reconfigures an `EditorView.editable` **Compartment** to `false` (never
-  `readOnly` — programmatic dispatches like the SSE external-reconcile and autosave-normalize
-  keep working), blurs the content DOM, and flips the overlay's live canvas to
-  `pointer-events:auto` so a click physically can't place a caret. Text editing in normal mode
-  is byte-for-byte unaffected (the overlay is `pointer-events:none` and does nothing per
-  keystroke).
-- Strokes are captured with the same state machine as the page drawing (pressure/velocity
-  width, hold-to-straighten, smooth-on-release) and rendered by the shared
-  `core/src/drawing/render2d.drawStroke`.
-- A stroke never becomes its own document transaction. Strokes accumulate in a session op log
-  and land as ONE transaction, debounced and flushed on draw-mode exit, note switch, window
-  blur and unmount. Every ink transaction carries `Transaction.addToHistory.of(false)`, so
-  cmd+Z in the editor restores the user's typing and never their ink. The drawing tool keeps
-  its own, session-scoped undo stack, cleared on draw-mode exit and on any document change the
-  overlay did not make.
+Draw mode gives you endless scroll space below the last line, so there is always fresh page to draw on. That space is not saved in the note.
 
-### A pending op is addressed by something that survives an edit
+Draw mode applies to `.md` notes in the note editor only. It is not available in the vault's `.settings` file or in a `.draw` file (which is its own drawing surface).
 
-The debounce means an op is recorded when the hand moves and spent up to `COMMIT_DELAY` later,
-so between the two anything else may write the note — the daemon, the `bismuth` CLI, a second
-window, an external editor over SSE, the autosave's frontmatter normalizer. Two rules hold the
-window shut, and both are load-bearing:
+Rebind the toggle under `keybindings:` in `.settings`. On Linux and Windows, `Ctrl+Shift+I` opens browser devtools, so rebind it there if the toggle does not respond. See [keybindings](../settings/keybindings.md).
 
-- **An erase carries the STROKE, not just its coordinates.** A raw line number does not survive
-  a foreign insert above the fence, and a raw stroke index does not survive a foreign rewrite of
-  that fence's payload. So the op holds a `StrokeRef` — a line number remapped through every
-  document change (`inkRemap.ts`, invoked from the update listener, the only place CodeMirror's
-  change set exists) plus the stroke itself, from which the index is re-derived at flush.
-- **A plan that cannot apply is REPORTED, never returned as the input text.** `planErase` and
-  `planStrokeEdit` return a `Plan` (`{ok: true, text}` or `{ok: false, reason}`). `flushNow`
-  spends the ops against the real document BEFORE it empties the log, and an op that will not
-  resolve is dropped with a console warning.
+### Undo and redo while drawing
 
-An unresolvable op is dropped, never applied to a guess: splicing a different stroke is worse
-than losing an erase, because nothing looks wrong afterwards and no one reports it.
+While draw mode is on, `Mod+Z` and `Mod+Shift+Z` (the `ink-undo` and `ink-redo` keybindings) undo and redo ink strokes only. Outside draw mode they undo and redo typing only. The two histories never mix, so undoing a typo cannot remove a drawing and undoing a stroke cannot revert your text. Ink undo covers the current draw-mode session and resets when you leave it.
 
-Only the ADDRESS is remapped. A seam's `origin` is its block's top and a pending stroke's y was
-captured in the same layout, so a line shift moves both rigidly and the stored offset is already
-correct; rewriting it would be exactly the drift the coordinate contract below exists to prevent.
-A foreign REFLOW is still unhandled, for the same reason a late web-font load is.
+## Two kinds of drawing: attached and standalone
 
-Pinned by `inkCommit.test.ts` (the plans), `inkRemap.test.ts` (the mapping, against real
-`ChangeSet`s) and InkOverlay's `EraseSurvivesALineShift` / `EraseSurvivesAPayloadRewrite`
-stories, which are the only place the commit path itself runs end to end.
+A fence's kind is written in its info string, never guessed from the lines around it.
 
-## Coordinates & anchoring
+| Fence | Kind | What it is | Space it takes |
+|---|---|---|---|
+| ` ```draw ` | Attached | Ink over the block directly above it | None; it paints over existing text |
+| ` ```draw block ` | Standalone | A drawing with no text to attach to | The height of the ink, so text after it flows below |
 
-Strokes are CAPTURED in a logical content space: x/y in the editor's 680px reading column
-(`INK_LOGICAL_W`, `core/src/drawing/model.ts`), painted at a uniform scale
-`s = contentDOM.width / 680` with the offset read from the live `contentDOM` rect each repaint.
+Ink you draw over text becomes an attached fence under that paragraph, heading or list. Ink you draw below the last line becomes one standalone fence at the end of the note.
 
-What a fence STORES is a different question, with a different answer per shape (the contract
-lives in `inkCommit.ts`):
+Only a fence opened with exactly three backticks counts. A `draw` fence quoted inside a wider fence (four backticks or tildes) is ordinary code, and an unrecognized info string such as ` ```draw other ` stays an ordinary code block.
 
-- **Attached** fences store ink relative to the TOP of the block they decorate, in **unscaled
-  pixels**. Top rather than bottom because markdown grows downward — typing into an annotated
-  paragraph moves its bottom but leaves its top where it was. Pixels rather than the 680px
-  logical column because line heights do not rescale with pane width but a logical offset does;
-  x stays scaled, so a narrow pane squashes annotation ink horizontally rather than letting it
-  drift off its text.
-- **Standalone** fences store ink in the uniform logical space, scaling as a whole — there is no
-  text to stay aligned with. Its widget top is the block boundary above it and the ink keeps the
-  real distance below that boundary it was drawn at, so it paints back where the pen left it.
-  **Normalizing to `pad` is the LAST RESORT**, used only when there is no edge in the document to
-  measure against at all: normalizing re-seats the ink against a widget that lands wherever the
-  fence's three lines fall, which is not where the pen was (measured: ink drawn 380px below the
-  prose reappeared 358px higher the moment the pen lifted).
+The editor treats a draw fence as one atomic block: arrow keys step over it, and the cursor never enters its raw base64. Outside draw mode, pressing and dragging a standalone drawing moves it to another spot between the note's blocks, and the hand cursor over it says so. An attached fence cannot be moved on its own, because it belongs to the paragraph above it.
 
-A fence is anchored by its own position in the document, which the document already tracks, so
-an insertion above it needs no remapping of anything — unlike the old per-stroke `a: {p, y}`
-line anchor, which no longer exists.
+Because ink is note content, a stroke commit is an ordinary note write, and everything that reads the note sees the fences. Change the payload only by drawing; it is a compressed stroke list, not text.
 
-## A drawing never displaces text
+### Ink never pushes your text around
 
-A standalone fence reserves real height (`standaloneHeight` = its lowest ink plus a pad); an
-attached one reserves nothing. So a standalone fence with prose under it turns every unit of ink
-added below its lowest ink into a unit the whole rest of the note moves down, the instant the pen
-lifts. That is the whole of the user-facing complaint "when i finish drawing, things jump around,
-spacing is made", and unlike a coordinate bug the ink is exactly where it was drawn — the
-DOCUMENT moves out from under it.
+Drawing does not move the words in your note. Ink inside the span the note already covers is saved as an attached fence, which reserves no height, and that includes ink drawn across an existing standalone drawing with text below it. Only ink drawn past the last line becomes a standalone fence, and nothing follows it. Pen strokes that cross a block edge are cut at the edge and each piece goes to the block it landed in.
 
-Measured in the running app on a note shaped like the reporter's own (a heading, a standalone
-drawing, then three paragraphs): one stroke drawn across the drawing's lower edge is cut at the
-box edge, and its upper piece was stored at exactly the box bottom — one pad past the lowest ink
-— so the box grew by a pad and **all three paragraphs jumped down 41.9 CSS px**. Every further
-stroke across that edge did it again, cumulatively.
+### How ink follows text
 
-The rule `inkCommit.ts` now holds, in three parts:
+An attached fence stores its ink relative to the top of the block it annotates. If you type into that paragraph, its top stays put and the ink stays on the words it marked. Horizontally, ink scales with the pane width, so a narrow pane squashes annotation ink sideways rather than letting it drift off its text; vertically it keeps its pixel offset because line heights do not change with pane width. A standalone drawing scales uniformly as one picture.
 
-- Ink inside the vertical span the document already occupies **attaches**, reserves zero height,
-  and paints over what is there. That includes ink over a standalone drawing that has text under
-  it: it is written into the next attached band instead of into the drawing, so the drawing
-  cannot grow. The ink does not move — the attached frame paints it back at the same absolute y —
-  it just stops being part of that drawing, which is the price of the note not jumping.
-- Ink past the last line of content becomes **one standalone block at the end**, reserving from
-  the last content line down to the ink's bottom. Nothing follows it, so nothing is displaced,
-  and text written afterwards still flows below it (that is the feature standalone height exists
-  for, and it is unaffected).
-- **No fence with a non-zero reserved height is ever written above existing content.** The seam
-  table is captured at pointerdown and spent up to `COMMIT_DELAY` later, so it can go stale — an
-  external edit over SSE, the autosave normalizer, the user typing at the end — and a stale table
-  names an insertion point with prose under it. A drawing landing there moves everything below it
-  by its whole height. `trailingAnchor` checks its answer against the note's last content line
-  and falls back to a normalized fence at the end of the note instead.
+## Export a note with its ink
 
-Pinned by `inkCommit.test.ts`'s "a drawing never displaces text" block (pure text-to-text, and
-the assertion is the reserved height above the prose, not a fence count) and by InkOverlay's
-`DrawingNeverDisplacesText` story, which reads the paragraphs' own client rects before and after
-a real pointer gesture.
+`bismuth export <note> --format html|pdf|png` renders a note's ink as pictures in place. Each attached drawing is laid over the paragraph it annotates and each standalone drawing sits in the flow. Without this step the ink would export as a block of base64 text. See the [CLI reference](../cli/reference.md) for the other export flags.
 
-## Export
-
-`bismuth export <note> --format html|pdf|png` renders a note's ink as REAL PICTURES, not as the
-base64 its fence stores — `app/src/export/inkHtml.ts` rewrites each fence before the markdown is
-rendered, rasterizing its strokes through `ExportDeps.drawingToPng` (the same seam a `.draw` file
-export uses, with a `box` argument for a transparent, caller-sized ink layer).
-
-Placement follows the same coordinate contract the editor paints by, expressed in CSS so it holds
-at any reading-column width — 624px printable Letter in the PDF, 760px in the PNG, whatever the
-window is in an `.html` opened in a browser:
-
-- **Attached**: the annotated block is wrapped in a `position: relative` container and the ink is
-  absolutely positioned over it at `width: 100%; height: <its own px>` — x scaled by the column,
-  y left in unscaled pixels, which is the asymmetry the contract requires.
-- **Standalone**: a block image at `width: 100%; height: auto`, reserving the same height the
-  editor widget does, uniformly scaled.
-
-The accepted cost is that an attached raster is scaled non-uniformly by CSS, so a pen nib reads
-as a slight ellipse at a column narrower than the 680px logical one (~15% in the PDF). Position
-beats nib roundness; making it exact would mean baking the column width into the raster, which is
-the guess this placement exists to avoid.
-
-The page-render golden is `cli/test/notePageInk.test.ts` — it renders a note with both fence
-shapes and asserts non-trivial ink coverage AND that the annotation lands on its paragraph's own
-glyph rows, at two different column widths.
-
-## Server behavior
-
-Ink now lives inside note markdown, so it is ordinary note content: a stroke commit is a normal
-note write, classified and cached exactly like any other edit to the file (graph/tree/search/
-rows/tasks all see it the same way a typed paragraph would). There is no separate sidecar path,
-no dirty-to-nothing carve-out, and nothing for `files.ts` to carry on move/delete/restore beyond
-the note itself.
-
-## Drawing embeds are gone
-
-`![[Sketch.draw]]` no longer renders an embed in notes (`kindForTarget` returns `null` for
-`.draw`; the token stays as inert plain text). Standalone `.draw` tabs, image/PDF ink sidecars,
-and drawing export are untouched.
+Attached ink in an export is scaled sideways to the page's column width but not vertically, so a pen nib can look slightly oval in a column narrower than the editor's. The ink still lands on the words it marks.
 
 ## Ink on images and PDFs
 
-Images and PDFs take ink too, with the same `toggle-draw-mode` key, the same toolbar and the same
-paint-only-until-toggled behaviour — but it is a different surface with a different storage
-contract, so none of this page's fence/seam/anchoring machinery applies. The strokes live in the
-file's `<file>.draw` sidecar (a `DrawingDoc`, one page per source page), drawn in place on the
-preview tab by `app/src/preview/PageInk.tsx`, mapped through `core/src/drawing/pageInk.ts`. Full
-reference: [Drawing → Ink on images and PDFs, in place](../drawing/overview.md#ink-on-images-and-pdfs-in-place-appsrcpreviewpageinktsx).
+Images and PDFs take ink with the same toggle key and toolbar, but the strokes live in a `<file>.draw` sidecar next to the file, not in a fence. None of the fence behavior above applies. See [Drawing](../drawing/overview.md).
+
+## How it works
+
+### Where each piece lives
+
+| Piece | File |
+|---|---|
+| Overlay component, mounted by `Editor.tsx` for `.md` buffers (not `.settings`) | `app/src/editor/InkOverlay.tsx` |
+| Fence scan, read and write; free of CodeMirror and DOM imports | `core/src/drawing/drawBlocks.ts` |
+| Stroke payload codec (version byte, deflate, base64) | `core/src/drawing/inkCodec.ts` |
+| Stroke-to-markdown commit planner (cut at seams, choose the owning fence) | `app/src/editor/inkCommit.ts` |
+| Fence widget: hides the source, reserves height, drag handle | `app/src/editor/drawBlock.ts` |
+| Standalone height and ink bounds | `app/src/editor/drawBlockGeometry.ts` |
+| Endless scroll space while drawing | `app/src/editor/drawScrollSpace.ts` |
+| Pending-op address remapping across foreign edits | `app/src/editor/inkRemap.ts` |
+| Toolbar, shared with `.draw` pages | `app/src/drawing/Toolbar.tsx` |
+| Export rewrite of fences into pictures | `app/src/export/inkHtml.ts` |
+
+The keybindings `toggle-draw-mode`, `exit-draw-mode`, `ink-undo` and `ink-redo` are entries in `KEYBINDING_CATALOG` (`core/src/keybindings.ts`). `Editor.tsx` handles the toggle on the pane wrapper, so the key only affects the focused pane.
+
+### The fence format
+
+`drawFenceKind(info)` in `drawBlocks.ts` maps the normalized info string to `attached` (`draw`), `standalone` (`draw block`) or `null`. `scanDrawBlocks(text)` follows CommonMark fence rules: a fence opens with a run of backticks or tildes and closes only on the same character with a run at least as long. Only a three-backtick run can open a draw fence, and a fence's whole body is consumed in one step so a nested fence-looking line is content. Each result carries the fence's line range, its decoded strokes, `standalone`, and for an attached fence `attachedToLine`, the nearest non-blank line above it.
+
+The payload is `[version byte][deflated JSON header][deflated point stream]`, base64-encoded. Points are delta-coded per stroke as zigzag varints. A payload that fails to decode reads as no strokes.
+
+### Draw mode and the editor
+
+Entering draw mode reconfigures an `EditorView.editable` compartment to `false`. It is never `readOnly`, so programmatic dispatches such as the reload after an external file change and the autosave normalizer keep working. It also blurs the editor and turns on the overlay's live canvas, so a click cannot place a caret. A second compartment adds the scroll space. Toggling does not rebuild the editor view.
+
+Strokes are captured by the same state machine as a `.draw` page: pressure or velocity width, hold-to-straighten, smoothing on release. `drawStroke` in `core/src/drawing/render2d.ts` paints them.
+
+### Commit model
+
+A stroke is not a document transaction. Strokes and erases accumulate in a session op log and land as one transaction, debounced by `COMMIT_DELAY` (500 ms) and flushed on draw-mode exit, note switch, window blur and unmount. Every ink transaction carries `Transaction.addToHistory.of(false)`, so editor undo never touches ink. The ink undo stack lives inside `InkOverlay.tsx`; it does not use the `.draw` store, whose snapshots could restore a state from before your typing. It is cleared on draw-mode exit and on any document change the overlay did not make.
+
+A pending op must survive edits made during the debounce window by the daemon, the CLI, a second window or the autosave normalizer. An erase therefore carries a `StrokeRef`: a line number remapped through every document change (`inkRemap.ts`, called from the update listener) plus the stroke itself, from which the index is re-derived at flush. `planCommit`, `planErase`, `planStrokeEdit` and `planReorder` return a `Plan`, either `{ ok: true, text }` or `{ ok: false, reason }`. `flushNow` applies the ops against the live document before emptying the log, and an op that cannot be resolved against the document is dropped with a console warning, never applied to a guess.
+
+### Coordinates
+
+Strokes are captured in a logical space: x and y in the editor's reading column of `INK_LOGICAL_W` (680) units, painted at scale `contentDOM.width / 680` with the offset read from the live `contentDOM` rect on each repaint. What a fence stores depends on its kind, per the contract in `inkCommit.ts`:
+
+- Attached fences store ink relative to the top of the annotated block, in unscaled pixels for y and logical units for x. The top is the stable edge, because markdown grows downward.
+- Standalone fences store ink in the uniform logical space. Its widget top is the block boundary above it, and the ink keeps its distance below that boundary. Normalizing the ink to the fence's padding is the last resort, used only when the note has no edge to measure against.
+
+### Why a drawing cannot displace text
+
+A standalone fence reserves `standaloneHeight` (its lowest ink plus a pad) and an attached fence reserves nothing, so a standalone fence with prose below it would push the rest of the note down by every unit of ink added past its lowest ink. `inkCommit.ts` prevents this with three rules:
+
+- Ink inside the vertical span the note already occupies attaches, reserves zero height, and paints in the same absolute position. Ink over a standalone drawing that has text below it is written into the next attached band instead of into the drawing, so the drawing cannot grow.
+- Ink past the last content line becomes one standalone block at the end.
+- No fence with non-zero reserved height is ever written above existing content. The seam table is captured at pointer-down and spent up to `COMMIT_DELAY` later, so it can be stale; `trailingAnchor` checks its answer against the note's last content line and falls back to a normalized fence at the end.
+
+Regression coverage: `inkCommit.test.ts` (pure text-to-text plans, including the displacement block), `inkRemap.test.ts` (mapping against real `ChangeSet`s), the `InkOverlay` stories `EraseSurvivesALineShift`, `EraseSurvivesAPayloadRewrite` and `DrawingNeverDisplacesText` (the only place the commit path runs end to end), and `cli/test/notePageInk.test.ts` (an exported note with both fence kinds, at two column widths).
+
+### Export placement
+
+`inkifyMarkdown` in `inkHtml.ts` rasterizes each fence to a transparent PNG through `ExportDeps.drawingToPng` (with a `box` argument), the same seam a `.draw` export uses, then rewrites the markdown before it renders. An attached drawing wraps the annotated block in a `position: relative` container and places the picture absolutely at `width: 100%; height: <its own px>`, so x scales with the column and y stays unscaled, matching the editor. A standalone drawing is a block image at `width: 100%; height: auto`. A note with no ink exports unchanged.
+
+### Embeds and the server
+
+`kindForTarget` in `app/src/editor/embedSpec.ts` returns `null` for the `.draw` extension, so `![[Sketch.draw]]` is not an embed and stays as plain text. A stroke commit is an ordinary note write, classified, cached and indexed like typing, and a note's ink needs no handling on rename, move or delete beyond the note itself.
+
+Source: `core/src/drawing/drawBlocks.ts`, `core/src/drawing/inkCodec.ts`, `core/src/drawing/model.ts`, `core/src/drawing/render2d.ts`, `core/src/keybindings.ts`, `app/src/editor/InkOverlay.tsx`, `app/src/editor/inkCommit.ts`, `app/src/editor/inkRemap.ts`, `app/src/editor/drawBlock.ts`, `app/src/editor/drawBlockGeometry.ts`, `app/src/editor/drawScrollSpace.ts`, `app/src/editor/embedSpec.ts`, `app/src/export/inkHtml.ts`, `app/src/Editor.tsx`

@@ -1,254 +1,140 @@
-# Self-Update (git-based)
+# Self-update
 
-The bundled Bismuth app can update itself in place. When the installed
-`/Applications/Bismuth.app` is behind `origin/main`, one click pulls the latest source, rebuilds
-the app, and swaps the `.app` bundle. The mechanism uses git and a local rebuild because the build
-records the local clone it came from.
+A Bismuth app built from source can update itself in place. When the clone it was built from is behind `origin/main`, a banner offers one click that pulls the latest source, rebuilds the app, swaps it into `/Applications` and relaunches it. This page is for anyone who installed with `bun run build:app` ([Install and run](install.md)); an app run from `bun run dev:browser` has no updater.
 
-This page covers the full pipeline: how a build records its origin, how the backend detects + applies updates, how the frontend banner drives it, the Tauri/env plumbing that lets a detached script swap the bundle after the app quits, the **on-launch background install** of the bundled `@bismuth/daemon` service, and the **opt-in app self-update**.
-
-> **Unavailable outside a bundled source build.** In `bun run dev:browser` (or any build with no
-> `build-origin.json` / no `BISMUTH_APP_PATH`), `GET /update/status` returns `available:false`
-> with a `reason`, and the banner does not appear.
-
----
-
-## The big picture
-
-```
-build time   app/scripts/build-bismuth-tools.ts
-             └─ writes build-origin.json { repoRoot, sha, builtAt } into the tools resource
-
-run time     app/src/updateCheck.ts  ──poll──> GET /update/status   (core/src/selfUpdate.ts)
-             │                                   └─ git fetch + builtSha..origin/main → UpdateStatus
-             ▼
-             app/src/UpdateBanner.tsx  (shown when available)
-               │ click UPDATE
-               ├─ POST /update/apply          → startUpdate()  (returns immediately)
-               │     └─ git pull --ff-only → bun install --frozen-lockfile → bun run tauri build --bundles app
-               │        └─ spawnRelauncher() writes + nohup-spawns a detached swap script
-               ├─ poll GET /update/progress   → phase: pulling → building → ready
-               └─ on "ready": invoke Tauri `quit_app`
-                            ▼
-             detached relauncher waits for the app pid to die, ditto-swaps the .app, reopens it
+```text
+Bismuth update available — 3 commits behind          [ update ]  [x]
 ```
 
----
+## Update the app
 
-## `build-origin.json` — where the build came from
+The app checks for updates at launch and every 5 minutes after that. To update:
 
-`app/scripts/build-bismuth-tools.ts` runs as part of `tauri build` (wired into `beforeBuildCommand`). After compiling the `bismuth` + `bismuth-mcp` binaries and staging `docs/`, it records the build provenance:
+1. Click **update** in the banner at the top of the window, or run **Update Bismuth…** from the command palette.
+2. Wait while the button shows **Pulling…**, then **Building… (a few min)**. The build takes several minutes, and the app stays usable until it finishes.
+3. The app quits when the build is ready, and a helper relaunches the new copy. Your tabs and vault are unchanged.
 
-```ts
-const originRepoRoot = canonicalRepoRoot(repoRoot);
-writeFileSync(
-  join(outDir, "build-origin.json"),
-  JSON.stringify({ repoRoot: originRepoRoot, sha, builtAt: new Date().toISOString() }, null, 2),
-);
+Dismiss the banner with the **x** button; it comes back on the next launch. The palette command answers with a toast: it says `Bismuth is up to date` when nothing is pending, and reports why when it cannot check (see the next section).
+
+An update needs the same tools as the original build: `git`, `bun` and Rust. Keep the clone you built from on disk, because the app updates by pulling that clone. A fast-forward pull fails if you have local commits there that `origin/main` does not contain.
+
+## Turn on automatic updates
+
+Set `update.autoUpdate` to `true` in the vault's `.settings`, and the app applies a pending update in the background and relaunches without a click. It is off by default.
+
+```yaml
+update:
+  autoUpdate: true
 ```
 
-- `repoRoot` — the absolute path of the **stable main-worktree clone**, the directory the self-updater will `git pull --ff-only origin main` + rebuild in. `canonicalRepoRoot()` resolves this via `git worktree list --porcelain` (which always lists the main worktree first), **not** the checkout the build ran from. This matters when a build runs inside an ephemeral `.claude/worktrees/*` checkout: baking that path would point self-update at a directory that disappears when the worktree is cleaned up, leaving the installed app reporting "update source unavailable" forever. Compilation still ships the current checkout's code; only the recorded self-update origin is canonicalized. Falls back to the build checkout path if git is unavailable / not a repo.
-- `sha` — the `git rev-parse HEAD` at build time (`""` if git failed).
-- `builtAt` — ISO timestamp.
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `update.autoUpdate` | boolean | `false` | Apply an available update at launch and relaunch when the rebuild is ready |
 
-The file is staged at `resources/bismuth-tools/build-origin.json`, the same resource dir the machine-wide install reads (see [machine-wide install](../mcp/overview.md)). At runtime the core sidecar receives that dir as `BISMUTH_INSTALL_SRC`, and `readBuildOrigin()` reads `${BISMUTH_INSTALL_SRC}/build-origin.json`. No `BISMUTH_INSTALL_SRC` or no file → `readBuildOrigin()` returns `null` → the updater self-disables.
+Automatic updating runs at most once per session. If an attempt ends in an error, a later check tries again. A relaunch still quits your app, so leave this off if you want to choose when that happens.
 
----
+## Why does the banner not appear?
 
-## Backend: `core/src/selfUpdate.ts`
+The banner appears only when an update is available. These states hide it, and the palette command reports them in a toast:
 
-Three exported functions back the three `/update/*` routes. None ever throw — failures surface as an `error` phase or a `reason` string. (Full route shapes: [HTTP reference](../api/http-reference.md).)
+| Toast text | Cause | Fix |
+|---|---|---|
+| `Bismuth is up to date` | Your build matches `origin/main` | None |
+| `This build can't self-update (not built from source)` | A dev run, or a build without origin information | Install with `bun run build:app` |
+| `Can't read the update source — grant Bismuth Files & Folders access in System Settings` | macOS blocks the app from the clone, which is common under `~/Documents` | Grant Files and Folders access to Bismuth |
+| `No upstream configured to update from` | The clone has no `origin/main` | Add the remote and fetch |
+| `Update source unavailable — couldn't check for updates` | `git` is missing, the clone moved, or it is not a git repository | Restore the clone, or rebuild from a current one |
 
-### `getUpdateStatus()` → `UpdateStatus` (`GET /update/status`)
+Being offline is not an error: the check reports against the last `origin/main` it fetched.
+
+## What if an update fails?
+
+A failed update leaves the installed app untouched and shows the reason in a toast.
+
+| Message | Meaning | Fix |
+|---|---|---|
+| `the Bismuth repo has uncommitted changes — won't overwrite` | The clone is dirty | Commit or stash the changes |
+| `git pull failed (diverged or conflict)` | The clone has commits that `origin/main` lacks | Rebase or reset the clone by hand |
+| `bun install failed` | A pulled dependency did not resolve | Read the log, then run `bun install` in the clone |
+| `build failed` | The Tauri build failed | Read the log |
+
+The pull, install and build failure messages name the full log, `bismuth-update-build.log` in the system temp directory (under `/var/folders/` on macOS). The helper that swaps the app writes its own `bismuth-update.log` in the same directory. If the swap itself fails, the helper restores your previous app, so you are never left without one.
+
+## What happens to the daemon and to permissions?
+
+The daemon updates with the app. The new app carries a new daemon binary, which the app copies into place on its next launch; there is no separate daemon update. After the install settles on launch, the app runs the [doctor](doctor.md)'s safe repairs and logs `bismuth doctor: fixed <n>, <d> waiting for consent`. Repairs that delete files wait for the **fix** button in the launch toast, or for `bismuth doctor --fix`. Set `BISMUTH_NO_BOOT_DOCTOR=1` to skip the launch pass.
+
+Updates keep your macOS folder permissions only if you signed builds with a stable certificate; see [macOS folder permissions surviving updates](install.md#macos-folder-permissions-surviving-updates).
+
+## How it works
+
+The pipeline spans the build, the backend, the frontend and the Tauri shell.
+
+```text
+build time   build-bismuth-tools.ts writes build-origin.json { repoRoot, sha, builtAt }
+
+run time     updateCheck.ts ──poll──> GET /update/status        (selfUpdate.ts)
+                │                        └─ git fetch, then builtSha..origin/main
+                ▼
+             UpdateBanner.tsx  ── click ──> POST /update/apply  (returns at once)
+                                              git pull --ff-only
+                                              bun install --frozen-lockfile
+                                              bun run tauri build --bundles app
+                                              spawn the detached relauncher
+                poll GET /update/progress: pulling, building, ready
+                on ready: invoke the Tauri command quit_app
+                                              ▼
+             relauncher waits for the app pid, swaps the .app with ditto, reopens it
+```
+
+### Build origin
+
+`app/scripts/build-bismuth-tools.ts` runs inside `tauri build` and writes `build-origin.json` with `repoRoot`, `sha` (the `git rev-parse HEAD` at build time, or an empty string) and `builtAt` into the tools resource. `repoRoot` is the main worktree, resolved from `git worktree list --porcelain`, not the checkout the build ran in; a build made inside a disposable `.claude/worktrees/*` checkout would otherwise point the updater at a folder that disappears. The sidecar receives the resource directory as `BISMUTH_INSTALL_SRC`, and `readBuildOrigin()` reads the file from it. No variable or no file means no updater.
+
+### Status
+
+`getUpdateStatus()` in `core/src/selfUpdate.ts` never throws. It returns:
 
 ```ts
 interface UpdateStatus {
-  available: boolean;
-  behind: number;          // commits builtSha (fallback: HEAD) is behind origin/main
-  localSha: string | null;
-  remoteSha: string | null;
-  builtSha: string | null; // from build-origin.json
-  dirty: boolean;          // working tree has uncommitted changes
-  reason?: string;         // why unavailable, when applicable
+  available: boolean
+  behind: number          // commits builtSha is behind origin/main
+  localSha: string | null
+  remoteSha: string | null
+  builtSha: string | null // from build-origin.json
+  dirty: boolean          // uncommitted changes in the clone
+  reason?: string         // why unavailable
 }
 ```
 
-Steps (all best-effort, injectable `GitRunner` for tests):
+The steps are: read the origin (`reason: "not-a-source-build"` without it), probe the clone with `git rev-parse --is-inside-work-tree`, run `git fetch --quiet origin main` (20-second limit, failure tolerated), resolve `origin/main` (`reason: "no-upstream"` on failure), then count `git rev-list --count <baseRev>..origin/main`. A failed probe is classified by `classifyGitFailure()` into `git-not-found`, `access-denied`, `repo-missing` or `not-a-git-repo`.
 
-1. `readBuildOrigin()` — no origin/`repoRoot` → `{ available:false, reason:"not-a-source-build" }`.
-2. `git -C <repoRoot> rev-parse --is-inside-work-tree` — fails → `classifyGitFailure()` inspects the spawn result/stderr and returns one of four reasons: `git-not-found` (the spawn itself failed — no `git` on `PATH`), `access-denied` (macOS TCC permission denial — the common case for a Finder-launched app reaching a dev clone under `~/Documents`), `repo-missing` (stderr mentions "no such file or directory"), or `not-a-git-repo` (the fallback, when nothing more specific matched).
-3. `git fetch --quiet origin main` (best-effort, 20 s; offline still reports against the last-known remote).
-4. `git rev-parse origin/main` — fails → `reason:"no-upstream"`.
-5. `localSha = git rev-parse HEAD`, `remoteSha = origin/main`, `behind = git rev-list --count <baseRev>..origin/main` where `baseRev = builtSha || 'HEAD'` (see below), `dirty = git status --porcelain` non-empty.
-6. Return `{ available: behind > 0, behind, localSha, remoteSha, builtSha, dirty }`.
+`behind` counts from the sha the installed build was made from (`baseRev = builtSha || 'HEAD'`), not from the clone's current HEAD. The clone is often the one you commit from, so after a local commit and push its HEAD already equals `origin/main` while the installed app is still old; counting from HEAD would report no update. `HEAD` is the fallback when the built sha is missing from the clone.
 
-**`behind` is measured from the installed build's sha, not the clone's live HEAD.** The build-source clone is often the same clone the developer commits from, so after a local commit+push the clone's HEAD advances to `origin/main` while the running `.app` is still at whatever sha it was built from — a HEAD-based count would then report `behind:0` (no update) even though the installed app is stale. `baseRev = builtSha || 'HEAD'`, falling back to `HEAD` only when `builtSha` is missing/unresolvable in this clone (e.g. shallow/GC'd) — for a normal user whose clone matches their build, `builtSha === HEAD` and the result is unchanged.
+### Apply
 
-### `startUpdate()` → `UpdateProgress` (`POST /update/apply`)
+`startUpdate()` claims the slot synchronously (a second concurrent call returns the current state), validates the build, and starts `runPipeline` without awaiting it, so `POST /update/apply` returns at once. Validation requires a build origin and `BISMUTH_APP_PATH`, an available update, and a clean clone. The pipeline runs three commands with these time limits:
 
-Validates, sets `phase:"pulling"`, and fires the pipeline **without awaiting** so the HTTP request returns immediately; the frontend then polls progress. Idempotent while a run is in flight (returns the current `state` if already `pulling`/`building`).
+1. `git pull --ff-only origin main` in the clone (120 seconds).
+2. `bun install --frozen-lockfile` in the clone (300 seconds). A plain `bun install` could rewrite the committed `bun.lock` and leave the clone dirty, which would block the next update.
+3. `bun run tauri build --bundles app` in `app/` (900 seconds). `--bundles app` skips the dmg, because only the `.app` is swapped and dmg packaging is the flakiest step. If a signing identity exists (see [install](install.md#macos-folder-permissions-surviving-updates)) it is passed as `APPLE_SIGNING_IDENTITY`.
 
-Guard rails before kicking off:
-- Not a bundled source build (no `build-origin.json` or no `BISMUTH_APP_PATH`) → `phase:"error"`, `"self-update unavailable (not a bundled source build)"`.
-- `getUpdateStatus().available === false` → `phase:"idle"`, `"already up to date"`.
-- `dirty` working tree → `phase:"error"`, `"the Bismuth repo has uncommitted changes — won't overwrite"`.
+`bun` is found with `Bun.which` over `buildPath()`: `claudeLookupPath()` from `core/src/claudeWhich.ts` plus `~/.cargo/bin`. A Finder-launched sidecar inherits only the minimal launchd `PATH`, so git, bun and cargo would not resolve otherwise. `GET /update/progress` returns the in-memory `{ phase, message?, log? }`, where `phase` is `idle`, `pulling`, `building`, `ready` or `error` and `log` is the last 2000 characters of the failing step. Every command, with its full output and exit code, goes to `bismuth-update-build.log`, truncated at the start of each run.
 
-The pipeline (`runPipeline`), all deps (`git`, `proc`, `signingIdentity`, `spawnRelauncher`, `logPath`) injectable for tests:
-1. `git pull --ff-only origin main` (120 s). Non-zero (diverged/conflict) → `phase:"error"` with the stderr tail.
-2. `phase:"building"`, `"installing dependencies…"`, then `bun install --frozen-lockfile` in `<repoRoot>` (300 s). `--frozen-lockfile` matters: `bun.lock` is committed, and a plain `bun install` could rewrite it, leaving the clone dirty — and `startUpdate()` refuses to run against a dirty clone, so the *next* update would be blocked. Non-zero → `phase:"error"`, `"bun install failed — full log: <path>"` (e.g. a pulled dependency bump that `bun install` hasn't resolved yet, like `Could not resolve: "heic-convert"`).
-3. `phase:"building"`, `"rebuilding Bismuth (this takes a few minutes)…"`, then `bun run tauri build --bundles app` in `<repoRoot>/app` (900 s). **`--bundles app` deliberately skips the `.dmg`**: self-update only swaps the `.app`, and the dmg packaging step (`bundle_dmg.sh`) is intermittently flaky, so building it would only add a failure mode. (`bun` is resolved via `Bun.which("bun", { PATH })` because in the compiled sidecar `process.execPath` is the sidecar binary, not bun.)
-4. On build success: `spawnRelauncher(repoRoot, appPath)`, then `phase:"ready"`, `"update ready — relaunching…"`.
+### Relauncher
 
-Every step's command line + full stdout/stderr/exit code is appended to a **persistent log**, `join(tmpdir(), "bismuth-update-build.log")`, truncated at the start of each `runPipeline` run (writing to it never throws into the pipeline). On any step's failure the `message` names that path, so a build failure survives past the in-memory banner's short tail.
+`spawnRelauncher()` writes a one-shot bash script to the temp directory and starts it with `nohup`, so it reparents to launchd and outlives the sidecar. The script waits up to 120 seconds for `BISMUTH_APP_PID` to exit, moves the installed app to a `.bak-<n>` copy beside it, copies the new `.app` in with `/usr/bin/ditto`, deletes the backup on success, restores it on failure, then runs `open` on the app. It deletes itself on exit.
 
-`buildPath()` is `claudeLookupPath()` (`core/src/claudeWhich.ts`) plus `~/.cargo/bin`. That is the inherited `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, the installed nvm node `bin` dirs (newest first), and the system dirs `/usr/bin:/bin:/usr/sbin:/sbin`, with `~/.cargo/bin` appended last — a Finder-launched sidecar inherits only the minimal launchd `PATH`, so git/bun/cargo wouldn't otherwise resolve for a from-source rebuild.
+### Frontend
 
-### `getUpdateProgress()` → `UpdateProgress` (`GET /update/progress`)
+`app/src/updateCheck.ts` holds the status signal. It retries the first check every 4 seconds for up to 60 tries while the sidecar is still starting, then re-checks every 5 minutes. `applyUpdateAndRelaunch()` is the shared pipeline behind the banner button, the palette command and automatic updating: it posts `/update/apply`, polls `/update/progress` every 2 seconds, and on `ready` imports `@tauri-apps/api/core` and invokes `quit_app`. Outside Tauri that call fails silently. On `idle` it re-checks the status; on `error` it returns the message. `maybeAutoUpdate()` runs after each successful check when `settings.update.autoUpdate` is true and an update is available, guarded by a once-per-session flag that resets after an error or an idle result. `app/src/UpdateBanner.tsx` renders the bar and the phase labels.
 
-Returns the in-memory `state`:
+### Tauri shell
 
-```ts
-type UpdatePhase = "idle" | "pulling" | "building" | "ready" | "error";
-interface UpdateProgress { phase: UpdatePhase; message?: string; log?: string }
-```
+When the bundled app spawns its sidecar, `app/src-tauri/src/lib.rs` sets three variables the updater depends on: `BISMUTH_INSTALL_SRC` (the tools resource, which holds `build-origin.json`), `BISMUTH_APP_PATH` (the running `.app`, found by walking up from the executable) and `BISMUTH_APP_PID`. The `quit_app` command calls `app.exit(0)`. In dev the app is not inside a `.app` and the sidecar is not spawned, so none of the three is set and the status reports `not-a-source-build`.
 
-`log` holds the tail (≤2000 chars) of the failing step's combined stderr+stdout; `message` additionally names the full persistent log path (`join(tmpdir(), "bismuth-update-build.log")`) for any step's failure.
+### Daemon install on launch
 
-### The detached relauncher
+On every boot the sidecar calls `installDaemonFromBundle()` in `core/src/daemonInstall.ts` without awaiting it. With no `BISMUTH_DAEMON_BUNDLE` it does nothing. Otherwise it compares the bundled binary's `size:mtime` with the marker `~/.bismuth/.daemon-installed`; on a match it only re-ensures the service, and on a mismatch it copies the binary to `~/.bismuth/bin/bismuth-daemon` through a temp file and an atomic rename (a direct copy fails with `ETXTBSY` while the old service runs) and rewrites the marker. `runSetup()` runs `<bin> --ensure-installed`, which registers launchd `com.bismuth.daemon` or systemd `bismuth-daemon`. It never throws, so a failed daemon install cannot block the app. `POST /daemon/update` calls the same `runSetup()`.
 
-`spawnRelauncher()` writes a one-shot bash script (`bismuth-update-<pid>-<n>.sh`) to `tmpdir()` and launches it with `nohup … &` so it **reparents to launchd and outlives the sidecar** (which dies when the app quits). The script:
-
-```bash
-#!/bin/bash
-set -e
-trap 'rm -f "$0"' EXIT          # the script deletes itself on exit
-NEW="<repoRoot>/app/src-tauri/target/release/bundle/macos/Bismuth.app"
-DEST="<BISMUTH_APP_PATH>"          # the running /Applications/Bismuth.app
-APP_PID="<BISMUTH_APP_PID>"
-[[ -d "$NEW" ]] || exit 1
-# wait up to 120s for the app to actually quit
-if [[ -n "$APP_PID" ]]; then
-  for _ in $(seq 1 240); do kill -0 "$APP_PID" 2>/dev/null || break; sleep 0.5; done
-fi
-sleep 1
-BACKUP="$DEST.bak-$$"
-if [[ -e "$DEST" ]]; then mv "$DEST" "$BACKUP"; fi
-if /usr/bin/ditto "$NEW" "$DEST"; then
-  rm -rf "$BACKUP"
-else
-  rm -rf "$DEST"
-  if [[ -e "$BACKUP" ]]; then mv "$BACKUP" "$DEST"; fi
-  exit 1
-fi
-/usr/bin/open "$DEST"
-```
-
-It waits on the app's pid, then swaps the bundle **atomically with a backup**: it moves the existing `DEST` aside to `$DEST.bak-$$` first, `ditto`-copies the freshly built `.app` into place, and only deletes the backup once `ditto` succeeds. If `ditto` fails, it removes the partial copy and restores the backup from `$DEST.bak-$$`, so a failed swap can never leave the user with no app at all. Its log goes to `join(tmpdir(), "bismuth-update.log")` — the per-user `TMPDIR` on macOS (under `/var/folders/…`), not `/tmp`.
-
----
-
-## Frontend: detect → banner → apply
-
-### `app/src/updateCheck.ts` — auto-check with boot retry
-
-A module-level singleton that polls `GET /update/status` into an `updateStatus` signal:
-
-- **Boot retry:** the sidecar may still be starting when the webview loads, so the first check retries every `BOOT_RETRY_MS` (4 s), up to `BOOT_MAX_TRIES` (60 ≈ 4 min), until it answers.
-- **Periodic:** once reachable, re-checks every `PERIODIC_MS` (5 min).
-- `check()` swallows fetch errors (returns `false` so a not-yet-reachable backend isn't surfaced). `recheckUpdate()` forces an immediate re-check (used after an apply no-ops).
-
-In dev / non-source builds the backend returns `available:false`, so this is a harmless no-op.
-
-**Opt-in app auto-update (`update.autoUpdate`, default off).** Every successful `check()` also calls `maybeAutoUpdate()`. When the setting is on **and** the just-fetched status is `available`, it drives the exact same pipeline as the banner button — without any click:
-
-1. `POST /update/apply` (`api.applyUpdate()`); if it returns `phase:"error"`, bail (reset the once-guard so a later check can retry).
-2. Poll `GET /update/progress` (`api.updateProgress()`) every 2 s; transient poll failures are ignored (keep polling).
-3. On `phase:"ready"` → dynamically `import("@tauri-apps/api/core")` and `invoke("quit_app")` (the detached relauncher then swaps the `.app` + reopens). Outside Tauri the import/invoke is swallowed.
-4. On `phase:"error"` / `phase:"idle"` → stop polling and reset the once-guard so a later check retries.
-
-It runs at most once per session (a module-level `autoStarted` flag, reset only on the bail/error/idle paths). When the setting is **off** (the default) `maybeAutoUpdate()` returns immediately and the manual `UpdateBanner` path below is unchanged. It's a no-op in dev / non-source builds because the backend reports `available:false`.
-
-### `app/src/UpdateBanner.tsx` — the slim top bar
-
-Shown only when `updateStatus()?.available` and not dismissed. Reads `behind` to render "Bismuth update available — N commit(s) behind". The **UPDATE** button's `update()` calls the same shared `applyUpdateAndRelaunch()` pipeline described above (`app/src/updateCheck.ts`), reflecting each `phase` in the button ("Pulling…" → "Building… (a few min)" → "Relaunching…"):
-
-1. `result:"relaunching"` (the pipeline reached `phase:"ready"` and invoked `quit_app`) → return; the detached relauncher takes over.
-2. `result:"error"` → toast `message`, re-enable the button.
-3. `result:"up-to-date"` (already `phase:"idle"`) → re-enable the button; the pipeline itself already called `recheckUpdate()`.
-
-Inside the shared pipeline, on `phase:"ready"` it dynamically imports `@tauri-apps/api/core` and `invoke("quit_app")` so the detached relauncher can swap the `.app` bundle + reopen it. If that import/invoke fails (e.g. not in Tauri, or the app already quit), the failure is silently swallowed — there is no fallback toast; the pipeline still resolves `{result:"relaunching"}`.
-
----
-
-## On-launch daemon install + opt-in app self-update
-
-The daemon updates **with the app** — there is no separate git-pull daemon auto-update. The bundled `@bismuth/daemon` runtime ships baked into the `.app` (staged at `resources/daemon`); a fresh app build means a fresh daemon binary, copied into place on the next boot.
-
-### 1. The `@bismuth/daemon` service — `core/src/daemonInstall.ts`
-
-On every server boot the sidecar fires `installDaemonFromBundle()` (without awaiting) from `core/src/server.ts`:
-
-```ts
-// Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
-// running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
-void installDaemonFromBundle();
-```
-
-There is **no `BISMUTH_APP_PATH` gate and no git pull** — it's a bundle-copy + service-register, not a self-update of the daemon's source:
-
-- No `BISMUTH_DAEMON_BUNDLE` env (dev / standalone) → no-op. Otherwise it reads the bundled binary at `${BISMUTH_DAEMON_BUNDLE}/bin/bismuth-daemon`.
-- **Version-gated by a marker** (`~/.bismuth/.daemon-installed`, holding the source binary's `size:mtime`): if the marker matches and the installed binary exists, it just re-ensures the service (`runSetup()`) and returns; otherwise it copies the binary to `~/.bismuth/bin/bismuth-daemon` (via a temp file + atomic `rename`, to dodge `ETXTBSY` when the running service holds the old inode), rewrites the marker, and runs `runSetup()`.
-- `runSetup()` runs `<bin> --ensure-installed`, which writes the launchd plist / systemd unit pointing at that stable installed path (service ids: launchd `com.bismuth.daemon`, systemd `bismuth-daemon`). `SetupResult` is `{ ok, binPath, error? }`.
-- `installStatus()` shells out to `<bin> --status` → `InstallStatus = { installed, running, binPath }`.
-- Best-effort throughout: every function catches and never throws, so a failed daemon install can never block the app.
-
-The daemon is the in-repo `@bismuth/daemon` workspace (`daemon/src/**`) — one machine process that multiplexes per-vault brains. Machine identity (device-id, devices.json, owner.json, daemon.pid, logs, vaults.json) lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session-id, `identity.md`) lives under `<vault>/.daemon`. There is **no `daemon.autoUpdate`/`daemon.home` setting** (the schema `daemon` object has four keys — `enabled`, `inboxRetentionDays`, `backend`, `inheritUserMcp` — none of them a home directory or an update toggle) and **no git-pull self-update path** for it. The manual equivalent of the boot install is `POST /daemon/update`, which also just calls `runSetup()` (re-registers the service); it does not pull source.
-
-### Doctor repairs after an update
-
-Once the machine-wide install settles on boot, core runs the [doctor](doctor.md)'s **safe** repairs (stale links, a service unit written under an old home, orphaned files) and logs `bismuth doctor: fixed <n>, <d> waiting for consent`. Destructive repairs are never applied automatically: they wait for the launch toast's **fix** button (or `bismuth doctor --fix`). Dev runs and `BISMUTH_NO_BOOT_DOCTOR=1` skip the boot pass.
-
-### 2. The Bismuth app itself — `update.autoUpdate`
-
-The app's own background self-update lives on the **frontend**, driven by `maybeAutoUpdate()` in `app/src/updateCheck.ts` (detailed above). It is **opt-in via `update.autoUpdate`** (default `false`): when on and a status check reports an available update, it auto-applies the same `POST /update/apply` → poll-progress → `quit_app` pipeline and relaunches when the rebuild is ready; when off (the default), nothing happens automatically and the manual `UpdateBanner` is the only path. It's a no-op in dev / non-source builds because the backend reports `available:false`.
-
----
-
-## Tauri plumbing: `app/src-tauri/src/lib.rs`
-
-The env the self-updater depends on is injected here when the bundled app spawns its core sidecar (`start_backend`):
-
-- **`BISMUTH_INSTALL_SRC`** — set to the bundled `resources/bismuth-tools` dir (which contains `build-origin.json`). Also drives the machine-wide install. `readBuildOrigin()` reads from here.
-- **`BISMUTH_APP_PATH`** — the running `…/Bismuth.app` path, derived from `current_exe()` by walking ancestors for the `.app` extension (`running_app_path()`). `None` in dev (the binary isn't inside a `.app`), which self-disables the updater.
-- **`BISMUTH_APP_PID`** — `std::process::id()` of the Tauri app, so the relauncher knows which pid to wait on.
-
-The **`quit_app`** Tauri command is a one-liner registered in the invoke handler:
-
-```rust
-#[tauri::command]
-fn quit_app(app: tauri::AppHandle) { app.exit(0); }
-```
-
-The frontend invokes it once `phase:"ready"`; the app exits, the detached relauncher (waiting on `BISMUTH_APP_PID`) swaps the bundle and reopens it.
-
----
-
-## Why it self-disables in dev / non-source builds
-
-| Condition | Effect |
-|---|---|
-| `bun run dev:browser` | The Tauri setup only spawns its own backend when `!cfg!(debug_assertions)`; the dev backend has no `BISMUTH_APP_PATH`/`BISMUTH_INSTALL_SRC` injected → `getUpdateStatus()` → `reason:"not-a-source-build"`. |
-| Build with no `build-origin.json` | `readBuildOrigin()` → `null` → `reason:"not-a-source-build"`. |
-| `repoRoot` isn't a git checkout, `git` isn't on `PATH`, or (commonly, on a Finder-launched app reaching a dev clone under `~/Documents`) macOS TCC denies access | `reason` is one of `not-a-git-repo` / `git-not-found` / `repo-missing` / `access-denied`, per `classifyGitFailure()` above. |
-| No `origin/main` upstream | `reason:"no-upstream"`. |
-| Dirty working tree | Status still reports `available`, but `POST /update/apply` refuses (`"won't overwrite"`). |
-
----
-
-## Related
-
-- [Machine-wide install (CLI + MCP)](../mcp/overview.md) — the sibling install path that shares `BISMUTH_INSTALL_SRC` and the bundled tools resource.
-- [HTTP API reference](../api/http-reference.md) — exact shapes of `/update/status`, `/update/apply`, `/update/progress`, `/bismuth/install`.
-- [Install & run](install.md) — building the bundled app from source.
-
-Source: `core/src/selfUpdate.ts`, `core/src/claudeWhich.ts`, `app/src/updateCheck.ts`, `app/src/UpdateBanner.tsx`, `app/src-tauri/src/lib.rs`, `app/scripts/build-bismuth-tools.ts`, `core/src/server.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `app/src/api.ts`
+Source: `core/src/selfUpdate.ts`, `core/src/claudeWhich.ts`, `core/src/daemonInstall.ts`, `core/src/server.ts`, `core/src/doctor/routes.ts`, `core/src/schema/settingsSchema.ts`, `app/src/updateCheck.ts`, `app/src/UpdateBanner.tsx`, `app/src/App.tsx`, `app/src/api.ts`, `app/src-tauri/src/lib.rs`, `app/scripts/build-bismuth-tools.ts`

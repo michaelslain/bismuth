@@ -1,573 +1,131 @@
-# Themes & Palette System
+# Themes and fonts
 
-This page covers Bismuth's named themes, the `appearance` settings that select them, the `:root` CSS-variable projection, graph accents, and editor fonts. Use it when choosing a token, wiring a themed component, investigating a color mismatch, or adding a fifth theme (see [Adding a New Theme](#adding-a-new-theme)). The [Settings Reference](reference.md) covers the rest of `appearance` and every other setting.
-
-A theme supplies the app's colors for canvas, surfaces, borders, text, accents, graph nodes, terminal, and category swatches from one place, with no per-color overrides. `core/src/theme/tokens.ts` owns those definitions so core consumers — Google Calendar color mapping, drawing paper and ink, and the settings-schema enum — can import them, and core cannot import `app` (the dependency runs app → core). `app/src/themes.ts` is a thin, byte-identical re-export so the frontend keeps its `"./themes"` import path; `app/src/settingsCssVars.ts` projects its tokens into CSS variables.
-
-The ASCII redesign defines four themes in `bismuth-design/ascii/design-system/tokens/colors.css`: `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), and `riso` (cream + indigo, light).
-
----
-
-## Theme Names
-
-The setting is `appearance.theme` in `.settings` (the vault's hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:34`). The schema enum lists the 4 built-in names (the first is the default) plus the vault's valid custom themes (`settingsSchemaFor` in `core/src/schema/themedSettingsSchema.ts` extends the enum per vault).
+Bismuth paints the whole app, the graph and the terminal from one colour theme, and sets type in two font families: a monospace face for the interface and a proportional face for your writing.
+You choose both with three keys in `.settings`: `appearance.theme`, `appearance.uiFont` and `appearance.proseFont`.
+To change a single colour or size instead, see [design tokens](tokens.md); to build a whole theme, see the [custom themes guide](../guides/custom-themes.md).
 
 ```yaml
 appearance:
-  theme: ink   # default
+  theme: paper
+  uiFont: Monaspace Neon
+  proseFont: Lora
 ```
 
-| Setting value | Display name | Light/Dark |
-|---|---|---|
-| `ink` | Ink *(default)* | Dark — "Riso, but dark": warm paper ink on charcoal |
-| `paper` | Paper | Light — the light counterpart to Ink, same inks |
-| `cathode` | Cathode | Dark — hot phosphor terminal, high-contrast, glows |
-| `riso` | Riso | Light — cream paper + indigo ink, print-flat, no glow |
+The app repaints as soon as you save; no reload.
 
-The `THEME_NAMES` array in `core/src/theme/tokens.ts` is the ordered authoritative list; the first entry (`ink`) is both the schema default and the `DEFAULT_THEME` constant used by `resolveTheme()` when an unknown name is provided. The display names above are the authoritative `THEME_LABELS` map in the same file (no decorative separators). (`app/src/themes.ts` re-exports `THEME_NAMES`, `THEME_LABELS`, and `DEFAULT_THEME`, so the frontend's `"./themes"` import path is unchanged.)
+## Pick a theme
 
-**Legacy names**: `.settings` files saved under the pre-redesign 12-theme system (e.g. `oxide-duotone`, `indigo-oxide`) are unknown names to `resolveTheme()` and silently fall back to `ink` — no migration or error, just the same "unknown name → default" behavior that has always backed `resolveTheme()`.
-
----
-
-## ColorTokens Interface
-
-Every theme resolves to a `ColorTokens` object. The base palette (first 8 fields) is required; everything after it is an **optional explicit override** — each documents the CSS var it feeds, and `settingsCssVars` prefers the explicit value when a theme sets it, falling back to its original color-mix derivation otherwise. All four ASCII themes set every optional field explicitly.
-
-```ts
-interface ColorTokens {
-  background: string;   // canvas / --bg
-  foreground: string;   // text / --fg
-  neutral: string;      // muted text + graph edges / --text-muted
-  accent: string;       // --accent
-  border: string;       // --border
-  surface: string;      // --surface-1 / --panel
-  surface2: string;     // --surface-2
-  accentPalette: string[]; // graph node ramp (5 entries: rose, violet, blue, teal, green)
-  isLight?: boolean;     // true for paper + riso; drives light/dark branching
-
-  // Structural surfaces
-  rail?: string; editor?: string; surface3?: string; borderSoft?: string; faint?: string;
-  hoverBg?: string; popBg?: string; popBgStrong?: string; scrimBg?: string; overlayBg?: string;
-  labelHalo?: string; graphBg?: string; graphEdge?: string; nodeCold?: string; nodeSelf?: string;
-  vignetteEdge?: string; termBg?: string; termFg?: string;
-  glowAccent?: string; glowText?: string;   // bloom is a THEME decision — only cathode glows
-  accentSoft?: string; onAccent?: string;
-
-  // Category hues (Bases statuses, calendar categories, map pins, chart series) — CATEGORICAL,
-  // distinct from the semantic danger/success/warning below.
-  categoryTeal?: string; categoryBlue?: string; categoryViolet?: string;
-  categoryGreen?: string; categoryGold?: string; categoryRose?: string;
-
-  // Semantic status overrides — each ASCII theme sets these explicitly.
-  danger?: string; success?: string; warning?: string;
-}
-```
-
-`--accent-purple` is **not** its own `ColorTokens` field: it equals `accentPalette[1]` in every scope, so the existing `palette[1]` derivation in `settingsCssVars` covers it without a dedicated token.
-
-The `isLight` flag is only present (and `true`) on `paper` and `riso`. Its absence is treated as `false`. It drives several structural surfaces that branch differently between dark and light whenever a theme doesn't set the explicit field (rail, pop-bg, scrim, label-halo, editor surface, graph background).
-
----
-
-## Per-Theme Color Values
-
-Re-transcribed programmatically from the `THEMES` object in `core/src/theme/tokens.ts` (2026-09-03) —
-the section previously claimed to be a verbatim transcription of
-`bismuth-design/ascii/design-system/tokens/colors.css` but had drifted from the actual, live
-`tokens.ts` values in several fields per theme (`faint` in all four; `neutral`/`accent`/`glowAccent`/
-`accentSoft`/`categoryGold` in `paper`; `neutral`/`categoryGold` in `riso`). `tokens.ts` is the single
-source of truth `settingsCssVars` actually reads, so it — not the design-system CSS — is what these
-blocks are transcribed from now.
-
-### ink (dark, default)
-
-```text
-background:    #15161A        accent:        #93BDB0
-foreground:    #E8E3D6        border:        #3A3E4A
-neutral:       #9C998E        surface:       #20222A
-surface2:      #272A33        accentPalette: ["#C98CA8","#A190C4","#8296C6","#83B4AE","#A3BE8C"]
-rail:          #101116        editor:        #121317
-surface3:      #31353F        borderSoft:    #282B34
-faint:         #827F78        hoverBg:       rgba(232,227,214,.05)
-popBg:         rgba(18,19,23,.88)      popBgStrong: rgba(18,19,23,.94)
-scrimBg:       rgba(10,11,14,.6)      overlayBg:   rgba(10,11,14,.6)
-labelHalo:     #15161A        graphBg:       #121317
-graphEdge:     #3C4048        nodeCold:      #4A4E58
-nodeSelf:      #E8E3D6        vignetteEdge:  #0D0E11
-termBg:        #101116        termFg:        #C9C4B6
-glowAccent:    0 0 0 1px rgba(147,189,176,0.14)   glowText: none
-accentSoft:    rgba(147,189,176,0.12)    onAccent: #15161A
-categoryTeal/Blue/Violet/Green/Gold/Rose: #83B4AE #8296C6 #A190C4 #A3BE8C #CBB27E #C98CA8
-danger:        #C87F72        success:       #A3BE8C        warning: #CBB27E
-```
-
-### paper (light)
-
-```text
-background:    #E9E6E0        accent:        #436D63
-foreground:    #2E2C29        border:        #C4BEB3
-neutral:       #64605A        surface:       #EFEDE8
-surface2:      #E1DDD5        accentPalette: ["#A85C7A","#7A6AA0","#5A6E9E","#4E8079","#6E8A55"]
-isLight:       true
-rail:          #E3E0D9        editor:        #F2F0EB
-surface3:      #D3CEC5        borderSoft:    #D8D3C9
-faint:         #6A6761        hoverBg:       rgba(46,44,41,.05)
-popBg:         rgba(242,240,235,.9)   popBgStrong: rgba(242,240,235,.96)
-scrimBg:       rgba(90,86,78,.3)      overlayBg:   rgba(90,86,78,.3)
-labelHalo:     #F2F0EB        graphBg:       #E1DDD5
-graphEdge:     #C9C3B7        nodeCold:      #B6B0A4
-nodeSelf:      #2E2C29        vignetteEdge:  #D8D3C9
-termBg:        #2E2C29        termFg:        #E9E6E0
-glowAccent:    0 0 0 1px rgba(67,109,99,0.16)    glowText: none
-accentSoft:    rgba(67,109,99,0.12)     onAccent: #F2F0EB
-categoryTeal/Blue/Violet/Green/Gold/Rose: #4E8079 #5A6E9E #7A6AA0 #5E7F4B #A07F3C #A85C7A
-danger:        #A8503F        success:       #5E7F4B        warning: #B54708
-```
-
-### cathode (dark)
-
-```text
-background:    #05070A        accent:        #35F0E0
-foreground:    #DDF3EA        border:        #1B3A38
-neutral:       #6FA69A        surface:       #0C1116
-surface2:      #121A20        accentPalette: ["#FF5AA8","#A96BFF","#5A82F5","#35E8E0","#5CFA8A"]
-rail:          #020304        editor:        #04070A
-surface3:      #18242B        borderSoft:    #112524
-faint:         #637D78        hoverBg:       rgba(53,240,224,.07)
-popBg:         rgba(4,7,10,.82)      popBgStrong: rgba(4,7,10,.9)
-scrimBg:       rgba(0,0,0,.66)        overlayBg:   rgba(0,0,0,.66)
-labelHalo:     #05070A        graphBg:       #04070A
-graphEdge:     #1B3A38        nodeCold:      #24504B
-nodeSelf:      #DDF3EA        vignetteEdge:  #020405
-termBg:        #020304        termFg:        #9FE6D8
-glowAccent:    0 0 12px rgba(53,240,224,.35)     glowText: 0 0 8px rgba(53,240,224,.28)
-accentSoft:    rgba(53,240,224,0.12)     onAccent: #05070A
-categoryTeal/Blue/Violet/Green/Gold/Rose: #35E8E0 #5A82F5 #A96BFF #5CFA8A #FFC23D #FF4FA3
-danger:        #FF6B5A        success:       #5CFA8A        warning: #FFC23D
-```
-
-Cathode is the **one theme with bloom** — `glowAccent`/`glowText` carry real glow shadows; every other theme sets `glowText: none` and a flat 1px accent rim (or `none`) for `glowAccent`.
-
-### riso (light)
-
-```text
-background:    #EAE4D4        accent:        #2E36A8
-foreground:    #22285E        border:        #B9AE92
-neutral:       #55587E        surface:       #E3DCC8
-surface2:      #DBD3BC        accentPalette: ["#C0387A","#6B4FA8","#2E36A8","#2F7F86","#5E8A3C"]
-isLight:       true
-rail:          #E1DACA        editor:        #F1ECDF
-surface3:      #CFC5AA        borderSoft:    #CFC6AE
-faint:         #69665F        hoverBg:       rgba(34,40,94,.06)
-popBg:         rgba(241,236,223,.92)  popBgStrong: rgba(241,236,223,.97)
-scrimBg:       rgba(60,58,74,.28)     overlayBg:   rgba(60,58,74,.28)
-labelHalo:     #F1ECDF        graphBg:       #DBD3BC
-graphEdge:     #BCB39A        nodeCold:      #AFA68E
-nodeSelf:      #22285E        vignetteEdge:  #CFC6AE
-termBg:        #22285E        termFg:        #EAE4D4
-glowAccent:    0 0 0 1px rgba(46,54,168,.18)     glowText: none
-accentSoft:    rgba(46,54,168,0.12)      onAccent: #F1ECDF
-categoryTeal/Blue/Violet/Green/Gold/Rose: #2F7F86 #2E36A8 #6B4FA8 #5E8A3C #A97928 #C0387A
-danger:        #B03A2E        success:       #4F7A34        warning: #A86A18
-```
-
----
-
-## CSS Custom Properties
-
-`settingsCssVars.ts` exports `settingsToCssVars(settings)` which returns a `Record<string, string>` map of every CSS var the app consumes. `applyCssVars(settings)` calls this then sets them all on `document.documentElement`. It also sets `color-scheme` to `"light"` or `"dark"` (so native form controls and scrollbars match). The map is DOM-free and testable in isolation.
-
-### Color Variables (from theme tokens)
-
-Each of these prefers the theme's explicit `ColorTokens` field (all four ASCII themes set one) and falls back to a color-mix derivation only for a theme that omits it:
-
-| CSS var | Explicit field | Fallback derivation |
-|---|---|---|
-| `--bg` / `--fg` / `--accent` / `--border` / `--text-muted` / `--panel` / `--surface-1` / `--surface-2` | `background`/`foreground`/`accent`/`border`/`neutral`/`surface`/`surface`/`surface2` | (required — no fallback) |
-| `--border-soft` | `borderSoft` | `color-mix(fg 10%, transparent)` |
-| `--faint` | `faint` | `color-mix(fg 42%, transparent)` |
-| `--hover-bg` | `hoverBg` | `color-mix(fg 8%, transparent)` |
-| `--surface-3` | `surface3` | `color-mix(fg 14%, transparent)` |
-| `--rail` | `rail` | dark: `color-mix(bg 88%, black)`; light: `color-mix(bg 70%, border)` |
-| `--editor` | `editor` | dark: `background`; light: `color-mix(surface 64%, bg)` |
-| `--pop-bg` | `popBg` | dark: `color-mix(bg 82%, transparent)`; light: `color-mix(surface 84%, transparent)` |
-| `--pop-bg-strong` | `popBgStrong` | dark: `color-mix(bg 88%, transparent)`; light: `color-mix(surface 90%, transparent)` |
-| `--scrim-bg` | `scrimBg` | dark: `color-mix(fg 62%, transparent)`; light: `color-mix(neutral 32%, transparent)` |
-| `--overlay-bg` | `overlayBg` | same fallback expression as `--scrim-bg` |
-| `--label-halo` | `labelHalo` | dark: `#05060a`; light: `color-mix(#fff 90%, transparent)` |
-| `--graph-bg` | `graphBg` (a **flat color**, not a gradient) | dark/light radial-gradient (legacy derivation) |
-| `--vignette-edge` | `vignetteEdge` | dark: `color-mix(bg 70%, black)`; light: `color-mix(bg 50%, border)` |
-| `--graph-edge` | `graphEdge` | `color-mix(fg 18%, transparent)` |
-| `--node-cold` | `nodeCold` | `color-mix(fg 24%, bg)` |
-| `--node-self` | `nodeSelf` | `foreground` |
-| `--accent-soft` | `accentSoft` | `color-mix(accent 14%, transparent)` |
-| `--on-accent` | `onAccent` | dark: `#08101F`; light: `#fff` |
-| `--glow-accent` | `glowAccent` | `"none"` |
-| `--glow-text` | `glowText` | `"none"` |
-
-### Terminal Variables (fixed palette, not theme-tinted)
-
-| CSS var | Explicit field | Fallback |
-|---|---|---|
-| `--term-bg` | `termBg` | dark: `#08090E`; light: `#2B2740` |
-| `--term-fg` | `termFg` | dark: `#C7CCE0`; light: `#E3DEF2` |
-
-### Graph Ramp Variables
-
-`settingsToCssVars` exposes exactly `--graph-0` through `--graph-4` (5 slots), positional to `accentPalette[i]`; a missing index falls back to the theme's **accent** (`palette[i] ?? a.accent`).
-
-| CSS var | Source |
-|---|---|
-| `--graph-0` … `--graph-4` | `palette[0..4]` or `accent` |
-
-### Chrome Accent Variables
-
-| CSS var | Explicit field | Fallback source |
-|---|---|---|
-| `--teal` | `categoryTeal` | `palette[0]` or `accent` |
-| `--blue` | `categoryBlue` | `palette[2]` or `palette[1]` or `accent` |
-| `--violet` | `categoryViolet` | `palette[3]` or `palette[2]` or `accent` |
-| `--grad` | — | `linear-gradient(120deg, graph-0, graph-1, graph-2, graph-3, graph-4, gold)` — six stops, matching every scope's `--grad` in `colors.css` |
-| `--accent-purple` | — | `palette[1]` or `palette[0]` or `accent` (editor syntax + task accents) |
-
-### Category Color Variables
-
-Used for Bases status badges, calendar event categories, map pins, and chart series. Re-tint automatically when the theme changes (stored category tokens that match one of these values get the new theme's hue; custom hex colours stay fixed):
-
-| CSS var | Explicit field | Fallback source |
-|---|---|---|
-| `--green` | `categoryGreen` | `palette[1]` or `accent` |
-| `--gold` | `categoryGold` | `palette[4]` or `palette[3]` or `accent` |
-| `--rose` | `categoryRose` | `palette[3]` or `accent` |
-
-All four ASCII themes pin every category field explicitly.
-
-### Map Variables
-
-Bases offline map surfaces:
-
-| CSS var | Source |
-|---|---|
-| `--map-sea` | `surface2` |
-| `--map-land` | `surface` |
-| `--map-coast` | `color-mix(accent 45%, surface)` |
-| `--map-grid` | `color-mix(fg 12%, transparent)` |
-
----
-
-## Semantic Status Tokens
-
-Beyond the palette, `core/src/theme/tokens.ts` defines a **semantic status trio** — `danger` / `success` / `warning` — invariant across a theme's hue but tuned **separately per light vs dark** for accessibility. `semanticTokens(tokens)` prefers a theme's own explicit `danger`/`success`/`warning` fields (all four ASCII themes set these) and otherwise falls back to `SEMANTIC_LIGHT`/`SEMANTIC_DARK`. `settingsCssVars` projects the result as `--danger` / `--success` / `--warning`, so components read `var(--danger)` instead of hardcoding reds and greens.
-
-| Token | CSS var | Dark fallback (`SEMANTIC_DARK`, = ink) | Light fallback (`SEMANTIC_LIGHT`, = paper) |
+| `theme` value | Name | Light or dark | Character |
 |---|---|---|---|
-| `danger` | `--danger` | `#C87F72` | `#A8503F` |
-| `success` | `--success` | `#A3BE8C` | `#5E7F4B` |
-| `warning` | `--warning` | `#CBB27E` | `#B54708` |
+| `ink` | Ink (default) | dark | Warm paper ink on charcoal. |
+| `paper` | Paper | light | The light counterpart of Ink, with the same inks. |
+| `cathode` | Cathode | dark | A phosphor terminal: high contrast, and the only theme that glows. |
+| `riso` | Riso | light | Cream paper and indigo ink, print-flat, no glow. |
 
-These are **semantic**, distinct from the categorical `--green`/`--rose` swatches above — so destructive/success affordances are never re-tinted by a theme's category hues.
+Set it by editing `.settings`, or from the shell:
 
----
-
-## Elevation Shadows
-
-**The four blurred shadow vars described in older copies of this section — `--shadow-menu` /
-`--shadow-popup` / `--shadow-card` / `--shadow-modal` — were deleted 2026-08-27** (visual-unification
-audit §9.3, wave 1): no blur survives the ASCII redesign, and every former consumer now reads a
-single var, `--lift`, instead. The `ShadowTokens` interface, `SHADOW_DARK`, `SHADOW_LIGHT` and
-`shadowTokens()` all still exist in `core/src/theme/tokens.ts` — they were narrowed to one field,
-not removed:
-
-```ts
-interface ShadowTokens {
-  hard: string;
-}
-const SHADOW_DARK: ShadowTokens  = { hard: 'rgba(0,0,0,.45)' };
-const SHADOW_LIGHT: ShadowTokens = { hard: 'rgba(16, 24, 40, .35)' };
+```bash
+bismuth settings set appearance.theme cathode --vault ~/vault
 ```
 
-`shadowTokens(tokens)` still picks `SHADOW_LIGHT` when `t.isLight`, else `SHADOW_DARK`, exactly as
-before — only the shape of what it returns changed. `settingsCssVars.ts` projects `shadow.hard` as
-`--shadow-hard`.
+A theme name that is not one of these, and not a valid custom theme of this vault, reads as `ink` without an error.
+A theme changes every colour in the app: surfaces, borders, text, the accent, the graph's node colours and edges, category colours for statuses and calendar events, the terminal's colours, and the native scrollbar and form-control appearance.
+It does not change the graph's 2D/3D mode or any layout setting.
 
-`hard` is **not itself a box-shadow value** — it is the flat shadow *color* that the actual depth cue
-composites against. That cue is `--lift`, defined once in the tokens section of `app/src/global.css` (not
-per-theme):
+Exports and drawing paper do not follow the theme: an exported file looks the same wherever it is opened.
 
-```css
---lift: 2px 2px 0 var(--shadow-hard);
-```
+## Pick fonts
 
-A zero-blur, hard-offset "TUI drop-shadow" — the one permitted depth cue post-redesign, used
-everywhere the four deleted vars used to be. Because it has no blur to soften it, `--shadow-hard`
-carries **more opacity** than the old blurred shadows did (`.45`/`.35` here vs. the old `.3`-`.5`
-dark range and `.10`-`.14` light range) — a flat 2px offset with a faint fill would barely read as a
-shadow at all.
+Two keys choose the families. Every family is bundled with the app, so nothing needs installing.
 
-| CSS var | Dark (`SHADOW_DARK.hard`) | Light (`SHADOW_LIGHT.hard`) |
-|---|---|---|
-| `--shadow-hard` | `rgba(0,0,0,.45)` | `rgba(16, 24, 40, .35)` |
+| Key | Used for | Values | Default |
+|---|---|---|---|
+| `appearance.uiFont` | All chrome (rail, tabs, buttons, menus, calendar chips) and the monospace parts of a note: code, inline code, frontmatter, math, in-note tags, and config buffers such as `.settings` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | `Monaspace Xenon` |
+| `appearance.proseFont` | Your writing: note body, headings and tables, chat messages and the chat composer | `Libron`, `IBM Plex Serif`, `Lora`, or any `uiFont` value | `Libron` |
 
----
+Set `proseFont` to a Monaspace face for an all-monospace editor. A name not in the list reads as the default, with no error. Outside the editor, text written as prose uses the prose face.
 
-## Category Swatches & Accent Ramp (centralization)
+Related size keys, all in the [settings reference](reference.md#appearance):
 
-`tokens.ts` fixes the six named category hues in one place — `CATEGORY_SWATCHES` — so every consumer sources the same values (the `ink` scope's hues):
+- `appearance.editorFontSize` sets prose size (default 13.5 px).
+- `appearance.uiFontSize` sets chrome text size (default 11.5 px).
+- `appearance.monoScale` scales the monospace text inside prose (default 1).
+- `editor.lineHeight` sets prose line height as a multiple of the 18 px row unit (default 1.25).
 
-| Token | Hex |
-|---|---|
-| `teal` | `#83B4AE` |
-| `blue` | `#8296C6` |
-| `violet` | `#A190C4` |
-| `green` | `#A3BE8C` |
-| `gold` | `#CBB27E` |
-| `rose` | `#C98CA8` |
+A serif and a monospace face at the same pixel size do not look the same size. Bismuth corrects for this with a measured factor per prose face, so changing `proseFont` does not shrink or grow your notes.
+Code inside prose is sized at a fixed ratio of the prose text, so it sits at the same visual weight.
 
-`ACCENT_RAMP` is those six hexes in canonical order (teal → blue → violet → green → gold → rose). `THEME_ACCENTS` is the per-theme `--accent` hex, derived from `THEMES` (`Object.fromEntries(THEME_NAMES.map(n => [n, THEMES[n].accent]))`) so it can **never drift** from the theme definitions.
+## Pick the logo mark
 
-This is the **one ramp** that used to be hand-copied — and had drifted — into four places; all now source from `tokens.ts`:
-
-- **Drawing toolbar** (`core/src/drawing/theme.ts`): `themeColors()` reads `THEMES[…]` / `DEFAULT_THEME` for a drawing's paper + default ink (dark → `ink`, light → `paper`).
-- **Export theme** (`app/src/export/exportTheme.ts`): `DEFAULT_TOKENS` spreads `CATEGORY_SWATCHES` for the headless-fallback teal→rose ramp (`accent` stays the `global.css` default `#93BDB0`, the ink accent).
-- **gcal color map** (`core/src/gcal/colors.ts`): resolves category tokens via `CATEGORY_SWATCHES` and the `accent` token via `THEME_ACCENTS` before snapping to the nearest Google event color.
-- **`global.css` `:root` fallbacks**: the first-paint literal values mirror these swatches (documented in `tokens.ts`).
-
----
-
-## Appearance Settings → CSS Vars (Font & Layout)
-
-Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`, `ui.*`, and `calendar.*` settings to CSS vars (it emits no `terminal.*` vars: `Terminal.tsx` reads `terminal.fontSize` and `terminal.lineHeight` straight from the settings store, and the terminal's colors are the fixed `--term-bg`/`--term-fg` palette below). A complete listing:
-
-### From `appearance.*`
-
-| Setting | CSS var | Default |
-|---|---|---|
-| `appearance.uiFont` | `--ui-font-stack` | `'Monaspace Xenon', ui-monospace, monospace` |
-| `appearance.proseFont` | `--prose-font`, `--prose-scale` | `'Libron', Georgia, serif`, `0.97` |
-| `appearance.editorFontSize` | `--editor-font-size` | `13.5px` |
-| `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
-| `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
-| `appearance.tabRailWidth` | `--tab-rail-width` | `232px` |
-| `appearance.uiFontSize` | `--fs-ui` | `11.5px` |
-| `appearance.monoScale` | `--mono-scale` | `1` |
-| `appearance.cursorWidth` | `--cursor-width` | `2px` |
-| `appearance.cursorGlideMs` | `--cursor-glide` | `70ms` |
-| `appearance.cursorBlinkSeconds` | `--cursor-blink` | `1.2s` |
-
-Two of these defaults deliberately break from the app's `--fs-ui` chrome size (`11.5px`), each for a
-documented reason (`settingsSchema.ts`'s own `doc` string on the key):
-
-- **`editorFontSize` is `13.5`, not `11.5`.** Despite the name, this key sets the **prose** font size
-  — `13.5` is the design system's own prose size (`--fs-body-lg`, `global.css`), deliberately off the
-  `11.5px` chrome scale because chrome is scanned and prose is read. The `18px` row unit
-  (`--row-h`) is unaffected, so a line of prose still lands on the same grid as a tree row or a tab.
-- **`iconSize` is `12`, not `11.5`.** It sits above the `11.5px` `--fs-ui` chrome **text**
-  size because an icon needs more room than a label at the same optical weight.
-
-  **It is the app's ONE icon size.** Every icon reads it — `icons/Icon.tsx`, `ui/IconButton.tsx`,
-  `ui/IconBar.tsx` and the other icon-bearing primitives default to `app/src/ui/iconSize.ts`'s
-  getter, and it is also projected as the `--icon` CSS token for box sizes. No call site passes a
-  size; `app/src/ui/iconSizeLint.test.ts` fails on a literal one unless it carries an
-  `icon-size-exempt:` comment (an oversized illustration mark, never chrome). Older wording
-  described `12` as an exact half-scale of a 24×24 pixel-icon grid;
-  that rationale belonged to the retired pixel-icon set and no longer applies, since icons are now
-  Phosphor SVG on a 256×256 native grid (see
-  [third-party notices](../overview/third-party-notices.md)).
-
-### From `ui.*`
-
-| Setting | CSS var | Default |
-|---|---|---|
-| `ui.paletteTopOffset` | `--palette-top-offset` | `12vh` |
-| `ui.paneDividerWidth` | `--pane-divider-width` | `5px` |
-| `ui.cardGridMinWidth` | `--card-grid-min` | `220px` |
-| `ui.kanbanColumnMinWidth` | `--kanban-col-min` | `248px` |
-| `ui.kanbanColumnMaxWidth` | `--kanban-col-max` | `288px` |
-| `ui.mapMinHeight` | `--map-min-height` | `480px` |
-
-### From `editor.*`
-
-| Setting | CSS var | Default |
-|---|---|---|
-| `editor.lineHeight` | `--prose-line-height` | `1.25` |
-
-`--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `global.css`
-`:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
-in `Editor.tsx`. Default `1.25` → **22.5px**: prose renders in the proportional serif face
-(`--prose-font`, Libron by default) at `--prose-font-size` = 13.5px × the face's measured
-`--prose-scale` (`0.97` for Libron) = 13.1px, where 22.5px of leading is a 1.72 ratio — open, which suits
-a reading face (IBM Plex Serif, at 1.00 → 13.5px, sits at 1.67; Lora, at 1.04 → 14.04px, at 1.60).
-The old default of `1.5` (27px) was tuned for the earlier CMU Serif measurement (`--prose-scale`
-1.28, ~17.28px prose) and was never re-derived when the scale dropped to 1.04. `1.25` is still a
-**rational multiple of the row unit** on purpose rather than tuned tight to the font size: four
-prose lines span exactly five tree rows, so the "prose lands on the app's grid" property this token
-exists to protect survives — now as a 4:5 relationship instead of 1:1, rather than an arbitrary one.
-
-### From `calendar.*`
-
-| Setting | CSS var | Default |
-|---|---|---|
-| `calendar.monthCellMinHeight` | `--month-cell-min-h` | `80px` |
-| `calendar.timeGutterWidth` | `--time-gutter-width` | `50px` |
-
-The three `--cursor-*` vars drive THE text cursor — one accent bar in every text-entry surface:
-every CodeMirror surface (`app/src/editor/cursorTheme.ts`) and the terminal's `.xterm-custom-cursor`
-overlay. Native `<input>`/`<textarea>` carets take the accent colour from `global.css`'s element
-reset. The brand's decorative `_` mark (`ui/Caret` — wordmark, status bar, switcher, chat, intro) is
-deliberately a different shape but blinks on the same `--cursor-blink`.
-
----
-
-## Editor & UI Fonts (MONO_FONTS / FONT_STACKS)
-
-The interface is **one monospace family throughout**, with exactly one proportional exception — note prose and chat message bodies, see [The prose face](#the-prose-face---prose-font) below. `appearance.uiFont` is the **mono** face: all chrome (rail, tabs, buttons, menus, calendar chips) AND everything in a note that is not prose (code blocks and inline code, frontmatter, math, in-note tags) — config buffers (`.settings`, `*.yaml`) render entirely in it too. It picks one of the five Monaspace variants (`MONO_FONTS` in `app/src/settings.ts`), defaulting to `Monaspace Xenon`. The setting name maps to a full CSS font stack via `FONT_STACKS` in the same file:
-
-| Setting value | CSS font stack | Notes |
-|---|---|---|
-| `Monaspace Xenon` *(default)* | `'Monaspace Xenon', ui-monospace, monospace` | From `@fontsource/monaspace-xenon`; shipped with Bismuth |
-| `Monaspace Neon` | `'Monaspace Neon', ui-monospace, monospace` | From `@fontsource/monaspace-neon`; shipped with Bismuth |
-| `Monaspace Argon` | `'Monaspace Argon', ui-monospace, monospace` | From `@fontsource/monaspace-argon`; shipped with Bismuth |
-| `Monaspace Krypton` | `'Monaspace Krypton', ui-monospace, monospace` | From `@fontsource/monaspace-krypton`; shipped with Bismuth |
-| `Monaspace Radon` | `'Monaspace Radon', ui-monospace, monospace` | From `@fontsource/monaspace-radon`; shipped with Bismuth |
-
-`app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/global.css`'s `:root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`global.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
-
-### The prose face (`--prose-font`)
-
-Note prose (the CodeMirror surface), note headings, note tables, chat message bodies and the chat composer render in a **proportional serif** rather than the mono stack. It **is** a setting — `appearance.proseFont`, an enum of `Libron` (the default), `IBM Plex Serif`, `Lora`, plus the same five Monaspace variants (for an all-mono editor) — projected by `settingsCssVars.ts` into the tokens below (`--prose-font` and `--prose-scale` directly; the sizes derive from them):
-
-| Token | Value | Meaning |
-|---|---|---|
-| `--prose-font` | `'Libron', Georgia, serif` (default) | Resolved from `appearance.proseFont` via `FONT_STACKS`. Each stack leads with the exact family its package declares — for Lora that is `'Lora Variable'` (from `@fontsource-variable/lora`); plain `'Lora'` resolves nothing and falls silently through to `Georgia`. |
-| `--prose-scale` | `0.97` (Libron) / `1` (Plex) / `1.04` (Lora) | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Per face, from `PROSE_SCALES` in `app/src/settings.ts`, re-derived from measured x-height against Monaspace Xenon: Libron 531 vs 517 (ink, at a 1000px em) → 0.97; IBM Plex Serif 516 vs 517 → 1.00; Lora Variable 50.00 vs 51.75 at a 100px em → 1.04. A face with no entry (an all-mono prose choice) keeps 1.04. |
-| `--prose-font-size` | `calc(var(--editor-font-size) * var(--prose-scale))` | **Derived, never a literal.** The user's `appearance.editorFontSize` still moves prose with it. |
-| `--code-scale` | `0.89` | Code-to-prose ratio. At `--prose-scale`'s x-height parity Monaspace Xenon is 24% wider and carries 16% more ink than Lora, so code read bigger than the sentence around it; 12.5px mono against 14.04px Lora is ink parity. Re-checked for IBM Plex Serif: code/prose ink is 1.10 (12.0px mono against 13.5px Plex) vs Lora's 1.11, so the ratio carries over. Re-derive if either face changes. |
-| `--code-font-size` | `calc(var(--prose-font-size) * var(--code-scale) * var(--mono-scale, 1))` | **The one size for mono inside prose**: code blocks and both fence rows, frontmatter, `#tags`, task checkboxes/fields, list + syntax marks, raw table source, math source, chat code blocks. |
-| `--fs-rel-code` | `calc(1em * var(--code-scale) * var(--mono-scale, 1))` | Inline `code` — the same ratio off `1em`, so it scales inside a heading or table cell. |
-
-The scope is deliberately narrow: prose bodies, headings and tables. Code spans, frontmatter and every `ui/` primitive are pulled back to `--ui-font-stack` — in the editor by `global.css`'s family- and size-reset lists (the size list is the ONE place mono-in-prose is sized, at `--code-font-size`; `livePreview.ts` sets no size on those classes), in chat by `chat/ChatTextBubble.module.css`. KaTeX output is not code and keeps its own size.
-
-Libron, the default, is not on npm: its four static cuts (400/700 × normal/italic, release v0.30, OFL-1.1) are vendored in `app/src/assets/fonts/libron/` and declared by `@font-face` at the top of `global.css`'s tokens section. The five Monaspace families and IBM Plex Serif (static 400/500/600/700 + italics) are declared via `@fontsource` imports in `app/src/fonts.ts`; Lora is declared via the `@fontsource-variable/lora` package. An export embeds only the prose serif its stack names (`proseFacesFor` in `app/src/export/fontFaceCss.ts`). There is no vendored `cmu.css` any more — the former CMU Serif (Computer Modern) face and the unused Newsreader face are both gone, and `computer-modern`/`@fontsource-variable/newsreader` are no longer dependencies.
-
-The family string in `--prose-font` must match what the chosen package actually declares. A name that does not resolve falls silently through to the `Georgia` fallback with no error anywhere — this is the exact trap that let the old CMU-era stack go unnoticed for weeks. `app/src/ui/gallery/FontSpecimen.tsx` is a Lora specimen story carrying Lora's string — it lies rather than fails if the two drift apart.
-
-The `--mono-scale` var (default `1`, `appearance.monoScale`) is a personal multiplier on top of `--code-font-size` / `--fs-rel-code`: every mono-in-prose size goes through it, so it tunes code, frontmatter, tags and inline code together. It no longer carries a `0.85` fallback — `--code-scale` is the designed ratio.
-
-**Adding a new font**: add it to `MONO_FONTS` (extends both `uiFont` and, via `PROSE_FONTS = ['Libron', 'IBM Plex Serif', 'Lora', ...MONO_FONTS]`, `proseFont`) or to `PROSE_FONTS` directly for a prose-only face, in both `settingsSchema.ts` and `settings.ts`, AND to `FONT_STACKS` in `settings.ts`. A prose serif also needs its measured `PROSE_SCALES` entry, its `@fontsource` imports in `index.tsx` + `.storybook/preview.ts`, and its files in `DOC_FACES` + both `docFontCss.ts` embedders so an export can ship it. The schema enum, autocomplete, and lint all pick it up automatically.
-
----
-
-## What Changes When You Switch Themes
-
-Switching `appearance.theme` reruns `settingsToCssVars` → `applyCssVars`, which sets all vars in one synchronous pass on `:root`. The following update immediately without any page reload:
-
-- The entire background/surface/border/text palette
-- The graph node colors (via `--graph-0..4`) and any already-rendered nodes
-- Graph edge color (`--graph-edge`)
-- The "you" node color (`--node-self`)
-- All accent-derived UI (buttons, selection rings, active tabs, progress bars)
-- The iridescent gradient (`--grad`) and named chrome accents (`--teal`, `--blue`, `--violet`)
-- Editor syntax accent (`--accent-purple`, pulled from `palette[1]`)
-- Category swatches for Bases statuses, calendar events, map pins, chart series (`--green`, `--gold`, `--rose`)
-- Bases map surface colors
-- The terminal background/foreground (two fixed values, one for dark/one for light)
-- Modal scrim, overlay, popovers, and label halos
-- The graph canvas backdrop (`--graph-bg`, a flat color per theme)
-- Bloom (`--glow-accent`/`--glow-text`) — only `cathode` turns it on
-- `color-scheme` on `<html>` (native scrollbar/form-control appearance)
-
-The 2D/3D graph dimension and graph simulation settings are **not** affected by theme changes.
-
----
+`appearance.icon` chooses the logo in the favicon and the sidebar, independently of the theme: `hopper-crystal` (default), `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph` or `node-rings`.
 
 ## Custom themes
 
-A vault can define its own themes. Agents should start at the [custom themes guide](../guides/custom-themes.md); every token a theme may set is in the [design tokens reference](tokens.md).
+A vault can define its own themes. A custom theme is a partial override of a built-in, so you write only what you change. [The custom themes guide](../guides/custom-themes.md) walks through making one, and [design tokens](tokens.md) lists every token a theme may set.
 
-- **File**: `<vault>/.themes/<name>.yaml`, one per theme. A theme is a **partial override**: optional `label`, optional `extends` (a built-in, default `ink`) and a `tokens:` map holding only the tokens it changes. An empty file is valid and is stock `ink`. Token keys are CSS variable names without `--` (`bg`, `accent`, `r-card`), and a token is any registered design token, not only a colour: see [the tokens reference](tokens.md). The old format's top-level keys (`background`, `isLight`, …) still parse but warn `<key>: moved — write it under tokens: as <new key>`. The name matches `^[a-z0-9][a-z0-9-]{0,39}$` and may not be a built-in. Parsing and validation are pure, in `core/src/theme/customTheme.ts`; file I/O is `core/src/theme/themeFiles.ts`.
-- **Select it**: `appearance.theme: <name>` in `.settings` (or `bismuth theme use <name>`). The schema enum and the editor lint accept the name only when the theme is valid.
-- **Precedence**: built-in default, then the theme's `extends`, then the theme's `tokens:`, then `.settings` `appearance.tokens` (an explicit token also beats its legacy `.settings` key; a legacy key present in the file beats the theme). Details: [tokens reference](tokens.md#precedence).
-- **Hardening**: a theme file or `.themes/` directory that is a symlink is refused, and a file over 64 KB is refused. A symlinked `.themes/` directory is refused with each file listed as `cannot read file: symlink refused`, and a non-file entry reads `cannot read file: not a regular file`.
-- **`GET /themes`**: returns a `ThemesFeed`, every custom theme with its `extends`, override `tokens` and resolved `colors`, plus the invalid ones with diagnostics. See [the HTTP reference](../api/http-reference.md#get-themes).
-- **App side**: `app/src/customThemes.ts` holds a reactive `customThemes` signal fed by `GET /themes`, refetched when an SSE `paths` entry matches `isThemePath`. `resolveTheme`/`resolveAppearance` consult it, so `settingsCssVars`, the graph, the sheets, the drawing toolbar and every other caller repaint with no reload, both when the file is edited and when `appearance.theme` changes.
-- **Invalid or missing → `ink`.** A theme file that fails validation, or a name with no file, paints `ink`, the same fallback as any unknown name. Diagnostics are in `GET /themes` and `bismuth theme validate`. Contrast problems are warnings only.
-- **Mobile**: the iPad/iOS in-process backend answers `GET /themes` with an empty feed (`FileAccess` has no directory listing), so a custom theme shows `ink` there for now.
-- **Not themed**: export (fixed light/dark scopes) and drawing paper stay theme-independent. `.themes/` and its top-level `*.yaml` files are listed in the sidebar tree, like `.settings`.
+- File. `<vault>/.themes/<name>.yaml`, one per theme, with optional `label`, optional `extends` (a built-in, default `ink`) and a `tokens:` map. An empty file is valid and is stock `ink`.
+- Name. It matches `^[a-z0-9][a-z0-9-]{0,39}$` and cannot be a built-in name.
+- Select it. Set `appearance.theme: <name>`, or run `bismuth theme use <name>`. The schema and the editor's lint accept the name only while the theme is valid.
+- Precedence. From lowest to highest: the built-in default, the theme's `extends`, the theme's `tokens:`, then `appearance.tokens` in `.settings`. [Precedence](tokens.md#precedence) has the exceptions.
+- A broken theme shows `ink`. A file that fails validation, or a name with no file, paints `ink`, like any unknown name. `bismuth theme validate` lists the problems. Low contrast is only a warning.
+- Refused files. A theme file or `.themes/` directory that is a symlink is refused, as is a file over 64 KB. A refused file reads `cannot read file: symlink refused` or `cannot read file: not a regular file`.
+- iPad and iOS. Custom themes work there too: the in-process backend lists `.themes/` through the same file-access seam.
 
----
+`.themes/` and its top-level `*.yaml` files appear in the sidebar tree, like `.settings`.
 
-## resolveTheme / resolveAppearance / semanticTokens / shadowTokens
+## How it works
 
-```ts
-// Resolve a theme name string to its ColorTokens.
-// `custom` maps a name to the resolved colours of a VALID custom theme; a built-in
-// name always wins over a custom theme of the same name. Unknown names (including
-// every pre-redesign 12-theme name) silently fall back to DEFAULT_THEME ("ink").
-resolveTheme(name: string, custom?: Readonly<Record<string, ColorTokens>>): ColorTokens
+`core/src/theme/tokens.ts` owns the built-in themes, so core code (Google Calendar colour mapping, drawing paper and ink, the settings schema) can import them; `app/src/themes.ts` re-exports it for the app.
+`THEME_NAMES` is the ordered list (the first, `ink`, is `DEFAULT_THEME`), `THEME_LABELS` the display names, and `THEMES` maps each name to a `ColorTokens` object.
+To read another theme's values, open `THEMES` in that file; [design tokens](tokens.md) lists the `ink` defaults of every token.
 
-// Resolve from the appearance sub-object in settings: resolveTheme(a.theme, custom),
-// then the FIELD tokens in a.tokens written on top (applyColorTokens). Non-field
-// tokens (lengths, durations, ...) are not ColorTokens; they are projected straight
-// onto :root by settingsCssVars.
-resolveAppearance(
-    a: { theme: string; tokens?: Readonly<Record<string, string>> },
-    custom?: Readonly<Record<string, ColorTokens>>,
-): ColorTokens
+A `ColorTokens` object requires background, foreground, neutral, accent, border, surface, surface2 and an `accentPalette` (the graph's node ramp: rose, violet, blue, teal, green).
+Everything else is optional: structural surfaces, graph colours, terminal colours, glow, category hues and the danger, success and warning trio. `isLight` is set on `paper` and `riso`.
+All four built-ins set every optional field explicitly; a theme that omits one gets a colour-mix derivation from `settingsToCssVars`.
 
-// The semantic status trio (danger/success/warning) for a resolved theme — prefers
-// the theme's own explicit fields, else SEMANTIC_LIGHT/SEMANTIC_DARK by t.isLight.
-semanticTokens(t: ColorTokens): SemanticTokens
+Resolution is pure and DOM-free:
 
-// The elevation shadow set (menu/popup/card/modal) for a resolved theme —
-// SHADOW_LIGHT when t.isLight, else SHADOW_DARK.
-shadowTokens(t: ColorTokens): ShadowTokens
-```
+- `resolveTheme(name, custom?)` returns the named theme's `ColorTokens`. A built-in name always beats a custom theme of the same name; an unknown name returns `ink`.
+- `resolveAppearance(appearance, custom?)` resolves the theme, then writes the colour tokens from `appearance.tokens` over it. Tokens that are not colours go straight to `:root`.
+- `semanticTokens` returns the theme's own danger, success and warning, or a light or dark fallback chosen by `isLight`.
+- `shadowTokens` returns one flat shadow colour, `--shadow-hard`. The depth cue itself is `--lift`, a zero-blur hard offset defined once in `global.css`.
 
-All four live in `core/src/theme/tokens.ts` and are **DOM-free + dependency-free** (pure data + pure functions), so they're safe to call from tests, the graph renderer, the terminal palette builder, the backend, the CLI, or any non-browser context.
+`settingsToCssVars` in `app/src/settingsCssVars.ts` turns the resolved theme and the settings into one `{ '--var': value }` map, and `applyCssVars` sets it on `document.documentElement` in one pass, together with `color-scheme`.
+An inline script in `index.html` applies the same map from the cached settings before the app mounts, so the right theme shows on the first frame.
 
----
+`CATEGORY_SWATCHES` (the six category hues), `ACCENT_RAMP` and `THEME_ACCENTS` in `tokens.ts` are the single source for the drawing toolbar, the export theme, the Google Calendar colour map and the first-paint fallbacks in `global.css`.
 
-## Default Accent Palette Fallback
+Custom themes: parsing and validation are pure, in `core/src/theme/customTheme.ts`; file reads are in `core/src/theme/themeFiles.ts`.
+`GET /themes` returns a `ThemesFeed` of valid themes with their resolved colours, plus the invalid ones with diagnostics ([HTTP reference](../api/http-reference.md#get-themes)).
+`app/src/customThemes.ts` holds a signal fed by that route and refetched when an SSE path matches a theme file, so every caller of `resolveTheme` repaints with no reload.
 
-`app/src/settings.ts` exports `DEFAULT_ACCENT_PALETTE` as a fallback used by `settingsToCssVars` when `a.accentPalette` is empty:
+### Fonts
 
-```ts
-// Single-sourced from themes.ts's default theme so the values can't drift.
-export const DEFAULT_ACCENT_PALETTE = THEMES[DEFAULT_THEME].accentPalette;
-```
+`FONT_STACKS` and `PROSE_SCALES` in `app/src/settings.ts` turn a family name into a CSS stack and an optical scale:
 
-In practice every theme provides its own palette, so this fallback is defensive only.
+| Family | Stack | `--prose-scale` |
+|---|---|---|
+| `Libron` | `'Libron', Georgia, serif` | `0.97` |
+| `IBM Plex Serif` | `'IBM Plex Serif', Georgia, serif` | `1` |
+| `Lora` | `'Lora Variable', Lora, Georgia, serif` | `1.04` |
+| Each Monaspace face | `'<name>', ui-monospace, monospace` | `1.04` (the default for a face with no entry) |
 
----
+The scales come from measured x-heights against Monaspace Xenon. `--prose-font-size` is `calc(var(--editor-font-size) * var(--prose-scale))`, never a literal.
+`--code-font-size` is the prose size times `--code-scale` (0.89) times `--mono-scale`, and it is the one size for monospace inside prose. `font-variant-ligatures: none` is set app-wide so Monaspace's coding ligatures do not break the character grid.
 
-## App Logo Mark
+A stack must lead with the family name the font package actually declares. Lora's is `Lora Variable`; plain `Lora` resolves nothing and falls silently through to Georgia.
+Libron is vendored in `app/src/assets/fonts/libron/` and declared by `@font-face` in `global.css`; the Monaspace families and IBM Plex Serif come from `@fontsource` imports in `app/src/fonts.ts`, and Lora from `@fontsource-variable/lora`.
+An export embeds only the prose face its stack names (`proseFacesFor` in `app/src/export/fontFaceCss.ts`).
 
-The `appearance.icon` setting selects the per-vault logo mark (favicon + sidebar logo). This is independent of the theme. Valid values:
+### Add a built-in theme
 
-```text
-hopper-crystal (default) · node-b · square-funnel · nested-diamonds ·
-pinwheel · node-crystal · lattice · diamond-bloom · node-diamond ·
-octagon-bloom · spin-cross · tri-bloom · radial-graph · node-rings
-```
+1. Add the name to `THEME_NAMES` and a display name to `THEME_LABELS` in `core/src/theme/tokens.ts`. The settings schema imports `THEME_NAMES`, so the enum follows.
+2. Add its `ColorTokens` to `THEMES`, setting every optional field. Set `isLight: true` for a light theme.
+3. Nothing changes in `settingsCssVars.ts`; its derivations are generic over the tokens.
 
----
+### Add a font
 
-## Adding a New Theme
+Add the family to `MONO_FONTS` (extends both `uiFont` and `proseFont`) or to `PROSE_FONTS` (prose only) in `core/src/theme/fontFamilies.ts`, and add its stack to `FONT_STACKS` in `app/src/settings.ts`.
+A prose serif also needs a measured `PROSE_SCALES` entry, its `@fontsource` imports in `app/src/fonts.ts` and `app/.storybook/preview.ts`, and its files in the export embedder so exports can ship it. The schema enum, autocomplete and lint follow.
 
-1. Add the theme name to `THEME_NAMES` in `core/src/theme/tokens.ts`. There is **no copy to keep in sync**: `settingsSchema.ts` imports the tuple (`import { THEME_NAMES as THEME_NAME_TUPLE } from "../theme/tokens"; const THEME_NAMES = [...THEME_NAME_TUPLE];`), so the schema enum updates automatically.
-2. Add a `THEME_LABELS` entry for the display name in `tokens.ts`.
-3. Add the `ColorTokens` object to `THEMES` in `tokens.ts` — set every optional field explicitly (the ASCII themes all do; a theme that omits one gets `settingsCssVars`'s legacy color-mix derivation instead).
-4. Set `isLight: true` if it is a light theme.
-5. `categoryTeal`/`categoryBlue`/`categoryViolet`/`categoryGreen`/`categoryGold`/`categoryRose` can pin specific category hues that suit the palette; otherwise the defaults from the ramp apply.
-6. No changes to `settingsCssVars.ts` are needed: all derivations are generic over the tokens.
-
----
-
-## Adding a CSS-Driven Setting
-
-Per the architecture: one schema entry in `settingsSchema.ts` + one line in `settingsToCssVars` mapping `s.<section>.<key>` to `"--var-name"` + one `var(--var-name, <fallback>)` in the CSS. The setting value is converted to a string; numeric settings that map to `px` values use `s.foo + "px"`.
-
----
-
-Source: `core/src/theme/tokens.ts`, `app/src/themes.ts` (re-export), `app/src/settingsCssVars.ts`, `core/src/schema/settingsSchema.ts`, `app/src/settings.ts`, `core/src/gcal/colors.ts`, `core/src/drawing/theme.ts`, `app/src/export/exportTheme.ts`, `bismuth-design/ascii/design-system/tokens/colors.css`, `bismuth-design/ascii/design-system/tokens/effects.css`, `bismuth-design/ascii/README.md`
+Source: `core/src/theme/tokens.ts`, `core/src/theme/fontFamilies.ts`, `core/src/theme/customTheme.ts`, `core/src/theme/themeFiles.ts`, `core/src/schema/settingsSchema.ts`, `app/src/themes.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/customThemes.ts`, `app/src/fonts.ts`, `app/src/export/fontFaceCss.ts`

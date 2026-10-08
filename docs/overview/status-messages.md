@@ -1,132 +1,124 @@
 # Status messages
 
-This page explains Bismuth's messages and the action, if any, they call for. Short-lived pop-ups
-(top-right toasts) come from `pushToast` (`app/src/ui/ToastHost.tsx`). The connection messages below use
-the `ConnectionState` in `app/src/serverVersion.ts`: `app/src/App.tsx` renders the status-bar
-label, while `serverVersion.ts` pushes the toast.
+Bismuth tells you what it is doing through short-lived toasts (top-right pop-ups) and readouts in the status bar at the bottom of the window. This page lists the messages you can see, each led by its exact text, with what it means and what to do. For a symptom with no message, start from [troubleshooting](troubleshooting.md).
 
-## The connection
+Messages that end in `: <reason>` carry the underlying error text in place of `<reason>`; include it in a bug report.
 
-Bismuth's window is a frontend talking to a small local backend — the `core` server — over
-HTTP on your own machine. Nothing leaves your computer. The window keeps one long-lived
-[Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events) stream open
-to `/events`; the backend pushes a frame down it whenever a file changes, and the window
-refetches only what that frame says is stale.
+## The connection is lost
 
-The backend also writes an `: keepalive` comment down that same stream every
-`appConfig.server.sseHeartbeatMs` (default 5 seconds — `core/src/schema/settingsSchema.ts`), and
-`Bun.serve` is configured with a 255-second idle timeout, specifically so a quiet vault (no file
-changes for minutes at a time) doesn't get its stream reaped as "idle" by Bun or an OS/proxy in
-between. A stream on an otherwise-idle vault is expected to survive indefinitely on those
-keepalives alone.
+The status bar label `connection lost — polling` and the toast `Connection lost. Retrying...` mean the window cannot confirm that its local backend is reachable. The toast has a **Retry now** button. Both clear on their own when the connection returns.
 
-What the keepalive can't protect against is the network path actually going away — a laptop
-sleeping, Wi-Fi switching, a VPN reconnecting. Those drop the stream with no close frame at all,
-silently. So there's a second, independent safety net: the window also polls `GET /version`
-every 5 seconds regardless of the stream's state, purely to notice a dead stream that the
-keepalive couldn't save.
+What to do: usually nothing. Wait a few seconds, or click **Retry now** to force a reconnect. Files already on disk are not at risk; the worst case is a sidebar or graph that is briefly out of date, and an edit made while the label shows may not reach the backend until it clears.
 
-### "connection lost — polling" / "Connection lost. Retrying..."
+If the label stays for more than a minute while the rest of the app still responds, the backend process has probably died. Quit and relaunch Bismuth.
 
-You may see this as two different things at once, and they mean the same thing:
+The toast does not appear until the window has reached the backend once, so a normal launch never flashes it. The label can show for up to a second on a single stream error before the next check confirms the backend is fine.
 
-- A small **`connection lost — polling`** label appears in the status bar at the bottom of the
-  window, next to the vault name.
-- A **`Connection lost. Retrying...`** toast pops up in the corner, with a **Retry now** button.
+## `doctor // 2 repairs need your ok: …`
 
-Both are driven by the same underlying connection state, they just surface it in two places —
-the status bar is the persistent indicator, the toast is the one-time nudge with an action
-attached.
+Bismuth found leftovers from an older build that it will not delete without asking. The toast reads `doctor // <n> repairs need your ok: <title 1>, <title 2>`, and with more than two titles it ends `<title 1>, <title 2> +<n> more`. It shows once at launch and disappears after 20 seconds.
 
-**What happened:** the indicator means the window does not currently have positive confirmation
-the backend is reachable via either signal — not strictly that both have failed at once. That
-covers a genuine outage where the SSE stream dropped *and* the `/version` poll is also failing,
-but also two milder cases that flip the same indicator: a single SSE-only error by itself (the
-label can appear for up to ~1 second, until the very next fast poll confirms the backend is fine
-again), and the brief `"reconnecting"` state while a manual **Retry now** attempt is in flight.
+What to do: click **fix** to apply exactly the listed repairs; the toast becomes `doctor // fixed <k> of <n>`. To look first, run `bismuth doctor` in a terminal, where each line says what the repair removes. Ignoring the toast leaves things as they are, and the same findings appear at the next launch. The full list of findings is in [doctor](doctor.md).
 
-**What Bismuth does about it:** switches the poll from every 5 seconds to every 1 second and
-keeps retrying the stream in the background. When either succeeds, both the status-bar label and
-the toast are meant to clear on their own — no action needed.
+No toast appears when nothing is pending or when the backend has no doctor (the iPad and iOS in-process backend).
 
-**What you should do:** usually nothing — wait a few seconds. The **Retry now** button on the
-toast forces an immediate reconnect attempt. Your notes are files on disk and are never at risk
-from this; the worst case is a sidebar or graph that's briefly out of date.
+## Updates
 
-**When to worry:** if it persists for more than a minute while the app is otherwise responsive
-(you can still click around, switch tabs, etc.), that usually means the backend process died.
-Quit and relaunch Bismuth.
-
-**On launch:** the toast is deliberately suppressed until the window has reached the backend at
-least once, because the backend takes a second or two to start after launch. A "connection lost"
-flash on every launch would be noise, not information — see the comment above
-`everConnected` in `app/src/serverVersion.ts`.
-
-## The doctor toast
-
-### "doctor // 2 repairs need your ok: …"
-
-A toast like **`doctor // 2 repairs need your ok: <title 1>, <title 2>`** appears once at launch, with
-a **fix** button. With more than two it ends `<title 1>, <title 2> +<n> more`.
-
-**What happened:** at boot Bismuth ran [the doctor](doctor.md), found leftovers from an older build
-(an old service registration, a retired folder), and applied every repair that is provably safe. The
-ones listed here delete something you might still want, so they were left alone.
-
-**What Bismuth does about it:** nothing further. The toast disappears after 20 seconds, and the same
-findings appear again next launch until they are dealt with.
-
-**What you should do:** click **fix** to apply exactly the listed repairs; the toast becomes
-`doctor // fixed <k> of <n>`. To look first, run `bismuth doctor` in a terminal: each line says what
-the repair removes. To leave things as they are, ignore the toast.
-
-**Not shown when:** nothing is pending, or the backend has no doctor (the iPad/iOS in-process backend,
-or an older core). Source: `app/src/doctorToast.ts`.
+| Message | Meaning and action |
+|---|---|
+| `Checking for a Bismuth update…` | The **Update Bismuth…** command is asking the update service. Wait. |
+| `Bismuth is already up to date` | There is nothing to pull. |
+| `Updating Bismuth (<n> commits behind)…` | An update is downloading. It moves through `Pulling update…`, `Building update… (a few min)` and `Relaunching…`; the app restarts itself. |
+| `Update failed: <reason>` | The pull or build failed. Retry; [self-update](self-update.md) lists each failure reason. |
+| `This build can't self-update (not built from source)` | Self-update only runs for a build made from source. |
+| `Can't read the update source — grant Bismuth Files & Folders access in System Settings` | macOS blocked access to the source folder. Grant the permission and retry. |
+| `No upstream configured to update from` | The checkout has no `origin/main` to compare against. |
+| `Update source unavailable — couldn't check for updates` | The update service could not run its check. Retry later. |
+| `Couldn't reach the update service` | The backend did not answer the update check. See the connection message above. |
+| `Re-registering the daemon service…` | The **Update daemon…** command is rewriting the launchd or systemd unit. |
+| `Daemon service re-registered (it updates with the app)` | Done. The daemon binary ships inside the app, so there is no separate download. |
+| `Daemon update failed: <reason>` | Re-registration failed. Run `bismuth doctor` and read the `daemon.*` findings. |
 
 ## Folders and windows
 
 | Message | Meaning | What to do |
 |---|---|---|
-| `Couldn't open the folder picker: <reason>` | The native OS folder dialog itself failed to open (desktop app only) — a genuine dialog error, not you clicking Cancel. Shown both when opening a folder as a new vault and when browsing for an export destination folder. Cancelling the picker is silent by design and shows nothing at all. | Retry. If it repeats, the reason names the underlying failure — include it in a bug report. |
-| `Open folder failed: <reason>` | A folder was chosen, but no backend could be started for it. | Check the folder still exists and is readable, then retry — the prompt stays open for another attempt. |
-| `Folder server started, but the window couldn't open` | The backend for that folder is running, but the OS refused to open a new window for it. | Retry; if it repeats, relaunch Bismuth. |
-| `Couldn't open a new window` | The OS refused to open a new window (used by "New window", which reopens your current vault in another window). | Relaunch Bismuth. |
-| `Copied path` | Clicking the status bar's location readout copied a path to your clipboard (`copyStatusLocation` in `app/src/App.tsx`) — the focused file's full absolute path, or the vault's path when the focused pane isn't a file. | None — the path is on your clipboard. |
-| `Couldn't copy path` | The clipboard write failed after clicking the location readout (e.g. clipboard permissions, or an insecure context — the `.catch` in `copyStatusLocation`, `app/src/App.tsx`). | Try clicking again, or read the path from the tooltip shown on hover. |
+| `Couldn't open the folder picker: <reason>` | The operating system's folder dialog failed to open (desktop app). Cancelling the dialog is silent and shows nothing. | Retry. |
+| `Open folder failed: <reason>` | You chose a folder, but no backend could start for it. | Check the folder exists and is readable, then retry; the prompt stays open. |
+| `Folder server started, but the window couldn't open` | The folder's backend is running, but the OS refused a new window. | Retry; if it repeats, relaunch Bismuth. |
+| `Couldn't open a new window` | The OS refused a new window for **New window**. | Relaunch Bismuth. |
+| `Couldn't open window: <reason>` | Creating a window raised an error event. | Relaunch Bismuth. |
+| `Copied path` | Clicking the status bar's location readout copied a path to the clipboard. | None. |
+| `Couldn't copy path` | The clipboard write failed. | Click again, or read the path from the readout's tooltip. |
 
-## One folder, one backend, one window
+Opening a folder never switches the current window's vault. Each folder opens in its own window with its own backend.
 
-Opening a folder does **not** switch the current window's vault. Bismuth follows a
-process-per-vault model (`core/src/openFolder.ts`, `POST /open-folder`): each folder you open
-gets its own backend process on its own port, and its own window pinned to that backend via
-`?api=<url>`. So two open folders are two windows that cannot interfere with each other's
-caches, watchers, or tabs.
+## Notes, files and the sidebar
 
-The status bar at the bottom of the window shows the focused pane's location, next to the
-connection indicator described above — see "What the status bar shows" below for what it reads
-and why it's the full absolute path, not just the vault's folder name.
+| Message | Meaning | What to do |
+|---|---|---|
+| `This note changed elsewhere while you were editing — your edits were kept, but check nearby content for an overwritten external change.` | Another program wrote the file while you typed; Bismuth merged both. | Read the lines around your edit. |
+| `Deleted <name>` / `Deleted <n> items` | A delete finished. The toast has an **undo** button for 8 seconds. | Click **undo** to restore. |
+| `Restored <name>` | An undo or restore finished. | None. |
+| `undo failed: <reason>` | An undo could not complete. | Read the reason. |
+| `Delete failed: <reason>`, `Create failed: <reason>`, `Move failed: <reason>`, `Rename failed: <reason>`, `Restore failed: <reason>` | The file operation did not happen. | Read the reason; usually a name clash or a permission. |
+| `Template failed: <reason>` | Creating a note from a template failed. | Read the reason, then check the template. |
+| `Open a note to insert a template` | The template picker needs a note focused. | Focus a note and retry. |
+| `Open a note to insert an emoji` | The emoji command needs a note focused. | Focus a note and retry. |
+| `Open a note, base, or sheet to export it` | **Export current file…** needs a note, base or sheet focused. | Focus one and retry. |
+| `Pick a file inside your vault` | The export picker chose a file outside the vault. | Choose a vault file. |
+| `Exported <file> → <path>` | The export is written; on desktop it is revealed in Finder. | None. |
+| `Export failed: <reason>` | The export did not complete. | Read the reason. |
+| `Couldn't read that drop` | A dropped item carried no readable data. | Drag the file itself. See [draggables](draggables.md). |
+| `Couldn't read dropped file — see console` | A dropped file could not be read. | Retry; the console names the file. |
+| `Couldn't convert <file> to JPEG — saved as-is` | An HEIC image was attached without conversion. | None; the original file is stored. |
+| `Couldn't save attachment: <reason>` | The dropped or pasted file was not written to the attachments folder. | Check the `attachments.folder` setting and disk space. |
+| `Query block wasn't inserted — the note was closed` | The query builder finished after its note was closed. | Reopen the note and insert the block again. |
+
+## Bases and tasks
+
+| Message | Meaning | What to do |
+|---|---|---|
+| `The rows changed while you were editing — that edit was not saved.` | A table cell edit lost a race with a refresh. | Re-enter the value. |
+| `Row added — click it to fill in its properties` | A new row exists with no values. | Open the row and fill in properties. |
+| `Add row failed: <reason>`, `Save failed: <reason>` | The row write was rejected. | Read the reason. |
+| `Archived <n> completed tasks` / `No completed tasks to archive` | Result of **Archive completed tasks (this note)** on the focused note. | None. |
+| `Open a note to archive its completed tasks` | The command needs a note focused. | Focus a note and retry. |
+| `Converted <n> task lines in <m> notes to the bracket syntax` | At launch Bismuth rewrote emoji-style task lines into bracketed fields, see [task syntax](../tasks/syntax.md). When a snapshot was taken the message ends `// snapshot taken`. | None. |
+| `Task syntax could not be converted — a vault snapshot failed, so nothing was changed` | The pre-conversion backup failed, so Bismuth left every note alone. | Fix the backup problem (disk space or git), then relaunch. |
+| `<n> lines could not be converted — see the console` | Some task lines did not parse. | Rewrite them by hand per the task syntax page. |
+
+## Google Calendar and the daemon
+
+| Message | Meaning | What to do |
+|---|---|---|
+| `Syncing Google Calendar…` | A sync is running. | Wait. |
+| `Approve access in your browser, then return here…` | The Google consent screen is open in your browser. | Approve, then return to Bismuth. |
+| `Enter both the Client ID and Client Secret` | The connect form is missing a field. | Fill both. |
+| `Connect failed: <reason>`, `sync failed: <reason>`, `Disconnect failed: <reason>` | The Google Calendar step failed. | Read the reason; see [Google Calendar sync](../gcal/overview.md). |
+| `Disconnected from Google Calendar` | The connection is removed. | None. |
+| `Daemon setup failed: <reason>` | Enabling the daemon service failed. | See [daemon setup](../daemon/setup.md). |
+| `Already resolved` | An inbox page was already answered elsewhere. | None. |
 
 ## What the status bar shows
 
-The bar is configurable: it renders the `statusBar:` list in `.settings`, and the four readouts below are its **default** list (`DEFAULT_STATUS_BAR` in `core/src/statusBarItems.ts` — the builtins `location`, `connection`, `inbox`, `daemon`), what you see when no `statusBar:` key is set. Left to right (`app/src/shell/StatusBar.tsx`):
+The status bar renders the `statusBar:` list in `.settings`. With no `statusBar:` key it shows these built-in readouts, left to right.
 
-| Item | Meaning |
-| --- | --- |
-| Location | A single readout (issue #10). A focused **file** shows its full absolute filesystem path — `<vaultPath>/<relPath>` — because the vault tree already shows the relative path, and the point of this readout is telling you which vault you're even in. A focused **sentinel** pane (graph, terminal, chat, daemon…) or no focus shows `<vaultPath> // <label>` instead, since there's no file path to give. Hover for a `title` tooltip with the full text, click to copy it (see the `Copied path` / `Couldn't copy path` toasts above). This is the one item allowed to shrink to nothing on a narrow window, so nothing else gets clipped mid-character. |
-| `connection lost — polling` | Only while SSE is down. See [The connection](#the-connection) above. |
-| `inbox: N` | Daemon-inbox pages awaiting review. Always present while the daemon is on, **including at zero**, so it is a findable place rather than a control that only exists when it has something to say. Quiet at zero; a `--gold` dot appears and the count brightens when something is waiting. Click it to open the inbox. Hidden entirely when the daemon is off, since the whole inbox surface is gated behind `daemon.enabled`. |
-| `daemon: off / idle / working` | Whether this machine's daemon is running for this vault, and whether it is currently doing something. Only the state word is coloured — `--faint` for `off`, `--gold` for `idle`, `--green` for `working` — and the blinking `_` caret sits directly after it, marking it as the live value on the line. |
+| Readout | Meaning |
+|---|---|
+| a path | The focused file's full absolute path. A graph, terminal, chat or daemon pane, or no focus, shows `<vault path> // <label>` instead. Hover for the full text; click to copy it. |
+| `connection lost — polling` | Appears only while the live connection is down. |
+| `inbox: <n>` | Daemon inbox pages awaiting review; present at zero while the daemon is on, with a gold dot when something waits. Click it to open the inbox. Hidden when the daemon is off. |
+| `daemon: off`, `daemon: idle` or `daemon: working` | Whether this machine's daemon is running for this vault and whether it is busy. |
 
-Beyond these built-ins, a `statusBar:` list can also hold templated `text` segments, `query` counts, and `run:` shell segments. A `run:` command a vault asks for is not executed until you approve it on this machine: until then the bar shows the (truncated) command as an `[ allow ]` prompt, and clicking it opens the trust dialog. How to add, order, tone and approve segments is covered in [Status Bar & Home Page](../settings/status-bar.md).
+A `statusBar:` list can also hold templated text, query counts and `run:` shell segments. A `run:` command a vault asks for does not execute until you approve it on this machine: until then the bar shows the truncated command as an `[ allow ]` prompt, and clicking it opens the trust dialog. See [status bar and home page](../settings/status-bar.md).
 
-The graph mode (`2ND` / `3RD` / `BOTH` / `LOCAL`) used to appear here and **no longer
-does**. It lives on the graph pane's own header toolbar instead — it is a per-pane setting, and the
-status bar is app-scoped.
+## How it works
 
----
+The window is a frontend talking over HTTP on your own machine to a local backend, the `core` server; nothing leaves the machine. The window holds one Server-Sent Events stream open to `/events`, and the backend pushes a frame down it when a file changes. The window refetches only what the frame marks stale.
 
-Source: `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/shell/StatusBar.tsx`,
-`app/src/shell/InboxIndicator.tsx`, `app/src/ExportView.tsx`,
-`app/src/pickResult.ts`, `app/src/ui/ToastHost.tsx`, `core/src/server.ts`,
-`core/src/schema/settingsSchema.ts`, `core/src/openFolder.ts`,
-`core/src/statusBarItems.ts`, `app/src/shell/StatusSegment.tsx`.
+Two mechanisms keep a quiet vault's stream alive. The backend writes a `: keepalive` comment every `server.sseHeartbeatMs` (default 5000 ms, [settings reference](../settings/reference.md)), and `Bun.serve` runs with a 255-second idle timeout. A network path that vanishes (sleep, Wi-Fi switch, VPN) drops the stream with no close frame, so the window also polls `GET /version` every 5 seconds. When neither signal confirms the backend, the connection state turns disconnected, the poll speeds to every second and the stream retries in the background. The status-bar label and the toast both read that one state.
+
+Toasts come from `pushToast`; the connection toast is pushed by `serverVersion.ts` and the label rendered by the status bar. Each folder you open gets its own backend process on its own port (`POST /open-folder`), and its window is pinned to that backend with `?api=<url>`, so two open folders share no caches, watchers or tabs.
+
+Source: `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/doctorToast.ts`, `app/src/UpdateBanner.tsx`, `app/src/shell/StatusBar.tsx`, `app/src/shell/InboxIndicator.tsx`, `app/src/ExportView.tsx`, `app/src/Editor.tsx`, `app/src/ui/ToastHost.tsx`, `core/src/server.ts`, `core/src/openFolder.ts`, `core/src/statusBarItems.ts`

@@ -1,43 +1,49 @@
-# Per-base properties (`properties:`)
+# Base properties
 
-The `properties:` frontmatter key of a `type: base` note comes in **two forms**. The classic **map form** attaches metadata (a display name, a hide flag) to properties that are otherwise discovered from the rows. The **list form** goes further: it **declares the base's own property set** — the fields its cards/rows carry — so a board's fields belong to the board itself instead of to whatever frontmatter its notes happen to accumulate.
+The `properties:` key of a base has two forms. The map form attaches a label or a hide flag to properties that the base discovers in its rows. The list form declares the base's own fields, with types, options and defaults, so a board's fields belong to the board and not to whatever frontmatter its notes happen to carry.
 
-Parsing lives in `normalizeProperties` (`core/src/bases/parse.ts`); the declared-set consumers are `runView`'s column resolution (`core/src/bases/query.ts`) and the pure helpers in `core/src/bases/properties.ts` (`declaredDefaults`, `declaredPropertyKeys`, and — for a property's functional type — `propertyType` / `parseBasePropertyType` / `validatePropertyValue` / `coercePropertyValue`).
-
----
-
-## Map form — metadata over auto-derived properties (classic)
+Use the map form when a base reads existing notes and you only want nicer column labels. Use the list form when the base is the home of its cards, such as a kanban board.
 
 ```yaml
 ---
 type: base
 properties:
+  - status
+  - name: priority
+    type: number
+    default: 1
+  - name: stage
+    type: select
+    options: [todo, doing, done]
+view: kanban
+groupBy: stage
+---
+```
+
+## How do I label or hide a property?
+
+In the map form, `properties` maps a property name to a definition. Without a `properties` list, a view without `order` shows the union of the rows' own frontmatter keys, which suits a base that reads existing notes.
+
+```yaml
+properties:
   status:
     displayName: Status
   order:
     hidden: true
----
 ```
 
-`Record<name, def>` where each def is:
-
 | Field | Type | Effect |
-| --- | --- | --- |
-| `displayName` | string | Custom header label for the column (`columnLabel`). |
-| `hidden` | `true` | Omits the property from **auto-derived** columns. An explicit view `order:` listing it still wins. |
-| `type` | a type string (see [Property types](#property-types)) | The property's functional value type. Parsed into a canonical `BasePropertyType`. |
-| `default` | any non-null value | Seeded onto new cards **only in the list form** (see below); tolerated as metadata here. |
+|---|---|---|
+| `displayName` | string | Header label for the column. |
+| `hidden` | `true` | Leaves the property out of the automatically derived columns. A view `order:` that lists it still shows it. |
+| `type` | a type string | The property's value type; see [property types](#what-property-types-are-there). |
+| `default` | any non-null value | Seeded onto new cards in the list form; tolerated as metadata here. |
 
-With the map form (or no `properties:` at all) a view without an explicit `order:` derives its columns by **unioning the rows' own frontmatter keys** (`deriveColumns`). That is exactly right for a base that *reads existing pages* — e.g. a table over your `#book` notes should keep reflecting whatever frontmatter those notes carry. Nothing about this behavior changed.
+## How do I declare a base's own fields?
 
-## List form — the base declares its own property set
+In the list form each entry is a bare name or a map. The list declares the base's property set, so a view without `order:` shows exactly these properties in this order.
 
 ```yaml
----
-type: base
-filters:
-  and:
-    - file.inFolder("thoughts/My Board")
 properties:
   - status
   - description
@@ -46,72 +52,75 @@ properties:
     default: 1
   - name: worktree
     displayName: Worktree
-view: kanban
-groupBy: status
----
 ```
 
-Each list entry is either a **bare property name** or a map with:
-
 | Field | Required | Meaning |
-| --- | --- | --- |
-| `name` | yes | The frontmatter key (bare names recommended; `note.x` is accepted and treated as `x`; `file.*`/`formula.*` ids are allowed as read-only columns). Entries without a usable name are skipped; duplicate names keep the first. |
-| `type` | no | The property's functional value type (see [Property types](#property-types)). Absent → untyped; unrecognized → `text` (tolerant). |
-| `options` | for `select`/`multiselect` | The allowed choices. |
-| `number` | for `number` | Number format: `plain` \| `unit` \| `currency` \| `percent`. |
-| `unit` | for `number` | Unit label (e.g. `kg`) or currency code (e.g. `USD`). |
+|---|---|---|
+| `name` | yes | The frontmatter key. A `note.x` prefix is accepted and means `x`; `file.*` and `formula.*` ids are allowed as read-only columns. Entries without a usable name are skipped and duplicate names keep the first. |
+| `type` | no | The value type. No `type` means untyped; an unrecognised one means `text`. |
+| `options` | for `select`, `multiselect` | The allowed choices. |
+| `number` | for `number` | Display format: `plain`, `unit`, `currency` or `percent`. |
+| `unit` | for `number` | A unit label such as `kg`, or a currency code such as `USD`. |
 | `expr` | for `formula` | The formula expression. |
-| `default` | no | Value seeded onto **new cards** (kanban add-card). `false`/`0`/`""` are real defaults; `null`/missing means "no default". |
-| `displayName` / `hidden` | no | Same metadata as the map form. |
+| `default` | no | Value written onto new cards. `false`, `0` and `""` are real defaults; `null` or absent means none. |
+| `displayName`, `hidden` | no | The same as in the map form. |
 
-## Property types
+A declaration changes these things:
 
-A property's `type` is **functional**, not just informational (#99): it is parsed into a canonical `BasePropertyType` — a discriminated `kind` plus optional carriers — that is the single source of truth for the property's type. The value entry points (`propertyType`, `validatePropertyValue`, `coercePropertyValue`) live in `core/src/bases/properties.ts`; a settings panel is built on top of it by later work.
+1. Columns and card fields come from the declaration, in order, instead of from the union of the rows' keys. A stray key on one note adds no column. `file.name` is still placed first when the rows are real notes; declare it yourself to move it. An explicit `order:` always wins.
+2. A kanban without `order:` shows the declared properties as each card's editable chips, leaving out the title and the `groupBy` property.
+3. A kanban's add-card action writes every declared writable property that has a `default`, then the values shared by all sibling cards (so the new card matches the base's filter), then the clicked column's group value.
+4. The settings pickers offer declared fields, so a declared field with no data yet can be sorted, grouped or bound straight away.
 
-### The kanban inline editor is type-driven (#100)
+A declaration shapes display and creation. It is not a validation schema: filters, sorts and groups can still use undeclared properties, and bases that read existing notes keep reflecting the notes' own frontmatter. Calendar and flashcards views use their own field bindings, not declared columns.
 
-The kanban card's inline meta-chip editor (`app/src/bases/{KanbanCard.tsx,PropertyValueEditor.tsx,propertyEdit.ts}`) reads a property's DECLARED type (`propertyType(config, id)`) and, when present, picks the editor/display straight from it — no more heuristic-guessing for a typed property:
+## What property types are there?
 
-| Declared `kind` | Editor | Display |
-| --- | --- | --- |
-| `text` | single-line input | plain text (unchanged) |
-| `markdown` | multiline textarea | block markdown (`bases/markdown.ts` `renderMarkdown`) |
-| `number` | numeric input | formatted per `number`/`unit` — see below |
-| `boolean` | the existing `Chip` toggle | unchanged |
-| `date` | `<input type=date>` | unchanged |
-| `datetime` | `<input type=datetime-local>` | unchanged |
+A property's `type` is functional: it selects the editor and the display.
 
-`select`/`multiselect` got dedicated editors in #101. `list`/`link` have **no dedicated editor yet** — a declared property of one of those kinds falls through to the pre-#100 heuristic (vault-wide `.settings` registry, then the value's runtime type, then a "known sibling values" picker), so nothing regresses. A property with **no declared type at all** (`propertyType` returns `undefined`) takes the exact same fallback path — untyped bases are byte-for-byte unaffected, **except** a property literally named `description` (bare or `note.description`): with no declared type and no vault-registry entry, it defaults to `markdown` rather than falling all the way to the generic heuristic (#103) — kanban no longer has a dedicated description slot (see [kanban view docs](views/kanban.md)), so this default keeps a bare `description` field behaving like every pre-#103 board's built-in one. Declare an explicit `type:` on it to opt out.
+| `type` | Meaning |
+|---|---|
+| `text` | Plain single-line text. |
+| `markdown` | A multiline markdown body. |
+| `number` | A number, formatted by `number` and `unit`. |
+| `boolean` | A checkbox. |
+| `select` | One choice from `options`. |
+| `multiselect` | Any subset of `options`. |
+| `date` | A calendar date, `YYYY-MM-DD`. |
+| `datetime` | A date and time, ISO-8601. |
+| `list` | A free list of values. |
+| `link` | A wikilink to another note. |
+| `formula` | A value computed from `expr`; read-only. |
 
-`formula` never reaches an editor, dedicated or heuristic, at all — it's computed, not stored, so it's **read-only by construction** (#102, see [Formula properties](#formula-properties) below).
+Type strings are case-insensitive. Two aliases are accepted: `checkbox` means `boolean` and `time` means `datetime`. Unknown number formats are dropped, leaving a plain number, and empty `options` are dropped.
 
-**Number format display** (`app/src/bases/numberFormat.ts`, pure + unit-tested):
-- `plain` — the raw value, as-is.
-- `unit` — `"<value> <unit>"` (e.g. `unit: kg` → `"5 kg"`); bare value when no unit is set.
-- `currency` — `Intl.NumberFormat({style:"currency"})` keyed by `unit` as an ISO-4217 code (defaults `USD` when unset), e.g. `unit: USD` → `"$5.00"`.
-- `percent` — **the stored/frontmatter value is a plain fraction 0–1** (`0.25` means 25%), matching what `Intl.NumberFormat({style:"percent"})` expects natively — so display needs no manual ×100. The EDIT BOX, though, shows/accepts the human percentage number (`25`, not `0.25`) since typing a fraction is far more surprising than typing a percentage; the ×100/÷100 conversion happens only at that edit boundary (`numberEditValue`/`parseNumberEdit`), so the canonical stored value always stays the 0–1 fraction.
+A property named `description` with no declared type and no vault-wide registry entry is edited as `markdown`. Declare an explicit `type` to change that.
+
+### How are numbers formatted?
 
 ```yaml
 properties:
   - name: price
     type: number
     number: currency
-    unit: USD          # -> "$19.99"
+    unit: USD          # shows $19.99
   - name: weight
     type: number
     number: unit
-    unit: kg           # -> "5 kg"
+    unit: kg           # shows 5 kg
   - name: progress
     type: number
-    number: percent    # stored as 0.8, displayed as "80%", edit box shows/accepts 80
+    number: percent    # stored as 0.8, shows 80%
   - name: score
     type: number
-    number: plain      # bare number, no formatting
+    number: plain      # shows the bare number
 ```
 
-### Select and multiselect options
+`plain` shows the stored value. `unit` shows `<value> <unit>`, or the bare value when no unit is set. `currency` uses the `unit` as an ISO-4217 code and defaults to `USD`. `percent` stores a fraction between 0 and 1, so `0.25` displays as 25%; the edit box shows and accepts the percentage number (`25`) and converts at the boundary.
 
-A `select` property (single choice) and a `multiselect` property (any subset) both declare their choices with `options: [a, b, c]`:
+### How do select and multiselect work?
+
+Both declare their choices with `options`:
 
 ```yaml
 properties:
@@ -123,43 +132,13 @@ properties:
     options: [urgent, blocked, needs-review]
 ```
 
-A `select` opens a dropdown (`Select`) offering `options`. A `multiselect` — and an undeclared list of strings such as `tags` — is edited in **one line of text** (`app/src/ui/TagsField.tsx`), typed like a frontmatter list: `planning, docs` — comma-separated, so a value may hold spaces (`In progress`, `Jane Doe`). A tag column's values are drawn in the tag look (teal) while you type, and a leading `#` typed out of habit is dropped. As you type a value the note editor's own completion popup opens under it — the same popup, keys and look as the editor (`editor/completionDisplay.ts`) — offering the values that **start with** what you typed and are not already in the field: for a tag column, this column's values first, then every tag in the vault (the graph's tag nodes, the note editor's own tag source); for another list, its column's values; for `multiselect`, its declared `options`. Arrow keys move, Tab (`accept-completion`, rebindable) or Enter takes the highlighted one, Escape closes the popup, and — with no popup open — Enter or leaving the field commits the whole list once, while Escape cancels (back to the last saved value). A value that matches nothing is kept as typed. **Opening the field and leaving it without typing never writes** — the text is only parsed back into a list when you changed it. A list the field could not round-trip — one holding numbers or links, or a value containing a comma — is shown read-only instead of opening an editor. A stored value **outside** the declared `options` (hand-edited YAML, or an option removed after the fact) is preserved rather than dropped: for `select` it still shows as the current selection; for `multiselect` it stays in the field's text.
+A `select` opens a dropdown of the options. A `multiselect`, and an undeclared list of strings such as `tags`, is edited as one line of comma-separated text (`planning, docs`) with the note editor's completion popup offering values that start with what you typed. For a tag column the popup offers the column's values first, then every tag in the vault.
 
-### Type kinds
+Enter or leaving the field commits the list; Escape cancels. Opening the field and leaving it without typing never writes. A list holding numbers, links or a value that contains a comma is shown read-only. A stored value outside the declared `options` is kept, not dropped.
 
-| `type:` | Canonical `kind` | Carriers | Meaning |
-| --- | --- | --- | --- |
-| `text` | `text` | — | Plain single-line text. |
-| `markdown` | `markdown` | — | Rich text / markdown body. |
-| `number` | `number` | `number` (format), `unit` | Numeric value; `number: plain\|unit\|currency\|percent`, `unit:` the label/currency code. |
-| `boolean` | `boolean` | — | Checkbox. |
-| `select` | `select` | `options` | Single choice from `options`. |
-| `multiselect` | `multiselect` | `options` | Any subset of `options`. |
-| `date` | `date` | — | Calendar date (`YYYY-MM-DD`). |
-| `datetime` | `datetime` | — | Date + time (ISO-8601). |
-| `list` | `list` | — | Free list of values. |
-| `link` | `link` | — | Wikilink to another note. |
-| `formula` | `formula` | `expr` | Value computed from `expr`. |
+### How do formula properties work?
 
-### Legacy vocabulary (still accepted)
-
-The pre-#99 informational strings map onto canonical kinds so existing bases keep working unchanged:
-
-| Legacy `type:` | Maps to `kind` |
-| --- | --- |
-| `text` | `text` |
-| `number` | `number` |
-| `checkbox` | `boolean` |
-| `date` | `date` |
-| `time` | `datetime` |
-| `list` | `list` |
-| `link` | `link` |
-
-Parsing is tolerant: a property with no `type:` is **untyped** (`type` is `undefined`); a `type:` present but unrecognized falls back to `text`; unknown number formats are dropped (keeping a plain `number`), and empty `options` are dropped. Type strings are matched case-insensitively.
-
-### Formula properties
-
-A declared property with `type: formula` computes its value from `expr` — the SAME expression language, and the SAME evaluator (`core/src/bases/evaluate.ts` via `parseExpr`/`evaluate`), that powers a base's own top-level `formulas:` map. There is no separate expression engine for declared formula properties:
+A property with `type: formula` computes its value from `expr`, using the same expression language as the base's `formulas:` map (see [expression syntax](./query-syntax.md)).
 
 ```yaml
 properties:
@@ -172,80 +151,33 @@ properties:
     expr: price * qty
 ```
 
-**How it hooks into the existing evaluator** (`core/src/bases/query.ts` `runView`): `declaredFormulas(base)` (`core/src/bases/properties.ts`) collects every formula-kind declared property's `expr`, keyed by its bare name, and MERGES that map into `base.formulas` before `computeFormulas` runs — so `total` is computed by the exact same per-row `computeFormulas` pass, landing in `row.formula.total`, as if you'd written a top-level `formulas: { total: "price * qty" }` yourself. An explicit `formulas:` entry of the same name wins (it's spread in last).
+The value appears as the column `formula.total`. It is read-only, and a stray `default` on it is never written. An explicit `formulas:` entry of the same name wins. An expression that reads a missing field follows normal arithmetic coercion (`price * qty` with no `qty` is `NaN`); an expression that fails to parse computes nothing and does not throw.
 
-**Column id — and why it's read-only.** A formula-kind declared property canonicalizes to a `formula.<name>` column id (`declaredColumns`), not `note.<name>` — the same namespace an explicit `formulas:` reference uses (`order: [formula.ppu]`). Every write path already treats a `formula.`-prefixed id as non-writable (`writableKey()` in `app/src/bases/kanbanMeta.ts`, pre-dating #102), so a formula property is read-only for free: the kanban card's meta-chip click handler (`KanbanCard.tsx` `enterMeta`) never opens an editor for it, and `commitMeta` refuses to write it even if called. No new editor-dispatch code was needed for the read-only behavior itself — only the column-id + evaluator wiring above.
+## Can I edit properties without writing YAML?
 
-**Display.** The computed value renders through the same read path as any other column — `resolveProperty("formula.total", row)` → `row.formula.total`, formatted by the existing `renderValue`/`renderCell` (table columns) or the kanban card's meta section. `declaredDefaults` explicitly skips formula-kind properties (a stray `default:` on one is never seeded onto a new card's frontmatter — there's no frontmatter key to seed).
+Open the base's **Settings** in the view bar. The properties section writes the list form for you, for every view kind. Each declared property is one line with its name, type and visibility; click one to expand its editor (name, type, type-specific extras, default, up and down arrows, delete). **add property** appends an entry, and the eye icon toggles `hidden`. The same panel edits `formulas:` and the rest of the base; see [filters](./filters.md#can-i-edit-filters-without-writing-yaml) and [sources](./sources.md#can-i-edit-the-source-without-writing-yaml). Saving writes only the keys that changed.
 
-**Edge cases** (matching the codebase's existing tolerance for `formulas:`): a expr referencing a missing field evaluates via normal JS coercion (e.g. `price * qty` with no `qty` → `NaN`), never throws; a malformed `expr` (fails to parse) computes `undefined` for every row, also without throwing.
+Map-form entries are not shown in the list; adding a row converts the key to list form and replaces the map. For a kanban, this section is also where the board's fields live.
 
-### Richer object form (examples)
+## How it works
 
-```yaml
-properties:
-  - name: priority
-    type: number
-    number: currency
-    unit: USD
-  - name: stage
-    type: select
-    options: [todo, doing, done]
-  - name: labels
-    type: multiselect
-    options: [urgent, blocked]
-  - name: pricePerUnit
-    type: formula
-    expr: price / qty
-```
+`normalizeProperties` in `core/src/bases/parse.ts` reads both forms. A list sets `BaseConfig.declaredProperties` (names in declaration order); its presence is the flag that the base declares its own set, and the map form never sets it. `parseBasePropertyType` in `core/src/bases/properties.ts` turns `type` and its carriers into a `BasePropertyType`, and `propertyType`, `validatePropertyValue`, `coercePropertyValue`, `declaredDefaults`, `declaredFormulas` and `declaredPropertyKeys` are the helpers views call.
 
-The parsed config carries the names in declaration order as `BaseConfig.declaredProperties`; its presence is the flag that the base declares its own set (the map form never sets it, so existing bases are untouched).
+`runView` in `core/src/bases/query.ts` resolves columns from the declaration and merges `declaredFormulas(base)` into `base.formulas` before computing formulas, so a declared formula runs through the same per-row pass as a top-level one. A formula property canonicalizes to a `formula.<name>` id, and every write path treats a `formula.` id as non-writable, which is what makes it read-only.
 
-## What a declaration changes
+The kanban card's inline editor (`app/src/bases/KanbanCard.tsx`, `PropertyValueEditor.tsx`, `propertyEdit.ts`) picks its editor from the declared kind:
 
-1. **Columns / card fields.** A view without an explicit `order:` shows **exactly the declared properties, in declaration order** (canonicalized: `status` → `note.status`), instead of the row-frontmatter union — a stray extra key on one note no longer leaks a column/field onto every card. `file.name` is still seeded first when the rows are real notes (declare it yourself to reposition it; `hidden: true` drops any declared entry). An explicit view `order:` **always wins**, exactly as before.
-2. **Kanban card meta.** A kanban without an `order:` shows the declared properties (minus the title column and the `groupBy` property — the column a card sits in already conveys it) as each card's editable meta chips — previously only an explicit `order:` produced meta. `description` is not excluded (#103 removed its dedicated slot; it's just another declared property, typically `type: markdown`). Empty values are still dropped per `hasValue`.
-3. **New cards seed the declared defaults.** Kanban's add-card writes every declared writable property that has a `default` (via `declaredDefaults`), then the values shared by all existing sibling cards (`constProps` — so the new card keeps matching the base's filter), then the clicked column's status value. Only the status/`order` keys are never seeded from defaults.
-4. **Pickers offer declared fields.** The settings dropdowns (`BaseSettings`) union the declared names with the row-derived columns, so a declared-but-not-yet-populated field can be bound/sorted/grouped immediately.
+| Declared kind | Editor |
+|---|---|
+| `text` | single-line input |
+| `markdown` | multiline textarea, rendered as block markdown |
+| `number` | numeric input, displayed through `numberFormat.ts` |
+| `boolean` | chip toggle |
+| `date`, `datetime` | date or datetime-local input |
+| `select` | dropdown |
+| `multiselect` | the comma-separated field in `app/src/ui/TagsField.tsx` |
+| `list`, `link` | no dedicated editor: falls back to the vault-wide `.settings` registry, then the value's runtime type, then a picker of known sibling values |
 
-## What it does NOT change
+An untyped property takes that same fallback path. `base validate` checks each declared `default` against its type with `validatePropertyValue`.
 
-- **Bases that read existing pages keep reflecting the notes' own frontmatter** — no declaration, no change: columns still derive from the rows.
-- The `properties:` **map form keeps its exact metadata-only semantics**; it never restricts columns.
-- Full-pane views (calendar / flashcards) use their own field bindings, not `runView` columns.
-- Filtering/sorting/grouping can still reference undeclared properties — the declaration shapes *display and creation*, it is not a validation schema.
-- `schema:` (column → type, used by the calendar serializer) is unrelated and unchanged; a declared property `type` is the canonical `BasePropertyType` consumed by editors/validation (see [Property types](#property-types)).
-
-## Editing properties in the settings panel
-
-You don't have to hand-edit the `properties:` YAML — open the base's settings (the gear icon in the view bar, `BaseSettings.tsx`) for a **Properties** section that writes the same list-form `properties:` for you. It's shown for every view type, not just kanban.
-
-Each declared property collapses to a single name/type/visibility line; clicking it expands one editor at a time (name, type, type-specific extras — `options` for select/multiselect, `number`/`unit` for number, `expr` for formula — plus a default value, reorder up/down arrows, and delete). An "ADD PROPERTY" button appends a new blank entry. The eye icon toggles a property's `hidden` flag without opening the row. Reordering here is what drives declared card/table field order (the same `declaredProperties` order described above).
-
-The same panel also edits the base's **formulas** (`formulas:` — name/expression rows; a duplicate name blocks save, an unparsable expression is flagged under its row) and everything else a base reads — see [filters](./filters.md#editing-filters-in-the-settings-panel) and [sources](./sources.md#editing-the-source-in-the-settings-panel). Saving writes only changed keys, each as a plain top-level key (`source`, `filters`, `formulas`, `properties`, and the view's own keys).
-
-Map-form `properties:` (metadata only) are not shown in the list; adding a row there converts the key to list form, replacing the map.
-
-For kanban specifically, this Properties section **replaces** the old "Columns" list — a kanban board's fields, their types, and their visibility all live in one place instead of two.
-
-### Example: fields scoped to the board
-
-```yaml
----
-type: base
-filters:
-  and:
-    - file.inFolder("projects/Tracker")
-properties:
-  - status
-  - name: effort
-    type: number
-    default: 1
-  - name: due
-    type: date
-view: kanban
-groupBy: status
----
-```
-
-Cards on this board show `effort` and `due` (and nothing else, however messy the notes' frontmatter gets); a card added to the "Todo" column is created with `status: Todo`, `effort: 1`.
+Source: `core/src/bases/parse.ts`, `core/src/bases/properties.ts`, `core/src/bases/query.ts`, `core/src/bases/types.ts`, `app/src/bases/propertyEdit.ts`, `app/src/bases/PropertyValueEditor.tsx`, `app/src/bases/numberFormat.ts`, `app/src/bases/BaseSettings.tsx`, `app/src/ui/TagsField.tsx`

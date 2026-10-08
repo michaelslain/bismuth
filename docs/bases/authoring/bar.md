@@ -1,15 +1,16 @@
 # bar
 
-A character-grid bar chart — one full-width row of monospace `#` fill per bucket (`app/src/bases/BarView.tsx` + `barRows.ts`). **No SVG, no `AsciiChart`/`AsciiMeter`.** Shares its data pipeline (`buildChartData`) with `line`/`stat`/`heatmap`. Interactive: hovering a row updates the readout, clicking opens a drill list of the notes behind that bucket, and the ViewBar exposes `x`/`y`/`agg`/`bin` pickers.
+A `bar` view draws one full-width row of `#` fill per bucket, with the value printed at the right. Use it to compare categories or a handful of periods.
 
 ## Working example
 
 ```yaml
 ---
 type: base
+source: notes where file.hasTag("reading")
 view: bar
 x: date
-y: glasses
+y: pages
 aggregate: sum
 bin: week
 ---
@@ -19,18 +20,19 @@ bin: week
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `x` | `string` (property id) | auto-detected | Category/time axis. Bare names resolve to `note.<name>`. |
-| `y` | `string` (property id) | auto-detected | Numeric value axis. Ignored entirely when `aggregate: count`. |
-| `aggregate` | `"sum"\|"avg"\|"count"\|"min"\|"max"` | `"sum"` if `y` resolves, else `"count"` | How values in a bucket combine. |
-| `bin` | `"day"\|"week"\|"month"` | `"day"` | Time-bucket size for date axes; no effect on category axes. |
+| `x` | property id | auto-detected | the bucket axis: a date column or a category column; a bare name means `note.<name>` |
+| `y` | property id | auto-detected | the numeric value; ignored when `aggregate: count` |
+| `aggregate` | `sum` \| `avg` \| `count` \| `min` \| `max` | `sum` when `y` resolves, else `count` | how a bucket's values combine |
+| `bin` | `day` \| `week` \| `month` | `day` | bucket size on a date axis; no effect on a category axis |
+| `limit` | number | none | charts only the first N rows |
 
 ## Failure modes
 
-- **Auto-detection has a ≥50%-of-rows heuristic and excludes booleans from `y`.** If your data is ambiguous (mixed types, sparse values), omitting `x`/`y` can silently pick the wrong columns — set them explicitly when the chart looks wrong.
-- **Every bucket's label always shows, at any count — there is no 16-bar cutoff.** (That gate belongs to `line`'s x-axis labels, not `bar`.) Rows just get longer as buckets grow; there's no rotation or truncation because there's no axis to run out of room on.
-- **No `title` tooltip on any bar** — the raw numeric value is printed right-aligned after the bar instead, and hovering a row drives the shared readout line above the chart, not a native tooltip.
-- **A negative value clamps to a zero-length fill** rather than drawing backwards or throwing; `fill = round(max(0, value) / max * width)`. An all-zero or single-value dataset still renders bars, just short or flat ones — that's not an error state.
-- **Category-axis buckets sort by value descending, not alphabetically** (ties broken alphabetically by key) — the bar order isn't insertion order or the order you wrote filters/categories in.
-- **Hover/select styling**: hovering a row turns its fill `--fg`; clicking selects it (fill stays `--fg`, every other row's fill drops to `--text-muted`) and opens the drill list — there is no per-bar color palette.
+- If `x` or `y` is unset, the chart guesses: the first column that is mostly ISO dates for `x`, the first other mostly-numeric column for `y`. On mixed data it can pick the wrong column silently; set both.
+- If `aggregate` or `bin` holds any other value, it is dropped without an error and the default applies; `bismuth base validate` does not catch it.
+- If no column is numeric, the chart counts rows instead of summing; `true`/`false` columns never count as numeric.
+- Category buckets sort by value, highest first (ties alphabetical), not in the order the values appear.
+- On a date axis, a row with an empty or non-date `x` is skipped, not charted as zero.
+- A negative value draws an empty bar.
 
-Full reference: `docs/bases/views/charts.md`
+Full reference: [docs/bases/views/charts.md](../views/charts.md#bar-view)

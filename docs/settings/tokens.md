@@ -1,14 +1,15 @@
 # Design tokens
 
-A **token** is one named design choice: a colour, a length, a duration, a font. Every token is a CSS custom property on `:root` in `app/src/global.css`, and the registry in `core/src/theme/designTokens.ts` (`DESIGN_TOKENS`) lists each one with its kind, group, default and a line saying what it paints. After reading this page you can restyle any part of Bismuth by writing a few lines of YAML, with no code change.
+A **token** is one named design choice: a colour, a length, a duration, a font. Every token has a kind, a group, a default and a line saying what it paints, and you can override any of them in YAML with no code change.
+Read this page to restyle part of Bismuth, or to find the key for the thing you want to change.
 
-**The key is the CSS variable name without the leading `--`.** `--accent` is `accent`, `--sp-3` is `sp-3`, `--r-card` is `r-card`. Keys are lowercase and case-sensitive. To list them all from the shell: `bismuth theme tokens` (see [the CLI reference](../cli/reference.md)).
+The key is the CSS variable name without the leading `--`. `--accent` is `accent`, `--sp-3` is `sp-3`, `--r-card` is `r-card`. Keys are lowercase and case-sensitive. To list them all from the shell: `bismuth theme tokens` (see [the CLI reference](../cli/reference.md)).
 
 ## Where to set a token
 
 There are two places. Both take the same `tokens:` map and check every value the same way.
 
-**1. In the vault's `.settings`**, under `appearance.tokens`. It applies to this vault, whatever theme is selected:
+1. In the vault's `.settings`, under `appearance.tokens`. It applies to this vault, whatever theme is selected:
 
 ```yaml
 appearance:
@@ -18,7 +19,7 @@ appearance:
     sp-3: 10px
 ```
 
-**2. In a theme file**, `<vault>/.themes/<name>.yaml`, under `tokens:`. It applies whenever that theme is selected (`appearance.theme: <name>`). A theme can also say `extends: paper` to start from a built-in. See [the custom themes guide](../guides/custom-themes.md).
+2. In a theme file, `<vault>/.themes/<name>.yaml`, under `tokens:`. It applies whenever that theme is selected (`appearance.theme: <name>`). A theme can also say `extends: paper` to start from a built-in. See [the custom themes guide](../guides/custom-themes.md).
 
 ```yaml
 label: 'Dusk'
@@ -34,20 +35,20 @@ Changes repaint the running app live. Deleting a line puts the default (or the t
 
 ## Precedence
 
-Lowest to highest: the built-in default in `global.css`, then the theme's `extends` built-in, then the theme's `tokens:`, then `.settings` `appearance.tokens`. A key that is present beats one that is absent.
+Lowest to highest: the built-in default, then the theme's `extends` built-in, then the theme's `tokens:`, then `.settings` `appearance.tokens`. A key that is present beats one that is absent.
 
-The legacy `.settings` keys in the next section alias tokens, and a legacy key that is **present** in the file beats the theme. An explicit `appearance.tokens` entry beats its legacy key. Examples:
+The `.settings` keys in [the next section](#settings-keys-that-set-a-token) each set one token. A key of that kind that is present in `.settings` beats the theme, and an explicit `appearance.tokens` entry beats its matching key. Examples:
 
 1. The theme sets `accent: '#111111'` and `.settings` `appearance.tokens` sets `accent: '#ff6b6b'`. Red wins.
 2. The theme sets `editor-font-size: 14px` and `.settings` has `appearance.editorFontSize: 16`. The editor is 16px.
 3. The same `.settings` also has `appearance.tokens.editor-font-size: 18px`. The editor is 18px.
-4. `.settings` sets none of them. The theme's value applies, because an absent legacy key no longer pins its default over a theme.
+4. `.settings` has neither. The theme's value applies, because an absent key never pins its default over a theme.
 
-## Legacy settings keys
+## Settings keys that set a token
 
-Ten older `.settings` keys stay valid and are aliases for tokens. No saved `.settings` changes meaning.
+Some ordinary `.settings` keys are shortcuts for a token. Each is valid on its own and sets the token in the same row.
 
-| token | legacy key | kind |
+| token | settings key | kind |
 |---|---|---|
 | `ui-font-stack` | `appearance.uiFont` | font-mono |
 | `prose-font` | `appearance.proseFont` | font-prose |
@@ -60,11 +61,12 @@ Ten older `.settings` keys stay valid and are aliases for tokens. No saved `.set
 | `cursor-glide` | `appearance.cursorGlideMs` | duration |
 | `cursor-blink` | `appearance.cursorBlinkSeconds` | duration |
 
-Values for the legacy keys are checked against the schema's min and max; a value outside them is skipped. A legacy font key holds the family name.
+A value outside the key's minimum and maximum in the [settings reference](reference.md#appearance) is skipped. A font key holds the family name.
 
 ## What a value may be
 
-Each token has a **kind**, which fixes what a valid value looks like. A value that fails is an **error**. In `.settings` the bad key is dropped and the rest apply. In a theme file the theme is invalid and the app paints `ink` until it validates. An unknown key is only a warning, with a did-you-mean hint, and is ignored. In `.settings` the warning reads `unknown token: <key>`; in a theme file it reads `<key>: unknown token, ignored (did you mean <key>?)`.
+Each token has a **kind**, which fixes what a valid value looks like. A value that fails is an error. In `.settings` the bad key is dropped and the rest apply. In a theme file the theme is invalid and the app paints `ink` until it validates.
+An unknown key is only a warning, with a did-you-mean hint, and is ignored. In `.settings` the warning reads `unknown token: <key>`; in a theme file it reads `<key>: unknown token, ignored (did you mean <key>?)`.
 
 Nothing that could escape a declaration is accepted: no `;`, braces, `<`, `>`, `!`, `@`, quotes, backslashes, comments, `url(...)` or `expression`.
 
@@ -84,8 +86,8 @@ Nothing that could escape a declaration is accepted: no `;`, braces, `<`, `>`, `
 
 Colour tokens come in two flavours:
 
-- **Field tokens** are read by JavaScript (the graph canvas, the terminal, Google Calendar), so they accept **plain colours only**.
-- **CSS-only colour tokens** also accept `var(--registered)` and `color-mix(...)`.
+- Field tokens are read by JavaScript (the graph canvas, the terminal, Google Calendar), so they accept plain colours only.
+- CSS-only colour tokens also accept `var(--registered)` and `color-mix(...)`.
 
 Where a value references `var(--x)`, `x` must be a registered token.
 
@@ -93,7 +95,7 @@ In a theme file an error reads like `sp-3: not a length: big (6px, 0.5em, or a n
 
 ## Tokens by group
 
-Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` fails if a row's kind, default or description disagrees with the registry. **default** is what Bismuth paints at default settings (the `ink` theme's value for a colour).
+Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` fails if a row's kind, default or description disagrees with the registry. default is what Bismuth paints at default settings (the `ink` theme's value for a colour).
 
 ### surface
 
@@ -236,10 +238,10 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 
 | key | kind | default | what it paints |
 |---|---|---|---|
-| `ui-font-stack` | font-mono | `Monaspace Xenon` | UI + mono font family (all chrome, code, frontmatter, math, tags). Legacy: appearance.uiFont. |
-| `prose-font` | font-prose | `Libron` | Prose font family (note body, headings, tables, chat). Legacy: appearance.proseFont. |
+| `ui-font-stack` | font-mono | `Monaspace Xenon` | UI + mono font family (all chrome, code, frontmatter, math, tags). Also set by appearance.uiFont. |
+| `prose-font` | font-prose | `Libron` | Prose font family (note body, headings, tables, chat). Also set by appearance.proseFont. |
 | `prose-scale` | number | `0.97` | Size correction measured for the prose face, so prose reads at one optical size. |
-| `mono-scale` | number | `1` | Optical-size factor for the mono font, 0.6 to 1. Legacy: appearance.monoScale. |
+| `mono-scale` | number | `1` | Optical-size factor for the mono font, 0.6 to 1. Also set by appearance.monoScale. |
 | `glyph-scale` | number | `1.25` | Size of glyph art relative to its cell. |
 | `code-scale` | number | `0.89` | Mono text size relative to the prose around it. |
 
@@ -249,7 +251,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 |---|---|---|---|
 | `fs-nano` | length | `9.5px` | Smallest text. |
 | `fs-micro` | length | `10.5px` | Fine print and captions. |
-| `fs-ui` | length | `11.5px` | Chrome text: tabs, menus, rows, 11 to 16px. Also scales the ASCII cell width. Legacy: appearance.uiFontSize. |
+| `fs-ui` | length | `11.5px` | Chrome text: tabs, menus, rows, 11 to 16px. Also scales the ASCII cell width. Also set by appearance.uiFontSize. |
 | `fs-body` | length | `13px` | Dense body text. |
 | `fs-body-lg` | length | `13.5px` | Prose body text. |
 | `fs-lead` | length | `15px` | Lead paragraphs. |
@@ -264,7 +266,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `fs-h4` | length | `var(--editor-font-size)` | Note heading 4. |
 | `fs-h5` | length | `min(var(--fs-body), var(--editor-font-size))` | Note heading 5. |
 | `fs-h6` | length | `min(var(--fs-body), var(--editor-font-size))` | Note heading 6. |
-| `editor-font-size` | length | `13.5px` | Note prose size, 11 to 28px. Legacy: appearance.editorFontSize. |
+| `editor-font-size` | length | `13.5px` | Note prose size, 11 to 28px. Also set by appearance.editorFontSize. |
 
 ### weight
 
@@ -288,7 +290,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `lh-ui` | number | `1.7` | Chrome line height. |
 | `lh-prose` | number | `1.6` | Prose line height where the editor setting does not apply. |
 | `lh-grid` | number | `1` | Character-grid line height; one cell tall. |
-| `prose-line-height` | number | `1.25` | Note prose line height, 0.8 to 1.8. Legacy: editor.lineHeight. |
+| `prose-line-height` | number | `1.25` | Note prose line height, 0.8 to 1.8. Also set by editor.lineHeight. |
 
 ### tracking
 
@@ -330,7 +332,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `rail-w-collapsed` | length | `46px` | Width of the tab rail when collapsed. |
 | `skeleton-bar-h` | length | `var(--sp-5)` | Height of one placeholder bar in a skeleton. |
 | `list-max-h` | length | `320px` | Tallest a dropdown list grows before scrolling. |
-| `icon` | length | `12px` | Size of every icon, 11 to 20px. Legacy: appearance.iconSize. |
+| `icon` | length | `12px` | Size of every icon, 11 to 20px. Also set by appearance.iconSize. |
 | `bar-icon-size` | length | `18px` | Size of icons in a view bar. |
 | `ascii-dash-pitch` | number | `2` | Cells between dashes of an ASCII dashed line. |
 
@@ -392,9 +394,9 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 
 | key | kind | default | what it paints |
 |---|---|---|---|
-| `cursor-width` | length | `2px` | Text cursor bar width, 1 to 4px. Legacy: appearance.cursorWidth. |
-| `cursor-glide` | duration | `70ms` | Cursor glide between positions, 20 to 200ms. Legacy: appearance.cursorGlideMs. |
-| `cursor-blink` | duration | `1.2s` | Cursor blink cycle, 0.6 to 2s. Legacy: appearance.cursorBlinkSeconds. |
+| `cursor-width` | length | `2px` | Text cursor bar width, 1 to 4px. Also set by appearance.cursorWidth. |
+| `cursor-glide` | duration | `70ms` | Cursor glide between positions, 20 to 200ms. Also set by appearance.cursorGlideMs. |
+| `cursor-blink` | duration | `1.2s` | Cursor blink cycle, 0.6 to 2s. Also set by appearance.cursorBlinkSeconds. |
 
 ## What is not a token
 
@@ -443,8 +445,19 @@ Each of these is set on `:root` but is a font metric, a formula over tokens, or 
 | `--map-min-height` | layout preference: .settings (ui.mapMinHeight) owns it |
 | `--popover-font` | alias of --ui-font-stack: a font stack is set through the font token, not per surface |
 
-## Related
+## How it works
 
-- [Custom themes guide](../guides/custom-themes.md): the `.themes/<name>.yaml` format and workflow
-- [Themes](themes.md): the four built-in themes and how they resolve
-- [Settings reference](reference.md#appearance): `appearance.tokens`
+`DESIGN_TOKENS` in `core/src/theme/designTokens.ts` is the registry. Each entry has a key, kind, group, default and doc, and some carry a `setting` alias or a `field` flag.
+A token is a custom property on `:root` in `app/src/global.css`; a new one is a `:root` line there plus a registry entry plus its row in the group tables above.
+
+`core/test/theme/tokensDoc.test.ts` fails when a group table disagrees with the registry on kind, default or description, and when this page omits a group, a not-a-token group, an unregistered `:root` variable or a settings alias.
+`app/src/tokenRegistry.test.ts` fails on a `:root` variable that is neither registered nor listed under [`:root` variables that are not tokens](#root-variables-that-are-not-tokens).
+
+Values are checked by `checkTokenValue` per kind; `parseTokenMap` validates a whole map and returns the accepted values with diagnostics.
+A **field token** is a colour that JavaScript reads through `ColorTokens` (the graph canvas, the terminal, Google Calendar), so it is applied by `applyColorTokens` over the resolved theme.
+Every other token is projected straight onto `:root` by `overrideVars` in `app/src/effectiveTokens.ts`, with `settings.appearance.tokens` over the active theme's tokens.
+`legacyTokens` reads the settings keys above out of the raw `.settings` document, and `GET /settings` folds them into `appearance.tokens` with an explicit entry winning. A font token holds a family name, which the app maps to a font stack.
+
+[Themes and fonts](themes.md) covers how a theme resolves, and the [custom themes guide](../guides/custom-themes.md) covers the `.themes/<name>.yaml` format.
+
+Source: `core/src/theme/designTokens.ts`, `core/src/theme/customTheme.ts`, `core/src/settingsSerialize.ts`, `app/src/effectiveTokens.ts`, `app/src/settingsCssVars.ts`, `app/src/global.css`, `app/src/tokenRegistry.test.ts`, `core/test/theme/tokensDoc.test.ts`

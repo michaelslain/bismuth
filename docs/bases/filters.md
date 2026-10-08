@@ -1,436 +1,47 @@
-# Bases Filters
+# Base filters
 
-Filtering decides which rows survive: `filters:` in a base config, `where:` in a `where`/`from` source spec. This covers the `FilterNode` shape, the `and`/`or`/`not` combinator trees, how a single string filter is parsed and evaluated against one note's context, the truthiness rule that decides pass/fail, comparison semantics per value type, short-circuit operators, and the date/duration arithmetic filter expressions can use. Drawn from `core/src/bases/filters.ts`, `evaluate.ts`, `values.ts`, `functions.ts`, `parser.ts`, `lexer.ts`, `query.ts`, `source.ts`, and the colocated tests.
-
-For the broader Bases model see [bases overview](./overview.md); for sources and composition see [sources](./sources.md); for the full function/method catalog see [functions](./functions.md); for sorting/grouping/columns see [query](./query-syntax.md).
-
-## The `FilterNode` type
-
-A filter is a `FilterNode`, defined in `core/src/bases/types.ts`:
-
-```ts
-export type FilterNode =
-  | string                       // a Bases expression evaluated for truthiness
-  | { and: FilterNode[] }        // every child must pass
-  | { or: FilterNode[] }         // at least one child must pass
-  | { not: FilterNode[] };       // every child must FAIL (NOR — see gotcha)
-```
-
-It is recursive: the children of `and`/`or`/`not` are themselves `FilterNode`s, so you can nest trees arbitrarily. A **leaf** is always a string expression.
-
-Two places consume filters:
-
-- `BaseConfig.filters` — the base's only filter; a base has one view and the view has no filters of its own (see [Where filters live](#where-filters-live)).
-- A `SourceSpec`'s `where` field (`{ kind: "notes", where? }` / `{ kind: "tasks", where? }`) is a **plain string filter** (not a full `FilterNode` tree) — see [`where:` in sources](#where-in-sources).
-
-## Evaluating a filter: `passesFilter`
-
-The entire filter engine is `passesFilter(node, ctx)` in `core/src/bases/filters.ts`:
-
-```ts
-export function passesFilter(node: FilterNode | undefined, ctx: EvalContext): boolean {
-  if (!node) return true;
-
-  if (typeof node === "string") {
-    try {
-      return truthy(evaluate(parseExpr(node), ctx));
-    } catch {
-      return false;
-    }
-  }
-
-  if ("and" in node) return node.and.every((n) => passesFilter(n, ctx));
-  if ("or" in node)  return node.or.some((n)   => passesFilter(n, ctx));
-  if ("not" in node) return node.not.every((n) => !passesFilter(n, ctx));
-  return true;
-}
-```
-
-Behavior, point by point:
-
-1. **`undefined` (or any falsey node) passes everything.** No filter = every row is kept (`passesFilter(undefined, ctx) === true`). Verified by the test `undefined filter passes everything`.
-2. **A string leaf** is `parseExpr`'d into an AST, `evaluate`d against the row's context, then run through `truthy()`. The row passes iff the result is truthy.
-3. **A string leaf that throws or fails to parse returns `false` (fail closed).** Both the `parseExpr` and the `evaluate` are inside a `try/catch`. A syntactically broken expression such as `"this is not valid )("` makes the row **fail**, not error out — test `malformed expression fails closed (does not throw)`.
-4. **`and`** uses `Array.every` — all children must pass; an empty `and: []` passes (vacuously true).
-5. **`or`** uses `Array.some` — at least one child must pass; an empty `or: []` fails (vacuously false).
-6. **`not`** uses `Array.every(child => !passesFilter(child))` — every child must FAIL for the `not` to pass. See the [NOR gotcha](#gotcha-not-is-nor-not-elementwise-negation) below.
-
-### `EvalContext` — what a filter sees per note
-
-Each row is evaluated against an `EvalContext` (built by `toContext(row, hostThis)` in `query.ts`):
-
-```ts
-export interface EvalContext {
-  file: FileMeta;                          // file.* metadata (name, path, folder, tags, links, …)
-  note: Record<string, unknown>;           // bare frontmatter keys + note.* keys
-  formula: Record<string, unknown>;        // formula.* (computed before filtering — see below)
-  this?: Record<string, unknown>;          // host/embedding note's frontmatter (this.*) — optional
-  scope?: Scope;                           // lambda parameter scope chain
-}
-```
-
-`FileMeta` (from `types.ts`) provides:
-
-| `file.` field | Meaning |
-|---|---|
-| `name` | basename without extension, e.g. `"housing"` |
-| `basename` | alias of `name` (Obsidian parity) |
-| `path` | vault-relative path, e.g. `"reading/housing.md"` |
-| `folder` | folder path, `""` at vault root |
-| `ext` | always `"md"` — rows are built from `.md` files only (a base is itself a `.md` note) |
-| `size` | bytes (number) |
-| `ctime` / `mtime` | epoch ms (numbers) |
-| `tags` | `string[]` without the leading `#` |
-| `links` | `string[]` wikilink targets (no `.md`, no `#heading`, no `|alias`) |
-
-**Formulas are computed before filtering.** In `runView` (`query.ts`), step 1 computes `formula.*` for every row, and only then (step 2) applies the filter. This means a filter can reference `formula.ppu` and it will already be populated. Test: `formula references work in filters` (`passesFilter("formula.ppu > 5", ctx)` is `true` when `ctx.formula.ppu === 6`).
-
-## How a leaf string is evaluated
-
-A leaf string is a full Bases expression. The pipeline is `parseExpr(src)` → `evaluate(ast, ctx)` → `truthy(result)`. The expression language (parser/evaluator) is documented fully in [functions](./functions.md); the parts that matter for filtering are below.
-
-### Identifier resolution
-
-`resolveIdent` (in `evaluate.ts`) resolves a bare name in this order:
-
-1. **Lambda scope chain** (`ctx.scope`) — innermost first; used inside `.map`/`.filter`/`.reduce` lambdas.
-2. The reserved roots: `file` → `ctx.file`, `note` → `ctx.note`, `formula` → `ctx.formula`, `this` → `ctx.this`.
-3. **Otherwise a bare name is a frontmatter key**: `ctx.note[name]` (or `undefined` if `ctx.note` is absent).
-
-So in a filter:
-
-- `status` and `note.status` are the same thing (a frontmatter key). Test `resolves bare, note., and file. identifiers`: `run("price")` → `10`, `run("note.status")` → `"in-progress"`, `run("file.name")` → `"housing"`.
-- `file.tags`, `file.folder`, `file.path`, etc. read `FileMeta`.
-- `formula.ppu` reads the precomputed formula.
-- `this.minPrice` reads the **host note's** frontmatter when the base is embedded inline in another note (see [`this.` host context](#this-host-note-context)).
-
-### Member, index, and missing values
-
-- **Member access** (`obj.name`) returns `undefined` when the object is `null`/`undefined` or when the key is missing — never throws. Test: `run("note.missing")` → `undefined`.
-- **`.length`** is special-cased on strings and arrays (`getMember`): `file.tags.length`, `someString.length`.
-- **Index access** (`arr[0]`, `obj["key"]`): numeric index into an array, string key into an object; otherwise `undefined`. Test: `run("file.tags[0]")` → `"logistics"`.
-
-### Operators available in a filter
-
-From `parser.ts` (`BINARY_PRECEDENCE`) and `evaluate.ts` (`evalBinary`), in **increasing** precedence (higher binds tighter):
-
-| Prec | Operators | Notes |
-|---|---|---|
-| 1 | `\|\|` | logical OR (short-circuit, returns an operand value) |
-| 2 | `&&` | logical AND (short-circuit, returns an operand value) |
-| 3 | `==`, `!=` | loose equality / inequality (see [equality](#-and--equality)) |
-| 4 | `>`, `<`, `>=`, `<=` | ordered comparison (NaN-safe — see [ordered comparison](#--ordered-comparison)) |
-| 5 | `+`, `-` | numeric or date/duration arithmetic, or string concat for `+` |
-| 6 | `*`, `/`, `%` | numeric arithmetic |
-
-Unary operators (`parseUnary`): `!x` (logical NOT, via `truthy`) and `-x` (numeric negation, via `toNumber`). Test: `run("!done")` → `true` (when `done` is `false`), `run("-age")` → `-2`.
-
-All binary operators are **left-associative** (`parseBinary` recurses with `prec + 1`). Parentheses group: `run("1 + 2 * 3")` → `7`, `run("(1 + 2) * 3")` → `9`.
-
-There are **no keyword operators** (`and`, `or`, `not`, `in`, `like` are NOT operators — they would lex as identifiers/frontmatter keys). Combination of conditions inside a single string uses `&&` / `||` / `!`; the YAML `and`/`or`/`not` keys are the structural alternative. The full operator/punctuation set the lexer recognizes is `+ - * / % > < ! == != >= <= && || => . , ( ) [ ]` plus regex literals (`/pat/flags`), string literals (`"…"` / `'…'`), numbers, and the keywords `true` / `false` / `null`.
-
-### Calling functions/methods in a filter
-
-A leaf can call global functions (`if(...)`, `date(...)`, `today()`, `now()`, `duration(...)`, `min`/`max`, `link`, etc.) and type-dispatched methods. The methods most relevant to filtering are on `file` (`FileMeta`):
-
-| Call | Returns | Filter use |
-|---|---|---|
-| `file.hasTag("book")` | `true` if `"book"` is in `file.tags` (multiple args = ANY match) | `file.hasTag("book")` |
-| `file.hasLink("Other")` | `true` if `"Other"` is in `file.links`; accepts a name, a `FileMeta` (e.g. `this.file`), or a `Link`, all compared by basename | `file.hasLink(this.file)` |
-| `file.inFolder("reading")` | `true` if `file.folder === "reading"` OR starts with `"reading/"` (subfolders included) | `file.inFolder("reading")` |
-| `file.hasProperty("price")` | `true` if `ctx.note` has its own key named `"price"` | `file.hasProperty("isbn")` |
-
-String/array/date methods (`.contains`, `.startsWith`, `.endsWith`, `.matches`, `.isEmpty`, `.lower`, `.upper`, array `.contains`/`.isEmpty`, date `.isEmpty`, etc.) are all usable in filters because the result just gets fed to `truthy()`. Notable:
-
-- `tags.contains("book")` — array membership (also `===`-or-string-equal per element).
-- `title.lower().contains("dune")` — case-insensitive substring test.
-- `name.matches(/^chapter/i)` — regex test (regex literal supported; bad patterns fail closed to `false`).
-- `due.isEmpty()` — for a `Date`, true when the date is invalid/NaN.
-
-See [functions](./functions.md) for the complete catalog and per-type dispatch.
-
-## Truthiness: what makes a row pass
-
-The pass/fail decision is `truthy(value)` from `core/src/bases/values.ts`:
-
-```ts
-export function truthy(v: unknown): boolean {
-  if (v === null || v === undefined) return false;
-  if (typeof v === "boolean") return v;
-  if (typeof v === "number") return v !== 0 && !Number.isNaN(v);   // 0 and NaN are falsey
-  if (typeof v === "string") return v.length > 0;                  // "" is falsey
-  if (Array.isArray(v)) return v.length > 0;                       // [] is falsey
-  if (v instanceof Date) return !Number.isNaN(v.getTime());        // invalid Date is falsey
-  return true;                                                     // any other object is truthy
-}
-```
-
-| Value | Truthy? |
-|---|---|
-| `null`, `undefined` | no |
-| `false` | no |
-| `true` | yes |
-| `0`, `NaN` | no |
-| any other number (incl. negatives) | yes |
-| `""` | no |
-| any non-empty string | yes |
-| `[]` | no |
-| any non-empty array | yes |
-| invalid `Date` (`getTime()` is NaN) | no |
-| valid `Date` | yes |
-| any other object (incl. a `Link`) | yes |
-
-This means a **bare property name is a presence/non-empty test**:
-
-- `filters: status` keeps rows whose `status` frontmatter is a non-empty string (or any truthy value), and drops rows where `status` is missing, `""`, `0`, `false`, `[]`, or `null`.
-- `filters: tags` keeps rows that have at least one tag.
-- `filters: "!status"` keeps rows where `status` is **absent or empty/falsey**.
-- `filters: "file.hasProperty('due')"` is the precise "has a `due` key at all (even if empty/false)" test, distinct from the truthiness test `due`.
-
-## Comparison semantics per value type
-
-### `==` and `!=` (equality)
-
-`==` is `looseEquals(l, r)`; `!=` is `!looseEquals(l, r)`. From `values.ts`:
-
-```ts
-export function looseEquals(a, b) {
-  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();   // by instant
-  if (isLink(a) && isLink(b)) return a.path === b.path;                             // by path
-  if (isLink(a)) return a.path === b || a.display === b;                            // link vs string
-  if (isLink(b)) return b.path === a || b.display === a;
-  return a === b;                                                                    // strict ===
-}
-```
-
-- **Date vs Date**: equal iff same instant (`getTime()`), not reference identity.
-- **Link vs Link**: equal iff same `path`.
-- **Link vs string**: equal iff the string matches the link's `path` OR its `display` text.
-- **Everything else**: JavaScript `===`. So `"10" == 10` is **false** (no numeric coercion in equality), `1 == 1.0` is true, `true == 1` is false, `null == undefined` is false (strict `===` says they differ). There is no type coercion for `==`/`!=` outside the Date/Link special cases.
-
-Examples (filters.test / evaluate.test):
-- `status != "done"` → keeps non-done rows; `status == "done"` → keeps done rows.
-- `price == 10 || age == 99` → `true` when `price` is `10`.
-
-### `>`, `<`, `>=`, `<=` (ordered comparison)
-
-These use `cmpSafe(l, r)` which wraps `compare` but first **fails NaN-safe on null/undefined**:
-
-```ts
-function cmpSafe(l, r) {
-  if (l == null || r == null) return NaN;   // missing operand -> NaN
-  return compare(l, r);
-}
-```
-
-A NaN result makes every ordered comparison `false` (`NaN > 0`, `NaN < 0`, `NaN >= 0`, `NaN <= 0` are all `false`). So **a missing operand never throws and never passes an ordered comparison.** Test: `run("missing > 5")` → `false`.
-
-`compare(a, b)` (in `values.ts`) returns a sign-comparison:
-
-```ts
-export function compare(a, b) {
-  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();  // chronological
-  if (typeof a === "number" && typeof b === "number") return a - b;              // numeric
-  if (a == null) return b == null ? 0 : -1;                                       // nulls sort first
-  if (b == null) return 1;
-  return String(a).localeCompare(String(b));                                      // locale string compare
-}
-```
-
-Per type:
-
-- **Date vs Date**: chronological (`getTime` difference). So `due < today()` is a real date comparison.
-- **number vs number**: numeric difference. So `price > 5`, `age <= 3`.
-- **null/undefined**: sort first (treated as less than any present value) inside `compare`, **but** ordered operators never reach this branch for a missing operand — `cmpSafe` short-circuits null/undefined to NaN → `false`. (The `compare` null-handling matters for `sort:` and `groupBy` ordering, not for filter `>`/`<`.)
-- **Mixed / everything else**: coerced to strings and compared with `localeCompare`. So comparing a string to a number, or two strings, is a lexical (locale-aware) comparison: `"banana" > "apple"` is true.
-
-> Gotcha: ordered comparisons across mismatched types fall back to **string** comparison, which is rarely what you want. `"10" > "9"` is `false` (string compare: `"1" < "9"`). Keep the operands the same type, or coerce with `number(x)` / `date(x)`.
-
-### `&&` and `||` (short-circuit, value-returning)
-
-These do **not** coerce to booleans — they return one of the operand values (JS semantics), short-circuiting:
-
-```ts
-if (op === "&&") { const l = evaluate(left); return truthy(l) ? evaluate(right) : l; }
-if (op === "||") { const l = evaluate(left); return truthy(l) ? l : evaluate(right); }
-```
-
-- `a && b` → if `a` is falsey, returns `a` (and never evaluates `b`); else returns `b`.
-- `a || b` → if `a` is truthy, returns `a`; else returns `b`.
-
-Test `&& / || return operand values, not booleans`:
-- `missing || "default"` → `"default"`
-- `status || "default"` → `"in-progress"` (truthy string passes through)
-- `price && "yes"` → `"yes"` (truthy number → right)
-- `done && "yes"` → `false` (falsey left short-circuits, returns `false`)
-- `!!(missing || "default")` → `true`
-
-**This is safe in a filter** because `passesFilter` always runs the final result through `truthy()`. `status || "default"` returns a non-empty string, which is truthy, so the row passes. You usually only see the value-not-boolean behavior when one expression feeds another (e.g. inside a formula or an `if(...)`), not at the filter boundary. The combinators `&&`/`||` and the YAML `and`/`or` keys are interchangeable for combining conditions; pick whichever is clearer.
-
-## Date and duration arithmetic in filters
-
-Filters frequently compare dates. The `+` and `-` operators understand **duration string literals** and **`duration()` ms values** when one side is a `Date` or a number.
-
-Duration literals are parsed by `parseDurationMs` (`functions.ts`) — `/^(-?\d+(?:\.\d+)?)(ms|mo|M|[smhdwy])$/`:
-
-| Suffix | Unit | ms |
-|---|---|---|
-| `ms` | milliseconds | 1 |
-| `s` | seconds | 1000 |
-| `m` | minutes | 60 000 |
-| `h` | hours | 3 600 000 |
-| `d` | days | 86 400 000 |
-| `w` | weeks | 7 × day |
-| `mo` / `M` | months (≈30 days) | 30 × day |
-| `y` | years (≈365 days) | 365 × day |
-
-Notes: `m` = minutes, `M`/`mo` = months. Fractional and negative quantities are allowed (`"1.5w"`, `"-2h"`). A non-matching string yields `NaN` (not a duration).
-
-`evalPlus` / `evalMinus` semantics (from `evaluate.ts`):
-
-- **`Date + "7d"`** → a Date shifted forward by the duration. (Test: `d + "1d"` adds 86 400 000 ms.)
-- **`Date - "2h"`** → shifted back. (Test: `d - "2h"` subtracts 7 200 000 ms.)
-- **`number + "1d"`** (e.g. `file.mtime` is epoch ms) → stays numeric, adds the ms. (Test: `file.mtime + "1d"`.)
-- **`Date + 0` / `"0d"`** → the zero-length duration is honored (a regression test guards that `"0d"` doesn't fall through to string concat): `d + "0d"` returns the same instant as a `Date`.
-- **`Date + duration("7d")`** → `duration()` returns ms (a number); `Date + number` shifts the date too, so `today() + duration("7d")` works the same as `today() + "7d"`. (Tests: `urgency buckets via a date formula`, `urgency buckets work with duration() too`.)
-- **`"abc" + "def"`** (neither side a Date/number/duration) → string concatenation (`evalPlus` falls through to `${asString(l)}${asString(r)}`).
-
-Relevant helpers usable in date filters: `today()` (midnight today), `now()` (current instant), `date(x)` (coerce a string/Date to a `Date`), and the date methods `.plus("7d")`, `.minus("3d")`, `.format("YYYY-MM-DD")`, `.date()` (strip time), `.isEmpty()`.
-
-Real filter patterns (drawn from the urgency-bucket tests):
+A filter decides which rows a base keeps. The base's `filters:` key holds one expression or an `and`/`or`/`not` tree of expressions, and a row stays when the result is true. This page is for anyone writing or debugging a filter; the expression language itself is in [expression syntax](./query-syntax.md) and the methods you can call in [functions](./functions.md).
 
 ```yaml
-# overdue tasks
-filters: 'date(due) < today()'
-
-# due within the next week (inclusive)
-filters: 'date(due) <= today() + "7d"'
-
-# has a due date AND it's overdue (combine combinator + expression)
+---
+type: base
+source: notes where file.hasTag("book")
 filters:
   and:
-    - 'file.hasProperty("due")'
-    - 'date(due) < today()'
-```
-
-## Where filters live
-
-### The base's `filters:`
-
-`filters:` is a top-level key of the base, and it is the only place a filter lives besides a source's `where:`. `runView` (`query.ts`) applies `base.filters` to the rows:
-
-```yaml
-type: base
-filters: 'file.hasTag("book") && status == "open"'
+    - 'status == "open" || status == "in-progress"'
+    - 'price > 5'
+    - not:
+        - file.hasTag("archive")
 view: table
-order: [file.name]
-# Effective: file.hasTag("book") AND status == "open"  → only "alpha"
+---
 ```
 
-To combine conditions, use an `and:`/`or:`/`not:` tree or `&&` / `||` in one string.
+## What shapes can a filter take?
 
-A legacy `views:` entry's own `filters:` is ANDed onto the base's when the file is read, and on the first write the file is flattened to `{ and: [base filters, entry filters] }` under the top-level `filters:` (see [overview](./overview.md#legacy-views-lists)).
-
-A base that composes another (`source: base`, `ref: "[[Other]]"`) receives only the other base's rows; the other base's `filters:` are not applied, so restate them (see [composing](./overview.md#one-view-per-base-composing)).
-
-### `where:` in sources
-
-A `SourceSpec` of kind `notes` or `tasks` carries a `where` **string** (not a `FilterNode` tree). In `resolveSource` (`source.ts`):
-
-```ts
-if (spec.kind === "notes") {
-  let rows = ...;                        // vault notes (optionally scoped by `from`)
-  if (!spec.where) return rows;
-  return rows.filter((r) => passesFilter(spec.where!, toContext(r)));
-}
-```
-
-So `where:` is exactly the same leaf-string filter machinery (`passesFilter` on a string), evaluated per note with `toContext(r)` (note that the source `where` is evaluated **without** a `hostThis`, so `this.*` is undefined there). To combine conditions in a `where:` string, use `&&` / `||` / `!` inside the one string — a source `where` cannot be an `and`/`or`/`not` YAML tree (it is typed as `string`).
-
-For tasks, `where` goes through the **same** `passesFilter` machinery as `notes` above — task filtering is not a separate language any more. The one wrinkle: a `where` string that still holds legacy Obsidian-Tasks-DSL text (`not done`, `due before tomorrow`, …) is translated into a Bases expression first, via `translateTaskDsl` (`core/src/bases/taskDsl.ts`), so an un-migrated ` ```query ` block keeps working; `bismuth base migrate-queries` rewrites such blocks in place. See [tasks](../tasks/query-dsl.md) and [sources](./sources.md).
-
-Examples (frontmatter accepts a string source form, normalized by `normalizeSource`):
+A filter is a string, or a tree whose branches are `and`, `or` and `not` keys holding lists of filters. A string leaf is any [Bases expression](./query-syntax.md).
 
 ```yaml
-# notes tagged #book whose price clears 5
-source: notes where file.hasTag("book") && price > 5
-
-# tasks scoped to the notes another base selects
-source:
-  kind: tasks
-  from: "[[Google Keep]]"
-  where: not done
-```
-
-## Editing filters in the settings panel
-
-The base settings modal (gear in the view bar, `app/src/bases/BaseSettings.tsx`) has a **filters** section that edits the base's `filters:` — and the same editor builds a notes/tasks source's `where:`. Each is a list of conditions under one **match all / any** switch (`and:` / `or:`):
-
-- A **condition** is property / operator / value pickers (the operator set follows the property's type: text, number, date, checkbox, tag, list). It compiles to the same leaf the ` ```query ` builder emits (`queryGen.ts`'s `compileNotesRow`).
-- An **expression** row holds any Bases expression verbatim. "Edit as expression" turns a condition into one.
-- Nothing is dropped on save (`app/src/bases/filterForm.ts`): an untouched editor writes nothing; a row you didn't edit is written back exactly as it was — a nested `or:`/`not:` subtree, or a top-level `not:`, shows as one expression row and is saved as the **same subtree**; a leaf becomes a visual condition only when recompiling it reproduces its exact tokens (`done == true` stays an expression, since the builder would write `done == "true"`); a malformed or mixed `&&`/`||` string is one expression row. A condition still missing its value is skipped until it has one.
-- Written shape: one condition → a bare string; several → `{and: [...]}` / `{or: [...]}`; none → the key is removed. A source `where` (a string, not a tree) joins rows as `(a) && (b)`.
-
-## `this.` host-note context
-
-When a base is rendered **inline inside another note** (an embedded `query` block), the host note's frontmatter flows in as `this.*`. `runView(base, rows, hostThis)` passes `hostThis` into both formula computation and `toContext`, so filters can reference it.
-
-Test `hostThis flows into filters / formulas / groupBy as this.*`:
-
-```yaml
-formulas:
-  adj: 'price * this.markup'
-filters: 'price >= this.minPrice'    # this.minPrice comes from the host note
-view: table
-order: [file.name, formula.adj]
-# host = { minPrice: 10, markup: 2, tier: "open" }
-# → only alpha (price 10) and gamma (price 20) clear minPrice; adj = price * 2
-```
-
-`file.hasLink(this.file)` is the canonical "this note links back to the host note" filter — `linkName()` normalizes `this.file` (a `FileMeta`) to its basename before checking `file.links` (test `file.hasLink accepts a FileMeta (this.file), matching by name`).
-
-## Worked examples of `and`/`or`/`not` trees
-
-From `filters.test.ts` (`ctx.file.tags = ["book"]`, `ctx.note = { status: "open", price: 10 }`, `ctx.formula = { ppu: 6 }`):
-
-```ts
-// AND of a tag check and a nested OR
-const f = { and: ['file.hasTag("book")', { or: ["price > 5", "price < 0"] }] };
-passesFilter(f, ctx);                        // true  (has tag book AND price>5)
-
-passesFilter({ not: ['file.hasTag("book")'] }, ctx);   // false (it DOES have book)
-passesFilter({ not: ['file.hasTag("movie")'] }, ctx);  // true  (it does NOT have movie)
-
-passesFilter('status != "done"', ctx);       // true
-passesFilter('status == "done"', ctx);       // false
-passesFilter("formula.ppu > 5", ctx);        // true
-passesFilter("this is not valid )(", ctx);   // false (fails closed)
-```
-
-YAML authoring forms (these mirror the `FilterNode` shape):
-
-```yaml
-# Single leaf
+# one expression
 filters: 'status != "done"'
 
-# AND (all must pass)
+# every child must pass
 filters:
   and:
     - 'file.hasTag("book")'
     - 'price > 5'
 
-# OR (any may pass)
+# at least one child must pass
 filters:
   or:
     - 'status == "open"'
     - 'status == "in-progress"'
 
-# NOT (every child must fail)
+# every child must fail
 filters:
   not:
     - 'file.hasTag("archive")'
 
-# Nested: (book AND (open OR in-progress)) AND NOT archived
+# nested: book and (open or in-progress) and not archived
 filters:
   and:
     - 'file.hasTag("book")'
@@ -441,34 +52,119 @@ filters:
         - 'file.hasTag("archive")'
 ```
 
-## Gotchas and edge cases
+Within one string you can combine conditions with `&&`, `||` and `!`. The words `and`, `or` and `not` are not operators inside an expression; they work only as the tree keys above. `filters` is the base's only filter: a base has one view and the view has none of its own.
 
-- **A YAML comment can silently truncate a filter expression — the one silent YAML behavior that eats a Bases expression.** In YAML, a `#` preceded by whitespace starts a comment, and that rule applies inside a *plain* (unquoted) scalar too — the `"` characters in `tags.contains(" #book")` are ordinary text, not YAML quoting, because the scalar didn't *start* with a quote:
+An empty or absent `filters` keeps every row. An empty `and: []` keeps every row and an empty `or: []` keeps none.
 
-  ```yaml
-  filters: tags.contains(" #book")     # kept: tags.contains("   dropped: #book")
-  filters: tags.contains("#book")      # fine — no space before the #, so it's not a comment
-  ```
+## What makes a row pass?
 
-  This is correct YAML (nothing to fix in the parser) and it silently produces a filter that still parses — just to something else. It hits any plain scalar used as a filter/source expression, not only a top-level `filters:`/`where:` value: an `and`/`or`/`not` tree writes each leaf as a bare sequence item with no `:` of its own, and the same whitespace-before-`#` rule truncates those leaves identically:
+The result of a leaf is tested for truthiness. These values are false: `null`, `undefined`, `false`, `0`, `NaN`, an empty string, an empty list and an invalid date. Everything else is true, including negative numbers, non-empty strings and lists, valid dates and links.
 
-  ```yaml
-  filters:
-    and:
-      - tags.contains(" #book")        # truncated the same way as a flat scalar
-      - status == "active"
-  ```
+So a bare property name is a presence test:
 
-  The fix is to quote the whole value (single or double quotes) — once YAML is quoting a scalar, a `#` inside it is just a character. `core/src/bases/yamlComment.ts`'s `findCommentTruncations(frontmatter)` detects this by walking the real parsed YAML AST (`parseDocument` + `visit`, not a hand-rolled line scan): for every scalar whose `type` is `Scalar.PLAIN` (i.e. the parser itself says it wasn't quoted), it looks at the text from where the parser stopped reading the value (`node.range[1]`) to the end of that line, and reports a truncation when that stretch matches whitespace-then-`#` (`/^[ \t]+#/`) — a `#` with no preceding space, or inside a quoted scalar, is not a match. The reported `key` is the *nearest enclosing key* found by walking back up the AST to the closest `Pair` whose key is itself a scalar — for a flat `filters: expr` that's `filters`; for a bare leaf inside a tree it's the list's own key (`and`/`or`), not `filters`. `bismuth base validate` runs this against the raw frontmatter text (before YAML parsing has already thrown the dropped half away) and reports each affected line with its key, line number, what was actually kept, what the comment ate, and a ready-to-paste quoted replacement — see `cli/src/commands/base.ts`'s `base validate`.
-- **`not` is NOR, not element-wise negation.** `passesFilter` implements `not` as `node.not.every((n) => !passesFilter(n, ctx))` — **every** child must fail for the `not` to pass. With one child this is plain negation. With multiple children, `not: [A, B]` passes only when both A and B fail (i.e. it's `NOT (A OR B)`), **not** `NOT A AND NOT B` per element (those happen to be equivalent by De Morgan, but the failure semantics are "all children must individually fail"). If any child passes, the whole `not` fails.
-- **Fail closed.** A malformed leaf expression, a thrown method call, or a bad regex literal all resolve to `false`, dropping the row — you will never see an error surfaced from a filter; you'll see fewer rows. Double-check expressions if rows vanish unexpectedly.
-- **`undefined`/empty filter = pass-all.** Omitting `filters:` shows every row in the source.
-- **Bare name = non-empty test, via `truthy`.** `filters: status` is "has a non-empty status", which is different from `file.hasProperty("status")` ("the key exists, even if empty/false/0").
-- **`==` does not coerce types** (except Date↔Date by instant and Link↔string by path/display). `"10" == 10` is `false`. Use `number()`/`date()` to align types first.
-- **Ordered comparisons (`> < >= <=`) with a missing operand are `false`** (`cmpSafe` → NaN), and **mismatched non-null types fall back to locale string comparison** — keep operands the same type.
-- **Formulas are available in filters** because they're computed before filtering, but **only the formulas declared on the base config** (`base.formulas`). A typo in a formula name resolves to `undefined` (falsey).
-- **`&&`/`||` return operand values, not booleans**, but the filter boundary always applies `truthy()`, so this is transparent for the pass/fail decision; it matters when chaining into another expression/formula.
-- **Source `where:` is a string, not a tree.** You cannot put `and:`/`or:`/`not:` YAML under a source `where`; combine with `&&`/`||`/`!` inside the single expression instead. Full `FilterNode` trees are only available under `filters:` in a base config.
-- **`this.*` is only populated for embedded bases.** A standalone base file has no host note, so `this.minPrice` is `undefined` (filters using it then fail-closed via NaN/falsey). Source `where:` strings never get a `hostThis`.
+| Filter | Keeps rows where |
+|---|---|
+| `status` | `status` is non-empty. Rows with it missing, `""`, `0`, `false` or `[]` drop. |
+| `tags` | the note has at least one tag. |
+| `"!status"` | `status` is absent or empty. |
+| `file.hasProperty("due")` | the `due` key exists, even when its value is empty or false. |
 
-Source: `core/src/bases/filters.ts`, `core/src/bases/evaluate.ts`, `core/src/bases/values.ts`, `core/src/bases/functions.ts`, `core/src/bases/parser.ts`, `core/src/bases/lexer.ts`, `core/src/bases/query.ts`, `core/src/bases/source.ts`, `core/src/bases/types.ts`, `core/src/bases/yamlComment.ts`, `core/test/bases/filters.test.ts`, `core/test/bases/evaluate.test.ts`, `core/test/bases/query.test.ts`, `core/test/bases/yamlComment.test.ts`
+`not` passes only when every child fails. With one child that is plain negation; with several, `not: [A, B]` keeps a row only when neither A nor B matches.
+
+## What can a filter read?
+
+A filter sees one row at a time:
+
+| Name | Holds |
+|---|---|
+| `file.name`, `file.path`, `file.folder`, `file.tags`, `file.links`, `file.size`, `file.ctime`, `file.mtime` | File metadata. `name` has no extension, `path` is vault-relative, `folder` is empty at the root, `tags` have no `#`. |
+| `note.<key>` or a bare `<key>` | A frontmatter value. |
+| `formula.<name>` | A value from the base's `formulas`, computed before filtering, so a filter can use it. |
+| `this.<key>`, `this.file` | The frontmatter and file of the note that embeds the base; see [embedded bases](#how-does-a-filter-use-the-note-it-is-embedded-in). |
+
+The methods used most often in filters are `file.hasTag("book")` (any of several tags), `file.hasLink("Other")`, `file.inFolder("reading")` (including subfolders) and `file.hasProperty("price")`. String, list and date methods work too; see [functions](./functions.md).
+
+Date filters use `date(x)`, `today()` and duration strings:
+
+```yaml
+# overdue
+filters: 'date(due) < today()'
+
+# due within the next week
+filters: 'date(due) <= today() + "7d"'
+
+# has a due date and it is overdue
+filters:
+  and:
+    - 'file.hasProperty("due")'
+    - 'date(due) < today()'
+```
+
+In a time zone behind UTC, `date(due) < today()` is also true on the due day, because `date()` reads a date-only string as midnight UTC. See [why is my date a day off](./functions.md#why-is-my-date-a-day-off).
+
+## What happens to a filter that is wrong?
+
+A filter that fails never raises an error. It drops the row, so you see fewer rows, not a message.
+
+- A leaf that fails to parse or throws counts as false for every row, so the base shows no rows. `bismuth base validate` reports unparseable filters and formulas.
+- An ordered comparison (`>`, `<`, `>=`, `<=`) with a missing value is false, so rows without that property drop out.
+- `==` does not convert types: `"10" == 10` is false. Align types first with `number()` or `date()`. Ordered comparison across mismatched types falls back to comparing strings, where `"10" > "9"` is false.
+- A typo in a formula name reads as `undefined`, which is false.
+- The expression parser ignores trailing tokens it does not understand. `!note.resolved and note.priority == "high"` parses as `!note.resolved` and silently drops the rest. Use `&&`.
+
+### Why did my filter lose its tail?
+
+A `#` after a space starts a YAML comment, even inside what looks like a quoted string, unless the whole value starts with a quote:
+
+```yaml
+filters: tags.contains(" #book")     # parsed as: tags.contains("
+filters: tags.contains("#book")      # fine: no space before the #
+filters: 'tags.contains(" #book")'   # fine: the whole value is quoted
+```
+
+The truncated filter still parses, into something else, with no error. It affects every unquoted scalar in a filter, including bare items inside an `and`/`or`/`not` list. Quote the whole value. `bismuth base validate` finds these, names the key and line, and prints a quoted replacement.
+
+## Where else do filters appear?
+
+A source's `where:` is a single string, not a tree, and uses the same expressions: `source: notes where file.hasTag("book") && price > 5`. Combine conditions there with `&&` and `||`. A source `where` has no embedding note, so `this.*` is undefined in it. See [sources](./sources.md).
+
+A flat query block's `where:` is also one expression string; see [the query block](./query-block.md).
+
+A base that composes another with `source: base` does not receive the other base's `filters`, so restate them; see [bases overview](./overview.md#how-do-i-show-the-same-rows-in-a-second-view).
+
+## How does a filter use the note it is embedded in?
+
+When a base is embedded in a note through a query block, the host note's frontmatter is `this.*`, and `this.file` is the host's file. A standalone base file has no host, so `this.minPrice` is undefined and a filter on it drops every row.
+
+```yaml
+formulas:
+  adj: 'price * this.markup'
+filters: 'price >= this.minPrice'
+view: table
+order: [file.name, formula.adj]
+```
+
+With a host whose frontmatter is `minPrice: 10` and `markup: 2`, only rows priced 10 or more remain, and `adj` doubles the price. `file.hasLink(this.file)` keeps the rows that link back to the host note.
+
+## Can I edit filters without writing YAML?
+
+Open **Settings** in the view bar and use the **filters** section. It edits the base's `filters:` and, with the same editor, a notes or tasks source's `where:`. Each is a list of conditions under one **match all / any** switch.
+
+- A condition is a property, an operator and a value. The operators follow the property's type: text, number, date, checkbox, tag or list.
+- An expression row holds any Bases expression as written. "Edit as expression" turns a condition into one.
+- Nothing is lost on save. An untouched editor writes nothing, and a row you did not edit is written back exactly as it was. A nested `or:` or `not:`, or a top-level `not:`, shows as one expression row and is saved as the same subtree. A leaf becomes a visual condition only when recompiling it reproduces its exact text (`done == true` stays an expression because the builder writes `done == "true"`). A condition with no value yet is skipped.
+- One condition is written as a bare string, several as `{and: [...]}` or `{or: [...]}`, none removes the key. A source `where` joins its rows as `(a) && (b)`.
+
+## How it works
+
+`passesFilter(node, ctx)` in `core/src/bases/filters.ts` is the whole engine: no node passes; a string runs `parseExpr` then `evaluate` then `truthy` inside a try/catch that returns false; `and` uses `every`, `or` uses `some`, and `not` uses `every` over the negated children. Parsed expressions are cached by string. `combineFilters(a, b)` ANDs two filters; the reader uses it when a `views:` entry carries its own `filters`.
+
+`runView` in `core/src/bases/query.ts` computes `formula.*` for every row first, then applies `base.filters`, then sorts and groups. `toContext(row, hostThis)` builds the evaluation context; the base filter receives `hostThis`, a source `where` does not.
+
+`resolveSource` in `core/src/bases/source.ts` applies a source `where` with the same `passesFilter`. A tasks `where` that looks like Tasks-style text is translated by `translateTaskDsl` first.
+
+`findCommentTruncations` in `core/src/bases/yamlComment.ts` finds the YAML-comment trap by walking the parsed YAML document: for each plain (unquoted) scalar it checks whether the text after where the parser stopped, up to the end of the line, starts with whitespace then `#`. The reported key is the nearest enclosing key, so a bare item in an `and` list reports `and`, not `filters`. `bismuth base validate` (`cli/src/commands/base.ts`) runs it against the raw frontmatter text, before parsing discards the dropped half.
+
+The settings editor is `app/src/bases/BaseSettings.tsx` with its form logic in `filterForm.ts`; conditions compile to the same leaves the query builder emits (`queryGen.ts`'s `compileNotesRow`).
+
+Source: `core/src/bases/filters.ts`, `core/src/bases/evaluate.ts`, `core/src/bases/values.ts`, `core/src/bases/query.ts`, `core/src/bases/source.ts`, `core/src/bases/yamlComment.ts`, `core/src/bases/types.ts`, `cli/src/commands/base.ts`, `app/src/bases/filterForm.ts`, `app/src/bases/BaseSettings.tsx`, `core/test/bases/filters.test.ts`, `core/test/bases/yamlComment.test.ts`

@@ -1,126 +1,53 @@
-# Bases: Sources & Row Resolution
+# Base sources
 
-Every Bismuth base resolves a **`SourceSpec`** — `base`, `notes`,
-or `tasks` — into a uniform `Row[]`. `core/src/bases/source.ts` reads vault
-notes, extracts checkbox tasks, or recursively renders another base
-(composition). Covers the `SourceSpec` shape, `normalizeSource` (the
-string/object coercion of a frontmatter `source:`), `from: [[Base]]` scoping,
-recursive base composition with cycle-guarding (including symlink cycles), the
-canonical row body parser (`rows.ts`), and the server-side `POST /rows`
-endpoint's caching and in-flight dedup. Worked examples, including scoped
-tasks, are drawn from the unit tests.
-
-See also: [bases overview](./overview.md), [the `query` block & flat view specs](./query-block.md), [tasks](../tasks/syntax.md).
-
-## The `SourceSpec` type
-
-Defined in `core/src/bases/types.ts`:
-
-```ts
-export type SourceSpec =
-  | { kind: "base";  ref?: string }                   // ref = "[[Other Base]]"
-  | { kind: "notes"; where?: string; from?: string }  // vault notes filtered by a Bases expr
-  | { kind: "tasks"; where?: string; from?: string }; // vault checkbox tasks
-```
-
-Field meanings:
-
-| Field   | Kinds         | Meaning |
-| ------- | ------------- | ------- |
-| `kind`  | all           | Which source: `"base"`, `"notes"`, or `"tasks"`. |
-| `ref`   | `base`        | A wikilink `"[[Other Base]]"` pointing at the base to render. Resolves that base's **own** declared source (recursive composition), not just its static rows. |
-| `where` | `notes`,`tasks` | A filter. For `notes` it is a **Bases filter expression** (e.g. `file.hasTag("book")`). For `tasks` it is a **Tasks query DSL** string (e.g. `not done`). |
-| `from`  | `notes`,`tasks` | A wikilink `"[[Base]]"` that **scopes** the source to only the notes that the referenced base selects (see [`from:` scoping](#the-from-base-scoping-mechanism)). |
-
-There is no `notes`/`tasks` `ref`, and no `base` `where`/`from` — those fields
-are pruned away by `normalizeSource` if present (see below).
-
-### Where a `SourceSpec` comes from
-
-A `SourceSpec` is produced in three places, all converging on the same resolver:
-
-1. **A `type: base` md file's frontmatter `source:`** — parsed by
-   `normalizeSource` into `BaseConfig.source`; `BaseView` fetches the base's
-   rows from that spec (see [Frontend resolution](#frontend-resolution-baseview--row-cache)
-   below). A base with no `source:` and an inline row table in its body owns
-   those rows outright (`{ kind: "base" }`) — see [bases overview](./overview.md#three-axes-kind-mode-and-origin)
-   for how this "origin" axis sits alongside kind and mode.
-2. **A flat ` ```query ` block** — `of: [[Base]]` → `{kind:"base"}`,
-   `tasks:` → `{kind:"tasks"}`, with optional `from:` (see
-   [query blocks](./query-block.md)). A block with neither `of:` nor `tasks:`
-   has **no** source and renders an empty state.
-3. **Direct construction** in tests / the frontend's `BaseView` fallback logic.
-
-## `normalizeSource(raw, fm)` — string ⟷ object coercion
-
-`core/src/bases/sourceSpec.ts` exports `normalizeSource(raw, fm)`, which coerces
-a frontmatter `source` value (a **string** or an **object**) plus the
-surrounding frontmatter object `fm` (for top-level `from`/`where`/`ref`) into a
-`SourceSpec`. It returns `undefined` for anything unrecognized — **callers then
-apply their own default** (the frontend defaults to `{kind:"notes"}` for a
-sourceless query base, or `{kind:"base"}` when the base has inline rows).
-
-The valid kinds are `["base", "notes", "tasks"]`.
-
-### Object form
+A base's `source` says where its rows come from: the notes in the vault, the checkbox tasks in them, or the rows of another base. Every other part of a base, from filters to the view, works on the rows the source produces. This page is for anyone writing a `source:`, and for the person debugging a base that shows too many, too few or the wrong rows.
 
 ```yaml
-source:
-  kind: tasks
-  from: "[[Keep]]"
+---
+type: base
+source: notes where file.hasTag("book")
+view: table
+---
 ```
 
-→ `{ kind: "tasks", from: "[[Keep]]" }` (passthrough; `undefined` fields pruned).
+## What can a source be?
 
-- If `kind` is not one of `base`/`notes`/`tasks`, returns `undefined`
-  (`normalizeSource({ kind: "bogus" }, {})` → `undefined`).
-- `ref`/`from` are read through `wikiStr` (handles the nested-array YAML quirk,
-  below); `where` is read as a plain non-empty string.
+A source has one of these kinds. In frontmatter it is a string, or an object with the same fields.
 
-### String form
+| Kind | Rows | Fields |
+|---|---|---|
+| `notes` | Vault notes, one row each. | `where`, `from` |
+| `tasks` | Checkbox tasks found in vault notes, one row each. | `where`, `from` |
+| `base` | The rows of another base. | `ref` |
 
-The string is trimmed and matched against
-`/^(base|notes|tasks)(?:\s+where\s+(.+))?$/i` (case-insensitive on the kind):
+| Field | Kinds | Meaning |
+|---|---|---|
+| `where` | `notes`, `tasks` | A [Bases expression](./query-syntax.md) that keeps the rows where it is true. |
+| `from` | `notes`, `tasks` | A wikilink to a base. Limits the source to the notes that base selects. |
+| `ref` | `base` | A wikilink to the base whose rows to use. |
 
-```yaml
-source: notes                          # { kind: "notes" }
-source: notes where folder == "Keep"   # { kind: "notes", where: 'folder == "Keep"' }
-source: tasks                          # { kind: "tasks" }  (+ picks up top-level from/where)
-source: base                          # { kind: "base" }   (+ picks up top-level ref)
-```
+These spellings are equivalent where they overlap:
 
-When the string form is used, the top-level frontmatter supplies the other
-fields:
+| Frontmatter | Means |
+|---|---|
+| `source: notes` | Every note. |
+| `source: notes where folder == "Keep"` | Notes where the expression is true. |
+| `source: tasks` with `from: "[[Keep]]"` and `where: not done` | Tasks in the notes `Keep` selects, filtered. |
+| `source: base` with `ref: "[[X]]"` | The rows of base `X`. |
+| `source: { kind: notes, where: 'file.hasTag("book")' }` | The object form of `notes where ...`. |
+| `source: { kind: tasks, from: "[[Keep]]" }` | The object form with a scope. |
 
-- `from:` comes from `fm.from` (wikilink).
-- `ref:` comes from `fm.ref` (wikilink).
-- `where:` comes from the **inline** `where` clause on the string **if present**,
-  otherwise from `fm.where`. The inline clause **wins**.
+In the string form, `from`, `ref` and `where` can also sit as top-level keys beside `source`. An inline `where` in the string wins over a top-level `where`: `source: tasks where done` with `where: not done` filters by `done`. A source of another shape (`source: bogus`, `source: 42`, an object with an unknown `kind`) is ignored without an error.
 
-Real examples from `sourceSpec.test.ts`:
+## What happens when a base has no source?
 
-```ts
-normalizeSource("notes", {})
-// → { kind: "notes" }
+A base with no recognised `source` uses its own rows when its body has any, and otherwise every note in the vault. So the empty base `type: base` shows the whole vault, and a base with rows in its body shows only those rows. Set `source:` explicitly when you want to narrow the vault.
 
-normalizeSource('notes where folder == "Keep"', {})
-// → { kind: "notes", where: 'folder == "Keep"' }
+## How do I list tasks from one set of notes?
 
-normalizeSource("tasks", { from: "[[Keep]]", where: "not done" })
-// → { kind: "tasks", from: "[[Keep]]", where: "not done" }
+`from` limits a `notes` or `tasks` source to the notes another base selects. A base that shows only the tasks inside the notes of a `Keep` base:
 
-normalizeSource("tasks where done", { where: "not done" })
-// → { kind: "tasks", where: "done" }   // inline `where done` beats fm.where
-
-normalizeSource("base", { ref: "[[X]]" })
-// → { kind: "base", ref: "[[X]]" }
-
-normalizeSource("bogus", {})            // → undefined (unknown kind)
-normalizeSource(undefined, {})          // → undefined
-normalizeSource(42, {})                 // → undefined
-```
-
-So a frontmatter base that filters vault notes can be written either way:
+`Keep.md`:
 
 ```yaml
 ---
@@ -130,368 +57,7 @@ where: file.hasTag("keep")
 ---
 ```
 
-or, equivalently:
-
-```yaml
----
-type: base
-source: notes where file.hasTag("keep")
----
-```
-
-### The unquoted-`[[Base]]` YAML quirk (`wikiStr`)
-
-This is a frequent gotcha. In YAML frontmatter an **unquoted** wikilink like
-
-```yaml
-from: [[Keep]]
-```
-
-does **not** parse as the string `"[[Keep]]"`. YAML reads `[[Keep]]` as a nested
-flow sequence — `[["Keep"]]` (an array containing an array containing the string
-`"Keep"`). Without handling this, the `from` scope is silently dropped and tasks
-fall back to the **whole vault**.
-
-`wikiStr` therefore accepts both forms for `from`/`ref`:
-
-- a non-empty **string** → used as-is;
-- an **array** → flattened (`flat(Infinity)`), string leaves joined with `, ` and
-  wrapped back into `"[[...]]"`.
-
-From `sourceSpec.test.ts`:
-
-```ts
-normalizeSource("tasks", { from: [["Keep"]] })
-// → { kind: "tasks", from: "[[Keep]]" }
-
-normalizeSource("base", { ref: [["My Base"]] })
-// → { kind: "base", ref: "[[My Base]]" }
-
-normalizeSource({ kind: "tasks", from: [["Keep"]] }, {})
-// → { kind: "tasks", from: "[[Keep]]" }   // object form also coerced
-```
-
-**Recommendation:** quote wikilink-valued fields (`from: "[[Keep]]"`,
-`ref: "[[X]]"`) to avoid relying on the coercion, but unquoted forms are
-tolerated. The end-to-end regression test
-("UNQUOTED from: [[Base]] in a base file still scopes tasks") confirms an
-unquoted `from: [[Keep]]` in a `source: tasks` base still scopes correctly.
-
-### `refToPath(ref)` — wikilink → file path
-
-`sourceSpec.ts` also exports `refToPath`, which converts a `ref`/`from` wikilink
-into a vault-relative file path:
-
-- strips the leading `[[` and trailing `]]`;
-- if the result already ends in `.md` or `.base`, returns it unchanged;
-- otherwise appends `.md`.
-
-```ts
-refToPath("[[C]]")            // "C.md"
-refToPath("[[My Base]]")      // "My Base.md"
-refToPath("[[Legacy.base]]")  // "Legacy.base"  (already has an extension)
-refToPath(undefined)          // ""
-refToPath("Nope")             // "Nope.md"  (bare names without [[ ]] also work)
-```
-
-Bases live as `type: base` markdown files — there is **no `.base` extension** in
-the canonical model — but a legacy `.base` ref is resolved to that file, **not**
-a `.md` sibling (verified in `source.test.ts`: a `[[Legacy.base]]` ref resolves
-the `.base` file, not `Legacy.base.md`).
-
-### `resolveRefPath(root, ref)` — how `ref`/`from` find a file
-
-`refToPath` is pure and root-only. `resolveSource` resolves every `ref` and `from`
-through `resolveRefPath` (`source.ts`), which follows the same order a wikilink does:
-
-1. **An exact vault path wins.** `[[reading/List]]` or a root-level `List` that exists
-   as `<ref>.md` (or a `.base` file) is used as written.
-2. **Otherwise the basename is searched** across the vault's markdown with `pickByBase`
-   (`linkTarget.ts`): the fewest path segments wins, then the smaller path. So
-   `ref: "[[List]]"` finds `reading/List.md`.
-3. **Nothing matches** returns `refToPath(ref)` unchanged, so errors still name a path
-   ("looked for `List.md`"). `base validate` uses the same resolution for `source:`,
-   `from` and `taskFile`.
-
-A base with **no `source:`** returns its own body rows when it has any, and otherwise
-every note in the vault (the same fallback `BaseView`'s `activeSpec` applies).
-
-## Resolving a `SourceSpec` to `Row[]`
-
-`core/src/bases/source.ts` exports the two resolver functions.
-
-### `SourceCtx`
-
-`resolveSource`/`resolveBaseRows` take a `SourceCtx`:
-
-```ts
-export interface SourceCtx {
-  root: string;                          // vault root
-  today?: string;                        // ISO date for task DSL relative dates; defaults to new Date()…slice(0,10)
-  seen?: Set<string>;                    // base paths already entered (cycle guard); real-path-resolved
-  vaultRows?: () => Promise<Row[]>;      // optional cache provider for the unscoped vault notes feed
-  vaultTasks?: (paths?: string[]) => Promise<Row[]>; // optional provider for vault task rows
-}
-```
-
-- `root` is the only required field.
-- `today` defaults to `new Date().toISOString().slice(0, 10)` when omitted.
-- `seen` defaults to a fresh `Set`; it accumulates **real** (symlink-resolved)
-  base paths across the composition chain for cycle protection.
-- `vaultRows` / `vaultTasks` let a caller serve the heavy vault feeds from a
-  cache instead of re-scanning the disk. When absent they fall back to
-  `buildVaultRows(root)` / `buildTaskRows(root)` respectively. The
-  `vaultTasks` provider is called **with no args** for the unscoped/global case
-  (which the caller may cache) and **with `paths`** for scoped extraction (which
-  must always run fresh — see the tasks resolution below).
-
-### `resolveSource(spec, ctx)`
-
-The central dispatcher. Returns `Row[]`.
-
-#### `kind: "base"`
-
-```ts
-if (spec.kind === "base") {
-  if (!spec.ref) return [];
-  return resolveBaseRows(refToPath(spec.ref), ctx);
-}
-```
-
-- An empty/missing `ref` → `[]`.
-- Otherwise resolves the referenced base file via `resolveBaseRows` (composition).
-
-A `{kind:"base"}` **with no ref** is also how the frontend renders a base's own
-inline rows: in `BaseView` the inline rows are parsed client-side and passed in
-directly, so a sourceless self-render never hits `/rows`. (See
-[Frontend resolution](#frontend-resolution-baseview--row-cache).)
-
-#### `kind: "notes"`
-
-```ts
-if (spec.kind === "notes") {
-  let rows = await (ctx.vaultRows?.() ?? buildVaultRows(ctx.root));
-  if (spec.from) {
-    const scoped = await resolveBaseRows(refToPath(spec.from), ctx);
-    const paths = new Set(scoped.map((r) => r.file.path));
-    rows = rows.filter((r) => paths.has(r.file.path));
-  }
-  if (!spec.where) return rows;
-  return rows.filter((r) => passesFilter(spec.where!, toContext(r)));
-}
-```
-
-1. Start from the full vault notes feed (`vaultRows` provider or `buildVaultRows`).
-2. If `from` is set, resolve that base to a set of note paths and **intersect**
-   (keep only notes whose `file.path` the base selects).
-3. If `where` is set, filter each remaining row through `passesFilter` against
-   the row's evaluation context (`toContext(r)`). `where` is a **Bases filter
-   expression** here.
-
-From `source.test.ts`:
-
-```ts
-// notes filtered by a Bases where-expr
-resolveSource({ kind: "notes", where: 'file.hasTag("book")' }, { root: dir })
-// vault: a.md (tags:[book]), b.md (tags:[film])  →  [a]
-
-// notes with no where → all notes
-resolveSource({ kind: "notes" }, { root: dir })  // → both notes
-```
-
-#### `kind: "tasks"`
-
-```ts
-let paths: string[] | undefined;
-if (spec.from) {
-  const scoped = await resolveBaseRows(refToPath(spec.from), ctx);
-  paths = [...new Set(scoped.map((r) => r.file.path))].filter(Boolean);
-}
-const rows = paths
-  ? await buildTaskRows(ctx.root, paths)               // scoped: always fresh
-  : await (ctx.vaultTasks?.() ?? buildTaskRows(ctx.root)); // global: cacheable
-if (!spec.where) return rows;
-const isDsl = looksLikeTaskDsl(spec.where);
-const translation = isDsl ? translateTaskDsl(spec.where, today) : undefined;
-const expr = isDsl ? translation!.where : spec.where;
-const filtered = expr ? rows.filter((r) => passesFilter(expr, toContext(r))) : rows;
-return isDsl
-  ? applyTaskSort(filtered, translation!.sort, (r, p) => resolveProperty(p, r))
-  : filtered;
-```
-
-1. If `from` is set, resolve that base to its note paths and extract tasks
-   **only from those files** (`buildTaskRows(root, paths)`). This scoped
-   extraction **always runs fresh** — it bypasses the `vaultTasks` provider,
-   because that provider's cache is keyed to the global (no-paths) feed only.
-2. If `from` is absent, use the global task feed (`vaultTasks` provider or
-   `buildTaskRows(root)`).
-3. If `where` is set, it is filtered through the **same** `passesFilter`
-   machinery as `notes` above — task filtering is not a separate language.
-   `where` is first checked with `looksLikeTaskDsl`: if it still holds legacy
-   Obsidian-Tasks-DSL text (`not done`, `due before tomorrow`, `sort by …`),
-   `translateTaskDsl` (`core/src/bases/taskDsl.ts`) turns it into a Bases
-   filter expression **plus** any `sort by …` line as a `SortSpec[]`, and
-   `applyTaskSort` applies that sort in the same pass, ranking a legacy
-   `sort by priority` by urgency rather than alphabetically (see
-   [tasks](../tasks/query-dsl.md)). A modern `where` (already a Bases
-   expression, no DSL) is used as-is and carries no sort of its own — sorting
-   for a migrated block comes from the flat spec's own `sort:` key instead
-   (see [query blocks](./query-block.md)), which ranks a `priority` property
-   by the same urgency ordering: `applyTaskSort` and the flat spec's `sort:`
-   both go through one shared comparator, `compareForSort` (`core/src/bases/query.ts`),
-   so a migrated block sorts identically to its un-migrated form.
-
-From `source.test.ts`:
-
-```ts
-// legacy tasks: DSL, translated + sorted on the way in
-// t.md = "- [ ] one\n- [x] two"
-resolveSource({ kind: "tasks", where: "not done" }, { root: dir })
-// → rows with note.description === ["one"]
-```
-
-### `resolveBaseRows(path, ctx)` — base composition
-
-```ts
-export async function resolveBaseRows(path: string, ctx: SourceCtx): Promise<Row[]> {
-  const seen = ctx.seen ?? new Set<string>();
-  const fa = await getFileAccess();
-  // Rooted against the vault first: FileAccess.realPath takes an ABSOLUTE path, so
-  // passing the vault-relative `path` (an earlier bug) resolved against the server's
-  // cwd instead, leaving `seen`/the parse cache cwd-dependent and doing no real
-  // symlink resolution at all.
-  const absPath = `${ctx.root.replace(/\/+$/, "")}/${path}`;
-  const realPath = await fa.realPath(absPath);  // dereference symlinks for cycle detection
-  if (seen.has(realPath)) return [];            // cycle → []
-  seen.add(realPath);
-
-  let text: string;
-  try { text = await fa.readNote(ctx.root, path); }
-  catch { return []; }                          // missing/unreadable → []
-
-  const name = fileBasename(path);
-  // Cached by CONTENT (not mtime — see below), keyed on `${realPath}\0${path}`, so a
-  // base re-parsed along a composition chain skips parseBaseFile when its raw text
-  // hasn't changed since the last resolve.
-  const parseKey = `${realPath}\0${path}`;
-  const cached = baseParseCache.get(parseKey);
-  const fresh = cached?.raw === text;
-  const { config, rows } = fresh ? cached! : parseBaseFile(text, { name, path });
-  if (!fresh) baseParseCache.set(parseKey, { raw: text, config, rows });
-  if (!config.source) return rows;              // own-rows (inline-table) base
-  return resolveSource(config.source, { ...ctx, seen });  // re-run its OWN source
-}
-```
-
-`baseParseCache` is a module-level `Map` keyed on content equality, not mtime —
-filesystem mtime resolution is commonly 1s or coarser, so an edit-then-immediate-read
-within the same tick could otherwise serve a stale parse. The cached value embeds
-`config`/`rows` (whose `rows` carry the write-back `path` via `syntheticBaseFile`),
-which `realPath` no longer determines once symlinked aliases collapse — so the parse
-cache keys on both `realPath` and `path`, while `seen` (cycle detection) stays on
-`realPath` alone.
-
-The composition rule, stated plainly:
-
-- A base with **no `source:`** declared is an **own-rows base** — it returns its
-  inline table/YAML rows (parsed by `parseBaseFile` → `parseRows`).
-- A base **with a `source:`** (notes / tasks / another base) **re-runs that
-  source** recursively, threading the shared `seen` set so the chain can't loop.
-
-So `{kind:"base", ref:"[[Keep]]"}` does **not** dump Keep's static rows when Keep
-is itself a `source: notes` base — it runs Keep's notes query. This is the
-"composition" behavior:
-
-```ts
-// Keep.md:    source: notes where file.hasTag("keep")
-// keep/x.md:  tags: [keep]
-// other/z.md: tags: [other]
-resolveSource({ kind: "base", ref: "[[Keep]]" }, { root: dir })
-// → only [keep/x.md]   (Keep's OWN notes source is followed, not its empty table)
-```
-
-An own-rows base returns its parsed rows directly:
-
-```ts
-// C.md:  ---\ntype: base\nview: table\n---  +  a GFM table with | title | / | Hi |
-resolveSource({ kind: "base", ref: "[[C]]" }, { root: dir })
-// → rows[0].note.title === "Hi"
-```
-
-### Cycle guarding (incl. symlink cycles)
-
-`seen` holds **real** paths (`fileAccess.realPath` dereferences symlinks, falling
-back to the input path when it can't resolve — e.g. on iOS). This catches both:
-
-- direct config cycles: `A → ref:[[B]] → ref:[[A]]`, and
-- symlink loops: `A → link-to-A → A`, or `A → B → link-to-A`.
-
-When a cycle is detected the offending resolution returns `[]` (it does not
-throw). From `source.test.ts`:
-
-```ts
-// A.md: source: base, ref: "[[B]]"
-// B.md: source: base, ref: "[[A]]"
-resolveSource({ kind: "base", ref: "[[A]]" }, { root: dir })  // → []
-```
-
-A **missing** ref likewise yields `[]` (no throw):
-
-```ts
-resolveSource({ kind: "base", ref: "Nope" }, { root: dir })  // → []
-```
-
-## The `from: [[Base]]` scoping mechanism
-
-`from` answers "which notes does this source apply to?" by resolving the named
-base to a **set of note paths** and restricting the source to those files:
-
-- **`notes` + `from`**: keep only vault notes whose path the base selects
-  (set intersection on `file.path`).
-- **`tasks` + `from`**: extract checkbox tasks **only from** the base's selected
-  files (`buildTaskRows(root, paths)`), instead of the whole vault.
-
-Because `from` itself goes through `resolveBaseRows`, the referenced base's own
-source is fully resolved first — so `from: [[Keep]]` where Keep is a
-`source: notes where …` base scopes to exactly the notes Keep would show.
-
-### Worked example — scoped tasks (the "Do Now" pattern)
-
-A common pattern: a base that surfaces only the tasks inside another base's
-notes. From `source.test.ts` ("scopes tasks to the referenced base's notes
-only"):
-
-```yaml
-# Keep.md — selects notes tagged #keep
----
-type: base
-source: notes
-where: file.hasTag("keep")
----
-```
-
-```markdown
-<!-- keep/x.md — tagged keep, has a task -->
----
-tags: [keep]
----
-- [ ] scoped task
-```
-
-```markdown
-<!-- other/y.md — NOT tagged keep, has a task -->
-- [ ] unscoped task
-```
-
-Resolving a tasks source scoped to Keep:
-
-```ts
-resolveSource({ kind: "tasks", from: "[[Keep]]" }, { root: dir })
-// → [{ note.description: "scoped task" }]   // "unscoped task" is excluded
-```
-
-As a real "Do Now" base file:
+`Do Now.md`:
 
 ```yaml
 ---
@@ -502,348 +68,107 @@ view: table
 ---
 ```
 
-This shows only the tasks in the notes the `Keep` base selects — not the whole
-vault. (The CLAUDE.md "scoped-tasks example" describes exactly this: a `Do Now`
-base with `source: tasks` + `from: "[[Google Keep]]"`.)
+If `keep/x.md` is tagged `keep` and holds `- [ ] scoped task`, and `other/y.md` is not tagged and holds `- [ ] unscoped task`, the base shows only `scoped task`. The referenced base is resolved first through its own source, so `from: [[Keep]]` selects exactly the notes `Keep` would show. Without `from`, a `tasks` source reads every task in the vault. Task line syntax is in [tasks](../tasks/syntax.md).
 
-## Row body parsing (`core/src/bases/rows.ts`)
+## How do I build on another base's rows?
 
-An own-rows base's body is parsed into `Row[]` by `parseRows(body, meta)` where
-`meta = { name, path }`. Two body formats are accepted:
+`source: base` with a `ref` uses the rows of another base, which is how one set of rows gets a second view. The referenced base's own source is followed, so a `ref` to a base with `source: notes where file.hasTag("keep")` yields those notes, not the referenced file's body.
 
-1. **Canonical: a YAML list of objects.** Each list item becomes one `Row` whose
-   `note` is that object. Numbers stay numbers; YAML block scalars (`|-`)
-   preserve multi-line cell content.
-2. **Back-compat: a GFM markdown table.** Detected by a header line with a pipe
-   followed by a `|---|---|` separator (`looksLikeTable`), parsed via
-   `parseMarkdownTable`. Older table-based bases still load.
-
-An **empty** or **prose-only** body returns `[]`.
-
-Each produced `Row` has:
-
-- `file`: a **synthetic** `FileMeta` (`syntheticBaseFile(meta.path)`) — `name`
-  and `basename` are **empty strings** (base rows are not distinct notes, so the
-  filename isn't auto-shown as a meaningless repeated column), but `path` keeps
-  the base file for write-back.
-- `note`: the row object (the frontmatter-equivalent record).
-- `formula`: `{}` (filled in later by the query engine).
-- `index`: this row's 0-based position among the rows THIS parse produced —
-  both body formats stamp it (the YAML-list path in its filter-then-map loop,
-  the GFM-table path in its own row-push loop), so a table-format base is
-  just as write-addressable as the canonical YAML-list form. See
-  [the `Row` model](./overview.md#the-row-model) for what it's for and why
-  it never becomes a `note.*` column.
-
-From `rows.test.ts`:
-
-```ts
-const META = { name: "Library", path: "Library.md" };
-
-// YAML list body
-parseRows(
-  "- title: Capital\n  author: Marx\n  rating: 4\n- title: Normal People\n  author: Rooney\n  rating: 5",
-  META,
-)
-// → rows[0].note.title === "Capital", rows[0].note.rating === 4 (number),
-//    rows[0].file.name === "" , rows[0].file.path === "Library.md"
-
-// multi-line cell via YAML block scalar
-parseRows("- front: q\n  back: |-\n    line 1\n    line 2", META)
-// → rows[0].note.back === "line 1\nline 2"
-
-// GFM table fallback
-parseRows("| title | rating |\n| --- | --- |\n| Capital | 4 |", META)
-// → rows[0].note.title === "Capital", rows[0].note.rating === 4
-
-parseRows("", META)              // → []
-parseRows("just some prose", META) // → []
+```yaml
+---
+type: base
+source: base
+ref: "[[Keep]]"
+view: cards
+---
 ```
 
-`serializeRows(rows, columnOrder?)` writes rows back to the **canonical
-YAML-list** body (never a markdown table). `undefined` cell values are dropped
-(so empty cells don't serialize as `key: null`). With a `columnOrder` array,
-keys are emitted in that order, then any remaining keys appended alphabetically;
-without it, insertion order is preserved. An empty `rows` array serializes to
-`""`. Round-trip is stable:
+Only rows carry over. The referenced base's `filters`, `formulas`, `properties`, `sort` and `groupBy` are not applied, so restate any filter you need. [Bases overview](./overview.md#how-do-i-show-the-same-rows-in-a-second-view) has a worked example. A cycle (A refs B refs A), a missing base and a `source: base` with no `ref` all resolve to zero rows without an error.
 
-```ts
-const rows = parseRows("- a: 1\n  b: x", META);
-parseRows(serializeRows(rows), META)
-// → back[0].note.a === 1, back[0].note.b === "x"
-```
+## How are wikilinks in `from` and `ref` found?
 
-## Server-side `POST /rows`
+A wikilink resolves the way a note link does. An exact vault path wins: `[[reading/List]]`, or a root-level `[[List]]` that exists. Otherwise the base name is searched across the vault and the match with the fewest path segments wins, then the smaller path, so `[[List]]` finds `reading/List.md`. If nothing matches, the source yields no rows, and `bismuth base validate` reports the path it looked for.
 
-The single source-resolution endpoint. It is registered in the **read** route
-table (NOT `mutatingRoutes`) — despite being a `POST`, it is read-only (the body
-carries the spec, which is too large/structured for a query string), so it does
-**not** invalidate caches or broadcast SSE.
+Quote wikilinks in YAML. An unquoted `from: [[Keep]]` parses as a nested list, not a string. Bismuth rebuilds the string, so an unquoted link works, but quoting avoids relying on it.
 
-### Request / response
+## What can go wrong with a tag filter?
 
-```http
-POST /rows
-Content-Type: application/json
+A bare `#tag` is not a filter, and each place it appears fails differently:
 
-{ "spec": <SourceSpec> }
-```
+- Unquoted, `source: notes where #book` is a YAML comment, so the source becomes `notes` and the base shows the whole vault.
+- Inside the string form, `notes where "#book"` is a non-empty string, which is true for every note.
+- As `where: "#book"` it is a parse error and the base shows zero rows.
 
-Response: `200` with the resolved `Row[]` JSON.
+Write `file.hasTag("book")`: no `#`, and it matches the exact tag only, not `book/x`. To match subtags, list them: `file.hasTag("book", "book/x")`.
 
-The handler (`core/src/server.ts`):
+## How does a tasks `where` differ from a notes `where`?
 
-```ts
-"POST /rows": async (req, __) => {
-  const { spec } = (await req.json()) as { spec: SourceSpec };
-  let rowsMemo: Promise<Row[]> | null = null;
-  let tasksMemo: Promise<Row[]> | null = null;
-  const rows = await resolveSource(spec, {
-    root: cfg.vault,
-    today: todayISO(),
-    vaultRows: () => (rowsMemo ??= rowsCache.get()),
-    vaultTasks: () => (tasksMemo ??= tasksCache.get()),
-  });
-  const denyEntries = await denyEntriesForRequest(req);
-  return ok(filterByPath(rows, denyEntries, r => r.file.path));
-},
-```
+Both are Bases expressions evaluated per row, so `source: tasks where !note.resolved && note.priority == "high"` works like a notes filter. A `tasks` `where` that holds Tasks-style text (`not done`, `due before tomorrow`, a `sort by` line) is translated into an expression when the base is read. A migrated query uses a plain expression plus a separate `sort`; see [the tasks query language](../tasks/query-dsl.md). Sorting a task source is the view's `sort`, which ranks a property named `priority` by urgency (`highest`, `high`, `medium`, `none`, `low`, `lowest`) rather than alphabetically.
 
-### Caching at three layers
+## Can I edit the source without writing YAML?
 
-1. **Per-resolution memo (`rowsMemo` / `tasksMemo`).** One `/rows` call can hit
-   the unscoped vault feeds many times (base composition + `from:` chains).
-   These memos ensure the vault rows / global task feeds build (or fetch from the
-   server cache) **at most once per request**. They cover the unscoped case
-   only — scoped task extraction (`from:` → `buildTaskRows(root, paths)`)
-   bypasses the provider and always runs fresh.
+Open **Settings** in the view bar and use the **source** section. Its "rows from" choice writes:
 
-2. **Server vault-feed cache (`rowsCache` / `tasksCache`).** The server keeps
-   an `AsyncCache<Row[]>` (`core/src/asyncCache.ts`) for each **unscoped**
-   feed, shared by `/vault-data`, `/rows`, and the source resolver:
-
-   ```ts
-   const rowsCache = createAsyncCache<Row[]>(() => buildVaultRows(cfg.vault));
-   const tasksCache = createAsyncCache<Row[]>(() =>
-     buildTaskRows(cfg.vault, undefined),
-   );
-   ```
-
-   `createAsyncCache` is a small wrapper the graph and tree caches share too,
-   giving each feed three guarantees a bare `let cached = null` lacks:
-   concurrent `get()` calls while a build is in flight share **one** build
-   instead of each kicking off its own vault walk; an `invalidate()` that
-   lands mid-build drops that build's result instead of repopulating a
-   now-stale cache (tracked via a generation counter); and `warm()` kicks the
-   first build off the request path at boot (`rowsCache.warm()` /
-   `tasksCache.warm()`).
-
-   Invalidation happens in `applyDirty` (after the 250ms file-watch debounce),
-   and rows and tasks are now patched the same way:
-
-   - **`rowsCache`** is *patched* rather than dropped when the change lists
-     specific paths: `await patchVaultRows(cfg.vault, paths, rowsCache).catch(() =>
-     rowsCache.invalidate())`. `patchVaultRows` (`core/src/basesData.ts`)
-     re-parses only the changed notes and splices them into the cached
-     `Row[]` in place — edited notes replace in place, deleted notes are
-     spliced out, and a brand-new note (present on disk, absent from the
-     cached feed) triggers a cheap re-**list** of the vault (a dirent walk, no
-     file reads) to recover its position, reusing every other cached row
-     as-is. This is what keeps a base from paying a full vault re-walk +
-     re-parse (~400ms) on every keystroke-driven autosave; it falls back to
-     `rowsCache.invalidate()` when there's nothing safe to patch (no cached
-     feed yet, the listing failed, or an unreadable note). A change with no
-     specific paths (`paths.length === 0`) invalidates outright.
-   - **`tasksCache`** is patched the same way, via `patchTaskRows`
-     (`core/src/bases/tasksData.ts`): `await patchTaskRows(cfg.vault, paths, tasksCache).catch(() =>
-     tasksCache.invalidate())`. Unlike `patchVaultRows`, task-row ORDER doesn't need to
-     match a full rebuild — `reconcileRows` (`app/src/bases/reconcileRows.ts`) keys a task
-     row by `path + description`, not array position — so `patchTaskRows` simply splices out
-     every existing row for a changed path and appends the freshly re-extracted tasks for
-     those paths (`collectTasksFromPaths`), rather than re-walking them into position. It
-     falls back to `tasksCache.invalidate()` on the same failure conditions as the rows
-     patch, and a change with no specific paths invalidates outright.
-
-   This patch is **awaited** before the SSE publish (unlike the search-index
-   patch, which is fire-and-forget) — a base render persists on screen, so a
-   client that refetches `/rows` off the SSE event must see the patched feed,
-   not a one-edit-stale one.
-
-   On the client, `BaseView` does **not** re-request `/rows` on every SSE version
-   bump — it calls `changeAffectsView` (`app/src/bases/changeRelevance.ts`) and skips
-   changes that provably can't affect the view: memory-only (3rd-brain) changes, and
-   content-only vault edits to notes the view doesn't depend on **when its filters are
-   purely `file.*` (tag/folder/name) over an unscoped source**. This stops a busy vault
-   (e.g. the `@bismuth/daemon` process rewriting `DAEMON.md` every ~2s) from re-resolving every
-   open base continuously. Property-value filters (`note.status`, `due < today()`),
-   `where` exprs, scoped `from:`, and composed `ref:` sources always re-resolve on a
-   content edit (their membership is content-dependent and can't be skipped safely).
-
-3. **Client SWR row cache (`bases/rowCache.ts`).** See below.
-
-### `today`
-
-`POST /rows` passes `today: todayISO()` so `today()`/relative-date expressions
-in a `where` resolve against the server's current date — including a legacy
-`tasks` `where` still holding Obsidian-Tasks-DSL text, whose relative-date
-words (`tomorrow`, `in 3 days`, …) `translateTaskDsl` resolves at this same
-`today`.
-
-## Frontend resolution (`BaseView` + row cache)
-
-The frontend never re-implements per-kind resolution — it sends the spec to
-`/rows`. `app/src/api.ts`:
-
-```ts
-resolveRows: (spec: SourceSpec, version?: number) => {
-  const key = JSON.stringify(spec);
-  const inflight = rowsInflight.get(key);
-  if (inflight && inflight.version === version) return inflight.promise;
-  const p = postJson<Row[]>("/rows", { spec }).finally(() => {
-    if (rowsInflight.get(key)?.promise === p) rowsInflight.delete(key);
-  });
-  rowsInflight.set(key, { version, promise: p });
-  return p;
-},
-```
-
-`api.resolveRows` **dedups** identical concurrent specs (the same base reopened
-in a split, or many ` ```query ` blocks pointing at one base) onto a single
-in-flight POST, keyed by the serialized spec and cleared once it settles — but
-only when the two calls share the same `version`. `version`, when passed, is the
-server version the caller is resolving AT; a call issued after a version bump
-(e.g. right after a write) always issues a fresh POST rather than dedupe onto an
-older in-flight one for the same spec, so a write is never masked by a stale
-in-flight resolve. A caller that omits `version` dedupes purely by spec, matching
-the historical behavior — every call site except `BaseView.tsx`'s revalidation
-path (`app/src/bases/BaseView.tsx`), which stamps the call with `serverVersion()`.
-
-`BaseView` splits this into two steps, on purpose: parsing the file (the
-DOCUMENT) is one HTTP round-trip that must not repeat when only the source
-changes, while the spec that feeds the view is a separate step.
-
-**Step 1 — `loadDocument()`** produces `{ config, rows, basePath }`, keyed only
-on the base's own identity (`path`/`source`/`view`):
-
-- **`props.view`** (a flat ` ```query ` block): `config` is a synthetic
-  config carrying the block's own `source` (`v.source`); `rows =
-  []` (a query block has no inline table of its own to fall back to).
-- **`props.path`** (a `type: base` md file): parse the file via
-  `parseBaseFile` into `{ config, rows }`.
-- **`props.source`** (raw inline config string): parse it via `parseBase`;
-  `rows = []`.
-
-**Step 2 — `activeSpec()`** resolves the base's spec, falling back in this order:
-
-```ts
-if (d.config.source) return d.config.source;
-if (props.view) return undefined;          // no of:/tasks: → deliberate empty state
-return d.rows.length ? { kind: "base" } : { kind: "notes" };
-```
-
-The base's `source:` wins; without one, a
-`type: base` file with inline rows renders those (`{ kind: "base" }`), and
-one with none defaults to `{ kind: "notes" }` (whole vault). Only a flat
-query block with no `of:`/`tasks:` gets `undefined` — an intentional empty
-state, not "all notes".
-
-**Step 3 — resolving rows for the spec:**
-
-```ts
-const rows =
-  spec?.kind === "base" && !spec.ref
-    ? d.rows                                       // this base's OWN rows, already parsed
-    : spec ? await api.resolveRows(spec) : [];      // everything else, server-side
-```
-
-An own-rows base (`{kind:"base"}` with no `ref`) paints straight from the
-document's already-parsed `rows` — no `/rows` round-trip. Everything else
-(notes / tasks / a real base-ref composition) goes server-side via `/rows`,
-which follows composition + scoped tasks. No spec at all → `[]`
-(empty state).
-
-Rows are cached and re-fetched keyed on **the document's identity plus the
-JSON-serialized spec**, so a source edit triggers a fresh resolve and an
-unchanged source does not.
-
-### Client SWR cache (`RowCache`)
-
-`bases/rowCache.ts` is a small string-keyed stale-while-revalidate cache,
-freshness-tracked against the SSE server version (`serverVersion.ts`):
-
-- `peek(key)` → cached value (even if stale) or `undefined`.
-- `isFresh(key, version)` → true only when a non-stale entry exists at exactly
-  `version`. On a fresh hit, `BaseView` **skips the `/rows` round-trip** entirely.
-- `begin(key)` → claims a token for `key` before an async fetch starts, returning an
-  incrementing per-key counter (`tokens.get(key) ?? 0) + 1`, modeled on
-  `core/src/asyncCache.ts`'s `generation` counter one level more granular. The token
-  is passed to the matching `set()` call.
-- `set(key, value, version, token?)` records a fresh entry. When `token` is given,
-  the write is dropped — and `false` returned — unless it is still the LATEST token
-  `begin(key)` issued for this key; an older fetch settling late must not overwrite a
-  newer value. Callers that pass no token keep the unconditional always-writes
-  behavior.
-- `invalidate(version)` marks every entry resolved **before** `version` stale
-  (a vault change can alter any base's rows, and the spec is resolved
-  server-side so the client can't tell which — over-revalidating is safe). Cached
-  values are kept so reopens still paint instantly.
-
-This token/`begin()` pairing is race protection: it drops a slow fetch that started
-before a newer one already settled, instead of letting it clobber fresher data with
-stale results — the same shape used by the `docCache` (document parse cache) and
-`rowCache` (resolved-rows cache) instances `BaseView.tsx` keeps, both `RowCache`s.
-Known gap, paired deliberately rather than routed around: if the newer fetch ERRORS
-it never calls `set()`, so its token stays "latest" and the older fetch's `set()`
-keeps returning `false` — the cache is stuck on its pre-race value until the next
-`invalidate()` lets a fresh `begin()`/`set()` pair revalidate it.
-
-In `BaseView`: an effect calls `rowCache.invalidate(serverVersion())` on every
-version bump; the resource re-runs on a source change **or** version bump; on a fresh
-cache hit it returns the cached rows without calling `/rows`; otherwise it claims a
-token via `rowCache.begin(key)` before resolving, then `rowCache.set(key, result,
-version, token)`. Solid keeps the previous value painted while revalidating, so
-reopening a base or opening it in a split paints instantly from the last resolution
-(a `BaseSkeleton` shows only on cold load).
-
-## Editing the source in the settings panel
-
-The base settings modal's **source** section (`app/src/bases/SourceFields.tsx`, logic in `sourceForm.ts`) sets where rows come from without YAML:
-
-| "rows from" | Writes |
+| Choice | Writes |
 |---|---|
-| this base's own rows | removes `source:` (the body table, or every note when there is none) |
+| this base's own rows | removes `source:` |
 | vault notes | `source: { kind: notes, where?, from? }` |
 | vault tasks | `source: { kind: tasks, where?, from? }` |
 | another base | `source: { kind: base, ref: "[[Other]]" }` |
 
-`where` is built with the filter-condition editor (see [filters](./filters.md#editing-filters-in-the-settings-panel)); a legacy Tasks-DSL `where` shows as one expression row and is kept verbatim. "Limit to base" is `from`; the base pickers list every note as `[[name]]`. The panel always writes the **object form** — it needs no sibling keys and YAML quotes the expression, so a `#` inside it can't be eaten as a comment — and removes the now-dead top-level `where`/`from`/`ref` a string-form source read. An untouched section writes nothing.
+`where` is built with the condition editor described in [filters](./filters.md#can-i-edit-filters-without-writing-yaml), and "limit to base" is `from`. The panel always writes the object form, which needs no sibling keys and which YAML quotes, so a `#` in an expression cannot become a comment. It also removes the top-level `where`, `from` and `ref` that a string-form source read. An untouched section writes nothing.
 
-## Edge cases & gotchas (summary)
+## What can go wrong?
 
-- **Unquoted `from: [[X]]` / `ref: [[X]]`** parse as nested YAML arrays, not
-  strings — `wikiStr` coerces them back, but prefer quoting. An uncoerced drop
-  silently widens a scoped tasks base to the whole vault.
-- **`normalizeSource` returns `undefined` for unknown input** — callers must
-  supply their own default; an unknown `kind` (object or string) is not a hard
-  error.
-- **Composition follows the referenced base's OWN source**, not its static rows.
-  `{kind:"base", ref:"[[Keep]]"}` runs Keep's `source: notes/tasks/base` query.
-- **Composition carries ROWS ONLY.** The referenced base's `filters`,
-  `formulas`, `properties`, and view keys (sort, groupBy, limit, ...) are not
-  applied to the referencing base; restate any filter you need. This is how a
-  second view of the same rows is made — see
-  [One view per base: composing](./overview.md#one-view-per-base-composing).
-- **Cycles return `[]`, not an error** — and symlink cycles are caught via
-  real-path resolution in `seen`.
-- **Missing / unreadable base files return `[]`** (no throw).
-- **Scoped task extraction always runs fresh** — only the unscoped global feeds
-  are cached (server `tasksCache` / per-request `tasksMemo`).
-- **Base-row `file.name`/`file.basename` are empty** — base rows are synthetic,
-  not distinct notes; only `file.path` (the base file) is meaningful for
-  write-back.
-- **A `.base`-extension ref resolves the `.base` file**, not a `.md` sibling
-  (`refToPath` leaves an existing `.md`/`.base` extension intact).
-- **`POST /rows` is read-only despite being POST** — no cache invalidation, no
-  SSE broadcast; it lives in the read route table.
+| Symptom | Cause |
+|---|---|
+| A scoped tasks base shows nothing. | `from` names a base that does not exist, or one that selects no notes with tasks in them. |
+| The whole vault shows. | The `source` is unrecognised, or a `#tag` was read as a comment. |
+| A composed base ignores the other base's filters. | Composition carries rows only; restate the filters. |
+| Zero rows from a `ref`. | A cycle, a missing base or no `ref`. |
+| Row `file.name` is empty. | The rows are stored in a base body; they are not separate notes. |
+| Changing an upstream base's `source` changes a downstream base. | `from` and `ref` re-run the upstream base's own source. |
 
-Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/source.ts`, `core/src/bases/rows.ts`, `core/src/bases/table.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/query.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/tasksData.ts`, `core/src/server.ts`, `core/src/api.ts (app/src/api.ts)`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`, `core/test/bases/queryBlock.test.ts`
+## How it works
+
+A `source` is parsed into a `SourceSpec` (`core/src/bases/types.ts`) by `normalizeSource(raw, fm)` in `core/src/bases/sourceSpec.ts`:
+
+```ts
+type SourceSpec =
+  | { kind: 'base'; ref?: string }
+  | { kind: 'notes'; where?: string; from?: string }
+  | { kind: 'tasks'; where?: string; from?: string }
+```
+
+A string is matched against `/^(base|notes|tasks)(?:\s+where\s+(.+))?$/i`, and the sibling keys `from`, `ref` and `where` come from the surrounding frontmatter. `wikiStr` rebuilds `"[[X]]"` from the nested array YAML produces for an unquoted link. `refToPath` turns a wikilink into a vault path by appending `.md`; `resolveRefPath` in `core/src/bases/source.ts` then applies the exact-path-then-basename rule above.
+
+A `SourceSpec` also comes from a flat ` ```query ` block (`of:` becomes `base`, `tasks:` becomes `tasks`; see [the query block](./query-block.md)). `resolveSource(spec, ctx)` returns `Row[]`:
+
+- `base`: no `ref` gives `[]`; otherwise `resolveBaseRows` on the referenced file.
+- `notes`: the vault notes feed, intersected with `from`'s paths when set, then filtered by `where` through `passesFilter`.
+- `tasks`: with `from`, `buildTaskRows(root, paths)` extracts tasks from only those files, always fresh; without it, the global task feed, which a caller may cache. `where` then filters through the same `passesFilter`.
+
+`resolveBaseRows(path, ctx)` reads the base file, parses it (cached by file content, not mtime), and resolves its `source` recursively. With no `source`, it returns its own body rows, or every note when it has none. `ctx.seen` holds the real, symlink-resolved path of every base entered, so a config cycle or a symlink loop returns `[]` instead of throwing. A missing or unreadable base also returns `[]`. `SourceCtx` carries the vault `root`, an ISO `today` for relative dates, `seen`, and optional `vaultRows` and `vaultTasks` providers that let a server serve the unscoped feeds from a cache.
+
+### How `POST /rows` resolves and caches
+
+`POST /rows` takes `{ "spec": <SourceSpec> }` and returns the resolved `Row[]`, filtered by the caller's visibility. It sits in the read route table (`core/src/routes/bases.ts`) despite being a POST, so it neither invalidates caches nor broadcasts an SSE event. Rows are cached at these layers:
+
+1. A per-request memo builds the unscoped notes and task feeds at most once per call, however many `from` and `ref` hops there are. Scoped task extraction bypasses it.
+2. The server keeps `rowsCache` and `tasksCache` (`createAsyncCache` in `core/src/asyncCache.ts`): concurrent callers share one build, and an invalidation that lands mid-build drops that build's result. After the file-watch debounce, `patchVaultRows` and `patchTaskRows` re-parse only the changed notes and splice them in; they fall back to a full invalidate when nothing safe can be patched, and a change with no specific paths invalidates outright. The patch is awaited before the SSE event is published, so a client that refetches sees the patched feed.
+3. The client's stale-while-revalidate `RowCache` (`app/src/bases/rowCache.ts`) serves a reopened base instantly and revalidates against the SSE version.
+
+`api.resolveRows` (`app/src/api.ts`) merges identical concurrent specs into one request, keyed by the serialized spec and the server version, so a write is never answered by an older in-flight request. `BaseView` resolves a base's own rows client-side from the already-parsed file and sends every other spec to `/rows`.
+
+### How are body rows parsed?
+
+`parseRows(body, meta)` in `core/src/bases/rows.ts` turns a base body into rows. The canonical body is a YAML list of objects; a GFM pipe table is read as well. An empty or prose-only body yields `[]`. Each row gets a synthetic `file` with an empty `name` and the base's `path` (kept for write-back), the object as `note`, and a zero-based `index` for write-back. `serializeRows(rows, columnOrder?)` writes the YAML list, drops undefined values so empty cells do not become `key: null`, and emits keys in `columnOrder` first, then alphabetically.
+
+```ts
+parseRows('- title: Capital\n  author: Marx\n  rating: 4', { name: 'Library', path: 'Library.md' })
+// rows[0].note.rating === 4 (a number), rows[0].file.name === '', rows[0].file.path === 'Library.md'
+parseRows('- front: q\n  back: |-\n    line 1\n    line 2', meta)   // back === 'line 1\nline 2'
+parseRows('| title | rating |\n| --- | --- |\n| Capital | 4 |', meta) // rating === 4
+```
+
+Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/source.ts`, `core/src/bases/rows.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/tasksData.ts`, `core/src/basesData.ts`, `core/src/asyncCache.ts`, `core/src/routes/bases.ts`, `app/src/api.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/SourceFields.tsx`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`

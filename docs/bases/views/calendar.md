@@ -1,39 +1,8 @@
-# Calendar View
+# Calendar view
 
-The calendar view is one Bases view kind with **two registers**: a full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, category colors) that runs inside a `type: base` markdown file, and a **tasks register** that draws checkbox tasks on the same grid instead of events. There is no standalone calendar page and no separate file extension — any base becomes a calendar by declaring `view: calendar` in its YAML frontmatter. Events are stored as rows in the base file body using the same canonical row format every base uses — a YAML list of row objects (a legacy GFM pipe table still reads back-compat) — and categories as a YAML list under the `categories` frontmatter key. All calendar settings (default view, week-start, time format) live in `.settings` under `calendar`.
+The calendar view draws a base's rows on a month, week, 3-day or day grid. It has two registers: the events register draws events stored in the base file, and the tasks register (`mode: tasks`) draws checkbox tasks on the same grid. Use this page to configure a calendar base. Event fields, recurrence rules and categories live in [calendar overview](../../calendar/overview.md); Google sync lives in [Google Calendar sync](../../gcal/overview.md).
 
-**In this doc:** declaring a calendar base and its on-disk event/recurrence format → the four view modes and navigation → event chips and the event modal → category colors → global calendar settings vs. per-base column mapping → the storage backend and Google Calendar sync → reactive state, range calculation, and keyboard shortcuts → the [tasks register](#tasks-register) (`mode: tasks`) → gotchas.
-
-Everything through [Storage Backend](#storage-backend) describes the **events register** (`mode` absent or `"normal"`, `calendarContent` absent or `"events"` — the default); the tasks register is its own section, [below](#tasks-register). This "view mode" (events vs. tasks — what each cell DRAWS) is unrelated to the `Month`/`Week`/`3 Day`/`Day` navigation modes covered next, which apply to either register.
-
----
-
-## Making a Base a Calendar
-
-### Minimal frontmatter
-
-```yaml
----
-type: base
-view: calendar
----
-```
-
-`view: calendar` is the whole declaration: a base has exactly one view, and its kind is the `view:` key (top-level `type` stays `base`). The base is parsed by `parseBaseFile` in `core/src/bases/parse.ts` and routed to `CalendarView` by `BaseView.tsx` whenever `activeType() === "calendar"`. A file with a legacy `views:` list still reads (its first entry only) and is rewritten flat on the app's first write to it.
-
-### With an explicit column schema
-
-```yaml
----
-type: base
-view: calendar
-schema: { title: text, date: date }
----
-```
-
-Adding a `schema` key is optional but recommended — it documents the expected types. The serialiser preserves every frontmatter key across saves, so `schema`, `source`, and any other top-level keys are not clobbered.
-
-### With categories pre-declared
+A calendar is an ordinary `type: base` file with `view: calendar`. This base holds its own events in the body:
 
 ```yaml
 ---
@@ -44,27 +13,6 @@ categories:
     color: "#b00020"
   - name: Personal
     color: teal
----
-```
-
-`categories` is a YAML list of `{name, color}` objects. The `color` field accepts either a CSS hex string (`"#b00020"`) or a theme token (one of `accent`, `teal`, `blue`, `violet`, `green`, `gold`, `rose`) — see [Category Colors](#category-colors) below.
-
----
-
-## On-Disk Event Format
-
-Events are stored as rows in the base file body using the **same canonical row format every base uses** — there is no calendar-specific serialisation. `parseCalendarFile` (`calendarSerialize.ts`) calls `parseRows(body, meta)` (`core/src/bases/rows.ts`) directly, and `serializeCalendarFile` calls `serializeRows(events.map(eventToRow))` with **no `columnOrder` argument**.
-
-- **Canonical form: a YAML list of row objects**, one per event. `serializeRows` with no `columnOrder` falls back to `Object.entries(r.note)` — i.e. each object's own key **insertion order** — and drops any key whose value is `undefined` (so an absent field never serializes as `key: null`). `eventToRow` always builds the object in the same field order (`id, title, date, startTime, endTime, location, link, description, category, categories, recurrence, localUpdated`), so the emitted key order is stable in practice, but it is a byproduct of that insertion order, not a column schema enforced by the serialiser.
-- **Back-compat: a GFM pipe table.** `parseRows` still reads an older-style pipe table (a header line with a pipe followed by a `|---|---|` separator, detected by `looksLikeTable`) via `parseMarkdownTable`, so a calendar base saved before the YAML-list format shipped still loads. `serializeCalendarFile` never writes a table — the next save of any calendar base rewrites its body as the canonical YAML list.
-
-```yaml
----
-type: base
-view: calendar
-categories:
-  - name: Work
-    color: "#b00020"
 ---
 
 - id: a1
@@ -81,388 +29,7 @@ categories:
   recurrence: '{"type":"weekly","daysOfWeek":[1],"startDate":"2026-05-25","seriesId":"s1"}'
 ```
 
-### Event row fields
-
-| Field | Type | Notes |
-|---|---|---|
-| `id` | `string` | UUID, auto-generated on create |
-| `title` | `string` | Event title |
-| `date` | `"YYYY-MM-DD"` | The event's primary date |
-| `startTime` | `"HH:MM"` or absent | Omit for all-day events |
-| `endTime` | `"HH:MM"` or absent | Sets block height in time-grid views |
-| `location` | `string` | Free-text location |
-| `link` | `string` | URL opened by the chip link button |
-| `description` | `string` | Markdown — rendered with marked in the modal |
-| `category` | `string` | Must match a name in `frontmatter.categories`; uncategorised events render as a ghost (outline-only) chip |
-| `categories` | JSON array string, or absent | Multiple categories per event. `eventToRow` serialises `event.categories` (a `string[]`) as `JSON.stringify(e.categories)`, and only when it has at least one entry; `rowToEvent` reads it back, tolerating an already-parsed array or a bare single string. |
-| `recurrence` | JSON string or absent | A `Recurrence` object serialised as JSON — see [Recurrence](#recurrence) |
-
-All fields except `id`, `title`, and `date` are optional. Absent values are simply omitted from the row object (`serializeRows` drops `undefined` values rather than writing them as `null`).
-
-### Recurrence storage
-
-Recurrence is stored as a JSON string value in the row's `recurrence` field (not as a nested YAML structure):
-
-```json
-{"type":"weekly","daysOfWeek":[1],"startDate":"2026-05-25","endDate":"2026-06-30","seriesId":"s1"}
-```
-
-It is encoded/decoded by `calendarSerialize.ts` using `JSON.stringify` / `JSON.parse`. Malformed JSON is silently dropped.
-
----
-
-## The `CalendarEvent` Type
-
-```ts
-interface CalendarEvent {
-  id: string
-  title: string
-  date: string          // "YYYY-MM-DD"
-  startTime?: string    // "HH:MM" — undefined = all-day
-  endTime?: string
-  location?: string
-  link?: string
-  description?: string
-  // Single category (legacy + backward-compatible). When an event belongs to multiple
-  // categories, `categories` holds the full ordered list and `category` mirrors the first
-  // (so single-category events, Google Calendar color mapping, etc. keep round-tripping).
-  category?: string
-  categories?: string[]
-  recurrence?: Recurrence
-  localUpdated?: string // ISO timestamp stamped on every local create/edit (EventStore);
-                        // the Google Calendar last-write-wins tiebreaker against the remote `updated`
-}
-```
-
----
-
-## Recurrence
-
-### `Recurrence` type
-
-```ts
-interface Recurrence {
-  type: RecurrenceType           // 'daily' | 'weekly' | 'biweekly' | 'monthly'
-  daysOfWeek?: number[]          // 0–6, Sunday=0; used for weekly/biweekly
-  startDate: string              // "YYYY-MM-DD" — series start
-  endDate?: string               // "YYYY-MM-DD" — if absent, runs to year 2100
-  seriesId: string               // UUID grouping all master segments of a series
-}
-```
-
-### Recurrence types
-
-| Type | Behaviour |
-|---|---|
-| `daily` | Fires every calendar day from `startDate` to `endDate` |
-| `weekly` | Fires on days in `daysOfWeek` each week. If `daysOfWeek` is absent, defaults to the weekday of `startDate` |
-| `biweekly` | Fires on days in `daysOfWeek` every other week. Week-offset counted from `startDate` |
-| `monthly` | Fires on the same day-of-month as `startDate`. If `startDate` is day 29/30/31, clamps to the last day of shorter months (e.g. Jan 31 → Feb 28 in a non-leap year) |
-
-### Recurrence expansion
-
-`expandRecurrence(recurrence, rangeStart, rangeEnd)` (in `core/src/bases/recurrence.ts`) iterates day-by-day from `max(recurrence.startDate, rangeStart)` to `min(recurrence.endDate ?? '2100-01-01', rangeEnd)` and calls `matchesRecurrence` on each day. Only matching days are returned.
-
-### Editing and deleting recurring events
-
-When the user edits or deletes a recurring event, a `RecurrenceDialog` modal prompts for scope:
-
-| Button | Scope | Behaviour |
-|---|---|---|
-| "Just this one" | `one` | Splits the series at this date: truncates the master's `endDate` to the day before, creates a one-off event for this occurrence (edit) or no event (delete), and optionally adds a new master segment for the days after |
-| "This and following" | `following` | Truncates the master's `endDate` to the day before the occurrence. For edits, creates a new master segment starting at the occurrence with a new `seriesId` |
-| "All" | `all` | Edits or deletes every master event sharing the same `seriesId` |
-
-The split strategy is implemented in `EventStore.ts` methods `editOccurrence`, `editFollowing`, `editSeries`, `deleteOccurrence`, `deleteFollowing`, `deleteSeries`.
-
----
-
-## View Modes
-
-There are four view modes controlled by the Toolbar's segmented toggle. The mode is stored in a reactive Solid signal (`currentView` in `calendar/state.ts`), not in the base file.
-
-| Mode | `ViewType` | Navigation unit | Time grid |
-|---|---|---|---|
-| Month | `"month"` | 1 month | No — grid of date cells |
-| Week | `"week"` | 7 days | Yes — 24-hour vertical columns |
-| 3 Day | `"3day"` | 3 days | Yes |
-| Day | `"day"` | 1 day | Yes |
-
-### Month view
-
-`MonthView.tsx` + `MonthView.module.css`. **One scroll container** (`data-testid="month-scroller"`)
-holds both the sticky weekday header and the 7-column grid, so a scrollbar narrows both by the same
-amount and the header never drifts out of alignment with the columns below it.
-
-- Columns are `repeat(7, minmax(0, 1fr))` — equal width; a bare `1fr` is deliberately avoided
-  because its minimum is its own content, not 0, which is what previously misaligned the columns.
-- Rows are `grid-auto-rows: auto` with `align-content: stretch` on the grid: **rows grow to fit
-  their content, they never squash it.** A week holding a busy day keeps every chip full height;
-  whatever height is left over in the grid (a short month, a tall pane) is divided equally across
-  the auto rows, so a quiet month still fills the pane instead of leaving a gap below the last row.
-  The whole month scrolls, inside `.scroller`, once the rows' natural heights outgrow the space
-  available — chips are never shrunk to make a busy week fit.
-- Leading and trailing days from adjacent months fill incomplete rows, dimmed via `MonthView`'s
-  own `dim` class (`month-cell-number.dim` in `MonthView.module.css`), merged onto `DayNumber`'s
-  root through its `class` prop rather than owned by `DayNumber` itself.
-- Each day cell (`data-testid="month-cell"`) shows its event or task chips stacked vertically.
-- Clicking an empty cell opens the `EventModal` to create an event on that date — events register
-  only; a tasks-register cell click opens that cell's own inline composer instead (see
-  [Creating a task](#creating-a-task) below).
-- Week column headers (`data-testid="month-day-name"`) follow the `weekStartsOnMonday` setting
-  (Mon–Sun or Sun–Sat).
-
-### Week / 3-day / Day views (TimeGrid)
-
-All three share the `TimeGrid` component. The grid is 1728px tall (`GRID_PX = 1728`, 72px an hour — four 18px `--row-h` rows, so a quarter hour is one row), representing 24 hours. All-day events (no `startTime`) are rendered in a sticky header row above the scrollable time grid, capped at six `--row-h` rows with its own scroll per day.
-
-- **Drag-to-create**: Mouse-down on an empty column area begins a "create" drag, tracking the pointer's **running maximum** displacement from where the press started (not the live or final distance — a press that wanders out past the threshold and back to its origin still counts as a drag). On mouse-up, `computeCreatePayload` (`app/src/calendar/components/views/timeGridDrag.ts`) decides the payload: a press that never exceeded `DRAG_DEADZONE_PX = 4` (exclusive — exactly 4px still counts as a click) opens `EventModal` with only `startTime`; a genuine drag opens it with both `startTime` and `endTime`, flooring the end to a full `SNAP_INTERVAL` (30 min) when the snapped span comes out under that — pulling `start` back instead when the drag is flush against the end of the day, since `endTime` can't be clamped past `MAX_MINUTES`. Distance is measured as `Math.hypot(dx, dy)`, so a diagonal wobble isn't treated as directional. Before this deadzone existed the threshold was zero pixels, so a trackpad wobble during an intended click floored a 30-minute event while a perfectly still click did not.
-- **Drag-to-move**: Mouse-down on an existing event chip triggers a "move" drag once the pointer moves **4px or more on either axis** — `TimeGrid.tsx`'s `onChipMouseDown` returns early only while both `|dy|` and `|dx|` are under 4px, with vertical movement retiming the event and horizontal movement moving it to another day. On release, `store.updateEvent` is called with the new `startTime` / `endTime` (and `date`, if the drop landed on a different day).
-- Both drags snap to 30-minute intervals (`SNAP_INTERVAL = 30`, in `timeGridDrag.ts`).
-- Short events (≤ 30 min duration) are rendered 15px taller than their true duration for legibility.
-- If an event ends before it starts (data error), `endMin` is forced to `startMin + 15`.
-
----
-
-## Toolbar and the View Bar
-
-The calendar contributes its controls to the base pane's ONE `ViewBar` rather than rendering a bar
-of its own. `app/src/calendar/components/Toolbar.tsx` exports `calendarSlots(): ViewBarSlots` — a
-function returning slots, not a component — and `BaseView.tsx` reads it through a `createMemo`
-(`viewSlots`) whenever `activeType() === 'calendar'`, feeding the result into the props of the one
-`<ViewBar>` it owns. `CalendarView.tsx` renders no `<Toolbar>` of its own; a second call site is
-exactly how a calendar base used to show two stacked bars.
-
-`ViewBar` (`app/src/ui/ViewBar.tsx`) takes six named regions, and a control's region is decided by
-the **question it answers**, not its shape:
-
-| Region | Question |
-|---|---|
-| `identity` | What am I looking at? |
-| `locus` | Where am I inside it, and how do I move? |
-| `facet` | Which projection of the same thing? |
-| `readouts` | What is its state right now? |
-| `config` | Which settings govern this session? |
-| `actions` | Do a thing. |
-
-`calendarSlots()` fills three of them:
-
-- **`locus`** — `DateNav` (prev/next chevrons and the date itself, which doubles as the "jump to
-  today" control — see [Navigation](#navigation) below) followed by the `[Month, Week, 3 Day, Day]`
-  view-mode `SegmentedToggle`. It lives in `locus` rather
-  than `facet`: "which span of time is on screen" is the same question the date navigation answers.
-- **`config`** — the Categories button, toggling `showCategoryPanel`.
-- **`actions`** — the + Event button, opening `EventModal` seeded with the current anchor date.
-
-The Settings gear is not part of `calendarSlots()` — `BaseView.tsx` renders a settings action for
-every base type in its own `actions` group and routes it to `showCalendarSettings` for a calendar
-base instead of the generic settings overlay.
-
----
-
-## Navigation
-
-Navigation and the range label live in `DateNav` (`app/src/calendar/components/DateNav.tsx`), the
-`locus`-region cluster that `Toolbar.tsx`'s `calendarSlots()` contributes to the base's one `ViewBar`
-(see [Toolbar and the view bar](#toolbar-and-the-view-bar) below). It renders exactly three
-controls, in this order: `‹` (Previous), the date, `›` (Next). **There is no separate Today
-button** — the date label itself IS the "jump to today" control: it is titled "Jump to today" and
-clicking it sets `currentDate.value = new Date()` directly, the same way the date always tells you
-where you are.
-
-| Action | Month | Week | 3 Day | Day |
-|---|---|---|---|---|
-| Previous / Next | ±1 month | ±7 days | ±3 days | ±1 day |
-| Click the date | Jumps to today's date, on every view |
-
-Previous/Next call `stepDate(currentDate.value, currentView.value, dir)`.
-
-**The range label is NOT an ISO date range.** It comes from `rangeLabel(d, view, mondayFirst)`
-(`app/src/calendar/dates.ts`), which returns both a `long` and a `short` form — the toolbar collapses
-to the short one in a narrow pane, since CSS can't rewrite text. Both forms are built by dropping
-whatever the two ends of the span already agree on (`spanLabel`), not by concatenating two ISO
-strings:
-
-| View | `long` | `short` |
-|---|---|---|
-| Month | `"May 2026"` | `"May 2026"` |
-| Week (Mon 2026-05-25 – Sun 2026-05-31, same month) | `"25 – 31 May 2026"` | `"25 – 31 May"` |
-| 3 Day (2026-05-27 – 2026-05-29) | `"27 – 29 May 2026"` | `"27 – 29 May"` |
-| Day (2026-05-27) | `"Wed 27 May 2026"` | `"Wed 27 May"` |
-| Week spanning a month boundary (2026-01-29 – 2026-02-04) | `"29 Jan – 4 Feb 2026"` | same, no year |
-| Week spanning a year boundary (2025-12-29 – 2026-01-04) | `"29 Dec 2025 – 4 Jan 2026"` | same, no years |
-
-The year is dropped from the `short` form and, within `spanLabel`, from whichever endpoint shares it
-with the other; the month name is dropped from the left endpoint when both ends fall in the same
-month. There is no `headerLabel()` function — this table is `rangeLabel`'s real output, produced
-entirely by `spanLabel` + `monthName`, both pure and colocated in `dates.ts`.
-
----
-
-## Event Chips
-
-`EventChip` renders each event as a colored chip. Behaviour:
-
-- **Background color**: `color-mix(in srgb, <category-color> 85%, transparent)`. Events with no matching category render without a background (`ghost` CSS class — outline only).
-- **Time display**: If `startTime` is set, rendered as `HH:MM — HH:MM` (12h) or `HH:MM` (24h) per `militaryTime` setting. The `formatTime` function strips the leading zero: `"13:05"` → `"1:05"` in 12h mode.
-- **Meta row**: `location` and/or `link` shown below the title. The meta row is hidden via `ResizeObserver` if it overflows the chip height.
-- **Click**: Opens `EventModal` in edit mode.
-- **Right-click**: Shows a context menu with Edit and Delete options.
-
----
-
-## Event Modal
-
-The `EventModal` dialog handles both create and edit. Fields:
-
-| Field | UI element | Stored in |
-|---|---|---|
-| Title | Plain text `<input>` | `CalendarEvent.title` |
-| Date | Date picker | `CalendarEvent.date` |
-| All-day toggle | Toggle switch | Absence of `startTime`/`endTime` |
-| Start time / End time | Time pickers (shown when not all-day) | `CalendarEvent.startTime`, `endTime` |
-| Location | Text input | `CalendarEvent.location` |
-| Link | Text input | `CalendarEvent.link` |
-| Description | Markdown textarea / rendered preview | `CalendarEvent.description` |
-| Category | Chip picker from existing categories | `CalendarEvent.category` |
-| Repeat | Segmented toggle (None/Daily/Weekly/Biweekly/Monthly) | `CalendarEvent.recurrence` |
-| Days-of-week | Shown for Weekly/Biweekly | `Recurrence.daysOfWeek` |
-| Ends | Optional date picker shown when any repeat is set | `Recurrence.endDate` |
-
-### Keyboard shortcuts in modal
-
-| Key | Action |
-|---|---|
-| `Enter` (not in textarea/select) | Save event |
-| `Backspace` (not in input/textarea/select) | Delete event |
-| `Escape` | Close modal |
-
-### Description field
-
-The description field renders as a plain textarea during edit and as sanitised markdown (via `renderMarkdown`) when blurred and non-empty. Click the rendered preview to return to edit mode.
-
-### Recurrence: days-of-week
-
-For `weekly` and `biweekly`, a day-of-week picker is shown: Mon–Sun mapped to integers 0–6 (Sunday=0). Defaults to the weekday of the event's date. Multiple days can be selected simultaneously (multi-select toggle buttons).
-
----
-
-## Category Colors
-
-Categories are named event groups with associated colors. The `CategoryPanel` modal manages them.
-
-### Color storage
-
-Colors are stored as either:
-
-1. A **theme token** string: one of `accent`, `teal`, `blue`, `violet`, `green`, `gold`, `rose`. These map to `var(--<token>)` CSS variables, so the category automatically recolors when the user changes the app theme.
-2. A **CSS hex string**: e.g. `"#b00020"`. These are literal hex values from the native color picker.
-
-```ts
-export const THEME_SWATCHES = ["accent", "teal", "blue", "violet", "green", "gold", "rose"] as const;
-```
-
-`resolveCategoryColor(color)` converts the stored value to a usable CSS value:
-- Theme token `"teal"` → `"var(--teal)"`
-- Hex `"#b00020"` → `"#b00020"` (pass-through)
-- `undefined` → `"var(--accent)"` (fallback)
-
-`categoryColorHex(color)` converts to a concrete hex for the native `<input type="color">` (which cannot display `var(...)`). It reads the computed CSS property off `:root` for theme tokens.
-
-### Category CRUD
-
-| Action | Method |
-|---|---|
-| Add | `store.addCategory({ name, color })` |
-| Rename | `store.updateCategory(oldName, { name })` — also renames the category on all events |
-| Recolor | `store.updateCategory(name, { color })` |
-| Delete | `store.deleteCategory(name, reassignTo?)` — events are reassigned to `reassignTo` (if given) or have their `category` cleared (`undefined`) |
-
-When deleting, the UI looks for a stable fallback: the first category named `"Uncategorized"` or `"Default"` is used as the reassign target. If no such category exists, `deleteCategory` is called without a `reassignTo`, clearing the field.
-
----
-
-## Calendar Settings
-
-Global calendar display settings live in `.settings` under `calendar:`. Like every other setting, they are edited in `.settings` itself — there is no GUI for them (see [settings overview](../../settings/overview.md)). The "Settings" button in the calendar toolbar opens `CalendarSettings.tsx`, which is a different thing: the PER-BASE field-mapping modal (which note column backs each calendar field) plus the Google Calendar sync panel.
-
-### `settings.calendar` keys
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `defaultView` | `"month" \| "week" \| "3day" \| "day"` | `"week"` | The view selected when the calendar first opens |
-| `weekStartsOnMonday` | `boolean` | `true` | Whether the week begins on Monday (ISO standard) or Sunday |
-| `militaryTime` | `boolean` | `false` | Use 24-hour time in chips and the time grid gutter |
-| `defaultCategoryColor` | `string` | `"#8296C6"` | Default hex color pre-filled when creating a new category |
-
-### Default view hydration
-
-There is a known timing issue: `state.ts` seeds `currentView` from the synchronous `DEFAULTS` (`"week"`) at module-load time, before `.settings` has been fetched. `CalendarView.tsx` runs a one-shot reactive effect that reconciles `currentView` with the hydrated `settings.value.defaultView` once settings arrive, using the pure helper:
-
-```ts
-reconcileDefaultView(savedDefault: ViewType, current: ViewType, switched: boolean): ViewType | null
-```
-
-- Returns `null` (no-op) if the user has manually switched view or if `current` already matches `savedDefault`.
-- Returns the saved default otherwise, applied via `applyDefaultView()` (which does NOT set `userSwitchedView = true`, so a programmatic reconcile is never treated as a user action).
-
----
-
-## Column Mapping (CalendarSettings Modal)
-
-The "Settings" button in the toolbar opens a field-mapping dialog (`CalendarSettings.tsx`) that controls which table columns the calendar reads for each role. This is persisted as top-level frontmatter keys on the base file (plain `setProperty` calls).
-
-| Key | Default column | Required | Description |
-|---|---|---|---|
-| `dateField` | `date` | Yes | Which column contains the event date. Required |
-| `startTimeField` | `startTime` | No | Column for start time (week/day views) |
-| `endTimeField` | `endTime` | No | Column for end time (block height) |
-| `recurrenceField` | `recurrence` | No | Column holding the JSON repeat rule |
-| `categoryField` | `category` | No | Column driving the chip color |
-
-These keys configure the base's view (`parseBaseFile` in `parse.ts` reads them into `config.view`). If a field mapping key is absent, the default column name is used.
-
-The dropdown for each field lists: the standard columns (`date`, `startTime`, `endTime`, `recurrence`, `category`, `title`, `location`, `link`), plus any columns actually present in the existing event rows.
-
-### Google Calendar sync (per-calendar)
-
-The same settings panel (`GcalSyncPanel.tsx`) also carries the **per-calendar** Google sync linkage, persisted as two more top-level frontmatter keys (read into `config.view` like the field bindings above):
-
-| Key | Default | Description |
-|---|---|---|
-| `googleCalendarSync` | `false` (absent) | Whether two-way Google Calendar sync is enabled for THIS calendar base. |
-| `googleCalendarId` | `primary` | Which Google calendar this base syncs with (`primary` = main; or paste another calendar's ID). |
-
-A vault can have several calendar bases, each synced with a different Google calendar. Connection-level config (conflict policy, cadence, timezone) lives in the global `googleCalendar` settings; see [Google Calendar sync](../../gcal/overview.md).
-
----
-
-## Storage Backend
-
-`CalendarView` selects a backend based on whether `basePath` is provided:
-
-| Condition | Backend | Storage |
-|---|---|---|
-| `basePath` provided | `BaseBackend` | `PUT /file` writes the base `.md` file |
-| No `basePath` | `MemoryBackend` | In-memory only (lost on unmount) |
-
-`BaseBackend` (`bases/calendarBase.ts`) implements `CalendarStorage`:
-
-1. `init()` — reads the base file via `api.read`, parses frontmatter + events with `parseCalendarFile`.
-2. `load()` — returns the in-memory `EventsFile` snapshot (synchronous, called right after `init()`).
-3. `save(data)` — writes back to disk with `api.write`. Fire-and-forget: saves preserve all original frontmatter keys (schema, source, etc.) and rewrite only the `categories` key and the event rows (the YAML list body). No full cache invalidation — the version poll reflects truth on next read.
-
----
-
-## Tasks Register
-
-**`mode: 'normal' | 'tasks'`, default `normal`.** This is the general **mode** axis every Bases
-view has (see [bases overview → three axes](../overview.md#three-axes-kind-mode-and-origin)),
-asked of the calendar view kind: `mode: tasks` renders resolved task **rows** (the same
-`ViewResult`/`Row[]` pipeline every other row-based Bases view — table, cards, list — already
-uses) instead of reading the base file's own event table through `BaseBackend`/`EventStore`.
-`mode: normal` (or the key absent) is the events register documented above, entirely untouched
-by the tasks register existing.
+This base shows every open task in the vault instead:
 
 ```yaml
 ---
@@ -473,325 +40,144 @@ mode: tasks
 ---
 ```
 
-**`calendarContent: 'events' | 'tasks'` is the calendar-only predecessor of `mode` and is
-SUPERSEDED by it**, not a second, unrelated setting — `calendarContent: tasks` still means
-exactly the same thing `mode: tasks` does, and a base file written before `mode:` existed keeps
-working with no edit required. Every consumer reads the mode through `viewMode(view)`
-(`core/src/bases/types.ts`) rather than either field directly, so the two spellings can never
-disagree except by the one explicit rule: **an explicit `mode:` wins if a base somehow carries
-both.** New base files should write `mode: tasks`; `calendarContent` is not removed, just no
-longer the field to reach for.
+## Config keys
 
-`app/src/bases/CalendarView.tsx` is a thin gate on `viewMode(view)`: it mounts either
-`EventsCalendar` (the pre-existing UI, above) or `TasksCalendar`, and a **live** flip of the mode
-(editing the base's frontmatter with the pane still open) unmounts one and mounts the other
-fresh — so an events register's `EventStore`/`BaseBackend` never sits around stale while the
-tasks register is showing, and vice versa.
+A calendar reads these top-level frontmatter keys. The settings gear in the view bar writes the register-specific ones for you.
 
-Tasks are **all-day only**. Month view stacks task chips in each day cell exactly like event chips
-(see [Month view](#month-view) above); week/3-day/day render them through `TaskAllDayStrip.tsx`,
-which **composes** the same `DayHeaderRow` and `AllDayRow` components `TimeGrid` composes for the
-events register — an actual shared component, not a shared CSS classname — so the two registers
-can never disagree about column geometry. The hourly time grid is never used in this register.
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `view` | `calendar` | `table` | Selects the calendar renderer |
+| `mode` | `normal` or `tasks` | `normal` | `normal` draws events; `tasks` draws task rows |
+| `categories` | list of `{name, color}` | none | Declared category names and colours; a colour is a hex string or a palette token (`accent`, `teal`, `blue`, `violet`, `green`, `gold`, `rose`) |
+| `dateField` | string | `date` (events), unset (tasks) | Events: the date column. Tasks: pins placement to one field and turns off the `scheduled`-then-`due` fallback |
+| `startTimeField` | string | `startTime` | Events: start-time column |
+| `endTimeField` | string | `endTime` | Events: end-time column |
+| `recurrenceField` | string | `recurrence` | Events: column holding the JSON repeat rule |
+| `categoryField` | string | `category` (events), unset (tasks) | Column that names a row's category |
+| `googleCalendarSync` | boolean | `false` | Turns on two-way sync for this calendar |
+| `googleCalendarId` | string | `primary` | Google calendar this base syncs with |
+| `taskFile` | wikilink or path | none | Tasks: the note a new task is appended to in a `source:` base |
+| `defaultCategory` | string | none | Tasks: the category preselected for a new task in an own-rows base |
 
-`TaskAllDayStrip` is one scroll container (`.strip`, `overflow-y: auto`) holding a sticky
-`DayHeaderRow` (`.head`, `position: sticky; top: 0`) above a single `AllDayRow` passed `fill`.
-`fill` makes that row grow to the bottom of the pane (`flex: 1 0 auto` on `.row.fill` in
-`AllDayRow.module.css`) instead of sitting as a header-height strip over a blank void — so **every
-day column stretches the full height of the pane and is a full-height drop target**, not just a
-thin cell at the top. Every day column stays equal width at every pane width because each cell in
-both `DayHeaderRow` and `AllDayRow` carries `min-width: 0` (a bare flex item's default minimum is
-its content width, which is what used to let a busy cell disagree with the header about where a
-day's boundary fell).
+Global display preferences (default view, week start, 24-hour time) live in `.settings`; see [Display settings](#display-settings).
 
-Both rows take an optional `gutter` prop (default `true`), and `TaskAllDayStrip` is the one caller
-that passes `gutter={false}` on both. That left-hand spacer column only ever existed to align these
-rows with `TimeGrid`'s hour-label gutter (`DayGutter`) — and this register has no `TimeGrid` under
-it to align with, so `TaskAllDayStrip` renders no gutter at all: the day columns start flush against
-the pane's left edge instead of leaving an empty strip with nothing in it.
+## Which register does a calendar draw?
+
+A calendar draws events when `mode` is absent or `normal`, and tasks when `mode: tasks`. Changing `mode` in the file while the pane is open swaps registers immediately. Both registers share the same four grid layouts and the same date navigation.
+
+| | Events register | Tasks register |
+|---|---|---|
+| Rows | The base's own body rows | Task rows from `source: tasks`, or the base's own rows |
+| Time | Timed or all-day | All-day only |
+| Create | Click a cell or drag on the time grid | Click a cell and type |
+| View bar | Categories button and a new-event button | Date navigation and grid layout only |
+
+## Move around the calendar
+
+The view bar's grid toggle switches between month, week, 3 day and day. The arrows step by one grid unit: a month, 7 days, 3 days or 1 day. The date between the arrows names the visible range and, when clicked, jumps to today; a **today** button beside the arrows does the same.
+
+The first grid shown is the `defaultView` setting. Switching the grid by hand wins over the setting until the calendar is reopened.
+
+## Events register
+
+The events register reads and writes event rows in the base file's body. It writes them as a YAML list of row objects, one per event.
+
+### Event columns
+
+The interactive grid reads events from the standard column names `id`, `title`, `date`, `startTime`, `endTime`, `location`, `link`, `description`, `category`, `categories` and `recurrence`. Only `id`, `title` and `date` are needed; an event with no `startTime` is all-day. The `dateField`, `startTimeField`, `endTimeField`, `recurrenceField` and `categoryField` keys rebind those columns where a calendar is rendered from its view config, which is the HTML export. Author event rows with the standard names so the grid and the export agree.
+
+`recurrence` is a JSON string in one field, not a nested YAML object. An event's `category` matches a `name` in `categories`; an undeclared name draws as an outline-only chip. The full field table is in [calendar overview](../../calendar/overview.md).
+
+### Create, edit and move events
+
+| Gesture | Result |
+|---|---|
+| Click an empty month cell | Opens the new-event dialog on that date |
+| Click an empty spot on a week, 3-day or day column | Opens the dialog with a start time |
+| Drag down an empty spot on a time column | Opens the dialog with a start and end time, snapped to 30 minutes |
+| Drag an event chip up or down on a time column | Retimes the event; the drop snaps to 30 minutes |
+| Drag an event chip sideways on a time column | Moves the event to another day |
+| Click an event chip | Opens the dialog in edit mode |
+| Right-click an event chip | Menu with Edit and Delete |
+
+A press that moves less than 4 pixels is a click, not a drag. A drag that ends shorter than 30 minutes is stretched to 30. Editing or deleting one occurrence of a recurring event asks whether the change applies to this one, this and following, or all.
+
+Every change rewrites the base file: the `categories` frontmatter key and the body rows change, and every other frontmatter key is kept as written.
+
+### Bind columns and sync from calendar settings
+
+The settings gear opens the calendar settings dialog. It sets the five column-binding keys in one batch and carries the Google Calendar panel that sets `googleCalendarSync` and `googleCalendarId`. A vault can hold several calendar bases, each synced with a different Google calendar. Connection settings such as conflict policy and cadence are global; see [Google Calendar sync](../../gcal/overview.md).
+
+## Tasks register
+
+The tasks register draws task rows as all-day chips on the grid. A chip is a checkbox, a description and, when the task is overdue, an `Nd late` label. Week, 3-day and day layouts show one tall all-day strip per day instead of an hourly grid.
 
 ### Where a task's rows come from
 
-A tasks calendar works over **either kind of base**:
+A tasks calendar works over either kind of base.
 
 | The base | Rows come from |
 |---|---|
-| `source: tasks` (as above) | vault checkbox tasks, resolved through the normal `source: tasks` pipeline (`core/src/bases/source.ts` → `buildTaskRows`) — see [tasks syntax](../../tasks/syntax.md) |
-| no `source:` (the base owns its rows) | the base file's own inline row table, same as any self-owned base. `BaseView` runs every row through `normalizeStoredTaskRow` before this register (or any other row-based tasks-mode view) ever sees it, so a row only needs `description` and whatever dates it actually has — `status` defaults to `"todo"`, and `resolved`/`statusChar`/`placed`/`recurring` are all derived, never hand-authored. See [the `Row` model](../overview.md#the-row-model). |
+| `source: tasks` | Checkbox lines in the vault's notes; see [task syntax](../../tasks/syntax.md) |
+| no `source:` | The base file's own body rows |
 
-`dateField` is deliberately **absent** by default. Without it, placement falls back to
-scheduled-then-due (below); setting it explicitly pins the view to ONE field and turns that
-fallback off.
+A body row needs `description` and a `scheduled` or `due` date under those exact names. `status` defaults to `todo`. A row that uses `title` and `date` as an events base would draws nothing in this register, because nothing maps those names.
 
-### Placement: scheduled first, due as the fallback
+### Where a task sits on the grid
 
-A task with a `scheduled` date sits on it. A task with no `scheduled` date sits on its `due`
-date. A task with **neither** does not appear on the grid at all. When `dateField` is set
-explicitly, that field wins outright and no fallback applies.
+A task sits on its `scheduled` date, or on its `due` date when it has no `scheduled` date. A task with neither does not appear. Setting `dateField` pins placement to that one field with no fallback.
 
-The reasoning: the grid answers "when am I doing this", and the deadline (`due`) only places the
-chip when that has not been decided (no `scheduled` date yet).
+### Overdue tasks roll onto today
 
-This logic is pure and lives in `app/src/calendar/taskPlacement.ts`'s `placedDate(row,
-dateField?)` — the same module the write-back (drag reschedule, below) reads to know WHICH field
-to rewrite, so the grid and the write path can never disagree about where a task sits.
+An unfinished task placed before today draws in today's cell, with a red-washed box and an `Nd late` label. The file keeps the original date: only the drawing moves. Dragging the chip to another day is the one gesture that rewrites the date. A done or cancelled task stays on its own day. Within a day, the most overdue task comes first, then file order.
 
-### Overdue tasks roll onto today, WITHOUT the line being rewritten
+### Category colours
 
-An unfinished (not `resolved`) task whose placed date is **before today** renders in **today's**
-cell, never on its original day — nothing falls off the back of the calendar. Critically, **the
-markdown line itself is not touched**: rolling a carried task onto today is a pure read-time
-placement decision (`placeRows` in `taskPlacement.ts`), not a write. The task's `scheduled`/`due`
-field keeps its original value on disk; only the chip's on-screen bucket moves, every time the
-page re-renders, until the task is either completed/cancelled or dragged to a new day (which IS a
-write — see below).
+A chip's checkbox takes the colour of its category. The category name comes from the first of these that exists:
 
-The carried register — chosen from rendered mockups against the real theme tokens, the user's own
-words for the goal being *"info from the quiet and look of alarm"*:
+1. The column named by `categoryField`, when the row has a non-empty value there.
+2. For a task read from a note, the name of the note it lives in.
+3. The row's `category` column.
 
-- Box: `color-mix(in srgb, var(--danger) 12%, transparent)` fill, `1px solid var(--danger)`.
-- The `[ ]` marker: `var(--danger)`.
-- The description: `var(--fg)`, normal ink — stays readable, not additionally alarmed.
-- A trailing `Nd late` in `var(--danger)`.
+A name declared in `categories` uses its declared colour. Every other name gets a palette colour chosen from its text, shifted to the next unused colour when two names collide, so the first six categories are six distinct colours with no configuration. The shifting means adding a category can change a later category's colour; declare a colour to pin it.
 
-A task placed on today itself (never carried, `late === 0`) reads as ordinary text with no box at
-all — the box means "carried from a day that passed", not "due today". A **resolved** task (done
-or cancelled) never carries forward, even if it's overdue and unfinished-looking by its dates: it
-stays on its own original day, since `placeRows` only carries unresolved rows.
+### Work with a task chip
 
-**Within a day's bucket, carried tasks sort most-late-first.** `placeRows` (`taskPlacement.ts`)
-sorts each bucket by `late` descending before returning it, so the task that has been overdue the
-longest renders first in today's cell instead of being buried wherever it happened to fall in the
-note's own line order. Ties — including every one of the day's own, never-carried tasks, which all
-share `late === 0` — keep their original file order, since the sort is a stable
-`Array.prototype.sort`.
-
-### Categories: a task's source is its category
-
-A task chip's marker colour comes from a **category name**, resolved by `taskCategoryName(row,
-categoryField?)` (`app/src/calendar/taskCategory.ts`) in this order:
-
-1. an explicit `categoryField` wins, reading `row.note[categoryField]` — the SAME `categoryField`
-   set in [Task calendar settings](#task-calendar-settings) below — when it is a non-empty string.
-2. otherwise a **scanned** row (one with a real markdown line — `typeof row.note.line ===
-   'number'`) takes its **source note's basename** (`row.file.name`). A `source: tasks` row is
-   always scanned, so with no `categoryField` set, every task's category is simply which note it
-   lives in.
-3. otherwise `row.note.category`.
-4. otherwise the task has no category and its marker keeps its default `var(--text-muted)`.
-
-Colours come from the base's `categories:` frontmatter — the same `[{name, color}]` list the
-events register already writes and reads via `core/src/calendar.ts`'s `categoriesOf` (`BaseConfig.
-categories` in `core/src/bases/types.ts`). **A name with no declared colour still gets one**: `taskCategoryColors(names, declared)`
-(`taskCategory.ts`) builds the full name → resolved-colour map each render. Declared colours win;
-every remaining name is hashed (a plain djb2-derived string hash) into `AUTO_CATEGORY_TOKENS`
-(`app/src/calendar/categoryColor.ts` — `PALETTE_TOKENS` minus `accent`, which stays reserved for
-the app's own selection colour and pickable only by hand), then **advanced to the next unused
-token when the hashed one is already taken in this same call**. That is what makes the first six
-distinct categories six distinct colours with zero configuration — the user's literal ask — at the
-cost of perfect stability: adding or removing an earlier-seen category can shift a later one's
-colour. `autoCategoryColor(name)` is the same hash considered alone, with nothing to collide
-against.
-
-`TaskChip` paints the resolved colour as the **text colour of the `[ ]` marker** — an inline
-`color` (TaskChip.tsx), so it overrides every class rule, including `.carried`'s own styling. A
-task with no category keeps the marker's default `var(--text-muted)`. A carried/late task shows
-its CATEGORY colour on the marker; lateness is carried instead by the danger wash, the hairline
-border, and the `Nd late` label from [Overdue tasks](#overdue-tasks-roll-onto-today-without-the-line-being-rewritten)
-above — never by the marker's own colour.
-
-### Chip behavior
-
-**Every writing interaction — toggle, status menu, drag — is gated by ONE predicate,
-`isWritableTask(task)` (`app/src/calendar/taskPlacement.ts`): does the row resolve to EITHER a
-real markdown line (`isTaskLine` — `note.line` plus a resolvable placement field) OR a stored row
-this base owns (`canWriteStoredRow` — `Row.index` is a real, non-negative write handle; see
-`app/src/bases/taskWrite.ts`).** A `source: tasks` row satisfies the first; an own-rows base's row
-(no `source:`) satisfies the second, via the same `POST /rows` seam `BaseView.tsx`'s own
-toggle/status-menu use for every other row-based view. The marker, the drag gesture and the
-context menu all read this ONE function rather than three separate checks, so they cannot
-silently disagree about which rows are writable. The only rows that still fail it are ones with
-NEITHER a line nor a stored index — a note row surfaced some other way, or a row still awaiting
-its `rowCreate` round-trip.
-
-`taskRowRef(task)` (also `taskPlacement.ts`) is the write-side counterpart: it resolves the SAME
-row to whichever locator a write needs — `{ path, field, line }` for a markdown line (`POST
-/tasks/reschedule` addresses it by path+line) or `{ path, field, index }` for a stored row (`POST
-/rows` addresses it by path+index) — so the chip's drag payload (`app/src/calendar/taskDrag.ts`'s
-`TaskRowRef`) and its Alt+arrow reschedule can never disagree about which shape a given task is.
-
-- **Left-click the `[ ]` marker** toggles the task — a markdown line via `POST /tasks/toggle` by
-  path + line (the SAME endpoint every other row-based task view uses — `ListView.tsx`, the cards
-  view), a stored row via `api.rowUpdate` carrying `toggleStoredTask`'s result (`taskWrite.ts`) —
-  but only when `isWritableTask` is true. When it is false, the marker renders **dimmed and
-  inert** (`opacity: 0.4`, `aria-disabled="true"`, `TaskChip.module.css`'s `.readOnly`): clicking
-  it does not toggle, and the click falls through to the chip's own open-on-click instead of
-  landing in a silent dead zone.
-- **Right-click the marker** opens the shared status menu (`app/src/taskStatusMenu.tsx` —
-  same affordance the cards view and `ListView.tsx` already use) when `isWritableTask` is true,
-  offering every status OTHER than the task's current one; picking one calls `POST /tasks/toggle`
-  (a line) or `rowUpdate` with `setStoredTaskStatus`'s result (a stored row) with an explicit
-  status. When `isWritableTask` is false, right-click does nothing special — no custom menu, no
-  error.
-- **Clicking the chip body** opens the shared task editor (`app/src/bases/openTaskEditor.tsx` —
-  edit description/priority/dates, change category/destination, delete, plus its own "open note"
-  button) rather than jumping straight to the source note. This is what makes a STORED row's
-  fields — which have no source note to open at all — reachable from the grid; a markdown-line
-  row's editor still offers "open note" for the old one-click-to-the-file behavior.
-- **Dragging a chip to another day** (native HTML5 drag-and-drop — `draggable` on the chip,
-  `dragover`/`drop` on the day cell) reschedules it, when `isWritableTask` is true: the field that
-  PLACED the task — `scheduled` or `due`, whichever `placementField` (`taskPlacement.ts`) resolved
-  at drag-start, computed the same way `placedDate` picks scheduled over due — is rewritten to the
-  dropped-on day, either via `POST /tasks/reschedule` (a line, always in **bracket form**
-  regardless of the line's current spelling — see [tasks syntax → rescheduling a date
-  field](../../tasks/syntax.md#rescheduling-a-date-field)) or via `rowUpdate` (a stored row, the
-  drop target looks the row up by path+index among the view's own rows to build the write body,
-  since a drop only knows the destination day). This is the ONLY way a carried task's stored date
-  ever changes: rolling onto today (above) never touches the file. A row failing `isWritableTask`
-  is not `draggable` at all — there is nowhere for a drop to write.
-
-The day cell's own `mousedown`-based drag (the events register's drag-to-move/drag-to-create,
-above) and its `click`-based "new event" affordance are both suppressed in the tasks register — a
-grid cell in this register says which DAY, not which event: clicking empty space in it opens that
-day's own inline composer instead (see [Creating a task](#creating-a-task) below), never the
-events register's `EventModal`. The chip stops `click`, `mousedown`, `pointerdown` and `dblclick`
-on its own marker so toggling never also opens the note, starts a drag, or opens the composer
-underneath it; the composer itself stops the same four events for the same reason, so clicking
-inside an open composer never re-triggers the cell's own click handler.
-
-### Keyboard
-
-Every task chip is a focusable `role="button"` (`tabindex={0}`) — each chip is its own tab stop, so
-tabbing through a day's cells reaches every task individually. Its `onKeyDown` does nothing itself — it asks
-the pure `chipKeyAction(e)` (`app/src/ui/chipKeys.ts`) what the keydown means, and
-`TaskChip.tsx` only wires the result:
-
-| Key | Action | Requires `isWritableTask`? |
-|---|---|---|
-| `Enter` | Open the shared task editor (same as clicking the chip body) | No — works even on a read-only chip |
-| `Space` | Toggle done / not-done | Yes |
-| `Shift+F10` or `ContextMenu` | Open the status menu (the same one the cards and list views use) | Yes |
-| `Alt+←` / `Alt+→` | Reschedule ±1 day | Yes |
-| `Alt+↑` / `Alt+↓` | Reschedule ±1 week (±7 days) | Yes |
-| `Ctrl` or `Cmd` held, with any key | Ignored — passes through to the app/browser shortcut untouched | — |
-| `Shift` held with anything other than `F10` (including `Shift+Alt+←`) | Ignored | — |
-
-A chip whose row fails `isWritableTask` — one with neither a markdown line nor a stored `Row.index`
-(see [Chip behavior](#chip-behavior) above) — still opens on `Enter`; toggle, the status menu, and
-reschedule are no-ops on it, the same as their mouse equivalents (`TaskChip.tsx` checks
-`writable()` before acting on any of the other three).
-
-**Focus follows the task across its own rewrite.** Toggling, setting a status, or rescheduling
-writes the row, which re-renders the chip as a brand-new element — often in a different cell (a
-reschedule moves it to another day) or with different props (a toggle changes `late`/`resolved`).
-`calendar/state.ts`'s `focusTaskKey`/`requestTaskFocus(key)` carry the intent across that remount:
-the key handler calls `requestTaskFocus(taskKey(row))` (`taskKey` = `` `${path}:${line}` ``,
-the task's identity across re-renders) just before firing the write, and the newly-mounted chip's
-`onMount` calls `.focus()` on itself when its own key matches `focusTaskKey.value`, then clears
-the box — so keyboard focus lands on the task's new location instead of falling back to `<body>`.
-
-### The tasks register's view bar
-
-`calendarSlots(ctx)` (`Toolbar.tsx`) now takes an optional `CalendarSlotsCtx`:
-
-```ts
-export interface CalendarSlotsCtx {
-    isTasks: boolean
-}
-```
-
-`BaseView.tsx` passes `{ isTasks: activeMode() === 'tasks' }` when it computes the calendar's
-`viewSlots`. `isTasks` gates two of the bar's three regions off entirely in this register:
-`config` (the Categories button — it toggles `CategoryPanel`, which only `EventsCalendar` mounts,
-and a task has no event-style category picker to open) and `actions` (the events register's
-`[ + Event ]` button — there is no longer a single destination for a bar-level "new task" button
-to write to, since creation now happens per-cell; see below). Only `locus` — `DateNav` and the
-`[Month, Week, 3 Day, Day]` toggle — renders in the tasks register's bar. The gear (settings) is
-not part of `calendarSlots()` at all; see [Task calendar settings](#task-calendar-settings) below.
-
-### Creating a task
-
-**A quiet `+` sits in the top-right corner of every tasks-register day cell** (`IconButton`,
-`aria-label="Add task"`) — invisible at rest, revealed on cell hover or `:focus-within` so a
-keyboard user tabbing through the grid still finds it, absolutely positioned so it never adds
-height to the cell and can't shift a chip's layout. Clicking it — or clicking empty space
-anywhere in the cell, the older affordance, still live — opens an inline composer at the bottom
-of that cell's chip stack (`TaskCellComposer.tsx`), autofocused. It shows a `[ ]` marker matching
-a real chip's and a text input. Keys:
-
-| Key / event | Result |
+| Gesture | Result |
 |---|---|
-| `Enter` in the text input, text non-empty | Commits the task, clears the input, and leaves the composer open on the same day — a second task is one keystroke away |
-| `Enter` in the text input, text empty | Closes the composer (same as Escape) |
-| `Escape` | Closes the composer, discarding any typed text |
-| Blur to OUTSIDE the composer, text non-empty | Commits the task (same as Enter) |
-| Blur to OUTSIDE the composer, text empty | Closes the composer (same as Escape) |
-| `Tab` from the text input | Reaches the destination picker (below), when there is one — a blur that lands INSIDE the composer (the picker) neither commits nor cancels |
+| Click the checkbox | Toggles done |
+| Right-click the checkbox | Opens the status menu |
+| Click the chip | Opens the task editor (description, priority, dates, category, destination, delete, open note) |
+| Drag the chip to another day | Reschedules the task |
+| Press `Enter` on a focused chip | Opens the task editor |
+| Press `Space` | Toggles done |
+| Press `Shift+F10` or the context-menu key | Opens the status menu |
+| Press `Alt+←` or `Alt+→` | Reschedules by one day |
+| Press `Alt+↑` or `Alt+↓` | Reschedules by one week |
 
-**The `→ <destination>` line is a PICKER, not fixed text, whenever there is more than one place a
-task could land.** `TaskComposeProps.targets` (`app/src/calendar/taskCompose.ts`) is every
-destination the composer could write to — computed by `TasksCalendar` (`CalendarView.tsx`) from
-the SAME distinction as [Where a task's rows come from](#where-a-tasks-rows-come-from) above:
+A drag or an `Alt` shortcut rewrites the field that placed the task (`scheduled` or `due`, or `dateField`). For a checkbox line it always writes bracket form; see [task syntax](../../tasks/syntax.md#rescheduling-a-date-field). Keyboard focus follows the task to its new cell after a write.
 
-| The base | One target per | `id` | `label` |
-|---|---|---|---|
-| sources tasks (`source: tasks`) | distinct source note already among the grid's rows, PLUS the view's `taskFile` (even with no rows of its own yet) | the note's vault path | the note's basename — matches `taskCategory.ts`'s `row.file.name`, so a target's colour always matches the chips already painted from that note |
-| owns its rows (no `source:`) | category NAME in play — every name already seen on a row, plus every declared `categories:` with no rows yet — plus one more, `id: ''`, for "no category" | the category name (or `''`) | the category name (or `no category`) |
+Only a task with a place to write is editable from the grid: a checkbox line in a note, or a row in the base's own body. Any other chip draws a dimmed checkbox and ignores toggling, dragging and the shortcuts, though `Enter` still opens it.
 
-Fewer than two targets renders the plain `→ destination` text exactly as before (`ui/Select` adds
-nothing when there is nothing to pick between); two or more renders `Select`
-(`TaskCellComposer.tsx`) in its place, and the composer's `[ ]` marker repaints in the CURRENTLY
-PICKED target's own colour rather than the view's `defaultCategory`. The picked target is
-remembered for the session (`TasksCalendar`'s own signal), so switching days keeps the same
-destination instead of resetting to the default every time the composer reopens.
+### Create a task
 
-`TaskComposeProps` (`app/src/calendar/taskCompose.ts`) is the whole contract — `date` (which
-cell, or `null`), `destination` (the current target's label), `targets`, `target`, `setTarget`,
-`open(date)`, `commit(date, text)`, `cancel()` — built once per register (`TasksCalendar` in
-`CalendarView.tsx`) and threaded through every view component as one prop, so month/week/3-day/day
-never grow their own copy of "where is the composer open".
+Hover a day cell and click the `+` in its corner, or click empty space in the cell. An inline composer opens at the bottom of the cell with a checkbox and a text input.
 
-What commit writes depends on the picked `target`, and the written text always carries the
-**description first**, never a bare date field on its own:
+| Key or event | Result |
+|---|---|
+| `Enter` with text | Creates the task and keeps the composer open for another |
+| `Enter` with no text, or `Escape` | Closes the composer and discards the text |
+| Click away with text | Creates the task |
+| Click away with no text | Closes the composer |
 
-| The base | A task is | Commit writes |
+Under the input, a `→` line names where the task will be written. With two or more choices it is a picker, and the choice is remembered for the session.
+
+| The base | The picker offers | A new task is |
 |---|---|---|
-| owns its rows (no `source:`) | a row in the base file | `api.rowCreate(basePath, note)`, `note` = `{ description: text, status: 'todo', scheduled: date, [categoryField ?? 'category']: target }` — the category key only when the picked target is not `''` ("no category") |
-| sources tasks (`source: tasks`) | a checkbox line in a note | `<text> [scheduled <date>]` appended to the note the picked target names (its `id`, already a vault PATH), via `POST /tasks/create` |
+| `source: tasks` | Each note already on the grid, plus `taskFile` | A line `<text> [scheduled <date>]` appended to the chosen note |
+| no `source:` | Each category in play, plus "no category" | A body row `{description, status: todo, scheduled, <categoryField>}` |
 
-**`taskFile` is resolved against the vault, server-side, not turned into a path client-side.**
-`POST /tasks/create` → `core/src/taskCreate.ts`'s `resolveTaskFilePath(ref, noteIds)`: an exact
-match on the ref among the vault's real note ids wins first (with or without `.md`); then
-`pickByBase`/`preferId` (`core/src/linkTarget.ts`) resolve a bare basename the same way a wikilink
-resolves everywhere else in the app, settling a duplicate basename deterministically; only when
-neither matches does `${ref}.md` name a brand-new note. Before this resolver existed, the
-client-side `refToPath()` turned `[[Name]]` straight into `Name.md` **at the vault root** with no
-lookup at all — a `taskFile` naming a note that actually lived in a subfolder got a stray new note
-created at the root, which then failed the base's own source filter: written, invisible,
-unfindable. `appendTaskLine` (both `core/src/taskCreate.ts`'s server-side implementation and
-`app/src/bases/taskCreate.ts`'s thin client wrapper over `POST /tasks/create`) returns the
-vault-relative path it actually wrote to, so the caller reacts to where the task really landed,
-not a guess.
-
-**A self-owned base's task can now be CREATED and COMPLETED from the grid — this used to be a
-documented, permanent limitation and no longer is.** Before `isWritableTask`/`canWriteStoredRow`
-existed, a self-owned tasks calendar's rows rendered read-only: the `[ ]` marker was dimmed and
-inert, dragging was disabled, and ticking a task meant opening the note (or the base file itself)
-and editing `resolved`/`statusChar` by hand. Toggle, the status menu, and drag/Alt+arrow reschedule
-now all go through the same `api.rowUpdate` seam `BaseView.tsx`'s own row-based views already use
-(`app/src/bases/taskWrite.ts`'s `toggleStoredTask`/`setStoredTaskStatus`, plus a direct field
-rewrite for reschedule) — see [Chip behavior](#chip-behavior) above for exactly which interaction
-maps to which write. The only rows still read-only are ones with no write handle at all (neither a
-markdown line nor a real `Row.index`) — see the note at the end of that section.
-
-**`source: tasks` with no `taskFile` AND no rows yet: the composer opens fine, but committing
-writes nothing.** This is now the ONLY no-destination case — as soon as either a `taskFile` is set
-OR at least one task row already exists (so there's a source note to target), the destination
-picker (above) has something to offer and a commit always lands somewhere. With truly nothing to
-pick from, committing opens [Task calendar settings](#task-calendar-settings) and toasts `Set a
-destination note for new tasks in this calendar’s settings first`, so the user can name one instead
-of the write silently going nowhere.
-`taskFile` is a top-level frontmatter key, persisted the same way as `dateField`/`categoryField`:
+`taskFile` accepts a wikilink (`[[Inbox]]`), a bare name or a path. A name resolves against the vault like a wikilink does, so a note in a subfolder is found rather than a stray copy created at the vault root. A `source: tasks` base with no `taskFile` and no task on the grid has nowhere to write: committing opens the task calendar settings and shows a toast asking you to set a destination note.
 
 ```yaml
 ---
@@ -803,147 +189,48 @@ taskFile: "[[Inbox]]"
 ---
 ```
 
-**A commit outside the active view's own filters still writes, but toasts a warning naming the
-real path.** After either write path returns, `newTaskVisible(config, viewConfig, prospective)`
-checks whether the just-written row would actually match this view's own filters; when it would
-not, the toast reads `Added to <path> — it does not match this view's filters, so it will not
-appear here` — `<path>` is the path the write itself returned (`dest` for the sourced write,
-`basePath` for the owned-rows write), not a client-side guess at where the task went.
-
-Both write paths are picked up by the vault's normal version-bump/SSE reactivity (`POST /row/update`
-and `PUT /file`/`POST /tasks/create` both invalidate on write), so the new task appears on the grid
-without any explicit refetch call from the composer.
+A task written outside the view's own filters is still written. A toast names the file it went to and says it will not appear in this view.
 
 ### Task calendar settings
 
-The gear button — rendered by `BaseView.tsx` for every base type, not by `calendarSlots()` — opens
-`showCalendarSettings` for a calendar base regardless of register. In the **events** register that
-signal is read by `EventsCalendar`'s `<CalendarSettings>` (field mapping + Google sync, described
-[above](#column-mapping-calendarsettings-modal)). In the **tasks** register it now opens a
-different modal, `TaskCalendarSettings.tsx` — before this task existed, nothing in the tasks
-register listened to `showCalendarSettings` at all, so the gear looked live (it even took the
-active state) and did nothing.
+In the tasks register the settings gear opens a task calendar settings dialog. Choosing "not set" removes the key from the file.
 
-`TaskCalendarSettings` has three sections, in this order:
-
-| Section | Field | Persists as |
+| Section | Field | Writes |
 |---|---|---|
-| **Placement** | Date column — which column places a task when no fallback is wanted | `dateField`, via `api.setProperty(basePath, 'dateField', value)` |
-| **New tasks** | Destination note (sourced bases only) — which note the composer appends to | `taskFile`, same `setProperty` call, stored as a wikilink (`[[Name]]`, or a path-qualified form from `linkTargetFor` when the basename is ambiguous) |
-| **New tasks** | Default category (own-rows bases only) — the category value stamped on a composer-created row | `defaultCategory`, same `setProperty` call |
-| **Categories** | Category column (own-rows bases only) — which column `taskCategoryName` reads as `categoryField` | `categoryField`, same `setProperty` call |
-| **Categories** | One swatch + name row per category currently in play | picking a colour calls `onPickColor(name, token)` → `api.setProperty(basePath, 'categories', next)` — rewriting the base's WHOLE `categories:` frontmatter array, updating the picked name's entry in place (or appending it, if it wasn't declared yet) and leaving every other declared category untouched |
+| placement | date column | `dateField` |
+| new tasks | destination note (`source:` bases) | `taskFile`, as a wikilink |
+| new tasks | default category (own-rows bases) | `defaultCategory` |
+| categories | category column (own-rows bases) | `categoryField` |
+| categories | a colour swatch per category in play | the whole `categories` list, with the picked entry updated or appended |
 
-Picking **Not set** on any of these REMOVES the key from the frontmatter (`api.deleteProperty`)
-rather than storing an empty string — an empty `categoryField` would otherwise name a column with
-no name.
+## Display settings
 
-**New tasks** shows exactly one of Destination note / Default category, picked by `!props.ownsRows`
-— a sourced base has a note to append to and no row schema to stamp a category onto; an own-rows
-base has the opposite. The Destination-note picker's options come from every vault note, valued as
-the wikilink text `TaskCalendarSettings` will write (`noteOptions`, built with the same
-`linkTargetFor` the vault uses everywhere else to keep a wikilink unambiguous). The events
-register's `CalendarSettings` (Google Calendar panel included) is unchanged and stays a wholly
-separate component — the two are deliberately not unified.
+These `.settings` keys under `calendar:` change how every calendar looks. They are edited in `.settings` like any other setting; the full list with ranges is in [settings reference](../../settings/reference.md).
 
----
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `defaultView` | `month`, `week`, `3day`, `day` | `week` | Grid shown when a calendar first opens |
+| `weekStartsOnMonday` | boolean | `true` | Week starts Monday instead of Sunday |
+| `militaryTime` | boolean | `false` | 24-hour times on chips and the hour gutter |
+| `monthCellMinHeight` | number, 50 to 160 | `80` | Minimum day-cell height in month view, in pixels |
+| `timeGutterWidth` | number, 40 to 80 | `50` | Hour-label column width in week and day views, in pixels |
+| `defaultCategoryColor` | hex string | blue swatch | Colour pre-filled for a new category |
 
-## Google Calendar Two-Way Sync
+## Failure modes
 
-A calendar base can be two-way-synced with Google Calendar (`core/src/gcal/`). One sync pass (`syncEvents` in `core/src/gcal/sync.ts`) does three phases:
+- A calendar base with an empty body has no events, even when the frontmatter looks complete. Write event rows below the closing `---`.
+- `bismuth base create --view calendar` writes `source: notes`, which makes the base read vault notes instead of its own body. For an own-rows calendar, delete the `source:` line before adding event rows, or scaffold with `bismuth calendar create` instead.
+- Only one calendar renders at a time. Two calendar panes visible together share the same date and grid layout.
+- An own-rows tasks calendar whose rows lack `description` or the `scheduled` and `due` names draws nothing.
+- `taskFile` naming a note outside the base's `from:` scope writes tasks that never appear in the view. `bismuth base validate` reports it.
+- A palette-token category colour (`teal`) follows the app theme. A tool outside Bismuth that reads the file sees the word, not a colour.
 
-- **Pull** — reconcile every remote event into the base (create / update / delete-local).
-- **Push** — insert new local events and patch locally-changed ones (`If-Match` etag → 412 conflict handling).
-- **Delete** — events removed locally (gone from the base but still linked) are deleted on Google.
+## How it works
 
-Change detection is timestamp-free where possible: a per-event content signature in an external (non-vault) manifest flags local edits, while the remote `updated` time flags remote edits. Only a genuine conflict (both sides changed) consults the conflict policy (`lastWriteWins` | `googleWins` | `bismuthWins`). `lastWriteWins` compares the row's `localUpdated` stamp against the remote `updated` time. The base file itself stays clean — all sync state lives in the external manifest. See `docs/gcal/overview.md` for the full OAuth/sync detail.
+`CalendarView` (`app/src/bases/CalendarView.tsx`) only chooses a register from `viewMode(view)`. `EventsCalendar` mounts an `EventStore` over a `BaseBackend`, which reads the base file with `parseCalendarFile`, applies edits, and writes the whole file back with `serializeCalendarFile`. The write is serialised through a promise chain, and the backend re-reads the file when the server reports a change to it, so a background Google sync is not overwritten. `TasksCalendar` has no store: it places the resolved rows of the view result on every render.
 
----
+The calendar contributes controls to the base's single view bar through `calendarSlots()`, which `BaseView` reads; the view renders no bar of its own. Grid state (current view, date, open dialogs) is module-level signals in `app/src/calendar/state.ts`, which is why one calendar renders at a time.
 
-## Reactive State
+Task placement, the overdue carry and category colours are pure functions in `app/src/calendar/taskPlacement.ts` and `taskCategory.ts`. The chip's writability, the drag payload and the reschedule target all come from `isWritableTask` and `taskRowRef`, so the marker, the drag and the shortcuts cannot disagree. Writes go through the same endpoints as the other task views: `POST /tasks/toggle`, `POST /tasks/reschedule` and `POST /tasks/create` for checkbox lines, and `POST /rows/update` and `POST /rows` for body rows; see [HTTP API reference](../../api/http-reference.md). `POST /tasks/create` resolves `taskFile` server-side in `resolveTaskFilePath`. An own-rows base runs each row through `normalizeStoredTaskRow` before the tasks register sees it.
 
-All calendar state is module-level reactive boxes in `calendar/state.ts` (Solid `createSignal` wrappers). Because these are global, only one calendar can render at a time (mounting two `CalendarView` instances would share the same `currentView`/`currentDate` signals).
-
-| Signal | Type | Purpose |
-|---|---|---|
-| `currentView` | `ViewType` | Active view mode |
-| `currentDate` | `Date` | The "focused" date (centre of the visible range) |
-| `events` | `CalendarEvent[]` | Events visible in the current range |
-| `categories` | `Category[]` | All categories from the store |
-| `showEventModal` | object or `null` | Open the EventModal; carries optional `date`, `event`, `masterId`, `occurrenceDate`, `startTime`, `endTime` |
-| `showCategoryPanel` | `boolean` | Toggle CategoryPanel |
-| `showCalendarSettings` | `boolean` | Toggle CalendarSettings modal |
-| `dragState` | `DragState \| null` | Active create/move drag |
-| `recurrenceAction` | object or `null` | Pending scope-prompt for edit/delete on a recurring event |
-
-`events` and `categories` are refreshed by `refreshEvents(store)` whenever `currentView`, `currentDate`, or `weekStartsOnMonday` changes, and after every mutation.
-
----
-
-## Range Calculation
-
-`refreshEvents` computes the visible date range from the current view and date:
-
-| View | `start` | `end` |
-|---|---|---|
-| `month` | First day of `currentDate`'s month | Last day of `currentDate`'s month |
-| `week` | `startOfWeek(currentDate, weekStartsOnMonday)` | start + 6 days |
-| `3day` | `currentDate` | currentDate + 2 days |
-| `day` | `currentDate` | `currentDate` |
-
-Recurring events are expanded over this range by `getEventsForRange`, which calls `expandRecurrence` for each recurring master.
-
----
-
-## Keyboard Shortcuts Summary
-
-| Context | Key | Action |
-|---|---|---|
-| Event modal | `Enter` | Save event |
-| Event modal | `Backspace` (not in field) | Delete event |
-| Event modal / Category panel | `Escape` | Close |
-| Category panel | `Enter` (not renaming) | Add new category |
-| Category panel | `Enter` (in rename field) | Commit rename |
-| Category panel | `Escape` (in rename field) | Cancel rename |
-
----
-
-## Gotchas and Edge Cases
-
-- **Single-calendar constraint**: global Solid signals mean only one `CalendarView` renders correctly at a time. Mounting two would share `currentView`/`currentDate`.
-- **Recurrence stored as JSON inside a string field**: the `recurrence` field holds a JSON string, not a nested YAML structure. Do not hand-edit it as a YAML object — edit the JSON text itself.
-- **All-day vs timed events**: omitting `startTime` (empty cell) makes the event all-day. In time-grid views, all-day events appear in a fixed header row, not in the scrollable 24-hour grid.
-- **Monthly recurrence clamping**: a series starting on the 31st will fire on Feb 28/29 and on the 30th for 30-day months, not be silently skipped.
-- **Category color theme tokens**: storing `"teal"` (not `"#008080"`) means the color follows the app theme. When exporting or reading the file outside Bismuth, `teal` must be resolved manually.
-- **Frontmatter preservation**: `BaseBackend.save` preserves all original frontmatter keys. Only `categories` and the event rows body are overwritten. A `schema:` key in frontmatter will not be lost.
-- **`userSwitchedView` is module-level, but reset on every mount**: `currentView.value` writes (e.g. the Toolbar's view buttons) flip the module-level `userSwitchedView` flag so `defaultView` hydration never clobbers a manual switch — see `applyDefaultView()`/`reconcileDefaultView()` above. Because the flag is module-level it would otherwise survive a `CalendarView` remount and permanently disable hydration for the rest of the session after a single click. `CalendarView.tsx`'s `onMount` calls `resetUserSwitchedView()` (`app/src/calendar/state.ts`) first, before `reconcileDefaultView`, precisely to undo that — so each fresh mount of the calendar (a new base opened, a pane split, etc.) honors the saved `defaultView` again regardless of what happened in a prior mount.
-- **Legacy `views:` lists**: a calendar base written with a `views:` list still reads (first entry only; extra entries are ignored) and is flattened to `view: calendar` on the app's first write. A list with more than one entry makes writes fail with `BASE_VIEWS_FORMAT_ERROR` until each extra view is moved into its own base (`source: base`, `ref: "[[This Base]]"`).
-- **The tasks register never touches `EventStore`/`BaseBackend`** — it reads `props.result`'s
-  resolved rows fresh on every render, the same pipeline table/cards/list use. There is nothing to
-  re-initialise on remount and no stale-store risk the way the events register has to guard
-  against (see [Storage Backend](#storage-backend) above).
-  - **A carried task's rendered day and its stored day are different things, on purpose.** Reading
-    the base file directly (or any tool that isn't this calendar) always shows the task on its
-    real `scheduled`/`due` date, even while the grid shows it on today. Don't mistake the two for
-    a bug — see [Overdue tasks roll onto today](#overdue-tasks-roll-onto-today-without-the-line-being-rewritten).
-  - **A self-owned tasks calendar's rows need the right `description`/date column names**, not
-    just any columns — `normalizeStoredTaskRow` derives `resolved`/`statusChar`/`placed`/
-    `recurring` for free (see [Where a task's rows come from](#where-a-tasks-rows-come-from)
-    above), but it still reads `description` and `scheduled`/`due` under those exact names. A row
-    using different ones (e.g. a generic `title`/`date` pair, as an EVENTS-register base would
-    use) renders nothing in the tasks register: nothing here guesses a mapping the way
-    `dateField`/`categoryField` do for events.
-
----
-
-## Related Docs
-
-- [Bases overview](../overview.md)
-- [Base file format](../../calendar/overview.md)
-- [Task syntax](../../tasks/syntax.md) — the bracket-field grammar the tasks register places by
-  and rewrites on drag
-
-Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/ThreeDayView.tsx`, `app/src/calendar/components/views/DayView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/views/TaskAllDayStrip.tsx`, `app/src/calendar/components/views/DayHeaderRow.tsx`, `app/src/calendar/components/views/AllDayRow.tsx`, `app/src/calendar/components/views/DayGutter.tsx`, `app/src/calendar/components/DayNumber.tsx`, `app/src/calendar/components/CalendarFrame.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/components/TaskCellComposer.tsx`, `app/src/calendar/components/TaskCalendarSettings.tsx`, `app/src/calendar/taskCompose.ts`, `app/src/calendar/taskCategory.ts`, `app/src/bases/taskCreate.ts`, `core/src/taskCreate.ts`, `core/src/linkTarget.ts`, `app/src/ui/palette.ts`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskDrag.ts`, `app/src/calendar/taskChipKeys.ts`, `app/src/ui/chipKeys.ts`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/table.ts`, `core/src/bases/source.ts`, `core/src/bases/taskRow.ts`, `core/src/bases/types.ts`, `core/src/tasks.ts`, `core/src/calendar.ts`, `core/src/server.ts`, `app/src/api.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/calendar/taskPlacement.test.ts`, `app/src/calendar/taskDrag.test.ts`, `app/src/calendar/taskChipKeys.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`, `core/test/server.test.ts`, `core/test/taskCreate.test.ts`
-
-For the `POST /tasks/create` route itself (request/response shape, status codes), see
-[HTTP API reference](../../api/http-reference.md).
+Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/EventsCalendar.tsx`, `app/src/bases/TasksCalendar.tsx`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/bases/tasksCalendarWrites.ts`, `app/src/calendar/state.ts`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskCategory.ts`, `app/src/calendar/taskCompose.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/components/TaskCellComposer.tsx`, `app/src/calendar/components/TaskCalendarSettings.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/ui/chipKeys.ts`, `core/src/bases/taskRow.ts`, `core/src/taskCreate.ts`, `core/src/schema/settingsSchema.ts`

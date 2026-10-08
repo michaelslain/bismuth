@@ -1,207 +1,6 @@
-# The ```query Embedded Block
+# The query block
 
-The ` ```query ` fenced code block is the **one and only** embedded block in Bismuth's markdown. It renders a *view into* a base or the vault's tasks directly inside a note. There is no ` ```base `, ` ```view `, or ` ```tasks ` block — a base itself is a `type: base` markdown file (see [bases overview](./overview.md)), and tasks are queried with `tasks:` plus a `where:`/`sort:` filter *inside* a `query` block, the same Bases filter language `source: notes` uses (see [filters](./filters.md)). Covers the two body forms a `query` block accepts (a **full inline base config** vs a **flat query spec**), how each is parsed and rendered, the SOURCE-toggle behavior, autocomplete, and examples drawn from the source and its tests.
-
-## Where it lives in the code
-
-- `app/src/editor/queryBlock.ts` — the CodeMirror extension that finds every ` ```query ` fence, replaces it with the rendered view (`QueryBlockWidget` → mounts `BaseView`), implements the SOURCE reveal/collapse for inline editing, and wires the pencil ("Edit query") that opens the visual builder (see below).
-- `app/src/editor/queryRanges.ts` — the pure ` ```query ` fence-range finder (`queryRanges()`), extracted out of `queryBlock.ts` so it can be imported headlessly (`queryBlock.ts` transitively pulls in Solid `.tsx`, which bun's test transform can't compile outside a `.tsx` or a dynamic import).
-- `app/src/editor/queryBuilderEdit.ts` — pure, DOM-free editing helpers for the visual builder's CodeMirror side: `queryFenceText(body)` wraps a body in fences, `replaceQueryBody(state, blockIndex, body)` produces the transaction that rewrites one block's body (or `null` for a stale index).
-- `app/src/editor/openQueryBuilder.tsx` — mounts the `<QueryBuilder>` modal outside of any Solid component tree (both call sites — the slash menu and the pencil — are plain functions, not components).
-- `core/src/bases/queryBlock.ts` — `parseQueryBlock(src)`, the pure parser for the **flat** spec form. Returns a `QueryBlock`.
-- `core/src/bases/parse.ts` — `parseBase(text)`, the pure parser for the **full inline base config** form (the same parser that parses a `type: base` file's frontmatter).
-- `app/src/editor/queryComplete.ts` — context-aware autocomplete inside a `query` block (keys, view modes, Bases filter snippets for `where:`, group fields).
-- `core/src/bases/taskDsl.ts` — `translateTaskDsl(dsl, today)`, the one-way translation of the legacy Obsidian-Tasks DSL into a Bases filter expression, applied at read time to a `tasks:` value that still holds DSL text.
-- `app/src/bases/BaseView.tsx` — the unified host that both forms ultimately render through.
-
-The extension is wired into the editor in `app/src/Editor.tsx` as `queryBlock(() => path)` and the completer in `app/src/editor/autocomplete.ts` as `querySource()`.
-
-## The fence
-
-`queryBlock.ts` matches fences with this regex:
-
-```
-/^```query[ \t]*\n([\s\S]*?)\n```/gm
-```
-
-Notes from the source:
-- The opening line must be exactly ` ```query ` (optionally trailing spaces/tabs), at the start of a line.
-- The body is everything between the opening line and the next ` ``` ` on its own line (capture group 1).
-- `livePreview.ts` deliberately **skips** `query` fences (it checks `m[1].trim() === "query"`) so it does not also render them as a generic code block — `queryBlock.ts` owns the whole fence replacement.
-
-## Two body forms
-
-Which form a block uses is decided by `looksLikeBaseConfig(body)` in `queryBlock.ts`:
-
-```js
-function looksLikeBaseConfig(body) {
-  return /^(views|filters|formulas|properties|schema|source)\s*:/m.test(body);
-}
-```
-
-- If the body declares any top-level key from **`filters:` / `formulas:` / `properties:` / `schema:` / `source:`** (or a legacy `views:`), it is a **full inline base config** → parsed with `parseBase()` and passed to `BaseView` as the `source` prop:
-  ```js
-  BaseView({ source: this.source, hostPath, embeddedSource })
-  ```
-- Otherwise it is a **flat query spec** → parsed with `parseQueryBlock()` and passed to `BaseView` as the `view` prop:
-  ```js
-  BaseView({ view: parseQueryBlock(this.source), hostPath, embeddedSource })
-  ```
-
-These two forms are mutually exclusive — the presence of any base-config key flips the whole block into config mode.
-
----
-
-## Form 1 — Flat query spec
-
-A flat block is a tiny `key: value` list (one per line). `parseQueryBlock(src)` (`core/src/bases/queryBlock.ts`) parses it:
-
-- It splits on newlines, trims each line, skips blank lines, and for each line splits on the **first** `:` (index `> 0`) into `key` → `value` (both trimmed). Later duplicate keys overwrite earlier ones.
-- **YAML block scalars** (`tasks: |-`, also `|`/`>`/`|+`/`>+`): when a value is exactly a block-scalar indicator, the parser gathers the following *more-indented* lines (relative to the key's indent) as a multi-line value, strips the common leading indent, and trims trailing newlines. This lets a legacy multi-line Tasks-DSL `tasks:` body carry a `sort by …` clause on its own line (`translateTaskDsl` only honors a whole-line sort, never one inside an ` AND `-joined single line) — the modern grammar has a dedicated `sort:` key instead, so a new block doesn't need this. A dedent back to the key's indent ends the block.
-- A query references a base (`of:`) or runs a task query (`tasks:`). **It does not iterate notes itself** — that is a base's job (`source: notes`). A flat block with neither `of:` nor `tasks:` resolves to **no source** and the host renders an empty state.
-
-### Keys
-
-| Key | Meaning |
-|-----|---------|
-| `of: [[Base]]` | Render that base — resolves to `{ kind: "base", ref: "[[Base]]" }`. **Composes**: it follows the referenced base's *own* source recursively (see [sources & composition](./sources.md)), not just its static rows. |
-| `tasks:` | Run a task query over the vault's checkbox tasks → `{ kind: "tasks" }`. Bare `tasks:` (nothing after it) = all tasks, filtered by `where:` below. **Legacy**: a value after `tasks:` that still holds Obsidian-Tasks-DSL text (`not done`, `due before tomorrow`, `sort by …`) becomes `source.where` and is translated into a Bases filter expression at READ time — not by `parseQueryBlock` itself, but by `translateTaskDsl` (`core/src/bases/taskDsl.ts`) where the source is resolved. `bismuth base migrate-queries` rewrites such a block in place into the modern `tasks:` + `where:` + `sort:` form. See [tasks](../tasks/query-dsl.md) for the migration. |
-| `from: [[Base]]` | Only meaningful **with** `tasks:`. Scopes task extraction to that base's notes → sets `source.from`. `from:` alone (no `tasks:`) produces **no source**. |
-| `view: <type>` | Render mode. The current spelling; legacy alias is `as:`. See valid types below. |
-| `as: <type>` | Legacy alias for `view:`. `view:` is preferred; if both are given, `view:` wins (`kv.view ?? kv.as`). |
-| `where: <expr>` | A filter — a Bases filter expression applied to the resolved rows (see [filters](./filters.md)). Maps to the block's `filters`. |
-| `sort: <property>[ desc][, <property>[ desc]...]` | Sort rows by one or more properties, applied in order. `sort: note.due` sorts ascending; `sort: note.due desc` descending; a trailing ` desc` or ` reverse` on any key reverses just that key, e.g. `sort: note.due desc, note.name`. Maps to the view's `sort`, which sorts through `compareForSort` (`core/src/bases/query.ts`) — a property whose bare name is `priority` ranks by urgency (`highest` < `high` < `medium` < `none` < `low` < `lowest`), not alphabetically; every other property sorts by the plain value comparator (see the gotcha below). |
-| `group: <field>` | Group rows by a property (sets the view's `groupBy.property`, direction `ASC`). |
-| `limit: <n>` | Cap the number of rows. Parsed via `Number(...)`. |
-
-### `of:` vs `tasks:` precedence
-
-From `parseQueryBlock`:
-
-```js
-if (kv.of) {
-  source = { kind: "base", ref: kv.of };
-} else if ("tasks" in kv) {
-  source = { kind: "tasks" };
-  if (kv.tasks) source.where = kv.tasks;
-  if (kv.from) source.from = kv.from;
-}
-```
-
-- `of:` and `tasks:` are **mutually exclusive**; if both appear, **`of:` wins** and the `tasks:`/`from:` keys are ignored.
-- `"tasks" in kv` is checked (not truthiness) so a **bare `tasks:`** with no value still creates a tasks source.
-- `from:` is only read inside the `tasks:` branch.
-
-### Render mode (`as`) resolution
-
-```js
-const mode = kv.view ?? kv.as;
-const as = VIEW_TYPES.includes(mode)
-  ? mode
-  : source?.kind === "tasks" ? "list" : "table";
-```
-
-- An explicit valid `view:`/`as:` value is used verbatim.
-- An **unknown/missing** view falls back to: `list` for a tasks query, `table` for everything else.
-
-### Valid view types
-
-`VIEW_TYPES` (`core/src/bases/types.ts`) — exactly these 12 strings:
-
-```
-table  cards  list  bullets  kanban  map  calendar  flashcards  bar  line  stat  heatmap
-```
-
-(`bullets` = a plain markdown bullet list, grouped, no table chrome. `bar`/`line`/`stat`/`heatmap` are charts. See each renderer under `app/src/bases/`.)
-
-### What `parseQueryBlock` returns
-
-A `QueryBlock` (`core/src/bases/types.ts`):
-
-```ts
-interface QueryBlock {
-  source?: SourceSpec;   // undefined ⇒ empty state
-  as: ViewType;          // the render mode
-  where?: string;        // kv.where || undefined
-  sort?: SortSpec[];     // kv.sort, split on "," into one SortSpec per key
-  group?: string;        // kv.group || undefined
-  limit?: number;        // Number(kv.limit) or undefined
-}
-```
-
-`sort:` splits its value on `,` into one `SortSpec` per key; a key ending in ` desc` or ` reverse` becomes `{ property, direction: "DESC" }`, everything else `{ property, direction: "ASC" }`. Sorting is also available in the full inline config form via a top-level `sort:`, or by referencing a base with `of:` that defines its own sort.
-
-### How `BaseView` renders a flat `view`
-
-In `BaseView.loadConfig()`, the `view` prop is turned into a `BaseConfig` (one view, the block's `where:` as the base `filters`):
-
-```js
-const config = {
-  view: {
-    type: v.as,
-    sort: v.sort,
-    groupBy: v.group ? { property: v.group } : undefined,
-    limit: v.limit,
-  },
-  filters: v.where,
-  source: v.source,
-};
-return { config, rows: [],
-         basePath: v.source?.kind === "base" ? refToPath(v.source.ref) : undefined };
-```
-
-- The rows are resolved **server-side** via `POST /rows {spec}` (`api.resolveRows`) when `source` is set; if it is `undefined` (no `of:`/`tasks:`), rows resolve to `[]` → empty state.
-- For `of: [[Base]]`, `basePath` is set to the referenced base's path (`refToPath` turns `[[Base]]` → `Base.md`), which surfaces a base crumb + the Settings/Source chrome.
-
-### Flat-spec examples (copy-paste)
-
-Render the `Calendar` base as a filtered list (from the parser test):
-
-````markdown
-```query
-of: [[Calendar]]
-as: list
-where: date == today
-```
-````
-
-→ `{ source: { kind: "base", ref: "[[Calendar]]" }, as: "list", where: "date == today" }`
-
-All open tasks, default checkbox list:
-
-````markdown
-```query
-tasks: not done
-as: list
-```
-````
-
-→ `{ source: { kind: "tasks", where: "not done" }, as: "list" }`
-
-Open tasks scoped to one base's notes, shown as a kanban grouped by status:
-
-````markdown
-```query
-tasks: not done
-from: [[Keep]]
-as: kanban
-group: status
-```
-````
-
-→ `{ source: { kind: "tasks", where: "not done", from: "[[Keep]]" }, as: "kanban", group: "status" }`
-
-Every task, default list (bare `tasks:`):
-
-````markdown
-```query
-tasks:
-```
-````
-
-→ `{ source: { kind: "tasks" }, as: "list" }`
-
-Open, high-priority tasks, sorted by due date (the modern spelling — no DSL):
+A fenced block with the language `query` renders a live view of a base or of the vault's tasks inside a note. It is the only embedded block: there is no `base`, `view` or `tasks` fence. Use it to show a table of open tasks in a project note, or a card view of a base, without opening the base itself.
 
 ````markdown
 ```query
@@ -211,13 +10,31 @@ sort: note.due
 ```
 ````
 
-→ `{ source: { kind: "tasks" }, as: "list", where: '!note.resolved && note.priority == "high"', sort: [{ property: "note.due", direction: "ASC" }] }`
+A block has one of two forms, and the form is picked by the keys it contains:
 
-> The Bases grammar has no `and`/`or` keyword, only `&&`/`||` — an `and` written here would
-> parse as `!note.resolved`, silently DROP everything after it (the parser doesn't reject
-> trailing tokens), and match every unresolved task regardless of priority.
+- A flat spec points at a base (`of:`) or at tasks (`tasks:`) and adds a filter, sort, group and limit.
+- A full inline base config is a base written inside the block, with its own `source`, `filters`, `formulas` and view.
 
-Render the `Books` base as cards, capped at 20 rows:
+## Which form does my block use?
+
+The block is a full inline base config when any line starts with `filters:`, `formulas:`, `properties:`, `schema:`, `source:` or `views:`. Otherwise it is a flat spec. The forms are exclusive: a block with `source:` and `of:` is read as a config and the flat keys (`of`, `tasks`, `from`, `where`, `group`) are ignored. A block with only `view:` and view keys is a flat spec, so add `source:` when you want the config form.
+
+## How do I write a flat spec?
+
+A flat spec is one `key: value` per line. A line splits at its first colon, so `where: a:b` keeps `a:b` as the value; blank lines are skipped and a repeated key keeps its last value.
+
+| Key | Meaning |
+|---|---|
+| `of: [[Base]]` | Render that base. It follows the base's own source, so a base over notes shows those notes. |
+| `tasks:` | Query checkbox tasks. Bare `tasks:` means all tasks; narrow with `where:`. |
+| `from: [[Base]]` | With `tasks:`, scope tasks to the notes that base selects. Alone it does nothing. |
+| `view: <kind>` | The render kind; see [bases overview](./overview.md#what-view-kinds-are-there). `as:` is an alias; `view:` wins when both appear. |
+| `where: <expr>` | A [Bases expression](./query-syntax.md) filtering the rows. |
+| `sort: <property>[ desc][, ...]` | Sort keys applied in order. `desc` or `reverse` after a key reverses that key: `sort: note.due desc, note.name`. |
+| `group: <property>` | Group rows by a property, ascending. |
+| `limit: <n>` | Maximum rows. |
+
+Examples:
 
 ````markdown
 ```query
@@ -227,114 +44,35 @@ limit: 20
 ```
 ````
 
-Edge cases that produce **no source** (empty state):
-
 ````markdown
 ```query
-as: cards
-```
-````
-→ `source` undefined (no `of:`/`tasks:`).
-
-````markdown
-```query
+tasks:
 from: [[Keep]]
-as: table
+where: !note.resolved
+view: kanban
+group: status
 ```
 ````
-→ `source` undefined (`from:` alone is not a source).
+
+`of:` and `tasks:` are exclusive: with both, `of:` wins and `tasks:` and `from:` are ignored.
+
+A flat block never iterates the vault. A block with neither `of:` nor `tasks:`, or with `from:` alone, has no source and shows an empty state. To list notes, use the inline config form below, or point `of:` at a base whose `source` is `notes`.
+
+If `view:` is missing or not a valid kind, the block renders as a `list` for a tasks query and a `table` for everything else, without an error.
+
+Write conditions with `&&` and `||`. The expression language has no `and` keyword, so `!note.resolved and note.priority == "high"` parses as `!note.resolved`, drops the rest silently, and matches every unresolved task.
+
+`sort: note.priority` ranks by urgency (`highest`, `high`, `medium`, `none`, `low`, `lowest`) when both values are those words; every other property sorts by the plain value order. A row missing the sort property sorts last.
+
+A `tasks:` value can hold Tasks-style filter text such as `tasks: not done`, which is translated into an expression when the block is read. `bismuth base migrate-queries [--dry-run]` rewrites such blocks into the plain `tasks:` + `where:` + `sort:` form; see [the tasks query language](../tasks/query-dsl.md).
+
+## How do I write a full inline base config?
+
+The block body is the same YAML as a base file's frontmatter, without the `type` line:
 
 ````markdown
 ```query
-from: notes where status == "done"
-as: table
-```
-````
-→ `source` undefined. **`from: notes` was removed** — iterating the vault is a base's job, not a query's. Use a `type: base` file with `source: notes where …` instead.
-
-Unknown view fallbacks (from the tests):
-
-- `of: [[X]]` + `view: bogus` → `as` becomes `"table"`.
-- `tasks:` + `view: bogus` → `as` becomes `"list"`.
-
----
-
-## Form 2 — Full inline base config
-
-When the body declares a top-level base key, the whole block body is parsed as a base's YAML config with `parseBase(text)` (`core/src/bases/parse.ts`) — **the exact same parser** used for a `type: base` file's frontmatter (via `parseBaseObject`). This lets you embed a complete base inline, without a separate base file. Like a base file it has one view, spelled flat.
-
-### Recognized top-level keys (any one triggers this form)
-
-`filters:`, `formulas:`, `properties:`, `schema:`, `source:` (plus a legacy `views:`). A block that carries only `view:` and view keys (no key from that list) is read as a flat spec, not a config, so add a `source:` (or another config key) when you want the config form.
-
-### Parsed shape (`BaseConfig`)
-
-`parseBase` returns a `BaseConfig` (`core/src/bases/types.ts`):
-
-```ts
-interface BaseConfig {
-  filters?: FilterNode;                 // the base's filter
-  formulas?: Record<string, string>;    // name -> expression string
-  properties?: Record<string, { displayName?: string; hidden?: boolean }>;
-  view: ViewConfig;                     // the one view; defaults to a table
-  source?: SourceSpec;                  // where the rows come from
-  schema?: Record<string, string>;      // column -> "text"|"date"|"time"|"number"|"checkbox"|"list"|"link"
-}
-```
-
-Parser behavior worth knowing (from `parse.ts`):
-
-- **Malformed/non-object YAML** → returns `EMPTY_BASE` = `{ view: { type: "table" } }`. (`safeYaml` swallows YAML errors.)
-- **`view: <kind>`** names the one view, and every other top-level key that is not a base key (`type`, `view`, `views`, `name`, `filters`, `source`, `from`, `where`, `ref`, `formulas`, `properties`, `schema`, `categories`) is a view key, all normalized by `normalizeView`. With no `view:` the view is a table.
-- An **invalid `view:` kind** falls back to `"table"`.
-- A legacy **`views:`** list still reads, first entry only (its `type` is the kind); further entries are ignored. A base file is flattened on its first write; a query block has no such write path, so rewrite it flat by hand.
-- **`source:`** accepts a string (`source: notes where file.hasTag("book")`) OR an object (`source: { kind: tasks, from: "[[X]]" }`) — both coerced by `normalizeSource` (see [sources & composition](./sources.md)). An unrecognized value yields `undefined`. A bare `#tag` is not a filter: unquoted it is a YAML comment (`source: notes where #book` silently becomes the whole vault); inside the string form (`notes where "#book"`) it is a non-empty string, true for every note; as `where: "#book"` it is a parse error (zero rows). Write `file.hasTag("book")` — no `#`, exact tag only (not `book/x`).
-- **`formulas:`** — each value is stringified.
-- **`properties:`** — per-property `{ displayName?, hidden? }`; `hidden: true` drops the property from auto-derived columns.
-- A top-level **`columnWidths:`** map configures the table's column widths.
-
-> Note: the flat-spec keys `of:`, `tasks:`, `as:` and `group:` are **not** part of this form. The config form uses the base grammar — `source:`, `view:`, `filters:`, `sort:`, `groupBy:`, `limit:`, etc. (`view:` and `limit:` mean the same in both forms.) `looksLikeBaseConfig` only checks for the config keys above, so a block mixing the two (e.g. `source:` + `of:`) is parsed as a config and the flat keys are ignored.
-
-### View keys
-
-The one view is a `ViewConfig` (`core/src/bases/types.ts`), spelled as top-level keys. The full set normalized by `normalizeView`:
-
-- `view` — one of the 12 `VIEW_TYPES` (invalid → `table`).
-- `limit` — number; row cap.
-- `order` — array of property ids to display (e.g. `["file.name", "formula.ppu"]`).
-- `sort` — array of `{ property, direction: "ASC"|"DESC" }` (a bare string → `ASC`; `column` accepted as an alias for `property`).
-- `groupBy` — `{ property, direction }` (a bare string → `ASC`).
-- `summaries` — `{ propertyId: summaryName }`.
-- `cardContent` — `"properties"`, `"body"`, or `"tasks"` (cards view; `"tasks"` = body filtered to checklist lines).
-- `image`, `imageFit` (`cover`/`contain`), `imageAspectRatio` — cards cover image.
-- `columns` — explicit group order / kanban columns.
-- `columnWidths` — `{ propertyId: px }` (table).
-- `lat`, `lng`, `zoom`, `center` — map view.
-- Calendar bindings: `dateField`, `startTimeField`, `endTimeField`, `recurrenceField`, `categoryField`.
-- Flashcards bindings: `frontField`, `backField`, `dueField`, `easeField`, `intervalField`, `bidirectional`.
-- Chart bindings: `x`, `y`, `aggregate` (`sum`/`avg`/`count`/`min`/`max`), `bin` (`day`/`week`/`month`).
-
-`filters:` and `source:` are base keys, not view keys. (For the deep dive on each, see [the view](./overview.md#the-view).)
-
-### How `BaseView` renders an inline config
-
-In `BaseView.loadConfig()`, the `source` prop (inline YAML) is parsed and its effective source defaults to notes:
-
-```js
-const config = parseBase(props.source ?? "");
-return { config, spec: config.source ?? { kind: "notes" }, inlineRows: null };
-```
-
-- So an inline config **with no `source:`** defaults to `{ kind: "notes" }` — i.e. it iterates the vault's notes. This is the one place an inline `query` block *can* iterate notes (because it is, in effect, a full base). The flat form cannot.
-- Rows are resolved server-side via `api.resolveRows(spec)`.
-
-### Inline-config examples (copy-paste)
-
-A base over `#book` notes, sorted by rating, shown as cards:
-
-````markdown
-```query
-source: notes where tags.contains("book")
+source: notes where file.hasTag("book")
 view: cards
 sort:
   - property: rating
@@ -343,19 +81,9 @@ cardContent: properties
 ```
 ````
 
-An inline base with a filter and a formula (one view; a second view would be a second base that composes this one, see [overview](./overview.md#one-view-per-base-composing)):
+All the base keys work: `source`, `filters`, `formulas`, `properties`, `schema`, `view` and the view's own keys; see [bases overview](./overview.md#what-keys-does-a-base-file-have). The block has one view, written flat. In a block, `view` and `limit` mean what they mean in a base; `of`, `tasks`, `as` and `group` do not exist in this form. Use `groupBy` and a `source` of `base` with a `ref` instead.
 
-````markdown
-```query
-filters: status != "archived"
-formulas:
-  ppu: price / pages
-view: table
-order: [file.name, status, formula.ppu]
-```
-````
-
-An inline base with **no `source:`** (defaults to `{ kind: "notes" }`, iterating the vault):
+A config block with no `source:` reads every note in the vault, which is the one way an inline block can iterate notes:
 
 ````markdown
 ```query
@@ -364,7 +92,7 @@ view: list
 ```
 ````
 
-A config that composes another base via a `source:` object:
+A config that composes another base:
 
 ````markdown
 ```query
@@ -375,157 +103,74 @@ view: table
 ```
 ````
 
----
+Malformed YAML in a config block gives an empty table. A `views:` list is read through its first entry only. A query block has no write-back that rewrites the block, so write it flat by hand.
 
-## The Visual Query Builder (no-code)
+## Can I build a query without writing it?
 
-Besides hand-writing either body form above, Bismuth ships a **no-code visual query builder** — a modal that edits a `BuilderState` (source picker, filter rows, view/sort/group/limit controls, and a live preview) and generates the block body for you on confirm. All codegen/parse is pure and DOM-free: `app/src/bases/queryGen.ts` builds/reverses a `BuilderState` ⇄ block-body text with no Solid or `api.ts` dependency (it runs under `bun test` like `blockModel.ts`); the modal itself, `app/src/bases/QueryBuilder.tsx`, is a thin reactive form + live preview mounted over it.
+Yes. The visual query builder is a form with a live preview that generates the block body. Open it two ways:
 
-### Where it's wired in
+- Type `/` in a note and choose **Query builder**. The block is inserted only when you confirm; cancelling leaves nothing behind.
+- Click the pencil (**Edit query**) in a rendered block's view bar. The builder opens with that block's settings, and confirming rewrites just that block in one undoable edit.
 
-The builder is wired into the CodeMirror `Editor.tsx` surface, through two entry points:
+The builder's source choice decides the form it writes:
 
-- **A `/` slash item** — "Query builder" (`app/src/editor/slashMenu.ts`, id `query-builder`, listed right after the plain `query` snippet item) opens the builder fresh via `openQueryBuilder()` (`app/src/editor/openQueryBuilder.tsx`). Its apply branch, in `app/src/editor/slashComplete.ts`, deletes the `/…` trigger text immediately and inserts the generated ` ```query ` fence (`queryFenceText()`, `app/src/editor/queryBuilderEdit.ts`) at that position only on confirm — cancelling leaves nothing behind, since the trigger text is already gone. This item is offered only when the host supplies a `getHostPath` getter (threaded through `vaultCompletion()`/`markdownEditingExtensions()`), which the note Editor does and the chat composer + table cell editor do not — so it never appears in either of those.
-- **The pencil on a rendered ` ```query ` block** — `QueryBlockWidget` (`app/src/editor/queryBlock.ts`) passes an `onEditQuery` callback into `BaseView`'s `embeddedSource`, which renders an "Edit query" `IconButton` before SOURCE, only when `isBuilderRepresentable(source)` holds (see below) — a hand-authored block the builder can't losslessly model gets no pencil, so it can only be edited as raw source. Clicking it opens the builder seeded from `parseQueryBlockBody(source)`; on confirm, `replaceQueryBody()` (`app/src/editor/queryBuilderEdit.ts`) rewrites just that block's fence BODY as one CodeMirror transaction (undoable in a single step), re-locating the block's current index at CONFIRM time — not at open time — the same `posAtDOM` + `locateBlockIndex` rule `reveal()` uses for the SOURCE toggle.
-
-Both entry points share `app/src/editor/openQueryBuilder.tsx`, which mounts `<QueryBuilder>` outside of any Solid component tree (a fresh container appended to `document.body`, torn down on confirm or close) — neither the slash-menu's `apply()` nor the widget's pencil handler is itself a Solid component, so there is nothing to render JSX into at the call site.
-
-### Three source modes → the two body forms
-
-The builder's `SegmentedToggle` picks one of three unrelated `BuilderSource`s (`state.source: "notes" | "tasks" | "base"`), and each generates a **different** one of the two body forms documented above:
-
-| Builder source | Generated body form | Shape |
-|---|---|---|
-| **Notes** | Full inline config (Form 2) | `source: notes where <Bases-expr>` + the flat view keys `view`, `sort`, `groupBy`, `limit`. This is the ONLY inline way to iterate notes-with-filters, since a flat block can't. |
-| **Tasks** | Flat spec (Form 1) | `tasks: <Obsidian-Tasks DSL>` (+ optional `from:`, `view:`, `group:`, `limit:`). |
-| **Base** | Flat spec (Form 1) | `of: [[Base]]` (+ optional `where:`, `view:`, `group:`, `limit:`). |
-
-`buildQueryBlockBody()`/`parseQueryBlockBody()` are not required to be byte-identical (YAML key order can differ) — the contract is that `build(parse(body))` is *semantically* equivalent, and any expression the reverse-parser can't model survives verbatim in a raw field (`notes.rawWhere` / `tasks.rawWhere`) so a hand-edited query is never silently dropped when reopened in the builder.
-
-### Notes filters: property discovery + operators
-
-Properties are discovered the same way `BaseSettings` discovers base columns — `columnsOf(await api.resolveRows({ kind: "notes" }))` (every key seen across the sampled rows, plus `file.name` first if any row has one) — augmented with fixed `FILE_PSEUDO` pseudo-properties (`tags`, `file.folder`, `file.ext`, `file.path`, `file.ctime`, `file.mtime`) and any property already referenced by a seeded filter row (so editing an existing block never drops its own column from the dropdown).
-
-`inferType(prop, rows)` samples the first non-null value of `prop` across the resolved rows to pick a coarse `PropType` — `file.*` pseudo-props use their fixed table; numbers/booleans/arrays are typed by `typeof`/`Array.isArray`; a string is typed `"date"` if it matches `/^\d{4}-\d{2}-\d{2}([T ]|$)/`, else `"string"` — and falls back to `"string"` if no row has a value for the property.
-
-Each `PropType` gets its own operator set (`OPS_BY_TYPE`):
-
-| `PropType` | Operators |
+| Source | Form written |
 |---|---|
-| `string` | equals, does not equal, contains, starts with, ends with, matches regex, is set, is empty |
-| `number` | `=`, `≠`, `>`, `≥`, `<`, `≤`, is set, is empty |
-| `date` | is before, is on or after, is within N days, is empty |
-| `boolean` | is checked, is unchecked |
-| `tag` | has tag, does not have tag |
-| `list` | contains, is set, is empty |
-| `link` | links to, is set |
+| Notes | A full inline config: `source: notes where <expression>` plus `view`, `sort`, `groupBy` and `limit`. |
+| Tasks | A flat spec with `tasks:` text, and optional `from`, `view`, `group` and `limit`. |
+| Base | A flat spec with `of:`, and optional `where`, `view`, `group` and `limit`. |
 
-`compileNotesRow(row)` (`queryGen.ts`) compiles one `{prop, op, val, type}` row to a single Bases-expression leaf:
+Note filters offer operators that follow the property's type (text, number, date, checkbox, tag, list, link) and compile to ordinary expressions such as `file.hasTag("book")` and `date(due) < today()`. The "match all / any" switch joins conditions with `&&` or `||`. An expression the builder cannot model is kept as written in an advanced field, so reopening a hand-edited query never drops it.
 
-| Operator | Compiles to |
-| --- | --- |
-| `equals` (string) | `prop == "val"` (JSON-quoted; a number-typed row emits a bare numeric literal via `numOrStr`) |
-| `has_tag` | `file.hasTag("val")` |
-| `in_folder` | `file.inFolder("val")` |
-| `date_before` | `date(prop) < <rhs>` |
-| `date_after` | `date(prop) >= <rhs>` |
-| `date_within` (N days) | one leaf joining two comparisons with `&&`: `date(prop) >= today() && date(prop) < today() + "Nd"` |
+The pencil appears only when the builder can reproduce the block exactly. A flat spec always qualifies. A config block qualifies only if its keys are limited to `source`, `view`, `sort`, `groupBy` and `limit`, its source is `notes` or `notes where <expression>`, and the whole expression maps back to condition rows. A block with `filters:`, `formulas:`, `properties:` or `schema:` has no pencil and is edited as source.
 
-For `date_before`/`date_after`, `<rhs>` resolves a date preset (`today`, `today+Nd`, `today-Nd`, or a literal `YYYY-MM-DD`) to `today()` / `today() ± "Nd"` / `date("YYYY-MM-DD")`.
+## How do I edit a block's source?
 
-Multiple rows join with `&&` or `||` per the "Match All/Any of these" toggle (`compileNotesWhere`), each leaf parenthesized when there's more than one row.
+The rendered block hides its fence. Click **Source** in its view bar to reveal the raw fence inline, with the caret in the body, and edit it like any markdown. It saves with the note, with no separate dialog. The block collapses back to the rendered view when the caret leaves it or when you click outside it. A base opened as a file uses a text panel with **save** and **cancel** buttons instead.
 
-### Tasks filters → DSL leaves
+## What does autocomplete offer inside a block?
 
-`compileTaskLeaves(tf)` (`queryGen.ts`) turns the Task-filters form (Status: Open/Done/All, Priority, Due, Recurring, an optional "Scope to a base") into Tasks-DSL leaves joined with ` AND ` on one line. Notable mappings:
+Completion works inside a `query` fence, for the flat spec only. The config form has no dedicated completer.
 
-| Form field | Value | Compiles to |
-| --- | --- | --- |
-| Status | `Open` | `not done` |
-| Due | `Overdue` | `due before today` |
-| Due | `Due this week` | `due before in 7 days` |
-| Due | `Has a due date` | `due after 1900-01-01` (per the code's own comment, "has a due date = a date after the dawn of time" — an always-true-if-dated trick, since the DSL has no direct `has due date` leaf) |
+| Position | Offered |
+|---|---|
+| A fresh or partial key | `of`, `tasks`, `from`, `where`, `sort`, `view`, `group`, `limit`. |
+| After `view:` or `as:` | Every view kind, each with a one-line description. |
+| After `group:` | `status`, `priority`, `due`, `scheduled`, `file.folder`, `file.name`. |
+| After `where:` | Starter expressions such as `!note.resolved`, `note.due == today()`, `note.priority == "high"` and `file.hasTag("book")`. |
+| An empty `of:` or `from:` | A `[[ ]]` skeleton; typing `[[` hands over to wikilink completion. |
+| After `tasks:` or `sort:` | Nothing. |
 
-A chosen sort is **not** folded into that `AND`-joined line — it's emitted on its own line as a YAML block scalar (`tasks: |-` followed by the filters line, then the `sort by <key>[ reverse]` line), because `translateTaskDsl` only honors a `sort by …` that occupies a whole line by itself (see [tasks](../tasks/query-dsl.md)). The builder still generates this legacy DSL form for the Tasks source — it is read back correctly via the translation shim, same as any other un-migrated block.
+## What can go wrong?
 
-### Round-trip fidelity: `isBuilderRepresentable`
+- A flat block with no `of:` and no `tasks:` is an empty state, not the whole vault.
+- One config key anywhere flips the whole block to config mode and ignores the flat keys.
+- An unknown `view:` falls back silently to `list` (tasks) or `table`.
+- A bare `#tag` is not a filter: in a config block, `source: notes where #book` is a YAML comment and shows the whole vault. Write `file.hasTag("book")`; see [sources](./sources.md#what-can-go-wrong-with-a-tag-filter).
+- An unquoted `from: [[Base]]` in a config block is read as a nested list and rebuilt as a string; the flat parser keeps the literal text. Quote it in config blocks.
+- A `query` fence that shows as a plain code block means the editor extension is not mounted in that surface.
 
-Because the builder only models a bounded subset of each form, `isBuilderRepresentable(body)` (`queryGen.ts`) decides whether opening `body` in the visual builder and clicking Save is guaranteed lossless:
+## How it works
 
-- Any **flat** tasks/base spec round-trips losslessly (`true`) — the builder always regenerates an equivalent flat spec, even when some DSL leaves fall through to the advanced/raw field.
-- A **full inline config** is representable only if all of the following hold:
-  - it has **no top-level key other than `source`, `view`, `sort`, `groupBy`, `limit`** (a legacy single-entry `views:` is also read; a config with `filters:`/`formulas:`/`properties:`/`schema:` is NOT representable — those would be silently dropped on save);
-  - its `source` is exactly `notes` or `notes where <expr>` (a `tasks`/`base` **config**-form source isn't representable, since the builder always emits those two flat);
-  - the `where` expression fully reverses into filter rows (`reverseWhere` didn't have to fall back to `rawWhere`);
-  - a legacy `views:` list, if present, has at most one entry, with no keys beyond `type`/`name`/`sort`/`groupBy`/`limit`.
-- `QueryBlockWidget` (`app/src/editor/queryBlock.ts`) only sets `onEditQuery` (the pencil) when this returns `true`, so a richer hand-authored block can only be edited as raw source, never silently clobbered by the visual form.
+`app/src/editor/queryBlock.ts` finds each fence with `/^```query[ \t]*\n([\s\S]*?)\n```/gm` (`queryRanges()` in `app/src/editor/queryRanges.ts`, split out so it can be tested headlessly) and replaces it with a `QueryBlockWidget`. The live-preview extension skips `query` fences so they are not also drawn as code. The extension is wired into the note editor as `queryBlock(() => path)`, and the completer as `querySource()` in `app/src/editor/autocomplete.ts`.
 
----
+The widget decides the form with `looksLikeBaseConfig(body)`, the regex `^(views|filters|formulas|properties|schema|source)\s*:` over the lines. A config body is parsed by `parseBase` (`core/src/bases/parse.ts`, the parser a base file's frontmatter uses) and passed to `BaseView` as `source`. A flat body is parsed by `parseQueryBlock` (`core/src/bases/queryBlock.ts`) into a `QueryBlock` and passed as `view`; `hostPath` is also passed so the block can read the host note as `this`.
 
-## SOURCE toggle and inline editing
+```ts
+interface QueryBlock {
+  source?: SourceSpec   // undefined: empty state
+  as: ViewType
+  where?: string
+  sort?: SortSpec[]
+  group?: string
+  limit?: number
+}
+```
 
-Because the fence is **replaced** by the rendered view, the raw query is normally hidden. The rendered view exposes a **SOURCE** icon (the `Code`/`X` button in `BaseView`'s `ViewBar`). The behavior differs for embedded blocks vs base files:
+`parseQueryBlock` also gathers a YAML block scalar (`tasks: |-`) into a multi-line value. A sort key is a single word with an optional trailing `desc` or `reverse`; a malformed key is dropped rather than kept as a sort on a field that cannot exist. For a flat block `BaseView` builds a `BaseConfig` with the block's `where` as `filters`, and `sort`, `group` and `limit` on the view. A config block with no `source` defaults to `{ kind: 'notes' }`. Rows come from `POST /rows`, with the stale-while-revalidate cache described in [bases overview](./overview.md#how-it-works). `flashcards`, and `calendar` outside tasks mode, render full-pane directly from the rows.
 
-- For an **embedded ` ```query ` block**, `BaseView` is mounted with an `embeddedSource = { onReveal }` callback. Clicking SOURCE calls `onReveal`, which (in `queryBlock.ts`) locates this block's current document index (by DOM position via `posAtDOM`, robust to edits above) and **reveals the raw fence inline** in the editor, dropping the caret into the body (`selection.anchor = bodyFrom`). You then edit the fence like any other markdown — it auto-saves with the note; there is **no separate save dialog**.
-- The revealed source is shown in the editor's monospace code font (`.cm-query-body`, `'Monaspace Xenon', ui-monospace, monospace`), and the body lines carry 1-based in-block line numbers (matching fenced code); the ` ```query ` and closing ` ``` ` fence lines do not get numbers.
-- The block **collapses back** to the rendered view automatically as soon as the caret leaves it. Two mechanisms drive this:
-  - `revealedField.update` removes a revealed index when a selection move or doc change puts the caret outside the block's `[from, to]` range.
-  - `collapseOnClickOutside` (a `mousedown` handler) closes any revealed block when you click outside it — needed because clicking the rendered task widgets below doesn't move the caret (they swallow the event). It never prevents the click itself.
-- The `embeddedSource` callback differs from a real **base file**'s SOURCE toggle: a `type: base` file (opened via `path`) toggles an in-pane textarea `SourceEditor` (with Save/Cancel) instead of revealing fence text in an editor.
+Source revealing uses a CodeMirror `StateField` of revealed block indices (`revealedField`), flipped by `toggleQuerySource`; `collapseOnClickOutside` closes a revealed block on an outside click, and the block is found by DOM position (`posAtDOM`) so edits above it do not break the index. Completion is two pure helpers in `app/src/editor/queryComplete.ts`: `lineInQueryBlock` (a fence state machine that works on an unclosed block) and `classifyQueryLine`.
 
-> Implementation detail: `revealedField` is a `StateField<Set<number>>` keyed by the document-order index of each fence; `toggleQuerySource` is the effect that flips a block in/out of the revealed set. `buildDecorations` either replaces a block with a `QueryBlockWidget` (rendered) or, when revealed, leaves it as raw numbered lines.
+The builder is `app/src/bases/QueryBuilder.tsx` over the pure `app/src/bases/queryGen.ts`: `buildQueryBlockBody` and `parseQueryBlockBody` convert between a `BuilderState` and the block text (equivalent, not byte-identical), `compileNotesRow` compiles a condition to an expression leaf, and `isBuilderRepresentable` is the round-trip check that gates the pencil. The Tasks source writes Tasks-style filter text with the sort on its own `sort by` line inside a `tasks: |-` block scalar, which `translateTaskDsl` reads back. `app/src/editor/openQueryBuilder.tsx` mounts the modal outside any component tree, `replaceQueryBody` in `queryBuilderEdit.ts` rewrites one block's body as a single transaction, and the slash item lives in `app/src/editor/slashMenu.ts` (id `query-builder`).
 
-## Autocomplete inside a ```query block
-
-`querySource()` (`app/src/editor/queryComplete.ts`, wired in `autocomplete.ts`) provides context-aware completion **only inside** a `query` fence body. It is split into two pure, tested helpers:
-
-- `lineInQueryBlock(lines, index)` — a fenced-code state machine. Each ` ``` ` toggles in/out of a block; the **opening** fence's language tag decides whether the block is a `query`. Works on an **unclosed** block (the common case while typing), since it only inspects lines above the cursor. The opening and closing fence lines themselves are **not** body lines.
-- `classifyQueryLine(textBefore)` — classifies the text before the caret into what to complete. Value handlers are checked before the generic key handler (the key form requires no colon yet).
-
-### Completion contexts
-
-| Position | Completion offered |
-|----------|-------------------|
-| Fresh/partial key (indent + word, no colon) | The 8 flat keys, **in this order**: `of`, `tasks`, `from`, `where`, `sort`, `view`, `group`, `limit`. Each inserts its skeleton and (where useful) re-opens the popup. |
-| After `view: ` or legacy `as: ` | All 12 view types shown, built from `VIEW_TYPES.map(...)` (`core/src/bases/types.ts`) with each option's `info` looked up in the `VIEW_DOCS` doc-string map — both cover all 12 (`table`, `cards`, `list`, `bullets`, `kanban`, `calendar`, `map`, `flashcards`, `bar`, `line`, `stat`, `heatmap`). |
-| After `group: ` | Common group fields: `status`, `priority`, `due`, `scheduled`, `file.folder`, `file.name`. |
-| After `where: ` | Starter Bases-filter snippets — `!note.resolved`, `note.resolved`, `note.due == today()`, `note.placed < today()`, `note.priority == "high"`, `note.recurring`, `file.hasTag("book")` — the same filter language `source: notes` uses (see [filters](./filters.md)). |
-| Empty `of: ` or `from: ` | A `[[ … ]]` skeleton; once you type `[[`, the existing wikilink source owns the popup (so the dedicated handler only matches the empty case). |
-| After `tasks: ` or `sort: ` | No dedicated completion (returns null). A legacy `tasks:` DSL body is still read (translated at query time), it just isn't offered as a completion any more — see the key table above. |
-
-Key-skeleton inserts (from `KEY_SPECS`):
-
-- `of` → `of: [[]]`, caret inside `[[`, re-triggers (hands off to wikilink/base completion).
-- `tasks` → `tasks: `, no re-trigger (see above — filter completion lives on `where:` now).
-- `from` → `from: [[]]`, caret inside `[[`, re-triggers.
-- `where` → `where: `, re-triggers (Bases-filter snippet list).
-- `sort` → `sort: `, no re-trigger.
-- `view` → `view: `, re-triggers (view-type list).
-- `group` → `group: `, re-triggers (group fields).
-- `limit` → `limit: `, no re-trigger.
-
-> Note: the autocomplete only assists the **flat** spec. The full inline base config form has no dedicated query-block completer (it shares the base/YAML editing experience).
-
-## Rendering pipeline summary
-
-1. `queryBlock.ts` finds each ` ```query ` fence and, unless revealed, replaces it with a `QueryBlockWidget`.
-2. The widget mounts `BaseView` with either `source` (inline config) or `view` (flat spec), plus `hostPath` (the current note's path — used so an embedded base can reference the host note as `this.file`) and `embeddedSource`.
-3. `BaseView.loadConfig()` produces a `BaseConfig` + a `SourceSpec`. Rows come from `api.resolveRows(spec)` (server-side `/rows`, which follows base composition + scoped tasks), with a stale-while-revalidate client row cache keyed on the SSE server version.
-4. `runView(config, rows, idx, hostMeta)` computes the `ViewResult`; the matching renderer (`TableView`/`CardsView`/`ListView`/`BulletsView`/`KanbanView`/`MapView`/`HeatmapView`/`BarView`/`LineView`/`StatView`/`CalendarView`/`FlashcardsView`) draws it.
-5. Flashcards, and calendar EXCEPT in `mode: tasks`, are **full-pane** views (`fullPane()`), rendered directly from `data().rows` rather than through `runView`. A calendar in `mode: tasks` (or the legacy `calendarContent: tasks` spelling) is not full-pane — it resolves rows through `runView` exactly like table/cards/list/etc, same as every other row-based view.
-
-## Gotchas
-
-- **A flat block never iterates the vault.** Only `of:` (a base) or `tasks:` produce a source. `from: notes …` is gone; `from:` alone is inert. If you want to iterate notes inline, use the **full inline config** form (which defaults to `{ kind: "notes" }`) or reference a `type: base` file with `of:`.
-- **`of:` beats `tasks:`** if both are present; `from:` is read only with `tasks:`.
-- **Unknown `view:` doesn't error** — it silently falls back (`list` for tasks, `table` otherwise).
-- **A legacy `tasks:` DSL body is translated at READ time, not by `parseQueryBlock`.** The parser just carries whatever follows `tasks:` verbatim as `source.where`; `source.ts` is what checks `looksLikeTaskDsl` and calls `translateTaskDsl` before filtering. A block that has already been migrated (`tasks:` bare + `where:`/`sort:`) skips that translation entirely.
-- **`sort: note.priority` ranks by urgency, not alphabetically.** The flat spec's `sort:` is applied at the VIEW level (`runView` in `core/src/bases/query.ts`) through `compareForSort`, which special-cases any property whose bare name is `priority` (dropping its `note./file./formula./this.` namespace) with a rank table — `highest` < `high` < `medium` < `none` < `low` < `lowest` — and falls back to the plain value comparator for every other property. `applyTaskSort` (`core/src/bases/taskDsl.ts`), which runs for a legacy `tasks:` DSL's `sort by priority` line at the SOURCE level, imports and uses this same `compareForSort` — so a migrated block sorts identically to an un-migrated one. `bismuth base migrate-queries` rewrites a `sort by priority` DSL line into a modern `sort:` key rather than leaving it in legacy form, since doing so no longer changes the sort's behavior (see [tasks](../tasks/query-dsl.md)).
-- **One config key flips the whole block to config mode** — adding any of `filters:/formulas:/properties:/schema:/source:` (or a legacy `views:`) makes the flat keys (`of:`, `tasks:`, etc.) ignored.
-- **First `:` splits a flat line** — values may contain colons (e.g. `where: date == today` is fine; `where: a:b` keeps `a:b` as the value). Duplicate keys: last one wins.
-- **`livePreview` skips `query` fences** — if you ever see a raw `query` code block rendered as plain code, the `queryBlock` extension isn't mounted.
-- **`from: [[Base]]` in YAML** parses as a nested flow sequence, not a string — `normalizeSource`'s `wikiStr` reconstructs `"[[Base]]"` from the array form so unquoted refs don't silently drop the scope (relevant to the full-config form; the flat parser keeps the literal string).
-
-See also: [bases overview](./overview.md), [sources & composition](./sources.md), [the view](./overview.md#the-view), [tasks](../tasks/syntax.md).
-
-Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryRanges.ts`, `app/src/editor/queryBuilderEdit.ts`, `app/src/editor/queryBuilderEdit.test.ts`, `app/src/editor/openQueryBuilder.tsx`, `app/src/editor/slashMenu.ts`, `app/src/editor/slashComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/queryComplete.test.ts`, `core/src/bases/queryBlock.ts`, `core/test/bases/queryBlock.test.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/query.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/QueryBuilder.tsx`, `app/src/bases/queryGen.ts`, `cli/src/commands/base.ts`
+Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryRanges.ts`, `app/src/editor/queryBuilderEdit.ts`, `app/src/editor/openQueryBuilder.tsx`, `app/src/editor/slashMenu.ts`, `app/src/editor/queryComplete.ts`, `core/src/bases/queryBlock.ts`, `core/src/bases/parse.ts`, `core/src/bases/taskDsl.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/QueryBuilder.tsx`, `app/src/bases/queryGen.ts`, `cli/src/commands/base.ts`, `core/test/bases/queryBlock.test.ts`

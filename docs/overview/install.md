@@ -1,497 +1,189 @@
-# Installation and Running Bismuth
+# Install and run Bismuth
 
-This guide covers installing, running, and building Bismuth: prerequisites, dependencies, optional
-environment variables for a real development vault, full-stack/Vite-only/standalone server modes,
-build commands, and multiple instances on non-default ports.
-
-**Contents:** prerequisites and Rust setup → repository layout → the two-step development quick
-start → optional environment variables → standalone backend → one-time macOS code-signing setup →
-production builds (Vite, Tauri, self-spawned backend, first-run intro, bundled resources) →
-multiple instances → testing → CORS → common startup errors.
-
----
-
-## Prerequisites
-
-| Requirement | Minimum version | Notes |
-|---|---|---|
-| **Bun** | 1.0+ | Runtime, package manager, test runner, and bundler for all workspaces |
-| **Node.js** | 20+ | Required by some native addons and Tauri toolchain |
-| **Rust** | Current stable | Only needed for `tauri build` (native binary); not needed for web-only dev |
-
-Install Bun: https://bun.sh/docs/installation
-
-### Install Rust (only for `tauri build`)
+Bismuth installs on macOS by building the app from source and dragging it into `/Applications`; engineers can also run it from source with hot reload, either in a browser or in a native window. This page covers both paths, the one-time code-signing setup that keeps macOS permissions across updates, and the errors you can hit on startup. After installing, open [Getting started](getting-started.md) for your first vault.
 
 ```bash
-# 1. Install Rust (accept the default "1) Proceed with installation")
+git clone https://github.com/michaelslain/bismuth.git
+cd bismuth
+bun install
+bun run build:app     # builds the app (a few minutes), then opens the dmg
+```
+
+## Install the app (macOS)
+
+You need these tools first:
+
+| Tool | Minimum | Needed for |
+|---|---|---|
+| Bun | 1.0 | Runtime, package manager, test runner and bundler for every workspace |
+| Node.js | 20 | Some native addons and the Tauri toolchain |
+| Rust | Current stable | The native build (`tauri build`); not needed for browser-only development |
+
+Install Bun from [bun.sh](https://bun.sh/docs/installation). To install Rust, accept the installer's default and load it into your current shell, because the installer only updates `PATH` for new shells:
+
+```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# 2. Load cargo into your CURRENT shell (the installer only adds it to PATH for NEW shells)
 source "$HOME/.cargo/env"
-
-# 3. Verify
 cargo --version && rustc --version
 ```
 
-See also the full Tauri prerequisites: https://tauri.app/start/prerequisites/
+Tauri may need further system packages; see the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
-### The daemon ships as a compiled bundled binary
+Then build and install:
 
-The in-repo **`@bismuth/daemon`** workspace (`daemon/src/**`) is one machine process that
-multiplexes per-vault "brains". You do **not** clone or `bun install` anything separately to build
-it. The Tauri build compiles the daemon to a standalone binary
-(`app/scripts/build-daemon-sidecar.ts` → `app/src-tauri/resources/daemon/bin/bismuth-daemon`,
-staged as a Tauri **resource**). On boot the bundled app's core sidecar copies that binary to
-`~/.bismuth/bin` and registers it as a launchd/systemd service (`core/src/daemonInstall.ts`
-`installDaemonFromBundle()` — see
-[Bundled resources](#bundled-resources-relay--daemon--machine-wide-tools) below and
-[Self-update](self-update.md)). The daemon therefore updates **with** the app — there is no git
-clone and no `daemon.autoUpdate`/`daemon.home` setting (the schema's `daemon` object has four keys —
-`enabled`, `inboxRetentionDays`, `backend`, `inheritUserMcp` — none of them a home directory or an
-update toggle). `~/.claude-bot` survives only as a one-time, copy-only legacy migration source
-(`migrateDaemonState` in `core/src/daemon.ts`, gated by a `.claude-bot-migrated` marker).
+1. Run `bun install` once at the repo root. Bun installs every workspace in one pass; `npm install` and `yarn` do not understand the workspaces.
+2. Run `bun run build:app` from the repo root. It builds the frontend, the backend binary, the daemon binary and the tools bundle, wraps them in a `.app` and a `.dmg`, deletes the loose `.app` so macOS lists one Bismuth, and opens the dmg.
+3. Drag **Bismuth** to **Applications**, eject the dmg and launch it.
 
----
+A Finder window may flash open and shut during the build. That is the dmg being styled, not the installer.
 
-## Repository Layout (Monorepo)
+To build without the helper script, run `cd app && bun run tauri build`, then open `app/src-tauri/target/release/bundle/dmg/Bismuth_*.dmg`. This leaves both the dmg and the `.app` under `app/src-tauri/target/release/bundle/{dmg,macos}/`; delete the staged `macos/Bismuth.app` afterwards so Spotlight does not list a second copy. Re-running the build and dragging again replaces the installed app in place.
 
-Bismuth is a Bun workspace monorepo. The root `package.json` declares seven workspaces:
+The first launch opens an intro and a folder picker; see [Getting started](getting-started.md). To stay current, see [Self-update](self-update.md). To check an existing machine for leftovers from older builds, run `bismuth doctor` ([Doctor](doctor.md)). `bismuth uninstall` removes the machine-wide CLI symlink, the MCP registrations and `~/.bismuth`, and unloads the daemon's launchd or systemd service first; it leaves your vault alone.
 
-```json
-"workspaces": ["core", "cli", "app", "relay", "mcp", "memory", "daemon"]
-```
+## macOS folder permissions surviving updates
 
-- **core** — backend HTTP server (`core/src/server.ts`)
-- **app** — Tauri + Solid + Vite desktop frontend
-- **cli** — `bismuth` command-line binary
-- **relay** — Claude Code plugin hooks (no standalone process)
-- **mcp** — stdio MCP server serving `docs/` + the `bismuth` CLI to app-terminal Claude sessions
-- **memory** — `@bismuth/memory`, the pure 3rd-brain memory graph (note CRUD + frontmatter + backlinks, keyword search, query DSL), used by the daemon, relay hooks, and MCP memory tools
-- **daemon** — `@bismuth/daemon`, the per-vault daemon runtime; one machine process multiplexing every enabled vault's memory + crons + processes + conversation session
+A build signed with no certificate loses its folder permissions on every rebuild. macOS ties each privacy grant (Files and Folders, Accessibility, Full Disk Access) to the app's code identity, and an unsigned build's identity is a hash of its own bytes, which changes on every build. Create one stable self-signed certificate and every later build reuses its identity:
 
----
+1. Open Keychain Access, then **Certificate Assistant**, then **Create a Certificate**.
+2. Name it anything containing `Bismuth` (for example `Bismuth Self-Signed`), set Identity Type to **Self-Signed Root** and Certificate Type to **Code Signing**, then create it.
 
-## Step 1 — Install Dependencies
+Every `tauri build` now finds it automatically: a login-keychain code-signing certificate whose name contains `Bismuth`, or the `APPLE_SIGNING_IDENTITY` environment variable if you set one. This covers `bun run build:app`, a manual `bun run tauri build`, and the self-update rebuild. With neither present the build falls back to an ad-hoc signature.
 
-Run once from the repo root. Bun installs all workspaces in a single pass.
+A self-signed certificate stabilises the identity only. It gives you no Apple Team ID, no Gatekeeper trust and no notarization.
+
+The daemon binary is signed with the identifier `com.bismuth.daemon` under the same certificate. If the daemon needs Full Disk Access, grant it once after the first signed install: System Settings, Privacy and Security, Full Disk Access, add `~/.bismuth/bin/bismuth-daemon`, then run `bismuth daemon restart`. The grant survives later updates. To move an already installed ad-hoc daemon onto the certificate without rebuilding:
 
 ```bash
-bun install
+codesign --force --sign "<cert name>" --identifier com.bismuth.daemon ~/.bismuth/bin/bismuth-daemon && bismuth daemon restart
+codesign -d -r- ~/.bismuth/bin/bismuth-daemon   # must name the identifier and a certificate, not a cdhash
 ```
 
-This installs dependencies for all seven workspaces. Do not run `npm install` or `yarn`; they do not understand Bun workspaces.
+## Develop from source
 
----
+Development runs the backend and the frontend as two processes. Install dependencies once with `bun install` at the repo root, then start both from `app/`.
 
-## Step 2 — (Optional) Point at a Real Vault
-
-**A fresh clone runs with no environment setup at all.** `bun run dev:browser`/`dev:app` (`app/scripts/dev.ts`) resolve which vault to open via `app/scripts/devVault.ts`'s `resolveDevVault()`:
-
-| Variable | Purpose |
-|---|---|
-| `BISMUTH_VAULT` | Absolute path to your 2nd-brain markdown vault directory |
-| `BISMUTH_MEMORY` | Absolute path to your 3rd-brain memory directory (dev only; the bundled app derives it as `<vault>/.daemon/memory`) — but once the vault's daemon is enabled, `effectiveMemoryDir()` in `core/src/server.ts` ignores this and always builds the memory graph from `<vault>/.daemon/memory`, so this variable still drives the file watcher and vault-git-backup scheduling and is echoed back by `GET /config`, but stops controlling where the 3rd-brain graph itself lives |
-
-- **Neither set (the default)** — `resolveDevVault()` materialises a generated example vault at
-  repo-root `.dev-vault/` (gitignored, alongside `.claude/`), creating `.dev-vault/vault` and
-  `.dev-vault/vault/.daemon/memory` and writing any of its fixture files that don't already exist.
-  Existing files are left alone, so **dev builds write to this vault** — autosave, task toggles, SRS
-  scheduling all persist there across restarts. `rm -rf .dev-vault` is always a clean reset. The
-  script logs which vault it picked (and whether it just created files) on every start.
-- **Both set** — your paths win outright and are passed straight through, `explicit: true`.
-- **Only one set** — `resolveDevVault()` throws immediately: `set BOTH BISMUTH_VAULT and BISMUTH_MEMORY, or neither (neither = the example vault)`. A half-set pair is treated as a likely stale export rather than an intent, since pairing a real vault with a fixture memory dir (or vice versa) would write 3rd-brain notes somewhere you aren't looking.
-
-To run against a real vault instead of the generated example, export both:
-
-```bash
-export BISMUTH_VAULT="/path/to/your/vault"
-export BISMUTH_MEMORY="/path/to/your/memory"
-```
-
-Or, to try it against a scratch vault:
-
-```bash
-mkdir -p /tmp/test-vault /tmp/test-memory
-echo "# Hello" > /tmp/test-vault/example.md
-export BISMUTH_VAULT="/tmp/test-vault"
-export BISMUTH_MEMORY="/tmp/test-memory"
-```
-
-The **standalone server** (`bun run core/src/server.ts ...`, see below) accepts the same two variables as a fallback for its `--vault`/`--memory` flags (`cliArg('vault') ?? process.env.BISMUTH_VAULT`, and likewise for memory — `core/src/server.ts`). If neither the flag nor the env var resolves either one, it prints:
-
-```
-usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]
-```
-
-then exits with code 1. Unlike `dev:browser`/`dev:app`, the standalone server has no generated-example fallback — one of flag or env var is required for both `vault` and `memory`.
-
----
-
-## Step 3 — Running in Development
-
-### Full-stack dev (Tauri app + backend, recommended)
-
-Run from the `app/` directory. This starts the backend and the Vite frontend concurrently using `concurrently -k` (kills both on Ctrl-C).
+### Run in the browser
 
 ```bash
 cd app
 bun run dev:browser
 ```
 
-What this launches (`app/package.json`'s `"dev:browser"` script runs `app/scripts/dev.ts`, which resolves the vault via `resolveDevVault()` (Step 2 above) and then starts both halves through `concurrently`):
+This starts the backend on port 4321 and Vite on port 1420, and stops both on Ctrl-C. Open `http://localhost:1420/`. It mints one owner token per run and gives it to both halves, so your requests count as the vault's owner. Vite fails immediately if 1420 is taken instead of picking another port.
 
-1. `bun run ../core/src/server.ts` — backend on port **4321**, given `BISMUTH_VAULT`/`BISMUTH_MEMORY` (the resolved or generated example vault) plus a freshly minted `BISMUTH_OWNER_TOKEN` in its env
-2. `vite` — Vite dev server on port **1420** (strict — fails if 1420 is taken), given the matching `VITE_OWNER_TOKEN`
-
-`dev:app` (`bun run scripts/dev.ts --app`) adds a third process, the Tauri window, in the same process group — see the comment at the top of `app/scripts/dev.ts` for why `tauri.conf.json`'s `beforeDevCommand` must stay empty.
-
-Open the app at `http://localhost:1420/` in a browser, or let the Tauri window open automatically if you are running inside the Tauri shell.
-
-**Hot reload behaviour:**
-- `.tsx` / `.css` changes in `app/src/` → Vite HMR, no page reload, editor/graph state preserved
-- Changes under `core/src/` → the backend process restarts; the frontend reconnects automatically via its fallback version-poll
-- `.settings` in the vault → re-read on the next request; no restart needed
-
-### Vite frontend only (no backend)
-
-There is no dedicated script for this — `app/package.json` has no `start`/`vite` entry — but `bun run <bin>` falls through to a local `node_modules/.bin` binary when no matching script exists, so `vite`'s own CLI works directly:
+### Run with the native window
 
 ```bash
 cd app
-bun run vite
+bun run dev:app
 ```
 
-This runs `vite` alone, with no owner token minted and no vault resolution. You will need a separately running backend for any API calls to work, and that backend's vault must match what you expect — this path skips `resolveDevVault()` entirely.
+This starts the same two processes plus the Tauri window in one process group. Leave `beforeDevCommand` in `tauri.conf.json` empty: filling it starts a second backend and Vite pair that collides on ports 4321 and 1420 and takes the window down. A bare `bun run tauri dev` paints an empty window because it brings no frontend up.
 
-### Shorthand from root (standalone backend only)
+### Choose which vault to open
 
-```bash
-bun run core:serve
-```
+A fresh clone needs no setup. With nothing exported, the dev script generates an example vault at `.dev-vault/` in the repo root (gitignored) and prints which vault it chose on every start.
 
-This maps to `bun run core/src/server.ts` with no flags — it will error immediately because `--vault` and `--memory` are required. You must provide them:
-
-```bash
-BISMUTH_VAULT="/your/vault" BISMUTH_MEMORY="/your/memory" bun run core:serve
-# or with explicit flags:
-bun run core/src/server.ts --vault /your/vault --memory /your/memory
-```
-
----
-
-## Standalone Backend Server
-
-The backend can be run independently of the frontend. Both `--vault` and `--memory` are required; `--port` is optional and defaults to **4321**.
-
-```bash
-bun run core/src/server.ts \
-  --vault /path/to/vault \
-  --memory /path/to/memory \
-  [--port 4322]
-```
-
-Parsed by `cliArg(name)` in `server.ts` (scans `Bun.argv` for `--<name>` and returns the next token). The startup sequence when invoked directly (`import.meta.main` is true) tries the CLI flag first, falling back to the matching env var:
-
-```typescript
-if (import.meta.main) {
-  const vault = cliArg('vault') ?? process.env.BISMUTH_VAULT
-  const memory = cliArg('memory') ?? process.env.BISMUTH_MEMORY
-  if (!vault || !memory) {
-    console.error(
-      'usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]',
-    )
-    process.exit(1)
-  }
-  const portArg = cliArg('port')
-  const s = createServer({
-    vault,
-    memory,
-    port: portArg ? Number(portArg) : 4321,
-  })
-  console.log(`core listening on http://localhost:${s.port}`)
-}
-```
-
-So `BISMUTH_VAULT`/`BISMUTH_MEMORY` work as a substitute for `--vault`/`--memory` here too — a flag always wins if both are given.
-
-On boot the server:
-1. Reconciles `.settings` (the vault's single hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:34`; migrates any legacy `settings.yaml` or interim `.settings/settings.yaml` into it first via `migrateSettingsLocation()`, then writes the comment-only `SETTINGS_SEED` if absent and strips a pre-sparse full-defaults dump via `stripMaterializedDefaults`; never adds keys; fire-and-forget).
-2. Loads runtime config (`AppConfig`) from `.settings` merged over defaults.
-3. Starts a file watcher on the vault (and memory directory if provided) with a debounce of `appConfig.server.fileWatchDebounceMs` (default 250 ms).
-4. Binds `Bun.serve` on the configured port with WebSocket upgrade support for `/terminal`.
-
-### `CoreConfig` interface
-
-```typescript
-export interface CoreConfig {
-  vault: string;    // absolute path to vault directory (required)
-  memory?: string;  // absolute path to memory directory (optional for library use; required for CLI)
-  port?: number;    // defaults to 4321
-}
-```
-
----
-
-## macOS folder permissions surviving updates (one-time setup)
-
-**Bug #48** — "computer permissions are not persistent between Bismuth updates." macOS TCC
-(the Files-and-Folders / Accessibility / etc. privacy grant database) pins every grant to the
-app's **designated requirement**, not its bundle id. Run `codesign -d -r- /Applications/Bismuth.app`
-on an unsigned build and you'll see `designated => cdhash H"…"` — the default ad-hoc signature
-anchors the requirement to the exact binary's own content hash. Since every rebuild produces
-different bytes, every rebuild gets a fresh "identity" and macOS silently revokes every grant —
-for both `Bismuth.app` and the `bismuth-daemon` service binary.
-
-To make grants survive updates, create a **stable self-signed code-signing certificate** once
-(no Apple Developer account needed):
-
-1. Keychain Access → Certificate Assistant → **Create a Certificate…**
-2. Name: anything containing `Bismuth` (e.g. `Bismuth Self-Signed`), Identity Type: *Self-Signed
-   Root*, Certificate Type: **Code Signing** → Create.
-
-That's it — **every** `tauri build` invocation now auto-detects it: the `tauri` npm script
-(`app/scripts/tauri.ts`, which every build path funnels through — a plain `bun run tauri build`,
-`bun run installer`/`build:app`, and the self-update rebuild pipeline in
-`core/src/selfUpdate.ts` alike) and the daemon sidecar build (`app/scripts/build-daemon-sidecar.ts`)
-share one detector (`app/scripts/signingIdentity.ts`): any login-keychain codesigning
-certificate whose name contains `Bismuth`, or an explicit `APPLE_SIGNING_IDENTITY` env var,
-wins; without either they fall back to ad-hoc exactly as before. This closed a gap in the first
-version of this fix, which only wired the auto-detect into the self-update pipeline — a plain,
-manually-run `bun run tauri build` (the normal build path documented above, and how the very
-first install is built) never saw it and stayed ad-hoc-signed even after creating the
-certificate.
-
-**Why a self-signed (non-Apple-issued) certificate works at all**: codesign's auto-generated
-designated requirement for a certificate that does *not* chain to Apple's root CA takes the
-form `anchor = H"<hash of the certificate itself>"` — an anchor on the reused *certificate*,
-not the binary (this is documented in Apple's [Code Signing Requirement
-Language](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/RequirementLang/RequirementLang.html)
-reference for custom certificate hierarchies). Re-signing with the *same* certificate on every
-rebuild keeps that requirement — and therefore the TCC identity — stable, even though the
-certificate itself is self-signed and untrusted by anyone else. This is a narrower claim than
-"self-signed certs are equivalent to Developer ID": a self-signed cert gets no Apple Team ID,
-no Gatekeeper trust, and no notarization — it only stabilizes the one requirement field TCC
-actually keys grants on. A real Developer ID (+ notarization) is worth it if Bismuth is ever
-distributed as a prebuilt binary to other machines, or if you want first-launch Gatekeeper
-friction (a separate, pre-existing concern from unsigned/self-signed local builds) to go away.
-
-**The daemon binary specifically.** `build-daemon-sidecar.ts` signs with `--identifier com.bismuth.daemon`, so the designated requirement is `identifier "com.bismuth.daemon" and <certificate anchor>` — stable across rebuilds when a signing identity is present (without one the build stays ad-hoc and the requirement is a per-build `cdhash`). Full Disk Access (needed for iMessage `chat.db`) is keyed to that requirement, so after the **first** signed install re-grant it once (System Settings → Privacy & Security → Full Disk Access → `~/.bismuth/bin/bismuth-daemon`, then `bismuth daemon restart`) and it survives every later update. To bring an already-installed ad-hoc daemon onto the same identity without waiting for an app build: `codesign --force --sign "<cert name>" --identifier com.bismuth.daemon ~/.bismuth/bin/bismuth-daemon && bismuth daemon restart`. Verify with `codesign -d -r- ~/.bismuth/bin/bismuth-daemon` — the designated requirement must name the identifier and a certificate, not a `cdhash`.
-
----
-
-## Building for Production
-
-### Vite web build
-
-Produces optimized static assets in `app/dist/`.
-
-```bash
-cd app
-bun run build
-```
-
-The build uses manual chunk splitting (see `vite.config.ts`) to keep the entry bundle small: d3-force-3d, xterm, KaTeX, jspdf + html2canvas, and marked are each split into separate lazy chunks.
-
-### Tauri native binary
-
-Produces a native desktop application (`.app` on macOS, `.exe` on Windows, etc.).
-
-```bash
-bun run build:app     # from the repo root: builds, then opens the dmg installer
-# — or, lower-level —
-cd app && bun run tauri build
-```
-
-`build:app` (root `package.json`) runs `cd app && bun run installer`, which chains `tauri build` → `scripts/postbuild-clean.ts` → `scripts/open-installer.ts`. `postbuild-clean.ts` deletes the staged `bundle/macos/Bismuth.app` once a `.dmg` exists (the decision lives in the pure, unit-tested `postbuildClean.ts`), so a source build doesn't leave Bismuth listed twice in Spotlight / the Applications list (github issue #4) — the dmg is the only installable artifact from here on. `open-installer.ts` then opens that dmg so you can drag it in (and, since `postbuild-clean.ts` already removed the staged `.app`, no longer mentions it as a second thing to drag). The `tauri` script (`app/scripts/tauri.ts`) wraps `@tauri-apps/cli` and requires Rust + the Tauri prerequisites — it also auto-detects a stable macOS signing identity and passes it to every `tauri` invocation (see [macOS folder permissions surviving updates](#macos-folder-permissions-surviving-updates-one-time-setup) above). The `beforeBuildCommand` (`predmg:clean → prebundle:relay → build:bismuth-tools → build → build:core-sidecar → build:daemon-sidecar`) builds the Vite frontend, the relay resource, the bismuth-tools resource, the compiled core sidecar, and the compiled daemon resource as part of the pipeline.
-
-**To install**: `tauri build` on its own (the `— or, lower-level —` path above, without `postbuild-clean.ts`) writes a `.dmg` and the `.app` it wraps under `src-tauri/target/release/bundle/{dmg,macos}/`, and leaves both in place. It does **not** auto-open an installer window — open the dmg yourself (`open src-tauri/target/release/bundle/dmg/Bismuth_*.dmg`) and drag **Bismuth → Applications**, then eject; or skip the dmg and drag `src-tauri/target/release/bundle/macos/Bismuth.app` straight into `/Applications` instead. Going through `bun run build:app`/`installer` runs `postbuild-clean.ts` right after the build, which deletes that staged `.app` once the dmg exists — so only the dmg remains, and dragging the (now-deleted) `.app` is no longer an option; use the dmg. Re-running the build and re-dragging replaces the prior copy in place.
-
-> A Finder window that flashes open and closed **during the build** is `bundle_dmg.sh` running its Finder-prettifying AppleScript to style the dmg (icon layout / background) — it is **not** the installer, and it auto-closes when that step finishes. The dmg is still written to the path above. (To suppress it, build with `CI=true bun run tauri build`, which passes `--skip-jenkins` to `bundle_dmg.sh` — the dmg then has no custom styling but builds identically.)
-
-#### Self-spawned backend (bundled app)
-
-Unlike dev (where `bun run dev:browser` launches `core` via `concurrently`), the **bundled app runs its own backend**:
-
-- `app/scripts/build-core-sidecar.ts` compiles `core/src/server.ts` into a standalone binary via `bun build --compile`, output to `app/src-tauri/binaries/bismuth-core-<target-triple>` (gitignored, ~58 MB). `tauri.conf.json` lists it under `bundle.externalBin` so it ships inside the `.app`. A signed build runs it under the hardened runtime, so `bundle.macOS.entitlements` points at `app/src-tauri/Entitlements.plist`, which grants every signed executable two keys: `allow-jit`, without which the compiled Bun runs with no JIT (about 6.5x slower), and `disable-library-validation`, without which `dlopen` refuses the bun-pty library that is extracted to `$TMPDIR` at runtime and every terminal tab fails (`lib.symbols` undefined). `app/scripts/entitlements.test.ts` guards both.
-- At launch, `app/src-tauri/src/lib.rs` (release builds only — gated on `!cfg!(debug_assertions)`) picks a **free port**, spawns the sidecar as `bismuth-core --vault <V> --memory <M> --port <free>` via `tauri-plugin-shell`, and kills it on `RunEvent::Exit` (no orphaned process). `lib.rs` also registers the `print_pdf` Tauri command (`app/src-tauri/src/print_pdf.rs`): an off-screen WKWebView print-to-PDF that backs the export pane's PDF format, answering `"unsupported"` off macOS. The main window is created in Rust (not in `tauri.conf.json`) with an initialization script setting `window.__BISMUTH_API__ = "http://localhost:<free>"` before any app JS runs (alongside `window.__BISMUTH_OWNER_TOKEN__` and `window.__BISMUTH_VAULT__`, see below); `api.ts` `resolveBase` reads it (precedence: `?api=` > `__BISMUTH_API__` > `VITE_API_BASE` > `:4321`). "Open folder" windows still pin their own backend via `?api=`.
-- **Per-launch owner token.** `start_backend` first calls `mint_owner_token()` — 32 bytes read from `/dev/urandom`, hex-encoded (the Rust twin of `core/src/ownerToken.ts`'s `mintOwnerToken()`). It passes the value to the sidecar as `BISMUTH_OWNER_TOKEN` (the sidecar uses it instead of minting its own) and injects the **same** value into the webview's init script as `window.__BISMUTH_OWNER_TOKEN__`, next to `window.__BISMUTH_VAULT__` (the vault this window is bound to — only an identity key for per-vault client caches, since the free port changes every launch; it carries no authority). The shared token is what makes the app's own requests count as the vault's owner: without it every request would be treated as a non-owner agent and `hidden`/`chat-only` notes would silently stop working in the app's own editor. If `/dev/urandom` cannot be read, the sidecar is not started at all (treated like a spawn failure).
-- **Vault resolution**: a Finder-launched app has no shell env, so `BISMUTH_VAULT` is unset. The app reads `config.json` from the app config dir (`~/Library/Application Support/com.bismuth.app/config.json`); when a valid saved vault exists (`read_valid_config` — the path is set and is a real directory), it spawns the backend against it, deriving memory as `<vault>/.daemon/memory` (`vault_memory_dir`). A one-time startup migration (`migrate_legacy_config_dir`, run before any config read) renames the legacy config dir (`…/com.michael.obsidian` → `…/com.bismuth.app`) when it exists, so users upgrading across the bundle-id rename keep their saved vault.
-- **No vault yet → the intro, not a bare picker**: when there is no usable vault, `lib.rs` does **not** jump straight to a folder picker. Instead it builds the window with **no backend** and renders a full-window onboarding takeover (see [First-run intro](#first-run-intro-the-vault-takeover) below). The native folder picker is only opened later, by the intro's final CTA.
-
-#### First-run intro (the vault takeover)
-
-The very first time a bundled app is launched — or any time the global *intro-seen* marker is absent — the user does not land in a folder picker. They land in a **full-window slideshow** that introduces Bismuth and then opens their vault. This replaces the old "first launch → native folder picker" path.
-
-**Gating (Rust → JS):** In `lib.rs`'s `setup` (release only, `!cfg!(debug_assertions)`):
-
-```rust
-let valid = if !cfg!(debug_assertions) { read_valid_config(&app.handle()) } else { None };
-let has_vault = valid.is_some();
-let first_run = !cfg!(debug_assertions) && (!has_seen_intro(&app.handle()) || !has_vault);
-```
-
-So the intro shows when **either** the user has never finished it (`intro-seen` marker absent) **or** there is no usable vault. When `first_run`, `injected` is `None` (no backend is spawned — the intro is backend-free), and `build_main_window` writes an init script setting `window.__BISMUTH_FIRST_RUN__ = true` (plus `window.__BISMUTH_HAS_VAULT__ = true` when a vault is already configured, i.e. a replay). `app/src/index.tsx` reads that flag and code-splits the root so first-run loads `intro/VaultIntro` instead of `App`:
-
-```ts
-const firstRun =
-  (isTauri() && window.__BISMUTH_FIRST_RUN__ === true) ||
-  new URLSearchParams(window.location.search).has("intro");
-const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App")));
-```
-
-`?intro=1` in the URL forces the intro in dev/browser for previewing (no native picker / backend in that mode — `enterVault` just logs).
-
-**The `intro-seen` marker (separate from the vault config):** A *global*, app-level flag at `<app-config-dir>/intro-seen` — written by `mark_intro_seen`, checked by `has_seen_intro`. It is deliberately kept **separate from `config.json`**: it is one flag across all vaults (the intro is not re-shown per vault), and replaying it never touches the saved vault paths.
-
-**The slideshow** (`app/src/intro/VaultIntro.tsx`, driven by the slide table in `app/src/intro/introSlides.ts`) is an arrow-key / `[back]` `[next]` navigable sequence of slides (`SlideKey`):
-
-| Slide | What it shows |
+| Variable | Meaning |
 |---|---|
-| `welcome` | "Notes that think" — wikilinks pitch, the gradient `ui/Wordmark` at hero size |
-| `theme` | "Pick your palette" — four swatch cards in one row (`ThemePicker`), each showing every colour the theme paints with, over the intro's live graph (`BIG_GRAPH`, 337 nodes so the renderer auto-spins it, drawn by the app's own `AsciiGraphRenderer`), set back small and dim behind the cards; choosing one re-themes the whole takeover and recolours that graph live |
-| `graph` | "Three brains, one mind" — the SAME graph instance slides into the foreground: it grows over the art box and comes to full strength (`IntroGraph`'s `stage` moves from `backdrop` to `hero`). It is six equal topic blossoms on the points of an octahedron around "you", so it reads balanced as it spins |
-| `daemon` | "An agent that never sleeps" — the background Bismuth daemon |
-| `agents` | "Bring your own agent" — chat runs on whichever coding agent you already use (Claude Code, Codex, Gemini, opencode, Cline, Goose); Bismuth speaks MCP, so any of them can search the docs and write bases, queries and notes |
-| `pickagent` | "Pick an agent" — a single choice (`PowerUpList` with `single`): every coding-agent CLI found on this machine, then the **free agent** (opencode on free models, no account, about 45 MB). The intro has no backend, so detection is the Tauri command `detect_agents(binaries)` (`lib.rs`): it returns the subset of the picker-visible backends' binaries (`binariesFor` in `introAgents.ts`) that are executable files in any `PATH` entry, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, every `~/.nvm/versions/node/*/bin`, `~/.bismuth/agents/bin`, `/usr/bin` or `/bin` (mirroring `claudeLookupPath`, since a Finder-launched app has a minimal `PATH`). The first installed agent is selected; with none found the copy says so and the free agent is the only card. Outside the desktop app detection returns nothing. Choosing an installed agent writes `chat.provider` after the vault opens; choosing the free agent runs its setup |
-| `powerups` | "Optional power-ups" — toggle which setups to run after the vault opens (see below) |
-| `begin` | "Open your vault" — the final CTA, **"Enter your vault"** |
+| `BISMUTH_VAULT` | Absolute path of the vault folder |
+| `BISMUTH_MEMORY` | Absolute path of the memory folder |
 
-The theme picker only recolors live; it commits **nothing** until the CTA. On commit, the chosen theme name is passed to the Tauri command (below) which **seeds the new vault's `appearance.theme`** so the app paints in that theme on first boot.
-
-**The CTA → `choose_first_vault`:** "Enter your vault" (`enterVault` in `app/src/intro/introEnterVault.ts`) invokes the Tauri command `choose_first_vault(theme, icon)`, which:
-1. opens the **native folder picker** ("Open or create your Bismuth vault");
-2. on cancel returns `Ok(false)` → the intro stays put (`busy` cleared);
-3. on a pick: `create_dir_all` the folder, derive memory as `<vault>/.daemon/memory` (also created), `seed_vault_settings` writes a minimal legacy-path `settings.yaml` (`appearance: { theme, icon }`) **only if none exists** (Rust still targets the old root filename here — the sidecar's `reconcileSettings`/`migrateSettingsLocation` (`core/src/settings.ts:59`) renames it into the real `.settings` file on first boot, preserving those seeded keys; the rest of the schema is not written, it reads as defaults), persists `config.json`, calls `mark_intro_seen`, and `app.restart()`s into the new vault.
-
-In dev (`tauri dev`), `choose_first_vault` **skips** `app.restart()` (a restart would tear down the `beforeDevCommand` backend → white screen, and the dev vault comes from `BISMUTH_VAULT` regardless) — the frontend just navigates to `/` itself.
-
-**Power-ups (queued for after the vault opens):** the `powerups` slide offers two setups (`POWER_UPS` in `introSlides.ts`): **daemon** (command `daemon-setup`) and **cli + mcp** (command `bismuth-install`). Both are default-on (`DEFAULT_POWERUPS`). The intro has no backend, so it can't run them itself — `enterVault` writes the chosen command-palette ids to `localStorage["bismuth-first-run-powerups"]` (and caches the theme CSS vars under `bismuth-theme-vars-v1` for the post-restart first paint). The restarted app reads that key and runs the chosen commands against the real backend. Re-running either is idempotent (CLI+MCP re-syncs on boot, the daemon re-installs from the bundle version-gated on launch), so leaving them checked is safe even when already installed.
-
-**The agent choice** is persisted separately, to `localStorage["bismuth-first-run-agent"]` (`FIRST_RUN_AGENT_KEY`): `free-agent` or a backend id. After the vault opens, `App.tsx` reads and removes it: `free-agent` runs the free-agent setup (the same `completeFreeAgentSetup` the palette modal uses); a backend id is written explicitly with `api.setSetting(['chat','provider'], id)` and toasts `Chat set to <label>`; absent does nothing.
-
-**Replay (secret keybind):** The frontend can replay the onboarding via two Tauri commands:
-- `reset_first_run` — removes **only** the `intro-seen` marker (leaving `config.json` intact) and relaunches; with a vault still configured this re-shows the intro and then drops the user back into their current vault. Bound to a secret keybind.
-- `finish_intro` — used when replaying with a vault already configured: marks the intro seen and relaunches **into the existing vault without re-picking** (the intro's CTA continues here instead of `choose_first_vault` when `window.__BISMUTH_HAS_VAULT__` is set).
-
-`set_last_vault(vault)` is the related "open another folder as a new brain" persist — it writes the new vault into `config.json` (preserving the existing memory dir, ignoring an empty/nonexistent path) so the next cold launch reopens it.
-
-#### Bundled resources: relay + daemon + machine-wide tools
-
-`beforeBuildCommand` also stages three more resources alongside the core sidecar, and `lib.rs` points the sidecar at them via env vars (`tauri.conf.json` lists `resources/relay`, `resources/bismuth-tools`, `resources/daemon`):
-
-- **`resources/relay`** (`app/scripts/bundle-relay.ts`, hooks-only — no `node_modules`/`.mcp.json`) → `BISMUTH_RELAY_BUNDLE`. `core/src/terminal.ts` resolves the relay shim from it so app terminal tabs auto-load the agent-graph relay plugin (the source-relative `relay/` doesn't exist inside the compiled sidecar). The shim's zdotdir sources the user's `~/.zshrc` first, so oh-my-zsh + their `PATH` + their `claude` all still work — the `claude` function is added on top.
-- **`resources/bismuth-tools`** (`app/scripts/build-bismuth-tools.ts` — compiled `bismuth` + `bismuth-mcp` binaries + the `docs/` tree) → `BISMUTH_INSTALL_SRC`. On boot the sidecar runs `ensureBismuthInstalled` (`core/src/bismuthInstall.ts`): a **version-gated, idempotent** machine-wide install — copies the tools to `~/.bismuth/`, symlinks `bismuth` onto `PATH`, and registers the MCP in the user's global `~/.claude.json` (`claude mcp add -s user`). No-op when the bundled binaries are unchanged (hash at `~/.bismuth/.version`). See [MCP server](../mcp/overview.md).
-- **`resources/daemon`** (`app/scripts/build-daemon-sidecar.ts` — the compiled `@bismuth/daemon` runtime as `bin/bismuth-daemon`) → `BISMUTH_DAEMON_BUNDLE`. On boot the sidecar runs `installDaemonFromBundle` (`core/src/daemonInstall.ts`): **version-gated** on the source binary's size+mtime, it copies the binary to `~/.bismuth/bin/bismuth-daemon` (atomic temp-rename so an updating, still-running service doesn't hit `ETXTBSY`) and runs `<bin> --ensure-installed` to register the launchd `com.bismuth.daemon` / systemd `bismuth-daemon` service. Because the daemon must **outlive** the app to keep firing crons, it's a standalone service — NOT a Tauri-managed child like the core sidecar. No-op in dev (no `BISMUTH_DAEMON_BUNDLE`).
-
-**Uninstall and the doctor.** `bismuth uninstall` removes the machine-wide pieces in order: it first unloads and removes the daemon's launchd/systemd service (the service is kept alive by the OS, so deleting its binary alone would just make it restart-loop), then the CLI symlink, the MCP registrations and `~/.bismuth`. To check an existing machine for leftovers from older builds without uninstalling, run `bismuth doctor` — see [Doctor](doctor.md).
-
-> **DMG build hygiene**: tauri's `bundle_dmg.sh` can fail if a prior failed build left a `/Volumes/dmg.*` scratch volume mounted. `beforeBuildCommand` runs `app/scripts/predmg-clean.ts` first to detach stale volumes + remove `rw.*.dmg` scratch, so re-running `tauri build` self-heals.
-
-### Preview the Vite build
+Set both or neither. With only one set, the dev script stops with `set BOTH BISMUTH_VAULT and BISMUTH_MEMORY, or neither (neither = the example vault)`, because a half-set pair is usually a stale export.
 
 ```bash
-cd app
-bun run serve
+export BISMUTH_VAULT="/path/to/your/vault"
+export BISMUTH_MEMORY="/path/to/your/vault/.daemon/memory"
 ```
 
-Maps to `vite preview`, serving the production build on a local port for smoke-testing.
+Dev builds write to the vault: autosave, task toggles and review scheduling all persist in `.dev-vault/`. Delete the folder (`rm -rf .dev-vault`) for a clean reset; missing example files come back on the next start, and existing ones are left alone. Once a vault's daemon is enabled, the graph reads memory from `<vault>/.daemon/memory` whatever `BISMUTH_MEMORY` says; the variable still controls the file watcher and the memory snapshots.
 
----
+### Hot reload
 
-## Running Multiple Instances on Alternate Ports
+- Edits to `.tsx` and `.css` in `app/src/` hot-reload in Vite and keep editor and graph state.
+- The dev script starts the backend with plain `bun run`, so restart `dev:browser` after editing `core/src/`.
+- `.settings` in the vault is re-read on the next request, with no restart.
 
-The defaults are **backend :4321** and **Vite :1420**. Only one instance can use each port. To run a second Bismuth instance (e.g. for a different vault):
-
-### Override the backend port
-
-Pass `--port` to the standalone server. `app/scripts/dev.ts` has no `--port`/`PORT` handling at
-all — `dev:browser`/`dev:app` always start the backend on **4321** and Vite on **1420**, so a second
-full-stack dev instance means running the standalone backend on its own port (below) alongside a
-separately started Vite (see [Vite strict port](#vite-strict-port)), not a second `dev:browser`.
+### Run the backend alone
 
 ```bash
-# Standalone backend on a custom port:
-bun run core/src/server.ts \
-  --vault /path/to/second-vault \
-  --memory /path/to/second-memory \
-  --port 4322
+bun run core/src/server.ts --vault /path/to/vault --memory /path/to/memory [--port 4322]
 ```
 
-### Point the frontend at a non-default backend
+`--vault` and `--memory` are required unless `BISMUTH_VAULT` and `BISMUTH_MEMORY` are exported, and a flag wins over its variable. `--port` defaults to 4321. Without both paths the server prints `usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]` and exits with code 1. Unlike the dev script, it has no example-vault fallback. `bun run core:serve` at the repo root runs the same file, so pass the flags or variables to it as well.
 
-The frontend resolves the backend base URL at runtime in this priority order (from `app/src/api.ts`):
+Vite alone is `cd app && bun run vite`. It does no vault resolution and mints no token, so it needs a backend that is already running.
 
-1. **`?api=<url>` query parameter** — wins over everything; trailing slashes are trimmed. Set automatically when "Open Folder" opens a sibling backend in a new window.
-2. **`window.__BISMUTH_API__`** — injected by the bundled Tauri shell for the sidecar it spawned on a free port (trailing slashes trimmed). Never set in a browser or `dev:browser` run.
-3. **`VITE_API_BASE` build-time env var** — used to bake a non-standard backend URL into the build.
-4. **Default** — `http://localhost:4321`
+### Run a second instance
 
-To develop against a backend on port 4322, either:
+`PORT=` does nothing, and `dev:browser` accepts no port option, so a second instance means starting both halves yourself on other ports, sharing one token:
 
 ```bash
-# Option A: set VITE_API_BASE at Vite start time (see "Vite frontend only" above — there is no
-# "start" script, so this runs vite's own CLI directly via bun run's node_modules/.bin fallback)
-cd app && VITE_API_BASE="http://localhost:4322" bun run vite
-
-# Option B: open the app with ?api= in the URL
-open http://localhost:1420/?api=http://localhost:4322
+TOKEN=$(openssl rand -hex 32)
+BISMUTH_OWNER_TOKEN=$TOKEN bun run core/src/server.ts --port 4323 \
+    --vault "$PWD/.dev-vault/vault" --memory "$PWD/.dev-vault/vault/.daemon/memory" &
+cd app && VITE_OWNER_TOKEN=$TOKEN VITE_API_BASE=http://localhost:4323 \
+    bun x vite --port 1422 --strictPort
 ```
 
-### Vite strict port
+Without the shared token, content routes return 403 or silently drop notes a vault marks `chat-only` or `hidden`. You can also point an open page at another backend with `http://localhost:1420/?api=http://localhost:4323`. The app resolves its backend as described in [Architecture](architecture.md#how-does-a-client-reach-core).
 
-Vite's dev server is configured with `strictPort: true` at port 1420 (`vite.config.ts`). If 1420 is taken, Vite fails immediately rather than trying another port. To run a second frontend, you must start Vite with an explicit `--port` flag:
+### Build and test
 
-```bash
-cd app
-VITE_API_BASE="http://localhost:4322" vite --port 1421
-```
-
----
-
-## Testing
-
-Tests use Bun's native test runner. No additional test setup is required.
-
-```bash
-# Run all core tests
-bun test core
-
-# Filter to a single file — pass the path directly, or a bare pattern with NO "core" argument
-# alongside it. "bun test core -- <pattern>" looks like a filter but silently runs everything:
-# `core` is itself one of Bun's OR'd substring patterns, and every file under core/test/ already
-# contains "core" in its path, so it always matches the full suite regardless of what follows it.
-bun test core/test/wikilinks.test.ts
-bun test server
-bun test vault
-```
-
-Test files live in `core/test/` (one `*.test.ts` per module). Frontend tests (`panes.test.ts`, `settings.parity.test.ts`, `graph/collide.test.ts`, etc.) live colocated with source in `app/src/`.
-
----
-
-## CORS
-
-The backend sets permissive CORS headers on every response:
-
-```
-Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: GET, PUT, POST, OPTIONS
-Access-Control-Allow-Headers: Content-Type, X-Bismuth-Token
-```
-
-This allows the Vite dev server (any port) and the Tauri webview to reach the backend without proxy configuration.
-
----
-
-## Common Startup Errors
-
-| Error | Cause | Fix |
+| Command | Where | Result |
 |---|---|---|
-| `set BOTH BISMUTH_VAULT and BISMUTH_MEMORY, or neither (neither = the example vault)` | `dev:browser`/`dev:app` — only one of the two is exported | Export both, or unset both to fall back to the generated example vault (Step 2) |
-| `usage: server --vault ... --memory ...` | Running `bun run core:serve`/`core/src/server.ts` with neither the flag nor the matching env var for `vault` or `memory` | Supply both `--vault`/`--memory` flags, or export `BISMUTH_VAULT`/`BISMUTH_MEMORY` |
-| `Port 1420 is already in use` | Another Vite instance is running | Kill it or start with `vite --port 1421` |
-| `Port 4321 is already in use` | Another backend is running | Use `--port 4322` on the standalone server (`dev:browser`/`dev:app` themselves have no port override — see [Running Multiple Instances](#running-multiple-instances-on-alternate-ports)) |
-| `ENOENT` on vault watch start | Vault directory does not exist | Create the directory before starting |
+| `bun run build` | `app/` | Production web build in `app/dist/`, with the heavy libraries split into lazy chunks |
+| `bun run serve` | `app/` | `vite preview` of that build |
+| `bun run tauri build` | `app/` | Native app and dmg (needs Rust) |
+| `bun test core` | repo root | The core test suite |
 
-Source: `CLAUDE.md`, `package.json`, `app/package.json`, `app/scripts/dev.ts`, `app/scripts/devVault.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemonInstall.ts`, `app/scripts/build-daemon-sidecar.ts`, `app/vite.config.ts`, `app/src/api.ts`, `app/src-tauri/src/lib.rs`, `app/src-tauri/src/print_pdf.rs`, `app/src-tauri/tauri.conf.json`, `app/src-tauri/Entitlements.plist`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`, `core/src/ownerToken.ts`
+Pass an exact path to run one test file: `bun test core/test/wikilinks.test.ts`. `bun test core -- <pattern>` does not filter, because `core` already matches every path. Hooks, gates and the visual checks are in [Testing](../contributing/testing.md).
+
+### Startup errors
+
+| Message | Cause | Fix |
+|---|---|---|
+| `set BOTH BISMUTH_VAULT and BISMUTH_MEMORY, or neither ...` | Only one of the pair is exported | Export both, or unset both |
+| `usage: server --vault ... --memory ...` | Standalone backend started without both paths | Pass the flags or export the variables |
+| `Port 1420 is already in use` | Another Vite instance runs | Stop it, or start Vite with `--port` as in the second-instance recipe |
+| `Port 4321 is already in use` | Another backend runs | Stop it, or run the standalone backend with `--port` |
+| `ENOENT` when the vault watch starts | The vault folder does not exist | Create the folder first |
+
+Other symptoms are indexed in [Troubleshooting](troubleshooting.md).
+
+## How it works: the bundled app
+
+A release build ships its own backend. `app/scripts/build-core-sidecar.ts` compiles `core/src/server.ts` into a standalone binary at `app/src-tauri/binaries/bismuth-core-<target-triple>`, and `tauri.conf.json` lists it under `bundle.externalBin`. On launch, `app/src-tauri/src/lib.rs` (release builds only) picks a free port, mints a 32-byte owner token from `/dev/urandom`, and spawns the sidecar as `bismuth-core --vault <V> --memory <M> --port <free>` with `BISMUTH_OWNER_TOKEN` set. It injects `window.__BISMUTH_API__`, `window.__BISMUTH_OWNER_TOKEN__` and `window.__BISMUTH_VAULT__` into the webview before any app code runs, and kills the sidecar when the app exits. If `/dev/urandom` cannot be read, the sidecar does not start.
+
+The sidecar signs with `app/src-tauri/Entitlements.plist`, which grants `allow-jit` (without it the compiled Bun runs about 6.5 times slower) and `disable-library-validation` (without it every terminal tab fails to load its PTY library).
+
+A Finder-launched app has no shell environment, so `lib.rs` reads the saved vault from `config.json` in the app config directory, `~/Library/Application Support/com.bismuth.app/`. A saved vault must exist as a directory; memory is always `<vault>/.daemon/memory`. `set_last_vault` rewrites `config.json` when you open another folder as a new brain.
+
+The `beforeBuildCommand` runs `predmg:clean`, `prebundle:relay`, `build:bismuth-tools`, `build`, `build:core-sidecar` and `build:daemon-sidecar` in order. `predmg:clean` detaches leftover `dmg.*` scratch volumes and mounted Bismuth installer volumes under `/Volumes`, and deletes `rw.*.dmg` files that a failed earlier build can leave behind, so a rebuild repairs itself.
+
+Three resources are staged next to the sidecar, and `lib.rs` passes their paths to it:
+
+| Resource | Variable | What the sidecar does with it |
+|---|---|---|
+| `resources/relay` | `BISMUTH_RELAY_BUNDLE` | Terminal tabs load the relay shim from it |
+| `resources/bismuth-tools` | `BISMUTH_INSTALL_SRC` | `ensureBismuthInstalled` copies the CLI, MCP and `docs/` to `~/.bismuth`, links `bismuth` onto `PATH` and registers the MCP; skipped when the bundled hash in `~/.bismuth/.version` is unchanged |
+| `resources/daemon` | `BISMUTH_DAEMON_BUNDLE` | `installDaemonFromBundle` copies the daemon binary to `~/.bismuth/bin` and registers the launchd or systemd service |
+
+The daemon is a standalone service, not a Tauri child, because it must outlive the app to keep firing crons. It updates with the app, so there is no separate daemon updater.
+
+## How it works: first run
+
+On a release build, `lib.rs` shows the first-run intro when the global `intro-seen` marker is missing or there is no usable saved vault. In that case it starts no backend and sets `window.__BISMUTH_FIRST_RUN__` (plus `window.__BISMUTH_HAS_VAULT__` when a vault is already saved). `app/src/index.tsx` then loads `intro/VaultIntro` instead of `App`; adding `?intro=1` to the URL forces the intro in dev.
+
+The intro is a slideshow (`app/src/intro/introSlides.ts`) that ends with the **Enter your vault** button. That button calls the Tauri command `choose_first_vault(theme, icon)`, which opens a folder picker, creates the folder and its `.daemon/memory`, seeds the chosen theme and icon into a `settings.yaml` at the vault root only if no settings file exists (core's `reconcileSettings` moves it into `.settings` on first boot), writes `config.json`, writes `intro-seen` and relaunches. Cancelling the picker leaves the intro in place. Dev builds skip the relaunch and navigate in place.
+
+Two choices from the intro run after the vault opens, because the intro has no backend. The power-up commands (`daemon-setup`, `bismuth-install`, both selected by default) are stored under the `localStorage` key `bismuth-first-run-powerups`, and the agent choice under `bismuth-first-run-agent`; `App` reads and clears each once. Agent detection in the intro is the Tauri command `detect_agents`, which scans `PATH` and the usual install directories for executables.
+
+The shortcut Cmd+Ctrl+Opt+Shift+R calls `reset_first_run`, which deletes the `intro-seen` marker and relaunches into the intro; with a saved vault, `finish_intro` then continues into it without re-picking.
+
+## How it works: CORS
+
+Core answers every request with `Access-Control-Allow-Origin: *`, methods `GET,PUT,POST,OPTIONS`, and headers `Content-Type, X-Bismuth-Token`, so Vite on any port and the Tauri webview reach it with no proxy.
+
+Source: `package.json`, `app/package.json`, `app/scripts/dev.ts`, `app/scripts/devVault.ts`, `app/scripts/tauri.ts`, `app/scripts/signingIdentity.ts`, `app/scripts/build-core-sidecar.ts`, `app/scripts/build-daemon-sidecar.ts`, `app/scripts/postbuild-clean.ts`, `app/vite.config.ts`, `app/src-tauri/tauri.conf.json`, `app/src-tauri/Entitlements.plist`, `app/src-tauri/src/lib.rs`, `app/src/index.tsx`, `app/src/api.ts`, `app/src/intro/introSlides.ts`, `app/src/storageKeys.ts`, `core/src/server.ts`, `core/src/routes/context.ts`, `core/src/bismuthInstall.ts`, `core/src/daemonInstall.ts`, `cli/src/commands/install.ts`

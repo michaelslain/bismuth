@@ -1,304 +1,125 @@
-# Daemon On-Disk Storage Layout
+# Daemon storage
 
-This page documents the daemon's **two-tier** storage model — what the `@bismuth/daemon` runtime
-writes, where, and in what format. The daemon is **one machine process that multiplexes per-vault
-"brains"**: machine-level identity + runtime state live in a single home dir, and each enabled
-vault's brain (its crons, processes, memory, and conversation session) lives under that vault's own
-`.daemon` directory. Bismuth core reads the same tree to power the daemon page (`::daemon`, fed by
-`GET /daemon/snapshot` + `GET /daemon/logs`), and writes only a few control files (`owner.json`, the `enabled` frontmatter,
-and trigger files) — see [overview.md](overview.md).
-
-> **Legacy migration note.** `~/.claude-bot` is not a live layout — it survives only as a
-> **one-time, copy-only migration source** (see [Legacy migration](#legacy-claude-bot-migration)
-> below). There is **no** `daemon.home` setting.
-
----
-
-## The two tiers
+The daemon keeps its state in two places: one machine directory shared by every vault, and a `.daemon/` folder inside each vault it serves. Everything is a plain file (markdown, JSON or text), and Bismuth's core reads the same files to draw the daemon page. Read this page to find a file, learn what writes it, or recover from a bad edit. For the runtime behind these files see [the overview](overview.md).
 
 ```
-~/.bismuth/daemon/                       # MACHINE_DIR — one per machine (identity + runtime)
-└── …                                    # device-id, devices.json, owner.json, daemon.pid, logs/, vaults.json
+~/.bismuth/daemon/                 one per machine
+  device-id  devices.json  owner.json  daemon.pid
+  vaults.json  vaults-seen.json  logs/
 
-<vault>/.daemon/                         # PER-VAULT brain — one per enabled vault
-└── …                                    # crons/, processes/, memory/, identity.md, session-id
+<vault>/.daemon/                   one per vault
+  identity.md  PAGES.md
+  crons/  processes/  pages/  memory/  logs/
+  session-id  session-ids
 ```
 
-| Tier | Root | Holds | Resolved by |
-| --- | --- | --- | --- |
-| **Machine** | `~/.bismuth/daemon` (env `BISMUTH_DAEMON_DIR`) | device identity, owner selection, device heartbeats, the daemon PID, daemon logs, and the `vaults.json` registry of known vault roots — **shared across all vaults** | `MACHINE_DIR` (`daemon/src/lib/config.ts`); core's `daemonMachineDir()` |
-| **Per-vault** | `<vault>/.daemon` | one vault's crons, processes, 3rd-brain memory, daemon identity/personality, conversation session id, and cron run-state | `vaultPaths(root, name)` → `VaultContext` (`daemon/src/lib/config.ts`); core's `vaultDaemonDir(vault)` |
+## Machine directory
 
-The machine dir is resolved as `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon` — the env var is the only
-override (ops/dev/tests), and core's `daemonMachineDir()` resolves the same way so both processes
-agree byte-for-byte. There is no per-user setting that moves it.
+`~/.bismuth/daemon` (override: `BISMUTH_DAEMON_DIR`) holds what is true of the machine, not of one vault. The daemon creates the directory and `logs/` at boot and writes the identity files on first use. It writes `device-id`, `devices.json` and its state files atomically (temp file, then rename), so a reader never sees a half-written file.
 
----
+| Path | Format | What it holds |
+|---|---|---|
+| `device-id` | bare UUID | This machine's stable id, created on first use |
+| `devices.json` | `{ "<deviceId>": { "label", "lastSeenISO" } }` | Every device that has heartbeated; `label` is the hostname |
+| `owner.json` | `{ "ownerDeviceId", "ownerLabel", "updatedAt" }` | The device allowed to run sessions. Absent means unclaimed, and every device is allowed |
+| `daemon.pid` | integer | The running daemon's pid; removed on a clean shutdown |
+| `vaults.json` | JSON array of absolute vault paths | The vaults the daemon may serve |
+| `vaults-seen.json` | `{ "<vault path>": "<ISO>" }` | When each vault was last in use |
+| `logs/bismuth-daemon.{stdout,stderr}.log` | text | The service's output |
+| `logs/vault-registry.log` | text | A line each time a vault is dropped from `vaults.json` |
+| `.claude-bot-migrated` | vault path | The vault that received a copy of a standalone `~/.claude-bot` brain; see [migrating](../overview/migrating.md) |
 
-## Tier 1 — Machine directory (`~/.bismuth/daemon`)
+The service definition itself lives outside this directory: see [the service files](lifecycle.md#where-the-service-files-and-logs-are). The binary is `~/.bismuth/bin/bismuth-daemon`, and the install marker is `~/.bismuth/.daemon-installed`.
 
-Created on daemon boot by `ensureDirs()` (`daemon/src/daemon/index.ts`): it `mkdir -p`s `MACHINE_DIR`
-and `logs/`. The identity files are created lazily on first heartbeat/claim.
+## Vault folder
 
-```
-~/.bismuth/daemon/                       # MACHINE_DIR (config.ts) — env BISMUTH_DAEMON_DIR overrides
-├── device-id                            # plain UTF-8 UUID for THIS machine (no JSON)
-├── devices.json                         # { "<deviceId>": { label, lastSeenISO } }
-├── owner.json                           # { ownerDeviceId, ownerLabel, updatedAt } (absent = unclaimed)
-├── daemon.pid                           # plain int (process.pid); presence + liveness ⇒ running
-├── vaults.json                          # JSON array of absolute vault roots (written by Bismuth core)
-├── vaults-seen.json                     # { "<vault root>": "<ISO>" } — last-seen stamps sidecar (TTL only)
-├── .claude-bot-migrated                 # one-time legacy-migration marker (records the dest vault)
-├── .daemon-installed                    # bundle install marker (size:mtime of the staged binary)
-└── logs/                                # daemon stdout/stderr (launchd/systemd redirect here)
-    ├── bismuth-daemon.stdout.log
-    └── bismuth-daemon.stderr.log
-```
+`<vault>/.daemon/` holds one vault's brain. Files whose names start with a dot are bookkeeping the daemon rewrites constantly; they stay out of the file tree.
 
-### Per-file reference (machine tier)
+| Path | Format | What it holds |
+|---|---|---|
+| `identity.md` | markdown, `name` in frontmatter | The daemon's name and personality; seeded once, never overwritten |
+| `PAGES.md` | markdown | The inbox-page format guide the daemon reads before writing a page; seeded once |
+| `crons/<name>.md` | frontmatter plus prompt body | One cron. See [crons and processes](crons-and-processes.md) |
+| `crons/.last-fired.json` | JSON keyed by cron name | The latest result of each cron |
+| `crons/.running.json` | `{ "<name>": { "startedAt" } }` | Crons running now |
+| `crons/.triggers/<name>` | empty file named for the cron | A pending "run now" request |
+| `processes/<name>.md` | frontmatter | One background process |
+| `processes/.pids/<name>.pid` | integer | The child's pid, so the next daemon instance can find an orphan |
+| `processes/.triggers/<name>` | empty file | A pending "reconcile this process" request |
+| `pages/<slug>.md` | frontmatter plus body | One inbox page. See [pages](pages.md) |
+| `pages/.state/<slug>.json` | JSON | A page's status, kept apart from the page so an edit cannot clobber it |
+| `pages/.triggers/<slug>` | empty file | A pending "run the approved action" request |
+| `memory/<name>.md`, `memory/<folder>/<name>.md` | markdown | The memory graph. See [memory](memory.md) |
+| `logs/activity-YYYY-MM-DD.jsonl` | JSON lines | The activity log, below |
+| `logs/<process>.{stdout,stderr}.log` | text | A background process's output, appended |
+| `session-id` | session id | The most recent daemon session. It changes with every new session |
+| `session-ids` | one id per line | Every session the daemon started, oldest first, capped at 2000 |
+| `session-ids-legacy` | one id per line | Daemon sessions found by scanning the Claude session store once, the first time chat History opens; core writes it |
+| `codex-session-id` | thread id | The Codex thread, when `daemon.backend` is `codex`; separate from `session-id` so switching backends keeps both |
+| `codex/` | Codex's own state | `CODEX_HOME` for the Codex backend |
 
-| Path | Format | Owning module | Written / created by |
-| --- | --- | --- | --- |
-| `~/.bismuth/daemon/` (`MACHINE_DIR`) | dir | `lib/config.ts` | `ensureDirs` (`daemon/index.ts`); also `getDeviceId` mkdir |
-| `device-id` | plain UTF-8 UUID, trimmed, no JSON | `lib/device.ts` | `getDeviceId` — generates+persists a `randomUUID()` on first read (atomic `<path>.<pid>.tmp` then rename), reused across restarts |
-| `devices.json` | JSON map `{ "<deviceId>": { label, lastSeenISO } }` | `lib/owner.ts` | `heartbeatDevice()` upserts this device's entry every tick (even idle / non-owner) with `label = os.hostname()` (`getDeviceLabel`) and a fresh ISO; atomic |
-| `owner.json` | JSON `{ ownerDeviceId, ownerLabel, updatedAt }`; absent = unclaimed | `lib/owner.ts` | `getOwner()` / `isOwner()` read it. **`isOwner()` is true when absent** (unclaimed = single-device behavior). Bismuth core writes it byte-compatibly via `setOwner()` |
-| `daemon.pid` | plain int | `daemon/index.ts` | `writePid` (`String(process.pid)`) / `removePid` on graceful shutdown. Liveness via `process.kill(pid, 0)` — the pid file survives a crash/SIGKILL, so readers always re-check liveness |
-| `vaults.json` | JSON array of absolute vault roots — **frozen element shape: plain path strings** | `lib/config.ts` (`VAULTS_FILE`), read by `lib/registry.ts` | **Written by Bismuth core** (`registerVaultRoot`) on vault open; the daemon only reads it (`knownVaultRoots()`) to discover which vaults exist. Each vault opts in via its own `.settings` (`daemon.enabled`). Core and the installed daemon binary are versioned independently, so the elements never gain a new shape — an element that stops being a string makes the older side see **zero vaults** (every cron silently stops). New per-vault metadata goes in a sibling file, never in here |
-| `vaults-seen.json` | JSON map `{ "<abs vault root>": "<ISO>" }` | `lib/config.ts` (`VAULTS_SEEN_FILE`), `core/src/daemon.ts` (`vaultsSeenFile`) | The last-seen sidecar for `vaults.json`, feeding core's 30-day registry TTL (`VAULT_REGISTRY_TTL_MS`) and nothing else. Two writers: core stamps a vault when it boots against it (`registerVaultRoot`), the daemon stamps every vault it actually serves (`refreshVaultsSeen`, hourly-throttled). **Advisory** — absent/corrupt/unwritable degrades to "no history", which baselines every vault and retires none. Core owns the file's existence; the daemon only refreshes entries in a file core already created |
-| `.claude-bot-migrated` | plain text = the destination vault root | `core/src/daemon.ts` | `migrateDaemonState` — written once, machine-wide, to gate the legacy copy to exactly one vault (see below) |
-| `.daemon-installed` | plain text = `"<size>:<mtimeMs>"` of the staged binary | `core/src/daemonInstall.ts` | `installDaemonFromBundle` — version marker so the daemon binary is only re-copied when a new app build ships a new one |
-| `logs/bismuth-daemon.{stdout,stderr}.log` | plain text | `lib/platform.ts` | launchd `StandardOutPath`/`StandardErrorPath` (or systemd `StandardOutput=append:`) redirect the service's output here |
+A trigger file's name is its payload and its presence is the signal: the file's content is never read. The daemon polls trigger folders every 5 seconds, deletes each file before acting on it, and ignores names that start with a dot.
 
-The launchd/systemd service definition itself lives **outside** `MACHINE_DIR` (`lib/platform.ts`):
+## Activity log (`logs/activity-YYYY-MM-DD.jsonl`)
 
-| Platform | Service file | Service id |
-| --- | --- | --- |
-| macOS | `~/Library/LaunchAgents/com.bismuth.daemon.plist` | launchd label `com.bismuth.daemon` |
-| Linux | `~/.config/systemd/user/bismuth-daemon.service` | systemd unit `bismuth-daemon` |
+The activity log is the daemon's history: every cron outcome, background-process lifecycle moment and brain start, one JSON object per line, one file per UTC day. `crons/.last-fired.json` keeps only the latest result per cron; the log is the only place to see what an earlier failure was.
 
-The daemon **binary** is installed at `~/.bismuth/bin/bismuth-daemon` (env override `BISMUTH_DAEMON_BIN`)
-by core's `installDaemonFromBundle()`, which then runs `<bin> --ensure-installed` to write+load the
-service. See [lifecycle.md](lifecycle.md) and [install](../overview/install.md).
-
----
-
-## Tier 2 — Per-vault brain (`<vault>/.daemon`)
-
-`vaultPaths(root, name)` resolves every path the runtime touches for one vault into a `VaultContext`.
-On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/index.ts`) the daemon
-`mkdir -p`s `daemonDir`, `memory/`, `crons/`, `processes/`, `logs/`, and `pages/`, then runs
-`reconcileSeeds()` (below) to write any missing seeded defaults.
-
-```
-<vault>/.daemon/                         # vaultPaths(root).daemonDir
-├── identity.md                          # name (frontmatter) + personality (body) — user-editable, SEEDED
-├── PAGES.md                             # page-format authoring guide for the daemon — SEEDED, no execution
-├── session-id                           # this vault's latest SDK session id (a moving pointer)
-├── session-ids                          # durable append-only SET of daemon-minted session ids
-├── session-ids-legacy                   # one-time backfill of that set, written ONCE by core
-├── memory/                              # 3rd-brain markdown notes (single-level folders allowed)
-│   └── <name>.md
-├── logs/                                # per-process stdout/stderr for THIS vault's processes
-│   ├── <process>.stdout.log             #   + this vault's daemon ACTIVITY log (below)
-│   ├── <process>.stderr.log
-│   └── activity-YYYY-MM-DD.jsonl        # one JSON ActivityEvent per line, one file per UTC day
-├── crons/
-│   ├── <name>.md                        # cron def (frontmatter + body = prompt) — defaults SEEDED
-│   ├── .last-fired.json                 # { "<name>": { timestamp, result } }
-│   ├── .running.json                    # { "<name>": { startedAt } }
-│   └── .triggers/
-│       └── <name>                       # ISO-timestamp file (presence = "run now"; no .md)
-├── processes/
-│   ├── <name>.md                        # process def (frontmatter; command required)
-│   ├── .pids/
-│   │   └── <name>.pid                   # plain int — the cross-restart orphan-reap link
-│   └── .triggers/
-│       └── <name>                       # ISO-timestamp file (presence = "reconcile runtime"; no .md)
-└── pages/                               # the daemon inbox — one .md per page, core's read/write window
-    ├── <slug>.md                        # page: frontmatter (title, createdAt, deliverAt?, source?, actions[]) + body
-    ├── .state/
-    │   └── <slug>.json                  # dynamic sidecar: {status, pressedAction?, pressedAt?, prompt?, model?, timeoutSecs?, daemonNote?, completedAt?}
-    └── .triggers/
-        └── <slug>                       # ISO-timestamp file (presence = "run the approved action"; no .md)
-```
-
-### Per-file reference (per-vault tier)
-
-| Path | Format | Owning module | Written / created by |
-| --- | --- | --- | --- |
-| `<vault>/.daemon/` | dir | `lib/config.ts` (`vaultPaths`) | `ensureVaultDirs` (`daemon/index.ts`) |
-| `identity.md` | markdown: `name:` frontmatter + personality body | `daemon/seeds.ts`, read by `persona.ts` + `lib/registry.ts` | Seeded with `name: daemon` + `DEFAULT_DAEMON_IDENTITY` when absent (`reconcileSeeds`). The `name:` drives the sidebar label + daemon-graph hub (`daemonIdentityName()` in core, `readDaemonSettings()` in the daemon); the body is the bot's system prompt, read fresh per session via `buildDaemonPersona` in `persona.ts` (`You are <name>.\n\n<body>`, delivered to every daemon backend). User-editable; never clobbered. See [memory.md](memory.md) |
-| `session-id` | plain text SDK session id | `daemon/session.ts` | `saveSessionId(ctx, id)` / `getSessionId(ctx)` — per-vault, so the one runtime `resume`s the right thread for each concurrent vault. A **moving pointer**: overwritten on every new session, so it names only the daemon's LATEST run |
-| `session-ids` | newline-delimited session ids, oldest first, deduped, capped at 2000 | `daemon/sessionIds.ts` | `recordDaemonSessionId(ctx, id)` — the **durable set** of every session the daemon minted, appended from `saveSessionId`. Read by core (`readDaemonSessionIds`, `core/src/daemon.ts`) so the chat page lists only the user's own chats and a future surface can find the daemon's. Answers "did the daemon mint this session?" for ALL of them — which `session-id` cannot |
-| `session-ids-legacy` | same format as `session-ids` | **core** (`core/src/chatDaemonLegacy.ts`) | The **one-time backfill** of the durable set, for daemon sessions minted *before* `session-ids` existed. `backfillLegacyDaemonSessions(vault)` scans the SDK store once (first History open; gated on `.daemon` existing, bounded by reading only each transcript's first message) and records every session whose OPENING prompt the daemon itself composed — an exact match on `DAEMON_BOOT_PROMPT`, or the `[Cron: ` prefix **and** the cron result instruction together. `readDaemonSessionIds` unions this with `session-ids`. Its own existence is the done-marker (an empty file = "scanned, found nothing"); it is frozen once written, since it describes history. **A separate file on purpose**: its writer is a different OS process (core, not the daemon), so each file keeps a single writing process and the daemon's in-process lock stays sufficient. See [lifecycle.md](lifecycle.md) |
-| `memory/<name>.md` | markdown note: frontmatter `{ type, tags, created, updated }` + body with `[[backlinks]]`; single-level folders allowed | `@bismuth/memory` (`memory/src/graph.ts`) | The 3rd brain. Written by the daemon's bot, the relay collect hook, and the MCP `remember` tool — all against `<vault>/.daemon/memory` via `BISMUTH_MEMORY_DIR`. Full note format: [memory.md](memory.md) |
-| `crons/<name>.md` | cron def frontmatter, EITHER `{ name?, schedule, catchup?(default true) }` (time-based, the default) OR `{ name?, on: file-change, watch }` (fires on a vault file/glob change instead) — both share `{ enabled?(default true), notify?, model?, effort?, timeout?, waitFor?, incremental?(default false), checkpointDirs?(comma list of vault\|memory, default vault; legacy singular checkpointDir still parses) }` + body (= prompt) | `daemon/cron.ts` | `daemon/cron.ts` CRUD; the one default (`dream`) is seeded, schedule-based and `incremental: true` with `checkpointDirs: vault, memory`; a retired `vault-review.md` is renamed `vault-review.md.disabled`. Full model incl. file-change crons and incremental scoping: [crons-and-processes.md](crons-and-processes.md#file-change-crons) |
-| `crons/.last-fired.json` | `{ "<name>": { timestamp: ISO, result: "success"\|"failed"\|"unknown"\|"killed"\|"skipped", detail?: string } }`, keyed by job name | `daemon/cron.ts` | `updateLastFired` (unique-tmp atomic write under a per-file serial queue). `loadLastFired` migrates a legacy plain-string value to `{ timestamp, result: "success" }`. `result: "skipped"` + `detail` (e.g. `"skipped: no changes since 2026-07-20T10:00:00Z"`) is written by an `incremental` cron's pre-fire check (see [crons-and-processes.md](crons-and-processes.md#incremental-crons)) instead of ever starting a session; `daemonGraph.ts` surfaces `detail` verbatim as the daemon graph's `lastResult` so a skip is visible, not silent |
-| `crons/.running.json` | `{ "<name>": { startedAt: ISO } }`, keyed by job name | `daemon/cron.ts` | `markRunning` / `markDone` (same serial-queue + atomic write) |
-| `crons/.triggers/<name>` | ISO-timestamp file (content unused; presence is the signal); filename = job name, **no** `.md` | `daemon/cron.ts` | core's `runCron`; consumed (unlinked) by `processTriggers` every 5s. Owner-gated — a non-owner daemon unlinks without firing |
-| `processes/<name>.md` | process def frontmatter `{ command(required), name?, args?, cwd?, env?, restart?(default on-failure), restartDelay?(default 1000), enabled?(default true) }` | `daemon/process.ts` | `daemon/process.ts`. Full model: [crons-and-processes.md](crons-and-processes.md) |
-| `processes/.pids/<name>.pid` | plain int (`PIDS_SUBDIR = ".pids"`) | `daemon/process.ts` | `writePidFile` — the cross-restart link a fresh daemon reads (`reapOrphans`) to kill children orphaned by a previous instance. Removed on confirmed exit. No `.running.json` for processes; liveness is in-memory + this pid file |
-| `processes/.triggers/<name>` | ISO-timestamp file; filename = process file basename, **no** `.md` | `daemon/process.ts` | core's `setProcessEnabled`; consumed by `processProcessTriggers` every 5s, which reconciles that process's runtime to its on-disk `enabled` flag |
-| `logs/<process>.{stdout,stderr}.log` | plain text | `daemon/process.ts` | `spawnProcess` opens these append-mode and wires the child's stdio to them |
-| `logs/activity-YYYY-MM-DD.jsonl` | JSONL: one `ActivityEvent` object per line, day bucketed by UTC | `daemon/src/lib/activityLog.ts` | `logActivity(ctx, event)` appends (via `enqueueWrite`, the same per-file serial queue `.last-fired.json`/`.running.json` use); pruned by `pruneActivityLogs` on every brain-start. **Never throws** — a full disk or a read-only vault degrades to a console error, not a failed cron. See [Activity log](#activity-log-logsactivity-yyyy-mm-ddjsonl) below |
-| `PAGES.md` | plain markdown (the `PAGES_GUIDE` string constant) | `daemon/seeds.ts` (content from `daemon/src/daemon/pagesGuide.ts`) | Seeded once, non-clobbering, alongside `identity.md`. A format-discovery doc, not a cron — any page-authoring session (a cron, the persistent vault thread) `Read`s it to learn the page frontmatter shape; there is no other hardcoded page-format knowledge |
-| `pages/<slug>.md` | markdown: frontmatter `{ title?, createdAt?, deliverAt?, source?, actions: PageAction[] }` + body (the editable draft) | **core** (`core/src/daemonPages.ts`), authored by the daemon | The daemon authors a page to ask the user to approve or dismiss something; core's `vaultPagesDir(vault)` / `DAEMON_PAGE_RE` govern the path. `resolvePage` looks up the pressed action's `prompt` here (core owns the real `yaml` parser; the daemon's own frontmatter reader is single-line-only and can't parse nested `actions[]`). See [pages.md](pages.md) |
-| `pages/.state/<slug>.json` | JSON `PageState`: `{ status, pressedAction?, pressedAt?, prompt?, model?, timeoutSecs?, daemonNote?, completedAt? }` | `core/src/daemonPages.ts` (`readPageState`/`writePageState`) | The page's DYNAMIC execution state, kept out of the page's own frontmatter deliberately — a same-file daemon write would race the editor's autosave. Written via temp-then-rename (the daemon's `processPageTriggers` may be reading it concurrently). A page with no sidecar yet reads as `status: "pending"` (synthesized by `listDaemonPages`) |
-| `pages/.triggers/<slug>` | ISO-timestamp file; filename = page slug, **no** `.md` | `core/src/daemonPages.ts` (`resolvePage`, via `writeTrigger`) | Dropped when an "approve" action is pressed (a "dismiss" action resolves entirely in core, no daemon round-trip); consumed by the daemon's `processPageTriggers` (`daemon/src/daemon/pages.ts`) on the same 5s cadence as cron/process triggers. Owner-gated like the others |
-
-### Activity log (`logs/activity-YYYY-MM-DD.jsonl`)
-
-Every cron outcome, every background-process lifecycle moment, and every brain-start is appended
-here as one line of `JSON.stringify(event) + "\n"` — append-only, so a crash mid-write costs at most
-a truncated trailing line rather than a corrupted whole-file blob. One file per **UTC** day, so the
-boundary is the same on every machine; the `activity-` prefix keeps this set disjoint from the
-`<process>.stdout.log`/`.stderr.log` files that share the same directory, and every function in
-`activityLog.ts` filters on that prefix so a retention prune can never touch a process's raw output.
-
-**This log is the HISTORY; `.last-fired.json` is the current STATE.** `.last-fired.json` (above)
-keeps exactly one entry per cron and overwrites it on every run — so after two consecutive failures
-of different kinds, the on-disk entry only remembers the second. The activity log is the only place
-a post-mortem can see which class of failure actually drove a backoff.
-
-Each line is an `ActivityEvent`:
-
-```ts
-interface ActivityEvent {
-    ts: string          // ISO-8601 UTC
-    kind: 'cron' | 'process' | 'daemon' | 'session'
-    name: string         // cron/process name; the vault's daemon name for kind "daemon"/"session"
-    event: string         // "started" | "finished" | "skipped" | "exited" | …
-    outcome?: 'success' | 'failed' | 'unknown' | 'killed' | 'skipped'  // only on an event that ENDS a unit of work
-    cause?: string        // failure class, mirrors cron.ts's FailureCause: "environment" | "timeout" | "job"
-    durationMs?: number   // wall-clock duration, on events that end a run
-    detail?: string       // human-readable one-liner — the thing an agent quotes back to the user
-    summary?: string      // on a cron `finished` event: the run's final report line (last non-empty line of the result text, ≤ 300 chars)
+```json
+{
+  "kind": "cron",
+  "name": "dream",
+  "event": "finished",
+  "outcome": "success",
+  "durationMs": 84213,
+  "summary": "vault=3 memory=1 transcripts=2 merged=1 pages=0",
+  "ts": "2026-10-08T03:25:25.415Z"
 }
 ```
 
-| `kind` | `event` | Carries |
-| --- | --- | --- |
-| `cron` | `started` | — |
-| `cron` | `finished` | `outcome` (`success`/`failed`/`unknown`/`killed`), `cause` on failure, `durationMs`, `detail`, `summary` — the run's one-line report (for `dream`: `vault=N memory=N transcripts=N merged=N pages=N …`) |
-| `cron` | `skipped` | `outcome: "skipped"`, `detail` — the incremental cron's pre-fire skip reason, verbatim (the same string written to `.last-fired.json`'s `detail`) |
-| `process` | `started` | `detail: "pid <n>"` |
-| `process` | `exited` | `outcome` (`success` on code 0, `failed` on a non-zero code, `killed` on a signal), `detail` |
-| `process` | `restarting` | `detail: "in <n>ms (restart #<n>)"` |
-| `process` | `reaped` | `detail` — an orphan from a previous daemon instance |
-| `daemon` | `brain-started` | — (no `detail`; see below) |
-| `daemon` | `cron-retired` | `detail: "<name> merged into dream"` — `reconcileSeeds` renamed a retired cron (`vault-review`) to `<name>.md.disabled` |
+| Field | Type | Meaning |
+|---|---|---|
+| `ts` | ISO-8601 UTC | When the event was logged |
+| `kind` | `cron`, `process`, `daemon` or `session` | What produced it |
+| `name` | string | The cron or process name; the daemon's name for `daemon` events |
+| `event` | string | The moment, from the table below |
+| `outcome` | `success`, `failed`, `unknown`, `killed` or `skipped` | Only on an event that ends a unit of work |
+| `cause` | `environment`, `timeout` or `job` | Why a run failed or was killed |
+| `durationMs` | number | Wall-clock time of a run that ended |
+| `detail` | string | A one-line explanation |
+| `summary` | string | A cron's closing report line, at most 300 characters |
 
-**`daemon`/`brain-started` deliberately carries no `detail`.** An earlier draft put the vault's
-absolute filesystem root there; it was removed because `GET /daemon/logs` is ungated like its
-sibling daemon routes (see [http-reference.md](../api/http-reference.md#get-daemonlogs)), and the
-vault's on-disk path was the one genuinely new piece of host layout a non-owner caller could read
-from it — while adding nothing, since the log already lives inside that same vault. Do not
-reintroduce it.
+| `kind` | `event` | Notes |
+|---|---|---|
+| `cron` | `started` | A run began |
+| `cron` | `finished` | Carries `outcome`, `durationMs`, `summary`, and `cause` on failure |
+| `cron` | `skipped` | An incremental cron found nothing changed; `detail` holds the reason |
+| `process` | `started` | `detail` is `pid <n>` |
+| `process` | `exited` | `outcome` is `success` on code 0, `failed` on another code, `killed` on a signal |
+| `process` | `restarting` | `detail` is the wait and the restart count |
+| `process` | `reaped` | A process left by a previous daemon instance was killed |
+| `process` | `spawn-failed` | The command could not start; the process is not restarted |
+| `daemon` | `brain-started` | A vault's brain came online; carries no `detail` |
+| `daemon` | `cron-retired` | `reconcileSeeds` renamed a merged cron to `.disabled` |
 
-**Retention.** `ACTIVITY_RETENTION_DAYS = 30` (`daemon/src/lib/config.ts`) — not a `.settings` key,
-a fixed constant. `pruneActivityLogs(ctx.logsDir)` runs once per vault on every brain-start
-(`startVault`, `daemon/src/daemon/index.ts`) rather than on a ticker, since brain-start is the one
-moment the daemon is guaranteed to touch that vault. It deletes only files matching the
-`activity-YYYY-MM-DD.jsonl` pattern older than the window; a missing dir, an unreadable dir, or a
-failed unlink degrades to "removed fewer than hoped" and is never an error.
+Read it with `bismuth daemon logs --vault <vault>` (flags `--limit`, `--kind`, `--name`, `--since`), `GET /daemon/logs`, or the `daemon_logs` MCP tool. Files older than 30 days are deleted when a vault's brain starts. The log is append-only, so a crash costs at most a truncated last line, and a full disk never fails a cron.
 
-**Reading it back.** Core's `readActivity(daemonDir, query)` (`core/src/daemonActivity.ts`) is the
-one reader — never throws, walks day files newest-first and stops once the requested `limit` is met,
-and is exposed as `GET /daemon/logs` ([http-reference.md](../api/http-reference.md)), `bismuth daemon
-logs` ([cli/reference.md](../cli/reference.md#daemon-logs---requires---vault)), and the daemon-gated
-`daemon_logs` MCP tool ([mcp/daemon-tools.md](../mcp/daemon-tools.md)). Core's `ActivityEvent` is a
-**deliberate literal duplicate** of the daemon's — the same core-never-imports-daemon convention
-every other reader in this family follows (see [Relationship to Bismuth](#relationship-to-bismuth)).
+## Which vaults the daemon serves
 
-### Seeded defaults (`reconcileSeeds`)
+The daemon serves the vaults listed in `vaults.json`. Bismuth adds a vault to the list when it opens the vault, and each vault still has to set `daemon.enabled: true`. The list is a plain array of path strings; the daemon ignores any element that is not one, so never edit it into another shape.
 
-`reconcileSeeds(ctx)` (`daemon/src/daemon/seeds.ts`) is the daemon's analog of core's
-`reconcileSettings`: one declarative, **incremental, non-clobbering** pass run on every brain-start.
-It writes each registered seed only when its file is MISSING, so a fresh vault gets the full set, an
-already-set-up vault that predates a newly-added default gets just that new piece on next boot, and
-user edits (or a deliberate `enabled: false`) are never overwritten. `seedsFor(ctx)` currently seeds:
+Bismuth keeps the list short. When it registers a vault it also drops entries for directories that do not exist, for temp or agent scratch folders, and for vaults unseen for 30 days whose daemon is off. A vault with the daemon on is never dropped for age. Dropped entries are logged in `logs/vault-registry.log`. A vault inside a folder whose name starts with `.dev-vault` is never registered, and the daemon skips one it finds. A vault on `/Volumes`, `/mnt`, `/media`, `/net` or `/run/media` is kept when its path is missing, because an unplugged drive looks the same as a deleted one.
 
-- **`identity.md`** — `---\nname: daemon\n---` + `DEFAULT_DAEMON_IDENTITY`.
-- **The default crons** (`daemon/src/daemon/defaultCrons.ts`, embedded as string constants so they
-  survive `bun build --compile`):
-  - **`dream`** — `schedule: 0 * * * *` (hourly), `timeout: 1800`, `incremental: true`,
-    `checkpointDirs: vault, memory`, no `notify`: consolidates changed vault notes, changed memory
-    notes and unprocessed `auto-*` transcripts into this vault's `memory/` graph, in one session.
-    It is the only seeded cron; `vault-review` was merged into it and is retired (below).
-- **`PAGES.md`** — the `PAGES_GUIDE` string constant (`daemon/src/daemon/pagesGuide.ts`), written
-  straight into `ctx.daemonDir`. Unlike the cron above it has no `refreshKey` — like
-  `identity.md` it is written once and never versioned/upgraded in place, only written when
-  entirely absent. It documents the `pages/<slug>.md` format (above) for any page-authoring
-  session; it is not itself a cron and nothing ever executes it.
+## What a vault snapshot includes
 
-After seeding, `reconcileSeeds` **retires** each name in `RETIRED_CRONS` (`['vault-review']`) — but only when `crons/dream.md` equals the current stock `DREAM`. The retired `<name>.md` (stock or hand-edited) is renamed `<name>.md.disabled` (`<name>.md.disabled-2`, `-3`, … if that exists), its content kept; the result's `retired` array lists it and a `daemon`/`cron-retired` activity event is appended. A customized `dream.md` retires nothing.
+Bismuth's local git snapshots of a vault (`vault.backupOnSave`) track `identity.md`, `PAGES.md` and the non-dot files in `crons/`, `processes/` and `pages/`. They skip `memory/` (its own repo), `logs/`, the session files and every dot-file. So `git log -p -- .daemon/crons/dream.md` in the vault shows how a cron changed, and a deleted cron or page can be restored from a snapshot.
 
-**Dev vaults never reach the machine registry.** `isDevVaultRoot(root)` (`core/src/daemon.ts`) is true when some path segment of `root` starts with `.dev-vault` (`.dev-vault`, `.dev-vault-alex`, …); `isEphemeralVaultRoot` returns true for it, so `registerVaultRoot` never adds such a root to `vaults.json` and prunes one already present with a log line. The daemon's `loadEnabledVaults()` independently skips those roots, even if an older core wrote them.
+## How it works
 
-Add a future seedable by appending one entry to `seedsFor()`.
+- `enabled` defaults to true for a cron or process. Only an explicit `enabled: false` disables one. The daemon's parsers compare the raw string to `"false"`, and core's readers compare to the boolean.
+- Two keys per cron or process. The file name (the slug) identifies it everywhere in memory, in trigger files and pid files, and in the HTTP, CLI and MCP surfaces. The display name (`name:` in the frontmatter, else the slug) keys `.last-fired.json`, `.running.json` and the activity log. Editing `name:` by hand therefore orphans a cron's history, and a catch-up-eligible cron fires again on the next tick.
+- Disable pauses. Turning a vault's daemon off, or dropping it from `vaults.json`, stops its processes and watchers and deletes nothing.
+- Memory has no index. The graph is recomputed from the markdown on every read. The daemon passes `<vault>/.daemon/memory` explicitly, and tools read it from `BISMUTH_MEMORY_DIR`.
+- Core writes only control files. Bismuth writes `owner.json`, a cron or process's `enabled` frontmatter, trigger files, pages and their sidecars, and the vault registry. Every reader in core tolerates a missing or malformed file and returns an empty value.
+- Writes to state files are queued. Writes to `.last-fired.json`, `.running.json` and the activity log go through a per-file queue in `daemon/src/lib/writeQueue.ts`, so concurrent runs do not lose updates.
 
----
-
-## Invariants
-
-- **`enabled` defaults to `true`.** Only an explicit `enabled: false` disables a cron/process — the
-  daemon's parsers check `frontmatter.enabled !== "false"`, and core's reader checks `data.enabled !== false`.
-- **Keying differs.** A cron's runtime/display name is `frontmatter.name ?? filename`; a process's
-  is likewise `frontmatter.name ?? filename`. Trigger files and `.pids/` files, however, are always
-  named by the **file basename**. In-memory runtime state (the running set, abort controllers, the
-  managed process map) is keyed `${ctx.root}::${file}` — the `.md` basename, never the display
-  `name` — so two vaults can each own an identically-named cron/process without colliding, and a
-  lookup by file basename (every external caller: HTTP routes, the CLI, MCP) never misses because a
-  job's frontmatter `name:` differs from its filename (e.g. `name: "Web Search"` in
-  `web-search.md`).
-- **Trigger files: unlink-first, then act.** Dotfiles are excluded from the trigger scan; a non-owner
-  daemon consumes a trigger without acting on it.
-- **All identity/owner writes are atomic** (tmp + rename). Cron state writes additionally go through a
-  per-file serial queue (keyed by the absolute, already-vault-unique path).
-- **Memory has no on-disk index or DB** — the graph is recomputed from the `.md` files on demand by
-  `@bismuth/memory` (see [memory.md](memory.md)). The memory dir is always supplied explicitly (the
-  daemon passes `<vault>/.daemon/memory`; the MCP + relay hooks set `BISMUTH_MEMORY_DIR`) — there is
-  no machine-global default.
-- **Disable = pause, never delete.** Disabling a vault's daemon (or dropping it from `vaults.json`)
-  tears down its live processes/session but never touches its on-disk `.daemon` state.
-
----
-
-## Legacy `~/.claude-bot` migration
-
-`~/.claude-bot` is not a live layout. It survives only as
-a **one-time, copy-only** migration source, handled by `migrateDaemonState(vault, legacy?)` in
-`core/src/daemon.ts`:
-
-- **Copy-only — never deletes or moves the source.** `~/.claude-bot` stays in place as a permanent
-  backup, so the migration can never lose the user's memory graph.
-- **Machine-wide, gated to ONE vault.** A `~/.bismuth/daemon/.claude-bot-migrated` marker records the
-  destination vault root; once present, no other vault ever migrates. The brain lands in the first
-  vault whose daemon is enabled after upgrade.
-- **Per-file merge.** For each of `memory/`, `crons/`, `processes/`, it copies only legacy items not
-  already present in `<vault>/.daemon/<sub>` — so seeded defaults and the vault's own newer notes are
-  never clobbered.
-- **Best-effort; never throws.** Any failure leaves `~/.claude-bot` untouched as the source of truth.
-- **Source override.** The legacy root defaults to `~/.claude-bot` but is overridable via
-  `BISMUTH_LEGACY_CLAUDE_BOT_DIR` (or the `legacy` arg) so tests never read the user's real dir.
-
----
-
-## Relationship to Bismuth
-
-Bismuth core reads this tree to power the daemon page (`::daemon` — its crons + services panel via
-`GET /daemon/snapshot`, and its log panel via the
-per-vault activity log (`GET /daemon/logs`, see [Activity log](#activity-log-logsactivity-yyyy-mm-ddjsonl)
-above). It writes only:
-`owner.json` (`setOwner`), a cron/process's `enabled` frontmatter (`setCronEnabled`/`setProcessEnabled`),
-and trigger files (`runCron`/`setProcessEnabled`). Crucially, daemon **liveness** is read MACHINE-level
-(`daemonMachineDir()/daemon.pid`) while crons/processes are read PER-VAULT (`vaultDaemonDir(vault)/{crons,processes}`),
-because one machine process multiplexes every vault's brain. Every reader tolerates missing/malformed
-files and never throws.
-
-See also: [overview.md](overview.md), [lifecycle.md](lifecycle.md),
-[crons-and-processes.md](crons-and-processes.md), [memory.md](memory.md),
-[communication.md](communication.md), and the docs [README](../README.md).
-
-Source: `daemon/src/lib/config.ts`, `daemon/src/lib/device.ts`, `daemon/src/lib/owner.ts`, `daemon/src/lib/platform.ts`, `daemon/src/lib/registry.ts`, `daemon/src/lib/checkpointRef.ts`, `daemon/src/daemon/index.ts`, `daemon/src/daemon/cron.ts`, `daemon/src/daemon/fileWatch.ts`, `daemon/src/daemon/process.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/seeds.ts`, `daemon/src/daemon/defaultCrons.ts`, `daemon/src/daemon/incrementalCron.ts`, `daemon/src/daemon/pagesGuide.ts`, `daemon/src/daemon/pages.ts`, `core/src/daemon.ts`, `core/src/daemonState.ts`, `core/src/daemonGraph.ts`, `core/src/daemonInstall.ts`, `core/src/daemonPages.ts`, `memory/src/graph.ts`, `mcp/src/memory.ts`, `relay/lib/memory.ts`
+Source: `daemon/src/lib/{config,device,owner,registry,activityLog,writeQueue}.ts`, `daemon/src/daemon/{index,cron,process,seeds,sessionIds,pages}.ts`, `core/src/{daemon,daemonState,daemonGraph,daemonActivity,daemonPages,backup,chatDaemonLegacy}.ts`

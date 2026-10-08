@@ -1,142 +1,131 @@
-# Daemon Pages — the inbox
+# Daemon pages
 
-A **page** is how the daemon asks the user to approve or dismiss something it did the groundwork for — drafted replies, a proposed change, anything worth a human's eyes before it becomes real. Pages are ordinary markdown notes the daemon authors under `<vault>/.daemon/pages/`, surfaced together as the **daemon inbox** (a section on the daemon page, `::daemon`, plus a per-page action bar when a page is opened as a note).
+A daemon page is how the daemon asks you to approve or dismiss something it prepared: drafted replies, a proposed change, anything worth a look before it becomes real. A page is an ordinary markdown note under `<vault>/.daemon/pages/`, and the inbox section of the daemon page lists them. Read this page to write pages from a cron or the CLI, or to learn what happens when you press a button. [Set up the daemon](setup.md) walks through approving your first page.
 
-This page covers the file format, the dynamic-state sidecar, delivery timing, the button-press → execution → completion lifecycle, failure handling, the frontend surfaces, and cleanup. It complements [overview.md](overview.md) and [crons-and-processes.md](crons-and-processes.md) — a page is neither a cron nor a process; it's a one-shot, user-gated action.
+A page the daemon wrote, as `bismuth page create` produces it:
 
----
-
-## File format — `<vault>/.daemon/pages/<slug>.md`
-
-A page is a `type: daemon-page` markdown note, parsed with core's full-YAML frontmatter (`core/src/frontmatter.ts`), daemon-authored but user-editable like any note:
-
-```yaml
+```markdown
 ---
 type: daemon-page
-title: "Reply drafts ready for review"
-createdAt: 2026-07-06T08:00:03.000Z
-deliverAt: 2026-07-06T17:00:00.000Z   # ISO instant; OMIT/null = deliver ASAP / next-open
-source: "cron:answer-emails"          # provenance, display-only
+title: Reply drafts ready
+createdAt: 2026-10-08T03:24:10.943Z
+source: cron:answer-emails
 actions:
   - id: send
-    label: "Send replies"
-    kind: primary                     # primary | default | danger — cosmetic only
-    model: sonnet                     # optional; falls back to sendMessage's haiku default
-    timeout: 300                      # optional session-timeout secs (default 300)
-    prompt: |                         # PRESENT => "approve" action (daemon acts). ABSENT => pure dismiss.
-      The user approved these replies; the body below reflects their edits. Send each
-      "## Reply to ..." section (To/Subject/Body) exactly as written using the configured
-      mail tool. Do not alter wording. Report which were sent.
+    label: Send replies
+    kind: primary
+    prompt: Send each reply exactly as written.
   - id: discard
-    label: "Discard all"
-    kind: danger                      # no prompt => resolved entirely by core, no daemon round-trip
+    label: Discard
+    kind: danger
 ---
 
-## Reply to Jane: Re: Q3 budget
-**To:** jane@co.com **Subject:** Re: Q3 budget
-
-Hi Jane, ...
+Reply to Jane: Q3 budget looks fine.
 ```
 
-- **Approve vs. dismiss is derived from the presence of `prompt:`** on the pressed action — one less field to desync. An action with a `prompt` re-invokes the daemon (an isolated session) once pressed; one without resolves instantly, no daemon round-trip at all.
-- **The body is the editable draft** and is the source of truth for exact wording — the user can edit it in the normal editor before pressing an action.
-- A short authoring guide, `<vault>/.daemon/PAGES.md`, is seeded non-clobbering (like `identity.md`) alongside every vault's brain (`daemon/src/daemon/pagesGuide.ts` + `seeds.ts`) so any page-authoring session — a cron, the persistent vault thread — can `Read` it; there is no hardcoded page-format knowledge anywhere else.
+Pressing **send** makes the daemon run the action's `prompt` followed by the page body, in a fresh session. Pressing **discard** has no `prompt`, so it closes the page without involving the daemon.
 
-### Creating a page via CLI / MCP
+## Page frontmatter
 
-A page can also be authored programmatically — from a Claude session (the bismuth MCP's `bismuth_cli` tool) or the shell — through a **validated helper**, so the intricate nested `actions[]` frontmatter that `resolvePage` depends on is never hand-assembled:
+| Key | Type | Effect |
+|---|---|---|
+| `type` | `daemon-page` | Marks the note as a page, so it opens with an action bar |
+| `title` | text | The inbox row and the page heading; defaults to the file name |
+| `createdAt` | ISO instant | When the page was written |
+| `deliverAt` | ISO instant | Hold the page until then; omit it to show the page at once |
+| `source` | text | Where it came from, shown as `from <name>`. A `cron:` prefix is dropped |
+| `actions` | list | The buttons, below |
+
+Each entry in `actions` has these keys.
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `id` | text | none | Required. Identifies the button |
+| `label` | text | none | Required. Shown lowercase on the button |
+| `kind` | `primary`, `default`, `danger` | `default` | Styling only. The primary button sits last |
+| `prompt` | text | none | Present: an approve button that makes the daemon act. Absent: a dismiss button |
+| `model` | model name | `haiku` | Model for the approved session. Set a stronger one for consequential actions |
+| `timeout` | seconds | 300 | Session limit for the approved action |
+
+An action missing `id` or `label` is skipped, and the page keeps its other buttons. The body is the editable draft and the source of truth: write `prompt` so it says to act on the body as edited. The daemon seeds `.daemon/PAGES.md`, a short authoring guide that any session can read to learn this format.
+
+## Create a page from the CLI
+
+`bismuth page create` validates the slug, stamps `type` and `createdAt`, serializes `actions` correctly, and refuses to overwrite an existing page. Use it instead of hand-writing the nested YAML.
 
 ```bash
-bismuth page create reply-drafts \
+bismuth page create reply-drafts --vault ~/vault \
   --title "Reply drafts ready" --source "cron:answer-emails" \
-  --body "## Reply to Jane\n…" \
-  --actions '[{"id":"send","label":"Submit","kind":"primary","prompt":"Send each reply exactly as written."},{"id":"discard","label":"Discard","kind":"danger"}]'
+  --body "Reply to Jane: Q3 budget looks fine." \
+  --actions '[{"id":"send","label":"Send replies","kind":"primary","prompt":"Send each reply exactly as written."},{"id":"discard","label":"Discard","kind":"danger"}]'
 ```
 
-`bismuth page create` calls `core/src/daemonPages.ts` `createDaemonPage` (also reachable at `POST /daemon/pages`), which validates the slug, stamps `type: daemon-page` + `createdAt`, serializes the `actions[]` via the `yaml` library, and writes atomically (temp+rename) — refusing to clobber an existing page. `bismuth page list|resolve|mark-failed` cover the rest of the inbox lifecycle headlessly. This is part of the [app-control surface](../mcp/app-control.md) and adds **no new MCP tool** (it rides `bismuth_cli`).
+It prints `{"path":".daemon/pages/reply-drafts.md","slug":"reply-drafts"}`. The slug becomes the file name, so it cannot start with a dot or contain a slash. `--deliver-at <iso>` sets `deliverAt`. The rest of the inbox is headless too:
 
-## Dynamic state — the `.state` sidecar
+| Command | Effect |
+|---|---|
+| `bismuth page list --vault <vault>` | Every page with its status |
+| `bismuth page resolve <path> <actionId> --vault <vault>` | Press a button |
+| `bismuth page mark-failed <path> --vault <vault>` | Force a stuck page to `failed` |
 
-A page's execution state (`status`, the resolved prompt, model/timeout, the daemon's completion note) lives in a **separate JSON sidecar**, never the page's own frontmatter:
+The same operations are the `page_list`, `page_create` and `page_resolve` tools in [the MCP daemon tools](../mcp/daemon-tools.md).
 
-```
-<vault>/.daemon/pages/.state/<slug>.json
-```
+## When a page is due
 
-```json
-{ "status": "working", "pressedAction": "send", "pressedAt": "...",
-  "prompt": "<resolved action prompt>", "model": "sonnet", "timeoutSecs": 300,
-  "daemonNote": "", "completedAt": null }
-```
+A page is due when its status is `pending` and the current time is at or after `deliverAt`, or at or after `createdAt` when `deliverAt` is absent. The app works this out each time it reads the inbox; there is no delivery step. A page with a future `deliverAt` is listed as scheduled, with no urgency, until its time comes, even if the app never closed.
 
-`status` is one of `pending | working | done | failed | dismissed`. A page with no sidecar yet reads as `pending` (synthesized by `listDaemonPages`). This split exists because `Editor.tsx`'s external-reload reconcile blocks while the user has un-flushed local edits, and the pending autosave writes the buffer — so a daemon write into the page's *own* frontmatter while the user edits the body would be clobbered. It mirrors the existing `.last-fired.json`/`.running.json` split for crons.
+While `daemon.enabled` is on, the app reads the inbox at launch, every 30 seconds (every 5 seconds while a page is running), and whenever the vault's file tree changes.
 
-Both the sidecar dir (`.state/`) and the trigger dir (`.triggers/`, below) are dot-prefixed, so `listTree`'s hidden-entry skip keeps them out of the sidebar for free, and core's file-watcher noise classifier (`isDaemonRuntimeNoise` in `server.ts`) keeps their churn from ever bumping the tree/graph version — only the page `.md` itself is watcher-visible (`DAEMON_PAGE_RE`, `core/src/daemonPages.ts`).
+## How you are told a page exists
 
-## Delivery — a stateless predicate, no ticker
+- In the app. A toast reads "N pages ready for review" (or the page's title when there is one) with a **Review** action that opens the daemon page, and a badge on the inbox toolbar button counts due pages. The inbox never opens by itself at launch.
+- From the OS. When a cron run ends and a page file exists that did not exist when it started, the daemon posts one notification titled `<daemon name>: <page title>` with the text `New in your inbox`. A cron with `notify: true` already sends its own notification and gets no per-page one. A page whose `source` names a different cron is left to that cron's run.
 
-```
-due = status === "pending" && now >= (deliverAt ?? createdAt)
-```
+The notification comes from the daemon, not from the model, so a cron needs no instruction to send it.
 
-There is **no** delivery write, no `queued`/`delivered` state, and no backend delivery ticker — `due` is re-evaluated fresh every time the frontend reads `GET /daemon/pages` (`app/src/daemon/daemonInboxLogic.ts` `isDue`).
+## Approve, dismiss or retry
 
-- **"Deliver on next open"** = omit `deliverAt` → due immediately.
-- **"Deliver at a time"** = a future `deliverAt` → not due until then, even if the app never closed.
+Open a page from the inbox. Its action bar is pinned under the editor. Edit the body if you want, then press a button.
 
-The frontend evaluates this at two points: a cold-launch check (`App.tsx`'s `onMount`, catching anything that became due while closed) and a live poll while the app runs — 30s normally, tightened to ~5s while any page is `working`, plus an immediate refresh on any structural vault change (`serverVersion.ts` `lastChange()`). Both are gated on `settings.daemon.enabled`. The frontend diffs the previous due-id snapshot to toast only newly-due pages (`app/src/daemon/daemonInboxApi.ts`).
+1. The app saves the page's current text to disk first, so the daemon acts on what is on screen.
+2. A dismiss button marks the page `dismissed`. Nothing else happens.
+3. An approve button marks it `working`, and the daemon runs the action within 5 seconds in a fresh session with the model and timeout from the action. The prompt is the action's `prompt`, a blank line, `---`, then the page body.
+4. When the session ends, the daemon writes `done` or `failed` with a note of up to 500 characters. The bar shows the status as `waiting on you`, `working…`, `done // <note>`, `failed // <note>` or `dismissed // 5m ago`.
 
-## Button-press protocol
+Pressing a button on a page that is `working`, `done` or `dismissed` does nothing and shows "Already resolved". The daemon, never the model, writes the final status.
 
-1. The user edits the page body/frontmatter in the normal editor (ordinary autosave).
-2. Pressing an action button first **flushes the exact on-screen buffer to disk** (`flushFocusedEditor()`, same mechanism the rename flow uses) — the daemon acts on precisely what's on screen, not a stale debounced save.
-3. The frontend calls `POST /daemon/pages/resolve { path, actionId }` — a **read-table** route (no vault-cache invalidation; the frontend just re-polls `GET /daemon/pages`), alongside the other `/daemon/*` routes in `core/src/server.ts`.
-4. **Core** (`resolvePage`, `core/src/daemonPages.ts`) re-reads the page fresh, parses its frontmatter, and looks up the pressed action:
-   - Already terminal → an **idempotent** "already resolved" result (guards a double-click or a race between two open windows).
-   - **Dismiss** (no `prompt`) → sidecar `{status:"dismissed", pressedAction, pressedAt}`. Done.
-   - **Approve** (has `prompt`) → sidecar `{status:"working", pressedAction, pressedAt, prompt, model, timeoutSecs}` — core resolves the prompt HERE, because the daemon's own frontmatter reader (`daemon/src/lib/frontmatter.ts`) is single-line-only and can't parse nested `actions[]` YAML — then drops a trigger file at `.daemon/pages/.triggers/<slug>` (the same `writeTrigger` port crons/processes use).
-5. **The daemon** (`processPageTriggers`, `daemon/src/daemon/pages.ts`) polls `.triggers/` on the same 5s cadence as `processTriggers` (called right after it in `processAllTriggers`, `daemon/src/daemon/cron.ts`): readdir, dotfilter, **owner-gate** (a non-owner device consumes the trigger without firing — same as crons), unlink-before-process, skip if the sidecar isn't `status: "working"`. It reads the sidecar's `prompt`/`model`/`timeoutSecs` plus the page's frontmatter-stripped body, builds `finalPrompt = prompt + "\n\n---\n" + body`, and fires `sendMessage(finalPrompt, ctx, { newSession: true, model, timeoutSecs })` — an **isolated one-shot session**, never the persistent vault thread, never resumed.
-6. **Completion is deterministic, written by the daemon runtime — never the LLM.** On success, the sidecar becomes `{status:"done", daemonNote:<summary>, completedAt}`; on throw/timeout/abort, `{status:"failed", daemonNote:<error>, completedAt}`.
-7. The page `.md` is never moved or deleted out from under an open tab by the daemon or the resolve flow (only an explicit `[ archive ]` or the retention GC removes it) — its action bar reads the live sidecar status via the poll and downgrades in place to a status chip ("Done — …" / "Failed: …").
+### Retry a failed page
 
-## Failure states
+A `failed` page keeps its buttons. Pressing one again runs the approval again from the start, with the page body as it is now.
 
-| Aspect | Behavior |
-| --- | --- |
-| Authoritative | the daemon writes `failed` on any timeout/throw. The UI is never the source of truth for completion. |
-| Client-side escape hatch | if a page reads `working` for longer than ~10 minutes (the daemon process itself may have died mid-run, with no writer left to ever settle it), the action bar offers **Mark failed** → `POST /daemon/pages/mark-failed { path }`, which force-writes `{status:"failed"}` with no daemon involvement. |
-| Retry | a `failed` page keeps its action buttons live — pressing again re-runs the round-trip (flush → resolve → trigger). |
-| Owner-device gate | on a non-owner device, the trigger is consumed without firing (same semantics as cron/process triggers). The action bar surfaces this via `GET /daemon/status`'s owner data. |
+### When a page is stuck on working
 
-## Frontend surfaces
+A page that has read `working` for more than 10 minutes means the daemon probably died mid-run. The bar then offers **mark failed**, which sets `failed` without the daemon, and a stuck page's buttons stay hidden until you use it. If this device is not the owner, the bar warns that approving here will not fire: only the owner device's daemon acts. See [communication](communication.md#which-device-runs-the-daemon).
 
-- **`InboxPageView`** (`app/src/InboxPageView.tsx`) — a `type: daemon-page` note routes here instead of the plain editor (`FileView.tsx`'s `isDaemonPage()` check, mirroring `isBase()`). It renders the **standard** `Editor` body with a chrome action bar pinned UNDER it at the bottom of the pane (buttons from `actions[]`, a status chip once terminal, or an owner-device warning) — this is where a page is approved, dismissed or retried — chrome, not inline markdown, so daemon-authored controls stay physically separate from the user's editable prose.
-- **Inbox section on the daemon page** (`app/src/daemon/DaemonInbox.tsx` + `InboxRow.tsx`, one `DaemonSection` among the four on the `::daemon` page's right column — the old `::inbox` tab folded into it, and persisted `::inbox` tabs migrate to `::daemon`) — ONE flat list: due, then failed, then scheduled (each group's existing sort), no `Needs review`/`Scheduled` sub-headings. Each row is ONE line — status dot, title, age — with no source or snippet and no action buttons: clicking it opens the page (above), where its actions live. The row's only control is `[ archive ]`, shown on hover/keyboard focus (always on touch screens), which DELETES the page + its sidecar via `POST /daemon/pages/archive` (`archivePage`) whatever its state — a pending page archived this way is simply never answered — and is not offered on a `working` page (409 there). Once anything is resolved, a trailing line `N resolved // show` (`N resolved` and `//` in `--faint`, `show` in `--text-muted`) toggles to `N resolved // hide` and reveals the resolved rows beneath it — shown under the empty line too when nothing is open.
-- **Toolbar inbox button** — `open-inbox` ships in the DEFAULT sidebar toolbar (`toolbar:` in `.settings` — removable/movable like any button), hidden entirely while the daemon is off; a badge overlays the due count (special-cased in App.tsx's toolbar render). It's also a palette command. Clicking opens/focuses the daemon page (`::daemon`). A toast fires on newly-due pages (batched to "N pages ready for review"), whose "Review" action opens the same page. The inbox is **never** auto-opened on cold launch.
-- **`open-inbox` command** (`core/src/commands.ts` + `app/src/commands.ts`) — palette + optional toolbar access.
+If the daemon had already written `done` or `failed` by the time you mark it, the daemon's result stands.
 
-## How the user is told a page exists
+## Archive and clean up
 
-Two separate signals:
+The `[ archive ]` control on an inbox row deletes the page and its status file, whatever its state, except while it is `working`. A page archived while pending is never answered; the vault's snapshots can restore it. Pages are also removed on their own: a page that is `done`, `failed` or `dismissed` is deleted when it is older than `daemon.inboxRetentionDays` (default 7, range 1 to 90), checked whenever the inbox is read.
 
-- **In the app** — the toolbar badge and the batched "N pages ready for review" toast (see [Frontend surfaces](#frontend-surfaces)).
-- **OS notification, from the daemon** — `fireJob` (`daemon/src/daemon/cron.ts`) lists `.daemon/pages/*.md` before a cron's session starts and again once it settles. For every page file that is new, it calls `notify("<daemon name>: <page title>", "New in your inbox")` — `<page title>` from the page's frontmatter `title`, else its slug. One notification per new page, for **every** cron regardless of its `notify` flag; the model never has to ask for it. This is how `dream` (which has no `notify: true`) surfaces something that needs the user: its prompt files ONE page per such thing (`source: "cron:dream"`, per `.daemon/PAGES.md`), never a duplicate of a still-pending page on the same subject and never a page that only reports the run.
+## How it works
 
-## Cleanup — no cron, no ticker
+### Two files per page
 
-Garbage collection runs **in the read path**: `listDaemonPages` (`core/src/daemonPages.ts`) deletes a page's `.md` + its `.state` sidecar, best-effort, whenever it's about to list a page that is BOTH terminal (`done`/`failed`/`dismissed`) AND whose `completedAt`/`pressedAt` is older than `daemon.inboxRetentionDays` (default 7, `core/src/schema/settingsSchema.ts`). Since the frontend polls `GET /daemon/pages` regularly while the daemon is enabled, GC happens on its own with no extra machinery. A resolved page could in principle be GC'd while open in a stale tab — the same accepted risk as any externally-deleted-while-open file.
+A page's status lives in a JSON sidecar, `pages/.state/<slug>.json`, never in the page's own frontmatter. The editor's autosave writes the whole page, so a daemon write into the same file while you edit the body would be overwritten. The sidecar holds `status` (`pending`, `working`, `done`, `failed` or `dismissed`), `pressedAction`, `pressedAt`, the resolved `prompt`, `model`, `timeoutSecs`, `daemonNote` and `completedAt`. A page with no sidecar reads as `pending`. Both the `.state/` and `.triggers/` folders start with a dot, so they stay out of the file tree and their churn never marks the tree dirty. Only the page `.md` is visible to the watcher.
 
-## Execution is runtime code, not a cron
+### The press protocol
 
-Unlike `dream`, page execution is NOT a seeded, user-deletable cron — it's runtime code (`processPageTriggers`) that always runs, so a user who deletes/disables a cron by mistake can never silently break the whole inbox feature.
+1. The app calls `POST /daemon/pages/resolve` with the page path and action id.
+2. `resolvePage` in `core/src/daemonPages.ts` re-reads the page and looks up the action. Core resolves the action here because the daemon's own frontmatter reader is single-line and cannot parse nested `actions`. A page already `done`, `dismissed` or `working` returns `alreadyResolved`.
+3. With no `prompt`, core writes `dismissed` and stops. With a `prompt`, it writes `working` with the prompt, model and timeout (300 seconds if unset) and drops `pages/.triggers/<slug>`.
+4. `processPageTriggers` in `daemon/src/daemon/pages.ts` runs in the same 5-second poll as cron triggers. It deletes the trigger, skips the page unless its sidecar says `working` with a prompt, and calls `sendMessage` with `newSession: true`. If the page file is missing, it writes `failed`.
+5. On completion it writes `done` with the first 500 characters of the result, or `failed` with the error. When the backend was downgraded to Claude for this run, the note starts with the reason.
 
----
+A non-owner device deletes the trigger without acting. Execution is runtime code, not a cron, so deleting a cron cannot break the inbox.
 
-## Cross-links
+### Where the inbox shows
 
-- [overview.md](overview.md) — the daemon model + Bismuth's daemon controls.
-- [crons-and-processes.md](crons-and-processes.md) — the trigger-file port pages reuse, and how it differs (one-shot isolated session vs. a recurring job).
-- [storage.md](storage.md) — on-disk file shapes under `<vault>/.daemon`.
-- [../README.md](../README.md) — the docs root.
+A `type: daemon-page` note opens in `InboxPageView` (`app/src/InboxPageView.tsx`), the standard editor with the action bar under it. The inbox box on the daemon page is `DaemonInbox`, a flat list of due pages, then failed, then scheduled. The sidebar toolbar button `open-inbox` is hidden while the daemon is off.
 
-Source: core/src/daemonPages.ts, core/src/server.ts, core/src/daemon.ts (`writeTrigger`), core/src/schema/settingsSchema.ts, daemon/src/daemon/{pages,pagesGuide,cron,seeds}.ts, daemon/src/lib/config.ts, app/src/{daemonInbox,daemonInboxLogic,daemon/DaemonInbox,daemon/InboxRow,daemon/DaemonPageHost,InboxPageView,the toolbar inbox button,FileView,tabIds,PaneContent,commands,App}.tsx
+Source: `core/src/daemonPages.ts`, `core/src/routes/daemon.ts`, `daemon/src/daemon/{pages,pagesGuide,cron}.ts`, `cli/src/commands/page.ts`, `app/src/{InboxPageView,InboxActionBar,inboxPageMeta}.ts*`, `app/src/daemon/{DaemonInbox,InboxRow,daemonInboxApi,daemonInboxLogic}.ts*`

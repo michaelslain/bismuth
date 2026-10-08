@@ -1,272 +1,197 @@
-# Google Calendar Two-Way Sync
+# Google Calendar sync
 
-This page covers Bismuth's **two-way Google Calendar sync**: OAuth, the reconciliation engine, conflict resolution, and the manifest. It reconciles the events in a Bismuth calendar base (a `type: base` note with a `view: calendar`) against a Google calendar in both directions, so an edit made in the app's calendar lands in Google and an edit made in Google flows back into the vault. It connects via Google's OAuth 2.0 "Authorization Code + PKCE" flow over a loopback redirect, requesting the single `calendar.events` scope (events read+write only — no Gmail, Drive, contacts, or calendar-ACL access). All secrets and sync bookkeeping live **outside the vault** under `~/.bismuth/gcal/` so nothing sensitive is ever committed to git, and the vault's `.settings` carries only non-secret operational config. Reconciliation runs on demand ("Sync now") and on a background ticker; both serialize through an in-process chain and a cross-process file lock so two syncs can never race the shared manifest.
+Bismuth syncs a calendar base with a Google calendar in both directions: an event you edit in the app lands in Google, and an event you edit in Google flows back into the vault. Sync is per calendar, so one vault can hold several calendar bases, each linked to a different Google calendar. Sync needs a Google account connection and one switch on each calendar base; the events and recurrence rules being synced are described in [calendar events](../calendar/overview.md).
 
-**Sync is PER-CALENDAR.** A vault can hold several calendar bases, each two-way-synced with a *different* Google calendar. Which Google calendar a base syncs with, and whether sync is on, are declared on **that base's own frontmatter** — `googleCalendarId` (default `primary`) and `googleCalendarSync` (a boolean), folded into the calendar view config like `dateField` (see `core/src/gcal/config.ts` `resolveGcalConfig`). The connection-level bits shared by every calendar (conflict policy, cadence, naive-event timezone) still live in the global `googleCalendar` settings. The old **global** `googleCalendar.{enabled,calendarId,basePath}` keys are now **legacy**: they're honored only as a migration fallback for the single base the old one-mapping named (so an existing vault keeps syncing unchanged), and re-toggling sync in that calendar's settings writes the per-base keys and takes over.
+Two frontmatter keys on the calendar base switch sync on and pick the Google calendar:
 
+```yaml
 ---
-
-## What It Is
-
-The subsystem is the `core/src/gcal/` module set plus a handful of `/gcal/*` HTTP routes and a connect modal:
-
-- **`index.ts`** — in-process orchestration (one instance per core process, like `relay.ts`). Holds the short-lived pending-PKCE map (keyed by the OAuth `state`), an access-token cache, the public surface (`setCredentials` / `startAuth` / `completeAuth` / `status` / `getAccessToken` / `sync` / `disconnect`), and the serialization chain that queues every sync.
-- **`pkce.ts` / `oauth.ts`** — the OAuth 2.0 + PKCE flow.
-- **`client.ts`** — minimal Google Calendar API v3 calls (list/insert/patch/get/delete + `primaryInfo`).
-- **`map.ts` / `recurrence.ts` / `colors.ts`** — pure translation between a Bismuth calendar-base row and a Google event (fields, RRULE, event color).
-- **`sync.ts`** — the three-phase reconciliation engine.
-- **`config.ts` / `discover.ts`** — `resolveGcalConfig` (per-base linkage from a base's frontmatter + legacy fallback) and `listGcalSyncTargets` (the ticker's scan for sync-enabled bases).
-- **`state.ts` / `manifest.ts` / `lock.ts`** — external storage under `~/.bismuth/gcal/` (the manifest is per-base keyed).
-
-The Bismuth side of an event is a **row in a calendar base**: `sync.ts` reads the base file with `readNote`, parses it via `parseBaseFile`, mutates row `note` objects, and reassembles + writes it back with `reassemble` + `writeNote`. The synced field set mirrors the calendar view's `eventToRow` keys — `id`, `title`, `date`, `startTime`, `endTime`, `location`, `link`, `description`, `category`, `recurrence`, `localUpdated` (see `buildNote` in `map.ts`).
-
-Headless edits via the **`bismuth calendar …` CLI group** (see `docs/cli/reference.md`) are sync-safe by construction: they preserve event `id`s, stamp `localUpdated` on every create/edit exactly like the app, and never touch the manifest (which lives outside the vault) — the sync engine sees them as ordinary local edits. The flip side: a CLI `calendar delete` propagates to Google on the next sync (Phase C), just like an in-app delete.
-
+type: base
+view: calendar
+googleCalendarSync: true
+googleCalendarId: primary
 ---
+```
 
-## OAuth 2.0 + PKCE Loopback Flow
+`primary` is your main Google calendar. The account connection is shared by the whole machine; only these two keys are per calendar.
 
-`oauth.ts` implements Google's "Authorization Code + PKCE" flow for a desktop/installed client (RFC 8252). The three Google endpoints are fixed:
+## What do I need before I connect?
 
-- `AUTH_ENDPOINT` — `https://accounts.google.com/o/oauth2/v2/auth`
-- `TOKEN_ENDPOINT` — `https://oauth2.googleapis.com/token`
-- `REVOKE_ENDPOINT` — `https://oauth2.googleapis.com/revoke`
+You need a Google OAuth client of type Desktop app, which you create in Google Cloud Console with the Google Calendar API enabled for its project. Bismuth does not ship a client of its own, so the connect dialog asks for the client ID and client secret. It requests one permission, the `calendar.events` scope: read and write events only, with no access to Gmail, Drive, contacts or calendar sharing.
 
-The single requested scope is `CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events"` — read + write to calendar **events only**. Google enforces this server-side: the token grants no access to Gmail, Drive, contacts, or calendar sharing/ACLs.
+Sync runs in the installed Bismuth app. A development build, a test run or a headless core refuses to connect, sync or disconnect (HTTP `403`) unless it starts with `BISMUTH_GCAL_AUTOSYNC=1`. The refusal exists because the Google connection belongs to the machine, and a core running on a copy of your vault could otherwise delete real events; see [Why do some cores refuse to sync?](#why-do-some-cores-refuse-to-sync).
 
-### PKCE helpers (`pkce.ts`)
+## How do I connect and turn on sync?
 
-Pure + unit-tested, sourcing randomness from the platform CSPRNG (`crypto.getRandomValues`):
+Connect from the calendar you want to sync.
 
-- **`createVerifier()`** — a 43-char base64url `code_verifier` (32 random bytes), inside RFC 7636's 43–128 range. Generated per attempt, never persisted.
-- **`createState()`** — an opaque CSRF `state` (16 random bytes, base64url); also keys the pending verifier on Bismuth's side.
-- **`challengeFromVerifier(verifier)`** — the S256 `code_challenge` = `base64url(SHA-256(verifier))`.
+1. Open the calendar base and open its settings with the gear in the view bar.
+2. In the **google calendar sync** section, choose **connect google calendar**.
+3. Paste the client ID and client secret and choose **sign in with google**. Bismuth opens Google's consent page in your system browser.
+4. Approve access. The browser shows "Connected as <account>. You can close this tab and return to Bismuth."
+5. Return to Bismuth. The connect dialog notices the connection and turns sync on for the calendar you opened it from.
 
-### The flow, step by step
+Afterwards the same section shows the connected account and these controls.
 
-1. **`startAuth(redirectUri)`** (`index.ts`) — reads stored state, throws if no `clientId`, prunes expired pendings, mints a verifier + state + challenge, records `pending.set(state, { verifier, redirectUri, createdAt })`, and returns the consent URL. Pendings expire after `PENDING_TTL_MS` (10 minutes); a flow that never returns simply ages out.
-2. **`buildAuthUrl({ clientId, redirectUri, challenge, state })`** (`oauth.ts`) — assembles the consent URL with `response_type=code`, `scope=calendar.events`, `code_challenge` + `code_challenge_method=S256`, `state`, and — crucially — `access_type=offline` + `prompt=consent` so a refresh token is (re-)issued.
-3. The frontend opens that URL in the **system browser** (`openExternalUrl`). The `redirect_uri` is a loopback `http://127.0.0.1:<port>/gcal/callback` targeting this backend's own port (Google desktop clients accept any 127.0.0.1 port).
-4. Google redirects the browser back to `GET /gcal/callback?code=…&state=…` (a top-level navigation, not a fetch → no CORS).
-5. **`completeAuth(code, state)`** — looks up + deletes the pending by `state` (throws "unknown or expired auth state" if absent), then **`exchangeCode({ clientId, clientSecret, code, verifier, redirectUri })`** posts `grant_type=authorization_code` + the PKCE `code_verifier` to the token endpoint. If Google returns **no** `refresh_token`, it throws ("re-consent required"). It caches the access token (`expiresAt = now + expires_in*1000`), then best-effort fetches identity via `primaryInfo` (a 1-item `events.list` on the primary calendar yielding the calendar `summary` ≈ account email + `timeZone` — staying strictly within `calendar.events`, no userinfo scope). Finally it persists `{ refreshToken, account, timeZone, connectedAt }`.
-
-### Token refresh + revoke
-
-- **`getAccessToken()`** returns the cached token while it's more than 60 s from expiry; otherwise it calls **`refreshAccessToken({ clientId, clientSecret, refreshToken })`** (`grant_type=refresh_token`). If Google answers `invalid_grant` (a revoked/expired refresh token never recovers), it clears the cache, calls `clearGcalToken()` to drop the dead token (so `status()` flips to disconnected and the UI prompts a reconnect) and throws a friendly "reconnect Google Calendar" error rather than looping forever on the same opaque failure.
-- **`revokeToken(token)`** posts to the revoke endpoint; it is **best effort and never throws**.
-- **`disconnect()`** revokes the refresh token (if any), clears the access cache, and wipes both the state file (`clearGcalState`) and the manifest (`clearManifest`).
-
-Both the client secret and refresh token are sent on the token requests, but the PKCE protection means the flow does not rely on the secret for a public native client — the secret is "not truly secret" for an installed client (RFC 8252) but is still treated as a credential and kept outside the vault.
-
----
-
-## The Three-Phase Sync Engine (`sync.ts`)
-
-`syncEvents(opts)` runs one reconciliation pass in three phases over a single Google `events.list` result.
-
-### Listing: incremental vs. full
-
-If the manifest holds a `syncToken`, the engine asks for **incremental** changes only (changed + deleted events since the token). If the token has expired, `listEvents` throws `SyncTokenExpired` (HTTP 410) → the engine drops the token and does a **full** sync. A full sync uses a window of `now − 90 days` to `now + 365 days`, `showDeleted: true`, and `singleEvents=false` (so recurring **masters** come through, not expanded instances). `listEvents` pages through `nextPageToken` to the end and returns the final `nextSyncToken`, which is persisted to enable the next incremental sync. The page size is 250.
-
-Before reconciling, the engine **selects this base's own sub-manifest** (`baseSyncFor(manifest, vault, basePath, { claimLegacy })`): the manifest is keyed by **vault + base path** (`manifestKey`, `` `${realpath(vault)}::${basePath}` ``), so each synced calendar in each vault keeps a *separate* link map + sync token + `calendarId`. This is a data-safety property, not just an isolation one: a dev/test/agent core running against a **copy** of the vault gets its own, empty sync entry instead of sharing the real vault's — see "Per-vault namespacing" below. Two calendars can therefore never share links — Phase C only ever walks the current base's own links, so it can't mass-delete one calendar's events while syncing another (this is what the old single-base manifest's retarget-guard papered over). If this base's stored `calendarId` differs from the one it's now being synced against (the base was pointed at a *different* Google calendar), the engine drops that base's old `links` + `syncToken` and full-resyncs against the new target; the old calendar's events are left untouched (Phase C's deletes are idempotent 404/410s).
-
-### Phase A — Pull (remote → local)
-
-For each remote event:
-
-| Case | Behavior |
+| Control | Effect |
 |---|---|
-| **Cancelled** (`status === "cancelled"`) | If it's linked, mark the local row for deletion (`deletedLocal++`) and drop the link; otherwise ignore. |
-| **Unmappable** (`fromGoogle` returns null — see Mapping) | `skipped++`. |
-| **Self-heal** | An *unlinked* event that still carries a `bismuthId` extended property matching an existing local row is a recovered link (manifest lost / crashed mid-sync). It is re-attached at the current state rather than pulled back as a duplicate (`relinked++`). |
-| **New** (no link, no recoverable `bismuthId`) | A fresh local row is created with a `randomUUID()` id (`pulledNew++`); the event is queued to be **stamped** with that id on Google (`toStamp`), so the self-heal can re-link it after a lost manifest. |
-| **Existing link** | Change is detected timestamp-free where possible — `remoteChanged = ev.updated !== link.updated`, `localChanged = sigOfNote(note) !== link.sig`. Only a *genuine conflict* (both changed) consults the policy (`conflicts++`); pure remote changes apply via `applyRemoteToNote` (`pulledUpdate++`); pure local changes are left to Phase B. |
+| sync this calendar with google | sets `googleCalendarSync` on the base |
+| google calendar | sets `googleCalendarId`; empty means `primary` |
+| on a conflict | picks the conflict policy (see below) |
+| sync now | runs one sync for this calendar and shows a toast like `Synced — 3 in, 1 out, 2 removed, 1 conflict` |
 
-`applyRemoteToNote` writes **all** signature-covered fields (title/date/times/location/description/recurrence) and stamps `localUpdated = ev.updated`. `category` is intentionally preserved — Google carries no Bismuth category, so a pull must not blank it — and the stored sig is recomputed from the *written* note so the next sync doesn't mis-read the preserved category or applied recurrence as a fresh local edit.
+To sync a calendar other than your main one, paste its ID into **google calendar**. Find the ID in Google Calendar under Settings, Integrate calendar, Calendar ID. Changing the ID points the calendar at a different Google calendar: Bismuth drops its stored links to the old one, leaves the old calendar's events untouched, and does a full sync against the new one.
 
-### Phase B — Push (local → remote)
+To disconnect, use **disconnect** in the same section or the Disconnect Google Calendar command. Disconnecting revokes the token and erases the stored client credentials and every sync link; reconnecting asks for the client ID and secret again.
 
-For each local row (skipping rows already marked for deletion in Phase A):
+## When does a sync run?
 
-| Case | Behavior |
+A sync runs when you press **sync now** and automatically in the background while the app is open and connected. The background cadence is `googleCalendar.syncIntervalMinutes` (default 15 minutes), and it syncs every calendar base that has `googleCalendarSync: true`. Syncs never overlap: a manual sync waits behind a running one.
+
+## What happens when both sides changed the same event?
+
+Bismuth compares each event with its state at the last sync. If only one side changed, that change wins. If both changed, `googleCalendar.conflictPolicy` decides.
+
+| Policy | Label in the panel | Winner |
+|---|---|---|
+| `lastWriteWins` (default) | most recent edit wins | the newer of the row's `localUpdated` and Google's `updated`; a row with no `localUpdated` keeps the local version |
+| `googleWins` | google wins | Google |
+| `bismuthWins` | this calendar wins | the base |
+
+The policy is global to the connection and applies to every synced calendar.
+
+## What syncs and what is skipped?
+
+An event syncs through these fields.
+
+| Bismuth field | Google field |
 |---|---|
-| **No link** | `insertEvent` with a **deterministic** Google event id (`googleEventId(bid)`) and a `bismuthId` stamp. If the event already exists on Google (lost link / crash), Google answers `409` → `DuplicateId`, which the engine turns into a re-link (`getEvent` + relink, `relinked++`) instead of a duplicate. Otherwise `pushedNew++`. |
-| **Linked + unchanged** (`sigOfNote === entry.sig`) | Skip. |
-| **Linked + changed** | `patchEvent` guarded by the stored etag (`If-Match`). On `412` (`PreconditionFailed`, remote moved under us) it re-reads with `getEvent`, runs the conflict policy, and either re-patches (local wins → `pushedUpdate++`) or applies the remote (`applyRemoteToNote` → `pulledUpdate++`). |
+| `title` | summary |
+| `date`, `startTime`, `endTime` | start and end; no `startTime` means all-day |
+| `location`, `description` | location, description |
+| `recurrence` | a single `RRULE` |
+| `category` | the event colour (nearest of Google's 11 event colours) |
 
-Per-event push errors are caught individually: one malformed event (e.g. a bad recurrence Google rejects) is counted (`failed++`, logged) and the batch continues — the base file and the remaining events still sync.
+The `link` field and a multi-category `categories` list do not sync. A pulled event arrives with no category, because Google carries none, and a later pull never blanks a category you set. Times are wall-clock times with no conversion; `googleCalendar.timeZone` is only the zone sent with a pushed timed event. A timed event with no `endTime` is pushed with its end equal to its start.
 
-### Phase C — Delete (local-only → remote)
+A Google event is skipped on pull, silently except for the `skipped` count, when it is:
 
-After collecting the set of currently-present local bismuthIds (existing rows minus Phase-A deletions, plus new rows), the engine walks every manifest link: a link whose `bismuthId` is **no longer present locally** was deleted in Bismuth → `deleteEvent` (etag-guarded) on Google and drop the link (`deletedRemote++`). A `PreconditionFailed` (remote changed) is left for the next sync; any other delete error is counted (`failed++`) without aborting the batch. `deleteEvent` treats `404`/`410` as success (idempotent — already gone).
+- cancelled, or a modified single instance of a repeating series;
+- a repeating series Bismuth cannot represent (below);
+- missing a start date;
+- an all-day event that spans several days;
+- a timed event that ends on a later day.
 
-### Stamping pulled events + persisting
+An event you cannot find in Bismuth after a sync is usually one of these.
 
-Pulled (Google-created) events queued in `toStamp` are patched with their `bismuthId` extended property (best effort) so the lost-manifest self-heal can re-link them too. Finally the base file is rewritten **only when rows actually changed** (`newRows.length || deleteBids.size || res.pulledUpdate`) — an idle steady-state sync must not rewrite a byte-identical file, which would trip the vault watcher (SSE re-render + git churn) every interval and widen the window to clobber a concurrent in-app edit. The `nextSyncToken` and a `lastSyncAt` ISO stamp are written to the manifest.
+Repeating events map to a subset of iCalendar rules. A series syncs only if it uses `FREQ=DAILY`, `FREQ=WEEKLY` or `FREQ=MONTHLY`, an `INTERVAL` of 1 (or 2 with weekly, which is a biweekly series), and optionally `BYDAY` and `UNTIL`. A series with `COUNT`, `YEARLY`, `RDATE`, `EXDATE`, another interval or several rules is skipped entirely.
 
-`SyncResult` returns the full count set: `total`, `pulledNew`, `pulledUpdate`, `pushedNew`, `pushedUpdate`, `deletedLocal`, `deletedRemote`, `conflicts`, `skipped`, `failed`, `relinked`. The frontend's `summarizeSync` condenses these into a toast like `Synced — 3 in, 1 out, 2 removed, 1 conflict`.
+## What can go wrong?
 
-### Conflict policies
+- **Deleting a row deletes the event in Google.** A synced event removed from the base file, by you, by the CLI, or by replacing the file with one that lacks it, is deleted from Google on the next sync. Delete in either place on purpose.
+- **A deleted event in Google deletes the row.** A cancelled Google event removes the linked row on the next pull.
+- **The Sync Google Calendar palette command names no calendar.** It only works when `googleCalendar.basePath` names a base; otherwise it fails with "no calendar base to sync". Use **sync now** in the calendar's settings, or `bismuth gcal sync <basePath>`.
+- **A revoked or expired Google grant needs a reconnect.** Bismuth reports "Google access was revoked or expired — reconnect Google Calendar", clears the dead token and keeps your client credentials, so reconnecting needs only consent.
+- **One bad event does not stop a sync.** An event Google rejects, such as a malformed recurrence, is counted as `failed` and logged, and the rest still sync.
+- **An unchanged calendar is not rewritten.** The base file is written only when a pull changed rows, so an idle sync does not touch the file.
+- **Another process holds the sync lock.** Two cores never sync at once. A sync that finds a fresh lock fails; a lock older than 15 minutes is taken over.
 
-`resolveConflict(policy, localUpdated, remoteUpdated)` in `sync.ts` (type `ConflictPolicy = "lastWriteWins" | "googleWins" | "bismuthWins"`):
+## Why do some cores refuse to sync?
 
-| Policy | Winner |
+Connecting, syncing and disconnecting answer `403` outside the installed app. The Google refresh token, the client credentials and the sync links live once per machine under `~/.bismuth/gcal/`, and a sync deletes from Google every linked event missing from the base it reads. A development or agent core pointed at a copy of the vault could therefore delete real events, or revoke the real token on disconnect.
+
+Setting `BISMUTH_GCAL_AUTOSYNC=1` on a core opts it in to connect, sync, disconnect and the background ticker together. Set `BISMUTH_GCAL_DIR` as well to point it at a different state directory, so an opted-in test core does not touch your real connection. `GET /gcal/status` always works.
+
+## How do I use Google sync from the shell?
+
+The `bismuth gcal` commands wrap the same routes; the first four need a running core.
+
+| Command | Does |
 |---|---|
-| `googleWins` | Always `"remote"`. |
-| `bismuthWins` | Always `"local"`. |
-| `lastWriteWins` (default) | Compares the row's `localUpdated` ISO stamp against the remote `updated` time; the **newer** wins (ISO/UTC strings sort chronologically). If the local row has no `localUpdated` stamp, it keeps **local** rather than silently discarding it. |
+| `gcal status` | reports `connected`, `needsCredentials`, `account`, `timeZone`, `connectedAt` |
+| `gcal connect [--client-id I --client-secret S]` | stores credentials if given and prints the consent URL; a person must finish sign-in in a browser |
+| `gcal sync <basePath>` | syncs one calendar now and prints the counts |
+| `gcal disconnect` | revokes the token and wipes local sync state |
+| `gcal targets` | lists calendar bases with sync enabled; reads the vault directly |
+| `gcal health --vault <dir> [<basePath>]` | reports last sync time, linked-event count and calendar ID per base; read-only |
 
----
+`gcal sync` returns these counts: `total`, `pulledNew`, `pulledUpdate`, `pushedNew`, `pushedUpdate`, `deletedLocal`, `deletedRemote`, `conflicts`, `skipped`, `failed`, `relinked`. `gcal health` omits conflicts because they are not stored, and without a `<basePath>` it lists only the entries for the vault you name. Flags for every command are in the [CLI reference](../cli/reference.md).
 
-## Mapping a Google Event ↔ a Bismuth Row (`map.ts`)
+Edits made with `bismuth calendar` are safe on a synced calendar: they keep event ids and stamp `localUpdated`, so the next sync sees them as ordinary local edits. See [calendar events](../calendar/overview.md#how-do-i-edit-a-calendar-from-the-shell).
 
-`fromGoogle(ev)` maps a Google event to row fields or returns **null to skip**. It skips:
+## Which settings control sync?
 
-- cancelled events;
-- modified per-instance exceptions of a series (`recurringEventId` set — only clean masters are kept);
-- recurring masters whose RRULE can't be represented;
-- undated events;
-- multi-day all-day events (exclusive `end.date` beyond the day after start, which Bismuth's single-`date` model can't hold); and
-- overnight timed events (end on a later calendar day).
+Per calendar, on the base's frontmatter:
 
-There is **no timezone math** on a timed event — the `dateTime` string already carries the wall-clock time Google displays, so the date + `HH:MM` parts are taken verbatim, matching Bismuth's naive-local model.
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `googleCalendarSync` | boolean | off | turns two-way sync on for this base |
+| `googleCalendarId` | string | `primary` | the Google calendar to sync with |
 
-`toGoogle(fields, timeZone, colorMap)` builds the insert/patch body (`summary`, `location`, `description`, `start`/`end`, optional `recurrence`, optional `colorId`). For a recurring event the start is anchored on `firstOccurrence` (the first valid weekday on/after the start) so Google's DTSTART can't surface the event on the wrong weekday. All-day events use `start.date` + an **exclusive** `end.date` of `nextDay()`.
+Connection-wide, under `googleCalendar` in `.settings`:
 
-`googleEventId(bismuthId)` derives a **deterministic, valid** Google event id (base32hex: `a`–`v` + `0`–`9`, length 5–1024) from a row id — making inserts idempotent (a re-insert hits Google's 409 instead of duplicating). UUIDs are already hex (a subset of base32hex) once hyphens are stripped; anything else falls back to a SHA-1 hex digest.
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `conflictPolicy` | `lastWriteWins`, `googleWins`, `bismuthWins` | `lastWriteWins` | winner when both sides changed |
+| `syncIntervalMinutes` | number, 1 to 1440 | 15 | background sync cadence |
+| `timeZone` | IANA zone string | empty | zone sent with pushed timed events; empty uses the zone captured at connect, then the system zone, then UTC |
+| `enabled`, `calendarId`, `basePath` | boolean, string, string | `false`, `primary`, empty | a single-calendar fallback: the base named by `basePath` syncs with these values when it has no `googleCalendarSync` key of its own |
 
-`signature(m)` is the stable content signature (title, date, start/end, location, description, recurrence-sans-seriesId, category) used for local-change detection.
+The full list of `.settings` keys is in the [settings reference](../settings/reference.md).
 
----
+## How it works
 
-## Recurrence (`recurrence.ts`)
+The sync code is `core/src/gcal/`, a few `/gcal/*` routes, and the connect dialog and sync panel in the app.
 
-The model is `BismuthRecurrence = { type, daysOfWeek?, startDate, endDate?, seriesId }` where `type` is `"daily" | "weekly" | "biweekly" | "monthly"`. `seriesId` is a *local* grouping id, **not** synced content — it's excluded from the change-detection signature (`recurrenceSignature`).
+### OAuth
 
-**`buildRRule(rec, allDay, timeZone)`** emits a single `RRULE:`:
+`oauth.ts` runs Authorization Code with PKCE over a loopback redirect, as RFC 8252 describes for installed apps. `startAuth` creates a code verifier, a state value and an S256 challenge, remembers them for 10 minutes keyed by the state, and returns Google's consent URL with `access_type=offline` and `prompt=consent` so Google issues a refresh token. The redirect URI is `http://127.0.0.1:<core port>/gcal/callback`.
 
-- `daily` → `FREQ=DAILY`; `monthly` → `FREQ=MONTHLY`.
-- `weekly` → `FREQ=WEEKLY`; `biweekly` → `FREQ=WEEKLY;INTERVAL=2`.
-- A weekday set adds `BYDAY=` (e.g. `BYDAY=MO,WE,FR`, sorted; codes `SU MO TU WE TH FR SA`).
-- An `endDate` adds `UNTIL=`: the compact `YYYYMMDD` for all-day, or for timed series the instant **23:59:59 local** on `endDate` expressed in UTC (`timedUntil` shifts by the tz's offset so the last occurrence isn't dropped west of UTC).
+`GET /gcal/callback` calls `completeAuth`, which exchanges the code, refuses a response with no refresh token, reads the account name and time zone from a one-item event list on the primary calendar (keeping to the `calendar.events` scope), and stores the result. `getAccessToken` caches the access token until 60 seconds before expiry and refreshes it with the refresh token; an `invalid_grant` reply drops the token and asks for a reconnect.
 
-**`parseRRule(recurrence, startDate, seriesId)`** parses a Google `recurrence` array back to a `BismuthRecurrence`, returning **null (→ skip the event)** for anything unsupported:
+### Where state lives
 
-- any `RDATE` or `EXDATE` entry → null;
-- not exactly one `RRULE:` (multi-rule) → null;
-- a `COUNT` field → null;
-- `FREQ` other than `DAILY`/`MONTHLY`/`WEEKLY` (e.g. `YEARLY`) → null;
-- any `INTERVAL` other than `1`, except `FREQ=WEEKLY;INTERVAL=2` (→ biweekly) → null.
+Everything durable sits outside the vault in `~/.bismuth/gcal/`, or the directory named by `BISMUTH_GCAL_DIR`. The directory is mode `0700`.
 
-A supported rule reads `BYDAY` into `daysOfWeek` and `UNTIL` (first 8 digits, `YYYYMMDD`) into `endDate`.
+| File | Contents |
+|---|---|
+| `state.json` (mode `0600`) | client ID and secret, refresh token, account, time zone, connect time |
+| `sync.json` (mode `0600`) | per calendar: last sync time, Google calendar ID, sync token, and links from a Google event ID to `{bismuthId, etag, updated, sig}` |
+| `sync.lock` | a cross-process advisory lock taken with an exclusive create |
 
----
+The manifest key is `<realpath of the vault>::<base path>`, so a copy of a vault gets its own empty entry and never shares links with the original. An entry written before keys were namespaced is claimed, by moving it to the namespaced key, only when `BISMUTH_APP_PATH` is set, which the installed app's sidecar does. The links are kept out of the base file because the calendar serializer re-emits only known event fields and would drop extra columns on the next in-app edit.
 
-## Color Mapping (`colors.ts`)
+### The sync engine
 
-A Bismuth category color is a **theme token** (`accent`/`teal`/`blue`/`violet`/`green`/`gold`/`rose`) or a custom hex. `categoryColorId(color, theme)` resolves it to one of **Google's 11 event colors** (`colorId` 1–11):
+`syncEvents` in `sync.ts` reconciles one calendar base in three phases over one Google event listing. With a stored sync token it asks for changes only; if Google answers `410` it drops the token and does a full listing of the window from 90 days back to 365 days ahead, with deleted events included and repeating series left unexpanded. Pages are 250 events.
 
-- `accent` → the active theme's `--accent` hex (`THEME_ACCENT[theme]`, a local alias for `colors.ts`'s import of `THEME_ACCENTS` from `theme/tokens.ts`; default theme is `ink`, whose accent is `#93BDB0`), then snap to nearest.
-- a fixed swatch token → its hex (`SWATCH_HEX`), then snap.
-- a hex → passthrough, then snap.
+| Phase | Does |
+|---|---|
+| A, pull | cancelled linked events delete their rows; unmappable events count as skipped; unlinked events carrying a known `bismuthId` re-link; new events become rows with a fresh UUID; linked events apply the remote change, or the conflict policy if both sides changed |
+| B, push | rows with no link are inserted with a deterministic Google ID; rows whose content signature changed are patched with the stored etag, and a `412` re-reads the event and applies the policy |
+| C, delete | links whose row is missing from the base delete the Google event; a `404` or `410` counts as success |
 
-"Snap" is `nearestGoogleColorId`: parse the hex to RGB and pick the Google event color with the smallest squared-RGB distance. `colorId` is just an event field, so this works entirely within the `calendar.events` scope. In `sync.ts`, the base file's `categories` frontmatter (`{ name, color }` entries) is turned into a `categoryName → colorId` map (`categoryColorMap`) and applied to pushed events via `toGoogle`.
+Change detection is timestamp-free where possible: a remote change is `updated` differing from the stored value, and a local change is the row's content signature differing from the stored `sig`. The signature covers title, date, times, location, description, recurrence without its `seriesId`, and category.
 
----
+Inserts use `googleEventId(bismuthId)`, a base32hex ID derived from the row ID, so a repeated insert hits Google's `409 duplicate` and re-links instead of duplicating. Every event also carries a private `bismuthId` extended property, so a lost manifest self-heals by re-attaching events in phase A.
 
-## Storage — Everything Outside the Vault (`~/.bismuth/gcal/`)
+A push error on one event is caught per event, counted in `failed`, and the batch continues. `buildRRule` and `parseRRule` in `recurrence.ts` translate recurrence; an `UNTIL` for a timed series is 23:59:59 local on the end date, expressed in UTC. `colors.ts` snaps a category colour (a palette token resolved against the active theme, or a hex) to the nearest of Google's 11 event colours by squared RGB distance.
 
-All durable state lives under `~/.bismuth/gcal/`, created with `0700` perms, so nothing sensitive enters the vault or git:
+### Serialization and the ticker
 
-- **`state.json`** (`state.ts`, file mode **`0600`**, re-asserted with `chmodSync` on overwrite) — `GcalState`: `clientId`, `clientSecret`, `refreshToken`, `account`, `timeZone`, `connectedAt`. Reads never throw (a missing/corrupt file degrades to `{}`). `writeGcalState` merges a patch; `clearGcalState` deletes the file (disconnect); `clearGcalToken` drops only the token + identity but **keeps the client credentials**, so a reconnect only needs re-consent, not re-entering the id/secret.
-- **`sync.json`** (`manifest.ts`, mode `0600`) — the `SyncManifest`: `{ bases: { [key]: BaseSync } }` where each `BaseSync` = `{ lastSyncAt, syncToken, calendarId, links }` and `links` maps a Google event id → `{ bismuthId, etag, updated, sig }`. `key` is now **`${realpath(vault)}::${basePath}`** (`manifestKey(vault, basePath)`), not the bare base path — see "Per-vault namespacing" below. `baseSyncFor(m, vault, basePath, { claimLegacy })` gets or creates a base's namespaced entry, and is the one place a legacy bare-path entry is claimed (moved onto the namespaced key). `bismuth gcal health` requires `--vault` and reads the manifest itself, read-only: the `manifestKey(vault, basePath)` entry first, then — only for an explicitly named `<basePath>` whose namespaced entry is absent — the legacy bare entry, marked `legacy: true` and never claimed. `readManifest` **migrates** the old flat single-base shape (`{ links, basePath, syncToken }`) by nesting it under its bare `basePath` (a separate, older migration from before per-base keying existed — that bare entry is then a "legacy" entry in the sense below until something claims it). Kept here, not as columns on the rows, because the frontend calendar serializer only re-emits known event fields and would drop extra sync columns on the next in-app edit. Reads never throw.
-- **`sync.lock`** (`lock.ts`) — a cross-process advisory lock so the dev server and the bundled app can never sync the shared manifest concurrently (interleaved syncs could strand links or double-insert). `withSyncLock` acquires it atomically via `openSync(path, "wx")` (O_CREAT|O_EXCL), throwing `SyncLocked` if another process holds a non-stale lock; a lock older than `STALE_MS` (15 minutes — generous so a slow sync is never stolen) is reclaimed.
+Within a process, `index.ts` queues every `sync` behind the previous one, and each run takes the cross-process lock `withSyncLock`. The background ticker in `server.ts` runs every 60 seconds (override with `BISMUTH_GCAL_TICK_MS`), and only when `gcalAutoSyncEnabled()` is true, meaning `BISMUTH_APP_PATH` is set or `BISMUTH_GCAL_AUTOSYNC` is `1`. On each tick, if connected and `syncIntervalMinutes` has passed, it lists targets with `listGcalSyncTargets` and syncs each in turn, logging per-calendar failures. The interval handle is cleared by the server's `stop()` and `Symbol.dispose`.
 
-The directory itself is `gcalDir()` (`manifest.ts`) — `~/.bismuth/gcal`, or **`BISMUTH_GCAL_DIR`** when set, the same override `BISMUTH_RUN_DIR` / `BISMUTH_CHAT_DIR` / `BISMUTH_DAEMON_DIR` give their machine-wide dirs. Because this dir holds a live refresh token and sits outside every vault, redirecting it is the only way a process can be isolated from the user's real Google account — tests point it at a temp dir so a suite run can neither read the developer's credentials nor be steered by whether one happens to be connected. An explicit `home` argument (`gcalDir(home)`) still wins over the env var.
+### Routes
 
-### The manifest links map + bismuthId self-heal
+| Route | Effect |
+|---|---|
+| `GET /gcal/status` | `{connected, needsCredentials, account?, timeZone?, connectedAt?}`; always open |
+| `POST /gcal/credentials` | stores `{clientId, clientSecret}` outside the vault |
+| `POST /gcal/auth/start` | returns the consent URL as `{url}` |
+| `GET /gcal/callback` | completes sign-in and renders a small HTML page |
+| `POST /gcal/disconnect` | revokes the token and wipes state and manifest |
+| `POST /gcal/sync` | syncs the base named by `basePath` in the body; a vault mutation that invalidates caches for that file |
 
-The manifest's `links` map is the durable bridge between the two systems. Each event is additionally **stamped** on Google with a `bismuthId` private extended property (`BID_PROP = "bismuthId"`). This makes the system self-healing: if the manifest is ever lost or a sync crashes mid-flight, an unlinked Google event whose `bismuthId` matches an existing local row is re-attached rather than re-pulled as a duplicate (Phase A self-heal), and a local insert that 409s on its deterministic id is re-linked rather than duplicated (Phase B). Both Bismuth-pushed events (stamped on insert) and Google-pulled events (stamped via the `toStamp` post-pass) carry the stamp, so the self-heal covers events created on either side.
+All but status answer `403` through `onlyWhenGcalEnabled` when the core is not allowed to use Google. `POST /gcal/sync` returns `404` for a missing base and `400` when no base is named or the sync fails. Shapes are in the [HTTP API reference](../api/http-reference.md). In the app, `GcalConnectModal.tsx` polls `GET /gcal/status` every 1.5 seconds for up to 3 minutes while sign-in completes, and `GcalSyncPanel.tsx` writes the per-calendar keys through `POST /set-property`.
 
-### Per-vault namespacing + auto-sync gating (data safety)
-
-The manifest lives **outside every vault** (`~/.bismuth/gcal/sync.json`), which used to mean a dev, test, or agent core pointed at a **copy** of the real vault shared the real vault's link map and sync token. Phase C deletes on Google every linked event missing from the base it's syncing — so a core started against a stale or partial vault copy could delete the user's real Google Calendar events out from under them. Four changes close this:
-
-1. **The manifest key includes the vault.** `manifestKey(vault, basePath)` = `` `${realpath(vault)}::${basePath}` ``, so two vaults with the same base path (a real vault and a copy of it) get **independent** `BaseSync` entries — a copy's sync always starts from an empty link map against its own key, never the real vault's. `baseSyncFor(manifest, vault, basePath, { claimLegacy })` resolves this per-vault entry, creating an empty one if none exists.
-2. **A pre-existing bare-path entry (from before namespacing existed) is "legacy" and is never read, mutated, or deleted unless explicitly claimed.** `claimLegacy` defaults to `!!process.env.BISMUTH_APP_PATH` — set only on the installed app's sidecar (`app/src-tauri/src/lib.rs`), whose vault comes from the app's own `config.json` and so IS the real vault. When true and a bare `m.bases[basePath]` entry exists, it is **moved** (not copied) to the namespaced key on first sync, so it can only ever be claimed once, by one vault. A dev/test/agent core (no `BISMUTH_APP_PATH`) always gets `claimLegacy: false` by default and so can never see it.
-3. **The background auto-sync ticker itself doesn't exist unless `gcalAutoSyncEnabled()` is true** — `!!process.env.BISMUTH_APP_PATH || process.env.BISMUTH_GCAL_AUTOSYNC === '1'`. `server.ts` checks this once at startup: if false, `setInterval` is never called (not created-then-skipped — never created at all) and it logs once: `[gcal] auto-sync off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)`. This means no dev/test/agent core syncs in the background unless a human deliberately opts in with `BISMUTH_GCAL_AUTOSYNC=1` (e.g. to test sync itself against a throwaway calendar) — the same variable that also unlocks the routes in item 4 — and opting in this way does **not** also set `claimLegacy`, so it still can't touch a real vault's legacy links.
-4. **Every route that calls Google or writes the machine-wide gcal state is gated the same way** — `POST /gcal/sync`, `POST /gcal/disconnect`, `POST /gcal/credentials`, `POST /gcal/auth/start` and `GET /gcal/callback` (one helper in `server.ts`, `onlyWhenGcalEnabled`). `GET /gcal/status` stays open: it only reads. Unless `gcalAutoSyncEnabled()` is true, each answers **`403`** with a readable sentence that names `BISMUTH_GCAL_AUTOSYNC=1` — a JSON `{ error }`, except the callback, which is a browser navigation and gets the same small HTML page it renders for every other outcome, with status 403 — and logs `[gcal] <action> off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)` (`manual sync`, `disconnect` or `connect`). The refusal comes before the route does anything: no Google call, no `state.json` or `sync.json` write, and for sync no base read, self-write mark or cache invalidation. Two reasons, both about a dev/test/agent core that may be running on a vault copy:
-   - **Sync.** "A person clicking Sync now" is no human in the loop — `bismuth gcal sync <basePath>` reaches the route from any agent through the CLI or MCP's `bismuth_cli` — and a sync from a copy used the machine-wide refresh token: its first sync re-linked every event through the `bismuthId` self-heal, later syncs pushed the copy's edits, and Phase C deleted real events whose rows the copy lacked.
-   - **The connection itself.** `~/.bismuth/gcal` holds ONE refresh token, one set of client credentials and one manifest for the whole machine — the real app's. `bismuth gcal disconnect` from such a core revoked the user's real refresh token and wiped the real manifest; `gcal connect` (credentials, then the OAuth flow the callback completes) overwrote the real connection.
-
-   So a dev/test/agent core cannot sync, connect or disconnect at all until a human sets **`BISMUTH_GCAL_AUTOSYNC=1`** on it. Despite its name, that variable now means *"this core may use Google Calendar"*: it enables the auto-sync ticker, manual sync, connect and disconnect together (the name is kept for compatibility). The CLI prints each refusal's sentence as `error: <METHOD> <route> → 403: …`. Opting in still does **not** set `claimLegacy` (only `BISMUTH_APP_PATH` does), so an opted-in dev core starts from its own empty namespaced entry rather than a real vault's legacy links — but it DOES act on the machine-wide connection, so set `BISMUTH_GCAL_DIR` alongside it to keep that away from the real one.
-
----
-
-## HTTP Endpoints (`core/src/server.ts`)
-
-Because the OAuth plumbing and secrets live outside the vault, the read-only `/gcal/*` routes are **SYSTEM actions, not vault mutations** — like the `/daemon/*` routes they live in the GET/read table (no cache-invalidate). Only the sync route is a vault mutation.
-
-| Method + path | Behavior |
-| --- | --- |
-| `GET /gcal/status` | `ok(gcalStatus())` → `{ connected, needsCredentials, account?, timeZone?, connectedAt? }`. `connected = Boolean(refreshToken)`; `needsCredentials = !clientId || !clientSecret`. |
-| `POST /gcal/credentials` | `{ clientId, clientSecret }` → `setCredentials` (stored outside the vault). `400` if either is missing. `403` (JSON `{ error }`, nothing written) unless `gcalAutoSyncEnabled()`. |
-| `POST /gcal/auth/start` | Builds `redirectUri = http://127.0.0.1:<server.port>/gcal/callback`, returns `{ url }` (the consent URL). `400` on error (e.g. missing client id). `403` (JSON `{ error }`) unless `gcalAutoSyncEnabled()`. |
-| `GET /gcal/callback` | The loopback redirect target. Reads `error` / `code` / `state` from the query; on success calls `completeAuth` and renders a small self-contained **HTML page** (`gcalCallbackHtml`, message escaped) telling the user they can close the tab. Unless `gcalAutoSyncEnabled()`: the same page with the refusal sentence, status `403`, and no code exchange or token write. |
-| `POST /gcal/disconnect` | `await disconnect()` → revoke + wipe state + manifest. `403` (JSON `{ error }`, no revoke, nothing wiped) unless `gcalAutoSyncEnabled()`. |
-| `POST /gcal/sync` | A **vault mutation** (`mutatingHandler`): reconciles both directions for ONE calendar base and returns the `SyncResult`. The body carries `{ basePath }` (the calendar whose settings/tab it came from; falls back to the legacy `googleCalendar.basePath`); the route reads THAT base's frontmatter and resolves its own `googleCalendarId` via `resolveGcalConfig`. Its `pathOf` returns the target base path → cache-invalidate + SSE re-render of the open calendar. `403` (JSON `{ error }`, nothing read or invalidated) unless `gcalAutoSyncEnabled()` — see item 4 of "Per-vault namespacing + auto-sync gating" above, which covers every gated route; `404` if the base doesn't exist, `400` if no base is targeted or on sync error. |
-
-The **per-base** linkage (which base ↔ which Google calendar + whether sync is on) is resolved by `resolveGcalConfig(view, basePath, legacy)` (`core/src/gcal/config.ts`) from the base's default calendar-view config, falling back to the legacy global mapping for the one base it named. The **connection-level** args shared by every calendar are derived by `gcalConnectionArgs(appConfig)`: `policy` (default `"lastWriteWins"`), `timeZone` (`gc.timeZone`), and `theme` (`appearance.theme`, for the `accent` category color). The frontend client methods are `gcalStatus`, `gcalSetCredentials`, `gcalAuthStart`, `gcalDisconnect`, and `gcalSync(basePath?)` (`app/src/api.ts`). `GcalConnectModal.tsx` handles the account connect (polls `GET /gcal/status` every 1.5 s for up to 3 minutes until the loopback callback completes) and, when opened from a calendar's settings, turns on that base's `googleCalendarSync` on success; `calendar/components/GcalSyncPanel.tsx` is the per-calendar panel — toggle + Google-calendar-id field, persisted to the base via `POST /set-property`.
-
----
-
-## CLI (`bismuth gcal` — `cli/src/commands/gcal.ts`)
-
-Before this command group, the subsystem had **zero CLI commands** — every capability above was reachable only from the app UI (or, for anything with an HTTP route, `bismuth api <METHOD> /gcal/...`). Full flag/usage reference: [`docs/cli/reference.md`](../cli/reference.md#google-calendar-sync-commands-commandsgcalts); summarized here for how each maps onto this page's model:
-
-- **`gcal status` / `gcal connect` / `gcal sync <basePath>` / `gcal disconnect`** wrap the `/gcal/*` routes above over HTTP (same `resolveCore` discovery as `bismuth app`) rather than importing `core/src/gcal/index.ts` directly — `sync` needs the server's already-loaded `appConfig` (`gcalConnectionArgs`), and the OAuth/sync lifecycle stays orchestrated from exactly one call site. On a core where `gcalAutoSyncEnabled()` is false, `connect`, `sync` and `disconnect` are refused (403) and print the route's sentence; `status` still works. `gcal connect` is the one OAuth entry point that CAN be automated safely: it prints the consent URL from `POST /gcal/auth/start` and a note that **a person must finish sign-in in a browser** — it never polls for completion or claims the flow succeeded (`GET /gcal/callback` above is still what completes it, exactly as today).
-- **`gcal targets`** wraps `listGcalSyncTargets` (`discover.ts`) — the same scan the auto-sync ticker runs — but headlessly: it builds its own `legacy: LegacyGcalConfig` from the vault's settings (`loadAppConfig`) rather than needing a running server's `appConfig`. This was previously called ONLY by the internal ticker; answers "which calendar bases have sync enabled" for the first time from outside the app.
-- **`gcal health --vault <dir> [<basePath>]`** reads `readManifest()` (`manifest.ts`) directly — also headless, since the manifest is a plain file at `gcalDir()` (`~/.bismuth/gcal/sync.json`, or `BISMUTH_GCAL_DIR`). Reports `{ basePath, calendarId, lastSyncAt?, linkedEvents, hasSyncToken, legacy? }` per base. Because this file lives **outside every vault**, no vault-scoped command could reach it before this — an agent had no way to answer "when did this calendar last sync, and how many events are linked?" without triggering a sync itself. Per-sync `conflicts` counts are NOT in this output (they're not persisted in `BaseSync` — see `SyncResult` above); they're in `gcal sync`'s own printed result instead. **Requires `--vault`** to resolve `manifestKey(vault, basePath)`. **READ-ONLY**: unlike `syncEvents`'s `baseSyncFor`, this command never creates, moves or claims a manifest entry — it does its own plain, non-mutating lookup inline (`cli/src/commands/gcal.ts`).
-
-  With an explicit `<basePath>`, it looks up the namespaced entry first, falling back to a legacy bare-`basePath` entry (marked `legacy: true`) only when the namespaced one is absent. **"List all" (`<basePath>` omitted) is scoped to `--vault` and shows ONLY namespaced entries — never a legacy one.** A legacy entry has no vault association (it predates namespacing, so it could belong to any vault, or none), and a first version of this command computed its legacy-fallback set over the WHOLE manifest rather than the queried vault, so `gcal health --vault <any dev vault>` leaked the real vault's unclaimed legacy history as if it were that dev vault's own (caught in review, fixed in Task 11 round 1). Pass the exact `<basePath>` to see a legacy entry; it will never appear in "list all".
-
----
-
-## Config: per-calendar linkage + connection-level settings
-
-The **per-calendar** linkage lives on each calendar base's own frontmatter (folded into its calendar view config, like `dateField`):
-
-| Base frontmatter key | Type / default | Meaning |
-| --- | --- | --- |
-| `googleCalendarSync` | boolean, absent (off) | Whether two-way sync is enabled for THIS calendar base. |
-| `googleCalendarId` | string, `"primary"` | Which Google calendar this base syncs with (`primary` = your main calendar; or paste another calendar's ID from Google Calendar → Settings → Integrate calendar → Calendar ID). |
-
-The **connection-level** `googleCalendar` settings (`core/src/schema/settingsSchema.ts`) hold only **non-secret** operational config shared by every synced calendar (every secret stays in `~/.bismuth/gcal/state.json`):
-
-| Key | Type / default | Meaning |
-| --- | --- | --- |
-| `conflictPolicy` | enum `lastWriteWins`/`googleWins`/`bismuthWins`, default `lastWriteWins` | How to resolve an event changed on **both** sides since the last sync. |
-| `syncIntervalMinutes` | number, `15` (min 1, max 1440) | Auto-sync cadence in minutes for every synced calendar (manual "Sync now" syncs at any time — on a core where sync is enabled at all, see "Per-vault namespacing + auto-sync gating"). |
-| `timeZone` | string, `""` | IANA timezone applied to naive (untimed) events when pushing to Google (blank = system timezone). |
-| `enabled` · `calendarId` · `basePath` | boolean `false` · string `"primary"` · string `""` | **LEGACY** (was the old single global mapping). Honored only as a migration fallback for the one base `basePath` named — `resolveGcalConfig` treats it as that base's per-calendar config when the base has no per-base keys of its own. New calendars use `googleCalendarSync`/`googleCalendarId` instead. |
-
-When `timeZone` is blank, `index.ts`'s `sync()` resolves the effective zone as: the `timeZone` setting → the stored `state.timeZone` captured at connect → the system zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) → `"UTC"`.
-
----
-
-## Serialization & the Auto-Sync Ticker
-
-Two layers of serialization keep syncs from racing:
-
-- **In-process chain** (`index.ts`) — every `sync()` call queues behind the previous one via a `syncChain` promise (`syncChain.then(run, run)`), so a manual "Sync now" and the background ticker never interleave reads/writes of the base file + manifest. A failed sync is caught so it doesn't break the chain.
-- **Cross-process lock** (`lock.ts`) — each run executes inside `withSyncLock`, so two backends can't touch the shared manifest at once.
-
-The **auto-sync ticker** is a `setInterval(…, gcalTickMs())` in `server.ts`, created only when `gcalAutoSyncEnabled()` is true (see "Per-vault namespacing + auto-sync gating" above) — 60 s by default, overridable via **`BISMUTH_GCAL_TICK_MS`** (tests shorten it; whether a tick happened is otherwise only observable by waiting a minute out) — and **`.unref()`'d** so it never keeps the process alive. When auto-sync isn't enabled, `setInterval` is simply never called; `server.ts` logs `[gcal] auto-sync off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)` once instead, and there is no ticker for `stop()`/`Symbol.dispose` to clear (`clearInterval(undefined)` is a no-op). Every tick it checks: is a sync not already running, and is `gcalStatus().connected`? If so, and at least `max(1, syncIntervalMinutes || 15) × 60_000` ms have elapsed since the last run (`gcalAutoSyncAt`), it enumerates every sync-enabled calendar base via `listGcalSyncTargets(vault, legacy)` (`core/src/gcal/discover.ts` — a cheap frontmatter walk that resolves each base's `googleCalendarSync`/`googleCalendarId`, honoring the legacy global mapping) and syncs each **sequentially** against its own calendar (the in-process `syncChain` serializes them anyway). The run is guarded by `gcalAutoSyncRunning` (no overlap); per-base errors are caught and logged (`[gcal] auto-sync failed for <base>: …`), as is a failure of the *scan* itself (`[gcal] auto-sync scan failed for <vault>: …`, e.g. an unreadable or deleted vault dir — otherwise an unattributable unhandled rejection); and each base-file write is picked up by the vault watcher (cache-invalidate + SSE) so the open calendar refreshes. The ticker is a no-op until an account is connected (fresh test vaults never are). Note the tick is the *poll* interval; the *effective* cadence is `syncIntervalMinutes` (the ticker simply checks each poll whether enough time has passed).
-
-**The ticker's lifetime is the server's.** `createServer()` retains the interval handle and routes **both** of Bun's shutdown verbs through one teardown that clears it: the returned server's `stop()`, and its `Symbol.dispose` (what `using server = createServer(…)` invokes). The returned value is still Bun's own `Server`, and `stop()` forwards its argument and result unchanged, so no caller changes. The dispose hook must be installed with `Object.defineProperty` — Bun's prototype property is non-writable, so a plain assignment throws in strict mode, unlike `stop()`, which is writable and is simply shadowed. Bun's native dispose is `if (has_listener) stop(true)` and nothing else, so replacing it with `shutdown(true)` loses no behavior.
-
-Without this, a torn-down server's ticker would keep firing for the rest of the **process**, scanning the vault path that server was built with — `.unref()` does not bound this, since unref only allows exit once nothing else is pending. It matters most under `bun test`, which runs every test file in one process: a leaked ticker fires during an unrelated later file and reports an ENOENT for a vault that only existed as an earlier file's fixture. Both paths are covered by `core/test/server.gcal-ticker.test.ts`.
-
----
-
-Source: `core/src/gcal/index.ts`, `core/src/gcal/oauth.ts`, `core/src/gcal/pkce.ts`, `core/src/gcal/sync.ts`, `core/src/gcal/config.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/client.ts`, `core/src/gcal/state.ts`, `core/src/gcal/lock.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/map.ts`, `core/src/gcal/recurrence.ts`, `core/src/gcal/colors.ts`, `core/src/bases/parse.ts` + `core/src/bases/types.ts` (`googleCalendarSync`/`googleCalendarId` view config), `core/src/server.ts` (the `/gcal/*` routes + auto-sync ticker), `core/src/schema/settingsSchema.ts` (`googleCalendar`), `core/src/settings.ts` (`.settings` — the live vault settings file + `loadAppConfig`), `app/src/GcalConnectModal.tsx`, `app/src/calendar/components/GcalSyncPanel.tsx` (the per-calendar panel), `app/src/api.ts` (`gcal*` methods), `cli/src/commands/gcal.ts`, `cli/src/http.ts` (`resolveCore`), `cli/test/cli.test.ts`.
+Source: `core/src/gcal/index.ts`, `core/src/gcal/oauth.ts`, `core/src/gcal/pkce.ts`, `core/src/gcal/sync.ts`, `core/src/gcal/client.ts`, `core/src/gcal/map.ts`, `core/src/gcal/recurrence.ts`, `core/src/gcal/colors.ts`, `core/src/gcal/config.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/state.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/lock.ts`, `core/src/routes/gcal.ts`, `core/src/server.ts`, `core/src/schema/settingsSchema.ts`, `app/src/GcalConnectModal.tsx`, `app/src/calendar/components/GcalSyncPanel.tsx`, `cli/src/commands/gcal.ts`

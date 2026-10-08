@@ -1,90 +1,95 @@
-# App control — driving a running Bismuth window
+# App control
 
-App control lets a Claude session or shell operate a running Bismuth window: it can inspect windows and tabs, manage tabs, run an approved UI command, and author a daemon inbox page. It is the only external route into the live webview.
+App control lets an AI agent or a shell script operate a running Bismuth window: list windows and tabs, open, close, focus, rename, pin and reorder tabs, run a safe command, and author an inbox page. It is the only outside route into the live window. It adds no MCP tools: an agent reaches it through `bismuth_cli`, using the `app` command group for window operations and the `page` group for inbox pages. See [the MCP overview](overview.md) for why the tool list stays short.
 
-It adds no MCP schemas. The existing `bismuth_cli` tool reaches the `app` CLI group for operations that need a running window and the headless `page` group for inbox pages. This keeps the machine-wide MCP catalog small; see [overview.md](overview.md).
-
----
-
-## The command channel
-
-```
-bismuth app <verb>  ──HTTP──▶  core /ui/command  ──WebSocket──▶  the window  ──reply──▶  back out
+```bash
+bismuth app windows --pretty
+bismuth app tabs --pretty
+bismuth app open ::daemon
 ```
 
-- Each open window holds a **control WebSocket** to core at `GET /ui?w=<windowId>` (`app/src/uiControlClient.ts`). Core keys windows by their stable `?w=` id (`windowId.ts`; the primary window is `main`).
-- The window reports its tab layout as `{type:"tabs", snapshot}` through App's existing tab-persistence effect. `GET /ui/windows` reads that report.
-- A command is a request/reply round-trip in `core/src/uiControl.ts`, following `chat.ts`'s pending-reply pattern. Core sends `{type:"command", reqId, action, args}` and the window returns `{type:"reply", reqId, ok, result|error}`. If a window does not reply, the request resolves `{ok:false}` after about 8 seconds instead of hanging.
-- Both `/ui/windows` and `/ui/command` are **read-table** routes (no cache invalidation): any vault mutation a command triggers runs its own invalidation path.
+The `app` commands need a running app. When none answers they fail with `could not reach a running Bismuth app at <url> — open the app, or pass --api <url>`.
 
-## HTTP routes
+## Commands
 
-| Route | Body | Returns |
-|---|---|---|
-| `GET /ui/windows` | — | `[{id, label, activeTabId, tabCount}]` — connected windows (`[]` when none) |
-| `POST /ui/command` | `{windowId?, action, args?}` | `{ok, result?, error?}` — the window's reply |
+| Command | Effect |
+|---|---|
+| `bismuth app windows` | List open windows: id, label, active tab, tab count |
+| `bismuth app tabs [--window <id>]` | List a window's tabs and the panes in each |
+| `bismuth app open <content> [--new-tab] [--window <id>]` | Open a note path or a sentinel in its own tab |
+| `bismuth app close <tabId> [--window <id>]` | Close a tab and its panes |
+| `bismuth app focus <tabId> [--window <id>]` | Make a tab active |
+| `bismuth app rename <tabId> <name> [--window <id>]` | Give a tab a custom label |
+| `bismuth app pin <tabId> [--off] [--window <id>]` | Pin a tab so it leads the strip; `--off` unpins |
+| `bismuth app reorder <tabId> <index> [--window <id>]` | Move a tab to a 0-based position |
+| `bismuth app run <commandId> [--window <id>]` | Run a command from the palette's catalog |
+| `bismuth app commands` | List the ids `app run` accepts |
 
-`POST /ui/command` picks the target window: `windowId` when given (must be connected), else the single open window — **zero windows → 404**, **several → 409** (pass `windowId`). Two gates run **before** dispatch (mirrored client-side): `run-command` refuses a blocklisted id (403), `open-tab` refuses `::chat:` content (403).
+`content` for `app open` is a vault path such as `reading/x.md`, or one of the sentinels `::graph`, `::daemon`, `.settings` and `::term:<uuid>`. Opening a file always opens its own tab, and `--new-tab` is accepted without effect. Search is the Cmd+O switcher inside the window, so there is no sentinel for it. Tab ids come from `app tabs`.
 
-## Actions
+With one window open, every command targets it. With none, the command fails with `no Bismuth window is open`; with several it fails and asks for `--window <id>`, which `app windows` lists.
 
-| Action | args | Effect |
-|---|---|---|
-| `list-tabs` | — | `{tabs:[{tabId, label, active, leaves:[{leafId, content, label, icon?, active}]}], activeTabId}` |
-| `open-tab` | `{content, newTab?}` | Open a note path or sentinel — opening a file always opens its own tab and never replaces a pane; `newTab` is accepted and ignored, kept for compatibility |
-| `close-tab` | `{tabId}` | Close a tab (whole pane tree) |
-| `focus-tab` | `{tabId}` | Activate a tab |
-| `rename-tab` | `{tabId, name}` | Set a custom label on a tab, overriding its auto content label |
-| `pin-tab` | `{tabId, pinned}` | Pin (or unpin) a tab so pinned tabs lead the tab strip |
-| `reorder-tab` | `{tabId, index}` | Move a tab to a new 0-based position in the tab strip |
-| `run-command` | `{id}` | Run a command-catalog id (`core/src/commands.ts`) — allowlist-gated; the window awaits the action before replying, and an interactive command's `result` says so (see below) |
+Which running app the command reaches is decided in this order: `--api <url>`, the `BISMUTH_API` variable, `CLAUDE_RELAY_URL`, the app registered for `--vault` or `BISMUTH_VAULT` (else the only running app) in `~/.bismuth/run`, and finally `http://localhost:4321`. A terminal tab inside the app already has `BISMUTH_API` set, so `bismuth app …` there drives its own window with no flags.
 
-`content` is a vault path such as `reading/x.md` or one of `::graph`, `::daemon`, `.settings`, and `::term:<uuid>`. There is no `::search` sentinel: search is the in-window Cmd+O switcher, not a tab. `panes.ts` maps retired values through `LEGACY_CONTENT_IDS`, so an older script opening `::inbox` reaches `::daemon`.
+## Inbox pages without a window
 
-`::chat:*` is refused because opening a live recursive Agent-SDK chat crosses a different trust boundary. `::daemon` is allowed: its inline chat has the real composer but no session until a trusted user press or focus arms it in `app/src/daemon/daemonChatArming.ts`, and app control cannot produce that gesture.
+The `page` group works on the daemon inbox with no running app. `page create` writes a validated page so a caller never hand-writes the nested `actions` YAML.
 
-## `run-command`'s result: completed vs. waiting on a person
+| Command | Effect |
+|---|---|
+| `bismuth page list [--retention-days <n>]` | Pages with their status |
+| `bismuth page create <slug> [--title …] [--body …] [--actions '<json>'] [--source …] [--deliver-at <iso>]` | Write a page |
+| `bismuth page resolve <page-path> <actionId>` | Press a page's button |
+| `bismuth page mark-failed <page-path>` | Force a stuck `working` page to `failed` |
 
-The window waits for an action before replying `ok:true`. Async commands such as `detect-ai`, `gcal-sync`, and `archive-tasks` report success only after they finish.
+All of them take `--vault <dir>`. The format and lifecycle are in [pages](../daemon/pages.md).
 
-A small set of commands — `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `free-agent-setup`, `gcal-connect` — only opens a modal for a person to complete. They remain available through app control so, for example, an agent can open the Google Calendar connection dialog when asked how to connect it. `CommandSpec.interactive` in `core/src/commands.ts` marks these eight commands, and `run-command` reports that state:
+## Run a command
+
+`app run <commandId>` runs a command from the palette catalog and waits for it to finish before it replies, so an async command such as `gcal-sync` reports success only after it completes.
+
+Some commands only open a dialog that a person must finish: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `free-agent-setup` and `gcal-connect`. They stay available so an agent can open, for example, the Google Calendar connection dialog when you ask how to connect it. For these the reply says so:
 
 ```json
 { "ok": true, "result": { "interactive": true, "label": "Connect Google Calendar…", "note": "Opened \"Connect Google Calendar…\" — this needs a person to finish it in the app." } }
 ```
 
-An ordinary command returns `{ "ok": true }`. Callers can use `result.interactive` to distinguish finished work from a dialog waiting for someone at the keyboard.
+An ordinary command replies `{ "ok": true }`. Read `result.interactive` to tell finished work from a dialog waiting for someone at the keyboard.
 
-## `bismuth app` (needs a running app)
+## What app control refuses
 
-| Command | Notes |
+| Refused | Why |
 |---|---|
-| `bismuth app windows` | list open windows |
-| `bismuth app tabs [--window <id>]` | list tabs + panes |
-| `bismuth app open <content> [--new-tab] [--window <id>]` | open a note/sentinel |
-| `bismuth app close <tabId> [--window <id>]` | close a tab |
-| `bismuth app focus <tabId> [--window <id>]` | focus a tab |
-| `bismuth app rename <tabId> <name> [--window <id>]` | set a tab's custom label |
-| `bismuth app pin <tabId> [--off] [--window <id>]` | pin (or `--off` to unpin) a tab |
-| `bismuth app reorder <tabId> <index> [--window <id>]` | move a tab to a new position |
-| `bismuth app run <commandId> [--window <id>]` | run a safe command |
-| `bismuth app commands` | the ids `app run` accepts (catalog − blocklist) |
+| `app run` with `new-window`, `open-folder`, `update-app`, `daemon-update` or `new-claude-chat` | Heavy or system-level actions an unattended caller should not fire blindly |
+| `app open` with any `::chat:` content | A chat is a live agent session, a different trust boundary from opening a note |
 
-**Core discovery** (which running core to reach): `--api <url>` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the **run-registry** (`~/.bismuth/run/<b64url(vault)>.json = {port, vault, pid}`, written by every core on boot — `core/src/runRegistry.ts`; matched by `--vault`/`BISMUTH_VAULT`, else the single running core) → `:4321`. In-app terminal tabs already carry `BISMUTH_API`/`CLAUDE_RELAY_URL` (`core/src/terminal.ts`), so `bismuth app …` from inside a tab targets its own window with no flags.
+Both refusals return HTTP 403 with a message. `app commands` lists the ids that remain. Opening the daemon page (`::daemon`) is allowed because its chat starts nothing until a person clicks or focuses the composer, and app control cannot produce that gesture.
 
-## `bismuth page` (headless — the daemon inbox)
+## How it works
 
-| Command | Notes |
+```
+bismuth app <verb>  --HTTP-->  core /ui/command  --WebSocket-->  the window  --reply-->  back out
+```
+
+Each open window holds a control WebSocket to core at `/ui?w=<windowId>` (`app/src/uiControlClient.ts`), keyed by a stable window id; the primary window is `main`. The window reports its tab layout through the same effect that persists tabs, and `GET /ui/windows` reads that report.
+
+`POST /ui/command` takes `{windowId?, action, args?}`. Core picks the window (`windowId` if given and connected, else the only one: 404 for none, 409 for several), sends `{type: "command", reqId, action, args}`, and waits for the window's `{type: "reply", reqId, ok, result | error}`. A window that does not answer within 8 seconds resolves `{ok: false}` instead of hanging (`core/src/uiControl.ts`). Both routes are read-table routes with no cache invalidation; any vault change a command causes runs its own invalidation.
+
+| Route | Body | Returns |
+|---|---|---|
+| `GET /ui/windows` | none | `[{id, label, activeTabId, tabCount}]`, or `[]` |
+| `POST /ui/command` | `{windowId?, action, args?}` | `{ok, result?, error?}` |
+
+| Action | `args` |
 |---|---|
-| `bismuth page list [--retention-days <n>]` | pages merged with their `.state` sidecar |
-| `bismuth page create <slug> [--title …] [--body …] [--actions '<json>'] [--source …] [--deliver-at <iso>]` | authored via the validated `createDaemonPage` (`POST /daemon/pages`) |
-| `bismuth page resolve <page-path> <actionId>` | press an action (approve → daemon runs; dismiss → resolved locally) |
-| `bismuth page mark-failed <page-path>` | force a stuck `working` page to `failed` |
+| `list-tabs` | none. Replies `{tabs: [{tabId, label, active, leaves: [{leafId, content, label, icon?, active}]}], activeTabId}` |
+| `open-tab` | `{content, newTab?}` |
+| `close-tab`, `focus-tab` | `{tabId}` |
+| `rename-tab` | `{tabId, name}` |
+| `pin-tab` | `{tabId, pinned}` |
+| `reorder-tab` | `{tabId, index}` |
+| `run-command` | `{id}` |
 
-`create` validates the slug and stamps `type: daemon-page` + `createdAt`, serializing the nested `actions[]` correctly — see [daemon/pages.md](../daemon/pages.md).
+The two refusals run twice, in the route before dispatch and again in the window's handler. `UI_CONTROL_BLOCKLIST` in `core/src/commands.ts` holds the blocked command ids, and the commands that only open a dialog carry `interactive: true` in `COMMAND_CATALOG` in the same file.
 
-## The blocklist (auditable, at two layers)
-
-`run-command` refuses `core/src/commands.ts`'s `UI_CONTROL_BLOCKLIST` — heavyweight/system verbs an unattended caller shouldn't fire blindly, plus opening a chat: `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat`. Enforced authoritatively by `POST /ui/command` and mirrored in the frontend dispatch (`app/src/uiControlClient.ts`). `bismuth app commands` lists what remains.
-
-Source: `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `app/src/uiControlClient.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `core/src/server.ts`, `core/src/commands.ts`
+Source: `core/src/uiControl.ts`, `core/src/routes/relay.ts`, `core/src/runRegistry.ts`, `core/src/commands.ts`, `core/src/daemonPages.ts`, `app/src/uiControlClient.ts`, `cli/src/commands/{app,page}.ts`, `cli/src/http.ts`

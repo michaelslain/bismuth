@@ -1,129 +1,8 @@
-# Drawing: `.draw` Format, Tools, and Export
+# Drawing
 
-This page documents Bismuth's vector drawing system: the `.draw` JSON format, smoothing, tools and colors, paper backgrounds, placed images, in-place image/PDF ink, rendering, and PNG/PDF export in both headless and browser paths. Use it when changing the model or export pipeline, or debugging a stroke or image.
+A drawing is a `.draw` file in your vault: a multi-page vector sketch you draw with a pen, a highlighter and an eraser. The same pen and highlighter also ink directly on any image or PDF you open, saving the marks beside the file. This page is for anyone who draws in Bismuth, and for engineers who read or write `.draw` files.
 
-The subsystem separates a headless backend (`core/src/drawing/`) from a browser frontend (`app/src/drawing/`). Its rendering primitives are pure and independently tested without the DOM. A `.draw` file also stores ink placed directly on an image or PDF preview. That preview uses the same pen and highlighter tools and creates the `<file>.draw` sidecar only after the first mark (see **Images**).
-
-### What's in here
-
-- **[On-Disk Format](#on-disk-format)** — the `.draw` JSON schema (paper, pages, strokes, images), serialization rounding, minimal examples
-- **[Tools](#tools)**, **[Color Palette](#color-palette)**, **[Size Levels](#size-levels)** — the pen/highlighter/eraser toolset and its fixed color/width choices
-- **[Smoothing Modes](#smoothing-modes)** and **[Smoothing Pipeline](#smoothing-pipeline)** — sharp vs. smooth strokes and the four-stage post-processor behind "smooth"
-- **[Pressure and Velocity Width Model](#pressure-and-velocity-width-model)** — how stroke width is derived from stylus pressure or pointer speed
-- **[Paper Backgrounds](#paper-backgrounds)** and **[Images](#images)** — background grids/dots and placed raster images, and in-place ink on image/PDF previews
-- **[Rendering Architecture](#rendering-architecture)** and **[Store and Undo/Redo](#store-and-undoredo)** — the dual-canvas renderer and the mutation/undo model
-- **[Headless Export](#headless-export)** — PNG/PDF export without a browser, plus the separate browser-side rasterizer
-- **[Toolbar Layout](#toolbar-layout)**, **[Persistence](#persistence)** — UI layout and how `.draw` files are saved
-- **[Edge Cases and Gotchas](#edge-cases-and-gotchas)** — the sharp edges worth knowing before you change this code
-
----
-
-## On-Disk Format
-
-A `.draw` file is a JSON `DrawingDoc` object serialized by `serializeDoc()` (which calls `roundDoc()` before `JSON.stringify`). The file extension is `.draw`; `PaneContent` in the frontend routes `*.draw` files to `DrawingPage`.
-
-### Top-level schema
-
-```ts
-interface DrawingDoc {
-  v: 1;               // always the integer 1 (version discriminant)
-  kind: "drawing";    // literal string; parseDoc checks this
-  paper: Paper;       // document-wide background setting
-  pages: Page[];      // one or more pages (adding pages: store.addPage())
-  bookmarks?: Bookmark[];  // in-place PDF annotation sidecars only — see Images
-  margin?: PageMargin;     // in-place PDF annotation sidecars only — see Images
-}
-```
-
-Every field except `bookmarks` and `margin` is required. `parseDoc` throws `"not a drawing document"` if `kind !== "drawing"` or `pages` is not an array.
-
-### Paper
-
-```ts
-interface Paper {
-  bg: PaperBg;   // "blank" | "lines" | "grid" | "dots"
-}
-```
-
-`paper` is document-wide — all pages share the same background. Changing the background via the Toolbar updates `doc.paper.bg` via `store.setBackground()`.
-
-### Page
-
-```ts
-interface Page {
-  strokes: Stroke[];
-  images?: ImageEl[];   // optional; omitted entirely on pages with no placed images
-  highlights?: Highlight[];  // optional; text highlights on a PDF page's sidecar — see Images
-}
-```
-
-Pages are zero-indexed. `doc.pages[0]` is always present; additional pages are appended with `store.addPage()`. Each page has its own independent stroke list; the paper background is shared. `images` is optional and omitted on ordinary pages — see **Images** below.
-
-### ImageEl
-
-```ts
-interface ImageEl { src: string; x: number; y: number; w: number; h: number; }
-```
-
-A placed raster image, in the page's 816×1056 logical coordinate space. `src` is a self-contained `data:image/...;base64,...` URL so the `.draw` file stays fully portable (the headless CLI export needs zero asset resolution). `x`/`y`/`w`/`h` are the image's bounding box in logical page pixels. Images are drawn UNDER the ink (background-ish) — see **Images** below.
-
-### Stroke
-
-```ts
-interface Stroke {
-  t: "pen" | "hl";   // tool: pen or highlighter
-  c: string;          // color token: "fg" or explicit hex e.g. "#22C6D6"
-  w: number;          // base width in drawing-space pixels (one of SIZE_LEVELS: 2,5,9,14,20)
-  straight?: boolean; // optional; true = treat as a two-endpoint straight line
-  pts: number[];      // flat [x, y, pressure, x, y, pressure, ...] buffer
-}
-```
-
-#### `pts` buffer layout
-
-The `pts` array is a flat triplet buffer:
-
-```
-index 0: x (drawing-space px, 0..PAGE_W)
-index 1: y (drawing-space px, 0..PAGE_H)
-index 2: pressure (0..255, stored as a byte)
-index 3: x ...
-```
-
-- `x` and `y` are **integers** after serialization (rounded by `roundDoc`).
-- `pressure` is **clamped to [0, 255]** by `roundDoc` (values outside that range are clipped). The third element of each triplet (`i % 3 === 2`) is the pressure byte; x and y are the other two. `eachPoint()` in `smooth.ts` normalizes missing pressure to 255 (full pressure).
-- A single point is 3 elements. A straight stroke stores exactly two triplets (start and end) when `straight: true`.
-
-#### Serialization rounding
-
-`roundDoc()` rounds x/y coordinates to integers and clamps pressure to [0, 255]:
-
-```ts
-pts: s.pts.map((n, i) => (i % 3 === 2 ? clampByte(n) : Math.round(n)))
-```
-
-This means raw float coordinates from the pointer events are quantized on save. The live in-memory representation may have floats; only the written file is integer-quantized.
-
-`roundDoc` rounds a page's `images` the same way — `x`/`y`/`w`/`h` are rounded to integers — but NEVER touches `src` (rounding a data URL would corrupt the image bytes). A page with no `images` array stays image-less after `roundDoc` (old files round-trip unchanged, since the field is spread in conditionally rather than defaulted to `[]`).
-
-### Constants
-
-```ts
-const PAGE_W = 816;   // drawing canvas width in drawing-space px
-const PAGE_H = 1056;  // drawing canvas height in drawing-space px
-```
-
-These match a US Letter page at 96 DPI (8.5 × 11 in). The canvas coordinate system always uses these logical dimensions regardless of display DPR or CSS size.
-
-### Empty document
-
-`emptyDoc()` creates the canonical starting state: version 1, grid paper, one empty page:
-
-```ts
-{ v: 1, kind: "drawing", paper: { bg: "grid" }, pages: [{ strokes: [] }] }
-```
-
-### Minimal valid `.draw` file example
+A `.draw` file is JSON. This one holds a single pen stroke on grid paper:
 
 ```json
 {
@@ -140,626 +19,215 @@ These match a US Letter page at 96 DPI (8.5 × 11 in). The canvas coordinate sys
 }
 ```
 
-### Straight stroke example
+Ink inside a note (a ` ```draw ` fence) uses the same stroke format but has its own page; see [note ink](../editor/ink.md).
 
-```json
-{ "t": "pen", "c": "#22C6D6", "w": 9, "straight": true, "pts": [100, 100, 255, 400, 300, 255] }
-```
+## Create a drawing
 
-When `straight: true` the renderer uses only the first and last triplets as the two endpoints, ignoring any intermediate points. The hold-to-straighten gesture sets `straight = true` and collapses the live `pts` buffer to exactly those two endpoints.
+Right-click a folder in the file tree and choose **New Drawing** to make `Untitled.draw` there, ready to rename. The **New drawing** command (command palette, the `+` menu or a toolbar button) makes `Drawing.draw` at the vault root and opens it. A `.draw` file that does not exist yet, or is empty, opens as a blank drawing on grid paper.
 
----
+## Draw on a page
 
-## Tools
+The toolbar above the page holds every control. Each page is a letter-sized sheet; add more with **add page** under the last one. Everything saves automatically after each stroke, erase, paper change or undo.
 
-Three tools are available, controlled by the `ToolState.tool` field:
+| Control | Choices |
+|---|---|
+| Tool | Pen, highlighter, eraser |
+| Colour | Default ink, the theme accent, rose, gold, green |
+| Size | Five levels: 2, 5, 9, 14, 20 |
+| Smoothing | `sharp` keeps your raw path; `smooth` relaxes the stroke when you lift the pen |
+| Paper | blank, lines, grid, dots (shared by every page) |
+| Undo / redo | Whole-drawing history |
+| Zoom | 25% to 400%; Cmd/Ctrl + wheel or pinch zooms smoothly, the buttons step 5% |
+| Import image | Place a picture on page 1 |
 
-| id | description |
-|----|-------------|
-| `"pen"` | Freehand pen; pressure/velocity taper; stores as `Stroke { t: "pen" }` |
-| `"hl"` | Highlighter; rendered at `globalAlpha = 0.32` with `globalCompositeOperation = "multiply"`; effective width is `s.w * 2` in `getStroke`; thinning forced to 0 (uniform width) |
-| `"eraser"` | Stroke-eraser; not stored as a stroke type; erases the topmost stroke whose control points are within `tools.size + 8` drawing-space px of the pointer |
+A new drawing starts on the pen, the 5 size, `smooth` and grid paper.
 
-The eraser is a **stroke-eraser** (deletes entire strokes), not a pixel eraser.
+The pen thins with speed, or follows pressure on a stylus. The highlighter draws a translucent band at twice the pen size. The eraser removes a whole stroke: the topmost stroke within a few pixels of the pointer, not individual pixels.
 
-### Tool state
+Default ink is stored as the word `fg` and resolves to the theme's ink colour whenever the drawing is drawn, so it follows a theme change. The accent and the other colours are stored as fixed hex values. The drawing surface always paints on the dark theme's paper.
 
-```ts
-interface ToolState {
-  tool: "pen" | "hl" | "eraser";
-  color: string;           // "fg" or hex from the palette
-  size: number;            // one of SIZE_LEVELS: 2, 5, 9, 14, 20
-  smoothMode: "sharp" | "smooth";
-  holdToStraighten: boolean;
-  holdDelayMs: number;
-}
-```
+### Hold to straighten
 
----
+With the pen tool, pause for 0.9 seconds a few points into a stroke and it snaps to a straight line from where you started to where the pen is. Keep moving to aim the end. The line is stored as two points and is never smoothed.
 
-## Color Palette
+### Place an image on a page
 
-The toolbar exposes a fixed 7-color palette. The first entry is `"fg"` (theme ink); the rest are explicit hex values:
+Add a picture three ways: the **Import image** button, pasting an image from the clipboard (focus the page first), or dragging an image file onto a page. An imported picture is centred on the page, fitted to it and never enlarged beyond its own size. Images sit under the ink, so you can draw over them. They are stored inside the `.draw` file, which keeps the file portable. You can undo an insert, but you cannot select, move or delete one afterwards.
 
-| Index | Token | Hex displayed | Description |
-|-------|-------|---------------|-------------|
-| 0 | `"fg"` | `#E7E8F2` (swatch preview) | Theme default ink — resolves via `themeColors()` to the active theme's `foreground` token: `#2E2C29` for the light bucket (`paper` theme) or `#E8E3D6` for the dark bucket (`ink` theme, the default) — see **Theme colors** below |
-| 1 | `"#22C6D6"` | cyan | — |
-| 2 | `"#5C7BEE"` | cornflower blue | — |
-| 3 | `"#8B6CF0"` | violet | — |
-| 4 | `"#43D49A"` | mint green | — |
-| 5 | `"#F2C53D"` | amber | — |
-| 6 | `"#F0509B"` | pink | — |
+## Ink on images and PDFs in place
 
-The color token `"fg"` is stored verbatim in `Stroke.c` and resolved at render time by `makeColorResolver(themeColors(theme))`:
+An image or PDF opens in a preview tab, and you draw on it right there. Press Mod+Shift+I (the `toggle-draw-mode` keybinding, Escape to leave) or the **Draw** button in the preview bar. The drawing toolbar docks at the bottom of the visible area with the pen, highlighter, eraser, colour, size, smoothing and undo controls.
 
-```ts
-// theme.ts
-export function makeColorResolver(t: ThemeColors): (c: string) => string {
-  return (c) => (c === "fg" ? t.fg : c);
-}
-```
+Your marks save to a sidecar named after the file with `.draw` added: `photo.png` becomes `photo.png.draw`, `report.pdf` becomes `report.pdf.draw`. The file tree hides the sidecar while its image or PDF exists, and the sidecar moves with it. Nothing is written until you draw something.
 
-This means a stroke drawn with the default ink color adapts to theme changes without re-saving.
+Mod+Z and Mod+Shift+Z undo and redo on the focused preview whether or not draw mode is on. One history covers strokes, highlights, bookmarks and the scratch-paper toggle together, and it resets when a different file opens.
 
-### Theme colors
+Saving is debounced by 600 ms and flushes when you leave draw mode, click out of the pane, switch files or close the tab. Three cases protect existing data:
 
-`themeColors(theme: "dark" | "light")` (`core/src/drawing/theme.ts`) does not hardcode hex literals — it reads the active `ThemeColors` from the centralized token map in `core/src/theme/tokens.ts` (`THEMES`), the single source of truth for Bismuth's whole color system (also used by gcal, the settings theme picker, and `app/src/themes.ts`):
+- An empty sidecar means no ink yet, and nothing is written until you draw.
+- A sidecar that is not a drawing is left alone, and shows no ink, until your first stroke replaces it.
+- If reading the sidecar fails, drawing is disabled and a toast says so, rather than risk overwriting it.
 
-```ts
-// core/src/drawing/theme.ts
-const LIGHT_THEME = "paper";
+A sidecar created by drawing in place holds strokes on blank paper, without a copy of the image or PDF page. A headless export of that sidecar therefore renders your ink on a blank page.
 
-export function themeColors(theme: "dark" | "light"): ThemeColors {
-  const t = theme === "light" ? THEMES[LIGHT_THEME] : THEMES[DEFAULT_THEME];
-  return { bg: t.background, fg: t.foreground, border: t.border, borderSoft: t.borderSoft ?? t.border };
-}
-```
+## Highlight, bookmark and add a margin on a PDF
 
-The drawing surface only distinguishes two coarse buckets — `"dark"` and `"light"` — not all four named app themes (`ink`/`paper`/`cathode`/`riso`, `core/src/theme/tokens.ts` `THEME_NAMES`). `"light"` resolves to the `paper` theme's tokens; `"dark"` (and any other value) resolves to `THEMES[DEFAULT_THEME]`, i.e. `ink`:
-
-| Bucket | Source theme | `bg` (`background`) | `fg` (`foreground`) | `border` | `borderSoft` |
-|--------|--------------|----------------------|----------------------|----------|--------------|
-| `"light"` | `paper` | `#E9E6E0` | `#2E2C29` | `#C4BEB3` | `#D8D3C9` |
-| `"dark"` | `ink` (`DEFAULT_THEME`) | `#15161A` | `#E8E3D6` | `#3A3E4A` | `#282B34` |
-
-The `bg` color is used as the canvas fill; `fg` is what the `"fg"` color token resolves to (see **Color Palette** above). `border`/`borderSoft` feed the paper ground: `paperLineColor(t)` returns `t.borderSoft` and `paperDotColor(t)` returns `t.border` — see **Paper Backgrounds** below — replacing an earlier flat `rgba(fg, 0.14)` wash.
-
----
-
-## Size Levels
-
-Five discrete width levels (no slider):
-
-```ts
-const SIZE_LEVELS = [2, 5, 9, 14, 20];
-```
-
-`ToolState.size` must be one of these values. The value is stored directly as `Stroke.w`. For the highlighter, `getStroke` uses `s.w * 2` as the effective size.
-
----
-
-## Smoothing Modes
-
-Toggled via `ToolState.smoothMode`:
-
-| Mode | Behavior |
-|------|---------|
-| `"sharp"` | The raw pointer samples are stored as-is; no post-processing on pointer-up. The stroke reflects every jitter in the input. |
-| `"smooth"` | On pointer-up (`onUp()`), `smoothStrokePoints(current.pts)` is called, replacing `current.pts` before the stroke is committed to the document. The live drawing is always raw (zero lag); smoothing is applied only on release. |
-
-A `straight` stroke (hold-to-straighten) is never smoothed regardless of `smoothMode` — it already has exactly two points.
-
-### Hold-to-straighten gesture
-
-When `ToolState.holdToStraighten` is true and `tool === "pen"`, holding the stylus/pointer still for `holdDelayMs` ms triggers the hold timer. If the in-progress stroke has more than 9 samples (i.e., `pts.length > 9`), the stroke is collapsed:
-
-```ts
-current.straight = true;
-const x0 = current.pts[0], y0 = current.pts[1];
-current.pts = [x0, y0, 255, lastRaw.x, lastRaw.y, 255];
-```
-
-The stroke then renders as a straight capsule from start to current pointer position. Moving the pointer after hold updates only the endpoint (`pts[3]`, `pts[4]`).
-
----
-
-## Pressure and Velocity Width Model
-
-### Real stylus pressure
-
-A pointer event has "real" pressure when `pressure > 0 && pressure !== 0.5`. The value `0.5` is the browser's default for mouse events (not a real stylus reading).
-
-```ts
-export function isRealPressure(p: number): boolean { return p > 0 && p !== 0.5; }
-```
-
-When real pressure is detected at any point during the stroke (`hasReal` flag), the width model switches to the pressure formula for all subsequent samples:
-
-```ts
-// hasRealPressure path
-w = base * (0.35 + 1.4 * pressure)   // pressure is the raw 0..1 PointerEvent value
-```
-
-At `pressure = 1.0`: `w = base * 1.75` (maximum). At `pressure = 0.35 / 1.4 ≈ 0.25`: `w = base * 0.7` (minimum for mid-press). The minimum approaches `base * 0.35` as pressure → 0.
-
-### Velocity fallback (mouse / no-stylus)
-
-When no real pressure is detected, width is derived from pointer speed:
-
-```ts
-// velocity fallback
-const t = Math.min(speed / 3.2, 1);
-w = base * (1.25 - 0.7 * t);
-```
-
-`speed` is computed as `(distance / dt) * 16` where distance is in drawing-space pixels and `dt` is in milliseconds. Faster movement → thinner line (calligraphic taper). At `speed = 0`: `w = base * 1.25`. At `speed ≥ 3.2`: `w = base * 0.55`.
-
-### Pressure byte encoding
-
-The computed width `w` is normalized against the maximum possible width (`base * 1.75`) and stored as a 0..255 byte:
-
-```ts
-const p01 = Math.max(0, Math.min(1, w / (base * 1.75)));
-pressureByte = Math.round(p01 * 255);
-```
-
-On replay, `getStroke` receives `pressure / 255` to reconstruct the outline. This encoding ensures the taper is baked into the stored data and reproduces correctly at render time.
-
----
-
-## Smoothing Pipeline
-
-`smoothStrokePoints(pts, spacing?, samples?, passes?)` is the on-release post-processor. It is a four-stage pipeline, all O(n), running in sub-millisecond time on typical strokes (50–150 points):
-
-```
-1. dedupe     — drop consecutive near-duplicate points (guards spline divide-by-zero)
-2. resample   — uniform arc-length resample → evenly-spaced control points
-3. gaussian   — binomial [0.25, 0.5, 0.25] denoise passes (approximating — actually removes jitter)
-4. catmullRom — centripetal Catmull-Rom (α = 0.5) spline interpolation → dense, flowing curve
-```
-
-### Stage 1: Dedupe
-
-`dedupe(ps, minDist = 0.6)` drops consecutive points closer than 0.6 px. Always keeps the exact last point. Guards the downstream spline against division by zero on coincident points.
-
-### Stage 2: Uniform resample
-
-`resample(ps, spacing)` walks arc length and emits a point every `spacing` pixels, interpolating coordinates and pressure. Start and end points are exact. After this step all control points are equidistant, making the Gaussian kernel behave uniformly.
-
-### Stage 3: Gaussian denoise
-
-`gaussian(ps, passes)` applies the binomial kernel `[0.25, 0.5, 0.25]` for `passes` iterations. Endpoints are pinned (never moved). On uniformly-spaced points, a handful of passes removes hand jitter with negligible path shrinkage. Unlike an interpolating spline, this is an **approximating** pass that actually moves points away from the raw input.
-
-Constants:
-```ts
-const RESAMPLE_SPACING = 9;   // px between control points after resample (full-strength)
-const DENOISE_PASSES   = 12;  // Gaussian passes (full-strength)
-```
-
-### Stage 4: Catmull-Rom spline
-
-`catmullRom(ps, samples)` emits `samples` points per segment using centripetal parameterization (α = 0.5), which is the parameterization proven to avoid cusps and self-intersections. The Barry–Goldman power-basis form is used. Phantom control points are added at both ends so the first and last segments are well-defined. The exact final input point is re-pinned to prevent floating-point drift.
-
-```ts
-const SAMPLES_PER_SEGMENT = 8;  // sub-samples per Catmull-Rom segment
-```
-
-### Scale-adaptive smoothing
-
-`adaptiveParams(arcLen)` ramps smoothing strength based on stroke arc length to protect handwriting:
-
-| Arc length | Spacing | Passes | Effect |
-|------------|---------|--------|--------|
-| < 70 px (a letter) | 2 | 1 | Minimal smoothing — mostly faithful, just de-jittered |
-| 70–160 px (ramp) | 2..9 (linear) | 1..12 (linear) | Gradient between extremes |
-| > 160 px (sweep) | 9 (full) | 12 (full) | Maximum smoothing |
-
-This prevents short handwriting strokes from being "melted into illegible blobs" while long sweeping lines get full treatment. The explicit `spacing` / `passes` override parameters exist for testing and allow bypassing the adaptive logic.
-
-### `smoothStrokePoints` signature
-
-```ts
-smoothStrokePoints(
-  pts: number[],    // flat [x, y, pressure, ...] buffer
-  spacing?: number, // override resample spacing (default: adaptive)
-  samples?: number, // Catmull-Rom sub-samples per segment (default: 8)
-  passes?: number,  // override Gaussian passes (default: adaptive)
-): number[]         // new flat [x, y, pressure, ...] buffer
-```
-
-Strokes with fewer than 3 points are returned unchanged (a dot or 2-point line cannot be splined).
-
----
-
-## Paper Backgrounds
-
-`PaperBg` values and their visual meaning:
-
-| Value | Description |
-|-------|-------------|
-| `"blank"` | Solid background fill, no markings |
-| `"lines"` | Horizontal ruled lines at 14 px intervals |
-| `"grid"` | Horizontal + vertical lines at 14 px intervals |
-| `"dots"` | Dot grid at 14 px intervals (dots rendered as filled circles, radius 1.3 px) |
-
-The gap constant:
-```ts
-// core/src/drawing/paper.ts
-export const GRID_GAP = 14;  // px between grid/line/dot marks
-```
-
-`GRID_GAP` matches the ASCII redesign's 14px grid/dot/ruled spacing (`bismuth-design/ascii-extended/PORTING.md` §2c) so the drawing paper ground aligns with the rest of the app's paper grounds.
-
-Lines and grid marks are stroked with `paperLineColor(t)` — the active theme's `borderSoft` token (`--border-soft`) — and dots are filled with `paperDotColor(t)` — the theme's `border` token (`--border`). Both come from `core/src/drawing/theme.ts` and track the app theme instead of a derived alpha wash of `fg`; grid/ruled lines deliberately use the softer hairline while dots use the stronger one. See **Theme colors** above for how `t` is resolved.
-
-`paperLines(bg, w, h)` returns `Line[]` structs `{x1, y1, x2, y2}` for the "lines" and "grid" modes; returns `[]` for "blank" and "dots". `paperDots(bg, w, h)` returns `Dot[]` structs `{x, y}` for the "dots" mode; returns `[]` for all others.
-
-The default background for new drawings is `"grid"` (set by `emptyDoc()`).
-
----
-
-## Images
-
-A page can carry zero or more placed raster images (`Page.images?: ImageEl[]`), stored inline as self-contained `data:` URLs so a `.draw` file stays fully portable and headlessly exportable with zero asset resolution.
-
-### Z-order
-
-`renderPage()` (`core/src/drawing/render2d.ts`) draws in this order: paper background → images → strokes. Images sit ON TOP of the paper wash (so the background tint never bleeds through them) but UNDER the ink (so annotations drawn over a placed image land on top of it, not behind it).
-
-### Placing images (import / paste / drag-drop)
-
-`DrawingPage.tsx` supports adding an image to the current drawing itself (independent of the in-place image/PDF ink below):
-
-- **Toolbar import button** — opens a hidden `<input type=file accept=image/*>`; the picked file is placed on page 0.
-- **Paste** — a clipboard image item (`ClipboardEvent`) is placed on page 0.
-- **Drag-drop** — a dropped image file is placed on whichever page element (`[data-page-index]`) it was dropped over.
-
-All three funnel through `imageElFromSrc(src, maxScale)`, which decodes the image's natural size (`decodeSize()`, via a throwaway `Image`) and centers it on the page with `fitImage()` (`core/src/drawing/pageInk.ts`), preserving aspect ratio. An **imported** image is capped at `maxScale = 1` (never upscaled past its natural size); the default `maxScale = Infinity` (scaled up or down to fill the page) is the page box in-place image/PDF ink maps to (see below). Placed images are stored as data URLs via `blobToDataUrl()` (a `FileReader.readAsDataURL` wrapper) and added with `store.addImage(pageIndex, imageEl)`; the whole-document undo stack covers the insert (selecting/moving/deleting an individual placed image is not yet implemented).
-
-### Ink on images and PDFs, in place (`app/src/preview/PageInk.tsx`)
-
-An image or a PDF opens in its **preview tab** (`PreviewView`), and is drawn on **right there** — there is no separate markup surface. The same `toggle-draw-mode` keybinding notes use (default **Mod+Shift+I**, Escape exits) flips the ink layer interactive and docks the drawing `Toolbar` (pen / highlighter / eraser, colour, size, smoothing, undo/redo — no paper, zoom or import groups) at the bottom of the visible area; outside draw mode the layer only paints. `PreviewView` catches the key on a capture-phase keydown of its root, the same way it handles Find. Mod+Z / Mod+Shift+Z undo and redo on the focused preview **whether or not draw mode is on**: while drawing the ink layer's host handles the keys, otherwise `PreviewView`'s capture-phase keydown does. Both reach the ONE undo stack of the preview's annotation store (`createAnnotationStore.ts`), which covers strokes, highlights, bookmarks and the scratch-paper toggle alike. Exiting draw mode keeps that history; it resets only when a different file (a different sidecar path) opens.
-
-**Where the strokes live**: the file's sidecar `<file>.draw` (`inkSidecarFor` in `core/src/fileKinds.ts` — `photo.png` → `photo.png.draw`, `report.pdf` → `report.pdf.draw`), an ordinary `DrawingDoc`. The file tree hides the sidecar while its binary exists and moves it with the binary.
-
-**Coordinate contract** (`core/src/drawing/pageInk.ts`, pure + tested in `core/test/drawing/pageInk.test.ts`):
-
-- Sidecar page `i` is source page `i`; an image has exactly one page, a PDF one per page (`ensurePages` pads a sidecar when ink first lands on a later page, and never truncates one).
-- Source page `i` occupies a **box** inside the 816×1056 logical page. If the sidecar page carries `images[0]` — a sidecar written by the retired ANNOTATE surface, which embedded the source there — **that stored box is authoritative**. Otherwise the box is `fitImage(natW, natH)` (centred, `scale = min(816/natW, 1056/natH)`), which is the same box that surface computed, so old and new sidecars agree (`pageBoxFor`).
-- Screen mapping: `logical = box.xy + (screenPoint − renderedPageRect.xy) × (box.w / renderedPageRect.w)` (`screenToLogical` / `logicalToScreen`).
-
-**What the preview measures**: an image is one page measured off the `<img>`'s *painted* rect — its content box letterboxed by `object-fit: contain` (`containRect`), since `.preview-image` carries padding — plus `naturalWidth/Height`, re-measured on load and on resize. A PDF hands `PageInk` to `PdfPages` as its `overlay` (rendered inside the scroll content, so ink scrolls with the pages) and feeds it the page boxes and natural sizes from `PdfPages`' `onLayout`, so zoom and resize re-lay the ink with the pages. Canvases (a committed base + a live draft, like `DrawingCanvas`) exist only for pages near the viewport, tracked by an `IntersectionObserver`.
-
-**A PDF's parsed document is session-cached, not reloaded per mount**: `preview/pdfDocCache.ts` keeps up to 3 loaded documents keyed by vault path, so a pane that unmounts and remounts on the same file (a tab reused, `PreviewView` recreated) skips fetch + parse and never flashes a loading state (pages still in the raster stash below paint at once; the rest re-render). It is invalidated by an SSE change naming that exact path (so a sidecar's own `x.pdf.draw`/`x.pdf.md` edit never evicts `x.pdf`'s cache), re-keyed on a move/rename, and dropped on delete — the same freshness plumbing `noteCache.ts` uses for note bodies. Every document also shares ONE pdf.js worker for the session (`pdfjsSetup.ts`'s `sharedWorker()`), so opening a PDF no longer spawns a fresh Worker thread. A separate, smaller `rasterStash` keeps the last rendered `<canvas>` for up to 4 (page, width) pairs across every open document, so a page a stashed remount already rendered blits instantly instead of waiting on pdf.js. On top of the cache, `PdfPages` accepts an `initialPosition` (restored once the document is ready and measured, through the same pending-jump path as a controller-driven scroll) and reports scroll position via `onPosition`; `PreviewView` uses this pair to restore the reading position, zoom and panel state when a PDF tab is reopened. `PdfPages` also keeps the reading place — the page and fraction under the viewport's middle — across a reflow: opening/closing the bookmarks panel, toggling scratch, zooming and resizing the pane all change the page stack's layout, and the reader's spot is re-anchored to it rather than left at a now-stale raw pixel offset (`pageLayout.ts`'s `anchorAt`/`scrollTopForAnchor`).
-
-**Zoom** works the same on the PDF tab, the in-note PDF embed and the image tab (`preview/zoomGesture.ts` + `preview/createPreviewZoom.ts`). A trackpad pinch zooms in proportion to the fingers. Chrome, WebView2 and WebKitGTK report a pinch as ctrl+wheel and the factor is `exp(-deltaY · 0.01)`; a mouse-wheel notch is clamped to one ~1.3× step. WKWebView, the macOS app's engine, reports a pinch as Safari `gesturestart`/`gesturechange`/`gestureend` events instead, so those are handled too. Each frame's events are combined into one update, and the spot under the pointer stays under it: PdfPages' `controller.zoomAt` keeps a page point fixed (`pageLayout.ts`'s `pointAnchorAt`/`scrollForPointAnchor`), and `PreviewView`'s `imageZoomAt` does the same for the picture. The bar's − / + / fit glide for 160ms (`ZOOM_TWEEN_MS`) about the viewport centre. During a pinch a PDF page's existing raster just stretches. `PdfPageCanvas` re-renders it sharp once the size has held still for 140ms, so pdf.js never renders a frame that is already stale. An image zooms from its fit (1, never below) up to 8×. Once it is zoomed (or has a scratch strip) it is laid out explicitly by `preview/imageZoomLayout.ts`, centred while it fits and gutter-aligned once it doesn't, inside a stage that grows so the body scrolls to pan. The ink and scratch-note layers span that stage, so ink still lands on the picture and the draw dock stays pinned to the bottom of the visible area. Image zoom resets on every open; PDF zoom is remembered per file as before.
-
-**Load and save**:
-
-- An **empty** sidecar body (`GET /file` never 404s a read) means "no ink yet" — nothing is written until the user draws.
-- A body that is **not a drawing** is left untouched, and shows no ink, until the user draws; the first stroke then replaces it.
-- A **failed read** disables drawing (a toast says so) rather than risk overwriting a sidecar that could not be read.
-- Edits save through `api.saveDrawing` (`PUT /file`), debounced 600 ms and flushed on draw-mode exit, focus leaving the pane, window blur, a file switch and unmount.
-
-**New sidecars carry strokes only.** The old surface copied the whole image — and a JPEG raster of every PDF page — into the JSON as `data:` URLs; the in-place layer writes `pages[i].strokes` with no `images`, and `paper.bg = "blank"`. A legacy sidecar keeps its embedded images (they are the stored boxes). **Consequence:** a headless `.draw` export of a sidecar *created in place* renders the ink on a blank page, without the image or PDF page under it.
-
-A tab persisted from before the change can still carry the retired `::annotate:<file>` content id; `PaneContent.tsx` routes it to that file's preview, and `tabIds.ts` labels it as the file.
-
-### PDF annotations in place: highlights, margin, bookmarks
-
-A PDF's preview also takes **text highlights**, a **drawable margin** and **bookmarks**, all in the same `<file>.draw` sidecar as its ink. `PreviewView` creates **one** annotation store (`app/src/preview/createAnnotationStore.ts`) while an image or PDF is open and hands it to `PageInk`, `HighlightLayer` and `BookmarksPanel`, so ink, highlights, bookmarks and the margin share one load, one 600 ms debounced writer and one undo stack. The store refuses edits until the sidecar has loaded (`loadState === "ready"`), so the toggles that edit stay disabled until then. The bar above the preview is `app/src/preview/PreviewBar.tsx` — one ViewBar, every control an `IconButton`/`TextButton` from the Button family, grouped by spacing alone (`--bar-icon-gap` inside a group, `--bar-crumb-gap` between groups, no dividers). A PDF's trail reads `p. N / M` · `− 100% + fit` · highlight draw scratch (a highlighter, a pencil, a notebook) · bookmarks (a mirrored panel-right icon) · then, in the desktop app, open-in-default-app / reveal-in-file-manager as icon-only buttons with tooltips. An image's bar is the same component with the draw toggle and the file actions in the same places:
+A PDF's preview bar adds three more tools, each saved in the same `<file>.draw` sidecar. They stay disabled until the sidecar has loaded.
 
 | Control | What it does |
 |---|---|
-| **p. N / M** (`preview/PageReadout.tsx`) | The page one third down the viewport, of the page count. Click it to type a page number: Enter (or blur) scrolls there, clamped into range; Escape leaves the position alone. |
-| **− 100% + fit** | Zoom out, the zoom level, zoom in, and fit — a one-shot back to fit width (zoom 1). fit is never shown selected; the `%` already says whether the page is at fit width. Below the view bar's 650px tier −, % and + drop (Ctrl/Cmd+wheel still zooms) but fit stays, at every width, as the one-click way back to fit width. |
-| **HIGHLIGHT** (Highlighter icon, `aria-label="Highlight text"`) | **One-shot, not a mode.** Pressed with text already selected on a page, it highlights that selection at once (one highlight per page the selection touched) and stays off. Pressed with nothing selected it **arms** (shown selected): the next drag-selection is highlighted, or a click on an existing highlight removes it, and either edit disarms it. Pressing it while armed disarms. Arming exits draw mode; entering draw mode disarms. |
-| **DRAW** (Pencil icon, `aria-label="Draw"`) | Enters/exits draw mode — the same state as the `toggle-draw-mode` key (its title shows the binding). |
-| **SCRATCH** (Notebook icon, `aria-label="Scratch paper"`) | Adds scratch paper (the sidecar's `margin`) to the right of every page, or removes it. The strip is a NOTE surface, not more of the page: ink drawn there (in draw mode) resolves like note ink, and outside draw mode it also takes typed, click-to-place note blocks — see **Scratch notes** below. On a PDF this toggle is here in the bar; the same toggle for an IMAGE is not in the bar yet — until it lands, an image's strip only appears when its `.draw` sidecar already carries a `margin` (set directly, not through this UI). |
-| **BOOKMARKS** (PanelRight icon, mirrored — Phosphor's `sidebar-simple` draws the panel on the left, flipped here so it reads as the right-hand panel it opens; `aria-label="Bookmarks"`) | The right-most toggle. Opens a right-hand panel: **BOOKMARKS** (add the current page, jump, rename, delete) above **OUTLINE**, the PDF's own embedded table of contents. Clicking either jumps the page stack to that page. The panel closes when another file opens. |
+| **Highlight text** | With text selected, highlights it at once and stays off. With nothing selected it arms: your next text selection is highlighted, or a click on an existing highlight removes it |
+| **Draw** | Turns draw mode on and off, the same as Mod+Shift+I |
+| **Scratch paper** | Adds a drawable strip to the right of every page, or removes it |
+| **Bookmarks** | Opens a right-hand panel with your bookmarks (add the current page, jump, rename, delete) above the PDF's own outline |
 
-Toggles draw no frame in any state; on is accent brackets + accent glyph, so a freshly opened PDF paints no frame at all; nothing else in the bar is ever framed. The page readout is unframed at rest too. Narrow panes use only the shared view-bar collapse ladder (`data-bar-drop`, `app/src/ui/ViewBar.module.css`): the zoom steps (−, %, +) and the file actions drop below its 650px tier, the page readout below 500px; fit, highlight draw scratch and bookmarks stay at every width. The filename ellipsizes first and keeps about six characters. There is no second bar row.
+The bar also shows the current page (click it to type a page number), the zoom controls and a `fit` button that returns to fit-to-width. In the desktop app it adds open-in-default-app and reveal-in-file-manager buttons. Narrow panes drop the zoom steps and file actions first; the highlight, draw, scratch and bookmark controls stay at every width.
 
-**The sidecar fields** (types in `core/src/drawing/model.ts`; pure edits in `core/src/drawing/`):
+An outline entry whose destination cannot be resolved shows dimmed and does nothing. Highlights default to yellow.
 
-```ts
-interface Highlight {        // pages[i].highlights — pageHighlights.ts
-  id: string;
-  c: string;                 // a hex colour, or "hl" = the default (PDF_HIGHLIGHT_YELLOW, core/src/theme/tokens.ts)
-  rects: HighlightRect[];    // { x, y, w, h } in the 816×1056 logical page space, one per line of text
-  text?: string;             // the selected text
-}
-interface Bookmark {         // doc.bookmarks — pageBookmarks.ts
-  id: string;
-  page: number;              // 0-based source page
-  label: string;             // defaults to "Page N"
-}
-interface PageMargin {       // doc.margin — pageMargin.ts
-  right: number;             // margin width as a fraction of the page's rendered width, clamped to [0, 2]
-}
+On an image, the scratch strip appears only when its sidecar already carries a `margin`; the preview bar has no scratch button for images.
+
+## Scratch notes
+
+The scratch strip also takes typed notes. Click any empty spot on the strip and a small note block starts there, pinned to that page and position. A page can hold any number of blocks, and each scales with zoom so it stays beside the passage it annotates.
+
+- **Look.** The strip is a note surface, not the page's own paper. It uses the editor's ground and the prose font, and ink drawn on it takes the note-ink colours. A stroke that crosses from the page onto the strip changes colour at the page edge.
+- **Where blocks live.** Typed blocks are saved in the body of the file's companion note (`x.png` has `x.png.md`), below its frontmatter, not in the `.draw` sidecar. That makes their text searchable and lets their `[[wikilinks]]` and `#tags` reach the vault graph like any other note. The block grammar is in [companion notes](../vault/frontmatter.md).
+- **When blocks are editable.** Blocks take clicks only while scratch paper is on, draw mode is off, and highlight is not armed. In draw mode the strip takes ink only.
+- **Editing.** Clicking empty strip space places a block and focuses it; leaving a block that is still blank removes it. Hover a block for an `X` to delete it and a handle along its top edge to drag it; dropping it over any page's strip re-anchors it there.
+- **Undo.** Mod+Z inside a block undoes that block's own text only. Creating, moving or deleting a block is not undoable.
+
+Because a block's text lives in the companion note and not in the `.draw` file, an export of the sidecar does not include it.
+
+## The `.draw` file format
+
+A `.draw` file is one `DrawingDoc` JSON object, written compactly by `serializeDoc()` and read by `parseDoc()`. Parsing throws `not a drawing document` when `kind` is not `"drawing"` or `pages` is not an array.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `v` | `1` | Version discriminant |
+| `kind` | `"drawing"` | Literal checked on read |
+| `paper.bg` | `"blank" \| "lines" \| "grid" \| "dots"` | Background shared by every page |
+| `pages` | `Page[]` | At least one page; page `i` is index `i` |
+| `bookmarks` | `Bookmark[]?` | Image and PDF sidecars only |
+| `margin` | `{ right: number }?` | Image and PDF sidecars only |
+
+An empty drawing is `{ "v": 1, "kind": "drawing", "paper": { "bg": "grid" }, "pages": [{ "strokes": [] }] }`.
+
+### Pages and strokes
+
+Every page uses a fixed logical space of 816 by 1056 units (`PAGE_W`, `PAGE_H`: US Letter at 96 DPI), whatever the screen size or zoom. A page is `{ strokes, images?, highlights? }`.
+
+| Stroke field | Type | Meaning |
+|---|---|---|
+| `t` | `"pen" \| "hl"` | Pen or highlighter. The eraser is not stored |
+| `c` | `string` | `"fg"` for theme ink, or a hex colour |
+| `w` | `number` | Base width: one of 2, 5, 9, 14, 20 |
+| `straight` | `boolean?` | `true`: draw only the first and last point as a capsule |
+| `pts` | `number[]` | Flat `[x, y, pressure, x, y, pressure, ...]` triplets |
+
+`x` and `y` are logical units, rounded to integers when written. `pressure` is a byte from 0 to 255, clamped when written; a point with missing pressure reads as 255. A straight stroke stores exactly two triplets, and any extra points are ignored when drawing.
+
+```json
+{ "t": "pen", "c": "#CBB27E", "w": 9, "straight": true, "pts": [100, 100, 255, 400, 300, 255] }
 ```
 
-- **Highlights** use the same coordinate contract as strokes: `rects` live in logical page space and map to the screen through `pageBoxFor` + the rendered page rect. `roundDoc` rounds their rects to whole units on save.
-- **The margin** turns on at `DEFAULT_MARGIN_RATIO` (0.4 — the page keeps 1/1.4 of the fit-width column). Turning it off **removes the `margin` key**; it never stores `{ right: 0 }`. `PdfPages` lays each page and its margin out together inside the zoom width, so a margin makes the page itself narrower. The logical scale still comes from the page's own width, so margin ink sits at logical `x` beyond the page box (`box.x + box.w`) at the same density as ink on the page. **The strip is a NOTE surface, not the page's own paper** (scratch-notes decision 3): `preview/ScratchPaper.tsx` paints it `var(--editor)` — the note editor's own ground — with a `var(--rule-soft)` hairline where it meets the page, replacing the old fixed white (`PDF_PAGE_PAPER`/`PDF_PAGE_RULE`, retired — no app/core code reads them any more; pdf.js itself still always rasterizes the page on white regardless of theme). Ink drawn ON THE PAGE still resolves against the light bucket (dark-on-white); ink drawn on the STRIP resolves against the dark bucket instead (`themeColors('dark')`, the same bucket `editor/InkOverlay.tsx` uses for note ink) so it reads light-on-dark against its own ground — `preview/PageInk.tsx`'s `paintSplit` paints each stroke against the page's own region and, only when that page actually has a strip, a SECOND pass against the strip's, so one stroke crossing from page onto strip renders in both colours at once, split exactly at `box.x + box.w` (a page with no strip paints once). **Consequence:** headless `.draw` export renders the 816-wide logical page only, so margin ink (and any scratch-note block text, which lives outside the `.draw` file entirely — see below) falls outside the exported page.
-- **Bookmarks** are listed by page, stable within a page. The outline is not stored: `PdfPages` reads it from the PDF each time it loads (`preview/pdfOutline.ts`), and an entry whose destination cannot be resolved shows dimmed and does nothing.
+Images on a page are `{ src, x, y, w, h }`. `src` is a `data:image/...;base64,...` URL, and `x`, `y`, `w`, `h` are the bounding box in page units. Saving rounds the box and never touches `src`.
 
-### Scratch notes
+### Highlights, bookmarks and margin
 
-The scratch strip (above) is meant to function like a note: it takes typed notes as well as ink,
-click-to-place, anywhere on the page — not a fixed set of lines at the top. Three decisions shape
-the feature:
+An image or PDF sidecar can carry three extra fields.
 
-1. **Typing model: click-to-place blocks.** Clicking any empty spot on the strip starts a small note
-   block right there, pinned to `(page, logical x, logical y)`. A page can carry any number of
-   blocks; each one scales with zoom so it stays beside the passage it annotates.
-2. **Storage: the binary's companion note**, not the `.draw` sidecar. Images/PDFs already carry
-   their tags in a companion note (`<file>.md`, e.g. `x.png` → `x.png.md`; `core/src/fileKinds.ts`'s `companionPathFor` —
-   `docs/vault/frontmatter.md`); scratch-note blocks live in that same file's BODY, below the
-   frontmatter fence. This makes block text **searchable** and its `[[wikilinks]]`/`#tags` reach the
-   vault graph, the same as any other note — something a `.draw` sidecar (opaque strokes) cannot
-   offer. Ink stays exactly where it always has, in `<file>.draw`.
-3. **Look: the note surface**, per **The sidecar fields** above — `var(--editor)` ground,
-   `--prose-font` type, note-bucket ink.
+| Field | Shape | Notes |
+|---|---|---|
+| `pages[i].highlights` | `{ id, c, rects, text? }[]` | `rects` are one `{x, y, w, h}` per line of selected text, in page units. `c` is a hex colour or `"hl"` for the default yellow |
+| `bookmarks` | `{ id, page, label }[]` | `page` is 0-based; `label` defaults to `Page N` |
+| `margin` | `{ right }` | Strip width as a fraction of the page's rendered width, clamped to 0..2. Turning the strip on sets 0.4; turning it off removes the key |
 
-**One store, shared with the tags strip.** `app/src/preview/createCompanionStore.ts` is the ONE
-owner of a binary's companion note while its preview is open (`annotationTypes.ts`'s
-`CompanionStore`) — `CompanionFrontmatter` (tags) and `ScratchTextLayer` (blocks) both read/write
-through it, so a save from either can never drop the other's content: one read, one ~800ms debounced
-write (`settings.editor.autoSaveDelay`), one conflict-reload path (`api.writeChecked` against the
-last-known disk text; a conflict reloads from disk, bumps a `revision` counter every keyed block
-editor re-seeds from, and toasts). `PreviewView` builds this store the same way it builds the
-annotation store — once, when the file becomes an ink kind, `untrack`ed so the memo itself doesn't
-depend on the store's own setup reads.
+The PDF's outline is not stored; it is read from the PDF each time.
 
-**Format** (`core/src/scratchNotes.ts`, pure + unit-tested; format owned by the companion-note
-parser — full grammar in `docs/vault/frontmatter.md`'s companion-notes section): hand-written text
-stays first, verbatim, then one HTML-comment-delimited region per non-blank block, sorted by page,
-then y, then x:
+### Where sidecar ink sits on its source page
 
-```
-<!-- scratch id=k3f9 p=3 x=842 y=412 w=300 -->
-**why?** see [[Lecture 7]]
-<!-- /scratch -->
+Sidecar page `i` is source page `i`: an image has one page, a PDF has one per page. The source page occupies a box inside the 816 by 1056 space. If the sidecar page carries `images[0]`, that stored box is the page box and wins. A stored `images[0]` is the source image or PDF page embedded as a data URL, and an export draws it under the ink. Otherwise the box is the source's natural size scaled to fit and centred.
+
+A screen point maps to the page by `logical = box.xy + (screenPoint - renderedPageRect.xy) x (box.w / renderedPageRect.w)`. Margin ink sits at logical `x` beyond `box.x + box.w`. Ink drawn outside the page box is kept in the file but not shown.
+
+## Export a drawing
+
+A drawing exports to PNG or PDF. From the app, open the drawing and use **Export current file…** (Mod+Shift+P); the options are on the [export page](../export/overview.md). From the shell:
+
+```bash
+bismuth export Sketch.draw                       # Sketch.draw.png, no vault needed
+bismuth export Sketch.draw --format pdf --out sketch.pdf
+bismuth render Sketch.draw --theme light --out sketch-light.png
 ```
 
-`p` is 1-based (a person reading the file sees page numbers, not array indices); `page` on the
-in-memory `ScratchBlock` (`core/src/scratchTypes.ts`) is 0-based. `x`/`y`/`w` are whole logical units
-in the SAME 816×1056 page space as ink. A malformed or unterminated marker is never treated as a
-block — the line(s) stay in the hand-written text untouched, so a companion note a person edited by
-hand can't silently lose content. Blank blocks (a click-to-place block abandoned without typing
-anything) are never written.
+Both commands render without a browser. `--theme` is `dark` (the default) or `light` and sets the paper and the colour of default ink. Every page renders at twice its logical size. A PNG stacks the pages vertically in one tall image. The PDF from the shell has one page per drawing page, each 816 by 1056 points. The PDF the app produces is cut onto Letter pages instead.
 
-**Interaction rules** (`app/src/preview/scratchGeometry.ts` + `ScratchTextLayer.tsx`):
+Placed images export under the ink. An undecodable image is skipped rather than failing the export. The command's full flags are in the [CLI reference](../cli/reference.md).
 
-- Blocks and the click-to-place hit areas take pointer events only while SCRATCH is on, draw mode
-  and highlight-arming are both off, and both stores (`annotation` + `companion`) are ready — in
-  draw mode the strip is ink-only, PageInk stays above the text layer in DOM order (overlay order is
-  `HighlightLayer`, `ScratchTextLayer`, `PageInk`), and clicking it never places or focuses a block.
-- Clicking empty strip space places a block there, focused immediately; leaving a block that is
-  still blank removes it. A hover/focus-revealed `X` deletes a non-empty one; a hover/focus-revealed
-  move handle along the block's top edge drags it — dropping over any page's strip re-anchors it
-  there, dropping elsewhere snaps it back.
-- Only pages near the viewport mount a block's editor (`ScratchTextLayer`'s `visibleRange`,
-  `PdfPages`' current page ± 2 in `PreviewView`) — a long PDF never mounts a CodeMirror instance per
-  block on every page at once.
-- Mod+Z/Mod+Shift+Z and the `toggle-draw-mode` key, typed WHILE FOCUS IS INSIDE A BLOCK, only ever
-  edit that block's own text (CodeMirror's own undo history) — they never reach the annotation
-  store's shared undo stack or toggle draw mode out from under the block. `PreviewView`'s
-  capture-phase `onKey` gates on this the same way it already gated on the tags strip: a `data-*`
-  hook (`data-scratch-text`, on `ScratchTextLayer`'s root) it checks with a tag-free `closest()`
-  before handling any of those keys.
+## How it works
 
-**Not (yet) undoable**: creating, moving or deleting a block. Text edits inside one block undo
-through CodeMirror's own history as normal; block create/move/delete is a companion-note edit, in a
-different file from the `.draw` undo stack, and is deferred to a later `/bust`.
+The subsystem splits into a headless backend (`core/src/drawing/`) of pure functions and a browser frontend (`app/src/drawing/`, `app/src/preview/`). Rendering has no DOM dependency, so the same code draws on screen, in the CLI and in the export pane.
 
----
+### Width model
 
-## Rendering Architecture
+`input.ts` derives each point's width. A pointer event has real pressure when `pressure > 0 && pressure !== 0.5`; 0.5 is the browser's default for a mouse. With real pressure, width is `base x (0.35 + 1.4 x pressure)`. Without it, width follows speed: `t = min(speed / 3.2, 1)` and `base x (1.25 - 0.7 x t)`, where `speed` is distance over milliseconds times 16. The result is normalised by `base x 1.75` and stored as the pressure byte, so the taper is baked into the file and replays identically.
 
-### Dual-canvas model
+### Smoothing
 
-`DrawingCanvas.tsx` uses **two stacked `<canvas>` elements**:
+In `smooth` mode, `smoothStrokePoints()` runs once on pointer-up; the live stroke is always raw. It dedupes points closer than 0.6 units, resamples at even arc length, runs binomial `[0.25, 0.5, 0.25]` denoise passes with pinned endpoints, then interpolates a centripetal Catmull-Rom spline (alpha 0.5, 8 samples per segment). Strength scales with the stroke's length so handwriting survives:
 
-- **`base` canvas**: The committed layer. Repainted in full via `renderPage()` whenever the document or theme changes. Not touched during live drawing.
-- **`live` canvas**: The in-progress stroke draft. Cleared and redrawn per pointer-move event via `drawStroke()`. Cleared on pointer-up after the stroke is committed.
+| Arc length | Resample spacing | Denoise passes |
+|---|---|---|
+| under 70 | 2 | 1 |
+| 70 to 160 | ramps linearly 2 to 9 | ramps linearly 1 to 12 |
+| over 160 | 9 (`RESAMPLE_SPACING`) | 12 (`DENOISE_PASSES`) |
 
-This separation eliminates the need to repaint all committed strokes on every pointer-move event. The DPR (device pixel ratio) is capped at 2 to avoid oversized buffers on 3× displays.
+Strokes with fewer than 3 points come back unchanged.
 
-### Image decode cache
+### Stroke outlines
 
-`renderPage()` needs a pre-decoded image handle to draw a page's `images` synchronously, but decoding a data URL (`new Image(); img.src = ...`) is asynchronous. `DrawingCanvas.tsx` keeps a **module-level cache** — `const imageCache = new Map<string, HTMLImageElement>()` — shared across every `DrawingCanvas` instance (so a split pane or a reopened tab showing the same image src reuses the already-decoded handle instead of re-decoding it):
+`strokeOutline()` in `geometry.ts` turns a stroke into a filled polygon with `perfect-freehand`: `thinning` 0.6 for a freehand pen and 0 for a highlighter or straight stroke, `smoothing` 0.5, `streamline` 0 (the input is already smooth, and streamline only adds lag), `simulatePressure` false, `last` true. The polygon is filled through quadratic curves between midpoints, which avoids a faceted outline.
 
-- `resolveImage(src)` looks up (or lazily creates) the cached `Image` for a src. While it hasn't finished decoding (`!img.complete`), it returns `undefined` — `renderPage` simply skips that image for this paint.
-- Each live canvas instance tracks its own `hooked` set of srcs it has already attached a `load` listener for, so a still-decoding image gets at most one pending listener per canvas, not one per repaint call. Because the `Image` itself is shared, every canvas instance awaiting the same src attaches its own listener (`addEventListener`, which stacks, rather than `.onload =`, which would clobber a sibling's) so all of them repaint once the shared decode completes.
-- Once `.complete`, the handle is returned and the image is blitted on every subsequent paint with no further decode cost.
+The highlighter draws at alpha 0.32. On a light page it uses `multiply`; on a dark page, where multiply would vanish into near-black, it uses `screen`. The choice follows the paper's luminance (below 0.18 counts as dark).
 
-The equivalent headless (`core/src/drawing/export.ts`) and browser-export (`app/src/export/drawingRaster.ts`) paths don't need this incremental-repaint dance — they `await` every image's decode up front (`loadImage()` / a `Promise`-wrapped `Image.onload`) into a plain `Map` before rendering synchronously.
+### Paper and theme colours
 
-### Coordinate system
+`GRID_GAP` is 14 units for ruled lines, grid lines and dots (dot radius 1.3). Lines and grid use the theme's `borderSoft` token and dots use `border`. `themeColors()` in `theme.ts` reads two buckets from `core/src/theme/tokens.ts`: `light` resolves to the `paper` theme and `dark` to the default theme (`ink`), supplying `bg`, `fg`, `border` and `borderSoft`. `makeColorResolver()` turns `"fg"` into the bucket's `fg`.
 
-The canvas backing store is always `PAGE_W * DPR × PAGE_H * DPR`. CSS sizes the canvas element responsively (100% of its container). `toLocal()` maps PointerEvent client coordinates through `getBoundingClientRect()`:
+### Canvas and store
 
-```ts
-x = (e.clientX - r.left) * (PAGE_W / r.width)
-y = (e.clientY - r.top)  * (PAGE_H / r.height)
-```
+`DrawingCanvas.tsx` stacks two canvases per page. The base canvas repaints through `renderPage()` when the document or theme changes. The live canvas redraws only the in-progress stroke and clears on pointer-up. The pixel ratio is capped at 2, and pointer events are read coalesced for smooth stylus input. Pointer positions map to logical units through `getBoundingClientRect()`, so zoom changes only the CSS size.
 
-This means strokes are stored in 816×1056 logical coordinates regardless of window size or zoom.
+Decoded images are cached module-wide in an LRU of 32 entries, shared by every canvas. `renderPage()` draws paper, then images, then strokes, and skips an image that has not finished decoding until it repaints.
 
-Zoom (`store.zoom`) scales the CSS display of the canvas; the logical coordinate system is unchanged. Zoom range is 25%–400% (`zoom <= 0.25` disables zoom-out, `zoom >= 4` disables zoom-in).
+`createDrawingStore()` in `store.ts` holds the document as a signal with whole-document undo and redo stacks (`structuredClone` snapshots). Every mutation, including undo and redo, calls the save callback, which writes through the generic `PUT /file` route; there is no drawing-specific route. The eraser deletes the topmost stroke whose points fall within `tools.size + 8` units of the pointer.
 
-### Stroke outline rendering
+### Preview ink layer
 
-`strokeOutline(s, resolveColor)` in `geometry.ts` converts a `Stroke` to a filled polygon via the `perfect-freehand` library:
+`PageInk.tsx` renders sidecar ink over an image or PDF page, driven by one annotation store (`createAnnotationStore.ts`) that `PreviewView` creates for the open file and shares with `PageInk`, `HighlightLayer` and `BookmarksPanel`. The coordinate rules live in `core/src/drawing/pageInk.ts` (`pageBoxFor`, `screenToLogical`, `logicalToScreen`, `ensurePages`, which pads a sidecar when ink first lands on a later page and never truncates one). An image measures the painted `<img>` rect letterboxed by `object-fit: contain`; a PDF hands `PageInk` to `PdfPages` as an overlay and feeds it page boxes from its layout callback. Canvases exist only for pages near the viewport, tracked by an `IntersectionObserver`.
 
-- Pressure bytes are divided by 255 to restore the 0..1 pressure values that `getStroke` expects.
-- `thinning`: `0` for straight strokes and highlighter, `0.6` for freehand pen (produces the pressure-driven taper).
-- `smoothing`: `0.5` (a `getStroke`-internal per-vertex curve smoothing).
-- `streamline`: `0` — the raw input is already smooth (either raw for "sharp", or post-processed by `smoothStrokePoints` for "smooth"). Streamline would add lag without benefit.
-- `simulatePressure`: `false` — real pressure bytes are always present.
-- `last: true` — caps the terminal end of the stroke.
+The margin strip paints in two passes (`paintSplit`): each stroke against the page's colour bucket, and against the strip's dark bucket when a strip exists, split at `box.x + box.w`. `PdfPages` lays a page and its strip out together inside the zoom width.
 
-For a straight stroke (`s.straight === true`), only the first and last points are passed to `getStroke`, producing a uniform capsule.
+PDF documents are cached by vault path (`pdfDocCache.ts`, 3 documents) and share one pdf.js worker. A raster stash keeps the last 4 rendered (page, width) canvases so a remounted tab paints instantly. An SSE change that names the exact path invalidates an entry; a sidecar's own edits do not evict its PDF. `PdfPages` keeps the reader's place (page and fraction under the viewport's middle) across reflows. Zoom (`zoomGesture.ts`, `createPreviewZoom.ts`) treats a Chrome-style pinch as ctrl+wheel with factor `exp(-deltaY x 0.01)`, clamps a wheel notch to about 1.3x, handles Safari `gesture*` events for WKWebView, and keeps the point under the pointer fixed. The zoom buttons glide for 160 ms, and a page re-renders sharp once its size has held still for 140 ms. An image zooms from fit up to 8x.
 
-The polygon returned by `getStroke` is filled using `fillPolygon()` which connects polygon vertices with **quadratic curves through midpoints** (the "getSvgPathFromStroke" trick) rather than straight `lineTo` calls. This eliminates the faceted "geometric" look of straight-connected outline polygons.
+Scratch notes: `createCompanionStore.ts` is the one owner of a binary's companion note while its preview is open. Tags (`CompanionFrontmatter`) and blocks (`ScratchTextLayer`) both write through it, with one debounced write and one conflict-reload path, so neither drops the other's content. `core/src/scratchNotes.ts` parses and writes the block regions. Only pages within two of the current page mount a block editor.
 
-### Highlighter compositing
+### Export
 
-```ts
-// render2d.ts drawStroke()
-ctx.globalAlpha = s.t === "hl" ? 0.32 : 1;
-if (s.t === "hl") ctx.globalCompositeOperation = "multiply";
-```
+`core/src/drawing/export.ts` renders with `@napi-rs/canvas` and assembles PDFs with `pdf-lib`. `renderDocToPng(doc, theme, box?)` stacks all pages in one canvas at `SCALE = 2` (1632 by 2112 per page). `renderDocToPdf()` rasterises each page separately and embeds each as a PDF page. Both pre-decode every distinct image `src` first.
 
-The highlighter renders at 32% opacity with multiply blending, matching a physical highlighter effect over text.
+When `renderDocToPng` receives a `box` (`{ width, height }`), it takes the note-ink path: only `pages[0].strokes`, no paper or images, on a transparent canvas of the caller's size. A note's ` ```draw ` fences use this so the ink composites over the exported page's own text (`app/src/export/inkHtml.ts`). `cli/src/commands/draw.ts` never passes `box`.
 
----
+The browser export pane rasterises with `app/src/export/drawingRaster.ts`, which feeds the same `renderDocStacked` into a DOM canvas, so the preview and the CLI output agree apart from canvas rounding.
 
-## Store and Undo/Redo
+### Gotchas
 
-`createDrawingStore(initial, requestSave)` returns the reactive document store:
+- Two different "fewer than 3" checks exist: `eachPoint` yields one point per complete triplet of the flat array, while `smoothStrokePoints` skips strokes with fewer than 3 points.
+- `fg` is written to disk as the literal string, so a theme change recolours existing default-ink strokes with no re-save.
+- The page size is fixed. There is no per-drawing or per-page size.
+- A stored `images[0]` box wins over a fit computed from the source's natural size, because the strokes were drawn against it.
+- `PaneContent.tsx` matches the `.draw` route before the preview route, so a sidecar such as `photo.png.draw` opened directly opens as a drawing.
 
-| Method | Effect |
-|--------|--------|
-| `commitStroke(pageIndex, stroke)` | Append stroke to page; push to undo stack; trigger save |
-| `eraseStroke(pageIndex, strokeIndex)` | Remove stroke by index; push to undo stack; trigger save |
-| `setBackground(bg)` | Change `paper.bg`; push to undo stack; trigger save |
-| `addPage()` | Append a new empty page; push to undo stack; trigger save |
-| `undo()` | Pop from undo stack, push to redo stack, trigger save |
-| `redo()` | Pop from redo stack, push to undo stack, trigger save |
-
-Undo/redo stacks hold full `DrawingDoc` snapshots (`structuredClone`). The `requestSave` callback is called on every mutation including undo/redo, using `PUT /file` (no dedicated route).
-
-Coalesced pointer events (`e.getCoalescedEvents()`) are processed during `onMove` for smoother input capture on high-frequency stylus inputs.
-
----
-
-## Headless Export
-
-The `export.ts` module renders a `DrawingDoc` to PNG or PDF without a browser DOM, using `@napi-rs/canvas` for rasterization and `pdf-lib` for PDF assembly. This is the path used by the CLI/server (headless), but it is **not the only rasterizer** — see **Browser-side export** below for the separate in-browser path used by the export-pane live preview.
-
-Before rendering, `decodeImages(doc)` pre-decodes every distinct `ImageEl.src` referenced across the doc's pages into a handle map via `@napi-rs/canvas`'s `loadImage()` (since `src` is always a self-contained data URL, no asset resolution is needed); an undecodable src is left out of the map and simply skipped when `renderPage` draws that page, rather than aborting the whole export.
-
-### Scale
-
-All exports render at `SCALE = 2` (i.e., 2× logical resolution):
-- PNG canvas: `PAGE_W * 2 × PAGE_H * 2` = 1632 × 2112 px per page
-- PDF page dimensions: `PAGE_W × PAGE_H` = 816 × 1056 pt
-
-### `renderDocToPng(doc, theme)`
-
-Returns `Promise<Buffer>` — a PNG with all pages stacked vertically.
-
-- Canvas height: `PAGE_W * 2 × (PAGE_H * n * 2)` where `n = doc.pages.length`.
-- Each page is rendered at a vertical offset of `i * PAGE_H` (in logical coords, after the 2× scale transform).
-- Theme: `"dark"` or `"light"` — controls background and ink color resolution.
-
-```ts
-const png = await renderDocToPng(doc, "dark");
-// png is a Buffer starting with 0x89 0x50 (PNG magic bytes)
-```
-
-#### The optional `box` argument — ink-layer export
-
-`renderDocToPng(doc, theme, box?: InkBox)` takes a third, optional argument (`core/src/drawing/export.ts` lines 80-85). When `box` (`{ width: number; height: number }`, `core/src/drawing/model.ts`) is passed, the function takes a completely different path: `if (box) return inkLayerToPng(doc, theme, box)`, skipping the stacked-pages renderer entirely.
-
-`inkLayerToPng(doc, theme, box)` renders **only `doc.pages[0].strokes`** — no paper background, no images, no page stacking — onto a canvas sized `box.width * SCALE × box.height * SCALE` at the caller-chosen logical size, via `renderInkLayer(ctx, strokes, themeColors(theme))` (`core/src/drawing/render2d.ts` lines 109-116). `renderInkLayer` just loops the stroke list through `drawStroke()` with no background fill first, so the canvas ground stays transparent — unlike `renderPage()`, which always fills its background before drawing.
-
-This is the **note-ink export** path: a ` ```draw ` fence inside a note holds strokes and nothing else, so when a note containing one is exported to PNG/PDF, the ink needs to composite over the exported page's own rendered text rather than paint its own paper. The caller is `ExportDeps.drawingToPng` in `app/src/export/types.ts`, wired up in `cli/src/commands/export.ts`'s note/base/sheet export path:
-
-```ts
-drawingToPng: async (docText, theme, box) => {
-    const bytes = await renderDocToPng(parseDoc(docText), theme, box)
-    return {
-        bytes,
-        dataUrl: `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`,
-    }
-},
-```
-
-Without `box`, `renderDocToPng` is the historical full-sheet `.draw` file export described above (paper, images, every page stacked). `cli/src/commands/draw.ts` (exporting a standalone `.draw` file directly) never passes `box`; only the note-export path does. `cli/test/notePageInk.test.ts` exercises the `box` path end to end.
-
-### `renderDocToPdf(doc, theme)`
-
-Returns `Promise<Uint8Array>` — a multi-page PDF with one page per drawing page.
-
-- Each page is rasterized independently at 2× resolution via `pageToPng()`.
-- PNG is embedded into the PDF page via `pdf-lib`'s `embedPng()`.
-- PDF pages are `PAGE_W × PAGE_H` points (816 × 1056 pt ≈ 8.5 × 11 in).
-- The PDF header is `%PDF-`; page count matches `doc.pages.length`.
-
-```ts
-const pdf = await renderDocToPdf(doc, "light");
-// pdf is Uint8Array; String.fromCharCode(...pdf.slice(0,5)) === "%PDF-"
-```
-
-### Theme colors used for export
-
-`renderDocToPng`/`renderDocToPdf` resolve `bg`/`fg` via the same `themeColors()` described in **Theme colors** above — sourced from `core/src/theme/tokens.ts`'s `THEMES` map, not a hardcoded literal:
-
-| Theme bucket | bg | fg |
-|--------------|----|----|
-| `"light"` (`paper`) | `#E9E6E0` | `#2E2C29` |
-| `"dark"` (`ink`, `DEFAULT_THEME`) | `#15161A` | `#E8E3D6` |
-
-### Browser-side export (`app/src/export/drawingRaster.ts`)
-
-The export pane needs an instant PNG preview while the user is still interacting with the app, so it does **not** round-trip through the headless `export.ts`/`@napi-rs/canvas` path. `drawingToPng(docText, theme)` rasterizes a `.draw` document to a PNG entirely in the browser, reusing the same pure `core/src/drawing/render2d.ts` renderer (`renderDocStacked`) that both the headless export and `DrawingCanvas` use:
-
-- Parses `docText` via `parseDoc()`, falling back to `emptyDoc()` on a parse failure.
-- Pre-decodes every distinct `ImageEl.src` into an `HTMLImageElement` (`decodeImages()`, a browser-side analog of `export.ts`'s `decodeImages` — an undecodable src is skipped rather than failing the export).
-- Renders into an off-DOM `<canvas>` sized `PAGE_W * SCALE × PAGE_H * n * SCALE` (`SCALE = 2`, `n = doc.pages.length`), using the DOM `CanvasRenderingContext2D` directly (no `@napi-rs/canvas`).
-- Returns `{ bytes: Uint8Array; dataUrl: string }` — the raw PNG bytes (for saving/uploading) and a ready-to-`<img src>` data URL (for the instant preview), decoded from the canvas's own `toDataURL("image/png")`.
-
-Because it shares `render2d.ts` with the headless exporter, the two rasterizations are visually identical (same background wash, stroke outlines, image z-order); only the canvas backend and image-decode mechanism differ.
-
----
-
-## Toolbar Layout
-
-The drawing toolbar (`Toolbar.tsx`) is organized as a two-row horizontal dock with four groups:
-
-1. **Tools** (pen / highlighter / eraser) — `SegmentedToggle` with Lucide icons
-2. **Colors + Sizes** — stacked vertically: 7 color swatches (top row), 5 size dots (bottom row); same bounding box so the rows align
-3. **Smoothing + Paper** — stacked vertically: sharp/smooth toggle (top), paper background selector (bottom)
-4. **Undo/Redo + Zoom** — stacked vertically: undo + redo buttons (top), zoom-out / percentage / zoom-in (bottom)
-
-The paper options cycle through `["blank", "lines", "grid", "dots"]` in that order.
-
----
-
-## Persistence
-
-`.draw` files are read and written via the generic `PUT /file` endpoint — there is no dedicated drawing API route. The frontend:
-
-1. Reads the file content via `api.read(path)` → `parseDoc(text)`.
-2. On each mutation (stroke commit, erase, background change, undo/redo), calls `serializeDoc(doc)` and `api.write(path, text)` via `PUT /file`.
-
-Saves are triggered immediately on every mutation (no debounce), since `DrawingCanvas` coalesces pointer events and only commits on pointer-up.
-
----
-
-## Edge Cases and Gotchas
-
-- **Two separate "fewer than 3" guards (don't conflate them)**: these count different things.
-  - *Flat-array element count (`eachPoint`)*: `pts` is a flat `number[]` of `(x, y, pressure)` triples. `eachPoint` iterates in steps of 3 with the guard `i + 2 < a.length + 1`, emitting one point per **complete** triple — so an array with fewer than 3 elements yields zero points, and exactly 3 elements yields one valid point.
-  - *Point count (`smoothStrokePoints`)*: after `toPts`/`dedupe`, smoothing operates on **points**. `smoothStrokePoints` returns the buffer unchanged when there are `< 3` points (a single dot or a 2-point line has nothing to smooth) — this is a point-count threshold, not the element-count one above.
-- **Pressure out of [0, 255]**: `roundDoc` clamps via `clampByte`; values like 300 or -5 become 255/0 on disk. The live buffer may temporarily hold out-of-range values before serialization.
-- **`"fg"` stored literally**: color `"fg"` is written to disk as the string `"fg"`, not the resolved hex. Theme changes after the fact automatically produce the correct color.
-- **Coincident points crash prevention**: `dedupe` drops near-coincident points (< 0.6 px apart) before the spline stage. Without this, zero-length segments cause division-by-zero in the Catmull-Rom knot computation.
-- **Straight stroke rendering**: When `straight: true`, `strokeOutline` passes only `[input[0], input[input.length - 1]]` to `getStroke`. Any intermediate points in `pts` are ignored at render time.
-- **Highlighter on dark themes**: Multiply blending at 0.32 alpha works well over light backgrounds but may produce unexpected results on dark backgrounds. The highlighter width is also 2× the stored `w` value.
-- **`streamline: 0` rationale**: The `getStroke` `streamline` parameter applies a trailing exponential moving average to the input, which introduces display lag proportional to its value. Since the live path is raw (no smoothing), and the committed path is already preprocessed by `smoothStrokePoints`, `streamline` is set to 0 to avoid any lag.
-- **Page dimensions are fixed**: `PAGE_W = 816` and `PAGE_H = 1056` are compile-time constants. There is no per-document or per-page size setting.
-- **DPR cap**: `DrawingCanvas` caps DPR at 2 (`Math.min(window.devicePixelRatio || 1, 2)`) to prevent excessively large canvas buffers on 3× displays.
-- **Export uses theme tokens, not CSS vars**: The headless export cannot read CSS custom properties. It resolves colors via `themeColors()` (`core/src/drawing/theme.ts`), which reads the active bucket's tokens from the centralized `THEMES` map in `core/src/theme/tokens.ts` (light bucket → `paper` theme, dark bucket → `DEFAULT_THEME`/`ink`) rather than a hand-copied literal. Pass the correct theme (`"dark"` or `"light"`) to get the right background and ink color.
-- **Two rasterizers, one renderer**: `core/src/drawing/export.ts` (headless, `@napi-rs/canvas`, for the CLI/server) and `app/src/export/drawingRaster.ts` (browser, DOM `<canvas>`, for the instant export-pane preview) both delegate to the same pure `render2d.ts`/`renderDocStacked`, so their output is pixel-equivalent modulo canvas-backend rounding — only image decoding and the canvas host differ.
-- **`.draw` sidecars are named by suffix**: `inkSidecarFor` appends `.draw`, so ink on `report.pdf` lands in `report.pdf.draw` and ink on `photo.png` in `photo.png.draw`. `PaneContent`'s `.draw` route is matched before its preview route so a sidecar opened directly still opens as a drawing.
-- **In-place ink never writes a sidecar the user has not drawn on**: an empty body writes nothing, a body that is not a drawing is only replaced by the first stroke, and a failed read disables drawing.
-- **Legacy sidecar boxes win**: a sidecar page's stored `images[0]` box is the page box, even if it differs from `fitImage` of the source's natural size — the strokes were drawn against it.
-- **Ink outside the page box is clipped**: each page's ink canvas covers only the rendered source page, so a legacy stroke drawn in the old surface's letterbox margin (outside the image, inside 816×1056) is kept in the file but not shown.
-- **Image cache is module-level, not per-canvas**: `DrawingCanvas.tsx`'s `imageCache` is shared across every mounted canvas in the process, so decoding a given image src is a one-time cost no matter how many pages/panes reference it — but it also means the cache is never evicted (an in-session memory tradeoff, not a per-session-persisted one).
-
-Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/theme/tokens.ts`, `core/src/drawing/export.ts`, `core/src/drawing/render2d.ts`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/DrawingPage.tsx`, `core/src/drawing/pageInk.ts`, `app/src/preview/PageInk.tsx`, `app/src/PreviewView.tsx`, `app/src/drawing/input.ts`, `app/src/drawing/store.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/types.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`, `core/test/drawing/model.test.ts`, `core/test/drawing/smooth.test.ts`, `core/test/drawing/geometry.test.ts`, `core/test/drawing/export.test.ts`, `core/test/drawing/pageInk.test.ts`, `cli/test/notePageInk.test.ts`
+Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/render2d.ts`, `core/src/drawing/export.ts`, `core/src/drawing/pageInk.ts`, `core/src/drawing/pageHighlights.ts`, `core/src/drawing/pageBookmarks.ts`, `core/src/drawing/pageMargin.ts`, `core/src/scratchNotes.ts`, `core/src/fileKinds.ts`, `core/src/theme/tokens.ts`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/store.ts`, `app/src/drawing/input.ts`, `app/src/preview/PageInk.tsx`, `app/src/preview/createAnnotationStore.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/PreviewBar.tsx`, `app/src/preview/pdfDocCache.ts`, `app/src/PreviewView.tsx`, `app/src/export/drawingRaster.ts`, `app/src/export/inkHtml.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`

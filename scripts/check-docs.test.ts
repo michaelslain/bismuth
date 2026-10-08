@@ -9,6 +9,10 @@ import {
     definedScripts,
     missingScripts,
     unmentionedWorkspaces,
+    slug,
+    headingSlugs,
+    anchorLinks,
+    historyLines,
 } from './check-docs'
 
 // --- citedScripts -----------------------------------------------------------------------------
@@ -150,4 +154,48 @@ test('a link inside a fenced block is skipped, one after the fence is not', () =
 
 test('backticked link TEXT does not hide the link target', () => {
     expect(mdLinks('[`tasks.md`](guide/tasks.md)')).toEqual(['guide/tasks.md'])
+})
+
+// --- anchors ----------------------------------------------------------------------------------
+
+test('slug follows GitHub: code and punctuation dropped, spaces to dashes', () => {
+    expect(slug('Recurrence engine (`recurrence.ts`)')).toBe(
+        'recurrence-engine-recurrencets',
+    )
+    expect(slug('`==` and `!=` equality')).toBe('and-equality')
+})
+
+test('a GitHub double-dash anchor and a collapsed one compare equal', () => {
+    expect(slug('-and--equality')).toBe(slug('`==` and `!=` equality'))
+})
+
+test('repeated headings get -1, -2 suffixes; headings in fences are not headings', () => {
+    const md = '# Title\n## Example\n```md\n## Not a heading\n```\n## Example\n'
+    expect([...headingSlugs(md)]).toEqual(['title', 'example', 'example-1'])
+})
+
+test('anchorLinks finds page and same-page anchors, skips urls and code', () => {
+    const md =
+        '[a](x.md#one) [b](#two) [c](https://e.com/x.md#three) `[d](y.md#four)`'
+    expect(anchorLinks(md)).toEqual([
+        { target: 'x.md', anchor: 'one' },
+        { target: '', anchor: 'two' },
+    ])
+})
+
+// --- history lint -----------------------------------------------------------------------------
+
+test('history words in prose are flagged with their line', () => {
+    const hits = historyLines('# T\nThe flag is read.\nThe old flag is no longer read.\n')
+    expect(hits.map(h => h.line)).toEqual([3])
+})
+
+test('history words inside code are not flagged', () => {
+    expect(historyLines('```\n// legacy path\n```\nuse `legacyKey`\n')).toEqual([])
+})
+
+test('issue numbers and commit hashes are flagged, hex colours in code are not', () => {
+    expect(historyLines('fixed in (#103)').length).toBe(1)
+    expect(historyLines('removed in commit a6687c0').length).toBe(1)
+    expect(historyLines('the colour `#103`').length).toBe(0)
 })

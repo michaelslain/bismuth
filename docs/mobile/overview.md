@@ -1,164 +1,110 @@
-# Mobile (iPad/iOS)
+# Mobile (iPad and iOS)
 
-On iPad/iOS the Bun HTTP server can't run — there's no Bun process, no `Bun.serve`, no `node:fs`, no listening port. So the mobile build keeps the **exact same logic modules** (engine, bases, search, tasks, srs, frontmatter, layout) but drops the HTTP layer entirely: the WebView calls an **in-process backend** directly, and all vault IO goes through a `tauri-plugin-fs` file layer instead of `files.ts`.
+On iPad and iOS, Bismuth runs the same vault logic inside the app's WebView, with no server: there is no Bun process, no listening port and no `node:fs` on the device. The app calls an in-process backend directly, and the files are read and written through the Tauri file plugin. This page is for engineers building the mobile app, and for anyone who needs to know what the iPad build can and cannot do.
 
-Two swappable seams make this work with **zero api call-site changes**: a `FileAccess` interface (which filesystem the logic reads/writes) and a `Transport` interface (how `api.*` reaches the backend). The mobile entrypoint swaps both before the app loads; desktop never touches either and is completely unaffected.
+A mobile entry point swaps the app's file and transport seams before it loads `App`:
 
-## Why in-process
+```ts
+import { bootMobile } from './mobile/bootMobile'
+await bootMobile() // swap the file layer and the transport
+const { App } = await import('./App') // App loads after the swap
+const { start } = await import('./serverVersion')
+start() // the version poll starts only when called
+render(() => <App />, root)
+```
 
-The desktop backend is a Bun server (`core/src/server.ts`) the app talks to over `http://localhost:4321`. That whole path — `Bun.serve`, `Bun.Glob`, `node:fs` — is unavailable in a WKWebView on iOS. Rather than port the logic, Bismuth keeps it and removes the transport: `core/src/localBackend.ts` exposes `dispatch(method, path, body)` that runs the same engine/bases/search/srs code the HTTP routes run, and the mobile Transport calls `dispatch` in-process instead of `fetch`ing a port.
+`bootMobile()` uses `<documentDir>/Bismuth` as the vault, creating it when it is missing; pass `{ vault, memory? }` to use another folder. The desktop `app/src/index.tsx` never imports it, so the desktop build is unchanged.
 
-Because nothing in the logic pipeline may statically import Bun/`node:fs` (or the WebView bundle would break), two indirections keep those out of the mobile bundle:
+## What the iPad build can do
 
-- **`fileAccess.ts`** — every module reads/writes the vault through a `FileAccess` interface, never `files.ts`/`Bun`/`node:fs` directly. Desktop lazily `import()`s the real `files.ts` on first use (a *dynamic* import, so `Bun.Glob` + `node:fs` stay out of the static dep graph); mobile installs a `tauri-plugin-fs` impl before the first read, so the dynamic import never fires.
-- **`api.ts`** — every `api.*` verb funnels through a `Transport`. Desktop uses `httpTransport`; mobile swaps in `inProcessTransport`.
+The in-process backend answers the read paths and the writes that change a note's content. Everything else the desktop server does is listed under the next heading.
 
-## The in-process backend — `core/src/localBackend.ts`
-
-`createLocalBackend({ vault, memory? })` returns `{ dispatch, subscribe, getVersion }`. `dispatch(method, path, body)` parses `path` as a URL (query params included), switches on `"<METHOD> <pathname>"`, and returns **plain data** (not a `Response`). It holds a lazy graph cache mirroring the HTTP server: a mutating dispatch calls `emit(paths)`, which bumps `version`, nulls the graph so it rebuilds on the next read, and fires every `subscribe` listener with `{ version, paths }` — the mobile stand-in for SSE.
-
-### What it covers
-
-**Reads:**
-
-| Route | Handler |
+| Area | Works |
 |---|---|
-| `GET /version` | `{ version }` |
-| `GET /graph` | `attachLayout(buildGraph(vault, memory), vault)` (cached) |
-| `GET /graph/views` | `computeViewLayouts` over the cached graph |
-| `GET /tree` | `FileAccess.listTree(vault)` |
-| `GET /vault-data` | `buildVaultRows(vault)` (the Bases feed) |
-| `GET /config` | `{ vault, memory }` |
-| `GET /settings` | the vault's `.settings` (read via `FileAccess`) merged over schema `DEFAULTS` by the same pure serializer the desktop server uses (`serializeSettingsFromText`, `core/src/settingsSerialize.ts`), widened by the custom themes below — so `appearance.theme`, `appearance.tokens` and every saved key reach the app. A missing or unparseable file degrades to `DEFAULTS`. No reconcile (the file is never rewritten) |
-| `GET /themes` | `FileAccess.listDir(vault, '.themes')` + each `.themes/<name>.yaml` through `themesFeedFromFiles` (`core/src/theme/themeFeed.ts`) → the same `{ themes, invalid }` feed desktop serves. No `.themes` dir = empty feed |
-| `GET /status-bar` | parses `.settings` itself (the `readSettings` helper is bound to Bun fs) and returns `{ segments }` from `evaluateStatusBar(normalizeStatusBar(statusBar), …)`. `run:` shell segments never execute — each comes back with the error `shell segments are desktop-only` — and `isTrusted` is always `true`, so no trust prompt is raised |
-| `GET /schema` | `{ properties: {} }` |
-| `GET /templates` | `[]` (needs a dir walk — follow-up) |
-| `GET /file` | note text (or `""` if absent — parity with `GET /file` never 404ing) |
-| `GET /meta` | `parseFrontmatter(text).data` |
-| `GET /base` | `parseBaseFile(text, …)` (404 if the base file is missing) |
-| `GET /tasks` | `collectVaultTasks(vault)` |
-| `GET /cards/{decks,all,note,due}` | the SRS collectors |
-| `POST /rows` | `resolveSource(spec, …)` (Bases source resolution) |
-| `POST /search` | `searchVault(vault, query, opts)` |
+| Graph and file tree | The graph with its layouts, the file tree, the vault's rows for Bases |
+| Notes | Read a note, write it (with an edit-conflict check), read its frontmatter, set and delete properties, replace across the vault |
+| Bases | Read a base, resolve a source into rows, update, delete and reorder rows, including the kanban batch writes |
+| Tasks | List tasks, toggle one |
+| Flashcards | List decks and cards, review a card |
+| Search | Vault search |
+| Settings and themes | Read `.settings` with its defaults applied, and read custom themes from `.themes/` |
+| Status bar | Segments, except shell segments |
 
-**Content-only writes** (each ends by `emit(paths)` for the paths it wrote, to invalidate the graph + notify subscribers):
+## What it cannot do
 
-| Route | Handler |
+These requests fail on a device. The in-process backend throws an `EINVAL` error with status 501 and the message `<METHOD /path> is not supported by the in-process backend yet` for the first group, and an `ENOENT` error with status 404 for routes it has no handler for.
+
+| Not available | Detail |
 |---|---|
-| `PUT /file` | `FileAccess.writeNote` |
-| `POST /set-property`, `POST /delete-property` | `flattenBaseViews` (a legacy `views:` list becomes flat; a multi-entry list throws `BASE_VIEWS_FORMAT_ERROR`) then `setFrontmatterKey` / `deleteFrontmatterKey` then write — every view key is a plain top-level key (how the kanban view persists column order/colors) |
-| `POST /set-properties` | batched `POST /set-property` — groups writes by `path`, one read-modify-write per path via `flattenBaseViews` + `setFrontmatterKey`, skips a path that no longer exists rather than failing the whole batch (mirrors `server.ts`; the kanban drag-drop's write path) |
-| `POST /row/update`, `POST /row/delete`, `POST /row/reorder`, `POST /rows/update` | `upsertRow` / `deleteRow` / `reorderRow` / `upsertRows` (`bases/rowOps.ts`) |
-| `POST /tasks/toggle` | `applyTaskToggle(content, line, status, today)` (`tasks.ts`, shared with the HTTP server): range-checks `line` (`EINVAL` `line out of range`), then `setTaskLineStatus` when the body carries a `status` (the status menu) or a plain `toggleTaskLine` otherwise, then `reorderTaskBlocks`; CRLF files keep CRLF |
-| `POST /cards/review` | dual-mode — row review (`applyReviewToRow` + `upsertRow`) when `{file,index}`, else markdown-card review (`applyReview`) by `{id}` |
-| `POST /replace` | `replaceInVault(vault, query, replacement, opts, scope)` |
+| Creating, moving, deleting or restoring files and folders | `POST /create`, `/move`, `/delete`, `/restore` |
+| Changing settings from the app | `POST /set-setting`, `/folder-icon`; the app reads `.settings` but cannot write it |
+| Daily notes, backup, opening another vault | `POST /daily-note`, `/backup` (there is no `git` on the device), `/open-folder` |
+| Attachments | Uploading, downloading a remote image, HEIC conversion and staging a temp file all throw |
+| Shell status segments | A `run:` segment returns `shell segments are desktop-only`; `POST /status-bar/trust` is refused |
+| The daemon | The cron and process writes (`/daemon/cron/*`, `/daemon/process/*`) are refused, because the in-process path has no owner channel. Every other `/daemon/*` route has no handler, so the daemon page cannot load |
+| The doctor | `GET /doctor` and `POST /doctor/fix` |
+| Templates and the property schema | `GET /templates` returns `[]` and `GET /schema` returns `{ properties: {} }` |
+| Most task edits | `/tasks/reschedule`, `/update`, `/delete`, `/move`, `/archive`, `/create` have no handler; only toggling works |
+| Chat, updates, search prompts, folder visibility | `/chat/*`, `/update/*`, `POST /search-prompt`, `POST /folder-visibility` have no handler |
 
-### What it does NOT cover yet
+## Emoji task fields do not show on iPad
 
-These routes throw through `notSupported(route)`: an `AppError` with code **`EINVAL`**, status **501** and the message `<METHOD /path> is not supported by the in-process backend yet`. ("NOT_SUPPORTED" is only the label used in the source comments and tests, not the error code.) The in-process backend has no HTTP, so this surfaces as a thrown error, not a network response:
+Bismuth reads task dates, priorities and recurrences only from bracket fields such as `[due 2026-09-14]`. The conversion of the Obsidian-Tasks emoji spelling to bracket fields runs on the desktop, because it takes a git snapshot first and a device has no `git`. A vault that is only ever opened on an iPad keeps its emoji fields, and the app shows those tasks without dates, priorities or recurrences. The note text is untouched. Open the vault once on a desktop and the conversion runs there. A vault created on the device starts with nothing to convert, and emoji fields typed by hand on the iPad stay unconverted until a desktop opens the vault. [Tasks syntax](../tasks/syntax.md) has the bracket-field grammar.
 
-- **Structural filesystem ops** — `POST /create`, `POST /move`, `POST /delete`, `POST /restore` (need `FileAccess` extended with create/move/delete).
-- **`POST /set-setting`** and **`POST /folder-icon`** — need a `.settings` writer (`GET /settings` already reads the file, read-only).
-- **`POST /daily-note`** — daily-note materialization.
-- **Binary asset upload** — `uploadAsset` (below) throws, as do `fetchAsset`, `convertHeic` and `stageTmpFile`; asset bytes need `tauri-plugin-fs` + `convertFileSrc`.
-- **`POST /backup`** (git snapshot) and **`POST /open-folder`** (spawning a sibling backend) — no git, no second process on device.
-- **`POST /status-bar/trust`** — writes the machine trust store for approved `run:` status-bar segments. Mobile never runs those segments (see `GET /status-bar` above), and the write is refused outright.
-- **Every `/daemon/*` write** — `POST /daemon/cron/toggle`, `/daemon/cron/run`, `/daemon/cron/delete`, `/daemon/process/toggle`, `/daemon/process/delete`. The HTTP server owner-gates these (they mutate the shared daemon machine dir, not the vault, and CORS is `*`); the in-process transport has no owner channel at all, so it refuses them with the same 501 rather than running them unauthenticated.
+## How it works
 
-### Routes with no handler at all
+### The file and transport seams
 
-A route that has no `case` in `dispatch` falls to the `default` branch and throws `AppError('ENOENT', 'no in-process handler for <METHOD /path>', 404)` — a different error from the 501 above: the 501 list is routes mobile *knows* it cannot do yet, this is everything it never heard of. Routes the HTTP server serves that land here include `POST /folder-visibility`, `POST /tasks/reschedule`, `/tasks/update`, `/tasks/delete`, `/tasks/move`, `/tasks/archive`, `/tasks/create`, `POST /search-prompt`, `GET /daemon/pages` and `POST /daemon/pages/*`, `GET /update/status`, `POST /update/apply`, `GET /update/progress`, and the `/chat/*` routes.
+The logic modules (engine, bases, search, tasks, flashcards, frontmatter, layout) must not import Bun or `node:fs` statically, or the WebView bundle breaks. Two interfaces keep them out of it.
 
-## The `FileAccess` seam — `core/src/fileAccess.ts`
-
-`FileAccess` is the single IO interface the whole logic pipeline reads/writes through:
+`FileAccess` in `core/src/fileAccess.ts` is the one file interface the logic reads and writes through.
 
 ```ts
 interface FileAccess {
-  listMarkdown(root): Promise<string[]>;   // all .md, vault-relative
-  listTree(root): Promise<TreeEntry[]>;     // md + .base + .sheet + .draw + folders
-  readNote(root, rel): Promise<string>;
-  writeNote(root, rel, contents): Promise<void>;
-  listBases(root): Promise<string[]>;       // all .base, vault-relative
-  statNote(root, rel): Promise<FileStat | null>;   // size + ms timestamps, null if vanished
-  listDir(root, rel): Promise<string[]>;    // entry names in a vault-relative dir, [] if missing
-  realPath(path): Promise<string>;          // canonicalize for cycle detection (best-effort)
+    listMarkdown(root): Promise<string[]> // every .md, vault-relative
+    listTree(root): Promise<TreeEntry[]> // the sidebar tree
+    readNote(root, rel): Promise<string>
+    writeNote(root, rel, contents): Promise<void>
+    statNote(root, rel): Promise<FileStat | null> // null if the file vanished
+    listDir(root, rel): Promise<string[]> // entry names; [] if the folder is missing
+    realPath(path): Promise<string> // for cycle detection; best effort
 }
 ```
 
-- **`getFileAccess()`** resolves the active impl, lazily building the desktop default on first use: dynamic `import("./files")` + `import("node:fs/promises")` + `import("node:path")`, wiring `files.ts` fns and a `statNote`/`realPath` over `node:fs`. The dynamic imports keep `files.ts`, `node:fs`, `node:path` out of this module's *static* dep graph.
-- **`setFileAccess(a)`** installs an override (mobile calls it at boot). Once set, `getFileAccess()` returns it and the lazy default never loads — so no Bun-coupled code enters the WebView bundle.
+`getFileAccess()` builds the desktop implementation on first use with dynamic `import()` calls, so `files.ts`, `node:fs` and `node:path` stay out of the static dependency graph. `setFileAccess()` installs another implementation, and once it is set the desktop one never loads. On a device that is `tauriFileAccess()` in `app/src/mobile/tauriFileAccess.ts`, built on `@tauri-apps/plugin-fs`. It walks the vault with `readDir`, skips unreadable folders and dot-files (`.git`, `.obsidian`), lists the same file types the desktop tree lists, hides a binary's companion note and ink sidecar when the binary is present, and treats `realPath` as the identity because iOS has no `realpath`. The vault root is an absolute, security-scoped folder you granted; the mobile entry starts access to it before the first read.
 
-### The mobile impl — `app/src/mobile/tauriFileAccess.ts`
+`Transport` in `app/src/api.ts` is the interface every `api.*` call goes through: `getJson`, `getText`, `post`, `put`, `postJson`, `writeFileChecked`, `uploadAsset`, `fetchAsset`, `convertHeic`, `stageTmpFile`, `assetUrl`, `eventsUrl` and `base`. Desktop uses the HTTP transport. `setTransport(inProcessTransport(backend))` swaps in `app/src/mobile/inProcessTransport.ts`, which turns each verb into `backend.dispatch(...)`. Because `post` and `put` still return a `Response`, no call site changes. `writeFileChecked` reads the file, compares it with the caller's base text and writes only if they match, returning `{ conflict: true, current }` otherwise; a small window remains between the read and the write, which is acceptable with one process and one tab. `assetUrl` returns its input, `eventsUrl` returns `""`, and `base()` returns `inprocess://local`.
 
-`tauriFileAccess()` backs `FileAccess` with `@tauri-apps/plugin-fs` (`readTextFile`/`writeTextFile`/`readDir`/`stat`). A recursive `walk` uses `readDir`, wrapped in try/catch (skip unreadable dirs, parity with the Bun `walkDir`) and **skips dotfiles** (`.git`/`.obsidian`/…) like desktop. `listMarkdown`/`listBases` collect by extension; `listTree` emits dirs plus files in `TREE_EXTS` (`.md`/`.base`/`.sheet`/`.draw`). `statNote` maps the plugin's `Date` fields to ms (`ctimeMs` falls back to `birthtime`). `listDir` is `readDir` mapped to entry names (`[]` on a missing dir; dotfiles included, unlike `walk`, because `.themes` is hidden). `realPath` is identity — iOS has no plugin `realpath` and cycle detection on the logical path suffices (symlink-vaults aren't a mobile concern).
+### The in-process backend
 
-The vault `root` is an absolute, **security-scoped** directory the user granted; paths are POSIX. The mobile entry starts access to the scoped resource (`startAccessingSecurityScopedResource`) before the first read.
+`createLocalBackend({ vault, memory? })` in `core/src/localBackend.ts` returns `{ dispatch, subscribe, getVersion }`. `dispatch(method, path, body)` parses the path as a URL, switches on `"<METHOD> <pathname>"` and returns plain data, not a `Response`. It keeps a lazy graph cache like the server's. Every content write ends with `emit(paths)`, which bumps the version, drops the graph so the next read rebuilds it, and calls each `subscribe` listener with `{ version, paths }`.
 
-## The `Transport` seam — `app/src/api.ts`
+| Reads | Handled by |
+|---|---|
+| `GET /version`, `/config` | The backend's own state |
+| `GET /graph`, `/graph/views` | The engine, with layouts attached, cached |
+| `GET /tree` | `FileAccess.listTree` |
+| `GET /vault-data` | `buildVaultRows`, the Bases feed |
+| `GET /settings` | `.settings` merged over the schema defaults by the serializer the desktop server uses; an unreadable file gives the defaults |
+| `GET /themes` | Each `.themes/<name>.yaml` through the theme feed; no folder means an empty feed |
+| `GET /status-bar` | `.settings` parsed in place; shell segments are not run and every segment counts as trusted |
+| `GET /file`, `/meta`, `/base` | The note text (`""` when absent), its frontmatter, the parsed base (404 when missing) |
+| `GET /tasks`, `/cards/{decks,all,note,due}` | The task and flashcard collectors |
+| `POST /rows`, `/search` | Source resolution and vault search |
 
-Every `api.*` verb routes through a `Transport`:
+| Content writes | Handled by |
+|---|---|
+| `PUT /file` | `FileAccess.writeNote` |
+| `POST /set-property`, `/delete-property`, `/set-properties` | Frontmatter edits; the batch form groups writes per note and skips a note that has vanished |
+| `POST /row/update`, `/row/delete`, `/row/reorder`, `/rows/update` | The row operations in `bases/rowOps.ts` |
+| `POST /tasks/toggle` | `applyTaskToggle`, which range-checks the line number and keeps CRLF line endings |
+| `POST /cards/review` | A base row when the body carries `{file, index}`, else a markdown card by `{id}` |
+| `POST /replace` | `replaceInVault` |
 
-```ts
-interface Transport {
-  getJson<T>(path): Promise<T>;
-  getText(path): Promise<string>;
-  post(path, body): Promise<Response>;   // returns a Response — a web standard in WKWebView
-  put(path, body): Promise<Response>;
-  postJson<T>(path, body): Promise<T>;
-  writeFileChecked(path, contents, baseText): Promise<{conflict:false} | {conflict:true; current}>;
-  uploadAsset(targetPath, bytes): Promise<string>;
-  fetchAsset(url, targetPath): Promise<string>;       // download a remote image into the vault
-  convertHeic(bytes): Promise<ArrayBuffer>;           // HEIC/HEIF -> JPEG
-  stageTmpFile(name, bytes): Promise<string>;         // bytes -> a real path outside the vault
-  assetUrl(target): string;
-  eventsUrl(): string;
-  base(): string;
-}
-```
+A row update, delete or reorder whose `index` is missing or not an integer is refused with a 400, because an omitted index would otherwise append a duplicate row or delete the first one.
 
-The default is `httpTransport(BASE)` (fetch against the runtime-resolved core port, plus a boot-time connect-retry on GETs). **`setTransport(t)`** swaps it — the mobile entry passes `inProcessTransport(backend)`. Keeping the verbs identical (including `post`/`put` returning a `Response`, available in WKWebView) means **no call-site changes** when the backend moves in-process.
+### Change detection
 
-### The mobile impl — `app/src/mobile/inProcessTransport.ts`
+There is no `/events` stream. `inProcessTransport.eventsUrl()` returns an empty string, so no `EventSource` opens. The mobile entry calls `backend.subscribe(evt => …)` to drive refetches, with the `api.version()` poll as a backstop. The payload has the same `{ version, paths }` shape the server's stream carries, so the app's refetch logic is shared.
 
-`inProcessTransport(backend)` translates each verb into a `backend.dispatch(...)`:
-
-- `getJson`/`getText`/`postJson` return the dispatch result directly.
-- `post`/`put` wrap the result as a `Response` via `asResponse` (a string → `new Response(str)`, else a JSON `Response`) so callers that read `.json()`/`.text()` keep working.
-- **`writeFileChecked`** implements the same optimistic-concurrency contract as HTTP (#46) **client-side**, since there are no HTTP status codes to 409 with: it `dispatch("GET", "/file")`, compares to `baseText`, and only `dispatch("PUT", "/file")` if they still match — else returns `{ conflict: true, current }`. There's a small read-then-write TOCTOU window (not atomic against `writeNote` the way the server's check is), acceptable for this single-process, single-tab mobile backend — there's no concurrent external writer racing the same vault.
-- **`uploadAsset`**, **`fetchAsset`**, **`convertHeic`** and **`stageTmpFile`** all throw `<verb> is not supported by the in-process backend yet` (binary IO not wired yet); **`assetUrl`** returns the target path unchanged; **`eventsUrl`** returns `""` on purpose — EventSource is not used on mobile.
-- **`base()`** returns `"inprocess://local"`.
-
-## Boot — `app/src/mobile/bootMobile.ts`
-
-`bootMobile(opts?)` swaps both seams **before** `App`/`serverVersion` are imported, so the default HTTP path is never even constructed:
-
-```ts
-import { bootMobile } from "./mobile/bootMobile";
-await bootMobile();                    // swap FileAccess + Transport
-const { App } = await import("./App"); // App loads AFTER the swap
-render(() => <App />, root);
-```
-
-Steps:
-
-1. Resolve the vault — `opts.vault`, else `defaultVaultDir()`: `<documentDir>/Bismuth`, created via `mkdir({ recursive: true })` if absent.
-2. `setFileAccess(tauriFileAccess())` — point the pipeline at the device filesystem.
-3. `createLocalBackend({ vault, memory })` + `setTransport(inProcessTransport(backend))` — route all `api.*` through the in-process backend.
-
-It returns `{ backend, vault }` so the caller can `backend.subscribe(...)`. Desktop's `index.tsx` never imports this module, so the desktop build is untouched.
-
-## Emoji task syntax is not migrated on mobile
-
-The once-per-vault conversion of emoji task signifiers to bracket fields (`core/src/taskMigrateRun.ts`) is wired into `createServer` only — `bootMobile` never calls it. The pass takes a local git snapshot before rewriting anything, and iPad has no `git`, so it cannot run there. A vault opened only on mobile keeps the emoji spelling, and because `core/src/tasks.ts` no longer reads that spelling, the app shows no dates, priorities or recurrences for those tasks.
-
-Nothing is lost — the note text itself is untouched — and the vault migrates automatically the next time it is opened on desktop. This is accepted rather than solved while the app is desktop-first. A vault that is ever opened on a desktop migrates there automatically, and a vault created directly on-device (`defaultVaultDir()` in `app/src/mobile/bootMobile.ts` `mkdir`s one when `bootMobile` is given no vault path and the directory does not yet exist) starts with nothing to migrate. What is not covered is old-style syntax typed by hand on iPad: it stays unmigrated for as long as that vault is only ever opened there.
-
-## Change detection — `subscribe()` instead of SSE
-
-There is no `/events` stream on mobile. `httpTransport.eventsUrl()` returns `/events`; `inProcessTransport.eventsUrl()` returns `""`, so no `EventSource` is opened. Instead the backend fires `ChangeListener`s on every mutating dispatch, and the mobile entry calls `backend.subscribe(evt => …)` to drive refetches — with the existing `api.version()` poll (the desktop resilience path) as a backstop. Same `{ version, paths }` shape the SSE payload carries, so the frontend's refetch logic is reused.
-
----
-
-Source: `core/src/localBackend.ts`, `core/src/fileAccess.ts`, `app/src/api.ts`, `app/src/mobile/bootMobile.ts`, `app/src/mobile/inProcessTransport.ts`, `app/src/mobile/tauriFileAccess.ts`, `core/src/taskMigrateRun.ts`, `core/src/tasks.ts`
+Source: `core/src/localBackend.ts`, `core/src/fileAccess.ts`, `app/src/api.ts`, `app/src/mobile/{bootMobile,inProcessTransport,tauriFileAccess}.ts`, `core/src/taskMigrateRun.ts`

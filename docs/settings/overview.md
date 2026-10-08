@@ -1,700 +1,116 @@
-# Settings Overview
+# Settings
 
-This page explains how `.settings` works: its lifecycle, the schema behind it, the frontend store, and the boundary between them. Use the [Settings Reference](reference.md) for every section, key, and default; use [Themes & Palette](themes.md) for the color system.
-
-There is no settings GUI. Each vault has one hidden, extensionless YAML file at its root: `.settings`. Open it like a note to use schema-aware autocomplete (Ctrl-Space) and inline lint. The backend is the only writer, so a setting change preserves the document's comments, unknown keys, and `properties:` registry. `core/src/schema/settingsSchema.ts` defines names, types, defaults, bounds, and documentation; parity tests keep `app/src/settings.ts` and `app/src/settingsCssVars.ts` aligned with it.
-
-> **Historical note**: the vault settings file used to be named `settings.yaml` at the vault root. It is now `.settings` (still YAML, just hidden and extensionless) — see [Filename History and Migration](#filename-history-and-migration) below. This doc uses `.settings` throughout; older docs/discussions may still say `settings.yaml`.
-
----
-
-## Architecture at a Glance
-
-```
-SETTINGS_SCHEMA (core)      ← single source of truth
-    │
-    ├── DEFAULTS (derived)  ← plain nested object seeded synchronously into the frontend store
-    ├── reconcileSettings   ← migrates/prunes on vault open; never adds keys (the file is sparse)
-    ├── setSettingInFile     ← per-key in-place merge (POST /set-setting)
-    ├── serializeSettings    ← file merged over defaults → GET /settings
-    ├── settingsComplete.ts  ← Ctrl-Space autocomplete inside the editor
-    ├── yamlSchema.ts        ← inline lint
-    └── settingsCssVars.ts   ← projects appearance/ui/editor/calendar → CSS :root vars (terminal font size + line height are read directly by `Terminal.tsx`, not via CSS vars)
-```
-
-The 2D/3D graph dimension is intentionally **not** a setting — it is a transient per-window localStorage toggle in `GraphView.tsx` and never rewrites `.settings`.
-
----
-
-## The `.settings` File
-
-### Location
-
-Always at `<vault-root>/.settings` (the constant `SETTINGS_FILE = ".settings"`, `core/src/settings.ts:34`). There is no global settings file; every vault has its own. It's a single hidden, extensionless file — still plain YAML underneath, just without a `.yaml` extension or a visible name, so it doesn't clutter the file tree as an ordinary note.
-
-### Filename History and Migration
-
-The settings file was originally named `settings.yaml` at the vault root (constant `LEGACY_SETTINGS_FILE = "settings.yaml"`, `core/src/settings.ts:36`). It was later renamed to the current hidden `.settings` file. `migrateSettingsLocation(vault)` (`core/src/settings.ts:59`) runs at the top of every `reconcileSettings` call and does a one-time, idempotent, best-effort relocation in three stages:
-
-1. **Already migrated**: if `.settings` exists AND is a regular file, it's a no-op — return immediately.
-2. **Interim half-migration**: if a `.settings/settings.yaml` *directory* exists (an earlier build of this feature briefly used `.settings/` as a folder containing `settings.yaml`), collapse it into the `.settings` *file* — rename the inner file out to a temp name (`.settings.migrating`), remove the now-empty `.settings/` directory, then rename the temp file to `.settings`. (A file and a directory can't share the same name mid-move, hence the temp hop.)
-3. **Legacy vault-root file**: if a vault-root `settings.yaml` exists and `.settings` doesn't, `renameSync` it to `.settings`. A rename (not a copy) preserves the user's comments and values verbatim. If the rename fails (a lock, an odd filesystem), it falls back to `copyFileSync` so `.settings` still ends up populated (the legacy file is left behind as a backup); if even that fails, the vault silently reverts to defaults via the normal reconcile/seed path.
-
-All of this is best-effort and silent — a vault that has never used `settings.yaml` (freshly created) or that's already on `.settings` is completely unaffected.
-
-### First Launch
-
-The file is **sparse**: only settings you change live in it, and every key left out reads as its schema default. On first open of a vault `initializeSettings` is called. If `.settings` is absent, it writes `SETTINGS_SEED`, a two-line comment header with no keys. Discoverability is via the editor's Ctrl-Space autocomplete, which lists every key with its `doc` string, valid range and `default: <value>`. The generated file:
+Each vault has one settings file, `.settings`: a hidden YAML file with no extension at the vault root. It holds only the values you change; every key you leave out uses its default. There is no settings screen. You open `.settings` in the editor like any note, with autocomplete and inline lint.
 
 ```yaml
-# Only the settings you change live here; every key left out uses its default.
-# Ctrl-Space lists every key with its doc and default value.
-```
-
-Every reader merges over `DEFAULTS` (`serializeSettingsForFrontend`, `loadAppConfig`, `bismuth settings get`, `readDaemonEnabledSync`, the daemon's `vaultSettings.ts`, `mcp/src/memory.ts`), so an absent key behaves exactly like a key written at its default. Writing a value equal to its default is still allowed and is never pruned.
-
-### On Every Vault Open: `reconcileSettings`
-
-`reconcileSettings(vault)` runs on vault open. It:
-1. First calls `migrateSettingsLocation` (see [Filename History and Migration](#filename-history-and-migration) above) to relocate any legacy `settings.yaml`/interim `.settings/` layout into the `.settings` file.
-2. If `.settings` is absent, calls `initializeSettings` to write `SETTINGS_SEED` (no keys).
-3. If the file exists, parses it via the YAML CST (`parseDocument`).
-4. If the file has YAML parse errors, leaves it **completely untouched** (avoids clobbering a half-edited file).
-5. If the top-level value is not a YAML map (empty/scalar/corrupt/comment-only), leaves it untouched.
-6. Otherwise runs the in-place migrations in order: `renameKeys`, `moveKeys`, `migrateDaemonConfig` (a no-op), `migrateLegacyAppearance`, `pruneRetiredKeys`, then `stripMaterializedDefaults`. **It never adds missing keys and does not remove unknown keys.**
-7. Writes back only if something actually changed (no spurious writes/SSE churn).
-
-`stripMaterializedDefaults` is a one-time cleanup of files written before `.settings` went sparse. When at least half of all schema leaves (`MATERIALIZED_DUMP_RATIO`, `0.5`) sit in the file at exactly their schema default, the file is treated as the old full-defaults dump: every leaf still at its default is deleted, then every section left empty. A leaf carrying a comment, an unknown key and any non-default value are kept. A sparse hand-written file never reaches the threshold, so a value you write equal to its default survives. `migrateLegacyAppearance` resets the legacy type scale by deleting those keys (absent = current default) rather than writing default values, and removes an emptied `editor:` section.
-
-Key properties of `reconcileSettings`:
-- Preserves all user-written comments (including inline `# ...` after values).
-- Preserves existing user values; never overwrites them.
-- Preserves any keys not present in the schema (unknown keys survive).
-- Adding a new schema entry needs no migration code: it reads as its default until you set it.
-- A corrupt file is never written to; the user must fix it manually.
-
-```typescript
-// Real test demonstrating preservation:
-await writeNote(vault, SETTINGS_FILE, // ".settings"
-  "# my notes\nappearance:\n  theme: ink # inline\n");
-await reconcileSettings(vault);
-// Raw file still contains "# my notes" and "# inline"
-// No keys are added: graph, editor, … stay absent and read as defaults
-```
-
-### The Per-Key Merge: `setSettingInFile`
-
-`setSettingInFile(vault, path, value)` is the **only** backend write path for individual settings. It:
-1. Runs `reconcileSettings` first (ensures the file exists, at minimum as the seed, and is migrated).
-2. Reads the current raw file.
-3. Uses `doc.setIn(path, value)` on the YAML CST — surgical in-place update.
-4. Writes the result back, preserving all other keys, comments, and key order.
-
-The path is a `string[]` array, e.g. `["appearance", "theme"]` or `["graph", "nodeSize"]`.
-
-This is guarded by a **per-vault mutex** (`settingsMutexes` — a `Map<vault, Promise<void>>`) that serializes all concurrent `POST /set-setting` requests for the same vault, preventing TOCTOU races on the read-modify-write cycle. 100+ concurrent mutations are handled safely (verified by tests).
-
-```typescript
-// Setting a value:
-await setSettingInFile(vault, ["appearance", "theme"], "paper");
-await setSettingInFile(vault, ["graph", "nodeSize"], 12);
-
-// Unknown keys and siblings are preserved:
-// Before: appearance:\n  theme: ink\n  myCustom: 1\n# hdr
-// After:  appearance:\n  theme: paper\n  myCustom: 1\n# hdr
-```
-
-### Serving Settings to the Frontend: `serializeSettingsForFrontend`
-
-`GET /settings` returns `serializeSettingsForFrontend(vault)`:
-1. Starts from `structuredClone(DEFAULTS)`.
-2. Reads and parses `.settings` (tolerates malformed YAML → `data = {}`).
-3. For each known section:
-   - `folderIcons` — passed through as a free-form string map via `readFolderIconsFrom`.
-   - `folderVisibility` — passed through as a free-form string map via `readFolderVisibilityFrom`.
-   - `toolbar` and `tabBar` — parsed via `readButtonListFrom` (validates item structure, drops malformed items — including any item whose `icon` is not a non-empty string). The user's array is read as-is, never overlaid index-by-index on the default.
-   - `dailyNotes` — parsed via `readDailyNotesFrom` (validates item structure, drops malformed items).
-   - Top-level **scalar** sections (`homePage`) — skipped by the `typeof stored !== 'object'` guard, so the default (`""`) is always returned, whatever the file says.
-   - `statusBar` (a top-level list) — NOT special-cased, so it takes the generic overlay below **per index onto the default list**: a longer user list is truncated to the default's 4 items, and a shorter one is padded with the default's remaining items. The rendered bar is unaffected (`GET /status-bar` re-reads the raw file via `normalizeStatusBar`), but `GET /settings` and `bismuth settings get --key statusBar` report the overlaid list.
-   - All other sections: per-key `typeof` check; wrong-type values are silently dropped back to defaults. Numeric keys with out-of-range values (below `min` or above `max`) are dropped. Enum keys with unknown values are dropped. A list-typed key is accepted only if it is structurally valid: a list of strings must contain only strings; a list of objects (`chat.presets`) keeps each object item reduced to the item schema's fields, a field that is missing or not a string reads as `""`, and a non-object item is dropped.
-4. Strips the `properties` section (delivered separately by `GET /schema`).
-
-This means a corrupt or partial `.settings` degrades gracefully to defaults — nothing explodes.
-
----
-
-## The Schema (`SETTINGS_SCHEMA`)
-
-Defined in `core/src/schema/settingsSchema.ts`. Every section is an `object` entry with nested `SchemaEntry` fields.
-
-### `SchemaEntry` Fields
-
-```typescript
-interface SchemaEntry {
-  type: PropertyType;    // the type (see below)
-  default?: unknown;     // materialized into DEFAULTS; required for every leaf
-  doc?: string;          // shown in Ctrl-Space autocomplete; required for every leaf
-  min?: number;          // lower bound (numeric types; enforced in serializeSettings)
-  max?: number;          // upper bound (numeric types; enforced in serializeSettings)
-}
-```
-
-### `PropertyType` Values
-
-| Type | Description |
-|---|---|
-| `"string"` | Arbitrary string |
-| `"number"` | Number, optionally bounded by `min`/`max` |
-| `"boolean"` | `true` or `false` |
-| `"date"` | Date string |
-| `"datetime"` | Datetime string |
-| `"file"` | Vault file path |
-| `"icon"` | Icon name (any Phosphor icon) or emoji |
-| `"keybind"` | Shortcut combo string (e.g. `"Mod+P"`); drives the "Record shortcut" autocomplete |
-| `{ kind: "path", only?: "dir"\|"file", scope?: "templates"\|"fs" }` | Path; completion narrows to dirs/files/templates, or (`"fs"`) the real filesystem |
-| `{ kind: "enum", values: string[], caseInsensitive?: boolean, allowPrefixes?: string[] }` | One of a fixed set of strings |
-| `{ kind: "list", item?: PropertyType }` | YAML sequence |
-| `{ kind: "object", fields: Schema }` | Nested YAML map |
-
----
-
-## All Schema Sections and Keys
-
-### `appearance`
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `theme` | enum | `ink` | 4 values | Bismuth color theme; selects all colors in the app and graph. Values: `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), `riso` (cream+indigo, light). |
-| `icon` | enum | `hopper-crystal` | 14 values | App logo mark (favicon + sidebar). Values: `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings`. |
-| `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI + MONO font — a Monaspace variant, used for all chrome (rail, tabs, buttons, menus, calendar chips) AND the mono constructs inside a note (code blocks, inline code, frontmatter, math, in-note tags). Config buffers (`.settings`, `*.yaml`) render entirely in it. |
-| `proseFont` | enum | `Libron` | `Libron`, `IBM Plex Serif`, `Lora`, `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Prose font — the proportional face for note body text, note headings, note tables, chat message bodies and the chat composer. Default `Libron` (`Lora`'s family string is `'Lora Variable'`); set it to a Monaspace variant for an all-mono editor. |
-| `editorFontSize` | number | `13.5` | 11–28 | Note prose font size in px — the design system's own prose size (`--fs-body-lg`), the one thing NOT at the 11.5px `--fs-ui` chrome size. |
-| `sidebarWidth` | number | `266` | 200–600 | Left sidebar width in px (the ASCII design's 266px vault rail). Dragging the sidebar's edge snaps onto this default within 12px. |
-| `sidebarGraphHeight` | number | `305` | 200–500 | Mini graph panel height in the sidebar in px. |
-| `tabRailWidth` | number | `232` | 160–480 | Right tab rail's open width in px (hovered or pinned). Set by dragging the rail's edge, which snaps onto this default within 12px. |
-| `uiFontSize` | number | `11.5` | 11–16 | Base UI font size (sidebar, tabs, menus) in px. It sets `--fs-ui`, the workhorse chrome size, and the ASCII grid's cell width (`--cell-w`) scales with it (6.3px at the 11.5 default). |
-| `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
-| `iconSize` | number | `12` | 11–20 | Icon size in px for EVERY icon in the app — toolbars, file-tree rows, menus, buttons, chips. One size, no per-surface overrides (only a few oversized illustration marks opt out, each marked `icon-size-exempt:`). Default 12: an icon needs a little more room than the 11.5px `--fs-ui` label text beside it. |
-| `cursorWidth` | number | `2` | 1–4 | Text cursor bar width in px — the ONE cursor every editor, field and terminal draws. Moved from `terminal.*` (migrated on reconcile). |
-| `cursorGlideMs` | number | `70` | 20–200 | Text cursor glide between positions in ms, in every editor, field and terminal. Moved from `terminal.*`. |
-| `cursorBlinkSeconds` | number | `1.2` | 0.6–2.0 | Text cursor blink cycle in seconds, shared by every cursor in the app. Moved from `terminal.*`. |
-
-There are **no per-color override keys** in `appearance` — the theme is the single source of color. Flat keys like `background`, `foreground`, `accent`, or `accentPalette` do not exist in the schema and are stripped by the type check in `serializeSettingsForFrontend`.
-
-### `graph`
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `spin` | boolean | `true` | — | Idle rotation of the 3D graph. |
-| `showFps` | boolean | `false` | — | Show the frame-rate (FPS) counter. |
-| `spinSpeed` | number | `0.0015` | 0–0.01 | Idle spin speed in radians/frame. |
-| `repulsion` | number | `-10` | -40 – -1 | No effect currently (see note below) — was d3-force `forceManyBody` strength; more negative = nodes push apart harder. |
-| `linkDistance` | number | `5` | 1–40 | No effect currently (see note below) — was target distance between linked nodes. |
-| `centering` | number | `0.13` | 0–0.5 | No effect currently (see note below) — was `forceX/Y/Z` strength toward the origin; higher = denser ball. |
-| `nodeSize` | number | `6` | 2–16 | No effect currently (see note below) — was base node radius. |
-| `showGraphLabels` | boolean | `true` | — | Master toggle for in-scene labels. |
-| `graphLabelHubCount` | number | `10` | 0–30 | Count of top-degree nodes that always have a label. |
-| `nodeSizeMinMult` | number | `0.4` | 0.1–1.0 | No effect currently (see note below) — was the size multiplier for a 0/1-degree leaf (smallest dot). |
-| `nodeSizeDegreeGain` | number | `0.45` | 0.1–1.5 | No effect currently (see note below) — was how fast node size grows with `sqrt(link count)`. |
-| `nodeSizeMaxMult` | number | `6` | 2–12 | No effect currently (see note below) — was ceiling on node size (largest hub vs leaf). |
-| `mapDefaultZoom` | number | `2` | 1–18 | Default zoom for the Bases map view when it can't fit all markers. |
-| `refreshDebounceMs` | number | `300` | 100–1000 | Delay before rebuilding the graph after an edit burst in ms. |
-| `backgroundNoise` | boolean | `false` | — | The faint ASCII noise texture under the graph field. Off by default. |
-| `gradient` | boolean | `false` | — | The phosphor glow behind dense regions of the graph and the darkened vignette at its edges. Off by default (a flat ground). |
-
-The graph's 2D/3D view mode is **intentionally absent** from this section. It is a transient `localStorage` toggle in `GraphView.tsx` and never writes `.settings`.
-
-`repulsion`, `linkDistance`, `centering`, `nodeSize`, `nodeSizeMinMult`, `nodeSizeDegreeGain`, and `nodeSizeMaxMult` currently have no effect — they're vocabulary from the pre-ASCII force-directed renderer. The keys still exist and validate, but nothing reads them: `GraphView.tsx`'s `buildConfig()` never forwards them into `GraphConfig`, and `core/src/layout.ts`'s force-directed pass uses its own hardcoded constants instead. Kept for now as a deliberately deferred product decision, not removed.
-
-### `editor`
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `livePreview` | boolean | `true` | — | Render markdown inline as you type. |
-| `lineNumbers` | boolean | `false` | — | Show line numbers. |
-| `lineWrapping` | boolean | `true` | — | Wrap long lines. |
-| `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
-| `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper); independent of spellcheck, off by default. |
-| `autoSaveDelay` | number | `800` | 200–3000 | Milliseconds of idle before auto-saving. |
-| `lineHeight` | number | `1.25` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1.25` -> 22.5px. Prose is Libron (`--prose-font`) at 13.1px (13.5 × `--prose-scale` 0.97), where 22.5px of leading is a 1.72 ratio, an open measure that suits a reading face. Still a rational multiple of the row unit, so four prose lines span exactly five tree rows. |
-| `mathMacros` | string | `""` | — | LaTeX preamble of `\newcommand`/`\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. Available in every `$...$` and `$$...$$` across the vault. |
-| `wrapSelection` | boolean | `true` | — | With text selected, typing a wrapping character surrounds the selection instead of replacing it (e.g. select a word, press `*` → `*word*`). |
-| `wrapSelectionChars` | list (string) | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes already wrap via auto-close, so they're omitted by default. |
-
-### `vault`
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `backupOnSave` | boolean | `true` | Take a git snapshot after every save. |
-
-### `attachments`
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `folder` | string | `attachments` | Folder for new pasted/dropped attachments (relative to vault root). `""` = vault root, `"."` = current note's folder. Auto-created if missing. |
-| `onDrop` | enum | `copy` | Behavior when dragging a file in from outside the vault. `copy` = copy into the attachment folder (keeps vault self-contained). `reference` = reference in place. Note: ⌥-drop always references regardless of this setting. |
-| `naming` | string | `Pasted image {timestamp}` | Filename template for pasted clipboard images (extension added automatically). `{timestamp}` expands to a sortable date-time stamp. Name collisions get a numeric suffix. |
-
-Embed resolution is always filename-first (like wikilinks), so moving an attachment later never breaks its `![[name]]` embed — `folder` only controls where NEW files land.
-
-### `calendar`
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `defaultView` | enum | `week` | `month`, `week`, `3day`, `day` | Default calendar view. Must stay in sync with `ViewType` in `app/src/calendar/types.ts`. |
-| `weekStartsOnMonday` | boolean | `true` | — | Start the week on Monday. |
-| `militaryTime` | boolean | `false` | — | Use 24-hour time format. |
-| `monthCellMinHeight` | number | `80` | 50–160 | Minimum height of a day cell in month view in px. |
-| `timeGutterWidth` | number | `50` | 40–80 | Width of the hour-label gutter in week/day views in px. |
-| `defaultCategoryColor` | string | `#8296C6` | — | Default color for a newly created event category (hex string). |
-
-### `googleCalendar`
-
-Two-way Google Calendar sync — connection-level config shared by every synced calendar. **Non-secret operational config only** — the OAuth client credentials and tokens live OUTSIDE the vault (`~/.bismuth/gcal`), never in `.settings` or git. Connect via the "Connect Google Calendar…" command. The single OAuth scope is `calendar.events` (read+write events only; no Gmail/Drive/contacts access).
-
-**Which calendar base syncs with which Google calendar is now PER-CALENDAR**, declared on each calendar base's own frontmatter (not here): `googleCalendarSync: true` turns sync on for that base, and `googleCalendarId` (default `primary`) picks the Google calendar. Set both from the calendar's settings panel (or hand-edit the base frontmatter). A vault can have several calendars, each synced with a different Google calendar. See `docs/gcal/overview.md`.
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `enabled` | boolean | `false` | — | **LEGACY** (now per-calendar). Old global on/off switch; honored only as a migration fallback for the base named by `basePath`. New calendars use each base's `googleCalendarSync` frontmatter key. |
-| `calendarId` | string | `primary` | — | **LEGACY** (now per-calendar). Old global calendar id; honored only for the base named by `basePath`. New calendars set `googleCalendarId` in their own frontmatter. |
-| `basePath` | string | `""` | — | **LEGACY** (now per-calendar). Old global "which calendar base to sync" pointer. Kept as a migration pointer; new setups enable sync per calendar in that calendar's settings instead. |
-| `conflictPolicy` | enum | `lastWriteWins` | `lastWriteWins`, `googleWins`, `bismuthWins` | How to resolve an event changed on BOTH sides since the last sync. Applies to every synced calendar. |
-| `syncIntervalMinutes` | number | `15` | 1–1440 | Auto-sync cadence in minutes for every synced calendar (manual sync is always available). |
-| `timeZone` | string | `""` | — | IANA timezone applied to naive (untimed) events when pushing to Google (blank = system timezone). |
-
-### `ui`
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `paletteTopOffset` | string | `12vh` | — | How far down the screen the command palette appears (CSS length, e.g. `12vh`). |
-| `paneDividerWidth` | number | `5` | 3–12 | Grab width of the divider between split panes in px; the visible line is always the app's 1px border. |
-| `cardGridMinWidth` | number | `220` | 150–360 | Minimum card width in Bases cards view in px. |
-| `kanbanColumnMinWidth` | number | `248` | 180–360 | Minimum Bases kanban column width in px. |
-| `kanbanColumnMaxWidth` | number | `288` | 220–420 | Maximum Bases kanban column width in px. |
-| `mapMinHeight` | number | `480` | 300–800 | Minimum height of the Bases map view in px. |
-| `tableMinColWidth` | number | `60` | 30–150 | Minimum column width when resizing a Bases table in px. |
-
-### `layout`
-
-Details and the placement rules: [Shell layout](layout.md).
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `sidebarSide` | enum | `left` | `left`, `right` | Which window edge the sidebar sits on. |
-| `tabRailSide` | enum | `right` | `left`, `right` | Which window edge the vertical tab rail sits on. |
-| `sidebar` | list | `[toolbar, files, graph]` | `toolbar`, `files`, `graph` | Sidebar sections top to bottom; an omitted id is hidden. |
-| `statusBar` | boolean | `true` | — | Show the status bar along the bottom edge. |
-
-### `server`
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `fileWatchDebounceMs` | number | `250` | 50–2000 | Coalesce rapid file changes for this long before rebuilding caches in ms. |
-| `sseHeartbeatMs` | number | `5000` | 1000–30000 | Keepalive ping interval for the live-update stream in ms. |
-
-### `daemon`
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `enabled` | boolean | `false` | — | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain graph mode + the daemon's own page. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
-| `inboxRetentionDays` | number | `7` | 1–90 | How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker. |
-| `backend` | enum | `claude` | `claude`, `codex` | Which agent CLI runs this vault's daemon brain (unattended, resumable, headless). A REQUEST, not a guarantee — `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) refuses any non-Claude backend for a vault with even one hidden/chat-only note and degrades to `claude` instead, logging why. |
-| `inheritUserMcp` | boolean | `false` | — | Let this vault's daemon sessions use the MCP servers and plugins installed for your own `claude` CLI (user scope: `~/.claude.json` servers + `~/.claude/settings.json` plugins), on top of the always-present vault-targeted `bismuth` server. Off by default because a cron runs unattended with permissions bypassed and no confirmation prompt. Project- and local-scope settings are never loaded regardless — the session's cwd is the vault root, so a `.mcp.json` sitting in your notes would otherwise auto-execute. |
-| `recall.enabled` | boolean | `true` | — | Master switch for every automatic memory injection into agent sessions: prompt-time recall, mid-turn recall, session-start memory and subagent memory. Off = agents only see memory they ask for via the remember/recall/forget tools. Requires `daemon.enabled`. |
-| `recall.midTurn` | boolean | `true` | — | Run one memory recall per agent tool batch, inside a long turn, not only at the prompt. Cost: one extra lookup per tool batch. Off = recall at the prompt only. |
-| `recall.semantic` | boolean | `true` | — | Embedding (meaning-based) search in recall. Cost: on first use core starts a separate helper process holding a ~35MB embedding model (about 260-280MB of RAM while it runs, a little CPU while it embeds); core itself grows by under 10MB. The helper exits after 10 minutes idle, which returns all of that memory. Off = keyword-only recall and the helper is never started. |
-
-The daemon is **one machine process** (the in-repo `@bismuth/daemon` workspace, `daemon/src/**`) that multiplexes per-vault "brains". Machine identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, logs, `vaults.json`) lives at `~/.bismuth/daemon` (`daemonMachineDir()` = `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`); each enabled vault's brain — crons, processes, memory, session-id, `identity.md` — lives under `<vault>/.daemon`. There is no `daemon.home` or `daemon.autoUpdate` setting; the daemon updates WITH the app (no git-pull self-update). Install/setup is `core/src/daemonInstall.ts` (`installDaemonFromBundle()` copies the bundled `bismuth-daemon` binary to `~/.bismuth/bin`, then runs `<bin> --ensure-installed`); the service ids are launchd `com.bismuth.daemon` / systemd `bismuth-daemon`.
-
-### `update`
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `autoUpdate` | boolean | `false` | Auto-apply Bismuth app updates on launch in the background, then relaunch when the rebuild is ready (off = manual via the update banner). |
-
-### `terminal`
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `fontSize` | number | `13` | 9–20 | Terminal font size in px. |
-| `lineHeight` | number | `1.5` | 1.2–2.0 | Terminal line height multiplier. |
-
-### `chat`
-
-Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior. There is no `chat.computerUse` setting: the Claude Code backend's `--chrome` flag is derived from the backend catalog's `computerUse` capability alone (see [chat overview](../chat/overview.md)).
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `provider` | enum | `claude` | 10 values | Default chat provider for NEW chat tabs: `claude` runs Claude Code, `opencode` runs opencode, `codex` runs OpenAI Codex, `cline` runs Cline, `gemini` runs Gemini CLI, `goose` runs Goose, `openclaw` runs OpenClaw, `hermes` runs Hermes Agent, `claude-code-acp` runs Claude Code (ACP), `codex-acp` runs Codex (ACP). Each chat can still pick its own provider in the header. |
-| `presets` | list (object) | `[]` | — | Saved provider + model + effort combinations, picked from the chat's model dialog (chat tab and daemon chat). Each item is `{name, provider, model, effort}` — `provider` is a chat connector id, `model` the connector's model id (empty = its default), `effort` a level the model supports (empty = its default). Usually written by the dialog's `[+ save]`; see [chat presets](../chat/overview.md). |
-
-The enum is sourced from `BACKEND_IDS` (`core/src/agentBackends/catalog.ts`), so adding a backend never needs a schema edit.
-
-### `mcp`
-
-Multi-CLI MCP registration (`core/src/agentBackends/mcpRegistrars.ts`): which OTHER agent CLIs, besides Claude Code (which always auto-registers on boot via `bismuthInstall.ts`), also get Bismuth's stdio MCP server (docs + `bismuth` CLI + memory tools) written into their own global config.
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `registerWith` | list (string) | `[]` | Additional agent CLIs to register Bismuth's MCP server with, e.g. `["codex", "gemini"]`. Registrar ids: `codex`, `cline`, `openclaw`, `gemini`, `qwen`, `copilot`, `amp`, `droid`, `crush`, `goose`. Listing a CLI here IS the opt-in — registration runs on the next app start (and on demand via `bismuth install --mcp <cli>` / `--mcp all`). Empty by default, so Bismuth never writes into another CLI's config uninvited; registration is idempotent and never clobbers an entry it didn't write. |
-
-### `codex`
-
-OpenAI Codex-specific opt-ins (`core/src/agentBackends/agentsMd.ts` + `codexHooks.ts`). Codex has no system-prompt flag and no PATH-shim hook mechanism — `AGENTS.md` and a project-scoped `.codex/hooks.json` are its own designed channels for memory + session telemetry, but both mean writing into files the user may hand-edit, so both keys default off (same opt-in precedent as `mcp.registerWith`).
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `writeAgentsMd` | boolean | `false` | Let Bismuth write/refresh a managed block in this vault's `AGENTS.md` with a short persona/memory note for the Codex CLI. The block is delimited by markers and never touches surrounding prose. |
-| `installRelayHooks` | boolean | `false` | Let Bismuth write a project-scoped `.codex/hooks.json` (+ its small reporting script) into this vault so a Codex session run in a Bismuth terminal tab or chat reports its lifecycle into Bismuth's in-process relay registry — the same role Claude Code's relay plugin plays. |
-
-### `srs` (Spaced-Repetition)
-
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `baseEase` | number | `250` | 130–400 | Starting ease factor for a new flashcard (SM-2). Higher = longer intervals. |
-| `easyBonus` | number | `1.3` | 1.0–2.0 | Extra interval multiplier when a card is rated "easy". |
-| `lapsesIntervalChange` | number | `0.5` | 0.1–1.0 | Interval multiplier when a card is rated "hard" (lapse penalty). |
-| `minEase` | number | `130` | 50–250 | Floor on a card's ease factor. |
-| `easeStep` | number | `20` | 5–50 | Ease delta per review. |
-| `easyGraduatingInterval` | number | `4` | 1–14 | Days until next review when a new card is rated "easy". |
-| `goodGraduatingInterval` | number | `1` | 1–3 | Days until next review when a new card is rated "good"/"hard". |
-
-### `templates`
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `folder` | path (dir) | `Templates` | Vault folder holding template `.md` files. Option+T inserts one at the cursor. |
-| `newNote` | path (scope: templates) | `""` | Vault path to a template `.md` used to pre-fill a brand-new note (the New Note command and the file-tree "New File" action). Empty = no template (plain empty note). |
-
-### `properties`
-
-A free-form `{name: typeString}` map for the vault-wide property registry. Defaults to empty (absent from a fresh `.settings`, which is sparse). Edited directly in the YAML. Parsed separately via `GET /schema` (not included in `GET /settings`). Valid type strings: `string`, `number`, `boolean`, `date`, `datetime`, `file`, `list`, or an object with an `enum` sub-key.
-
-```yaml
-properties:
-  due: date
-  status:
-    enum: [todo, doing, done]
-  rating: number
-  tags: list
-```
-
-### `folderIcons`
-
-A free-form `{folderPath: iconName}` string map. Defaults to empty. Written by right-clicking a folder → "Set icon" (calls `POST /folder-icon` which calls `setFolderIcon`). Not intended for manual editing but valid YAML.
-
-```yaml
-folderIcons:
-  projects: Folder
-  archive: Archive
-  Journal: BookOpen
-```
-
-Empty or non-string values are dropped by `readFolderIconsFrom`.
-
-### `folderVisibility`
-
-A free-form `{folderPath: "chat-only"|"hidden"}` string map (folders have no frontmatter of their own to carry a `visibility` key). Defaults to empty. Written via `POST /folder-visibility`; nearest-ancestor-wins resolution lives in `core/src/visibility.ts`. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — it is an honesty boundary, not a security boundary, and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Per-file visibility is a note's own `visibility:` frontmatter key, not this section. `all` is also accepted (restricts nothing). Any other value, or a non-map, makes the vault unavailable to agents (see [visibility](../vault/visibility.md)).
-
-```yaml
-folderVisibility:
-  private: hidden
-  drafts: chat-only
-```
-
-### `toolbar`
-
-A YAML sequence of button objects. Each button must have:
-- `icon` (required): an icon name (e.g. `FilePlus`, or any Phosphor icon such as `Books`) or an emoji.
-- Either `command` (single string) or `commands` (list of strings) — not both; `commands` wins when both are present.
-- `tooltip` (optional): hover text; defaults to the command's label.
-
-Malformed items (missing `icon`, missing both `command`/`commands`, non-string or empty values) are **silently dropped**. An explicit empty list `[]` is honored.
-
-```yaml
-toolbar:
-  - command: new-note
-    icon: FilePlus
-  - command: new-folder
-    icon: FolderPlus
-  - command: search
-    icon: Search
-  - command: terminal
-    icon: SquareTerminal
-    tooltip: Open terminal tab
-  - commands:
-      - new-note
-      - terminal
-    icon: Rocket
-    tooltip: Note + terminal
-```
-
-Default toolbar has three buttons: `create-menu` (icon `Plus`), `search` (icon `Search`), and `open-inbox` (icon `Inbox`) — the daemon inbox button, hidden while the daemon is off and carrying a due-count badge.
-
-### `tabBar`
-
-A YAML sequence of button objects — the tab-bar action buttons (right of the tab strip). Same item shape and rendering as `toolbar` (`command`/`commands`, `icon`, `tooltip`), configured the same way.
-
-Default tab bar has three buttons: `new-tab` (icon `SquarePlus`), `terminal` (icon `SquareTerminal`), and `new-claude-chat` (icon `MessageSquare`).
-
-```yaml
-tabBar:
-  - command: new-tab
-    icon: SquarePlus
-  - command: terminal
-    icon: SquareTerminal
-  - command: new-claude-chat
-    icon: MessageSquare
-```
-
-### `statusBar` and `homePage`
-
-The bottom bar is a list of segments (`statusBar:`), and `homePage:` names the note a new tab should open (currently not applied — the app never receives it). Both are documented in [Status bar & home page](status-bar.md).
-
-### `dailyNotes`
-
-A YAML sequence of daily-note type configurations. Each entry must have `id` (non-empty) and `fileName` (non-empty); other fields have defaults. Malformed items are dropped; an explicit empty list is honored.
-
-| Field | Required | Default | Description |
-|---|---|---|---|
-| `id` | yes | — | Stable identifier; forms the command `daily-note:<id>`. |
-| `label` | no | `id` value | Command-palette label and default button tooltip. |
-| `icon` | no | `CalendarDays` | Icon name (any Phosphor icon) or emoji. |
-| `folder` | no | `""` | Vault folder for entries (`""` = vault root). |
-| `fileName` | yes | — | Filename pattern using `{{date}}` and other tokens; no `.md` extension. |
-| `template` | no | `""` | Vault path to a template `.md` to pre-fill new notes. |
-
-Default configuration has one entry: `journal` (folder `Journal`, fileName `{{date}} journal`, template `Templates/Journal.md`).
-
-```yaml
-dailyNotes:
-  - id: journal
-    label: Journal
-    icon: BookOpen
-    folder: Journal
-    fileName: "{{date}} journal"
-    template: Templates/Journal.md
-  - id: work
-    label: Work Log
-    icon: Briefcase
-    folder: Work/Logs
-    fileName: "{{date}} work"
-```
-
-### `keybindings`
-
-A nested object (not a list), one string key per app-level action — **52 of them**, spanning global app shortcuts, the note/card/chat editors, the file tree, flashcards, the graph renderer, and ink; two ids (`ui-dismiss`/`ui-confirm`) are shared across every transient modal/menu/inline input via `app/src/ui/widgetKeys.ts`. Values are combo strings using the portable `Mod` (= Cmd on macOS, Ctrl elsewhere), or the exact `Ctrl`/`Cmd`/`Meta` tokens for pinning a combo to one physical key independent of `Mod`. Comma-separate alternatives. Defaults are derived from `KEYBINDING_CATALOG` in `core/src/keybindings.ts`. Full reference, including every id's default and the combo grammar: [keybindings.md](./keybindings.md).
-
-```yaml
+# .settings: only what you change lives here
+appearance:
+  theme: paper
+  editorFontSize: 15
+layout:
+  sidebarSide: right
 keybindings:
-  find: Mod+F
-  command-palette: Mod+P
-  quick-switcher: Mod+O
-  terminal: "Mod+`, Mod+J"
-  split-right: Mod+D
-  split-down: Mod+Shift+D
-  equalize-panes: Mod+Alt+=
-  close-pane: Mod+W
-  new-tab: Mod+T
-  reopen-tab: Mod+Shift+T
-  history-back: Mod+[
-  history-forward: Mod+]
-  focus-pane-left: Mod+Alt+ArrowLeft
-  focus-pane-right: Mod+Alt+ArrowRight
-  focus-pane-up: Mod+Alt+ArrowUp
-  focus-pane-down: Mod+Alt+ArrowDown
-  new-claude-chat: Mod+Shift+C
-  insert-template: Alt+T
-  toggle-sidebar: Alt+S
+  command-palette: Mod+K
 ```
 
-The `keybindings` section is placed **last** in the schema (a test enforces this), which fixes its position in the schema, autocomplete and `DEFAULTS`. It does not appear in a fresh `.settings`: that file is sparse and a keybinding is written only when you rebind it.
+Read this page to learn how `.settings` behaves. [Settings reference](reference.md) lists every section, key and default.
 
----
+## Open and edit .settings
 
-## `DEFAULTS` — The Materialized Default Object
+Run the command **Open Settings** from the command palette (Cmd+P) to open `.settings` as a tab. A fresh vault starts with a two-line comment and no keys.
 
-`DEFAULTS` (exported from `core/src/schema/settingsSchema.ts`) is a plain nested object derived by `deriveDefaults(SETTINGS_SCHEMA)` — it recursively materializes the `default` field of every leaf into a nested plain object. It is the synchronous seed for both the backend's `AppConfig` type and the frontend's `Settings` store.
+Press Ctrl+Space (the `open-completion` binding) inside the file to list the keys valid at the cursor. Each suggestion shows the key's description, its allowed range or values, and its default. Lint underlines a wrong type, an out-of-range number or an unknown enum value as you type.
 
-`DEFAULTS` includes the `properties` and `folderIcons` keys (both `{}`; neither is written into a fresh `.settings`). The `properties` key is stripped by `serializeSettingsForFrontend` before sending to the frontend.
+Settings apply as soon as you save. Comments, key order and keys the schema does not know are never touched when the app writes the file.
 
-The frontend re-exports `DEFAULTS` from the schema spine — there is one copy, not two.
+## How defaults work
 
----
+An absent key is its default. Writing a key at its default value is allowed and is kept. To restore a default, delete the key.
 
-## Frontend Settings Store (`app/src/settings.ts`)
+The file is per vault: there is no global settings file, and two vaults can differ. A value you set applies only to the vault that holds the file.
 
-The Solid.js store is initialized **synchronously** from `mergeServerSettings(readCache("bismuth-settings-cache-v1"))` — reading the last hydrated settings from `localStorage`. This ensures the correct theme/fonts/sizes paint on the first frame without a flash of defaults.
+## What happens to a wrong value
 
-### Hydration Lifecycle
+A value that fails its check reads as the key's default, without an error in the app:
 
-1. **Synchronous seed**: store seeded from `localStorage` cache (or `DEFAULTS` on cold cache).
-2. **Boot hydrate**: `GET /settings` is fetched; result is `mergeServerSettings`'d and reconciled into the store via `solid-js/store` `reconcile`.
-3. **SSE re-hydrate**: when `.settings` appears in an SSE change event, `GET /settings` is refetched. If the merged result equals the live store (own write echo), the update is a no-op.
-4. **Persist on change**: a 600ms debounced effect diffs the live store against `lastSnapshot` using `diffLeaves` and fires one `POST /set-setting` per changed leaf. Persistence only starts after the first hydrate, so the synchronous seed is never persisted over the user's file.
-5. **localStorage mirror**: a separate effect mirrors the live store to `localStorage` (key `bismuth-settings-cache-v1`) on every change, enabling the fast first-paint seed on next launch.
+- A value of the wrong type (`sidebarWidth: wide`).
+- A number below the key's minimum or above its maximum (`sidebarWidth: 9000`). The value is not clamped; the default applies.
+- An enum value not in the list (`theme: dark`).
+- A list item of the wrong shape. `toolbar`, `tabBar` and `dailyNotes` drop malformed items and keep the rest.
 
-### `mergeServerSettings(parsed)`
+If the YAML itself does not parse, every key reads as its default and the app leaves the file untouched so you can fix it.
 
-A pure function used both for the `localStorage` seed and the server JSON. It clones `DEFAULTS`, then for each known section key, copies over stored values that pass a `typeof` check — missing or wrong-type values fall back to defaults. Array-typed top-level sections (like `toolbar`, `tabBar`, `dailyNotes`, `statusBar`) are replaced wholesale when the server sends an array; otherwise the default is kept.
+## Which changes the app writes for you
 
-### `diffLeaves(prev, next)`
+Some actions in the app write `.settings` directly, one key at a time:
 
-Walks `next`, emitting `{ path: string[], value }` for every leaf whose value differs from `prev`. Arrays are compared whole as leaves. Keys only in `prev` are ignored (the store never drops keys). This is the mechanism that ensures only changed leaves are posted to `POST /set-setting`, preserving comments and the `properties:` registry.
+- Dragging the sidebar or tab rail edge writes `appearance.sidebarWidth` and `appearance.tabRailWidth`; each edge snaps onto its default within 12px.
+- The commands **Move sidebar to other side**, **Move tab rail to other side** and **Toggle status bar** write the `layout` keys.
+- Setting a folder icon from the file tree writes `folderIcons`.
 
----
+## Where do I change X?
 
-## Backend Runtime Config: `AppConfig` and `loadAppConfig`
-
-The backend consumes settings at runtime via `loadAppConfig(vault): Promise<AppConfig>`. It calls `serializeSettingsForFrontend` and casts the result to `AppConfig`. The typed sections consumed by backend modules:
-
-```typescript
-interface AppConfig {
-  server: { fileWatchDebounceMs: number; sseHeartbeatMs: number };
-  daemon: { enabled: boolean; inboxRetentionDays: number };
-  templates?: { folder: string };
-  srs: SrsConfig;        // identity match for core/src/srs/scheduler.ts SrsConfig
-  googleCalendar?: {
-    enabled: boolean;
-    calendarId: string;
-    basePath: string;
-    conflictPolicy: "lastWriteWins" | "googleWins" | "bismuthWins";
-    syncIntervalMinutes: number;
-    timeZone: string;
-  };
-  [section: string]: unknown;
-}
-```
-
-Other sections (`graph`, `appearance`, `ui`, etc.) are present at runtime but not typed in `AppConfig`; reach them via the index signature.
-
----
-
-## CSS Custom Property Projection (`app/src/settingsCssVars.ts`)
-
-`settingsToCssVars(settings)` produces a `{ "--var": "value" }` map applied to `:root` via `setCssVars`. It is pure and DOM-free. `applyCssVars(settings)` calls both and also sets `color-scheme` (for native form controls/scrollbars).
-
-The function is called reactively in `App.tsx` whenever `settings` changes. The same map shape is computed by an inline script in `index.html` from the `localStorage` cache — this is what makes the correct theme appear before the React tree mounts.
-
-### Settings → CSS Custom Properties Mapping
-
-| Setting | CSS Variable |
+| I want to | Go to |
 |---|---|
-| `appearance.uiFont` | `--ui-font-stack` (resolved to full CSS font stack via `FONT_STACKS`) |
-| `appearance.proseFont` | `--prose-font` (resolved to full CSS font stack via `FONT_STACKS`) |
-| `appearance.editorFontSize` | `--editor-font-size` |
-| `appearance.sidebarWidth` | `--sidebar-width` |
-| `appearance.sidebarGraphHeight` | `--sidebar-graph-height` |
-| `appearance.tabRailWidth` | `--tab-rail-width` |
-| `appearance.uiFontSize` | `--fs-ui` |
-| `appearance.monoScale` | `--mono-scale` |
-| `appearance.cursorWidth` | `--cursor-width` |
-| `appearance.cursorGlideMs` | `--cursor-glide` |
-| `appearance.cursorBlinkSeconds` | `--cursor-blink` |
-| `ui.paletteTopOffset` | `--palette-top-offset` |
-| `ui.paneDividerWidth` | `--pane-divider-width` |
-| `ui.cardGridMinWidth` | `--card-grid-min` |
-| `ui.kanbanColumnMinWidth` | `--kanban-col-min` |
-| `ui.kanbanColumnMaxWidth` | `--kanban-col-max` |
-| `ui.mapMinHeight` | `--map-min-height` |
-| `editor.lineHeight` | `--prose-line-height` |
-| `calendar.monthCellMinHeight` | `--month-cell-min-h` |
-| `calendar.timeGutterWidth` | `--time-gutter-width` |
+| Pick a theme or a font | [Themes and fonts](themes.md) |
+| Override one colour, size or radius | [Design tokens](tokens.md) |
+| Move the sidebar or tab rail, hide the status bar | [Shell layout](layout.md) |
+| Change the bottom bar | [Status bar and home page](status-bar.md) |
+| Rebind a shortcut | [Keybindings](keybindings.md) |
+| Rearrange the toolbar or tab bar buttons | [Toolbar and commands](toolbar-commands.md) |
+| Look up any key | [Settings reference](reference.md) |
+| Make a custom theme | [Custom themes guide](../guides/custom-themes.md) |
 
-Additionally, all color/theme tokens are projected from the selected Bismuth theme via `resolveAppearance(s.appearance)` (see `app/src/themes.ts`). These include `--bg`, `--fg`, `--accent`, `--border`, `--panel`, `--surface-1/2/3`, `--rail`, `--editor`, `--hover-bg`, and the full graph ramp (`--graph-0` through `--graph-4`), plus derived accents (`--teal`, `--blue`, `--violet`, `--grad`), category colors (`--green`, `--gold`, `--rose`), and terminal colors (`--term-bg`, `--term-fg`).
+## Change settings from the shell
 
----
+The `bismuth` CLI reads and writes `.settings` without the app running:
 
-## Autocomplete and Lint in the Editor
-
-When `.settings` is open in the Bismuth editor:
-
-- **Autocomplete** (`editor/settingsComplete.ts`): Ctrl-Space suggests setting keys (scoped to the current section) and values (enum members, `true`/`false`, property type names, icon names (the full Phosphor library), keybind combos with a "Record shortcut…" option). Each suggestion shows the key's `doc` string and a compact range label (e.g. `11–28` for bounded numbers, `option1 | option2 | …` for enums). The autocomplete is nested-schema-aware (knows which section the cursor is in).
-- **Lint** (`editor/yamlSchema.ts`): inline diagnostics highlight wrong types, out-of-range numbers, and unknown enum values.
-
-The `doc` field on each `SchemaEntry` is the text shown in the autocomplete. A parity test (`app/src/settings.parity.test.ts`) enforces that every settable leaf has both a materialized `default` AND a non-empty `doc`.
-
----
-
-## HTTP API for Settings
-
-| Endpoint | Description |
-|---|---|
-| `GET /settings` | Returns `serializeSettingsForFrontend(vault)` — file merged over defaults, `properties` section stripped. |
-| `GET /schema` | Returns the vault property registry (from `.settings` `properties:` section) for note validation and autocomplete. |
-| `GET /config` | Read-only launch config: `{ vault, memory }`. |
-| `POST /set-setting` | Merges one value at `path` into `.settings` in place. Body: `{ path: string[], value: unknown }`. Goes through `mutatingHandler` — invalidates caches and broadcasts an SSE event with `paths: [".settings"]`. |
-
-The `POST /set-setting` endpoint validates that `body.path` is a non-empty `string[]`. A non-array or array with non-string elements returns HTTP 400. An empty path is a no-op (returns success without writing).
-
----
-
-## How to Add a New Setting
-
-Adding a setting requires changes in exactly three places, with no migration code:
-
-### 1. Add to the Schema (`core/src/schema/settingsSchema.ts`)
-
-Add an entry to the appropriate section inside `SETTINGS_SCHEMA`. Every leaf entry must have a `type`, a `default` equal to the current hardcoded value (so upgrades are behavioral no-ops), and a non-empty `doc` string.
-
-```typescript
-// Example: adding a new boolean to the editor section
-editor: object({
-  // ... existing keys ...
-  myNewToggle: {
-    type: "boolean",
-    default: false,
-    doc: "Description shown in Ctrl-Space autocomplete.",
-  },
-}),
+```bash
+bismuth settings get --key appearance.theme --vault ~/vault
+bismuth settings set appearance.theme paper --vault ~/vault
+bismuth settings schema --vault ~/vault --pretty
 ```
 
-After this change, `DEFAULTS` is automatically updated (derived from the schema). Existing `.settings` files are not touched: the key reads as its default until the user sets it. The autocomplete and lint pick it up automatically. The `settings.parity.test.ts` parity tests enforce that the default and doc are present.
+`settings set` takes a dotted key path and a value parsed as JSON, falling back to a plain string. It merges that one key into the file. The [CLI reference](../cli/reference.md) lists the options.
 
-### 2. Add to the Frontend `Settings` Interface (`app/src/settings.ts`)
+## How it works
 
-Add the matching field to the `Settings` interface. The `settings.parity.test.ts` test will catch a mismatch.
+The schema in `core/src/schema/settingsSchema.ts` (`SETTINGS_SCHEMA`) is the single source of truth. Every leaf has a type, a default, a description and, for numbers, bounds. These are derived from it, so none is a second copy:
 
-```typescript
-editor: {
-  // ... existing fields ...
-  myNewToggle: boolean;
-};
-```
+- `DEFAULTS`, the plain nested object the app store seeds from.
+- The `keybindings` section, one `keybind` field per `KEYBINDING_CATALOG` entry.
+- The `appearance.tokens` fields, one per `DESIGN_TOKENS` entry.
+- The `toolbar.command` enum, from `COMMAND_IDS`.
+- Autocomplete (`app/src/editor/settingsComplete.ts`) and lint (`app/src/editor/yamlSchema.ts`).
 
-### 3. Wire the Consumer
+`app/src/settings.parity.test.ts` fails when a schema leaf has no default or no description, or when the `Settings` type in `app/src/settings.ts` disagrees with the schema.
 
-**CSS-driven setting** (a size, duration, color, or other CSS value):
-- Add one line to `settingsToCssVars` in `app/src/settingsCssVars.ts`:
-  ```typescript
-  "--my-new-var": s.editor.myNewToggle ? "1" : "0",
-  ```
-- Reference it in the relevant CSS file:
-  ```css
-  .my-element { opacity: var(--my-new-var, 1); }
-  ```
+### The backend
 
-**Frontend logic setting** (read in a component or effect):
-- Read `settings.editor.myNewToggle` reactively in the Solid component.
+- `reconcileSettings(vault)` in `core/src/settings.ts` runs when core starts, when `.settings` is saved from the editor, and before every programmatic write.
+  It writes the seed when the file is absent, applies the key renames and moves listed in the code, and deletes the keys on its retired list. It never adds a key.
+  It leaves a file with YAML errors, or a top-level value that is not a map, untouched, and writes only when something changed.
+- `setSettingInFile(vault, path, value)` is the one backend write path. It reconciles, sets one path in the parsed YAML document, and writes the result, so comments, order and unknown keys survive. A per-vault mutex serializes concurrent writes. `POST /set-setting` calls it.
+- `serializeSettingsFromText` in `core/src/settingsSerialize.ts` builds the `GET /settings` response: it clones `DEFAULTS`, then overlays each valid value from the file.
+  It applies the checks in [What happens to a wrong value](#what-happens-to-a-wrong-value), drops `properties` (served by `GET /schema`), and folds the settings that alias tokens into `appearance.tokens`.
+- Top-level scalar keys are not overlaid, so a stored `homePage` never reaches the app. A top-level list such as `statusBar` is overlaid per index onto the default list; the status bar itself re-reads the raw file, so only `settings get` shows the overlaid list.
 
-**Backend logic setting** (read in the server or a backend module):
-- Call `loadAppConfig(vault)` and read `cfg.editor.myNewToggle`.
-- The backend re-reads `loadAppConfig` per-request (it is not cached indefinitely); `.settings` changes are reflected within the next request after an SSE cycle.
+The settings routes (`GET /settings`, `GET /schema`, `GET /config`, `POST /set-setting`) are listed in the [HTTP reference](../api/http-reference.md).
 
-**Adding a new top-level section** additionally requires updating the hardcoded key list in `core/test/schema/settingsSchema.test.ts` (the test asserting `Object.keys(SETTINGS_SCHEMA).sort()` — this is a guard, not a source of truth).
+### The app
 
----
+`app/src/settings.ts` seeds a Solid store synchronously from a `localStorage` copy of the last response (`bismuth-settings-cache-v1`), so the right theme and fonts paint on the first frame. It then fetches `GET /settings`, and again whenever an SSE event lists `.settings`.
 
-## Edge Cases and Gotchas
+A 600 ms debounced effect diffs the store against its last snapshot (`diffLeaves` in `app/src/settingsDiff.ts`) and sends one `POST /set-setting` per changed leaf. Persistence starts after the first fetch, so the seed never overwrites your file.
 
-- **Corrupt `.settings`**: if the file has YAML parse errors or the top-level value is not a map, `reconcileSettings` leaves it untouched. The user must fix it manually. Reading a corrupt file via `readSettings` returns `{ raw, data: {} }` — callers fall back to defaults.
-- **Migration is best-effort and silent**: `migrateSettingsLocation` (run at the top of every `reconcileSettings`) never throws; a failed rename falls back to a copy, and total failure just means the vault starts from a fresh seed `.settings` file (all defaults) (the legacy `settings.yaml` is left on disk untouched in every failure case).
-- **`properties:` is stripped from `GET /settings`**: the property registry is delivered by `GET /schema`, not `GET /settings`. A `properties` key in the parsed server data is never forwarded to the frontend settings store.
-- **Unknown keys survive reconcile AND `setSettingInFile`**: custom YAML keys not in the schema are never removed by any of the backend write operations. The parity-test and `serializeSettingsForFrontend` simply ignore them.
-- **`toolbar` and `dailyNotes` are list sections**: they are validated item-by-item; malformed items are silently dropped (not errored). In `mergeServerSettings` on the frontend, array-typed top-level sections are replaced wholesale — the default is only used if the server sends a non-array.
-- **Empty-path `setSettingInFile` call is a no-op**: `if (!path.length) return;` at the top of the function.
-- **Per-vault mutex scope**: the mutex is keyed by vault path, so concurrent requests against different vaults run in parallel.
-- **`folderIcons` written by `POST /folder-icon`**: folder icons are not set via `POST /set-setting`; they go through the dedicated `setFolderIcon(vault, path, icon)` helper which also acquires the per-vault mutex. An empty/null/undefined icon deletes the entry, and deleting the last entry removes the emptied `folderIcons:` key (`setFolderVisibility` does the same for `folderVisibility:`).
+`app/src/settingsCssVars.ts` projects settings and the resolved theme onto `:root` custom properties. The terminal font size and line height are read directly by `app/src/Terminal.tsx`. The 2D/3D graph toggle is a per-window `localStorage` flag, never a setting.
 
-Source: `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/theme/tokens.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/visibility.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/settingsDiff.ts`, `core/test/settings.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/fixtures/upgrade/settings-schema-snapshot.json`, `app/src/settings.parity.test.ts`
+### Add a setting
+
+1. Add the entry to `SETTINGS_SCHEMA`, with a default equal to the current behaviour and a description. A new top-level section also goes in the key lists of `core/test/schema/settingsSchema.test.ts`.
+2. Add the matching field to the `Settings` type in `app/src/settings.ts`.
+3. Wire the consumer: a CSS value goes in `settingsToCssVars`, app logic reads `settings.<section>.<key>`, and backend logic reads `loadAppConfig(vault)`.
+
+Existing files need no migration; the key reads as its default until set.
+
+Source: `core/src/settings.ts`, `core/src/settingsSerialize.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/routes/settings.ts`, `app/src/settings.ts`, `app/src/settingsDiff.ts`, `app/src/settingsCssVars.ts`, `app/src/settings.parity.test.ts`

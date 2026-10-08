@@ -1,540 +1,217 @@
-# Toolbar & Commands
-
-This page explains Bismuth's command system: the pure `COMMAND_CATALOG`, its runnable bindings, the `toolbar:` configuration for sidebar-header buttons, and dynamic `daily-note:<id>` commands. It lists command ids, labels, default icons, button fields (`command`, `commands`, `icon`, `tooltip`), resolution order, and edge cases. Use it to configure a toolbar, add a command, or debug a disabled button.
-
-> The same item shape drives BOTH bars: `toolbar:` (the sidebar header bar) and `tabBar:`
-> (the buttons right of the tab strip — defaults: `new-tab`, `terminal`, `new-claude-chat`).
-> Everything below applies to either key.
-
-## Overview
-
-Commands separate metadata from behavior so the command palette and sidebar toolbar stay aligned:
-
-- **`core/src/commands.ts`** — `COMMAND_CATALOG`, a list of `CommandSpec` (`id`, `label`, `icon`). Pure metadata, no frontend imports. The settings schema derives the `toolbar.command` enum from `COMMAND_IDS` (so `.settings` autocomplete and lint know every valid command id). This file is the **single source of truth for command ids**.
-- **`app/src/commands.ts`** — `bindCommands(handlers, dailyNotes)` produces a live `Map<string, BoundCommand>` where each catalog id is mapped to a runnable `{ id, label, icon, action }`. The catalog says *what* each command is; the binding says *what it does*. `App.tsx` passes its handlers in once.
-- **`core/src/schema/settingsSchema.ts`** — defines the `toolbar:` settings key (a list of button objects) and the `dailyNotes:` key (which registers extra `daily-note:<id>` commands).
-
-Command ids are also used outside the two button bars: a [`statusBar:`](status-bar.md) segment takes a `command:` field with the same id set (`COMMAND_IDS` plus the `daily-note:` prefix, lint-validated by the same schema enum). Clicking such a segment runs the bound command from the same `bindCommands` map (`App.tsx`: `onRunCommand={id => void commands().get(id)?.action()}`), without the app-control blocklist.
-
-The sidebar header bar (the `<IconBar band>` row in `app/src/shell/Sidebar.tsx`, filled by `App.tsx`) is configured entirely by `toolbar:` in `.settings`. There is no GUI for it — you edit `.settings` directly (see [settings overview](./overview.md)).
-
-## The Command Catalog
-
-`COMMAND_CATALOG` (in `core/src/commands.ts`) is the complete, ordered list of every built-in command. Each entry is a `CommandSpec`:
-
-```ts
-export interface CommandSpec {
-  /** Stable id referenced by settings.yaml `toolbar` entries and the palette. */
-  id: string;
-  /** Human label shown in the palette and as a button's default tooltip. */
-  label: string;
-  /** Default Lucide icon name (the palette icon; toolbar buttons may override). */
-  icon: string;
-  /**
-   * True for a command whose action only OPENS A MODAL and then waits on a person to finish it
-   * (a connect/setup/install dialog, or a picker like the emoji library / create menu) — it never
-   * completes the underlying task by itself. Still runnable via app control BY DESIGN: an agent
-   * opening the dialog to show a user how is the intended behaviour. What changes is the
-   * `run-command` reply (App.tsx's `runCommand` handler) — it reports `interactive: true` plus a
-   * `note` explaining that a person needs to finish it, instead of implying the task itself is done.
-   */
-  interactive?: boolean;
-}
-```
-
-Eight catalog entries set `interactive: true`: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `free-agent-setup`, `gcal-connect` — see ["Interactive commands & app control"](#interactive-commands--app-control) below.
-
-`COMMAND_IDS` is derived as `COMMAND_CATALOG.map(c => c.id)` (catalog order), and `commandLabel(id)` returns the label for an id or `undefined` for an unknown id.
-
-Invariants enforced by `core/test/commands.test.ts`:
-
-- `COMMAND_IDS` equals `COMMAND_CATALOG.map(c => c.id)`, in catalog order.
-- All ids are unique.
-- Every command has a non-empty `label` and `icon`.
-
-### Complete command list
-
-The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog order, with its default Lucide icon and the `CommandHandlers` method it binds to (see "How commands bind to actions").
-
-| # | id | label | default icon | bound handler / action |
-|---|---|---|---|---|
-| 1 | `new-tab` | New tab | `Plus` | `h.newTab` |
-| 2 | `close-tab` | Close tab | `X` | `h.closeActiveTab` |
-| 3 | `reopen-tab` | Reopen closed tab | `RotateCcw` | `h.reopenClosedTab` |
-| 4 | `history-back` | Back | `ArrowLeft` | `h.historyBack` |
-| 5 | `history-forward` | Forward | `ArrowRight` | `h.historyForward` |
-| 6 | `open-graph` | Open graph view | `Share2` | `h.openGraph` |
-| 7 | `open-daemon` | Open daemon | `Bot` | `h.openDaemon` |
-| 8 | `open-inbox` | Open daemon inbox | `Inbox` | `h.openDaemon` |
-| 9 | `open-folder` | Open folder… | `FolderOpen` | `h.openFolder` |
-| 10 | `new-window` | New window | `AppWindow` | `h.newWindow` |
-| 11 | `create-menu` | Create new… | `Plus` | `h.openCreateMenu` |
-| 12 | `new-note` | New note | `FilePlus` | `h.newNote` |
-| 13 | `new-folder` | New folder | `FolderPlus` | `h.newFolder` |
-| 14 | `new-base` | New base | `Database` | `h.newBase` |
-| 15 | `new-spreadsheet` | New spreadsheet | `Table` | `h.newSpreadsheet` |
-| 16 | `new-drawing` | New drawing | `PenTool` | `h.newDrawing` |
-| 17 | `new-claude-chat` | New Claude Chat | `MessageSquare` | `h.newClaudeChat` |
-| 18 | `export` | Export current file… | `Download` | `h.exportActive` |
-| 19 | `archive-tasks` | Archive completed tasks (this note) | `Archive` | `h.archiveTasks` |
-| 20 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` | `h.archiveAllTasks` |
-| 21 | `detect-ai` | Detect AI text | `Bot` | `h.detectAiActive` |
-| 22 | `emoji-library` | Emoji library… | `Smile` | `h.openEmojiLibrary` |
-| 23 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
-| 24 | `search` | Search | `Search` | `h.openSearch` |
-| 25 | `settings` | Open Settings | `Settings` | `h.openSettings` |
-| 26 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
-| 27 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
-| 28 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
-| 29 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
-| 30 | `graph-local` | Graph: Local (open note) | `Pin` | `() => h.setMode("local")` |
-| 31 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
-| 32 | `split-right` | Split right | `PanelRight` | `h.splitPaneRight` |
-| 33 | `split-down` | Split down | `PanelBottom` | `h.splitPaneDown` |
-| 34 | `close-pane` | Close pane | `SquareX` | `h.closeFocusedPane` |
-| 35 | `focus-pane-left` | Focus pane left | `ArrowLeft` | `h.focusPaneLeft` |
-| 36 | `focus-pane-right` | Focus pane right | `ArrowRight` | `h.focusPaneRight` |
-| 37 | `focus-pane-up` | Focus pane up | `ArrowUp` | `h.focusPaneUp` |
-| 38 | `focus-pane-down` | Focus pane down | `ArrowDown` | `h.focusPaneDown` |
-| 39 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
-| 40 | `toggle-tab-rail` | Toggle tab rail | `PanelRight` | `h.toggleTabRail` |
-| 41 | `move-sidebar-side` | Move sidebar to other side | `Columns2` | `h.moveSidebarSide` |
-| 42 | `move-tab-rail-side` | Move tab rail to other side | `Columns2` | `h.moveTabRailSide` |
-| 43 | `toggle-status-bar` | Toggle status bar | `PanelBottom` | `h.toggleStatusBar` |
-| 44 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 45 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
-| 46 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
-| 47 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
-| 48 | `free-agent-setup` | Set up free agent… | `Download` | `h.openFreeAgentSetup` |
-| 49 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
-| 50 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
-| 51 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
-| 52 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
-| 53 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
-| 54 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
-| 55 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
-
-Notes on individual commands:
-
-- **`new-tab` vs `open-graph`**: `new-tab` always spawns a fresh home tab (it opens `homeContent(settings.homePage)`: meant to be your configured `homePage` note, but `homePage` never reaches the app today, so it is always the graph — it never focuses an existing tab); `open-graph` focuses an existing graph tab if one is open (else opens one). (Comment in `app/src/commands.ts`.)
-- **`open-daemon`**: opens the daemon page (`::daemon` — the living face, crons + services, inbox + log, and a docked chat; see `docs/daemon/overview.md`) as its own tab, focusing the existing one if open (`h.openDaemon`).
-- **`open-inbox`**: the inbox lives on the daemon page, so this is bound to the same `h.openDaemon` — it opens the daemon page. It keeps its own id and label because it ships in the **default sidebar toolbar** (see ["The `toolbar:` Setting"](#the-toolbar-setting) below), where it is hidden while the daemon is off and carries the due-count badge.
-- **`create-menu`** is the **`+Create` chooser** — a single button that opens a context menu of all the "create" commands instead of running one. See ["The `create-menu` chooser"](#the-create-menu-chooser) below.
-- **File-menu commands** (`open-folder`, `new-window`, `export`): `open-folder` opens a chosen folder as its own brain in a new window (a sibling backend); `new-window` reopens the current folder in a new window; `export` acts on the active file.
-- **`new-base`** creates a `type: base` markdown file. As a plain command (palette / toolbar `command: new-base`) it calls `h.newBase` directly; as the `create-menu` "New base ▸" submenu it offers one entry per Bases view kind (see the chooser section).
-- **`archive-tasks` / `archive-all-tasks`**: permanently remove completed/cancelled tasks — from the **active note** (`h.archiveTasks`) or across **all notes** (`h.archiveAllTasks`).
-- **`detect-ai`**: estimates how AI-generated the active page reads and toasts the score. It runs a **local, offline** detector — see ["The `detect-ai` command"](#the-detect-ai-command).
-- **`emoji-library`**: opens the emoji grid picker (`h.openEmojiLibrary` → `openGallery({ source: emojiSource })`) and inserts the chosen glyph at the focused editor's caret (`insertIntoFocusedEditor`; toasts "Open a note to insert an emoji" when no note is focused). It is the **always-visible home** for the full library and ships in the **default sidebar toolbar** (beside `create-menu`). This is why the `:emoji` completion popup no longer carries an "Open emoji gallery" row — that buried the library and could outrank a real match like `:rocket` (#67; see `docs/editor/autocomplete.md`).
-- **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
-- **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-local`): each calls `h.setMode(...)` with the corresponding graph mode string. `graph-local` switches to the open note's immediate neighborhood (`"local"` `GraphMode` — see `app/src/GraphView.tsx`), the same lens the graph's own LOCAL toggle button flips to. There is no `graph-daemon` command any more — the daemon's crons/processes moved off the graph onto their own page (`docs/graph/overview.md`).
-- **Pane commands** (`split-right`, `split-down`, `close-pane`, `focus-pane-left`, `focus-pane-right`, `focus-pane-up`, `focus-pane-down`): mirror the seven pane-arrangement keybindings in `core/src/keybindings.ts` (split/close/focus a pane), reusing `App.tsx`'s existing `splitPane`/`closeFocusedPane`/`focusNeighbor` logic rather than duplicating it. Their `CommandHandlers` fields (`splitPaneRight`, `splitPaneDown`, `closeFocusedPane`, `focusPaneLeft`, `focusPaneRight`, `focusPaneUp`, `focusPaneDown`) are **required**, not optional — a comment on the interface explains why: they were briefly optional while `App.tsx`'s wiring was pending, which let the catalog advertise all seven as runnable via app control while every one of them actually failed with "unknown command", an agent told a capability exists and then handed a failure. Required means `bindCommands`'s one call site (`App.tsx`) won't typecheck if a pane handler is ever dropped again. `toggleSidebar` and `toggleTabRail` are required for the same reason.
-- **`toggle-tab-rail`**: pins the right tab rail open, or lets it go back to expanding only on hover (`h.toggleTabRail`) — the tab-rail counterpart to `toggle-sidebar`. Same feature as the `toggle-tab-rail` keybinding (default `Alt+Shift+S`; see [keybindings](./keybindings.md)).
-- **`move-sidebar-side` / `move-tab-rail-side` / `toggle-status-bar`**: flip `layout.sidebarSide`, `layout.tabRailSide` and `layout.statusBar` through the settings store (`h.moveSidebarSide`, `h.moveTabRailSide`, `h.toggleStatusBar`), so the window rearranges live and the change lands in `.settings`. No keybindings; see [shell layout](./layout.md). `moveSidebarSide`, `moveTabRailSide` and `toggleStatusBar` are required `CommandHandlers` fields like the other shell toggles.
-- **The panel edge lines run the same two toggles.** The sidebar's inner line and the tab rail's inner line (the line facing the editor; with the default layout the sidebar's right and the rail's left) are grab strips (`app/src/shell/EdgeHandle.tsx`): **drag** one to resize the panel (writes `appearance.sidebarWidth` / `appearance.tabRailWidth`, clamped to the schema's range by `app/src/edgeResize.ts`), **click** it to run `toggle-sidebar` / `toggle-tab-rail`, and **hover** it to make a chevron button spring out at its vertical centre, pointing the way the panel will move (`‹` hide / `›` show the sidebar, `‹` pin / `›` unpin the rail) — the same toggle, its tooltip naming the live keybinding. With the sidebar hidden its strip is the window's left edge, so hovering there offers `›` show. Focusable by Tab: Enter or Space toggles, as on a real button.
-- **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.
-- **`bismuth-install`**: opens the panel to install the `bismuth` CLI + MCP machine-wide (`h.openBismuthInstall`).
-- **`free-agent-setup`**: opens the panel that downloads opencode and defaults chats to Zen Free (rotating) — no account (`h.openFreeAgentSetup`). The intro's `free agent` power-up runs the same setup on first launch.
-- **`update-app`**: manually updates the Bismuth app (same pipeline as the `UpdateBanner` button) for when the banner was dismissed or missed; no-op-with-toast when already up to date / in dev (`h.updateApp`).
-- **`new-claude-chat`**: opens a fresh Claude Code chat session in its own tab (`h.newClaudeChat`).
-- **`gcal-connect` / `gcal-sync` / `gcal-disconnect`**: open the "Connect Google Calendar" OAuth panel (`h.gcalConnect`), pull events from Google Calendar into the configured base (`h.gcalSync`), and disconnect Google Calendar — revoke + wipe stored tokens (`h.gcalDisconnect`).
-- **`zoom-in` / `zoom-out` / `zoom-reset`**: step the whole app's UI zoom in/out or reset it to 100% (`app/src/zoom.ts`) — the same feature as the `zoom-in`/`zoom-out`/`zoom-reset` keybindings (default `Mod+=`/`Mod+Shift+=`, `Mod+-`, `Mod+0`; see [keybindings](./keybindings.md)). Zoom uses native webview page-zoom (`tauri::WebviewWindow::set_zoom`, the same mechanism as a real browser's Cmd+=/Cmd+-), applied to the invoking window; the level is a per-machine `localStorage` preference (like the graph's 2D/3D toggle), not a `.settings` value, since it's a display preference rather than vault content.
-
-### Notable absences / gotchas
-
-- **Several commands share an icon**: `Download` (`export`, `daemon-setup`, `bismuth-install`, `free-agent-setup`), `RefreshCw` (`daemon-update`, `update-app`, `gcal-sync`), and **`new-tab` shares `Plus` with `create-menu`**. That is intentional and allowed — icon uniqueness is not an invariant (only `id` uniqueness is).
-- Icons are **Lucide icon names** by convention (matched against the icon registry on the frontend), but toolbar/daily-note `icon` fields may also be a literal emoji (see "Button fields").
-
-### The `create-menu` chooser
-
-`create-menu` (`Create new…`, icon `Plus`) is a **single button that opens a `+Create` context menu** instead of running one create command. It binds to `h.openCreateMenu(e?)`, and unlike every other handler it takes the triggering `MouseEvent` so the menu can anchor under the clicked button (it falls back to a fixed spot — `x: 8, y: 48` — when invoked without an event, e.g. from the command palette). This is why `BoundCommand.action` is typed `(e?: MouseEvent) => unknown`.
-
-`openCreateMenu` (`App.tsx`) assembles the menu from the bound command map, in order:
-
-1. `new-note`
-2. `new-folder`
-3. **`New base ▸`** — a submenu (icon `Database`), **not** the flat `new-base` command. It maps over `BASE_VIEW_KINDS` (`app/src/baseViews.ts`), one entry per Bases view kind; each entry dispatches an `bismuth-new` event (`{ kind: "base", view }`) that seeds a `type: base` file with that view via the same `bismuth-new` → `FileTree.doCreate` path.
-4. `new-spreadsheet`
-5. `new-drawing`
-6. Then each **resolving** `daily-note:<id>` command (a config with a blank id is skipped), with a separator before the first daily-note entry when any static entry preceded it.
-
-The **12 base view kinds** in the `New base ▸` submenu (from `BASE_VIEW_KINDS`, in declared order) — `view` value, menu label, icon:
-
-| # | view | label | icon |
-|---|---|---|---|
-| 1 | `table` | Table | `Table` |
-| 2 | `cards` | Cards | `LayoutGrid` |
-| 3 | `list` | List | `List` |
-| 4 | `bullets` | Bullets | `TextQuote` |
-| 5 | `kanban` | Kanban | `SquareKanban` |
-| 6 | `calendar` | Calendar | `Calendar` |
-| 7 | `flashcards` | Flashcards | `Layers` |
-| 8 | `map` | Map | `Map` |
-| 9 | `bar` | Bar chart | `ChartColumn` |
-| 10 | `line` | Line chart | `ChartLine` |
-| 11 | `stat` | Stat | `Sigma` |
-| 12 | `heatmap` | Heatmap | `Grid3x3` |
-
-Each kind seeds a file named `Untitled <label>.md` (`baseFileName`) with starter frontmatter (`baseTemplate`): `calendar` gets `---\ntype: base\nview: calendar\n---\n` (it stores its events in the body, so no `source:`); every other view gets `---\ntype: base\nsource: notes\nview: <view>\n---\n` so it renders the vault immediately. The same list backs the folder context menu's "New base ▸" in `FileTree`, keeping the two menus in sync.
-
-### The `detect-ai` command
-
-`detect-ai` (`Detect AI text`, icon `Bot`) binds to `h.detectAiActive`. It estimates how AI-generated the **active page** reads and toasts a whole-document score. The detection runs **entirely on-device, offline** — there is no network call to any model API:
-
-- It uses **transformers.js** (`@huggingface/transformers`, onnxruntime-web WASM) in the **frontend webview**, never in the core sidecar (the same `$bunfs` WASM-path limitation that keeps Harper spellcheck frontend-only). See `app/src/ai/aiDetect.ts`.
-- The classifier (`onnx-community/e5-small-lora-ai-generated-detector-ONNX`, int8 `q8`, ~34MB) is **lazy-loaded + code-split**, so it costs nothing at boot; the model downloads on **first use** and is then cached by transformers.js, so later runs are effectively offline.
-- `detectAiScore(text, onProgress?)` strips frontmatter, splits prose into ~280-word windows, evenly samples at most 16 of them, scores each window, and returns `{ score, peak, chunks }` (mean P(AI), highest single-window P(AI), window count). `onProgress` reports a `load` phase (first-run download, 0–100) then an `analyze` phase (window-by-window) so the UI can show real progress.
-- It throws `TooShortError` when there are fewer than 40 words of prose.
-- **Accuracy caveat baked into the code**: the model is trained on the RAID corpus, which contains **no Claude**, so it is unvalidated on Claude-class text and unreliable on edited/paraphrased prose. It is a rough hint, never proof — the UI must say so.
-
-### Interactive commands & app control
-
-Commands are also reachable from outside the UI, via **app control** — `bismuth app run <id>` / MCP → `POST /ui/command` → App.tsx's `runCommand` handler → the same bound `action()` a click would run. Two mechanisms in `core/src/commands.ts` govern that surface, both distinct from the palette/toolbar path above:
-
-- **The `interactive` flag** (`CommandSpec.interactive`, on `CommandSpec` — see the interface above) marks a command whose action only **opens a modal** and hands off to a person, never completing the underlying task itself. Eight catalog entries set it: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `free-agent-setup`, `gcal-connect`. These stay runnable via app control **by design** — an agent opening the Google Calendar connect dialog in answer to "how do I connect gcal?" is showing the user how, which is the point. What changes is the reply: `runCommand` awaits `cmd.action()` and then, when `cmd.interactive` is true, returns `{ ok: true, interactive: true, label: cmd.label, note: 'Opened "<label>" — this needs a person to finish it in the app.' }` instead of the plain `{ ok: true }` an ordinary command gets — so a caller can branch on `result.interactive` and know a dialog is now open and waiting on someone at the keyboard, not that the task is done.
-- **`UI_CONTROL_BLOCKLIST`** (`core/src/commands.ts`) is a flat list of command ids that app control refuses outright, regardless of `interactive`: `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` — heavyweight/system verbs an unattended caller shouldn't trigger blindly, plus opening a Claude chat (a live, recursive Agent-SDK session — a materially different trust boundary than opening a note). `isUiControlAllowed(id)` returns `COMMAND_IDS.includes(id) && !UI_CONTROL_BLOCKLIST.includes(id)`; `uiControlAllowedIds()` returns the catalog ids minus the blocklist (what `bismuth app commands` lists). `runCommand` checks the blocklist first and replies `{ ok: false, error: 'command "<id>" is not allowed via app control' }` before even resolving the command.
-
-Full reference for the app-control surface (routes, `bismuth app`/`page` CLI groups, the MCP tools that ride it): [docs/mcp/app-control.md](../mcp/app-control.md).
-
-## How Commands Bind to Actions
-
-`bindCommands(handlers, dailyNotes)` in `app/src/commands.ts` turns the pure catalog into a runnable map.
-
-```ts
-export function bindCommands(
-  h: CommandHandlers,
-  dailyNotes: DailyNoteConfig[] = [],
-): Map<string, BoundCommand>
-```
-
-`BoundCommand` is the runnable shape consumed by both the palette and the toolbar:
-
-```ts
-export interface BoundCommand {
-  id: string;
-  label: string;
-  icon: string;
-  // True for a command whose action only opens a modal and waits on a person to finish it (see
-  // core/src/commands.ts's CommandSpec.interactive) — App.tsx's run-command handler reads this to
-  // report `{interactive:true, note:…}` instead of implying the underlying task itself completed.
-  interactive?: boolean;
-  action: (e?: MouseEvent) => unknown;
-}
-```
-
-### CommandHandlers
-
-`App` supplies one `CommandHandlers` object (`app/src/commands.ts`). It is the full set of behaviors bound to catalog ids:
-
-```ts
-export interface CommandHandlers {
-  openSettings: () => void;
-  openTerminal: () => void;
-  openSearch: () => void;
-  newNote: () => void;
-  newFolder: () => void;
-  newBase: () => void;
-  newSpreadsheet: () => void;
-  newDrawing: () => void | Promise<void>;
-  // The "+" create chooser. Receives the triggering click (when run from a toolbar
-  // button) so the menu can anchor under that button; falls back to a fixed spot
-  // when invoked without an event (e.g. from the command palette).
-  openCreateMenu: (e?: MouseEvent) => void;
-  openGraph: () => void;
-  // Open the daemon page (the living face, crons + services, inbox + log, docked chat) as its
-  // own tab. The inbox folded into that page, so `open-inbox` routes here too.
-  openDaemon: () => void;
-  setMode: (mode: GraphMode) => void;        // GraphMode = "2nd"|"3rd"|"both"|"local"
-  openDailyNote: (id: string) => void;
-  equalizePanes: () => void;
-  // Pane arrangement verbs, wired to the same splitPane/closeFocusedPane/focusNeighbor logic the
-  // keybinding path uses (App.tsx). REQUIRED (not optional): these were briefly optional while
-  // App.tsx's wiring was pending, which let the catalog list all seven as runnable via app control
-  // while every one of them actually failed with "unknown command" — an agent told a capability
-  // exists and then handed a failure. Required means bindCommands's one call site (App.tsx) won't
-  // typecheck if a pane handler is ever dropped again.
-  splitPaneRight: () => void;
-  splitPaneDown: () => void;
-  closeFocusedPane: () => void;
-  focusPaneLeft: () => void;
-  focusPaneRight: () => void;
-  focusPaneUp: () => void;
-  focusPaneDown: () => void;
-  toggleSidebar: () => void;
-  toggleTabRail: () => void;
-  newTab: () => void;
-  closeActiveTab: () => void;
-  reopenClosedTab: () => void;
-  historyBack: () => void;
-  historyForward: () => void;
-  openFolder: () => void | Promise<void>;
-  newWindow: () => void | Promise<void>;
-  exportActive: () => void;
-  // Estimate how AI-generated the active page reads (local, offline) and toast the score.
-  detectAiActive: () => void | Promise<void>;
-  // Open the modal to pick which device owns the daemon.
-  openDaemonOwner: () => void;
-  // Open the panel to install/repair (adopt) the daemon.
-  openDaemonSetup: () => void;
-  // Update the daemon to the latest version (POST /daemon/update, idempotent +
-  // fetch-gated) — toasts progress. Distinct from openDaemonSetup, which only installs/adopts.
-  updateDaemon: () => void | Promise<void>;
-  // Open the panel to install the bismuth CLI + MCP machine-wide.
-  openBismuthInstall: () => void;
-  // Open the panel to download opencode and run it on free models (no account).
-  openFreeAgentSetup: () => void;
-  // Manually update the Bismuth app (same pipeline as the UpdateBanner button) — for when
-  // the banner was dismissed or missed. No-op-with-toast when already up to date / in dev.
-  updateApp: () => void | Promise<void>;
-  // Open the modal to view/remove the user's custom spellcheck dictionary words.
-  openEditDictionary: () => void;
-  // Permanently remove completed/cancelled tasks — from the active note, or all notes.
-  archiveTasks: () => void | Promise<void>;
-  archiveAllTasks: () => void | Promise<void>;
-  // Open the "Connect Google Calendar" panel (OAuth connect/disconnect/status).
-  gcalConnect: () => void;
-  // Pull events from Google Calendar into the configured base (one-way sync).
-  gcalSync: () => void | Promise<void>;
-  // Disconnect Google Calendar (revoke + wipe stored tokens).
-  gcalDisconnect: () => void | Promise<void>;
-  // Open the emoji library (grid picker) and insert the pick at the focused editor's caret.
-  openEmojiLibrary: () => void | Promise<void>;
-  // Open a fresh Claude Code chat session in its own tab.
-  newClaudeChat: () => void;
-  // Whole-app UI zoom (see app/src/zoom.ts) — step in/out or reset to 100%.
-  zoomIn: () => void;
-  zoomOut: () => void;
-  zoomReset: () => void;
-}
-```
-
-Because actions may anchor a popover, run async, or return a value the caller needs to await, `BoundCommand.action` is `(e?: MouseEvent) => unknown` (most actions ignore the event; `create-menu` uses it to anchor its chooser to the clicked button). `App.tsx`'s `run-command` app-control handler awaits `cmd.action()` before reporting `ok: true`, so an agent can't observe success before the action has actually resolved (`detect-ai`, `gcal-sync`, `archive-tasks`…); the palette and toolbar call sites fire-and-forget and ignore the return value.
-
-`App.tsx` (around line 998) constructs the bound map reactively:
-
-```ts
-const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openDaemon, setMode, openDailyNote, equalizePanes, splitPaneRight, splitPaneDown, closeFocusedPane, focusPaneLeft, focusPaneRight, focusPaneUp, focusPaneDown, toggleSidebar, toggleTabRail, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, openFreeAgentSetup, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
-```
-
-### Binding algorithm
-
-Inside `bindCommands` an internal `actions: Record<string, ((e?: MouseEvent) => unknown) | undefined>` maps every catalog id to a closure over a handler — the value type allows `undefined` so a catalog id with no entry in the map (e.g. a new `COMMAND_CATALOG` id landing before its binding is added) is skipped defensively. Then:
-
-1. For each `spec` in `COMMAND_CATALOG`, look up `actions[spec.id]`.
-2. If there is no action (a catalog id with no entry in the `actions` map), **skip defensively** (a catalog entry with no binding is dropped silently) — this is a fallback for a new catalog entry landing before its binding, not a normal state, since every `CommandHandlers` field is required.
-3. Otherwise `map.set(spec.id, { id, label, icon, interactive: spec.interactive, action })`, carrying the catalog's `label`, `icon` and `interactive` flag.
-
-This means the produced map keys are the catalog ids that have a binding, plus the dynamic daily-note ids (below).
-
-Verified behavior (`app/src/commands.test.ts`):
-
-- `map.get("terminal")?.label === "Open Terminal"`, `map.get("graph-both")?.icon === "Network"`, `map.get("nope") === undefined`.
-- Running `map.get("new-note")!.action()`, then `graph-2nd`, then `settings` records `["new-note", "mode:2nd", "settings"]` — confirming `graph-2nd` calls `setMode("2nd")`.
-
-## Dynamic Daily-Note Commands
-
-`bindCommands` also registers a command per entry in the `dailyNotes` config (passed as `settings.dailyNotes`). These are **NOT** in the static `COMMAND_CATALOG`; they are generated at bind time:
-
-```ts
-for (const dn of dailyNotes) {
-  if (!dn.id) continue;                          // entries with no id are skipped
-  const id = `daily-note:${dn.id}`;
-  map.set(id, {
-    id,
-    label: `Create Daily Note: ${dn.label || dn.id}`,
-    icon: dn.icon || "CalendarDays",             // default icon if none configured
-    action: () => h.openDailyNote(dn.id),
-  });
-}
-```
-
-Key facts:
-
-- The command id is `daily-note:<id>` where `<id>` is the daily-note config's `id`.
-- Label is `Create Daily Note: <label-or-id>`.
-- Icon falls back to `CalendarDays` when the config has no `icon`.
-- Entries with an empty/missing `id` are skipped.
-- The action calls `h.openDailyNote(dn.id)` (opens today's note for that type, creating it from `template` on first use).
-
-Verified (`app/src/commands.test.ts`): with `[{ id: "journal", label: "Journal", icon: "BookOpen", ... }]`, `map.get("daily-note:journal")` has label `"Create Daily Note: Journal"`, icon `"BookOpen"`, and its action records `daily:journal`.
-
-The `dailyNotes` settings key is configured separately — see [daily notes & templates](../templates/syntax.md) for its full field set (`id`, `label`, `icon`, `folder`, `fileName`, `template`).
-
-## The `toolbar:` Setting
-
-The sidebar header bar buttons are configured by the top-level `toolbar:` key in `.settings`. Schema definition (`core/src/schema/settingsSchema.ts`):
-
-```ts
-toolbar: {
-  type: { kind: "list", item: { kind: "object", fields: {
-    command:  { type: { kind: "enum", values: COMMAND_IDS, allowPrefixes: ["daily-note:"] },
-                doc: "Which command this button runs (a catalog id or daily-note:<id>). Use command: OR commands:, not both." },
-    commands: { type: { kind: "list", item: { kind: "enum", values: COMMAND_IDS, allowPrefixes: ["daily-note:"] } },
-                doc: "Multiple commands to run in sequence (alternative to command: field). Use command: OR commands:, not both." },
-    icon:     { type: "icon",
-                doc: 'Lucide icon name (e.g. "FilePlus") or an emoji shown on the button.' },
-    tooltip:  { type: "string",
-                doc: "Optional hover text (defaults to the command's label)." },
-  } } },
-  default: [
-    { command: "create-menu", icon: "Plus" },
-    { command: "search", icon: "Search" },
-    // The daemon inbox lives here by default (hidden while the daemon is off; carries a
-    // due-count badge — see App.tsx's toolbar render). Removable/movable like any button.
-    { command: "open-inbox", icon: "Inbox" },
-  ],
-  doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",
-}
-```
-
-`toolbar:` is a **list of button objects**, rendered left-to-right in declared order. The default (seeded on a fresh install) is three buttons: **Create new…** (`create-menu`), **Search**, and **Open daemon inbox** (`open-inbox`, hidden in the UI while the daemon is off — see the note in the schema comment above).
-
-> The `commands` field's own schema `doc:` string ("Multiple commands to run in sequence") is the literal text shown in `.settings` autocomplete, but it overstates what actually happens — see ["Button resolution precedence"](#button-resolution-precedence-resolvebuttoncommands) below. `commands:` is a fallback list: the button runs the first id that resolves and never runs the rest, it does not run every entry.
-
-### Button fields
-
-| field | type | required | meaning |
-|---|---|---|---|
-| `command` | enum of `COMMAND_IDS`, plus the `daily-note:` prefix | no* | The single command id this button runs. |
-| `commands` | list of those same enum values | no* | An ordered **fallback** list of command ids — the button runs the first one that resolves; the rest never run (alternative to `command`). |
-| `icon` | `icon` (Lucide name or emoji) | **yes** | The glyph drawn on the button. An item whose `icon` is not a non-empty string is dropped by the server reader (`readButtonListFrom`), so a button with only `command:` silently disappears. (The `CircleHelp` fallback in the renderer applies only to the glyph of a disabled button whose command is unknown, and never to a missing `icon`.) |
-| `tooltip` | string | no | Hover text. Defaults to the resolved command's `label`. |
-
-\* Use **`command:` OR `commands:`, not both**. If both are present, `commands` (when non-empty) wins (see precedence below).
-
-#### `command` / `commands` enum values
-
-Both fields are validated against the enum `values: COMMAND_IDS` with `allowPrefixes: ["daily-note:"]`. Validation logic (`core/src/schema/validate.ts`):
-
-- A value is accepted if it is exactly one of `COMMAND_IDS`, **or** it starts with an allowed prefix (`daily-note:`).
-- So `daily-note:journal`, `daily-note:anything` pass lint even though the literal isn't in the enum (the actual id existence is resolved at bind time, not at lint time).
-- An unrecognized value (not a catalog id, not `daily-note:`-prefixed) produces an error diagnostic: `expected one of: <comma-separated COMMAND_IDS>`, with up to 3 nearest-match suggestions.
-
-Autocomplete (`app/src/editor/settingsComplete.ts`) augments the enum list for `command:`/`commands:` with the document's configured daily-note ids, so typing offers `daily-note:<id>` completions with the daily note's label as detail. The completion popup's `validFor` is widened to `/^[\w:-]*$/` so it survives typing the `:` in `daily-note:<id>`.
-
-#### `icon` field
-
-The `icon` PropertyType is a literal `"icon"` (see `core/src/schema/types.ts`). It accepts a Lucide icon **name** (e.g. `FilePlus`, `Search`, `SquareTerminal`) or an **emoji**. Autocomplete offers an icon gallery plus name matches. The button uses `btn.icon` directly when rendering, **independent of the command's catalog icon** — i.e. a toolbar button's icon overrides the palette/catalog icon for that command.
-
-#### `tooltip` field
-
-Optional hover text. When omitted, the rendered button's label is the resolved command's `label` (`btn.tooltip ?? c().label` in `App.tsx`).
-
-### How the toolbar renders (single-command path)
-
-`App.tsx` renders every configured button — the sidebar header bar (from `settings.toolbar`) and the tab rail's toolbar (from `settings.tabBar`) alike — through one local `ToolbarButton` wrapper, which resolves a button's `command`/`commands` config to a live command and hands plain props to the purely-presentational `CommandButton` (`app/src/shell/CommandButton.tsx`):
-
-```tsx
-function ToolbarButton(props2: {
-    btn: { command?: string, commands?: string[], icon: string, tooltip?: string }
-}) {
-    const cmd = () => resolveButtonCommands(props2.btn, commands())[0]
-    const hidden = () => cmd()?.id === 'open-inbox' && !settings.daemon.enabled
-    return (
-        <Show when={!hidden()}>
-            <Show
-                when={cmd()}
-                fallback={
-                    <CommandButton icon={props2.btn.icon || 'CircleHelp'} disabled
-                        label={`Unknown command: ${props2.btn.command}`} />
-                }
-            >
-                {c => (
-                    <CommandButton icon={props2.btn.icon}
-                        label={props2.btn.tooltip ?? c().label}
-                        onClick={e => c().action(e)}
-                        badge={c().id === 'open-inbox' ? dueCount() : undefined} />
-                )}
-            </Show>
-        </Show>
-    )
-}
-```
-
-Neither caller passes a size: both rows render inside `ui/IconBar`, which sizes every button from `appearance.iconSize`.
-
-Behavior of the current renderer:
-
-- It resolves the command via `resolveButtonCommands(props2.btn, commands())[0]` — the **first resolvable id** in the button's `command`/`commands` config (see precedence below); any further ids in a `commands:` list are never invoked.
-- `open-inbox` is special-cased as a daemon surface: the whole button is hidden while `settings.daemon.enabled` is off, and it carries a live `dueCount()` badge (from `app/src/daemon/daemonInboxApi.ts`) no other command carries.
-- If a command resolves, it renders a `CommandButton` with `btn.icon`, label `btn.tooltip ?? command.label`, and `onClick` running `command.action(e)`.
-- If nothing resolves (unknown/unbound id, or an empty `commands` list with no fallback `command`), it renders a **disabled** `CommandButton` with icon `btn.icon || "CircleHelp"` and label `Unknown command: <id>`.
-- The actual icon/label/badge/disabled markup lives in `CommandButton`, which knows nothing about commands, the daemon, or the inbox — `ToolbarButton` does all the resolution and hands it plain props.
-
-### Button resolution precedence (`resolveButtonCommands`)
-
-`resolveButtonCommands(btn, map)` (`app/src/commands.ts`) is the pure helper for resolving a button's command reference to an ordered list of `BoundCommand`s. It supports both the single `command` and the multi-`commands` forms:
-
-```ts
-export function resolveButtonCommands(
-  btn: { command?: string; commands?: string[] },
-  map: Map<string, BoundCommand>,
-): BoundCommand[] {
-  const ids = btn.commands && btn.commands.length > 0
-    ? btn.commands
-    : btn.command
-      ? [btn.command]
-      : [];
-  return ids.map((id) => map.get(id)).filter((c): c is BoundCommand => c !== undefined);
-}
-```
-
-**`resolveButtonCommands` itself returns the full ordered, resolvable list — but the toolbar only ever runs the first entry of it.** `ToolbarButton` (`app/src/App.tsx`) calls `resolveButtonCommands(props2.btn, commands())[0]`, and its doc comment says so directly: "runs the FIRST resolvable one, disabled when none resolve." So `commands:` is a **fallback list, not a run-all sequence** — `commands: [a, b]` means "run `a`; if `a` doesn't resolve (unknown id, or a catalog entry that lost its binding), run `b` instead." Once `a` resolves, `b` is never invoked, no matter how many times the button is clicked; only when the *whole* list resolves to `[]` does the button render disabled.
-
-Precedence and edge cases (verified in `app/src/commands.test.ts`) — these describe what `resolveButtonCommands` returns, i.e. the candidate list `ToolbarButton` then takes index `[0]` from:
-
-- **Single `command`** → list of one bound command: `{ command: "new-note" }` → `["new-note"]`.
-- **`commands` list** → resolved in declared order: `{ commands: ["new-note", "terminal"] }` → `["new-note", "terminal"]` (only `"new-note"` actually runs; `"terminal"` is the fallback if `"new-note"` doesn't resolve).
-- **A non-empty `commands` wins over `command`**: `{ command: "settings", commands: ["new-note", "terminal"] }` → `["new-note", "terminal"]` (the `settings` command is ignored entirely, not run as a further fallback).
-- **Unknown ids are silently dropped**, keeping the resolvable subset in order: `{ commands: ["new-note", "nope", "terminal"] }` → `["new-note", "terminal"]`.
-- **Unknown single command** → `[]`: `{ command: "nope" }` → `[]`.
-- **Empty `commands` list** → `[]`: `{ commands: [] }` → `[]`.
-- **Empty `commands` falls back to `command`**: an empty list is *not* a "win", so `{ command: "new-note", commands: [] }` → `["new-note"]`.
-- **Neither key present** → `[]`: `{}` → `[]`.
-
-When `resolveButtonCommands` returns `[]`, the intended caller behavior is to render a **disabled** button (per the function's doc comment: "Returns [] when nothing resolves — the caller renders that as a disabled button") — see `ToolbarButton`'s fallback branch above.
-
-## Adding a New Command
-
-Per the project conventions (CLAUDE.md "Commands & Sidebar Toolbar"):
-
-1. **Add an entry to `COMMAND_CATALOG`** in `core/src/commands.ts` (`{ id, label, icon }`).
-2. **Add a matching `action` binding** in `bindCommands` in `app/src/commands.ts`, and a corresponding method on `CommandHandlers` (and supply it from `App.tsx`).
-
-The `toolbar.command` enum, its autocomplete, and the command palette pick the new id up automatically (because the schema derives the enum from `COMMAND_IDS`).
-
-> Note: adding any new **top-level** schema key (not a new command) also requires updating the hardcoded key lists in `core/test/schema/settingsSchema.test.ts`. Adding a *command* does not touch any top-level key, so that step does not apply to commands.
-
-## Example `.settings` toolbar
-
-A toolbar mixing built-in commands, a daily-note command, an emoji icon, a custom tooltip, and a multi-command button:
+# Toolbar and commands
+
+A command is a named action: open a graph tab, split a pane, create a note.
+Every command appears in the command palette (Cmd+P), and the same command ids fill the buttons of the sidebar toolbar (`toolbar:`), the buttons beside the tab strip (`tabBar:`), a clickable [status bar](status-bar.md) segment (`command:`), and the `bismuth app run` CLI.
+This page lists the commands and shows how to put them on a button.
 
 ```yaml
 toolbar:
-  - command: create-menu             # the "+Create" chooser (New note/folder/base ▸/…)
+  - command: create-menu
     icon: Plus
   - command: search
     icon: Search
     tooltip: Find in vault
-  - command: terminal
-    icon: SquareTerminal
-  - command: graph-both
-    icon: Network
-  - command: detect-ai               # local, offline "Detect AI text"
-    icon: Bot
-  - command: daily-note:journal      # dynamic command from dailyNotes config
+  - command: daily-note:journal
     icon: BookOpen
-  - command: open-folder
-    icon: "📁"                        # an emoji is a valid icon
-  - commands: [new-note, terminal]   # fallback list: runs new-note; falls back to terminal only if new-note doesn't resolve
+  - commands: [new-note, terminal]
     icon: Rocket
-    tooltip: Note + terminal
+    tooltip: Note, or a terminal if there is none
 ```
 
-## Cross-references
+## Add a button
 
-- [Settings overview](./overview.md) — how `.settings` is structured, schema-driven autocomplete, lint, and persistence.
-- [Daily notes & templates](../templates/syntax.md) — the `dailyNotes:` config that registers `daily-note:<id>` commands.
-- [Keybindings](./keybindings.md) — the parallel split-data system for keyboard shortcuts (`KEYBINDING_CATALOG` + `matchesKeybinding`).
-- [App control](../mcp/app-control.md) — the `bismuth app run`/`POST /ui/command` surface that runs commands from outside the UI, including the `interactive` reply shape and the `UI_CONTROL_BLOCKLIST`.
+1. Open `.settings` (command **Open Settings**) and find `toolbar:` or `tabBar:`. Writing the key replaces the whole list, so include the buttons you want to keep.
+2. Add an item with a `command` id from [the catalog below](#the-command-catalog) and an `icon`.
+3. Save. The bar updates at once. To restore the defaults, delete the key.
 
-Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`, `app/src/shell/CommandButton.tsx`, `app/src/daemon/daemonInboxApi.ts`, `core/src/settings.ts`, `app/src/homePage.ts`
+[Settings reference](reference.md#toolbar) has the defaults and the field list. The fields in short:
+
+| Field | Meaning |
+|---|---|
+| `command` | One command id, or `daily-note:<id>` for a daily-note type. |
+| `commands` | A list of ids; the button runs the first one that resolves. |
+| `icon` | An icon name (any Phosphor icon) or an emoji. Required. |
+| `tooltip` | Hover text. Defaults to the command's label. |
+
+Use `command` or `commands`, not both. If both are present and `commands` is non-empty, `commands` wins.
+
+## How a button resolves its command
+
+- `commands` is a fallback list, not a sequence. `commands: [a, b]` runs `a`; it runs `b` only if `a` is not a known command. Once `a` resolves, `b` never runs. The schema's autocomplete text says "run in sequence", which overstates it.
+- An unknown id is skipped. If no id in the button resolves, the button shows disabled with the tooltip `Unknown command: <id>`.
+- An empty `commands` list falls back to `command`.
+- A button without an `icon` disappears. An item missing a non-empty `icon`, or missing both `command` and `commands`, is dropped when settings load, with no error. An explicit empty list `[]` is honoured and gives an empty bar.
+- The button icon is yours. It replaces the command's default icon on that button.
+- `open-inbox` hides while the daemon is off. It also carries a badge with the due count.
+- An unknown id fails lint. Lint accepts any catalog id and any `daily-note:`-prefixed value, and reports others with the nearest matches. Whether a `daily-note:<id>` exists is only known when the app runs.
+
+## Daily-note commands
+
+Each entry in [`dailyNotes`](reference.md#dailynotes) registers a command `daily-note:<id>`. It appears in the palette as `Create Daily Note: <label>` and opens today's note of that type, creating it from the entry's template the first time.
+Put the id in a button's `command` to get a button for it. Autocomplete offers the ids of your configured daily notes.
+
+## The create menu
+
+The command `create-menu` (**Create new…**) is one button that opens a menu instead of running a single action. The menu lists, in order:
+
+1. New note
+2. New folder
+3. **New base**, a submenu with one entry per Bases view kind (the kinds are listed in [Bases overview](../bases/overview.md)); each creates `Untitled <kind>.md` with that view
+4. New spreadsheet
+5. New drawing
+6. New Claude Chat
+7. A separator, then each daily-note command
+
+The menu opens under the button you clicked, or at a fixed spot when run from the palette.
+
+## The command catalog
+
+These are the built-in commands, grouped by area. `COMMAND_CATALOG` in `core/src/commands.ts` is the source of truth; every command in it is valid for `command` and `commands`. A "yes" in the dialog column marks a command whose action only opens a dialog that a person finishes.
+
+### Tabs and navigation
+
+| id | label | default icon | dialog |
+|---|---|---|---|
+| `new-tab` | New tab | `Plus` |  |
+| `close-tab` | Close tab | `X` |  |
+| `reopen-tab` | Reopen closed tab | `RotateCcw` |  |
+| `history-back` | Back | `ArrowLeft` |  |
+| `history-forward` | Forward | `ArrowRight` |  |
+| `open-graph` | Open graph view | `Share2` |  |
+| `open-daemon` | Open daemon | `Bot` |  |
+| `open-inbox` | Open daemon inbox | `Inbox` |  |
+| `search` | Search | `Search` |  |
+| `terminal` | Open Terminal | `SquareTerminal` |  |
+| `new-window` | New window | `AppWindow` |  |
+| `open-folder` | Open folder… | `FolderOpen` |  |
+
+### Create
+
+| id | label | default icon | dialog |
+|---|---|---|---|
+| `create-menu` | Create new… | `Plus` | yes |
+| `new-note` | New note | `FilePlus` |  |
+| `new-folder` | New folder | `FolderPlus` |  |
+| `new-base` | New base | `Database` |  |
+| `new-spreadsheet` | New spreadsheet | `Table` |  |
+| `new-drawing` | New drawing | `PenTool` |  |
+| `new-claude-chat` | New Claude Chat | `MessageSquare` |  |
+
+### Notes and tasks
+
+| id | label | default icon | dialog |
+|---|---|---|---|
+| `export` | Export current file… | `Download` |  |
+| `archive-tasks` | Archive completed tasks (this note) | `Archive` |  |
+| `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` |  |
+| `detect-ai` | Detect AI text | `Bot` |  |
+| `emoji-library` | Emoji library… | `Smile` | yes |
+| `edit-dictionary` | Edit custom dictionary… | `BookOpen` | yes |
+
+### Graph modes
+
+| id | label | default icon | dialog |
+|---|---|---|---|
+| `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` |  |
+| `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` |  |
+| `graph-both` | Graph: Both Brains | `Network` |  |
+| `graph-local` | Graph: Local (open note) | `Pin` |  |
+
+### Panes
+
+| id | label | default icon | dialog |
+|---|---|---|---|
+| `equalize-panes` | Equalize panes | `Columns3` |  |
+| `split-right` | Split right | `PanelRight` |  |
+| `split-down` | Split down | `PanelBottom` |  |
+| `close-pane` | Close pane | `SquareX` |  |
+| `focus-pane-left` | Focus pane left | `ArrowLeft` |  |
+| `focus-pane-right` | Focus pane right | `ArrowRight` |  |
+| `focus-pane-up` | Focus pane up | `ArrowUp` |  |
+| `focus-pane-down` | Focus pane down | `ArrowDown` |  |
+
+### Window layout and zoom
+
+| id | label | default icon | dialog |
+|---|---|---|---|
+| `toggle-sidebar` | Toggle sidebar | `PanelLeft` |  |
+| `toggle-tab-rail` | Toggle tab rail | `PanelRight` |  |
+| `move-sidebar-side` | Move sidebar to other side | `Columns2` |  |
+| `move-tab-rail-side` | Move tab rail to other side | `Columns2` |  |
+| `toggle-status-bar` | Toggle status bar | `PanelBottom` |  |
+| `zoom-in` | Zoom In | `ZoomIn` |  |
+| `zoom-out` | Zoom Out | `ZoomOut` |  |
+| `zoom-reset` | Reset Zoom | `RotateCcw` |  |
+
+### Setup and updates
+
+| id | label | default icon | dialog |
+|---|---|---|---|
+| `settings` | Open Settings | `Settings` |  |
+| `daemon-owner` | Set daemon owner device… | `Server` | yes |
+| `daemon-setup` | Set up daemon… | `Download` | yes |
+| `daemon-update` | Update daemon… | `RefreshCw` |  |
+| `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | yes |
+| `free-agent-setup` | Set up free agent… | `Download` | yes |
+| `update-app` | Update Bismuth… | `RefreshCw` |  |
+
+### Google Calendar
+
+| id | label | default icon | dialog |
+|---|---|---|---|
+| `gcal-connect` | Connect Google Calendar… | `Calendar` | yes |
+| `gcal-sync` | Sync Google Calendar | `RefreshCw` |  |
+| `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` |  |
+
+Notes on individual commands:
+
+- `new-tab` and `open-graph`. `new-tab` always opens a fresh home tab, which is the knowledge graph. `open-graph` focuses an existing graph tab and opens one only if none is open.
+- `open-daemon` and `open-inbox`. Both open the daemon page, where the inbox lives. They keep separate ids so the default toolbar can carry the inbox button, with its badge.
+- `new-base`. As a plain command it creates a `type: base` note. As the create menu's **New base** submenu it offers one entry per view kind.
+- `archive-tasks` and `archive-all-tasks`. They permanently remove completed and cancelled tasks, from the active note or from every note.
+- `detect-ai`. It estimates how AI-generated the active page reads and shows the score in a toast. The detector runs on your device with no network call, other than a one-time model download of about 34 MB on first use. It needs at least 40 words of prose.
+  It was trained on a corpus without Claude text, so treat the score as a rough hint and not as proof.
+- `emoji-library`. It opens the emoji picker and inserts your pick at the cursor of the focused note.
+- `edit-dictionary`. It opens the list of words you added to the spellcheck dictionary, so you can remove them.
+- Graph modes. `graph-2nd` shows the vault, `graph-3rd` the memory graph, `graph-both` both with their cross-links, and `graph-local` the neighbourhood of the open note. See [graph overview](../graph/overview.md).
+- Pane commands run the same logic as the matching [keybindings](keybindings.md).
+- Layout commands. `move-sidebar-side`, `move-tab-rail-side` and `toggle-status-bar` flip the `layout` keys and write `.settings`; `toggle-sidebar` and `toggle-tab-rail` show or pin the panels. See [shell layout](layout.md).
+  The panel edge lines run the same toggles: drag one to resize, click it to toggle.
+- `daemon-update` and `update-app`. They run the daemon and app updates by hand, for when the update banner was dismissed or missed.
+- `free-agent-setup`. It downloads opencode and defaults chats to a rotating free model, with no account. The intro's free-agent option runs the same setup.
+- `zoom-in`, `zoom-out`, `zoom-reset`. They zoom the whole window like a browser's page zoom. The level is a per-machine preference, not a `.settings` value.
+- Several commands share an icon. That is allowed; only ids are unique.
+
+## Run commands from outside the app
+
+`bismuth app run <id>` (and the matching MCP tool) runs a command in an open window. `bismuth app commands` lists the ids it accepts. [App control](../mcp/app-control.md) covers the routes and tools.
+
+- Dialog commands stay runnable. An agent can open the Google Calendar connect dialog to show you how. The reply says `interactive: true` with a note that a person needs to finish it, instead of implying the task is done.
+- Some commands are refused. `new-window`, `open-folder`, `update-app`, `daemon-update` and `new-claude-chat` return `command "<id>" is not allowed via app control`.
+  They are heavyweight, or open a live agent session, and an unattended caller should not trigger them blindly. Everything else in the catalog is allowed.
+
+## How it works
+
+`COMMAND_CATALOG` is an ordered list of `CommandSpec` (`id`, `label`, `icon`, optional `interactive`) in `core/src/commands.ts`, with no frontend imports.
+`COMMAND_IDS` is derived from it, and the schema uses that list for the `toolbar.command`, `tabBar.command` and `statusBar.command` enums, with `allowPrefixes: ['daily-note:']`.
+`core/test/commands.test.ts` asserts that ids are unique and that every command has a label and an icon.
+
+`bindCommands(handlers, dailyNotes)` in `app/src/commands.ts` turns the catalog into a `Map<string, BoundCommand>`.
+A `BoundCommand` is `{ id, label, icon, interactive, action }`, and `action` takes an optional `MouseEvent` so the create menu can anchor under the clicked button.
+`App.tsx` passes one `CommandHandlers` object, every field required, so dropping a handler fails the typecheck. The palette, the toolbar, the tab bar and app control all read this one map. A catalog id with no binding is skipped silently.
+
+`resolveButtonCommands(btn, map)` returns the resolvable ids of a button in order. `ToolbarButton` in `App.tsx` takes index `[0]` and renders a disabled `CommandButton` (`app/src/shell/CommandButton.tsx`) when the list is empty. A non-empty `commands` beats `command`; an empty one defers to it.
+
+App control reaches a command through `POST /ui/command`, then `runCommand` in `App.tsx`. It checks `UI_CONTROL_BLOCKLIST`, looks up the command, awaits `cmd.action()`, and adds the `interactive` note.
+`isUiControlAllowed` and `uiControlAllowedIds` in `core/src/commands.ts` back `bismuth app commands`.
+
+`detect-ai` uses transformers.js in the webview, never the core sidecar (`app/src/ai/aiDetect.ts`). It splits prose into windows of about 280 words, scores at most 16 evenly spaced ones, and returns the mean and peak probability.
+
+### Add a command
+
+1. Add `{ id, label, icon }` to `COMMAND_CATALOG`.
+2. Add a field to `CommandHandlers` and an entry in `bindCommands`'s `actions` map in `app/src/commands.ts`, and supply the handler from `App.tsx`.
+
+The toolbar enum, autocomplete and palette pick the id up automatically.
+
+Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`, `app/src/shell/CommandButton.tsx`

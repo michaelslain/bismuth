@@ -1,443 +1,91 @@
-# Bismuth Architecture Overview
+# Architecture
 
-Bismuth is a personal knowledge-management system built as a Bun monorepo with seven workspaces.
-This page explains their roles, how the three-brain model becomes one knowledge graph, and how that
-graph reaches the frontend. Start here when orienting yourself in the codebase.
-
-The central concept is the **three-brain model**: a "2nd brain" (a vault of Markdown files) and a
-"3rd brain" (per-vault daemon memory notes under `<vault>/.daemon/memory`, present only when
-`daemon.enabled`). The core backend merges them into one knowledge graph, precomputes 2D and 3D
-layouts, and serves the result over HTTP to a Tauri + Solid.js desktop app.
-
-The relay plugin reports Claude Code sessions and subagents from the app's terminal tabs to an
-in-process core registry. It no longer provides a graph mode (the "agents" graph was removed in
-`a6687c0`), but the registry still supports `chat.ts` subagent lifetime tracking and
-`terminal.ts` tab-close pruning. The mcp workspace is a stdio MCP server that auto-attaches to
-those sessions to serve the docs and CLI.
-
-**What's in this doc:** monorepo layout and workspace roles → the three-brain model → graph composition and types → graph modes (2nd/3rd/both/local) → vault-change data flow → HTTP API summary → settings architecture → caching strategy.
-
----
-
-## Monorepo Layout
-
-The root `package.json` declares seven Bun workspaces:
-
-```json
-{
-  "workspaces": ["core", "cli", "app", "relay", "mcp", "memory", "daemon"]
-}
-```
-
-| Workspace | Package name | Role |
-|-----------|--------------|------|
-| `core/` | `@bismuth/core` | Backend HTTP server, graph builders, all business logic |
-| `app/` | `app` | Tauri + Solid.js desktop frontend; imports core's shared types and pure helpers by relative path (`../../core/src/...`) |
-| `cli/` | `@bismuth/cli` | `bismuth` binary; depends on `@bismuth/core` (the only workspace that declares it) and calls core functions headlessly |
-| `relay/` | `@bismuth/relay` | Claude Code hooks-only plugin; feeds core's in-process relay registry |
-| `mcp/` | `@bismuth/mcp` | stdio MCP server; auto-attaches to app-terminal Claude sessions, serves `docs/` + the `bismuth` CLI token-frugally |
-| `memory/` | `@bismuth/memory` | The pure 3rd-brain memory graph (note CRUD + frontmatter + backlinks, keyword search, query DSL), used by the daemon, relay hooks, and MCP memory tools |
-| `daemon/` | `@bismuth/daemon` | Per-vault daemon runtime; one machine process multiplexing every enabled vault's memory + crons + processes + conversation session |
-
-Install all workspaces at once with `bun install` from the repo root. To add a package to a specific workspace: `cd <workspace> && bun add <package>`.
-
-### `core/` — the backend
-
-`core/src/server.ts` is the entry point. It starts a `Bun.serve` HTTP server (default port `:4321`) that:
-
-- Accepts `--vault <dir>` and `--memory <dir>` CLI flags (both required when run standalone; the bundled app passes `<vault>/.daemon/memory` as `--memory`).
-- Exposes a REST API consumed by both the app and the CLI.
-- Watches the vault (including its in-vault `.daemon/memory`) for file changes, debounces them at 250 ms, selectively invalidates caches, bumps a version counter, and pushes SSE events to connected frontend clients.
-
-`@bismuth/core` has no package entry point: `core/package.json` declares no `module`, `main` or `exports` field and there is no `core/src/index.ts`, so nothing can import the bare specifier. Consumers reach core's pure functions and types by relative path into `core/src/` (`../../core/src/...`), and only `cli/package.json` lists `@bismuth/core` as a dependency (`app` imports by relative path without declaring it). `mcp` deliberately does not import core at all (`mcp/src/memory.ts` and `mcp/src/daemon.ts` say so) — vault features ride the `bismuth_cli` tool, which shells out to the `bismuth` binary.
-
-### `app/` — the desktop frontend
-
-A Tauri app wrapping a Vite + Solid.js SPA. Launched with `cd app && bun run dev:browser` (browser) or `bun run dev:app` (adds the native Tauri window). Both go through `app/scripts/dev.ts`, which runs `bun run ../core/src/server.ts` and `vite` concurrently via `concurrently`. `dev.ts` is a script rather than an inline `package.json` string because it needs real variable scope: it mints one random owner token per run (`core/src/ownerToken.ts`) and threads the same value to both halves — `BISMUTH_OWNER_TOKEN` to core, `VITE_OWNER_TOKEN` into the Vite bundle where `app/src/api.ts`'s `resolveOwnerToken` reads it — so dev requests present as the vault's owner instead of a filtered non-owner channel. Without it, every content route (`GET /file`, `POST /search`, …) 403s or silently filters the moment a vault marks anything `visibility: chat-only`/`hidden`. It also resolves which vault to open via `app/scripts/devVault.ts`: an exported `BISMUTH_VAULT`/`BISMUTH_MEMORY` always wins, otherwise it materialises a generated example vault at repo-root `.dev-vault/` (gitignored — dev builds write to their vault, so a committed fixture would surface as repo diffs the moment anyone clicked anything). Missing files are restored and existing ones left alone, so experiments survive restarts while `rm -rf .dev-vault` is a clean reset. The practical consequence: **a fresh clone runs with no environment setup at all.** `--app` additionally runs Tauri in this process group rather than through `tauri.conf.json`'s `beforeDevCommand`, which would re-invoke `bun run dev:browser` and collide a second core+Vite pair on `:4321`/`:1420`. The app talks to the core server at a URL resolved at runtime from (in priority order): `?api=<url>` query param → `VITE_API_BASE` build env → default `http://localhost:4321`. This resolution is in `app/src/api.ts`.
-
-The entry point `app/src/index.tsx` code-splits two roots. On **first run** the bundled app's `lib.rs` injects `window.__BISMUTH_FIRST_RUN__` (and does **not** start a backend); `index.tsx` then renders the full-window **Vault Intro** takeover (`app/src/intro/VaultIntro.tsx`) instead of `App` — a short slideshow ending in a native folder picker that creates the vault, with `?intro=1` forcing it in dev/browser for preview. A normal launch never loads the intro, and first-run never loads `App` (which would fire API calls against a backend that isn't there). Full detail in [install](./install.md).
-
-### `cli/` — the `bismuth` binary
-
-A thin dispatcher over `@bismuth/core`. Most file-based operations (list notes, read/write, tasks, bases, drawing export) run **headlessly** with no running server — e.g. `bismuth graph` (`cli/src/commands/graph.ts`) calls `buildGraph()` directly and prints the result, no server involved. Operations with no dedicated command group go through the generic `api <METHOD> <path>` passthrough (`cli/src/commands/api.ts`: "Call any server route directly, for in-memory/server-only capabilities"), which hits a running server. Vault is specified via `--vault` flag or `BISMUTH_VAULT` env var.
-
-### `relay/` — the session registry plugin
-
-A collection of Claude Code hook scripts. It is **not** a daemon and installs nothing in `~/.claude`. It is loaded per-session, only inside Bismuth's terminal tabs, via a PATH shim (`relay/shim/claude`) that injects `--plugin-dir <relay>` when a bare `claude` is invoked.
-
-> **Note**: the relay-fed "agents" graph mode was removed in commit `a6687c0` ("ephemeral tooling state, not knowledge"). `relay.ts`, its four ingest routes below, terminal provenance, and the chat agent-session plumbing all survive — only the graph mode, `agentLayout.ts`, `AgentsGraph.tsx`, and `GET /agent-graph` were deleted.
-
-Hook wiring (declared in `relay/hooks/hooks.json`):
-
-| Hook | Script | POST endpoint | Purpose |
-|------|--------|---------------|---------|
-| `SessionStart` | `bin/session-start-hook.ts` | `POST /relay/session` | Register terminal-tab session as root node |
-| `UserPromptSubmit` | `bin/recall-hook.ts` | `POST /relay/session` | Heartbeat / self-register on resumed sessions |
-| `SubagentStart` | `bin/subagent-start-hook.ts` | `POST /relay/subagent/start` | Add child node under spawning session |
-| `SubagentStop` | `bin/subagent-stop-hook.ts` | `POST /relay/subagent/stop` | Mark child finished |
-| `SessionEnd` | `bin/session-end-hook.ts` | `POST /relay/session/end` | Drop the session on a real `exit`/`logout` (not `clear`/`compact`, which keep Claude running in the tab); when the daemon is enabled it also collects the transcript into memory on `exit`/`logout`/`clear` (not `compact`) |
-
-All hooks are **best-effort**: they exit 0 within a 2-second budget and swallow all errors so they never block the user's Claude session. The hooks no-op if `CLAUDE_TERMINAL_ID` is absent (i.e., outside Bismuth terminals). The relay registry lives entirely in-process inside core (`core/src/relay.ts`); it does not persist across server restarts. Nothing renders this registry as a graph any more — its two consumers are `chat.ts` (which imports `DONE_SUBAGENT_TTL_MS`/`RUNNING_SUBAGENT_MAX_MS` to mirror the same finished/abandoned-subagent lifetimes for its own agent-session view) and `terminal.ts` (which calls `relay.prune()` against the live pty set on tab close).
-
-### `mcp/` — the docs + CLI MCP server
-
-A stdio [MCP](https://modelcontextprotocol.io) server (`@bismuth/mcp`) that rides the **same auto-attach mechanism as relay**: the relay plugin's `relay/.mcp.json` declares it, so when a bare `claude` loads the plugin (`--plugin-dir <relay>`) Claude Code auto-starts the server — no flags, no approval prompts. It exposes the `docs/` reference (including the agent guides under `bases/authoring*` and `guides/`) and the `bismuth` CLI to that session **token-frugally** (search returns snippets, not whole pages): `mcp/src/docs.ts` (pure index/search/read), `mcp/src/cli.ts` (CLI bridge), `mcp/src/instructions.ts` (`SERVER_INSTRUCTIONS`, the text clients read before their first tool call), `mcp/src/server.ts` (low-level SDK server, 5 always-on tools: `bismuth_docs_list`/`search`/`read`, `bismuth_cli`, `bismuth_cli_help`; the daemon-gated memory + daemon tools are added only when the daemon is enabled). Scope is app-local, like relay. See [MCP server](../mcp/overview.md).
-
-### Agent guides — docs pages, not skills
-
-Three guides tell an agent how to do a Bismuth task correctly. They are ordinary `docs/` pages: `docs/bases/authoring.md` (how to write a `type: base` note: a lookup table from "what you want to show" to one of the 12 view kinds, a read-the-matching-page-first workflow, and cross-cutting gotchas such as `source:` string-vs-object coercion and its silent-fallback footgun, `from:` composing an upstream base's own source recursively, and that the only embedded block is ` ```query `) with one page per view kind under `docs/bases/authoring/<kind>.md`, and `docs/guides/converting-obsidian-to-bismuth.md` + `docs/guides/converting-bismuth-to-obsidian.md`, each with topic pages in a sibling directory. They used to ship as Claude Code skills in a top-level `skills/` directory; that directory, the `bismuth_skill` MCP tool and the `~/.claude/skills/<id>` symlinks are retired.
-
-The trigger is the MCP server's instructions (`mcp/src/instructions.ts`'s `SERVER_INSTRUCTIONS`), which a client that honours MCP `instructions` reads before its first tool call: every time you create, edit or debug a base, first read `bases/authoring.md` with `bismuth_docs_read`, then `bases/authoring/<view kind>.md`; when converting a vault between Obsidian and Bismuth, first read the matching `guides/converting-…md`. That reaches all ten agent backends through one channel, where only Claude Code ever had a native skills mechanism. Codex also gets the same pointers in its managed `AGENTS.md` block (`core/src/chatProviders/codex/driver.ts`'s `CODEX_AGENTS_MD_CONTENT`, via `core/src/agentBackends/agentsMd.ts`'s `writeAgentsMdBlock`, opt-in via `settings.codex.writeAgentsMd`).
-
-The installer no longer stages or links anything for them: `core/src/bismuthInstall.ts` copies `bin/` + `docs/` into `~/.bismuth` only, and on every ensure runs `removeLegacySkills()` to delete the `~/.claude/skills/<id>` symlinks older builds wrote (only when the entry is a symlink into `~/.bismuth`; a foreign entry at that path is left alone) and `~/.bismuth/skills`. `core/test/guides.test.ts` and `cli/test/guideCommands.test.ts` keep the guides honest. Full file-by-file breakdown: [Codebase map](../contributing/codebase-map.md); how the MCP serves them: [MCP server](../mcp/overview.md).
-
-### Storybook — the `app/` component catalog
-
-`app/.storybook/` runs a separate dev server (Storybook 9 via `storybook-solidjs-vite`; `bun run storybook` from `app/`, port `6006`) that mounts individual `app/src/` components outside the full Tauri+Solid app shell. `preview.ts` does the two things that make a mounted component behave like it does in production instead of rendering blank or stuck loading: it projects the real theme tokens onto `:root` via `setCssVars(settingsToCssVars(DEFAULTS))` (the exact call `App.tsx` makes at runtime), and it installs an in-memory `Transport` (`app/src/api.ts`'s swappable seam — the same one mobile uses to run the app with no HTTP server) seeded from shared fixture data, so a component that fetches on mount reads back real content instead of parking on a spinner forever. The catalog spans 166 `*.stories.tsx` files holding 705 `export const X: Story` declarations (as of this writing — counted with `find app/src -name '*.stories.tsx' | wc -l` and `grep -rc "export const .*: Story" app/src --include='*.stories.tsx'`; re-count rather than trust these, since they only grow) — the `ui/` primitives, all 12 Bases view renderers, the calendar views, app-root chrome and modals, drawing, graph, editor surfaces, and `ChatView`. Shared fixtures live in `app/src/ui/_baseFixtures.tsx`, `_fakeTransport.ts`, `_calendarFixtures.ts`, `_graphFixtures.ts`, `_daemonFixtures.ts`, `_cmHarness.tsx`, and `_storyKit.tsx`. Full file breakdown: [Codebase map](../contributing/codebase-map.md).
-
----
-
-## The Three-Brain Model
-
-Bismuth treats knowledge as three layers, each producing a graph:
-
-### 2nd Brain (vault)
-
-The vault is a directory of markdown files. `core/src/vault.ts` builds the vault graph in two passes:
-
-1. Create a `"note"` node for every `.md` file (id = vault-relative path minus `.md`, e.g. `reading/quotes/x`).
-2. Re-read each note to extract wikilinks (`[[Another Note]]`), `#tags`, and YAML frontmatter; create `"link"`, `"tag"`, and frontmatter-derived edges.
-
-Important details:
-- Wikilink matching is **filename-based, not path-based**: `[[Another Note]]` matches any `Another Note.md` anywhere in the vault. Ambiguous matches are undefined.
-- The top-level folder segment becomes the `folder` field on each node (e.g. `reading/quotes/x.md` → `folder="reading"`).
-- The vault graph uses node kinds `"note"` and `"tag"`. The set `SECOND_BRAIN_KINDS = new Set(["note", "tag"])` in `graph.ts` is what the frontend mode filter applies.
-
-The vault graph is exposed by `GET /graph`.
-
-### 3rd Brain (memory)
-
-The 3rd brain is the per-vault daemon's memory, living **inside the vault** at `<vault>/.daemon/memory`. It is **gated on `settings.daemon.enabled`**: the server computes `effectiveMemoryDir()` (`core/src/server.ts`) as `join(cfg.vault, ".daemon", "memory")` only when `appConfig.daemon?.enabled`, otherwise `undefined`. When the daemon is disabled there is **no 3rd brain** at all (and no error). The bundled app derives the same path Rust-side (`vault_memory_dir(vault)` → `<vault>/.daemon/memory` in `app/src-tauri/src/lib.rs`) and passes it as the sidecar's `--memory`; core then ignores it unless the daemon is enabled. There is **no** separate top-level memory directory.
-
-When a `memoryDir` is in effect, `core/src/memory.ts` builds a graph of `"memory"` nodes with ids prefixed `mem:` (e.g. `mem:project-xyz`). The constant `THIRD_BRAIN_KINDS = new Set(["memory"])` is what the frontend mode filter applies.
-
----
-
-## Graph Composition in `engine.ts`
-
-`buildGraph(vaultDir, memoryDir?)` in `core/src/engine.ts` is the single composition entry point called by the server's graph cache:
-
-```typescript
-export async function buildGraph(vaultDir: string, memoryDir?: string): Promise<GraphData>
-```
-
-Steps:
-
-1. `buildVaultGraph(vaultDir)` — returns `{ graph, byBase, byPath }`. `byBase` is a map from filename-without-extension (e.g. `"Another Note"`) to node id; `byPath` is a map from the full vault-relative path (e.g. `"reading/Another Note"`) to node id. Both are needed for wikilink resolution.
-2. If no `memoryDir` (the daemon is disabled, so there's no 3rd brain), stamp Louvain communities onto the vault graph and return.
-3. If `memoryDir` is provided, `buildMemoryGraph(memoryDir)` returns `{ nodes, edges, links }` where `links` is a map from memory node base name to the wikilink targets it references.
-4. **"About" edges** are created for each memory→vault cross-reference: for each entry in `memory.links`, `resolveLinkTarget(target, vaultByBase, vaultByPath)` is called — it tries path-qualified resolution first (`vaultByPath`), then falls back to basename resolution (`vaultByBase`). A successful resolution produces an `{ from: "mem:<base>", to: <vaultNodeId>, kind: "about" }` edge.
-5. `mergeGraphs([vault, { nodes: memory.nodes, edges: [...memory.edges, ...about] }])` deduplicates nodes by id (first-seen wins) and concatenates edges.
-6. `stampCommunities(merged)` calls `detectCommunityHierarchy()` (`core/src/community.ts`) — deterministic, non-random **hierarchical** Louvain community detection using only edges whose both endpoints are present — and stamps four fields onto each node: `community` (the finest level's numeric id) and `communityLabel` (that level's exemplar label), which mirror the pre-hierarchy flat contract every existing consumer reads, plus `communityPath` (community id per level, COARSEST → FINEST) and `communityPathLabels` (the matching exemplar label per level).
-
-**How many levels a vault gets** — `communityLevelsFor(nodeCount)`:
-
-| Node count | Levels |
-|---|---|
-| < 360 | 1 |
-| < 1620 | 2 |
-| < 7290 | 3 |
-| ≥ 7290 | 4 |
-
-So a small vault gets one flat level exactly as before, and a large one gets clusters nested up to 4 deep. Levels are built bottom-up and strictly nested — two nodes sharing a finest community always share every coarser one.
-
-**How each level picks its exemplar name** — `pickExemplar()`:
-- Members within `EXEMPLAR_DEGREE_FRAC` (0.5) of the community's top degree form a pool, capped at `EXEMPLAR_POOL` (8).
-- A `kind: "tag"` member in that pool wins outright over notes.
-- Among the survivors, the shortest label that still fits `EXEMPLAR_FIT_CHARS` (20 characters) is picked — the field is a monospace ASCII grid with no room for a full note-title sentence as a cluster name.
-
-The result is a `GraphData`:
-
-```typescript
-interface GraphData {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  views?: { second?: ViewLayout; third?: ViewLayout }; // populated lazily via GET /graph/views
-}
-```
-
-Layout positions (`position3d`, `position2d`) are attached by `attachLayout()` in `core/src/layout-cache.ts` before the graph is stored in the server's `graphCache`. The frontend receives nodes already stamped with positions and morphs between them in `app/src/graph/AsciiGraphRenderer.ts` — a Canvas2D (not WebGL/Three.js) renderer that draws the graph as a monospace character field (glyphs for nodes, real vector strokes for edges) — it does not run any force simulation for "2nd"/"3rd"/"both" mode. ("local" mode is the one exception — see Graph Modes below.)
-
-Over the renderer's canvas sits a shared **`GraphAtmosphere`** overlay (`app/src/graph/GraphAtmosphere.tsx`): the iridescent cluster-glow lobes (driven by the renderer's per-frame `setBloomCallback`, which projects the biggest clusters to screen space as a density field) plus a depth vignette. It is rendered as a sibling after the canvas by both `GraphView` and the first-run intro graph, so the two share one source instead of duplicating the glow-wiring.
-
----
-
-## Graph Types (`core/src/graph.ts`)
-
-### Node kinds
-
-| Kind | Brain | Source | Description |
-|------|-------|--------|-------------|
-| `"note"` | 2nd | `vault.ts` | A vault markdown file |
-| `"tag"` | 2nd | `vault.ts` | A `#tag` extracted from notes |
-| `"memory"` | 3rd | `memory.ts` | A daemon memory note (from `<vault>/.daemon/memory`) |
-| `"self"` | — | Vestigial | Not produced by any graph mode — no mode has carried a self/"you" hub since `a6687c0` removed "agents" mode (a prior `withYouNode()` helper injected one into "2nd"/"3rd"/"both" too; also removed, as visual noise). The type and `SELF_NODE_ID = "::you"` still exist, and `AsciiGraphRenderer.ts` still special-cases `kind: "self"` with an `"@"` glyph, only because the first-run Vault Intro's synthetic demo graph (`app/src/intro/vaultIntroGraph.ts`) decorates its point cloud with one — no real vault/memory/daemon data ever produces this kind |
-| `"agent"` | — | Vestigial | Declared in `NodeKind` but nothing builds one any more: the graph builder and `GET /agent-graph` were deleted in `a6687c0` along with the "agents" graph mode. `core/src/agents.ts` itself still exists, reduced to the `ChatAgentSession`/`ChatAgentSubagent` types that `chat.ts` uses for per-chat subagent tracking |
-| `"daemon"` | daemon | `daemonGraph.ts` | The daemon hub node (id `"::daemon"`, label defaults to `"daemon"`) |
-| `"cron"` | daemon | `daemonGraph.ts` | A daemon-supervised cron job |
-| `"process"` | daemon | `daemonGraph.ts` | A daemon-supervised process |
-
-### Edge kinds
-
-| Kind | Direction | Description |
-|------|-----------|-------------|
-| `"link"` | note → note | Wikilink `[[Target]]` |
-| `"tag"` | note → tag | Note has this tag |
-| `"message"` | memory → memory | Memory-internal links |
-| `"about"` | memory → note | Cross-brain link: memory references vault note |
-| `"open"` | self → note | Vestigial: unused since no mode carries a self node any more (see `"self"` above) |
-| `"supervises"` | daemon → cron/process | Daemon hub to its supervised jobs |
-
-### `GraphNode` fields
-
-```typescript
-interface GraphNode {
-  id: string;
-  label: string;
-  kind: NodeKind;
-  state?: "idle" | "awake";
-  folder?: string;                 // top-level folder segment, e.g. "reading"
-  parent?: string;                 // agent nodes only — vestigial, see Node kinds above
-  position?: [x, y, z];           // 3D precomputed layout (attached by layout-cache.ts)
-  position2d?: [x, y];            // 2D precomputed layout
-  community?: number;              // Louvain community id, finest hierarchy level
-  communityLabel?: string;         // finest level's exemplar label
-  communityPath?: number[];        // community id per level, COARSEST → FINEST (length 1-4); last element === community
-  communityPathLabels?: string[];  // exemplar label per level, same length as communityPath; last element === communityLabel
-  daemon?: DaemonVizState;         // cron/process nodes only: enabled/running viz state
-}
-```
-
-### `DaemonVizState` fields
-
-```typescript
-interface DaemonVizState {
-  enabled: boolean;
-  running: boolean;
-  lastResult: string | null;  // "success" | "failed" | "unknown" | null (never ran)
-  lastFiredMs: number | null; // epoch ms of last run, or null
-  schedule?: string;          // cron expression (cron nodes only)
-}
-```
-
----
-
-## Graph Modes
-
-`GraphMode` (`app/src/commands.ts`) is exactly:
-
-```typescript
-export type GraphMode = "2nd" | "3rd" | "both" | "local";
-```
-
-The frontend switches between these four graph modes. Each mode determines which node/edge kinds to render and which backend endpoint (if any) to query. Node/edge selection per mode is pure: `app/src/graph/displayGraph.ts`'s `selectDisplayGraph()` picks and shapes the graph — and **never adds a "you"/self node** (see `"self"` in [Node kinds](#node-kinds) above for why):
-
-| Mode | Backend source | Node kinds included |
-|------|---------------|---------------------|
-| `"2nd"` | `GET /graph`, filtered client-side via `subgraphByKinds()` | `note`, `tag` |
-| `"3rd"` | `GET /graph`, filtered client-side via `subgraphByKinds()` | `memory` |
-| `"both"` | `GET /graph` (full) | All of 2nd + 3rd |
-| `"local"` | No dedicated endpoint — client-side only, over the already-fetched "both" graph | The open note's neighbourhood: the note itself plus every node within 1 hop in **either** direction (outbound links and backlinks alike), restricted to `note`/`tag` kinds, via `core/src/graph.ts`'s `localSubgraph()` |
-
-There used to be a fifth mode, `"daemon"` (`daemon`/`cron`/`process` nodes from `GET /daemon/graph`). It was removed as a graph mode — the daemon's crons/processes now get their own page (`::daemon`), fed by `GET /daemon/snapshot` instead. `daemonGraph()`/`buildDaemonGraph()` (`core/src/daemonGraph.ts`) are unchanged and still back the CLI's `bismuth daemon graph`. See `docs/graph/overview.md`.
-
-For `"2nd"` and `"3rd"` modes the frontend requests `GET /graph/views` on first mode switch to obtain per-brain precomputed layouts (`ViewLayout`). These are computed lazily by `computeViewLayouts()` and cached on the live `GraphData` object in memory. Subsequent `GET /graph` calls return the cached graph with `.views` populated.
-
-`"local"` mode is the one exception to "layouts come from the backend, not the browser": the whole-vault positions on `localSubgraph()`'s output are meaningless at neighbourhood scale (a dozen notes scattered across a world sized for thousands), so `GraphView.tsx` re-lays the subgraph out itself with core's pure, synchronous `computeLayout()` (`LOCAL_REFINE_TICKS = 120`, 3D first then 2D seeded from it) — no backend round-trip, no cache, settling in a few ms. `localSubgraph()` also strips `community`/`communityPath`/`communityPathLabels` from its output (colouring a dozen notes by the whole vault's cluster structure said nothing at that scale), but `app/src/graph/localLayoutInput.ts`'s `localLayoutInput()` looks those fields back up from the full, un-stripped graph (`GraphView`'s `communitySource` prop) and feeds them to `computeLayout()` anyway — so a neighbour sharing the focused note's community still settles closer, without the renderer ever drawing the fields.
-
-The 2D/3D toggle is a transient `localStorage` value, not a `.settings` key — it persists across sessions but does not appear in the settings file.
-
----
-
-## Data Flow: Vault Change → Frontend Update
+Bismuth is a Bun-workspaces monorepo around one local backend. The backend (`core`) reads a vault of markdown notes, merges it with the daemon's memory into one knowledge graph, and serves it over HTTP, server-sent events and WebSockets to the desktop app, the `bismuth` CLI and agent tooling. This page is for engineers: it shows how the workspaces fit together and how the graph reaches the screen. For terms such as vault or companion note, see the [glossary](glossary.md).
 
 ```
-Vault .md file written
-  → node:fs.watch fires (core/src/server.ts)
-  → scheduleVault(filename)
-  → debounce timer (250ms, configurable via server.fileWatchDebounceMs)
-  → classifyVault(paths): re-fingerprints changed notes via changeClassifier.ts
-      - content-only edit (no link/tag/icon change) → dirty={graph:false, tree:false}
-      - structural change → dirty={graph:true} or dirty={tree:true} or both
-      - `.settings` change → dirty={graph:true, tree:true}
-  → applyDirty(paths, dirty):
-      - graphCache.invalidate() if dirty.graph
-      - treeCache.invalidate() if dirty.tree
-      - cachedRows = null, cachedTasks = null (always)
-      - version++
-      - sse.publish({version, paths, dirty})
-
-Frontend (app/src/serverVersion.ts):
-  - Persistent EventSource on GET /events
-  - On event: if dirty.graph → re-fetch GET /graph; if only file changed → re-fetch GET /file
-  - Fallback: low-frequency GET /version poll (1s when disconnected, 5s when connected)
-    recovers silently-dropped SSE (proxy/OS-sleep)
+                 ┌──────────────┐   HTTP + SSE + WebSocket    ┌────────────────────┐
+ app (Solid) ───▶│              │◀────────────────────────────│ cli (headless calls │
+ in Tauri or     │     core     │                             │  core functions)    │
+ a browser       │  Bun server  │◀── relay hooks / MCP ───────│ claude sessions     │
+                 └──────┬───────┘                             └────────────────────┘
+                        │ reads and watches
+              ┌─────────┴──────────┐
+              │ vault (markdown)   │  2nd brain
+              │ .daemon/memory     │  3rd brain, when the daemon is enabled
+              └────────────────────┘
 ```
 
-**Key invariant**: The graph is rebuilt lazily on the first `GET /graph` request after `graphCache.invalidate()`. The server never rebuilds speculatively. Node positions are precomputed in `layout.ts` (pivot-MDS + force simulation) during this rebuild and attached to nodes before caching — the frontend only morphs.
+## What does each workspace do?
 
----
+Each workspace is a directory in the root `package.json` `workspaces` list.
 
-## HTTP API Summary
+| Workspace | Package | Role |
+|---|---|---|
+| `core/` | `@bismuth/core` | Backend server, graph builders, caches, file watcher and every piece of business logic |
+| `app/` | `@bismuth/app` | Tauri shell plus a Solid and Vite single-page app: editor, graph, panes, bases |
+| `cli/` | `@bismuth/cli` | The `bismuth` binary; most commands call core functions directly with no server running |
+| `relay/` | `@bismuth/relay` | A Claude Code plugin of hook scripts that report terminal sessions to core and fetch memory |
+| `mcp/` | `@bismuth/mcp` | A stdio MCP server that serves `docs/` and the `bismuth` CLI to agents |
+| `memory/` | `@bismuth/memory` | The pure 3rd-brain memory graph: note CRUD, backlinks, keyword search, query language |
+| `daemon/` | `@bismuth/daemon` | One machine process that runs every enabled vault's memory, crons, processes and session |
 
-All routes are served by `core/src/server.ts`. Mutating routes go through `mutatingHandler`, which auto-invalidates caches and broadcasts SSE after the handler returns.
+`bench/` (visual checks), `scripts/` (the commit gate and docs check) and `design/` (the design-system baseline) are not workspaces. Add a dependency to one workspace with `cd <workspace> && bun add <package>`, and install all of them with `bun install` at the repo root. Per-directory file maps are in the [codebase map](../contributing/codebase-map.md).
 
-This summary lists every route these two dictionaries currently serve, grouped by subsystem in roughly the order `core/src/server.ts` declares them — exact request/response shapes belong in [HTTP API reference](../api/http-reference.md).
+## How do the three brains become one graph?
 
-### Read routes (GET / read-only POST)
+The three-brain model puts you at the centre of two stored layers:
 
-| Route | Description |
-|-------|-------------|
-| `GET /version` | Current version counter `{version}` |
-| `GET /events` | SSE stream; pushes `{version, paths, dirty:{graph,tree}}` |
-| `GET /graph` | Full merged knowledge graph (nodes + edges + precomputed positions) |
-| `GET /graph/views` | Per-brain view layouts for 2nd/3rd mode; computed lazily, cached |
-| `GET /tree` | Vault file tree as `TreeEntry[]` (with folder icons overlaid) |
-| `GET /file?path=` | Raw markdown content of a vault file |
-| `PUT /file` | Write vault file (also invalidates caches) |
-| `GET /asset?path=` | Serve vault media file as binary (filename-first resolution) |
-| `POST /asset?path=` | Upload attachment (≤100 MB); returns actual path after de-collision |
-| `POST /asset/fetch {url, path}` | Owner-only: fetch a remote image URL and write it into the vault as an attachment (SSRF-guarded) |
-| `POST /convert/heic` | Transcode HEIC/HEIF bytes to JPEG for a paste/drop the browser can't decode |
-| `POST /tmp-file?name=` | Stage pasted/dropped bytes at a real filesystem path outside the vault, so chat can reference them by path |
-| `GET /abs-path?path=` | Resolve a vault-relative path to its absolute filesystem path (owner-gated; backs "Reveal in Finder") |
-| `GET /vault-data` | All vault rows (frontmatter + metadata) as `Row[]` |
-| `GET /base?file=` | Parse and return a base file's config |
-| `POST /rows {spec}` | Resolve a `SourceSpec` → `Row[]` (base composition, scoped tasks) |
-| `GET /meta?path=` | Parsed frontmatter of a single file |
-| `GET /config` | Runtime config: `{vault, memory}` |
-| `GET /settings` | Parsed app settings (`.settings` merged over defaults) |
-| `GET /schema` | Property registry from `.settings` |
-| `GET /templates` | List template files |
-| `GET /tasks` | All vault tasks |
-| `GET /tasks/migration` | What the boot-time task-syntax migration changed, for a one-time toast |
-| `GET /cards/decks` | SRS deck list |
-| `GET /cards/all` | All flashcards |
-| `GET /cards/note?path=` | Cards for a specific note |
-| `GET /cards/due?deck=` | Due cards (optional deck filter) |
-| `GET /daemon/status` | Daemon status (machine-level, from `daemonMachineDir()`) |
-| `GET /daemon/devices` | Known devices list |
-| `GET /daemon/snapshot` | Daemon supervision snapshot (`{ daemon, crons, processes }`) for the daemon's own page, from this vault's `.daemon` dir |
-| `GET /daemon/logs?limit=&kind=&name=&since=` | This vault's daemon activity log — cron outcomes, process lifecycle, brain starts, newest first |
-| `GET /daemon/install` | Daemon install probe (`installStatus()`) |
-| `POST /daemon/setup` | Idempotent, adopt-only daemon setup (`runSetup()`) |
-| `POST /daemon/update` | Re-run the adopt-only install (the daemon updates WITH the app; no git pull) |
-| `POST /daemon/cron/toggle {name, enabled}` | Enable/disable a cron |
-| `POST /daemon/cron/run {name}` | Trigger a cron immediately |
-| `POST /daemon/cron/delete {name}` | Delete a cron definition; `409` if it's currently running |
-| `POST /daemon/process/toggle {name, enabled}` | Enable/disable a process |
-| `POST /daemon/process/delete {name}` | Delete a process definition (also drops its reconcile trigger) |
-| `GET /daemon/pages` | The daemon's inbox: pages under `.daemon/pages/*.md` awaiting an approve/dismiss action |
-| `POST /daemon/pages/resolve {path, actionId}` | Resolve a pressed inbox action — approve (runs a `prompt`) or dismiss |
-| `POST /daemon/pages/mark-failed {path}` | Force a stuck "working" page sidecar to `failed`, no daemon involvement (client escape hatch) |
-| `POST /daemon/pages/archive {path}` | Owner-only: permanently delete an inbox page and its `.state` sidecar, whatever its status |
-| `GET /bismuth/install` | Machine-wide `bismuth` CLI + MCP install status |
-| `POST /bismuth/install` | Idempotent, version-gated install/update of the CLI + MCP, machine-wide |
-| `GET /update/status` | Whether the running build is behind `origin/main` (git-based self-update) |
-| `POST /update/apply` | Apply a self-update — pulls + rebuilds + relaunches; returns immediately, builds in background |
-| `GET /update/progress` | Progress of an in-flight self-update |
-| `GET /gcal/status` | Google Calendar connection status |
-| `POST /gcal/credentials {clientId, clientSecret}` | Store the OAuth client credentials outside the vault (never enters `.settings`/git) |
-| `POST /gcal/auth/start` | Begin OAuth: returns the Google consent URL for the frontend to open in the system browser |
-| `GET /gcal/callback` | Loopback OAuth redirect target Google sends the browser to; exchanges the code, renders a small HTML page |
-| `POST /gcal/disconnect` | Disconnect the connected Google account |
-| `POST /relay/session` | Register a terminal-tab session |
-| `POST /relay/session/end` | End a terminal-tab session |
-| `POST /relay/subagent/start` | Register a subagent |
-| `POST /relay/subagent/stop` | Mark a subagent finished |
-| `GET /relay/snapshot` | Read side of the relay registry, for `bismuth relay list` (redacted `lastMessage` for non-owners) |
-| `GET /ui/windows` | Every connected app window (id, label, active tab, tab count) |
-| `POST /ui/command {windowId?, action, args}` | Relay one app-control command to a window and return its `{ok, result\|error}` |
-| `GET /chat/sessions?scope=` | List past terminal + in-app chat sessions for the history picker (owner-only) |
-| `GET /chat/session-messages?id=&provider=` | Replay one past session as `ChatFrame[]`, in order (owner-only) |
-| `POST /chat/search {query, scope}` | Search past chat/terminal session content by text (owner-only) |
-| `POST /backup` | Git snapshot of vault |
-| `POST /daily-note {id}` | Create or open today's daily note |
-| `POST /open-folder {folder}` | Spawn a sibling server for a different vault; returns `{url}` |
-| `POST /search {query, opts}` | Full-text search |
-| `POST /search-prompt {query}` | AI prompt-search fallback: re-ranks keyword candidates with a one-shot Haiku turn when `/search` comes up empty |
-| `POST /list-dir {path, only}` | List filesystem directory entries outside the vault, backing autocomplete for `scope: "fs"` settings |
-| `GET /terminal/info` | The terminal's absolute vault cwd, so a file dragged from the tree can be inserted as an absolute path |
-| `GET /terminal` | Upgrade to WebSocket for PTY session |
-| `GET /chat` | Upgrade to WebSocket driving the headless Agent-SDK chat session |
-| `GET /ui` | Upgrade to WebSocket for the per-window app-control channel (`core/src/uiControl.ts`) |
+- **2nd brain**: the vault, a folder of markdown files with wikilinks, tags and YAML frontmatter.
+- **3rd brain**: the daemon's memory notes under `<vault>/.daemon/memory`. It exists only when `daemon.enabled` is true for the vault; otherwise the graph has no memory nodes and raises no error.
 
-### Mutating routes (POST — cache-invalidate + SSE broadcast)
+Core builds the vault graph in two passes: one `note` node per `.md` file, then edges and `tag` nodes from each note's wikilinks, tags and frontmatter. Wikilinks match by file name anywhere in the vault, not by path, and an ambiguous name resolves unpredictably. Memory notes become `mem:`-prefixed nodes. A memory note that links to a vault note produces an `about` edge, resolved by full path first and then by file name.
 
-| Route | Description |
-|-------|-------------|
-| `POST /move {from, to}` | Move/rename a file or folder |
-| `POST /delete {path}` | Move to .trash |
-| `POST /restore {trashPath, to}` | Restore from .trash |
-| `POST /create {path, kind}` | Create file or directory |
-| `POST /replace {query, replacement, opts, scope}` | Find-and-replace in vault |
-| `POST /set-property {path, key, value}` | Set a single frontmatter key |
-| `POST /set-properties {writes}` | Batch frontmatter writes across many notes in one request (kanban drag-drop reorder) |
-| `POST /delete-property {path, key}` | Remove a frontmatter key |
-| `POST /set-setting {path[], value}` | Merge one `.settings` key in place |
-| `POST /folder-icon` | Set/clear a folder icon |
-| `POST /folder-visibility {path, visibility}` | Set/clear a folder's AI-visibility override |
-| `POST /gcal/sync {basePath}` | Two-way reconcile of a calendar base with its configured Google calendar (last-write-wins) |
-| `POST /tasks/toggle {path, line, status?}` | Toggle (or set an exact status on) a checkbox task in-place |
-| `POST /tasks/reschedule {path, line, field, date}` | Calendar drag-to-reschedule: rewrite a task's `due`/`scheduled`/`start` date |
-| `POST /tasks/archive {path?}` | Archive completed/cancelled tasks — one note, or the whole vault when `path` is omitted |
-| `POST /tasks/create {file, body}` | Append a new task line to a note resolved from a `taskFile` ref (wikilink) |
-| `POST /cards/review` | Apply SRS review (markdown cards or row cards) |
-| `POST /row/update {file, index, note}` | Create (`index:null`) or update a base row |
-| `POST /rows/update {file, updates}` | Batch create/update of many base rows in one request |
-| `POST /row/delete {file, index}` | Delete a base row |
-| `POST /row/reorder {file, from, to}` | Reorder a base row |
-| `POST /daemon/pages {slug, ...}` | Author a daemon inbox page with validated frontmatter (also exposed via the `page` CLI group) |
-| `POST /daemon/owner {deviceId}` | Set daemon owner device (vault mutation) |
+The merged graph then gets community labels. Detection is hierarchical Louvain, deterministic, and runs only when the graph has at least 30 nodes; a larger graph gets more nested levels, up to 4. Layouts are computed on the server, so the browser draws precomputed positions and never runs a force simulation. Node kinds, edge kinds, graph modes and layout details are in [Graph](../graph/overview.md).
 
----
+## How does a client reach core?
 
-## Settings Architecture
+The backend listens on port 4321 by default. The app resolves the backend URL at runtime, first match wins:
 
-`.settings` (`SETTINGS_FILE` in `core/src/settings.ts`) is a single hidden, extensionless YAML file at the vault root. It is the single source of truth for all user-configurable behavior. The backend is the **only writer** — the frontend never writes the file directly, it always calls `POST /set-setting`. A one-time `migrateSettingsLocation()` relocates two legacy layouts into it on first open: a vault-root `settings.yaml`, and an interim `.settings/settings.yaml` folder from an earlier build; both are idempotent, best-effort, and preserve the user's values via filesystem rename (falling back to copy).
+1. the `?api=<url>` query parameter, which "Open folder" sets for a sibling backend in a new window
+2. `window.__BISMUTH_API__`, injected by the bundled Tauri shell for the backend it spawned on a free port
+3. the `VITE_API_BASE` build variable
+4. `http://localhost:4321`
 
-- **Schema**: `core/src/schema/settingsSchema.ts` — defines all keys with type, default, min/max or enum, and doc string.
-- **Reconciliation**: On server boot (and on every `GET /file?path=.settings`), `reconcileSettings()` migrates the file in place (renames, moves, retired-key pruning, one-time `stripMaterializedDefaults`) without clobbering existing values or comments. It never adds keys: `.settings` is sparse and every reader merges over `DEFAULTS`, so absent keys read as defaults. A missing file is created as the comment-only `SETTINGS_SEED`.
-- **Frontend hydration**: `GET /settings` returns the parsed file merged over defaults. `app/src/settings.ts` stores these as a reactive Solid signal.
-- **CSS variables**: `app/src/settingsCssVars.ts` projects appearance/ui settings into `:root` CSS custom properties; component stylesheets use `var(--name, fallback)`.
-- **Schema-aware editor**: Opening `.settings` in the editor activates `editor/settingsComplete.ts` (autocomplete showing doc + valid range) and `editor/yamlSchema.ts` (lint).
+Requests carry an owner token in the `X-Bismuth-Token` header. The dev script and the bundled app mint one token per launch and hand it to both core and the app; without it, content routes return 403 or silently filter notes a vault marks `chat-only` or `hidden`. The CLI reads the same token from a `0600` run record under `~/.bismuth/run`, over loopback only. The [install guide](install.md) covers dev ports and the bundled app's sidecar; the [HTTP reference](../api/http-reference.md) lists every route.
 
----
+On iPad and iOS the HTTP server cannot run, so the app runs the same core logic in-process through a swappable transport. See [Mobile](../mobile/overview.md).
 
-## Caching Strategy
+## How does an edit reach every client?
 
-| Cache | Invalidated by | Notes |
-|-------|---------------|-------|
-| `graphCache` (async dedup) | `dirty.graph` file-watch events, all mutations | First read after invalidation rebuilds graph + layout |
-| `treeCache` (async dedup) | `dirty.tree` file-watch events, structural mutations | |
-| `cachedRows` | Any vault file change | Rebuilt lazily on next `GET /vault-data` or `POST /rows` |
-| `cachedTasks` | Any vault file change | Rebuilt lazily on next task query |
-| `graph.views` | When `graphCache` is invalidated | In-place mutation of live cached object; computed lazily on `GET /graph/views` |
-| Search index | Any vault file change | `invalidateSearchIndex()` called in `applyDirty` |
-| Client SWR row cache | SSE version bump | `app/src/bases/rowCache.ts` keyed by SSE version |
-| Layout positions (localStorage) | — | Frontend caches precomputed positions in localStorage for instant paint on reload |
+Core watches the vault, batches changes for 250 ms by default, works out whether links, tags or icons changed, drops only the caches that changed, bumps a version counter and pushes it over SSE. Clients refetch only what the event marks dirty, and a `GET /version` poll covers a dead stream. [Data flow](data-flow.md) covers the whole loop.
 
-The `asyncCache` abstraction (`core/src/asyncCache.ts`) ensures concurrent first requests share one build and a mid-build file change doesn't repopulate a stale value.
+## Where do settings live?
 
----
+Settings are one hidden, extensionless YAML file at the vault root, `.settings`, opened in the editor like any note. The file is sparse: an absent key means its schema default. The app changes a setting through `POST /set-setting`, one key at a time, so comments and key order survive. The schema in core is the source of truth, and the app's settings store mirrors it. See [Settings](../settings/overview.md).
 
-## Related Documentation
+## How do agents connect?
 
-- [Core graph types](../graph/overview.md)
-- [Bases query system](../bases/overview.md)
-- [Terminal / relay session registry](../terminal/overview.md)
-- [Daemon integration](../daemon/overview.md)
-- [Settings schema](../settings/reference.md)
-- [HTTP API reference](../api/http-reference.md)
+Three channels reach an agent:
 
-Source: `CLAUDE.md`, `package.json`, `core/src/engine.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/selfUpdate.ts`, `core/src/uiControl.ts`, `core/src/gcal/`, `core/src/graph.ts`, `core/src/community.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/terminal.ts`, `core/src/agentBackends/catalog.ts`, `core/src/bases/types.ts`, `relay/package.json`, `relay/hooks/hooks.json`, `relay/bin/session-end-hook.ts`, `relay/lib/report.ts`, `core/package.json`, `cli/package.json`, `cli/src/commands/graph.ts`, `cli/src/commands/api.ts`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`, `app/src/intro/vaultIntroGraph.ts`, `app/src/commands.ts`, `app/src/graph/displayGraph.ts`, `app/src/graph/localLayoutInput.ts`, `app/src/GraphView.tsx`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src-tauri/src/lib.rs`, `mcp/src/server.ts`, `mcp/src/instructions.ts`, `docs/bases/authoring.md`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/settings.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/package.json`
+- **Terminal tabs** run the user's own `claude` through a shell shim that loads the relay plugin, so each session and subagent reports to core's in-process relay registry. The registry feeds `bismuth relay list` and the chat view's subagent tracking, and when the daemon is enabled the hooks also recall memory and collect transcripts. It lives only while core runs.
+- **MCP** is a stdio server. The relay plugin's `.mcp.json` auto-attaches it to those sessions, and the bundled app installs it machine-wide. It serves the docs and the CLI in token-frugal slices; vault features go through the `bismuth_cli` tool, which runs the `bismuth` binary. See [MCP server](../mcp/overview.md).
+- **Chat** runs a long-lived agent session per chat over a provider seam that supports several backends. See [Chat](../chat/overview.md).
+
+The agent guides (writing a base, converting a vault between Obsidian and Bismuth, making a theme) are ordinary `docs/` pages. The MCP server's instructions, which a client reads before its first tool call, tell an agent which page to read before each task, so every backend gets the same trigger through one channel.
+
+## How does the UI get tested without the app?
+
+Storybook mounts individual components with the real theme tokens and an in-memory transport, so a component that fetches on mount renders real content. See [Testing](../contributing/testing.md).
+
+## How it works: entry points
+
+- **core**: `core/src/server.ts` starts `Bun.serve`. It owns the state, the file watcher, `mutatingHandler`, the WebSocket upgrades and one `RouteContext`; route handlers live in `core/src/routes/<area>.ts`, one factory per area. Flags are `--vault`, `--memory` and `--port`, with `BISMUTH_VAULT` and `BISMUTH_MEMORY` as fallbacks for the first two. `core/src/engine.ts` exports `buildGraph(vaultDir, memoryDir?)`, the single composition entry point; `effectiveMemoryDir()` in the server returns `<vault>/.daemon/memory` only when the daemon is enabled, and `--memory` is otherwise ignored for the graph.
+- **core as a library**: `core/package.json` has no `main`, `module` or `exports`, so nothing imports `@bismuth/core` by name. `app`, `cli` and `daemon` import by relative path into `core/src/`; only `cli` lists the package as a dependency. `mcp` imports one module from core, the visibility gate in `core/src/visibilityCliGate.ts`. `core` depends on `@bismuth/memory`, which the daemon also uses.
+- **graph build**: `core/src/vault.ts` (vault graph, two passes), `core/src/memory.ts` (the `mem:` namespace), `core/src/engine.ts` (merge, `about` edges, `stampCommunities`), `core/src/community.ts` (`communityLevelsFor`), `core/src/layout-cache.ts` (`attachLayout`).
+- **app**: `app/scripts/dev.ts` starts core and Vite together and mints the token; `app/src/api.ts` resolves the backend URL and the token; `app/src/index.tsx` code-splits between `App` and the first-run intro. On first run the bundled shell sets `window.__BISMUTH_FIRST_RUN__` and starts no backend.
+- **cli**: `cli/src/registry.ts` merges the command groups and `cli/src/index.ts` dispatches them; `cli/src/commands/api.ts` is the passthrough for server-only routes.
+- **relay**: `relay/hooks/hooks.json` declares the hooks; each script in `relay/bin/` posts to `/relay/*` and no-ops without `CLAUDE_TERMINAL_ID`. The registry is `core/src/relay.ts`.
+- **mcp**: `mcp/src/server.ts` (tools), `mcp/src/docs.ts` (index, search, read), `mcp/src/cli.ts` (CLI bridge), `mcp/src/instructions.ts` (`SERVER_INSTRUCTIONS`).
+- **settings**: `core/src/schema/settingsSchema.ts` (schema), `core/src/settings.ts` (`reconcileSettings`, `setSettingInFile`), `app/src/settings.ts` (store), `app/src/settingsCssVars.ts` (projection onto `:root`).
+
+Source: `package.json`, `core/package.json`, `core/src/server.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/community.ts`, `core/src/relay.ts`, `core/src/visibilityCliGate.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `cli/src/registry.ts`, `relay/hooks/hooks.json`, `mcp/src/server.ts`, `mcp/src/instructions.ts`, `app/scripts/dev.ts`, `app/src/api.ts`, `app/src/index.tsx`, `app/src/settings.ts`

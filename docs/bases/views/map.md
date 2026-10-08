@@ -1,137 +1,6 @@
-# Map View
+# Map view
 
-The map view renders base rows as geographic markers on an interactive world map. It is a fully offline, self-contained renderer — no tile server or internet connection is required. The basemap is a coarse vector world map drawn entirely in SVG using hardcoded polygon outlines for the major landmasses (North America, South America, Africa, Europe, Asia, Australia) plus a graticule grid. Markers are positioned using the Web Mercator projection and can be panned by dragging and zoomed by scroll wheel or the on-screen +/− buttons.
-
-## Configuring a Map View
-
-Set `view: map` in a `type: base` file's frontmatter. The only required fields are `lat` and `lng` (or rows that have bare `lat`/`lng` frontmatter keys, which are the defaults).
-
-```yaml
----
-type: base
-view: map
----
-```
-
-## View Config Fields
-
-All map-specific fields live on the `ViewConfig` object alongside the standard fields (`limit`, `sort`, and the base's `filters`, `source`, etc.). See [bases overview](../overview.md) for shared fields.
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `lat` | string, optional | `"lat"` | Property id whose value is the latitude in decimal degrees. Defaults to the bare `lat` frontmatter key. Any property namespace is valid: `"note.latitude"`, `"formula.computed_lat"`, etc. |
-| `lng` | string, optional | `"lng"` | Property id whose value is the longitude in decimal degrees. Same namespacing rules as `lat`. |
-| `zoom` | number, optional | — | Seed zoom level for the initial framing. Range 1–18 (enforced at interaction time, not parse time). Only used when `center` is also provided — set alone, it's ignored and auto-fit runs instead. |
-| `center` | object, optional | — | Seed map center for the initial framing. Must be `{ lat: <number>, lng: <number> }`. Only active when `zoom` is also provided. Together, `center` + `zoom` bypass the auto-fit logic entirely. |
-
-```yaml
-view: map
-lat: latitude
-lng: longitude
-zoom: 6
-center: { lat: 40.7, lng: -74 }
-```
-
-## Marker Rendering
-
-A row becomes a marker only when both its resolved `lat` and `lng` values are valid numeric coordinates. The filtering rules, applied in order, are:
-
-1. The resolved property value must be a JavaScript `number` or a string that `Number()` can parse without producing `NaN`.
-2. Latitude must be in `[-85, 85]` (Web Mercator clamped range, inclusive — rows are dropped only when `< -85 || > 85`).
-3. Longitude must be in `[-180, 180]`.
-
-Rows that fail any of these checks are silently skipped and never appear as markers. There is no error or warning for skipped rows.
-
-Each marker renders as a pin with a label chip. The label text comes from the first column in `result.columns` (which defaults to `"file.name"` when no explicit `order:` is given). Clicking a marker opens the **row editor** for that row (`openRowEditor` — its title plus the view's columns, with `[open note]` to jump to the note) — unless the click was actually the end of a drag (see [Placing, Moving and Removing Pins](#placing-moving-and-removing-pins) below), in which case it relocates the pin instead. A rename or property edit there refetches the rows, so the pin's label follows.
-
-## Initial Framing Logic
-
-The view chooses an initial center and zoom according to the following priority:
-
-1. **Explicit `center` + `zoom` in the view config** — used as-is, no auto-fit.
-2. **Zero markers** — falls back to `{ lat: 20, lng: 0 }` at the `graph.mapDefaultZoom` setting (default: 2).
-3. **Exactly one marker** — centers on that marker at zoom 10.
-4. **Multiple markers** — computes the bounding box of all marker coordinates, picks the highest zoom from 14 down to 1 at which the bounding box fits within an 800×600 reference viewport at 80% padding. Falls back to `graph.mapDefaultZoom` if nothing fits (i.e., all zoom levels have too-large a bbox).
-
-The view re-runs this framing only when the view's configured `center`/`zoom` change and once when the first markers arrive on a map the user has not yet panned, zoomed or armed — never merely because a marker moved (`shouldReframe` in `app/src/bases/mapCoords.ts`). Placing or dragging a pin writes its note and the rows refetch; re-fitting on that used to jerk the whole map out from under the pin just put down, and placing the FIRST pin on an all-unplaced map used to snap to zoom 10 on it. Arming placement never touches the framing either. The **fit to pins** button still re-fits on demand.
-
-## Interaction
-
-- **Pan**: left-click drag anywhere on the map. The cursor is `grab` over the map, `grabbing` while a pan (or a pin drag) is in progress, `crosshair` while a placement is armed, `pointer` over pins and the map's buttons, and `not-allowed` over a disabled **Add pin**.
-- **Zoom wheel**: scroll up to zoom in, scroll down to zoom out. The world point under the cursor stays anchored (cursor-anchored zoom).
-- **Zoom buttons**: `+` and `−` buttons in the top-right controls panel zoom around the map center.
-- **Reset (`RotateCcw` icon button, "Reset view")**: resets center and zoom back to the computed initial framing.
-- **Fit to pins (`Map` icon button, "Fit to pins")**: re-centers and re-fits on the current markers (the computed initial framing). It used to wear the `Pin` glyph as "Locate notes", which read as an add-pin button that reset the zoom and placed nothing; the `Pin` glyph now belongs to **Add pin** (below).
-- The floating controls and the placement group claim their own `mousedown`/`click`, so pressing one never starts a pan and — while armed — never drops the pin under the button that was pressed.
-- Zoom is clamped to `[1, 18]`.
-
-## Placing, Moving and Removing Pins
-
-Rows are no longer only readable off hand-written frontmatter — a pin can be placed, dragged to a new spot, or removed straight from the map, as long as the view's `lat`/`lng` fields resolve to a real frontmatter key (a bare name or an explicit `note.*` id). A `formula.*`, `file.*` or `this.*` coordinate has nothing to write back to, so on a view configured that way the map is **read-only**: the map's right-click menu does not open, **Add pin** is disabled (its title says why), and a pin's context menu offers only "edit".
-
-### Adding a pin
-
-The top-left **Add pin** control (`Pin` icon button) creates a NEW row: press it (the map goes `crosshair`, a "click to add a pin — esc to cancel" hint follows the cursor), then click the map. A row is created at that point through the same path the bar's `[+]` uses (`createRow` in `app/src/bases/AddRowAction.tsx`) — a new `Untitled` note beside the base's existing note rows (the base's own folder when it has none), or, for a base that owns its rows, a row appended to the base file's own table — with its `lat`/`lng` set, and the row editor opens on it so it can be named and filled in. A second `Untitled` never overwrites the first (`Untitled 2`, …). Pressed again while armed, Add pin cancels; so does `Escape`. It is disabled only when the map cannot create a row (read-only coordinates, or no base file behind the view), with the reason in its title. While armed, pins are click-through, so a click beside or on a label still places there.
-
-A click past the world's edge (the basemap paints sea there) lands on the nearest edge: `screenToLatLng` clamps to `lat ±85` / `lng ±180`. Unclamped it used to write e.g. `lng: -182.98`, which the view then filed under **unplaced** — on a wide pane at low zoom most of the surface is off the world, so a placed pin "sometimes" never appeared.
-
-### Placing a row with no coordinates yet
-
-Any row whose resolved `lat`/`lng` is missing, unparseable, or out of Web Mercator's valid range (`lat` outside `[-85, 85]`, `lng` outside `[-180, 180]`) is **unplaced** rather than silently dropped. It is placed from the map's **right-click menu**: right-clicking the empty map opens a menu at that point — `new pin here` (creates a new row there, as **Add pin** does), then one `place <title> here` item per unplaced row (the same first-column label a marker's chip shows). Picking one writes that row's coordinates at the right-clicked point at once — no arming step.
-
-### Moving a pin
-
-A placed pin can be dragged to a new position: press and drag it, and its coordinates update on drop. A pointer-down/up with no real movement is still a plain **click**, which opens the row editor — dragging never interferes with the click. The same "move" is also reachable from a pin's context menu (see below), which re-arms placement for that row instead of requiring a drag.
-
-### Removing a pin from the map
-
-Right-clicking a pin (or pressing `Shift+F10` — or the `ContextMenu` key — while it's focused) opens a menu with three actions:
-
-- **edit** — the row editor, same as a plain click.
-- **move pin** — arms placement for that row (the same armed state Add pin starts), so the next map click relocates it.
-- **remove pin** — deletes the row's `lat`/`lng` fields, turning it back into an unplaced row. It does not delete the note or any other property.
-
-### How the write lands
-
-- A **note row** (an ordinary vault note, read straight off its frontmatter) writes/clears its coordinates via `PATCH`-style property writes — both fields in one request when setting, one request per field when clearing.
-- An **own-rows row** (an inline row stored in the base file's own body — e.g. a base with no `source:`) writes back by row index instead, the same write handle every other stored-row action in Bases uses (kanban drag, task status, …). A row with no write handle (a placeholder row mid-creation) gets no placement affordance.
-- Written coordinates are rounded to 6 decimal places (roughly 11cm of precision) — enough for any note's purposes, and short enough that a placed or dragged pin doesn't leave 17 significant digits of float noise in the note's frontmatter.
-- A write's mutation already invalidates the base's cache and pushes an SSE update, so the view refetches on its own; nothing further is required to see the pin move.
-
-## Settings Integration
-
-The `lat`, `lng`, `zoom` and `center` fields above are top-level keys in the base file's frontmatter — the base's own **settings panel** (opened from the view's config affordance) exposes fields for all four, so a map view's coordinate source and initial framing no longer require hand-editing the base file's YAML.
-
-Two `.settings` entries additionally affect the map view — `mapDefaultZoom` lives under `graph:`, and `mapMinHeight` lives under `ui:`:
-
-| Setting | Default | Range | Description |
-|---|---|---|---|
-| `graph.mapDefaultZoom` | `2` | 1–18 | Zoom level used when no markers are present or the bbox zoom-fit fails. |
-| `ui.mapMinHeight` | `480` | 300–800 | Minimum height of the map element in pixels (applied via the `--map-min-height` CSS variable). |
-
-## UI Elements
-
-The map renders several overlaid elements:
-
-- **SVG basemap** — sea background, graticule grid (30° meridians, 20° parallels; equator and prime meridian drawn bolder), and landmass polygons.
-- **Marker layer** — each pin is a `<PlainButton class={styles.mapPin}>` (a real `<button type="button">`) positioned above the SVG, with a text label chip and a teardrop indicator. Draggable, right-clickable and (when focused) `Shift+F10`-able when the view's coordinates are writable — see [Placing, Moving and Removing Pins](#placing-moving-and-removing-pins).
-- **Controls panel** (top-right) — zoom stack (`+`/`−`) and two solo `IconButton`s (`RotateCcw` reset / `Map` fit to pins).
-- **Placement group** (top-left) — the `Pin` **Add pin** `IconButton`: it arms creating a new pin, and the next click on the map creates it there. Rows that exist but have no location are placed from the map's right-click menu (`place <title> here`), not from this button.
-- **Placing hint** — a small floating label, shown while placement is armed: "click to add a pin — esc to cancel" after **Add pin**, or "placing `<title>` — esc to cancel" after a pin's `move pin`.
-- **Scale bar** (bottom-left) — shows a dynamically computed "nice" distance (1/2/5 × 10^n km or m) representing approximately 70 screen pixels at the current zoom and latitude. Uses the Web Mercator ground resolution formula.
-- **Empty state** — shown when zero markers are valid; displays `"No notes have valid <lat> / <lng> properties."` using the configured (or default) field names.
-
-## CSS Variables
-
-The map respects these theme CSS variables for colors:
-
-- `--map-sea` — sea/ocean background fill
-- `--map-land` — landmass polygon fill
-- `--map-coast` — landmass stroke and bold graticule color
-- `--map-grid` — regular graticule line color
-- `--map-min-height` — controlled by the `ui.mapMinHeight` setting
-
-## Example: Minimal (uses default `lat`/`lng` keys)
+A map view plots a base's rows as pins on a world map, using each row's latitude and longitude. The map is drawn offline from built-in vector outlines, with no tile server or network access; for the other view kinds, start at [Bases overview](../overview.md).
 
 ```yaml
 ---
@@ -141,9 +10,11 @@ view: map
 ---
 ```
 
-Notes tagged `#location` with `lat` and `lng` in their frontmatter will appear as markers.
+Every note tagged `#location` with `lat` and `lng` in its frontmatter becomes a pin, labelled with its title.
 
-## Example: Custom field names + fixed framing
+## Configuring a map view
+
+Set `view: map` in a `type: base` file. With no other keys, the map reads the bare `lat` and `lng` frontmatter properties. Point it at other properties, or fix the opening framing, with the keys below.
 
 ```yaml
 ---
@@ -156,31 +27,92 @@ center: { lat: 40.7, lng: -74 }
 ---
 ```
 
-Reads `latitude` and `longitude` from each row's frontmatter (or formula namespace) and opens the map pre-centered on New York at zoom 6.
+| Key | Type | Allowed values | Default | Effect |
+|---|---|---|---|---|
+| `lat` | string | a property id: bare, `note.x`, `formula.x` | `lat` | Property holding the latitude in decimal degrees |
+| `lng` | string | a property id: bare, `note.x`, `formula.x` | `lng` | Property holding the longitude in decimal degrees |
+| `zoom` | number | 1 to 18 | none | Opening zoom; used only together with `center` |
+| `center` | object | `{ lat: <number>, lng: <number> }` | none | Opening centre; used only together with `zoom` |
 
-## Example: Formula-derived coordinates
+The base settings panel (the gear in the view bar) has fields for all four keys. A coordinate can be a number or a numeric string (`"40.7"`).
 
-```yaml
----
-type: base
-formulas:
-  computed_lat: "note.geo_lat * 1"
-  computed_lng: "note.geo_lng * 1"
-view: map
-lat: formula.computed_lat
-lng: formula.computed_lng
----
-```
+Two `.settings` keys also shape the map; both are in the [settings reference](../../settings/reference.md):
 
-## Gotchas
+| Setting | Default | Range | Effect |
+|---|---|---|---|
+| `graph.mapDefaultZoom` | `2` | 1 to 18 | Zoom when there are no pins, when pins cannot be fitted, and after **Reset view** |
+| `ui.mapMinHeight` | `480` | 300 to 800 | Minimum height of the map, in pixels |
 
-- **Both `center` and `zoom` must be present** to use fixed framing. Providing only one silently falls through to auto-fit behavior.
-- **Latitude is clamped to ±85**, not ±90, because Web Mercator cannot represent the poles. Rows with `lat` outside `[-85, 85]` are dropped.
-- **String coordinates work**: the `lat`/`lng` values may be stored as strings in frontmatter — the renderer calls `Number()` on them. A value like `"40.7"` is accepted; `"40.7N"` is not (produces `NaN`).
-- **The title chip uses the first resolved column**, not necessarily `file.name`. If the base declares `order: [status, file.name]`, markers will be labeled with `status` values.
-- **No tile network dependency**: the basemap is entirely self-contained vector geometry hardcoded in the component. Markers will render correctly in air-gapped environments.
-- **ResizeObserver drives the map size**: the component observes its container and re-projects on resize. Initial SSR/static size assumptions (800×600) are replaced once the element mounts.
-- **A `formula.*`, `file.*` or `this.*` `lat`/`lng` makes the map read-only**: there is no frontmatter key to write those back to, so the right-click menu offers no `place …` items and a pin's context menu drops "move pin"/"remove pin" down to "edit" only.
-- **Written coordinates are rounded to 6 decimal places**, whether from a placement click or a drag — a base whose notes carry more precise hand-written coordinates keeps them until a pin over that row is placed/moved again.
+## Which rows become pins
 
-Source: `app/src/bases/MapView.tsx`, `app/src/bases/mapCoords.ts` (pure projection + coordinate-write math, unit-tested in `app/src/bases/mapCoords.test.ts`), `app/src/bases/taskWrite.ts` (`canWriteStoredRow`/`storedNote`, shared with the rest of Bases' row-index write seam), `core/src/bases/types.ts`, `core/test/bases/parse.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `app/src/bases/MapView.module.css`
+A row becomes a pin when both coordinates are numbers, latitude is within -85 to 85 and longitude within -180 to 180. Web Mercator cannot draw the poles, so the latitude range stops at ±85.
+
+Any other row is unplaced: it draws no pin and shows no error, but the map's right-click menu offers to place it (see "Place, move and remove pins" below). When no row has a location, the map shows **no rows have a location**.
+
+A pin's label is the row's value in the view's first column, which is `file.name` unless `order` puts another property first.
+
+## Where the map opens
+
+The map picks its opening framing from the first rule that applies:
+
+1. `center` and `zoom` are both set: use them.
+2. No pins: centre at latitude 20, longitude 0, at `graph.mapDefaultZoom`.
+3. One pin: centre on it at zoom 10.
+4. Several pins: centre on their bounding box at the highest zoom from 14 down to 1 that fits it, else `graph.mapDefaultZoom`.
+
+The framing runs again when `center` or `zoom` changes, and once when the first pins arrive on a map you have not yet moved. Placing or dragging a pin never reframes the map.
+
+## Move around the map
+
+| Control | Action |
+|---|---|
+| Drag the map | Pan |
+| Scroll wheel | Zoom in or out around the pointer |
+| **Zoom in**, **Zoom out** (top right) | Zoom around the centre |
+| **Reset view** | Back to latitude 20, longitude 0 at `graph.mapDefaultZoom` |
+| **Fit to pins** | Re-run the opening framing on the current pins |
+
+Zoom stays between 1 and 18. A scale bar in the bottom left shows a round distance for the current zoom and latitude.
+
+## Place, move and remove pins
+
+A map whose `lat` and `lng` are writable properties (bare or `note.` ids) can create and move pins. Clicking a pin opens the row editor for that row, with its title and the view's columns.
+
+| Action | How | What is written |
+|---|---|---|
+| Add a new pin | Click **Add pin** (top left), then click the map | A new row at that point, then the row editor opens on it |
+| Add a pin from the menu | Right-click the empty map, pick **new pin here** | Same as **Add pin** |
+| Place an unplaced row | Right-click the empty map, pick **place *title* here** | That row's `lat` and `lng` |
+| Move a pin | Drag it, or right-click it and pick **move pin**, then click the map | The row's `lat` and `lng` |
+| Remove a pin | Right-click it, pick **remove pin** | The row's `lat` and `lng` deleted; the row stays |
+
+While **Add pin** or **move pin** is armed, the pointer is a crosshair and a hint follows it; **Escape**, or clicking **Add pin** again, cancels. `Shift+F10` or the context-menu key opens a focused pin's menu.
+
+A new row is a note named `Untitled` (then `Untitled 2`, and so on) beside the base's existing notes, or a row appended to the base file's own body when the base has no `source:`.
+
+Written coordinates are rounded to six decimal places. A click past the edge of the world lands on the nearest edge.
+
+## When the map is read-only
+
+The map cannot write coordinates in these cases, and hides or disables the controls that would:
+
+- `lat` or `lng` is a `formula.`, `file.` or `this.` property. The empty-map menu does not open, **Add pin** is disabled with the reason in its tooltip, and a pin's menu offers only **edit**.
+- The view has no base file behind it, such as an embedded ` ```query ` block. Clicking a pin opens its note.
+- The rows are stored in another base file (a `source:` that reads another base's rows). **Add pin** is disabled and names the file to add them in.
+- A row is a task line. Clicking its pin opens the note.
+
+## Silent failures
+
+- Setting only one of `center` and `zoom` is ignored, and the map auto-fits.
+- An empty-string coordinate (`lat: ""`) reads as 0, so the row is pinned at latitude 0 or longitude 0 instead of being unplaced.
+- A coordinate with letters in it (`"40.7N"`) is not a number, so the row is unplaced.
+
+## How it works
+
+`MapView` reads `lat`, `lng`, `zoom` and `center` off the `ViewConfig` that `parse.ts`'s `normalizeView` builds (`zoom` must be a YAML number and `center` an object of two numbers, or they are dropped). The map is an SVG basemap (`MapBasemap`) of hard-coded landmass rings and a graticule, with pins (`MapPin`) and controls (`MapControls`) laid over it.
+
+The projection and placement maths are pure functions in `mapCoords.ts`: `project`/`unproject` (Web Mercator), `toNum`, `isPlaceable`, `fitView`, `zoomAround`, `screenToLatLng` (which clamps and rounds with `round6`), `shouldReframe` and `scaleBarFor`. `writableFieldKey` decides whether a coordinate can be written.
+
+A note row's coordinates are written with `POST /set-properties` (`api.setProperties`, both keys in one request) and cleared with two `POST /delete-property` calls. A row stored in a base file's body is written by index with `api.rowUpdate`, the branch chosen by `canWriteStoredRow`. New rows go through `createRow` in `AddRowAction.tsx`. Colours come from the `--map-sea`, `--map-land`, `--map-coast` and `--map-grid` tokens; `ui.mapMinHeight` feeds `--map-min-height`.
+
+Source: `app/src/bases/MapView.tsx`, `app/src/bases/mapCoords.ts`, `app/src/bases/MapBasemap.tsx`, `app/src/bases/MapControls.tsx`, `app/src/bases/MapPin.tsx`, `app/src/bases/AddRowAction.tsx`, `core/src/bases/parse.ts`, `core/src/schema/settingsSchema.ts`

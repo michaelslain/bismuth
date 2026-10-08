@@ -229,10 +229,10 @@ const CALLOUTS: TokenDef[] = [
 
 const font = grp('font')
 const FONT: TokenDef[] = [
-    font('ui-font-stack', 'font-mono', 'Monaspace Xenon', 'UI + mono font family (all chrome, code, frontmatter, math, tags). Legacy: appearance.uiFont.', { setting: 'appearance.uiFont' }),
-    font('prose-font', 'font-prose', 'Libron', 'Prose font family (note body, headings, tables, chat). Legacy: appearance.proseFont.', { setting: 'appearance.proseFont' }),
+    font('ui-font-stack', 'font-mono', 'Monaspace Xenon', 'UI + mono font family (all chrome, code, frontmatter, math, tags). Also set by appearance.uiFont.', { setting: 'appearance.uiFont' }),
+    font('prose-font', 'font-prose', 'Libron', 'Prose font family (note body, headings, tables, chat). Also set by appearance.proseFont.', { setting: 'appearance.proseFont' }),
     font('prose-scale', 'number', '0.97', 'Size correction measured for the prose face, so prose reads at one optical size.'),
-    font('mono-scale', 'number', '1', 'Optical-size factor for the mono font, 0.6 to 1. Legacy: appearance.monoScale.', { setting: 'appearance.monoScale' }),
+    font('mono-scale', 'number', '1', 'Optical-size factor for the mono font, 0.6 to 1. Also set by appearance.monoScale.', { setting: 'appearance.monoScale' }),
     font('glyph-scale', 'number', '1.25', 'Size of glyph art relative to its cell.'),
     font('code-scale', 'number', '0.89', 'Mono text size relative to the prose around it.'),
 ]
@@ -241,7 +241,7 @@ const typeScale = grp('type-scale')
 const TYPE_SCALE: TokenDef[] = [
     typeScale('fs-nano', 'length', '9.5px', 'Smallest text.'),
     typeScale('fs-micro', 'length', '10.5px', 'Fine print and captions.'),
-    typeScale('fs-ui', 'length', '11.5px', 'Chrome text: tabs, menus, rows, 11 to 16px. Also scales the ASCII cell width. Legacy: appearance.uiFontSize.', { setting: 'appearance.uiFontSize' }),
+    typeScale('fs-ui', 'length', '11.5px', 'Chrome text: tabs, menus, rows, 11 to 16px. Also scales the ASCII cell width. Also set by appearance.uiFontSize.', { setting: 'appearance.uiFontSize' }),
     typeScale('fs-body', 'length', '13px', 'Dense body text.'),
     typeScale('fs-body-lg', 'length', '13.5px', 'Prose body text.'),
     typeScale('fs-lead', 'length', '15px', 'Lead paragraphs.'),
@@ -256,7 +256,7 @@ const TYPE_SCALE: TokenDef[] = [
     typeScale('fs-h4', 'length', 'var(--editor-font-size)', 'Note heading 4.'),
     typeScale('fs-h5', 'length', 'min(var(--fs-body), var(--editor-font-size))', 'Note heading 5.'),
     typeScale('fs-h6', 'length', 'min(var(--fs-body), var(--editor-font-size))', 'Note heading 6.'),
-    typeScale('editor-font-size', 'length', '13.5px', 'Note prose size, 11 to 28px. Legacy: appearance.editorFontSize.', { setting: 'appearance.editorFontSize' }),
+    typeScale('editor-font-size', 'length', '13.5px', 'Note prose size, 11 to 28px. Also set by appearance.editorFontSize.', { setting: 'appearance.editorFontSize' }),
 ]
 
 const weight = grp('weight')
@@ -278,7 +278,7 @@ const LINE_HEIGHT: TokenDef[] = [
     lineHeight('lh-ui', 'number', '1.7', 'Chrome line height.'),
     lineHeight('lh-prose', 'number', '1.6', 'Prose line height where the editor setting does not apply.'),
     lineHeight('lh-grid', 'number', '1', 'Character-grid line height; one cell tall.'),
-    lineHeight('prose-line-height', 'number', '1.25', 'Note prose line height, 0.8 to 1.8. Legacy: editor.lineHeight.', { setting: 'editor.lineHeight' }),
+    lineHeight('prose-line-height', 'number', '1.25', 'Note prose line height, 0.8 to 1.8. Also set by editor.lineHeight.', { setting: 'editor.lineHeight' }),
 ]
 
 const tracking = grp('tracking')
@@ -317,7 +317,7 @@ const SIZE: TokenDef[] = [
     size('rail-w-collapsed', 'length', '46px', 'Width of the tab rail when collapsed.'),
     size('skeleton-bar-h', 'length', 'var(--sp-5)', 'Height of one placeholder bar in a skeleton.'),
     size('list-max-h', 'length', '320px', 'Tallest a dropdown list grows before scrolling.'),
-    size('icon', 'length', '12px', 'Size of every icon, 11 to 20px. Legacy: appearance.iconSize.', { setting: 'appearance.iconSize' }),
+    size('icon', 'length', '12px', 'Size of every icon, 11 to 20px. Also set by appearance.iconSize.', { setting: 'appearance.iconSize' }),
     size('bar-icon-size', 'length', '18px', 'Size of icons in a view bar.'),
     size('ascii-dash-pitch', 'number', '2', 'Cells between dashes of an ASCII dashed line.'),
 ]
@@ -374,9 +374,9 @@ const POPOVER: TokenDef[] = [
 
 const cursor = grp('cursor')
 const CURSOR: TokenDef[] = [
-    cursor('cursor-width', 'length', '2px', 'Text cursor bar width, 1 to 4px. Legacy: appearance.cursorWidth.', { setting: 'appearance.cursorWidth' }),
-    cursor('cursor-glide', 'duration', '70ms', 'Cursor glide between positions, 20 to 200ms. Legacy: appearance.cursorGlideMs.', { setting: 'appearance.cursorGlideMs' }),
-    cursor('cursor-blink', 'duration', '1.2s', 'Cursor blink cycle, 0.6 to 2s. Legacy: appearance.cursorBlinkSeconds.', { setting: 'appearance.cursorBlinkSeconds' }),
+    cursor('cursor-width', 'length', '2px', 'Text cursor bar width, 1 to 4px. Also set by appearance.cursorWidth.', { setting: 'appearance.cursorWidth' }),
+    cursor('cursor-glide', 'duration', '70ms', 'Cursor glide between positions, 20 to 200ms. Also set by appearance.cursorGlideMs.', { setting: 'appearance.cursorGlideMs' }),
+    cursor('cursor-blink', 'duration', '1.2s', 'Cursor blink cycle, 0.6 to 2s. Also set by appearance.cursorBlinkSeconds.', { setting: 'appearance.cursorBlinkSeconds' }),
 ]
 
 /** Every token, grouped in TOKEN_GROUPS order. */

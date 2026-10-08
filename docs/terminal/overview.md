@@ -1,606 +1,215 @@
-# Terminal & Relay Registry
+# Terminal tabs and the relay
 
-This page covers Bismuth's in-app terminal tabs — PTY sessions bridged over WebSocket — and the relay plugin that instruments every `claude` invocation in those tabs. The plugin reports session and subagent lifecycle to the in-process `core/src/relay.ts` registry. The system is scoped to one running app instance: terminal tab, session, and subagents.
+A terminal tab is a real shell inside Bismuth, opened in your vault directory. When you run `claude` in one, a small plugin (the relay) reports that session and its subagents to the running app, and loads Bismuth's MCP server and memory recall for that session only.
 
-The former live agents graph mode has been removed: `buildAgentGraph`, `GET /agent-graph`, and its frontend no longer exist, while `agents.ts` now holds only `ChatAgentSession` and `ChatAgentSubagent` types. The registry is still populated and pruned when a tab closes (see _Core Server Relay Endpoints_ and _Scope and Constraints_ below). `GET /relay/snapshot` now backs `bismuth relay list`, returning a full snapshot to the vault owner and a `lastMessage`-redacted view to everyone else (see _Core Server Relay Endpoints_ below).
+Use a terminal tab when you want Claude Code's full interactive interface next to your notes. For a conversation rendered inside the app, use [chat](../chat/overview.md); to compare the ways an agent reaches your vault, see [connect an agent](../chat/connect-an-agent.md).
 
-## What's in here
+```bash
+# in an app terminal tab, in your vault
+claude
+bismuth relay list      # from another tab: the session and its subagents appear
+```
 
-- **In-App Terminal Tabs** — the PTY/WebSocket architecture, the wire protocol, session lifecycle and reattach, the warm pool, and the origin policy.
-- **`buildPtyEnv`** — how the PTY's environment is built: the always-set variables, the relay shim activation, and the `shimSpecsFor` mechanism that generalizes shimming beyond `claude` to other agent backends.
-- **The Relay Plugin** — how the plugin loads into a `claude` session (zsh function vs. PATH shim), its hook configuration, and the hook scripts themselves.
-- **Relay Registry** — the in-memory session/subagent store the hooks report into, and its pruning/TTL rules.
-- **Core Server Relay Endpoints** — the `/relay/*` routes.
-- **Frontend Terminal Component** — `Terminal.tsx`'s font/color/cursor/resize/reconnect behavior.
-- **Scope and Constraints** — what this system deliberately does not do.
+## How do I open a terminal?
 
----
+Run the **Open Terminal** command from the command palette, or press `` Mod+` `` or `Mod+J` (the `terminal` keybinding; rebind it under `keybindings` in `.settings`). The tab starts a login shell in the vault directory, using `$SHELL` (or `/bin/sh` when unset).
 
-## In-App Terminal Tabs
+- Reload and reconnect. Reloading the window or a network drop keeps the shell running. The tab reattaches to the same process for 30 seconds, with its working directory and environment intact.
+- Closing. Closing the tab, or exiting the shell, ends the process. When the shell exits, the tab closes itself, unless the shell died within 750 ms of connecting; then the tab stays open showing `[process exited]` so a startup error stays readable.
+- Dropping files. Drag a file from the file tree or the OS onto a terminal to insert its shell-quoted path at the prompt, followed by a space. See [draggables](../overview/draggables.md).
+- Opening fast. The app keeps one warm login shell ready, so a new tab shows its prompt immediately.
 
-### Architecture
+## What changes when I run `claude` in a terminal tab?
 
-Each terminal tab is a full PTY session (`bun-pty`) exposed over a WebSocket endpoint (`GET /terminal`). The frontend mounts an xterm.js emulator and connects to that WebSocket; PTY output flows to the browser as raw bytes, keystrokes flow back as framed binary messages.
+A bare `claude` in an app terminal runs as `claude --plugin-dir <relay>`. The relay plugin loads for that session only, and nothing is installed in `~/.claude`. It does four things:
 
-- **Backend**: `core/src/terminal.ts` — pure session management + `buildPtyEnv`
-- **Frontend**: `app/src/Terminal.tsx` — `TerminalTab` Solid component
-- **WebSocket path**: `GET /terminal?cols=<n>&rows=<n>` (upgrades via Bun's `server.upgrade`)
-- **Default backend port**: `:4321`; the frontend derives `WS_BASE` by replacing `http` → `ws` in `VITE_API_BASE` (or the default `http://localhost:4321`)
+- Reports the session. The session and any subagents it spawns are registered with the app, and dropped when you exit or close the tab. `bismuth relay list` prints them.
+- Provides the MCP server. In a development checkout, `relay/.mcp.json` declares the Bismuth MCP server for the session. The packaged app registers it machine-wide instead ([MCP](../mcp/overview.md)).
+- Recalls memory. When the vault's [daemon](../daemon/overview.md) is enabled, the plugin injects relevant memory at session start, on each prompt, and after each batch of tool calls.
+- Collects transcripts. With the daemon enabled, a session's transcript is saved into memory as an auto note when the session ends.
 
-### WebSocket Protocol
+The plugin never blocks Claude: every hook has a short timeout, swallows its errors, and exits 0. Outside an app terminal there is no `CLAUDE_TERMINAL_ID`, so `claude` does not load the plugin at all.
 
-All messages are binary (`binaryType = "arraybuffer"`). Two frame types:
+`claude` run in a plain shell outside the app is unaffected. The same applies to visibility: a terminal session is you, with full filesystem access, and is not restricted by [visibility](../vault/visibility.md).
+
+## What does the shell see?
+
+Each tab starts with the variables below set on top of your own environment.
+
+| Variable | Value |
+|----------|-------|
+| `TERM` | `xterm-256color` |
+| `CLAUDE_TERMINAL_ID` | This tab's session id; the hooks require it |
+| `CLAUDE_RELAY_URL` | This window's backend, such as `http://localhost:4321` |
+| `BISMUTH_API` | The same URL, so `bismuth app …` drives this window |
+| `BISMUTH_MEMORY_DIR` | The vault's memory directory; set only when the daemon is enabled |
+| `DISABLE_AUTO_UPDATE`, `DISABLE_UPDATE_PROMPT` | `true`, which silences oh-my-zsh update prompts |
+| `CLAUDE_JOB_DIR`, `CLAUDE_WORKFLOW_ID` | Empty, so a workflow variable from the app's own environment does not leak into your sessions |
+
+Each window runs its own backend on its own port, so a `claude` session reports only to the window whose terminal it runs in.
+
+## Which settings change the terminal?
+
+| Key | Default | Range | Effect |
+|-----|---------|-------|--------|
+| `terminal.fontSize` | `13` | 9 to 20 | Font size in px |
+| `terminal.lineHeight` | `1.5` | 1.2 to 2 | Line height multiplier |
+
+Colors follow the active theme: the terminal reads `--term-bg` and `--term-fg` (falling back to `--bg` and `--fg`) and builds the 16-color ANSI palette from the theme's accent palette.
+The text cursor is the app-wide cursor ([`appearance`](../settings/reference.md#appearance) `cursorWidth`, `cursorGlideMs`, `cursorBlinkSeconds`). The font stack starts with Monaspace Xenon, then common Nerd Font faces, then the system monospace.
+
+## Why does `claude` not load the plugin in my shell?
+
+- zsh. The app points `ZDOTDIR` at a Bismuth init directory that sources your own `.zshenv`, `.zprofile` and `.zshrc` and then defines a `claude` function. Because the function is defined after your `.zshrc`, it wins even if your `.zshrc` re-prepends `PATH`.
+- Other shells. A `claude` shim at the front of `PATH` execs the real binary with `--plugin-dir`. It needs the real `claude` to be found; if Bismuth cannot find one on its search path, a non-zsh tab runs whichever `claude` your shell finds.
+- No relay files. If the relay directory is missing, the tab runs your normal login shell with no shim.
+
+## How it works
+
+### The PTY and its WebSocket
+
+Each tab is a `bun-pty` session in `core/src/terminal.ts`, exposed on `GET /terminal?cols=<n>&rows=<n>&termId=<id>` and rendered by xterm.js in `app/src/Terminal.tsx`. The WebSocket carries binary frames:
 
 | Tag byte | Direction | Payload |
 |----------|-----------|---------|
-| `0x00` | client → server (stdin) | Raw keystrokes as UTF-8 bytes following the tag |
-| `0x01` | client → server (resize) | 4 bytes: `cols` + `rows` as little-endian uint16s following the tag |
-| *(no tag)* | server → client (stdout) | Raw PTY output bytes — written directly to xterm |
-
-**Example frame builders** (from `Terminal.tsx`):
+| `0x00` | client to server | Raw keystrokes as UTF-8 bytes after the tag |
+| `0x01` | client to server | `cols` and `rows` as two little-endian uint16s after the tag |
+| none | server to client | Raw PTY output bytes, written straight to xterm |
 
 ```ts
-// stdin: prefix 0x00 + encoded keystrokes
+// stdin: tag 0x00 + keystroke bytes (app/src/Terminal.tsx)
 function stdinFrame(bytes: Uint8Array): Uint8Array {
-  const frame = new Uint8Array(1 + bytes.length);
-  frame[0] = 0x00;
-  frame.set(bytes, 1);
-  return frame;
-}
-
-// resize: 0x01 + cols/rows as LE uint16
-function resizeFrame(cols: number, rows: number): Uint8Array {
-  const frame = new Uint8Array(5);
-  const view = new DataView(frame.buffer);
-  frame[0] = 0x01;
-  view.setUint16(1, cols, true);
-  view.setUint16(3, rows, true);
-  return frame;
+    const frame = new Uint8Array(1 + bytes.length)
+    frame[0] = 0x00
+    frame.set(bytes, 1)
+    return frame
 }
 ```
 
-### Session Lifecycle (Backend)
+The upgrade enforces an origin allow-list: no `Origin` header (the Tauri webview), `localhost` or `127.0.0.1` on any port, the `tauri://` scheme, or a `10.x.x.x` address. Anything else gets `403 forbidden origin`.
 
-`createTerminalSession` is the main entry point. It:
-1. Generates a `randomUUID()` as the session id.
-2. Calls `buildPtyEnv` to produce the PTY environment (see below).
-3. Spawns the PTY with `bun-pty` `spawn`, using `opts.shell ?? process.env.SHELL ?? "/bin/sh"`.
-4. Stores the session in the `sessions` Map.
-5. Returns the `Session` object: `{ id, pty, cols, rows }`.
+### Session lifecycle and reattach
 
-```ts
-const session = createTerminalSession({
-  cwd: cfg.vault,   // working directory for the shell
-  cols: 80,
-  rows: 24,
-  relayPort: server.port,  // default 4321; used to build CLAUDE_RELAY_URL
-  // shell?: overrides process.env.SHELL if provided
-});
-```
+On connect the server reads the client's stable `termId` (its `::term:<uuid>` content id). If `getSessionByTermId` finds a live session, the server cancels any pending kill and pipes to that same PTY.
+Otherwise it claims a warm shell with `claimPooledSession` or cold-spawns one with `createTerminalSession`, keyed by `termId`.
 
-The server upgrades the WebSocket in the same call:
-```ts
-server.upgrade(req, { data: { sessionId: session.id } as TermWsData });
-```
+On close, the code decides. A clean close (`1000`: the shell exited, or the client disposed the tab) kills the session now. An abnormal close (reload `1001`, drop `1006`) keeps the PTY alive for a grace window, 30 seconds by default (`BISMUTH_TERMINAL_GRACE_MS`).
+Every PTY is killed synchronously on process exit, so shells do not outlive a backend restart. `killSession` also calls the relay's `prune` with the live terminal ids, which is how the registry learns a tab closed.
 
-The `websocket` handler on the server:
-- **`open`**: subscribes to `pty.onData` (pipes PTY output → `ws.send`) and `pty.onExit` (closes the socket with code **1000** when the shell exits, so the client knows it was a real exit rather than a dropped connection).
-- **`message`**: routes tag `0x00` (stdin) or `0x01` (resize) to the PTY.
-- **`close`**: disposes listeners, then decides by close code. A **clean close (1000)** — the shell exited, or the client deliberately disposed the tab via `ws.close(1000)` — kills the session immediately. An **abnormal close** (reload `1001`, network drop `1006`, …) keeps the PTY alive for a grace window (`BISMUTH_TERMINAL_GRACE_MS`, default 30 s) so a reconnecting client can **reattach by `termId`** and keep its running shell.
+### Output buffering and the warm pool
 
-**Session reattach.** Each client passes a stable `termId` (its `::term:<uuid>` content id) as `/terminal?…&termId=…`. On connect the server looks it up via `getSessionByTermId`: if a live session exists (within the grace window) it cancels the pending kill and pipes to that **same PTY** — preserving the running process, cwd, and env across a reconnect or a webview reload. Otherwise it creates a fresh session keyed by that `termId`.
+A session is decoupled from any one socket. One permanent `pty.onData` reader forwards output to the live socket sink when one is attached, and otherwise appends it to a replay buffer capped at 256 KiB (most recent wins).
+`attachSink` drains the buffer first and then goes live, so order is preserved. That is why a shell can render its prompt before any client connects and why output during a brief disconnect is not lost.
 
-Other session management functions:
+The warm pool keeps one login shell (`POOL_SIZE`) spawned and rc-loaded ahead of demand. `prewarmPool(cwd, relayPort, memoryDir)` starts it at server start; `claimPooledSession` hands it out, resizes it to the real viewport and refills the pool.
+`setPoolMemoryDir` flushes and re-warms idle shells when `settings.daemon.enabled` toggles, because a pooled shell caches its environment at spawn. Unclaimed pooled shells are excluded from `listSessionIds()`, so they never prune the relay registry.
 
-| Function | Purpose |
-|----------|---------|
-| `killSession(id)` | Kill the PTY and remove from registry (+ its `termId` index entry and grace timer) |
-| `resizeSession(id, cols, rows)` | Update stored size and call `pty.resize` |
-| `getSession(id)` | Look up a session by id |
-| `getSessionByTermId(termId)` | Look up a live session by its stable client term id (reattach) |
-| `scheduleSessionKill(id, ms)` / `cancelSessionKill(id)` | Arm / disarm the post-disconnect grace kill |
-| `attachSink(id, send)` / `detachSink(id)` | Wire / unwire the live socket output sink (see _Output buffering & the warm pool_) |
-| `listSessionIds()` | Return all live ids backing a real tab — **excludes unclaimed warm-pool shells** (used by relay pruning) |
-| `sessionCount()` | Count of open sessions (includes pooled shells) |
+### The PTY environment
 
-All PTY children are killed synchronously on `process.exit` via a `process.on("exit")` handler, so orphaned shells don't outlive backend restarts or hot-reload cycles. (The handler walks the full `sessions` map — not `listSessionIds`, which omits unclaimed warm-pool shells that still need killing.)
+`buildPtyEnv` is a pure function from the parent environment to the shell's environment (unit-tested in `core/test/terminal.test.ts`); `undefined` values are dropped.
+Beyond the variables in the table above, when the relay files exist (`shimAvailable`) it sets `BISMUTH_RELAY_PLUGIN` and `ZDOTDIR`, and when the real `claude` was resolved it sets `BISMUTH_REAL_CLAUDE` and prepends the shim directory to `PATH`.
 
-### Output buffering & the warm pool
+The decoupling matters in the packaged app: the sidecar's minimal launchd `PATH` may not contain your `claude`, so the real path can be null. The zsh init then resolves `claude` itself after your `.zshrc` loads (`whence -p claude`), and the function is still defined.
 
-A session is **decoupled from any one socket**. Every session installs a single permanent `pty.onData` reader (`dataSub`) for the PTY's whole life: if a live socket sink is attached it forwards each chunk straight to it, otherwise it accumulates the output into a capped replay `buffer` (most-recent-wins; trimmed from the front past `MAX_BUFFER_BYTES`, 256 KiB). This buys two things: a shell can render its prompt **before any client connects** (the buffer holds it), and output produced while a tab is briefly disconnected (reload / network blip, during the reattach grace window) is buffered, not lost.
+The relay directory is `BISMUTH_RELAY_BUNDLE` in the packaged app and `relay/` in the repo.
+The real `claude` is resolved once at module load by `whichClaude()` against a search path augmented with Homebrew, `~/.bun/bin`, `~/.local/bin` and nvm node directories, before the shim directory is on `PATH`, so the shim never recurses.
 
-The socket plumbing is two functions:
+### Shim specs and per-backend wrapping
 
-| Function | Purpose |
-|----------|---------|
-| `attachSink(id, send)` | Drain the buffer to `send` **first** (so the client sees the pre-warmed prompt / missed output before live bytes), then make `send` the live sink |
-| `detachSink(id)` | Clear the sink; output resumes buffering (capped) for a later reattach |
+`shimSpecsFor(backends, resolve, opts)` turns the backend catalog into the list of binaries the shell wraps.
+It skips backends without a terminal surface and backends whose `relayReporting` is `none`; it includes a `wrapper`-mode backend only when `WRAPPER_REPORTING_ENABLED` is true, and never wraps `claude` that way.
+A backend whose binary does not resolve still gets a spec with `realPath: null`, and the zsh init retries with `whence -p`.
 
-Order is preserved because the buffered bytes are flushed before the sink goes live.
+`serializeShimSpecs` writes the specs to `BISMUTH_SHIM_SPECS` as flat text: ASCII Record Separator (`\x1e`) between records and Unit Separator (`\x1f`) between the fields `id`, `binary`, `realPath` and `mode`.
+Those bytes never appear in a path, zsh splits them with `(ps:\x1e:)` flags, and the non-zsh script splits them with `IFS`, so no `jq` or `python` is needed.
 
-**Warm pool.** To make opening a tab feel instant, the backend keeps `POOL_SIZE` (currently **1**) login shells spawned-and-rc-loaded ahead of demand. A pooled shell runs its full (often 100s-of-ms) login-shell startup chain up front, renders its prompt into the buffer, and waits. Pool functions:
+The zsh init (`relay/shim/zdotdir/.zshrc`) defines one function per spec. A `hooks` entry runs the real binary with `--plugin-dir "$BISMUTH_RELAY_PLUGIN"`; a `wrapper` entry runs it through `relay/bin/wrap.ts`.
+Its sibling files keep your shell normal: `.zshenv` and `.zprofile` re-source yours, since redirecting `ZDOTDIR` would otherwise skip them. The shell starts as a login shell (`loginShellArgs()` returns `-l`), so Homebrew, bun and nvm `PATH` entries from `.zprofile` apply as in a normal terminal.
+`.zshrc` restores `ZDOTDIR` to `$HOME` first and repairs `HISTFILE` when macOS's `/etc/zshrc` pointed it at the shim directory.
 
-| Function | Purpose |
-|----------|---------|
-| `prewarmPool(cwd, relayPort?, memoryDir?)` | Start (and keep) the warm pool; idempotent, safe to call once at server start. Records the cwd/port/memoryDir used to spawn pooled shells and tops the pool up to `POOL_SIZE`. Until called, no pre-warming happens. |
-| `claimPooledSession({ termId?, cols, rows })` | Hand out a pre-warmed session (or `undefined` if the pool is empty), key it to the client's `termId`, resize it to the real viewport, then asynchronously refill the pool so the next tab is also instant. Its already-rendered prompt sits in the buffer and is replayed by `attachSink` on ws open. |
-| `setPoolMemoryDir(memoryDir)` | Re-bake the pool's injected `BISMUTH_MEMORY_DIR` when `settings.daemon.enabled` toggles. Pooled shells cache their env at spawn, so this flushes the idle ones and re-warms, so the next claimed tab gets the new daemon state. No-op if unchanged. |
+For non-zsh shells, `relay/shim/claude` is a plain `exec "$BISMUTH_REAL_CLAUDE" --plugin-dir "$BISMUTH_RELAY_PLUGIN" "$@"`, and `relay/shim/agent-shim` is a multi-call script: `buildWrapperShimDir` creates one symlink per resolvable wrapper-mode backend, and the script looks up its own invoked name in `BISMUTH_SHIM_SPECS`.
 
-A pooled shell installs a `poolExitSub` that drops it from the pool (and re-warms) if a still-unclaimed warm shell dies (e.g. a bad rc). `claimPooledSession` disposes that subscription and flips `pooled` to `false` as it converts the shell into a real tab. Unclaimed pooled shells are kept out of `listSessionIds()` (so they never prune the "agents" relay registry) but are still counted by `sessionCount()` and killed on process exit.
+### How the wrapper reporter works
 
-So serving a tab has two paths: claim a warm shell via `claimPooledSession` when one is ready, else cold-spawn via `createTerminalSession`. Both return a `Session`; the server then `attachSink`s the WebSocket to it.
+A backend with `relayReporting: "wrapper"` has no hook system, so the shell runs it through `relay/bin/wrap.ts <backendId> <realBinaryPath> [args…]`.
+It posts `POST /relay/session` with the backend id, runs the real binary with inherited stdio so it keeps the tty, forwards `SIGINT` and `SIGTERM` to the child, awaits the exit code (signal termination arrives as `128+N`), reports `/relay/session/end`, and exits with the same code.
+`wrap.ts` never reports for `claude`.
 
-### WebSocket Origin Policy
+`WRAPPER_REPORTING_ENABLED` in `core/src/terminal.ts` is `false`, so wrapping is off. Wrapping an interactive TUI risks signal handling, tty ownership and exit-code fidelity.
+`relay/test/wrap.test.ts` verifies the mechanism against a stub binary and a mock relay server, which is not the same as a real agent CLI under a real PTY. The catalog's per-backend `relayReporting` is the other gate; both must agree before a backend is wrapped.
 
-The `/terminal` upgrade enforces an origin allowlist:
-- No `Origin` header (Tauri webview)
-- `localhost` or `127.0.0.1` on any port
-- `tauri://` scheme
-- `10.x.x.x` on any port
+### The relay plugin
 
-All other origins receive a `403 forbidden origin`.
+The `relay/` workspace is a Claude Code plugin loaded with `--plugin-dir`. It has no daemon and no slash commands, only hooks, declared in `relay/hooks/hooks.json`.
+Every hook script in `relay/bin/` follows one pattern, built from `relay/lib/report.ts`: gate on `CLAUDE_TERMINAL_ID`, read the hook payload from stdin, post to core, exit 0.
 
----
+| Hook | Script | Posts | Memory job (daemon enabled) |
+|------|--------|-------|----------------------------|
+| `SessionStart` (matcher `startup\|resume\|clear\|compact`) | `session-start-hook.ts` | `POST /relay/session` | `POST /memory/recall`, mode `session-start` |
+| `UserPromptSubmit` | `recall-hook.ts` | `POST /relay/session` again, as a heartbeat; it also registers a session whose start was missed | mode `prompt` |
+| `PostToolBatch` | `tool-batch-hook.ts` | none | mode `tool`, each tool response capped at 2000 characters; also fires inside subagents |
+| `SubagentStart` | `subagent-start-hook.ts` | `POST /relay/subagent/start` | mode `subagent` |
+| `SubagentStop` | `subagent-stop-hook.ts` | `POST /relay/subagent/stop` | none |
+| `SessionEnd` | `session-end-hook.ts` | `POST /relay/session/end`, skipped on `clear` and `compact` | saves the transcript as an auto note, skipped on `compact` |
 
-## `buildPtyEnv` — PTY Environment Construction
+Memory work runs only when `BISMUTH_MEMORY_DIR` is set. `relay/lib/recall.ts` sends each recall to core's `POST /memory/recall` with a timeout (1500 ms for prompt, session start and subagent; 700 ms for a tool batch).
+Core owns ranking, dedup and settings; the hooks only forward the payload and print `additionalContext`. If core is unreachable, the reply is not 2xx, or the call times out, nothing is printed.
 
-`buildPtyEnv` is a **pure function** that builds the complete environment for the spawned shell. It is exported separately from session creation so it can be unit-tested independently.
+All hooks are best-effort: each post has a 2 second budget (`BUDGET_MS`), every network error is swallowed, and a hook with no `CLAUDE_TERMINAL_ID` is a no-op.
 
-### Signature
+### The relay registry
+
+`core/src/relay.ts` is an in-process, in-memory registry of terminal-tab sessions and their subagents. It has no database and no file; it lives while core runs.
 
 ```ts
-export interface PtyEnvParams {
-  base: Record<string, string | undefined>;  // parent process.env (undefined values stripped)
-  relayUrl: string;       // e.g. "http://localhost:4321"
-  terminalId: string;     // UUID for this tab (becomes CLAUDE_TERMINAL_ID)
-  shimAvailable: boolean;  // relay shim files exist (dev repo or bundled) → activate the zsh shim
-  realClaude: string | null;  // resolved real `claude` binary, or null (zdotdir resolves from PATH)
-  pluginDir: string;      // relay/ dir — BISMUTH_RELAY_BUNDLE in the bundle, else ../../relay
-  shimDir: string;        // path to relay/shim/
-  zdotDir: string;        // path to relay/shim/zdotdir/ (zsh-only init)
-  shimSpecs?: ShimSpec[];      // per-backend shim specs (claude + any enabled wrapper backends) — see below
-  wrapperShimDir?: string;     // PATH dir of per-wrapper-backend symlinks to relay/shim/agent-shim
-}
-
-export function buildPtyEnv(p: PtyEnvParams): Record<string, string>
+interface RelaySession { sessionId; terminalId; cwd; backend?; lastSeen }
+interface RelaySubagent { agentId; parentSessionId; agentType; workflowId?; startedAt; done; doneAt?; lastMessage? }
 ```
 
-### What it sets
-
-**Always set:**
-
-| Variable | Value |
-|----------|-------|
-| `TERM` | `"xterm-256color"` |
-| `DISABLE_AUTO_UPDATE` | `"true"` — suppresses oh-my-zsh update prompts |
-| `DISABLE_UPDATE_PROMPT` | `"true"` |
-| `CLAUDE_RELAY_URL` | `p.relayUrl` — where relay hooks POST |
-| `CLAUDE_TERMINAL_ID` | `p.terminalId` — session provenance identifier |
-
-**Set when `shimAvailable` (relay present — activates the zsh shim, independent of `realClaude`):**
-
-| Variable | Value |
-|----------|-------|
-| `BISMUTH_RELAY_PLUGIN` | Path to the relay plugin dir |
-| `ZDOTDIR` | `p.zdotDir` — overrides zsh's init dir so the relay zshrc loads |
-
-**Additionally, only when `realClaude` is non-null:**
-
-| Variable | Value |
-|----------|-------|
-| `BISMUTH_REAL_CLAUDE` | Resolved path to the real `claude` binary |
-| `PATH` | `shimDir:${original PATH}` — prepends the shim for non-zsh shells (needs a resolved binary to exec) |
-
-**Additionally, when `shimSpecs` is non-empty (see "Generalizing beyond claude" below):**
-
-| Variable | Value |
-|----------|-------|
-| `BISMUTH_SHIM_SPECS` | `serializeShimSpecs(shimSpecs)` — one delimited record per backend |
-
-**Additionally, when `wrapperShimDir` is set AND `shimSpecs` contains a resolved `"wrapper"`-mode entry:**
-
-| Variable | Value |
-|----------|-------|
-| `PATH` | `wrapperShimDir:${PATH}` — the non-zsh multi-call shim dir, prepended in front of whatever else is already there |
-
-The decoupling matters in the bundled app: the sidecar's minimal launchd `PATH` may not contain the user's `claude`, so `realClaude` is null — but the zdotdir `.zshrc` sources the user's `~/.zshrc` and then resolves `claude` itself (`whence -p claude`), so the relay `claude` function is still defined.
-
-### Relay dir + claude binary resolution
-
-`RELAY_PLUGIN_DIR` is `process.env.BISMUTH_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay")` — the Tauri-staged relay resource in the bundle (where `import.meta.dir` is a virtual path), the source `relay/` in dev. `SHIM_AVAILABLE = existsSync(<zdotdir>)`.
-
-`REAL_CLAUDE` is resolved **once at module load** via `whichClaude()` (`core/src/claudeWhich.ts`) — `Bun.which("claude", …)` against a `PATH` augmented with `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, and the nvm node bins (`$NVM_DIR/versions/node/<version>/bin`, default-alias version first then the rest newest-first — `nvmBinPaths()`), so it resolves a `claude` installed via Homebrew *or* nvm even from a packaged GUI app's minimal `PATH`. Resolved before the shim dir is on `PATH`, so the shim's `exec` never recurses. Null when not found — see the zdotdir fallback above.
-
-### Generalizing beyond claude: `shimSpecsFor` + per-backend wrapping
-
-The `claude`-only mechanism above generalizes to any agent-CLI backend (`core/src/agentBackends/catalog.ts`'s `BACKEND_LIST`) via a pure spec builder, exported alongside `buildPtyEnv`:
-
-```ts
-export interface BackendShimCandidate {
-  id: string;                                        // backend id, e.g. "claude", "opencode"
-  binary: string;                                     // binary/function name to resolve + wrap
-  relayReporting: "hooks" | "wrapper" | "none";        // BackendCapabilities.relayReporting
-  terminal: boolean;                                   // BackendCapabilities.terminal
-}
-
-export interface ShimSpec {
-  id: string;
-  binary: string;
-  realPath: string | null;    // resolved path, or null — the zsh init retries via `whence -p`
-  mode: "hooks" | "wrapper";
-}
-
-export function shimSpecsFor(
-  backends: readonly BackendShimCandidate[],
-  resolve: (binary: string) => string | null,
-  opts: { wrapperReportingEnabled: boolean },
-): ShimSpec[]
-
-export function serializeShimSpecs(specs: readonly ShimSpec[]): string
-```
-
-`shimSpecsFor` is the pure decision function, unit-tested the same way `buildPtyEnv` is:
-- **`"hooks"`** (today: only claude) → always included — the relay plugin is injected directly (`--plugin-dir <relay>`).
-- **`"wrapper"`** (a CLI with no hook system of its own) → included **only** when `wrapperReportingEnabled` is true; otherwise treated exactly like `"none"` (no spec, no function, no PATH entry — zero behavior change). See `WRAPPER_REPORTING_ENABLED` below.
-- **`"none"`** → never included; the backend resolves via the shell's ordinary `PATH`, untouched.
-- A backend `resolve()` can't find still gets a spec entry with `realPath: null` (not dropped) — the zsh init gets its own `whence -p` shot at it after the user's rc loads, same as claude always could. Non-zsh PATH-shim generation only wires up entries that DID resolve (there's no rc-sourcing step to retry after for a plain PATH shim).
-- Claude can never receive a `"wrapper"` entry, even if the catalog were ever misconfigured to claim one.
-
-**Delimiter choice**: `BISMUTH_SHIM_SPECS` is a flat string, `SHIM_RECORD_SEP` (`\x1e`, ASCII Record Separator) between records and `SHIM_FIELD_SEP` (`\x1f`, ASCII Unit Separator) between fields (`id`, `binary`, `realPath`-or-empty, `mode`) within a record. Both are reserved by the ASCII standard for exactly this — delimiting fields/records in plain text — and, for that reason, never legitimately appear in a filesystem path. zsh splits on them with the `(ps:\x1e:)`/`(ps:\x1f:)` parameter-expansion flags (the `p` flag makes zsh recognize the `\x1e`/`\x1f` escapes in the delimiter literal); the non-zsh shim script (`relay/shim/agent-shim`) parses the same format with plain `IFS` word-splitting. No `jq`/`python` dependency either way.
-
-**`WRAPPER_REPORTING_ENABLED`** (`core/src/terminal.ts`, currently `false`): wrapping an interactive TUI in an extra process risks signal handling, tty ownership, and exit-code fidelity for the payoff of one agents-graph node. It defaults OFF until a human has verified, by hand, that a wrapped backend's signals and exit codes survive under a **real** PTY — `relay/test/wrap.test.ts` verifies the mechanism itself (signal forwarding, exit-code relay, the never-wrap-claude guard) against a stub binary + a mock relay server, which is not the same as a real agent CLI's own tty/signal semantics. Flip the constant once that's been checked; every consumer (`shimSpecsFor`, `wrap.ts`, the zsh init, `agent-shim`) already reacts correctly the moment it does. The catalog's per-backend `relayReporting: "wrapper"` flag remains the OTHER gate — both must agree before a given backend is actually wrapped.
-
-### `relay/bin/wrap.ts` — the generic session reporter
-
-For a `"wrapper"`-mode backend, the generated shell function (or PATH-shim symlink) execs `relay/bin/wrap.ts <backendId> <realBinaryPath> [args…]` instead of the real binary directly:
-
-1. Mints a session id, and — only when `CLAUDE_TERMINAL_ID` is set and `backendId !== "claude"` — `POST /relay/session` with `{ sessionId, terminalId, cwd, backend: backendId }` (reusing `relay/lib/report.ts`'s `terminalId()`/`postRelay()`, the same best-effort/short-timeout/all-errors-swallowed discipline every relay hook follows).
-2. Runs the real binary via `Bun.spawn` with `stdio: ["inherit", "inherit", "inherit"]`, so it keeps owning the tty.
-3. Installs `SIGINT`/`SIGTERM` handlers that forward the signal to the child — registering a handler suppresses Bun's default terminate-on-signal action for the wrapper itself, so it survives long enough to relay the child's real exit code and report session end, instead of racing its own teardown against the child's.
-4. Awaits `child.exited` (which already encodes signal termination as `128+N`, matching normal shell convention), reports `/relay/session/end` (if it reported start), and `process.exit`s with that same code.
-
-Never wraps Claude Code — see the guard in `wrap.ts`'s own header. It has real hooks; adding a process layer around a user's daily driver would be pure risk for zero telemetry gain.
-
-### `relay/shim/agent-shim` — the non-zsh equivalent for wrapper backends
-
-A generic multi-call script (like `busybox`): `core/src/terminal.ts`'s `buildWrapperShimDir` creates one symlink per resolvable `"wrapper"`-mode backend, named after its binary, all pointing at this one file. It reads its own invoked name (`${0##*/}`), looks it up in `BISMUTH_SHIM_SPECS`, and either `exec`s the real binary directly (`"hooks"` mode) or through `wrap.ts` (`"wrapper"` mode). `claude` keeps its own dedicated `relay/shim/claude` file, fed by `BISMUTH_REAL_CLAUDE`/`BISMUTH_RELAY_PLUGIN` exactly as before — unchanged.
-
-### Gotchas
-
-- `undefined` values in `base` are stripped — no `key=undefined` in the env.
-- When `base` has no `PATH` at all and `realClaude` is set, `PATH` is set to `shimDir` only (no trailing `:` that POSIX would interpret as the current directory).
-- `buildPtyEnv` is called with `process.env` as `base`, which is the core server's inherited environment — not the user's interactive shell environment.
-
-### Unit test examples
-
-```ts
-// ZDOTDIR is set only when claude is found:
-expect(buildPtyEnv({ ...ENV_BASE, realClaude: "/usr/local/bin/claude" }).ZDOTDIR)
-  .toBe("/repo/relay/shim/zdotdir");
-expect(buildPtyEnv({ ...ENV_BASE, realClaude: null }).ZDOTDIR).toBeUndefined();
-
-// Shim prepended to PATH:
-expect(buildPtyEnv({ ...ENV_BASE, realClaude: "/usr/local/bin/claude" }).PATH)
-  .toBe("/repo/relay/shim:/usr/bin");
-
-// No shim when claude not found:
-expect(buildPtyEnv({ ...ENV_BASE, realClaude: null }).PATH).toBe("/usr/bin");
-
-// No trailing colon when base has no PATH:
-expect(buildPtyEnv({ ...ENV_BASE, base: {}, realClaude: "/usr/local/bin/claude" }).PATH)
-  .toBe("/repo/relay/shim");
-```
-
----
-
-## The Relay Plugin (`relay/`)
-
-### Purpose
-
-The `relay/` workspace is a Claude Code plugin (`--plugin-dir`) loaded **per-session** inside every Bismuth app terminal tab. It has no global install, no daemon, and no slash commands — only four event hooks that POST registration/heartbeat/subagent events to the core server's relay registry.
-
-The relay formerly powered the "agents" graph mode (`you → terminal-tab sessions → subagents`), which has been removed. The hooks and the registry still run, and the registry has a reader again: `GET /relay/snapshot` backs `bismuth relay list` (see _Core Server Relay Endpoints_ below).
-
-### How the plugin loads
-
-1. `terminal.ts` resolves `REAL_CLAUDE` once and computes `RELAY_PLUGIN_DIR` relative to itself (`core/src/terminal.ts → ../../relay`).
-2. When a tab opens, `buildPtyEnv` sets:
-   - `BISMUTH_REAL_CLAUDE` = the real `claude` binary path
-   - `BISMUTH_RELAY_PLUGIN` = the relay plugin dir
-   - `ZDOTDIR` = `relay/shim/zdotdir/` (zsh-only override)
-   - `PATH` = `relay/shim:${original PATH}` (non-zsh fallback)
-3. When the user runs `claude` in the tab:
-   - **zsh**: `ZDOTDIR` redirects init to `relay/shim/zdotdir/.zshrc`, which sources `$HOME/.zshenv` → `$HOME/.zshrc` then defines a `claude()` shell function: `command "$BISMUTH_REAL_CLAUDE" --plugin-dir "$BISMUTH_RELAY_PLUGIN" "$@"`. The function survives `.zshrc` re-prepending `PATH`.
-   - **other shells**: the PATH shim `relay/shim/claude` is found first and `exec "$BISMUTH_REAL_CLAUDE" --plugin-dir "$BISMUTH_RELAY_PLUGIN" "$@"`.
-
-### The PATH shim (`relay/shim/claude`)
-
-```bash
-#!/bin/bash
-exec "$BISMUTH_REAL_CLAUDE" --plugin-dir "$BISMUTH_RELAY_PLUGIN" "$@"
-```
-
-A plain `exec` — no logic, no recursion risk (the real binary path was resolved before the shim dir entered PATH).
-
-### The zsh init files (`relay/shim/zdotdir/`)
-
-**`.zshenv`** — sourced first by zsh (before `.zprofile`/`.zshrc`):
-```bash
-[[ -f "$HOME/.zshenv" ]] && source "$HOME/.zshenv"
-```
-Loads the user's real `.zshenv` so nothing in their environment is lost.
-
-**`.zprofile`** — sourced for **login** shells (after `.zshenv`, before `.zshrc`):
-```bash
-[[ -f "$HOME/.zprofile" ]] && source "$HOME/.zprofile"
-```
-The terminal spawns its shell as a **login** shell (`loginShellArgs()` → `-l`), so it runs the full startup chain a normal terminal does — `/etc/zprofile` (macOS `path_helper`) and the user's `~/.zprofile`. Because `ZDOTDIR` is redirected here, zsh would otherwise read this dir's `.zprofile` and **skip** the user's, losing PATH set up there (Homebrew `brew shellenv`, bun, nvm). Re-sourcing it makes the embedded terminal's `PATH` match a normal login terminal — without it those tools resolve in a normal terminal but not in the app (especially under the bundled app's minimal launchd `PATH`, which provides no fallback).
-
-**`.zshrc`** — sourced for interactive zsh shells:
-```bash
-export ZDOTDIR="$HOME"                          # restore normal ZDOTDIR immediately
-[[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"
-if [[ -n "$BISMUTH_REAL_CLAUDE" && -n "$BISMUTH_RELAY_PLUGIN" ]]; then
-  claude() { command "$BISMUTH_REAL_CLAUDE" --plugin-dir "$BISMUTH_RELAY_PLUGIN" "$@"; }
-fi
-```
-
-Key points:
-- `ZDOTDIR` is restored to `$HOME` before sourcing the user's config (read **after** `.zprofile`), so `~/.zlogin`, nested shells, and any code that checks `ZDOTDIR` behave normally.
-- The `claude` shell function is defined **after** the user's `.zshrc` runs, so it wins even if `.zshrc` re-prepends `/usr/local/bin` or similar directories to `PATH`.
-
-### Hook configuration (`relay/hooks/hooks.json`)
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{ "matcher": "startup|resume|clear|compact", "hooks": [{ "type": "command", "command": "bun run ${CLAUDE_PLUGIN_ROOT}/bin/session-start-hook.ts" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "bun run ${CLAUDE_PLUGIN_ROOT}/bin/recall-hook.ts" }] }],
-    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "bun run ${CLAUDE_PLUGIN_ROOT}/bin/subagent-start-hook.ts" }] }],
-    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "bun run ${CLAUDE_PLUGIN_ROOT}/bin/subagent-stop-hook.ts" }] }]
-  }
-}
-```
-
-The `SessionStart` matcher `"startup|resume|clear|compact"` ensures that `claude --resume` and `claude --continue` sessions also register.
-
-### Hook payloads (confirmed, Claude Code v2.1.165)
-
-| Hook | Relevant fields |
-|------|----------------|
-| `SessionStart` | `session_id`, `cwd`, `source` |
-| `UserPromptSubmit` | `session_id`, `cwd` |
-| `SubagentStart` | `session_id` (parent), `agent_id`, `agent_type` |
-| `SubagentStop` | `agent_id`, `agent_type`, `last_assistant_message` |
-
-### Hook scripts (`relay/bin/`)
-
-All hooks follow the same pattern: gate on `CLAUDE_TERMINAL_ID`, parse stdin JSON, POST to core.
-
-**`session-start-hook.ts`** — `SessionStart`:
-```ts
-// Posts to POST /relay/session
-await postRelay("/relay/session", { sessionId, terminalId, cwd });
-```
-
-**`recall-hook.ts`** — `UserPromptSubmit`:
-```ts
-// Re-posts the same /relay/session payload — acts as a heartbeat.
-// Also self-heals: if SessionStart was missed (e.g. out-of-order), this registers the session.
-await postRelay("/relay/session", { sessionId, terminalId, cwd });
-```
-
-**`subagent-start-hook.ts`** — `SubagentStart`:
-```ts
-// Posts to POST /relay/subagent/start
-await postRelay("/relay/subagent/start", {
-  parentSessionId: input.session_id,
-  agentId: input.agent_id,
-  agentType: input.agent_type ?? "agent",
-});
-```
-
-**`subagent-stop-hook.ts`** — `SubagentStop`:
-```ts
-// Posts to POST /relay/subagent/stop
-await postRelay("/relay/subagent/stop", { agentId, lastMessage });
-```
-
-### `lib/report.ts` — shared hook infrastructure
-
-All hooks import from `relay/lib/report.ts`:
-
-```ts
-// Timeout budget for each POST — hooks never block the user's session.
-const BUDGET_MS = 2000;
-
-// Reads the Claude Code hook payload from stdin. Returns {} on empty/invalid JSON.
-async function readHookInput(): Promise<HookInput>
-
-// POST best-effort: 2s timeout, all errors swallowed.
-async function postRelay(path: string, body: unknown): Promise<void>
-
-// Gate: returns the tab id or undefined if not in a Bismuth terminal.
-function terminalId(): string | undefined
-
-// Gates on CLAUDE_TERMINAL_ID, reads stdin, always exits 0.
-function hook(fn: (input: HookInput, tid: string) => Promise<void>): void
-```
-
-The `HookInput` interface:
-```ts
-interface HookInput {
-  session_id?: string;
-  cwd?: string;
-  agent_id?: string;
-  agent_type?: string;
-  last_assistant_message?: string;
-  [k: string]: unknown;
-}
-```
-
-**Best-effort guarantees:**
-- Hooks always exit 0 (never block or fail the user's Claude session).
-- Every network error is swallowed.
-- Hooks without `CLAUDE_TERMINAL_ID` are no-ops.
-- The 2-second `AbortSignal.timeout` prevents any one hook from hanging.
-
----
-
-## Relay Registry (`core/src/relay.ts`)
-
-An **in-process, in-memory** registry. There is no database, no file on disk, no daemon. The registry lives only while the core server process runs.
-
-### Data types
-
-```ts
-interface RelaySession {
-  sessionId: string;    // Claude Code session_id
-  terminalId: string;   // CLAUDE_TERMINAL_ID (pty session id)
-  cwd: string;          // working directory; used as the graph node label
-  lastSeen: number;     // ms epoch; bumped on every heartbeat
-}
-
-interface RelaySubagent {
-  agentId: string;          // SubagentStart agent_id (stable for the subagent's lifetime)
-  parentSessionId: string;  // the session that spawned it
-  agentType: string;        // e.g. "general-purpose", "Explore", "Plan"
-  startedAt: number;
-  done: boolean;            // flipped true on SubagentStop
-  doneAt?: number;
-  lastMessage?: string;     // SubagentStop last_assistant_message
-}
-
-interface RelaySnapshot {
-  sessions: RelaySession[];
-  subagents: RelaySubagent[];
-}
-```
-
-### Functions
-
-**`registerSession({ sessionId, terminalId, cwd }, now?)`**
-
-Register or heartbeat a session. Behaviours:
-- Same `sessionId`, same `terminalId` → bumps `lastSeen`; preserves existing `cwd` if the new one is empty; keeps all subagents. This is the `UserPromptSubmit` (heartbeat) path.
-- Different `sessionId`, same `terminalId` → the user re-ran `claude` in the same tab. The old session and all its subagents are dropped before registering the new one.
-
-```ts
-// Register a new session
-registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/Users/m/dev/proj" });
-
-// Heartbeat (same sessionId) — cwd "" preserves existing cwd
-registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "" });
-
-// New session in same tab — evicts s1 + its subagents
-registerSession({ sessionId: "s2", terminalId: "tab-1", cwd: "/Users/m/dev/proj" });
-```
-
-**`endSession(sessionId)`**
-
-Removes the session and all its subagents (called from `POST /relay/session/end`).
-
-**`startSubagent({ parentSessionId, agentId, agentType }, now?)`**
-
-Adds a subagent. The registry does not validate that the parent session exists; orphan subagents are pruned later by `prune()`.
-
-**`stopSubagent({ agentId, lastMessage? }, now?)`**
-
-Marks a subagent `done = true` and records `doneAt`. Unknown ids are silently ignored (missed `SubagentStart` is handled gracefully).
-
-**`prune(liveTerminalIds: Set<string>, now?)`**
-
-Called from `terminal.ts`'s `killSession`, with `new Set(listSessionIds())` — the live pty ids — on every tab close (there is no terminal-close hook of its own, so `killSession` calls this directly rather than a poller reading it lazily). Drops:
-1. Sessions whose `terminalId` is not in `liveTerminalIds` (tab was closed).
-2. Orphaned subagents whose parent session was dropped in step 1.
-3. Finished subagents past their TTL (`DONE_SUBAGENT_TTL_MS`, 8 seconds).
-
-`stopSubagent` also sweeps finished-and-expired subagents itself (as of this branch), so a long-lived tab that never closes doesn't accumulate done subagents indefinitely between tab closes.
-
-**`snapshot(now?)`**
-
-Returns the current `RelaySnapshot` (sessions + subagents arrays). Also runs the done-TTL sweep so stale subagents are shed even without a preceding `prune`.
-
-**`resetRelay()`**
-
-Clears all state. Tests only.
-
-### Subagent lifetimes
-
-```ts
-const DONE_SUBAGENT_TTL_MS = 8_000;                 // brief linger once finished
-const RUNNING_SUBAGENT_MAX_MS = 2 * 60 * 60 * 1000; // backstop for a never-reported stop
-```
-
-A subagent that has been marked `done` lingers for 8 seconds before `snapshot`/`prune`/`stopSubagent`'s own eager sweep removes it, so a subagent that starts and finishes in quick succession is still visible in a snapshot taken during that window rather than vanishing instantly.
-
-A subagent has a **second** exit, because its normal one — `SubagentStop` → `stopSubagent` — is a single best-effort report (2 s timeout, errors swallowed, no retry) that Claude Code can itself fail to deliver (it logs `[runAgent] SubagentStop on interrupted query failed`). If that report is lost, `done` never flips, so the done-TTL never applies and the only other sweep (the orphan prune) needs the **parent session** to die — the node would render `awake` forever under a still-open tab. So a subagent that never reports a stop is presumed finished past `RUNNING_SUBAGENT_MAX_MS`.
-
-That backstop is deliberately far beyond any real subagent rather than a tight guess, because nothing cheaply proves a subagent is still alive: the parent's `Stop` hook is **not** a turn boundary for subagents (verified against claude 2.1.211 — an async/background subagent outlives several parent `Stop`s, so finishing subagents on `Stop` would reap live ones), and a tool-call heartbeat fails too (a subagent sitting in one long `Bash` call emits nothing for its whole duration). It only guarantees that no node is immortal; `SubagentStop` remains the path that makes a finished subagent leave promptly.
-
-`core/src/chat.ts` sweeps a visual chat's Task-tool subagents on these same two exits, importing both constants so the paths can't drift.
-
----
-
-## Core Server Relay Endpoints
-
-These routes live in the **read table** in `server.ts` (not `mutatingRoutes`) — they update the agent registry but do not touch the vault, so no cache invalidation or SSE broadcast occurs.
-
-| Route | Body | Behaviour |
-|-------|------|-----------|
-| `POST /relay/session` | `{ sessionId, terminalId, cwd? }` | `registerSession` |
+- `registerSession`: The same `sessionId` and `terminalId` bumps `lastSeen`, keeps an existing `cwd` when the new one is empty, keeps the existing `backend` when the new one is omitted (default `claude`), and keeps subagents.
+  A different `sessionId` on the same `terminalId` means you re-ran `claude` in that tab: the old session and its subagents are dropped first.
+- `endSession` removes a session and its subagents.
+- `startSubagent` adds a subagent without checking the parent exists; `prune` removes orphans. A `workflowId` groups subagents spawned by one workflow.
+- `stopSubagent` marks it done; an unknown id is ignored.
+- `prune(liveTerminalIds)`, called from `killSession`, drops sessions whose terminal tab has closed, then orphaned subagents, then expired finished ones.
+- `snapshot` returns both lists after sweeping expired subagents. `redactSnapshot` drops each subagent's `lastMessage`.
+
+A finished subagent lingers for 8 seconds (`DONE_SUBAGENT_TTL_MS`) so a brief one is still visible for a beat.
+A subagent that never reports a stop is presumed finished after 2 hours (`RUNNING_SUBAGENT_MAX_MS`): `SubagentStop` is one best-effort post that Claude Code can itself fail to deliver, and the parent's `Stop` hook is not a turn boundary for background subagents, so nothing cheaper proves one is still alive.
+`core/src/chat.ts` imports both constants to sweep a chat's own Task-tool subagents the same way.
+
+### Relay routes
+
+The routes live in `core/src/routes/relay.ts`, in the read table: they update the registry but not the vault, so there is no cache invalidation and no SSE broadcast. Hooks swallow any 400.
+
+| Route | Body | Effect |
+|-------|------|--------|
+| `POST /relay/session` | `{ sessionId, terminalId, cwd?, backend? }` | `registerSession` |
 | `POST /relay/session/end` | `{ sessionId }` | `endSession` |
-| `POST /relay/subagent/start` | `{ parentSessionId, agentId, agentType? }` | `startSubagent` |
+| `POST /relay/subagent/start` | `{ parentSessionId, agentId, agentType?, workflowId? }` | `startSubagent` |
 | `POST /relay/subagent/stop` | `{ agentId, lastMessage? }` | `stopSubagent` |
-| `GET /relay/snapshot` | — | `snapshot()` — the read side of the registry, added for `bismuth relay list`. Owner requests (`requestChannel(req) === "owner"`) get the full `RelaySnapshot` verbatim; every other caller gets `redactSnapshot(snap)`, which drops each subagent's `lastMessage` (free-text `SubagentStop` output that can quote vault content) and leaves everything else — ids, types, timestamps, `cwd`, `backend` — intact |
+| `GET /relay/snapshot` | none | Owner requests get the full snapshot; every other caller gets the redacted one |
 
-All 400 errors from relay endpoints are silently swallowed by the hooks (best-effort).
+`GET /relay/snapshot` backs `bismuth relay list`. It redacts `lastMessage` for non-owners because that free text is a subagent's final output and can quote vault content.
 
-The graph-mode reader is gone — `GET /agent-graph` (and the `buildAgentGraph` pure function it called, in `core/src/agents.ts`) was removed along with the "agents" graph mode. `core/src/agents.ts` itself remains and is **not** orphaned: it now holds only the `ChatAgentSubagent` / `ChatAgentSession` types, imported by `core/src/chat.ts` for visual-chat subagent tracking. But the registry is not read-less: `GET /relay/snapshot` reads it directly (see the table above), and is what `cli/src/commands/relay.ts`'s `relay list` calls. The registry is still written to (by the routes above), pruned both on tab close (`terminal.ts`, see `prune` above) and eagerly on `stopSubagent`, and now has exactly the one reader.
+### The frontend component
 
----
+`TerminalTab` in `app/src/Terminal.tsx` mounts an xterm.js emulator, one instance per tab id, and keeps it mounted for the tab's life; the parent hides it with `display: none`.
+It waits for the primary font with `document.fonts.load` before constructing xterm, so the grid uses the right metrics, and registers its cleanup before that await so closing a tab mid-load still tears down.
 
-## Frontend Terminal Component (`app/src/Terminal.tsx`)
+- Theming. The 16-color palette comes from `buildAnsiPalette`; slots 16 to 255 are tinted toward the accent palette by `buildExtendedAnsi`, memoized per palette key.
+- Cursor. The native xterm cursor is invisible and an `.xterm-custom-cursor` overlay, positioned by transform on render and cursor-move events, draws the app cursor: an accent bar on the cell's left edge, gliding and blinking from the `appearance.cursor*` settings.
+  It hides in the scrollback and while the terminal is unfocused.
+- Click to position. A single click (not a drag) on the prompt row sends `\x1b[C` or `\x1b[D` to move the cursor. It is off on the alternate screen buffer, so clicks inside vim, `less` or a full-screen TUI send no stray arrow keys.
+- Scroll following. The viewport stays pinned to new output, even while the tab is hidden, until you scroll up into the scrollback.
+- Resize. A `ResizeObserver` on the container, debounced to one animation frame, ignores zero-size containers.
+- Reconnect. The client passes its `termId`. An abnormal close prints `[reconnecting…]` and retries with exponential backoff (`500ms * 2^attempt`, capped at 8 s). A clean close closes the tab, or prints `[process exited]` when the shell lived under 750 ms.
+  A socket error prints `[backend unavailable]`.
 
-The `TerminalTab` Solid component mounts an xterm.js emulator and bridges it to the backend WebSocket PTY.
+### Limits
 
-### Key implementation details
+- The registry is local to one core process: no cross-machine agents, no persistence across restarts, no messaging between instances.
+- Subagents cannot spawn subagents, so the tree is two levels deep: session, then subagents.
+- A `claude` session outside an app terminal never loads the plugin, and its hooks would no-op without `CLAUDE_TERMINAL_ID` anyway.
 
-- **Font loading**: waits for `Monaspace Xenon` via `document.fonts.load(...)` before constructing xterm, so the grid is sized with the correct font metrics from the start. If the font fails to load, rendering falls back gracefully.
-- **Color theming**: reads `--term-bg`/`--term-fg` CSS variables (falling back to `--bg`/`--fg`), then builds a 16-color ANSI palette from the active accent palette via `buildAnsiPalette`. The 240-entry extended ANSI palette (slots 16–255) is tinted toward the accent palette via `buildExtendedAnsi`, with the result memoized per palette key.
-- **Custom cursor**: xterm's native cursor is made invisible (`cursor: "rgba(0,0,0,0)"`); a custom `.xterm-custom-cursor` overlay div is positioned using `transform: translate(...)` and updated on `onRender`/`onCursorMove` events. This enables CSS transitions. It is THE app cursor — a `--cursor-width` accent bar on the cell's left edge, full cell height, gliding on `--cursor-glide` and blinking on `--cursor-blink` (the `appearance.cursor*` settings), identical to the editors' cursor. The `.xterm-rows` reference is re-queried lazily if xterm swaps it out, the overlay hides while scrolled into the scrollback (`viewportY !== baseY`), and CSS hides it entirely while the terminal is unfocused.
-- **Click-to-position**: a mousedown/mouseup tracker allows single-point clicks (not drags) on the current prompt row to jump the cursor left or right using `\x1b[C`/`\x1b[D` sequences. It is **disabled on the alternate screen buffer** (`buffer.active.type !== "normal"`) so clicks inside a full-screen TUI (vim, htop, `less`, the Claude TUI) don't inject stray arrow keys.
-- **Resize**: a `ResizeObserver` on the container div, rAF-debounced to collapse resize bursts (e.g. divider drag). Zero-size containers are ignored.
-- **Reconnection & exit**: the client passes its stable `termId` so a reconnect **reattaches to the same backend PTY** within the grace window (a reload or transient drop keeps the running shell — see _Session reattach_ above). It distinguishes by close code: an **abnormal close** reconnects with exponential backoff (`500ms * 2^attempt`, max 8s), printing `[reconnecting…]`; a **clean close (1000)** means the shell exited — the tab **closes itself** (via the `onExit` prop) instead of respawning a shell, unless the shell died within 750 ms of connecting (likely a startup failure), in which case the tab stays open showing `[process exited]` so the error remains readable. `[backend unavailable]` prints on socket error.
-- **Cleanup safety**: `onCleanup` is registered synchronously inside `onMount` before the `document.fonts.load` await, so teardown fires even if the tab is closed while the font is still loading.
-
-### Font stack
-
-```css
-'Monaspace Xenon', 'FiraCode Nerd Font', 'Symbols Nerd Font',
-'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace
-```
-
-### Settings consumed
-
-| Setting | Effect |
-|---------|--------|
-| `settings.terminal.fontSize` | xterm `fontSize` |
-| `settings.terminal.lineHeight` | xterm `lineHeight` |
-| `settings.appearance` (accentPalette) | 16-color + extended ANSI palette |
-
-### Mounting
-
-The component renders a single `<div class="term-host" />` and stays mounted for the tab's lifetime; the parent controls visibility via `display: none`. `TerminalTab` is keyed by `props.id` — one instance per tab id.
-
----
-
-## Scope and Constraints
-
-- **App-local only**: the relay registry is in-process in the core server. No cross-machine agents, no persistence across restarts, no messaging between instances.
-- **Depth 1**: subagents cannot spawn their own subagents, so the tree is always exactly 2 levels deep (session → subagents).
-- **No terminal-close hook of its own**: `terminal.ts`'s `killSession` calls `relay.prune` directly when a tab closes (no polling reader triggers it anymore — see _Core Server Relay Endpoints_ above).
-- **Multiple windows**: each Bismuth window runs its own backend (different port). In-tab `claude` sessions report to that window's backend only, because `CLAUDE_RELAY_URL` is set to `http://localhost:<server.port>` at session creation time.
-- **Sessions without `CLAUDE_TERMINAL_ID`**: if `claude` is run outside a Bismuth terminal (e.g. in a standalone shell), the relay hook is not loaded at all (requires `--plugin-dir`). Even if somehow loaded, the `CLAUDE_TERMINAL_ID` gate in `lib/report.ts` makes every hook a no-op.
-
-Source: `core/src/terminal.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/session-start-hook.ts`, `relay/bin/recall-hook.ts`, `relay/bin/subagent-start-hook.ts`, `relay/bin/subagent-stop-hook.ts`, `relay/bin/wrap.ts`, `relay/lib/report.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `relay/shim/zdotdir/.zshrc`, `relay/shim/zdotdir/.zprofile`, `relay/shim/zdotdir/.zshenv`, `core/src/agentBackends/catalog.ts`, `core/src/relay.ts`, `core/src/server.ts`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `relay/test/wrap.test.ts`
+Source: `core/src/terminal.ts`, `core/src/relay.ts`, `core/src/routes/relay.ts`, `core/src/claudeWhich.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/`, `relay/lib/report.ts`, `relay/lib/recall.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `relay/shim/zdotdir/`, `core/src/agentBackends/catalog.ts`, `cli/src/commands/relay.ts`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `relay/test/wrap.test.ts`

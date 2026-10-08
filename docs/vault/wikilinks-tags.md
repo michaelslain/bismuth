@@ -1,552 +1,144 @@
-# Wikilinks and Tags
+# Wikilinks and tags
 
-Bismuth extracts `[[WikiLink]]` wikilinks and `#tag` tags from vault notes, resolves both into graph nodes and edges, and applies ambiguity rules to filename-based link resolution; the editor surfaces autocomplete for both syntax forms. Extraction: `core/src/wikilinks.ts` and `core/src/tags.ts`. Graph integration: `core/src/vault.ts`. Editor autocomplete: `app/src/editor/wikilink.ts` and `app/src/editor/tag.ts`.
+A wikilink (`[[My Note]]`) links one note to another by name, and a tag (`#idea`) groups notes under a shared label.
+Bismuth turns every resolved link into a graph edge and every tag into a shared tag node, and the editor autocompletes both as you type.
+Read this page to learn the syntax, how a link finds its note, and the cases where a link or tag silently does nothing.
 
+```markdown
 ---
+tags: [book, "science fiction"]
+---
+See [[Gamma]], [[reading/Gamma#Chapter 2|chapter two]] and ![[diagram.png]].
+Filed under #reading/2026 and #idea.
+```
 
-## Wikilinks
+This note links to `Gamma` and `reading/Gamma` (the embed produces no link), and carries four tags: `book`, `science fiction`, `reading/2026` and `idea`.
 
-### Syntax
+## Which wikilink forms are supported?
 
-The supported wikilink forms mirror Obsidian syntax. All three can be combined:
-
-| Form | Example | What gets extracted |
+| Form | Example | Links to |
 |---|---|---|
-| Bare name | `[[My Note]]` | `My Note` |
-| With alias | `[[My Note\|Alias Text]]` | `My Note` (alias stripped) |
-| With heading anchor | `[[My Note#Section]]` | `My Note` (anchor stripped) |
-| Path-qualified | `[[reading/My Note]]` | `reading/My Note` |
-| All combined | `[[reading/My Note#Section\|Alias]]` | `reading/My Note` |
+| Name | `[[My Note]]` | the note named `My Note`, anywhere in the vault |
+| Alias | `[[My Note\|shown text]]` | `My Note`; the editor shows `shown text` |
+| Heading | `[[My Note#Section]]` | `My Note`, opened scrolled to the `Section` heading |
+| Path | `[[reading/My Note]]` | exactly `reading/My Note.md` |
+| Combined | `[[reading/My Note#Section\|Alias]]` | `reading/My Note`, heading and alias applied |
 
-Embeds (`![[file]]`) use the same double-bracket notation but are **not wikilinks** — they are render-only transclusion directives (images, PDFs, audio, video, note transclusion) and **never produce a graph edge**. The negative lookbehind `(?<!!)` in the extractor regex ensures a `!` immediately before `[[` is excluded.
+Anything between the brackets is allowed except `]`, so `[[2024-01-15]]`, `[[doc-v1.2.3]]` and `[[note@tag]]` are valid targets. An empty `[[]]` is ignored. In live preview the editor hides the brackets, the folder path and the heading, and shows the alias, or the bare name if there is none.
 
-```text
-![[Diagram.png]]   → skipped (embed, not a link)
-[[Diagram.png]]    → extracted (link)
-![[Other Note]]    → skipped (embed)
-[[Other Note]]     → extracted (link)
-```
+A heading anchor matches an ATX heading (`## Section`) by its text, ignoring case and repeated spaces. If no heading matches, the note simply opens at its saved scroll position.
 
-### Extraction: `extractWikilinks(md: string): string[]`
+## How does a link find its note?
 
-Located in `core/src/wikilinks.ts`.
+A link resolves in this order, and the first match wins:
 
-1. Calls `stripCode(md)` first (see below) to blank out fenced and inline code spans.
-2. Applies the regex `/(?<!!)\[\[([^\]]+?)\]\]/g` to the masked string.
-3. For each match, strips the alias (text after `|`) and heading anchor (text after `#`), then trims whitespace.
-4. Returns deduplicated targets as a `string[]`. Order is insertion order of the `Set` used internally.
+1. The target equals a note's path without `.md` (`reading/My Note`).
+2. The target equals a note's file name without `.md` (`My Note`).
 
-```ts
-// Examples matching what the tests verify:
-extractWikilinks("See [[internship]] and [[housing|my place]] and [[essay#intro]] and [[internship]].")
-// → ["internship", "housing", "essay"]  (deduplicated, alias and anchor stripped)
+Matching is case-sensitive, so `[[note]]` does not find `Note.md`. A link that matches nothing creates no graph edge and raises no error; clicking it in the editor opens a new note with that name.
 
-extractWikilinks("![[image.png]][[Note]]")
-// → ["Note"]  (embed excluded)
+When two notes share a file name (`reading/Note.md` and `writing/Note.md`), a bare `[[Note]]` goes to the one with the fewest folders, and between equals to the one whose path sorts first.
+Write `[[writing/Note]]` to pick the other.
+The autocomplete and drag-to-link already write the path form when a name is ambiguous, so the link you insert always resolves to the note you chose.
 
-extractWikilinks("```\n[[Hidden]]\n```\n[[Visible]]")
-// → ["Visible"]  (code fence blanked)
+A link to an image or PDF, such as `[[photo.png]]`, resolves to that file's [companion note](frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs) (`photo.png.md`) if one exists.
+Clicking it opens the file's preview tab.
+If the target is an existing image or PDF with no companion, clicking still opens it.
 
-extractWikilinks("`[[NotALink]]` but [[RealLink]]")
-// → ["RealLink"]  (inline code span blanked)
+## Why does `![[file]]` not count as a link?
 
-extractWikilinks("")   // → []
-extractWikilinks("plain text")  // → []
-```
+An exclamation mark directly before the brackets makes the token an embed, a render-only directive for images, PDFs, audio, video and note transclusion. Embeds never create graph edges. `[[Diagram.png]]` is a link and `![[Diagram.png]]` is an embed. See [Attachments and embeds](attachments.md).
 
-#### What is extracted from complex syntax
+## Where are links and tags ignored?
 
-- `[[My Note#Section]]` → `"My Note"` (anchor discarded)
-- `[[reading/My Note#Section|Alias]]` → `"reading/My Note"` (heading and alias discarded, path preserved)
-- `[[2024-01-15]]` → `"2024-01-15"` (numbers allowed)
-- `[[my-note]]`, `[[my_note]]` → extracted as-is (hyphens, underscores allowed)
-- `[[note@tag]]`, `[[doc-v1.2.3]]` → allowed (no restriction on target characters beyond `]`)
-- `[[]]` → ignored (empty target after trim)
+Fenced code blocks (<code>```</code> or `~~~`, indented fences included) and inline code spans are blanked before links, tags and embeds are read, so examples in code never reach the graph.
 
-#### Code-stripping: `stripCode(md: string): string`
+An unterminated fence hides everything to the end of the file. If links or tags below a code block are missing from the graph, look for a fence with no closing line.
 
-Also exported from `core/src/wikilinks.ts`. Used by both `extractWikilinks` and `extractTags`.
+## Which tag forms are supported?
 
-Replaces code regions with same-length runs of spaces (newlines preserved), so character offsets outside the code are unaffected:
+A tag is either a frontmatter entry or an inline `#word`. A note's tags are the union of both, with duplicates removed.
 
-- **Fenced code blocks**: ` ``` ` or `~~~` openers (with optional info string) through the matching closer (or end of document if unterminated). Supports indented fences. An unterminated block is treated as extending to end of file — all content after the opener is hidden.
-- **Inline code spans**: one or more backticks, then the shortest matching run on the same line.
+Frontmatter `tags` accepts a list or a comma-separated string. A leading `#` is stripped.
 
-```text
-"Real [[Outside]]\n```\n[[Inside]]\n```\nmore [[Also Outside]]"
-→ extracts: ["Outside", "Also Outside"]
-
-"Use `[[NotALink]]` but [[RealLink]] counts."
-→ extracts: ["RealLink"]
-
-"[[Before]]\n~~~\n[[Hidden]]\n~~~\n[[After]]"
-→ extracts: ["Before", "After"]
-
-"[[Before]]\n```\n[[StillHidden]]\nno closing fence"
-→ extracts: ["Before"]   (unterminated block hides to EOF)
-```
-
-This mirrors the editor's live-preview behavior, which also skips code fences when rendering links and tags.
-
-### Graph Integration
-
-`buildVaultGraph` in `core/src/vault.ts` runs a two-pass algorithm using `buildGraphFromNotes`:
-
-**Pass 1**: Walk all `.md` files, create a `GraphNode` of kind `"note"` for each. IDs are the vault-relative path with the `.md` extension removed (e.g. `reading/My Note.md` → `"reading/My Note"`). Two lookup maps are built simultaneously:
-- `byBase: Map<string, string>` — basename (no extension, no path) → note id
-- `byPath: Map<string, string>` — full relative path (no extension) → note id
-
-**Pass 2**: For each note, extract wikilinks from its full content (frontmatter + body), resolve each target against the maps, and emit `"link"` edges.
-
-#### Node schema
-
-```ts
-interface GraphNode {
-  id: string;       // vault-relative path minus .md, e.g. "reading/quotes/My Note"
-  label: string;    // filename stem, e.g. "My Note"
-  kind: "note";
-  folder: string;   // top-level folder segment, or "(root)" for root-level notes
-}
-```
-
-- `"reading/quotes/x.md"` → id `"reading/quotes/x"`, label `"x"`, folder `"reading"`
-- `"x.md"` → id `"x"`, label `"x"`, folder `"(root)"`
-- `"a/b/c/d/deep.md"` → folder is always the first path segment: `"a"`
-
-#### Edge schema
-
-```ts
-interface GraphEdge {
-  from: string;   // source note id
-  to: string;     // target note id
-  kind: "link";
-}
-```
-
-### Resolution: Filename-Based Matching
-
-Wikilink matching is **filename-based** (Obsidian-compatible): a bare `[[My Note]]` matches `My Note.md` anywhere in the vault by basename, not by path.
-
-**Resolution order** (implemented in `resolveLinkTarget`):
-
-1. **Exact path match** (`byPath.get(target)`): If the target contains a `/` or exactly equals a known vault-relative path (minus `.md`), this wins.
-2. **Basename fallback** (`byBase.get(target)`): If no exact path matches, look up the target as a basename.
-
-```ts
-// resolveNotePath in wikilink.ts (frontend) mirrors this order:
-resolveNotePath("My Note", notes)            // looks up byBase
-resolveNotePath("reading/quotes/My Note", notes)  // exact path wins
-```
-
-#### Ambiguity rules
-
-- If two notes share the same basename (e.g. `reading/Note.md` and `writing/Note.md`), a bare `[[Note]]` link is **ambiguous**. The outcome is undefined — `byBase` stores only the last-indexed winner. Use `[[reading/Note]]` to be explicit.
-- A path-qualified link `[[reading/Note]]` always wins over a basename collision.
-- **Links to non-existent notes are silently dropped** — no edge is created, no error is raised. The note node for the target simply doesn't exist, so `resolveLinkTarget` returns `undefined` and the edge is skipped.
-
-```text
-// vault.test.ts examples:
-"internship.md" linking to [[housing]] and [[ghost]]
-→ edge internship→housing created  (housing.md exists)
-→ no edge for ghost                (ghost.md does not exist)
-
-"index.md" linking [[reading/Note]] when both reading/Note.md and writing/Note.md exist
-→ edge index→reading/Note  (exact path wins)
-
-"index.md" linking [[My Note]] when only reading/My Note.md exists
-→ edge index→reading/My Note  (basename fallback resolves correctly)
-```
-
-#### Circular links
-
-Circular links are allowed and both directions create edges:
-
-```text
-a.md: [[b]]
-b.md: [[a]]
-→ edges: a→b and b→a both present
-```
-
-Self-links (`[[self]]` in `self.md`) may or may not produce an edge — behavior is not guaranteed.
-
----
-
-## Tags
-
-### Syntax
-
-Tags appear in two locations in a note:
-
-1. **Frontmatter `tags` key** — a YAML sequence or comma-separated string.
-2. **Inline body tags** — `#tag` patterns in the markdown body.
-
-Both are extracted by `extractTags` and deduplicated into a single set for the note.
-
-#### Frontmatter tags
-
-The frontmatter `tags` key is parsed by `parseList` from `core/src/schema/coerce.ts`:
-
-| Frontmatter value | Result |
+| Value | Tags |
 |---|---|
-| `tags: [foo, bar]` | `["foo", "bar"]` |
-| `tags: foo` | `["foo"]` |
-| `tags: "foo, bar"` | `["foo", "bar"]` (comma-split only) |
-| `tags: "science fiction"` | `["science fiction"]` (multi-word tag preserved — NO whitespace split) |
-| `tags: "science fiction, russian lit"` | `["science fiction", "russian lit"]` |
-| `tags: ["science fiction", "russian"]` | `["science fiction", "russian"]` |
-| `tags: null` | `[]` |
-| `tags: []` | `[]` |
-| `tags: ""` | `[]` |
-| `tags: "   "` | `[]` (whitespace-only → empty) |
-| `tags: ["#prefixed"]` | `["prefixed"]` (leading `#` stripped by `normalizeTag`) |
+| `tags: [foo, bar]` | `foo`, `bar` |
+| `tags: foo` | `foo` |
+| `tags: "foo, bar"` | `foo`, `bar` |
+| `tags: "science fiction"` | `science fiction` (one tag) |
+| `tags: ["#foo"]` | `foo` |
+| `tags:` empty, `""`, `[]` | none |
 
-**Key rule**: The only separator in a string value is `,`. Whitespace inside a tag value is preserved. `"science fiction"` is one tag, not two.
+Commas are the only separator in a string. Whitespace inside a tag is kept.
 
-#### Inline body tags
+Inline tags follow these rules:
 
-The regex is `/(?:^|\s)#([A-Za-z0-9_][A-Za-z0-9_/-]*)/g` applied to the markdown body (after `stripCode`).
-
-Rules:
-- The `#` must be at **start of line** or **preceded by whitespace**. This excludes `C#`, `##headings`, and mid-word `#`.
-- The character immediately after `#` must be a word character (`A-Za-z0-9_`). This means `# ` (heading) and `##` (heading marker) are excluded because the character after `#` is a space or another `#`.
-- Subsequent characters: `A-Za-z0-9_`, `/` (for nested tags), `-`.
-- Tags are **case-sensitive**: `#MyTag`, `#myTag`, `#MYTAG` are three distinct tags.
+- The `#` is at the start of a line or after whitespace.
+- The next character is a letter, digit or `_`. Later characters may also be `/` (nesting) and `-`.
+- Tags are case-sensitive: `#MyTag` and `#mytag` are two tags.
 
 ```text
-#body-tag         → "body-tag"        (hyphen allowed)
-#my_tag           → "my_tag"          (underscore allowed)
-#parent/child     → "parent/child"    (slash for nesting)
-#tag1             → "tag1"            (numbers allowed after first char)
-# Title           → not a tag         (heading — space after #)
-## Another        → not a tag         (heading marker)
-C#                → not a tag         (mid-word #)
-`#fix`            → not a tag         (inside inline code span)
+#body-tag        tag "body-tag"
+#parent/child    tag "parent/child"
+# Title          heading, not a tag
+## Another       heading, not a tag
+C#               not a tag (# mid-word)
+`#fix`           not a tag (inline code)
+#tag1#tag2       only "tag1"; the second # follows a letter, not whitespace
 ```
 
-Consecutive tags like `#tag1#tag2` (no whitespace between): `#tag1` is captured (the `#` of `#tag2` is not preceded by whitespace), but `#tag2` is NOT captured by the regex. Only `#tag1` and `#tag3` in `#tag1#tag2 #tag3` are guaranteed.
+## What does the editor autocomplete?
 
-Tags inside fenced code blocks or inline code spans are suppressed by `stripCode` (same logic as wikilinks):
+| You type | Suggestions |
+|---|---|
+| `[[` | Note names. A name shared by several notes inserts the path form. |
+| `[[Note#` | The headings of `Note`, when `Note` resolves to a real note. |
+| `#` after whitespace | Tags already in the vault. |
+| `tags: ` in frontmatter, and after each comma | Tags already in the vault. |
 
-```ts
-extractTags({}, "```\n#notag\n```\n#realtag")
-// → ["realtag"]
+Accepting a note name adds `]]` unless it is already there, and leaves the cursor after it. Heading suggestions start only when the text before the `#` names a real note, so typing `[[C#` still completes a note called `C# Notes`.
 
-extractTags({}, "Run `git commit -m '#fix'` then add #real")
-// → ["real"]
-```
+## How do links and tags appear in the graph?
 
-### Extraction: `extractTags(data, body): string[]`
+Each `.md` note is a `note` node.
+A resolved link is a `link` edge from the linking note to the target.
+Each distinct tag is one `tag` node with id `tag:<name>` and label `#<name>`, shared by every note that uses it, and each note-tag pair is one `tag` edge.
+Repeated links from one note to the same target make one edge.
 
-Located in `core/src/tags.ts`. Signature:
+The 2nd brain graph shows both note and tag nodes. Memory notes are separate; see [Graph](../graph/overview.md).
 
-```ts
-extractTags(data: Record<string, unknown>, body: string): string[]
-```
+## How it works
 
-- `data` is the parsed YAML frontmatter object (from `parseFrontmatter`).
-- `body` is the markdown body string (everything after the frontmatter block).
-- Returns a deduplicated `string[]` of tag names (without leading `#`).
+### Extraction
 
-Deduplication is global across both sources:
+`core/src/wikilinks.ts` exports `stripCode(md)` and `extractWikilinks(md)`.
+`stripCode` replaces fenced and inline code with spaces of the same length, keeping newlines, so offsets and the whitespace test for tags stay correct.
+`extractWikilinks` returns the distinct targets, matching `/(?<!!)\[\[([^\]]+?)\]\]/g` against the masked text and cutting each match at the first `|` and then the first `#`.
+It skips the work entirely when the note has no `[[`.
 
-```ts
-extractTags({ tags: ["foo"] }, "Text with #foo and #bar")
-// → ["foo", "bar"]   (foo deduplicated, not doubled)
-```
+`core/src/tags.ts` exports `extractTags(data, body)`. Frontmatter tags go through `parseList` and `normalizeTag` from `core/src/schema/coerce.ts`. Inline tags use `INLINE_TAG_REGEX` (`/(?:^|\s)#([A-Za-z0-9_][A-Za-z0-9_/-]*)/g`) on the masked body. The result is a deduplicated array without the `#`.
 
-### Graph Integration
+### Resolution
 
-`buildVaultGraph` in `core/src/vault.ts` creates tag nodes and edges during the edge-extraction pass.
+`buildVaultGraph` in `core/src/vault.ts` extracts links from the whole file text, frontmatter included, and resolves each with `resolveLinkTarget(target, byBase, byPath)`: `byPath.get(target) ?? byBase.get(target)`.
+`buildGraphFromNotes` fills `byBase` with `preferId` from `core/src/linkTarget.ts`, which picks the id with the fewest path segments and then the smaller path by code-unit order.
+The same module provides `pickByBase` and `linkTargetFor`, which the editor uses so that the graph and a click resolve a name to the same note, and so that inserted links are path-qualified exactly when needed.
 
-#### Tag node schema
+`resolveNotePath(target, notes)` in `app/src/editor/wikilink.ts` is the editor's mirror: exact path first, then `pickByBase`.
+`wikilinkOpenPath` decides what a click opens: a resolved note id gets `.md` appended, an unresolved target that `previewKind` recognises as a previewable attachment opens as written, and anything else opens as a new `<target>.md`.
 
-Tag nodes are created lazily on first reference across the vault. All notes that reference the same tag share the single node.
+### Editor helpers
 
-```ts
-interface GraphNode {
-  id: string;    // "tag:" + tag name, e.g. "tag:foo", "tag:science fiction"
-  label: string; // "#" + tag name, e.g. "#foo", "#science fiction"
-  kind: "tag";
-  // no folder field on tag nodes
-}
-```
+The pure helpers in `app/src/editor/wikilink.ts` and `app/src/editor/tag.ts` have no CodeMirror imports, so they run under `bun test`.
+`matchWikilinkPrefix` finds the rightmost unclosed `[[` on the line, `matchWikilinkHeadingPrefix` splits an open link at its first `#`, `matchTagPrefix` applies the inline-tag boundary rule, and `parseWikilink` splits `target#heading|alias` and derives `display`.
+`wikilinkVisibleRange` returns the slice live preview leaves visible.
+`buildInsert` appends `]]` only when it is not already ahead.
+`matchTagListItem` in `app/src/editor/autocomplete.ts` completes the segment after the last comma of a frontmatter `tags:` line.
+The completion sources are wired in `app/src/editor/autocomplete.ts`; heading completion reads the target note once and caches its parsed headings per path.
 
-Examples:
-```text
-tag "foo"            → { id: "tag:foo",            label: "#foo",            kind: "tag" }
-tag "science fiction" → { id: "tag:science fiction", label: "#science fiction", kind: "tag" }
-tag "parent/child"   → { id: "tag:parent/child",   label: "#parent/child",   kind: "tag" }
-```
+### Graph kinds
 
-#### Tag edge schema
+`SECOND_BRAIN_KINDS` in `core/src/graph.ts` is `note` and `tag`. A tag node has no `folder` field.
 
-```ts
-interface GraphEdge {
-  from: string;   // note id, e.g. "reading/My Note"
-  to: string;     // tag node id, e.g. "tag:foo"
-  kind: "tag";
-}
-```
-
-One edge per note-tag pair; duplicates within a note are deduped by `extractTags` before edges are created. Two notes using the same tag each get their own edge to the single shared tag node.
-
-```text
-// vault.test.ts examples:
-note.md with frontmatter tags: [foo] and body #bar
-→ nodes: tag:foo (#foo), tag:bar (#bar)
-→ edges: note→tag:foo (kind:"tag"), note→tag:bar (kind:"tag")
-
-a.md with #shared  AND  b.md with #shared
-→ ONE tag node: tag:shared
-→ TWO edges: a→tag:shared, b→tag:shared
-```
-
-#### Graph mode filtering
-
-Tag nodes have `kind: "tag"`, which is included in `SECOND_BRAIN_KINDS` (the "2nd brain" view). Tag nodes are **not** present in the "3rd brain" (memory) view or the "agents"/"daemon" views.
-
-```ts
-export const SECOND_BRAIN_KINDS = new Set<NodeKind>(["note", "tag"]);
-```
-
----
-
-## Editor Autocomplete
-
-Both wikilinks and tags have **pure, DOM-free helper modules** (`app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`) that are testable under Bun without a browser. The actual CodeMirror integration (trigger, completion source, decoration) is in `app/src/editor/autocomplete.ts`.
-
-### Wikilink Autocomplete
-
-#### Detecting an open wikilink: `matchWikilinkPrefix`
-
-```ts
-matchWikilinkPrefix(textBefore: string): { from: number; query: string } | null
-```
-
-Detects an open `[[…` on the current line with no closing `]]` yet. The regex `/\[\[([^\]\n]*)$/` matches the rightmost unclosed `[[` on the line.
-
-- Returns `{ from, query }` where `from` is the document offset of the first character after `[[`, and `query` is what has been typed so far.
-- Returns `null` when no open wikilink is detected.
-
-```ts
-matchWikilinkPrefix("[[")                      // → { from: 2, query: "" }
-matchWikilinkPrefix("see [[par")               // → { from: 6, query: "par" }
-matchWikilinkPrefix("[[My Note")               // → { from: 2, query: "My Note" }
-matchWikilinkPrefix("[[a]] [[b")               // → { from: 8, query: "b" }   (rightmost)
-matchWikilinkPrefix("[[Done]]")                // → null  (closed)
-matchWikilinkPrefix("just text")               // → null
-```
-
-#### Completion candidate type
-
-```ts
-type NoteCandidate = { label: string; path: string; folder?: string }
-```
-
-- `label` — basename (stem without extension), shown in the autocomplete dropdown and inserted.
-- `path` — full vault-relative path (the graph node id), used to navigate to the file on click.
-- `folder` — top-level folder, shown as autocomplete detail text.
-
-#### Resolving a chosen note: `resolveNotePath`
-
-```ts
-resolveNotePath(target: string, notes: { label: string; path: string }[]): string | null
-```
-
-Mirrors the backend's `resolveLinkTarget`:
-1. Exact path match (`n.path === target`) wins.
-2. Basename fallback (`n.label === target`).
-3. Returns `null` when nothing matches (the target is treated as a brand-new note that doesn't exist yet).
-
-```ts
-const notes = [
-  { label: "My Note", path: "reading/quotes/My Note" },
-  { label: "Index",   path: "Index" },
-];
-
-resolveNotePath("My Note", notes)                  // → "reading/quotes/My Note"
-resolveNotePath("reading/quotes/My Note", notes)   // → "reading/quotes/My Note"
-resolveNotePath("Index", notes)                    // → "Index"
-resolveNotePath("Nonexistent", notes)              // → null
-```
-
-#### Building the insertion text: `buildInsert`
-
-```ts
-buildInsert(label: string, hasClosingAhead: boolean): { insert: string; cursorOffset: number }
-```
-
-- If the cursor already has `]]` immediately ahead (`hasClosingAhead: true`), inserts only the label to avoid `]]]]`.
-- Otherwise appends `]]`.
-- `cursorOffset` is always `label.length + 2` so the cursor lands just after `]]`.
-
-```ts
-buildInsert("Foo", false)  // → { insert: "Foo]]", cursorOffset: 5 }
-buildInsert("Foo", true)   // → { insert: "Foo",   cursorOffset: 5 }
-```
-
-#### Live-preview visible range: `wikilinkVisibleRange`
-
-```ts
-wikilinkVisibleRange(inner: string, start: number): { from: number; to: number }
-```
-
-Given the text inside a `[[…]]` token and the document offset of the opening `[[`, returns the character range to **reveal** in live-preview — everything outside this range (the brackets, folder path, `#heading`) is hidden by the decoration.
-
-- If an alias (`|`) is present: reveals the alias text only.
-- If a heading (`#`) is present but no alias: reveals only the basename (up to the `#`), excluding the anchor.
-- If neither: reveals the full inner text as-is (which is the bare name).
-
-```ts
-wikilinkVisibleRange("My Note", 0)             // → { from: 2, to: 9 }   (whole name)
-wikilinkVisibleRange("reading/quotes/My Note", 0) // → { from: 17, to: 24 } (basename only)
-wikilinkVisibleRange("My Note|Alias", 0)       // → { from: 10, to: 15 } (alias only)
-wikilinkVisibleRange("My Note#Section", 0)     // → { from: 2, to: 9 }   (name, not anchor)
-wikilinkVisibleRange("My Note", 100)           // → { from: 102, to: 109 } (offset honored)
-```
-
-#### Parsing a wikilink token: `parseWikilink`
-
-```ts
-parseWikilink(inner: string): { target: string; alias?: string; heading?: string; display: string }
-```
-
-Fully parses the text between `[[` and `]]` into its semantic parts:
-
-```ts
-parseWikilink("My Note")                          // → { target: "My Note", display: "My Note" }
-parseWikilink("reading/quotes/My Note")           // → { target: "reading/quotes/My Note", display: "My Note" }
-parseWikilink("My Note|Alias")                    // → { target: "My Note", alias: "Alias", display: "Alias" }
-parseWikilink("My Note#Section")                  // → { target: "My Note", heading: "Section", display: "My Note" }
-parseWikilink("reading/My Note#Section|Alias")    // → { target: "reading/My Note", heading: "Section", alias: "Alias", display: "Alias" }
-parseWikilink("  My Note  ")                      // → { target: "My Note", display: "My Note" }  (trimmed)
-```
-
-- `display` is always the alias if given, else the basename of the target (last `/`-delimited segment).
-- The `alias` and `heading` fields are absent (not `undefined`) when not present.
-
-### Tag Autocomplete
-
-#### Detecting a tag in progress: `matchTagPrefix`
-
-```ts
-matchTagPrefix(textBefore: string): { from: number; query: string } | null
-```
-
-Detects a `#tag` being typed at the end of the text before the cursor. Requires the `#` to be at start-of-line or after whitespace (same rule as the body extractor).
-
-```ts
-matchTagPrefix("#")               // → { from: 1, query: "" }
-matchTagPrefix("#sch")            // → { from: 1, query: "sch" }
-matchTagPrefix("see #pro")        // → { from: 5, query: "pro" }
-matchTagPrefix("#parent/child")   // → { from: 1, query: "parent/child" }
-matchTagPrefix("see #a #b")       // → { from: 8, query: "b" }   (rightmost)
-matchTagPrefix("# ")              // → null  (heading)
-matchTagPrefix("##")              // → null  (heading marker)
-matchTagPrefix("C#")              // → null  (mid-word #)
-matchTagPrefix("just text")       // → null
-```
-
-`from` points to the document offset of the first character of the tag name (after the `#`). Completion replaces from this offset.
-
-#### Frontmatter `tags:` value autocomplete
-
-Defined in `app/src/editor/autocomplete.ts` as `matchTagListItem`:
-
-```ts
-matchTagListItem(textBefore: string): { from: number; query: string } | null
-```
-
-Matches when the cursor is on a frontmatter `tags:` line, completing the segment after the last comma. This supports inline comma-separated frontmatter tag values with autocomplete.
-
-```ts
-matchTagListItem("tags: fic")           // → { from: 6, query: "fic" }
-matchTagListItem("tags: fiction, rus")  // → { from: 15, query: "rus" }
-matchTagListItem("tags: a,  b")         // → { from: 10, query: "b" }   (leading spaces trimmed)
-matchTagListItem("status: do")          // → null  (non-tags key)
-```
-
----
-
-## Edge Cases and Gotchas
-
-### Wikilinks
-
-- **Embeds are never links**: `![[file]]` always produces zero edges, even if the target is a valid note.
-- **Case-sensitive targets**: `[[Note]]` and `[[note]]` are distinct targets. If you have both `Note.md` and `note.md`, the match is unambiguous. If only one exists, that one matches regardless of case only if its exact stem matches.
-- **Unterminated fenced blocks hide to EOF**: A ` ``` ` with no matching close treats the rest of the document as code. Any wikilinks or tags after the opener are silently ignored.
-- **Whitespace in link targets**: `[[My Note]]` extracts `"My Note"` (space preserved). Wikilink targets can contain spaces.
-- **Numbers and special characters**: targets like `[[2024-01-15]]`, `[[doc-v1.2.3]]`, `[[note@tag]]` are all valid.
-- **Ambiguous basename**: when two notes share a basename, `byBase` stores only one (last-indexed). The result is non-deterministic. Always use a path-qualified link to avoid ambiguity.
-- **Links to missing notes**: silently produce no edge. The note is not "created" in the graph as a placeholder.
-
-### Tags
-
-- **Multi-word frontmatter tags**: `"science fiction"` in a YAML string is ONE tag. The comma is the only separator. Whitespace is not a separator.
-- **Leading `#` in frontmatter**: `tags: ["#foo"]` → tag is `"foo"` (leading `#` stripped by `normalizeTag`).
-- **Inline tags require whitespace or line-start before `#`**: `word#tag` is NOT a tag. `C#` is NOT a tag.
-- **Consecutive inline tags without whitespace**: `#tag1#tag2` — only `tag1` is captured; `tag2`'s `#` is not preceded by whitespace.
-- **Deduplication across frontmatter and body**: if `foo` appears in both, the resulting tag list contains it once.
-- **Tag nodes are global**: one tag node is shared across all notes that use the tag. Multiple notes referencing the same tag create multiple edges (one each) to the single node.
-- **Tags are case-sensitive**: `#MyTag`, `#myTag`, `#MYTAG` are three separate tag nodes.
-
----
-
-## Data Flow Summary
-
-```text
-vault .md files
-    ↓ parseFrontmatter(content)
-  { data (YAML), body (markdown) }
-    ↓ extractWikilinks(content)       ↓ extractTags(data, body)
-  ["target1", "target2", ...]       ["tag1", "tag2", ...]
-    ↓ resolveLinkTarget(target,       ↓ (always create tag node + edge)
-       byBase, byPath)
-  toId (or undefined → skip)
-    ↓                                  ↓
-  GraphEdge { from, to, kind:"link" }  GraphNode { id:"tag:name", kind:"tag" }
-                                       GraphEdge { from, to:"tag:name", kind:"tag" }
-```
-
-Both wikilinks and tags feed into `GET /graph` as part of the vault graph returned by `buildVaultGraph`. The frontend accesses them through the shared graph state; the "2nd brain" view shows both `"note"` and `"tag"` kind nodes.
-
----
-
-## Companion notes: the tag/graph surface for binary files
-
-Images and PDFs pick up tags, a tag-graph presence and a graph node through the same wikilink/tag
-pipeline above, but indirectly — via a **companion note** `<binary>.md` next to the binary
-(`core/src/fileKinds.ts`'s `companionPathFor`; full contract in `docs/vault/frontmatter.md`'s
-"Companion notes" section, which this cross-references rather than repeats). What matters for THIS
-document:
-
-- The companion is a real `.md` file, so `extractTags`/the vault graph builder treat it exactly
-  like any other note — its `tags:` frontmatter produces the same `tag:`-kind nodes and `tag`-kind
-  edges as a note's own tags, and a wikilink `[[photo.png]]` resolves to it the same way a link to
-  any other note resolves.
-- Its `note`-kind graph node is labelled with the binary's own filename (`photo.png`), because a
-  note node's label is its filename with the trailing `.md` stripped — and a companion's filename
-  already ends in the binary's own extension before that `.md`.
-- **Redirect:** clicking that graph node (or any other route into the companion — the Cmd+O
-  switcher, a wikilink click, a Bases card click, app-control's `openTab`) does not open the
-  companion's own near-empty body. `app/src/App.tsx`'s `resolveCompanionTarget` — a small helper
-  shared by `openFile` — the path EVERY file open funnels through, including a graph-node click, the
-  Cmd+O switcher, a wikilink click, a Bases card click and app-control's `openTab` — and by
-  `openTool`, which serves tool surfaces only (settings/terminal/export/graph/daemon/new-chat) —
-  swaps the companion path for `binaryForCompanion(path)` before opening, so the person lands on the
-  binary's preview tab (tags strip included) instead, wherever the open originated.
-- **Orphan rule:** the redirect (and the file tree's hiding of the companion — see
-  `docs/vault/frontmatter.md`) both require the binary sibling to still exist. A companion whose
-  binary was deleted outside the app is just a normal note: it shows up in the tree, and opening it
-  opens it, tags and all.
-
----
-
-## Related Documentation
-
-- [Graph types and node/edge kinds](../graph/overview.md)
-- [Vault graph builder](../vault/structure.md)
-- [Frontmatter parsing](../vault/frontmatter.md)
-- [Bases source system](../bases/overview.md)
-
-`Source: core/src/wikilinks.ts, core/src/tags.ts, app/src/editor/wikilink.ts, app/src/editor/tag.ts, core/src/vault.ts, core/src/graph.ts, core/src/schema/coerce.ts, core/test/wikilinks.test.ts, core/test/tags.test.ts, app/src/editor/wikilink.test.ts, app/src/editor/tag.test.ts, core/test/vault.test.ts, app/src/editor/autocomplete.test.ts`
+Source: `core/src/wikilinks.ts`, `core/src/tags.ts`, `core/src/vault.ts`, `core/src/graphBuilder.ts`, `core/src/linkTarget.ts`, `core/src/graph.ts`, `core/src/schema/coerce.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/autocomplete.ts`, `app/src/Editor.tsx`

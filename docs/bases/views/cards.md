@@ -1,234 +1,8 @@
-# Cards View
+# Cards view
 
-The Cards view renders each row in a base as a visual card: a book-cover style grid (`cardContent: properties`, the default), a Google-Keep-style **inline-editable** markdown note (`cardContent: body`), or a checklist-only editor (`cardContent: tasks`). All three are driven by `CardsView.tsx`, which inspects `view.cardContent` and delegates the `body`/`tasks` variants to `BodyCard.tsx`. Cards is a record-type view (alongside table, list, kanban, map) and shares the same column-visibility / sort / group-by settings panel as those view types.
+The cards view shows each row of a base as a card. It has three faces for a note: a book-cover grid (the default), a Keep-style masonry of live-editable note bodies, and a masonry of live-editable checklists. It suits collections you browse by look, such as books, projects, or notes you edit without opening them. The other [view kinds](../overview.md) show the same rows differently.
 
-In `body`/`tasks` mode the card body is **not a rendered preview — it is a live, always-editable CodeMirror editor** (`CardEditor.tsx`) over the note's actual markdown. It reuses the note editor's `livePreview` extension, so the same in-place markdown rendering, `#tag`/wikilink/link styling, checkbox glyphs (empty `[ ]`, checked `[x]`, in-progress `[/]`, cancelled `[-]`), and right-click task-status menu all apply — but here a click also places the cursor, a drag selects, and typing edits the note. Edits autosave (see "Inline Editing" below). Clicking a `[[wikilink]]`, `[text](url)`, or bare URL navigates instead of placing the cursor (`navigateOnLinkClick` in `CardEditor.tsx`, mirroring `Editor.tsx`'s filename-based wikilink open).
-
-### `cardContent` vs. `mode` — two different axes
-
-`cardContent` is not the general `mode` axis, and the two never touch each other. Every base view
-has a `mode: 'normal' | 'tasks'` key (see [bases overview → three axes](../overview.md#three-axes-kind-mode-and-origin))
-that answers a different question — WHAT THE ROWS ARE — from `cardContent`, which answers what
-RENDERS INSIDE a card whose row is a note:
-
-| Key | Question it answers | One card is | Values |
-|---|---|---|---|
-| `cardContent` | What renders inside a card, when the row is a note? | one NOTE | `properties` (default), `body`, `tasks` — the three [sub-modes](#two-sub-modes) below |
-| `mode` | What IS each row? | one TASK, when `mode: tasks` | `normal` (default), `tasks` |
-
-`mode: tasks` on a cards view is a **different picture** from `cardContent: tasks`, even though
-both names use the word "tasks": it means one card per checkbox TASK (via the same shared
-`<TaskRow>` [list and bullets](./list-bullets.md#tasks-mode-rendering-shared-by-both-views) render
-— the checkbox, description, and field chips, laid out as a masonry card with no cover and no
-click-to-open of its own), sourced either from a `source: tasks` query or from rows the base
-stores itself (see [three axes](../overview.md#three-axes-kind-mode-and-origin)). `cardContent:
-tasks` stays exactly what it always was: one card per NOTE, narrowed to that note's checklist.
-Both are legitimate, they answer independent questions, and a cards view can combine `mode: tasks`
-with any `cardContent` value (the latter is simply not consulted for the card FACE while `mode:
-tasks` is active — everything below this point describes `mode: normal`, the default).
-
----
-
-## Two Sub-modes
-
-### Properties mode (default)
-
-`cardContent: properties` (or omitted) renders a 5-column wrapping grid of book-style cards. Each card has:
-
-1. A **cover** — either a generated text cover (a typed glyph fingerprint unique to the note, with title and author text) or a real image when `image:` is configured.
-2. A **body row** below the cover — status word on the left, star rating or page count on the right, plus the title and author when an image cover is used (they don't appear on the cover itself in that case).
-
-The grid is a responsive CSS `display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr))` (`.cardGrid` in `CardsView.module.css`) — as many equal columns as fit at or above the minimum width, each column stretching to share the leftover space. Row-major flow keeps cards in sorted/grouped order (a CSS-multicol masonry would scramble it reading top-to-bottom down each column). The minimum column width is configurable via `settings.ui.cardGridMinWidth` (default `220`, range 150–360px), projected to the `--card-grid-min` CSS variable by `settingsCssVars.ts` — there's no per-base override, but the vault-wide setting changes it for every cards view. `mode: tasks` cards render in a separate, narrower grid (`.taskCardGrid`, `minmax(180px, 1fr)`, not tied to `cardGridMinWidth`) since a task line is shorter than a note preview.
-
-### Body mode
-
-`cardContent: body` renders a **3-column CSS masonry** (using `column-count: 3; column-gap: 14px`). Each card (`BodyCard.tsx`) shows:
-
-- The first column value as the card title chip (`renderValue(firstCol, row)`).
-- The **whole note body**, opened in a live `CardEditor` you can edit directly. The frontmatter and a leading `# Title` heading that merely repeats the card title are sliced off (`splitCard`, see "Inline Editing") so the title isn't shown twice and the YAML never appears in the card.
-- Editor-style task glyphs via `livePreview`: left-click toggles, right-click sets an explicit status — but here the line is also fully editable as text.
-- Clickable wikilinks/links that navigate (`bismuth-open` / external open).
-
-Body cards take their natural height; the CSS masonry keeps short notes short rather than stretching them to fill rows.
-
-### Tasks mode
-
-`cardContent: tasks` renders the same masonry as body mode and through the same `CardEditor`, but the editable region is **narrowed to the note's checklist** — from its first task line to its last (`mode: "tasks"`, via `splitCard`/`taskRegion`). Prose, headings, and bullets before the first task join the hidden prefix; anything after the last task joins the hidden suffix; both are preserved verbatim and re-prepended/appended on save. The card thus stays a focused but fully-editable checklist — you can add, delete, or retype task lines as normal markdown — while the surrounding note content is left untouched. A note with **no** task lines falls back to editing the whole body, so the first task can still be typed. Use it for a task-board over notes whose bodies mix prose and checklists (e.g. a `#tasks`-tagged folder).
-
----
-
-## Config Fields
-
-All fields are top-level keys in the base's YAML frontmatter, beside `type: base`. Summary, then detail for each field below:
-
-| Field | Type | Default | Purpose |
-|---|---|---|---|
-| `view` | `"cards"` | — (required) | Selects the cards renderer. |
-| `mode` | `normal` \| `tasks` | `normal` | The general mode axis (see [three axes](../overview.md#three-axes-kind-mode-and-origin)) — `tasks` renders one card per task via `<TaskRow>` instead of everything below. Independent of `cardContent`. |
-| `cardContent` | `properties` \| `body` \| `tasks` | `properties` | Which of the three [sub-modes](#two-sub-modes) to render, when `mode` is `normal` (or absent). |
-| `image` | string (property id) | — | Property whose value supplies the cover image, in properties mode. |
-| `imageFit` | `cover` \| `contain` | `cover` | Maps to the CSS `object-fit` of the cover `<img>`. |
-| `imageAspectRatio` | number | `0.667` | Width ÷ height ratio applied to the cover container's `aspect-ratio`. |
-
-### `view`
-
-```yaml
-view: cards
-```
-
-Required. Selects the cards renderer.
-
-### `cardContent`
-
-```yaml
-cardContent: properties   # (default) book-cover grid
-cardContent: body         # Google-Keep masonry with markdown body
-cardContent: tasks        # like body, but filtered to the note's checklist lines only
-```
-
-Optional. Defaults to `"properties"` when omitted.
-
-### `image`
-
-```yaml
-image: cover
-```
-
-Optional. The **property id** whose value is used as the card's cover image in properties mode. The value may be:
-
-- A full URL: `https://...`, `data:...`, `blob:...` — used directly as the `<img src>`.
-- A bare filename or vault-relative path (e.g. `covers/gatsby.jpg`) — served through the vault asset endpoint (`api.assetUrl(s)`).
-
-When `image` is set but the property is empty or null for a given row, that card falls back to the generated text cover. When `image` is not set at all, all cards use the generated text cover.
-
-The image cover replaces the text cover. With an image cover, the title and author text appear in the card body row below the image (they are not overlaid on the cover). With the text cover, title and author appear on the cover itself and are omitted from the body row.
-
-If the image fails to load (`onError`), it is hidden (`visibility: hidden`) rather than showing a broken-image icon.
-
-### `imageFit`
-
-```yaml
-imageFit: cover     # (default) fill the cover area, cropping if needed
-imageFit: contain   # fit the whole image inside the cover area, letterboxing if needed
-```
-
-Optional. Maps directly to the CSS `object-fit` property on the `<img>`. Defaults to `"cover"`.
-
-### `imageAspectRatio`
-
-```yaml
-imageAspectRatio: 0.667    # (default) portrait 2:3
-imageAspectRatio: 1.0      # square
-imageAspectRatio: 1.778    # 16:9 landscape
-```
-
-Optional. Width-divided-by-height ratio applied as the CSS `aspect-ratio` inline style on the image container. Defaults to `0.667` (a 2:3 portrait aspect ratio, appropriate for book covers). The cover area height adjusts automatically.
-
----
-
-## Column Roles and Automatic Heuristics
-
-Cards does not require you to explicitly label columns by role — it detects them from the column name using heuristics in `CardBody.tsx` and `renderValue.tsx`:
-
-| Detected role | Detection rule (bare name, lowercased) | Rendering |
-|---|---|---|
-| **Title** | First column in `order:` (or first returned column) | Serif title text, 15px, `font-weight: 600` |
-| **Author** | First column that is not title, status, rating, or pages | Small muted text beneath the title |
-| **Status** | Bare name is exactly `status` | Colored-dot + word text (left side of meta row) |
-| **Rating** | Bare name is `rating`, `stars`, or `score` | Five gold stars (right side of meta row) |
-| **Pages** | Bare name is `pages`, `pagecount`, or `page_count` | "N pages" text (right side of meta row, only when no rating) |
-
-"Bare name" strips any namespace prefix (`note.`, `file.`, `formula.`, `this.`) and lowercases. So `note.Rating`, `formula.stars`, and `note.score` all satisfy the rating heuristic.
-
-The meta row (status + stars/pages) only renders when at least one of status, rating, or pages has a non-null value. The page-count shows only as an integer number (fractional values and non-finite numbers are silently omitted).
-
-### Text cover: title and author from first two columns
-
-In properties mode without an `image:` property, the generated text cover draws:
-- `coverTitle` from the first column's value (falls back to `row.file.name` if null).
-- `coverAuthor` from the **second** column's value (the `authorCol()` in `CardsView.tsx`, not `CardBody.tsx`'s heuristic). If the second column's value is an object (e.g. a Link), it is treated as absent.
-
-This is a simpler rule than the `CardBody` heuristic: it always takes column index 1, not the first non-title/non-meta column.
-
-### The generated cover's fingerprint and colour
-
-The generated text cover (`bases/CardCover.tsx`) is a neutral ground (`--surface-2`) typed over with a sparse field of the app's own glyphs (`| - + / \ _ # . o @`, the same `ui/ascii/noiseField.ts` texture the graph backdrop uses), with the title and author on a cleared band at its foot. The field is **seeded by the note's path** (`bases/coverFingerprint.ts`), so every note has its own pattern and it never changes when the view is re-sorted, filtered or regrouped.
-
-Colour appears **only when the view is grouped** (`groupBy`): each card's glyphs and a light wash of the ground take its group's hue — the same key→colour rule as a kanban column (`bases/groupHue.ts`: a known status colour, else a `--graph-0..4` slot hashed from the group key), and a view's `groupColors` override wins. An ungrouped view's covers stay neutral. Not otherwise configurable.
-
----
-
-## Click-to-Open
-
-In **properties mode**, when the base has no `basePath` (a read-only embedded `query` block), clicking anywhere on a card (or pressing Enter when the card has focus) opens the note in its own tab — `bismuth-open` always routes through `openFile`, which never replaces a pane (#56). The card dispatches `new CustomEvent("bismuth-open", { detail: { path } })`. The whole card is a `role="button"` with `tabindex={0}` for keyboard accessibility.
-
-When the base is editable (`basePath` set), a click instead opens the property editor for every editable row — note-backed or stored in the base's own body alike — and right-click does the same. See [Adding, Editing and Deleting Rows](#adding-editing-and-deleting-rows-properties-mode) below.
-
-In **body/tasks mode**, the card body is an editor, not a click-to-open target — a click places the cursor. Navigation happens only through inline links (`navigateOnLinkClick`):
-- Clicking a `[[wikilink]]` dispatches `bismuth-open` with the resolved path (`Note.md`, alias/`#heading` stripped via `m[1].split("|")[0].split("#")[0]`).
-- Clicking a `[text](url)` markdown link or a bare URL opens it externally (`openExternalUrl`).
-- Any other click falls through to `livePreview`, which places the cursor or toggles a task box.
-
----
-
-## Adding, Editing and Deleting Rows (Properties Mode)
-
-In **properties mode** only (`body`/`tasks` cards are covered by [Inline Editing](#inline-editing-body--tasks-mode) below), every card's properties are reachable from the UI — no action requires hand-editing the base file or a note's frontmatter. Requires a saved base file (`basePath` set); an embedded `query` block is read-only.
-
-- **Add a card**: the `[+]` button in the view bar (mode `normal` only). A base that **owns its rows** (no `source:`) appends a new row to the base's own body; a **notes-sourced** base creates a new note in the base's folder. Either way the row/property editor opens immediately to fill it in; a toast warns if the base's filters would hide the new card from this view.
-- **Edit a card's properties**: a click anywhere on an editable card opens the property editor — this now applies to a note-backed card too, not only one stored in the base's own body ([Click-to-Open](#click-to-open) above describes the non-editable case, where a note-backed card still opens the note). Right-click on any editable card opens the same editor. No pencil icon. For a note-backed row, the editor's footer also carries an `[open note]` button (before `[done]`) that opens the underlying note — a stored row (no note file behind it) has no such button.
-- **Delete a card**: open the editor (above) and use "delete" in its footer — a stored row is removed by index, a note is moved to trash, both with an Undo toast.
-
----
-
-## Inline Editing (Body / Tasks Mode)
-
-Body and tasks cards are fully editable in place, with autosave and external-change reconciliation — there is no "edit mode" toggle and no rendered-then-replaced preview. This is `CardEditor.tsx`, a CodeMirror 6 editor configured to read like the note editor's live-preview (transparent, gutterless, auto-height, prose font, `livePreview` + markdown + code highlighting), not a boxed code block.
-
-### Splitting prefix / body / suffix (`cardBodySplit.ts`)
-
-To edit a card without ever corrupting the file, `splitCard(raw, title, mode)` slices the note into `{ prefix, body, suffix }` such that `prefix + body + suffix === raw` exactly:
-
-- **`prefix`** (kept out of the editor, re-prepended on save): always the YAML frontmatter (`FRONTMATTER_RE`, BOM-tolerant), plus a leading `# Title` ATX heading whose text equals the card's own title (`splitCardBody` — `H1_LINE_RE` + the surrounding blank lines), so the title isn't shown twice. In **tasks** mode the prefix also absorbs everything before the first checklist line.
-- **`body`**: the editable region. In **body** mode it's the whole note body after the prefix. In **tasks** mode it's narrowed to the checklist region — first task line to last (`taskRegion`, recognizing `- [.] ` lines via `TASK_LINE`).
-- **`suffix`** (re-appended on save, empty in body mode): in tasks mode, the note content after the last task line.
-
-Because the frontmatter and stripped surroundings live in `prefix`/`suffix` (literal substrings of the input) and are stitched back on every write, editing the card body can never reorder or drop YAML keys, and a tasks card can't clobber the prose around its checklist. `splitCardBody`/`splitCard`/`taskRegion` are pure and unit-tested in `cardBodySplit.test.ts`.
-
-### Autosave + echo suppression
-
-A CodeMirror `updateListener` flags `pendingSave` on any document change and debounces a save by `settings.editor.autoSaveDelay`. `save()` writes `prefix + body + suffix` via `api.write`, primes the shared note cache (`primeNoteCache`) so sibling cards / a reopened note paint warm, and records `lastSavedFull` **before** the `await` so a fast SSE echo of our own write is recognized. A failed write leaves `pendingSave` set so the next edit / flush retries. On teardown a still-pending edit is flushed before the view is destroyed.
-
-### External-change reconciliation
-
-`CardEditor` subscribes to `onServerChange`; when this note changes on disk (edited in a pane, a daemon write, an external sync), `reconcile()` re-reads it and:
-
-- Re-derives `prefix`/`suffix` from disk **even mid-edit** (that text isn't shown, so refreshing it means our next `prefix + body + suffix` save merges in the new surroundings instead of overwriting them).
-- No-ops if the on-disk text equals `lastSavedFull` (our own echo) or if `pendingSave` is set (our queued save wins) or if the body is already identical.
-- Otherwise replaces the document, preserving the caret/selection by clamped character offset, and annotates the transaction with `ExternalReload` so the autosave listener skips it (avoids writing the reload back to itself).
-
-If the very first read fails on mount, the card stays in "Loading…" rather than building an empty editor whose autosave would overwrite the note's frontmatter; a later `onServerChange` retries via `reconcile()` (which calls `buildView` on the first successful read).
-
----
-
-## Group Headers
-
-When a `groupBy:` property is set, a small all-caps label appears above each group's grid. The empty-string group key (ungrouped rows) renders no header. Group headers are styled at 11px uppercase with `--text-muted`.
-
----
-
-## Settings Panel
-
-The settings panel (opened via the gear icon on the view toolbar) for cards is the same as for all record-type views. It provides:
-
-- **Columns section** — toggle individual columns visible/hidden. At least one column must remain visible (toggling the last visible column is blocked; the button shows "At least one column must stay visible").
-- **Sort & group section** — pick a sort property + direction (ASC/DESC) and a group-by property + direction.
-
-**Settings.** Cards also get an **image column** picker under *column mapping* (`image`; "text cover" = unset) and a **cards** section: *card shows* (`cardContent`: properties / body / tasks), and — once an image column is bound — *image fit* (`imageFit`: cover / contain) and *cover shape* (`imageAspectRatio`, presets 2:3 … 16:9; a hand-written ratio is kept as its own option). The panel writes them as plain top-level keys.
-
----
-
-## Full Example
+## Minimal working base
 
 ```yaml
 ---
@@ -237,34 +11,86 @@ source:
   kind: notes
   where: 'file.hasTag("book")'
 view: cards
-cardContent: properties
 image: cover
-imageFit: cover
-imageAspectRatio: 0.667
-order:
-  - file.name
-  - note.author
-  - note.status
-  - note.rating
-  - note.pages
+order: [file.name, note.author, note.status, note.rating, note.pages]
 groupBy:
   property: note.status
-  direction: ASC
 sort:
   - property: note.rating
     direction: DESC
 ---
 ```
 
-With this config:
-- Cards show cover images from the `cover` frontmatter property (vault path or URL). Cards without a cover fall back to the generated gradient cover.
-- The text cover draws `file.name` as the title and `note.author` as the author.
-- The meta row shows `note.status` as a colored-dot word on the left and `note.rating` as gold stars on the right (star rating wins over page count when both exist).
-- Cards are grouped by status and sorted by rating descending within each group.
+Each card gets a cover from the `cover` property (a URL or a vault image path), the title and author from the first two columns, and a status word with gold stars beneath. Cards are grouped by status and sorted by rating within each group.
 
----
+## Config keys
 
-## Body Mode Example
+All keys sit at the top level of the base's frontmatter. The shared keys `filters`, `source`, `order`, `sort`, `groupBy`, `limit` and `columns` work as in the [table view](table.md#config-keys).
+
+| Key | Type | Allowed values | Default | Effect |
+|---|---|---|---|---|
+| `view` | string | `cards` | none | Selects the cards renderer. |
+| `cardContent` | string | `properties`, `body`, `tasks` | `properties` | What a note's card shows: its properties, its whole body, or its checklist. |
+| `image` | property id | any property | none | Property holding the cover image, in properties mode. |
+| `imageFit` | string | `cover`, `contain` | `cover` | CSS `object-fit` of the cover image. |
+| `imageAspectRatio` | number | positive width ÷ height | `0.667` | Aspect ratio of the cover (2:3 portrait). `1` is square, `1.778` is 16:9. |
+| `mode` | string | `normal`, `tasks` | `normal` | `tasks` makes every row a task and shows one task card per row. |
+
+`cardContent` and `mode` answer different questions. `cardContent` says what appears inside a card whose row is a note. `mode: tasks` says each row is a task, so the card shows a checkbox, description and field chips. `cardContent` is ignored while `mode: tasks` is active.
+
+## Properties mode
+
+With `cardContent: properties`, the cards form a responsive grid in sorted and grouped order. The grid fits as many equal columns as it can at or above the minimum width, set vault-wide by the `ui.cardGridMinWidth` setting (default 220 px, range 150 to 360). A base cannot override it.
+
+Each card has a cover and a body:
+
+- **Cover.** The generated text cover, or the image named by `image`.
+- **Body.** A status word on the left, and a star rating or page count on the right. With an image cover the title and author appear here, because the cover does not carry them.
+
+Further columns in `order` appear as `label value` lines, skipping empty values.
+
+### Which column plays which role
+
+Cards detects roles by column name. The bare name is the id without its prefix, lowercased, so `note.Rating` and `formula.score` both count.
+
+| Role | Detected as | Shown as |
+|---|---|---|
+| Title | The first column | Serif title |
+| Author | The first column that is not the title, a status, a rating or a pages column | Muted line under the title |
+| Status | Bare name `status` | Coloured dot and word, left of the meta row |
+| Rating | Bare name `rating`, `stars` or `score` | Five gold stars, right of the meta row |
+| Pages | Bare name `pages`, `pagecount` or `page_count` | `N pages`, right of the meta row, only when there is no rating |
+
+The generated text cover is simpler: it takes its author from the second column, whatever that column is. If you reorder columns, the cover and the body can therefore name different authors.
+
+### Cover images
+
+`image` names a property, not a URL. Its value can be a full `http`, `data` or `blob` URL, or a vault path such as `covers/gatsby.jpg`. A row whose cover property is empty, or holds a list or link, falls back to the text cover. An image that fails to load is hidden.
+
+```yaml
+image: cover        # a frontmatter property named cover
+imageFit: contain   # letterbox instead of cropping
+imageAspectRatio: 1 # square covers
+```
+
+Writing a URL directly as `image: "https://..."` looks up a property with that name, finds nothing and shows the text cover.
+
+### The generated cover
+
+A card with no image gets a neutral ground typed over with a sparse field of the app's own glyphs, with the title and author on a cleared band at the foot. The pattern comes from the note's path, so each note keeps its own cover however you sort or filter.
+
+Colour appears only when the view is grouped. Each card's glyphs take its group's hue, by the same rule a kanban column uses, and a `groupColors` entry overrides it. An ungrouped view stays neutral.
+
+## Open, add, edit and delete cards
+
+- **Click a card.** In a saved base, a click or Enter on an editable card opens the property editor, for a note card and a stored row alike. Right-click does the same. The editor of a note card has an **open note** button.
+- **Read-only blocks.** Where a base cannot be edited, such as an embedded `query` block, a click opens the note in its own tab. A stored row with no note is inert there.
+- **Add a card.** Click **New row** in the view bar (normal mode). A base that owns its rows appends a row to its body; a notes-sourced base creates an `Untitled` note in the base's folder and opens its editor. A toast warns when the base's filters would hide the new card.
+- **Delete a card.** Use delete in the property editor's footer. A stored row is removed and a note goes to the trash, each with an Undo toast.
+
+## Body and tasks modes
+
+With `cardContent: body` or `tasks`, cards form a masonry about 240 px wide per column. Each card has the first column as a title chip above a live editor of the note. The editor is the note editor's live preview, so a click places the cursor, typing edits the note, and task boxes toggle on click.
 
 ```yaml
 ---
@@ -273,30 +99,43 @@ source:
   kind: notes
   where: 'file.hasTag("todo")'
 view: cards
-cardContent: body
-order:
-  - file.name
+cardContent: tasks
+order: [file.name]
 ---
 ```
 
-- Each card is a live editor over the full note body — click to edit, autosaves.
-- Frontmatter and a duplicate `# Title` heading are kept out of the editor (re-prepended on save).
-- Task lines get editor-style glyphs: left-click toggles, right-click sets a status.
-- `[[wikilinks]]` in the body are clickable in-app navigation links.
+- **`body`** edits the whole note body. The frontmatter and a leading `# Title` heading that repeats the card title stay out of the editor.
+- **`tasks`** edits only the checklist, from the first task line to the last. Prose before and after it is kept verbatim. A note with no task lines edits its whole body, so the first task can be typed.
+- **Resolved tasks sink.** In `tasks` mode, done and cancelled tasks move to the bottom of each block, and the note on disk is rewritten to match.
+- **Links.** A click on a `[[wikilink]]` opens that note (the alias and `#heading` are dropped), and a click on a Markdown link or bare URL opens it externally. Any other click edits.
 
----
+Edits autosave after the `editor.autoSaveDelay` setting. If the note changes on disk while a card is open, the card reloads the new text and keeps the caret, unless you have unsaved edits, in which case your edit wins. A card that cannot read its note shows **couldn't load this note** with a retry, and one that cannot save shows **couldn't save your last edit** with a retry.
 
-## Edge Cases and Gotchas
+## Tasks mode
 
-- **`image` accepts a property id, not a URL directly.** Setting `image: "https://example.com/cover.jpg"` would try to look up a property named `https://example.com/cover.jpg` on each row, which will always be null. Store the URL in a frontmatter property (e.g. `cover:`) and set `image: cover`.
-- **Object-valued image properties are skipped.** If the property resolves to a non-string value (e.g. an array or a Link object), the card silently falls back to the text cover.
-- **The grid's column count is not directly configurable, only its minimum width.** There is no field for column count — the grid is `repeat(auto-fill, minmax(var(--card-grid-min), 1fr))`, so the number of columns is however many fit at the current pane width above `settings.ui.cardGridMinWidth` (default 220px, range 150–360). `mode: tasks` cards use a separate fixed 180px minimum (`.taskCardGrid`) unaffected by that setting.
-- **Body/tasks cards read files on mount.** `CardEditor` reads the note (via the shared `noteCache` — `peekNoteCache`/`readNoteCached`) when it mounts. Until a successful read it shows "Loading…". A read **failure** keeps it in "Loading…" deliberately — building an empty editor whose autosave fired would overwrite the note's frontmatter — and `onServerChange` retries via `reconcile()`.
-- **Editing the prefix/suffix externally is safe mid-edit.** Because `reconcile()` re-derives the hidden `prefix`/`suffix` from disk on every server change (even while you're typing in the body), an external edit to the frontmatter or the prose around a tasks checklist is merged into your next save rather than clobbered.
-- **A tasks card with no task lines edits the whole body.** `splitCard`'s `taskRegion` returns null, so the editor falls back to the full note body — letting you type the first task line.
-- **The `authorCol` logic differs between the cover and the body.** The cover uses the raw second column (index 1 from `cols()`). The `CardBody` component (properties mode) uses the first column that is not the title and is not a status/rating/pages column. These may produce different results if the columns are reordered.
-- **Empty `cardBodyInner` is hidden via CSS.** If `CardBody` renders no content at all (no meta, title suppressed by `titleAsField`, no author), the `.cardBodyInner` div is hidden by `display: none` rather than showing as an empty padded block.
-- **Wikilink alias syntax is supported in body/tasks mode.** Clicking `[[Note|Display text]]` navigates to `Note.md`; the `#heading` anchor fragment in a target (`[[Note#Section]]`) is stripped — only the file name is used for navigation.
-- **`mode: tasks` and `cardContent: tasks` are easy to conflate and are not the same setting.** `mode: tasks` means one card per checkbox task (any origin); `cardContent: tasks` means one card per note, narrowed to its checklist. See [`cardContent` vs. `mode`](#cardcontent-vs-mode--two-different-axes). Setting `cardContent` has no visible effect while `mode: tasks` is active — it is simply not read for the card face in that mode.
+With `mode: tasks`, each row is a task rendered by the same task row the [list and bullets views](list-bullets.md#tasks-mode-rendering-shared-by-both-views) use. A task card has a checkbox, a description and field chips, with no cover and no open-on-click. Task cards use a narrower grid (minimum 180 px) that `ui.cardGridMinWidth` does not affect.
 
-Source: `app/src/bases/CardsView.tsx`, `app/src/bases/CardBody.tsx`, `app/src/bases/BodyCard.tsx`, `app/src/bases/CardEditor.tsx`, `app/src/bases/cardBodySplit.ts`, `app/src/bases/BaseSettings.tsx`, `app/src/bases/CardsView.module.css`, `app/src/bases/TaskRow.tsx`, `core/src/bases/types.ts`, `core/src/bases/taskRow.ts`, `app/src/bases/renderValue.tsx`, `app/src/bases/markdown.ts`, `core/src/schema/settingsSchema.ts`, `app/src/settingsCssVars.ts`
+## Group headers
+
+With `groupBy`, each group gets a header with its label and row count above its grid. Rows with an empty group value have no header.
+
+## Settings panel
+
+The gear icon opens the cards settings panel. Beyond the shared sections it offers an **image** column picker (`text cover` clears it) and a **cards** section with the `cardContent` choice, plus, once an image column is set, the image fit and a cover-shape picker with presets from 2:3 to 16:9. A hand-written ratio is kept as its own option.
+
+## Gotchas
+
+- `image` takes a property id. A literal URL silently falls back to the text cover.
+- Mixing up `mode: tasks` (one card per task) and `cardContent: tasks` (one card per note, showing its checklist) is the usual mistake.
+- A body or tasks card reads its note when it mounts. If the note is deleted or unreadable, the card shows the retry message instead of an editor.
+- Resolved tasks reorder themselves on disk the first time a `tasks` card opens a note whose checklist is not already in that order.
+
+## How it works
+
+`CardsView.tsx` branches per card: a `TaskRow` in `mode: tasks`, a `BodyCard` for `body` and `tasks` content, or a cover plus `CardBody` for properties. It branches on the declared `mode`, never on a row's shape, so a task-shaped row in an ordinary cards base keeps its cover.
+
+`BodyCard.tsx` mounts `CardEditor.tsx`, a CodeMirror editor reusing the note editor's live preview. `cardBodySplit.ts` slices a note into `prefix`, `body` and `suffix` so that `prefix + body + suffix` is the original text. Frontmatter and the stripped surroundings are held aside and re-attached on every save, so a card edit cannot reorder or drop YAML keys. A save records the full text it wrote before the write resolves, so the file watcher's echo of that write is recognised and skipped. On a server change the card re-derives `prefix` and `suffix` from disk, then replaces the body only when there are no pending edits, tagging the transaction so autosave does not write the reload back.
+
+`CardCover.tsx` seeds its glyph field from the note path (`coverFingerprint.ts`) and takes its colour from `groupHue.ts`, the same rule as kanban. The grid CSS lives in `CardsView.module.css`, and the `ui.cardGridMinWidth` setting reaches it as the `--card-grid-min` variable from `settingsCssVars.ts`.
+
+Source: `app/src/bases/CardsView.tsx`, `app/src/bases/CardBody.tsx`, `app/src/bases/CardMeta.tsx`, `app/src/bases/CardCover.tsx`, `app/src/bases/BodyCard.tsx`, `app/src/bases/CardEditor.tsx`, `app/src/bases/cardBodySplit.ts`, `app/src/bases/columnKinds.ts`, `app/src/bases/groupHue.ts`, `app/src/bases/TaskRow.tsx`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`

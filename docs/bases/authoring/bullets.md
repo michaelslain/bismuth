@@ -1,6 +1,6 @@
 # bullets
 
-A plain `<ul>` list in editor prose style — no table chrome, no icons, no borders. Intended for reading-quote-style lists where a table is overkill.
+A plain bulleted list, one bullet per row showing only the first column. Suits quotes and short notes where a table is too much.
 
 ## Working example
 
@@ -21,16 +21,16 @@ sort:
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `order` | `string[]` | auto-derived | Only `order`'s (or the resolved `result.columns`') **first** column is ever rendered — bullets is single-column by design. |
-| `groupBy` | `{ property, direction? }` | none | Plain bold heading per group, no color/dot/count (contrast with `list`). |
-| `columns` (→ `groupOrder`) | `string[]` | value-sorted | Group order only, same rules as `list`. |
-| `mode` | `"normal"` \| `"tasks"` | `"normal"` | With `mode: tasks`, every `<li>` renders the shared `<TaskRow>` (checkbox, description, field chips) instead of the plain first-column text. Gates on the **declared mode only**, never on row shape — unlike `list`, an un-migrated `source: tasks` bullets base with no `mode:` key keeps rendering plain `renderValue` text. |
-| `sort`, `limit` | — | — | Standard fields. (`filters` and `source` are base-level keys, not view fields.) |
+| `order` | `string[]` | derived | Only the first column shows. A note row's bullet links to the note. |
+| `groupBy` | `{ property, direction? }` or a property string | none | A header per group: dot, value, `// N` count. |
+| `columns` | `string[]` | value order | Group order only. A listed group with no rows is not shown. |
+| `mode` | `"normal"` \| `"tasks"` | `"normal"` | `tasks` renders each bullet as a task line (checkbox, description, field chips). |
+| `sort`, `limit` | | | As for a table; `limit` is per group. |
 
 ## Failure modes
 
-- **Every column past the first is ignored** in normal mode. If you need a second/third field visible per row, use `list` (up to 3 columns) or `table` instead.
-- **Task-row rendering requires `mode: tasks` explicitly** — a `source: tasks` bullets view with no `mode:` key silently stays plain text (no checkbox, no toggle), which is easy to mistake for a bug when the identical base as `list` would auto-detect the shape and render checkboxes.
-- **No interactivity in normal mode beyond `renderValue`'s built-ins** (wikilinks and `file.name` open the note; everything else is static text) — there is no `onChange` callback for anything but the tasks-mode checkbox toggle/status handlers.
+- If you need a second value per row, use `list` (three values) or `table`; every column after the first is ignored.
+- If a `source: tasks` bullets base shows plain text with no checkboxes, add `mode: tasks`. Unlike `list`, bullets never detects a task row from its shape.
+- If a bullet for a row stored in the base file is not a link, that is expected: it has no note to open, and a click opens the row editor instead.
 
-Full reference: `docs/bases/views/list-bullets.md`
+Full reference: [docs/bases/views/list-bullets.md](../views/list-bullets.md)
