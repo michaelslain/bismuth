@@ -18,6 +18,7 @@
      opaque rectangles floating on the tinted background. Untinted chats inherit the theme tokens
      verbatim. */
   --chat-surface-1: var(--surface-1);
+  --code-bg: color-mix(in srgb, var(--chat-surface-1) 55%, var(--editor));
   --chat-surface-2: var(--surface-2);
   --chat-border-soft: var(--border-soft);
   --chat-border: var(--border);

@@ -62,6 +62,7 @@
   --surface-1: #20222A;
   --surface-2: #272A33;
   --surface-3: #31353F;
+  --code-bg: color-mix(in srgb, var(--surface-1) 55%, var(--editor));
   --border-soft: #282B34;
   --faint: #827F78;
   --rail: #101116;

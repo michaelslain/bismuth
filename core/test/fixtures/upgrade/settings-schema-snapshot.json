@@ -399,6 +399,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.code-bg": {
+    "type": {
+      "kind": "token",
+      "token": "code-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.code-scale": {
     "type": {
       "kind": "token",

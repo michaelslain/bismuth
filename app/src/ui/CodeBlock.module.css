@@ -24,7 +24,7 @@
    column, would otherwise be shifted by the padding). */
 :where(.chrome) {
     padding: var(--sp-4) var(--sp-5);
-    background: var(--surface-1);
+    background: var(--code-bg);
     border: var(--rule-soft);
     border-radius: var(--r-0);
 }

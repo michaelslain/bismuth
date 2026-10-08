@@ -105,6 +105,7 @@ const SURFACE: TokenDef[] = [
     surface('surface-1', 'color', '#20222A', 'First raised surface: cards, panels.', { field: 'surface' }),
     surface('surface-2', 'color', '#272A33', 'Second raised surface: inputs, wells.', { field: 'surface2' }),
     surface('surface-3', 'color', '#31353F', 'Third raised surface: pressed and selected fills.', { field: 'surface3' }),
+    surface('code-bg', 'color', 'color-mix(in srgb, var(--surface-1) 55%, var(--editor))', 'Code block fill: a step under surface-1, toward the note pane.'),
     surface('panel', 'color', '#20222A', 'Panel fill (same as surface-1 in every built-in theme).'),
     surface('rail', 'color', '#101116', 'Sidebar and top strip, a notch under the canvas.', { field: 'rail' }),
     surface('editor', 'color', '#121317', 'Main note pane.', { field: 'editor' }),

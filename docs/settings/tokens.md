@@ -105,6 +105,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `surface-1` | color | `#20222A` | First raised surface: cards, panels. |
 | `surface-2` | color | `#272A33` | Second raised surface: inputs, wells. |
 | `surface-3` | color | `#31353F` | Third raised surface: pressed and selected fills. |
+| `code-bg` | color | `color-mix(in srgb, var(--surface-1) 55%, var(--editor))` | Code block fill: a step under surface-1, toward the note pane. |
 | `panel` | color | `#20222A` | Panel fill (same as surface-1 in every built-in theme). |
 | `rail` | color | `#101116` | Sidebar and top strip, a notch under the canvas. |
 | `editor` | color | `#121317` | Main note pane. |

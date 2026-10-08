@@ -141,6 +141,9 @@ const fieldMark = Decoration.mark({ class: 'cm-task-field' })
 // brightens for editing when the caret is on that line.
 const blockTopRule = Decoration.line({ class: 'cm-block-top' })
 const blockBottomRule = Decoration.line({ class: 'cm-block-bottom' })
+// A code fence's own rows also carry `cm-code-fence`, which points the block fill at --code-bg.
+const codeTopRule = Decoration.line({ class: 'cm-block-top cm-code-fence' })
+const codeBottomRule = Decoration.line({ class: 'cm-block-bottom cm-code-fence' })
 // The fence text itself (frontmatter `---`, a code block's closing ```) renders ALWAYS VISIBLE in
 // very dim mono — never `display:none`-hidden. Two reasons: (1) the original #10 ask, pixel-matched
 // by the user's reference: the em dashes are faintly visible INSIDE the container at its top and
@@ -695,7 +698,7 @@ function buildDecorations(
                 const isClose = line.number === codeBlock.close
                 if (isOpen) {
                     // Opening fence: top grey band always; header widget when rendered, raw ``` when revealed.
-                    deco.push(blockTopRule.range(line.from))
+                    deco.push(codeTopRule.range(line.from))
                     if (!revealed && line.to > line.from) {
                         deco.push(
                             Decoration.replace({
@@ -711,7 +714,7 @@ function buildDecorations(
                     // (`fenceMark`) — "same with code blocks" in the #10 ask, and hiding it would collapse
                     // the line and erase the container's bottom rounded corners (see the fenceMark comment).
                     // In edit mode (revealed) it renders unmarked at full mono contrast.
-                    deco.push(blockBottomRule.range(line.from))
+                    deco.push(codeBottomRule.range(line.from))
                     if (!revealed && line.to > line.from)
                         deco.push(fenceMark.range(line.from, line.to))
                 } else {
@@ -1827,6 +1830,10 @@ export const livePreview = [
         '.cm-codeblock': {
             'font-family': 'var(--ui-font-stack)',
         },
+        // Code rows fill with --code-bg; frontmatter rows keep the --surface-1 default below.
+        '.cm-codeblock, .cm-code-fence': {
+            '--block-fill': 'var(--code-bg)',
+        },
         // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
         // (codeLineNumbers.ts), shared with the ```query source view. Positioned relative to the
         // line's own padding box (`left: -2.7em`), so the `.cm-block-mid` padding below doesn't shift
@@ -1901,7 +1908,7 @@ export const livePreview = [
             position: 'absolute',
             inset: '0',
             'z-index': '-10',
-            background: 'var(--surface-1)',
+            background: 'var(--block-fill, var(--surface-1))',
             'pointer-events': 'none',
         },
         // The always-visible fence text inside the band (frontmatter `---`, code closing ```): very
