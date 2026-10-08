@@ -38,7 +38,7 @@ const Wordmark: Component<WordmarkProps> = props => {
                 .filter(Boolean)
                 .join(' ')}
         >
-            <Text as="span" inherit class="asc-wordmark">
+            <Text as="span" inherit class={`asc-wordmark ${styles.word}`}>
                 bismuth
             </Text>
             {props.caret !== false && <Caret class={styles.caret} />}

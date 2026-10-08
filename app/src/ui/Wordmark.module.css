@@ -23,6 +23,17 @@
 .wordmark--body {
   --wordmark-size: var(--fs-body);
 }
+/* At body size the mark sits in a chrome band and is CENTRED in it (`align-items: center`), so its box
+   has to be its ink. Untrimmed, the box is the font's whole line — ascent over descent — and `bismuth`
+   has no descenders, so its letters rode 2px above the 36px band's centre, beside the macOS traffic
+   lights (measured from pixels at 2x: ink rows 11–21px of 36). `text-box` trims the word and its caret
+   to ascender-ish cap height over the baseline, so centring the box centres the letters; the caret's
+   underscore hangs below the baseline as a cursor does. Hero stays untrimmed: its slides were laid out
+   against the full line box. */
+.wordmark--body .word,
+.wordmark--body .caret {
+  text-box: trim-both cap alphabetic;
+}
 .wordmark--hero {
   --wordmark-size: var(--fs-wordmark-display);
 }
