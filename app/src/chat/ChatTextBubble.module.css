@@ -132,11 +132,14 @@
     white-space: nowrap;
     /* ...but `nowrap` alone lets a long span (a path, a quoted 90-char command) push past the
        column and grow the transcript a horizontal scrollbar. Cap the span at the column and let
-       IT scroll; a short span is unaffected (it is narrower than the cap). */
-    display: inline-block;
+       IT scroll; a short span is unaffected (it is narrower than the cap).
+       inline-flex, not inline-block: an inline-block scroll container's baseline is its bottom
+       margin edge, so it never sits on the prose baseline (`bottom` dropped the code 3px, plain
+       `baseline` lifts it 3px). A flex container takes its baseline from its text, scrolling or
+       not, in Chrome and WebKit alike; `baseline-source: first` would too, but WebKit lacks it. */
+    display: inline-flex;
     max-width: 100%;
     overflow-x: auto;
-    vertical-align: bottom;
 }
 .chat-bubble pre {
     margin: 0.55em 0;

@@ -115,6 +115,53 @@ export const LongInlineCode: Story = {
     },
 }
 
+/** Offset of `el`'s own text baseline from the baseline of the line it sits in, in px. A zero-size
+ *  inline-block's top edge is the baseline of whatever line holds it, so one marker beside the
+ *  element and one inside it compare the two baselines in any engine. */
+const baselineOffset = (el: Element) => {
+    const mark = () => {
+        const m = document.createElement('span')
+        m.style.cssText = 'display:inline-block;width:0;height:0'
+        return m
+    }
+    const outside = mark()
+    const inside = mark()
+    el.parentNode!.insertBefore(outside, el)
+    el.insertBefore(inside, el.firstChild)
+    const d = inside.getBoundingClientRect().top - outside.getBoundingClientRect().top
+    outside.remove()
+    inside.remove()
+    return d
+}
+
+/** Inline code and inline math sit on the prose baseline. Inline code is a scroll container (see
+ *  LongInlineCode), and an inline-block scroll container aligns by its bottom edge, which dropped
+ *  every chip ~3px below the sentence. */
+export const InlineBaseline: Story = {
+    render: () => (
+        <div style={{ width: '560px' }}>
+            <ChatTextBubble
+                text={
+                    'All 7 questions are now `###` headings under your `## Questions` section, and $x^2 + y^2 = r^2$ sits on the line too.'
+                }
+                role="assistant"
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        for (const text of ['###', '## Questions']) {
+            await expect(Math.abs(baselineOffset(canvas.getByText(text)))).toBeLessThanOrEqual(0.5)
+        }
+        const math = await waitFor(() => {
+            const el = canvasElement.querySelector('.katex')
+            if (!el) throw new Error('math not rendered yet')
+            return el
+        })
+        await expect(Math.abs(baselineOffset(math))).toBeLessThanOrEqual(0.5)
+    },
+}
+
 /** A plain sent message — the user role carries the same prose register (bubbles dissolve; both
  *  roles share `.chat-bubble`). */
 export const User: Story = {
