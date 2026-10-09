@@ -19,8 +19,8 @@ import { untrack } from 'solid-js'
 import type { ScratchBlock as ScratchBlockData } from '../../../core/src/scratchTypes'
 import type { NoteCandidate } from '../editor/wikilink'
 import MarkdownField from '../ui/MarkdownField'
-import IconButton from '../ui/IconButton'
 import styles from './ScratchBlock.module.css'
+import CloseButton from '../ui/CloseButton'
 
 export type ScratchBlockProps = {
     block: ScratchBlockData
@@ -123,10 +123,8 @@ function ScratchBlock(props: ScratchBlockProps) {
                 />
                 {/* The wrapper owns the reveal: ui/Button.module.css pins an icon button's own opacity. */}
                 <div class={styles.delete} data-testid="scratch-delete">
-                    <IconButton
-                        icon="X"
+                    <CloseButton
                         label="Delete note"
-                        size="sm"
                         onClick={e => {
                             e.stopPropagation()
                             props.onDelete()

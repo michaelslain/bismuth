@@ -9,6 +9,7 @@ import SearchBar from '../ui/SearchBar'
 import Text from '../ui/Text'
 import { isConfirmBackKey, isConfirmKey, isDismissKey } from '../ui/widgetKeys'
 import styles from './CodeFindBar.module.css'
+import CloseButton from '../ui/CloseButton'
 
 export type CodeFindBarProps = {
     /** 'code' (default): the find field. 'pdf': a note that in-app PDF search does not exist yet. */
@@ -57,11 +58,7 @@ const CodeFindBar: Component<CodeFindBarProps> = props => {
                         >
                             In-app PDF search isn't available yet.
                         </Text>
-                        <IconButton
-                            icon="X"
-                            label="Dismiss"
-                            onClick={props.onClose}
-                        />
+                        <CloseButton label="Dismiss" onClick={props.onClose} />
                     </>
                 }
             >
@@ -126,11 +123,7 @@ const CodeFindBar: Component<CodeFindBarProps> = props => {
                             refocus()
                         }}
                     />
-                    <IconButton
-                        icon="X"
-                        label="Close (Esc)"
-                        onClick={props.onClose}
-                    />
+                    <CloseButton label="Close (Esc)" onClick={props.onClose} />
                 </SearchBar>
             </Show>
         </div>

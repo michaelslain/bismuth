@@ -15,13 +15,13 @@ import {
     onMount,
 } from 'solid-js'
 import SearchBar from './ui/SearchBar'
-import { IconButton } from './ui/IconButton'
 import PaletteRow from './ui/PaletteRow'
 import EmptyState from './ui/EmptyState'
 import Text from './ui/Text'
 // ASCII register: --fs-ui rows on the .asc-popover panel, each carrying the node's own glyph.
 import styles from './GraphSearch.module.css'
 import { clamp } from './math'
+import CloseButton from './ui/CloseButton'
 
 export interface SearchItem {
     id: string
@@ -131,12 +131,7 @@ export function GraphSearch(props: {
                 inputRef={el => (inputRef = el)}
                 class={styles['graph-search-bar']}
             >
-                <IconButton
-                    icon="X"
-                    label="Close search"
-                    size="sm"
-                    onClick={props.onClose}
-                />
+                <CloseButton label="Close search" onClick={props.onClose} />
             </SearchBar>
             {/* Only render the divider + list once there's a query — keeps the panel a tidy
           single search bar (no empty sliver) until the user actually searches. */}

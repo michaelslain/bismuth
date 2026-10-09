@@ -3,13 +3,13 @@
 // sent images. Extracted verbatim in markup/behaviour from ChatView.tsx's transcript list render
 // (the fallback branch of its role Show chain).
 import { For, Show, type Component } from 'solid-js'
-import { IconButton } from '../ui/IconButton'
 import Text from '../ui/Text'
 import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
 import ChatTextBubble from './ChatTextBubble'
 import type { UserItem } from './chatTranscriptLogic'
 import styles from './ChatUserTurn.module.css'
+import CloseButton from '../ui/CloseButton'
 
 export type ChatUserTurnProps = {
     item: UserItem
@@ -29,10 +29,8 @@ const ChatUserTurn: Component<ChatUserTurnProps> = props => {
                         <Text as="span" eyebrow size="micro" tone="muted">
                             queued
                         </Text>
-                        <IconButton
-                            icon="X"
+                        <CloseButton
                             label="Cancel queued message"
-                            size="sm"
                             class={styles['chat-queued-cancel']}
                             onClick={() =>
                                 props.onCancelQueued(props.item.queueId!)

@@ -5,10 +5,10 @@
 import { onCleanup, onMount, Show, type JSX } from 'solid-js'
 import Card from '../ui/Card'
 import Text from '../ui/Text'
-import IconTextButton from '../ui/IconTextButton'
 import { isDismissKey } from '../ui/widgetKeys'
 import { shouldCloseOnKey } from './takeoverDismiss'
 import styles from './DaemonTakeover.module.css'
+import CloseButton from '../ui/CloseButton'
 
 export type DaemonTakeoverProps = {
     title: string
@@ -48,13 +48,11 @@ function DaemonTakeover(props: DaemonTakeoverProps) {
                         </Text>
                     </Show>
                 </div>
-                <IconTextButton
-                    icon="X"
+                <CloseButton
+                    label="close"
                     data-testid="daemon-takeover-close"
                     onClick={() => props.onClose()}
-                >
-                    close
-                </IconTextButton>
+                />
             </div>
             <div class={styles.body}>{props.children}</div>
         </Card>

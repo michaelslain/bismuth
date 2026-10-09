@@ -429,6 +429,9 @@ the accent. An outline appears only when it means something.
   the word and no space inside. No border, no fill, no horizontal padding: **the brackets are the
   edge.** The 24px height is an invisible hit area, so buttons still line up with rows. An icon
   goes inside the brackets: `[✓ label]`. One size only.
+- **Close is `[x]`:** every control that closes, dismisses, removes or cancels — a modal, a tab, a
+  pane, a toast, a list row, an attachment — is a `CloseButton`, a text button reading the letter
+  `x`. Never an `IconButton` with the `X` icon, which renders bracketless.
 - **States are colour and weight, nothing drawn:** `normal` `--fg`; `unselected` (a toggle member
   that is off) `--text-muted`; `selected` `--accent` + bold (or `accent`, if set); `primary`
   `--accent` + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover. Disabled is `--faint` alone with **no** opacity: 0.45 over `--faint` measures 1.89:1 on `--bg`,

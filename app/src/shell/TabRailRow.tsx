@@ -34,6 +34,7 @@ import Text from '../ui/Text'
 import TextInput from '../ui/TextInput'
 import { isDismissKey, isConfirmKey } from '../ui/widgetKeys'
 import styles from './TabRailRow.module.css'
+import CloseButton from '../ui/CloseButton'
 
 export function TabRailRow(props: {
     label: string
@@ -156,11 +157,10 @@ export function TabRailRow(props: {
                 <Show
                     when={props.pinned}
                     fallback={
-                        <IconButton
+                        <CloseButton
                             class={styles['tab-x']}
                             data-tab-rail-close=""
-                            size="sm"
-                            icon="X"
+                            variant="unselected"
                             label="Close tab"
                             onClick={props.onClose}
                         />

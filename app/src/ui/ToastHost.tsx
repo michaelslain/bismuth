@@ -5,7 +5,6 @@
 // exists.
 import { For, Show } from 'solid-js'
 import { TextButton } from './TextButton'
-import { IconButton } from './IconButton'
 import Text from './Text'
 import styles from './ToastHost.module.css'
 import {
@@ -17,6 +16,7 @@ import {
     type ToastTone,
     type PushToastOptions,
 } from './toastStore'
+import CloseButton from './CloseButton'
 
 export type { Toast, ToastTone, PushToastOptions }
 export { pushToast, updateToast, dismissToast, toasts }
@@ -65,8 +65,7 @@ export function ToastHost() {
                             it off screen, so it carries its own way out. A timed one dismisses
                             itself and stays uncluttered. */}
                         <Show when={t.persistent}>
-                            <IconButton
-                                icon="X"
+                            <CloseButton
                                 label="dismiss"
                                 onClick={() => dismissToast(t.id)}
                             />

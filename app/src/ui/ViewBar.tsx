@@ -7,10 +7,10 @@
 import { children, createSignal, type JSX, onCleanup, onMount, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Band from './Band'
-import IconButton from './IconButton'
 import leadOverflow from './leadOverflow'
 import { usePaneChrome } from './paneChrome'
 import styles from './ViewBar.module.css'
+import CloseButton from './CloseButton'
 
 /** Appends an optional extra class to a base (hashed) one — used throughout for the `class`/
  *  `parts` merge pattern every region and primitive here takes. */
@@ -226,8 +226,7 @@ function ViewBar(props: ViewBarProps) {
                     pane has. Handlers are PaneHeader.tsx's, verbatim. */}
                 <Show when={ownsChrome()}>
                     <div class={styles['vb-pane']} data-testid="vb-pane">
-                        <IconButton
-                            icon="X"
+                        <CloseButton
                             label="Close pane"
                             variant="unselected"
                             onPointerDown={e => e.stopPropagation()} // don't start a pane drag

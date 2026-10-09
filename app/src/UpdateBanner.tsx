@@ -20,7 +20,7 @@ import { plural } from './plural'
 import ViewBar from './ui/ViewBar'
 import Text from './ui/Text'
 import { TextButton } from './ui/TextButton'
-import { IconButton } from './ui/IconButton'
+import CloseButton from './ui/CloseButton'
 
 function phaseLabel(p: UpdatePhase | ''): string {
     switch (p) {
@@ -89,10 +89,8 @@ export function UpdateBanner(props: UpdateBannerProps) {
                         >
                             {working() ? 'updating…' : 'update'}
                         </TextButton>
-                        <IconButton
-                            icon="X"
+                        <CloseButton
                             label="Dismiss"
-                            size="sm"
                             onClick={() => setDismissed(true)}
                             disabled={working()}
                         />

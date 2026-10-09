@@ -8,7 +8,7 @@
 // bases/QueryBuilder) each hand-rolled this markup against one shared calendar/Calendar.module.css
 // — the repo's own "a shared stylesheet means a missing component" smell. The duplication had
 // already drifted: BaseSettings used a `<div role="button">` for close, which with no tabindex is
-// not keyboard focusable at all. The close control here is a real TextButton reading `[x]` — the
+// not keyboard focusable at all. The close control here is a CloseButton — a real TextButton reading `[x]` — the
 // letter, not an icon glyph — so it is focusable, labelled, and in the same bracket register as
 // every footer action.
 //
@@ -22,7 +22,7 @@
 // caller layers a translucent fill under it, so the rule is drawn only where there is no text: two
 // short edge segments plus a flexible segment between the subtitle and the close control.
 import { Show, createEffect, type Component } from 'solid-js'
-import TextButton from './TextButton'
+import CloseButton from './CloseButton'
 import { warnLabelCase } from './devWarn'
 import styles from './ModalHeader.module.css'
 
@@ -60,15 +60,12 @@ const ModalHeader: Component<ModalHeaderProps> = props => {
                 )}
             </Show>
             <span class={styles['rule-fill']} />
-            <TextButton
-                aria-label="Close"
-                title="Close"
+            <CloseButton
+                label="Close"
                 data-modal-close
                 class={styles['close']}
                 onClick={props.onClose}
-            >
-                x
-            </TextButton>
+            />
             <span class={styles['rule-trail']} />
         </div>
     )

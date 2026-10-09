@@ -38,6 +38,7 @@ import { filePathsFromTransfer } from '../fileIntake'
 import { addChatReference } from './chatContext'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
+import CloseButton from '../ui/CloseButton'
 
 export type ChatComposerBarProps = {
     /** undefined = no session yet (daemon, pre-arm): identical render; typing goes to a local
@@ -285,10 +286,8 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                                             alt={att.name}
                                             title={att.name}
                                         />
-                                        <IconButton
-                                            icon="X"
+                                        <CloseButton
                                             label="Remove attachment"
-                                            size="sm"
                                             class={styles['attachment-remove']}
                                             onClick={() =>
                                                 props.session?.removeAttachment(
