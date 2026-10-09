@@ -294,7 +294,7 @@ An installed `bismuth-mcp` binary is a compiled copy (`core/src/bismuthInstall.t
 
 For a restricted vault, `spawnChatQuery` in `core/src/chat.ts` and `buildQueryOptions` in `daemon/src/daemon/session.ts` configure the session with all of these together.
 
-- `managedSettings.permissions.deny`: `Read`, `Edit`, `Grep` and `Glob` rules for each restricted file in both its relative and absolute form. Claude Code's Read does not consistently match a relative path against an absolute rule, so both are emitted.
+- `managedSettings.permissions.deny`: `Read`, `Edit`, `Write`, `NotebookEdit`, `Grep` and `Glob` rules for each restricted file in both its relative and absolute form, so the file-writing tools cannot overwrite a note the model cannot read. Claude Code's Read does not consistently match a relative path against an absolute rule, so both are emitted.
 - `sandbox.filesystem.denyRead`: the OS-level deny for the same files, `.git` and the token file. This is what stops a Bash `cat`, `python3 -c` or `bismuth read`; `managedSettings` only covers the tool-call convention.
 - `sandbox.failIfUnavailable`: `true` whenever anything is restricted, so a sandbox that cannot start refuses the session instead of running it unprotected. An unrestricted vault omits the whole sandbox block.
 - `sandbox.allowUnsandboxedCommands: false`: the model cannot switch its sandbox off with the Bash tool's `dangerouslyDisableSandbox` parameter.

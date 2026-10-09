@@ -215,3 +215,29 @@ describe('pure helpers agree', () => {
             expect(daemon.isVisibleToDaemon(v)).toBe(core.isVisibleToDaemon(v))
         })
 })
+
+describe('managed settings deny rules agree', () => {
+    const entries: Parameters<Impl['buildManagedSettingsDeny']>[0] = [
+        { rel: 'private/secret.md', abs: '/v/private/secret.md' },
+        {
+            rel: 'a/b.md',
+            abs: '/v/a/b.md',
+            aliases: ['/alias/a/b.md', '/other/a/b.md'],
+        },
+    ]
+    test('identical output for the same entries', () => {
+        expect(daemon.buildManagedSettingsDeny(entries)).toEqual(
+            core.buildManagedSettingsDeny(entries),
+        )
+    })
+    test('empty input agrees', () => {
+        expect(daemon.buildManagedSettingsDeny([])).toEqual(
+            core.buildManagedSettingsDeny([]),
+        )
+    })
+    test('denies the writing tools, not only the reading ones', () => {
+        const rules = daemon.buildManagedSettingsDeny(entries)
+        expect(rules).toContain('Write(private/secret.md)')
+        expect(rules).toContain('NotebookEdit(/v/private/secret.md)')
+    })
+})

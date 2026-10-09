@@ -224,15 +224,30 @@ const SAMPLE_ENTRIES: DenyEntry[] = [
     { rel: 'private/b.md', abs: '/vault/private/b.md' },
 ]
 
-test('buildManagedSettingsDeny: emits Read/Edit/Grep/Glob rules for BOTH the relative and absolute form of every entry', () => {
+test('buildManagedSettingsDeny: emits Read/Edit/Write/NotebookEdit/Grep/Glob rules for BOTH the relative and absolute form of every entry', () => {
     const deny = buildManagedSettingsDeny(SAMPLE_ENTRIES)
-    for (const tool of ['Read', 'Edit', 'Grep', 'Glob']) {
+    for (const tool of [
+        'Read',
+        'Edit',
+        'Write',
+        'NotebookEdit',
+        'Grep',
+        'Glob',
+    ]) {
         expect(deny).toContain(`${tool}(secret.md)`)
         expect(deny).toContain(`${tool}(/vault/secret.md)`)
         expect(deny).toContain(`${tool}(private/b.md)`)
         expect(deny).toContain(`${tool}(/vault/private/b.md)`)
     }
-    expect(deny.length).toBe(SAMPLE_ENTRIES.length * 4 * 2)
+    expect(deny.length).toBe(SAMPLE_ENTRIES.length * 6 * 2)
+})
+
+test('buildManagedSettingsDeny: denies the file-writing tools Write and NotebookEdit for a restricted path', () => {
+    const deny = buildManagedSettingsDeny(SAMPLE_ENTRIES)
+    expect(deny).toContain('Write(secret.md)')
+    expect(deny).toContain('Write(/vault/secret.md)')
+    expect(deny).toContain('NotebookEdit(secret.md)')
+    expect(deny).toContain('NotebookEdit(/vault/secret.md)')
 })
 
 test('buildManagedSettingsDeny: empty entries → empty deny list', () => {

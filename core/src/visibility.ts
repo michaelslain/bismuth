@@ -702,7 +702,7 @@ async function walkDenyEntries(
 
 /**
  * Build the full `managedSettings.permissions.deny` rule list from buildDenyPaths' output — BOTH
- * the relative AND absolute form of every denied path, for each of Read/Edit/Grep/Glob. Both
+ * the relative AND absolute form of every denied path, for each of Read/Edit/Write/NotebookEdit/Grep/Glob. Both
  * forms are load-bearing: empirically (see the visibility-controls spike), Claude Code's Read
  * tool does NOT consistently resolve a relative `file_path` against an absolute deny pattern — a
  * model asked to read "secret.md in the current directory" may call Read with `file_path:
@@ -712,9 +712,14 @@ async function walkDenyEntries(
 export function buildManagedSettingsDeny(entries: DenyEntry[]): string[] {
     return entries.flatMap(e =>
         [e.rel, ...absForms(e)].flatMap(path =>
-            (['Read', 'Edit', 'Grep', 'Glob'] as const).map(
-                tool => `${tool}(${path})`,
-            ),
+            ([
+                'Read',
+                'Edit',
+                'Write',
+                'NotebookEdit',
+                'Grep',
+                'Glob',
+            ] as const).map(tool => `${tool}(${path})`),
         ),
     )
 }

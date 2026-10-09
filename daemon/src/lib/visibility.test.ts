@@ -132,13 +132,20 @@ const SAMPLE_ENTRIES: DenyEntry[] = [
     { rel: 'secret.md', abs: '/vault/secret.md' },
 ]
 
-test('buildManagedSettingsDeny: emits Read/Edit/Grep/Glob rules for BOTH path forms', () => {
+test('buildManagedSettingsDeny: emits Read/Edit/Write/NotebookEdit/Grep/Glob rules for BOTH path forms', () => {
     const deny = buildManagedSettingsDeny(SAMPLE_ENTRIES)
-    for (const tool of ['Read', 'Edit', 'Grep', 'Glob']) {
+    for (const tool of [
+        'Read',
+        'Edit',
+        'Write',
+        'NotebookEdit',
+        'Grep',
+        'Glob',
+    ]) {
         expect(deny).toContain(`${tool}(secret.md)`)
         expect(deny).toContain(`${tool}(/vault/secret.md)`)
     }
-    expect(deny.length).toBe(8)
+    expect(deny.length).toBe(12)
 })
 
 test('absDenyPaths: pulls just the absolute form', () => {
