@@ -1,14 +1,12 @@
-// The first-run intro's per-slide hero, centred in the art box: the gradient wordmark on the welcome
-// slide, the daemon's status + cron table + log and the agents-to-MCP-to-vault diagram as glyph
-// art (the pure scenes in ./glyphScenes, painted by GlyphArt), and the wordmark over the
-// `> open vault_` prompt on the begin slide. The parent remounts it per slide, which restarts a
-// scene's reveal.
+// The first-run intro's per-slide hero, centred over the slide's copy: the gradient wordmark on the
+// welcome and begin slides, and the daemon's status + cron table + log and the agents-to-MCP-to-vault
+// diagram as glyph art (the pure scenes in ./glyphScenes, painted by GlyphArt). The parent remounts
+// it per slide, which restarts a scene's reveal.
 import { Match, Switch, type Component } from 'solid-js'
 import GlyphArt from '../ui/ascii/GlyphArt'
 import Wordmark from '../ui/Wordmark'
 import { agentsScene } from './glyphScenes/agents'
 import { daemonScene } from './glyphScenes/daemon'
-import IntroPrompt from './IntroPrompt'
 import type { SlideHero } from './introSlides'
 import styles from './IntroHero.module.css'
 
@@ -27,19 +25,19 @@ export type IntroHeroProps = {
 const IntroHero: Component<IntroHeroProps> = props => {
     return (
         <div
-            class={`${styles['intro-hero']}${props.className ? ` ${props.className}` : ''}`}
+            class={[
+                styles['intro-hero'],
+                props.hero === 'daemon' || props.hero === 'agents'
+                    ? styles['intro-hero--tall']
+                    : '',
+                props.className ?? '',
+            ]
+                .filter(Boolean)
+                .join(' ')}
         >
             <Switch>
                 <Match when={props.hero === 'wordmark'}>
                     <Wordmark size="hero" />
-                </Match>
-                <Match when={props.hero === 'begin'}>
-                    <div class={styles.begin}>
-                        <Wordmark size="hero" />
-                        <div class={styles['begin-prompt']}>
-                            <IntroPrompt text="open vault" />
-                        </div>
-                    </div>
                 </Match>
                 <Match when={props.hero === 'daemon'}>
                     <GlyphArt

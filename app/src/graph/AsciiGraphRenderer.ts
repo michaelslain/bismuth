@@ -192,7 +192,6 @@ import {
     PAD_Y,
     ZOOM_STEP_PCT,
     compactScale,
-    depthAlpha,
     fitPxPerWorld,
     gridMetrics,
     maxResFor,
@@ -341,8 +340,6 @@ const EDGE_BASE_ALPHA_FALLBACK = 1
 export const EDGE_W_GAIN = 0.4,
     EDGE_W_MIN = 0.08,
     EDGE_W_MAX = 1.6 // CanvasGraphRenderer.ts drawCanvas()
-const EDGE_DEPTH_MIN = 0.04,
-    EDGE_DEPTH_CURVE = 2.4 // CanvasGraphRenderer.ts DEPTH_MIN_OPACITY/DEPTH_CURVE
 const EDGE_DEPTH_BANDS = 6 // CanvasGraphRenderer.ts drawCanvas()'s 3D depth banding
 
 // Colour slots. Every colour is a CSS custom property read off the host, so a theme switch is a
@@ -868,7 +865,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // allocates nothing, same discipline as the old `putEdge` closure it replaces.
     private edgeAccent: EdgeView[] = [] // hovered-incident, full alpha
     private edgeDim: EdgeView[] = [] // dimmed by an active focus/highlight set
-    private edgeMain: EdgeView[] = [] // 2D, no depth fade
+    private edgeMain: EdgeView[] = [] // 2D, unbanded
     private edgeFan: EdgeView[] = [] // flat 2D field: an edge into a hub's fan, a step quieter
     private edgeBands: EdgeView[][] = Array.from(
         { length: EDGE_DEPTH_BANDS },
@@ -2262,8 +2259,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
      *   mid/near  — the GLYPHS own it: the screen positions `projectNodes()` already wrote this frame
      *               (nv.sx/nv.sy), never a re-projection (there is only ever one projection pass per
      *               frame), dropping any node not in front of the camera (`nv.projValid`, the same
-     *               test drawn nodes/edges gate on). Weighted by depth — the same `depthAlpha` curve
-     *               the nodes themselves fade by, rather than a second invented one.
+     *               test drawn nodes/edges gate on). Each node weighs the same at every depth, as
+     *               the nodes themselves draw at full alpha near and far.
      *   crossfade — BOTH contribute, each scaled by its own band weight (`massAlpha` distributed over
      *               `levelAlphas`, and `glyphAlpha`), which sum to 1. No pop, no dark window.
      *
@@ -2368,7 +2365,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
                 const x = nv.sx / this.W,
                     y = nv.sy / this.H
                 if (!Number.isFinite(x) || !Number.isFinite(y)) continue
-                const w = depthAlpha(nv.dr) * this.glyphAlpha
+                const w = this.glyphAlpha
                 pts.push({ x, y, weight: w, rgb: this.nodeBloomRgb(nv) })
                 weight += w
             }
@@ -2896,7 +2893,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
                     id === this.hoveredId ||
                     id === this.activeFile ||
                     this.searchMatches.has(id)
-                let alpha = is2d ? 1 : depthAlpha(nv.dr)
+                let alpha = 1
                 if (focus && !focus.has(id)) alpha *= DIM_ALPHA
                 if (nv.dim) alpha *= 0.45
                 if (hot) alpha = 1
@@ -4215,13 +4212,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
         pass(this.edgeDim, base * EDGE_DIM_ALPHA, edgeHex)
         pass(this.edgeFan, base * FAN_EDGE_ALPHA, edgeHex)
         pass(this.edgeMain, base, edgeHex)
-        for (let bi = 0; bi < EDGE_DEPTH_BANDS; bi++) {
-            const fade =
-                EDGE_DEPTH_MIN +
-                (1 - EDGE_DEPTH_MIN) *
-                    Math.pow((bi + 0.5) / EDGE_DEPTH_BANDS, EDGE_DEPTH_CURVE)
-            pass(this.edgeBands[bi], base * fade, edgeHex)
-        }
+        // Every band strokes at full alpha: depth is cued by draw order and glyph weight, never by
+        // fading what is far from the camera.
+        for (let bi = 0; bi < EDGE_DEPTH_BANDS; bi++)
+            pass(this.edgeBands[bi], base, edgeHex)
         // `lit`, not the bare `memberEdgeAlpha` — see EDGE_BASE_ALPHA_FALLBACK's comment: it already
         // folds in the per-theme edgeBaseAlpha, so every pass (including this one) stays on the one knob.
         pass(this.edgeAccent, lit, accentHex)
@@ -4290,7 +4284,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
                 }
                 if (this.layerBuf[i] === LAYER_NODE) drawnNodes++
                 // Quantize alpha so near-identical cells share a run (16 buckets is invisible, and it keeps
-                // a depth-faded field from degenerating into one fillText per character).
+                // a dimmed or crossfading field from degenerating into one fillText per character).
                 const a = this.alphaBuf[i] & 0xf0
                 const col = this.colorBuf[i]
                 if (run && (col !== runColor || a !== runAlpha)) flush()

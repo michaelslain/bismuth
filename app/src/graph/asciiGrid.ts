@@ -170,13 +170,6 @@ export function nodeGlyph(
     return NODE_GLYPHS[glyphTier(deg, dr, is3d, bands)]
 }
 
-/** Per-band alpha for the 3D depth fade (near = opaque, far = faint). */
-export function depthAlpha(dr: number, min = 0.22, curve = 1.8): number {
-    if (!Number.isFinite(dr)) return 1
-    const t = dr < 0 ? 0 : dr > 1 ? 1 : dr
-    return min + (1 - min) * Math.pow(t, curve)
-}
-
 const EDGE_CHARS = new Set(['-', '|', '/', '\\', '+'])
 
 /**

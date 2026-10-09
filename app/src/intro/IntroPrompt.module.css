@@ -1,8 +1,0 @@
-/* app/src/intro/IntroPrompt.module.css — one mono line; the `>` is the accent (Text has no accent tone). */
-.intro-prompt {
-  white-space: pre;
-}
-
-.mark {
-  color: var(--accent);
-}

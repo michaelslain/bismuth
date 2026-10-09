@@ -1,4 +1,5 @@
-/* app/src/intro/IntroHero.module.css — the hero fills the art box and centres its art.
+/* app/src/intro/IntroHero.module.css — the hero centres its art. The glyph diagrams take the
+   window's full art height (`--intro-art-h`, IntroWindow); the wordmark slides take their content's.
    `--glyph-scale-cap` is the one hook ui/ascii's GlyphCanvas reads to cap how far a host's art may
    grow; this is the only host that sets it, from the `--intro-glyph-scale` token, so every other
    GlyphArt stays at the primitive's own MAX_SCALE. (The token stays a `:root` token, not a value
@@ -7,23 +8,11 @@
 .intro-hero {
   --glyph-scale-cap: var(--intro-glyph-scale);
   width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* the begin slide: the wordmark alone is centred (same y as the welcome slide); the prompt hangs
-   out of flow one --sp-6 below it */
-.begin {
-  position: relative;
-  display: flex;
-  justify-content: center;
-}
-
-.begin-prompt {
-  position: absolute;
-  top: calc(100% + var(--sp-6));
-  left: 50%;
-  transform: translateX(-50%);
+.intro-hero--tall {
+  height: var(--intro-art-h);
 }

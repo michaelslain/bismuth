@@ -215,7 +215,7 @@ function mountIntroGraph(
 
 describe('VaultIntro — the graph slide on the unified renderer', () => {
     it('the cloud is the fixture the slide describes', () => {
-        expect(BIG_GRAPH.nodes.length).toBe(337)
+        expect(BIG_GRAPH.nodes.length).toBe(244)
         // the renderer only auto-spins a 3D graph of at most 350 nodes; the intro's must turn
         expect(BIG_GRAPH.nodes.length).toBeLessThanOrEqual(350)
         // Positions are BAKED (no force settle, no auto-fit race) — every node must carry one.
@@ -224,7 +224,7 @@ describe('VaultIntro — the graph slide on the unified renderer', () => {
 
     it("paints the three-brains slide's whole-vault cloud inside the art box", () => {
         const { r, painted } = mountIntroGraph(BIG_GRAPH)
-        // 336 notes in six topic blossoms: many share a cell, so the painted count is a large fraction of
+        // 243 notes in nine topics and their bridges: many share a cell, so the painted count is a large fraction of
         // the field rather than the node count. The number that matters is that it is NOT near-zero —
         // a mis-framed cloud empties the grid.
         expect(painted.at(-1)).toBeGreaterThan(80)

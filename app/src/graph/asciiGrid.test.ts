@@ -19,7 +19,6 @@ import {
     clipSegmentToGrid,
     compactScale,
     degreeTier,
-    depthAlpha,
     depthBand,
     fitPxPerWorld,
     glyphTier,
@@ -135,14 +134,6 @@ describe('depth banding (the 3D cue is the GLYPH, never the font)', () => {
     it('clamps at both ends of the ramp', () => {
         expect(glyphTier(0, 0, true)).toBe(0)
         expect(glyphTier(50, 1, true)).toBe(2)
-    })
-
-    it('fades alpha with depth, monotonically, never below the floor', () => {
-        expect(depthAlpha(0)).toBeCloseTo(0.22, 5)
-        expect(depthAlpha(1)).toBeCloseTo(1, 5)
-        expect(depthAlpha(0.5)).toBeGreaterThan(depthAlpha(0.2))
-        expect(depthAlpha(-5)).toBeCloseTo(0.22, 5)
-        expect(depthAlpha(5)).toBeCloseTo(1, 5)
     })
 })
 

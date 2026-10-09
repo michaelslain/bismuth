@@ -9,7 +9,7 @@ import type { ThemeName } from '../themes'
 import { applyGraphConfig } from './vaultIntroGraph'
 import styles from './IntroGraph.module.css'
 
-export type IntroGraphStage = 'backdrop' | 'hero'
+export type IntroGraphStage = 'hero'
 
 export type IntroGraphProps = {
     graph: GraphData
@@ -17,10 +17,8 @@ export type IntroGraphProps = {
     active: boolean
     theme: ThemeName
     /** Where the ONE intro graph stands, inside IntroWindow's backdrop slot (the whole window body).
-     *  'backdrop' — small and dim behind the palette slide's theme cards. 'hero' — the three-brains
-     *  slide: brought forward over the art box, larger and at full strength. Changing it animates
-     *  the move (the renderer re-fits as its box grows), so the same graph slides into the
-     *  foreground. Absent: it fills its parent box (stories). */
+     *  'hero' — the palette and three-brains slides: over the art, larger than it and at full
+     *  strength. Absent: it fills its parent box (stories). */
     stage?: IntroGraphStage
     class?: string
 }
@@ -44,7 +42,6 @@ const IntroGraph: Component<IntroGraphProps> = props => {
             class={`${styles['root']}${props.class ? ` ${props.class}` : ''}`}
             classList={{
                 [styles['active']]: props.active,
-                [styles['stage-backdrop']]: props.stage === 'backdrop',
                 [styles['stage-hero']]: props.stage === 'hero',
             }}
         >

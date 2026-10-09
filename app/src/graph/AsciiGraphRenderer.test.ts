@@ -5230,7 +5230,7 @@ describe('the phosphor bloom is emitted by whichever pass owns the field (Task 1
         const stats = r.computeStats()
         expect(stats.bloomPoints).toBe(SPREAD_COUNT) // one point per node, no clouds
         expect(stats.bloomWeight).toBeGreaterThan(0)
-        expect(stats.bloomWeight).toBeLessThanOrEqual(SPREAD_COUNT) // depthAlpha <= 1 per node
+        expect(stats.bloomWeight).toBeLessThanOrEqual(SPREAD_COUNT) // weight <= 1 per node
     })
 
     /**

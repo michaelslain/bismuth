@@ -28,3 +28,14 @@
 .vi-root *::after {
   box-sizing: border-box;
 }
+
+/* The palette and three-brains slides' art is the backdrop graph, so the art slot holds this: the
+   room the graph's stage (IntroGraph) is drawn over, at the window's full art height. The palette
+   slide's theme names sit at its foot, under the cloud. */
+.graph-room {
+  width: 100%;
+  height: var(--intro-art-h);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}

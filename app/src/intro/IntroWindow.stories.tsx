@@ -36,7 +36,7 @@ const Stage = (height: string) => (Story: () => JSX.Element) => (
 )
 
 const args = {
-    art: <Text size="ui">art box // fixed height, content centred</Text>,
+    art: <Text size="ui">art // centred over the copy</Text>,
     text: (
         <>
             <Heading level={1} size="hero" register="prose">
@@ -66,16 +66,31 @@ export const EmptyArt: Story = {
     decorators: [Stage('100vh')],
 }
 
-/** A 640px-tall container: the art box drops to 16 rows and the footer stays inside the window. */
+/** The body's height: two --sp-7 paddings, the art height (`--intro-art-h`) and nine copy rows. */
+const bodyRows = (canvasElement: HTMLElement) => {
+    const rowH = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
+    )
+    const body = canvasElement.querySelector('[data-intro-slot="art"]')!.parentElement!
+    const pad = parseFloat(getComputedStyle(body).paddingTop)
+    return (body.getBoundingClientRect().height - 2 * pad) / rowH - 9
+}
+
+/** The art and the copy centre as one group: the gap above the art matches the gap below the copy. */
+const expectCentred = async (canvasElement: HTMLElement) => {
+    const body = canvasElement.querySelector('[data-intro-slot="art"]')!.parentElement!
+    const box = body.getBoundingClientRect()
+    const art = canvasElement.querySelector('[data-intro-slot="art"]')!.getBoundingClientRect()
+    const text = canvasElement.querySelector('[data-intro-slot="text"]')!.getBoundingClientRect()
+    await expect(Math.abs(art.top - box.top - (box.bottom - text.bottom))).toBeLessThan(2)
+}
+
+/** A 640px-tall container: the art height drops to 16 rows and the footer stays inside the window. */
 export const ShortWindow: Story = {
     args,
     decorators: [Stage('640px')],
     play: async ({ canvasElement }) => {
-        const rowH = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
-        )
-        const art = canvasElement.querySelector('[data-intro-slot="art"]')!
-        await expect(art.getBoundingClientRect().height).toBeCloseTo(16 * rowH, 0)
+        await expect(bodyRows(canvasElement)).toBeCloseTo(16, 0)
         const footer = canvasElement.querySelector('[data-intro-slot="footer"]')!
         await expect(footer.getBoundingClientRect().bottom).toBeLessThanOrEqual(
             canvasElement.getBoundingClientRect().bottom,
@@ -83,16 +98,14 @@ export const ShortWindow: Story = {
     },
 }
 
-/** A tall container (900px, over the 44rem step): the full 24-row art box. */
+/** A tall container (900px, over the 44rem step): the full 24-row art height, with the art and
+ *  the copy centred in the body as one group. */
 export const TallWindow: Story = {
     args,
     decorators: [Stage('900px')],
     play: async ({ canvasElement }) => {
-        const rowH = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
-        )
-        const art = canvasElement.querySelector('[data-intro-slot="art"]')!
-        await expect(art.getBoundingClientRect().height).toBeCloseTo(24 * rowH, 0)
+        await expect(bodyRows(canvasElement)).toBeCloseTo(24, 0)
+        await expectCentred(canvasElement)
     },
 }
 

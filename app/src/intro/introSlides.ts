@@ -11,7 +11,7 @@ export type SlideKey =
     | 'pickagent'
     | 'powerups'
     | 'begin'
-export type SlideHero = 'wordmark' | 'daemon' | 'agents' | 'begin'
+export type SlideHero = 'wordmark' | 'daemon' | 'agents'
 export type SlideExtra = 'themes' | 'pickagent' | 'powerups' | 'cta'
 
 export type Slide = {
@@ -47,29 +47,29 @@ export const SLIDES: Slide[] = [
         key: 'graph',
         label: 'three brains',
         title: 'Three brains, one mind',
-        body: "Your notes and Bismuth's memory connect into one graph, so what you know and what it learns stay woven together.",
+        body: "(1) You, (2) your notes, and (3) Bismuth's memory ",
     },
     {
         key: 'daemon',
         label: 'daemon',
         title: 'An agent that never sleeps',
-        body: "A background daemon runs on a schedule: folding new memory into your graph, re-linking notes, and surfacing what you'd forgotten.",
+        body: 'A background daemon runs on a schedule: consolidating memory, forging connections, and executing tasks.',
         hero: 'daemon',
     },
     {
         key: 'agents',
         label: 'agents',
         title: 'Bring your own agent',
-        body: 'Chat runs on whichever coding agent you already use — Claude Code, Codex, Gemini, opencode, Cline, Goose. Bismuth speaks MCP, so any of them can search the docs and write your bases, queries and notes.',
+        body: 'Daemon runs on whatever service you are already using: Claude Code, Codex, Gemini, opencode, Cline, Goose.',
         hero: 'agents',
     },
     {
         key: 'pickagent',
         label: 'agent',
         title: 'Pick an agent',
-        body: 'Chat runs on a coding agent on your machine. Pick one you already have, or set up a free one.',
+        body: 'Pick one you already have, or set up a free one.',
         bodyEmpty:
-            'Chat runs on a coding agent on your machine. None is installed yet, so start with a free one.',
+            'Chat runs on an agent on your machine. None is installed yet, so start with a free one.',
         extra: 'pickagent',
     },
     {
@@ -83,8 +83,8 @@ export const SLIDES: Slide[] = [
         key: 'begin',
         label: 'open vault',
         title: 'Open your vault',
-        body: 'Pick a folder and Bismuth makes it a vault. Start writing, and the graph fills itself in.',
-        hero: 'begin',
+        body: '',
+        hero: 'wordmark',
         extra: 'cta',
     },
 ]
@@ -113,7 +113,7 @@ export const POWER_UPS: PowerUp[] = [
         cmd: 'bismuth-install',
         icon: 'SquareTerminal',
         name: 'cli + mcp',
-        desc: 'Drive your vault from the shell, and let your coding agent read the docs + write bases.',
+        desc: 'Operate Bismuth from your terminal and chat.',
     },
 ]
 

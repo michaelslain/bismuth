@@ -222,7 +222,7 @@ The pure compute is `computeLayoutPair()` in `core/src/layoutCompute.ts`. `core/
 
 ### Renderer
 
-`AsciiGraphRenderer.ts` draws to a plain Canvas 2D context. It is the one renderer behind every host: the full-pane graph, the sidebar mini-graph, the first-run intro and the embedded ` ```graph ` block. Hosts hold it only as the `GraphRenderer` interface in `graphRenderer.ts`. Nodes and labels are glyphs snapped to grid cells, and edges are anti-aliased vector strokes beneath them.
+`AsciiGraphRenderer.ts` draws to a plain Canvas 2D context. It is the one renderer behind every host: the full-pane graph, the sidebar mini-graph, the first-run intro and the embedded ` ```graph ` block. Hosts hold it only as the `GraphRenderer` interface in `graphRenderer.ts`. Nodes and labels are glyphs snapped to grid cells, and edges are anti-aliased vector strokes beneath them. In 3D, depth is cued by glyph weight (`glyphTier()` in `asciiGrid.ts`: a far hub drops from `@` to `o`): nodes and edges draw at full alpha at every distance from the camera.
 
 `render(g)` computes `structuralGraphSig()` and skips a rebuild when only coordinates changed. On a structural change, `respace.ts`'s `scaleToSpacing()` measures the median nearest-neighbour distance and applies one uniform scale so the cloud hits `RESPACE_TARGET_SPACING` (14). A uniform scale preserves order, and the renderer shares no spacing constants with the backend.
 

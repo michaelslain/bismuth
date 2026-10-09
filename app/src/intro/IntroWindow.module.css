@@ -1,6 +1,7 @@
-/* The intro's framed window. Fixed-height art box + fixed-height text slot, so the headline sits at
-   one y on every slide whatever the art holds. The window does not position itself: its parent
-   centres it. */
+/* The intro's framed window. The body is one fixed height on every slide (so the window never
+   changes size), and each slide's art and copy centre in it as one group. `--intro-art-h` is the
+   height the tall art (the graph, the glyph diagrams) takes. The window does not position itself:
+   its parent centres it. */
 .intro-window {
   --intro-art-h: calc(24 * var(--row-h));
   display: flex;
@@ -13,7 +14,7 @@
   border-radius: 0;
 }
 /* Short windows: the art box drops to 16 rows so the footer stays on screen. The full window is
-   ~692px tall, and a container query measures the nearest size container's CONTENT box: VaultIntro's
+   ~716px tall, and a container query measures the nearest size container's CONTENT box: VaultIntro's
    root pads its box by --sp-7 (24px) on each side, so 44rem = 704px of content is 752px of window,
    and below that there is no slack. `max-height` is inclusive, so the threshold sits a hair UNDER
    the app's default 1200x800 window (content box 752px = 47rem) and that window keeps the full 24
@@ -38,12 +39,15 @@
 }
 .body {
   position: relative;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  height: calc(2 * var(--sp-7) + var(--intro-art-h) + 9 * var(--row-h));
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--sp-7) var(--sp-7) 0;
+  justify-content: center;
+  gap: var(--sp-6);
+  padding: var(--sp-7);
 }
 /* Behind everything in the body; the art box and the copy stack above it. */
 .backdrop {
@@ -55,13 +59,13 @@
 .art {
   position: relative;
   z-index: 1;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   width: 100%;
-  height: var(--intro-art-h);
 }
 .text {
   position: relative;
@@ -70,8 +74,6 @@
   box-sizing: border-box;
   width: 100%;
   max-width: calc(110 * var(--cell-w));
-  height: calc(9 * var(--row-h));
-  padding-top: var(--sp-6);
   display: flex;
   flex-direction: column;
   align-items: center;

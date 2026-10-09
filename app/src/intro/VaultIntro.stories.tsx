@@ -48,7 +48,7 @@ const Box =
 /** Slide 1 — the hero wordmark (sheen sweeping across it) and the pitch. */
 export const Welcome: Story = { args: { startAt: 'welcome' } }
 
-/** Slide 2 — the four theme cards in one row; picking one re-themes the window live. */
+/** Slide 2 — the theme names in one row; picking one re-themes the window live. */
 export const Theme: Story = { args: { startAt: 'theme' } }
 
 /** Slide 3 — "Three brains, one mind": the big graph cloud drawn inside the art box. */
@@ -74,8 +74,8 @@ export const PickAgentSome: Story = {
 /** Slide 7 — the two power-up cards, both on by default. */
 export const PowerUps: Story = { args: { startAt: 'powerups' } }
 
-/** Slide 8 — the hero wordmark over an `> open vault_` prompt; the footer's primary reads
- *  `[enter your vault]`. */
+/** Slide 8 — the hero wordmark over the copy; the footer's primary, `[enter your vault]`, is the
+ *  slide's one call to action. */
 export const Begin: Story = { args: { startAt: 'begin' } }
 
 /** Slide 2 with the paper theme picked: the selection ring and the whole window in the light palette. */
@@ -117,12 +117,12 @@ export const BeginBusy: Story = {
     },
 }
 
-/** The headline sits at one y on every slide, and the art box is the same size. Walks all eight
- *  slides with the real next button (stopping before the last, which enters the vault) and compares
- *  each slide to slide 1. */
+/** The window is the same size on every slide, and each slide's art and copy sit centred in the
+ *  body as one group. Walks all eight slides with the real next button (stopping before the last,
+ *  which enters the vault). */
 export const Geometry: Story = {
     args: { startAt: 'welcome' },
-    // A 900px stage, over the 44rem short-window step: the art box is the full 24 rows whatever
+    // A 900px stage, over the 44rem short-window step: the art height is the full 24 rows whatever
     // the browser viewport is (the step reads this box, not the viewport).
     decorators: [Box({ height: '900px' })],
     play: async ({ canvasElement }) => {
@@ -133,12 +133,14 @@ export const Geometry: Story = {
                 `[data-intro-slot="${name}"]`,
             ) as HTMLElement
         const measure = () => {
+            const body = slot('art').parentElement!.getBoundingClientRect()
             const art = slot('art').getBoundingClientRect()
+            const text = slot('text').getBoundingClientRect()
             return {
-                artTop: art.top,
-                artH: art.height,
-                h1Top: h1().getBoundingClientRect().top,
                 footerTop: slot('footer').getBoundingClientRect().top,
+                bodyH: body.height,
+                // Above-the-art minus below-the-copy: 0 when the group is centred.
+                skew: art.top - body.top - (body.bottom - text.bottom),
             }
         }
         // The headline's words without the typing cursor (an aria-hidden `_` that rides the title
@@ -150,21 +152,14 @@ export const Geometry: Story = {
         }
         await waitFor(() => expect(words()).toBe(SLIDES[0].title))
         const first = measure()
-        const rowH = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue(
-                '--row-h',
-            ),
-        )
-        await expect(first.artH).toBeCloseTo(24 * rowH, 0)
+        await expect(first.skew).toBeCloseTo(0, 0)
         for (let i = 1; i < SLIDES.length; i++) {
             await userEvent.click(canvas.getByRole('button', { name: /next/ }))
             await waitFor(() => expect(words()).toBe(SLIDES[i].title))
             const m = measure()
-            for (const k of Object.keys(first) as (keyof typeof first)[])
-                await expect(m[k], `slide ${i + 1} ${k}`).toBeCloseTo(
-                    first[k],
-                    0,
-                )
+            await expect(m.footerTop, `slide ${i + 1} footerTop`).toBeCloseTo(first.footerTop, 0)
+            await expect(m.bodyH, `slide ${i + 1} bodyH`).toBeCloseTo(first.bodyH, 0)
+            await expect(Math.abs(m.skew), `slide ${i + 1} skew`).toBeLessThan(2)
         }
     },
 }
@@ -197,7 +192,7 @@ export const DaemonRiso: Story = {
     args: { startAt: 'daemon', initialTheme: 'riso' },
 }
 
-/** A 640px-tall stage: the art box is the 16-row step and the footer stays on screen. */
+/** A 640px-tall stage: the glyph art is the 16-row step and the footer stays on screen. */
 export const ShortWindow: Story = {
     args: { startAt: 'agents' },
     decorators: [Box({ height: '640px' })],
@@ -223,12 +218,12 @@ export const ShortWindow: Story = {
     },
 }
 
-/** The app's DEFAULT 1200x800 window: the art box keeps the full 24 rows. The short-window step is a
+/** The app's DEFAULT 1200x800 window: the glyph art keeps the full 24 rows. The short-window step is a
  *  container query, which reads the root's CONTENT box (800px minus two `--sp-7` paddings = 752px),
  *  so a threshold written in viewport terms (47rem = 752px, inclusive) fires exactly here. Geometry
  *  (900px) and ShortWindow (640px) sit either side of that boundary and cannot see it. */
 export const DefaultWindow: Story = {
-    args: { startAt: 'welcome' },
+    args: { startAt: 'daemon' },
     decorators: [Box({ height: '800px' })],
     play: async ({ canvasElement }) => {
         const rowH = parseFloat(

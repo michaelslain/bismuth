@@ -80,7 +80,7 @@
 //     least as near — one comparison, no second pass or sort. `>=`, not `>`, so a TIE still falls
 //     through to "whichever wrote last": at rest in 2D (and any degenerate/flat 3D frame) every
 //     node's `dr` is the same flat 1, so every contest ties and 2D's arbitration is a verified no-op
-//     there, unchanged from before this task. Depth is still CUED by glyph weight and `depthAlpha`,
+//     there, unchanged from before this task. Depth is still CUED by glyph weight (nodes draw at full alpha at every depth),
 //     not by occlusion — this only decides which node's cue is the one shown. Cell aggregation is
 //     the grid's whole point (two nodes on one cell collapsing to one mark is the mechanism behind
 //     "zoom changes density, not visual language"); this orders the collapse by depth, it does not
@@ -98,25 +98,21 @@
 //     INTO 2D. `is2d` (`rasterize()`'s flag, `cfg.viewMode === "2d"`) is the ARRIVAL mode, true from
 //     the flip's very first frame, but the blended position (`modeMorph`) is still genuinely 3D for
 //     the whole transition — so `nv.dr` is NOT flat yet and this arbitration is actually LIVE, while
-//     `alpha = is2d ? 1 : depthAlpha(nv.dr)` and `nodeGlyph(…, !is2d, …)` (both keyed on the same
-//     `is2d`) already take the flat-2D branch from frame one. The behaviour is arguably still
-//     correct — the nodes really are at different depths on screen mid-morph — but for that window
-//     cell ownership is decided by a depth the user gets no visual (alpha/glyph) cue for at all.
+//     `nodeGlyph(…, !is2d, …)` (keyed on the same `is2d`) already takes the flat-2D branch from frame
+//     one. The behaviour is arguably still correct — the nodes really are at different depths on
+//     screen mid-morph — but for that window cell ownership is decided by a depth the user gets no
+//     glyph cue for at all.
 //
 //     `BACK_INTERACT_CUTOFF` (0.18) — Canvas's SEPARATE behaviour of excluding back-layer nodes from
 //     hover/click entirely, below a fixed depth-rank threshold — did NOT come back, on purpose. This
 //     field's depth cue was already a deliberate departure from Canvas's (occlusion): item 3 below
 //     documents choosing DIMMING over a positive hover ring for the same reason — a weaker affordance
-//     that never fully suppresses. `depthAlpha`'s OWN floor (`min = 0.22` — asciiGrid.ts; note this is
-//     NOT Canvas's `DEPTH_MIN_OPACITY`, a name that exists in `AsciiGraphRenderer.ts` only as a
-//     comment on the unrelated `EDGE_DEPTH_MIN = 0.04`, the edge-fade floor) does mean
-//     `depthAlpha(nv.dr)` alone never reaches 0. But that is not the same claim as "no glyph this
-//     field draws is ever fully invisible" — the composed alpha layers `DIM_ALPHA` (0.28, hover/focus
-//     dimming), `nv.dim` (0.45, daemon-disabled), and `glyphA` (the LOD crossfade weight) ON TOP of
-//     `depthAlpha`, and `paint()` quantizes the result to 16 buckets (`this.alphaBuf[i] & 0xf0`)
-//     before drawing — so anything that composes under 16/255 renders at globalAlpha EXACTLY 0, not
-//     faint. Concretely: with a hover or cluster focus active, a non-focused 3D node below
-//     `dr ≈ 0.054` already paints at 0; add `nv.dim` and the cutoff widens to `dr ≈ 0.56`. So a user
+//     that never fully suppresses. A node draws at full alpha at every depth, but that is not the
+//     same claim as "no glyph this field draws is ever fully invisible" — the composed alpha layers
+//     `DIM_ALPHA` (0.28, hover/focus dimming), `nv.dim` (0.45, daemon-disabled), and `glyphA` (the
+//     LOD crossfade weight), and `paint()` quantizes the result to 16 buckets
+//     (`this.alphaBuf[i] & 0xf0`) before drawing — so anything that composes under 16/255 renders at
+//     globalAlpha EXACTLY 0, not faint, as a node mid-crossfade can. So a user
 //     CAN click a node they cannot see — this is real, just not new: arbitration only changes which
 //     of two CONTESTING nodes claims a cell, and an UNCONTESTED faint-to-invisible node was equally
 //     clickable before this task (the old code wrote `cellNode` unconditionally too). The two
@@ -185,7 +181,7 @@ export interface GraphConfig {
     labelBgColor: string
     selfColor: number
     /** Don't paint the field's own opaque ground — let whatever is behind the canvas show through.
-     *  Set by the first-run Vault Intro, whose graph sits behind the theme cards and then over the
+     *  Set by the first-run Vault Intro, whose graph sits behind the theme names and then over the
      *  art box, on the intro window's own ground; an opaque ground there would paint a `--graph-bg`
      *  slab over the window. See AsciiGraphRenderer's `applyGround()`. */
     transparent?: boolean

@@ -57,14 +57,6 @@ export const Wordmark: Story = {
     },
 }
 
-/** The begin slide: the wordmark with the `> open vault_` prompt one --sp-6 below it. */
-export const Begin: Story = {
-    args: { hero: 'begin' },
-    play: ({ canvasElement }) => {
-        expect(canvasElement.textContent).toContain('> open vault')
-    },
-}
-
 /** The daemon slide: `> bismuth daemon status`, three cron rows and a log. */
 export const Daemon: Story = {
     args: { hero: 'daemon', at: daemonScene.revealMs + 3000 },

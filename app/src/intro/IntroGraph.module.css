@@ -17,16 +17,7 @@
 .root.active {
   opacity: 1;
 }
-/* The palette slide: set back, inside the middle of the window body, and dim, so the theme cards
-   on top read first. */
-.root.stage-backdrop {
-  top: 12%;
-  height: 76%;
-}
-.root.active.stage-backdrop {
-  opacity: 0.5;
-}
-/* The three-brains slide: brought forward over the art box (IntroWindow's --intro-art-h, below
+/* The palette and three-brains slides: brought forward over the art (IntroWindow's --intro-art-h, below
    --sp-7 of body padding) and larger than it. The 3D fit only fills ~84% of its box's height, so
    the box spills 8% of the art height past the top and bottom, which brings the cloud to the art
    box's own height: it never reaches the strip or the text. */

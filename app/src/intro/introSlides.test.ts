@@ -33,12 +33,12 @@ describe('SLIDES', () => {
         expect(by.welcome.hero).toBe('wordmark')
         expect(by.daemon.hero).toBe('daemon')
         expect(by.agents.hero).toBe('agents')
-        expect(by.begin.hero).toBe('begin')
+        expect(by.begin.hero).toBe('wordmark')
         expect(by.theme.extra).toBe('themes')
         expect(by.powerups.extra).toBe('powerups')
         expect(by.begin.extra).toBe('cta')
     })
-    it('pins every title and body to the wording at bust-base', () => {
+    it('pins every title and body', () => {
         expect(SLIDES.map(s => [s.key, s.title, s.body])).toEqual([
             [
                 'welcome',
@@ -53,22 +53,22 @@ describe('SLIDES', () => {
             [
                 'graph',
                 'Three brains, one mind',
-                "Your notes and Bismuth's memory connect into one graph, so what you know and what it learns stay woven together.",
+                "(1) You, (2) your notes, and (3) Bismuth's memory ",
             ],
             [
                 'daemon',
                 'An agent that never sleeps',
-                "A background daemon runs on a schedule: folding new memory into your graph, re-linking notes, and surfacing what you'd forgotten.",
+                'A background daemon runs on a schedule: consolidating memory, forging connections, and executing tasks.',
             ],
             [
                 'agents',
                 'Bring your own agent',
-                'Chat runs on whichever coding agent you already use — Claude Code, Codex, Gemini, opencode, Cline, Goose. Bismuth speaks MCP, so any of them can search the docs and write your bases, queries and notes.',
+                'Daemon runs on whatever service you are already using: Claude Code, Codex, Gemini, opencode, Cline, Goose.',
             ],
             [
                 'pickagent',
                 'Pick an agent',
-                'Chat runs on a coding agent on your machine. Pick one you already have, or set up a free one.',
+                'Pick one you already have, or set up a free one.',
             ],
             [
                 'powerups',
@@ -78,7 +78,7 @@ describe('SLIDES', () => {
             [
                 'begin',
                 'Open your vault',
-                'Pick a folder and Bismuth makes it a vault. Start writing, and the graph fills itself in.',
+                '',
             ],
         ])
     })
@@ -117,7 +117,7 @@ describe('SLIDES', () => {
     it('keeps the authored copy', () => {
         expect(SLIDES[0].title).toBe('Notes that think')
         expect(SLIDES[7].title).toBe('Open your vault')
-        expect(SLIDES.every(s => s.title && s.body)).toBe(true)
+        expect(SLIDES.every(s => s.title)).toBe(true)
     })
 })
 
@@ -125,7 +125,7 @@ describe('slideBody', () => {
     const pick = SLIDES.find(s => s.key === 'pickagent')!
     it('says none is installed only when the slide has that wording and nothing was found', () => {
         expect(slideBody(pick, true)).toBe(
-            'Chat runs on a coding agent on your machine. None is installed yet, so start with a free one.',
+            'Chat runs on an agent on your machine. None is installed yet, so start with a free one.',
         )
         expect(slideBody(pick, false)).toBe(pick.body)
         const theme = SLIDES.find(s => s.key === 'theme')!

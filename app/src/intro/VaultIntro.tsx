@@ -137,14 +137,10 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     const agent = () => picked() ?? defaultIntroAgent(agentOptions())
     const noneFound = () => detected().length === 0
     const slide = () => SLIDES[index()]
-    /** Where the intro graph stands on this slide, or nothing: behind the theme cards, then in the
-     *  foreground on the three-brains slide. */
+    /** Where the intro graph stands on this slide, or nothing: at full strength over the art on the
+     *  palette slide (so a theme pick shows on it) and the three-brains slide. */
     const graphStage = (): IntroGraphStage | undefined =>
-        slide().key === 'theme'
-            ? 'backdrop'
-            : slide().key === 'graph'
-              ? 'hero'
-              : undefined
+        slide().key === 'theme' || slide().key === 'graph' ? 'hero' : undefined
 
     // The intro mounts and unmounts inside a running page (Storybook, replay): record :root's
     // theme vars before the first paint below and put them back on the way out.
@@ -214,11 +210,15 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                 <Show when={s.hero}>
                                     {hero => <IntroHero hero={hero()} />}
                                 </Show>
-                                <Show when={s.extra === 'themes'}>
-                                    <ThemePicker
-                                        value={theme()}
-                                        onChange={setTheme}
-                                    />
+                                <Show when={graphStage()}>
+                                    <div class={styles['graph-room']}>
+                                        <Show when={s.extra === 'themes'}>
+                                            <ThemePicker
+                                                value={theme()}
+                                                onChange={setTheme}
+                                            />
+                                        </Show>
+                                    </div>
                                 </Show>
                                 <Show when={s.extra === 'pickagent'}>
                                     <PowerUpList

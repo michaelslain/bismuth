@@ -27,7 +27,7 @@ const PowerUpList: Component<PowerUpListProps> = props => {
         <div class={[styles.list, props.class ?? ''].filter(Boolean).join(' ')}>
             <For each={props.items}>
                 {p => (
-                    <Card class={styles.powerup}>
+                    <Card variant="quiet" class={styles.powerup}>
                         <ToggleRow
                             icon={p.icon}
                             label={p.name}
