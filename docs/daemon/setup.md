@@ -129,7 +129,8 @@ These `.settings` keys control the daemon. Every key is per vault; [the settings
 | `daemon.inheritUserMcp` | boolean | `false` | Lets daemon sessions use your own `claude` MCP servers and plugins. |
 | `daemon.recall.enabled` | boolean | `true` | Automatic memory injection into agent sessions. |
 | `daemon.recall.midTurn` | boolean | `true` | Also recall after each batch of tool calls. |
-| `daemon.recall.semantic` | boolean | `true` | Also match notes by meaning, not only by words. |
+
+Matching notes by meaning, not only by words, is the separate `embeddings.enabled` setting (boolean, default `false`). [The settings reference](../settings/reference.md#embeddings) has the cost.
 
 ## Failure modes
 

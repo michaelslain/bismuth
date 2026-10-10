@@ -170,8 +170,10 @@ They override framework habits, and most violations compile, render and pass tes
 | editor, ink | `docs/editor/markdown.md`, `docs/editor/ink.md` |
 | chat backends | `docs/chat/overview.md`, `docs/chat/backends.md` |
 | daemon | `docs/daemon/overview.md` |
+| memory injection, the session-start brain, the vault map, the dream | `docs/daemon/communication.md`, `docs/vault/map.md`, `docs/daemon/memory.md` |
 | feedback page, `bismuth feedback`, the hosted relay in `services/feedback/` | `docs/overview/feedback.md` |
 | visibility (what agents may read) | `docs/vault/visibility.md` |
+| vault semantic search, embeddings switch | `docs/vault/semantic-search.md` |
 | mobile | `docs/mobile/overview.md` |
 | on-disk layout | `docs/overview/storage.md` |
 

@@ -99,6 +99,7 @@ const EXPECTED = [
     'POST /rows/update',
     'POST /search',
     'POST /search-prompt',
+    'POST /search/semantic',
     'POST /set-properties',
     'POST /set-property',
     'POST /set-setting',

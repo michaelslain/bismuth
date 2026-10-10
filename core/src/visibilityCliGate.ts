@@ -261,6 +261,8 @@ const FILTERED_COMMANDS = new Set([
     'relay',
     'note',
     'daily',
+    'map',
+    'brain',
 ])
 
 /**

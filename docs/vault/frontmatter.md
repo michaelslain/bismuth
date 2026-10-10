@@ -198,7 +198,8 @@ The body is never altered.
 `setFrontmatterKey` and `deleteFrontmatterKey` take and return a markdown string and never touch the file system.
 Both go through `mutateFrontmatter`, which edits the AST with the `yaml` Document API so key order, quoting, comments and flow versus block lists survive.
 It writes with `lineWidth: 0` (no folding, because the daemon's cron and process parser is line-based) and `flowCollectionPadding: false` (`[a, b]`, not `[ a, b ]`).
-If the block is malformed it falls back to `yaml.parse` plus `yaml.stringify`, which drops comments but does not corrupt the note.
+If the block is malformed it falls back to `parseFrontmatterData` plus `yaml.stringify`, which drops comments but does not corrupt the note. Both paths parse at the `error` log level, so a collection key such as `{{date}}` prints no warning.
+`parseFrontmatter` reads malformed, list or scalar frontmatter as `{}`.
 `setFrontmatterKey` on a note without frontmatter prepends a fresh block.
 
 ### Property registry

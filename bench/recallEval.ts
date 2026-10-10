@@ -9,14 +9,21 @@
 // --reranker <module> (needs --semantic): default export createReranker({ cacheDir }) returning
 // { rerank(query, passages): Promise<number[]>; dispose(): void }; enables the `rerank` ranker
 // (hybrid, then the top RERANK_CANDIDATES reranked and gated; the query is `rerankQuery`, as in production). --sweep then also sweeps minLogit.
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+//   bun bench/recallEval.ts --dir <memoryDir> --cases <file> --service [--embeddings off|on] [--vault <dir>] [--explain] [--json]
+// --service: every case goes through `createRecallService` (core/src/memoryRecall.ts) and the scored
+// list is what it injects. off = no embedder / semanticScores / reranker and settings semantic:false;
+// on = the real semantic channel + reranker, as `recallServiceFor` wires them (the model downloads to
+// ~/.bismuth/models on first use). The legacy and bm25 rows ride along for comparison. --explain
+// prints, for each miss and false injection, the lexical ranker's score and the rule that decided it.
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { isMemoryNoteVisibleToDaemon, loadAllNotes } from '../memory/src/graph'
 import type { MemoryNote } from '../memory/src/graph'
 import { PACK_LIMITS, excerptText, packRecall, rankOptions } from '../memory/src/pack'
 import { RERANK_CANDIDATES, RERANK_MAX_DROP, RERANK_MIN_LOGIT, gateByRerank, rerankQuery } from '../memory/src/rerankGate'
 import { bismuthHome } from '../core/src/bismuthHome'
-import { buildRecallIndex, rankNotes } from '../memory/src/rank'
+import { STOP_WORDS, buildRecallIndex, rankNotes, tokenize } from '../memory/src/rank'
 import type { RecallIndex } from '../memory/src/rank'
 import { semanticQueryText, toolQuery } from '../memory/src/queryContext'
 import { capToolCalls } from '../relay/lib/recall'
@@ -215,7 +222,16 @@ export function legacySearch(notes: MemoryNote[], prompt: string, maxResults = 1
 }
 
 // ---- eval ----------------------------------------------------------------------------------------
-export type CaseRun = { injected: string[]; chars: number; ms: number }
+export type CaseRun = {
+    injected: string[]
+    chars: number
+    ms: number
+    /** `--service` only: the service's own `reason` when it injected nothing. */
+    reason?: string
+    /** `--service` only: the semantic channel scored the request / the cross-encoder gate decided it. */
+    semantic?: boolean
+    reranked?: boolean
+}
 
 export type Summary = {
     ranker: string
@@ -406,6 +422,238 @@ export function loadCases(file: string): EvalCase[] {
 export const isToolCase = (c: EvalCase) => !!c.tool
 export const isSubagentCase = (c: EvalCase) => c.mode === 'subagent'
 
+// ---- service: run each case through createRecallService ----------------------------------------
+export type ServiceOpts = { embeddings: 'off' | 'on'; vault?: string }
+export type ServiceRunner = {
+    run(c: EvalCase, i: number): Promise<CaseRun>
+    close(): void
+}
+
+/** One recall service over `memoryDir`. Each case gets its own session id, so the dedup ledger
+ *  never carries one case's injections into the next. A case's `context` becomes the last assistant
+ *  turn of a throwaway transcript, which is how production hands a follow-up its tail. */
+export async function createServiceRunner(memoryDir: string, opts: ServiceOpts): Promise<ServiceRunner> {
+    const { createRecallService } = await import('../core/src/memoryRecall')
+    const tmp = mkdtempSync(join(tmpdir(), 'recall-eval-'))
+    const on = opts.embeddings === 'on'
+    let channel: Awaited<ReturnType<typeof makeChannel>> | undefined
+    async function makeChannel() {
+        const { createSemanticChannel } = await import('../core/src/memoryEmbed')
+        // a long timeout: the first query may wait for the model download and the vector store build
+        return createSemanticChannel({ vectorsDir: join(tmp, 'vectors'), timeoutMs: 600_000 })
+    }
+    let reranker: (() => ReturnType<typeof import('../core/src/memoryRerank').sharedReranker>) | undefined
+    if (on) {
+        channel = await makeChannel()
+        const { sharedReranker } = await import('../core/src/memoryRerank')
+        reranker = () => sharedReranker()
+    }
+    const svc = createRecallService({
+        memoryDir: () => memoryDir,
+        settings: () => ({ enabled: true, midTurn: true, semantic: on }),
+        embedder: () => (channel ? channel.embedder() : null),
+        ...(channel
+            ? {
+                  semanticScores: channel.semanticScores,
+                  semanticOff: () => channel!.pause(),
+                  reranker,
+                  rerankTimeoutMs: 120_000,
+              }
+            : {}),
+        ...(opts.vault ? { vault: opts.vault } : {}),
+    })
+    if (on) {
+        // warm the model, the vector store and the reranker before the clock starts
+        await svc.recall({ mode: 'prompt', sessionId: 'warm', prompt: 'warm up the embedding model and the reranker' })
+        await Promise.all([...channel!.stores.values()].map(s => s.flush()))
+        await svc.recall({ mode: 'prompt', sessionId: 'warm2', prompt: 'warm up the embedding model and the reranker' })
+    }
+    mkdirSync(join(tmp, 'transcripts'), { recursive: true })
+    return {
+        async run(c, i) {
+            const sessionId = `case-${i}`
+            const t0 = performance.now()
+            let res
+            if (c.tool) {
+                res = await svc.recall({ mode: 'tool', sessionId, toolCalls: capToolCalls(c.tool) })
+            } else if (c.mode === 'subagent') {
+                res = await svc.recall({ mode: 'subagent', sessionId, prompt: c.prompt ?? '' })
+            } else {
+                let transcriptPath: string | undefined
+                if (c.context) {
+                    transcriptPath = join(tmp, 'transcripts', `${i}.jsonl`)
+                    const line = (role: string, text: string) =>
+                        JSON.stringify({ type: role, message: { role, content: [{ type: 'text', text }] } })
+                    writeFileSync(transcriptPath, [line('user', 'ok'), line('assistant', c.context)].join('\n'))
+                }
+                res = await svc.recall({
+                    mode: 'prompt',
+                    sessionId,
+                    prompt: c.prompt ?? '',
+                    ...(transcriptPath ? { transcriptPath } : {}),
+                })
+            }
+            return {
+                injected: res.injected,
+                chars: res.context?.length ?? 0,
+                ms: performance.now() - t0,
+                ...(res.reason ? { reason: res.reason } : {}),
+                ...(res.semantic ? { semantic: true } : {}),
+                ...(res.reranked ? { reranked: true } : {}),
+            }
+        },
+        close() {
+            rmSync(tmp, { recursive: true, force: true })
+        },
+    }
+}
+
+/** Why the lexical ranker did or did not inject `expected` for case `c`: the score against the
+ *  mode's minScore, the rank against maxNotes, the terms that matched, and the top rivals. */
+export function explainMiss(p: Prepared, c: EvalCase, expected: string): string {
+    const q = queryOf(c)
+    const mode = q.mode
+    const lim = PACK_LIMITS[mode]
+    const trace = new Map<string, string>()
+    const ranked = rankNotes(p.index, q, { ...rankOptions(mode), trace })
+    const at = ranked.findIndex(r => r.note.name === expected)
+    const top = ranked
+        .slice(0, 3)
+        .map(r => `${r.note.name} ${r.score.toFixed(3)}`)
+        .join('; ')
+    if (at < 0) {
+        const idx = p.notes.findIndex(n => n.name === expected)
+        const terms = [...new Set(tokenize(q.primary))]
+        const inNote = terms.filter(t => p.index.postings.get(t)?.has(idx))
+        const dropped = [...new Set((q.primary.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(w => STOP_WORDS.has(w)))]
+        const heads = inNote.filter(t => p.index.heads[idx]!.has(t))
+        const rule = trace.get(expected)
+        const detail = inNote.length || rule
+            ? `shares ${inNote.map(t => `${t}${heads.includes(t) ? ' (name/tag/description)' : ' (body only)'}`).join(', ') || 'an inflection of a content term'}; ` +
+              (rule ? `dropped by the ${rule} (${terms.length} content terms)` : 'filtered before ranking')
+            : `no content term of the query appears anywhere in it (content terms: ${terms.join(', ') || 'none'}; stop words dropped: ${dropped.join(', ') || 'none'})`
+        return `not retrieved: ${detail}; lexical top: ${top || 'nothing'}`
+    }
+    const r = ranked[at]!
+    const matched = (r.matched ?? []).join(',') || 'none'
+    if (r.score < lim.minScore)
+        return `score ${r.score.toFixed(3)} < ${mode} minScore ${lim.minScore} (rank ${at + 1}, matched: ${matched}); lexical top: ${top}`
+    if (at >= lim.maxNotes) return `score ${r.score.toFixed(3)} clears minScore but rank ${at + 1} > maxNotes ${lim.maxNotes} (matched: ${matched}); lexical top: ${top}`
+    return `score ${r.score.toFixed(3)} rank ${at + 1} clears minScore ${lim.minScore} and maxNotes (matched: ${matched}) yet it was not injected: pack budget or the body-only rule; lexical top: ${top}`
+}
+
+/** For an expect-nothing case that injected: each injected note's lexical score (against the mode's
+ *  minScore) and the query terms that carried it, and whether they sit in its name/tags/description. */
+export function explainInjected(p: Prepared, c: EvalCase, injected: string[]): string[] {
+    const q = queryOf(c)
+    const lim = PACK_LIMITS[q.mode]
+    const trace = new Map<string, string>()
+    const ranked = rankNotes(p.index, q, { ...rankOptions(q.mode), trace })
+    return injected.slice(0, 5).map(name => {
+        const r = ranked.find(x => x.note.name === name)
+        if (!r) return `${name}: injected without a lexical score (link boost)`
+        const idx = p.notes.findIndex(n => n.name === name)
+        const terms = (r.matched ?? []).map(t => `${t}${p.index.heads[idx]!.has(t) ? '*' : ''}`).join(',')
+        return `${name}: score ${r.score.toFixed(3)} vs minScore ${lim.minScore}, matched ${terms} (* = in name/tags/description, else body only), admitted by the ${trace.get(name) ?? 'semantic or link path (no keyword rule)'}`
+    })
+}
+
+export type Finding = { case: number; prompt: string; expected: string[]; injected: string[]; reason?: string; why: string[] }
+
+/** Every positive case that missed an expected note, and every expect-nothing case that injected. */
+export function findings(p: Prepared, cases: EvalCase[], runs: CaseRun[]): Finding[] {
+    const out: Finding[] = []
+    cases.forEach((c, i) => {
+        const run = runs[i]!
+        const label = c.prompt ?? (c.tool ? `tool: ${c.tool.map(t => t.tool_name).join(',')}` : '')
+        if (c.expect.length === 0) {
+            if (run.injected.length > 0)
+                out.push({ case: i, prompt: label, expected: [], injected: run.injected, why: explainInjected(p, c, run.injected) })
+            return
+        }
+        const missed = c.expect.filter(e => !run.injected.slice(0, 5).includes(e))
+        if (missed.length)
+            out.push({
+                case: i,
+                prompt: label,
+                expected: c.expect,
+                injected: run.injected,
+                ...(run.reason ? { reason: run.reason } : {}),
+                why: missed.map(e => `${e}: ${explainMiss(p, c, e)}`),
+            })
+    })
+    return out
+}
+
+/** The minScore values a sweep tries: read off the scores the candidates actually carry (the
+ *  mode's ranked top five per case, deciles of that pool), plus the current minScore and half and
+ *  double of it, so the grid brackets the production value on whatever scale the scores live. */
+export function sweepGrid(p: Prepared, cases: EvalCase[], mode: 'prompt' | 'tool' | 'subagent'): number[] {
+    const scores: number[] = []
+    for (const c of cases) {
+        const q = queryOf(c)
+        for (const r of rankNotes(p.index, q, rankOptions(q.mode)).slice(0, 5)) scores.push(r.score)
+    }
+    scores.sort((a, b) => a - b)
+    const cur = PACK_LIMITS[mode].minScore
+    const grid = new Set<number>([cur / 2, cur, cur * 2])
+    if (scores.length) for (let d = 1; d <= 9; d++) grid.add(scores[Math.floor((d / 10) * scores.length)]!)
+    return [...grid].map(v => Math.round(v * 1000) / 1000).filter((v, i, a) => v > 0 && a.indexOf(v) === i).sort((a, b) => a - b)
+}
+
+async function serviceMain(argv: string[], arg: (n: string) => string | undefined, dir: string, casesFile: string) {
+    const embeddings = arg('embeddings') ?? 'off'
+    if (embeddings !== 'off' && embeddings !== 'on') {
+        console.error('--embeddings takes off or on')
+        process.exit(2)
+    }
+    const vault = arg('vault')
+    const p = await prepare(dir)
+    const all = loadCases(casesFile)
+    const runner = await createServiceRunner(dir, { embeddings, ...(vault ? { vault: resolve(vault) } : {}) })
+    const label = `service-${embeddings}`
+    const groups = [
+        { name: 'prompt mode', pick: (c: EvalCase) => !isToolCase(c) && !isSubagentCase(c) },
+        { name: 'tool mode', pick: isToolCase },
+        { name: 'subagent mode', pick: isSubagentCase },
+    ]
+    const result: Record<string, unknown> = {}
+    const out: string[] = [`notes: ${p.notes.length}  cases: ${all.length}  service embeddings: ${embeddings}`]
+    const allFindings: Finding[] = []
+    try {
+        for (const g of groups) {
+            const cases = all.filter(g.pick)
+            if (cases.length === 0) continue
+            const rows: Summary[] = []
+            for (const r of ['legacy', 'bm25'] as const) rows.push((await evaluate(p, r, cases)).summary)
+            const runs: CaseRun[] = []
+            for (const c of cases) runs.push(await runner.run(c, all.indexOf(c)))
+            rows.push(summarize(label, cases, runs))
+            result[g.name] = rows
+            out.push('', `== ${g.name} (${cases.length} cases)`, table(rows))
+            if (embeddings === 'on')
+                out.push(`${label}: semantic scored ${runs.filter(r => r.semantic).length}/${runs.length}, reranker decided ${runs.filter(r => r.reranked).length}/${runs.length}`)
+            if (argv.includes('--explain')) allFindings.push(...findings(p, cases, runs))
+        }
+    } finally {
+        runner.close()
+    }
+    if (argv.includes('--explain')) {
+        result.findings = allFindings
+        out.push('', `== misses and false injections (${label})`)
+        for (const f of allFindings)
+            out.push(
+                `- [${f.case}] ${f.prompt}`,
+                `    expected: ${f.expected.join(', ') || '(nothing)'}`,
+                `    injected: ${f.injected.join(', ') || '(nothing)'}${f.reason ? ` [${f.reason}]` : ''}`,
+                ...f.why.map(w => `    why: ${w}`),
+            )
+    }
+    if (argv.includes('--json')) console.log(JSON.stringify(result, null, 2))
+    else console.log(out.join('\n'))
+    process.exit(0)
+}
+
 function table(rows: Summary[]): string {
     const f = (n: number) => n.toFixed(3)
     const head = 'ranker   cases  recall@3  recall@5  mrr    falseInj  meanChars  p50ms  p95ms'
@@ -426,8 +674,10 @@ async function main() {
     const casesFile = arg('cases')
     if (!dir || !casesFile) {
         console.error('usage: bun bench/recallEval.ts --dir <memoryDir> --cases <file> [--semantic <module>] [--reranker <module>] [--sweep] [--json]')
+        console.error('       bun bench/recallEval.ts --dir <memoryDir> --cases <file> --service [--embeddings off|on] [--vault <dir>] [--explain] [--json]')
         process.exit(2)
     }
+    if (argv.includes('--service')) return await serviceMain(argv, arg, resolve(dir), resolve(casesFile))
     let embedder: Embedder | undefined
     const semanticModule = arg('semantic')
     if (semanticModule) {
@@ -474,7 +724,7 @@ async function main() {
             if (cases.length === 0) continue
             const orig = PACK_LIMITS[mode].minScore
             const rows: Summary[] = []
-            for (const m of [0.5, 1.5, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 7, 8]) {
+            for (const m of sweepGrid(p, cases, mode)) {
                 PACK_LIMITS[mode].minScore = m
                 const s = (await evaluate(p, embedder ? 'hybrid' : 'bm25', cases)).summary
                 rows.push({ ...s, ranker: `min${m}` })

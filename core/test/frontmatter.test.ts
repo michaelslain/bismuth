@@ -1,6 +1,9 @@
 import { test, expect } from 'bun:test'
+import { buildDenyPaths } from '../src/visibility'
+import { makeVault } from './helpers'
 import {
     parseFrontmatter,
+    parseFrontmatterData,
     setFrontmatterKey,
     deleteFrontmatterKey,
 } from '../src/frontmatter'
@@ -242,4 +245,70 @@ test('setFrontmatterKey preserves the existing key order on update', () => {
     expect(fmLines[0]).toContain('title:')
     expect(fmLines[1]).toContain('status:')
     expect(fmLines[2]).toContain('rating:')
+})
+
+// A collection key (`{{date}}` parses as a flow map) is legal YAML that the yaml package warns about
+// on process.emitWarning / console.warn unless the parse is told logLevel 'error'.
+const COLLECTION_KEY = `---\n{{date}}: today\nvisibility: hidden\n---\nbody`
+
+async function captureWarnings(run: () => Promise<unknown> | unknown): Promise<string[]> {
+    const seen: string[] = []
+    const onWarning = (w: Error) => seen.push(w.message)
+    const origWarn = console.warn
+    console.warn = (...a: unknown[]) => void seen.push(a.join(' '))
+    process.on('warning', onWarning)
+    try {
+        await run()
+        await new Promise(r => setTimeout(r, 20)) // emitWarning delivers on a later tick
+    } finally {
+        process.off('warning', onWarning)
+        console.warn = origWarn
+    }
+    return seen
+}
+
+test('parseFrontmatterData parses quietly, null on an error or a non-map', async () => {
+    const warned = await captureWarnings(() => {
+        const data = parseFrontmatterData('{{date}}: today\nk: 1')
+        expect(data?.k).toBe(1)
+        expect(Object.values(data ?? {})).toContain('today')
+    })
+    expect(warned).toEqual([])
+    expect(parseFrontmatterData('')).toEqual({})
+    expect(parseFrontmatterData('a: [')).toBeNull()
+    expect(parseFrontmatterData('- a\n- b')).toBeNull()
+    expect(parseFrontmatterData('just a string')).toBeNull()
+})
+
+test('the visibility reader does not warn on a collection-valued frontmatter key', async () => {
+    const vault = makeVault({ 'tpl.md': COLLECTION_KEY, 'ok.md': '# ok' })
+    let deny: Awaited<ReturnType<typeof buildDenyPaths>> = []
+    const warned = await captureWarnings(async () => {
+        deny = await buildDenyPaths(vault, 'chat')
+    })
+    expect(warned).toEqual([])
+    expect(deny.map(d => d.rel)).toContain('tpl.md')
+})
+
+test('editing malformed frontmatter with a collection key prints no yaml warning', () => {
+    const warnings: unknown[] = []
+    const emit = process.emitWarning
+    const warn = console.warn
+    process.emitWarning = ((w: unknown) => void warnings.push(w)) as typeof process.emitWarning
+    console.warn = (...a: unknown[]) => void warnings.push(a)
+    try {
+        const out = setFrontmatterKey('---\n{{date}}: x\nbad: [unclosed\n---\nbody\n', 'a', 1)
+        expect(out).toBe('---\na: 1\n---\nbody\n')
+        setFrontmatterKey('---\n{{date}}: x\n---\nbody\n', 'a', 1)
+    } finally {
+        process.emitWarning = emit
+        console.warn = warn
+    }
+    expect(warnings).toEqual([])
+})
+
+test('list or scalar frontmatter reads as no keys', () => {
+    expect(parseFrontmatter('---\n- a\n- b\n---\nbody').data).toEqual({})
+    expect(parseFrontmatter('---\njust text\n---\nbody').data).toEqual({})
+    expect(parseFrontmatter('---\n- a\n---\nbody').body).toBe('body')
 })

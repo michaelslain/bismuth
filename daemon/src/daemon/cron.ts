@@ -3,6 +3,7 @@ import { readdir, readFile, writeFile, unlink } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { sendMessage, composeBackendRefusalNote } from './session'
+import { applyBrainReport } from './brainReport'
 import { atomicWriteJson } from '../lib/atomicJson.ts'
 import { processPageTriggers } from './pages'
 import {
@@ -52,6 +53,9 @@ interface CronJobBase {
     notify: boolean
     model?: string
     effort?: string
+    /** Speed/depth tier (`fast`, `balanced`, `deep`) that picks a model and effort per backend
+     *  when `model`/`effort` are absent (see tier.ts). Kept as the trimmed frontmatter string. */
+    tier?: string
     /** Session timeout in seconds. Default: 300 (5 min). 0 = no timeout. */
     timeout: number
     /** Process pattern to monitor after session ends (matched via pgrep -f). */
@@ -146,6 +150,7 @@ function parseCronFrontmatter(
         notify: frontmatter.notify === 'true',
         model: frontmatter.model,
         effort: frontmatter.effort,
+        tier: frontmatter.tier,
         timeout: parseTimeoutSecs(frontmatter.timeout),
         waitFor: frontmatter.waitFor,
         incremental: frontmatter.incremental === 'true',
@@ -1182,7 +1187,10 @@ async function fireJob(
         try {
             const prompt = buildCronPrompt({
                 jobName: job.name,
-                body: promptOverride ?? job.prompt,
+                body: await applyBrainReport(
+                    ctx,
+                    promptOverride ?? job.prompt,
+                ),
                 memoryDir: ctx.memoryDir,
                 triggerContext: opts?.triggerContext,
                 notify: job.notify,
@@ -1190,6 +1198,7 @@ async function fireJob(
             const response = await sendMessage(prompt, ctx, {
                 model: job.model,
                 effort: job.effort,
+                tier: job.tier,
                 abortController: ac,
                 timeoutSecs: job.timeout,
                 newSession: true,

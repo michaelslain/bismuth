@@ -21,6 +21,7 @@ import { mcpChannel } from '../../core/src/visibilityCliGate'
 import {
     daemonTools,
     daemonEnabled,
+    daemonVaultRoot,
     isDaemonTool,
     runDaemonTool,
 } from './daemon'
@@ -122,6 +123,34 @@ const tools = [
         },
     },
     {
+        name: 'vault_map',
+        description:
+            "The vault's structure: folders, clusters, hub notes, tags, surfaces. around:<note> shows where one note sits (links, siblings, memories). (bismuth map)",
+        inputSchema: {
+            type: 'object',
+            properties: {
+                folder: {
+                    type: 'string',
+                    description: 'Limit to this folder subtree.',
+                },
+                around: {
+                    type: 'string',
+                    description:
+                        "A note path: show its neighbourhood instead of the whole map.",
+                },
+            },
+        },
+    },
+    {
+        name: 'brain',
+        description:
+            'The session-start context: who you work with, the vault map and the memory index. Call once at the start when your context has no vault map. (bismuth brain)',
+        inputSchema: {
+            type: 'object',
+            properties: {},
+        },
+    },
+    {
         name: 'bismuth_cli',
         description:
             "Run the bismuth CLI with these args (e.g. ['task','list','--vault','/path']). Returns stdout/stderr/exit code.",
@@ -175,7 +204,7 @@ const memoryTools = [
                 type: {
                     type: 'string',
                     description:
-                        'person | project | workflow | fact | preference | daily | auto',
+                        'person | project | workflow | fact | preference | daily | auto | profile | hub',
                 },
                 tags: {
                     type: 'array',
@@ -242,7 +271,7 @@ const memoryTools = [
 
 // The memory tools AND the daemon-management tools share ONE gate — the daemon being enabled
 // for this vault (memoryDir()/daemonEnabled(), i.e. BISMUTH_MEMORY_DIR is injected). Outside a
-// daemon-enabled session the server exposes only the always-on six; a machine-wide session
+// daemon-enabled session the server exposes only the always-on set; a machine-wide session
 // with no daemon never sees remember/recall/forget nor the crons/processes/pages tools.
 /** Every tool this server can ever list — the always-on set plus the daemon-gated memory and
  *  daemon tools. `cli/test/mcpParity.test.ts` checks each against CLI_TWINS (./cliTwins.ts). */
@@ -251,6 +280,16 @@ export const ALL_TOOL_NAMES: string[] = [
     ...memoryTools,
     ...daemonTools,
 ].map(t => t.name)
+
+/** PURE: the CLI argv a vault_map call runs. */
+export function vaultMapCliArgs(a: Record<string, unknown>): string[] {
+    const argv = ['map']
+    if (typeof a.folder === 'string' && a.folder.length > 0)
+        argv.push('--folder', a.folder)
+    if (typeof a.around === 'string' && a.around.length > 0)
+        argv.push('--around', a.around)
+    return argv
+}
 
 /** PURE: the CLI argv a bismuth_doctor call runs. Always `--json`, so the agent gets the full
  *  report (findings, fixed, failed, pending) rather than the terminal table. */
@@ -348,6 +387,14 @@ export async function handleCallTool(
             }
             case 'bismuth_doctor':
                 return cliToolResult(await runCli(repoRoot, doctorCliArgs(args)))
+            case 'vault_map':
+            case 'brain': {
+                const root = daemonVaultRoot()
+                if (!root) return textResult('Not in a Bismuth vault: no vault map available.')
+                const argv =
+                    name === 'brain' ? ['brain'] : vaultMapCliArgs(args)
+                return cliToolResult(await runCli(repoRoot, [...argv, '--vault', root]))
+            }
             case 'bismuth_cli': {
                 const cliArgs = Array.isArray(args.args)
                     ? (args.args as unknown[]).map(String)

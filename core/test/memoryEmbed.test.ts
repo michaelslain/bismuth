@@ -91,6 +91,13 @@ test('core boot (server.ts) statically reaches the embedder module but never the
         expect(spec).not.toMatch(/^(@huggingface\/transformers|onnxruntime-)/)
 })
 
+test('vaultEmbed.ts never statically imports the model packages', () => {
+    const g = staticGraph(join(SRC, 'vaultEmbed.ts'))
+    expect(g.files.has(join(SRC, 'memoryEmbed.ts'))).toBe(true)
+    for (const spec of g.bare)
+        expect(spec).not.toMatch(/^(@huggingface\/transformers|onnxruntime-)/)
+})
+
 test('the iPad in-process backend never reaches the embedder or the recall service', () => {
     const g = staticGraph(join(SRC, 'localBackend.ts'))
     expect(g.files.has(join(SRC, 'memoryEmbed.ts'))).toBe(false)
@@ -733,4 +740,59 @@ test('the compiled CLI cannot host the worker: no embedder, BM25 only', () => {
         execPath: '/app/bismuth-core',
     })
     expect(sidecar.embedder()).not.toBeNull()
+})
+
+test('scores takes an optional k; the vault pass batches notes per embed call', async () => {
+    const dir = tempDir('vec-')
+    const { state, embedder } = countingEmbedder()
+    const calls: number[] = []
+    const batched: Embedder = {
+        embed: async t => (calls.push(t.length), embedder.embed(t)),
+        dispose() {},
+    }
+    const store = createVectorStore(dir, '/vault', { embedder: batched, debounceMs: 10, batchNotes: 2 })
+    const notes = Array.from({ length: 5 }, (_, i) => mkNote(`n${i}`, i === 4 ? 'beta' : `alpha ${i}`))
+    await store.scores(Float32Array.from([0, 1]), notes)
+    await store.flush()
+    expect(calls).toEqual([2, 2, 1]) // one embed() per slice, so a query can interleave
+    expect(state.embedded.length).toBe(5)
+    expect((await store.scores(Float32Array.from([0, 1]), notes, 3)).size).toBe(3)
+    expect((await store.scores(Float32Array.from([0, 1]), notes, 50)).size).toBe(5)
+    expect(store.size()).toBe(5)
+    expect(store.bestChunk(Float32Array.from([0, 1]), 'n4')).toBe(0)
+    expect(store.bestChunk(Float32Array.from([0, 1]), 'missing')).toBe(-1)
+})
+
+test('a multi-slice pass persists once at the end, not after every slice', async () => {
+    const dir = tempDir('vec-')
+    const seen: boolean[] = []
+    const file = join(dir, createHash('sha1').update('/vault').digest('hex'), 'vectors-chunked.json')
+    const embedder: Embedder = {
+        embed: async t => (seen.push(existsSync(file)), t.map(() => new Float32Array([1, 0]))),
+        dispose() {},
+    }
+    const store = createVectorStore(dir, '/vault', { embedder, debounceMs: 10, batchNotes: 2 })
+    const notes = Array.from({ length: 6 }, (_, i) => mkNote(`n${i}`, `alpha ${i}`))
+    await store.scores(Float32Array.from([1, 0]), notes)
+    await store.flush()
+    expect(seen).toEqual([false, false, false]) // unthrottled, slices 2 and 3 would see the file
+    expect(existsSync(file)).toBe(true)
+})
+
+test('pause during a multi-slice pass stops further embed calls', async () => {
+    const dir = tempDir('vec-')
+    let calls = 0
+    let store: ReturnType<typeof createVectorStore>
+    const embedder: Embedder = {
+        embed: async t => {
+            calls++
+            store.pause()
+            return t.map(() => new Float32Array([1, 0]))
+        },
+        dispose() {},
+    }
+    store = createVectorStore(dir, '/vault', { embedder, debounceMs: 10, batchNotes: 2 })
+    store.sync(Array.from({ length: 6 }, (_, i) => mkNote(`n${i}`, `alpha ${i}`)))
+    await sleep(200)
+    expect(calls).toBe(1)
 })

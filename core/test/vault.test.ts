@@ -279,3 +279,20 @@ test('malformed YAML frontmatter does not crash', async () => {
     const { graph: g } = await buildVaultGraph(dir)
     expect(g.nodes.length).toBeGreaterThan(0)
 })
+
+test('template placeholder frontmatter parses without yaml warnings', async () => {
+    const dir = tempDir('bismuth-vault-quiet-')
+    await writeNote(dir, 'tpl.md', '---\ndate: {{date}}\ntitle: {{title}}\n---\nbody\n')
+    const warns: unknown[] = []
+    const origWarn = console.warn
+    const origEmit = process.emitWarning
+    console.warn = (...a: unknown[]) => void warns.push(a)
+    process.emitWarning = ((w: unknown) => void warns.push(w)) as typeof process.emitWarning
+    try {
+        await buildVaultGraph(dir)
+    } finally {
+        console.warn = origWarn
+        process.emitWarning = origEmit
+    }
+    expect(warns).toEqual([])
+})

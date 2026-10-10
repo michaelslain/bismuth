@@ -120,6 +120,8 @@ export type RecallIndex = {
     /** field-weighted length per doc */
     lengths: number[]
     avgLength: number
+    /** stem → the indexed terms that share it (see `stem`); the keyword-only path matches across them */
+    stems: Map<string, string[]>
 }
 
 export type RankedNote = {
@@ -168,6 +170,41 @@ const STRICT_BROAD_HITS = 3
  *  lone hit, so the skepticism is off and a small vault is never silenced by it. */
 const SMALL_VAULT = 12
 
+/** Keyword-only evidence rules (no semantic scores at all; tool payloads keep their own rules).
+ *  Set from `bun bench/recallEval.ts --service --embeddings off` on both eval suites; the values
+ *  keep recall@5 at or above where it was and the sensitivity is in the verdict file.
+ *
+ *  A query term also matches the other forms of its stem, at this share of an exact match. */
+const STEM_FORM_WEIGHT = 0.6
+/** A lone body hit's word must still be rarer than this: found in under about a tenth of the notes. */
+const LONE_HIT_MIN_IDF = 0.55
+/** A lone body hit counts only when the note repeats the word (or holds it alone in the vault): at
+ *  least this many mentions, at least this share of the note's length ("push" eight times in a git policy note, against one
+ *  "time" in a log). A word mentioned this often is the note's subject even when it is a small
+ *  part of the prompt, so the coverage check above is waived. */
+const LONE_HIT_MIN_MENTIONS = 2
+const LONE_HIT_MIN_DENSITY = 0.004
+const LONE_HIT_TOPIC_MENTIONS = 4
+/** A note matched only by words from its body needs one of them to be distinctive: a normalized idf
+ *  (see `rankNotes`) of at least this: a word found in a handful of notes (two or three in a vault of
+ *  50 to 150), not merely uncommon. "capital", "function" and "list" name no topic. Set from the
+ *  eval: 0.85 loses a real expected note. */
+const DISTINCT_MIN_IDF = 0.8
+/** ...unless the note holds this share of the prompt's content terms: a short prompt that a note
+ *  answers almost word for word is on topic even when its words are common. */
+const ANSWERED_ENOUGH = 0.75
+/** Prompts of at least this many content terms are checked for how much of them the vault knows. */
+const UNKNOWN_MIN_TERMS = 3
+/** When at least this share of those terms appears nowhere in the vault, the prompt is about
+ *  something the vault holds no memory of and a note that merely shares a word with it is
+ *  coincidence. Set from the eval: no prompt with an expected note has more than a third of its terms
+ *  unknown (a bare follow-up carries its topic in context terms, which exempt a note), so 0.4 sits
+ *  just above that. */
+const UNKNOWN_MAX_SHARE = 0.4
+/** A note whose name, tags or description share this many terms with the prompt is about it,
+ *  whatever else the prompt says. */
+const UNKNOWN_EXEMPT_HEAD_HITS = 2
+
 /** Mild prior on note type: preferences and workflows are likelier to matter than a daily log. */
 const TYPE_PRIOR: Record<string, number> = {
     preference: 1.1,
@@ -188,6 +225,72 @@ export function tokenize(text: string): string[] {
         .toLowerCase()
         .split(/[^a-z0-9\u00c0-\uffff]+/)
         .filter(t => t.length >= 2 && !STOP_WORDS.has(t))
+}
+
+const STEM_SUFFIXES = ['ations', 'ation', 'ments', 'ment', 'ings', 'ing', 'ies', 'ed', 'es', 's']
+const STEM_MIN = 4
+
+/** A light suffix stripper (plural, -ing, -ed, -ation, -ment): "recommend" and "recommendations"
+ *  share a stem. Deliberately conservative: the stem keeps at least STEM_MIN letters, and digit
+ *  tokens (codes, dates) are left whole. Only the keyword-only path matches across a stem. */
+export function stem(term: string): string {
+    if (/\d/.test(term)) return term
+    for (const suf of STEM_SUFFIXES) {
+        if (!term.endsWith(suf) || term.length - suf.length < STEM_MIN) continue
+        if (suf === 's' && /(?:ss|us|is)$/.test(term)) return term
+        const base = term.slice(0, -suf.length)
+        return suf === 'ies' ? `${base}y` : dropFinalE(base)
+    }
+    return dropFinalE(term)
+}
+
+/** -e words share a stem with their inflections: "update" with "updated", "image" with "images". */
+const dropFinalE = (word: string) => (word.length > STEM_MIN && word.endsWith('e') ? word.slice(0, -1) : word)
+
+/** The names of the keyword-only evidence rules, as the eval's --explain prints them. */
+export const RULE = {
+    loneCoverage: 'lone-hit rule: one body word under 0.4 of the prompt',
+    loneMention: 'lone-hit rule: one passing mention of the word',
+    loneCommon: 'lone-hit rule: the word is found in many notes',
+    unknownPrompt: 'unknown-prompt gate: most of the prompt is unknown to the vault',
+    severalCommon: 'several-body-hits rule: no distinctive word among them',
+    severalApart: 'several-body-hits rule: the words are not together in one paragraph',
+    head: 'name/tags/description hit',
+    loneAdmitted: 'lone-hit rule: a repeated body word',
+    phrase: 'phrase exemption: two distinctive words side by side in the prompt and the note',
+    severalAdmitted: 'several-body-hits rule: a distinctive word, together in a paragraph',
+    other: 'body words (no rule dropped it)',
+} as const
+
+/** Unordered key for a pair of terms. */
+const pairKey = (a: string, b: string) => (a < b ? `${a} ${b}` : `${b} ${a}`)
+
+/** The pairs of content terms that sit next to each other (stop words dropped, either order). */
+function adjacentPairs(tokens: string[]): Set<string> {
+    const pairs = new Set<string>()
+    for (let k = 1; k < tokens.length; k++) if (tokens[k] !== tokens[k - 1]) pairs.add(pairKey(tokens[k - 1]!, tokens[k]!))
+    return pairs
+}
+
+/** Per note, the adjacent term pairs of its body, never across a paragraph break: its phrases. */
+const phraseCache = new WeakMap<MemoryNote, { content: string; pairs: Set<string> }>()
+function phrasePairs(note: MemoryNote): Set<string> {
+    const hit = phraseCache.get(note)
+    if (hit && hit.content === note.content) return hit.pairs
+    const pairs = new Set<string>()
+    for (const p of note.content.split(/\n{2,}|\n(?=#{1,6}\s)/)) for (const k of adjacentPairs(tokenize(p))) pairs.add(k)
+    phraseCache.set(note, { content: note.content, pairs })
+    return pairs
+}
+
+/** Per note, the term set of each paragraph (blank-line or heading split): what "found together" means. */
+const windowCache = new WeakMap<MemoryNote, { content: string; windows: Set<string>[] }>()
+function paragraphTerms(note: MemoryNote): Set<string>[] {
+    const hit = windowCache.get(note)
+    if (hit && hit.content === note.content) return hit.windows
+    const windows = note.content.split(/\n{2,}|\n(?=#{1,6}\s)/).map(p => new Set(tokenize(p)))
+    windowCache.set(note, { content: note.content, windows })
+    return windows
 }
 
 function addField(
@@ -227,7 +330,14 @@ export function buildRecallIndex(notes: MemoryNote[]): RecallIndex {
     const avgLength = lengths.length
         ? lengths.reduce((a, b) => a + b, 0) / lengths.length
         : 1
-    return { notes, postings, heads, lengths, avgLength: avgLength || 1 }
+    const stems = new Map<string, string[]>()
+    for (const term of postings.keys()) {
+        const k = stem(term)
+        const forms = stems.get(k)
+        if (forms) forms.push(term)
+        else stems.set(k, [term])
+    }
+    return { notes, postings, heads, lengths, avgLength: avgLength || 1, stems }
 }
 
 /**
@@ -254,6 +364,9 @@ export function rankNotes(
         locationWeight?: number
         /** Tool-payload evidence rule (see `PackLimits.strictEvidence`). */
         strictEvidence?: boolean
+        /** Filled with, per note name, the keyword-only rule that dropped or admitted it (the eval's
+         *  --explain reads it). Never changes the ranking. */
+        trace?: Map<string, string>
     } = {},
 ): RankedNote[] {
     const weights = new Map<string, number>()
@@ -272,21 +385,66 @@ export function rankNotes(
         1,
         Math.min(opts.maxQueryWeight ?? Infinity, [...weights.values()].reduce((a, b) => a + b, 0)),
     )
+    // Keyword-only (no semantic scores at all): a query term also matches the other forms of its
+    // stem, and the evidence rules below read the matched QUERY terms and their rarity. Tool
+    // payloads (strictEvidence) have their own rules and stay exact.
+    const keywordOnly = !(opts.semantic && opts.semantic.size > 0) && !opts.strictEvidence
     const primaryTerms = new Set(tokenize(query.primary))
     for (const t of primaryTerms) locationTerms.delete(t)
+    // Keyword-only: query terms that share a stem are ONE term for every evidence rule below
+    // ("capital capitals" is one content term, and a note holding only "capital" is a lone hit).
+    const unitOf = (t: string) => (keywordOnly ? stem(t) : t)
+    const primaryUnits = new Set([...primaryTerms].map(unitOf))
     const lexical = new Map<number, number>()
     const matched = new Map<number, string[]>()
+    /** per doc: the query terms that hit it and how rare each hit term is (its own form's idf) */
+    const matchedQuery = new Map<number, string[]>()
+    const matchedIdf = new Map<number, number[]>()
+    const knownTerms = new Set<string>()
+    /** keyword-only, per doc: the stems of the query terms already counted as a hit */
+    const unitsHit = new Map<number, Set<string>>()
+    const idfOfDf = (df: number) => Math.log(1 + (n - df + 0.5) / (df + 0.5)) / maxIdf
     for (const [term, qw] of weights) {
-        const docs = index.postings.get(term)
-        if (!docs) continue
-        const idf = Math.log(1 + (n - docs.size + 0.5) / (docs.size + 0.5)) / maxIdf
-        for (const [doc, tf] of docs) {
-            const norm = 1 - B + (B * index.lengths[doc]!) / index.avgLength
-            const s = (idf * qw * tf) / (tf + K1 * norm) / queryWeight
-            lexical.set(doc, (lexical.get(doc) ?? 0) + s)
+        // doc → the best-scoring form of this term in it: the term itself at full weight, other
+        // forms of its stem (keyword-only) at STEM_FORM_WEIGHT, each form on its own idf
+        const best = new Map<number, { s: number; form: string; idf: number }>()
+        const forms = [term]
+        if (keywordOnly) for (const f of index.stems.get(stem(term)) ?? []) if (f !== term) forms.push(f)
+        for (const form of forms) {
+            const docs = index.postings.get(form)
+            if (!docs) continue
+            // "the vault holds this word": the word itself, or an inflection that is a topic of some note
+            // (a name, tag or description). A body-only inflection ("configuration" for "configure")
+            // would let every ordinary verb make a foreign prompt look known.
+            if (form === term || [...docs.keys()].some(d => index.heads[d]!.has(form))) knownTerms.add(term)
+            const idf = idfOfDf(docs.size)
+            const w = form === term ? 1 : STEM_FORM_WEIGHT
+            for (const [doc, tf] of docs) {
+                const norm = 1 - B + (B * index.lengths[doc]!) / index.avgLength
+                const s = (w * idf * qw * tf) / (tf + K1 * norm) / queryWeight
+                const cur = best.get(doc)
+                if (!cur || s > cur.s) best.set(doc, { s, form, idf })
+            }
+        }
+        for (const [doc, b] of best) {
+            lexical.set(doc, (lexical.get(doc) ?? 0) + b.s)
+            if (keywordOnly) {
+                const seen = unitsHit.get(doc)
+                if (seen?.has(unitOf(term))) continue
+                if (seen) seen.add(unitOf(term))
+                else unitsHit.set(doc, new Set([unitOf(term)]))
+            }
             const m = matched.get(doc)
-            if (m) m.push(term)
-            else matched.set(doc, [term])
+            if (m) m.push(b.form)
+            else matched.set(doc, [b.form])
+            if (keywordOnly) {
+                const mq = matchedQuery.get(doc)
+                if (mq) mq.push(term)
+                else matchedQuery.set(doc, [term])
+                const mi = matchedIdf.get(doc)
+                if (mi) mi.push(b.idf)
+                else matchedIdf.set(doc, [b.idf])
+            }
         }
     }
 
@@ -324,6 +482,34 @@ export function rankNotes(
     // "marked" in a course log for "which notes are marked off limits to ai").
     const semanticVouches =
         !opts.strictEvidence && !!opts.semantic && opts.semantic.size >= SEMANTIC_TOP && n >= SMALL_VAULT
+    // Keyword-only: when much of what the prompt says appears nowhere in the vault, it is about
+    // something the vault holds no memory of, and one overlapping word is coincidence. A note that
+    // matched a context term is exempt: a bare "yes go ahead" is carried by its context.
+    const unknownShare = primaryUnits.size
+        ? [...primaryUnits].filter(u => ![...primaryTerms].some(t => unitOf(t) === u && knownTerms.has(t))).length / primaryUnits.size
+        : 0
+    const unknownGate = keywordOnly && n >= SMALL_VAULT && primaryUnits.size >= UNKNOWN_MIN_TERMS && unknownShare >= UNKNOWN_MAX_SHARE
+    // ...unless the note holds a phrase of the prompt: two distinctive words next to each other in
+    // the prompt and next to each other in the note ("tauri updater" in "fix the tauri updater retry
+    // logic in ci"). A small vault lacks everyday verbs, so an ordinary prompt crosses the unknown
+    // share easily; a shared phrase is a topic, while two words that merely both occur in the note
+    // ("write" and "email" in a long log) are still coincidence.
+    const queryPairs = unknownGate ? adjacentPairs(tokenize(query.primary)) : new Set<string>()
+    const sharesPhrase = (i: number, note: MemoryNote): boolean => {
+        const terms = matchedQuery.get(i)!
+        const forms = matched.get(i)!
+        const idfs = matchedIdf.get(i)!
+        for (let a = 0; a < terms.length; a++)
+            for (let b = a + 1; b < terms.length; b++)
+                if (
+                    idfs[a]! >= DISTINCT_MIN_IDF &&
+                    idfs[b]! >= DISTINCT_MIN_IDF &&
+                    queryPairs.has(pairKey(terms[a]!, terms[b]!)) &&
+                    phrasePairs(note).has(pairKey(forms[a]!, forms[b]!))
+                )
+                    return true
+        return false
+    }
     const docs = new Set([...lexical.keys(), ...semanticBonus.keys()])
     const ranked: RankedNote[] = []
     for (const i of docs) {
@@ -332,11 +518,61 @@ export function rankNotes(
         const prior = TYPE_PRIOR[note.frontmatter.type] ?? 1
         const sem = cosine.get(i)
         const hits = matched.get(i) ?? []
+        const headHits = hits.filter(t => index.heads[i]!.has(t)).length
         if (opts.strictEvidence && n >= SMALL_VAULT && hits.length === 1 && !index.heads[i]!.has(hits[0]!))
             continue
         if (n >= SMALL_VAULT && sem === undefined && hits.length === 1 && !index.heads[i]!.has(hits[0]!)) {
-            const coverage = primaryTerms.size ? (primaryTerms.has(hits[0]!) ? 1 : 0) / primaryTerms.size : 0
-            if (coverage < LONE_HIT_MIN_COVERAGE) continue
+            // the QUERY term that hit (keyword-only may have hit through another form of its stem)
+            const queryTerm = keywordOnly ? matchedQuery.get(i)![0]! : hits[0]!
+            const coverage = primaryUnits.size ? (primaryTerms.has(queryTerm) ? 1 : 0) / primaryUnits.size : 0
+            const mentions = index.postings.get(hits[0]!)?.get(i) ?? 0
+            if (coverage < LONE_HIT_MIN_COVERAGE && !(keywordOnly && mentions >= LONE_HIT_TOPIC_MENTIONS)) {
+                opts.trace?.set(note.name, RULE.loneCoverage)
+                continue
+            }
+            // keyword-only: one passing mention in a log is not a note about the word, unless no
+            // other note has the word at all
+            const soleHolder = index.postings.get(hits[0]!)?.size === 1
+            if (keywordOnly && ((!soleHolder && mentions < LONE_HIT_MIN_MENTIONS) || mentions / index.lengths[i]! < LONE_HIT_MIN_DENSITY)) {
+                opts.trace?.set(note.name, RULE.loneMention)
+                continue
+            }
+            // keyword-only: a word found in many notes ("capital") names no topic
+            if (keywordOnly && matchedIdf.get(i)![0]! < LONE_HIT_MIN_IDF) {
+                opts.trace?.set(note.name, RULE.loneCommon)
+                continue
+            }
+        }
+        if (
+            unknownGate &&
+            matchedQuery.get(i)!.every(t => primaryTerms.has(t)) &&
+            headHits < UNKNOWN_EXEMPT_HEAD_HITS &&
+            !sharesPhrase(i, note)
+        ) {
+            opts.trace?.set(note.name, RULE.unknownPrompt)
+            continue
+        }
+        // Several body-only words count as a topic only when two of them sit together in one
+        // paragraph (common words scatter across a long note by chance; a note about the subject
+        // keeps them side by side) and one of them is distinctive.
+        if (keywordOnly && n >= SMALL_VAULT && hits.length > 1 && headHits === 0) {
+            const answered = primaryUnits.size ? matchedQuery.get(i)!.filter(t => primaryTerms.has(t)).length / primaryUnits.size : 0
+            if (answered < ANSWERED_ENOUGH && Math.max(...matchedIdf.get(i)!) < DISTINCT_MIN_IDF) {
+                opts.trace?.set(note.name, RULE.severalCommon)
+                continue
+            }
+            if (!paragraphTerms(note).some(w => hits.filter(t => w.has(t)).length >= 2)) {
+                opts.trace?.set(note.name, RULE.severalApart)
+                continue
+            }
+        }
+        if (opts.trace && keywordOnly) {
+            const sole = hits.length === 1 && headHits === 0
+            const phrase = unknownGate && headHits < UNKNOWN_EXEMPT_HEAD_HITS && matchedQuery.get(i)!.every(t => primaryTerms.has(t))
+            opts.trace.set(
+                note.name,
+                headHits > 0 ? RULE.head : sole ? RULE.loneAdmitted : phrase ? RULE.phrase : hits.length > 1 ? RULE.severalAdmitted : RULE.other,
+            )
         }
         if (semanticVouches && !semanticBonus.has(i) && !hits.some(t => index.heads[i]!.has(t)))
             continue

@@ -574,7 +574,29 @@ const MOVED_KEYS: readonly { from: readonly string[]; to: readonly string[] }[] 
         from: ['terminal', 'cursorBlinkSeconds'],
         to: ['appearance', 'cursorBlinkSeconds'],
     },
+    // The semantic switch left the daemon: it governs vault-note search as well as memory recall.
+    { from: ['daemon', 'recall', 'semantic'], to: ['embeddings', 'enabled'] },
 ]
+
+/** After a move emptied a section, drop it (and any ancestor it leaves empty) so no `recall: {}`
+ *  husk stays behind. A section that carries a comment is kept, so the comment survives. */
+function dropEmptiedSections(doc: Document, sectionPath: readonly string[]) {
+    for (let depth = sectionPath.length; depth > 0; depth--) {
+        const path = sectionPath.slice(0, depth)
+        const node = doc.getIn(path, true)
+        if (!isMap(node) || (node as YAMLMap).items.length || hasComment(node)) return
+        // a comment on the section's KEY (`# note` above `recall:`) must survive too
+        const holder = depth === 1 ? doc.contents : doc.getIn(path.slice(0, -1), true)
+        const last = path[path.length - 1]
+        const pair = isMap(holder)
+            ? (holder as YAMLMap).items.find(
+                  p => (isScalar(p.key) ? p.key.value : p.key) === last,
+              )
+            : undefined
+        if (pair && hasComment(pair.key)) return
+        doc.deleteIn(path)
+    }
+}
 
 /**
  * Move any MOVED_KEYS pair still at its old path to its new one. The value node travels as-is
@@ -595,9 +617,17 @@ function moveKeys(doc: Document): boolean {
         const oldPair = findPair(parent as YAMLMap, oldKey)
         if (!oldPair) continue
         const index = (parent as YAMLMap).items.indexOf(oldPair)
-        const keyComment = isScalar(oldPair.key)
-            ? oldPair.key.commentBefore
-            : undefined
+        // The yaml lib hangs a comment above a section's FIRST key on the section's map, not on
+        // the key, so a first-key move takes it from there or it would stay behind on the old section.
+        const firstKeyComment =
+            index === 0 && fromSection.length
+                ? (parent as YAMLMap).commentBefore
+                : undefined
+        const keyComment =
+            [isScalar(oldPair.key) ? oldPair.key.commentBefore : undefined, firstKeyComment]
+                .filter(Boolean)
+                .join('\n') || undefined
+        if (firstKeyComment) (parent as YAMLMap).commentBefore = undefined
         ;(parent as YAMLMap).delete(oldKey)
         mutated = true
         if (doc.hasIn(to)) {
@@ -609,6 +639,7 @@ function moveKeys(doc: Document): boolean {
                 .join('\n')
             if (comment)
                 carryComment(doc, parent as YAMLMap, fromSection, index, comment)
+            dropEmptiedSections(doc, fromSection)
             continue
         }
         const toSection = to.slice(0, -1)
@@ -619,10 +650,34 @@ function moveKeys(doc: Document): boolean {
                 pair.key.commentBefore = keyComment
             ;(target as YAMLMap).items.push(pair)
         } else {
+            // A section that exists but is not a map (`embeddings:` null, or a scalar) cannot
+            // take a child: swap it for an empty map so setIn has a collection to write into.
+            if (doc.hasIn(toSection)) {
+                const discarded = doc.getIn(toSection)
+                if (discarded !== null && discarded !== undefined)
+                    console.warn(
+                        `[settings] ${toSection.join('.')} held ${JSON.stringify(discarded)}, not a section: replaced by a section holding ${to[to.length - 1]}`,
+                    )
+                doc.setIn(toSection, doc.createNode({}))
+            }
             doc.setIn(to, oldPair.value)
-            if (keyComment)
+            // The destination section did not exist, or was just replaced by an empty map, so setIn
+            // created the key:
+            const created = doc.getIn(toSection, true)
+            const newPair = isMap(created)
+                ? (created as YAMLMap).items.find(
+                      p => (isScalar(p.key) ? p.key.value : p.key) === to[to.length - 1],
+                  )
+                : undefined
+            if (keyComment && newPair) {
+                // setIn writes a bare string key; a comment needs a Scalar to sit on.
+                const scalarKey = doc.createNode(to[to.length - 1])
+                scalarKey.commentBefore = keyComment
+                newPair.key = scalarKey
+            } else if (keyComment)
                 carryComment(doc, parent as YAMLMap, fromSection, index, keyComment)
         }
+        dropEmptiedSections(doc, fromSection)
     }
     return mutated
 }

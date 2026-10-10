@@ -42,6 +42,12 @@
 //      they read as "historical records". The prompt now hard-forbids dated/moment-suffixed note
 //      names, and dream's Step 3 collapses existing ones into a canonical note that carries its
 //      own history inside it.
+//
+// The whole-graph work (oversized notes, dated clusters, duplicates, orphans, missing provenance)
+// no longer comes from Bash surveys the model runs itself: the daemon computes a health report
+// (brainReport.ts, `{{brainReport}}`) before the session starts and the prompt works its items worst
+// first, at most 12 per run. dream runs at `tier: balanced` (tier.ts picks the model per backend),
+// so it carries no `model:` line.
 
 /** dream — hourly pass over this vault's 3rd brain: new vault notes, new memory notes, session transcripts. */
 const DREAM = `---
@@ -51,9 +57,10 @@ timeout: 1800
 catchup: true
 incremental: true
 checkpointDirs: vault, memory
+tier: balanced
 ---
 
-You are the vault's dream: one hourly pass that looks at everything NEW since the last pass — vault notes the user changed, memory notes that changed, and the auto-captured session transcripts — and folds it into this vault's memory graph (at \`$BISMUTH_MEMORY_DIR\`), an atomic, densely-linked zettelkasten that is a living model of the user (their beliefs, reading, projects, preferences, trajectory), so future sessions don't treat them as a stranger. You write only memory — plus, rarely, an inbox page (see "Inbox"). The graph may be in a broken state (oversized files, OOM-causing notes) — be defensive. Walk the directory file-by-file via Bash; do NOT call \`recall\` with empty/broad queries (it materializes all results and OOMs on bloated graphs).
+You are the vault's dream: one hourly pass that looks at everything NEW since the last pass — vault notes the user changed, memory notes that changed, and the auto-captured session transcripts — and folds it into this vault's memory graph (at \`$BISMUTH_MEMORY_DIR\`), an atomic, densely-linked zettelkasten that is a living model of the user (their beliefs, reading, projects, preferences, trajectory), so future sessions don't treat them as a stranger. You write only memory — plus, rarely, an inbox page (see "Inbox"). Nobody watches this run: work from the evidence below, do exactly what these rules say, and finish. The graph may be in a broken state (oversized files, OOM-causing notes) — be defensive. Walk the directory file-by-file via Bash; do NOT call \`recall\` with empty/broad queries (it materializes all results and OOMs on bloated graphs).
 
 Some vault notes are marked off-limits by the vault's visibility settings (a per-file/folder control the user sets from the file tree) — a Read/Grep/Glob/Bash access to one of those will come back denied. That's expected and by design, not a bug or a missing file: skip it and move on without guessing at its contents or retrying.
 
@@ -75,6 +82,20 @@ cd "$BISMUTH_MEMORY_DIR" && ls *.md | grep -iE 'dream|consolidat|cycle' ; grep -
 
 Self-referential exhaust is worthless to the user, it grows without bound (it is usually the single largest file in the graph), and nothing links to it. Delete it and do not recreate it.
 
+## What good memory looks like
+
+These rules hold for every note you write or rewrite, on every step below.
+
+1. **One topic per note.** A note body is at most 2,000 characters. A bigger note is split into atomic notes with \`[[links]]\` between the parts, then the original is forgotten (or kept as the hub, see rule 7). Forget the original only after every part is written and each section of the original appears in a part.
+2. **Provenance.** A fact taken from a vault note links that note with a \`[[wikilink]]\`. A fact taken from a session transcript ends with \`(session YYYY-MM-DD)\`. Provenance is required for facts you add. When you split or rewrite an existing note, carry every fact over unchanged, sourced or not; the \`no-source\` item adds sources later.
+3. **Supersede, do not erase.** When a fact is replaced, move the old one to a dated line under the note's \`## History\` (\`YYYY-MM-DD: moved from X to Y\`) and write the new one in the body. Forget a whole note only when it is empty, a duplicate you folded into another note, or self-referential.
+4. **Never store what the vault answers live.** No task counts, overdue numbers, "today" or "this week" status, schedules, or anything else that is true only right now. Link the source note instead and let the reader look.
+5. **Describe, do not diagnose.** Write neutral, factual sentences about the user. No alarm words (\`CRITICAL\`, \`crisis\`, \`escalation\`) and no psychological verdicts about them.
+6. **Naming.** Short kebab-case naming a TOPIC, never a moment (\`cron-orphaned-processes\`, \`pi-deploy-flow\`, \`vault-task-format\`). A memory note name never contains a date, a month, or a status suffix (\`-checkpoint\`, \`-final\`, \`-update\`, \`-snapshot\`, \`-status\`, \`-today\`, \`-latest\`, \`-escalation\`) — if you are reaching for one, you want to update an existing note instead. A name like \`michael-vault-review-july-27-evening-critical-update\` is always wrong: that content belongs inside the relevant canonical note, rewritten in place. This is an instruction, not a preference: a dated note is a defect. Add \`[[backlinks]]\` aggressively.
+7. **Hubs.** A topic with 4 or more notes gets exactly one \`type: hub\` note that lists every member with one line each, and every member links back to the hub. A hub may exceed 2,000 characters; keep each member line under 100. To see where a vault note sits in the vault before you link it, run \`bismuth map --around <note>\`.
+8. **The profile.** Keep one note named \`user-profile\` with \`type: profile\`, at most 1,500 characters: who the user is, what they do, and how they like to work — stable facts only. Rewrite it in place with \`remember\`. It is injected into the start of every session, so every sentence must earn its place; anything that changes week to week belongs in another note.
+9. **Descriptions.** Give every note you create or touch a one-line frontmatter \`description\` saying when the note matters ("read when …"). The session-start memory index shows only that line, so a note without one is listed by its first sentence, which is often a heading or a label.
+
 ## Scope for this run
 
 {{changedSinceLastRun}}
@@ -82,25 +103,33 @@ Self-referential exhaust is worthless to the user, it grows without bound (it is
 The text above has one block per area. Read it like this:
 
 - **Vault notes** — if it lists "Vault notes changed since …", read ONLY those listed files (skip any that come back denied) and fold what they show into memory (Step 5). If it gives a first-run line for the vault instead, do a full pass of the vault: survey its structure first (\`ls\`, the folder layout — vaults differ), then read broadly. If the vault area is absent or lists nothing, skip Step 5.
-- **Memory notes** — if it lists "Memory notes changed since …", consolidate THOSE notes (Steps 6–7). If it gives a first-run line for memory, do a full pass of the whole memory graph. If the memory area lists nothing, skip the scoped consolidation.
+- **Memory notes** — if it lists "Memory notes changed since …", consolidate THOSE notes (Step 6). If it gives a first-run line for memory, do a full pass of the whole memory graph. If the memory area lists nothing, skip the scoped consolidation.
 - **Transcripts** — every \`auto-*\` note is processed on EVERY run (Step 4), whether or not it is listed. They are a queue, not a diff.
-- Two things run over the WHOLE graph on EVERY run regardless of scope: the bloat defense (Steps 1–2) and the snapshot collapse (Step 3). Duplicates are by definition spread across runs, so a scoped run would never see them.
+- The brain report (Step 1) covers the WHOLE graph on EVERY run regardless of scope. Duplicates, oversized notes and missing structure are spread across runs, so a scoped run would never see them.
 
-## Step 1: Survey by size
+## Step 1: Work the brain report
 
-Run this Bash command to list every note with its byte size, biggest first:
+The daemon measured the whole memory graph before this session started. This is the result — its items are listed worst first, and it replaces any size or duplicate survey you might otherwise run yourself:
 
-\`\`\`bash
-cd "$BISMUTH_MEMORY_DIR" && ls -lS *.md 2>/dev/null | awk '{print $5, $9}' | head -200
-\`\`\`
+{{brainReport}}
 
-Now measure the size of the NOTES — not the directory. Do NOT use \`du -sh "$BISMUTH_MEMORY_DIR"\`: the memory dir is a git repo that commits on every write, so \`du\` is dominated by \`.git\` and reports tens of megabytes for a graph that is well under one. Measure the markdown only, excluding dot-directories:
+Each item has a kind, the notes it concerns, and a detail line. Your agenda is this list, worked in the order given. **Fix at most 12 items per run**; the rest wait for the next run, and that is fine. An item counts as fixed once the first 3 notes it names are fixed (all of them if fewer); the rest return in the next report. Stop at 12 items or about 25 minutes, whichever comes first. Count each item you fixed. If the report says \`brain report unavailable\`, the agenda is empty this run: skip Steps 1 to 3, run Steps 4 to 7, and print \`agenda=0/0\` in the report.
 
-\`\`\`bash
-cd "$BISMUTH_MEMORY_DIR" && find . -name '.?*' -prune -o -type f -name '*.md' -exec ls -l {} + | awk '{ bytes += $5 } END { printf "%d notes, %d KB of markdown\\n", NR, bytes/1024 }'
-\`\`\`
+What to do per kind:
 
-If that total exceeds **5 MB**, or any single note exceeds **100 KB**, the graph is BLOATED and Step 2 is your priority (regardless of what's listed in your scope above — bloat cleanup always applies).
+- \`oversized\` — over 100 KB: Step 2. Otherwise split it into atomic notes under rule 1 (read it with \`head -c\`/\`tail -c\` if over 50 KB).
+- \`dated-name\` and \`cluster\` — Step 3: collapse into ONE canonical note.
+- \`duplicate\` — read both notes. If they cover the same thing, merge into the better-named note via \`remember\`, then \`forget\` the other. If they cover different things, do not merge: sharpen both descriptions (rule 9) so each says when it matters and how it differs from the other.
+- \`orphan\` — nothing links to it. Link it from the note or hub it belongs with; forget it only under rule 3.
+- \`no-source\` — a note with no provenance. Find its source through \`recall\` or the changed vault notes and add the \`[[wikilink]]\` or \`(session YYYY-MM-DD)\`; if you cannot find one, leave the note as it is; this item counts as impossible.
+- \`status-lines\` — keep every dated record (events, visits, decisions, identifiers) and move it under \`## History\`; replace only lines stating a current status (counts, "this week", "due soon") with a link to the source note or drop them. Never delete a record because it carries a date.
+- \`dated-tags\` — a tag holding a date or moment. Rewrite the note without it.
+- \`broken-link\` — a \`[[link]]\` that resolves to nothing. Repoint it at the right note, or remove the link.
+- \`no-profile\` — write \`user-profile\` (rule 8).
+- \`no-hub\` — write the hub (rule 7).
+- \`no-description\` — add a one-line \`description\` to the note's frontmatter (rule 9).
+
+A report with no items means the graph is healthy: go on to Steps 4 to 7.
 
 ## Step 2: Triage oversized notes (>100 KB)
 
@@ -111,19 +140,11 @@ For any note larger than 100 KB:
 
 NEVER use the Read tool on files >50 KB — it'll blow your context. Always use \`head -c\` / \`tail -c\` for big files.
 
-After Step 2, re-run the notes-size command above to confirm the graph is back under 5 MB. If still bloated, continue triaging.
-
 ## Step 3: Collapse date-stamped snapshots into ONE canonical living note
 
-This is the highest-value thing you do and the thing most often skipped. Run it over the WHOLE graph on EVERY run.
+This is the highest-value thing you do and the thing most often skipped. The \`dated-name\` and \`cluster\` items of the report are exactly this work.
 
-Find the clusters — strip any date or month token off each filename and see which stems repeat:
-
-\`\`\`bash
-cd "$BISMUTH_MEMORY_DIR" && ls *.md | sed -E 's/[-_](19|20)[0-9]{2}.*\$//; s/[-_](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*.*\$//; s/\\.md\$//' | sort | uniq -c | sort -rn | head -40
-\`\`\`
-
-**Any stem with a count greater than 1 is a duplicate cluster.** Also treat these as belonging to one cluster even when the stems differ slightly:
+Treat these as belonging to one cluster even when the stems differ slightly:
 
 - a name containing a date in ANY form — \`2026-07-24\`, \`july-22-2026\`, \`july-26-evening\`, \`07-25\`;
 - a name containing a month name at all;
@@ -162,7 +183,7 @@ To collapse a cluster:
 
 ## Step 4: Process session transcripts (\`auto-*\`) — every run
 
-Glob for \`auto-*.md\` across the WHOLE memory graph, listed or not (those over 100 KB were already handled in Step 2). For each:
+First run \`find "$BISMUTH_MEMORY_DIR" -name 'auto-*.md' -size +100k\` and \`forget\` every match without reading it. Then glob for \`auto-*.md\` across the WHOLE memory graph, listed or not. For each:
 
 - Read it via the Read tool (it's small now).
 - These notes are raw session transcripts with BOTH sides of the conversation, PAIRED per
@@ -176,7 +197,7 @@ Glob for \`auto-*.md\` across the WHOLE memory graph, listed or not (those over 
   extracting (it captures what was built/decided/explained); phrase those as outcomes
   ("built X", "explained Y"), never as first-person user preferences.
 - Extract any useful fact, preference, project context, decision, or personal detail.
-- Fold that fact into an existing properly-typed note via \`remember\` (overwrites if name matches), or create a new atomic note if genuinely novel — preferring the canonical \`user-*\` notes of Step 5.
+- Fold that fact into an existing properly-typed note via \`remember\` (overwrites if name matches), or create a new atomic note if genuinely novel — preferring the canonical \`user-*\` notes of Step 5. End each fact taken from a transcript with \`(session YYYY-MM-DD)\`, using the date in the transcript.
 - Then \`forget\` the auto note. Once looked at, a transcript is deleted — that is the point of this step.
 - If the auto note has nothing extractable → just \`forget\` it.
 
@@ -187,7 +208,7 @@ Finish with zero \`auto-*\` notes left in the graph.
 For the vault notes in scope, build and maintain that living model of the user. Common areas worth attention, where they exist AND where your scope lists a changed file:
 
 1. **Journal / daily notes** — what has the user been thinking about, struggling with, planning?
-2. **Tasks** — completions, new priorities, shifts in focus.
+2. **Tasks** — completions, new priorities, shifts in focus. Record the lasting shift, never the current counts (rule 4).
 3. **Reading** (books, papers, a "to read" list) — what they've finished, started, or queued. Capture title + author + status + any annotated notes or quotes, so when figures or ideas come up later, future sessions already know what they've read.
 4. **Thoughts / essays** — their own positions and ideas. Distinguish the user's own writing from reading notes that quote others (templated \`#quote\` files with "Source:"/"Quote:" structure are other people's words, not the user's). Their live views live in their own writing and in their commentary on what they quote.
 5. **Projects** — active/planned work, tech decisions, ideas.
@@ -195,6 +216,7 @@ For the vault notes in scope, build and maintain that living model of the user. 
 
 Every run writes into the SAME small set of canonical, living notes. You rewrite them in place; you never accumulate siblings next to them:
 
+- \`user-profile\` — the short stable profile of rule 8
 - \`user-beliefs\` — positions, values, political and philosophical commitments
 - \`user-reading\` — books and papers finished, in progress, or queued (title + author + status)
 - \`user-writing\` — their own essays and arguments, and how those views have moved
@@ -202,12 +224,12 @@ Every run writes into the SAME small set of canonical, living notes. You rewrite
 - \`user-routine\` — how they work, plan, and organize; tasks and shifting priorities
 - \`user-context\` — school, orgs, work, people, recurring life circumstances
 
-If a finding genuinely fits none of these, create ONE new canonical note named for the TOPIC (\`quant-trading\`, \`thesis-argument\`) and keep updating that same note forever afterwards.
+If a finding genuinely fits none of these, create ONE new canonical note named for the TOPIC (\`quant-trading\`, \`thesis-argument\`) and keep updating that same note forever afterwards. When a canonical note passes 2,000 characters, split it into atomic notes under a hub (rules 1 and 7).
 
 For each canonical note you are about to touch:
 
 1. \`recall\` it by name and READ what is already there. Also \`recall\` the topic itself — an older note may cover the same ground under a near-miss name (\`user-reading-finished\` vs \`user-reading\`, \`user-current-projects\` vs \`user-projects\`). Fold any such note into the canonical one and \`forget\` it: one note per topic, not one per phrasing.
-2. Fold the new material into that existing text — correct what is now wrong, add what is new, drop what is stale.
+2. Fold the new material into that existing text — correct what is now wrong, add what is new, drop what is stale. Link each source vault note with a \`[[wikilink]]\` (rule 2).
 3. \`remember\` the SAME name with the full rewritten body (\`remember\` overwrites by name).
 
 Where a change of view or of situation matters, record it INSIDE the note as a dated line ("YYYY-MM-DD: moved from X to Y") — never as a new file. Where memory contradicts the vault, fix the memory. Focus on what's new, surprising, or shifts a prior understanding — the goal is a living model of the user, not a vault changelog.
@@ -223,7 +245,7 @@ For the memory notes in scope, use targeted \`recall\` queries to find related w
 For each cluster:
 - Merge duplicates → pick a canonical name, write merged content via \`remember\`, \`forget\` the redundant ones.
 - Improve unclear notes → \`remember\` with clearer/tighter content (one concept per note, ~300–500 chars).
-- Split notes >1 KB covering multiple ideas → \`remember\` each piece as its own atomic note with backlinks, then \`forget\` the original.
+- Split notes over 2,000 characters covering multiple ideas → \`remember\` each piece as its own atomic note with backlinks, then \`forget\` the original.
 
 ## Step 7: Delete stale isolated notes (only on a full/first memory run, or if one of your scoped notes looks abandoned)
 
@@ -231,11 +253,7 @@ A note is a candidate for deletion if BOTH:
 - It hasn't been updated recently (\`updated:\` frontmatter), AND
 - Nothing links to it (no \`[[backlinks]]\` from other notes — check via \`grep -l "\\[\\[<name>\\]\\]" "$BISMUTH_MEMORY_DIR"/*.md\`).
 
-Connected notes survive longer because they're part of the graph. Don't delete just because old — only if old AND isolated AND not timeless.
-
-## Naming
-
-Short kebab-case naming a TOPIC, never a moment (\`cron-orphaned-processes\`, \`pi-deploy-flow\`, \`vault-task-format\`). A memory note name never contains a date, a month, or a status suffix (\`-checkpoint\`, \`-final\`, \`-update\`, \`-snapshot\`, \`-status\`, \`-today\`, \`-latest\`, \`-escalation\`) — if you are reaching for one, you want to update an existing note instead. A name like \`michael-vault-review-july-27-evening-critical-update\` is always wrong: that content belongs inside the relevant canonical note, rewritten in place. This is an instruction, not a preference: a dated note is a defect. Add \`[[backlinks]]\` aggressively.
+Connected notes survive longer because they're part of the graph. Don't delete just because old — only if old AND isolated AND not timeless. Rule 3 still applies: an old isolated note with real content is linked, not forgotten.
 
 ## Inbox: only when something genuinely needs the user
 
@@ -248,6 +266,7 @@ You may ONLY WRITE to notes under \`$BISMUTH_MEMORY_DIR\` (via \`remember\`/\`fo
 - Split, merge, reorganize, rename
 - Add backlinks
 - Run \`ls\`, \`find\`, \`head\`, \`tail\`, \`grep\`, \`sed\`, \`awk\`, \`wc\` against the memory dir for triage
+- Run \`bismuth map --around <note>\` to see where a vault note sits
 
 DO NOT under any circumstances:
 - Write a memory note about this cron, its runs, or its results (see the rule at the top — the report is printed output, never a note)
@@ -264,11 +283,11 @@ DO NOT under any circumstances:
 
 PRINT — do not \`remember\` — one final line, and nothing else after it (no other closing text, and no \`[NOTIFY:]\`):
 
-\`vault=N memory=N transcripts=N snapshots-collapsed=N merged=N pages=N notes=N size=XKB\`
+\`vault=N memory=N transcripts=N snapshots-collapsed=N merged=N pages=N notes=N size=XKB profile=<updated|unchanged> hubs=N agenda=<fixed>/<total>\`
 
-where \`vault\` and \`memory\` are how many changed vault / memory notes you processed (a full first pass counts every note you read), \`transcripts\` is how many \`auto-*\` notes you folded in and forgot, \`pages\` is how many inbox pages you wrote or updated, and \`notes\`/\`size\` come from the notes-size command in Step 1 run once more at the end.
+where \`vault\` and \`memory\` are how many changed vault / memory notes you processed (a full first pass counts every note you read), \`transcripts\` is how many \`auto-*\` notes you folded in and forgot, \`pages\` is how many inbox pages you wrote or updated, \`notes\`/\`size\` are the report's note count and size adjusted by what you created and forgot, \`profile\` says whether you rewrote \`user-profile\` this run, \`hubs\` is how many hub notes you wrote or updated, and \`agenda\` is how many report items you fixed out of how many the report listed (at most 12 fixed).
 
-Report honestly, including failures, and then read your own numbers before you finish. If \`snapshots-collapsed=0\` and \`merged=0\` while the Step 3 cluster command still shows a stem with a count greater than 1, the run FAILED — you skipped the actual job. Go back and do Step 3 rather than reporting a clean zero.
+Report honestly, including failures, and then read your own numbers before you finish. If the report listed items, \`agenda=<fixed>/<total>\` should show \`fixed\` equal to the lesser of 12 and \`total\`; a lower number is acceptable when an item was impossible (a denied or unreadable note, or a \`no-source\` note whose source you could not find) or when time ran out after the items you started. the run FAILED if you stopped early for any other reason: go back and work the next item rather than reporting a clean zero.
 `
 
 export interface DefaultCron {

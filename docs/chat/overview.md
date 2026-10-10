@@ -207,7 +207,7 @@ It never touches the input queue or the transcript, so it does not appear in rep
 `stripEditorContext` removes the block again when a session is replayed, so a past bubble shows only what you typed.
 
 When the vault's daemon is enabled, the driver passes two SDK hooks to `query()` that call the core recall service (`recallServiceFor`, `core/src/memoryRecall.ts`): `UserPromptSubmit` (mode `prompt`) and `PostToolBatch` (mode `tool`, once per batch of parallel tool calls).
-The service dedups per session, so a note shown at the prompt is not injected again unless its content changed. The `daemon.recall.{enabled,midTurn,semantic}` settings are read live on every call. opencode's per-turn `system` recall uses the same service in mode `prompt`.
+The service dedups per session, so a note shown at the prompt is not injected again unless its content changed. The `daemon.recall.{enabled,midTurn}` and `embeddings.enabled` settings are read live on every call. opencode's per-turn `system` recall uses the same service in mode `prompt`.
 
 ### Quick ask
 

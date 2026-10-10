@@ -22,6 +22,7 @@ test('SETTINGS_SCHEMA nests the app sections, calendar, ui, server, folderIcons 
             'daemon',
             'dailyNotes',
             'editor',
+            'embeddings',
             'folderIcons',
             'folderVisibility',
             'googleCalendar',
@@ -172,6 +173,14 @@ test('calendar section mirrors the calendar defaults', () => {
     expect(cal.militaryTime.default).toBe(false)
 })
 
+test('embeddings section is exactly { enabled }, a boolean that defaults off', () => {
+    const embeddings = objectFields(SETTINGS_SCHEMA.embeddings)
+    expect(Object.keys(embeddings)).toEqual(['enabled'])
+    expect(embeddings.enabled.type).toBe('boolean')
+    expect(embeddings.enabled.default).toBe(false)
+    expect(embeddings.enabled.doc).toContain('keyword-only')
+})
+
 test('daemon section is exactly { backend, enabled, inboxRetentionDays, inheritUserMcp, recall }', () => {
     const daemon = objectFields(SETTINGS_SCHEMA.daemon)
     expect(Object.keys(daemon).sort()).toEqual([
@@ -184,7 +193,6 @@ test('daemon section is exactly { backend, enabled, inboxRetentionDays, inheritU
     expect(Object.keys(objectFields(daemon.recall)).sort()).toEqual([
         'enabled',
         'midTurn',
-        'semantic',
     ])
     expect(daemon.inheritUserMcp.type).toBe('boolean')
     expect(daemon.inheritUserMcp.default).toBe(false)
@@ -420,6 +428,7 @@ test('DEFAULTS is the plain nested object derived from the schema', () => {
             'daemon',
             'dailyNotes',
             'editor',
+            'embeddings',
             'folderIcons',
             'folderVisibility',
             'googleCalendar',

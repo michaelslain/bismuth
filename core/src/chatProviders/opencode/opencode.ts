@@ -166,6 +166,8 @@ interface OpencodeSession {
 // satisfies its SessionSink shape structurally.
 
 const sessions = new Map<string, OpencodeSession>()
+// The session-start brain block, fetched once per session and carried on every turn.
+const brainBySession = new WeakMap<OpencodeSession, string>()
 
 export function hasSession(chatId: string): boolean {
     return sessions.has(chatId)
@@ -646,7 +648,33 @@ async function runTurnServer(
                 },
                 1500,
             ).catch(() => null)
-            if (recalled?.context) system = recalled.context
+            // `system` is per-call, so EVERY turn carries the session-start brain block (profile,
+            // vault map, memory index) ahead of that turn's recall. Fetched once per session and
+            // reused; opencode exposes no compact/clear hook to refetch on. Via the recall service
+            // so the settings gate applies.
+            let brainText = brainBySession.get(s)
+            if (brainText === undefined) {
+                const b = await recallWithin(
+                    svc,
+                    {
+                        mode: 'session-start',
+                        sessionId: s.sessionId as string,
+                        source: 'startup',
+                        channel: 'chat',
+                    },
+                    3000,
+                ).catch(() => null)
+                brainText = b?.context ?? ''
+                // Cache only a real brain block; a timeout, no-match or a map not ready yet retries
+                // next turn.
+                if (b?.context && b.context.includes('# Vault map'))
+                    brainBySession.set(s, b.context)
+            }
+            const brain = brainText ? { context: brainText } : null
+            const parts = [brain?.context, recalled?.context].filter(
+                (p): p is string => !!p,
+            )
+            if (parts.length) system = parts.join('\n\n')
         }
         if (slash) {
             const res = await server.client.session.command({

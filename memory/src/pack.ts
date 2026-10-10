@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { isMemoryNoteVisibleToDaemon, noteDescription } from './graph'
+import { memoryLinkIndex } from './health'
 import type { MemoryNote } from './graph'
 import { tokenize } from './rank'
 import type { RankedNote } from './rank'
@@ -85,6 +86,9 @@ const SESSION_START_BUDGET = 9500
 const PREFERENCE_BODY_MAX = 1200
 /** All preference bodies together stay under this, so the index keeps room. */
 const PREFERENCE_BODIES_BUDGET = 4000
+/** Room kept for non-preference index lines when a lead is present. */
+const OTHER_INDEX_RESERVE = 3000
+const PREFERENCE_BODIES_FLOOR = 1500
 const POINTER_DESC_MAX = 120
 /** Index lines are dropped lowest-value type first. */
 const INDEX_TYPE_ORDER = ['workflow', 'project', 'fact', 'person', 'daily', 'auto']
@@ -107,7 +111,7 @@ export function excludeKey(name: string, hash: string): string {
 }
 
 /** Keep a note's text from closing or opening the envelope early (stripInjectedBlocks keys on it). */
-function defang(text: string): string {
+export function defang(text: string): string {
     return text.replace(new RegExp(`<(/?)${MEMORY_BLOCK_TAG}>`, 'g'), '[$1' + MEMORY_BLOCK_TAG + ']')
 }
 
@@ -244,68 +248,124 @@ function indexLine(note: MemoryNote): string {
     return defang(`[[${note.name}]] (${note.frontmatter.type})${d ? ` — ${d}` : ''}`)
 }
 
+export type SessionStartOpts = { budgetChars?: number; lead?: string }
+
+export const PROFILE_NOTE = 'user-profile'
+
+const isProfileNote = (n: MemoryNote): boolean =>
+    n.frontmatter.type === 'profile' || n.name === PROFILE_NOTE
+
+/** The user-profile note's body, cut to `maxChars` at a line boundary; null when there is no
+ *  profile note visible to the daemon. */
+export function formatProfile(notes: MemoryNote[], maxChars: number = 1500): string | null {
+    const profile = notes.find(n => isMemoryNoteVisibleToDaemon(n) && isProfileNote(n))
+    const body = profile?.content.trim()
+    if (!body) return null
+    if (body.length <= maxChars) return defang(body)
+    const kept: string[] = []
+    let used = 0
+    for (const line of body.split('\n')) {
+        if (used + line.length + 1 > maxChars) break
+        kept.push(line)
+        used += line.length + 1
+    }
+    return defang(kept.length ? kept.join('\n').trimEnd() : cut(body, maxChars))
+}
+
+/** Rank value of a note for the index: how many other memory notes link to it. */
+function inLinkCounts(notes: MemoryNote[]): Map<string, number> {
+    const { inbound } = memoryLinkIndex(notes)
+    return new Map([...inbound].map(([name, from]) => [name, from.size]))
+}
+
 /**
  * The always-on session-start block: a one-line index of every visible note plus the bodies of
- * short `preference` notes, at most 9500 chars (the hook's additionalContext cap is 10,000).
- * Every preference index line stays; other index lines are dropped lowest-value type first.
+ * short `preference` notes, at most `budgetChars` (default 9500; the hook's additionalContext cap
+ * is 10,000). `opts.lead` (the profile and vault map) sits between the banner and the index and
+ * counts against the budget. Every preference index line stays; the other lines are ordered by
+ * value (hubs first, then in-links, recency, type) and each is kept or skipped on its own.
  */
-export function formatSessionStart(notes: MemoryNote[]): string | null {
-    const visible = notes
-        .filter(isMemoryNoteVisibleToDaemon)
-        .sort((a, b) => b.frontmatter.updated.localeCompare(a.frontmatter.updated) || a.name.localeCompare(b.name))
-    if (visible.length === 0) return null
+export function formatSessionStart(notes: MemoryNote[], opts?: SessionStartOpts): string | null {
+    const visible = notes.filter(isMemoryNoteVisibleToDaemon)
+    if (visible.filter(n => !isProfileNote(n)).length === 0) return null
+    const inLinks = inLinkCounts(visible)
+    const typeRank = (t: string) => {
+        const i = INDEX_TYPE_ORDER.indexOf(t)
+        return i < 0 ? INDEX_TYPE_ORDER.length : i
+    }
+    const isHub = (n: MemoryNote) => n.frontmatter.type === 'hub'
+    const byValue = (a: MemoryNote, b: MemoryNote) =>
+        Number(isHub(b)) - Number(isHub(a)) ||
+        (inLinks.get(b.name) ?? 0) - (inLinks.get(a.name) ?? 0) ||
+        b.frontmatter.updated.localeCompare(a.frontmatter.updated) ||
+        typeRank(a.frontmatter.type) - typeRank(b.frontmatter.type) ||
+        a.name.localeCompare(b.name)
+    const ranked = visible.filter(n => !isProfileNote(n)).sort(byValue)
 
-    const { open, close } = envelope(['# Memory index', ''])
     const footerReserve = 90
-    let remaining = SESSION_START_BUDGET - open.length - 1 - close.length - footerReserve
+    const budget = opts?.budgetChars ?? SESSION_START_BUDGET
+    const bare = envelope(['# Memory index', ''])
+    // the lead is cut at a line boundary so envelope + lead + footer never exceed the budget
+    const leadMax = budget - bare.open.length - 1 - bare.close.length - footerReserve - 2
+    let lead = opts?.lead ? defang(opts.lead.trim()) : ''
+    if (lead.length > leadMax) {
+        const kept: string[] = []
+        let used = 0
+        for (const line of lead.split('\n')) {
+            if (used + line.length + 1 > leadMax) break
+            kept.push(line)
+            used += line.length + 1
+        }
+        lead = kept.join('\n').trimEnd()
+    }
+    const { open, close } = envelope([...(lead ? [lead, ''] : []), '# Memory index', ''])
+    let remaining = budget - open.length - 1 - close.length - footerReserve
 
-    const prefs = visible.filter(n => n.frontmatter.type === 'preference')
-    const prefLines: string[] = []
+    const prefs = ranked.filter(n => n.frontmatter.type === 'preference')
+    const prefLines = new Map<string, string>()
     for (const n of prefs) {
         const l = indexLine(n)
-        if (l.length + 1 > remaining) break
-        prefLines.push(l)
+        if (l.length + 1 > remaining) continue
+        prefLines.set(n.name, l)
         remaining -= l.length + 1
     }
 
+    // With a lead (profile + map) the index lines of hubs, projects, people and facts keep at
+    // least this much room: preference bodies are the first thing to give way.
+    const bodiesBudget = lead ? Math.min(PREFERENCE_BODIES_BUDGET, Math.max(PREFERENCE_BODIES_FLOOR, remaining - OTHER_INDEX_RESERVE)) : PREFERENCE_BODIES_BUDGET
     const bodies: string[] = []
     let bodyCost = 0
     for (const n of prefs) {
         const body = n.content.trim()
         if (!body || body.length > PREFERENCE_BODY_MAX) continue
         const block = defang(`## ${n.name}\n${body}`)
-        if (bodyCost + block.length + 2 > PREFERENCE_BODIES_BUDGET) continue
+        if (bodyCost + block.length + 2 > bodiesBudget) continue
         // keep room for the section title
         if (block.length + 2 + 30 > remaining) continue
         bodies.push(block, '')
         bodyCost += block.length + 2
         remaining -= block.length + 2
+        // a shown body replaces its index line
+        const shown = prefLines.get(n.name)
+        if (shown !== undefined) {
+            prefLines.delete(n.name)
+            remaining += shown.length + 1
+        }
     }
     if (bodies.length) remaining -= '# Preferences'.length + 2
 
     const otherLines: string[] = []
-    let dropped = 0
-    let listing = true
-    for (const type of INDEX_TYPE_ORDER) {
-        for (const n of visible.filter(v => v.frontmatter.type === type)) {
-            const l = indexLine(n)
-            if (listing && l.length + 1 <= remaining) {
-                otherLines.push(l)
-                remaining -= l.length + 1
-            } else {
-                listing = false
-                dropped++
-            }
-        }
+    let dropped = prefs.length - prefLines.size - bodies.length / 2
+    for (const n of ranked) {
+        if (n.frontmatter.type === 'preference') continue
+        const l = indexLine(n)
+        if (l.length + 1 <= remaining) {
+            otherLines.push(l)
+            remaining -= l.length + 1
+        } else dropped++
     }
-    // any note whose type is not in the order list and not preference
-    for (const n of visible) {
-        const t = n.frontmatter.type
-        if (t !== 'preference' && !INDEX_TYPE_ORDER.includes(t)) dropped++
-    }
-    dropped += prefs.length - prefLines.length
 
-    const out = [open.replace(/\n$/, ''), '', ...prefLines, ...otherLines, '']
+    const out = [open.replace(/\n$/, ''), '', ...prefLines.values(), ...otherLines, '']
     if (bodies.length) out.push('# Preferences', '', ...bodies)
     if (dropped > 0) out.push(`(${dropped} more notes not listed; use the recall tool to search them)`, '')
     out.push(close)

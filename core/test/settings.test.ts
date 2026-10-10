@@ -630,6 +630,178 @@ describe('reconcile prunes retired schema keys', () => {
         expect((data.appearance as any).cursorWidth).toBe(3)
     })
 
+    test('daemon.recall.semantic moves to embeddings.enabled and the old key is gone', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'daemon:\n  recall:\n    semantic: true\n',
+        )
+        expect(await reconcileSettings(vault)).toBe(true)
+        const { data } = (await readSettings(vault))!
+        expect((data as any).embeddings).toEqual({ enabled: true })
+        expect((data as any).daemon).toBeUndefined() // no empty daemon/recall husk left behind
+        const raw = readFileSync(join(vault, '.settings'), 'utf8')
+        expect(raw).not.toContain('semantic')
+        expect(await reconcileSettings(vault)).toBe(false) // settled
+    })
+
+    test('daemon.recall.semantic false moves too, beside sibling recall keys', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'daemon:\n  recall:\n    midTurn: false\n    semantic: false\n',
+        )
+        await reconcileSettings(vault)
+        const { data } = (await readSettings(vault))!
+        expect((data as any).embeddings).toEqual({ enabled: false })
+        expect((data as any).daemon.recall).toEqual({ midTurn: false })
+    })
+
+    test('an existing embeddings.enabled wins over daemon.recall.semantic, which is deleted', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'embeddings:\n  enabled: false\ndaemon:\n  recall:\n    semantic: true\n',
+        )
+        expect(await reconcileSettings(vault)).toBe(true)
+        const { data } = (await readSettings(vault))!
+        expect((data as any).embeddings).toEqual({ enabled: false })
+        expect(readFileSync(join(vault, '.settings'), 'utf8')).not.toContain('semantic')
+    })
+
+    test('the comment above daemon.recall.semantic travels to embeddings.enabled', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'daemon:\n  recall:\n    midTurn: false\n    # meaning search, my note\n    semantic: true\n',
+        )
+        await reconcileSettings(vault)
+        const raw = readFileSync(join(vault, '.settings'), 'utf8')
+        expect(raw).toContain('# meaning search, my note')
+        expect(raw.indexOf('# meaning search, my note')).toBeGreaterThan(
+            raw.indexOf('embeddings'),
+        )
+        expect(raw.indexOf('# meaning search, my note')).toBeLessThan(raw.indexOf('enabled'))
+    })
+
+    test('a comment above the emptied daemon section survives the move', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            '# my daemon notes\ndaemon:\n  recall:\n    semantic: true\n',
+        )
+        await reconcileSettings(vault)
+        const { data } = (await readSettings(vault))!
+        expect((data as any).embeddings).toEqual({ enabled: true })
+        expect(readFileSync(join(vault, '.settings'), 'utf8')).toContain('# my daemon notes')
+    })
+
+    test('a comment above the emptied recall section survives the move', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'daemon:\n  enabled: true\n  # recall tuning\n  recall:\n    semantic: true\n',
+        )
+        await reconcileSettings(vault)
+        const { data } = (await readSettings(vault))!
+        expect((data as any).embeddings).toEqual({ enabled: true })
+        expect(readFileSync(join(vault, '.settings'), 'utf8')).toContain('# recall tuning')
+    })
+
+    test('daemon.recall.semantic moves into an embeddings section whose value is null', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'embeddings:\ndaemon:\n  recall:\n    semantic: true\n',
+        )
+        await reconcileSettings(vault)
+        const { data } = (await readSettings(vault))!
+        expect((data as any).embeddings).toEqual({ enabled: true })
+        expect(readFileSync(join(vault, '.settings'), 'utf8')).not.toContain('semantic')
+    })
+
+    test('daemon.recall.semantic moves into an embeddings section holding a scalar', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'embeddings: true\ndaemon:\n  recall:\n    semantic: true\n',
+        )
+        await reconcileSettings(vault)
+        const { data } = (await readSettings(vault))!
+        expect((data as any).embeddings).toEqual({ enabled: true })
+    })
+
+    test('terminal cursor keys move into an appearance section whose value is null', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', 'appearance:\nterminal:\n  cursorWidth: 3\n')
+        await reconcileSettings(vault)
+        const { data } = (await readSettings(vault))!
+        expect((data.appearance as any).cursorWidth).toBe(3)
+        expect((data as any).terminal).toBeUndefined()
+    })
+
+    test('terminal cursor keys move into an appearance section holding a scalar', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', 'appearance: 5\nterminal:\n  cursorWidth: 3\n')
+        await reconcileSettings(vault)
+        const { data } = (await readSettings(vault))!
+        expect((data.appearance as any).cursorWidth).toBe(3)
+    })
+
+    test('a comment above the first key of a moved section travels with the key', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'terminal:\n  # cursor note\n  cursorWidth: 3\n  fontSize: 15\n',
+        )
+        await reconcileSettings(vault)
+        const raw = readFileSync(join(vault, '.settings'), 'utf8')
+        expect(raw).toContain('# cursor note')
+        expect(raw.indexOf('# cursor note')).toBeGreaterThan(raw.indexOf('appearance'))
+        expect(raw.indexOf('# cursor note')).toBeLessThan(raw.indexOf('cursorWidth'))
+    })
+
+    test('a first-key comment moves without leaving an orphan beside a surviving sibling', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'daemon:\n  recall:\n    # which\n    semantic: true\n    other: 1\n',
+        )
+        await reconcileSettings(vault)
+        const raw = readFileSync(join(vault, '.settings'), 'utf8')
+        expect(raw.split('# which').length).toBe(2) // exactly once
+        expect(raw.indexOf('# which')).toBeGreaterThan(raw.indexOf('embeddings'))
+        expect(raw.indexOf('# which')).toBeLessThan(raw.indexOf('enabled'))
+        const { data } = (await readSettings(vault))!
+        expect((data as any).daemon.recall).toEqual({ other: 1 })
+    })
+
+    test('a scalar in a moved key\'s destination section is replaced with a warning naming it', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', 'appearance: 5\nterminal:\n  cursorWidth: 3\n')
+        const warned: string[] = []
+        const warn = console.warn
+        console.warn = (...a: unknown[]) => void warned.push(a.join(' '))
+        try {
+            await reconcileSettings(vault)
+        } finally {
+            console.warn = warn
+        }
+        expect(warned).toHaveLength(1)
+        expect(warned[0]).toContain('appearance')
+        expect(warned[0]).toContain('5')
+    })
+
     test('a file that never had defaultMode is not rewritten by the prune step', async () => {
         const vault = await emptyVault()
         await reconcileSettings(vault) // absent -> writes the sparse seed (no defaultMode)

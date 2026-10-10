@@ -2,6 +2,19 @@ import { readFile } from 'node:fs/promises'
 import { parseFrontmatter } from '../lib/frontmatter.ts'
 import type { VaultContext } from '../lib/config.ts'
 import type { DenyEntry } from '../lib/visibility.ts'
+import { composeBrain } from '../lib/coreBrain.js'
+
+type ComposeBrain = (opts: {
+    vaultDir: string
+    memoryDir: string | null
+    channel: 'daemon'
+    waitMs?: number
+}) => Promise<string | null>
+
+/** How long a daemon session waits for a cold vault-map build before the persona goes out without
+ *  its `# Vault map` section. core's own default is 1 s (built for interactive chat); a daemon
+ *  session is a background run, so it waits up to 30 s. */
+export const DAEMON_BRAIN_WAIT_MS = 30_000
 
 /** How a daemon backend receives the persona text:
  *  - `systemPromptAppend`: the Agent SDK's `systemPrompt: { type: 'preset', preset: 'claude_code', append }`.
@@ -49,6 +62,7 @@ export const DEFAULT_DAEMON_IDENTITY = [
 export async function buildDaemonPersona(
     ctx: VaultContext,
     denyEntries: DenyEntry[],
+    compose: ComposeBrain = composeBrain,
 ): Promise<string> {
     let identity = DEFAULT_DAEMON_IDENTITY
     try {
@@ -70,6 +84,22 @@ export async function buildDaemonPersona(
             'Edit/Grep/Glob/Bash access to them is already blocked at the tool level, but treat them as if ' +
             "they don't exist: don't mention them, guess at their contents, or try alternate ways to reach " +
             `them if a tool call is denied.\n${list}`
+    }
+    // The brain block (profile, vault map, memory index) rides the same persona text, so Claude and
+    // Codex both get it. A cold map build is
+    // waited for up to DAEMON_BRAIN_WAIT_MS (core's default is 1 s); past that the map section is
+    // omitted for this session. Failure-proof: a
+    // throw or null leaves the persona exactly as it was.
+    try {
+        const brain = await compose({
+            vaultDir: ctx.root,
+            memoryDir: ctx.memoryDir,
+            channel: 'daemon',
+            waitMs: DAEMON_BRAIN_WAIT_MS,
+        })
+        if (brain) prompt += `\n\n${brain}`
+    } catch (err) {
+        console.error(`[persona:${ctx.name}] brain unavailable: ${err}`)
     }
     return prompt
 }

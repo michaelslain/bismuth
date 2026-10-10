@@ -1,8 +1,9 @@
 import { test, expect, afterAll } from 'bun:test'
-import { mkdirSync, utimesSync } from 'node:fs'
+import { mkdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     createRecallService,
+    readRecallSettingsSync,
     recallWithin,
     type RecallDeps,
     type RecallEngine,
@@ -25,15 +26,16 @@ const mkNote = (name: string, content: string): MemoryNote =>
         frontmatter: { type: 'fact' },
     }) as unknown as MemoryNote
 
-// Fakes: a note scores 1 per query word its content contains; packing takes every non-excluded
-// match, hashed by content.
+// Fakes: a note scores 1 per query word its content contains, plus its cosine when a semantic map
+// is passed (a note with a cosine and no word is a semantic-only hit); packing takes every
+// non-excluded match, hashed by content.
 const counts = { build: 0 }
 const fakeEngine = {
     buildRecallIndex: (notes: MemoryNote[]) => {
         counts.build++
         return { notes } as any
     },
-    rankNotes: (index: any, q: { primary: string }) =>
+    rankNotes: (index: any, q: { primary: string }, opts?: { semantic?: Map<string, number> }) =>
         (index.notes as MemoryNote[])
             .map(note => ({
                 note,
@@ -42,7 +44,7 @@ const fakeEngine = {
                     .filter(w => w && note.content.includes(w)).length,
                 score: 0,
             }))
-            .map(r => ({ ...r, score: r.lexical }))
+            .map(r => ({ ...r, score: r.lexical + (opts?.semantic?.get(r.note.name) ?? 0) }))
             .filter(r => r.score > 0),
     packRecall: (ranked: any[], _mode: string, exclude?: Set<string>) => {
         const kept = ranked.filter(r => !exclude?.has(r.note.name))
@@ -361,8 +363,15 @@ const fullNote = (name: string, content: string): MemoryNote =>
         backlinks: [],
         frontmatter: { type: 'fact', tags: ['t'], description: `about ${name}` },
     }) as unknown as MemoryNote
-const gateNotes = () => [fullNote('a', 'alpha one'), fullNote('b', 'alpha two')]
-const semOn = async () => new Map([['a', 0.9]])
+// semantic-only hits: neither note holds the prompt word, so the keyword-only path packs nothing and
+// the gate alone decides
+const gateNotes = () => [fullNote('a', 'one'), fullNote('b', 'two')]
+const alphaNotes = () => [fullNote('a', 'alpha one'), fullNote('b', 'alpha two')]
+const semOn = async () =>
+    new Map([
+        ['a', 0.9],
+        ['b', 0.8],
+    ])
 const rr = (logits: number[] | (() => Promise<number[]>)) => {
     const calls: { query: string; passages: string[] }[] = []
     const reranker = {
@@ -374,14 +383,14 @@ const rr = (logits: number[] | (() => Promise<number[]>)) => {
     }
     return { calls, reranker }
 }
-const gateSvc = (reranker: any, over: Partial<RecallDeps> = {}) =>
+const gateSvc = (reranker: any, over: Partial<RecallDeps> = {}, settings?: Partial<RecallSettings>) =>
     make({
         loadNotes: async () => gateNotes(),
         embedder: () => ({ embed: async () => [], dispose() {} }),
         semanticScores: semOn,
         reranker: () => reranker,
         ...over,
-    })
+    }, settings)
 
 test('rerank gate: candidates are judged against the prompt, packed in gate order, response says reranked', async () => {
     const { calls, reranker } = rr([-5, 4])
@@ -394,6 +403,17 @@ test('rerank gate: candidates are judged against the prompt, packed in gate orde
     expect(r.injected).toEqual(['b'])
     expect(r.reranked).toBe(true)
     expect(r.semantic).toBe(true)
+})
+
+// since keyword picks are always kept, this pins the response flags for a lexical-first note, not the gate bar (rerankGate.test.ts pins -6)
+test('rerank gate: a paraphrase whose note ranks first lexically is injected, semantic and reranked true', async () => {
+    // the cross-encoder reads a paraphrase low (-5.5) but above the bar; the note is also the lexical first
+    const { reranker } = rr([-5.5, -9])
+    const { svc } = gateSvc(reranker, { loadNotes: async () => [fullNote('a', 'alpha one'), fullNote('b', 'two')] })
+    const r = await svc.recall(prompt())
+    expect(r.injected).toEqual(['a'])
+    expect(r.semantic).toBe(true)
+    expect(r.reranked).toBe(true)
 })
 
 test('rerank gate: a terse prompt reaches the reranker with the conversation tail', async () => {
@@ -438,7 +458,7 @@ test('rerank gate: tool mode never calls the reranker', async () => {
 
 test('rerank gate: without semantic scores the reranker is not asked', async () => {
     const { calls, reranker } = rr([3, 3])
-    const { svc } = gateSvc(reranker, { semanticScores: async () => undefined })
+    const { svc } = gateSvc(reranker, { semanticScores: async () => undefined, loadNotes: async () => alphaNotes() })
     const r = await svc.recall(prompt())
     expect(calls).toHaveLength(0)
     expect(r.injected).toEqual(['a', 'b'])
@@ -484,12 +504,13 @@ test('rerank gate: a note between minScore and semanticMinScore is not a candida
     const real = await import('@bismuth/memory')
     const engine = {
         ...(fakeEngine as any),
-        // b at 0.1 sits above prompt minScore (0.08) and below semanticMinScore (0.12); a clears both
-        rankNotes: (index: any) =>
+        // ranked with semantics, b at 0.1 sits above prompt minScore (0.08) and below semanticMinScore
+        // (0.12); a clears both. Keyword-only, b reads 0.05, so that path does not pack it either.
+        rankNotes: (index: any, _q: unknown, opts?: { semantic?: Map<string, number> }) =>
             (index.notes as MemoryNote[]).map((note, i) => ({
                 note,
                 lexical: 1,
-                score: i === 0 ? 0.5 : 0.1,
+                score: i === 0 ? 0.5 : opts?.semantic ? 0.1 : 0.05,
             })),
         packRecall: real.packRecall,
         noteHash: real.noteHash,
@@ -498,4 +519,239 @@ test('rerank gate: a note between minScore and semanticMinScore is not a candida
     expect(calls[0]!.passages).toHaveLength(1)
     expect(calls[0]!.passages[0]).toContain('## a (fact)')
     expect(gated.injected).toEqual(['a'])
+})
+
+// --- embeddings on never recall less than off -------------------------------------------------
+
+const realPackEngine = async (over: Record<string, unknown> = {}) => {
+    const real = await import('@bismuth/memory')
+    return {
+        ...(fakeEngine as any),
+        packRecall: real.packRecall,
+        noteHash: real.noteHash,
+        ...over,
+    } as unknown as RecallEngine
+}
+
+test('embeddings on: a note the keyword-only path injects survives a reranker that scores it -11; a note neither path admits stays out', async () => {
+    // k holds the prompt word (the keyword-only path packs it); s is a semantic-only candidate
+    const notes = [fullNote('k', 'alpha one'), fullNote('s', 'two')]
+    const sem = async () =>
+        new Map([
+            ['k', 0.9],
+            ['s', 0.8],
+        ])
+    const engine = await realPackEngine()
+    const refused = rr([-11, -11])
+    const r = await gateSvc(refused.reranker, { engine, loadNotes: async () => notes, semanticScores: sem }).svc.recall(prompt())
+    expect(refused.calls[0]!.passages).toHaveLength(2)
+    expect(r.injected).toEqual(['k'])
+    expect(r.context).toContain('## k (fact)')
+    expect(r.context).not.toContain('## s (fact)')
+    expect(r).toMatchObject({ semantic: true, reranked: true })
+    // the gate admits s on its own and refuses k: s keeps its place, k follows it
+    const mixed = rr([-11, 4])
+    const both = await gateSvc(mixed.reranker, { engine, loadNotes: async () => notes, semanticScores: sem }).svc.recall(prompt())
+    expect(both.injected).toEqual(['s', 'k'])
+})
+
+test('embeddings on: past maxNotes the gate picks give way from the tail, never a keyword pick', async () => {
+    // five semantic-only notes fill the gate's candidates and the prompt maxNotes; k is the keyword pick
+    const sems = ['s1', 's2', 's3', 's4', 's5']
+    const notes = [...sems.map(n => fullNote(n, `${n} body`)), fullNote('k', 'alpha one')]
+    const sem = async () => new Map(sems.map(n => [n, 0.9] as [string, number]))
+    const { calls, reranker } = rr([4, 4, 4, 4, 4])
+    const engine = await realPackEngine()
+    const r = await gateSvc(reranker, { engine, loadNotes: async () => notes, semanticScores: sem }).svc.recall(prompt())
+    expect(calls[0]!.passages).toHaveLength(5)
+    expect(r.injected).toEqual(['s1', 's2', 's3', 's4', 'k'])
+})
+
+test('embeddings on: the keyword picks are the off service picks for the same request', async () => {
+    const notes = [fullNote('k', 'alpha one'), fullNote('j', 'alpha beta'), fullNote('s', 'two')]
+    const engine = await realPackEngine()
+    const off = await gateSvc(rr([]).reranker, { engine, loadNotes: async () => notes }, { semantic: false }).svc.recall(prompt())
+    const sem = async () => new Map([['s', 0.9]])
+    const on = await gateSvc(rr([-11, -11, -11]).reranker, { engine, loadNotes: async () => notes, semanticScores: sem }).svc.recall(prompt())
+    expect(off.injected).toEqual(['k', 'j'])
+    expect(on.injected).toEqual(off.injected)
+})
+
+test('embeddings off: one keyword ranking, no reranker, no second pass', async () => {
+    const opts: unknown[] = []
+    const engine = await realPackEngine({
+        rankNotes: (index: any, q: any, o: any) => {
+            opts.push(o)
+            return (fakeEngine as any).rankNotes(index, q, o)
+        },
+    })
+    const { calls, reranker } = rr([4, 4])
+    const r = await gateSvc(reranker, { engine, loadNotes: async () => alphaNotes() }, { semantic: false }).svc.recall(prompt())
+    expect(calls).toHaveLength(0)
+    expect(opts).toHaveLength(1)
+    expect((opts[0] as { semantic?: unknown }).semantic).toBeUndefined()
+    expect(r.injected).toEqual(['a', 'b'])
+    expect(r.semantic).toBeUndefined()
+})
+
+test('embeddings on, no reranker: a keyword pick under semanticMinScore is lifted and injected', async () => {
+    const notes = [fullNote('s1', 'one'), fullNote('k', 'alpha two')]
+    const engine = await realPackEngine({
+        rankNotes: (index: any, _q: unknown, o?: { semantic?: Map<string, number> }) =>
+            (index.notes as MemoryNote[])
+                .map(note => ({ note, lexical: 1, score: note.name === 'k' ? 0.09 : o?.semantic ? 0.5 : 0 }))
+                .filter(r => r.score > 0),
+    })
+    const r = await gateSvc(null, { engine, loadNotes: async () => notes, semanticScores: async () => new Map([['s1', 0.9]]) }).svc.recall(prompt())
+    expect(r.injected).toEqual(['s1', 'k'])
+})
+
+// --- graph-aware recall ----------------------------------------------------------------------
+
+const linkNote = (name: string, backlinks: string[], content = `${name} body`): MemoryNote =>
+    ({
+        name,
+        content,
+        backlinks,
+        frontmatter: { type: 'fact', tags: [], description: `about ${name}` },
+    }) as unknown as MemoryNote
+const editorCtx = (active: string, rest = 'what now') =>
+    `<editor-context>\nActive file: ${active}\n</editor-context>\n\n${rest}`
+// real engine (no fakes): headers, marks and pointers come from the real packer
+const realSvc = (notes: MemoryNote[], over: Partial<RecallDeps> = {}) =>
+    createRecallService({
+        memoryDir: () => '/mem',
+        settings: () => ({ enabled: true, midTurn: true, semantic: false }),
+        embedder: () => null,
+        loadNotes: async () => notes,
+        vault: '/vault',
+        ...over,
+    })
+
+test('link boost: a note linking the active file is injected without a word match, marked', async () => {
+    const svc = realSvc([linkNote('dream-log', ['projects/plan']), linkNote('stray', ['elsewhere'])])
+    const r = await svc.recall({ mode: 'prompt', sessionId: 's', prompt: editorCtx('projects/plan.md', 'zzzz') })
+    expect(r.injected).toEqual(['dream-log'])
+    expect(r.context).toContain('## dream-log (fact) [] (about the open note)')
+    // the per-session ledger still dedups it
+    const again = await svc.recall({ mode: 'prompt', sessionId: 's', prompt: editorCtx('projects/plan.md', 'zzzz') })
+    expect(again.injected).toEqual([])
+})
+
+test('link boost: at most 2 prompt notes, ahead of ranked notes; none without editor context', async () => {
+    const notes = [
+        linkNote('b1', ['plan']),
+        linkNote('b2', ['plan']),
+        linkNote('b3', ['plan']),
+        linkNote('ranked', [], 'zebra stripes'),
+    ]
+    const svc = realSvc(notes)
+    const r = await svc.recall({ mode: 'prompt', sessionId: 's', prompt: editorCtx('plan.md', 'zebra stripes') })
+    expect(r.injected.slice(0, 2)).toEqual(['b1', 'b2'])
+    expect(r.injected).toContain('ranked')
+    expect(r.injected).not.toContain('b3')
+    const plain = await realSvc(notes).recall({ mode: 'prompt', sessionId: 'p', prompt: 'zebra stripes' })
+    expect(plain.injected).toEqual(['ranked'])
+})
+
+test('link boost: tool mode takes 1 note from a file the batch touched, inside the vault only', async () => {
+    const notes = [linkNote('t1', ['plan']), linkNote('t2', ['plan'])]
+    const call = (file_path: string) => ({
+        mode: 'tool' as const,
+        sessionId: 's',
+        toolCalls: [{ tool_name: 'Edit', tool_input: { file_path } }],
+    })
+    expect((await realSvc(notes).recall(call('/vault/projects/plan.md'))).injected).toEqual(['t1'])
+    expect((await realSvc(notes).recall(call('/elsewhere/plan.md'))).injected).toEqual([])
+})
+
+test('link boost: pointers prefer wikilink neighbours of the injected notes', async () => {
+    const notes = [
+        ...[1, 2, 3, 4, 5, 6, 7].map(i => linkNote(`m${i}`, i === 1 ? ['nb'] : [], 'zebra stripes')),
+        linkNote('nb', [], 'quiet badger'),
+        ...Array.from({ length: 30 }, (_, i) => linkNote(`f${i}`, [], `filler${i} words${i}`)),
+    ]
+    const r = await realSvc(notes).recall({ mode: 'prompt', sessionId: 's', prompt: 'zebra stripes' })
+    expect(r.injected).not.toContain('nb')
+    const pointers = (r.context ?? '').split('Also related notes')[1] ?? ''
+    expect(pointers).toContain('[[nb]]')
+    expect(pointers.indexOf('[[nb]]')).toBeLessThan(pointers.indexOf('[[m6]]'))
+    expect(pointers).toContain('[[m6]]')
+})
+
+test('session-start returns the brain block; no vault or an empty brain falls back to the index', async () => {
+    const calls: unknown[] = []
+    const brain = async (o: unknown) => (calls.push(o), 'BRAIN BLOCK')
+    const { svc } = make({ vault: '/vault', brain })
+    expect((await svc.recall({ mode: 'session-start', sessionId: 's' })).context).toBe('BRAIN BLOCK')
+    expect(calls).toEqual([{ vaultDir: '/vault', memoryDir: '/mem', channel: 'daemon' }])
+    calls.length = 0
+    await svc.recall({ mode: 'session-start', sessionId: 's2', channel: 'chat' })
+    expect(calls).toEqual([{ vaultDir: '/vault', memoryDir: '/mem', channel: 'chat' }])
+    expect((await make({ brain }).svc.recall({ mode: 'session-start', sessionId: 's' })).context).toBe('index:2')
+    const empty = make({ vault: '/vault', brain: async () => null })
+    expect((await empty.svc.recall({ mode: 'session-start', sessionId: 's' })).context).toBe('index:2')
+    const { svc: off } = make({ vault: '/vault', brain }, { enabled: false })
+    expect((await off.recall({ mode: 'session-start', sessionId: 's' })).reason).toBe('disabled')
+})
+
+// --- vault map on an empty memory dir, pointer title in excerpts, `$` in names, embeddings switch ---
+
+test('session-start composes the vault map from an empty memory dir; other modes stay no-memory', async () => {
+    const brain = async () => '# Vault map\n- a'
+    const { svc } = make({ vault: '/vault', brain, loadNotes: async () => [] })
+    const start = await svc.recall({ mode: 'session-start', sessionId: 's' })
+    expect(start.context).toContain('# Vault map')
+    expect((await svc.recall(prompt())).reason).toBe('no-memory')
+    expect((await svc.recall(tool())).reason).toBe('no-memory')
+    // no vault, or an empty brain: nothing to say
+    const bare = make({ loadNotes: async () => [] })
+    expect((await bare.svc.recall({ mode: 'session-start', sessionId: 's' })).reason).toBe('no-memory')
+    const empty = make({ vault: '/vault', brain: async () => null, loadNotes: async () => [] })
+    expect((await empty.svc.recall({ mode: 'session-start', sessionId: 's' })).reason).toBe('no-memory')
+})
+
+test('link boost: an excerpt holding the pointer title line does not hide the real pointer list', async () => {
+    const title = 'Also related notes (not included; read the file if needed):'
+    const notes = [
+        linkNote('m1', ['nb'], `zebra stripes\n${title}\nstray prose line`),
+        linkNote('m2', [], 'zebra stripes'),
+        linkNote('nb', [], 'quiet badger'),
+        ...Array.from({ length: 30 }, (_, i) => linkNote(`f${i}`, [], `filler${i} words${i}`)),
+    ]
+    const r = await realSvc(notes).recall({ mode: 'prompt', sessionId: 's', prompt: 'zebra stripes' })
+    const ctx = r.context ?? ''
+    expect(r.injected).toContain('m1')
+    expect(ctx).toContain(`${title}\nstray prose line`)
+    const real = ctx.slice(ctx.lastIndexOf(title))
+    expect(real).toContain('[[nb]]')
+    expect(real).not.toContain('stray prose line')
+    // the excerpt's quote and the one rewritten list; the packer's own list was replaced, not duplicated
+    expect(ctx.split(title).length).toBe(3)
+})
+
+test('link boost: a boosted note named or tagged with $ patterns gets exactly one mark', async () => {
+    const note = {
+        name: 'cost-$&-$\'',
+        content: 'body',
+        backlinks: ['plan'],
+        frontmatter: { type: 'fact', tags: ['$&', "$'"], description: 'about it' },
+    } as unknown as MemoryNote
+    const r = await realSvc([note]).recall({ mode: 'prompt', sessionId: 's', prompt: editorCtx('plan.md', 'zzzz') })
+    const header = "## cost-$&-$' (fact) [$&, $']"
+    expect(r.context).toContain(header + ' (about the open note)')
+    expect((r.context ?? '').split('(about the open note)').length).toBe(2)
+})
+
+test('readRecallSettingsSync: semantic follows embeddings.enabled, not daemon.recall.semantic', () => {
+    const vault = tempDir('recall-settings-')
+    mkdirSync(vault, { recursive: true })
+    const read = (body?: string) => {
+        if (body !== undefined) writeFileSync(join(vault, '.settings'), body)
+        return readRecallSettingsSync(vault).semantic
+    }
+    expect(read()).toBe(false)
+    expect(read('embeddings:\n  enabled: true\n')).toBe(true)
+    expect(read('embeddings:\n  enabled: false\n')).toBe(false)
+    expect(read('daemon:\n  recall:\n    semantic: true\n')).toBe(false)
 })

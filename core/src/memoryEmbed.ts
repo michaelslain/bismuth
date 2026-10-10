@@ -346,29 +346,44 @@ export function noteChunks(note: MemoryNote): string[] {
 }
 
 /** A note scores as its best chunk. */
-const bestChunk = (q: Float32Array, s: Stored): number => {
+const bestChunkAt = (q: Float32Array, s: Stored): { score: number; index: number } => {
     let best = -Infinity
+    let index = 0
     for (let o = 0; o + s.dim <= s.vecs.length; o += s.dim) {
         let d = 0
         for (let i = 0; i < s.dim; i++) d += q[i]! * s.vecs[o + i]!
-        if (d > best) best = d
+        if (d > best) {
+            best = d
+            index = o / s.dim
+        }
     }
-    return best
+    return { score: best, index }
 }
+const bestChunk = (q: Float32Array, s: Stored): number => bestChunkAt(q, s).score
 
 export type VectorStoreOptions = {
     embedder: Embedder
     debounceMs?: number
     /** Test seam / metric: called with how many notes one re-embed run covered. */
     onEmbed?: (count: number) => void
+    /** Embed at most this many notes per `embed()` call (persisting after each). Unset = one call for
+     *  every stale note. The vault store sets it so a long first pass yields the shared embedder
+     *  between slices and a query is never queued behind the whole pass. */
+    batchNotes?: number
 }
 
 export type VectorStore = {
     /** Schedule a (debounced) re-embed of every note whose hash changed or that is new. */
     sync(notes: MemoryNote[]): void
-    /** Cosine of the query vector against each note's CURRENT vector, top `SCORES_KEPT`. A note whose
-     *  vector is stale or missing is absent from the map. Schedules a re-embed for those. */
-    scores(queryVec: Float32Array, notes: MemoryNote[]): Promise<Map<string, number>>
+    /** Cosine of the query vector against each note's CURRENT vector, top `k` (default `SCORES_KEPT`).
+     *  A note whose vector is stale or missing is absent from the map. Schedules a re-embed for those. */
+    scores(queryVec: Float32Array, notes: MemoryNote[], k?: number): Promise<Map<string, number>>
+    /** Index of the chunk of `name` that matches the query best, or -1 when it has no vector. */
+    bestChunk(queryVec: Float32Array, name: string): number
+    /** Unit-length mean of a note's chunk vectors, or undefined when it has none. */
+    centroid(name: string): Float32Array | undefined
+    /** How many notes currently have a stored vector. */
+    size(): number
     /** Stop background re-embedding until the next sync() (semantic turned off). */
     pause(): void
     /** Run any pending re-embed now and wait for it (tests, measurements). */
@@ -460,11 +475,17 @@ export function createVectorStore(
                 e.delete(name)
                 pruned = true
             }
-        if (todo.length) {
-            const chunks = todo.map(noteChunks)
+        const step = opts.batchNotes && opts.batchNotes > 0 ? opts.batchNotes : todo.length
+        if (pruned) persist()
+        const PERSIST_EVERY_MS = 10_000
+        let lastPersist = Date.now()
+        for (let from = 0; from < todo.length; from += step) {
+            if (halted) break
+            const slice = todo.slice(from, from + step)
+            const chunks = slice.map(noteChunks)
             const vecs = await opts.embedder.embed(chunks.flat())
             let at = 0
-            todo.forEach((n, i) => {
+            slice.forEach((n, i) => {
                 const mine = vecs.slice(at, at + chunks[i]!.length)
                 at += mine.length
                 const dim = mine[0]!.length
@@ -472,9 +493,12 @@ export function createVectorStore(
                 mine.forEach((v, k) => flat.set(v, k * dim))
                 e.set(n.name, { hash: noteHash(n), dim, vecs: flat })
             })
-            opts.onEmbed?.(todo.length)
+            opts.onEmbed?.(slice.length)
+            if (from + step >= todo.length || Date.now() - lastPersist >= PERSIST_EVERY_MS) {
+                persist()
+                lastPersist = Date.now()
+            }
         }
-        if (todo.length || pruned) persist()
     }
 
     const fire = () => {
@@ -513,7 +537,24 @@ export function createVectorStore(
             if (timer) clearTimeout(timer)
             timer = null
         },
-        async scores(queryVec, notes) {
+        bestChunk(queryVec, name) {
+            const s = read().get(name)
+            return s ? bestChunkAt(queryVec, s).index : -1
+        },
+        centroid(name) {
+            const s = read().get(name)
+            if (!s) return undefined
+            const n = s.vecs.length / s.dim
+            const out = new Float32Array(s.dim)
+            for (let o = 0; o < s.vecs.length; o++) out[o % s.dim]! += s.vecs[o]! / n
+            let norm = 0
+            for (const x of out) norm += x * x
+            norm = Math.sqrt(norm) || 1
+            for (let i = 0; i < out.length; i++) out[i]! /= norm
+            return out
+        },
+        size: () => read().size,
+        async scores(queryVec, notes, k = SCORES_KEPT) {
             sync(notes)
             const e = read()
             const out: [string, number][] = []
@@ -522,7 +563,7 @@ export function createVectorStore(
                 if (s && s.hash === noteHash(n)) out.push([n.name, bestChunk(queryVec, s)])
             }
             out.sort((a, b) => b[1] - a[1])
-            return new Map(out.slice(0, SCORES_KEPT))
+            return new Map(out.slice(0, k))
         },
         async flush() {
             if (timer) {

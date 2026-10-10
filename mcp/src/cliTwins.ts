@@ -11,6 +11,8 @@ export const CLI_TWINS: Record<string, string | null> = {
     bismuth_docs_search: 'docs search',
     bismuth_docs_read: 'docs read',
     bismuth_doctor: 'doctor',
+    vault_map: 'map',
+    brain: 'brain',
     bismuth_cli: null,
     bismuth_cli_help: null,
     // daemon-gated: memory

@@ -11,8 +11,8 @@
 // prompt), which is why the check has to be mechanical.
 //
 // Versions are numbered the way PRIOR_SEED_HASHES numbers them and nowhere else differently —
-// v1 = 2026-06-28, v2 = 2026-07-06, v3 = 2026-07-27 (incremental scoping), v4 = the current
-// DEFAULT_CRONS content. One vocabulary; see daemon/test/fixtures/oldSeedContent.ts.
+// v1 = 2026-06-28, v2 = 2026-07-06, v3 = 2026-07-27 (incremental scoping), and every later
+// version in order, the live DEFAULT_CRONS content never listed. One vocabulary; see daemon/test/fixtures/oldSeedContent.ts.
 //
 // So: walk this file's own git history, reconstruct every version of DEFAULT_CRONS we ever
 // shipped, and assert each one hashes to either the CURRENT content or a listed prior. Historical
@@ -423,8 +423,9 @@ test('dream still carries the {{changedSinceLastRun}} placeholder the daemon sub
 
 test('dream keeps its fused incremental frontmatter contract intact (two checkpoint areas, no notify)', () => {
     expect(DREAM).toStartWith(
-        '---\nname: dream\nschedule: 0 * * * *\ntimeout: 1800\ncatchup: true\nincremental: true\ncheckpointDirs: vault, memory\n---\n',
+        '---\nname: dream\nschedule: 0 * * * *\ntimeout: 1800\ncatchup: true\nincremental: true\ncheckpointDirs: vault, memory\ntier: balanced\n---\n',
     )
+    expect(DREAM.split('\n---\n')[0]).not.toContain('model:')
     // The run report goes to the activity log; an OS notification fires only for a filed inbox page.
     expect(DREAM.split('\n---\n')[0]).not.toContain('notify')
     expect(DREAM).not.toContain('[NOTIFY:]\n') // never instructs a notify marker
@@ -468,7 +469,7 @@ test('dream files inbox pages only when something needs the user, per PAGES.md, 
 
 test("dream's report is ONE line with the fused counters and keeps the failed-run self-check", () => {
     expect(DREAM).toContain(
-        '`vault=N memory=N transcripts=N snapshots-collapsed=N merged=N pages=N notes=N size=XKB`',
+        '`vault=N memory=N transcripts=N snapshots-collapsed=N merged=N pages=N notes=N size=XKB profile=<updated|unchanged> hubs=N agenda=<fixed>/<total>`',
     )
     expect(DREAM).toContain('the run FAILED')
     expect(DREAM).not.toContain('bloat-deleted=N')
@@ -495,15 +496,34 @@ test("dream's report is printed output, never remembered as a note", () => {
     expect(DREAM).not.toContain('End with a one-line summary')
 })
 
-test("dream's bloat gate measures the notes, not the git repo the memory dir happens to be", () => {
-    // `du -sh $BISMUTH_MEMORY_DIR` reported 31 MB on a graph of 0.6 MB of markdown — the other 28 MB
-    // was .git (one autosave commit per write). The gate must exclude dot-directories, and the
-    // threshold must be on the scale of the actual content.
-    expect(DREAM).not.toContain('```bash\ndu -sh') // no runnable du gate survives anywhere in the prompt
-    expect(DREAM).toContain("find . -name '.?*' -prune -o -type f -name '*.md'")
-    expect(DREAM).toContain('exceeds **5 MB**')
-    expect(DREAM).not.toContain('> 50 MB')
-    expect(DREAM).not.toContain('back under 50 MB')
+test('dream takes its whole-graph agenda from the brain report, not from Bash surveys', () => {
+    // The daemon substitutes {{brainReport}} before the session; the prompt must carry it and must not
+    // ask the model to re-measure the graph itself (the old du / ls -lS / sed-uniq commands).
+    expect(DREAM).toContain('{{brainReport}}')
+    expect(DREAM).toContain('Fix at most 12 items per run')
+    expect(DREAM).toContain('worst first')
+    expect(DREAM).not.toContain('du -sh')
+    expect(DREAM).not.toContain('ls -lS')
+    expect(DREAM).not.toContain('uniq -c')
+    expect(DREAM).not.toContain("find . -name '.?*' -prune")
+    // The oversized-note triage survives, with its byte-bounded peek.
+    expect(DREAM).toContain('Triage oversized notes (>100 KB)')
+    expect(DREAM).toContain('head -c 4000')
+    expect(DREAM).toContain('NEVER use the Read tool on files >50 KB')
+})
+
+test('dream states the brain rules: profile, atomic notes, provenance, supersede, live facts, neutrality, hubs', () => {
+    expect(DREAM).toContain('`user-profile` with `type: profile`, at most 1,500 characters')
+    expect(DREAM).toContain('A note body is at most 2,000 characters')
+    expect(DREAM).toContain('`(session YYYY-MM-DD)`')
+    expect(DREAM).toContain('`[[wikilink]]`')
+    expect(DREAM).toContain('Supersede, do not erase')
+    expect(DREAM).toContain('`## History`')
+    expect(DREAM).toContain('Never store what the vault answers live')
+    expect(DREAM).toContain('Describe, do not diagnose')
+    expect(DREAM).toContain('`CRITICAL`')
+    expect(DREAM).toContain('4 or more notes gets exactly one `type: hub` note')
+    expect(DREAM).toContain('bismuth map --around <note>')
 })
 
 test("dream collapses date-stamped snapshots and refuses the 'historical record' excuse", () => {
@@ -523,92 +543,12 @@ test("dream collapses date-stamped snapshots and refuses the 'historical record'
     expect(DREAM).toContain('the run FAILED')
 })
 
-test("dream's cluster-detection shell one-liner survives template-literal escaping verbatim", () => {
-    // The prompt is a TS template literal; a mis-escaped `$` or backtick would ship a broken command
-    // to a model that has no way to notice. Pin the exact bytes of the sed pipeline.
-    expect(DREAM).toContain(
-        "ls *.md | sed -E 's/[-_](19|20)[0-9]{2}.*$//; s/[-_](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*.*$//; s/\\.md$//' | sort | uniq -c | sort -rn",
-    )
-    // The awk size sum likewise: a literal backslash-n reaches awk's printf, not a real newline.
-    expect(DREAM).toContain(
-        'awk \'{ bytes += $5 } END { printf "%d notes, %d KB of markdown\\n", NR, bytes/1024 }\'',
-    )
+test('dream keeps its worked examples of dated clusters and has no template-literal interpolation site', () => {
+    expect(DREAM).toContain('ONE note, not seven:')
+    expect(DREAM).toContain('ONE note, not two:')
+    expect(DREAM).toContain('→ collapse to `vault-review-findings`')
+    expect(DREAM).toContain('→ collapse to `quant-trading`')
     expect(DREAM).not.toContain('${') // no accidental interpolation site left in the shipped text
-})
-
-/** Pull the Step 3 cluster-detection pipeline out of the SHIPPED prompt (the block containing
- *  `uniq -c`), so the test below runs the exact bytes the model will run — not a copy that could
- *  drift away from the prompt without anyone noticing. */
-function shippedClusterCommand(): string {
-    const match = DREAM.match(/```bash\n([^`]*uniq -c[^`]*)\n```/)
-    expect(
-        match,
-        "Step 3's cluster-detection bash block is gone from the dream prompt",
-    ).not.toBeNull()
-    return match![1]!
-}
-
-/** Pull one of Step 3's worked-example filename lists out of the shipped prompt. */
-function shippedExample(marker: string): string[] {
-    const match = DREAM.match(
-        new RegExp(`${marker}\\n\\n\`\`\`\\n([\\s\\S]*?)\\n\`\`\``),
-    )
-    expect(
-        match,
-        `Step 3's worked example "${marker}" is gone from the dream prompt`,
-    ).not.toBeNull()
-    return match![1]!.split('\n').filter(Boolean)
-}
-
-/** Run the shipped pipeline against a throwaway memory dir containing exactly `files`, and return
- *  the `uniq -c` output as {stem, count} pairs. */
-function clusterStems(files: string[]): { stem: string; count: number }[] {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-cron-cluster-'))
-    try {
-        for (const f of files) writeFileSync(join(dir, f), 'x\n', 'utf-8')
-        const out = execFileSync('bash', ['-c', shippedClusterCommand()], {
-            encoding: 'utf-8',
-            env: { ...process.env, BISMUTH_MEMORY_DIR: dir },
-            stdio: ['ignore', 'pipe', 'ignore'],
-        })
-        return out
-            .split('\n')
-            .map(l => l.trim())
-            .filter(Boolean)
-            .map(l => {
-                const [count, ...rest] = l.split(/\s+/)
-                return { stem: rest.join(' '), count: Number(count) }
-            })
-    } finally {
-        rmSync(dir, { recursive: true, force: true })
-    }
-}
-
-test("KNOWN DIVERGENCE: Step 3's shipped command splits its own seven-file worked example into TWO stems, not one", () => {
-    // The prompt calls this exact set "ONE note, not seven", but the sed pipeline it ships alongside
-    // only strips date/month tokens from the RIGHT of a name — it never normalizes a leading
-    // qualifier. So `michael-vault-review-july-22-2026-final.md` reduces to `michael-vault-review`
-    // while `vault-review-2026-07-24-checkpoint.md` reduces to `vault-review`, and the worked example
-    // comes back as two clusters. The prose that follows the command still covers the gap (the model
-    // is separately told to treat "several notes that clearly share a topic once you strip the above"
-    // as one cluster), so the prompt is not broken — but the command demonstrably does not produce
-    // the result its own example claims, and that mismatch is worth being visible rather than folklore.
-    //
-    // This test PINS the divergence, it does not bless it. If someone teaches the pipeline to fold the
-    // leading qualifier (e.g. a second sed pass, or clustering on the longest common suffix), this
-    // will fail — update the expectation to the single `vault-review` cluster and delete this comment.
-    const stems = clusterStems(shippedExample('ONE note, not seven:'))
-    expect(stems).toEqual([
-        { stem: 'michael-vault-review', count: 5 },
-        { stem: 'vault-review', count: 2 },
-    ])
-})
-
-test("Step 3's shipped command DOES collapse the two-file worked example, so the pipeline itself works", () => {
-    // The counterexample that proves the divergence above is about the leading qualifier and nothing
-    // else: when the names share a prefix, the same command collapses them exactly as advertised.
-    const stems = clusterStems(shippedExample('ONE note, not two:'))
-    expect(stems).toEqual([{ stem: 'michael-quant-trading-status', count: 2 }])
 })
 
 test("dream carries vault-review's rules: canonical user-* notes, fold into existing text, dated lines inside notes, visibility-denied is expected", () => {
@@ -674,4 +614,26 @@ test('dream points memory writes at the graph, not at a path relative to its cwd
     // No tools must mean "write nothing", never "improvise a location".
     expect(DREAM).toContain('do not improvise a location')
     expect(DREAM).toContain('write nothing')
+})
+
+test('dream never drops real content: provenance only for added facts, split keeps every fact, hubs exempt, records kept', () => {
+    // 1: splitting carries facts over unchanged and forgets the original only after the parts exist.
+    expect(DREAM).toContain('Provenance is required for facts you add')
+    expect(DREAM).toContain('carry every fact over unchanged, sourced or not')
+    expect(DREAM).not.toContain('is a guess; leave it out')
+    expect(DREAM).toContain('Forget the original only after every part is written')
+    // 2: status-lines keeps dated records.
+    expect(DREAM).toContain('keep every dated record')
+    expect(DREAM).toContain('Never delete a record because it carries a date')
+    expect(DREAM).not.toContain('Replace those lines with a link to the source note.')
+    // 3: the cap is a ceiling, not a quota.
+    expect(DREAM).toContain('first 3 notes it names are fixed')
+    expect(DREAM).toContain('about 25 minutes')
+    expect(DREAM).toContain('time ran out after the items you started')
+    expect(DREAM).not.toContain('must show \\`fixed\\` equal')
+    // 4: oversized transcripts are forgotten in Step 4 itself.
+    expect(DREAM).toContain("-name 'auto-*.md' -size +100k")
+    expect(DREAM).not.toContain('already handled in Step 2')
+    // 5: hubs may exceed the size cap.
+    expect(DREAM).toContain('A hub may exceed 2,000 characters; keep each member line under 100')
 })

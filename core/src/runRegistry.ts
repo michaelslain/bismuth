@@ -12,8 +12,8 @@
 // One rule governs the cleanup below: a record is only ever DELETED on proof its owner is dead.
 // See the block comment above readRunRecords.
 import { bismuthHome } from './bismuthHome'
-import { join } from 'node:path'
-import { mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync } from 'node:fs'
 import { writeFileAtomicSync } from './atomicWrite'
 import { pidAlive } from './daemonState'
 import { isTempPath } from './tempPath'
@@ -149,11 +149,27 @@ export function readRunRecords(): RunRecord[] {
     return out
 }
 
+/** One spelling for a vault path: absolute (relative paths resolve against the cwd), no trailing
+ *  slash, symlinks followed. A vault that is gone from disk keeps its absolute spelling. */
+function canonicalVault(p: string): string {
+    const abs = resolve(p)
+    try {
+        return realpathSync(abs)
+    } catch {
+        return abs
+    }
+}
+
+/** Whether two spellings name one vault: `./x`, `/abs/x/` and a symlink to `/abs/x` all do. */
+function sameVault(a: string, b: string): boolean {
+    return canonicalVault(a) === canonicalVault(b)
+}
+
 /**
  * Resolve a base URL from the registry.
  *
- * With a vault this is POSITIVE IDENTIFICATION — an exact path match, honoured whatever the path
- * looks like, so a sandbox core on `/tmp/…` is still reachable by name.
+ * With a vault this is POSITIVE IDENTIFICATION — the same directory under any spelling (relative,
+ * trailing slash, symlink), honoured whatever the path looks like, so a sandbox core on `/tmp/…` is still reachable by name.
  *
  * Without one it is a GUESS, only safe when unambiguous. Persistent vaults win the guess: a stray
  * sandbox/verification core on a temp path must not hijack a bare `bismuth app …` typed in a shell
@@ -163,7 +179,7 @@ export function readRunRecords(): RunRecord[] {
 export function resolveRunRegistryBase(vault?: string): string | undefined {
     const recs = readRunRecords()
     if (vault) {
-        const hit = recs.find(r => r.vault === vault)
+        const hit = recs.find(r => r.vault === vault) ?? recs.find(r => sameVault(r.vault, vault))
         return hit ? `http://localhost:${hit.port}` : undefined
     }
     const persistent = recs.filter(r => !isTempPath(r.vault))

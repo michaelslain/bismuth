@@ -72,15 +72,21 @@ export const PRIOR_SEED_HASHES: Record<string, string[]> = {
     // re-survey every run whenever the bismuth CLI wasn't resolvable on PATH (Bug #105). v3 moved
     // that scoping into the daemon. v4 stopped dream writing a memory note about its own runs, fixed
     // its bloat gate to measure notes instead of .git, and made both prompts forbid dated snapshot
-    // notes. v5 (the current DEFAULT_CRONS content) is the fused dream that absorbed vault-review;
-    // vault-review is no longer seeded (RETIRED_CRONS), its list stays so an old copy is still
-    // recognised as stock.
+    // notes. v5 is the fused dream that absorbed vault-review; later entries are successive edits of
+    // that fused dream. The live DEFAULT_CRONS content is never listed. vault-review is no longer
+    // seeded (RETIRED_CRONS), its list stays so an old copy is still recognised as stock.
     dream: [
         '751039390e12c74e9bb98044b97eb7bf508e5ec2a73dc71a42942eb61121e870', // v1 — 2026-06-28
         '302a7a4eafa8a5ba956ebb278462d47adf57daa8ad12bb7c098a2b7587c2aa63', // v2 — 2026-07-06
         'd324876622fd7a3453217a90605521f13f17e538ac10da8cbf36464e7c559a1c', // v3 — 2026-07-27, incremental scoping
         'ee00c96f7c8c68f4c788d8c973c6ce4071d6e66bcde39edc629a21696fd6ee22', // v4 — the body shipped at 86473737, before the fuse
         '450a9250911c557215194b8d72e4fe0590d24488f94cde488822d6aa1f591d8b', // v5 — the fused vault+memory dream, before its heading-spacing fix
+        'a5a0510e32dac1a6622c7b8cff3fcbea2fb84695b7fe22b7fe0b46d007b9ee21', // v6 — the size/cluster-survey dream, before the brain report
+        'b868e379540bd9620fe7c011440eda713319ca1382d60e27f1953b7449f95a8b', // v7 — the brain-report dream, before the review fixes
+        '7725befb1adc0d534b4d546046e00e48f1b726c5330c9820ced7dcfb62f18329', // v8 — the brain-report dream, before the no-description rule
+        '03c882eae25d3668af6e4fd32b5d2fc707b0862d6ac09c9bcb1013fd0a96140e', // v9 — the brain-report dream, before the carry-every-fact fixes
+        '5fef4988438511e18e68a349854cfb57745d0ad7cdfc2d4c207398383fed2f75', // v10 — the brain-report dream, before the unavailable-report + duplicate-bullet fixes
+        'de6bc04ca72d56fc9fd8f482c751106ad56f92640165244d878354dd769479fd', // v11 — the brain-report dream, before the healthy-graph line named Steps 4 to 7
     ],
     'vault-review': [
         '355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39', // v1 — 2026-06-28 (unchanged through f48076b)

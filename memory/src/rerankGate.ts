@@ -24,17 +24,21 @@ export function rerankQuery(q: { primary: string; context?: string }): string {
     return `${primary}\n${context.slice(0, RERANK_CONTEXT_CHARS)}`
 }
 
-/** Lowest raw logit that may be injected (ms-marco MiniLM logits run roughly -12..+8; a relevant
- *  note often sits near -5). Chosen -6 from `bun bench/recallEval.ts --reranker ... --sweep` with
- *  RERANK_TERSE_TERMS 4: synthetic recall@5 0.959 / false-inject 0.104, real vault (135 notes,
- *  private) 0.955 / 0.125. -6.5 (the largest-passing-minus-1.5 rule) gave the same recall at
- *  false-inject 0.125, so the margin bought nothing. See docs/daemon/communication.md. */
+/** Lowest raw logit the gate admits (keyword-only picks go in regardless, see `withKeywordPicks`) (ms-marco MiniLM logits run roughly -12..+8; a relevant
+ *  note often sits near -5, and a paraphrase of a rule reads -6 to -10 even when it is the right
+ *  note). -6 is the lowest bar that adds no false injection on either eval suite: every logit
+ *  between -6 and -7 on the synthetic suite belongs to an expect-nothing prompt except one match.
+ *  Measured with `bun bench/recallEval.ts --service --embeddings on`, see docs/daemon/communication.md. */
 export const RERANK_MIN_LOGIT = -6
-/** A candidate this far below the top logit is dropped even when it clears `RERANK_MIN_LOGIT`. */
-export const RERANK_MAX_DROP = 6
+/** A candidate this far below the top logit is dropped even when it clears `RERANK_MIN_LOGIT`. A
+ *  second real match often reads 6 to 8 below a strongly matching first one (3.4 and -4.0 on the
+ *  same prompt), so 6 refused it; 8 keeps it and adds no false injection. */
+export const RERANK_MAX_DROP = 8
 
-/** Keep the candidates whose logit is >= minLogit and >= top - maxDrop, best first. `[]` = inject
- *  nothing. A missing or non-finite logit never qualifies; a stable order breaks ties. */
+/** Keep the candidates whose logit is >= minLogit and >= top - maxDrop, best first. `[]` = the gate
+ *  admits nothing. A missing or non-finite logit never qualifies; a stable order breaks ties. The
+ *  gate only adds: the recall service (`withKeywordPicks` in core/src/memoryRecall.ts) injects
+ *  every keyword-only pick besides what it returns, whatever logit that pick reads. */
 export function gateByRerank(
     candidates: RankedNote[],
     logits: number[],

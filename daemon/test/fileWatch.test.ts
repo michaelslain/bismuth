@@ -10,6 +10,8 @@ import {
     createFileWatcher,
     isDaemonInternalPath,
     matchesWatch,
+    startFileWatch,
+    stopFileWatch,
     type FileWatcher,
 } from '../src/daemon/fileWatch.ts'
 
@@ -156,4 +158,25 @@ test("createFileWatcher returns null for a root that doesn't exist (never throws
         },
     )
     expect(fw).toBeNull()
+})
+
+test('startFileWatch invalidates the brain map for the vault on a batch, even one that only touches .daemon/', async () => {
+    root = mkdtempSync(join(tmpdir(), 'bismuth-filewatch-'))
+    mkdirSync(join(root, '.daemon'), { recursive: true })
+    const calls: string[] = []
+    const ctx = { root } as never
+    startFileWatch(ctx, DEBOUNCE_MS, dir => calls.push(dir))
+    try {
+        await sleep(WATCH_SETTLE_MS)
+        writeFileSync(join(root, '.daemon', 'state.json'), '{}')
+        await sleep(PAST_DEBOUNCE_MS)
+        expect(calls.length).toBeGreaterThanOrEqual(1)
+        const before = calls.length
+        writeFileSync(join(root, '.settings'), 'x')
+        await sleep(PAST_DEBOUNCE_MS)
+        expect(calls.length).toBeGreaterThan(before)
+        expect(new Set(calls)).toEqual(new Set([root]))
+    } finally {
+        stopFileWatch(ctx)
+    }
 })

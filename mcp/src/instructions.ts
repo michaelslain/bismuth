@@ -27,4 +27,7 @@ export const SERVER_INSTRUCTIONS =
     'vault/frontmatter.md for more. Asked what is hidden or off-limits to AI: run `bismuth ' +
     'settings deny-list`, never grep; an agent gets only a count by design, so give it and have ' +
     'the user run it for paths (vault/visibility.md). If Bismuth misbehaves after an update (missing CLI, stale MCP, ' +
-    'daemon not running), run bismuth_doctor first.'
+    'daemon not running), run bismuth_doctor first. ' +
+    'In a Bismuth vault, when your session context holds no `# Vault map` section inside a `<bismuth-memory>` block, ' +
+    'call `brain` once at the start; use `vault_map` with `around` to see where a note sits ' +
+    'before reorganising or linking it.'

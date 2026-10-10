@@ -102,6 +102,8 @@ import {
 } from './visibility'
 import { DEFAULTS as SETTINGS_DEFAULTS } from './schema/settingsSchema'
 import { invalidateSearchIndex, updateSearchIndex } from './search'
+import { invalidateBrain } from './brain'
+import { syncVaultEmbeddings } from './vaultEmbed'
 import {
     migrateDaemonState,
     daemonIdentityName,
@@ -279,6 +281,9 @@ export function createServer(cfg: CoreConfig) {
             else unmarkSelfWritten([SETTINGS_FILE])
         })
         .catch(() => unmarkSelfWritten([SETTINGS_FILE]))
+    // Vault-note embeddings (a no-op while `embeddings.enabled` is false): index once at boot, after the
+    // settings reconcile so the switch is read from the settled file.
+    void bootReconcile.then(() => syncVaultEmbeddings(cfg.vault))
 
     // On boot: convert this vault's emoji task syntax to bracket fields, once. The emoji
     // spelling has no reader any more (core/src/taskLegacy.ts says why), so an un-migrated
@@ -512,6 +517,9 @@ export function createServer(cfg: CoreConfig) {
         // touched only the memory dir (3rd brain, no vault paths) has nothing for them to react
         // to — skip the drop/rebuild entirely so a daemon memory write doesn't force the next
         // /search, /rows, or /tasks request to pay a full vault re-walk for no content change.
+        // The brain block's vault map is built from the notes, so any vault change drops it.
+        if (vaultTouched) invalidateBrain(cfg.vault)
+        if (vaultTouched) syncVaultEmbeddings(cfg.vault, paths.length > 0 ? paths : undefined)
         if (vaultTouched) {
             // The search index covers note bodies (and basenames/headings/tags), so even a content-only edit
             // that's dirty to neither graph nor tree changes search results. When we know exactly which paths
@@ -704,6 +712,7 @@ export function createServer(cfg: CoreConfig) {
                     // watcher above, which does dirty the tree via classifyVault.
                     if (memory) {
                         dirty.graph = true
+                        invalidateBrain(cfg.vault)
                         // Autosave the memory repo so it's revertable + gives the dream cron a commit
                         // history to diff against (refs/bismuth/dream). Coalesced so a burst of memory writes
                         // doesn't spam commits; best-effort, never blocks.

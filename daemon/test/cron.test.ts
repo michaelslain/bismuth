@@ -1074,3 +1074,11 @@ test('announcesNewPages: a notify:true cron leaves page announcements to its own
     expect(announcesNewPages({ notify: true })).toBe(false)
     expect(announcesNewPages({ notify: false })).toBe(true)
 })
+
+test('loadCronJobs reads a `tier` key as a trimmed string, and an absent one stays undefined', async () => {
+    cronFile('tiered', 'name: tiered\nschedule: 0 * * * *\ntier:   balanced  ')
+    cronFile('plain', 'name: plain\nschedule: 0 * * * *')
+    const jobs = await loadCronJobs(ctx)
+    expect(jobs.find(j => j.file === 'tiered')!.tier).toBe('balanced')
+    expect(jobs.find(j => j.file === 'plain')!.tier).toBeUndefined()
+})

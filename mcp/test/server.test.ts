@@ -56,7 +56,7 @@ test('dispatching bismuth_cli_help through the real handler leaves a normal look
 
 // --- bismuth_doctor + the always-on set --------------------------------------------------------
 
-test('outside a daemon-enabled vault the server lists exactly the six always-on tools', async () => {
+test('outside a daemon-enabled vault the server lists exactly the eight always-on tools', async () => {
     const saved = { mem: process.env.BISMUTH_MEMORY_DIR, vault: process.env.BISMUTH_VAULT, cwd: process.cwd() }
     const empty = tempDir('mcp-tools-')
     delete process.env.BISMUTH_MEMORY_DIR
@@ -72,6 +72,8 @@ test('outside a daemon-enabled vault the server lists exactly the six always-on 
             'bismuth_docs_search',
             'bismuth_docs_read',
             'bismuth_doctor',
+            'vault_map',
+            'brain',
             'bismuth_cli',
             'bismuth_cli_help',
         ])
@@ -82,10 +84,24 @@ test('outside a daemon-enabled vault the server lists exactly the six always-on 
     }
 })
 
+test('remember type description lists profile and hub', () => {
+    const handlers = (server as unknown as {
+        _requestHandlers: Map<string, (r: unknown, e: unknown) => Promise<{ tools: { name: string; inputSchema: { properties: { type?: { description: string } } } }[] }>>
+    })._requestHandlers
+    const saved = process.env.BISMUTH_MEMORY_DIR
+    process.env.BISMUTH_MEMORY_DIR = join(tempDir('mcp-rt-'), '.daemon', 'memory')
+    return handlers.get('tools/list')!({ method: 'tools/list' }, {}).then(({ tools }) => {
+        if (saved === undefined) delete process.env.BISMUTH_MEMORY_DIR
+        else process.env.BISMUTH_MEMORY_DIR = saved
+        const desc = tools.find(t => t.name === 'remember')!.inputSchema.properties.type!.description
+        expect(desc).toBe('person | project | workflow | fact | preference | daily | auto | profile | hub')
+    })
+})
+
 test('ALL_TOOL_NAMES covers the always-on, memory and daemon tools with no duplicates', () => {
     expect(new Set(ALL_TOOL_NAMES).size).toBe(ALL_TOOL_NAMES.length)
     expect(ALL_TOOL_NAMES).toEqual(expect.arrayContaining(['bismuth_doctor', 'remember', 'recall', 'forget', 'daemon_status', 'page_resolve']))
-    expect(ALL_TOOL_NAMES).toHaveLength(6 + 3 + 11)
+    expect(ALL_TOOL_NAMES).toHaveLength(8 + 3 + 11)
 })
 
 test('doctorCliArgs: no input is a bare json report', () => {
@@ -159,3 +175,48 @@ test('bismuth_docs_read through the real handler outlines a page over 20000 char
         else process.env.BISMUTH_DOCS_DIR = saved
     }
 })
+
+test('vault_map and brain resolve the vault from cwd when BISMUTH_VAULT is unset', async () => {
+    const vault = tempDir('vault-brain-')
+    writeFileSync(join(vault, '.settings'), '{}\n')
+    const origVault = process.env.BISMUTH_VAULT
+    const origMem = process.env.BISMUTH_MEMORY_DIR
+    const origCwd = process.cwd()
+    delete process.env.BISMUTH_VAULT
+    delete process.env.BISMUTH_MEMORY_DIR
+    try {
+        process.chdir(vault)
+        for (const name of ['vault_map', 'brain']) {
+            const r = await callTool(name)
+            const text = JSON.stringify(r)
+            expect(text).not.toContain('no vault — pass --vault')
+            expect(text).not.toContain('Not in a Bismuth vault')
+            expect(r.isError).toBeFalsy()
+        }
+    } finally {
+        process.chdir(origCwd)
+        if (origVault !== undefined) process.env.BISMUTH_VAULT = origVault
+        if (origMem !== undefined) process.env.BISMUTH_MEMORY_DIR = origMem
+    }
+}, 60_000)
+
+test('vault_map and brain outside any vault say so without erroring', async () => {
+    const dir = tempDir('no-vault-')
+    const origVault = process.env.BISMUTH_VAULT
+    const origMem = process.env.BISMUTH_MEMORY_DIR
+    const origCwd = process.cwd()
+    delete process.env.BISMUTH_VAULT
+    delete process.env.BISMUTH_MEMORY_DIR
+    try {
+        process.chdir(dir)
+        for (const name of ['vault_map', 'brain']) {
+            const r = await callTool(name)
+            expect(r.isError).toBeFalsy()
+            expect(JSON.stringify(r)).toContain('Not in a Bismuth vault')
+        }
+    } finally {
+        process.chdir(origCwd)
+        if (origVault !== undefined) process.env.BISMUTH_VAULT = origVault
+        if (origMem !== undefined) process.env.BISMUTH_MEMORY_DIR = origMem
+    }
+}, 60_000)

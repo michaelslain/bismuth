@@ -103,14 +103,34 @@ Every cron fire, approved page and similar run calls `sendMessage` in `daemon/sr
 
 - `cwd` is the vault root and `permissionMode` is `bypassPermissions`.
 - The environment adds `BISMUTH_MEMORY_DIR` (this vault's `.daemon/memory`), `BISMUTH_CLI`, an augmented `PATH`, and `BISMUTH_AGENT_CHANNEL=daemon`, which marks the session's own `bismuth` calls as an agent's for the visibility gate.
-- The system prompt is the `claude_code` preset with the persona from `buildDaemonPersona` appended: `You are <name>.`, the `identity.md` body, and, when notes are restricted, an advisory list of them.
-- The model defaults to `haiku`, run through your own installed `claude` binary with its login (no API key). A cron's `model` and `effort` keys override the model and effort.
+- The system prompt is the `claude_code` preset with the persona from `buildDaemonPersona` appended: `You are <name>.`, the `identity.md` body, when notes are restricted an advisory list of them, then the brain block (see [The persona carries the vault brain](#the-persona-carries-the-vault-brain)).
+- The model defaults to `haiku`, run through your own installed `claude` binary with its login (no API key). A cron's `model` and `effort` keys override the model and effort, and its `tier` key picks them by name (see [Cron tiers](#cron-tiers-map-per-backend)).
 - `mcpServers` holds one `bismuth` server: `~/.bismuth/bin/bismuth-mcp` with `BISMUTH_VAULT`, `BISMUTH_MEMORY_DIR`, `BISMUTH_DOCS_DIR`, `BISMUTH_CLI`, and the two channel stamps. `settingSources` is `[]`, or `['user']` when `daemon.inheritUserMcp` is true. The programmatic `bismuth` entry wins a name collision with your own, so the vault stamps hold either way.
 - When the vault restricts any note, the options add `managedSettings.permissions.deny`, a sandbox with `denyRead` on the restricted files, and `disallowedTools` for `mcp__bismuth__bismuth_cli`, `Grep` and `Glob`. A restricted vault therefore gives up the `bismuth_cli` tool in daemon sessions.
 
 The MCP path is absolute because launchd's `PATH` is minimal. If the bundled tools are not installed, the session gets no MCP block, logs an error line for each send, and has no `remember`, `recall` or `forget` tools. `settingSources` stays pinned on that path. `cronMemoryInstruction` in `daemon/src/daemon/cron.ts` appends the memory directory to every cron prompt and tells a session without `remember` to write nothing.
 
 An owner check opens `sendMessage`: a device that is not the owner throws, so only one device's daemon drives sessions. See [communication](communication.md#which-device-runs-the-daemon).
+
+### The persona carries the vault brain
+
+`buildDaemonPersona` ends the persona with the brain block: the user profile, the vault map and the memory index, composed for the daemon channel, which leaves out hidden and chat-only notes. Every cron fire and approved page therefore starts knowing the vault. Claude sessions receive the block through the system-prompt append and Codex sessions through `developer_instructions`. [The vault map](../vault/map.md) describes what the block holds.
+
+A cold vault map is waited for up to 30 seconds (`DAEMON_BRAIN_WAIT_MS`). If the build fails or returns nothing, the persona goes out without the block and the session still runs.
+
+The daemon's file watcher drops the cached map after every debounced batch of file events, including a batch made only of `.settings` or `.daemon/` changes. A cached map older than 5 minutes is rebuilt on the next session.
+
+### Cron tiers map per backend
+
+A cron's `tier` key (`fast`, `balanced` or `deep`) is resolved by `resolveTier` into the model and effort of the backend that runs the session, so no backend receives another's model name. [Crons and processes](crons-and-processes.md) lists the key with the other cron keys.
+
+| Tier | Claude | Codex |
+|---|---|---|
+| `fast` | model `haiku` | effort `low` |
+| `balanced` | model `sonnet` | effort `medium` |
+| `deep` | model `opus` | effort `high` |
+
+Codex tiers set only the effort; the model stays whatever your Codex configuration defaults to. An explicit `model` or `effort` in the cron wins over the tier's value. A cron with neither a tier nor a model keeps the `haiku` default on Claude. The tier resolves after the backend downgrade, so a Codex request that runs on Claude gets Claude's mapping. An unknown tier is ignored with a logged warning.
 
 ### Backend selection and Codex
 
@@ -128,4 +148,4 @@ Core reads and lightly writes the daemon's files; it never calls the daemon proc
 
 The bundled app ships the compiled daemon. On every launch it copies a newer build to `~/.bismuth/bin/bismuth-daemon` and runs `--ensure-installed` (`core/src/daemonInstall.ts`). The daemon updates with the app. [Lifecycle](lifecycle.md#install) has the details.
 
-Source: `daemon/src/daemon/{index,session,codexSession,persona,cron,seeds}.ts`, `daemon/src/lib/{config,registry,owner,bismuthPaths}.ts`, `core/src/{daemon,daemonGraph,daemonInstall}.ts`, `core/src/schema/settingsSchema.ts`, `app/src/daemon/{DaemonPage,DaemonPageHost,DaemonHub,daemonFaceModel,daemonPageModel}.ts*`
+Source: `daemon/src/daemon/{index,session,codexSession,persona,tier,fileWatch,cron,seeds}.ts`, `daemon/src/lib/{config,registry,owner,bismuthPaths,coreBrain}.ts`, `core/src/brain.ts`, `core/src/{daemon,daemonGraph,daemonInstall}.ts`, `core/src/schema/settingsSchema.ts`, `app/src/daemon/{DaemonPage,DaemonPageHost,DaemonHub,daemonFaceModel,daemonPageModel}.ts*`

@@ -1469,25 +1469,48 @@ function spawnChatQuery(
                                       ],
                                   },
                               ],
-                              // Compaction and /clear drop injected text from the model's context, so the
-                              // dedup ledger must reset or those notes would never be shown again.
+                              // The session-start brain block (profile, vault map, memory index) goes in
+                              // through the recall service, so the dedup ledger and `daemon.recall.enabled`
+                              // apply. Compaction and /clear drop injected text from the model's context;
+                              // the service resets the ledger for those sources and the block is injected again.
                               SessionStart: [
                                   {
                                       hooks: [
                                           async (input: HookInput) => {
                                               const dir = session.memoryDir
                                               if (
-                                                  dir &&
-                                                  input.hook_event_name ===
-                                                      'SessionStart' &&
-                                                  (input.source === 'compact' ||
-                                                      input.source === 'clear')
+                                                  !dir ||
+                                                  input.hook_event_name !==
+                                                      'SessionStart'
                                               )
-                                                  recallServiceFor(
-                                                      session.cwd,
-                                                      dir,
-                                                  ).reset(input.session_id)
-                                              return {}
+                                                  return {}
+                                              const { context } =
+                                                  await recallWithin(
+                                                      recallServiceFor(
+                                                          session.cwd,
+                                                          dir,
+                                                      ),
+                                                      {
+                                                          mode: 'session-start',
+                                                          sessionId:
+                                                              input.session_id,
+                                                          source: input.source,
+                                                          channel: 'chat',
+                                                      },
+                                                      3000,
+                                                  ).catch(() => ({
+                                                      context: null,
+                                                  }))
+                                              return context
+                                                  ? {
+                                                        hookSpecificOutput: {
+                                                            hookEventName:
+                                                                'SessionStart' as const,
+                                                            additionalContext:
+                                                                context,
+                                                        },
+                                                    }
+                                                  : {}
                                           },
                                       ],
                                   },

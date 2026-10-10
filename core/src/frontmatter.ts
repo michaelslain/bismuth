@@ -8,17 +8,33 @@ export interface Frontmatter {
 /** Regex to match YAML frontmatter block at start of markdown (handles \r\n too). */
 export const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/
 
+/**
+ * Parse a frontmatter YAML block (the text between the fences) without ever warning: a collection
+ * key such as `{{date}}` is legal YAML that the yaml package otherwise reports on every parse.
+ * An empty block is `{}`; a parse error or a document that is not a map (scalar, list) is `null`,
+ * so a caller that must fail closed can tell it from "no keys".
+ */
+export function parseFrontmatterData(yaml: string): Record<string, unknown> | null {
+    try {
+        const v = parse(yaml, { logLevel: 'error' }) as unknown
+        if (v === null || v === undefined) return {}
+        if (typeof v !== 'object' || Array.isArray(v)) return null
+        return v as Record<string, unknown>
+    } catch {
+        return null
+    }
+}
+
+/**
+ * Split a note into its frontmatter keys and body. Frontmatter that is malformed, or a list or
+ * scalar rather than a map, reads as `{}`: every caller looks up properties, so a non-map block
+ * behaves exactly like one with no keys.
+ */
 export function parseFrontmatter(md: string): Frontmatter {
     const m = md.match(FRONTMATTER_REGEX)
     if (!m) return { data: {}, body: md }
     // Real vaults contain notes with malformed YAML — tolerate it rather than crash.
-    let data: Record<string, unknown> = {}
-    try {
-        data = (parse(m[1] ?? '') ?? {}) as Record<string, unknown>
-    } catch {
-        data = {}
-    }
-    return { data, body: md.slice(m[0].length) }
+    return { data: parseFrontmatterData(m[1] ?? '') ?? {}, body: md.slice(m[0].length) }
 }
 
 /**
@@ -42,7 +58,7 @@ export function mutateFrontmatter(
 
     // Try Document API (preserves formatting).
     try {
-        const doc = parseDocument(fmText)
+        const doc = parseDocument(fmText, { logLevel: 'error' })
         const { keep, result } = mutate(
             doc,
             doc.toJSON() as Record<string, unknown>,
@@ -57,12 +73,7 @@ export function mutateFrontmatter(
         return `---\n${out}---\n${body}`
     } catch {
         // Malformed YAML: fall back to stringify via parsed object.
-        let data: Record<string, unknown> = {}
-        try {
-            data = (parse(fmText) ?? {}) as Record<string, unknown>
-        } catch {
-            /* data stays {} */
-        }
+        const data = parseFrontmatterData(fmText) ?? {}
         const { keep, result } = mutate({}, data, fmText)
         if (result) return result
         if (!keep || Object.keys(data).length === 0) return body

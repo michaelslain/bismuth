@@ -17,6 +17,7 @@ import {
 import { mcpBin, cliBin, docsDir } from '../lib/bismuthPaths.ts'
 import { recordDaemonSessionId } from './sessionIds.ts'
 import { sendCodexMessage } from './codexSession.ts'
+import { resolveTier } from './tier.ts'
 import { buildDaemonPersona, DAEMON_PERSONA_CHANNELS } from './persona.ts'
 
 // The compiled daemon binary doesn't bundle the Agent SDK's native CLI, and runs under launchd with
@@ -188,6 +189,8 @@ export interface SendOptions {
     timeoutSecs?: number
     /** Start a fresh session instead of resuming the existing one. */
     newSession?: boolean
+    /** Named effort tier (fast, balanced, deep) resolved per backend by tier.ts. */
+    tier?: string
 }
 
 /** The bundled Bismuth tools available to a daemon session (undefined when the GUI app never
@@ -400,6 +403,12 @@ export async function sendMessage(
         denyEntries.length,
     )
     if (refusal) console.error(`[session:${ctx.name}] ${refusal}`)
+
+    // Tiers resolve for the backend that actually runs (after any downgrade), so a Codex request
+    // downgraded to Claude gets Claude's mapping and never another backend's model name.
+    if (opts?.tier) {
+        opts = { ...opts, ...resolveTier(backend, opts.tier, { model: opts.model, effort: opts.effort }) }
+    }
 
     if (backend === 'codex') {
         return await sendCodexMessage(message, ctx, denyEntries, opts)

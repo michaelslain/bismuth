@@ -29,6 +29,8 @@ An agent runs the same search with `bismuth_docs_search`, then `bismuth_docs_rea
 | `bismuth_docs_search` | `query`, `limit?` (default 8) | Ranked `{path, heading, snippet}` hits; snippets only |
 | `bismuth_docs_read` | `path`, `section?`, `full?` | One page, or one section of it. A `path#anchor`, the form `bismuth_docs_search` returns, reads that section. A page over 20,000 characters (`DOC_READ_MAX_CHARS`) comes back as its intro plus an outline of every heading with its size, so the next call can name the section it needs; a repeated heading is addressed by its `-1`/`-2` anchor, shown in the outline. `full: true` returns the whole page |
 | `bismuth_doctor` | `fix?`, `safeOnly?`, `only?`, `section?`, `vault?` | The `bismuth doctor --json` report: leftovers from older builds, version skew, pending migrations. `fix: true` repairs |
+| `vault_map` | `folder?`, `around?` | The `bismuth map` output: folders, clusters, hub notes, tags and surfaces; `around: <note>` returns where one note sits (links, siblings, memories) |
+| `brain` | none | The `bismuth brain` output: who the agent works with, the vault map and the memory index |
 | `bismuth_cli` | `args: string[]` | stdout, stderr and exit code of the `bismuth` CLI, for example `["task","list","--vault","…"]` |
 | `bismuth_cli_help` | `group?` | The CLI reference, all commands or one group such as `daemon` |
 
@@ -51,9 +53,9 @@ Before an agent calls any tool, the server hands it a short block of instruction
 | Convert a vault to Obsidian | [`guides/converting-bismuth-to-obsidian.md`](../guides/converting-bismuth-to-obsidian.md) |
 | Make or change a colour theme | [`guides/custom-themes.md`](../guides/custom-themes.md) |
 
-The instructions also carry one rule. An image or PDF has no frontmatter of its own, so its tags and properties live in a hidden companion note named `<file>.<ext>.md`. An agent tags a binary with `bismuth prop set <file.pdf> tags '["a","b"]'`, which creates the companion if needed, and never writes a separate note that only embeds the file. [Frontmatter](../vault/frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs) has the companion-note model. A question about the user's tasks or deadlines goes to `bismuth task list --query`, never a grep for the user's wording, because a task names its deliverable rather than its project. The instructions end by pointing a misbehaving install at `bismuth_doctor`.
+The instructions also carry one rule. An image or PDF has no frontmatter of its own, so its tags and properties live in a hidden companion note named `<file>.<ext>.md`. An agent tags a binary with `bismuth prop set <file.pdf> tags '["a","b"]'`, which creates the companion if needed, and never writes a separate note that only embeds the file. [Frontmatter](../vault/frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs) has the companion-note model. A question about the user's tasks or deadlines goes to `bismuth task list --query`, never a grep for the user's wording, because a task names its deliverable rather than its project. An agent whose session context has no `# Vault map` section inside a `<bismuth-memory>` block calls `brain` once at the start, and calls `vault_map` with `around` to see where a note sits before reorganising or linking it. The instructions end by pointing a misbehaving install at `bismuth_doctor`.
 
-The block is capped at 240 words by `mcp/test/serverInstructions.test.ts`, because every session on the machine loads it. A new guide needs a docs page and one line in `mcp/src/instructions.ts`. The Codex backend gets the same pointers from a managed block in the vault's `AGENTS.md`, when `codex.writeAgentsMd` is on.
+The block is capped at 280 words by `mcp/test/serverInstructions.test.ts`, because every session on the machine loads it. A new guide needs a docs page and one line in `mcp/src/instructions.ts`. The Codex backend gets the same pointers from a managed block in the vault's `AGENTS.md`, when `codex.writeAgentsMd` is on.
 
 ## How the server gets into a session
 

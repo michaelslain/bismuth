@@ -27,6 +27,8 @@ only when the [daemon](daemon/overview.md) is enabled.
 **Notes and the vault**
 
 - [Vault structure](vault/structure.md) — what a vault holds and how files become notes, nodes and tree rows
+- [Vault map](vault/map.md) — the folders, hubs, clusters and surfaces overview agents get at session start, and `bismuth map`
+- [Semantic search](vault/semantic-search.md) — find notes by meaning with `bismuth search --semantic`, the `embeddings.enabled` switch and what it costs
 - [Frontmatter and properties](vault/frontmatter.md) — YAML properties, their types, and companion notes for images and PDFs
 - [Wikilinks and tags](vault/wikilinks-tags.md) — `[[links]]` matched by file name, `#tags`, and how each resolves
 - [Attachments and embeds](vault/attachments.md) — `![[file]]` and `![](url)` embeds, sizing, and where pasted files go

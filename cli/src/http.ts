@@ -137,3 +137,42 @@ export async function call(
         return text
     }
 }
+
+/** What {@link tryCall} resolved: the parsed body, a connection failure (`unreachable`), an expired
+ *  `timeoutMs` (`timeout`, the server may still be working), or a non-2xx answer from a LIVE core
+ *  (`error`: the HTTP status; `message` is the core's own readable text when it sent one). A caller
+ *  must not treat `error` as "no server": the core is up and refused, so falling back to doing the
+ *  work in-process would bypass it. */
+export type TryCallResult =
+    | { value: unknown }
+    | { unreachable: true }
+    | { timeout: true }
+    | { error: number; message?: string }
+
+/** Like {@link call} for a best-effort request: never exits the process. The owner token
+ *  attaches under the same rules as `call`. A connection error is
+ *  `{ unreachable: true }`; a non-2xx answer is `{ error: status }`; an expired `timeoutMs` is `{ timeout: true }`. */
+export async function tryCall(
+    base: string,
+    method: string,
+    path: string,
+    body?: unknown,
+    timeoutMs = 5000,
+): Promise<TryCallResult> {
+    const headers: Record<string, string> = {}
+    if (body !== undefined) headers['content-type'] = 'application/json'
+    const token = ownerTokenFor(base)
+    if (token) headers['x-bismuth-token'] = token
+    try {
+        const res = await fetch(`${base}${path.startsWith('/') ? '' : '/'}${path}`, {
+            method,
+            headers: Object.keys(headers).length > 0 ? headers : undefined,
+            body: body !== undefined ? JSON.stringify(body) : undefined,
+            signal: AbortSignal.timeout(timeoutMs),
+        })
+        if (!res.ok) return { error: res.status, message: errorMessageOf(await res.text().catch(() => '')) }
+        return { value: await res.json() }
+    } catch (e) {
+        return (e as { name?: string })?.name === 'TimeoutError' ? { timeout: true } : { unreachable: true }
+    }
+}

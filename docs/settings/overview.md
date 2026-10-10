@@ -89,6 +89,7 @@ The schema in `core/src/schema/settingsSchema.ts` (`SETTINGS_SCHEMA`) is the sin
 
 - `reconcileSettings(vault)` in `core/src/settings.ts` runs when core starts, when `.settings` is saved from the editor, and before every programmatic write.
   It writes the seed when the file is absent, applies the key renames and moves listed in the code, and deletes the keys on its retired list. It never adds a key.
+  A move whose destination section holds a scalar (`appearance: 5`) replaces it with a section holding the moved key, and logs a warning naming the section and the value it dropped.
   It leaves a file with YAML errors, or a top-level value that is not a map, untouched, and writes only when something changed.
 - `setSettingInFile(vault, path, value)` is the one backend write path. It reconciles, sets one path in the parsed YAML document, and writes the result, so comments, order and unknown keys survive. A per-vault mutex serializes concurrent writes. `POST /set-setting` calls it.
 - `serializeSettingsFromText` in `core/src/settingsSerialize.ts` builds the `GET /settings` response: it clones `DEFAULTS`, then overlays each valid value from the file.

@@ -39,6 +39,7 @@ import { filterByPath } from '../visibilityFilter'
 import { dailyNotePath, dailyNoteContent } from '../dailyNote'
 import { searchVault } from '../search'
 import { promptSearch } from '../searchPrompt'
+import { vaultSemanticNeighbours, vaultSemanticSearch } from '../vaultEmbed'
 import { listFsPaths } from '../fsPaths'
 import { replaceInVault } from '../replace'
 import { spawnVaultBackend } from '../openFolder'
@@ -479,6 +480,26 @@ export default function vaultRoutes(
                 // Invalid regex etc. — surface as a 400 so the UI shows it inline.
                 return new Response((e as Error).message, { status: 400 })
             }
+        },
+
+        // Semantic (embedding) search over vault notes, or the neighbours of one note (`around`).
+        // Read-only despite POST. Answers 200 with `{ hits }` or `{ unavailable, message }`; denied
+        // notes are dropped before `k` is applied.
+        'POST /search/semantic': async (req, __) => {
+            const { query, around, k } = (await req.json()) as {
+                query?: string
+                around?: string
+                k?: number
+            }
+            if (typeof query !== 'string' && typeof around !== 'string')
+                return new Response('query or around is required', { status: 400 })
+            const deny = await denyEntriesForRequest(req)
+            const opts = { k: typeof k === 'number' && k > 0 ? Math.floor(k) : undefined, deny }
+            const r =
+                typeof around === 'string'
+                    ? await vaultSemanticNeighbours(cfg.vault, around, opts)
+                    : await vaultSemanticSearch(cfg.vault, query!, opts)
+            return Response.json(Array.isArray(r) ? { hits: r } : r)
         },
 
         // AI prompt-search fallback: re-rank keyword candidates with a one-shot Haiku turn when the

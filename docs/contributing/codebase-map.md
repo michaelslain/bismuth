@@ -146,6 +146,7 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 | AI visibility | `visibility.ts`, `visibilityFilter.ts` (the one shared filter), `visibilityCliGate.ts`, `ownership.ts` |
 | Daemon read window | `daemon.ts`, `daemonGraph.ts`, `daemonState.ts`, `daemonViz.ts`, `daemonInstall.ts`, `daemonActivity.ts`, `daemonPages.ts`, `serviceUnit.ts` |
 | Memory recall | `memoryRecall.ts`, `memoryEmbed.ts`, `embedModel.ts`, `embedWorker.ts`, `embedWorkerBoot.ts`, `memoryRerank.ts`, `rerankWorker.ts`, `memoryRef.ts` |
+| Vault-note semantic search | `vaultEmbed.ts` (the vault-note semantic index: embeds notes, answers search and nearest-neighbour queries, drops denied notes before `k`), `embeddingsSetting.ts` (the one reader of `embeddings.enabled`) |
 | Chat, agents and terminal | `chat.ts`, `chatModelStore.ts`, `agents.ts`, `freeAgent.ts`, `claudeWhich.ts`, `relay.ts`, `terminal.ts`, `uiControl.ts` |
 | Install, update and run state | `bismuthInstall.ts`, `bismuthHome.ts`, `selfUpdate.ts`, `openFolder.ts`, `runRegistry.ts`, `ownerToken.ts` |
 | Mobile | `localBackend.ts`, the in-process backend used where no HTTP server can run |
@@ -223,7 +224,7 @@ Component files are PascalCase with a colocated `.module.css` and `.stories.tsx`
 | Path | Holds | Open first |
 |---|---|---|
 | `cli/src/commands/` | One module per command group: `api`, `app`, `backends`, `base`, `calendar`, `card`, `chat`, `checkpoint`, `daemon`, `docs`, `doctor`, `draw`, `export`, `feedback`, `file`, `gcal`, `graph`, `install`, `memory`, `note`, `page`, `prop`, `relay`, `search`, `serve`, `settings`, `task`, `theme`, `update` | `cli/src/registry.ts` |
-| `cli/src/` | The dispatcher (`index.ts`, longest-match over the registry), argument helpers (`args.ts`), the loopback HTTP helper (`http.ts`) | `index.ts` |
+| `cli/src/` | The dispatcher (`index.ts`, longest-match over the registry), argument helpers (`args.ts`), the loopback HTTP helper (`http.ts`), `semantic.ts` (CLI semantic queries: asks the vault's running core over `POST /search/semantic`, else queries in process) | `index.ts` |
 | `mcp/src/` | `server.ts` (tool list and dispatch), `docs.ts` (index, search and read of `docs/`), `cli.ts` (the CLI bridge), `memory.ts` and `daemon.ts` (daemon-gated tools), `instructions.ts` (the server instructions), `cliTwins.ts` | `server.ts` |
 | `memory/src/` | `graph.ts` (note CRUD, frontmatter, backlinks), `search.ts` and `rank.ts` (BM25), `recall.ts` and `pack.ts` (prompt to injected block), `query.ts`, `transcript.ts` | `index.ts` |
 | `daemon/src/daemon/` | The runtime: `cron.ts`, `process.ts`, `fileWatch.ts`, `pages.ts`, `session.ts`, `codexSession.ts`, `seeds.ts`, `persona.ts`, `defaultCrons.ts` | `index.ts` |

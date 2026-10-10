@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { parse } from 'yaml'
 import * as mem from '@bismuth/memory'
 import type {
@@ -11,9 +11,13 @@ import type {
     RecallMode,
     TranscriptEntry,
 } from '@bismuth/memory'
+import { composeBrain } from './brain'
+import type { BrainOpts } from './brain'
 import { sharedSemanticChannel } from './memoryEmbed'
+import { neighbourNames, notesAbout } from './memoryLinkBoost'
 import { RERANK_TIMEOUT_MS, sharedReranker } from './memoryRerank'
 import type { Reranker } from './memoryRerank'
+import { readEmbeddingsEnabledSync } from './embeddingsSetting'
 import { SETTINGS_FILE, readDaemonEnabledSync } from './settings'
 
 /** The recall service: ONE long-lived owner of ranking, packing and the per-session dedup ledger,
@@ -40,6 +44,9 @@ export type RecallRequest = {
     toolCalls?: RecallToolCall[]
     /** SessionStart source: startup | resume | clear | compact */
     source?: string
+    /** Whose view the session-start brain block composes. Absent means `daemon`, the stricter one
+     *  (fails closed); in-process chat callers and the route (for a chat-channel request) set `chat`. */
+    channel?: 'chat' | 'daemon'
     /** Aborted when the caller gave up (hook timeout, dropped fetch). An aborted recall still runs
      *  but never commits to the dedup ledger, since the model never saw what it packed. */
     signal?: AbortSignal
@@ -112,7 +119,19 @@ export type RecallDeps = {
     rerankTimeoutMs?: number
     /** Called when a recall arrives with `semantic` off: stops background re-embedding. */
     semanticOff?: () => void
+    /** The vault root: lets the link boost turn absolute tool file paths into vault paths, and
+     *  session-start compose the brain. Absent = no link boost from tool paths, and session-start
+     *  falls back to the memory index alone. */
+    vault?: string
+    /** The session-start block (vault map + profile + memory index). Defaults to `composeBrain`. */
+    brain?: (opts: BrainOpts) => Promise<string | null>
 }
+
+/** Memory notes injected because they link a note the user has open or a tool just touched. */
+const LINK_BOOST_CAP = { prompt: 2, subagent: 2, tool: 1 } as const
+const ABOUT_MARK = ' (about the open note)'
+const POINTER_TITLE = 'Also related notes (not included; read the file if needed):'
+const POINTER_DESC_MAX = 120
 
 const LEDGER_IDLE_MS = 6 * 60 * 60 * 1000
 const TRANSCRIPT_TAIL_BYTES = 256 * 1024
@@ -120,10 +139,11 @@ const TRANSCRIPT_TAIL_BYTES = 256 * 1024
 export const RECALL_SETTINGS_DEFAULTS: RecallSettings = {
     enabled: true,
     midTurn: true,
-    semantic: true,
+    semantic: false,
 }
 
-/** `daemon.recall` from the vault's `.settings`, merged over the defaults. Sync + tolerant: a
+/** `daemon.recall` from the vault's `.settings`, merged over the defaults; `semantic` is the
+ *  vault's `embeddings.enabled` switch. Sync + tolerant: a
  *  missing, corrupt or partial file reads as the defaults, and it never throws. */
 export function readRecallSettingsSync(vault: string): RecallSettings {
     try {
@@ -133,14 +153,14 @@ export function readRecallSettingsSync(vault: string): RecallSettings {
             daemon?: { recall?: Record<string, unknown> }
         } | null
         const recall = parsed?.daemon?.recall
-        const pick = (k: keyof RecallSettings) =>
+        const pick = (k: 'enabled' | 'midTurn') =>
             typeof recall?.[k] === 'boolean'
                 ? (recall[k] as boolean)
                 : RECALL_SETTINGS_DEFAULTS[k]
         return {
             enabled: pick('enabled'),
             midTurn: pick('midTurn'),
-            semantic: pick('semantic'),
+            semantic: readEmbeddingsEnabledSync(vault),
         }
     } catch {
         return { ...RECALL_SETTINGS_DEFAULTS }
@@ -215,6 +235,142 @@ async function rerankGate(
     } catch {
         return null
     }
+}
+
+/** With embeddings on, the semantic or gated pack plus every note the keyword-only path packs for
+ *  the same request (`keyword`, in its pack order). The semantic path's own picks keep their order
+ *  and the keyword picks it dropped follow them; when the two together overrun the mode's
+ *  `maxNotes` or char budget, the semantic path's own picks give way from the tail, never a keyword
+ *  pick. `list` is what the semantic path packed from and `floor` the score it packed at: a keyword
+ *  pick is lifted to it, since a hybrid score and a keyword-only score sit on different bars. */
+function withKeywordPicks(
+    packed: Packed,
+    list: RankedNote[],
+    keyword: RankedNote[],
+    floor: number,
+    maxNotes: number,
+    pack: (list: RankedNote[]) => Packed,
+): Packed {
+    const picked = new Set(packed.injected.map(i => i.name))
+    const missing = keyword.filter(r => !picked.has(r.note.name))
+    if (!missing.length) return packed
+    const keywordNames = new Set(keyword.map(r => r.note.name))
+    const byName = new Map(list.map(r => [r.note.name, r]))
+    const own = packed.injected
+        .map(i => byName.get(i.name))
+        .filter((r): r is RankedNote => !!r)
+    const dropOwn = (): boolean => {
+        for (let i = own.length - 1; i >= 0; i--)
+            if (!keywordNames.has(own[i]!.note.name)) {
+                own.splice(i, 1)
+                return true
+            }
+        return false
+    }
+    while (own.length + missing.length > maxNotes && dropOwn()) {}
+    const lift = (r: RankedNote): RankedNote => ({ ...r, score: Math.max(r.score, floor) })
+    for (;;) {
+        const chosen = [...own, ...missing].map(lift)
+        const chosenNames = new Set(chosen.map(r => r.note.name))
+        const out = pack([...chosen, ...list.filter(r => !chosenNames.has(r.note.name))])
+        const got = new Set(out.injected.map(i => i.name))
+        if (keyword.every(r => got.has(r.note.name)) || !dropOwn()) return out
+    }
+}
+
+/** A vault-relative path for `p`, or null when it is outside the vault (or relative and escaping). */
+function vaultRelative(p: string, vault: string | undefined): string | null {
+    if (!p) return null
+    if (isAbsolute(p)) {
+        if (!vault) return null
+        const rel = relative(vault, p)
+        return rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel.split(sep).join('/') : null
+    }
+    const clean = p.replace(/^\.\//, '')
+    return clean.startsWith('..') ? null : clean
+}
+
+/** Vault paths named in a prompt's `<editor-context>` block (Active file, Open tabs, ...). Read
+ *  before the block is stripped. `chat.ts` imports this module, so it is loaded lazily. */
+async function editorContextVaultPaths(text: string, vault: string | undefined): Promise<string[]> {
+    if (!text.includes('<editor-context>')) return []
+    const { extractEditorContextPaths } = await import('./chat')
+    return extractEditorContextPaths(text)
+        .map(p => vaultRelative(p, vault))
+        .filter((p): p is string => !!p)
+}
+
+/** Vault paths a tool batch read or edited: `file_path`-style string inputs inside the vault. */
+function toolVaultPaths(calls: RecallToolCall[], vault: string | undefined): string[] {
+    const out: string[] = []
+    for (const c of calls) {
+        const input = c.tool_input
+        if (!input || typeof input !== 'object') continue
+        for (const k of ['file_path', 'path', 'notebook_path']) {
+            const v = (input as Record<string, unknown>)[k]
+            const rel = typeof v === 'string' ? vaultRelative(v, vault) : null
+            if (rel) out.push(rel)
+        }
+    }
+    return [...new Set(out)]
+}
+
+/** Tag the excerpt headers of link-boosted notes. Left unmarked if the marks would push the block
+ *  over its budget. */
+function markBoosted(text: string, boosted: MemoryNote[], budget: number): string {
+    let out = text
+    for (const n of boosted) {
+        const header = `## ${n.name} (${n.frontmatter.type}) [${n.frontmatter.tags.join(', ')}]`
+        out = out.replace(header, () => header + ABOUT_MARK)
+    }
+    return out.length <= budget ? out : text
+}
+
+/** Put 1-hop wikilink neighbours of the injected notes (visible, unsent) first in the "Also
+ *  related" pointer lines, then the ranked pointers the packer already chose. */
+function preferNeighbourPointers(
+    text: string,
+    notes: MemoryNote[],
+    injected: string[],
+    exclude: Set<string>,
+    limits: { pointers: number; budgetChars: number },
+): string {
+    const byName = new Map(notes.map(n => [n.name, n]))
+    const near = neighbourNames(notes, injected).filter(n => !exclude.has(n) && byName.has(n))
+    if (!near.length) return text
+    const close = `</${mem.MEMORY_BLOCK_TAG}>`
+    const closeAt = text.lastIndexOf(close)
+    if (closeAt < 0) return text
+    let head = text.slice(0, closeAt)
+    const kept: string[] = []
+    // the packer's own list is the LAST title with only pointer lines after it; an excerpt can quote the title
+    const titleAt = head.lastIndexOf(POINTER_TITLE)
+    if (titleAt >= 0) {
+        const after = head.slice(titleAt + POINTER_TITLE.length).split('\n')
+        if (after.every(l => !l.trim() || l.startsWith('- [['))) {
+            kept.push(...after.filter(l => l.startsWith('- [[')))
+            head = head.slice(0, titleAt)
+        }
+    }
+    const defang = (t: string) =>
+        t.replace(new RegExp(`<(/?)${mem.MEMORY_BLOCK_TAG}>`, 'g'), '[$1' + mem.MEMORY_BLOCK_TAG + ']')
+    const lineFor = (n: MemoryNote) => {
+        const d = mem.noteDescription(n)
+        const cut = d.length > POINTER_DESC_MAX ? `${d.slice(0, POINTER_DESC_MAX - 1).trimEnd()}…` : d
+        return defang(`- [[${n.name}]] (${n.frontmatter.type})${cut ? ` — ${cut}` : ''}`)
+    }
+    const nearLines = near.map(n => lineFor(byName.get(n)!))
+    const nearSet = new Set(near)
+    const rest = kept.filter(l => !nearSet.has(l.match(/^- \[\[(.+?)\]\]/)?.[1] ?? ''))
+    const lines: string[] = []
+    let cost = head.length + POINTER_TITLE.length + 2 + close.length
+    for (const l of [...nearLines, ...rest]) {
+        if (lines.length >= limits.pointers || cost + l.length + 1 > limits.budgetChars) break
+        lines.push(l)
+        cost += l.length + 1
+    }
+    if (!lines.length) return text
+    return `${head}${POINTER_TITLE}\n${lines.join('\n')}\n\n${close}`
 }
 
 /** `toolBatches`: tool batches that injected since this key's last prompt (or subagent start). */
@@ -339,11 +495,21 @@ export function createRecallService(deps: RecallDeps): {
         sweep(t)
 
         const notes = await loadNotes(dir)
-        if (!notes.length) return none('no-memory')
+        // an empty memory dir still has a vault map to hand a new session
+        if (!notes.length && !(req.mode === 'session-start' && deps.vault)) return none('no-memory')
 
         if (req.mode === 'session-start') {
-            const context = engine().formatSessionStart(notes)
-            return context ? { context, injected: [] } : none('no-match')
+            // The brain block (vault map + profile + memory index); without a vault, or if composing
+            // it fails or comes back empty, the memory index alone.
+            let context: string | null = null
+            if (deps.vault)
+                context = await (deps.brain ?? composeBrain)({
+                    vaultDir: deps.vault,
+                    memoryDir: dir,
+                    channel: req.channel ?? 'daemon',
+                }).catch(() => null)
+            if (!context && notes.length) context = engine().formatSessionStart(notes)
+            return context ? { context, injected: [] } : none(notes.length ? 'no-match' : 'no-memory')
         }
 
         const key = keyOf(req.sessionId, req.agentId)
@@ -399,12 +565,20 @@ export function createRecallService(deps: RecallDeps): {
             primary = mem.stripInjectedBlocks(req.prompt ?? '')
             if (entries.length) context = eng.contextFromTranscript(entries)
         }
-        if (!primary.trim() && !context?.trim() && !location?.trim()) return none('no-match')
+        const vaultPaths =
+            req.mode === 'tool'
+                ? toolVaultPaths(req.toolCalls ?? [], deps.vault)
+                : await editorContextVaultPaths(
+                      req.mode === 'prompt' ? (req.prompt ?? '') : primary,
+                      deps.vault,
+                  )
+        const hasQuery = !!(primary.trim() || context?.trim() || location?.trim())
+        if (!hasQuery && !vaultPaths.length) return none('no-match')
 
         let semantic: Map<string, number> | undefined
         if (settings.semantic) {
             const embedder = deps.embedder()
-            if (embedder && deps.semanticScores)
+            if (hasQuery && embedder && deps.semanticScores)
                 semantic = await deps
                     .semanticScores(
                         embedder,
@@ -415,11 +589,10 @@ export function createRecallService(deps: RecallDeps): {
                     .catch(() => undefined)
         } else deps.semanticOff?.()
 
-        const ranked: RankedNote[] = eng.rankNotes(
-            indexFor(dir, notes),
-            { primary, ...(context ? { context } : {}), ...(location ? { location } : {}) },
-            mem.rankOptions(req.mode, semantic),
-        )
+        const query = { primary, ...(context ? { context } : {}), ...(location ? { location } : {}) }
+        const ranked: RankedNote[] = hasQuery
+            ? eng.rankNotes(indexFor(dir, notes), query, mem.rankOptions(req.mode, semantic))
+            : []
 
         // A note already shown with this exact content is skipped; a changed hash counts as new.
         const exclude = new Set<string>()
@@ -427,11 +600,28 @@ export function createRecallService(deps: RecallDeps): {
             if (ledger.injected.get(n.name) === eng.noteHash(n))
                 exclude.add(n.name)
 
+        // Memory notes that link a note the user has open (or a tool just touched) go first, even
+        // without a word match; the ledger still skips what was already sent.
+        const boosted = notesAbout(notes, vaultPaths)
+            .filter(n => !exclude.has(n.name))
+            .slice(0, LINK_BOOST_CAP[req.mode])
+        const boostedNames = new Set(boosted.map(n => n.name))
+        const withBoost = (list: RankedNote[], pool: RankedNote[] = ranked): RankedNote[] =>
+            boosted.length
+                ? [
+                      ...boosted.map(note => {
+                          const hit = list.find(r => r.note.name === note.name) ?? pool.find(r => r.note.name === note.name)
+                          return { lexical: 0, ...hit, note, score: Math.max(hit?.score ?? 0, 1) }
+                      }),
+                      ...list.filter(r => !boostedNames.has(r.note.name)),
+                  ]
+                : list
+
         const scored = !!semantic && semantic.size > 0
         // The relevance gate: with the semantic channel in hand, a cross-encoder reads the top
         // candidates against the prompt and the weak ones are refused. Any failure = today's rules.
         let gated: RankedNote[] | null = null
-        if (scored && (req.mode === 'prompt' || req.mode === 'subagent') && primary.trim())
+        if (hasQuery && scored && (req.mode === 'prompt' || req.mode === 'subagent') && primary.trim())
             gated = await rerankGate(
                 ranked,
                 req.mode,
@@ -441,12 +631,30 @@ export function createRecallService(deps: RecallDeps): {
                 deps.rerankTimeoutMs ?? RERANK_TIMEOUT_MS,
             )
 
-        const packed: Packed = gated
-            ? gated.length
-                ? // the gate replaced the stricter semantic floor, and its order is the pack order
-                  eng.packRecall(gated, req.mode, exclude, { dir, semantic: false })
-                : { text: null, injected: [] }
-            : eng.packRecall(ranked, req.mode, exclude, { dir, semantic: scored })
+        const gatedList = gated ? withBoost(gated) : null
+        // the gate replaced the stricter semantic floor, and its order is the pack order
+        const onList = gatedList ?? withBoost(ranked)
+        const onSemantic = gatedList ? false : scored
+        const mode = req.mode
+        const packOn = (list: RankedNote[]): Packed =>
+            eng.packRecall(list, mode, exclude, { dir, semantic: onSemantic })
+        let packed: Packed =
+            gatedList && !gatedList.length ? { text: null, injected: [] } : packOn(onList)
+        // Embeddings on never recall less than off: what the keyword-only path (ranked with no
+        // semantic map, packed as the off service packs) injects for this request is kept, whatever
+        // the semantic path or the gate decided about it.
+        if (scored && hasQuery) {
+            const lexical = eng.rankNotes(indexFor(dir, notes), query, mem.rankOptions(req.mode))
+            const keywordList = withBoost(lexical, lexical)
+            const keywordPack = eng.packRecall(keywordList, req.mode, exclude, { dir, semantic: false })
+            const byName = new Map(keywordList.map(r => [r.note.name, r]))
+            const keyword = keywordPack.injected
+                .map(i => byName.get(i.name))
+                .filter((r): r is RankedNote => !!r)
+            const limits = mem.PACK_LIMITS[req.mode]
+            const floor = (onSemantic && limits.semanticMinScore) || limits.minScore
+            packed = withKeywordPicks(packed, onList, keyword, floor, limits.maxNotes, packOn)
+        }
         // `semantic: true` says the semantic channel scored this request, matched or not.
         if (!packed.text)
             return {
@@ -454,6 +662,12 @@ export function createRecallService(deps: RecallDeps): {
                 ...(scored ? { semantic: true as const } : {}),
                 ...(gated ? { reranked: true as const } : {}),
             }
+
+        const limits = mem.PACK_LIMITS[req.mode]
+        const injectedNow = new Set(packed.injected.map(i => i.name))
+        packed.text = markBoosted(packed.text, boosted.filter(n => injectedNow.has(n.name)), limits.budgetChars)
+        if (limits.pointers > 0)
+            packed.text = preferNeighbourPointers(packed.text, notes, [...injectedNow], exclude, limits)
 
         // The caller gave up on this recall, so the model never saw these notes: leave the ledger be.
         if (req.signal?.aborted) return none('no-match')
@@ -499,6 +713,7 @@ export function recallServiceFor(
             semanticScores: (e, q, n, d) => sharedSemanticChannel().semanticScores(e, q, n, d),
             semanticOff: () => sharedSemanticChannel().pause(),
             reranker: () => sharedReranker(),
+            vault,
         })
         shared.set(key, svc)
     }

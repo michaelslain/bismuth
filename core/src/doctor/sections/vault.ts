@@ -12,11 +12,10 @@ import {
     writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { parse } from 'yaml'
 import { baseFormatOf, readBaseConfigRaw } from '../../bases/baseFile'
 import { flattenBaseViews } from '../../bases/flattenViews'
 import { listBases, listMarkdown } from '../../files'
-import { FRONTMATTER_REGEX } from '../../frontmatter'
+import { FRONTMATTER_REGEX, parseFrontmatterData } from '../../frontmatter'
 import {
     LEGACY_SETTINGS_FILE,
     SETTINGS_FILE,
@@ -179,18 +178,8 @@ function legacyViewCount(text: string): number | null {
     if (!m) return null
     // cheap pre-check: only a frontmatter with a top-level `views:` key can be a legacy base
     if (!/^views\s*:/m.test(m[1] ?? '')) return null
-    let data: Record<string, unknown>
-    try {
-        // logLevel 'error': a collection key (`? { date }`) is legal YAML that the yaml package warns
-        // about on process.emitWarning, and the doctor reads every note in the vault
-        data = (parse(m[1] ?? '', { logLevel: 'error' }) ?? {}) as Record<
-            string,
-            unknown
-        >
-    } catch {
-        return null
-    }
-    if (!data || typeof data !== 'object') return null
+    const data = parseFrontmatterData(m[1] ?? '')
+    if (!data) return null
     if (data.type !== 'base' || !('views' in data)) return null
     return Array.isArray(data.views) ? data.views.length : 0
 }

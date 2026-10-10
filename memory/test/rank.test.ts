@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import type { MemoryNote } from '../src/graph.ts'
-import { buildRecallIndex, rankNotes, tokenize } from '../src/rank.ts'
+import { buildRecallIndex, rankNotes, stem, tokenize } from '../src/rank.ts'
 import { PACK_LIMITS } from '../src/pack.ts'
 
 const note = (
@@ -25,6 +25,24 @@ describe('tokenize', () => {
     })
     test('question filler is a stopword: "which" and "off" match nothing', () => {
         expect(tokenize('which notes are marked off limits')).toEqual(['notes', 'marked', 'limits'])
+    })
+})
+
+describe('stem', () => {
+    test('a word and its inflections share one stem, -e words included', () => {
+        for (const group of [
+            ['update', 'updates', 'updated', 'updating'],
+            ['change', 'changes', 'changed'],
+            ['image', 'images'],
+            ['message', 'messages'],
+            ['database', 'databases'],
+            ['recommend', 'recommendations'],
+        ])
+            expect(new Set(group.map(stem)).size).toBe(1)
+    })
+    test('digit tokens and short words stay whole', () => {
+        expect(stem('207b')).toBe('207b')
+        expect(stem('case')).toBe('case')
     })
 })
 
@@ -165,5 +183,146 @@ describe('rankNotes, tool-payload options', () => {
         // and a primary term, or a hit on the note's own subject, still qualifies
         expect(names({ primary: 'torque bolt' })).toContain('torque')
         expect(names({ primary: '', context: 'bismuth release', location: 'app' })).toContain('bismuth-setup')
+    })
+})
+
+describe('rankNotes, keyword-only evidence (no semantic scores)', () => {
+    const filler = (n: number, body: (i: number) => string, prefix = 'filler') =>
+        Array.from({ length: n }, (_, i) => note(`${prefix}-${i}`, body(i)))
+    const names = (notes: MemoryNote[], q: Parameters<typeof rankNotes>[1], opts?: Parameters<typeof rankNotes>[2]) =>
+        rankNotes(buildRecallIndex(notes), q, opts).map(r => r.note.name)
+    /** a semantic map that scores nothing above the floor: the semantic path, with no lift */
+    const quietSemantic = new Map([['nobody', 0.1]])
+
+    test('a query term matches the other forms of its stem; with semantic scores it stays exact', () => {
+        const notes = [
+            note('anime-recommendations', 'a list of shows'),
+            ...filler(20, i => `unrelated words ${i}`),
+        ]
+        const q = { primary: 'recommend something' }
+        expect(names(notes, q)).toContain('anime-recommendations')
+        expect(names(notes, q, { semantic: quietSemantic })).not.toContain('anime-recommendations')
+    })
+
+    test('a form of the stem scores below an exact match', () => {
+        const notes = [
+            note('exact', 'notes about the migration plan'),
+            note('variant', 'notes about the migrations plan'),
+            ...filler(20, i => `unrelated words ${i}`),
+        ]
+        const ranked = rankNotes(buildRecallIndex(notes), { primary: 'migration plan' })
+        expect(ranked.map(r => r.note.name).slice(0, 2)).toEqual(['exact', 'variant'])
+        expect(ranked[1]!.score).toBeLessThan(ranked[0]!.score)
+    })
+
+    test('a lone body hit on a word found in many notes names no topic', () => {
+        const notes = [
+            note('politics', 'the nature of capital and labour'),
+            ...filler(5, i => `capital city number ${i}`, 'city'),
+            ...filler(20, i => `unrelated words ${i}`),
+        ]
+        expect(names(notes, { primary: 'capital australia' })).toEqual([])
+        // the same shape on a word only one note has still qualifies
+        const rare = [note('politics', 'the nature of capital and labour'), ...filler(25, i => `unrelated words ${i}`)]
+        expect(names(rare, { primary: 'capital australia' })).toEqual(['politics'])
+    })
+
+    test('several body-only words qualify only when two share a paragraph', () => {
+        const notes = [
+            note('together', 'intro line\n\nmerges sorted data before output\n\nclosing line'),
+            note('apart', 'merges data early\n\nsome other paragraph\n\nsorted output last'),
+            ...filler(20, i => `unrelated words ${i}`),
+        ]
+        expect(names(notes, { primary: 'sorted merges' })).toEqual(['together'])
+    })
+
+    test('body-only words that are all common need the note to answer most of the prompt', () => {
+        const common = (i: number) => `write a function over two lists number ${i}`
+        const notes = [
+            note('essay', 'write about the function of two lists'),
+            ...filler(14, common, 'common'),
+            ...filler(6, i => `unrelated words ${i}`),
+        ]
+        // 2 of 4 prompt terms, every one found in most notes: dropped
+        expect(names(notes, { primary: 'write function sorted merges' })).not.toContain('essay')
+        // 3 of 4: answered enough, kept
+        expect(names(notes, { primary: 'write function lists merges' })).toContain('essay')
+    })
+
+    test('a prompt mostly outside the vault does not inject on one shared word', () => {
+        const notes = [
+            note('tomato-planting', 'rows and spacing for beds'),
+            note('beds', 'raised beds hold basil and tomato plants'),
+            ...filler(20, i => `unrelated words ${i}`),
+        ]
+        const q = { primary: 'tomato kubernetes cluster autoscaler' }
+        expect(names(notes, q)).toEqual([])
+        // a note whose name or tags share two of the terms is about the prompt regardless
+        const two = [note('tomato-cluster', 'rows'), ...notes.slice(1)]
+        expect(names(two, q)).toContain('tomato-cluster')
+        // a note matched through the context is carried by it
+        expect(names(notes, { ...q, context: 'basil' })).toContain('beds')
+        // with semantic scores in play the gate is off: the semantic path keeps its own rules
+        expect(names(notes, q, { semantic: quietSemantic })).toContain('tomato-planting')
+        // short prompts are exempt: a bare "tomato kubernetes" has too little to judge
+        expect(names(notes, { primary: 'tomato kubernetes' })).toContain('tomato-planting')
+    })
+
+    test('two rare co-located body words survive the unknown-prompt gate', () => {
+        const notes = [
+            note('release-signing', 'The tauri updater verifies the signature of each build.'),
+            ...filler(20, i => `unrelated words ${i}`),
+        ]
+        expect(names(notes, { primary: 'fix the tauri updater retry logic in ci' })).toContain('release-signing')
+        expect(names(notes, { primary: 'can you refactor the tauri updater signing step' })).toContain('release-signing')
+        expect(names(notes, { primary: 'why does the tauri updater fail' })).toContain('release-signing')
+    })
+
+    test('query terms that share a stem are one matched term for the lone-hit rule', () => {
+        const notes = [
+            note('politics', 'the nature of capital and labour'),
+            ...filler(5, i => `capital city number ${i}`, 'city'),
+            ...filler(20, i => `unrelated words ${i}`),
+        ]
+        // "capital capitals" is ONE content term found only in the body of a word-common vault:
+        // the lone-hit rule drops it, instead of two matches reading as several body hits
+        expect(names(notes, { primary: 'capital capitals' })).toEqual([])
+        const rare = [note('politics', 'the nature of capital and labour'), ...filler(25, i => `unrelated words ${i}`)]
+        expect(names(rare, { primary: 'capital capitals' })).toEqual(['politics'])
+    })
+
+    test('several body words need a distinctive one: the same note passes with it and is dropped without it', () => {
+        const essay = note('essay', 'write a function over lists and merges them')
+        const prompt = { primary: 'write function lists merges sorted output' }
+        const plain = (i: number) => `write function lists number ${i}`
+        const withDistinct = [essay, ...filler(14, plain, 'common'), ...filler(6, i => `unrelated words ${i}`)]
+        // "merges" is found in this note alone
+        expect(names(withDistinct, prompt)).toContain('essay')
+        const common = (i: number) => `write function lists merges number ${i}`
+        const without = [essay, ...filler(14, common, 'common'), ...filler(6, i => `unrelated words ${i}`)]
+        // now every word it shares with the prompt sits in most of the vault
+        expect(names(without, prompt)).not.toContain('essay')
+    })
+
+    test('a lone body word counts when the note repeats it, however small a part of the prompt', () => {
+        const policy = note('git-policy', 'Standing rule. Never push without asking. A push publishes. Ask before every push upstream. Push is the one step that needs consent. Push last.')
+        const log = note('log', `${'misc entry '.repeat(40)} push once ${'misc entry '.repeat(40)}`)
+        // the other prompt words appear in the vault, so the prompt is not a foreign one
+        const known = [note('k1', 'we go home'), note('k2', 'ahead of schedule'), note('k3', 'a remote island')]
+        const notes = [policy, log, ...known, ...filler(20, i => `unrelated words ${i}`)]
+        // 1 of 4 content terms is far under the 0.4 lone-hit coverage, but the policy note is about it
+        expect(names(notes, { primary: 'can you go ahead and push this to the remote' })).toEqual(['git-policy'])
+    })
+
+    test('two rare body words that are not a phrase of the prompt stay coincidence on an unknown prompt', () => {
+        const notes = [
+            note('server-chores', 'The proxy logs rotate weekly. Renew the tls certificate in march.'),
+            ...filler(20, i => `unrelated words ${i}`),
+        ]
+        // proxy and tls each sit in this note alone, but apart: the prompt is about nginx, not this note
+        expect(names(notes, { primary: 'how do i configure an nginx reverse proxy with tls' })).not.toContain('server-chores')
+        // the same words as a phrase of the note are its topic
+        const phrased = [note('server-chores', 'Renew the proxy tls certificate in march.'), ...notes.slice(1)]
+        expect(names(phrased, { primary: 'how do i configure an nginx reverse proxy with tls' })).toContain('server-chores')
     })
 })

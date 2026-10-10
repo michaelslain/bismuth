@@ -26,7 +26,7 @@ const names = (rs: RankedNote[]) => rs.map(r => r.note.name)
 
 test('constants', () => {
     expect(RERANK_CANDIDATES).toBe(5)
-    expect(RERANK_MAX_DROP).toBe(6)
+    expect(RERANK_MAX_DROP).toBe(8)
     expect(RERANK_MIN_LOGIT).toBe(-6)
 })
 
@@ -43,8 +43,19 @@ test('nothing clears the bar: empty', () => {
 
 test('drops a candidate more than maxDrop below the top logit', () => {
     const c = [ranked('a'), ranked('b'), ranked('c')]
-    expect(names(gateByRerank(c, [9, 3, 2.9], { minLogit: -5 }))).toEqual(['a', 'b'])
-    expect(names(gateByRerank(c, [9, 3.1, 2.9], { minLogit: -5, maxDrop: 100 }))).toEqual(['a', 'b', 'c'])
+    expect(names(gateByRerank(c, [9, 1, 0.9], { minLogit: -5 }))).toEqual(['a', 'b'])
+    expect(names(gateByRerank(c, [9, 1.1, 0.9], { minLogit: -5, maxDrop: 100 }))).toEqual(['a', 'b', 'c'])
+})
+
+test('keeps a second real match that reads 7.4 below a strong first one, but not 8.1', () => {
+    const c = [ranked('a'), ranked('b'), ranked('c')]
+    expect(names(gateByRerank(c, [3.43, -3.96, -4.5]))).toEqual(['a', 'b', 'c'])
+    expect(names(gateByRerank(c, [3.43, -3.96, -4.7]))).toEqual(['a', 'b'])
+})
+
+test('a lexical-first match with a paraphrase logit of -5.5 is kept when it is the only candidate', () => {
+    expect(names(gateByRerank([ranked('a')], [-5.5]))).toEqual(['a'])
+    expect(names(gateByRerank([ranked('a')], [-6.01]))).toEqual([])
 })
 
 test('ties keep ranker order; missing or NaN logits never qualify', () => {

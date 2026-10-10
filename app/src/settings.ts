@@ -140,8 +140,10 @@ export interface Settings {
         recall: {
             enabled: boolean // master switch for every automatic memory injection (prompt, mid-turn, session start, subagent); needs daemon.enabled
             midTurn: boolean // one recall per agent tool batch
-            semantic: boolean // embedding search: loads a ~35MB model into core on first use, unloaded after 10 min idle; off = keyword-only
         }
+    }
+    embeddings: {
+        enabled: boolean // embedding search for memory recall + vault-note search: loads a ~35MB model into a helper on first use, unloaded after 10 min idle; off = keyword-only
     }
     update: {
         autoUpdate: boolean // auto-apply Bismuth app updates on launch (auto-relaunch when ready)

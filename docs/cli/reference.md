@@ -51,7 +51,7 @@ The server address resolves in this order:
 1. `--api <url>`
 2. `BISMUTH_API`
 3. `CLAUDE_RELAY_URL` (set inside the app's terminal tabs)
-4. The run registry in `~/.bismuth/run`, matched by `--vault` or `BISMUTH_VAULT`, else the single running core
+4. The run registry in `~/.bismuth/run`, matched by `--vault` or `BISMUTH_VAULT` (a relative path, a trailing slash or a symlink matches the same vault), else the single running core
 5. `http://localhost:4321`
 
 A non-2xx reply fails with `<METHOD> <path> → <status>: <message>`, using the reply's `error` text when it has one.
@@ -87,7 +87,7 @@ Channel `chat` hides notes marked `hidden`; channel `daemon` hides `hidden` and 
 |---|---|---|
 | Always allowed | `backends`, `backup`, `daemon`, `docs`, `doctor`, `folder-icon`, `install`, `memory`, `page`, `uninstall`, `app`, `settings get`, `settings schema`, `settings deny-list`, `checkpoint advance`, `checkpoint ref` | Cannot print a note body. |
 | Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop`, `render` | Refused when an argument names a restricted note or folder. |
-| Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily`, `checkpoint diff` | Run, with restricted notes dropped before any count, group or summary. |
+| Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily`, `map`, `brain`, `checkpoint diff` | Run, with restricted notes dropped before any count, group or summary. |
 | Refused | `api`, `serve`, `export`, `chat`, `update`, `settings set`, `settings status-bar`, `folder-visibility`, any unlisted command | Exit non-zero with a reason. |
 
 Three rules apply on top of the tiers:
@@ -383,6 +383,22 @@ Per-sync conflict counts are not stored; read them from `gcal sync` output.
 
 An agent must pass `--vault` to `gcal sync`, and a hidden base is refused.
 
+## map and brain
+
+`map` prints the vault's structure, and `brain` prints the context a session starts with.
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `map` | `[--folder <f>] [--around <note>] [--json] [--vault <dir>]` | Prints the vault map as markdown within 6000 characters: folders, clusters, hub notes, tags and surfaces. `--json` prints the map object. `--folder` limits folders, clusters and hubs to that subtree. `--around` prints one note's neighbourhood (cluster, links, backlinks, siblings, tags, memories) and exits non-zero when the note is not in the vault. When embeddings are on, `--around` also prints `similar:` with up to five semantically near notes within a two second budget, and `--json` adds a `similar` array. | optional |
+| `brain` | `[--vault <dir>]` | Prints the profile, vault map and memory index an agent gets at session start. Without the daemon it prints the map section alone. | no |
+
+```bash
+bismuth map --around "Projects/Launch.md" --vault ~/vault
+```
+
+`similar` is best effort: with embeddings off, unavailable or slower than two seconds, the output is unchanged and the exit code stays `0`.
+For an agent, restricted notes are absent from the map, the neighbourhood, the `similar` list and the brain. `BISMUTH_AGENT_CHANNEL=daemon` (or an MCP-spawned daemon channel) selects the narrower daemon view; every other caller gets the chat view. The MCP server exposes the same commands as `vault_map` and `brain`; see [the MCP server](../mcp/overview.md).
+
 ## graph
 
 Builds the knowledge graph and prints it as JSON.
@@ -482,9 +498,21 @@ Full-text search and vault-wide find-and-replace. Both share three booleans: `--
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
 | `search` | `<query> [--regex] [--case] [--word]` | Prints ranked matches with snippets, with no cap on results. | no |
+| `search --semantic` | `<query> [--limit n] [--json]` | Ranks notes by meaning instead of text. Prints one `path  score  excerpt` line per hit, or the hits as JSON. `--limit` defaults to `10`. | optional |
 | `replace` | `<query> <replacement> [--scope <path>] [--no-snapshot] [--regex] [--case] [--word]` | Replaces across the vault, or in one note with `--scope`. Prints the result object. | no |
 
 Without `--regex`, search is mid-word and typo tolerant.
+
+`search --semantic` needs `embeddings.enabled` set to `true` in the vault `.settings`.
+It asks the running server for this vault when one is reachable, and otherwise embeds in the CLI process, indexing any new or changed notes before it ranks.
+A server that is registered for a different vault is never asked, even when `--api`, `BISMUTH_API` or `CLAUDE_RELAY_URL` names it.
+A server that does not answer within the model-load wait plus five seconds reports that the index is warming, and the CLI does not start its own model beside it.
+A build that cannot run the model, with no app answering for the vault, tells you to open the vault in the Bismuth app.
+When embeddings are off, the index is still warming up, or the build cannot run the model, the command prints the reason on stderr and exits `1`.
+`--regex`, `--case` and `--word` do not apply to it.
+```bash
+bismuth search "how do I plan a launch" --semantic --limit 5 --vault ~/vault
+```
 `replace` commits a git snapshot of the vault first, so the change can be undone.
 A failed snapshot prints a `warning:` and the replace still runs; `--no-snapshot` skips the snapshot.
 For an agent, restricted notes are never rewritten or named in the report.
@@ -591,5 +619,6 @@ Argument parsing is in `cli/src/args.ts`.
 The visibility gate in `core/src/visibilityCliGate.ts` runs once in `index.ts` before any command, so no invocation skips it.
 Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `call` attaches the owner token and turns failures into messages.
 The run registry is `core/src/runRegistry.ts`.
+`cli/src/semantic.ts` serves the semantic commands: it posts to `/search/semantic` on the vault's running server, and falls back to `core/src/vaultEmbed.ts` in process.
 
-Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/commands/*.ts`, `core/src/visibilityCliGate.ts`
+Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/commands/*.ts`, `core/src/visibilityCliGate.ts`

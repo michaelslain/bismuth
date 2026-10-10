@@ -14,9 +14,11 @@ import { server } from '../src/server'
 // limits to ai" grepped invented frontmatter keys and never found the one command that answers.
 // Raised 200 → 240 for the task pointer: asked "when is my essay draft due", a chat grepped the
 // vault for "essay", a word no task used, before reading a task file by hand.
+// Raised 240 → 280 for the brain / vault_map pointer: a session with no vault map in context has to
+// know to ask for one.
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(240)
+    expect(words).toBeLessThan(280)
 })
 
 test('SERVER_INSTRUCTIONS sends task and deadline questions to bismuth task list', () => {

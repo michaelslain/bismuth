@@ -178,10 +178,23 @@ If the extension in `path` disagrees with the content type, the extension is cor
 |---|---|---|---|
 | `POST /search` | `{query, opts: {caseSensitive, wholeWord, regex}, snippetLimit?}` | `[{path, matchCount, snippets}]`, every matching note. `400` on an invalid regex. | filtered; none |
 | `POST /search-prompt` | `{query}`, a natural-language question | The `/search` shape plus a `reason` per hit. | filtered; none |
+| `POST /search/semantic` | `{query?, around?, k?}`; `query` is a text, `around` a note path | `{hits: [{path, score, excerpt}]}` or `{unavailable, message}`, always `200`. `400` when neither `query` nor `around` is a string. | filtered; none |
 
 `snippetLimit` caps the snippets per note (default 20) and does not change `matchCount`.
 Without `regex`, results are ranked in three tiers: full-text matches, then literal matches the index missed, then typo matches when `caseSensitive` is false.
 With `regex`, every note is scanned and results sort by match count.
+
+`POST /search/semantic` ranks notes by meaning rather than by words. With `query` it returns the notes closest to that text; with `around` it returns the notes closest to that note, the note itself excluded, and `around` wins when both are sent. `k` is the number of hits (default `10`; a value that is not a positive number falls back to the default). `excerpt` is the best-matching passage of the note, up to 300 characters, and `score` is higher for a closer match.
+The route reads `embeddings.enabled` from the vault's `.settings` on every call. When the answer is not a hit list, the body is `{unavailable, message}` with HTTP `200`:
+
+| `unavailable` | Meaning |
+|---|---|
+| `off` | `embeddings.enabled` is not `true`. |
+| `no-worker` | This build cannot run the embedding model. |
+| `warming` | The model is still loading (a query waits up to 20 seconds for it) or the notes are not embedded yet. Retry shortly. |
+| `failed` | The embedding model raised an error; `message` carries it. |
+
+Notes on the deny list are dropped before `k` is applied, so a hidden best match never takes a slot. An `around` note the deny list hides, or one that does not exist, returns `{hits: []}`. [Semantic search](../vault/semantic-search.md) covers what the feature does for a user.
 
 `POST /search-prompt` re-ranks candidates with one Haiku turn through the user's own `claude` binary. It returns `400` when `claude` is not on the path and `500` when the model call fails. The model may read restricted notes while ranking; only the returned list is filtered.
 
@@ -420,7 +433,7 @@ Recall ranks the vault's memory graph and keeps a per-session ledger so a note a
 The ledger clears on `session-start` with source `compact` or `clear` and expires after 6 hours idle.
 `transcriptPath` only widens the ranking query.
 
-The settings `daemon.recall.enabled`, `daemon.recall.midTurn` and `daemon.recall.semantic` are read on each call (absent means true), and the memory directory is read only when `daemon.enabled` is true.
+The settings `daemon.recall.enabled` and `daemon.recall.midTurn` are read on each call (absent means true), `embeddings.enabled` is read on each call (absent means false), and the memory directory is read only when `daemon.enabled` is true.
 Any request carrying an `Origin` header is refused with `403 cross-origin recall refused`, since relay hooks send none.
 Recall returns only notes visible to the daemon channel, so the route needs no token.
 

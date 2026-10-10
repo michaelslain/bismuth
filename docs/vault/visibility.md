@@ -119,7 +119,7 @@ In a restricted vault the Claude chat and the Claude daemon also lose the Grep a
 ## Agents and the `bismuth` CLI: filtered, not refused
 
 When an AI session runs a `bismuth` command, hiding a note costs it that one note and nothing more.
-A command that lists or aggregates notes (`search`, `tree`, `graph`, `task`, `rows`, `base render`, `card`, `calendar` and others) returns its normal result minus the notes hidden from that session's channel.
+A command that lists or aggregates notes (`search`, `map`, `tree`, `graph`, `task`, `rows`, `base render`, `card`, `calendar` and others) returns its normal result minus the notes hidden from that session's channel.
 An explicit path to a hidden note, such as `read Private/secret.md`, is refused.
 A short list of commands that cannot be filtered is refused whenever the vault restricts anything.
 Your own shell is never gated.
@@ -132,7 +132,7 @@ The gate classifies every command by name into four tiers, and a command nobody 
 |---|---|---|
 | Always safe | `backends` `doctor` `docs` `install` `uninstall` `app` `daemon` `agent-graph` `folder-icon` `backup` `page` `memory`, most of `settings`, `checkpoint advance` and `checkpoint ref` | Runs. None can return a note body. |
 | Path-scoped | `read` `write` `move` `delete` `restore` `mkdir` `prop` `render` | Runs unless an argument names a restricted path. |
-| Filtered | `tree` `templates` `graph` `search` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` `checkpoint diff` | Runs with hidden notes left out; an explicit restricted path is still refused. |
+| Filtered | `tree` `templates` `graph` `search` `map` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` `checkpoint diff` | Runs with hidden notes left out; an explicit restricted path is still refused. |
 | Refused when the vault restricts anything | `api` `serve` `export` `chat` `update` `checkpoint` (other than `diff`, `advance`, `ref`) `folder-visibility` `settings set` `settings unset` `settings status-bar`, and anything unclassified | Refused. |
 
 Why each refused command stays refused:
@@ -159,6 +159,8 @@ Link text inside a visible note is visible content: `[[secret]]` written in `ope
 | Community labels | Communities are computed again on the filtered graph, so no label is a hidden note's title. |
 | Tree entries | A hidden file is omitted. A folder is omitted when it is restricted, when it held a hidden file, or when an ancestor is omitted, unless a visible file sits beneath it. |
 | Search hits, rows, tasks, cards, calendar events | Dropped before counting, grouping or sorting, so no total includes a hidden note. |
+| Semantic search hits | `bismuth search --semantic`, `POST /search/semantic` and the `similar:` line of `bismuth map --around` never return a hidden note, or for the daemon a `chat-only` one, as a hit, a neighbour or an excerpt. Denied notes are dropped before the result is cut to its limit, so a hidden best match takes no slot. A hidden note used as the `--around` anchor returns nothing. See [Semantic search](semantic-search.md). |
+| Map neighbourhood memories | The `memories:` list of `bismuth map --around` leaves out a memory note by its own `visibility`: `hidden` always, `chat-only` unless the session is chat. It gives the same answer for any spelling of `--vault` (trailing slash, `./`). |
 | Aggregates | Base summaries, charts, deck totals and match counts cover visible notes only. |
 | Template bodies | A hidden template is never pulled in by name. A hidden and a missing template give the same message. |
 
@@ -341,4 +343,4 @@ For the daemon, `resolveDaemonBackend` in `daemon/src/daemon/session.ts` holds t
 Recall is a daemon-facing operation, so the stricter rule applies on every channel.
 Memory frontmatter is parsed by hand; a duplicate `visibility` key resolves to the strictest value, and a malformed head counts as `hidden`.
 
-Source: `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/visibilityCliGate.ts`, `core/src/visibilityFilter.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/routes/vault.ts`, `core/src/settings.ts`, `daemon/src/lib/visibility.ts`, `daemon/src/daemon/session.ts`, `memory/src/graph.ts`, `memory/src/search.ts`, `memory/src/query.ts`, `mcp/src/cli.ts`, `cli/src/index.ts`, `cli/src/commands/settings.ts`, `app/src/FileTree.tsx`, `app/src/VisibilityBadge.tsx`, `app/src/chat/ChatSetupGate.tsx`
+Source: `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/visibilityCliGate.ts`, `core/src/visibilityFilter.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/routes/vault.ts`, `core/src/vaultEmbed.ts`, `core/src/vaultMap.ts`, `core/src/settings.ts`, `daemon/src/lib/visibility.ts`, `daemon/src/daemon/session.ts`, `memory/src/graph.ts`, `memory/src/search.ts`, `memory/src/query.ts`, `mcp/src/cli.ts`, `cli/src/index.ts`, `cli/src/semantic.ts`, `cli/src/commands/settings.ts`, `app/src/FileTree.tsx`, `app/src/VisibilityBadge.tsx`, `app/src/chat/ChatSetupGate.tsx`

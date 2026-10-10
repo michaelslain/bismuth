@@ -16,7 +16,7 @@ export function getMemoryDir(): string {
 }
 
 export type NoteType =
-    'person' | 'project' | 'workflow' | 'fact' | 'preference' | 'daily' | 'auto'
+    'person' | 'project' | 'workflow' | 'fact' | 'preference' | 'daily' | 'auto' | 'profile' | 'hub'
 
 export interface NoteFrontmatter {
     type: NoteType
@@ -267,6 +267,7 @@ export function noteDescription(note: MemoryNote): string {
         }
         if (inFence || !line) continue
         if (/^(#{1,6}\s|---+$|\*\*\*+$|\||>\s*$)/.test(line)) continue
+        if (line.endsWith(':')) continue
         const prose = line
             .replace(/^([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?/, '')
             .replace(/^>\s*/, '')
@@ -274,9 +275,16 @@ export function noteDescription(note: MemoryNote): string {
             .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
             .replace(/[*_`~]+/g, '')
             .trim()
-        if (!prose) continue
-        const end = prose.search(/[.!?](\s|$)/)
-        return clipDescription(end === -1 ? prose : prose.slice(0, end + 1))
+        if (!prose || prose.endsWith(':')) continue
+        // A short `Label:` prefix (Status, Last Updated, RULE) is not prose: keep what follows it.
+        const body = prose
+            .replace(/^(?:CRITICAL\s+)?(?:UPDATE|Updated|Last Updated|Status|Note|RULE|IMPORTANT)\b[^:]{0,40}:\s*/i, '')
+            .replace(/^(?:\w+\s+){0,2}\w+:\s+(?=\S)/, '')
+            .replace(/^\([^)]*\)\s*/, '')
+            .trim()
+        if (!body) continue
+        const end = body.search(/[.!?](\s|$)/)
+        return clipDescription(end === -1 ? body : body.slice(0, end + 1))
     }
     return ''
 }

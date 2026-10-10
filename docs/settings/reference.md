@@ -288,20 +288,38 @@ When `enabled` is off the daemon is dormant: its state stays on disk and the `.d
 | `inheritUserMcp` | boolean | `false` | | Let daemon sessions use the MCP servers and plugins of your own `claude` CLI. |
 | `recall.enabled` | boolean | `true` | | Master switch for automatic memory injection into agent sessions. Needs `daemon.enabled`. |
 | `recall.midTurn` | boolean | `true` | | Also recall memory once per tool batch inside a long turn. |
-| `recall.semantic` | boolean | `true` | | Use embedding (meaning-based) search in recall. |
 
 `backend` is a request. For a vault with even one hidden or chat-only note, a non-Claude backend is refused and the brain runs on `claude`, with the reason logged, because only Claude Code can enforce the visibility gate. The `backend` enum lists the backends that can run a daemon at all.
 
 `inheritUserMcp` is off by default because a cron runs unattended with permissions bypassed: turning it on hands the daemon every tool those servers expose.
 User-scope servers (`~/.claude.json`) and plugins (`~/.claude/settings.json`) are loaded; project and local scope never are, because the session's working directory is the vault and a `.mcp.json` in your notes would otherwise run on its own.
 
-`recall.midTurn` costs one extra lookup per tool batch. `recall.semantic` starts a helper process on first use that holds a roughly 35 MB embedding model (about 260 to 280 MB of RAM while it runs).
-The helper exits after 10 minutes idle and returns that memory. Prompt and subagent recall also run a small relevance model in a second helper with the same idle exit. With the setting off, recall is keyword-only and neither helper starts. Both need `recall.enabled`.
+`recall.midTurn` costs one extra lookup per tool batch. Both `recall` switches need `daemon.enabled`; meaning-based matching in recall is the separate [`embeddings.enabled`](#embeddings) switch.
 
 ```yaml
 daemon:
   enabled: true
   inboxRetentionDays: 14
+```
+
+---
+
+## `embeddings`
+
+Meaning-based (embedding) search for memory recall and for vault-note search. It is off by default.
+
+| Key | Type | Default | Values / bounds | Effect |
+|---|---|---|---|---|
+| `enabled` | boolean | `false` | | Search by meaning as well as by words, in memory recall and in vault-note search. |
+
+`enabled` starts a helper process on first use that holds a roughly 35 MB embedding model (about 260 to 280 MB of RAM while it runs). The helper exits after 10 minutes idle and returns that memory.
+The first pass over a large vault takes minutes of CPU while the notes are embedded.
+Prompt and subagent recall also run a small relevance model in a second helper with the same idle exit.
+With the setting off, recall and search are keyword-only and neither helper ever starts. Recall also needs `daemon.recall.enabled`. [Semantic search](../vault/semantic-search.md) covers the feature from a user's side.
+
+```yaml
+embeddings:
+  enabled: true
 ```
 
 ---

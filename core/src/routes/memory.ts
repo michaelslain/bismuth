@@ -39,9 +39,11 @@ export default function memoryRoutes(
     ctx: RouteContext,
 ): Record<string, Handler> {
     return {
-        // Read table, no invalidate, no owner token: recall only ever returns daemon-visible notes
-        // (isMemoryNoteVisibleToDaemon), the same set the relay hooks injected before. The service
-        // reads `.settings` live, so a daemon.recall toggle applies on the next call.
+        // Read table, no invalidate, no owner token. Prompt and tool recall return daemon-visible
+        // notes only (isMemoryNoteVisibleToDaemon). Session-start composes the brain block for the
+        // request's channel: a caller presenting `X-Bismuth-Channel: chat` or the owner token gets
+        // the chat view, anything else the stricter daemon view. The service reads `.settings`
+        // live, so a daemon.recall toggle applies on the next call.
         'POST /memory/recall': async req => {
             // Tokenless + CORS `*` + text/plain-tolerant body means any web page could read memory
             // excerpts. Relay hooks use bun's fetch (no Origin) and the chat calls in-process, so a
@@ -60,6 +62,8 @@ export default function memoryRoutes(
             return ok(
                 await recallServiceFor(ctx.cfg.vault).recall({
                     ...parsed,
+                    channel:
+                        ctx.requestChannel(req) === 'daemon' ? 'daemon' : 'chat',
                     signal: req.signal,
                 }),
             )

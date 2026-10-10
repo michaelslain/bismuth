@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 const BIN = join(import.meta.dir, '..', 'bin')
 
-type Hit = { path: string; body: any }
+type Hit = { path: string; body: any; channel: string | null }
 let hits: Hit[] = []
 let mode: 'ok' | '500' | 'slow' = 'ok'
 
@@ -12,7 +12,7 @@ const server = Bun.serve({
     async fetch(req) {
         const path = new URL(req.url).pathname
         const body = await req.json().catch(() => null)
-        hits.push({ path, body })
+        hits.push({ path, body, channel: req.headers.get('x-bismuth-channel') })
         if (path !== '/memory/recall') return new Response('{}')
         if (mode === '500') return new Response('boom', { status: 500 })
         if (mode === 'slow') await Bun.sleep(4000)
@@ -172,4 +172,10 @@ describe('relay hooks call /memory/recall', () => {
             expect(hits).toHaveLength(0)
         })
     }
+})
+
+test('recall requests carry the chat channel header', async () => {
+    await run('session-start-hook.ts', { session_id: 's1', cwd: '/x', source: 'startup' })
+    expect(recallHits().length).toBeGreaterThan(0)
+    expect(recallHits().every(h => h.channel === 'chat')).toBe(true)
 })

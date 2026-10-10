@@ -814,6 +814,19 @@ describe('note description', () => {
         )
     })
 
+    test('noteDescription skips labels and heading-like lines', async () => {
+        const cases: [string, string][] = [
+            ['The Daemon Is:\nIt runs hourly. More.', 'It runs hourly.'],
+            ['Status: Fully active and operational. Extra.', 'Fully active and operational.'],
+            ['Last Updated: 2026-07-10 (by dream)\nThe real fact here.', '2026-07-10 (by dream)'],
+            ['CRITICAL UPDATE (June 21, 2026): The vault moved. Later.', 'The vault moved.'],
+        ]
+        for (const [i, [body, want]] of cases.entries()) {
+            await writeNote(`S${i}`, fm(), body, dir)
+            expect(noteDescription((await readNote(`S${i}`, dir))!)).toBe(want)
+        }
+    })
+
     test('noteDescription is capped at 160 chars', async () => {
         await writeNote('L', fm(), 'word '.repeat(100), dir)
         expect(noteDescription((await readNote('L', dir))!).length).toBeLessThanOrEqual(160)

@@ -22,8 +22,7 @@
 // and buildDenyPaths' doc comments for the extension/frontmatter/stem-inheritance fixes.
 import { open, readdir, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { parse as parseYaml } from 'yaml'
-import { FRONTMATTER_REGEX } from './frontmatter'
+import { FRONTMATTER_REGEX, parseFrontmatterData } from './frontmatter'
 import { readFolderVisibilityResult } from './settings'
 import { ownerTokenDenyPaths } from './ownerToken'
 import { mapWithConcurrency } from './concurrency'
@@ -361,15 +360,10 @@ async function readOwnVisibility(absPath: string): Promise<FileVisibility> {
     }
     const m = text.match(FRONTMATTER_REGEX)
     if (!m) return undefined // unclosed fence — not frontmatter
-    let data: unknown
-    try {
-        data = parseYaml(m[1] ?? '')
-    } catch {
-        return 'hidden'
-    }
-    if (data === null || data === undefined) return undefined // empty block
-    if (typeof data !== 'object' || Array.isArray(data)) return 'hidden'
-    const v = (data as Record<string, unknown>).visibility
+    // null = YAML error or a non-map document: fail closed. An empty block is {} and inherits.
+    const data = parseFrontmatterData(m[1] ?? '')
+    if (data === null) return 'hidden'
+    const v = data.visibility
     if (v === undefined || v === null || v === '') return undefined
     return isVisibilityLiteral(v) ? v : 'hidden'
 }

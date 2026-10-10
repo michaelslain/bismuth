@@ -600,19 +600,23 @@ export const SETTINGS_SCHEMA: Schema = {
             enabled: {
                 type: 'boolean',
                 default: true,
-                doc: "Master switch for every AUTOMATIC memory injection into agent sessions — the prompt-time recall, mid-turn recall, session-start memory and subagent memory. Off = agents only see memory they ask for through the remember/recall/forget tools. Requires daemon.enabled (the 3rd brain is off without it). Cost when on: a small keyword lookup per prompt; the heavier costs are the two switches below.",
+                doc: "Master switch for every AUTOMATIC memory injection into agent sessions — the prompt-time recall, mid-turn recall, session-start memory and subagent memory. Off = agents only see memory they ask for through the remember/recall/forget tools. Requires daemon.enabled (the 3rd brain is off without it). Cost when on: a small keyword lookup per prompt; the heavier cost is the mid-turn switch below.",
             },
             midTurn: {
                 type: 'boolean',
                 default: true,
                 doc: 'Run one memory recall per agent tool batch (between tool calls, inside a long turn), not only when you send a prompt. Cost: one extra lookup for each batch of tool calls an agent makes, so a long agentic turn does that many extra recalls. Off = memory is recalled at the prompt only. Has no effect when recall.enabled is off.',
             },
-            semantic: {
-                type: 'boolean',
-                default: true,
-                doc: 'Use embedding (meaning-based) search in recall. Cost: on first use core starts a separate helper process holding a ~35MB embedding model (about 260-280MB of RAM while it runs, a little CPU while it embeds); core itself grows by under 10MB. The helper exits after 10 minutes idle, which returns all of that memory. Off = keyword-only recall and the helper is never started. Has no effect when recall.enabled is off.',
-            },
         }),
+    }),
+    // Meaning-based (embedding) search, for memory recall and vault-note search alike. Top level
+    // because it is not a daemon feature: the vault's own note search reads it too.
+    embeddings: object({
+        enabled: {
+            type: 'boolean',
+            default: false,
+            doc: 'Use embedding (meaning-based) search in memory recall and in vault-note search. Cost: on first use core starts a separate helper process holding a ~35MB embedding model (about 260-280MB of RAM while it runs, exits after 10 minutes idle, which returns all of that memory); the first pass over a large vault takes minutes of CPU while it embeds. Off = keyword-only recall and search, and the helper is never started.',
+        },
     }),
     // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself
     // (see core/src/selfUpdate.ts); by default that's manual via the update banner.

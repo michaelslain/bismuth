@@ -15,6 +15,7 @@
 import { watch as fsWatch, type FSWatcher } from 'node:fs'
 import { loadCronJobs, fireFileChangeCron } from './cron.ts'
 import type { VaultContext } from '../lib/config.ts'
+import { invalidateBrain } from '../lib/coreBrain.js'
 
 /** Coalesce a burst of raw fs events into one batch after this many ms of quiet. */
 export const FILE_WATCH_DEBOUNCE_MS = 2000
@@ -67,7 +68,12 @@ export interface FileWatcher {
  */
 export function createFileWatcher(
     root: string,
-    opts: { debounceMs?: number; onBatch: (paths: string[]) => void },
+    opts: {
+        debounceMs?: number
+        onBatch: (paths: string[]) => void
+        /** Runs at the end of EVERY debounced burst, including one made only of `.daemon/**` paths. */
+        onFlush?: () => void
+    },
 ): FileWatcher | null {
     const debounceMs = opts.debounceMs ?? FILE_WATCH_DEBOUNCE_MS
     const pending = new Set<string>()
@@ -78,13 +84,15 @@ export function createFileWatcher(
         watcher = fsWatch(root, { recursive: true }, (_event, filename) => {
             if (!filename) return // extent-unknown event (rare) — nothing specific to batch
             const rel = toPosix(filename)
-            if (isDaemonInternalPath(rel)) return // never react to the daemon's own churn (loop guard)
-            pending.add(rel)
+            // Internal churn is never batched (loop guard) but still ends in an onFlush, so a
+            // `.settings` / `.daemon/` change cannot leave a stale cache behind.
+            if (!isDaemonInternalPath(rel)) pending.add(rel)
             if (timer !== null) clearTimeout(timer)
             timer = setTimeout(() => {
                 timer = null
                 const paths = [...pending]
                 pending.clear()
+                opts.onFlush?.()
                 if (paths.length > 0) opts.onBatch(paths)
             }, debounceMs)
         })
@@ -118,10 +126,13 @@ async function flush(ctx: VaultContext, paths: string[]): Promise<void> {
 export function startFileWatch(
     ctx: VaultContext,
     debounceMs: number = FILE_WATCH_DEBOUNCE_MS,
+    invalidate: (vaultDir: string) => void = invalidateBrain,
 ): void {
     if (watchers.has(ctx.root)) return
     const fw = createFileWatcher(ctx.root, {
         debounceMs,
+        // Folder visibility lives in `.settings`, so the cached brain map is dropped on every burst.
+        onFlush: () => invalidate(ctx.root),
         onBatch: paths => {
             void flush(ctx, paths)
         },

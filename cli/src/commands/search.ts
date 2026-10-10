@@ -3,7 +3,8 @@
 // (vault-wide find-and-replace). Mutating commands call core directly — the
 // app's file watcher picks up the writes live.
 import type { CommandMap } from '../types'
-import { bool, flag, out, positionals, requireVault } from '../args'
+import { BOOLEAN_FLAGS, bool, fail, flag, out, positionals, requireVault } from '../args'
+import { semanticQuery } from '../semantic'
 import { searchVault, type SearchOpts } from '../../../core/src/search'
 import { replaceInVault } from '../../../core/src/replace'
 import { commitVault, snapshotMessage } from '../../../core/src/backup'
@@ -25,13 +26,29 @@ function buildOpts(args: string[]): SearchOpts {
 export const commands: CommandMap = {
     search: {
         summary: 'Search the vault for a query (ranked, with match snippets)',
-        usage: '<query> [--regex] [--case] [--word]',
+        usage: '<query> [--regex] [--case] [--word] [--semantic [--limit n] [--json]]',
         run: async args => {
             const vault = requireVault(args)
-            const [query] = positionals(args)
+            const semantic = bool(args, 'semantic')
+            const [query] = positionals(
+                args,
+                semantic ? [...BOOLEAN_FLAGS, 'semantic', 'json'] : BOOLEAN_FLAGS,
+            )
             // Fail closed: agentDenyEntries throws when visibility cannot be determined, and that
             // propagates so the CLI exits non-zero. [] is the owner.
             const entries = await agentDenyEntries(vault)
+            if (semantic) {
+                if (!query) fail('usage: bismuth search <query> --semantic [--limit n] [--json]')
+                const limit = Number(flag(args, 'limit') ?? 10)
+                if (!Number.isInteger(limit) || limit < 1)
+                    fail('--limit must be a positive whole number')
+                const r = await semanticQuery(args, vault, { query }, entries, limit)
+                if (!Array.isArray(r)) fail(r.message)
+                if (bool(args, 'json')) return out(r, args)
+                for (const h of r)
+                    console.log(`${h.path}  ${h.score.toFixed(3)}  ${h.excerpt}`)
+                return
+            }
             const results = await searchVault(
                 vault,
                 query ?? '',

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     buildDaemonPersona,
+    DAEMON_BRAIN_WAIT_MS,
     DAEMON_PERSONA_CHANNELS,
     DEFAULT_DAEMON_IDENTITY,
 } from '../src/daemon/persona.ts'
@@ -63,4 +64,32 @@ test('every daemon-capable catalog backend declares a persona channel', () => {
     for (const id of daemonIds) {
         expect(DAEMON_PERSONA_CHANNELS[id]).toBeDefined()
     }
+})
+
+test('persona appends the daemon brain after identity and the restricted list', async () => {
+    await withIdentity('Be terse.\n', async ctx => {
+        const calls: unknown[] = []
+        const c = { ...ctx, root: '/v', memoryDir: '/v/.daemon/memory' } as VaultContext
+        const out = await buildDaemonPersona(c, [{ rel: 'secret.md' } as never], async o => {
+            calls.push(o)
+            return 'BRAIN BLOCK'
+        })
+        expect(out.endsWith('\n\nBRAIN BLOCK')).toBe(true)
+        expect(out.indexOf('secret.md')).toBeLessThan(out.indexOf('BRAIN BLOCK'))
+        expect(calls).toEqual([{ vaultDir: '/v', memoryDir: '/v/.daemon/memory', channel: 'daemon', waitMs: DAEMON_BRAIN_WAIT_MS }])
+    })
+})
+
+test('a brain that throws or returns null leaves the persona exactly as before', async () => {
+    await withIdentity('Be terse.\n', async ctx => {
+        const want = 'You are Atlas.\n\nBe terse.'
+        expect(await buildDaemonPersona(ctx, [], async () => null)).toBe(want)
+        const orig = console.error
+        console.error = () => {}
+        try {
+            expect(await buildDaemonPersona(ctx, [], async () => { throw new Error('boom') })).toBe(want)
+        } finally {
+            console.error = orig
+        }
+    })
 })

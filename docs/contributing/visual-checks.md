@@ -266,7 +266,7 @@ These tools measure rather than judge. Each takes its own flags; read the header
 | `bench/layoutquality.ts` | Graph layout quality over a real vault through the production cold path; read-only, so use a copy | `bun bench/layoutquality.ts --vault <path> [--label <name>] [--out <file>]` |
 | `bench/bench.ts` | Backend hot paths (`listTree`, search, task evaluation) over a synthetic vault, with worst event-loop stall | `bun bench/bench.ts --vault-size 2000 --label current` |
 | `bench/basesPerfBench.ts` | Bases and tasks timing over a synthetic vault; compare the printed tables before and after a change | `bun run bench:bases-perf` |
-| `bench/recallEval.ts` | Memory-recall rankers against labelled cases | `bun bench/recallEval.ts --dir <memoryDir> --cases <file>` |
+| `bench/recallEval.ts` | Memory-recall rankers against labelled cases; `--service [--embeddings off\|on] [--explain]` runs them through the real recall service | `bun bench/recallEval.ts --dir <memoryDir> --cases <file>` |
 | `bench/watch.sh` | A live progress view of a running `cssBaseline` or `storyAudit` sweep | `bash bench/watch.sh` in a second terminal |
 
 ## How it works

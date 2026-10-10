@@ -45,7 +45,11 @@ export async function requestRecall(
             `${relayUrl().replace(/\/+$/, '')}/memory/recall`,
             {
                 method: 'POST',
-                headers: { 'content-type': 'application/json' },
+                headers: {
+                    'content-type': 'application/json',
+                    // Relay hooks run in the user's own terminal tabs: the chat channel.
+                    'x-bismuth-channel': 'chat',
+                },
                 body: JSON.stringify(req),
                 signal: AbortSignal.timeout(timeoutMs),
             },

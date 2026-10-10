@@ -7,8 +7,10 @@ import {
     readdirSync,
     statSync,
     readFileSync,
+    realpathSync,
+    symlinkSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import {
     writeRunRecord,
     readRunRecords,
@@ -225,4 +227,51 @@ test('a malformed-shape record (wrong field types) is skipped without being prun
     expect(readdirSync(dir).filter(n => n.endsWith('.json'))).toContain(
         'weird.json',
     )
+})
+
+// A registered core is keyed by the vault path it booted with; a caller types the same directory in
+// whatever spelling its shell gave it.
+test('--vault resolves a registered vault under a relative, trailing-slash and symlinked spelling', () => {
+    const real = realpathSync(tempDir('bismuth-vault-'))
+    const link = join(dir, 'vault-link')
+    try {
+        symlinkSync(real, link)
+        writeRunRecord({ port: 4401, vault: real, pid: process.pid })
+        const base = 'http://localhost:4401'
+        expect(resolveRunRegistryBase(real + '/')).toBe(base) // trailing slash
+        expect(resolveRunRegistryBase(link)).toBe(base) // symlink to it
+        expect(resolveRunRegistryBase(link + '/')).toBe(base)
+        expect(resolveRunRegistryBase(relative(process.cwd(), real))).toBe(base) // relative
+        expect(resolveRunRegistryBase(join(real, '..', 'nope'))).toBeUndefined()
+    } finally {
+        rmSync(real, { recursive: true, force: true })
+    }
+})
+
+test('a record registered under a symlinked spelling is found by the real path and by a relative one', () => {
+    const real = realpathSync(tempDir('bismuth-vault-'))
+    const link = join(dir, 'vault-link')
+    try {
+        symlinkSync(real, link)
+        writeRunRecord({ port: 4402, vault: link, pid: process.pid })
+        const base = 'http://localhost:4402'
+        expect(resolveRunRegistryBase(real)).toBe(base)
+        expect(resolveRunRegistryBase(relative(process.cwd(), link))).toBe(base)
+    } finally {
+        rmSync(real, { recursive: true, force: true })
+    }
+})
+
+test('two vaults stay distinct under spelling normalisation', () => {
+    const a = realpathSync(tempDir('bismuth-vault-'))
+    const b = realpathSync(tempDir('bismuth-vault-'))
+    try {
+        writeRunRecord({ port: 4403, vault: a, pid: process.pid })
+        writeRunRecord({ port: 4404, vault: b, pid: process.pid })
+        expect(resolveRunRegistryBase(a + '/')).toBe('http://localhost:4403')
+        expect(resolveRunRegistryBase(b + '/')).toBe('http://localhost:4404')
+    } finally {
+        rmSync(a, { recursive: true, force: true })
+        rmSync(b, { recursive: true, force: true })
+    }
 })

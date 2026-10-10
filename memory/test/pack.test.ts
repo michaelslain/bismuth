@@ -3,6 +3,7 @@ import type { MemoryNote } from '../src/graph.ts'
 import {
     PACK_LIMITS,
     excludeKey,
+    formatProfile,
     formatSessionStart,
     noteHash,
     packRecall,
@@ -72,6 +73,15 @@ describe('packRecall', () => {
         }
     })
 
+    test('keyword-only: a generic word in a tenth of the notes injects nothing; a distinctive one does', () => {
+        const generic = Array.from({ length: 6 }, (_, i) => note(`essay-${i}`, `thoughts on capital and labour ${i}`))
+        const prompt = 'what is the capital of australia'
+        expect(packRecall(rank(generic, prompt), 'prompt').text).toBeNull()
+        expect(packRecall(rank(generic, prompt), 'subagent').text).toBeNull()
+        const one = [note('travel-notes', 'trip planning for australia in spring')]
+        expect(packRecall(rank(one, prompt), 'prompt').injected.map(i => i.name)).toEqual(['travel-notes'])
+    })
+
     test('the excerpt is the best-matching section, with the path', () => {
         const n = note(
             'guide',
@@ -118,15 +128,26 @@ describe('formatSessionStart', () => {
         )
     }
 
-    test('300 notes: at most 9500 chars, every preference index line kept, enveloped', () => {
+    test('300 notes: at most 9500 chars, every preference shown as an index line or a body, enveloped', () => {
         const notes = many()
         const out = formatSessionStart(notes)!
         expect(out.length).toBeLessThanOrEqual(9500)
         expect(out.startsWith(`<${MEMORY_BLOCK_TAG}>`)).toBe(true)
         expect(out.endsWith(`</${MEMORY_BLOCK_TAG}>`)).toBe(true)
         for (const n of notes.filter(n => n.frontmatter.type === 'preference'))
-            expect(out).toContain(`[[${n.name}]] (preference)`)
+            expect(out.includes(`[[${n.name}]] (preference)`) || out.includes(`## ${n.name}\n`)).toBe(true)
         expect(stripInjectedBlocks(out)).toBe('')
+    })
+
+    test('a lead larger than the budget is cut at a line boundary and the result stays within budget', () => {
+        const lead = Array.from({ length: 250 }, (_, i) => `lead line ${i} of the vault map`).join('\n').slice(0, 5000)
+        for (const budgetChars of [2000, 4000]) {
+            const out = formatSessionStart(many(), { budgetChars, lead })!
+            expect(out.length).toBeLessThanOrEqual(budgetChars)
+            expect(out.endsWith(`</${MEMORY_BLOCK_TAG}>`)).toBe(true)
+            expect(out).toContain('lead line 0 of the vault map')
+            expect(out).not.toContain('lead line 249')
+        }
     })
 
     test('short preference bodies ship, long ones do not', () => {
@@ -136,6 +157,49 @@ describe('formatSessionStart', () => {
         ])!
         expect(out).toContain('Always use tabs.')
         expect(out).not.toContain('y'.repeat(1300))
+    })
+
+    test('a long line is skipped on its own and never hides shorter ones after it', () => {
+        const short = note('bbb-short', 'x', 'fact', { description: 'short', updated: '2026-02-01' })
+        const long = note('n'.repeat(300), 'x', 'project', { updated: '2026-03-01' })
+        const budgetChars = formatSessionStart([short])!.length + 90
+        const out = formatSessionStart([long, short], { budgetChars })!
+        expect(out).not.toContain('nnnnnnnnnn')
+        expect(out).toContain('[[bbb-short]]')
+        expect(out).toContain('1 more notes not listed')
+    })
+
+    test('lines are ordered by in-links, then recency, then type; hubs come first', () => {
+        const notes = [
+            note('new-unlinked', 'x', 'fact', { updated: '2026-09-01' }),
+            note('old-popular', 'x', 'fact', { updated: '2026-01-01' }),
+            note('linker-1', 'see [[old-popular]]', 'fact', { updated: '2026-02-01' }),
+            note('linker-2', 'see [[old-popular]]', 'fact', { updated: '2026-02-02' }),
+            note('the-hub', 'x', 'hub', { updated: '2025-01-01' }),
+        ].map(n => ({ ...n, backlinks: [...n.content.matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1]!) }))
+        const out = formatSessionStart(notes)!
+        const at = (n: string) => out.indexOf(`[[${n}]]`)
+        expect(at('the-hub')).toBeLessThan(at('old-popular'))
+        expect(at('old-popular')).toBeLessThan(at('new-unlinked'))
+        expect(at('new-unlinked')).toBeLessThan(at('linker-2'))
+        expect(at('linker-2')).toBeLessThan(at('linker-1'))
+    })
+
+    test('the profile note is never an index line; a profile-only vault gives null', () => {
+        const profile = note('user-profile', 'Michael builds Bismuth.', 'profile')
+        expect(formatSessionStart([profile])).toBeNull()
+        expect(formatSessionStart([profile, note('other', 'x')])).not.toContain('[[user-profile]]')
+    })
+
+    test('lead sits between the banner and the index and counts against the budget', () => {
+        const notes = many()
+        const lead = 'PROFILE-LEAD '.repeat(100)
+        const out = formatSessionStart(notes, { lead })!
+        expect(out.indexOf('PROFILE-LEAD')).toBeGreaterThan(out.indexOf('\n\n'))
+        expect(out.indexOf('PROFILE-LEAD')).toBeLessThan(out.indexOf('# Memory index'))
+        expect(out.length).toBeLessThanOrEqual(9500)
+        expect(formatSessionStart(notes, { lead, budgetChars: 4000 })!.length).toBeLessThanOrEqual(4000)
+        expect(out).toMatch(/\d+ more notes not listed/)
     })
 
     test('hidden notes are not indexed; no visible notes gives null', () => {
@@ -192,5 +256,45 @@ describe('inclusion threshold does not depend on graph size', () => {
         ]
         expect(inject(big, 'write a haiku about rain', 'prompt')).toEqual([])
         expect(inject(big.slice(0, 3), 'write a haiku about rain', 'prompt')).toEqual(['chat-math'])
+    })
+})
+
+describe('formatProfile', () => {
+    const profile = (content: string, extra: Partial<MemoryNote['frontmatter']> = {}) =>
+        note('user-profile', content, 'profile', extra)
+
+    test('returns the body, cut at a line boundary within maxChars', () => {
+        const body = Array.from({ length: 100 }, (_, i) => `line number ${i} of the profile`).join('\n')
+        const out = formatProfile([profile(body)], 200)!
+        expect(out.length).toBeLessThanOrEqual(200)
+        expect(body.startsWith(out)).toBe(true)
+        expect(body[out.length]).toBe('\n')
+    })
+
+    test('null when absent, empty, or not visible to the daemon', () => {
+        expect(formatProfile([note('a', 'x')])).toBeNull()
+        expect(formatProfile([profile('  ')])).toBeNull()
+        expect(formatProfile([profile('secret', { visibility: 'chat-only' })])).toBeNull()
+    })
+})
+
+describe('formatSessionStart with a lead', () => {
+    test('preference bodies yield so non-preference index lines keep room', () => {
+        const prefs = Array.from({ length: 30 }, (_, i) =>
+            note(`pref-${i}`, `Preference body ${i}. ${'word '.repeat(40)}`, 'preference', { description: `pref desc ${i} ${'x'.repeat(40)}` }),
+        )
+        const types = ['project', 'person', 'fact', 'hub'] as const
+        const others = Array.from({ length: 100 }, (_, i) =>
+            note(`other-${i}`, `Body ${i}.`, types[i % 4]!, { description: `other desc ${i} ${'y'.repeat(40)}` }),
+        )
+        const lead = `# Who\n\n${'p'.repeat(300)}\n\n# Vault map (2000 notes)\n\n${'m\n'.repeat(1150)}`
+        const out = formatSessionStart([...prefs, ...others], { lead })!
+        expect(out.length).toBeLessThanOrEqual(9500)
+        expect(out.trimEnd().endsWith(`</${MEMORY_BLOCK_TAG}>`)).toBe(true)
+        expect(out.match(/^\[\[other-/gm)!.length).toBeGreaterThanOrEqual(25)
+        expect(out).toContain('# Preferences')
+        expect(out).toContain('## pref-')
+        // a preference whose body is shown has no index line
+        for (const m of out.matchAll(/^## (pref-\d+)$/gm)) expect(out).not.toContain(`[[${m[1]}]]`)
     })
 })

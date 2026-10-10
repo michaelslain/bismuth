@@ -20,15 +20,42 @@ Alice climbs with me on weekends. See [[spring-trip]].
 
 | Key | Values | Effect |
 |---|---|---|
-| `type` | `person`, `project`, `workflow`, `fact`, `preference`, `daily`, `auto`; other text is accepted | Groups notes; recall ranks `preference` and `workflow` slightly higher and `daily` and `auto` lower. Defaults to `fact` |
+| `type` | `person`, `project`, `workflow`, `fact`, `preference`, `daily`, `auto`, `profile`, `hub`; other text is accepted | Groups notes; recall ranks `preference` and `workflow` slightly higher and `daily` and `auto` lower. `profile` and `hub` have their own roles, below. Defaults to `fact` |
 | `tags` | inline list `[a, b]` | Matched by `tag:` queries and ranked as a title field |
 | `created`, `updated` | `YYYY-MM-DD`, local date | `updated` drives `after:` and `before:` filters. Missing values default to today |
-| `description` | one line | Says when the note matters; shown in the session-start index, clipped to 160 characters. Falls back to the note's first sentence |
+| `description` | one line | Says when the note matters. The session-start index shows only this line for each note, clipped to 160 characters. Without one, the index uses the note's first prose sentence, which skips headings, lines ending in `:` and short `Label:` prefixes such as `Status:` |
 | `visibility` | `chat-only` or `hidden` | Keeps the note away from agents; see below |
 
 Keep frontmatter simple: the parser is not YAML. It splits each line at the first colon, reads only the inline `[a, b]` list form for `tags`, and ignores a line with no colon.
 
 Notes sit at the top of the memory folder or one folder down (`trips/spring-trip.md`). A file two folders down is invisible to every tool. Note names have `/`, `\` and `..` replaced or stripped so a name cannot leave the folder. A `[[link]]` matches a note by its bare name in any folder, so `[[spring-trip]]` links to `trips/spring-trip`.
+
+## Profile and hub notes
+
+A `profile` note is the always-on summary of who you are. The note named `user-profile`, or any note of type `profile`, is shown in full at the top of every session's memory block and never as an index line. It is cut at 1,500 characters, so keep it to stable facts: who you are, what you do and how you like to work.
+
+A `hub` note lists the members of one topic, one line each, with a `[[link]]` per member. Hub lines sort first in the session-start index, and a hub may be longer than the 2,000 characters other notes are held to. A topic with four or more notes is a candidate for a hub.
+
+## Check the health of the graph
+
+The memory health report lists structural problems in the graph, worst first, as a numbered agenda. `dream` reads it at the start of every run ([crons and processes](crons-and-processes.md#seeded-crons-and-files)). Each item has a kind, the notes it concerns (up to ten) and a one-line fix.
+
+| Kind | Reported when |
+|---|---|
+| `no-profile` | No `profile` note exists |
+| `status-lines` | A note has three or more lines with an explicit date older than 14 days, outside a `## History` section |
+| `oversized` | A non-hub note body is over 2,000 characters |
+| `dated-tags` | A tag is `latest`, `status` or `current`, or contains a month name or a four-digit year |
+| `duplicate` | Two notes' names and descriptions share at least 60% of their words |
+| `cluster` | Two or more notes share a name once dates, months and status words are removed |
+| `broken-link` | A `[[link]]` resolves to no memory note and no vault note |
+| `no-hub` | Four or more notes share a tag or a name stem and no hub links at least half of them |
+| `dated-name` | A name carries a date, a month or a status word such as `-final` or `-update` |
+| `no-source` | A note links to no vault note and carries no `(session YYYY-MM-DD)` marker; profile and hub notes are exempt |
+| `orphan` | A note has no wikilink in or out |
+| `no-description` | A note other than the profile has no `description` |
+
+Transcript notes (`auto-*`) are skipped, and a restricted note never appears. `broken-link` and `no-source` need the vault's note names, so they appear only when the daemon supplies them. A `(session YYYY-MM-DD)` marker counts as a source.
 
 ## Write, find and remove notes
 
@@ -88,7 +115,17 @@ The check fails closed. The strictest `visibility` line in the frontmatter wins,
 
 ## How `dream` maintains the graph
 
-The seeded `dream` cron reads your changed notes and the session transcripts that your terminal sessions and chats save as `auto-*` notes, and folds them into a small set of canonical notes. It merges duplicates, collapses dated snapshots into one note, deletes transcripts it has processed, and files an inbox page only when something needs you. It writes memory only through `remember` and `forget`. See [crons and processes](crons-and-processes.md#seeded-crons-and-files).
+The seeded `dream` cron works the memory health report worst first, at most 12 items per run, then folds your changed notes and the session transcripts that your terminal sessions and chats save as `auto-*` notes into a small set of canonical notes. It writes memory only through `remember` and `forget`, and files an inbox page only when something needs you. [Crons and processes](crons-and-processes.md#seeded-crons-and-files) describes the full run.
+
+The rules it follows when it writes a note:
+
+- It keeps one `user-profile` note of at most 1,500 characters.
+- It writes atomic notes of at most 2,000 characters, and gives a topic with four or more notes one `hub` note.
+- It links each fact it adds to the vault note it came from, or ends it with `(session YYYY-MM-DD)`.
+- It moves a replaced fact to a dated line under `## History` instead of erasing it, and carries every fact over when it splits a note.
+- It never stores what the vault answers live, such as task counts or "this week" status, and links the source note instead.
+- It words facts about you neutrally, with no alarm words or psychological verdicts.
+- It gives every note it touches a one-line `description`, and uses `bismuth map --around <note>` ([vault map](../vault/map.md)) to see where a vault note sits before linking it.
 
 ## How it works
 
@@ -108,11 +145,12 @@ The memory folder is its own git repository, separate from the vault's. While th
 
 | Module | Role |
 |---|---|
-| `graph.ts` | Note create, read, delete, list; backlinks; the visibility check |
+| `graph.ts` | Note create, read, delete, list; backlinks; the visibility check; `noteDescription`, the index line's description |
 | `query.ts` | The filter syntax above, behind the `recall` tool |
 | `rank.ts` | BM25 ranking for injection |
-| `pack.ts`, `recall.ts` | Cut ranked notes into the bounded `<bismuth-memory>` block |
+| `pack.ts`, `recall.ts` | Cut ranked notes into the bounded `<bismuth-memory>` block; `pack.ts` also holds `formatProfile` (the profile, cut at 1,500 characters on a line boundary) and the index order (hubs first, then in-links, recency, type) |
+| `health.ts` | `brainHealth` computes the health report items and `formatBrainHealth` renders them as a numbered list capped at 3,000 characters; the daemon fills `{{brainReport}}` in a cron prompt with it (`daemon/src/daemon/brainReport.ts`) |
 | `transcript.ts` | Turn a finished conversation into an `auto-*` note |
 | `search.ts` | `searchMemory`, a ranked search that returns whole notes (up to 10) above the prompt-mode score floor |
 
-Source: `memory/src/{graph,query,rank,pack,recall,search,noteCache,transcript}.ts`, `mcp/src/memory.ts`, `cli/src/commands/memory.ts`, `core/src/{memoryRecall,backup}.ts`
+Source: `memory/src/{graph,query,rank,pack,recall,search,health,noteCache,transcript}.ts`, `daemon/src/daemon/{brainReport,defaultCrons}.ts`, `mcp/src/memory.ts`, `cli/src/commands/memory.ts`, `core/src/{memoryRecall,backup}.ts`

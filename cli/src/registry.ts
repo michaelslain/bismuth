@@ -32,6 +32,8 @@ import * as docs from './commands/docs'
 import * as memory from './commands/memory'
 import * as theme from './commands/theme'
 import * as feedback from './commands/feedback'
+import * as vaultMap from './commands/map'
+import * as brain from './commands/brain'
 
 /** Merge order is load-bearing: a later group's key overwrites an earlier one. */
 const GROUPS: { commands: CommandMap }[] = [
@@ -64,6 +66,8 @@ const GROUPS: { commands: CommandMap }[] = [
     memory,
     theme,
     feedback,
+    vaultMap,
+    brain,
 ]
 
 export const registry: CommandMap = Object.assign(
