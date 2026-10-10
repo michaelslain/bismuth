@@ -181,6 +181,13 @@ describe('matchesCombo — exact modifier matching', () => {
 
 describe('matchesCombo — Ctrl/Meta exact, independent of Mod', () => {
     // Table-driven over all four (ctrlKey, metaKey) states, per combo.
+    it('Alt+Space: matches macOS Option+Space, which types a non-breaking space', () => {
+        expect(
+            matchesCombo(ev('\u00a0', { alt: true, code: 'Space' }), 'Alt+Space'),
+        ).toBe(true)
+        expect(matchesCombo(ev(' ', { code: 'Space' }), 'Alt+Space')).toBe(false)
+    })
+
     it('Ctrl+Space: matches ctrlKey only, never metaKey-only or neither', () => {
         expect(matchesCombo(ev(' ', {}), 'Ctrl+Space')).toBe(false)
         expect(matchesCombo(ev(' ', { ctrl: true }), 'Ctrl+Space')).toBe(true)
@@ -313,7 +320,7 @@ describe('eventToCombo — recording a shortcut', () => {
 
 describe('KEYBINDING_CATALOG defaults — modifier truth table', () => {
     // The catalog now has 49 entries, and unlike the original 24 it uses literal
-    // Ctrl/Cmd/Meta tokens (open-completion: "Ctrl+Space, Mod+Shift+Space") and
+    // Ctrl/Cmd/Meta tokens (open-completion: "Ctrl+Space, Alt+Space, Mod+Shift+Space") and
     // shifted-punctuation alternatives (graph-zoom-in: "=, Shift+=, Plus") on top
     // of the plain Mod/Alt/Shift combos. A synthetic KeyboardEvent built from a
     // combo's literal token is NOT what a browser actually sends — a real space
@@ -520,6 +527,14 @@ describe('toCmKeys — the CodeMirror key-string converter', () => {
 
     it('converts Ctrl', () => {
         expect(toCmKeys('Ctrl+Space')).toEqual(['Ctrl-Space'])
+    })
+
+    it('converts the open-completion default, Alt+Space included', () => {
+        expect(toCmKeys('Ctrl+Space, Alt+Space, Mod+Shift+Space')).toEqual([
+            'Ctrl-Space',
+            'Alt-Space',
+            'Mod-Shift-Space',
+        ])
     })
 
     it('converts Shift', () => {

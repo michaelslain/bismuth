@@ -29,7 +29,7 @@ import {
 } from '@codemirror/view'
 import { createEffect } from 'solid-js'
 import { settings } from '../settings'
-import { toCmKeys } from '../keybindings'
+import { matchesCombo, parseCombo, toCmKeys } from '../keybindings'
 import type { KeybindingId } from '../../../core/src/keybindings'
 
 /** One settings-driven CodeMirror binding: a catalog id plus what it runs. */
@@ -50,8 +50,27 @@ function comboFor(id: KeybindingId): string | undefined {
 // Build the CodeMirror KeyBinding entries for one SettingsBinding: zero entries
 // when the setting is empty/missing (the "unbind" case), one per comma-alternative
 // otherwise.
+// The comma-alternatives of a combo string, trimmed, empties dropped.
+function alternativesOf(setting: string | undefined): string[] {
+    return (setting ?? '')
+        .split(',')
+        .map(c => c.trim())
+        .filter(c => c.length > 0)
+}
+
+// An Option-only combo (Alt, no Ctrl/Cmd/Mod). CodeMirror never matches these by physical key
+// on macOS, where Option types a character (Alt+Space sends "\u00a0"), so they are matched by
+// matchesCombo, which falls back to event.code, instead of becoming CM key strings.
+function isOptionOnly(combo: string): boolean {
+    const p = parseCombo(combo)
+    return !!p && p.alt && !p.ctrl && !p.meta && !p.mod
+}
+
 function keyBindingsFor(binding: SettingsBinding): KeyBinding[] {
-    const keys: string[] = toCmKeys(comboFor(binding.id))
+    const cmCombos = alternativesOf(comboFor(binding.id)).filter(
+        c => !isOptionOnly(c),
+    )
+    const keys: string[] = toCmKeys(cmCombos.join(','))
     return keys.map((key: string) => ({
         key,
         run: binding.run,
@@ -60,8 +79,36 @@ function keyBindingsFor(binding: SettingsBinding): KeyBinding[] {
     }))
 }
 
+// The keydown handler for every binding's Option-only alternatives. A binding's `shift`
+// command runs for the same combo with Shift added, mirroring CodeMirror's KeyBinding.shift.
+function optionHandlerFor(bindings: SettingsBinding[]): Extension {
+    return EditorView.domEventHandlers({
+        keydown: (e, view) => {
+            if (!e.altKey) return false
+            for (const b of bindings) {
+                for (const combo of alternativesOf(comboFor(b.id))) {
+                    if (!isOptionOnly(combo)) continue
+                    const run = matchesCombo(e, combo)
+                        ? b.run
+                        : b.shift && matchesCombo(e, `Shift+${combo}`)
+                          ? b.shift
+                          : undefined
+                    if (run && run(view)) {
+                        e.preventDefault()
+                        return true
+                    }
+                }
+            }
+            return false
+        },
+    })
+}
+
 function buildKeymapExtension(bindings: SettingsBinding[]): Extension {
-    return Prec.high(keymap.of(bindings.flatMap(keyBindingsFor)))
+    return Prec.high([
+        optionHandlerFor(bindings),
+        keymap.of(bindings.flatMap(keyBindingsFor)),
+    ])
 }
 
 /** Build the live keymap extension for a set of bindings, at Prec.high so it sits in

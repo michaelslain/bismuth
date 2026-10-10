@@ -130,11 +130,11 @@ export function ChatComposer(props: ChatComposerProps) {
     let host!: HTMLDivElement
     let view: EditorView | undefined
     const placeholderComp = new Compartment()
-    // `open-completion` (default 'Ctrl+Space, Mod+Shift+Space') is a plain CodeMirror binding with no
+    // `open-completion` (default 'Ctrl+Space, Alt+Space, Mod+Shift+Space') is a plain CodeMirror binding with no
     // external state to consult — unlike chat-send/chat-stop/chat-history-*, which classifyComposerKey
     // decides from the parent's own state and so aren't wired here — so it goes straight into a live
-    // settings-driven keymap. Two default alternatives because macOS steals Ctrl+Space for the
-    // input-source switcher whenever more than one input source is enabled; both must keep working
+    // settings-driven keymap. Fallback alternatives because macOS steals Ctrl+Space for the
+    // input-source switcher whenever more than one input source is enabled; all must keep working
     // after a rebind, which `settingsKeymapCompartment` gives for free (one CM binding per
     // comma-separated alternative, reconfigured in place — no view rebuild — on every settings change).
     const openCompletionKeymap = settingsKeymapCompartment([

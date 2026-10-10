@@ -35,7 +35,7 @@ A combo is tokens joined by `+`. All tokens except the last are modifiers; the l
 | Shift | `Shift` | Shift |
 
 `Ctrl` and `Cmd` are separate exact tokens, not other spellings of `Mod`. Use them when the portable fold is the problem.
-For example, `open-completion` defaults to `Ctrl+Space, Mod+Shift+Space` because macOS reserves Ctrl+Space for switching input sources whenever more than one is enabled. Rebind it away from `Ctrl+Space` and every other `Mod` shortcut keeps working.
+For example, `open-completion` defaults to `Ctrl+Space, Alt+Space, Mod+Shift+Space` because macOS reserves Ctrl+Space for switching input sources whenever more than one is enabled. Rebind it away from `Ctrl+Space` and every other `Mod` shortcut keeps working.
 
 The key is compared to the key the keyboard produced, ignoring case. These aliases are accepted for the key:
 
@@ -134,7 +134,7 @@ Each id below is a key under `keybindings:`, with its default combo and the acti
 | `toggle-italic` | `Mod+I` | Toggle italic |
 | `indent` | `Tab` | Indent |
 | `outdent` | `Shift+Tab` | Outdent |
-| `open-completion` | `Ctrl+Space, Mod+Shift+Space` | Open autocomplete |
+| `open-completion` | `Ctrl+Space, Alt+Space, Mod+Shift+Space` | Open autocomplete |
 | `accept-completion` | `Tab` | Accept autocomplete suggestion |
 | `toggle-draw-mode` | `Mod+Shift+I` | Toggle draw mode |
 | `exit-draw-mode` | `Escape` | Exit draw mode |

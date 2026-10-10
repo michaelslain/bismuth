@@ -15,7 +15,7 @@
 //   comma-separate alternatives (ANY one matching fires): "Mod+`, Mod+J"
 // Matching is EXACT on modifiers, so "Mod+D" (split-right) and "Mod+Shift+D" (split-down) never
 // collide — and the same exactness holds for Ctrl/Meta, which is what lets open-completion's
-// "Ctrl+Space, Mod+Shift+Space" pin the physical Ctrl key to dodge the macOS input-source
+// "Ctrl+Space, Alt+Space, Mod+Shift+Space" pin the physical Ctrl key to dodge the macOS input-source
 // switcher instead of folding into the portable Mod.
 // SPELLING TRAP: a bare shifted character never fires — Shift is matched EXACTLY, so an event
 // carrying shiftKey never matches a combo whose key token is the shifted character itself. Write
@@ -204,8 +204,8 @@ export const KEYBINDING_CATALOG = [
     {
         id: 'open-completion',
         label: 'Open autocomplete',
-        default: 'Ctrl+Space, Mod+Shift+Space',
-        doc: 'Open the autocomplete popup (wikilinks, tags, mentions, settings keys) in the focused editor or composer. Mod+Shift+Space is a fallback because Ctrl+Space is taken by the macOS input-source switcher whenever more than one input source is enabled.',
+        default: 'Ctrl+Space, Alt+Space, Mod+Shift+Space',
+        doc: 'Open the autocomplete popup (wikilinks, tags, mentions, settings keys) in the focused editor or composer. Alt+Space and Mod+Shift+Space are fallbacks because Ctrl+Space is taken by the macOS input-source switcher whenever more than one input source is enabled.',
     },
     {
         id: 'accept-completion',

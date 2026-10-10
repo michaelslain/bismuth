@@ -1479,7 +1479,7 @@ export function Editor(props: {
             ...(ed.wrapSelection
                 ? [wrapSelection(() => ed.wrapSelectionChars)]
                 : []),
-            // open-completion (default Ctrl+Space, Mod+Shift+Space — the second dodges macOS
+            // open-completion (default Ctrl+Space, Alt+Space, Mod+Shift+Space — the last two dodge macOS
             // stealing Ctrl+Space whenever more than one input source is enabled),
             // accept-completion (Tab; acceptCompletion returns false when no popup is open, so
             // it falls through to indent), indent and outdent (Tab/Shift-Tab by default — which

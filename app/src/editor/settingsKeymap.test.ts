@@ -9,44 +9,6 @@ import { EditorState, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { setSettings, DEFAULTS } from '../settings'
 
-// toCmKeys (app/src/keybindings.ts) is Task 1's addition, landing in a parallel
-// worktree, and does not exist in THIS worktree yet — see task-3-brief.md.
-// settingsKeymap.ts imports the REAL, unmodified name (`import { toCmKeys } from
-// '../keybindings'`), which is what makes `bun run typecheck` fail on that one
-// import until Task 1 merges (expected, reported separately — not worked around
-// here or in app/src/keybindings.ts, which belongs to Task 1).
-//
-// For THIS file's own run to go green today, `mock.module` stands in a minimal
-// local double for the slice of toCmKeys's documented contract these tests
-// exercise (letter-key combos, comma-alternatives, empty → unbind). It is not a
-// copy of Task 1's real parsing/validation logic — e.g. it does not replicate
-// "garbage" rejection. A dynamic `await import('./settingsKeymap')` (rather than
-// a static top-level import) is required so the mock is registered in the module
-// registry before settingsKeymap.ts's own static `import { toCmKeys } from
-// '../keybindings'` is resolved — the same pattern app/src/editor/keepaliveSave.test.ts
-// already uses in this repo for a different mocked dependency.
-mock.module('../keybindings', () => ({
-    toCmKeys: (setting: string | undefined | null): string[] => {
-        if (!setting) return []
-        return setting
-            .split(',')
-            .map(part => part.trim())
-            .filter(part => part.length > 0)
-            .map(combo => {
-                const tokens = combo
-                    .split('+')
-                    .map(t => t.trim())
-                    .filter(Boolean)
-                const key = tokens[tokens.length - 1]
-                const mods = tokens.slice(0, -1)
-                return [
-                    ...mods,
-                    key.length === 1 ? key.toLowerCase() : key,
-                ].join('-')
-            })
-    },
-}))
-
 // Separately-discovered environment gap (not this task's to fix — see the report's
 // "Found, not acted on"): under `bun test`, Bun's default "node" export condition
 // resolves the bare `solid-js` package to its SSR build
@@ -220,6 +182,37 @@ describe('buildSettingsKeymap', () => {
 
         expect(pressMod(view, 't')).toBe(false)
         expect(calls).toEqual([])
+    })
+
+    test('an Option-only combo fires on the character macOS Option types (Alt+Space sends nbsp)', () => {
+        setSettings('keybindings', 'open-completion', 'Alt+Space')
+        const calls: string[] = []
+        const view = mountView('hello', [
+            buildSettingsKeymap([
+                {
+                    id: 'open-completion',
+                    run: () => {
+                        calls.push('open-completion')
+                        return true
+                    },
+                },
+            ]),
+        ])
+        const e = new KeyboardEvent('keydown', {
+            key: '\u00a0',
+            code: 'Space',
+            altKey: true,
+            bubbles: true,
+            cancelable: true,
+        })
+        view.contentDOM.dispatchEvent(e)
+        expect(e.defaultPrevented).toBe(true)
+        expect(calls).toEqual(['open-completion'])
+        setSettings(
+            'keybindings',
+            'open-completion',
+            DEFAULTS.keybindings['open-completion'],
+        )
     })
 })
 

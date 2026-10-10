@@ -309,7 +309,7 @@ test('every KEYBINDING_CATALOG default is syntactically parseable', () => {
 test('the 25 new ids are present with their exact specified defaults', () => {
     const kb = objectFields(SETTINGS_SCHEMA.keybindings)
     const expected: Record<string, string> = {
-        'open-completion': 'Ctrl+Space, Mod+Shift+Space',
+        'open-completion': 'Ctrl+Space, Alt+Space, Mod+Shift+Space',
         'accept-completion': 'Tab',
         indent: 'Tab',
         outdent: 'Shift+Tab',

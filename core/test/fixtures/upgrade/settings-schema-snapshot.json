@@ -2933,7 +2933,7 @@
   },
   "keybindings.open-completion": {
     "type": "keybind",
-    "default": "Ctrl+Space, Mod+Shift+Space",
+    "default": "Ctrl+Space, Alt+Space, Mod+Shift+Space",
     "min": null,
     "max": null,
     "required": false
