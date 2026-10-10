@@ -7,11 +7,11 @@ import { configureVaultEmbed } from '../../core/src/vaultEmbed'
 import { runKey } from '../../core/src/runRegistry'
 import { semanticQuery } from '../src/semantic'
 import { makeLeakVault, runCli } from './visibilityLeak'
+import { freePort } from '../../core/test/ports'
 
 const T = 60_000
-const PORT = 6206
-const API = `http://127.0.0.1:${PORT}`
-const DEAD = 'http://127.0.0.1:6299'
+let API = ''
+const DEAD = `http://127.0.0.1:${freePort()}`
 
 let reply: unknown = { hits: [] }
 const seen: Array<Record<string, unknown>> = []
@@ -19,7 +19,7 @@ let server: ReturnType<typeof Bun.serve>
 
 beforeAll(() => {
     server = Bun.serve({
-        port: PORT,
+        port: 0,
         hostname: '127.0.0.1',
         async fetch(req) {
             if (new URL(req.url).pathname !== '/search/semantic')
@@ -28,6 +28,7 @@ beforeAll(() => {
             return Response.json(reply)
         },
     })
+    API = `http://127.0.0.1:${server.port}`
 })
 afterAll(() => server.stop(true))
 
@@ -92,8 +93,8 @@ describe('bismuth search --semantic', () => {
 })
 
 describe('semantic core selection and timing', () => {
-    const OTHER = 6256
-    const SLOW = 6257
+    const OTHER = freePort()
+    const SLOW = freePort()
     const otherSeen: string[] = []
     let other: ReturnType<typeof Bun.serve>
     let slow: ReturnType<typeof Bun.serve>
@@ -173,7 +174,7 @@ describe('semantic core selection and timing', () => {
     test('with no worker, embeddings off names embeddings.enabled and on names the app', async () => {
         const off = makeVault({ 'a.md': '# a\n' })
         const on = makeVault({ 'a.md': '# a\n', '.settings': 'embeddings:\n  enabled: true\n' })
-        const dead = ['--api', 'http://127.0.0.1:6299']
+        const dead = ['--api', DEAD]
         const deps = { workerAvailable: () => false }
         const a = await semanticQuery(dead, off, { query: 'x' }, [], 5, undefined, deps)
         expect(a).toMatchObject({ unavailable: 'off' })

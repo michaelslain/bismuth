@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { TOKENS, makeLeakVault, runCli, type RunOpts } from './visibilityLeak'
+import { freePort } from '../../core/test/ports'
 
 // The gate bypasses closed in one pass, each against the REAL CLI: a second root (`--dir`) that
 // swapped the checked vault, a vault addressed by a subfolder, an agent rewriting the rules or a
@@ -323,7 +324,7 @@ async function runCliNoVault(args: string[], opts: RunOpts) {
 }
 
 describe('HTTP-routed commands are gated against every running core vault', () => {
-    const PORT = 6151
+    const PORT = freePort()
     let core: { stop(): void } | undefined
     beforeAll(async () => {
         core = await startCore(PORT, makeLeakVault().vault)
@@ -349,7 +350,7 @@ describe('HTTP-routed commands are gated against every running core vault', () =
 })
 
 describe('agents may only GET through bismuth api', () => {
-    const PORT = 6152
+    const PORT = freePort()
     let core: { stop(): void } | undefined
     let vault = ''
     beforeAll(async () => {
@@ -387,8 +388,8 @@ describe('agents may only GET through bismuth api', () => {
 // commands; R2: percent-encoded spellings of protected paths / hidden notes must be refused for
 // `api GET`, since the server decodes them.
 describe('stale run records + percent-encoded api paths', () => {
-    const PORT = 6153
-    const PORT_RESTRICTED = 6154
+    const PORT = freePort()
+    const PORT_RESTRICTED = freePort()
     let core: { stop(): void } | undefined
     let restrictedCore: { stop(): void } | undefined
     let vault = ''
@@ -421,7 +422,7 @@ describe('stale run records + percent-encoded api paths', () => {
         test(`${name}: a record whose vault is gone does not refuse api GET`, async () => {
             const gone = '/nonexistent/vault'
             const rec = join(staleRunDir, `${Buffer.from(gone).toString('base64url')}.json`)
-            writeFileSync(rec, JSON.stringify({ port: 6169, vault: gone, pid: process.pid }))
+            writeFileSync(rec, JSON.stringify({ port: freePort(), vault: gone, pid: process.pid }))
             try {
                 const r = await runCli(api('/version', vault, PORT), opts)
                 expect(text(r)).not.toContain('could not resolve')

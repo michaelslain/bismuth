@@ -5,6 +5,9 @@ import { makeVault } from '../../core/test/helpers'
 import { THEMES } from '../../core/src/theme/tokens'
 import { DESIGN_TOKENS } from '../../core/src/theme/designTokens'
 import { parseCustomTheme } from '../../core/src/theme/customTheme'
+import { useSpawnBudget } from '../../core/test/spawnBudget'
+
+useSpawnBudget()
 
 async function run(vault: string, ...args: string[]) {
     const proc = Bun.spawn(

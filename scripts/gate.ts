@@ -250,11 +250,13 @@ function main(): void {
         // workspace selector. Bare `cli` also matches core/test/chatProviders/clineMocked.test.ts
         // ("cli" is in "clineMocked"), so the gate silently ran 7 unrelated tests and reported a
         // count nobody could reconcile. The trailing slash scopes it to the directory.
+        // `--parallel=4` matches the root `test:fast` script: four files at a time, sized for
+        // several sessions testing on one machine (docs/contributing/testing.md).
         if (ok) {
             ok = run(
                 `tests (fast) — ${tests.join(', ')}`,
                 'bun',
-                ['test', ...tests.map(t => `${t}/`)],
+                ['test', '--parallel=4', ...tests.map(t => `${t}/`)],
                 {
                     BISMUTH_FAST_TESTS: '1',
                 },

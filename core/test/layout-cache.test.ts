@@ -22,6 +22,9 @@ import {
 } from '../src/layout-cache'
 import { createAsyncCache } from '../src/asyncCache'
 import type { GraphData, GraphNode } from '../src/graph'
+import { useSpawnBudget } from './spawnBudget'
+
+useSpawnBudget()
 
 // Three notes A, B, C; the only edge is a wikilink A -> B.
 function baseGraph(): GraphData {

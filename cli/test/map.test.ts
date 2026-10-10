@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { makeLeakVault, runCli, TOKENS } from './visibilityLeak'
+import { freePort } from '../../core/test/ports'
 
 const T = 60_000
 
@@ -60,15 +61,16 @@ describe('bismuth brain', () => {
 })
 
 describe('bismuth map --around similar', () => {
-    const API = 'http://127.0.0.1:6207'
+    let API = ''
     let reply: unknown = { hits: [] }
     let server: ReturnType<typeof Bun.serve>
     beforeAll(() => {
         server = Bun.serve({
-            port: 6207,
+            port: 0,
             hostname: '127.0.0.1',
             fetch: () => Response.json(reply),
         })
+        API = `http://127.0.0.1:${server.port}`
     })
     afterAll(() => server.stop(true))
 
@@ -97,7 +99,7 @@ describe('bismuth map --around similar', () => {
         const j = await runCli(['map', '--around', 'open.md', '--json', '--api', API], { channel: 'owner' })
         expect('similar' in JSON.parse(j.stdout)).toBe(false)
         // no reachable core: the in-process path sees embeddings off
-        const dead = await runCli(['map', '--around', 'open.md', '--api', 'http://127.0.0.1:6299'], { channel: 'owner' })
+        const dead = await runCli(['map', '--around', 'open.md', '--api', `http://127.0.0.1:${freePort()}`], { channel: 'owner' })
         expect(dead.code).toBe(0)
         expect(dead.stdout).not.toContain('similar')
     }, T)

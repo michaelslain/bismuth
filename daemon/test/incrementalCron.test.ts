@@ -33,6 +33,9 @@ import {
     snapshotWorkingTree,
 } from '../src/lib/checkpointRef.ts'
 import type { VaultContext } from '../src/lib/config.ts'
+import { useSpawnBudget } from '../../core/test/spawnBudget'
+
+useSpawnBudget()
 
 // ── Pure functions ────────────────────────────────────────────────────────────
 

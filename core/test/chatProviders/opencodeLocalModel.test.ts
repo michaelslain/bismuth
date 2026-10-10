@@ -19,6 +19,9 @@ import {
 } from '../../src/chatProviders/opencode/opencode'
 import type { ChatFrame } from '../../src/chat'
 import { tempDir } from '../helpers'
+import { useSpawnBudget } from '../spawnBudget'
+
+useSpawnBudget()
 
 const LM = { url: 'http://localhost:1234', model: 'qwen', apiKey: '' }
 const local = () => {

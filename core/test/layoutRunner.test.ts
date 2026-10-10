@@ -1,6 +1,9 @@
 import { test, expect, spyOn } from 'bun:test'
 import { createLayoutRunner, runLayoutJob } from '../src/layoutRunner'
 import { computeLayoutPair } from '../src/layoutCompute'
+import { useSpawnBudget } from './spawnBudget'
+
+useSpawnBudget()
 
 const job = () => {
     const nodes = Array.from({ length: 200 }, (_, i) => ({ id: `n${i}` }))

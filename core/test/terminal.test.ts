@@ -27,6 +27,9 @@ import {
     snapshot as relaySnapshot,
     resetRelay,
 } from '../src/relay'
+import { useSpawnBudget } from './spawnBudget'
+
+useSpawnBudget()
 
 function tmp() {
     return tempDir('bismuth-term-')

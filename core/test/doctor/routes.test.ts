@@ -16,6 +16,9 @@ import type {
     DoctorOptions,
     DoctorReport,
 } from '../../src/doctor/types'
+import { useSpawnBudget } from '../spawnBudget'
+
+useSpawnBudget()
 
 const REPORT: DoctorReport = {
     ok: true,

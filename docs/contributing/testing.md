@@ -8,7 +8,7 @@ Browser-based checks of the UI have their own page, [Visual checks](visual-check
 ```bash
 bun test core/test/vault.test.ts   # one file, exact path
 bun test vault                     # every file whose path contains "vault"
-bun run test:fast                  # everything except the slow suites
+bun run test:fast                  # everything except the slow suites, four files at a time
 bun test                           # everything, slow suites included
 bun run typecheck                  # tsc --noEmit in every workspace
 bun run gate                       # what the pre-commit hook runs, by hand
@@ -62,7 +62,7 @@ Both hooks live in `.githooks/`. A fresh clone enables them with `bun run hooks:
 The commit gate runs these steps in order and stops at the first failure:
 
 1. **Typecheck** across all workspaces, whatever you staged. It is the only step that catches a change in one workspace breaking another's types.
-2. **Fast tests** (`BISMUTH_FAST_TESTS=1`) for the affected workspaces only. Editing `app/` does not re-run `daemon/`. Touching `package.json`, `bun.lock`, `tsconfig.base.json`, `bunfig.toml`, `scripts/` or `.githooks/` widens the run to every workspace.
+2. **Fast tests** (`BISMUTH_FAST_TESTS=1`, four files at a time, as `bun run test:fast` runs them) for the affected workspaces only. Editing `app/` does not re-run `daemon/`. Touching `package.json`, `bun.lock`, `tsconfig.base.json`, `bunfig.toml`, `scripts/` or `.githooks/` widens the run to every workspace.
 3. **Design-system gate and `tokenLint`** when a staged path is under `app/src/`, `design/` or `scripts/designSystem/`, or is `DESIGN.md`. See [Visual checks](visual-checks.md#how-do-the-design-system-gate-and-tokenlint-work).
 4. **`bench/moduleClassCheck.ts`** when a staged path is an `app/src/**/*.css` file. It builds the app, so it is the slowest step. A change to a `.tsx` file alone does not trigger it, so run it by hand after editing class names in TSX.
 
@@ -152,6 +152,28 @@ test('GET /my-route returns the right shape', async () => {
 })
 ```
 
+### A test that starts a process or a server
+
+A test file whose tests start a process (the CLI, a shell, a fake agent binary, `git`) or a worker
+calls `useSpawnBudget()` once after its imports. Process start-up slows down when the machine is
+busy, and `bun run test:fast` runs four files at a time beside whatever other checkouts are testing,
+so Bun's 5-second default fails such a test on the clock while the behaviour it checks is fine. The
+budget raises that file's default to 30 seconds; a test that really hangs still fails.
+
+A test never binds a fixed port. Pass `port: 0` to `Bun.serve` or `createServer` and read
+`server.port`; use `freePort()` for a port handed to a subprocess (`core/src/server.ts --port`) or
+one that must have no listener. Two suites running at once otherwise take the same port, and a
+readiness probe can reach the other suite's server.
+
+```ts
+import { useSpawnBudget } from '../../core/test/spawnBudget'
+import { freePort } from '../../core/test/ports'
+
+useSpawnBudget()
+
+const port = freePort()
+```
+
 ### A new settings section
 
 After adding a top-level section to `core/src/schema/settingsSchema.ts`:
@@ -184,6 +206,9 @@ Export a `start(deps?)` function that performs the side effects and returns a di
 
 - `makeSampleVault()` returns `{ vault, memory }`: three notes (`essay.md`, `housing.md`, `internship.md`) and one memory note (`michael-profile.md`) in fresh temp directories. Each call is isolated, so tests that write cannot affect each other.
 - `makeVault(files, prefix?)` builds a vault from a `{ relativePath: content }` map.
+
+`core/test/spawnBudget.ts` exports `useSpawnBudget()` and `core/test/ports.ts` exports `freePort()`,
+for tests that start processes or servers ([A test that starts a process or a server](#a-test-that-starts-a-process-or-a-server)).
 
 Allocate every temporary directory with `tempDir(prefix)` from `core/test/tempDirs.ts`, never a raw `mkdtempSync`.
 `tempDir` records the path, and the root `bunfig.toml` preloads `core/test/setup.ts`, which removes every recorded directory after the run.
@@ -280,4 +305,4 @@ It strips git's repository-location variables (`sanitizeGitEnv`) from the childr
 `.githooks/pre-push` runs `scripts/check-docs.ts --pre-push`, which checks relative `.md` links, `page.md#heading` anchors, the history-word lint, the `bun run` scripts CLAUDE.md cites, and workspace parity, then warns when source changed without docs.
 Run `bun run scripts/check-docs.ts` by hand to check a docs change.
 
-Source: `scripts/gate.ts`, `scripts/check-docs.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `bunfig.toml`, `package.json`, `tsconfig.base.json`, `core/test/setup.ts`, `core/test/helpers.ts`, `core/test/tempDirs.ts`, `core/test/slowGate.ts`, `core/test/upgrade/`
+Source: `scripts/gate.ts`, `scripts/check-docs.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `bunfig.toml`, `package.json`, `tsconfig.base.json`, `core/test/setup.ts`, `core/test/helpers.ts`, `core/test/tempDirs.ts`, `core/test/slowGate.ts`, `core/test/spawnBudget.ts`, `core/test/ports.ts`, `core/test/upgrade/`
