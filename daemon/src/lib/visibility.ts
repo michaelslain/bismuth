@@ -17,8 +17,8 @@
 // a file it misses is unprotected. Keep this file's walk logic byte-for-byte in step with
 // core/src/visibility.ts's; see that file's comments for the reasoning behind each fix.
 //
-// FAIL-CLOSED rules ported from core: a closed frontmatter fence that does not parse, parses to a
-// non-map, or carries a `visibility` that is not all/chat-only/hidden is `hidden` (a head still
+// FAIL-CLOSED rules ported from core: a closed frontmatter fence that names `visibility` and does
+// not parse or parses to a non-map, or carries a `visibility` that is not all/chat-only/hidden is `hidden` (a head still
 // unclosed after the 64 KiB re-read is `hidden` too); a malformed `folderVisibility` (non-map or an
 // unknown value) makes the walk undetermined; and the `.trash` is restricted whenever any
 // folderVisibility rule or any non-trash file restricts. YAML is parsed with the same `yaml`
@@ -380,14 +380,19 @@ async function readOwnVisibility(absPath: string): Promise<FileVisibility> {
     }
     const m = text.match(FRONTMATTER_CLOSED_RE)
     if (!m) return undefined // unclosed fence — not frontmatter
+    // A block that does not parse to a map fails closed only when it names `visibility`; one that
+    // never mentions it (a markdown link in `reference:`) carries no rule and inherits.
+    const broken: FileVisibility = /visibility/i.test(m[1] ?? '')
+        ? 'hidden'
+        : undefined
     let data: unknown
     try {
         data = parseYaml(m[1] ?? '')
     } catch {
-        return 'hidden'
+        return broken
     }
     if (data === null || data === undefined) return undefined // empty block
-    if (typeof data !== 'object' || Array.isArray(data)) return 'hidden'
+    if (typeof data !== 'object' || Array.isArray(data)) return broken
     const v = (data as Record<string, unknown>).visibility
     if (v === undefined || v === null || v === '') return undefined
     return isVisibilityLiteral(v) ? v : 'hidden'

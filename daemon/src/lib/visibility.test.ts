@@ -430,11 +430,21 @@ describe('malformed visibility fails closed', () => {
 
     test('a closed fence whose YAML is not a map is hidden', async () => {
         const vault = makeVault({
-            'scalar.md': '---\njust a string\n---\n# S\n',
-            'list.md': '---\n- a\n- b\n---\n# L\n',
+            'scalar.md': '---\njust a string about visibility\n---\n# S\n',
+            'list.md': '---\n- visibility: all\n- b\n---\n# L\n',
+            'plain-list.md': '---\n- a\n- b\n---\n# P\n',
             'open.md': '# Open\n',
         })
         expect(await rels(vault)).toEqual(['list.md', 'scalar.md'])
+    })
+
+    test('a broken block that never names visibility inherits', async () => {
+        const vault = makeVault({
+            'linked.md':
+                '---\nreference: [source](https://example.com), [[other]]\n---\n# L\n',
+            '.trash/1-old.md': '# Old\n',
+        })
+        expect(await rels(vault)).toEqual([])
     })
 
     test('a visibility value that is not a literal is hidden', async () => {

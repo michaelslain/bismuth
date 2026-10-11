@@ -318,10 +318,13 @@ async function readJsonlBaseVisibility(
  * returns undefined ("no explicit value", the folder cascade decides).
  *
  * Fails CLOSED on what the author plausibly meant as a rule: a CLOSED frontmatter fence whose YAML
- * does not parse, or a `visibility:` value present but not `all`/`chat-only`/`hidden` (wrong case,
- * a list, a number), reads as `hidden`. A tolerant read (`parseFrontmatter` swallows YAML errors as
- * `{}`) would turn a typo into "visible", un-hiding the note. An empty/null value is an ordinary
- * draft and inherits; an unclosed opening fence is not frontmatter at all.
+ * does not parse (or is not a map) AND whose text names `visibility`, or a `visibility:` value
+ * present but not `all`/`chat-only`/`hidden` (wrong case, a list, a number), reads as `hidden`. A
+ * tolerant read (`parseFrontmatter` swallows YAML errors as `{}`) would turn a typo into "visible",
+ * un-hiding the note. A broken block that never mentions `visibility` (a markdown link such as
+ * `reference: [site](https://…)` is the common case) carries no rule to honour and inherits —
+ * hiding it would restrict ordinary notes and, through them, the whole vault. An empty/null value
+ * is an ordinary draft and inherits; an unclosed opening fence is not frontmatter at all.
  *
  * Checked on EVERY file the walk finds, regardless of extension — NOT gated on `.md`. The old
  * "only `.md` carries frontmatter" assumption was itself a deny-list hole: a hidden note copied,
@@ -360,12 +363,20 @@ async function readOwnVisibility(absPath: string): Promise<FileVisibility> {
     }
     const m = text.match(FRONTMATTER_REGEX)
     if (!m) return undefined // unclosed fence — not frontmatter
-    // null = YAML error or a non-map document: fail closed. An empty block is {} and inherits.
+    // null = YAML error or a non-map document: fail closed when the block names `visibility`,
+    // else inherit. An empty block is {} and inherits.
     const data = parseFrontmatterData(m[1] ?? '')
-    if (data === null) return 'hidden'
+    if (data === null) return brokenBlockVisibility(m[1] ?? '')
     const v = data.visibility
     if (v === undefined || v === null || v === '') return undefined
     return isVisibilityLiteral(v) ? v : 'hidden'
+}
+
+/** A closed frontmatter block that does not parse to a map: `hidden` when its raw text names
+ *  `visibility` anywhere (any case, any quoting), since a rule may be in there; otherwise no
+ *  explicit value, so the folder cascade decides. */
+function brokenBlockVisibility(block: string): FileVisibility {
+    return /visibility/i.test(block) ? 'hidden' : undefined
 }
 
 /** Memoized per-directory folder-cascade lookup: many files share a directory, and

@@ -66,10 +66,10 @@ The explicit override has a cost: a `visibility: all` copied from a template int
 
 Moving a note into or out of a restricted folder changes its level, because levels are worked out from the current path whenever the deny list is built.
 
-Three silent traps, all of which fail toward more restriction:
+These silent traps all fail toward more restriction:
 
 - A `visibility:` value that is not exactly `all`, `chat-only` or `hidden` (`Hidden`, a list, a number) reads as `hidden`.
-- A closed frontmatter block whose YAML does not parse reads as `hidden`.
+- A closed frontmatter block whose YAML does not parse, and whose text contains the word `visibility`, reads as `hidden`. A broken block that never mentions `visibility`, such as `reference: [site](https://example.com)` (a markdown link is not valid YAML), carries no rule and inherits.
 - A `.base.jsonl` file whose line 1 is not valid JSON, is not a JSON object or is longer than 64 KiB reads as `hidden`, even when the file holds no `visibility` key. A line 1 without `visibility` inherits as usual, and a `visibility` value that is not exactly `all`, `chat-only` or `hidden` reads as `hidden`.
 - A `folderVisibility` entry with another value, such as `hiden`, or a `folderVisibility` that is not a map, makes the vault unavailable to AI sessions until you fix the file.
 
@@ -114,7 +114,19 @@ The daemon never throws on this. When a vault has any restricted note and `daemo
 
 The mechanism behind each value is described under [Per-backend/per-channel enforcement](#per-backendper-channel-enforcement).
 
-In a restricted vault the Claude chat and the Claude daemon also lose the Grep and Glob tools and the `bismuth_cli` MCP tool. A per-file rule cannot stop a vault-wide scan, so those tools are switched off whole.
+## Can an AI session still search a vault with hidden notes?
+
+Yes. A Claude chat or daemon session searches a restricted vault with `grep`, `rg` and `find` through its Bash tool, and the sandbox refuses to open each hidden file. The search returns every other note's matches, plus a `cannot read <file>: Operation not permitted` warning for each hidden file it skipped.
+
+```text
+$ grep -rn budget .
+ugrep: warning: cannot read Private/salary.md: Operation not permitted
+notes/plan.md:4:budget for the trip
+```
+
+A hidden file's contents never appear in a result. Its name does: `find` lists it and the warning line names it, which matches the [threat model](#what-does-visibility-protect-and-what-does-it-not).
+
+Claude Code builds that ship dedicated `Grep` and `Glob` tools have them switched off in a restricted vault, because an unscoped scan through those tools runs outside the sandbox and a per-file rule cannot stop it. Builds without those tools search through Bash as shown and lose nothing. The daemon also gives up the `bismuth_cli` MCP tool in a restricted vault; the chat never has it.
 
 ## Agents and the `bismuth` CLI: filtered, not refused
 
@@ -300,7 +312,7 @@ For a restricted vault, `spawnChatQuery` in `core/src/chat.ts` and `buildQueryOp
 - `sandbox.filesystem.denyRead`: the OS-level deny for the same files, `.git` and the token file. This is what stops a Bash `cat`, `python3 -c` or `bismuth read`; `managedSettings` only covers the tool-call convention.
 - `sandbox.failIfUnavailable`: `true` whenever anything is restricted, so a sandbox that cannot start refuses the session instead of running it unprotected. An unrestricted vault omits the whole sandbox block.
 - `sandbox.allowUnsandboxedCommands: false`: the model cannot switch its sandbox off with the Bash tool's `dangerouslyDisableSandbox` parameter.
-- `disallowedTools`: `bismuth_cli`, `Grep` and `Glob`.
+- `disallowedTools`: `bismuth_cli`, `Grep` and `Glob`. The chat disallows `bismuth_cli` in every vault.
 - `canUseTool` (chat): an in-process check that denies, with no prompt and no "always allow", any tool whose `file_path`, `notebook_path` or `path` is restricted.
 - Environment: `BISMUTH_AGENT_CHANNEL` and `BISMUTH_MCP_CHANNEL` set to `chat` or `daemon`.
 

@@ -909,6 +909,27 @@ describe('malformed visibility fails closed', () => {
         expect(await rels(vault, 'daemon')).toEqual(['broken.md'])
     })
 
+    test('a broken block that never names visibility inherits', async () => {
+        const vault = makeVault({
+            'linked.md':
+                '---\ntags: notes\nreference: [source](https://example.com), [[other]]\n---\n# L\n',
+            'priv/linked.md':
+                '---\nreference: [source](https://example.com)\n---\n# P\n',
+            'quoted.md': '---\n"Visibility": [hidden\n---\n# Q\n',
+        })
+        await setFolderVisibility(vault, 'priv', 'hidden')
+        expect(await rels(vault, 'chat')).toEqual(['priv/linked.md', 'quoted.md'])
+    })
+
+    test('a vault whose only broken frontmatter is a markdown link restricts nothing', async () => {
+        const vault = makeVault({
+            'linked.md': '---\nreference: [site](https://example.com)\n---\n# L\n',
+            '.trash/1-old.md': '# Old\n',
+        })
+        expect(await rels(vault, 'chat')).toEqual([])
+        expect(await rels(vault, 'daemon')).toEqual([])
+    })
+
     test('a visibility value that is not a literal is hidden', async () => {
         const vault = makeVault({
             'cased.md': '---\nvisibility: Hidden\n---\n# C\n',
