@@ -48,6 +48,10 @@ function fieldsHtml(
         .join('')
 }
 
+// A view that resolves zero rows says so, rather than exporting an empty sheet.
+const hasRows = (vr: ViewResult): boolean => vr.groups.some(g => g.rows.length > 0)
+const EMPTY = `<div class="exp-empty">no rows</div>`
+
 function groupHeader(key: string, p: ThemePalette): string {
     return key === ''
         ? ''
@@ -61,6 +65,7 @@ export function cardsHtml(
     vr: ViewResult,
     p: ThemePalette,
 ): ViewHtml {
+    if (!hasRows(vr)) return { body: EMPTY, css: cardsCss(p) }
     const cols = vr.columns
     const groups = vr.groups
         .map(
@@ -96,6 +101,7 @@ export function kanbanHtml(
     vr: ViewResult,
     p: ThemePalette,
 ): ViewHtml {
+    if (!hasRows(vr)) return { body: EMPTY, css: kanbanCss(p) }
     const cols = kanbanCols(vr)
     const columns = vr.groups
         .map((g: ResultGroup) => {
@@ -128,6 +134,7 @@ export function listHtml(
     vr: ViewResult,
     p: ThemePalette,
 ): ViewHtml {
+    if (!hasRows(vr)) return { body: EMPTY, css: listCss(p) }
     const cols = vr.columns
     const groups = vr.groups
         .map(
@@ -164,7 +171,8 @@ function fieldCss(t: ThemePalette): string {
   .exp-fval a { color: ${t.accent}; }
   .exp-group { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
     margin: 1.2rem 0 0.5rem; }
-  .exp-cardfields { display: flex; flex-direction: column; gap: 1px; }`
+  .exp-cardfields { display: flex; flex-direction: column; gap: 1px; }
+  .exp-empty { color: ${t.muted}; font-size: 0.9rem; }`
 }
 
 function cardsCss(t: ThemePalette): string {

@@ -103,3 +103,22 @@ describe('listHtml', () => {
         expect(body).toContain('Herbert')
     })
 })
+
+describe('a view with zero rows', () => {
+    const empty = vr(['file.name'], [{ key: '', rows: [] }])
+    test.each([
+        ['cards', cardsHtml],
+        ['kanban', kanbanHtml],
+        ['list', listHtml],
+    ] as const)('%s says "no rows" instead of an empty wrapper', (_, fn) => {
+        const { body, css } = fn(cfg, empty, DARK)
+        expect(body).toBe('<div class="exp-empty">no rows</div>')
+        expect(css).toContain('.exp-empty')
+    })
+
+    test('no groups at all reads the same', () => {
+        expect(cardsHtml(cfg, vr(['file.name'], []), DARK).body).toContain(
+            '>no rows<',
+        )
+    })
+})

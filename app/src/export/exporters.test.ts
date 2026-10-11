@@ -180,7 +180,7 @@ describe('renderPreview (no downloadable bytes for text formats; PDF now runs th
 
     test('note md preview shows the raw source in a <pre>', async () => {
         const r = await renderPreview('a/note.md', 'md', deps())
-        expect(r.previewHtml).toContain('<pre>')
+        expect(r.previewHtml).toContain('<pre class="exp-rawfile">')
         expect(r.previewHtml).toContain('# Title') // escaped markdown source
     })
 
@@ -559,8 +559,8 @@ describe('preview shows page separation (sheet per section)', () => {
             )
             const html = r.previewHtml!
             expect(html.match(/class="bismuth-preview-page"/g)).toHaveLength(3)
-            expect(html).toContain('Page 1 of 3')
-            expect(html).toContain('Page 3 of 3')
+            expect(html).toContain('page 1 of 3')
+            expect(html).toContain('page 3 of 3')
             expect(html).toContain('Page two body')
             expect(html).toContain('.bismuth-preview-page') // the sheet CSS is inlined
         })

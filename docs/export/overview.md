@@ -10,21 +10,25 @@ bismuth export Sketch.draw                          # Sketch.draw.png, no vault 
 
 ## Export a file from the app
 
-Open the file you want, then run **Export current file…** (Mod+Shift+P, or File > Export…). An export tab opens beside your work: a live preview on the left and the options on the right. Change an option and the preview updates; nothing is written until you export.
+Open the file you want, then run **Export current file…** (Mod+Shift+P, or File > Export…). An export tab opens beside your work. Its bar names the file and holds the format toggle and `[export]`. Below the bar, a live preview of the page sits on the left and the options on the right. Change an option and the preview updates; nothing is written until you export.
+
+The options run in the order you decide them: how the file looks, what goes in, then where it goes. The last line names exactly what the export writes, such as `writes roadmap.pdf → Downloads`, next to a second `[export]`.
 
 | Option | When it appears | What it does |
 |---|---|---|
-| Input path | Always | The file to export. Defaults to the file you opened; type another vault path, or browse in the desktop app |
-| Output path | Always | Destination folder. Empty means your Downloads folder; choosing a folder works in the desktop app and is remembered |
-| Content | Bases | `Visual` renders the view as its kind; `Data` exports its flat table |
-| Calendar span, Start day | A calendar base in visual mode | `month`, `week`, `3day` or `day`, anchored on the start day (blank is today) |
-| Include frontmatter | Plain notes | Keep or strip the leading YAML block. On by default |
-| Show markdown syntax | Plain notes | Print `##` markers before `h2` to `h6` headings. Off by default |
-| Format | Always | The formats valid for this file and mode |
-| Font size | PDF | 9, 10, 11, 12, 14, 16 or 18 pt; 12 by default. A larger size repaginates the document |
-| Theme | Always | `dark` or `light` |
+| Format | Always, in the bar | The formats valid for this file and mode |
+| font size | PDF | 9, 10, 11, 12, 14, 16 or 18 pt; 12 by default. A larger size repaginates the document |
+| theme | Always | `dark` or `light` |
+| content | Bases | `visual` renders the view as its kind; `data` exports its flat table |
+| span, starts | A calendar base in visual mode | `month`, `week`, `3-day` or `day`, anchored on the start day (blank is today) |
+| include `frontmatter` | Plain notes | Keep or strip the leading YAML block. On by default |
+| include `markdown syntax` | Plain notes | Print `##` markers before `h2` to `h6` headings. Off by default |
+| from | Always | The file to export. Defaults to the file you opened; type another vault path, or browse in the desktop app |
+| to | Always | Destination folder. Empty means your Downloads folder; choosing a folder works in the desktop app and is remembered |
 
-Your choices stay put when you switch to another tab and back. Format, font size, theme and the two plain-note toggles carry over to every export you open next; the input path, content mode and start day belong to that export tab.
+The preview shows the page as it prints. An HTML or PNG preview draws one sheet in the chosen theme's colours. A PDF preview is the same viewer a PDF tab uses: the bar carries `p. N / M` (click it to jump) and `− 100% + fit`, and pinch or Ctrl/Cmd+scroll zooms at the pointer. Changing an option keeps the last preview on screen, with `rendering…` in the bar, until the new one is ready, and a new PDF opens on the page you were reading.
+
+Your choices stay put when you switch to another tab and back. Format, font size, theme and the two plain-note toggles carry over to every export you open next; the `from` path, content mode and start day belong to that export tab.
 
 The tab is not available for `.settings`, which is configuration rather than a document.
 
@@ -33,8 +37,8 @@ The tab is not available for `.settings`, which is configuration rather than a d
 | File | Formats |
 |---|---|
 | Note (`.md`) | `pdf`, `html`, `png`, `md` |
-| Base (`.md` with `type: base`), `Data` content | `pdf`, `html`, `png`, `md`, `csv` |
-| Base, `Visual` content | `pdf`, `html`, `png` |
+| Base (`.md` with `type: base`), `data` content | `pdf`, `html`, `png`, `md`, `csv` |
+| Base, `visual` content | `pdf`, `html`, `png` |
 | Sheet (`.sheet`) | `pdf`, `html`, `png` |
 | Drawing (`.draw`) | `pdf`, `png` |
 
@@ -44,7 +48,7 @@ A sheet exports its first sheet only, as a plain table of raw cell values. Forma
 
 ## Export a base as it looks or as data
 
-`Data` exports the view's flat table: a Markdown table, CSV (RFC 4180 quoting, CRLF line ends) or an HTML table. `Visual` renders the view as its own kind, using the live theme's palette.
+`data` exports the view's flat table: a Markdown table, CSV (RFC 4180 quoting, CRLF line ends) or an HTML table. `visual` renders the view as its own kind, using the live theme's palette. A visual view that resolves no rows reads `no rows` in place of the view. A `md` or `csv` preview shows the file's lines exactly as written, one per line, and scrolls sideways when a line is wider than the sheet.
 
 | View kind | Visual export |
 |---|---|
@@ -54,7 +58,7 @@ A sheet exports its first sheet only, as a plain table of raw cell values. Forma
 | `list`, `bullets` | A list |
 | `table`, `map`, `bar`, `line`, `stat`, `heatmap`, `flashcards` | The flat data table |
 
-The pane starts in `Visual` for calendar, cards, kanban, list and bullets bases, and in `Data` for the rest. Once you choose a content mode, opening another file resets it to that file's default.
+The pane starts in `visual` for calendar, cards, kanban, list and bullets bases, and in `data` for the rest. Once you choose a content mode, opening another file resets it to that file's default.
 
 A calendar span of `month` shows the month containing the start day with leading and trailing days from adjacent months. `week` shows seven days from the start of the week, `3day` the start day and the two after it, and `day` just that day. Events come from the same mapping the live calendar uses, with recurrence expanded. In the app, `calendar.weekStartsOnMonday` and `calendar.militaryTime` apply; the command uses a Monday start and 12-hour times.
 
@@ -75,7 +79,7 @@ A line containing only `<!-- pagebreak -->` marks a page boundary. Insert one fr
 | `png` | One file per section: `note-1.png`, `note-2.png`, and so on |
 | `md` | The comment passes through as text |
 
-A marker inside a code fence or inline code stays literal. A section left blank by a marker at the very start or end, or two markers in a row, is dropped. The pane shows `N pages → N files` next to the format chips for a page-broken PNG export, and its HTML preview draws one labelled `Page N of M` sheet per section. The PDF preview is the real PDF.
+A marker inside a code fence or inline code stays literal. A section left blank by a marker at the very start or end, or two markers in a row, is dropped. For a page-broken PNG export the pane's bar reads `N pages // N files` and its last line names the first and last file (`writes note-1.png … note-3.png`), and its HTML preview draws one labelled `page N of M` sheet per section. The PDF preview is the real PDF.
 
 ## Export a note with its ink
 
@@ -118,15 +122,15 @@ The pane (`ExportView.tsx`) and the command (`cli/src/commands/export.ts`) call 
 - `renderPreview(path, format, deps, theme, opts)` computes only what the pane shows. It never produces export bytes, so flipping options is instant.
 - `renderExport(path, format, deps, theme, opts)` returns `{ bytes, mime, filename }`, plus `files` when a note splits into several PNGs.
 
-`ExportDeps` carries `read`, `resolveRows`, `htmlToPdf`, `htmlToPng`, `drawingToPng`, `katexCss` and `docFontCss`. The pane resolves the format list with `formatsFor()` and `formatsForOptions()` in `formats.ts`, and defaults the format with `defaultFormat()` in `formats.ts` and the mode with `defaultModeForView()` in `options.ts`.
+`ExportDeps` carries `read`, `resolveRows`, `htmlToPdf`, `htmlToPng`, `drawingToPng`, `katexCss` and `docFontCss`. The pane resolves the format list with `formatsFor()` and `formatsForOptions()` in `formats.ts`, and defaults the format with `defaultFormat()` in `formats.ts` and the mode with `defaultModeForView()` in `options.ts`. The pane's `writes …` line and `renderExport` both name output files through `exportFilenames()` in `formats.ts`, so the line never promises a name the export does not write.
 
 ### Add a format or a file kind
 
-A new file kind needs a row in the extension matrix in `formats.ts` (`formatsFor()` returns it, and `isExportable()` gates the command). Then add a branch to `bodyHtml` in `exporters.ts` that returns the kind's HTML body, and a case in `renderExport` for any format that bypasses HTML. A new format adds an `ExportFormat` value and a `renderExport` case. `md` and `csv` skip HTML (`markdownText`, `csvText`; CSV throws for anything but a base). The pane persists its options in `localStorage`: the output folder and calendar span under `bismuth.export.destFolder` and `bismuth.export.calSpan`, the shared formatting options under `bismuth.export.prefs`, and each tab's input path, hand-picked mode and start day under `bismuth.export.tab:<path>`. `export/exportPrefs.ts` validates what it reads back, so a bad stored value falls back to its default.
+A new file kind needs a row in the extension matrix in `formats.ts` (`formatsFor()` returns it, and `isExportable()` gates the command). Then add a branch to `bodyHtml` in `exporters.ts` that returns the kind's HTML body, and a case in `renderExport` for any format that bypasses HTML. A new format adds an `ExportFormat` value and a `renderExport` case. `md` and `csv` skip HTML (`markdownText`, `csvText`; CSV throws for anything but a base). The pane persists its options in `localStorage`: the output folder and calendar span under `bismuth.export.destFolder` and `bismuth.export.calSpan`, the shared formatting options under `bismuth.export.prefs`, and each tab's `from` path, hand-picked mode and start day under `bismuth.export.tab:<path>`. `export/exportPrefs.ts` validates what it reads back, so a bad stored value falls back to its default.
 
 ### Building the document
 
-`bodyHtml` picks the body by file kind. A sheet goes through `snapshotToHtmlTable` (`sheetHtml.ts`). A base goes through `baseViewHtml` for `Visual` or `tableToHtml(baseToTable(...))` for `Data`; `viewHtml.ts` and `calendarHtml.ts` are pure string builders that return `{ body, css }`. Any other `md` goes through `renderMarkdown` after `inkifyMarkdown` (`inkHtml.ts`) rewrites its draw fences into pictures.
+`bodyHtml` picks the body by file kind. A sheet goes through `snapshotToHtmlTable` (`sheetHtml.ts`). A base goes through `baseViewHtml` for `visual` or `tableToHtml(baseToTable(...))` for `data`; `viewHtml.ts` and `calendarHtml.ts` are pure string builders that return `{ body, css }`. Any other `md` goes through `renderMarkdown` after `inkifyMarkdown` (`inkHtml.ts`) rewrites its draw fences into pictures.
 
 `renderedBody` re-renders after `whenMathReady()` when the first pass leaves an unrendered KaTeX placeholder. `wrapBody` produces a standalone document: it inlines the document fonts unconditionally, KaTeX CSS (fonts as `data:` URIs) only when the body contains rendered math, and any view-specific CSS. The `.html` download and the rasteriser iframe cannot reach the app's stylesheets, so everything is inlined.
 

@@ -4,14 +4,19 @@ import {
     createResource,
     createEffect,
     on,
+    createMemo,
     For,
     Show,
 } from 'solid-js'
 import { api } from './api'
 import { settings } from './settings'
-import { Icon } from './icons/Icon'
 import ChipToggle from './ui/ChipToggle'
-import Label from './ui/Label'
+import ViewBar, { Crumb } from './ui/ViewBar'
+import BarLabel from './ui/BarLabel'
+import Readout from './ui/Readout'
+import SegmentedToggle from './ui/SegmentedToggle'
+import SettingsField from './ui/SettingsField'
+import Select from './ui/Select'
 import Swatch from './ui/Swatch'
 import Text from './ui/Text'
 import { Loading } from './ui/EmptyState'
@@ -20,9 +25,13 @@ import { TextInput } from './ui/TextInput'
 import PathField from './ui/PathField'
 import { pushToast } from './ui/ToastHost'
 import { isTauri } from './platform'
-import { pluralWord } from './plural'
 import { pickFile, pickFolder } from './appWindow'
-import { formatsForOptions, ext, defaultFormat } from './export/formats'
+import {
+    formatsForOptions,
+    ext,
+    defaultFormat,
+    exportFilenames,
+} from './export/formats'
 import { defaultModeForView, PDF_FONT_SIZES } from './export/options'
 import { readThemePalette } from './export/resolvePalette'
 import { SHEET_PAPER, sheetInkVars } from './export/sheetInk'
@@ -35,6 +44,10 @@ import { readCache, writeCache } from './viewCache'
 import { basename } from './fileIntake'
 import { htmlToPdfBytes } from './export/pdfPrint'
 import PdfPages from './preview/PdfPages'
+import PageReadout from './preview/PageReadout'
+import PdfZoom from './preview/PdfZoom'
+import createPreviewZoom from './preview/createPreviewZoom'
+import type { PdfPagesController, PdfPosition } from './preview/annotationTypes'
 import type {
     ExportFormat,
     ExportTheme,
@@ -55,24 +68,18 @@ const htmlToPng = (
 ): Promise<{ bytes: Uint8Array; dataUrl: string }> =>
     import('./export/htmlToPdf').then(m => m.htmlToPng(html))
 
+// The format's own extension — the toggle names exactly what the summary line says gets written.
 const LABEL: Record<ExportFormat, string> = {
-    html: 'HTML',
-    pdf: 'PDF',
-    md: 'Markdown',
-    png: 'PNG',
-    csv: 'CSV',
-}
-const FORMAT_ICON: Record<ExportFormat, string> = {
-    pdf: 'FileText',
-    html: 'Code',
-    md: 'Hash',
-    png: 'Image',
-    csv: 'Table',
+    html: 'html',
+    pdf: 'pdf',
+    md: 'md',
+    png: 'png',
+    csv: 'csv',
 }
 const THEMES: ExportTheme[] = ['light', 'dark']
 const THEME_LABEL: Record<ExportTheme, string> = {
-    dark: 'Dark',
-    light: 'Light',
+    dark: 'dark',
+    light: 'light',
 }
 // Light stays print-paper cream — it is not a UI theme. Dark reads the app's OWN active
 // scope's --bg (a live CSS var, not a snapshot) so the swatch isn't lying in cathode/riso
@@ -84,8 +91,8 @@ const THEME_SWATCH: Record<ExportTheme, string> = {
 
 const MODES: RenderMode[] = ['visual', 'data']
 const MODE_LABEL: Record<RenderMode, string> = {
-    visual: 'Visual',
-    data: 'Data',
+    visual: 'visual',
+    data: 'data',
 }
 const MODE_ICON: Record<RenderMode, string> = {
     visual: 'LayoutGrid',
@@ -93,10 +100,10 @@ const MODE_ICON: Record<RenderMode, string> = {
 }
 const SPANS: CalSpan[] = ['month', 'week', '3day', 'day']
 const SPAN_LABEL: Record<CalSpan, string> = {
-    month: 'Month',
-    week: 'Week',
+    month: 'month',
+    week: 'week',
     '3day': '3-day',
-    day: 'Day',
+    day: 'day',
 }
 
 // The vault-relative path of `abs` if it lives under `vaultRoot`, else null (the exporter
@@ -313,10 +320,55 @@ export function ExportView(props: {
 
     // PdfPages reports its page count once it has rendered the real bytes (onPageCount below);
     // reset to 0 while a new preview is loading so a stale "N pages" readout never lingers.
-    const [pdfPageCount, setPdfPageCount] = createSignal(0)
-    createEffect(() => {
-        if (result.loading) setPdfPageCount(0)
+    // The preview on screen: the LAST finished render, kept up while the next one is in flight.
+    // `latest` never suspends once a value exists, so an option change neither blanks the desk nor
+    // trips the pane's Suspense boundary (PaneSuspense), which would swap the whole tab — rail
+    // included — for its placeholder on every click.
+    const shown = () => (result.error ? undefined : result.latest)
+    const rendering = () => result.loading && !!result.latest
+
+    // The PDF preview is the PDF tab's own viewer: PdfPages with the same zoom (− / + / fit, pinch,
+    // ctrl/cmd+wheel anchored at the pointer — createPreviewZoom) and the same `p. N / M` readout.
+    // ONE PdfPages stays mounted across re-renders; a new render only hands it a new `load`, and
+    // the reader's last position is handed back as `initialPosition` so they stay on their page.
+    let pdfController: PdfPagesController | undefined
+    const pdfZoom = createPreviewZoom({
+        min: 0.25,
+        max: 4,
+        anchor: (apply, x, y) =>
+            pdfController ? pdfController.zoomAt(apply, x, y) : apply(),
     })
+    const [pdfPageCount, setPdfPageCount] = createSignal(0)
+    const [pdfPage, setPdfPage] = createSignal(0)
+    const [pdfPosition, setPdfPosition] = createSignal<PdfPosition>()
+    // Memoised on the bytes, so PdfPages reloads only when a render produced a new PDF. pdf.js's
+    // getDocument DETACHES the buffer it is handed, so `load` hands back a fresh copy every call.
+    const pdfLoad = createMemo(() => {
+        const bytes = shown()?.previewPdf
+        return bytes
+            ? () => Promise.resolve(bytes.slice().buffer as ArrayBuffer)
+            : undefined
+    })
+    const showsPdf = () => !!pdfLoad()
+
+    // A page-broken note's PNG export writes one file per page; every other export writes one.
+    const pngPages = () =>
+        format() === 'png' && !isBase() ? (pageCount() ?? 1) : 1
+    const outputFiles = () => exportFilenames(srcPath(), format(), pngPages())
+    // What the export will write, named the way the toast will name it afterwards. A multi-file
+    // export names its first and last file; the bar's readout already gives the count.
+    const writes = () => {
+        const files = outputFiles()
+        return files.length > 1 ? [files[0], files[files.length - 1]] : [files[0]]
+    }
+    const destLabel = () => destFolder().trim() || 'Downloads'
+    // The bar's readout: the page count wherever it is known, and the file count when it differs.
+    const readouts = () => {
+        const parts: string[] = []
+        if (pngPages() > 1) parts.push(`${pngPages()} pages`, `${pngPages()} files`)
+        return parts
+    }
+
 
     // Keep the chosen format valid as the available set changes (mode flip adds/removes
     // md+csv; a different file changes the matrix entirely).
@@ -479,28 +531,76 @@ export function ExportView(props: {
         }
     }
 
+    const formatToggle = () => (
+        <SegmentedToggle
+            options={formats().map(f => ({
+                id: f,
+                label: LABEL[f],
+                title: `Export as ${LABEL[f]}`,
+            }))}
+            value={format()}
+            onChange={pickFormat}
+        />
+    )
+    const exportButton = () => (
+        <IconTextButton
+            icon="Download"
+            primary
+            disabled={busy()}
+            onClick={doExport}
+        >
+            export
+        </IconTextButton>
+    )
+
     return (
         <div class={styles.exp}>
-            <div class={styles.exppreview}>
+            <ViewBar
+                identity={
+                    <Crumb icon="Share">
+                        <BarLabel long="export" />
+                    </Crumb>
+                }
+                locus={
+                    // The first thing the bar sheds: the rail's "from" field names the file too.
+                    <div data-bar-drop="4">
+                        <Readout parts={[srcPath()]} />
+                    </div>
+                }
+                facet={formatToggle()}
+                readouts={
+                    <>
+                        <Show when={rendering()}>
+                            <Readout parts={['rendering…']} />
+                        </Show>
+                        <Show when={showsPdf() && pdfPageCount() > 0}>
+                            <PageReadout
+                                current={pdfPage}
+                                count={pdfPageCount}
+                                onGo={i => pdfController?.scrollToPage(i)}
+                            />
+                        </Show>
+                        <Show when={readouts().length > 0}>
+                            <Readout parts={readouts()} />
+                        </Show>
+                    </>
+                }
+                config={
+                    <Show when={showsPdf()}>
+                        <PdfZoom
+                            zoom={pdfZoom.zoom}
+                            onZoomBy={pdfZoom.stepBy}
+                            onFit={pdfZoom.fit}
+                        />
+                    </Show>
+                }
+                actions={exportButton()}
+            />
+
+            <div class={styles['exp-body']}>
                 <div
-                    class={styles['exp-paper']}
-                    classList={{
-                        [styles['paper-wide']]: isBase() && mode() === 'visual',
-                        [styles['paper-pdf']]:
-                            !result.error && !!result()?.previewPdf,
-                    }}
-                    // The wrapper's fill while the iframe is loading/empty follows the CHOSEN export
-                    // theme (not the app's own live scope): print-paper cream for "light", the app's
-                    // active --bg for "dark" — same source as THEME_SWATCH.dark above. On the cream
-                    // the app's ink tokens are re-scoped from the export palette (sheetInk.ts): the
-                    // app's own --fg is 1.18:1 on it in ink. Dark IS the app's scope, so it sets none.
-                    style={{
-                        '--paper-bg':
-                            theme() === 'dark' ? 'var(--bg)' : SHEET_PAPER,
-                        ...(theme() === 'light'
-                            ? sheetInkVars(readThemePalette('light'))
-                            : {}),
-                    }}
+                    class={styles['exp-desk']}
+                    classList={{ [styles['desk-pdf']]: showsPdf() }}
                 >
                     <Show
                         when={!result.error}
@@ -516,7 +616,7 @@ export function ExportView(props: {
                         }
                     >
                         <Show
-                            when={result()}
+                            when={shown()}
                             fallback={
                                 <div class={styles['export-empty']}>
                                     <Loading>Rendering preview…</Loading>
@@ -525,45 +625,77 @@ export function ExportView(props: {
                         >
                             {r => (
                                 <Show
-                                    when={r().previewPdf}
-                                    keyed
+                                    when={pdfLoad()}
                                     fallback={
-                                        <Show
-                                            when={r().previewImg}
-                                            fallback={
-                                                <iframe
-                                                    class={
-                                                        styles['export-frame']
-                                                    }
-                                                    sandbox="allow-same-origin"
-                                                    srcdoc={
-                                                        r().previewHtml ?? ''
-                                                    }
-                                                />
-                                            }
+                                        <div
+                                            class={styles['exp-paper']}
+                                            classList={{
+                                                [styles['paper-wide']]:
+                                                    isBase() &&
+                                                    mode() === 'visual',
+                                            }}
+                                            data-export-sheet
+                                            // The sheet's fill follows the CHOSEN export theme, not
+                                            // the app's live scope: print-paper cream for "light", the
+                                            // app's active --bg for "dark" — same source as
+                                            // THEME_SWATCH.dark above. On the cream the app's ink
+                                            // tokens are re-scoped from the export palette
+                                            // (sheetInk.ts): the app's own --fg is 1.18:1 on it in
+                                            // ink. Dark IS the app's scope, so it sets none.
+                                            style={{
+                                                '--paper-bg':
+                                                    theme() === 'dark'
+                                                        ? 'var(--bg)'
+                                                        : SHEET_PAPER,
+                                                ...(theme() === 'light'
+                                                    ? sheetInkVars(
+                                                          readThemePalette(
+                                                              'light',
+                                                          ),
+                                                      )
+                                                    : {}),
+                                            }}
                                         >
-                                            <img
-                                                class={styles['export-img']}
-                                                src={r().previewImg}
-                                                alt="preview"
-                                            />
-                                        </Show>
+                                            <Show
+                                                when={r().previewImg}
+                                                fallback={
+                                                    <iframe
+                                                        class={
+                                                            styles[
+                                                                'export-frame'
+                                                            ]
+                                                        }
+                                                        sandbox="allow-same-origin"
+                                                        srcdoc={
+                                                            r().previewHtml ??
+                                                            ''
+                                                        }
+                                                    />
+                                                }
+                                            >
+                                                <img
+                                                    class={styles['export-img']}
+                                                    src={r().previewImg}
+                                                    alt="preview"
+                                                />
+                                            </Show>
+                                        </div>
                                     }
                                 >
-                                    {bytes => (
-                                        <div class={styles['export-pdf']}>
+                                    {load => (
+                                        <div
+                                            class={styles['export-pdf']}
+                                            data-export-pdf
+                                            ref={pdfZoom.attach}
+                                        >
                                             <PdfPages
-                                                // pdf.js's getDocument DETACHES the buffer it's
-                                                // handed, so `load` must hand back a FRESH copy
-                                                // every call — never the same ArrayBuffer twice.
-                                                load={() =>
-                                                    Promise.resolve(
-                                                        bytes.slice()
-                                                            .buffer as ArrayBuffer,
-                                                    )
-                                                }
-                                                zoom={1}
+                                                load={load()}
+                                                zoom={pdfZoom.zoom()}
+                                                initialPosition={pdfPosition()}
+                                                onPosition={setPdfPosition}
                                                 onPageCount={setPdfPageCount}
+                                                onCurrentPage={setPdfPage}
+                                                controller={c => (pdfController = c)}
                                             />
                                         </div>
                                     )}
@@ -572,205 +704,176 @@ export function ExportView(props: {
                         </Show>
                     </Show>
                 </div>
-            </div>
 
-            <div class={styles.exppanel}>
-                <div class={styles['exp-title']}>
-                    <Icon value="Share" /> Export {isBase() ? 'base' : 'note'}
-                </div>
-
-                <div class={styles.field}>
-                    <Label class={styles.flab}>Input path</Label>
-                    <PathField
-                        value={srcDraft()}
-                        onInput={setSrcDraft}
-                        onCommit={commitSrc}
-                        onBrowse={browseSource}
-                        placeholder="vault-relative path, e.g. notes/idea.md"
-                        label="Input path"
-                    />
-                </div>
-
-                <div class={styles.field}>
-                    <Label class={styles.flab}>Output path</Label>
-                    <PathField
-                        value={destFolder()}
-                        onInput={v => {
-                            setDestFolder(v)
-                            saveLs(DEST_KEY, v.trim())
-                        }}
-                        onBrowse={browseDest}
-                        placeholder="Downloads (default)"
-                        label="Output path"
-                    />
-                </div>
-
-                {/* Base-only: rendered view ("Visual") vs flat table ("Data"). */}
-                <Show when={isBase()}>
-                    <div class={styles.field}>
-                        <Label class={styles.flab}>Content</Label>
-                        <div class={styles.fopts}>
-                            <For each={MODES}>
-                                {m => (
-                                    <ChipToggle
-                                        selected={mode() === m}
-                                        icon={MODE_ICON[m]}
-                                        onToggle={() => pickMode(m)}
-                                    >
-                                        {MODE_LABEL[m]}
-                                    </ChipToggle>
-                                )}
-                            </For>
-                        </div>
+                <div class={styles.exppanel}>
+                    {/* How it looks: the format's own options first, then the theme every
+                        format shares. */}
+                    <div class={styles['opt-group']}>
+                        <Show when={format() === 'pdf'}>
+                            <SettingsField label="font size">
+                                <Select
+                                    class={styles['size-select']}
+                                    value={String(pdfFontSize())}
+                                    options={PDF_FONT_SIZES.map(sz => ({
+                                        value: String(sz),
+                                        label: `${sz}pt`,
+                                    }))}
+                                    onChange={v => setPdfFontSize(Number(v))}
+                                />
+                            </SettingsField>
+                        </Show>
+                        <SettingsField label="theme">
+                            <div class={styles.fopts}>
+                                <For each={THEMES}>
+                                    {t => (
+                                        <ChipToggle
+                                            selected={theme() === t}
+                                            onToggle={() => setTheme(t)}
+                                        >
+                                            <Swatch
+                                                static
+                                                color={THEME_SWATCH[t]}
+                                                class={styles['theme-swatch']}
+                                            />
+                                            {THEME_LABEL[t]}
+                                        </ChipToggle>
+                                    )}
+                                </For>
+                            </div>
+                        </SettingsField>
                     </div>
-                </Show>
 
-                {/* Calendar visual only: grid span + the day the grid starts at (default today). */}
-                <Show when={showCalendar()}>
-                    <div class={styles.field}>
-                        <Label class={styles.flab}>Calendar span</Label>
-                        <div class={styles.fopts}>
-                            <For each={SPANS}>
-                                {s => (
-                                    <ChipToggle
-                                        selected={calSpan() === s}
-                                        onToggle={() => pickSpan(s)}
-                                    >
-                                        {SPAN_LABEL[s]}
-                                    </ChipToggle>
-                                )}
-                            </For>
-                        </div>
-                    </div>
-                    <div class={styles.field}>
-                        <Label class={styles.flab}>Start day</Label>
-                        <div class={styles['path-row']}>
-                            <TextInput
-                                type="date"
-                                class={`${styles['path-input']} ${styles['exp-date']}`}
-                                value={calStart()}
-                                onInput={setCalStart}
-                            />
-                            <Show when={calStart()}>
-                                <IconTextButton
-                                    icon="RotateCcw"
-                                    onClick={() => setCalStart('')}
-                                >
-                                    today
-                                </IconTextButton>
+                    {/* What goes in: a base's rendered view or its flat table (and the calendar's
+                        window), or a plain note's frontmatter and markdown markers. A base's own
+                        frontmatter is config, never content, so a base never gets those two. */}
+                    <Show
+                        when={isBase() || ext(srcPath()) === 'md'}
+                    >
+                        <div class={styles['opt-group']}>
+                            <Show when={isBase()}>
+                                <SettingsField label="content">
+                                    <div class={styles.fopts}>
+                                        <For each={MODES}>
+                                            {m => (
+                                                <ChipToggle
+                                                    selected={mode() === m}
+                                                    icon={MODE_ICON[m]}
+                                                    onToggle={() => pickMode(m)}
+                                                >
+                                                    {MODE_LABEL[m]}
+                                                </ChipToggle>
+                                            )}
+                                        </For>
+                                    </div>
+                                </SettingsField>
+                            </Show>
+                            <Show when={showCalendar()}>
+                                <SettingsField label="span">
+                                    <div class={styles.fopts}>
+                                        <For each={SPANS}>
+                                            {s => (
+                                                <ChipToggle
+                                                    selected={calSpan() === s}
+                                                    onToggle={() => pickSpan(s)}
+                                                >
+                                                    {SPAN_LABEL[s]}
+                                                </ChipToggle>
+                                            )}
+                                        </For>
+                                    </div>
+                                </SettingsField>
+                                <SettingsField label="starts">
+                                    <div class={styles['path-row']}>
+                                        <TextInput
+                                            type="date"
+                                            class={`${styles['path-input']} ${styles['exp-date']}`}
+                                            value={calStart()}
+                                            onInput={setCalStart}
+                                        />
+                                        <Show when={calStart()}>
+                                            <IconTextButton
+                                                icon="RotateCcw"
+                                                onClick={() => setCalStart('')}
+                                            >
+                                                today
+                                            </IconTextButton>
+                                        </Show>
+                                    </div>
+                                </SettingsField>
+                            </Show>
+                            <Show when={!isBase()}>
+                                <SettingsField label="include">
+                                    <div class={styles.fopts}>
+                                        <ChipToggle
+                                            selected={includeFrontmatter()}
+                                            onToggle={() =>
+                                                setIncludeFrontmatter(
+                                                    !includeFrontmatter(),
+                                                )
+                                            }
+                                        >
+                                            frontmatter
+                                        </ChipToggle>
+                                        <ChipToggle
+                                            selected={showMarkdownSyntax()}
+                                            onToggle={() =>
+                                                setShowMarkdownSyntax(
+                                                    !showMarkdownSyntax(),
+                                                )
+                                            }
+                                        >
+                                            markdown syntax
+                                        </ChipToggle>
+                                    </div>
+                                </SettingsField>
                             </Show>
                         </div>
-                    </div>
-                </Show>
+                    </Show>
 
-                {/* Plain note only (a base's frontmatter is config, never rendered content): whether
-            the YAML frontmatter block is included in md/html/pdf/png output. */}
-                <Show when={!isBase() && ext(srcPath()) === 'md'}>
-                    <div class={styles.field}>
-                        <Label class={styles.flab}>Frontmatter</Label>
-                        <div class={styles.fopts}>
-                            <ChipToggle
-                                selected={includeFrontmatter()}
-                                onToggle={() =>
-                                    setIncludeFrontmatter(!includeFrontmatter())
-                                }
-                            >
-                                Include frontmatter
-                            </ChipToggle>
-                            <ChipToggle
-                                selected={showMarkdownSyntax()}
-                                onToggle={() =>
-                                    setShowMarkdownSyntax(!showMarkdownSyntax())
-                                }
-                            >
-                                Show markdown syntax
-                            </ChipToggle>
+                    {/* Where it goes: source and destination, then exactly what lands there, then
+                        the action that writes it. */}
+                    <div class={styles['exp-files']}>
+                        <SettingsField label="from">
+                            <PathField
+                                value={srcDraft()}
+                                onInput={setSrcDraft}
+                                onCommit={commitSrc}
+                                onBrowse={browseSource}
+                                placeholder="vault path, e.g. notes/idea.md"
+                                label="Export from"
+                            />
+                        </SettingsField>
+                        <SettingsField label="to">
+                            <PathField
+                                value={destFolder()}
+                                onInput={v => {
+                                    setDestFolder(v)
+                                    saveLs(DEST_KEY, v.trim())
+                                }}
+                                onBrowse={browseDest}
+                                placeholder="Downloads"
+                                label="Export to"
+                            />
+                        </SettingsField>
+                        <div class={styles['exp-commit']}>
+                            {/* Wraps rather than truncates: the file names are the point of the line. */}
+                            <Text as="div" size="ui" class={styles['exp-writes']}>
+                                writes{' '}
+                                <For each={writes()}>
+                                    {(f, i) => (
+                                        <>
+                                            {i() > 0 ? ' … ' : ''}
+                                            <Text as="span" inherit class={styles.fname}>
+                                                {f}
+                                            </Text>
+                                        </>
+                                    )}
+                                </For>{' '}
+                                → {destLabel()}
+                            </Text>
+                            {exportButton()}
                         </div>
                     </div>
-                </Show>
-
-                <div class={styles.field}>
-                    <Label class={styles.flab}>Format</Label>
-                    <div class={styles.fopts}>
-                        <For each={formats()}>
-                            {f => (
-                                <ChipToggle
-                                    selected={format() === f}
-                                    icon={FORMAT_ICON[f]}
-                                    onToggle={() => pickFormat(f)}
-                                >
-                                    {LABEL[f]}
-                                </ChipToggle>
-                            )}
-                        </For>
-                    </div>
-                    {/* PNG can't hold more than one page, so a page-broken note exports as N separate
-              files (note-1.png, note-2.png, …) instead of one — flag that up front. */}
-                    <Show when={format() === 'png' && (pageCount() ?? 1) > 1}>
-                        <Text as="span" inherit class={styles['exp-hint']}>
-                            {pageCount()} pages (page breaks) → exports as{' '}
-                            {pageCount()} separate PNG files
-                        </Text>
-                    </Show>
-                    <Show when={format() === 'pdf' && pdfPageCount() > 0}>
-                        <Text as="span" inherit class={styles['exp-hint']}>
-                            {pdfPageCount()}{' '}
-                            {pluralWord(pdfPageCount(), 'page')}
-                        </Text>
-                    </Show>
-                </div>
-
-                {/* PDF only: body font size (pt). Larger sizes render bigger text and repaginate. */}
-                <Show when={format() === 'pdf'}>
-                    <div class={styles.field}>
-                        <Label class={styles.flab}>Font size</Label>
-                        <div class={styles.fopts}>
-                            <For each={PDF_FONT_SIZES}>
-                                {sz => (
-                                    <ChipToggle
-                                        selected={pdfFontSize() === sz}
-                                        onToggle={() => setPdfFontSize(sz)}
-                                    >
-                                        {sz}pt
-                                    </ChipToggle>
-                                )}
-                            </For>
-                        </div>
-                    </div>
-                </Show>
-
-                <div class={styles.field}>
-                    <Label class={styles.flab}>Theme</Label>
-                    <div class={styles.fopts}>
-                        <For each={THEMES}>
-                            {t => (
-                                <ChipToggle
-                                    selected={theme() === t}
-                                    onToggle={() => setTheme(t)}
-                                >
-                                    <Swatch
-                                        static
-                                        color={THEME_SWATCH[t]}
-                                        class={styles['theme-swatch']}
-                                    />
-                                    {THEME_LABEL[t]}
-                                </ChipToggle>
-                            )}
-                        </For>
-                    </div>
-                </div>
-
-                <div class={styles['exp-spacer']} />
-
-                <div class={styles['exp-footer']}>
-                    <IconTextButton
-                        icon="Download"
-                        primary
-                        disabled={busy()}
-                        onClick={doExport}
-                    >
-                        export
-                    </IconTextButton>
                 </div>
             </div>
         </div>

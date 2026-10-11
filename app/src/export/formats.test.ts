@@ -1,6 +1,12 @@
 // app/src/export/formats.test.ts
 import { test, expect, describe } from 'bun:test'
-import { formatsFor, isExportable, formatsForOptions, defaultFormat } from './formats'
+import {
+    formatsFor,
+    isExportable,
+    formatsForOptions,
+    defaultFormat,
+    exportFilenames,
+} from './formats'
 import { SETTINGS_FILE } from '../tabIds'
 
 describe('formatsFor', () => {
@@ -74,5 +80,24 @@ describe('defaultFormat', () => {
     })
     test('falls back to the first format', () => {
         expect(defaultFormat(['md', 'csv'])).toBe('md')
+    })
+})
+
+describe('exportFilenames', () => {
+    test('a note writes <stem>.<format>', () => {
+        expect(exportFilenames('projects/roadmap.md', 'pdf')).toEqual(['roadmap.pdf'])
+    })
+    test('a .base.jsonl writes under the base name, not the jsonl stem', () => {
+        expect(exportFilenames('boards/tasks.base.jsonl', 'csv')).toEqual(['tasks.csv'])
+    })
+    test('a page-broken png writes one numbered file per page', () => {
+        expect(exportFilenames('a/note.md', 'png', 3)).toEqual([
+            'note-1.png',
+            'note-2.png',
+            'note-3.png',
+        ])
+    })
+    test('page count only splits png', () => {
+        expect(exportFilenames('a/note.md', 'pdf', 3)).toEqual(['note.pdf'])
     })
 })

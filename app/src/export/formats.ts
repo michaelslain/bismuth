@@ -1,7 +1,7 @@
 // app/src/export/formats.ts
 import type { ExportFormat, RenderMode } from './types'
 import { SETTINGS_FILE } from '../tabIds'
-import { isBasePath } from '../../../core/src/bases/baseFile'
+import { baseNameOf, isBasePath } from '../../../core/src/bases/baseFile'
 
 // Defined here (the pure leaf), not in ./exporters, and re-used by exporters.ts.
 // exporters.ts statically pulls in `marked` (../bases/markdown) + jspdf, and App.tsx
@@ -32,6 +32,28 @@ export function formatsFor(path: string): ExportFormat[] {
 /** The format the export pane starts on: `pdf` wherever it is offered, else the first. */
 export function defaultFormat(formats: ExportFormat[]): ExportFormat {
     return formats.includes('pdf') ? 'pdf' : (formats[0] ?? 'pdf')
+}
+
+/** The output file's name without its extension: a base's own name, else the file's stem. */
+export function stemName(path: string): string {
+    if (isBasePath(path)) return baseNameOf(path)
+    const file = path.split('/').pop() ?? path
+    const dot = file.lastIndexOf('.')
+    return dot === -1 ? file : file.slice(0, dot)
+}
+
+/** Every filename an export writes: one `<stem>.<format>`, except a PNG of a note split by page
+ *  breaks, which writes one `<stem>-<n>.png` per page. The exporter and the pane's summary line
+ *  both name files through this, so the pane never promises a name the export does not write. */
+export function exportFilenames(
+    path: string,
+    format: ExportFormat,
+    pngPages = 1,
+): string[] {
+    const name = stemName(path)
+    if (format === 'png' && pngPages > 1)
+        return Array.from({ length: pngPages }, (_, i) => `${name}-${i + 1}.png`)
+    return [`${name}.${format}`]
 }
 
 export function isExportable(path: string): boolean {

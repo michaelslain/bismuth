@@ -51,8 +51,8 @@ import {
     isSentinel,
 } from './tabIds'
 import { isPreviewPath } from './preview/previewKind'
-// PaneContent owns its own fallback grid rule (`.export-fallback`, mirroring ExportView's `.exp`
-// shape) rather than importing ExportView.module.css — that would make ExportView.module.css's
+// PaneContent owns its own fallback rules (`.export-fallback`, mirroring ExportView's `.exp` +
+// `.exp-body` shape) rather than importing ExportView.module.css — that would make ExportView.module.css's
 // stylesheet have two importers. See PaneContent.module.css's header comment.
 import styles from './PaneContent.module.css'
 
@@ -87,7 +87,17 @@ export function PaneContent(props: {
             {/* Export must win before the extension arms below so an export id is never
           mistaken for the file it targets. */}
             <Match when={props.path.startsWith(EXPORT_PREFIX)}>
-                <PaneSuspense fallback={<div class={styles['export-fallback']} />}>
+                <PaneSuspense
+                    fallback={
+                        <div class={styles['export-fallback']}>
+                            <div class={styles['export-fallback-bar']} />
+                            <div class={styles['export-fallback-body']}>
+                                <div />
+                                <div class={styles['export-fallback-rail']} />
+                            </div>
+                        </div>
+                    }
+                >
                     <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
                 </PaneSuspense>
             </Match>

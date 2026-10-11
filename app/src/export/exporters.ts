@@ -11,15 +11,11 @@ import { tableToHtml } from './rowsHtml'
 import { baseToTable } from './baseTable'
 import { baseViewHtml } from './baseView'
 import { snapshotToHtmlTable } from './sheetHtml'
-import { formatsFor, ext } from './formats'
+import { formatsFor, ext, stemName } from './formats'
 import { defaultExportOptions } from './options'
 import { paletteFor } from './exportTheme'
 import { parseFrontmatter } from '../../../core/src/frontmatter'
-import {
-    baseNameOf,
-    isBasePath,
-    isBaseText,
-} from '../../../core/src/bases/baseFile'
+import { isBaseText } from '../../../core/src/bases/baseFile'
 import { stripFrontmatter } from '../bases/cardBodySplit'
 import { pageSections } from './pageBreaks'
 import { whenMathReady } from '../editor/katexLoader'
@@ -35,13 +31,6 @@ import type {
 } from './types'
 
 const TEXT = new TextEncoder()
-
-function stemName(path: string): string {
-    if (isBasePath(path)) return baseNameOf(path)
-    const file = path.split('/').pop() ?? path
-    const dot = file.lastIndexOf('.')
-    return dot === -1 ? file : file.slice(0, dot)
-}
 
 // The rendered body of a text-ish file, plus any view-specific CSS to inject into the
 // document head (empty for prose/sheet/data-table; populated for a visual base view).
@@ -190,6 +179,10 @@ async function renderSectionHtml(
     return { html: renderMarkdown(ink.text), css: ink.css }
 }
 
+// The md/csv preview shows the file's own lines: one row per line, never wrapped (the base
+// `pre` rule wraps at hyphens, splitting a date across two lines), scrolled sideways instead.
+const RAW_FILE_CSS = `<style>pre.exp-rawfile { white-space: pre; word-break: normal; overflow-x: auto; }</style>`
+
 // The paged-preview stylesheet: each page-break-delimited section renders inside its own
 // bordered "sheet" with a small page label, so the pane VISUALIZES exactly where the export
 // splits pages (PNG: one file per sheet; PDF: a forced page boundary at each gap; HTML: a
@@ -199,8 +192,8 @@ function previewPagesCss(p: ThemePalette): string {
   .bismuth-preview-page { border: 1px dashed ${p.border}; border-radius: 8px;
     padding: 1.1rem 1.4rem 1.3rem; margin: 0 0 1.6rem; }
   .bismuth-preview-page:last-child { margin-bottom: 0; }
-  .bismuth-preview-pagelabel { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;
-    text-transform: uppercase; color: ${p.muted}; margin: 0 0 0.75rem; }
+  .bismuth-preview-pagelabel { font-size: 10.5px; font-weight: 600;
+    color: ${p.muted}; margin: 0 0 0.75rem; }
   .bismuth-preview-pagelabel + * { margin-top: 0; }
 `
 }
@@ -212,7 +205,7 @@ function previewPagesBody(sectionHtmls: string[]): string {
     return sectionHtmls
         .map(
             (html, i) =>
-                `<section class="bismuth-preview-page"><div class="bismuth-preview-pagelabel">Page ${i + 1} of ${n}</div>\n${html}</section>`,
+                `<section class="bismuth-preview-page"><div class="bismuth-preview-pagelabel">page ${i + 1} of ${n}</div>\n${html}</section>`,
         )
         .join('\n')
 }
@@ -286,12 +279,12 @@ export async function renderPreview(
         return { previewImg: dataUrl }
     }
     if (format === 'md') {
-        const pre = `<pre>${escapeHtml(await markdownText(path, deps, opts))}</pre>`
-        return { previewHtml: wrapHtmlDocument(pre, name, palette) }
+        const pre = `<pre class="exp-rawfile">${escapeHtml(await markdownText(path, deps, opts))}</pre>`
+        return { previewHtml: wrapHtmlDocument(pre, name, palette, RAW_FILE_CSS) }
     }
     if (format === 'csv') {
-        const pre = `<pre>${escapeHtml(await csvText(path, deps))}</pre>`
-        return { previewHtml: wrapHtmlDocument(pre, name, palette) }
+        const pre = `<pre class="exp-rawfile">${escapeHtml(await csvText(path, deps))}</pre>`
+        return { previewHtml: wrapHtmlDocument(pre, name, palette, RAW_FILE_CSS) }
     }
     // PDF previews as the REAL bytes the download produces — same engine, same print, so preview
     // and output can never disagree. `PdfPages` (ExportView.tsx) renders the pdf.js page stack.
