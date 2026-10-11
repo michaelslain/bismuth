@@ -859,7 +859,7 @@ export const SETTINGS_SCHEMA: Schema = {
     },
     // The TAB-BAR action buttons (right of the tab strip) — same item shape and rendering as
     // `toolbar`, so both bars are configured the same way. Defaults match what used to be
-    // hardcoded (new tab + terminal) plus the new-chat button the user asked for.
+    // hardcoded (new tab + terminal) plus the daemon page between them.
     tabBar: {
         type: {
             kind: 'list',
@@ -898,8 +898,8 @@ export const SETTINGS_SCHEMA: Schema = {
         },
         default: [
             { command: 'new-tab', icon: 'SquarePlus' },
+            { command: 'open-daemon', icon: 'Bot' },
             { command: 'terminal', icon: 'SquareTerminal' },
-            { command: 'new-claude-chat', icon: 'MessageSquare' },
         ],
         doc: 'Buttons in the tab bar (right of the tab strip), in order. Same shape as `toolbar`.',
     },

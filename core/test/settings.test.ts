@@ -961,8 +961,8 @@ describe('toolbar serialization', () => {
         const out = await serializeSettingsForFrontend(vault)
         expect(out.tabBar).toEqual([
             { command: 'new-tab', icon: 'SquarePlus' },
+            { command: 'open-daemon', icon: 'Bot' },
             { command: 'terminal', icon: 'SquareTerminal' },
-            { command: 'new-claude-chat', icon: 'MessageSquare' },
         ])
     })
 

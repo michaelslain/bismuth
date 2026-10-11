@@ -3320,12 +3320,12 @@
         "icon": "SquarePlus"
       },
       {
-        "command": "terminal",
-        "icon": "SquareTerminal"
+        "command": "open-daemon",
+        "icon": "Bot"
       },
       {
-        "command": "new-claude-chat",
-        "icon": "MessageSquare"
+        "command": "terminal",
+        "icon": "SquareTerminal"
       }
     ],
     "min": null,

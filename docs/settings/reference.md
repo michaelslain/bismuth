@@ -553,10 +553,10 @@ Default:
 tabBar:
   - command: new-tab
     icon: SquarePlus
+  - command: open-daemon
+    icon: Bot
   - command: terminal
     icon: SquareTerminal
-  - command: new-claude-chat
-    icon: MessageSquare
 ```
 
 ---
