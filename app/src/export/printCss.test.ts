@@ -1,10 +1,13 @@
 // app/src/export/printCss.test.ts
 import { test, expect, describe } from 'bun:test'
+import { Window } from 'happy-dom'
 import {
     injectHead,
     WEBKIT_PRINT_HEAD,
     PDF_BODY_OVERRIDE,
     PRINT_READY_TITLE,
+    keepHeadingsWithNext,
+    trimTrailingMargin,
 } from './printCss'
 
 describe('injectHead', () => {
@@ -38,12 +41,60 @@ describe('WEBKIT_PRINT_HEAD', () => {
         expect(WEBKIT_PRINT_HEAD).toContain('bismuth-keep')
     })
 
-    test('wraps headings into .bismuth-keep BEFORE setting the ready title', () => {
-        const wrapIndex = WEBKIT_PRINT_HEAD.indexOf('bismuth-keep')
+    test('runs keep-with-next and the margin trim BEFORE setting the ready title', () => {
         const titleIndex = WEBKIT_PRINT_HEAD.indexOf('document.title=')
-        expect(wrapIndex).toBeGreaterThan(-1)
-        expect(titleIndex).toBeGreaterThan(-1)
-        expect(wrapIndex).toBeLessThan(titleIndex)
+        for (const fn of [keepHeadingsWithNext, trimTrailingMargin]) {
+            const i = WEBKIT_PRINT_HEAD.indexOf(fn.toString())
+            expect(i).toBeGreaterThan(-1)
+            expect(i).toBeLessThan(titleIndex)
+        }
+    })
+})
+
+function makeDoc(body: string): Document {
+    const win = new Window()
+    win.document.body.innerHTML = body
+    return win.document as unknown as Document
+}
+
+describe('keepHeadingsWithNext', () => {
+    test('wraps the heading alone, leaving the block after it in place', () => {
+        const doc = makeDoc('<h2>A</h2><ul><li>1</li><li>2</li></ul><p>x</p>')
+        keepHeadingsWithNext(doc)
+        const wrap = doc.body.firstElementChild!
+        expect(wrap.className).toBe('bismuth-keep')
+        expect(wrap.firstElementChild!.tagName).toBe('H2')
+        expect(wrap.querySelector('ul')).toBeNull()
+        expect(wrap.nextElementSibling!.tagName).toBe('UL')
+    })
+
+    test('consecutive headings each get their own wrap', () => {
+        const doc = makeDoc('<h2>A</h2><h3>B</h3><p>x</p>')
+        keepHeadingsWithNext(doc)
+        const wraps = doc.body.querySelectorAll('.bismuth-keep')
+        expect(wraps.length).toBe(2)
+        expect(wraps[0].querySelector('h2')).not.toBeNull()
+        expect(wraps[1].querySelector('h3')).not.toBeNull()
+        expect(doc.body.lastElementChild!.tagName).toBe('P')
+    })
+
+    test('a trailing heading with nothing after it is left alone', () => {
+        const doc = makeDoc('<p>x</p><h2>End</h2>')
+        keepHeadingsWithNext(doc)
+        expect(doc.body.querySelector('.bismuth-keep')).toBeNull()
+    })
+})
+
+describe('trimTrailingMargin', () => {
+    test('zeroes the bottom margin down the trailing element chain only', () => {
+        const doc = makeDoc('<p id="a">a</p><ul id="l"><li id="i1">1</li><li id="i2">2</li></ul>')
+        trimTrailingMargin(doc)
+        const mb = (id: string) =>
+            (doc.getElementById(id) as HTMLElement).style.marginBottom
+        expect(mb('l')).toBe('0px')
+        expect(mb('i2')).toBe('0px')
+        expect(mb('a')).toBe('')
+        expect(mb('i1')).toBe('')
     })
 })
 
