@@ -125,6 +125,9 @@ export function FileTree(props: {
     ) => void
     // The folder path currently under a sidebar drag ("" = the tree root), for the drop highlight.
     dropHighlight: () => string | null
+    // File-level actions App owns (Export…), added to every file's menu — the sidebar row's and,
+    // through `bismuth-file-menu`, the tab's — so both surfaces list the same file actions.
+    fileActions?: (path: string) => MenuItem[]
 }) {
     // Guards an optimistic edit against a /tree fetch that was ALREADY in flight when
     // the edit happened. Solid's `mutate` is a raw signal setter: it does not clear the
@@ -797,6 +800,7 @@ export function FileTree(props: {
                 icon: 'Pencil',
                 onSelect: () => setEditing(node.path),
             })
+            if (!isDir) items.push(...(props.fileActions?.(node.path) ?? []))
             items.push({
                 label: 'Delete',
                 icon: 'Trash2',
@@ -816,6 +820,48 @@ export function FileTree(props: {
             x: e.clientX,
             y: e.clientY,
             items: buildMenuItems(node),
+        })
+    }
+
+    /** The tab bar's right-click on a tab holding a vault file: open THIS menu for that file, so a
+     *  note gets the same actions from its tab as from its tree row. `extra` carries the tab-only
+     *  actions (pin, tab name, export), appended after a separator. Rename reveals the row first,
+     *  since the inline rename box lives in a row that may sit under a collapsed folder. */
+    const onFileMenu = (ev: Event) => {
+        const { path, x, y, extra } = (ev as CustomEvent).detail as {
+            path: string
+            x: number
+            y: number
+            extra: MenuItem[]
+        }
+        const node = findNode(path)
+        if (!node) return
+        ev.preventDefault()
+        const items = buildMenuItems(node).map(it =>
+            it.label === 'Rename'
+                ? {
+                      ...it,
+                      onSelect: () => {
+                          revealAncestors(path)
+                          setEditing(path)
+                      },
+                  }
+                : it,
+        )
+        const tail = extra.map((it, i) =>
+            i === 0 && items.length ? { ...it, separatorBefore: true } : it,
+        )
+        setMenu({ x, y, items: [...items, ...tail] })
+    }
+    window.addEventListener('bismuth-file-menu', onFileMenu)
+    onCleanup(() => window.removeEventListener('bismuth-file-menu', onFileMenu))
+
+    function revealAncestors(path: string) {
+        const segs = path.split('/').slice(0, -1)
+        setOpen(prev => {
+            const n = new Set(prev)
+            segs.forEach((_, i) => n.add(segs.slice(0, i + 1).join('/')))
+            return n
         })
     }
 

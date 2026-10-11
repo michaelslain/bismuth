@@ -63,6 +63,8 @@ The tagging contract, including the `bismuth prop set` command for agents, is in
 
 Right-click a row, or use the **+** button at the top of the sidebar, to create a note, folder, base, spreadsheet or drawing. A new entry gets a placeholder name such as `Untitled.md` and opens straight into rename.
 
+Right-clicking a tab that shows a file opens the same menu as that file's sidebar row, including **Export…**, followed by the tab's own actions: **Rename tab…**, **Pin tab** and **Reset name**.
+
 | Action | How |
 |---|---|
 | Rename | Right-click, **Rename**. The hidden extension is added back for you |

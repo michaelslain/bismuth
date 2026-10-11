@@ -3024,6 +3024,19 @@ export default function App() {
         )
     }
 
+    // File-level actions shared by the sidebar row's menu and a file tab's menu (via FileTree).
+    function fileMenuActions(path: string): MenuItem[] {
+        return isExportable(path)
+            ? [
+                  {
+                      label: 'Export…',
+                      icon: 'Download',
+                      onSelect: () => openExport(path),
+                  },
+              ]
+            : []
+    }
+
     // Shared tab context menu (right-click) — used by both the horizontal strip and the
     // vertical right-rail. Kept as one builder so the toolbar and the rail
     // never drift.
@@ -3032,7 +3045,7 @@ export default function App() {
         const content = tab.root.kind === 'leaf' ? tab.root.content : null
         const items: MenuItem[] = [
             {
-                label: 'Rename…',
+                label: 'Rename tab…',
                 icon: 'Pencil',
                 onSelect: () => startRenameTab(tab.id),
             },
@@ -3076,12 +3089,27 @@ export default function App() {
                 ],
             })
         }
-        if (content && isExportable(content))
-            items.push({
-                label: 'Export…',
-                icon: 'Download',
-                onSelect: () => openExport(content),
-            })
+        // A file tab takes its file actions from the tree (below); only other tabs add them here.
+        const fileTab = !!content && !isSentinel(content)
+        // A tab showing one vault file gets the file tree's own menu for that file, with these
+        // tab actions appended — FileTree owns create/rename/delete/visibility, so it builds it.
+        // The tree claims the event with preventDefault; a path it does not hold falls through.
+        if (
+            fileTab &&
+            !window.dispatchEvent(
+                new CustomEvent('bismuth-file-menu', {
+                    detail: {
+                        path: content,
+                        x: e.clientX,
+                        y: e.clientY,
+                        extra: items,
+                    },
+                    cancelable: true,
+                }),
+            )
+        )
+            return
+        if (content) items.push(...fileMenuActions(content))
         setEditorMenu({ x: e.clientX, y: e.clientY, items })
     }
 
@@ -3185,6 +3213,7 @@ export default function App() {
                             activeFile={focusedContent()}
                             startItemDrag={startItemDrag}
                             dropHighlight={sidebarDropHighlight}
+                            fileActions={fileMenuActions}
                         />
                     }
                 />
