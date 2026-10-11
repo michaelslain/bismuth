@@ -78,4 +78,14 @@ export class RowCache<T> {
             if (e.version < version) e.stale = true
         }
     }
+
+    /** Mark ONE key stale regardless of version — for a write this client just made to the base
+     *  behind `key`. The write's version bump reaches the client over SSE, which can land after the
+     *  write's own response, so until then `isFresh` still answers yes at the pre-write version and
+     *  a refetch issued on the response would repaint the pre-write value. The cached value is kept
+     *  for instant paint, as with `invalidate`. */
+    markStale(key: string): void {
+        const e = this.store.get(key)
+        if (e) e.stale = true
+    }
 }

@@ -287,14 +287,23 @@ export function BaseView(props: {
         rowsKey,
         async key => {
             const version = serverVersion()
-            // Fresh cache hit (same version, not invalidated): skip the /rows round-trip.
-            if (rowCache.isFresh(key, version)) return rowCache.peek(key)!
+            const d = doc()!
+            const spec = activeSpec()
+            const ownRows = spec?.kind === 'base' && !spec.ref
+            // Fresh cache hit (same version, not invalidated): skip the /rows round-trip. A base's
+            // OWN rows are read off the document, so their entry is only fresh if it was built from
+            // the document on screen now: two overlapping revalidations (a write's own refetch and
+            // the SSE one) let the first build rows from the PRE-write document while the second's
+            // file read is still in flight, and the second would otherwise trust that entry and
+            // keep the old rows on screen for good.
+            if (rowCache.isFresh(key, version)) {
+                const cached = rowCache.peek(key)!
+                if (!ownRows || cached.rows === d.rows) return cached
+            }
             // Claimed BEFORE the resolve so a slower fetch that started earlier — at an older
             // version — can be told, once it settles, that a newer one already landed for this
             // key (see rowCache.ts's `begin`/`set(..., token)`).
             const token = rowCache.begin(key)
-            const d = doc()!
-            const spec = activeSpec()
             // Own-rows case: `{ kind: 'base' }` with no `ref` is the sentinel this base's
             // OWN table already parsed client-side — resolveSource would just return [] for
             // it server-side (no ref to follow), so it's read straight off the document
@@ -304,7 +313,7 @@ export function BaseView(props: {
             // resolve is stamped with `version` so a call issued after a write can't dedupe
             // onto an in-flight request `api.resolveRows` issued before it (api.ts).
             const rows =
-                spec?.kind === 'base' && !spec.ref
+                ownRows
                     ? d.rows
                     : spec
                       ? await api.resolveRows(spec, version)
@@ -354,6 +363,23 @@ export function BaseView(props: {
             await refetchDoc()
             await startRevalidate(refetchRows)
         })
+
+    // `revalidateAll` for a write this view's child just made to the base file. The write's
+    // version bump arrives over SSE, which can land AFTER the write's own response; until it does,
+    // both caches still count as fresh at the pre-write version, so a plain `revalidateAll` would
+    // repaint the pre-write rows — a deleted flashcard staying on screen, an edited one showing its
+    // old text, and the next action on that stale card addressing the wrong row index. Staling this
+    // base's two entries first makes the refetch re-read the file. Resolves once the rows landed,
+    // so a caller can hold its own write lock until the new rows are on screen.
+    const revalidateAfterWrite = async () => {
+        docCache.markStale(sig())
+        const rk = rowsKey()
+        if (rk) rowCache.markStale(rk)
+        await startRevalidate(async () => {
+            await refetchDoc()
+            await startRevalidate(refetchRows)
+        })
+    }
 
     // Revalidate on a server version bump, but ONLY when the change can actually affect this
     // view's rows. Otherwise a busy vault re-resolves + re-renders every open base continuously
@@ -858,10 +884,11 @@ export function BaseView(props: {
                                     // reviewed markdown card (a write to another note) AND for a
                                     // reviewed row card (a write to the base file's stored row),
                                     // and the callback does not say which. Narrowing it means
-                                    // threading that discriminator up from the child. Runs the
-                                    // same nested-transition revalidation as the SSE path (see
-                                    // `revalidateAll`) so the pane does not suspend and remount.
-                                    onReviewed={revalidateAll}
+                                    // threading that discriminator up from the child. Stales this
+                                    // base's cache first (see `revalidateAfterWrite`), then runs the
+                                    // same nested-transition revalidation as the SSE path so the
+                                    // pane does not suspend and remount.
+                                    onReviewed={revalidateAfterWrite}
                                     onBarSlots={setFlashcardsSlots}
                                 />
                             </Match>

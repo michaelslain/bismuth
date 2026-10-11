@@ -33,6 +33,17 @@ describe('RowCache', () => {
         expect(c.isFresh('a', 11)).toBe(true)
     })
 
+    it('markStale stales one key at the SAME version, for a write whose bump has not arrived', () => {
+        const c = new RowCache<number>()
+        c.set('a', 1, 10)
+        c.set('b', 2, 10)
+        c.markStale('a')
+        expect(c.isFresh('a', 10)).toBe(false) // the write's own refetch must re-read
+        expect(c.isFresh('b', 10)).toBe(true) // other bases untouched
+        expect(c.peek('a')).toBe(1)
+        c.markStale('missing') // no entry: a no-op, not a throw
+    })
+
     it('re-setting at the new version clears the stale flag', () => {
         const c = new RowCache<number>()
         c.set('a', 1, 10)

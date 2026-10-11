@@ -5,6 +5,7 @@ import {
     itemKey,
     nextCramPos,
     reindexRetiredAfterDelete,
+    reindexPendingAfterDelete,
     reindexRetiredAfterInsert,
     canGrade,
     progressTotal,
@@ -593,4 +594,25 @@ test('bidirectional: a pending forward grade leaves the reverse entry showing', 
     )
     const pending = new Map([[itemKey(q[0]), pendingDue(q[0])]])
     expect(withoutPending(q, pending).map(it => it.dir)).toEqual(['rev'])
+})
+
+// ── reindexPendingAfterDelete: a delete under an in-flight grade keeps hiding the right card ───
+
+test('reindexPendingAfterDelete drops the deleted row and shifts higher entries down', () => {
+    const pending = new Map<string, unknown>([
+        ['1:fwd', null],
+        ['3:fwd', '2026-10-01'],
+        ['3:rev', null],
+        ['5:fwd', null],
+    ])
+    const out = reindexPendingAfterDelete(pending, 3)
+    expect([...out]).toEqual([
+        ['1:fwd', null],
+        ['4:fwd', null],
+    ])
+})
+
+test('reindexPendingAfterDelete returns the same map when nothing is pending', () => {
+    const empty = new Map<string, unknown>()
+    expect(reindexPendingAfterDelete(empty, 0)).toBe(empty)
 })

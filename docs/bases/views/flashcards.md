@@ -71,9 +71,11 @@ Click **cram** in the view bar to review every card regardless of due date. Cram
 
 Three buttons sit on both faces of the card under review:
 
-- **Edit this card** opens a modal with **front** and **back** fields; saving writes the row.
+- **Edit this card** opens a modal with **front** and **back** fields; saving writes the row and the card shows the new text straight away.
 - **Reset this card's progress** removes its scheduling columns (and the `Back` companions on a bidirectional deck), so the card is new again. Front, back and every other column stay.
-- **Delete this card** removes the row at once, with an **Undo** toast.
+- **Delete this card** removes the row at once and moves to the next card, with an **Undo** toast. The session total drops by the deleted card's remaining reviews.
+
+Each of the three buttons, and grading, is ignored until the previous edit, reset or delete has reloaded the deck, so a second click never lands on a card that has already moved.
 
 ## Manage every card in the deck
 
@@ -111,5 +113,7 @@ The modal saves each edit as you make it and refreshes the review queue when it 
 The queue is pure and unit-tested in `flashcardsQueue.ts`: `buildQueue` (due filter, cram, bidirectional), `backField` (the `Back` suffix), `nextPosAfterGrade`, `nextCramPos` and `itemKey` (`<rowIndex>:<dir>`, the cram retire key), the pending-grade overlay (`withoutPending`, `livePending`) that hides a graded card until the refetch brings its new due date, and the per-base-path session store (`loadSession`, `saveSession`). `flashcardsActions.ts` holds `scheduleColumns`, `resetKeys` and `stripSchedule`.
 
 Writes go to the base file by row index: a grade is `POST /cards/review` with `file` and `index` (`api.reviewCardRow`, which runs `applyReviewToRow` in `core/src/srs/reviewRow.ts`); edits and resets are `api.rowUpdate`, reset all is `api.rowUpdateMany`, adds are `api.rowCreate`, deletes `api.rowDelete`, reorders `api.rowReorder`. The bulk parser is `parseBulk` in `cardsEdit.ts`.
+
+After an edit, reset or delete the view awaits `onReviewed`, which BaseView wires to `revalidateAfterWrite`: it marks this base's document and rows entries stale (`RowCache.markStale`) before refetching, because the write's SSE version bump can arrive after the write's own response and both caches still count as fresh at the old version until it does. The view's write lock (`writing`) holds edit, reset, delete and grade until that refetch resolves. A delete also shifts the pending-grade overlay with `reindexPendingAfterDelete`, so an in-flight grade keeps hiding the card it graded rather than the row that slid into its index.
 
 Source: `app/src/bases/FlashcardsView.tsx`, `app/src/bases/flashcardsQueue.ts`, `app/src/bases/flashcardsActions.ts`, `app/src/bases/EditCardsModal.tsx`, `app/src/bases/CardsListEditor.tsx`, `app/src/bases/cardsEdit.ts`, `app/src/bases/BaseView.tsx`, `core/src/routes/bases.ts`, `core/src/srs/reviewRow.ts`

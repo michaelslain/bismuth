@@ -57,6 +57,7 @@ import {
     nextCramPos,
     reindexRetiredAfterDelete,
     reindexRetiredAfterInsert,
+    reindexPendingAfterDelete,
     itemKey,
     canGrade,
     progressTotal,
@@ -252,7 +253,9 @@ export function FlashcardsView(props: {
     rows: Row[]
     config: BaseConfig
     basePath?: string
-    onReviewed: () => void
+    /** Refetch the deck after a write. Resolves once the new rows are on screen, which is what lets
+     *  edit and delete hold their write lock until the card they acted on is really gone. */
+    onReviewed: () => void | Promise<void>
     /** Where this deck's bar controls go. The host owns the ONE view bar and hands the slots to
      *  it; called with `undefined` on unmount so the bar sheds them with the deck.
      *
@@ -300,6 +303,19 @@ export function FlashcardsView(props: {
     // In-flight lock: true while a grade's async row-write / refetch is settling, so a
     // second press can't advance a second card (see canGrade / the double-skip fix).
     const [grading, setGrading] = createSignal(false)
+    // Write lock for edit / reset / delete: held from the write until the host's refetch has put the
+    // new rows on screen. Until then the card on screen still carries the PRE-write row index, and a
+    // second action on it would address whichever row has since moved into that index.
+    const [writing, setWriting] = createSignal(false)
+    const withWriteLock = async (fn: () => Promise<void>) => {
+        if (writing() || grading()) return
+        setWriting(true)
+        try {
+            await fn()
+        } finally {
+            setWriting(false)
+        }
+    }
 
     // Per-session tally for the host bar's `readouts` region — one bucket per SM-2 grade so EASY
     // shows
@@ -390,7 +406,10 @@ export function FlashcardsView(props: {
         // Single-advance lock: bail unless the answer is revealed AND no prior grade is
         // still settling. Guarding on `revealed` alone left an async gap where a
         // re-reveal + re-press double-graded the same card ("skips it twice").
-        if (!c || !canGrade({ revealed: revealed(), grading: grading() }))
+        if (
+            !c ||
+            !canGrade({ revealed: revealed(), grading: grading() || writing() })
+        )
             return
         setGrading(true)
         // Cram mode never writes scheduling — it's practice, not review.
@@ -489,31 +508,38 @@ export function FlashcardsView(props: {
         setEditingCard(true)
     }
 
-    const saveCardEdit = async (front: string, back: string) => {
-        const c = current()
-        if (!c || !props.basePath) return
-        await api.rowUpdate(props.basePath, c.index, {
-            ...c.r.note,
-            [frontField()]: front,
-            [backField()]: back,
+    const saveCardEdit = (front: string, back: string) =>
+        withWriteLock(async () => {
+            const c = current()
+            if (!c || !props.basePath) return
+            try {
+                await api.rowUpdate(props.basePath, c.index, {
+                    ...c.r.note,
+                    [frontField()]: front,
+                    [backField()]: back,
+                })
+            } catch (e) {
+                pushToast(`Could not save the card: ${(e as Error).message}`)
+                return
+            }
+            setEditingCard(false)
+            await props.onReviewed()
         })
-        setEditingCard(false)
-        props.onReviewed()
-    }
 
     // Reset the current card's progress: strips its due/ease/interval columns (and, on a
     // bidirectional deck, their `*Back` companions) so it reviews as new again — front/back and
     // every other field are untouched. Mirrors EditCardsModal's per-card "reset progress".
-    const resetCurrentCard = async () => {
-        const c = current()
-        if (!c || !props.basePath) return
-        const next = stripSchedule(
-            c.r.note,
-            resetKeys(baseSchedule(), bidirectional()),
-        )
-        await api.rowUpdate(props.basePath, c.index, next)
-        props.onReviewed()
-    }
+    const resetCurrentCard = () =>
+        withWriteLock(async () => {
+            const c = current()
+            if (!c || !props.basePath) return
+            const next = stripSchedule(
+                c.r.note,
+                resetKeys(baseSchedule(), bidirectional()),
+            )
+            await api.rowUpdate(props.basePath, c.index, next)
+            await props.onReviewed()
+        })
 
     // Delete the current card and advance: rowDelete drops it from the base, the
     // onReviewed refetch shrinks the queue, and the next card shifts into this pos
@@ -525,68 +551,70 @@ export function FlashcardsView(props: {
     // premature "Cram complete" or resurfacing an already-mastered card. So we
     // reconcile it against the post-delete deck BEFORE the refetch lands (the delete itself has
     // already succeeded by then, so a failure never touches the counters).
-    const deleteCurrent = async () => {
-        const c = current()
-        if (!c || !props.basePath) return
-        // Delete first: the counters below only move once the row is really gone, so a failed
-        // delete leaves the session exactly as it was.
-        const basePath = props.basePath
-        const row = props.rows[c.index]
-        if (!row) return
-        const note = storedNote(row)
-        const front = String(note[frontField()] ?? '').trim()
-        const wasCram = cram()
-        const perRow = bidirectional() ? 2 : 1 // fwd+rev entries a row contributes
-        try {
-            await api.rowDelete(basePath, c.index)
-        } catch (e) {
-            pushToast(`Could not delete the card: ${(e as Error).message}`)
-            return
-        }
-        setRevealed(false)
-        if (wasCram) {
-            const newRetired = new Set(
-                reindexRetiredAfterDelete(retired(), c.index),
+    const deleteCurrent = () =>
+        withWriteLock(async () => {
+            const c = current()
+            if (!c || !props.basePath) return
+            // Delete first: the counters below only move once the row is really gone, so a failed
+            // delete leaves the session exactly as it was.
+            const basePath = props.basePath
+            const row = props.rows[c.index]
+            if (!row) return
+            const note = storedNote(row)
+            const front = String(note[frontField()] ?? '').trim()
+            const wasCram = cram()
+            // The entries this row still has in the session — the frozen total drops by exactly
+            // these (normal mode: its due, ungraded directions; cram: every direction).
+            const removed = queue().filter(it => it.index === c.index).length
+            try {
+                await api.rowDelete(basePath, c.index)
+            } catch (e) {
+                pushToast(`Could not delete the card: ${(e as Error).message}`)
+                return
+            }
+            setRevealed(false)
+            setSessionTotal(t => (t === null ? t : Math.max(0, t - removed)))
+            setPending(p => reindexPendingAfterDelete(p, c.index))
+            if (wasCram) {
+                const newRetired = new Set(
+                    reindexRetiredAfterDelete(retired(), c.index),
+                )
+                // buildQueue is pure, so the cram queue after the row is removed can be
+                // computed now (cram ignores due dates, so this matches the coming refetch).
+                const newQueue = buildQueue(
+                    props.rows.filter((_, i) => i !== c.index),
+                    dueField(),
+                    todayISO(),
+                    true,
+                    bidirectional(),
+                )
+                setRetired(newRetired)
+                // Reposition onto the next still-unmastered card in the shrunk deck (or the
+                // completion sentinel when none remain). Scanning from pos()-1 makes the slot
+                // the deleted card vacated the first candidate; nextCramPos never lands on a
+                // retired card and reports -1 only when every survivor is mastered.
+                const np =
+                    newQueue.length === 0
+                        ? 0
+                        : nextCramPos(newQueue, pos() - 1, newRetired)
+                setPos(np === -1 ? newQueue.length : np)
+            }
+            pushUndoToast(
+                front
+                    ? `deleted card ${front.length > 40 ? `${front.slice(0, 39)}…` : front}`
+                    : 'deleted card',
+                async () => {
+                    await restoreRowAt(basePath, note, c.index)
+                    if (wasCram)
+                        setRetired(
+                            new Set(reindexRetiredAfterInsert(retired(), c.index)),
+                        )
+                    setSessionTotal(t => (t === null ? t : t + removed))
+                    await props.onReviewed()
+                },
             )
-            // buildQueue is pure, so the cram queue after the row is removed can be
-            // computed now (cram ignores due dates, so this matches the coming refetch).
-            const newQueue = buildQueue(
-                props.rows.filter((_, i) => i !== c.index),
-                dueField(),
-                todayISO(),
-                true,
-                bidirectional(),
-            )
-            setRetired(newRetired)
-            // The frozen total drops by the entries this row contributed.
-            setSessionTotal(t => (t === null ? t : Math.max(0, t - perRow)))
-            // Reposition onto the next still-unmastered card in the shrunk deck (or the
-            // completion sentinel when none remain). Scanning from pos()-1 makes the slot
-            // the deleted card vacated the first candidate; nextCramPos never lands on a
-            // retired card and reports -1 only when every survivor is mastered.
-            const np =
-                newQueue.length === 0
-                    ? 0
-                    : nextCramPos(newQueue, pos() - 1, newRetired)
-            setPos(np === -1 ? newQueue.length : np)
-        }
-        props.onReviewed()
-        pushUndoToast(
-            front
-                ? `deleted card ${front.length > 40 ? `${front.slice(0, 39)}…` : front}`
-                : 'deleted card',
-            async () => {
-                await restoreRowAt(basePath, note, c.index)
-                if (wasCram) {
-                    setRetired(
-                        new Set(reindexRetiredAfterInsert(retired(), c.index)),
-                    )
-                    setSessionTotal(t => (t === null ? t : t + perRow))
-                }
-                props.onReviewed()
-            },
-        )
-    }
+            await props.onReviewed()
+        })
 
     // Edit / reset / delete for the current card, handed to FlipCard's `actions` slot — which pins
     // them outside its reveal button, so a click on one never triggers the flip.

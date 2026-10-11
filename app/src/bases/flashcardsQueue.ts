@@ -241,6 +241,26 @@ export function reindexRetiredAfterInsert(
 }
 
 /**
+ * `reindexRetiredAfterDelete` for the `PendingGrades` map: a delete that lands while a grade's
+ * refetch is still in flight shifts every higher row down by one, and an entry left on its old
+ * index would hide whichever row slid into it (an unscheduled row carries the same `null` due a
+ * new card was graded at, so it matches and stays hidden for good). Returns `pending` itself when
+ * nothing moved.
+ */
+export function reindexPendingAfterDelete(
+    pending: PendingGrades,
+    deletedIndex: number,
+): PendingGrades {
+    if (pending.size === 0) return pending
+    const out = new Map<string, unknown>()
+    for (const [key, due] of pending) {
+        const [moved] = reindexRetiredAfterDelete([key], deletedIndex)
+        if (moved) out.set(moved, due)
+    }
+    return out
+}
+
+/**
  * Whether a grade action may fire right now — the single-advance lock.
  *
  * A grade is valid only when the answer is REVEALED and no prior grade is still

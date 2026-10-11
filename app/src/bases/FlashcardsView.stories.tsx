@@ -144,7 +144,7 @@ export const Default: Story = {
             <FlashcardsView
                 rows={DECK}
                 config={config}
-                onReviewed={() => reviewed.n++}
+                onReviewed={() => void reviewed.n++}
             />
         </Pane>
     ),
@@ -202,7 +202,7 @@ export const CramMode: Story = {
                 rows={DECK}
                 config={config}
                 basePath={CRAM_BASE_PATH}
-                onReviewed={() => reviewed.n++}
+                onReviewed={() => void reviewed.n++}
             />
         </Pane>
     ),
@@ -869,7 +869,7 @@ export const Bidirectional: Story = {
                 rows={biRows()}
                 config={biConfig}
                 basePath={BI_BASE_PATH}
-                onReviewed={() => reviewed.n++}
+                onReviewed={() => void reviewed.n++}
             />
         </Pane>
     ),
@@ -930,7 +930,7 @@ export const PersistedGradeAdvancesOnce: Story = {
                 rows={DECK}
                 config={config}
                 basePath={PERSISTED_BASE_PATH}
-                onReviewed={() => reviewed.n++}
+                onReviewed={() => void reviewed.n++}
             />
         </Pane>
     ),
@@ -965,7 +965,7 @@ export const FailedDeleteLeavesCounters: Story = {
                 rows={DECK}
                 config={config}
                 basePath={FAILED_DELETE_BASE_PATH}
-                onReviewed={() => reviewed.n++}
+                onReviewed={() => void reviewed.n++}
             />
         </Pane>
     ),
@@ -1016,7 +1016,7 @@ export const DeleteWithUndo: Story = {
                         rows={rows()}
                         config={config}
                         basePath={UNDO_DELETE_BASE_PATH}
-                        onReviewed={() => reviewed.n++}
+                        onReviewed={() => void reviewed.n++}
                     />
                 </Pane>
                 <ToastHost />
