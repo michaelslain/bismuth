@@ -24,6 +24,8 @@ Open the file you want, then run **Export current file…** (Mod+Shift+P, or Fil
 | Font size | PDF | 9, 10, 11, 12, 14, 16 or 18 pt; 12 by default. A larger size repaginates the document |
 | Theme | Always | `dark` or `light` |
 
+Your choices stay put when you switch to another tab and back. Format, font size, theme and the two plain-note toggles carry over to every export you open next; the input path, content mode and start day belong to that export tab.
+
 The tab is not available for `.settings`, which is configuration rather than a document.
 
 ## Which formats each file supports
@@ -120,7 +122,7 @@ The pane (`ExportView.tsx`) and the command (`cli/src/commands/export.ts`) call 
 
 ### Add a format or a file kind
 
-A new file kind needs a row in the extension matrix in `formats.ts` (`formatsFor()` returns it, and `isExportable()` gates the command). Then add a branch to `bodyHtml` in `exporters.ts` that returns the kind's HTML body, and a case in `renderExport` for any format that bypasses HTML. A new format adds an `ExportFormat` value and a `renderExport` case. `md` and `csv` skip HTML (`markdownText`, `csvText`; CSV throws for anything but a base). The pane persists the output folder and calendar span in `localStorage` under `bismuth.export.destFolder` and `bismuth.export.calSpan`.
+A new file kind needs a row in the extension matrix in `formats.ts` (`formatsFor()` returns it, and `isExportable()` gates the command). Then add a branch to `bodyHtml` in `exporters.ts` that returns the kind's HTML body, and a case in `renderExport` for any format that bypasses HTML. A new format adds an `ExportFormat` value and a `renderExport` case. `md` and `csv` skip HTML (`markdownText`, `csvText`; CSV throws for anything but a base). The pane persists its options in `localStorage`: the output folder and calendar span under `bismuth.export.destFolder` and `bismuth.export.calSpan`, the shared formatting options under `bismuth.export.prefs`, and each tab's input path, hand-picked mode and start day under `bismuth.export.tab:<path>`. `export/exportPrefs.ts` validates what it reads back, so a bad stored value falls back to its default.
 
 ### Building the document
 

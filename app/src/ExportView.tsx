@@ -1,5 +1,12 @@
 // app/src/ExportView.tsx
-import { createSignal, createResource, createEffect, For, Show } from 'solid-js'
+import {
+    createSignal,
+    createResource,
+    createEffect,
+    on,
+    For,
+    Show,
+} from 'solid-js'
 import { api } from './api'
 import { settings } from './settings'
 import { Icon } from './icons/Icon'
@@ -16,15 +23,12 @@ import { isTauri } from './platform'
 import { pluralWord } from './plural'
 import { pickFile, pickFolder } from './appWindow'
 import { formatsForOptions, ext } from './export/formats'
-import {
-    defaultModeForView,
-    PDF_FONT_SIZES,
-    DEFAULT_PDF_FONT_SIZE,
-} from './export/options'
+import { defaultModeForView, PDF_FONT_SIZES } from './export/options'
 import { readThemePalette } from './export/resolvePalette'
 import { SHEET_PAPER, sheetInkVars } from './export/sheetInk'
 import { renderExport, renderPreview } from './export/exporters'
 import { pageSections } from './export/pageBreaks'
+import { parseExportPrefs, parseExportTabState } from './export/exportPrefs'
 import { drawingToPng } from './export/drawingRaster'
 import { deliverFile, writeToFolder, type Delivery } from './export/download'
 import { readCache, writeCache } from './viewCache'
@@ -108,6 +112,10 @@ function toVaultRelative(abs: string, vaultRoot: string): string | null {
 // localStorage; no schema).
 const DEST_KEY = 'bismuth.export.destFolder'
 const SPAN_KEY = 'bismuth.export.calSpan'
+// The formatting options every export pane shares, and one tab's own state keyed by the path
+// it was opened for (export/exportPrefs.ts) — so leaving the pane and coming back keeps them.
+const PREFS_KEY = 'bismuth.export.prefs'
+const TAB_KEY = 'bismuth.export.tab:'
 // Thin wrappers over viewCache's readCache/writeCache (JSON-encoded) rather than
 // duplicating the try/catch + typeof-guard logic here.
 const loadLs = (k: string): string => readCache<string>(k) ?? ''
@@ -149,8 +157,10 @@ export function ExportView(props: {
     // keystroke — refetching would re-run the resource under the <Suspense> in PaneContent,
     // detaching this subtree and dropping the input's focus mid-word. We commit the draft on
     // blur / Enter (and immediately when chosen via the native picker).
-    const [srcPath, setSrcPath] = createSignal(props.path)
-    const [srcDraft, setSrcDraft] = createSignal(props.path)
+    const prefs = parseExportPrefs(readCache(PREFS_KEY))
+    const tab = parseExportTabState(readCache(TAB_KEY + props.path))
+    const [srcPath, setSrcPath] = createSignal(tab.src ?? props.path)
+    const [srcDraft, setSrcDraft] = createSignal(srcPath())
     const commitSrc = () => {
         const v = srcDraft().trim()
         if (v && v !== srcPath()) setSrcPath(v)
@@ -161,30 +171,34 @@ export function ExportView(props: {
     // Base-export options (ignored for non-base files). `mode` defaults per view kind but is
     // user-overridable; the calendar controls
     // anchor + size the grid.
-    const [mode, setMode] = createSignal<RenderMode>('data')
-    const [userSetMode, setUserSetMode] = createSignal(false)
+    const [mode, setMode] = createSignal<RenderMode>(tab.mode ?? 'data')
+    const [userSetMode, setUserSetMode] = createSignal(!!tab.mode)
     const [calSpan, setCalSpan] = createSignal<CalSpan>(
         (loadLs(SPAN_KEY) as CalSpan) || 'month',
     )
-    const [calStart, setCalStart] = createSignal('') // "" = today
+    const [calStart, setCalStart] = createSignal(tab.calStart) // "" = today
 
-    const [theme, setTheme] = createSignal<ExportTheme>('dark')
+    const [theme, setTheme] = createSignal<ExportTheme>(prefs.theme)
     const [busy, setBusy] = createSignal(false)
 
     // PDF-only: the body font size (pt). Default 12 (a standard document body size). Bigger sizes
     // render larger text and repaginate (taller content overflows onto more Letter pages).
-    const [pdfFontSize, setPdfFontSize] = createSignal(DEFAULT_PDF_FONT_SIZE)
+    const [pdfFontSize, setPdfFontSize] = createSignal(prefs.pdfFontSize)
 
     // Non-base `.md` only: whether the note's leading YAML frontmatter is included in the
     // export. Default true (the historical behavior — a base's own frontmatter is config, never
     // rendered as content, so the control only makes sense for a plain note).
-    const [includeFrontmatter, setIncludeFrontmatter] = createSignal(true)
+    const [includeFrontmatter, setIncludeFrontmatter] = createSignal(
+        prefs.includeFrontmatter,
+    )
 
     // Non-base `.md` only, same scope as includeFrontmatter above: whether the "## "/"### "/…
     // markdown marker is rendered before h2-h6 headings (mirrors the app's own editor aesthetic).
     // Default false — clean formatting, no markdown syntax showing (GitHub issue: an export
     // literally rendered "## Problem 1" as visible text).
-    const [showMarkdownSyntax, setShowMarkdownSyntax] = createSignal(false)
+    const [showMarkdownSyntax, setShowMarkdownSyntax] = createSignal(
+        prefs.showMarkdownSyntax,
+    )
 
     // Read the source file once per path: if it's a `type: base` md, expose its view kind so we
     // can offer the visual/data toggle. null for any non-base file (prose md /
@@ -224,10 +238,16 @@ export function ExportView(props: {
 
     // Reset per-file selections when the source changes (the mode default should re-derive from
     // the new file's view kind).
-    createEffect(() => {
-        srcPath()
-        setUserSetMode(false)
-    })
+    // Deferred: the first run would wipe a mode restored from this tab's saved state.
+    createEffect(
+        on(
+            srcPath,
+            () => {
+                setUserSetMode(false)
+            },
+            { defer: true },
+        ),
+    )
 
     // Default the render mode from the base's view kind (calendar/cards/kanban/list →
     // "visual"), until the user manually picks a mode this session.
@@ -255,6 +275,14 @@ export function ExportView(props: {
     const [format, setFormat] = createSignal<ExportFormat>(
         formats()[0] ?? 'html',
     )
+    // The format last picked by hand. Kept apart from format() because the available set is
+    // only known once the file's base info loads: a saved `csv` has to survive the first,
+    // not-yet-a-base pass of the validity effect below.
+    const [wantedFormat, setWantedFormat] = createSignal(prefs.format)
+    const pickFormat = (f: ExportFormat) => {
+        setWantedFormat(f)
+        setFormat(f)
+    }
 
     // Absolute vault root — used to seed the file picker and map a picked absolute path back
     // to the vault-relative path the exporter expects.
@@ -296,8 +324,27 @@ export function ExportView(props: {
     // md+csv; a different file changes the matrix entirely).
     createEffect(() => {
         const f = formats()
-        if (!f.includes(format())) setFormat(f[0] ?? 'html')
+        const want = wantedFormat()
+        if (want && f.includes(want)) setFormat(want)
+        else if (!f.includes(format())) setFormat(f[0] ?? 'html')
     })
+
+    createEffect(() =>
+        writeCache(PREFS_KEY, {
+            format: wantedFormat(),
+            theme: theme(),
+            pdfFontSize: pdfFontSize(),
+            includeFrontmatter: includeFrontmatter(),
+            showMarkdownSyntax: showMarkdownSyntax(),
+        }),
+    )
+    createEffect(() =>
+        writeCache(TAB_KEY + props.path, {
+            src: srcPath() === props.path ? undefined : srcPath(),
+            mode: userSetMode() ? mode() : undefined,
+            calStart: calStart(),
+        }),
+    )
 
     const browseSource = async () => {
         if (!isTauri()) {
@@ -441,7 +488,8 @@ export function ExportView(props: {
                     class={styles['exp-paper']}
                     classList={{
                         [styles['paper-wide']]: isBase() && mode() === 'visual',
-                        [styles['paper-pdf']]: !result.error && !!result()?.previewPdf,
+                        [styles['paper-pdf']]:
+                            !result.error && !!result()?.previewPdf,
                     }}
                     // The wrapper's fill while the iframe is loading/empty follows the CHOSEN export
                     // theme (not the app's own live scope): print-paper cream for "light", the app's
@@ -486,9 +534,13 @@ export function ExportView(props: {
                                             when={r().previewImg}
                                             fallback={
                                                 <iframe
-                                                    class={styles['export-frame']}
+                                                    class={
+                                                        styles['export-frame']
+                                                    }
                                                     sandbox="allow-same-origin"
-                                                    srcdoc={r().previewHtml ?? ''}
+                                                    srcdoc={
+                                                        r().previewHtml ?? ''
+                                                    }
                                                 />
                                             }
                                         >
@@ -526,8 +578,7 @@ export function ExportView(props: {
 
             <div class={styles.exppanel}>
                 <div class={styles['exp-title']}>
-                    <Icon value="Share" /> Export{' '}
-                    {isBase() ? 'base' : 'note'}
+                    <Icon value="Share" /> Export {isBase() ? 'base' : 'note'}
                 </div>
 
                 <div class={styles.field}>
@@ -648,7 +699,7 @@ export function ExportView(props: {
                                 <ChipToggle
                                     selected={format() === f}
                                     icon={FORMAT_ICON[f]}
-                                    onToggle={() => setFormat(f)}
+                                    onToggle={() => pickFormat(f)}
                                 >
                                     {LABEL[f]}
                                 </ChipToggle>
@@ -658,21 +709,13 @@ export function ExportView(props: {
                     {/* PNG can't hold more than one page, so a page-broken note exports as N separate
               files (note-1.png, note-2.png, …) instead of one — flag that up front. */}
                     <Show when={format() === 'png' && (pageCount() ?? 1) > 1}>
-                        <Text
-                            as="span"
-                            inherit
-                            class={styles['exp-hint']}
-                        >
+                        <Text as="span" inherit class={styles['exp-hint']}>
                             {pageCount()} pages (page breaks) → exports as{' '}
                             {pageCount()} separate PNG files
                         </Text>
                     </Show>
                     <Show when={format() === 'pdf' && pdfPageCount() > 0}>
-                        <Text
-                            as="span"
-                            inherit
-                            class={styles['exp-hint']}
-                        >
+                        <Text as="span" inherit class={styles['exp-hint']}>
                             {pdfPageCount()}{' '}
                             {pluralWord(pdfPageCount(), 'page')}
                         </Text>
