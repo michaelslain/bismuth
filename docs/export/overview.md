@@ -32,13 +32,13 @@ The tab is not available for `.settings`, which is configuration rather than a d
 
 | File | Formats |
 |---|---|
-| Note (`.md`) | `html`, `pdf`, `png`, `md` |
-| Base (`.md` with `type: base`), `Data` content | `html`, `pdf`, `png`, `md`, `csv` |
-| Base, `Visual` content | `html`, `pdf`, `png` |
-| Sheet (`.sheet`) | `html`, `pdf`, `png` |
+| Note (`.md`) | `pdf`, `html`, `png`, `md` |
+| Base (`.md` with `type: base`), `Data` content | `pdf`, `html`, `png`, `md`, `csv` |
+| Base, `Visual` content | `pdf`, `html`, `png` |
+| Sheet (`.sheet`) | `pdf`, `html`, `png` |
 | Drawing (`.draw`) | `pdf`, `png` |
 
-A base is detected by its frontmatter, not its extension. The export pane picks a valid format again whenever a change makes the current one unavailable.
+A base is detected by its frontmatter, not its extension. The export pane starts on `pdf` until you pick a format, and returns to `pdf` whenever a change makes the current format unavailable.
 
 A sheet exports its first sheet only, as a plain table of raw cell values. Formatting, formulas and later sheets are not included.
 
@@ -118,7 +118,7 @@ The pane (`ExportView.tsx`) and the command (`cli/src/commands/export.ts`) call 
 - `renderPreview(path, format, deps, theme, opts)` computes only what the pane shows. It never produces export bytes, so flipping options is instant.
 - `renderExport(path, format, deps, theme, opts)` returns `{ bytes, mime, filename }`, plus `files` when a note splits into several PNGs.
 
-`ExportDeps` carries `read`, `resolveRows`, `htmlToPdf`, `htmlToPng`, `drawingToPng`, `katexCss` and `docFontCss`. The pane resolves the format list with `formatsFor()` and `formatsForOptions()` in `formats.ts`, and defaults the mode with `defaultModeForView()` in `options.ts`.
+`ExportDeps` carries `read`, `resolveRows`, `htmlToPdf`, `htmlToPng`, `drawingToPng`, `katexCss` and `docFontCss`. The pane resolves the format list with `formatsFor()` and `formatsForOptions()` in `formats.ts`, and defaults the format with `defaultFormat()` in `formats.ts` and the mode with `defaultModeForView()` in `options.ts`.
 
 ### Add a format or a file kind
 

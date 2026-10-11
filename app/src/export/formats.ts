@@ -15,8 +15,8 @@ export function ext(path: string): string {
 // A base is a `type: base` md file, so it falls under `md` (same formats) — there is
 // no separate `base` extension.
 const MATRIX: Record<string, ExportFormat[]> = {
-    md: ['html', 'pdf', 'png', 'md'],
-    sheet: ['html', 'pdf', 'png'],
+    md: ['pdf', 'html', 'png', 'md'],
+    sheet: ['pdf', 'html', 'png'],
     draw: ['pdf', 'png'],
 }
 
@@ -27,6 +27,11 @@ export function formatsFor(path: string): ExportFormat[] {
     // A `.base.jsonl` is a base: same formats as a markdown base (the extension is `jsonl`).
     if (isBasePath(path)) return MATRIX.md
     return MATRIX[ext(path)] ?? []
+}
+
+/** The format the export pane starts on: `pdf` wherever it is offered, else the first. */
+export function defaultFormat(formats: ExportFormat[]): ExportFormat {
+    return formats.includes('pdf') ? 'pdf' : (formats[0] ?? 'pdf')
 }
 
 export function isExportable(path: string): boolean {
@@ -46,6 +51,6 @@ export function formatsForOptions(
 ): ExportFormat[] {
     if (!isBase) return formatsFor(path)
     return mode === 'data'
-        ? ['html', 'pdf', 'png', 'md', 'csv']
-        : ['html', 'pdf', 'png']
+        ? ['pdf', 'html', 'png', 'md', 'csv']
+        : ['pdf', 'html', 'png']
 }

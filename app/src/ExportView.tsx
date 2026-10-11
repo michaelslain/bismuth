@@ -22,7 +22,7 @@ import { pushToast } from './ui/ToastHost'
 import { isTauri } from './platform'
 import { pluralWord } from './plural'
 import { pickFile, pickFolder } from './appWindow'
-import { formatsForOptions, ext } from './export/formats'
+import { formatsForOptions, ext, defaultFormat } from './export/formats'
 import { defaultModeForView, PDF_FONT_SIZES } from './export/options'
 import { readThemePalette } from './export/resolvePalette'
 import { SHEET_PAPER, sheetInkVars } from './export/sheetInk'
@@ -272,9 +272,7 @@ export function ExportView(props: {
     })
 
     const formats = () => formatsForOptions(srcPath(), isBase(), mode())
-    const [format, setFormat] = createSignal<ExportFormat>(
-        formats()[0] ?? 'html',
-    )
+    const [format, setFormat] = createSignal<ExportFormat>(defaultFormat(formats()))
     // The format last picked by hand. Kept apart from format() because the available set is
     // only known once the file's base info loads: a saved `csv` has to survive the first,
     // not-yet-a-base pass of the validity effect below.
@@ -326,7 +324,7 @@ export function ExportView(props: {
         const f = formats()
         const want = wantedFormat()
         if (want && f.includes(want)) setFormat(want)
-        else if (!f.includes(format())) setFormat(f[0] ?? 'html')
+        else if (!f.includes(format())) setFormat(defaultFormat(f))
     })
 
     createEffect(() =>
