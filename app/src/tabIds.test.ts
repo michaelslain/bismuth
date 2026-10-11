@@ -8,6 +8,10 @@ import {
     contentLabel,
     contentIcon,
     isSentinel,
+    isChatSurface,
+    CHAT_PREFIX,
+    DAEMON_TAB,
+    GRAPH_TAB,
     isUnnamedNote,
 } from './tabIds'
 
@@ -104,5 +108,17 @@ describe('the daemon page tab', () => {
     })
     test('is a sentinel', () => {
         expect(isSentinel('::daemon')).toBe(true)
+    })
+})
+
+describe('isChatSurface', () => {
+    test('chat tabs and the daemon page are chat surfaces', () => {
+        expect(isChatSurface(CHAT_PREFIX + 'abc')).toBe(true)
+        expect(isChatSurface(DAEMON_TAB)).toBe(true)
+    })
+    test('notes, other panes and nothing are not', () => {
+        expect(isChatSurface('a/note.md')).toBe(false)
+        expect(isChatSurface(GRAPH_TAB)).toBe(false)
+        expect(isChatSurface(null)).toBe(false)
     })
 })

@@ -42,6 +42,12 @@ export function isSentinel(content: string): boolean {
     return content.startsWith('::')
 }
 
+// Panes that already ARE a chat with the daemon (a chat tab, the daemon page): Cmd+K quick ask
+// does nothing over them, since a popover chat on top of a chat is redundant.
+export function isChatSurface(content: string | null): boolean {
+    return content !== null && (content.startsWith(CHAT_PREFIX) || content === DAEMON_TAB)
+}
+
 // Chat tabs are labeled by an injected provider (tabIds stays framework-free): App wires it to
 // the per-session conversation title (chatTitles) with the daemon's identity name as fallback,
 // so precedence is title > daemon persona > "Chat". Because the provider reads signals, any

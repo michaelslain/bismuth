@@ -94,6 +94,7 @@ import {
     TERMINAL_PREFIX,
     GRAPH_TAB,
     DAEMON_TAB,
+    isChatSurface,
     DAEMON_CHAT_ID,
     FEEDBACK_TAB,
     EXPORT_PREFIX,
@@ -1480,6 +1481,7 @@ export default function App() {
                 ?.focus()
             return
         }
+        if (isChatSurface(focusedContent())) return
         const active = document.activeElement
         const view =
             active instanceof HTMLElement

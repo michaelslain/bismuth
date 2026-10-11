@@ -83,7 +83,7 @@ Notes whose visibility is `hidden` are left out of this block entirely ([visibil
 
 ## How do I ask a quick question?
 
-Press `Mod+K` (the `quick-ask` keybinding, rebindable in `.settings`) to open the chat in a popover beside what you are writing. In a note it opens at the caret; in any other pane it opens at the top of that pane. Press `Mod+K` again while it is open to focus its composer.
+Press `Mod+K` (the `quick-ask` keybinding, rebindable in `.settings`) to open the chat in a popover beside what you are writing. In a note it opens at the caret; in any other pane it opens at the top of that pane. Over a chat tab or the daemon page, which are already a chat, `Mod+K` does nothing. Press `Mod+K` again while it is open to focus its composer.
 
 The popover is the chat itself, in a smaller box. The header shows the daemon's face and name (`chat` when the daemon is off), then `[ apply ]`, `[ open in chat ]` and `[ esc ]`. Under it are the chat tab's transcript, composer and controls row:
 
