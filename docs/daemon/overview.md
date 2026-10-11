@@ -64,7 +64,7 @@ The left column is the daemon: a face, its name, and a chat. The right column ha
 | services | One per background process, `on` or `off` | Right-click for Enable or Disable, Delete |
 | log | Recent activity events, newest first | None |
 
-Click a box heading to open that section across the whole page; Esc or **close** returns. Rows that need you (a due or failed page, a failed cron) sort first, and a box too short for its rows ends with a `+N more` line that opens the section. A trailing `N resolved` line opens resolved inbox pages. The page has no create control: ask the daemon in its chat for a cron or a service, and approve the command it runs.
+Click a box heading to open that section across the whole page; Esc or **close** returns. Rows that need you (a due or failed page, a failed cron) sort first, and a box too short for its rows ends with a `+N more` line that opens the section. A trailing `N resolved` line opens resolved inbox pages, and disabled crons sort last, collapsed behind a `show N disabled` line that expands them in place. The page has no create control: ask the daemon in its chat for a cron or a service, and approve the command it runs.
 
 The status at the top right is one of:
 

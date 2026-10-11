@@ -116,31 +116,75 @@ export const Failed: Story = {
     },
 }
 
-/** A disabled cron definition — the whole row dims, status reads `off`. */
+const enabledCron = {
+    name: 'daily-digest',
+    file: 'daily-digest',
+    schedule: '0 8 * * *',
+    on: 'schedule' as const,
+    watch: null,
+    enabled: true,
+    lastFired: null,
+    running: false,
+    startedAt: null,
+}
+const disabledCron = (name: string) => ({
+    ...enabledCron,
+    name,
+    file: name,
+    schedule: '0 2 * * *',
+    enabled: false,
+})
+
+/** Disabled crons collapse in the box: the enabled rows show, the disabled ones fold into one
+ *  trailing `show 2 disabled` line that expands them in place. */
 export const Disabled: Story = {
     render: () => (
-        <div style={{ width: '360px', height: '120px' }}>
+        <div style={{ width: '360px', height: '160px' }}>
             <DaemonCrons
                 {...baseProps}
                 crons={[
-                    {
-                        name: 'nightly-backup',
-                        file: 'nightly-backup',
-                        schedule: '0 2 * * *',
-                        on: 'schedule',
-                        watch: null,
-                        enabled: false,
-                        lastFired: null,
-                        running: false,
-                        startedAt: null,
-                    },
+                    disabledCron('nightly-backup'),
+                    enabledCron,
+                    disabledCron('weekly-prune'),
                 ]}
             />
         </div>
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('off')).toBeInTheDocument()
+        await expect(canvas.getByText('daily-digest')).toBeInTheDocument()
+        await expect(canvas.queryByText('nightly-backup')).toBeNull()
+        await userEvent.click(canvas.getByText('show 2 disabled'))
+        await expect(canvas.getByText('nightly-backup')).toBeInTheDocument()
+        await expect(canvas.getByText('hide disabled')).toBeInTheDocument()
+    },
+}
+
+/** The opened section lists every enabled cron first; the disabled ones sit collapsed behind
+ *  `show 2 disabled` and expand last, dimmed and reading `off`. */
+export const DisabledFull: Story = {
+    render: () => (
+        <div style={{ width: '560px', height: '200px' }}>
+            <DaemonCrons
+                {...baseProps}
+                variant="full"
+                crons={[
+                    disabledCron('nightly-backup'),
+                    enabledCron,
+                    disabledCron('weekly-prune'),
+                ]}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const enabled = canvasElement.querySelector('[data-testid="daemon-crons-full"]')!
+        await expect(canvasElement.querySelector('[data-testid="daemon-crons-disabled"]')).toBeNull()
+        await userEvent.click(within(canvasElement).getByText('show 2 disabled'))
+        const disabled = canvasElement.querySelector('[data-testid="daemon-crons-disabled"]')!
+        await expect(enabled.textContent).toContain('daily-digest')
+        await expect(disabled.textContent).toContain('nightly-backup')
+        await expect(disabled.textContent).toContain('weekly-prune')
+        await expect(within(disabled as HTMLElement).getAllByText('off')).toHaveLength(2)
     },
 }
 
@@ -377,7 +421,9 @@ export const Full: Story = {
     play: async ({ canvasElement }) => {
         const list = canvasElement.querySelector('[data-testid="daemon-crons-full"]')!
         await expect(list.getAttribute('data-variant')).toBe('full')
-        await expect(list.querySelectorAll('[data-testid="daemon-row"]').length).toBe(12)
+        await expect(list.querySelectorAll('[data-testid="daemon-row"]').length).toBe(11)
+        await expect(canvasElement.querySelector('[data-testid="daemon-crons-disabled"]')).toBeNull()
+        await expect(within(canvasElement).getByText('show 1 disabled')).toBeInTheDocument()
         await expect(canvasElement.querySelector('[data-testid="daemon-section-crons"]')).toBeNull()
     },
 }

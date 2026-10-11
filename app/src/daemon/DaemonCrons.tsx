@@ -68,8 +68,28 @@ function DaemonCrons(props: DaemonCronsProps) {
     const [deletingName, setDeletingName] = createSignal<string | null>(null)
     const [busyName, setBusyName] = createSignal<string | null>(null)
     const full = () => props.variant === 'full'
+    // Enabled crons sort attention first; disabled ones always go last — summarised by one
+    // `show N disabled` line that expands them in place (box and opened section alike).
     const sorted = createMemo(() =>
-        attentionFirst(props.crons, c => cronNeedsAttention(c, props.daemonRunning)),
+        attentionFirst(
+            props.crons.filter(c => c.enabled),
+            c => cronNeedsAttention(c, props.daemonRunning),
+        ),
+    )
+    const disabled = createMemo(() => props.crons.filter(c => !c.enabled))
+    const [showDisabled, setShowDisabled] = createSignal(false)
+    const disabledEl = (testid?: string) => (
+        <Show when={disabled().length > 0}>
+            <DaemonMoreLine
+                label={
+                    showDisabled()
+                        ? 'hide disabled'
+                        : `show ${disabled().length} disabled`
+                }
+                onOpen={() => setShowDisabled(v => !v)}
+            />
+            <Show when={showDisabled()}>{listEl(disabled(), testid)}</Show>
+        </Show>
     )
     const limited = createMemo(
         () => !full() && props.limit !== undefined && sorted().length > props.limit,
@@ -168,13 +188,13 @@ function DaemonCrons(props: DaemonCronsProps) {
         )
     }
 
-    const listEl = () => (
+    const listEl = (crons: DaemonCron[], testid?: string) => (
         <div
             class={styles.cronsList}
             data-variant={props.variant}
-            data-testid={full() ? 'daemon-crons-full' : undefined}
+            data-testid={testid}
         >
-            <For each={shown()}>
+            <For each={crons}>
                 {cron => (
                     <DaemonRow
                         name={cron.name}
@@ -226,7 +246,10 @@ function DaemonCrons(props: DaemonCronsProps) {
                             </Text>
                         }
                     >
-                        {listEl()}
+                        <Show when={sorted().length > 0}>
+                            {listEl(sorted(), 'daemon-crons-full')}
+                        </Show>
+                        {disabledEl('daemon-crons-disabled')}
                     </Show>
                     {menuEl()}
                 </>
@@ -241,13 +264,14 @@ function DaemonCrons(props: DaemonCronsProps) {
                 class={props.class}
             >
                 <Show when={props.crons.length > 0}>
-                    {listEl()}
+                    <Show when={shown().length > 0}>{listEl(shown())}</Show>
                     <Show when={limited()}>
                         <DaemonMoreLine
                             label={`+${sorted().length - (props.limit as number)} more`}
                             onOpen={props.onOpenSection}
                         />
                     </Show>
+                    {disabledEl()}
                 </Show>
                 {menuEl()}
             </DaemonSection>
