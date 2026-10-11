@@ -191,3 +191,10 @@ export function ghostBox(
         endMin: end,
     }
 }
+
+/** Scroll offset that puts the earliest timed event across `days` at the top of the grid, or
+ *  null when none of those days has one. */
+export function firstEventTop(events: CalendarEvent[], days: string[]): number | null {
+    const starts = days.flatMap(ds => timedOn(events, ds).map(e => eventMinutes(e).startMin))
+    return starts.length ? minutesToPx(Math.min(...starts)) : null
+}

@@ -3,7 +3,6 @@
 // for the two gotchas): only `store` is a prop.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { CalendarEvent, Category } from '../../types'
-import { onMount } from 'solid-js'
 import { WeekView } from './WeekView'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
@@ -17,7 +16,6 @@ const STORY_H = '760px'
 
 import { expect, within } from 'storybook/test'
 import { placeRows } from '../../taskPlacement'
-import { GRID_PX } from './timeGridLayout'
 import { taskRow } from '../../../ui/_calendarAssertions'
 import { todayISO } from '../../../../../core/src/dates'
 
@@ -89,21 +87,13 @@ const WEEK_EVENTS: CalendarEvent[] = [
 
 
 /** A full, busy week (Mon 1/12 – Sun 1/18): back-to-back meetings in one category, overlapping
- *  lanes, a two-category event and an all-day one, unfiled events, five categories. The body is
- *  scrolled to 7:30am so the day's events are in view. */
+ *  lanes, a two-category event and an all-day one, unfiled events, five categories. The grid opens
+ *  scrolled to the week's earliest event. */
 export const BusyWeek: Story = {
     render: () => {
         seedCalendarState({ date: new Date(2026, 0, 12), categories: WEEK_CATEGORIES, events: WEEK_EVENTS })
-        let host!: HTMLDivElement
-        // The grid opens at midnight; scroll its body to 7:30am (72px per hour, GRID_PX / 24).
-        onMount(() =>
-            requestAnimationFrame(() => {
-                for (const el of host.querySelectorAll<HTMLElement>('*'))
-                    if (getComputedStyle(el).overflowY === 'auto') el.scrollTop = (7.5 * GRID_PX) / 24
-            }),
-        )
         return (
-            <div ref={host} style={{ height: STORY_H }}>
+            <div style={{ height: STORY_H }}>
                 <CalendarFrame>
                     <WeekView store={new EventStore(new MemoryBackend())} />
                 </CalendarFrame>

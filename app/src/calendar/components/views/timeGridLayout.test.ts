@@ -6,6 +6,7 @@ import {
     MINUTES_PER_DAY,
     allDayOn,
     eventMinutes,
+    firstEventTop,
     ghostBox,
     layoutDay,
     minutesToPx,
@@ -221,4 +222,16 @@ test('30 min is the one-line compact block, 45 min is the first with room for ti
     expect(half.compact).toBe(true)
     expect(three.height).toBe(minutesToPx(45) - 3)
     expect(three.compact).toBe(false)
+})
+
+test('firstEventTop is the earliest timed start across the shown days', () => {
+    const list = [
+        ev('a', 'd1', '10:00'),
+        ev('b', 'd2', '08:30'),
+        ev('c', 'd2'),
+        ev('d', 'd3', '06:00'),
+    ]
+    expect(firstEventTop(list, ['d1', 'd2'])).toBe(minutesToPx(510))
+    expect(firstEventTop(list, ['d4'])).toBeNull()
+    expect(firstEventTop([ev('x', 'd1')], ['d1'])).toBeNull()
 })

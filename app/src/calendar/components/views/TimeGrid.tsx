@@ -1,4 +1,4 @@
-import { For, Index } from 'solid-js'
+import { For, Index, createEffect } from 'solid-js'
 import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
 import { formatGutterHour } from '../../dates'
@@ -19,7 +19,7 @@ import {
     computeCreatePayload,
     pointerDistance,
 } from './timeGridDrag'
-import { allDayOn, eventMinutes, yToMinutes } from './timeGridLayout'
+import { allDayOn, eventMinutes, firstEventTop, yToMinutes } from './timeGridLayout'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 
@@ -33,6 +33,24 @@ interface Props {
 export function TimeGrid(props: Props) {
     const today = todayISO(new Date())
     const colRefs: Record<string, HTMLDivElement | undefined> = {}
+    let body: HTMLDivElement | undefined
+    let stickyTop: HTMLDivElement | undefined
+    let rows: HTMLDivElement | undefined
+    // Each date range scrolls once, as soon as its events are in, so the earliest event's top
+    // sits just under the sticky header, half a line down so its hour rule (drawn straddling the
+    // boundary) stays in view. Later edits within the same range never yank the view.
+    let scrolledFor = ''
+    createEffect(() => {
+        const days = props.dates.map(d => todayISO(d))
+        const key = days.join()
+        if (!body || !stickyTop || !rows || key === scrolledFor) return
+        const top = firstEventTop(props.events, days)
+        if (top === null) return
+        scrolledFor = key
+        const rowsTop = rows.getBoundingClientRect().top - body.getBoundingClientRect().top
+        const halfLine = parseFloat(getComputedStyle(body).getPropertyValue('--cell-h')) / 2 || 0
+        body.scrollTop = body.scrollTop + rowsTop + top - stickyTop.offsetHeight - halfLine
+    })
 
     function getMinutesFromEvent(e: MouseEvent, ds: string): number {
         const col = colRefs[ds]
@@ -203,9 +221,9 @@ export function TimeGrid(props: Props) {
 
     return (
         <div class={styles['time-grid']}>
-            <div class={styles['time-grid-body']}>
+            <div class={styles['time-grid-body']} ref={body}>
                 <div class={styles['time-grid-columns']}>
-                    <div class={styles['time-grid-sticky-top']}>
+                    <div class={styles['time-grid-sticky-top']} ref={stickyTop}>
                         <DayHeaderRow dates={props.dates} today={today} />
                         <AllDayRow
                             dates={props.dates}
@@ -225,7 +243,7 @@ export function TimeGrid(props: Props) {
                             )}
                         />
                     </div>
-                    <div class={styles['time-grid-time-rows']}>
+                    <div class={styles['time-grid-time-rows']} ref={rows}>
                         <DayGutter>
                             <Index each={HOURS}>
                                 {h => (
