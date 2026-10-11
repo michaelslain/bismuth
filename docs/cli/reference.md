@@ -409,6 +409,29 @@ Builds the knowledge graph and prints it as JSON.
 
 For an agent, hidden notes disappear with their edges, tags used only by them, and community labels taken from their titles. An agent's `--memory` must be exactly `<vault>/.daemon/memory`; any other directory is refused because only that one can be visibility-checked.
 
+## history
+
+`history` searches past conversations in the vault by date and text, reading the agent CLI's own session logs rather than memory.
+Memory holds the facts the `dream` cron distilled from a conversation; `history` returns what was said, so it answers "what did we talk about yesterday".
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `history` | `[query…] [--on <date>\|--since <date> --until <date>\|--days <n>\|--all] [--limit <n>] [--vault <dir>]` | Lists sessions, most recent first, with their dated turns. With query words, only turns containing every word. | no |
+| `history show` | `<session-id> [--vault <dir>]` | Prints one session turn by turn. | no |
+
+A date is `YYYY-MM-DD`, `today` or `yesterday`, in local time. With no date flag and no `--all`, the range is the last 30 days; `--limit` defaults to 10 sessions.
+Each turn is `{at, you, claude}`: the prompt, its timestamp, and Claude's prose reply; tool calls and their output are left out, and so are subagent and cron sessions.
+A listing without query words keeps the opening and closing turns of a long session and marks the omitted middle; `history show` keeps more of it.
+Output stays near 9,000 characters: the most recent sessions are printed whole, and the rest are listed under `more` as `{id, date, turnCount, matched, opening}`, opened with `history show <id>`.
+
+```bash
+bismuth history bside --on yesterday
+```
+
+The logs read are Claude Code's, kept per working directory under `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`), so a session counts when it started in the vault folder: an in-app chat, an app terminal tab, or `claude` run there.
+The session running the command is left out of its own results.
+An agent is refused `history` in a restricted vault, because a transcript quotes whatever its session read and has no single path to filter.
+
 ## install and uninstall
 
 Installs or removes the CLI and MCP server machine-wide. Neither touches the vault. The packaged app installs the CLI and MCP server itself on launch; see [install](../overview/install.md).
@@ -427,7 +450,7 @@ Saves, searches and removes notes in the vault's memory graph (the 3rd brain). T
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
 | `memory remember` | `--name <n> --content <md> [--type <t>] [--tags a,b] [--folder <f>] [--description <text>] [--memory <dir>] [--vault <dir>]` | Saves a note. Overwrites any note with the same name. | no |
-| `memory recall` | `<query…> [--folder <f>] [--memory <dir>] [--vault <dir>]` | Searches the graph. Queries accept `tag:`, `type:`, `keyword:`, `link:`, `after:` and `before:` filters. | no |
+| `memory recall` | `<query…> [--folder <f>] [--memory <dir>] [--vault <dir>]` | Searches the graph. Queries accept `tag:`, `type:`, `keyword:`, `link:`, `after:` and `before:` filters. Prints the best matches whole and the rest under `more` as pointers. | no |
 | `memory forget` | `<name> [--memory <dir>] [--vault <dir>]` | Removes a note. The name may be folder-prefixed. | no |
 
 The memory directory is `--memory`, else `BISMUTH_MEMORY_DIR` (set inside the app's terminal tabs), else `<vault>/.daemon/memory`. That last fallback applies only when the vault has the daemon enabled; otherwise the command fails with the same message the MCP server gives.
@@ -619,6 +642,7 @@ Argument parsing is in `cli/src/args.ts`.
 The visibility gate in `core/src/visibilityCliGate.ts` runs once in `index.ts` before any command, so no invocation skips it.
 Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `call` attaches the owner token and turns failures into messages.
 The run registry is `core/src/runRegistry.ts`.
+`history` parses each session log with `memory/src/sessionHistory.ts`, which reuses the turn folding in `memory/src/transcript.ts`.
 `cli/src/semantic.ts` serves the semantic commands: it posts to `/search/semantic` on the vault's running server, and falls back to `core/src/vaultEmbed.ts` in process.
 
-Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/commands/*.ts`, `core/src/visibilityCliGate.ts`
+Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`

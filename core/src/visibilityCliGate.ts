@@ -300,8 +300,8 @@ const COMPOUND_OVERRIDES: Record<string, CommandTier> = {
  * the vault restricts anything, because nothing filters their output per file: `api` (a passthrough
  * to ANY server route, including the exact `GET /file?path=…` ambient-oracle read this feature
  * exists to close — it must never be in another tier), `serve` (a second ungated core), `export`
- * (follows embeds and base sources through readers that were never audited), `chat` (transcripts
- * have no single path), `settings status-bar` (runs shell
+ * (follows embeds and base sources through readers that were never audited), `chat` and `history`
+ * (transcripts have no single path), `settings status-bar` (runs shell
  * output), `update`, and whatever the CLI grows next.
  *
  * The groups that DO filter their own output moved to {@link FILTERED_COMMANDS}. `note` and `daily`
@@ -336,7 +336,7 @@ export function commandTier(args: string[]): CommandTier {
 
 /** Named in the refuse-tier message so an agent knows which commands that tier means. */
 const REFUSED_COMMAND_NAMES =
-    '`api`, `serve`, `export`, `chat`, `settings status-bar`, `settings set`, `folder-visibility` and `update`'
+    '`api`, `serve`, `export`, `chat`, `history`, `settings status-bar`, `settings set`, `folder-visibility` and `update`'
 
 export interface GateDecision {
     /** True when the CLI may run. */

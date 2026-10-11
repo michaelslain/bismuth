@@ -129,11 +129,13 @@ export const commands: CommandMap = {
             if (!query) fail('usage: bismuth memory recall <query…> [--folder <f>]')
             const { dir, denied } = await resolveMemory(args)
             const result = await recall({ query, folder: flag(args, 'folder') }, dir)
-            const notes = result.notes.filter(n => {
-                const ref = parseNoteRef(n.name)
+            const visible = (name: string) => {
+                const ref = parseNoteRef(name)
                 return !denied(ref.name, ref.folder)
-            })
-            out({ ...result, count: notes.length, notes }, args)
+            }
+            const notes = result.notes.filter(n => visible(n.name))
+            const more = result.more.filter(p => visible(p.name))
+            out({ ...result, count: notes.length + more.length, notes, more }, args)
         },
     },
     'memory forget': {

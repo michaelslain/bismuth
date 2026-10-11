@@ -10,6 +10,10 @@ import {
     deleteNote,
     readNote,
     query,
+    parseQuery,
+    orderMatches,
+    budgetNotes,
+    memoryNotePath,
     parseNoteRef,
     todayISO,
     type NoteType,
@@ -159,9 +163,25 @@ export async function remember(
 export async function recall(
     args: { query: string; folder?: string },
     dir: string,
-): Promise<{ ok: true; count: number; notes: MemoryNote[] }> {
+): Promise<{
+    ok: true
+    count: number
+    notes: MemoryNote[]
+    more: { name: string; type: string; description: string; path: string }[]
+}> {
     const results = await query(args.query, dir, args.folder || undefined)
-    return { ok: true, count: results.length, notes: results }
+    // Best matches whole, the rest as pointers, so a broad query fits one tool result.
+    const ordered = orderMatches(results, parseQuery(args.query).keywords)
+    const { notes, more } = budgetNotes(ordered)
+    return {
+        ok: true,
+        count: results.length,
+        notes,
+        more: more.map(p => {
+            const ref = parseNoteRef(p.name)
+            return { ...p, path: memoryNotePath(ref.name, dir, ref.folder) }
+        }),
+    }
 }
 
 export async function forget(

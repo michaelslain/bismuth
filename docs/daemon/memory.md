@@ -88,9 +88,12 @@ The tools print JSON. This is `bismuth memory recall "type:person tag:climbing" 
       "content": "Alice climbs with me on weekends. See [[spring-trip]].",
       "backlinks": ["spring-trip"]
     }
-  ]
+  ],
+  "more": []
 }
 ```
+
+A `recall` result fits one tool result: `notes` holds the best matches whole, up to about 9,000 characters, and `more` lists every other match as `{name, type, description, path}`. Read a pointer's `path` for the full note. `count` is the number of matches, shown and pointed to. Matches are ordered by how well they fit the query's words, or by most recently updated for a query of filters only.
 
 ## Query syntax
 
@@ -116,6 +119,8 @@ The check fails closed. The strictest `visibility` line in the frontmatter wins,
 ## How `dream` maintains the graph
 
 The seeded `dream` cron works the memory health report worst first, at most 12 items per run, then folds your changed notes and the session transcripts that your terminal sessions and chats save as `auto-*` notes into a small set of canonical notes. It writes memory only through `remember` and `forget`, and files an inbox page only when something needs you. [Crons and processes](crons-and-processes.md#seeded-crons-and-files) describes the full run.
+
+The dream deletes each `auto-*` note once it has folded it in, so memory keeps facts, not conversations. To find what was said in a past conversation, run `bismuth history` ([CLI reference](../cli/reference.md#history)).
 
 The rules it follows when it writes a note:
 
@@ -151,6 +156,8 @@ The memory folder is its own git repository, separate from the vault's. While th
 | `pack.ts`, `recall.ts` | Cut ranked notes into the bounded `<bismuth-memory>` block; `pack.ts` also holds `formatProfile` (the profile, cut at 1,500 characters on a line boundary) and the index order (hubs first, then in-links, recency, type) |
 | `health.ts` | `brainHealth` computes the health report items and `formatBrainHealth` renders them as a numbered list capped at 3,000 characters; the daemon fills `{{brainReport}}` in a cron prompt with it (`daemon/src/daemon/brainReport.ts`) |
 | `transcript.ts` | Turn a finished conversation into an `auto-*` note |
+| `resultBudget.ts` | Order `recall` matches and split them into whole notes and pointers at the result budget |
+| `sessionHistory.ts` | Parse a Claude Code session log for `bismuth history`, and apply the same budget to its sessions |
 | `search.ts` | `searchMemory`, a ranked search that returns whole notes (up to 10) above the prompt-mode score floor |
 
-Source: `memory/src/{graph,query,rank,pack,recall,search,health,noteCache,transcript}.ts`, `daemon/src/daemon/{brainReport,defaultCrons}.ts`, `mcp/src/memory.ts`, `cli/src/commands/memory.ts`, `core/src/{memoryRecall,backup}.ts`
+Source: `memory/src/{graph,query,rank,pack,recall,search,health,noteCache,transcript,resultBudget,sessionHistory}.ts`, `daemon/src/daemon/{brainReport,defaultCrons}.ts`, `mcp/src/memory.ts`, `cli/src/commands/memory.ts`, `core/src/{memoryRecall,backup}.ts`

@@ -233,7 +233,7 @@ const memoryTools = [
     {
         name: 'recall',
         description:
-            "Search THIS VAULT'S Bismuth memory graph (the '3rd brain'), a store separate from your own native memory (supports tag:, type:, keyword:, link:, after:, before: filters).",
+            "Search THIS VAULT'S Bismuth memory graph (the '3rd brain'), a store separate from your own native memory (supports tag:, type:, keyword:, link:, after:, before: filters). Returns the best matches whole in `notes` and the rest in `more` as name/description/path pointers; read a pointer's path for its full note.",
         inputSchema: {
             type: 'object',
             properties: {

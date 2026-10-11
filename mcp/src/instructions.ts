@@ -14,6 +14,9 @@ export const SERVER_INSTRUCTIONS =
     'first read guides/converting-obsidian-to-bismuth.md or ' +
     'guides/converting-bismuth-to-obsidian.md. ' +
     'Making or changing a colour theme: first read guides/custom-themes.md. ' +
+    'Asked about a past conversation ("yesterday", "last time", "what we talked about"): run ' +
+    '`bismuth history [words] --on <date>` first; memory holds distilled facts, not what was ' +
+    'said, and session logs are not in the vault or .daemon/logs. ' +
     "Asked about the user's tasks, deadlines or what is due: run `bismuth task list --query " +
     "'not done and due before <date>'` and read the descriptions, never grep for the user's " +
     'wording; tasks live in any note and a task names its deliverable, not its project ' +

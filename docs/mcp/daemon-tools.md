@@ -26,7 +26,7 @@ The memory tools read and write the vault's memory graph. [Memory](../daemon/mem
 | Tool | Arguments | Returns |
 |---|---|---|
 | `remember` | `name`, `content`, `type?`, `tags?`, `folder?`, `description?` | `{ok, name}`. Creates or overwrites a note and keeps an existing note's `type`, `created`, `description` and `visibility` |
-| `recall` | `query`, `folder?` | `{ok, count, notes}`. Runs a query such as `type:person tag:climbing` or `after:2026-04-01 auth` |
+| `recall` | `query`, `folder?` | `{ok, count, notes, more}`: the best matches whole, the rest as pointers with a `path`. Runs a query such as `type:person tag:climbing` or `after:2026-04-01 auth` |
 | `forget` | `name` | `{ok, name}`. Deletes a note; the name may be `folder/name` |
 
 `remember` and `forget` refuse a note whose frontmatter restricts it, with `refused: that memory note is not visible to this agent`. The MCP server counts as an agent channel, so it applies the strict `daemon` rules: both `hidden` and `chat-only` notes are refused. A spawner that sets `BISMUTH_MCP_CHANNEL=chat` refuses only `hidden` notes. `recall` never returns a restricted note. Memory tools called when no memory directory resolves return `Memory is unavailable — the daemon is not enabled for this vault.`

@@ -145,7 +145,7 @@ The gate classifies every command by name into four tiers, and a command nobody 
 | Always safe | `backends` `doctor` `docs` `install` `uninstall` `app` `daemon` `agent-graph` `folder-icon` `backup` `page` `memory`, most of `settings`, `checkpoint advance` and `checkpoint ref` | Runs. None can return a note body. |
 | Path-scoped | `read` `write` `move` `delete` `restore` `mkdir` `prop` `render` | Runs unless an argument names a restricted path. |
 | Filtered | `tree` `templates` `graph` `search` `map` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` `checkpoint diff` | Runs with hidden notes left out; an explicit restricted path is still refused. |
-| Refused when the vault restricts anything | `api` `serve` `export` `chat` `update` `checkpoint` (other than `diff`, `advance`, `ref`) `folder-visibility` `settings set` `settings unset` `settings status-bar`, and anything unclassified | Refused. |
+| Refused when the vault restricts anything | `api` `serve` `export` `chat` `history` `update` `checkpoint` (other than `diff`, `advance`, `ref`) `folder-visibility` `settings set` `settings unset` `settings status-bar`, and anything unclassified | Refused. |
 
 Why each refused command stays refused:
 
@@ -153,6 +153,7 @@ Why each refused command stays refused:
 - `serve` starts a second unauthenticated core that the session could query with `curl`.
 - `export` follows embeds and base sources, so a hidden note could be pulled in by an embed.
 - `chat` holds session transcripts, which have no single path to filter.
+- `history` prints past session transcripts, which quote whatever their session read.
 - `folder-visibility`, `settings set` and `settings unset` rewrite the rules; a session that could clear a folder's `hidden` could read what it guarded.
 - `settings status-bar` runs shell output and counts notes by a filter, neither of which can be filtered.
 - `update` rebuilds the installed app with owner-level rights.

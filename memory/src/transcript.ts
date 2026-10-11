@@ -15,6 +15,8 @@ import { writeNote } from './graph'
 
 export interface TranscriptEntry {
     type?: string
+    /** ISO time the entry was written (Claude Code JSONL carries it; SDK messages may not). */
+    timestamp?: string
     message?: {
         role?: string
         content?: string | Array<{ type?: string; text?: string }>
@@ -25,6 +27,8 @@ export interface Turn {
     user: string
     /** Claude's prose for this exchange (text blocks only — tool payloads never included). */
     claude: string
+    /** The prompt's ISO timestamp, when the entry carried one. */
+    at?: string
 }
 
 /** Head-truncate any single message: keeps the substance of long reasoning while stopping one
@@ -97,6 +101,7 @@ export function extractTurns(entries: TranscriptEntry[]): Turn[] {
         if (!text) continue
         if (role === 'user') {
             cur = { user: clampMessage(text), claude: '' }
+            if (entry.timestamp) cur.at = entry.timestamp
             lastClaudeChunk = ''
             turns.push(cur)
         } else {

@@ -16,9 +16,15 @@ import { server } from '../src/server'
 // vault for "essay", a word no task used, before reading a task file by hand.
 // Raised 240 → 280 for the brain / vault_map pointer: a session with no vault map in context has to
 // know to ask for one.
+// Raised 280 → 320 for the history pointer: asked "what did we talk about yesterday", a chat
+// recalled September facts, then searched .daemon/logs and journals before the user said "logs".
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(280)
+    expect(words).toBeLessThan(320)
+})
+
+test('SERVER_INSTRUCTIONS sends past-conversation questions to bismuth history', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('bismuth history')
 })
 
 test('SERVER_INSTRUCTIONS sends task and deadline questions to bismuth task list', () => {
