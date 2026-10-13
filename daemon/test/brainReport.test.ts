@@ -8,8 +8,9 @@ import { tmpdir } from 'node:os'
 import { buildCronPrompt } from '../src/daemon/cron.ts'
 import type { VaultContext } from '../src/lib/config.ts'
 import {
-    applyBrainReport,
-    resolveBrainReport,
+    agendaKey,
+    resolveBrainAgenda,
+    substituteBrainReport,
     BRAIN_REPORT_PLACEHOLDER,
     type BrainReportDeps,
 } from '../src/daemon/brainReport.ts'
@@ -49,18 +50,32 @@ test('the placeholder is {{brainReport}}', () => {
 })
 
 test('a prompt with the placeholder gets the report, wherever it sits and however often it appears', async () => {
-    const out = await applyBrainReport(ctx, 'a\n{{brainReport}}\nb {{brainReport}}', fakes)
-    expect(out).toBe('a\nREPORT-BODY\nb REPORT-BODY')
+    const { text } = await resolveBrainAgenda(ctx, fakes)
+    expect(substituteBrainReport('a\n{{brainReport}}\nb {{brainReport}}', text)).toBe('a\nREPORT-BODY\nb REPORT-BODY')
+    expect(notesLoaded).toBe(1)
 })
 
-test('a prompt without the placeholder is returned unchanged and loads nothing', async () => {
+test('a prompt without the placeholder is returned unchanged', () => {
     const prompt = 'do the thing {{changedSinceLastRun}}'
-    expect(await applyBrainReport(ctx, prompt, fakes)).toBe(prompt)
-    expect(notesLoaded).toBe(0)
+    expect(substituteBrainReport(prompt, 'REPORT-BODY')).toBe(prompt)
+})
+
+test('a healthy graph has a null agenda key; any item gives a stable key that changes with the items', () => {
+    const item = { kind: 'orphan' as const, notes: ['a'], detail: 'nothing links to it' }
+    expect(agendaKey([])).toBeNull()
+    expect(agendaKey([item])).toBe(agendaKey([{ ...item }]))
+    expect(agendaKey([item])).not.toBe(agendaKey([item, { ...item, notes: ['b'] }]))
+    expect(agendaKey([item])).not.toBe(agendaKey([{ ...item, detail: 'other' }]))
+})
+
+test('the agenda key comes from every item, including ones the formatted text leaves out', async () => {
+    const items = [{ kind: 'orphan' as const, notes: ['a'], detail: 'd' }]
+    const agenda = await resolveBrainAgenda(ctx, { ...fakes, health: () => ({ notes: 1, bytes: 1, items }) })
+    expect(agenda).toEqual({ text: 'REPORT-BODY', key: agendaKey(items) })
 })
 
 test('the report renders in the final cron prompt for a non-incremental body too', async () => {
-    const body = await applyBrainReport(ctx, 'agenda: {{brainReport}}', fakes)
+    const body = substituteBrainReport('agenda: {{brainReport}}', (await resolveBrainAgenda(ctx, fakes)).text)
     const prompt = buildCronPrompt({
         jobName: 'x',
         body,
@@ -73,11 +88,8 @@ test('the report renders in the final cron prompt for a non-incremental body too
 
 test('a failure renders one `brain report unavailable: <reason>` line instead of throwing', async () => {
     failWith = new Error('memory dir\nis unreadable')
-    const out = await resolveBrainReport(ctx, fakes)
-    expect(out).toBe('brain report unavailable: memory dir is unreadable')
-    expect(await applyBrainReport(ctx, 'x {{brainReport}} y', fakes)).toBe(
-        'x brain report unavailable: memory dir is unreadable y',
-    )
+    const out = await resolveBrainAgenda(ctx, fakes)
+    expect(out).toEqual({ text: 'brain report unavailable: memory dir is unreadable', key: null })
 })
 
 test('vault basenames come from the vault markdown, skipping dot-dirs but keeping hidden notes resolvable', async () => {
@@ -91,7 +103,7 @@ test('vault basenames come from the vault markdown, skipping dot-dirs but keepin
         join(root, 'secret.md'),
         '---\nvisibility: hidden\n---\n\n# s\n',
     )
-    await resolveBrainReport(ctx, fakes)
+    await resolveBrainAgenda(ctx, fakes)
     expect([...seenNames!].sort()).toEqual(['alpha', 'beta', 'secret'])
 })
 
@@ -102,7 +114,7 @@ test('the real health report names an oversized memory note end to end', async (
         join(ctx.memoryDir, 'huge-note.md'),
         `---\ntype: fact\ntags: []\ncreated: 2026-01-01\nupdated: 2026-01-01\n---\n\n# Huge\n${body}\n`,
     )
-    const out = await resolveBrainReport(ctx)
+    const out = (await resolveBrainAgenda(ctx)).text
     expect(out).toContain('oversized')
     expect(out).toContain('huge-note')
 })
@@ -117,7 +129,7 @@ test('a hidden memory note never appears in the real report, and links to it are
         join(ctx.memoryDir, 'open-note.md'),
         '---\nname: open-note\n---\n\nsee [[secret-diary]] (session 2026-01-01)\n',
     )
-    const out = await resolveBrainReport(ctx)
+    const out = (await resolveBrainAgenda(ctx)).text
     expect(out).not.toContain('secret-diary')
     expect(out).toContain('notes=1')
 })
@@ -129,7 +141,7 @@ test('a memory note linking a daemon-denied vault note is not broken, and the de
         join(ctx.memoryDir, 'open-note.md'),
         '---\nname: open-note\n---\n\nsee [[secret-vault-note]] (session 2026-01-01)\n',
     )
-    const out = await resolveBrainReport(ctx)
+    const out = (await resolveBrainAgenda(ctx)).text
     expect(out).not.toContain('broken-link')
     expect(out).not.toContain('secret-vault-note')
 })

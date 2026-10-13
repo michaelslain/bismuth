@@ -93,6 +93,8 @@ An incremental cron (`incremental: true`) asks git whether anything relevant cha
 
 The check compares each area in `checkpointDirs` (the vault root, the memory directory) against a bookmark at `refs/bismuth/cron-<file name>` (`cron-<file name>-vault` for the vault when both areas are listed). Only `.md` files outside `.daemon/` count. The cron skips only when every area is past its first run and has no changed file.
 
+A cron whose prompt contains `{{brainReport}}` also runs with nothing changed while the health report still lists work. Each session records a fingerprint of the report it started from in `.last-fired.json` (`agenda`), and an unchanged vault and memory graph run again only when the report differs from that fingerprint. A run that fixed some items changes the report, so the next hour carries on with the rest; a run that fixed none leaves it equal, and the cron then waits for a real change, recording `skipped: no changes since <time>; the agenda is the one the last run started from`.
+
 If the prompt contains `{{changedSinceLastRun}}`, the daemon replaces it with a block per area that lists the changed files, or a first-run line when an area has no bookmark yet. A prompt without the placeholder runs unchanged.
 
 The daemon moves the bookmarks only when the session ends with `[CRON_RESULT:SUCCESS]`, never after a failure, a kill or an unknown result. The vault bookmark moves to a snapshot taken when the run started, so an edit made during the run is seen next time. The memory bookmark moves to a snapshot taken at the end, so the cron's own memory writes do not retrigger it.
@@ -102,6 +104,8 @@ An incremental cron needs a git repository with at least one commit in each area
 ## Put the memory health report in a prompt
 
 If a cron's prompt contains `{{brainReport}}`, the daemon replaces it with a ranked health report of the vault's memory graph before the session starts: oversized notes, dated or status-suffixed names, near-duplicate clusters, orphans, notes without a source, broken links, and a missing profile or hub. It works on every cron, incremental or not. The report checks links against the names of the vault's markdown notes, and a note hidden from the daemon by [visibility](../vault/visibility.md) contributes no name. When the report cannot be built, the placeholder becomes the single line `brain report unavailable: <reason>` and the run goes on. A prompt without the placeholder runs unchanged.
+
+The report's first line is `notes=<count> size=<KB> items=<total>`, followed by numbered items worst first. It is capped at 3,000 characters; when items do not fit, its last line is `(<n> more not shown; the agenda total is <total>)`, so a session counts against the full total rather than the visible items.
 
 ## Run, enable, disable and delete
 
@@ -137,16 +141,16 @@ If the daemon dies while a cron runs, the cron stays in `.running.json` and the 
 
 A vault's brain starts by writing any default file that is missing, so a new vault gets the full set and an older vault gets only what it lacks. The defaults are `identity.md`, `PAGES.md` and one cron, `dream`. A file that exists is never overwritten, except that a stock `dream.md` is upgraded in place: the daemon hashes the file, and when the hash matches any earlier stock version of `dream`, it replaces the file with the current one. A `dream.md` you edited, even by one character, is left alone for good. To turn `dream` off, set `enabled: false` in it; a deleted `dream.md` is written again at the next brain start.
 
-`dream` runs hourly with a 30-minute timeout at `tier: balanced`, is incremental over both the vault and the memory directory, and has no `notify`. In one session it:
+`dream` runs hourly with a 30-minute timeout at `tier: balanced` and `effort: high`, is incremental over both the vault and the memory directory, and has no `notify`. In one session it:
 
 1. Reads the vault notes and memory notes that changed, and every session transcript note (`auto-*`) in the memory graph.
-2. Works the `{{brainReport}}` agenda worst first and fixes at most 12 items per run; the rest wait for the next run. That covers collapsing dated snapshot notes into one note that carries its history inside it, merging duplicates, linking orphans, adding sources and splitting oversized notes.
+2. Works the `{{brainReport}}` agenda worst first, item after item until 12 are fixed, the list runs out, or about 25 minutes pass; anything beyond 12 waits for the next hourly run, which runs for it even when nothing else changed. That covers collapsing dated snapshot notes into one note that carries its history inside it, merging duplicates, linking orphans, adding sources and splitting oversized notes.
 3. Folds what matters into a small set of canonical memory notes (`user-profile`, `user-beliefs`, `user-reading`, `user-writing`, `user-projects`, `user-routine`, `user-context`, or one note named for a topic) with `remember`, and deletes each transcript note after extracting from it.
 4. Keeps `user-profile` (a `type: profile` note of at most 1,500 characters: who you are, what you do, how you work) current. Every session starts with it.
 5. Writes atomic notes of at most 2,000 characters, gives a topic with four or more notes one `type: hub` note, links each fact to its vault note or ends it with `(session YYYY-MM-DD)`, and moves a replaced fact to a dated line under `## History`.
 6. Files an inbox page only for something that needs you, with `source: "cron:dream"`.
 
-It writes memory and pages only. Its prompt forbids it from editing crons, processes, `identity.md` or your notes, and from writing a memory note about its own runs. It ends by printing one report line, which the activity log stores as the `summary` of its `finished` event:
+It writes memory and pages only. Its prompt forbids it from editing crons, processes, `identity.md` or your notes, and from writing a memory note about its own runs. It ends by printing one report line, which the activity log stores as the `summary` of its `finished` event. The summary is the session's last line made of three or more `key=value` pairs, so prose printed after the report does not replace it; a session with no such line logs its last line:
 
 ```
 vault=3 memory=1 transcripts=2 snapshots-collapsed=0 merged=1 pages=0 notes=48 size=212KB profile=unchanged hubs=1 agenda=5/5
@@ -183,12 +187,12 @@ Crons and processes are read by `daemon/src/lib/frontmatter.ts`, which is not a 
 
 `fireJob` in `daemon/src/daemon/cron.ts` runs these steps; the scheduler does not wait for the session:
 
-1. For an incremental cron, resolve the checkpoint plan first. A skip records the result and returns before any bookkeeping.
+1. When the body contains `{{brainReport}}`, build the report and its agenda fingerprint (`resolveBrainAgenda` in `daemon/src/daemon/brainReport.ts`). For an incremental cron, resolve the checkpoint plan, passing whether the agenda is pending (`agendaPending`). A skip records the result and returns before any bookkeeping.
 2. Add the job to the in-memory running set, write it to `.running.json`, and log `started`.
 3. Snapshot the cron's own file and the processes folder, and list the existing inbox pages.
-4. Replace `{{brainReport}}` in the body (`daemon/src/daemon/brainReport.ts`), build the prompt with `buildCronPrompt`, and call `sendMessage` with `newSession: true`, the cron's `model`, `effort`, `tier` and `timeout`.
+4. Replace `{{brainReport}}` in the body with the report built in step 1, build the prompt with `buildCronPrompt`, and call `sendMessage` with `newSession: true`, the cron's `model`, `effort`, `tier` and `timeout`.
 5. If `waitFor` is set, poll `pgrep -f` every 5 seconds until it stops matching or the time runs out.
-6. Parse the last result marker, write `.last-fired.json`, log `finished` with the report line, advance the incremental bookmarks on success, and send the `notify` notification.
+6. Parse the last result marker, write `.last-fired.json` with the agenda fingerprint, log `finished` with the report line (`lastReportLine`), advance the incremental bookmarks on success, and send the `notify` notification.
 7. A timeout or shutdown abort records `killed`; any other error records `failed` with its classified cause.
 8. In every case: announce new inbox pages ([pages](pages.md#how-you-are-told-a-page-exists)), run the file guards, remove the job from `.running.json` and the running set.
 

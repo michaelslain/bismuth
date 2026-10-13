@@ -16,6 +16,7 @@ import {
     isBackingOff,
     classifyFailure,
     nextLastFired,
+    agendaPending,
     backoffCooldownMs,
     retryCooldownMs,
     getIntervalMs,
@@ -1013,6 +1014,41 @@ test('lastReportLine: last non-empty line, trimmed, capped, ignoring the CRON_RE
     ).toBe('vault=3 memory=1')
     expect(lastReportLine('')).toBeUndefined()
     expect(lastReportLine('x'.repeat(500))!.length).toBe(300)
+})
+
+test('lastReportLine: prefers the key=value report line over prose printed after it', () => {
+    const out = [
+        'Fixed two hubs.',
+        'vault=5 memory=1 transcripts=0 notes=143 size=548KB agenda=2/26',
+        '',
+        '- **Transcripts:** no `auto-*` notes were present.',
+        '[CRON_RESULT:SUCCESS]',
+    ].join('\n')
+    expect(lastReportLine(out)).toBe(
+        'vault=5 memory=1 transcripts=0 notes=143 size=548KB agenda=2/26',
+    )
+    expect(lastReportLine('`vault=1 memory=2 agenda=0/0`\nbye')).toBe(
+        'vault=1 memory=2 agenda=0/0',
+    )
+    expect(lastReportLine('a=1 b=2\nbye')).toBe('bye')
+})
+
+test('agendaPending: runs while the agenda has items and differs from the last session start', () => {
+    expect(agendaPending(null, undefined)).toBe(false)
+    expect(agendaPending(null, 'k1')).toBe(false)
+    expect(agendaPending('k1', undefined)).toBe(true)
+    expect(agendaPending('k2', 'k1')).toBe(true)
+    expect(agendaPending('k1', 'k1')).toBe(false)
+})
+
+test('nextLastFired: a session records its agenda key, a skip carries it, null clears it', () => {
+    const ran = nextLastFired(undefined, { result: 'success', agenda: 'k1' })
+    expect(ran.agenda).toBe('k1')
+    const skipped = nextLastFired(ran, { result: 'skipped', detail: 'skipped: x' })
+    expect(skipped.agenda).toBe('k1')
+    const failed = nextLastFired(skipped, { result: 'failed', cause: 'job', agenda: 'k2' })
+    expect(failed.agenda).toBe('k2')
+    expect(nextLastFired(failed, { result: 'success', agenda: null }).agenda).toBeUndefined()
 })
 
 test('notifyNewPages: one notification per NEW page, titled from frontmatter else slug; none when nothing new', async () => {

@@ -286,9 +286,9 @@ export function brainHealth(allNotes: MemoryNote[], opts?: { vaultNames?: Set<st
 }
 
 export function formatBrainHealth(h: BrainHealth, maxChars: number = 3000): string {
-    const header = `notes=${h.notes} size=${(h.bytes / 1024).toFixed(1)}KB`
-    if (h.items.length === 0) return `${header}\nno issues found`.slice(0, maxChars)
     const total = h.items.length
+    const header = `notes=${h.notes} size=${(h.bytes / 1024).toFixed(1)}KB items=${total}`
+    if (total === 0) return `${header}\nno issues found`.slice(0, maxChars)
     const render = (budget: number): { lines: string[]; shown: number } => {
         const lines: string[] = [header]
         let used = header.length
@@ -306,8 +306,9 @@ export function formatBrainHealth(h: BrainHealth, maxChars: number = 3000): stri
     const all = render(maxChars)
     if (all.shown === total) return all.lines.join('\n')
     // Something is omitted: reserve room for the tail so it can never be the part that vanishes.
-    const reserve = `(${total} more not shown)`.length + 1
+    const tail = (n: number) => `(${n} more not shown; the agenda total is ${total})`
+    const reserve = tail(total).length + 1
     const { lines, shown } = render(maxChars - reserve)
-    lines.push(`(${total - shown} more not shown)`)
+    lines.push(tail(total - shown))
     return lines.join('\n')
 }

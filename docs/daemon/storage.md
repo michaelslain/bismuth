@@ -93,7 +93,7 @@ The activity log is the daemon's history: every cron outcome, background-process
 |---|---|---|
 | `cron` | `started` | A run began |
 | `cron` | `finished` | Carries `outcome`, `durationMs`, `summary`, and `cause` on failure |
-| `cron` | `skipped` | An incremental cron found nothing changed; `detail` holds the reason |
+| `cron` | `skipped` | An incremental cron found nothing changed and no pending agenda; `detail` holds the reason |
 | `process` | `started` | `detail` is `pid <n>` |
 | `process` | `exited` | `outcome` is `success` on code 0, `failed` on another code, `killed` on a signal |
 | `process` | `restarting` | `detail` is the wait and the restart count |

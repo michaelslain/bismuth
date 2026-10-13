@@ -186,6 +186,23 @@ test('resolveIncrementalRun: after advancing with no further changes, the plan i
     if (plan.skip) expect(plan.note).toMatch(/^skipped: no changes since /)
 })
 
+test('resolveIncrementalRun: nothing changed but the agenda is pending -> runs, every area reading "nothing changed"', async () => {
+    write('note.md', '# Note')
+    await commit('init')
+    await advanceIncrementalCheckpoint(dir, incrementalRefName('vault-review'))
+
+    const job = {
+        name: 'vault-review',
+        file: 'vault-review',
+        prompt: `Body\n${CHANGED_SINCE_PLACEHOLDER}\nend`,
+    }
+    const plan = await resolveIncrementalRun(ctx, job, { pendingAgenda: true })
+    expect(plan.skip).toBe(false)
+    expect(plan.prompt).toMatch(/Vault notes: nothing changed since /)
+    expect(plan.prompt).not.toContain(CHANGED_SINCE_PLACEHOLDER)
+    expect((await resolveIncrementalRun(ctx, job, { pendingAgenda: false })).skip).toBe(true)
+})
+
 test('resolveIncrementalRun: a changed markdown note since the ref -> runs with the file injected into the prompt', async () => {
     write('note.md', '# Note')
     await commit('init')

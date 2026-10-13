@@ -118,7 +118,7 @@ The check fails closed. The strictest `visibility` line in the frontmatter wins,
 
 ## How `dream` maintains the graph
 
-The seeded `dream` cron works the memory health report worst first, at most 12 items per run, then folds your changed notes and the session transcripts that your terminal sessions and chats save as `auto-*` notes into a small set of canonical notes. It writes memory only through `remember` and `forget`, and files an inbox page only when something needs you. [Crons and processes](crons-and-processes.md#seeded-crons-and-files) describes the full run.
+The seeded `dream` cron works the memory health report worst first, up to 12 items per run and again each hour while items remain, then folds your changed notes and the session transcripts that your terminal sessions and chats save as `auto-*` notes into a small set of canonical notes. It writes memory only through `remember` and `forget`, and files an inbox page only when something needs you. [Crons and processes](crons-and-processes.md#seeded-crons-and-files) describes the full run.
 
 The dream deletes each `auto-*` note once it has folded it in, so memory keeps facts, not conversations. To find what was said in a past conversation, run `bismuth history` ([CLI reference](../cli/reference.md#history)).
 
@@ -154,7 +154,7 @@ The memory folder is its own git repository, separate from the vault's. While th
 | `query.ts` | The filter syntax above, behind the `recall` tool |
 | `rank.ts` | BM25 ranking for injection |
 | `pack.ts`, `recall.ts` | Cut ranked notes into the bounded `<bismuth-memory>` block; `pack.ts` also holds `formatProfile` (the profile, cut at 1,500 characters on a line boundary) and the index order (hubs first, then in-links, recency, type) |
-| `health.ts` | `brainHealth` computes the health report items and `formatBrainHealth` renders them as a numbered list capped at 3,000 characters; the daemon fills `{{brainReport}}` in a cron prompt with it (`daemon/src/daemon/brainReport.ts`) |
+| `health.ts` | `brainHealth` computes the health report items and `formatBrainHealth` renders them as a numbered list capped at 3,000 characters under a header carrying the item total; the daemon fills `{{brainReport}}` in a cron prompt with it (`daemon/src/daemon/brainReport.ts`) |
 | `transcript.ts` | Turn a finished conversation into an `auto-*` note |
 | `resultBudget.ts` | Order `recall` matches and split them into whole notes and pointers at the result budget |
 | `sessionHistory.ts` | Parse a Claude Code session log for `bismuth history`, and apply the same budget to its sessions |

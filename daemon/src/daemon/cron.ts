@@ -3,7 +3,12 @@ import { readdir, readFile, writeFile, unlink } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { sendMessage, composeBackendRefusalNote } from './session'
-import { applyBrainReport } from './brainReport'
+import {
+    BRAIN_REPORT_PLACEHOLDER,
+    resolveBrainAgenda,
+    substituteBrainReport,
+    type BrainAgenda,
+} from './brainReport'
 import { atomicWriteJson } from '../lib/atomicJson.ts'
 import { processPageTriggers } from './pages'
 import {
@@ -343,6 +348,10 @@ export interface LastFiredEntry {
      *  Reset (omitted) by any non-failure outcome. Absent on legacy entries → treated as 1, i.e. the
      *  original single-cooldown behavior. */
     consecutiveFailures?: number
+    /** Fingerprint of the brain-report agenda the last SESSION started from (brainReport.ts's
+     *  agendaKey). Carried across skips; absent when that run's graph was healthy. The incremental
+     *  gate runs a job with nothing changed only while its agenda differs from this one. */
+    agenda?: string
 }
 
 /**
@@ -567,6 +576,9 @@ export function nextLastFired(
         result: LastFiredEntry['result']
         cause?: FailureCause
         detail?: string
+        /** The agenda key this session started from; `null` clears it. Omitted → carried from
+         *  `prev` (a skip starts no session, so the last session's agenda still stands). */
+        agenda?: string | null
     },
     now: Date = new Date(),
 ): LastFiredEntry {
@@ -575,6 +587,8 @@ export function nextLastFired(
         result: outcome.result,
     }
     if (outcome.detail !== undefined) entry.detail = outcome.detail
+    const agenda = outcome.agenda === undefined ? prev?.agenda : outcome.agenda
+    if (agenda) entry.agenda = agenda
     if (outcome.result !== 'failed' && outcome.result !== 'killed') return entry
 
     if (outcome.cause) entry.cause = outcome.cause
@@ -1042,15 +1056,32 @@ async function waitForProcessPattern(
     }
 }
 
-/** The last non-empty line of a session's output, trimmed and capped at 300 chars - the run's own
- *  closing report. The `[CRON_RESULT:...]` marker line is not a report, so it is skipped. */
+/** A line made only of `key=value` pairs, three or more of them (dream's `vault=N memory=N …`),
+ *  optionally wrapped in backticks. */
+const KEY_VALUE_REPORT = /^`?(?:[\w-]+=\S+\s+){2,}[\w-]+=[^\s`]+`?$/
+
+/** A session's closing report, trimmed and capped at 300 chars: the last `key=value` report line
+ *  when the output has one (a model often adds prose after it), else the last non-empty line. The
+ *  `[CRON_RESULT:...]` marker line is not a report, so it is skipped. */
 export function lastReportLine(output: string): string | undefined {
     const lines = output
         .split(/\r?\n/)
         .map(l => l.trim())
         .filter(l => l && !/^\[CRON_RESULT:/.test(l))
-    const last = lines[lines.length - 1]
+    const report = lines.findLast(l => KEY_VALUE_REPORT.test(l))
+    const last = report?.replace(/^`|`$/g, '') ?? lines[lines.length - 1]
     return last ? last.slice(0, 300) : undefined
+}
+
+/** Does a brain-report agenda keep an otherwise unchanged incremental cron running? Yes while it
+ *  has items and differs from the agenda the last session started from: a run that fixed some
+ *  items changes the agenda, so the next hour carries on; a run that fixed none leaves it equal,
+ *  so the job waits for a real change instead of repeating the same session every hour. Pure. */
+export function agendaPending(
+    key: string | null,
+    lastKey: string | undefined,
+): boolean {
+    return key !== null && key !== lastKey
 }
 
 /** Slugs (file stems) of the inbox pages currently in `.daemon/pages/`. Never throws. */
@@ -1142,20 +1173,36 @@ async function fireJob(
 ): Promise<void> {
     let promptOverride: string | undefined
     let checkpoint: IncrementalRunPlan | undefined
+    // Measured once, before the gate: the agenda decides whether an unchanged vault still runs, and
+    // the same text is what the session's {{brainReport}} shows.
+    const agenda: BrainAgenda | undefined = job.prompt.includes(
+        BRAIN_REPORT_PLACEHOLDER,
+    )
+        ? await resolveBrainAgenda(ctx)
+        : undefined
+    const agendaKey = agenda ? agenda.key : undefined
     if (job.incremental) {
-        const plan = await resolveIncrementalRun(ctx, job)
+        const pendingAgenda = agendaPending(
+            agendaKey ?? null,
+            lastFired[job.name]?.agenda,
+        )
+        const plan = await resolveIncrementalRun(ctx, job, { pendingAgenda })
         if (plan.skip) {
+            const note =
+                agendaKey && plan.note?.startsWith('skipped: no changes')
+                    ? `${plan.note}; the agenda is the one the last run started from`
+                    : plan.note
             lastFired[job.name] = await updateLastFired(ctx, job.name, prev =>
-                nextLastFired(prev, { result: 'skipped', detail: plan.note }),
+                nextLastFired(prev, { result: 'skipped', detail: note }),
             )
             await logActivity(
                 ctx,
                 cronActivityEvent(job.name, {
                     result: 'skipped',
-                    detail: plan.note,
+                    detail: note,
                 }),
             )
-            console.log(`[cron] "${job.name}": ${plan.note}`)
+            console.log(`[cron] "${job.name}": ${note}`)
             return
         }
         promptOverride = plan.prompt
@@ -1187,10 +1234,12 @@ async function fireJob(
         try {
             const prompt = buildCronPrompt({
                 jobName: job.name,
-                body: await applyBrainReport(
-                    ctx,
-                    promptOverride ?? job.prompt,
-                ),
+                body: agenda
+                    ? substituteBrainReport(
+                          promptOverride ?? job.prompt,
+                          agenda.text,
+                      )
+                    : (promptOverride ?? job.prompt),
                 memoryDir: ctx.memoryDir,
                 triggerContext: opts?.triggerContext,
                 notify: job.notify,
@@ -1226,7 +1275,7 @@ async function fireJob(
 
             const result = parseCronResult(response.result)
             lastFired[job.name] = await updateLastFired(ctx, job.name, prev =>
-                nextLastFired(prev, { result }),
+                nextLastFired(prev, { result, agenda: agendaKey }),
             )
             await logActivity(
                 ctx,
@@ -1277,6 +1326,7 @@ async function fireJob(
                         nextLastFired(prev, {
                             result: 'killed',
                             cause: 'timeout',
+                            agenda: agendaKey,
                         }),
                 )
                 await logActivity(
@@ -1299,7 +1349,11 @@ async function fireJob(
                 err,
             )
             lastFired[job.name] = await updateLastFired(ctx, job.name, prev =>
-                nextLastFired(prev, { result: 'failed', cause }),
+                nextLastFired(prev, {
+                    result: 'failed',
+                    cause,
+                    agenda: agendaKey,
+                }),
             )
             await logActivity(
                 ctx,

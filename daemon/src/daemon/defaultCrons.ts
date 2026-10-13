@@ -47,7 +47,8 @@
 // no longer comes from Bash surveys the model runs itself: the daemon computes a health report
 // (brainReport.ts, `{{brainReport}}`) before the session starts and the prompt works its items worst
 // first, at most 12 per run. dream runs at `tier: balanced` (tier.ts picks the model per backend),
-// so it carries no `model:` line.
+// so it carries no `model:` line, and at `effort: high`: at the tier's default effort it reported
+// `agenda=0/26` and `2/26` after 20-second runs and said it "didn't try to hit" the cap.
 
 /** dream — hourly pass over this vault's 3rd brain: new vault notes, new memory notes, session transcripts. */
 const DREAM = `---
@@ -58,6 +59,7 @@ catchup: true
 incremental: true
 checkpointDirs: vault, memory
 tier: balanced
+effort: high
 ---
 
 You are the vault's dream: one hourly pass that looks at everything NEW since the last pass — vault notes the user changed, memory notes that changed, and the auto-captured session transcripts — and folds it into this vault's memory graph (at \`$BISMUTH_MEMORY_DIR\`), an atomic, densely-linked zettelkasten that is a living model of the user (their beliefs, reading, projects, preferences, trajectory), so future sessions don't treat them as a stranger. You write only memory — plus, rarely, an inbox page (see "Inbox"). Nobody watches this run: work from the evidence below, do exactly what these rules say, and finish. The graph may be in a broken state (oversized files, OOM-causing notes) — be defensive. Walk the directory file-by-file via Bash; do NOT call \`recall\` with empty/broad queries (it materializes all results and OOMs on bloated graphs).
@@ -113,7 +115,7 @@ The daemon measured the whole memory graph before this session started. This is 
 
 {{brainReport}}
 
-Each item has a kind, the notes it concerns, and a detail line. Your agenda is this list, worked in the order given. **Fix at most 12 items per run**; the rest wait for the next run, and that is fine. An item counts as fixed once the first 3 notes it names are fixed (all of them if fewer); the rest return in the next report. Stop at 12 items or about 25 minutes, whichever comes first. Count each item you fixed. If the report says \`brain report unavailable\`, the agenda is empty this run: skip Steps 1 to 3, run Steps 4 to 7, and print \`agenda=0/0\` in the report.
+Each item has a kind, the notes it concerns, and a detail line. The header's \`items=N\` is the agenda's total, including any items the list leaves out. Your agenda is this list, worked in the order given, and it is the main work of this run, not an extra to sample. **Fix at most 12 items per run**, and keep going until you reach that number: work item after item until 12 are fixed, the list runs out, or about 25 minutes have passed. Stopping after one or two items with fixable items left is not finishing. An item counts as fixed once the first 3 notes it names are fixed (all of them if fewer); the rest return in the next report. Items beyond the 12 wait for the next hourly run, which runs for them even when nothing else changed. Count each item you fixed. If the report says \`brain report unavailable\`, the agenda is empty this run: skip Steps 1 to 3, run Steps 4 to 7, and print \`agenda=0/0\` in the report.
 
 What to do per kind:
 
@@ -285,7 +287,7 @@ PRINT — do not \`remember\` — one final line, and nothing else after it (no 
 
 \`vault=N memory=N transcripts=N snapshots-collapsed=N merged=N pages=N notes=N size=XKB profile=<updated|unchanged> hubs=N agenda=<fixed>/<total>\`
 
-where \`vault\` and \`memory\` are how many changed vault / memory notes you processed (a full first pass counts every note you read), \`transcripts\` is how many \`auto-*\` notes you folded in and forgot, \`pages\` is how many inbox pages you wrote or updated, \`notes\`/\`size\` are the report's note count and size adjusted by what you created and forgot, \`profile\` says whether you rewrote \`user-profile\` this run, \`hubs\` is how many hub notes you wrote or updated, and \`agenda\` is how many report items you fixed out of how many the report listed (at most 12 fixed).
+where \`vault\` and \`memory\` are how many changed vault / memory notes you processed (a full first pass counts every note you read), \`transcripts\` is how many \`auto-*\` notes you folded in and forgot, \`pages\` is how many inbox pages you wrote or updated, \`notes\`/\`size\` are the report's note count and size adjusted by what you created and forgot, \`profile\` says whether you rewrote \`user-profile\` this run, \`hubs\` is how many hub notes you wrote or updated, and \`agenda\` is how many report items you fixed out of the report's \`items=\` total (at most 12 fixed).
 
 Report honestly, including failures, and then read your own numbers before you finish. If the report listed items, \`agenda=<fixed>/<total>\` should show \`fixed\` equal to the lesser of 12 and \`total\`; a lower number is acceptable when an item was impossible (a denied or unreadable note, or a \`no-source\` note whose source you could not find) or when time ran out after the items you started. the run FAILED if you stopped early for any other reason: go back and work the next item rather than reporting a clean zero.
 `

@@ -423,7 +423,7 @@ test('dream still carries the {{changedSinceLastRun}} placeholder the daemon sub
 
 test('dream keeps its fused incremental frontmatter contract intact (two checkpoint areas, no notify)', () => {
     expect(DREAM).toStartWith(
-        '---\nname: dream\nschedule: 0 * * * *\ntimeout: 1800\ncatchup: true\nincremental: true\ncheckpointDirs: vault, memory\ntier: balanced\n---\n',
+        '---\nname: dream\nschedule: 0 * * * *\ntimeout: 1800\ncatchup: true\nincremental: true\ncheckpointDirs: vault, memory\ntier: balanced\neffort: high\n---\n',
     )
     expect(DREAM.split('\n---\n')[0]).not.toContain('model:')
     // The run report goes to the activity log; an OS notification fires only for a filed inbox page.
@@ -501,6 +501,9 @@ test('dream takes its whole-graph agenda from the brain report, not from Bash su
     // ask the model to re-measure the graph itself (the old du / ls -lS / sed-uniq commands).
     expect(DREAM).toContain('{{brainReport}}')
     expect(DREAM).toContain('Fix at most 12 items per run')
+    // the 12 is a number to reach, not permission to stop after one item (agenda=0/26 runs).
+    expect(DREAM).toContain('keep going until you reach that number')
+    expect(DREAM).toContain('the agenda\'s total')
     expect(DREAM).toContain('worst first')
     expect(DREAM).not.toContain('du -sh')
     expect(DREAM).not.toContain('ls -lS')

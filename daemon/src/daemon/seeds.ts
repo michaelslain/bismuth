@@ -87,6 +87,7 @@ export const PRIOR_SEED_HASHES: Record<string, string[]> = {
         '03c882eae25d3668af6e4fd32b5d2fc707b0862d6ac09c9bcb1013fd0a96140e', // v9 — the brain-report dream, before the carry-every-fact fixes
         '5fef4988438511e18e68a349854cfb57745d0ad7cdfc2d4c207398383fed2f75', // v10 — the brain-report dream, before the unavailable-report + duplicate-bullet fixes
         'de6bc04ca72d56fc9fd8f482c751106ad56f92640165244d878354dd769479fd', // v11 — the brain-report dream, before the healthy-graph line named Steps 4 to 7
+        'd2ae8fa42283822856b94d1ed9eafa3d678217521bee9fa77b8700b4d21338c3', // v12 — the brain-report dream, before effort: high and the work-to-12 agenda wording
     ],
     'vault-review': [
         '355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39', // v1 — 2026-06-28 (unchanged through f48076b)

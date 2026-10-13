@@ -199,11 +199,13 @@ function areaBlock(area: IncrementalArea, since: string): string {
  * filter them, and decide skip vs. run - plus (if running) the prompt with the placeholder
  * resolved. Called from cron.ts's fireJob BEFORE any of the running-state bookkeeping, so a skip
  * is a true no-op (no session, no PTY, no running-jobs entry). Skip iff EVERY area is past its
- * first run and has zero filtered files.
+ * first run and has zero filtered files, and `opts.pendingAgenda` is not set: a job whose
+ * brain-report agenda still has work runs with every area reading "nothing changed".
  */
 export async function resolveIncrementalRun(
     ctx: VaultContext,
     job: IncrementalJob,
+    opts: { pendingAgenda?: boolean } = {},
 ): Promise<IncrementalRunPlan> {
     const kinds = dirsOf(job)
     const areas: IncrementalArea[] = []
@@ -232,7 +234,8 @@ export async function resolveIncrementalRun(
         })
     }
 
-    if (areas.every(a => !a.firstRun && a.files.length === 0))
+    const unchanged = areas.every(a => !a.firstRun && a.files.length === 0)
+    if (unchanged && !opts.pendingAgenda)
         return {
             skip: true,
             note: `skipped: no changes since ${sinces[0]}`,
@@ -240,7 +243,7 @@ export async function resolveIncrementalRun(
         }
 
     let injected: string
-    if (areas.length === 1) {
+    if (areas.length === 1 && !unchanged) {
         // Single-area jobs keep their original wording (see decideIncrementalRun).
         const d = decideIncrementalRun(
             { base: areas[0]!.firstRun ? null : 'x', files: areas[0]!.files },

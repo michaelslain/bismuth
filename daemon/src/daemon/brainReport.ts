@@ -2,10 +2,12 @@
 // that carries the placeholder (the seeded dream uses it as its agenda). It is computed by the
 // daemon, not by the model: the model used to run a Bash size/cluster survey every hour; now it
 // reads a ranked list and works it worst first.
+import { createHash } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import {
     brainHealth,
+    type BrainHealthItem,
     formatBrainHealth,
     isMemoryNoteVisibleToDaemon,
     loadAllNotes,
@@ -40,11 +42,23 @@ export type BrainReportDeps = {
     format?: typeof formatBrainHealth
 }
 
-/** The formatted health report, or one `brain report unavailable: <reason>` line. Never throws. */
-export async function resolveBrainReport(
+/** The report as the prompt shows it, plus `key`: a fingerprint of every item in it (shown or
+ *  not), or null when the graph is healthy or the report is unavailable. The incremental gate
+ *  compares the key with the one the previous run started from (see cron.ts's fireJob). */
+export type BrainAgenda = { text: string; key: string | null }
+
+/** Fingerprint of an agenda's items; null for an empty agenda. Pure. */
+export function agendaKey(items: readonly BrainHealthItem[]): string | null {
+    if (items.length === 0) return null
+    return createHash('sha256').update(JSON.stringify(items)).digest('hex').slice(0, 16)
+}
+
+/** The formatted health report and its agenda key. Never throws: a failure is one
+ *  `brain report unavailable: <reason>` line with a null key. */
+export async function resolveBrainAgenda(
     ctx: VaultContext,
     deps: BrainReportDeps = {},
-): Promise<string> {
+): Promise<BrainAgenda> {
     const { loadNotes = loadAllNotes, health = brainHealth, format = formatBrainHealth } = deps
     try {
         const [all, vaultNames] = await Promise.all([
@@ -55,22 +69,17 @@ export async function resolveBrainReport(
         // report, but keep its name known so links to it are not reported as broken.
         const visible = all.filter(isMemoryNoteVisibleToDaemon)
         const hiddenNames = all.filter(n => !isMemoryNoteVisibleToDaemon(n)).map(n => n.name)
-        return format(health(visible, { vaultNames: new Set([...vaultNames, ...hiddenNames]) }))
+        const h = health(visible, { vaultNames: new Set([...vaultNames, ...hiddenNames]) })
+        return { text: format(h), key: agendaKey(h.items) }
     } catch (e) {
         const reason = (e instanceof Error ? e.message : String(e))
             .replace(/\s+/g, ' ')
             .trim()
-        return `brain report unavailable: ${reason}`
+        return { text: `brain report unavailable: ${reason}`, key: null }
     }
 }
 
-/** Replace the placeholder when the prompt carries it; a prompt without it is returned as is. */
-export async function applyBrainReport(
-    ctx: VaultContext,
-    prompt: string,
-    deps: BrainReportDeps = {},
-): Promise<string> {
-    if (!prompt.includes(BRAIN_REPORT_PLACEHOLDER)) return prompt
-    const report = await resolveBrainReport(ctx, deps)
+/** Put an already-resolved report into the prompt's placeholder. Pure. */
+export function substituteBrainReport(prompt: string, report: string): string {
     return prompt.split(BRAIN_REPORT_PLACEHOLDER).join(report)
 }

@@ -113,7 +113,7 @@ describe('formatBrainHealth', () => {
         const h = brainHealth(notes, { now })
         const out = formatBrainHealth(h)
         const lines = out.split('\n')
-        expect(lines[0]).toMatch(/^notes=30 size=\d+\.\dKB$/)
+        expect(lines[0]).toMatch(/^notes=30 size=\d+\.\dKB items=\d+$/)
         expect(lines[1]).toMatch(/^1\. no-profile: /)
         expect(lines[2]).toMatch(/^2\. oversized: big-\d+/)
         const small = formatBrainHealth(h, 150)
@@ -135,7 +135,8 @@ describe('formatBrainHealth', () => {
             const out = formatBrainHealth(h, n)
             const shown = out.split('\n').filter(l => /^\d+\. /.test(l)).length
             expect(out.length).toBeLessThanOrEqual(n)
-            expect(out.endsWith(`(${12 - shown} more not shown)`)).toBe(true)
+            expect(out.endsWith(`(${12 - shown} more not shown; the agenda total is 12)`)).toBe(true)
+            expect(out.split('\n')[0]).toBe('notes=50 size=1.0KB items=12')
             expect(shown).toBeLessThan(12)
         }
     })
