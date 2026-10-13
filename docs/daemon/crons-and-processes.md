@@ -36,7 +36,7 @@ restart: on-failure
 |---|---|---|---|
 | `name` | text | the file name | Display name. It keys the cron's history, so renaming it orphans that history |
 | `schedule` | five-field cron expression | none | Required unless `on: file-change`. A missing or malformed value makes the daemon skip the file |
-| `on` | `file-change` | schedule | Fire when a watched file changes instead |
+| `on` | `file-change` or `schedule` | `schedule` | `file-change` fires when a watched file changes instead |
 | `watch` | path or glob, relative to the vault | none | Required with `on: file-change` |
 | `enabled` | `false` to disable | on | Only the exact text `false` disables; `False` does not |
 | `catchup` | `false` to turn off | on | Whether a missed schedule fires late. Schedule crons only |
@@ -48,6 +48,8 @@ restart: on-failure
 | `waitFor` | a `pgrep -f` pattern | none | After the session ends, wait for matching processes to exit, within `timeout` |
 | `incremental` | `true` | off | Skip runs when nothing relevant changed; see below |
 | `checkpointDirs` | `vault`, `memory`, or both comma-separated | `vault` | Which areas an incremental cron checks. `checkpointDir` takes a single value |
+
+The editor checks a cron file's frontmatter against these keys, and so does `bismuth prop check .daemon/crons/<name>.md`. Each of these is an error: a schedule the daemon skips or never matches (a field count other than five, `*/0`, `7` in day-of-week, a name like `MON`), a missing `schedule` (or `watch` with `on: file-change`), an `effort` other than `low`, `medium` or `high`, a flag other than `true` or `false`, and a `timeout` that is not whole seconds or `none`. A range inside a schedule list is a warning, and any other key is reported as unknown. Note properties such as `tags` and folder-bound [named schemas](../vault/frontmatter.md#hold-notes-to-a-named-schema) do not apply to a cron file.
 
 The body of the file is the prompt. The daemon appends to it: the memory directory and a rule to write memory only through `remember`, an instruction to end with `[CRON_RESULT:SUCCESS]`, or with `[CRON_RESULT:FAILURE]` followed on the same line by one sentence saying what failed, and, with `notify: true`, an instruction to print one `[NOTIFY: …]` line. A session that prints neither marker records the result `unknown`.
 
@@ -183,6 +185,10 @@ When the daemon starts, it first kills processes left behind by a previous daemo
 
 Crons and processes are read by `daemon/src/lib/frontmatter.ts`, which is not a YAML parser. It matches the `---` fence, splits each line at the first `:`, and keeps every value as a trimmed string. A value wrapped in `"…"` is JSON-decoded and one wrapped in `'…'` is unwrapped. The daemon therefore tests the text: `enabled !== "false"` for opt-out keys, `=== "true"` for opt-in keys. A line with no colon is ignored. Core writes names in quotes whenever a bare value would not survive this parser.
 
+### Cron frontmatter lint
+
+`resolveNoteSchema` gives a file directly under `.daemon/crons/` the schema from `cronSchema()` alone. Its `schedule` and `timeout` use the `cron` and `timeout` property types, which `validateValue` checks with `cronScheduleProblem` and `cronTimeoutProblem`, mirroring `parseCronExpression`, `matchesField` and `parseTimeoutSecs`. The editor lint parses YAML, so `enabled: False` reads as the boolean `false` and passes, although the daemon keeps that cron enabled.
+
 ### Firing a job
 
 `fireJob` in `daemon/src/daemon/cron.ts` runs these steps; the scheduler does not wait for the session:
@@ -210,4 +216,4 @@ Each vault has one recursive `fs.watch` (`daemon/src/daemon/fileWatch.ts`), neve
 
 The upgrade rule depends on `PRIOR_SEED_HASHES` in `daemon/src/daemon/seeds.ts`, an append-only list of the SHA-256 of every earlier stock body of each default cron. A hash missing from the list does not raise an error: the daemon treats that stock file as customized and never upgrades it. To change `dream`, append the SHA-256 of the outgoing body to `PRIOR_SEED_HASHES.dream`, then edit `defaultCrons.ts`. Never list the current body. `bun test daemon` walks the git history of `defaultCrons.ts` and fails, naming the hash to add, if any shipped body is neither current nor listed.
 
-Source: `daemon/src/daemon/{cron,fileWatch,incrementalCron,brainReport,process,defaultCrons,seeds,pages}.ts`, `daemon/src/lib/{frontmatter,checkpointRef,config,drainTriggers,activityLog}.ts`, `core/src/daemon.ts`
+Source: `daemon/src/daemon/{cron,fileWatch,incrementalCron,brainReport,process,defaultCrons,seeds,pages}.ts`, `daemon/src/lib/{frontmatter,checkpointRef,config,drainTriggers,activityLog}.ts`, `core/src/daemon.ts`, `core/src/schema/cronSchema.ts`

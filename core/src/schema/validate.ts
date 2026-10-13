@@ -10,6 +10,7 @@ import type {
 import { isRealCalendarDate } from '../dates'
 import { extractWikilinks } from '../wikilinks'
 import { parseList } from './coerce'
+import { cronScheduleProblem, cronTimeoutProblem } from './cronSchema'
 import { checkTokenValue, suggestTokenKey, tokenDef } from '../theme/designTokens'
 import {
     loadSchemaSet,
@@ -118,6 +119,15 @@ export function validateValue(
                     return null
                 }
                 return err('expected a date-time (ISO-8601)')
+            }
+            case 'cron': {
+                const p = cronScheduleProblem(value)
+                if (!p) return null
+                return p.severity === 'error' ? err(p.message) : warn(p.message)
+            }
+            case 'timeout': {
+                const p = cronTimeoutProblem(value)
+                return p ? err(p) : null
             }
             case 'file': {
                 if (!ctx?.resolveLink) return null

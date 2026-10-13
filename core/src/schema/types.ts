@@ -10,6 +10,10 @@ export type PropertyType =
     | 'file'
     | 'icon'
     | 'keybind'
+    // A daemon cron's five-field schedule, checked the way the daemon parses it (cronSchema.ts).
+    | 'cron'
+    // A daemon cron's timeout: whole seconds, or `none`.
+    | 'timeout'
     // A path. `only` narrows completion to directories or files; omit for both.
     // `scope` selects the completion root: omitted = the vault tree; "templates" = the
     // configured templates folder (files only); "fs" = the real filesystem (absolute or

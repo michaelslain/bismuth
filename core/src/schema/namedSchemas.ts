@@ -7,6 +7,7 @@
 import type { Schema, SchemaEntry } from './types'
 import { BUILTIN_PROPERTIES, loadRegistry } from './registry'
 import { parseList } from './coerce'
+import { cronSchema, isCronPath } from './cronSchema'
 
 /** Everything needed to resolve any note's schema, as parsed from `.settings`. */
 export interface PropertySchemaSet {
@@ -112,7 +113,7 @@ export function appliedSchemas(
     path: string,
     frontmatter: Record<string, unknown>,
 ): AppliedSchema[] {
-    if (isBaseNote(frontmatter)) return []
+    if (isBaseNote(frontmatter) || isCronPath(path)) return []
     const out: AppliedSchema[] = []
     for (const folder of ancestorFolders(path)) {
         for (const name of set.folderSchemas[folder] ?? [])
@@ -147,6 +148,7 @@ function schemaKeyEntry(set: PropertySchemaSet): SchemaEntry {
 /**
  * The effective Schema for the note at `path` with the given (live) frontmatter: the vault-wide
  * registry, then every applied named schema in precedence order, then the `schema:` key itself.
+ * A daemon cron file (`.daemon/crons/<name>.md`) gets the cron schema alone (cronSchema.ts).
  * `required` is honoured only from named schemas — the vault-wide registry's `required` stays
  * ignored in notes, since it would demand the key of every note in the vault.
  */
@@ -155,6 +157,8 @@ export function resolveNoteSchema(
     path: string,
     frontmatter: Record<string, unknown>,
 ): Schema {
+    // A daemon cron file's frontmatter is the cron's config, not note properties.
+    if (isCronPath(path)) return cronSchema(frontmatter)
     const schema: Schema = {}
     for (const [key, entry] of Object.entries(set.properties)) {
         const { required: _ignored, ...rest } = entry

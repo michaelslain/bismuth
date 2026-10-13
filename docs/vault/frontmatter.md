@@ -176,6 +176,7 @@ When two of them declare the same key, the later one wins.
 A named schema's `required` keys are enforced: a note missing one gets an error on its first frontmatter line, or on its first line when it has no frontmatter block.
 A `required` flag in the vault-wide `properties:` stays ignored in notes, because it would ask every note in the vault for the key.
 A base note (`type: base`) follows no named schema, since its frontmatter is the base's configuration.
+A daemon cron file (`.daemon/crons/<name>.md`) follows the [cron keys](../daemon/crons-and-processes.md#cron-keys) alone, with no vault-wide properties and no named schema.
 
 The `schema:` key completes from the declared schema names, and a name that is not declared is an error with the nearest names as fixes.
 A `folderSchemas:` entry that names an undeclared schema binds nothing; the `.settings` editor marks it with a warning.
@@ -300,4 +301,4 @@ The `list` type accepts a comma-separated string through `parseList` in `core/sr
 `resolveCompanionTarget` in `app/src/App.tsx`, shared by `openFile` and `openTool`, swaps a companion path for its binary when the sidebar still lists that binary.
 `listTree` in `core/src/files.ts` does the hiding.
 
-Source: `core/src/frontmatter.ts`, `core/src/schema/registry.ts`, `core/src/schema/namedSchemas.ts`, `app/src/propertyRegistry.ts`, `core/src/schema/validate.ts`, `core/src/schema/suggest.ts`, `core/src/schema/coerce.ts`, `core/src/schema/types.ts`, `core/src/settings.ts`, `core/src/basesData.ts`, `core/src/fileKinds.ts`, `core/src/scratchNotes.ts`, `core/src/routes/vault.ts`, `cli/src/commands/prop.ts`, `app/src/editor/yamlSchema.ts`, `app/src/preview/companionDoc.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/frontmatterSummary.ts`, `app/src/App.tsx`
+Source: `core/src/frontmatter.ts`, `core/src/schema/registry.ts`, `core/src/schema/namedSchemas.ts`, `core/src/schema/cronSchema.ts`, `app/src/propertyRegistry.ts`, `core/src/schema/validate.ts`, `core/src/schema/suggest.ts`, `core/src/schema/coerce.ts`, `core/src/schema/types.ts`, `core/src/settings.ts`, `core/src/basesData.ts`, `core/src/fileKinds.ts`, `core/src/scratchNotes.ts`, `core/src/routes/vault.ts`, `cli/src/commands/prop.ts`, `app/src/editor/yamlSchema.ts`, `app/src/preview/companionDoc.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/frontmatterSummary.ts`, `app/src/App.tsx`
