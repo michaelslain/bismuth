@@ -45,7 +45,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'new-base', label: 'New base', icon: 'Database' },
     { id: 'new-spreadsheet', label: 'New spreadsheet', icon: 'Table' },
     { id: 'new-drawing', label: 'New drawing', icon: 'PenTool' },
-    { id: 'new-claude-chat', label: 'New Claude Chat', icon: 'MessageSquare' },
+    { id: 'new-claude-chat', label: 'New chat', icon: 'MessageSquare' },
     { id: 'export', label: 'Export current file…', icon: 'Download' },
     {
         id: 'archive-tasks',

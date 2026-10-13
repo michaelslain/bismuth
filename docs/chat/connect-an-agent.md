@@ -35,7 +35,7 @@ The four ways differ in where the agent runs and in what visibility restrictions
    ✓ claude           2.1.293 (Claude Code)    chat terminal relay:hooks daemon mcp:cli memory:hooks local
    ```
 
-3. Open a chat. Press `Mod+Shift+C`, or run **New Claude Chat** from the command palette.
+3. Open a chat. Press `Mod+Shift+C`, or run **New chat** from the command palette.
 4. Send a message, such as `which notes link to my home note?`. The reply streams into the transcript, and tool calls appear as chips with their results.
 
 No Claude Code and no other agent? The chat shows a setup screen with `[set up free agent]`, which installs opencode on free models with no account. See [opencode providers](opencode-providers.md).

@@ -2648,7 +2648,7 @@ export default function App() {
             exportActive()
             return
         }
-        // New Claude chat (default Mod+Shift+C): open a fresh chat session tab. Don't hijack the
+        // New chat (default Mod+Shift+C): open a fresh chat session tab. Don't hijack the
         // chord while typing in a form field (palette/search inputs).
         if (matchesKeybinding(e, kb['new-claude-chat'])) {
             runUnlessEditableTarget(e, newClaudeChat)

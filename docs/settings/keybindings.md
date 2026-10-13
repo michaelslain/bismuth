@@ -104,7 +104,7 @@ Each id below is a key under `keybindings:`, with its default combo and the acti
 | `export` | `Mod+Shift+P` | Export |
 | `history-back` | `Mod+[` | Back |
 | `history-forward` | `Mod+]` | Forward |
-| `new-claude-chat` | `Mod+Shift+C` | New Claude chat |
+| `new-claude-chat` | `Mod+Shift+C` | New chat |
 | `insert-template` | `Alt+T` | Insert template |
 | `toggle-sidebar` | `Alt+S` | Toggle sidebar |
 | `toggle-tab-rail` | `Alt+Shift+S` | Toggle tab rail |

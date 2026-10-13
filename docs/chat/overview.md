@@ -14,7 +14,7 @@ Escape          stop the reply  Up / Down      recall earlier messages
 
 ## How do I open a chat?
 
-Press `Mod+Shift+C` or run **New Claude Chat** from the command palette. The chat opens in its own tab, or in the focused pane when the tab is already split. Each press opens a new conversation.
+Press `Mod+Shift+C` or run **New chat** from the command palette. The chat opens in its own tab, or in the focused pane when the tab is already split. Each press opens a new conversation.
 The daemon page also hosts an inline chat with the same composer and controls ([daemon](../daemon/overview.md)).
 
 A reply keeps streaming when you switch tabs or panes: the connection and transcript live in a session that outlasts the view. Closing the tab ends the session.

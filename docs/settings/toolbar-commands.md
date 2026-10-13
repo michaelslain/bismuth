@@ -59,7 +59,7 @@ The command `create-menu` (**Create new…**) is one button that opens a menu in
 3. **New base**, a submenu with one entry per Bases view kind (the kinds are listed in [Bases overview](../bases/overview.md)); each creates `Untitled <kind>.md` with that view
 4. New spreadsheet
 5. New drawing
-6. New Claude Chat
+6. New chat
 7. A separator, then each daily-note command
 
 The menu opens under the button you clicked, or at a fixed spot when run from the palette.
@@ -96,7 +96,7 @@ These are the built-in commands, grouped by area. `COMMAND_CATALOG` in `core/src
 | `new-base` | New base | `Database` |  |
 | `new-spreadsheet` | New spreadsheet | `Table` |  |
 | `new-drawing` | New drawing | `PenTool` |  |
-| `new-claude-chat` | New Claude Chat | `MessageSquare` |  |
+| `new-claude-chat` | New chat | `MessageSquare` |  |
 
 ### Notes and tasks
 

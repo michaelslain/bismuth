@@ -161,9 +161,9 @@ export const KEYBINDING_CATALOG = [
     },
     {
         id: 'new-claude-chat',
-        label: 'New Claude chat',
+        label: 'New chat',
         default: 'Mod+Shift+C',
-        doc: 'Open a new Claude Code chat session in its own tab.',
+        doc: 'Open a new chat session in its own tab.',
     },
     {
         id: 'insert-template',
