@@ -50,6 +50,15 @@ export const Default: Story = {
         await expect(getComputedStyle(actionsBox).opacity).toBe('0')
         row.focus()
         await waitFor(() => expect(getComputedStyle(actionsBox).opacity).toBe('1'))
+        // `[ run ] [ off ]` on an enabled row; `[ off ]` disables it without opening the file.
+        const name = row.querySelector('[class*="name"]')!.textContent!
+        baseProps.onOpen.mockClear()
+        await userEvent.click(within(actionsBox).getByRole('button', { name: /off/ }))
+        await expect(baseProps.onToggle).toHaveBeenCalledWith(name, false)
+        await expect(baseProps.onOpen).not.toHaveBeenCalled()
+        // Scripted focus counts as keyboard focus (:focus-visible), which keeps a row's actions
+        // up; release it so the story rests the way a person sees the list.
+        ;(document.activeElement as HTMLElement | null)?.blur()
     },
 }
 
@@ -500,13 +509,13 @@ export const OpenedListsShareMeasure: Story = {
             lists[0].querySelector<HTMLElement>('[data-testid="daemon-row"] > :nth-child(4)')!,
             lists[1].querySelector<HTMLElement>('[data-testid="daemon-row"] > :nth-child(3)')!,
             lists[2].querySelector<HTMLElement>('[data-testid="inbox-row"] button > :last-child')!,
-            lists[3].querySelector<HTMLElement>('[class*="log-row"] > :last-child')!,
+            lists[3].querySelector<HTMLElement>('[data-testid="daemon-log-row"] button > :last-child')!,
         ]
         const sp4 = parseFloat(
             getComputedStyle(document.documentElement).getPropertyValue('--sp-4'),
         )
-        // Where the TEXT ends: the box's right edge minus its own right padding (a services
-        // status carries the row's inset as padding, the other three as margin or the row).
+        // Where the TEXT ends: the box's right edge minus its own right padding (the crons and
+        // services status words carry the row's inset as margin, inbox and log as the row's).
         for (const t of trailing) {
             const end =
                 t.getBoundingClientRect().right -

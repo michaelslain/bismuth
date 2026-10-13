@@ -35,26 +35,34 @@ export const Default: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('on')).toBeInTheDocument()
-        // DaemonProcesses rows have no `[ run ]`, but a row's actions cell is still the same
-        // DaemonRow.tsx primitive — no reveal to test without an `actions` prop supplied.
-        // Acceptance 5: a services row with no actions renders no actions cell at all (DaemonRow's
-        // `<Show when={props.actions !== undefined}>`) and the list's grid drops the whole track
-        // (`.list` vs `.list.with-actions` in DaemonProcesses.module.css), so every row's status
-        // word is its last painted cell.
+        // 'on' is both an enabled row's status and a disabled row's `[ on ]` button.
+        await expect(canvas.getAllByText('on').length).toBeGreaterThan(0)
+        // Every services row carries an `[ off ]`/`[ on ]` actions cell, pulled out of grid flow
+        // and pinned over the status word (DaemonProcesses.module.css), so the status word itself
+        // stays the row's rightmost painted content, inset by --sp-4 (8px).
         const rows = [
             ...canvasElement.querySelectorAll<HTMLElement>('[data-testid="daemon-row"]'),
         ]
         await expect(rows.length).toBeGreaterThan(0)
         for (const row of rows) {
-            await expect(row.querySelector('[class*="actions"]')).toBeNull()
-            // The status word is the row's LAST rendered cell whenever it has no actions — safer
-            // than matching by class, since ui/StatusDot's own `.status-dot` class also contains
-            // the substring "status".
-            const status = row.lastElementChild as HTMLElement
+            const actions = row.lastElementChild as HTMLElement
+            await expect(actions.textContent).toMatch(/off|on/)
+            await expect(getComputedStyle(actions).position).toBe('absolute')
+            const status = row.children[2] as HTMLElement
             const gap = row.getBoundingClientRect().right - status.getBoundingClientRect().right
-            await expect(gap).toBeLessThanOrEqual(2)
+            await expect(gap).toBeGreaterThanOrEqual(6)
+            await expect(gap).toBeLessThanOrEqual(12)
         }
+        // `[ off ]` on an enabled row disables it without opening the definition.
+        const enabled = rows.find(r => r.children[2].textContent === 'on')!
+        const name = enabled.querySelector('[class*="name"]')!.textContent!
+        baseProps.onOpen.mockClear()
+        await userEvent.click(within(enabled).getByRole('button', { name: /off/ }))
+        await expect(baseProps.onToggle).toHaveBeenCalledWith(name, false)
+        await expect(baseProps.onOpen).not.toHaveBeenCalled()
+        // Scripted focus counts as keyboard focus (:focus-visible), which keeps a row's actions
+        // up; release it so the story rests the way a person sees the list.
+        ;(document.activeElement as HTMLElement | null)?.blur()
     },
 }
 
@@ -107,7 +115,8 @@ export const LongName: Story = {
         await expect(getComputedStyle(name).textOverflow).toBe('ellipsis')
         // …with the status word still fully inside the row, not pushed off the edge by the
         // un-clipped name.
-        await expect(canvas.getByText('on')).toBeInTheDocument()
+        // 'on' is both an enabled row's status and a disabled row's `[ on ]` button.
+        await expect(canvas.getAllByText('on').length).toBeGreaterThan(0)
         const row = name.closest<HTMLElement>('[data-testid="daemon-row"]')!
         const status = row.lastElementChild as HTMLElement
         const rowRect = row.getBoundingClientRect()
@@ -264,7 +273,8 @@ export const DaemonOffline: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('on')).toBeInTheDocument()
+        // 'on' is both an enabled row's status and a disabled row's `[ on ]` button.
+        await expect(canvas.getAllByText('on').length).toBeGreaterThan(0)
         const dots = [
             ...canvasElement.querySelectorAll<HTMLElement>('[class*="dot-wrap"]'),
         ]

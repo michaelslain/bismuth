@@ -1,28 +1,56 @@
 /* app/src/daemon/DaemonProcesses.module.css — DaemonProcesses.tsx is the ONLY importer.
-   Same grid as DaemonCrons.module.css's `.list` minus the schedule column: dot // name //
+   Same grid as DaemonCrons.module.css's `.cronsList` minus the schedule column: dot // name //
    status // actions. No row ever passes DaemonRow a `meta`, so this list genuinely never has a
-   schedule track to size — the "same grid minus schedule" the spec asks for, not merely an
-   empty column. Name is now the ONE flexible track (`minmax(12ch, 1fr)`, matching how schedule
-   absorbs slack in DaemonCrons.module.css — there's no schedule column here to do it instead) and
-   ellipsizes under pressure via DaemonRow.module.css's own `.name`; status stays tight
-   (`max-content`), so it sits immediately after name with no leftover gap opening up before it.
+   schedule track to size. Name is the ONE flexible track (`minmax(12ch, 1fr)`, matching how
+   schedule absorbs slack in DaemonCrons.module.css) and ellipsizes under pressure via
+   DaemonRow.module.css's own `.name`; status stays tight (`max-content`).
 
-   NO ACTIONS TRACK AT REST: a services row only ever gets an `actions` cell while it's mid
-   inline-delete-confirm (DaemonProcesses.tsx's `rowActions`) — every other row's DaemonRow
-   renders no 4th cell at all now (see DaemonRow.tsx's `<Show when={props.actions !== undefined}>`).
-   A grid still reserves `column-gap` between a declared track and its neighbour whether or not
-   any row occupies it, so the base template below has only 3 columns; `.with-actions` (applied
-   by DaemonProcesses.tsx exactly while a row is confirming a delete) adds the 4th back so that
-   row's `[ delete ] [ cancel ]` has somewhere to land. Because `status` is DaemonRow's `:last-child`
-   whenever `actions` is absent, DaemonRow.module.css's own `.row > :last-child` rule gives it the
-   right-edge inset for free — unlike DaemonCrons, no structural override is needed here. */
+   Every row carries an `actions` cell (`[ off ]`/`[ on ]`, or `[ delete ] [ cancel ]` while
+   confirming), so the same overlay idiom as DaemonCrons.module.css applies: the actions cell is
+   pulled out of grid flow and pinned to the row's right edge, the status word hides under it on
+   hover/focus, and the status keeps its own `--sp-4` right inset as the row's rightmost content.
+   Selectors are structural (child combinator + `:nth-child` + DaemonRow's `data-confirming`). */
 .list {
     display: grid;
     grid-template-columns: auto minmax(12ch, 1fr) max-content;
+    column-gap: var(--sp-3);
     row-gap: 0;
 }
-.list.with-actions {
-    grid-template-columns: auto minmax(12ch, 1fr) max-content auto;
+.list > div {
+    position: relative;
+}
+.list > div > :nth-child(3) {
+    margin-right: var(--sp-4);
+    justify-self: end;
+}
+.list > div > :nth-child(4) {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+}
+.list > div:hover > :nth-child(3),
+.list > div:focus-visible > :nth-child(3),
+.list > div:has(:focus-visible) > :nth-child(3),
+.list > div[data-confirming] > :nth-child(3) {
+    visibility: hidden;
+}
+/* Touch: DaemonRow keeps .actions always visible — put the actions cell back into grid flow. */
+@media (hover: none) {
+    .list {
+        grid-template-columns: auto minmax(12ch, 1fr) max-content auto;
+    }
+    .list > div > :nth-child(3) {
+        margin-right: 0;
+    }
+    .list > div > :nth-child(4) {
+        position: static;
+        height: auto;
+    }
+    .list > div:focus-visible > :nth-child(3),
+    .list > div:has(:focus-visible) > :nth-child(3) {
+        visibility: visible;
+    }
 }
 /* Opened section: capped at the one daemon-list measure (--daemon-list-max, the same as the
    crons, inbox and log lists), the name track absorbing the slack so the status column ends at

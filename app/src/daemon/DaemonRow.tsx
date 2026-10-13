@@ -46,7 +46,7 @@ export type DaemonRowProps = {
     meta?: string
     /** Disabled definition — the whole row dims. */
     dim?: boolean
-    /** Trailing slot ('[ run ]', or '[ delete ] [ cancel ]' while confirming). */
+    /** Trailing slot ('[ run ] [ off ]', '[ off ]', or '[ delete ] [ cancel ]' while confirming). */
     actions?: JSX.Element
     /** The row is mid inline-delete-confirm — keeps `actions` visible even off hover/focus. */
     confirming?: boolean
@@ -72,7 +72,7 @@ function DaemonRow(props: DaemonRowProps) {
             onClick={open}
             onKeyDown={e => {
                 // Only the row's own key events, not ones bubbling up from a focused child
-                // button ([ run ]/[ delete ]/[ cancel ]) — otherwise Enter/Space on a button
+                // button ([ run ]/[ off ]/[ delete ]/[ cancel ]) — otherwise Enter/Space on a button
                 // both fires the button's click AND opens the row's definition file.
                 if (e.target !== e.currentTarget) return
                 // ui-confirm (rebindable, default Enter) plus a hardcoded Space — Space is this

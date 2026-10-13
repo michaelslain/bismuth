@@ -1,17 +1,22 @@
 // app/src/daemon/DaemonLog.tsx
-// The daemon page's activity log panel: one mono row per event (`time  who  what  note  duration`),
-// newest first as `events` already arrives (api.daemonLogs()). The note (why it ran, why it failed,
-// what it reported) clips to one line in the box and wraps in the full variant. Formatting is entirely
-// activityLine.ts's job — this component only renders what that returns. `limit` row-caps the
-// list (newest-first order is unchanged) behind a `+N more` line that opens the section; `variant="full"`
-// shows every row grouped under day labels (logDays.ts).
-import { createMemo, For, Show } from 'solid-js'
+// The daemon page's activity log panel: one DaemonLogRow per event, newest first as `events`
+// already arrives (api.daemonLogs()). A row's line unfolds its detail (one open at a time, kept
+// open across re-polls by logDetail.ts's `eventKey`); from there `[ only <name> ]` narrows the log
+// to that cron or service — a `only <name> // [ clear ]` line heads the list while it is narrowed
+// — and `[ open ]` opens the owner's definition. `limit` row-caps the list behind a `+N more` line
+// that opens the section; `variant="full"` shows every row grouped under day labels (logDays.ts).
+//
+// The filter is controlled when the host passes `filter` + `onFilter` (it then refetches by name
+// and carries the filter between the box and the opened section); otherwise it is local.
+import { createMemo, createSignal, For, Show } from 'solid-js'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
-import activityLine from './activityLine'
 import DaemonSection from './DaemonSection'
 import DaemonMoreLine from './DaemonMoreLine'
+import DaemonLogRow from './DaemonLogRow'
 import Text from '../ui/Text'
-import { clockTime, groupByDay } from './logDays'
+import { TextButton } from '../ui/TextButton'
+import { groupByDay } from './logDays'
+import { eventKey, filterEvents } from './logDetail'
 import type { RowLimit } from './daemonRowBudget'
 import styles from './DaemonLog.module.css'
 
@@ -23,56 +28,84 @@ export type DaemonLogProps = {
     onOpenSection?: () => void
     events: ActivityEvent[]
     limit?: RowLimit
+    /** The cron/service name the log is narrowed to (controlled), or null for everything. */
+    filter?: string | null
+    onFilter?: (name: string | null) => void
+    /** The vault path of an event's cron/service definition, or undefined when it has none
+     *  (a daemon/session event, or a definition since deleted). Omitted → no `[ open ]`. */
+    definitionFor?: (e: ActivityEvent) => string | undefined
+    onOpen?: (path: string) => void
     class?: string
 }
 
 function DaemonLog(props: DaemonLogProps) {
     const now = () => new Date()
+    const [localFilter, setLocalFilter] = createSignal<string | null>(null)
+    const filter = () =>
+        props.filter !== undefined ? props.filter : localFilter()
+    const setFilter = (name: string | null) => {
+        setOpenKey(null)
+        if (props.onFilter) props.onFilter(name)
+        else setLocalFilter(name)
+    }
+    const [openKey, setOpenKey] = createSignal<string | null>(null)
+
+    const visible = createMemo(() => filterEvents(props.events, filter()))
     const limited = createMemo(
-        () => props.limit !== undefined && props.events.length > props.limit,
+        () => props.limit !== undefined && visible().length > props.limit,
     )
     const shown = createMemo(() =>
         props.limit === undefined
-            ? props.events
-            : props.events.slice(0, props.limit),
+            ? visible()
+            : visible().slice(0, props.limit),
     )
-    const days = createMemo(() => groupByDay(props.events, now()))
+    const days = createMemo(() => groupByDay(visible(), now()))
 
     const row = (e: ActivityEvent, clock = false) => {
-        const line = activityLine(e, now())
+        const key = eventKey(e)
+        const path = () => props.definitionFor?.(e)
         return (
-            <div
-                class={styles['log-row']}
-                classList={{
-                    [styles['tone-fail']]: line.tone === 'fail',
-                    [styles['tone-live']]: line.tone === 'live',
-                    [styles['tone-ok']]: line.tone === 'ok',
-                }}
-            >
-                <Text as="span" inherit class={styles['log-time']}>
-                    {clock ? clockTime(e.ts) : line.time}
-                </Text>
-                <Text as="span" inherit class={styles['log-who']}>
-                    {line.who}
-                </Text>
-                <Text as="span" inherit class={styles['log-what']}>
-                    {line.what}
-                </Text>
-                <Text
-                    as="span"
-                    inherit
-                    class={styles['log-note']}
-                    classList={{ [styles['note-wrap']]: clock }}
-                    title={line.note ?? undefined}
-                >
-                    {line.note ?? ''}
-                </Text>
-                <Text as="span" inherit class={styles['log-duration']}>
-                    {line.duration ?? ''}
-                </Text>
-            </div>
+            <DaemonLogRow
+                event={e}
+                now={now()}
+                clock={clock}
+                expanded={openKey() === key}
+                onToggle={() => setOpenKey(k => (k === key ? null : key))}
+                onFilter={
+                    e.name && filter() !== e.name
+                        ? () => setFilter(e.name)
+                        : undefined
+                }
+                onOpenDefinition={
+                    path() && props.onOpen
+                        ? () => props.onOpen!(path()!)
+                        : undefined
+                }
+            />
         )
     }
+
+    const filterLine = () => (
+        <Show when={filter()}>
+            {name => (
+                <div class={styles['log-filter']} data-testid="daemon-log-filter">
+                    <Text as="span" size="micro" tone="muted">
+                        {`only ${name()} //`}
+                    </Text>
+                    <TextButton
+                        onClick={e => {
+                            e.stopPropagation()
+                            setFilter(null)
+                        }}
+                    >
+                        clear
+                    </TextButton>
+                </div>
+            )}
+        </Show>
+    )
+    const emptyText = () =>
+        filter() ? `nothing logged for ${filter()}` : 'nothing logged yet'
 
     return (
         <Show
@@ -81,14 +114,26 @@ function DaemonLog(props: DaemonLogProps) {
                 <DaemonSection
                     title="log"
                     empty="nothing logged yet"
-                    isEmpty={props.events.length === 0}
+                    isEmpty={props.events.length === 0 && !filter()}
                     onOpen={props.onOpenSection}
                     class={props.class}
                 >
-                    <For each={shown()}>{e => row(e)}</For>
+                    {filterLine()}
+                    <Show
+                        when={visible().length > 0}
+                        fallback={
+                            <Show when={filter()}>
+                                <Text tone="muted" class={styles['log-empty']}>
+                                    {emptyText()}
+                                </Text>
+                            </Show>
+                        }
+                    >
+                        <For each={shown()}>{e => row(e)}</For>
+                    </Show>
                     <Show when={limited()}>
                         <DaemonMoreLine
-                            label={`+${props.events.length - (props.limit as number)} more`}
+                            label={`+${visible().length - (props.limit as number)} more`}
                             onOpen={() => props.onOpenSection?.()}
                         />
                     </Show>
@@ -99,9 +144,10 @@ function DaemonLog(props: DaemonLogProps) {
                 data-testid="daemon-log-full"
                 class={`${styles['log-full']} ${props.class ?? ''}`}
             >
+                {filterLine()}
                 <Show
-                    when={props.events.length > 0}
-                    fallback={<Text tone="muted">nothing logged yet</Text>}
+                    when={visible().length > 0}
+                    fallback={<Text tone="muted">{emptyText()}</Text>}
                 >
                     <For each={days()}>
                         {d => (

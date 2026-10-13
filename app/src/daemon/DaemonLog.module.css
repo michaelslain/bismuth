@@ -1,77 +1,26 @@
 /* app/src/daemon/DaemonLog.module.css — DaemonLog.tsx is the ONLY importer.
-   One mono row per event: `time  who  what  note  duration`, tone colours per activityLine.ts's
-   ActivityTone (fail→--danger, live→--accent, quiet+ok→--text-muted — the row spells the word "skipped" out, so colour is
-   never the only cue, and --faint never carries content a user must read (DESIGN.md)). Deliberately
-   plain rows, not chips — a scrolling console read, not a table. The scroll + 16px bottom fade
-   that used to live on the deleted DaemonPanel is now DaemonSection's own `fill` variant
-   (DaemonSection.module.css) — this file owns only the row's own look, and `.log-duration`'s
-   existing right inset already lands on the section's shared `--sp-4` right edge. */
-/* 2px of block padding on the 18px line: a console read, one step looser than the 18px cron rows
-   (the time/who/what columns need a little air to scan) but not the 26px it was. */
-.log-row {
+   The list's own furniture: day labels, the narrowed-to line and the opened measure. Each event
+   row's look lives in DaemonLogRow.module.css. The scroll + bottom fade is DaemonSection's own
+   `fill` variant. */
+/* `only <name> // [ clear ]` — heads the list while it is narrowed to one cron or service, on
+   the rows' own left edge. */
+.log-filter {
     display: flex;
     align-items: baseline;
-    gap: var(--sp-4);
+    gap: var(--sp-3);
+    padding: var(--sp-1) var(--sp-4) var(--sp-2);
+}
+/* A narrowed box with nothing for that name — the rows' left edge, not the section's empty slot. */
+.log-empty {
+    display: block;
     padding: var(--sp-1) var(--sp-4);
-    font-size: var(--fs-micro);
-    white-space: nowrap;
-    color: var(--text-muted);
-}
-.log-time {
-    color: var(--text-muted);
-    flex-shrink: 0;
-    width: 4.5em;
-}
-.log-who {
-    color: var(--fg);
-    flex-shrink: 0;
-    max-width: 40%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.log-what {
-    flex-shrink: 0;
-}
-/* Why it ran or how it ended. Always --text-muted, whatever the tone: the coloured `what` already
-   says failed/live, the note is the explanation read after it. One clipped line in the box (the
-   full text is its title); the opened log wraps it so a long failure reason reads whole. */
-.log-note {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--text-muted);
-}
-.log-note.note-wrap {
-    white-space: normal;
-    overflow-wrap: anywhere;
-}
-.log-duration {
-    flex-shrink: 0;
-    min-width: 2.5em;
-    text-align: right;
-}
-/* Tone colours only .log-what + .log-duration — .log-time and .log-who keep their own
-   muted/fg colours regardless of outcome; the timestamp and the actor never change with the
-   event's tone, only the event text itself does. */
-.log-row.tone-fail .log-what,
-.log-row.tone-fail .log-duration {
-    color: var(--danger);
-}
-.log-row.tone-live .log-what,
-.log-row.tone-live .log-duration {
-    color: var(--accent);
-}
-.log-row.tone-ok .log-what,
-.log-row.tone-ok .log-duration {
-    color: var(--text-muted);
 }
 /* Day label above a day's rows in the full variant — same left edge as the rows' text. */
 .log-day {
     display: block;
     padding: var(--sp-3) var(--sp-4) var(--sp-1);
 }
-/* Opened log: cap the list so time, who, what and duration stay together. */
+/* Opened log: cap the list so time, who, what, note and duration stay together. */
 .log-full {
     max-width: var(--daemon-list-max);
 }

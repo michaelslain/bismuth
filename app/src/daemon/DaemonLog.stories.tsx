@@ -1,7 +1,7 @@
 // Visual spec for <DaemonLog> — the daemon page's activity log panel: one mono row per event,
 // newest first, toned by activityLine.ts's ActivityTone.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import DaemonLog from './DaemonLog'
 import { sampleActivity } from '../ui/_daemonFixtures'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
@@ -16,7 +16,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const logRows = (canvasElement: HTMLElement) =>
-    canvasElement.querySelectorAll('[class*="log-row"]')
+    canvasElement.querySelectorAll('[data-testid="daemon-log-row"]')
 
 /** 12 events spanning every kind (cron/process/daemon/session) and outcome, so every tone
  *  (fail/live/quiet/ok) and duration bucket (<1s/Ns/Nm) appears at once. No `limit`, so the
@@ -120,6 +120,82 @@ export const Full: Story = {
         await expect(canvas.getByText('today')).toBeInTheDocument()
         await expect(canvas.getByText('yesterday')).toBeInTheDocument()
         await expect(logRows(canvasElement).length).toBe(5)
+    },
+}
+
+/** Every event's owner that still has a definition — `[ open ]` shows for these crons/services. */
+const definitionFor = (e: ActivityEvent) =>
+    e.kind === 'cron' || e.kind === 'process'
+        ? `.daemon/${e.kind === 'cron' ? 'crons' : 'processes'}/${e.name}.md`
+        : undefined
+
+/** Clicking a row's line unfolds its detail: the exact time // kind // duration, the daemon's
+ *  detail text (here the failure), and `[ only answer-emails ]` `[ open ]`. A second click folds it. */
+export const Expanded: Story = {
+    args: { onOpen: fn() },
+    render: args => (
+        <div style={{ width: '420px' }}>
+            <DaemonLog
+                events={sampleActivity()}
+                definitionFor={definitionFor}
+                onOpen={args.onOpen}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement, args }) => {
+        const canvas = within(canvasElement)
+        const first = logRows(canvasElement)[0] as HTMLElement
+        const line = first.querySelector('button')!
+        await userEvent.click(line)
+        await expect(line.getAttribute('aria-expanded')).toBe('true')
+        const detail = within(first).getByTestId('daemon-log-detail')
+        await expect(within(detail).getByText('the gmail api timed out twice')).toBeInTheDocument()
+        await expect(within(detail).getByText(/cron \/\/ 4\.2s/)).toBeInTheDocument()
+        await userEvent.click(within(detail).getByRole('button', { name: /open/ }))
+        await expect(args.onOpen).toHaveBeenCalledWith('.daemon/crons/answer-emails.md')
+        // One open at a time: opening another row folds the first.
+        await userEvent.click((logRows(canvasElement)[3] as HTMLElement).querySelector('button')!)
+        await expect(canvas.getAllByTestId('daemon-log-detail')).toHaveLength(1)
+        await expect(line.getAttribute('aria-expanded')).toBe('false')
+    },
+}
+
+const filterOpened = fn()
+
+/** `[ only answer-emails ]` narrows the log to that cron, under an `only answer-emails //
+ *  [ clear ]` line; `[ clear ]` brings every event back. The box stays a box throughout. */
+export const Filtered: Story = {
+    render: () => {
+        const events = [
+            ...sampleActivity(),
+            {
+                ts: new Date(NOW - 3 * 60 * MIN).toISOString(),
+                kind: 'cron',
+                name: 'answer-emails',
+                event: 'finished',
+                outcome: 'success',
+                durationMs: 3100,
+            },
+        ]
+        return (
+            <div style={{ width: '420px' }}>
+                <DaemonLog events={events} onOpenSection={filterOpened} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        filterOpened.mockClear()
+        const total = logRows(canvasElement).length
+        await userEvent.click((logRows(canvasElement)[0] as HTMLElement).querySelector('button')!)
+        await userEvent.click(canvas.getByRole('button', { name: /only answer-emails/ }))
+        await expect(canvas.getByTestId('daemon-log-filter')).toBeInTheDocument()
+        const owned = sampleActivity().filter(e => e.name === 'answer-emails').length + 1
+        await expect(logRows(canvasElement).length).toBe(owned)
+        await userEvent.click(canvas.getByRole('button', { name: /clear/ }))
+        await expect(logRows(canvasElement).length).toBe(total)
+        // Neither button opens the section, though each unmounts before its click bubbles to the box.
+        await expect(filterOpened).not.toHaveBeenCalled()
     },
 }
 

@@ -94,6 +94,8 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         null,
     )
     const [opened, setOpened] = createSignal<DaemonSectionKey | null>(null)
+    // The cron/service name the log is narrowed to — shared by the box and the opened log.
+    const [logFilter, setLogFilter] = createSignal<string | null>(null)
     const [now, setNow] = createSignal(Date.now())
     const enabled = () => settings.daemon.enabled
     const session = () => chatSession(DAEMON_CHAT_ID)
@@ -116,6 +118,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         try {
             const ev = await api.daemonLogs({
                 limit: full ? FULL_LOG_LIMIT : LOG_LIMIT,
+                name: logFilter() ?? undefined,
             })
             setEvents(full ? ev.slice(0, LOG_LIMIT) : ev)
             if (full) setFullEvents(ev)
@@ -126,6 +129,19 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     createEffect(
         on(opened, k => (k === 'log' ? void fetchLogs() : setFullEvents(null))),
     )
+    createEffect(on(logFilter, () => void fetchLogs(), { defer: true }))
+    // A log event's owner → its definition file, while that cron/service still exists.
+    const definitionFor = (e: ActivityEvent): string | undefined => {
+        if (e.kind === 'cron') {
+            const c = snapshot().crons.find(x => x.name === e.name)
+            return c ? `.daemon/crons/${c.file}.md` : undefined
+        }
+        if (e.kind === 'process') {
+            const p = snapshot().processes.find(x => x.name === e.name)
+            return p ? `.daemon/processes/${p.file}.md` : undefined
+        }
+        return undefined
+    }
 
     createEffect(() => {
         if (!enabled()) return
@@ -343,6 +359,10 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                     <DaemonLog
                         variant="full"
                         events={fullEvents() ?? events()}
+                        filter={logFilter()}
+                        onFilter={setLogFilter}
+                        {...{ definitionFor }}
+                        onOpen={props.onOpen}
                     />
                 </DaemonTakeover>
             </Match>
@@ -409,6 +429,10 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                 events={events()}
                                 limit={limit()}
                                 onOpenSection={() => setOpened('log')}
+                                filter={logFilter()}
+                                onFilter={setLogFilter}
+                                {...{ definitionFor }}
+                                onOpen={props.onOpen}
                             />
                         )}
                     />

@@ -2,8 +2,8 @@
 // Presentational services panel — the "services" facet's panel (UI label "services"; the type
 // underneath is still DaemonProcess/`processes/`). Same shape as DaemonCrons.tsx minus a
 // schedule column and `[ run ]` (a background service has neither a cron expression nor a
-// discrete "run it now" action) — see DaemonProcesses.module.css's `.list` for the narrower
-// 4-column grid. `running` on DaemonProcess is always false (core exposes no per-process
+// discrete "run it now" action), so its hover action is `[ off ]`/`[ on ]` alone — see
+// DaemonProcesses.module.css's `.list` for the narrower 4-column grid. `running` on DaemonProcess is always false (core exposes no per-process
 // liveness file it can trust), so "live" here means enabled AND the daemon process itself is up
 // (`daemonRunning`) — the same rule this file's own `toneFor` has always applied.
 import { createMemo, createSignal, For, Show } from 'solid-js'
@@ -105,7 +105,17 @@ function DaemonProcesses(props: DaemonProcessesProps) {
     }
 
     const rowActions = (process: DaemonProcess) => {
-        if (deletingName() !== process.name) return undefined
+        if (deletingName() !== process.name)
+            return (
+                <TextButton
+                    onClick={e => {
+                        e.stopPropagation()
+                        props.onToggle(process.name, !process.enabled)
+                    }}
+                >
+                    {process.enabled ? 'off' : 'on'}
+                </TextButton>
+            )
         const busy = busyName() === process.name
         return (
             <>
@@ -138,7 +148,6 @@ function DaemonProcesses(props: DaemonProcessesProps) {
             class={styles.list}
             data-variant={props.variant}
             data-testid={full() ? 'daemon-processes-full' : undefined}
-            classList={{ [styles['with-actions']]: deletingName() !== null }}
         >
             <For each={shown()}>
                 {process => (

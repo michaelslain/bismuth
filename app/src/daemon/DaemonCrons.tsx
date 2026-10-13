@@ -176,15 +176,25 @@ function DaemonCrons(props: DaemonCronsProps) {
             )
         }
         return (
-            <TextButton
-                disabled={cron.running}
-                onClick={e => {
-                    e.stopPropagation()
-                    props.onRun(cron.name)
-                }}
-            >
-                run
-            </TextButton>
+            <>
+                <TextButton
+                    disabled={cron.running}
+                    onClick={e => {
+                        e.stopPropagation()
+                        props.onRun(cron.name)
+                    }}
+                >
+                    run
+                </TextButton>
+                <TextButton
+                    onClick={e => {
+                        e.stopPropagation()
+                        props.onToggle(cron.name, !cron.enabled)
+                    }}
+                >
+                    {cron.enabled ? 'off' : 'on'}
+                </TextButton>
+            </>
         )
     }
 

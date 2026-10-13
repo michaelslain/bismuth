@@ -1,0 +1,96 @@
+/* app/src/daemon/DaemonLogRow.module.css — DaemonLogRow.tsx is the ONLY importer.
+   One mono line per event: `time  who  what  note  duration`, tone colours per activityLine.ts's
+   ActivityTone (fail→--danger, live→--accent, quiet+ok→--text-muted — the row spells the word
+   "skipped" out, so colour is never the only cue). The line is a button that unfolds `.detail`
+   below it; the detail starts at the `who` column so it reads as belonging to that event. */
+.entry {
+    --log-time-w: 4.5em;
+    font-size: var(--fs-micro);
+    color: var(--text-muted);
+}
+/* 2px of block padding on the 18px line: a console read, not a table. No hover fill — buttons
+   never paint a background; the pointer cursor and the unfolding detail are the affordance. */
+.line {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-4);
+    width: 100%;
+    padding: var(--sp-1) var(--sp-4);
+    white-space: nowrap;
+    text-align: left;
+    cursor: pointer;
+}
+.line:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+}
+.time {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    width: var(--log-time-w);
+}
+.who {
+    color: var(--fg);
+    flex-shrink: 0;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.what {
+    flex-shrink: 0;
+}
+/* Why it ran or how it ended. Always --text-muted, whatever the tone: the coloured `what` already
+   says failed/live, the note is the explanation read after it. One clipped line (the full text is
+   its title); the opened log wraps it so a long reason reads whole. An open entry keeps it clipped:
+   the detail below already prints the daemon's text in full. */
+.note {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-muted);
+}
+.note-wrap {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.duration {
+    flex-shrink: 0;
+    min-width: 2.5em;
+    text-align: right;
+}
+/* Tone colours only what + duration — the timestamp and the actor never change with the event's
+   tone, only the event text itself does. */
+.tone-fail .what,
+.tone-fail .duration {
+    color: var(--danger);
+}
+.tone-live .what,
+.tone-live .duration {
+    color: var(--accent);
+}
+.tone-ok .what,
+.tone-ok .duration {
+    color: var(--text-muted);
+}
+.detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    padding: 0 var(--sp-4) var(--sp-3) calc(var(--sp-4) + var(--log-time-w) + var(--sp-4));
+}
+/* The daemon's own detail text (error output, a summary) — kept as written, wrapped. */
+.text {
+    color: var(--fg);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+.tone-fail .text {
+    color: var(--danger);
+}
+.actions {
+    display: flex;
+    gap: var(--sp-3);
+    padding-top: var(--sp-1);
+}

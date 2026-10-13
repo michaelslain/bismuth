@@ -95,9 +95,11 @@
     color: var(--text-muted);
 }
 
-/* Hidden at rest, revealed on row hover/focus-within (or mid inline-confirm) — opacity, never
-   `visibility`/`display`, so the row's actions column keeps its reserved grid track (no layout
-   shift) and a tabbed-to button stays in tab order even while invisible. */
+/* Hidden at rest, revealed on row hover, on KEYBOARD focus of the row or anything in it, or mid
+   inline-confirm — opacity, never `visibility`/`display`, so the row's actions column keeps its
+   reserved grid track (no layout shift) and a tabbed-to button stays in tab order even while
+   invisible. `:has(:focus-visible)`, not `:focus-within`: a clicked `[ off ]` keeps focus, and
+   `:focus-within` would hold the buttons up after the pointer leaves. */
 .actions {
     display: flex;
     align-items: center;
@@ -108,7 +110,8 @@
     transition: opacity var(--dur-fast) var(--ease);
 }
 .row:hover .actions,
-.row:focus-within .actions,
+.row:focus-visible .actions,
+.row:has(:focus-visible) .actions,
 .row[data-confirming] .actions {
     opacity: 1;
 }
