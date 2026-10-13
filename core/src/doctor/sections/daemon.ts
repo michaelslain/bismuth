@@ -108,6 +108,7 @@ function unitFindings(ctx: DoctorContext): Finding[] {
                 repair: {
                     risk: 'destructive',
                     description: `unload and remove ${unit}`,
+                    touches: [unit],
                     apply: () =>
                         removeServiceUnit(
                             {

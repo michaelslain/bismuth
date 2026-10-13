@@ -62,7 +62,7 @@ The left column is the daemon: a face, its name, and a chat. The right column ha
 | inbox | One line per open page: status dot, title, age | Click to open the page; `[ archive ]` on hover deletes it |
 | crons | Name, schedule or watched path, last result | Click to open the definition; `[ run ]` and `[ off ]` (`[ on ]` when disabled) on hover; right-click for Run now, Enable or Disable, Delete |
 | services | One per background process, `on` or `off` | Click to open the definition; `[ off ]` or `[ on ]` on hover; right-click for Enable or Disable, Delete |
-| log | Recent activity events, newest first: time, name, what happened, then why (the run's trigger and model, a failure's reason, a skip's reason, the run's report line) | Click a row to unfold its detail; from there `[ only <name> ]` and `[ open ]` |
+| log | Recent activity events, newest first: time, name, what happened, then why (the run's trigger and model, a failure's reason, a skip's reason, the run's report line). The doctor's repairs appear as `doctor` rows | Click a row to unfold its detail; from there `[ only <name> ]` and `[ open ]` |
 
 A log row unfolds to show the event's time to the second, its kind, exact duration and cause, and any detail text the daemon wrote, such as a failed run's error. `[ only <name> ]` narrows the log, boxed and opened alike, to that cron or service under an `only <name> // [ clear ]` line, and `[ open ]` opens the cron or service definition. A daemon or session event has neither action, and `[ open ]` is absent once the definition is deleted.
 

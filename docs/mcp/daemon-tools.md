@@ -56,7 +56,7 @@ The memory tools read and write the vault's memory graph. [Memory](../daemon/mem
 | Argument | Values | Default |
 |---|---|---|
 | `limit` | number of events | 100, at most 1000 |
-| `kind` | `cron`, `process`, `daemon`, `session` | all |
+| `kind` | `cron`, `process`, `daemon`, `session`, `doctor` | all |
 | `name` | a cron or process name, exact | all |
 | `since` | an ISO-8601 instant; an unparseable value is ignored | no lower bound |
 

@@ -91,7 +91,7 @@ const tools = [
     {
         name: 'bismuth_doctor',
         description:
-            'Check this machine (and a vault) for leftovers from older Bismuth builds, version skew and pending migrations; fix:true repairs. (bismuth doctor)',
+            'Check this machine (and a vault) for leftovers from older Bismuth builds, version skew and pending migrations; fix:true repairs. Repairs already applied (by boot or an earlier fix) are in daemon_logs with kind "doctor". (bismuth doctor)',
         inputSchema: {
             type: 'object',
             properties: {

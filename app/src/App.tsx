@@ -55,7 +55,11 @@ import { lastChange, currentConnectionState, serverVersion } from './serverVersi
 import { serverErrorText } from './serverError'
 import { debounce } from './debounce'
 import { ToastHost, pushToast, dismissToast, updateToast } from './ui/ToastHost'
-import { applyUpdateAndRelaunch } from './updateCheck'
+import {
+    applyUpdateAndRelaunch,
+    showUpdateFailure,
+    updatePhaseText,
+} from './updateCheck'
 import GalleryHost from './ui/gallery/GalleryHost'
 import { FolderPrompt } from './FolderPrompt'
 import { DaemonOwnerModal } from './daemon/DaemonOwnerModal'
@@ -1340,24 +1344,13 @@ export default function App() {
             id,
             `Updating Bismuth (${plural(status.behind, 'commit')} behind)…`,
         )
-        const phaseText = (p: string) =>
-            p === 'pulling'
-                ? 'Pulling update…'
-                : p === 'building'
-                  ? 'Building update… (a few min)'
-                  : p === 'ready'
-                    ? 'Relaunching…'
-                    : 'Updating…'
-        const r = await applyUpdateAndRelaunch(p =>
-            updateToast(id, phaseText(p)),
+        const r = await applyUpdateAndRelaunch((p, progress) =>
+            updateToast(id, updatePhaseText(p, progress)),
         )
         if (r.result === 'relaunching') return // quitting; the relauncher swaps + reopens
         dismissToast(id)
-        pushToast(
-            r.result === 'error'
-                ? `Update failed: ${r.message ?? 'unknown error'}`
-                : 'Bismuth is already up to date',
-        )
+        if (r.result === 'error') showUpdateFailure(r)
+        else pushToast('Bismuth is already up to date')
     }
     // Custom spellcheck dictionary editor — view/remove the user's added words.
     const editDictionaryOpen = () => modal() === 'edit-dictionary'

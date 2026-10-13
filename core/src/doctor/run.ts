@@ -1,5 +1,7 @@
 // The doctor engine: run every section, apply eligible repairs, build one sorted report.
 // A section that throws never takes the run down — it becomes `<id>.check-failed` and the others go on.
+// A destructive repair runs only after its `touches` are committed to the backup repo, and every
+// repair it attempts becomes one `doctor` event in the daemon activity log.
 import type {
     DoctorContext,
     DoctorOptions,
@@ -7,6 +9,8 @@ import type {
     DoctorSection,
     Finding,
     FindingReport,
+    Repair,
+    RepairBackup,
     Severity,
 } from './types'
 import { DEFAULT_SECTIONS } from './sections'
@@ -21,6 +25,52 @@ const SEVERITY_RANK: Record<Severity, number> = {
 type Stamped = Finding & { section: string }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** Back up (destructive only), then apply. A failed backup is a failed repair that never ran. */
+async function attempt(
+    ctx: DoctorContext,
+    id: string,
+    r: Repair,
+): Promise<{ warnings: string[]; backup?: RepairBackup }> {
+    let backup: RepairBackup | null = null
+    if (r.risk === 'destructive') {
+        try {
+            backup = await ctx.backup(id, r.description, r.touches)
+        } catch (e) {
+            return { warnings: [`backup failed, nothing changed: ${message(e)}`] }
+        }
+    }
+    let warnings: string[]
+    try {
+        warnings = await r.apply()
+    } catch (e) {
+        warnings = [message(e)]
+    }
+    return backup ? { warnings, backup } : { warnings }
+}
+
+/** The activity-log line for one attempted repair: who = `doctor`, what = `repair success` or
+ *  `repair failed`, note = the finding id, what it did, where the backup went, the first warning. */
+function repairEvent(
+    f: Stamped,
+    r: Repair,
+    result: { warnings: string[]; backup?: RepairBackup },
+): Parameters<DoctorContext['logActivity']>[0] {
+    const parts = [f.id, r.description]
+    if (result.backup)
+        parts.push(
+            `backup ${result.backup.commit.slice(0, 7)} in ${result.backup.repo}`,
+        )
+    if (result.warnings.length > 0) parts.push(result.warnings[0])
+    return {
+        ts: new Date().toISOString(),
+        kind: 'doctor',
+        name: 'doctor',
+        event: 'repair',
+        outcome: result.warnings.length === 0 ? 'success' : 'failed',
+        detail: parts.join(' // '),
+    }
+}
 
 async function checkSection(
     s: DoctorSection,
@@ -84,12 +134,10 @@ export async function runDoctor(
                 (!opts.only || opts.only.includes(f.id)) &&
                 (!opts.risks || opts.risks.includes(r.risk))
             if (eligible) {
-                let warnings: string[]
-                try {
-                    warnings = await r.apply()
-                } catch (e) {
-                    warnings = [message(e)]
-                }
+                const result = await attempt(ctx, f.id, r)
+                const { warnings } = result
+                if (result.backup) report.repair.backup = result.backup
+                ctx.logActivity(repairEvent(f, r, result))
                 if (warnings.length === 0) {
                     report.repair.status = 'applied'
                     fixed++

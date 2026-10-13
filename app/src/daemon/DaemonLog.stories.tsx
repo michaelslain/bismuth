@@ -259,3 +259,50 @@ export const Reasons: Story = {
         ).toBeInTheDocument()
     },
 }
+
+/** What the doctor repaired, as the boot pass and `bismuth doctor --fix` log it: one `doctor` row per
+ *  repair, its note the finding id, what it did and where the backup went. A destructive repair
+ *  names its backup commit; a failed one carries its first warning. */
+export const DoctorRepairs: Story = {
+    render: () => {
+        const at = (min: number) => new Date(NOW - min * MIN).toISOString()
+        const events: ActivityEvent[] = [
+            {
+                ts: at(1),
+                kind: 'doctor',
+                name: 'doctor',
+                event: 'repair',
+                outcome: 'success',
+                detail: 'legacy.claude-bot-service // unload and delete ~/Library/LaunchAgents/com.claude-bot.plist // backup 3f9c2ab in ~/.bismuth/doctor-backups',
+            },
+            {
+                ts: at(1),
+                kind: 'doctor',
+                name: 'doctor',
+                event: 'repair',
+                outcome: 'success',
+                detail: 'daemon.atomic-tmp // unlink 4 leftover temp files',
+            },
+            {
+                ts: at(1),
+                kind: 'doctor',
+                name: 'doctor',
+                event: 'repair',
+                outcome: 'failed',
+                detail: 'install.version-skew // rerun the installer // EACCES: permission denied, open /usr/local/bin/bismuth',
+            },
+        ]
+        return (
+            <div style={{ width: '420px' }}>
+                <DaemonLog variant="full" events={events} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(logRows(canvasElement).length).toBe(3)
+        await expect(
+            canvas.getByText(/^legacy\.claude-bot-service \/\/ unload/),
+        ).toBeInTheDocument()
+    },
+}

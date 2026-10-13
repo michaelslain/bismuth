@@ -226,9 +226,13 @@ test('runPipeline runs pull, install, then build, in order', async () => {
         },
         logPath: testLogPath('order'),
     })
-    expect(calls[0]).toBe('git pull --ff-only origin main')
-    expect(calls[1]).toContain('install --frozen-lockfile')
-    expect(calls[2]).toContain('run tauri build --bundles app')
+    expect(calls.slice(0, 2)).toEqual([
+        'git rev-list --count origin/main..HEAD',
+        'git rev-list --count HEAD..origin/main',
+    ])
+    expect(calls[2]).toBe('git pull --ff-only origin main')
+    expect(calls[3]).toContain('install --frozen-lockfile')
+    expect(calls[4]).toContain('run tauri build --bundles app')
     expect(seenProc[0].cwd).toBe('/repo')
     expect(seenProc[0].cmd).toContain('install')
     expect(seenProc[0].cmd).toContain('--frozen-lockfile')
@@ -285,4 +289,118 @@ test('pull failure never runs install', async () => {
     expect(procCalls).toEqual([])
     expect(getUpdateProgress().phase).toBe('error')
     expect(getUpdateProgress().message).toContain('git pull failed')
+})
+
+/** A git whose rev-list counts say the clone and origin/main diverged; every other call succeeds. */
+function divergedGit(calls: string[], ahead = 4312, behind = 1158): GitRunner {
+    return async (_repo, args) => {
+        calls.push(`git ${args.join(' ')}`)
+        if (args[0] === 'rev-list')
+            return {
+                code: 0,
+                stdout: `${args[2] === 'origin/main..HEAD' ? ahead : behind}\n`,
+                stderr: '',
+            }
+        return { code: 0, stdout: '', stderr: '' }
+    }
+}
+
+test('a diverged clone stops before the pull with diverged counts, touching nothing', async () => {
+    const calls: string[] = []
+    const procCalls: string[][] = []
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git: divergedGit(calls),
+        proc: async cmd => {
+            procCalls.push(cmd)
+            return { code: 0, stdout: '', stderr: '' }
+        },
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {},
+        logPath: testLogPath('diverged'),
+    })
+    expect(calls.some(c => /pull|reset|branch/.test(c))).toBe(false)
+    expect(procCalls).toEqual([])
+    const p = getUpdateProgress()
+    expect(p.phase).toBe('error')
+    expect(p.diverged).toEqual({ ahead: 4312, behind: 1158 })
+    expect(p.message).toBe(
+        'the Bismuth clone has 4312 commits origin/main lacks — reset saves them on a backup branch and moves to origin/main',
+    )
+})
+
+test('resetToUpstream saves HEAD on a backup branch, resets, then installs and builds without a pull', async () => {
+    const calls: string[] = []
+    let relaunched = false
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git: divergedGit(calls),
+        proc: async cmd => {
+            calls.push(cmd.slice(1).join(' '))
+            return { code: 0, stdout: '', stderr: '' }
+        },
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {
+            relaunched = true
+        },
+        logPath: testLogPath('reset'),
+        resetToUpstream: true,
+        now: () => new Date('2026-10-13T18:44:05.500Z'),
+    })
+    expect(calls.slice(2)).toEqual([
+        'git branch backup/pre-update-20261013T184405Z HEAD',
+        'git reset --hard origin/main',
+        'install --frozen-lockfile',
+        'run tauri build --bundles app',
+    ])
+    expect(relaunched).toBe(true)
+    expect(getUpdateProgress()).toEqual({
+        phase: 'ready',
+        message: 'update ready — relaunching…',
+        backupBranch: 'backup/pre-update-20261013T184405Z',
+    })
+})
+
+test('one local commit reads in the singular', async () => {
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git: divergedGit([], 1, 2),
+        proc: async () => ({ code: 0, stdout: '', stderr: '' }),
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {},
+        logPath: testLogPath('singular'),
+    })
+    expect(getUpdateProgress().message).toStartWith(
+        'the Bismuth clone has 1 commit origin/main lacks',
+    )
+})
+
+test('resetToUpstream on a clone that has not diverged just pulls', async () => {
+    const calls: string[] = []
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git: divergedGit(calls, 3, 0),
+        proc: async () => ({ code: 0, stdout: '', stderr: '' }),
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {},
+        logPath: testLogPath('reset-noop'),
+        resetToUpstream: true,
+    })
+    expect(calls).toContain('git pull --ff-only origin main')
+    expect(calls.some(c => c.startsWith('git reset'))).toBe(false)
+})
+
+test('a failed backup branch stops before the reset', async () => {
+    const calls: string[] = []
+    const base = divergedGit(calls)
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git: async (repo, args, t) =>
+            args[0] === 'branch'
+                ? { code: 128, stdout: '', stderr: 'fatal: bad name' }
+                : base(repo, args, t),
+        proc: async () => ({ code: 0, stdout: '', stderr: '' }),
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {},
+        logPath: testLogPath('branch-fail'),
+        resetToUpstream: true,
+    })
+    expect(calls.some(c => c.startsWith('git reset'))).toBe(false)
+    expect(getUpdateProgress().phase).toBe('error')
+    expect(getUpdateProgress().message).toContain('git branch failed')
 })

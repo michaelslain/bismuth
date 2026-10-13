@@ -771,7 +771,9 @@ export const api = {
         postJson<{ id: string }>('/feedback', payload),
     // Git-based self-update: auto-check status + start (background) + poll progress.
     updateStatus: () => getJson<UpdateStatus>('/update/status'),
-    applyUpdate: () => postJson<UpdateProgress>('/update/apply', {}),
+    // `reset` (a diverged clone only): save HEAD on a backup branch and reset to origin/main first.
+    applyUpdate: (opts: { reset?: boolean } = {}) =>
+        postJson<UpdateProgress>('/update/apply', opts.reset ? { reset: true } : {}),
     updateProgress: () => getJson<UpdateProgress>('/update/progress'),
     // One-click free agent: opencode download state + start (idempotent server-side).
     freeAgentStatus: () => getJson<FreeAgentStatus>('/agents/free'),

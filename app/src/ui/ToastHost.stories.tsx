@@ -8,7 +8,9 @@
 // it stays on screen for the spec, which would otherwise stack up indefinitely across repeated
 // visits in one Storybook session.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, within } from 'storybook/test'
 import { ToastHost, pushToast, dismissToast, toasts } from './ToastHost'
+import { showUpdateFailureWith } from '../updateFailure'
 
 function reset(): void {
     for (const t of toasts()) dismissToast(t.id)
@@ -64,5 +66,31 @@ export const PersistentProgress: Story = {
         pushToast('Saved', { ttl: 3_600_000 })
         pushToast('Syncing Google Calendar…', { ttl: 0 })
         return <ToastHost />
+    },
+}
+
+/** A self-update stopped because the source clone and origin/main diverged: a danger toast whose
+ *  action resets to upstream. Pushed through the real `showUpdateFailureWith`, so it carries that
+ *  toast's own 20 s ttl rather than this file's ttl=0. */
+export const UpdateDiverged: Story = {
+    render: () => {
+        reset()
+        showUpdateFailureWith(
+            {
+                result: 'error',
+                message:
+                    'the Bismuth clone has 3 commits origin/main lacks — reset saves them on a backup branch and moves to origin/main',
+                diverged: true,
+            },
+            { reapply: async () => ({ result: 'up-to-date' }) },
+        )
+        return <ToastHost />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvas.getByText(/^Update failed: the Bismuth clone has 3 commits/),
+        ).toBeInTheDocument()
+        await expect(canvas.getByText('reset')).toBeInTheDocument()
     },
 }

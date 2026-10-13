@@ -70,9 +70,14 @@ describe('formatDoctorReport', () => {
                         severity: 'warn',
                         title: 'a',
                         repair: {
-                            risk: 'safe',
+                            risk: 'destructive',
                             description: 'd',
                             status: 'applied',
+                            backup: {
+                                repo: '/r',
+                                commit: 'abc1234def567',
+                                file: 'f.tar.gz',
+                            },
                         },
                     },
                     {
@@ -94,7 +99,7 @@ describe('formatDoctorReport', () => {
         ).split('\n')
         expect(out).toEqual([
             'bismuth doctor // 2 findings // 0 need consent',
-            '! x.a  a  -> d [safe] // fixed',
+            '! x.a  a  -> d [destructive] // fixed // backup abc1234',
             '! x.b  b  -> d [safe] // failed: nope',
         ])
     })

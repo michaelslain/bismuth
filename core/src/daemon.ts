@@ -331,6 +331,25 @@ function normalizeVaultEntry(raw: unknown): VaultRegistryEntry | null {
     return null
 }
 
+/** Every vault root in the machine-level `vaults.json` registry, in file order. Empty when the file
+ *  is absent or malformed. Never throws. */
+export function registeredVaultRoots(home: string = daemonMachineDir()): string[] {
+    try {
+        const parsed = JSON.parse(readFileSync(join(home, 'vaults.json'), 'utf8'))
+        if (!Array.isArray(parsed)) return []
+        return [
+            ...new Set(
+                parsed
+                    .map(normalizeVaultEntry)
+                    .filter((e): e is VaultRegistryEntry => e !== null)
+                    .map(e => e.path),
+            ),
+        ]
+    } catch {
+        return []
+    }
+}
+
 /** Milliseconds since `iso`, or null when there is nothing parseable to measure. Callers treat
  *  null as "unknown age", never as "ancient" — see {@link registerVaultRoot}. */
 function ageSince(iso: string | undefined): number | null {

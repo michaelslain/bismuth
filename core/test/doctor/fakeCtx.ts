@@ -1,5 +1,6 @@
 // A DoctorContext built entirely under a fresh temp home, for every doctor test. Nothing here
-// touches the real home: exec succeeds silently, which() finds nothing, no pid is alive.
+// touches the real home: exec succeeds silently, which() finds nothing, no pid is alive, a backup
+// reports a fixed fake commit and activity events are dropped.
 import { join } from 'node:path'
 import { tempDir } from '../tempDirs'
 import type { DoctorContext } from '../../src/doctor/types'
@@ -17,6 +18,12 @@ export function fakeCtx(overrides: Partial<DoctorContext> = {}): DoctorContext {
         exec: async () => ({ code: 0, stdout: '', stderr: '' }),
         which: () => null,
         pidAlive: () => false,
+        backup: async () => ({
+            repo: join(home, '.bismuth', 'doctor-backups'),
+            commit: 'fakecommit',
+            file: 'fake.tar.gz',
+        }),
+        logActivity: () => {},
         ...overrides,
     }
 }

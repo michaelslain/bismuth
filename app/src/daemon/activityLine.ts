@@ -3,7 +3,7 @@
 // lifecycle events from the daemon's activity log) into the strings + a tone DaemonLogRow.tsx renders
 // per row, the note saying why among them. No Solid imports — see activityLine.test.ts. Vocabulary this maps (docs/api/
 // http-reference.md `GET /daemon/logs`): cron started/finished/skipped, process
-// started/exited/restarting/reaped, daemon brain-started.
+// started/exited/restarting/reaped, daemon brain-started, doctor repair success/failed.
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import { isFailedResult } from './failedResult'
 

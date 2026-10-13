@@ -21,7 +21,7 @@ import { createError } from './error'
 //
 // Deliberately narrow, and kept in sync with scripts/gate.ts's copy by intent rather than by import
 // — the gate is a standalone hook script and must not depend on a workspace to run.
-const GIT_LOCATION_VARS = [
+export const GIT_LOCATION_VARS = [
     'GIT_DIR',
     'GIT_WORK_TREE',
     'GIT_INDEX_FILE',

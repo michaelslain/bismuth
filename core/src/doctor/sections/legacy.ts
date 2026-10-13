@@ -64,7 +64,12 @@ function removeRepair(
     description: string,
     paths: string[],
 ): Repair {
-    return { risk, description, apply: async () => removePaths(paths) }
+    return {
+        risk,
+        description,
+        touches: paths,
+        apply: async () => removePaths(paths),
+    }
 }
 
 function skillLinks(ctx: DoctorContext): Finding[] {
@@ -142,6 +147,7 @@ function claudeBotFindings(ctx: DoctorContext): Finding[] {
             repair: {
                 risk: 'destructive',
                 description: `unload and delete ${unit}`,
+                touches: [unit],
                 apply: () =>
                     removeServiceUnit(
                         {

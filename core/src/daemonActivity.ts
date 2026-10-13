@@ -1,9 +1,11 @@
 /**
- * core/src/daemonActivity.ts — core's READ WINDOW onto the daemon's activity log.
+ * core/src/daemonActivity.ts — core's window onto the daemon's activity log.
  *
  * The daemon writes `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` (one JSON object per line,
- * one file per UTC day; see daemon/src/lib/activityLog.ts). Core only ever reads it — the same
- * one-way relationship daemon.ts/daemonGraph.ts have with the rest of `.daemon`.
+ * one file per UTC day; see daemon/src/lib/activityLog.ts). Core reads it, and appends exactly one
+ * kind of its own: `doctor`, one event per repair the doctor applies (appendActivity), so a repair
+ * shows up beside the daemon's events in the daemon page and `bismuth daemon logs`. Appending a
+ * whole line is the daemon's own write discipline, so the two writers never corrupt each other.
  *
  * NEVER THROWS, like every other reader in this family: a missing dir, an unreadable file, a
  * truncated line, or a hand-edited file degrades to fewer events, never an exception. A cron
@@ -16,7 +18,7 @@
  * runtime, so a daemon that adds a field is forward-compatible and one that drops a required
  * field degrades to skipping those lines.
  */
-import { readdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export interface ActivityEvent {
@@ -129,4 +131,28 @@ export function readActivity(
 
     out.sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))
     return out.slice(0, limit)
+}
+
+/**
+ * Append one event to `<daemonDir>/logs/activity-<UTC day of event.ts>.jsonl`, the file the daemon
+ * itself appends to. Does nothing when `daemonDir` does not exist (a vault that never ran the
+ * daemon has no log to show the event in). Never throws.
+ */
+export function appendActivity(daemonDir: string, event: ActivityEvent): void {
+    try {
+        readdirSync(daemonDir)
+    } catch {
+        return
+    }
+    try {
+        const logsDir = join(daemonDir, 'logs')
+        mkdirSync(logsDir, { recursive: true })
+        const day = new Date(event.ts).toISOString().slice(0, 10)
+        appendFileSync(
+            join(logsDir, `activity-${day}.jsonl`),
+            `${JSON.stringify(event)}\n`,
+        )
+    } catch {
+        // observability, not work: a full disk must not fail the repair it describes
+    }
 }

@@ -7,7 +7,13 @@
 import { createSignal } from 'solid-js'
 import { api } from './api'
 import { settings } from './settings'
-import type { UpdateStatus, UpdatePhase } from '../../core/src/selfUpdate'
+import { showUpdateFailureWith, type UpdateOutcome } from './updateFailure'
+export { updatePhaseText } from './updateFailure'
+import type {
+    UpdateProgress,
+    UpdateStatus,
+    UpdatePhase,
+} from '../../core/src/selfUpdate'
 
 const [updateStatus, setUpdateStatus] = createSignal<UpdateStatus | null>(null)
 export { updateStatus }
@@ -20,15 +26,13 @@ export { updateStatus }
  * (`relaunching` = build done + quitting, `up-to-date` = nothing to do, `error`).
  */
 export async function applyUpdateAndRelaunch(
-    onPhase?: (p: UpdatePhase | '') => void,
-): Promise<{
-    result: 'relaunching' | 'up-to-date' | 'error'
-    message?: string
-}> {
-    const started = await api.applyUpdate()
+    onPhase?: (p: UpdatePhase | '', progress?: UpdateProgress) => void,
+    opts: { reset?: boolean } = {},
+): Promise<UpdateOutcome> {
+    const started = await api.applyUpdate(opts)
     if (started.phase === 'error')
         return { result: 'error', message: started.message }
-    onPhase?.(started.phase)
+    onPhase?.(started.phase, started)
     return await new Promise(resolve => {
         const poll = setInterval(async () => {
             let p
@@ -37,7 +41,7 @@ export async function applyUpdateAndRelaunch(
             } catch {
                 return // transient; keep polling
             }
-            onPhase?.(p.phase)
+            onPhase?.(p.phase, p)
             if (p.phase === 'ready') {
                 clearInterval(poll)
                 try {
@@ -49,13 +53,24 @@ export async function applyUpdateAndRelaunch(
                 resolve({ result: 'relaunching' })
             } else if (p.phase === 'error') {
                 clearInterval(poll)
-                resolve({ result: 'error', message: p.message })
+                resolve({
+                    result: 'error',
+                    message: p.message,
+                    ...(p.diverged ? { diverged: true } : {}),
+                })
             } else if (p.phase === 'idle') {
                 clearInterval(poll)
                 recheckUpdate() // already up to date — refresh the banner signal
                 resolve({ result: 'up-to-date' })
             }
         }, 2000)
+    })
+}
+
+/** The failure toast, wired to re-run this pipeline with `reset` from its action. */
+export function showUpdateFailure(r: UpdateOutcome): void {
+    showUpdateFailureWith(r, {
+        reapply: onPhase => applyUpdateAndRelaunch(onPhase, { reset: true }),
     })
 }
 
@@ -69,7 +84,9 @@ async function maybeAutoUpdate(): Promise<void> {
     if (!settings.update?.autoUpdate) return
     autoStarted = true
     const r = await applyUpdateAndRelaunch()
-    if (r.result !== 'relaunching') autoStarted = false // let a later check retry
+    // A diverged clone needs the owner's click, so ask once and stop retrying this session.
+    if (r.diverged) showUpdateFailure(r)
+    else if (r.result !== 'relaunching') autoStarted = false // let a later check retry
 }
 
 const PERIODIC_MS = 5 * 60 * 1000 // re-check every 5 min once the backend is reachable

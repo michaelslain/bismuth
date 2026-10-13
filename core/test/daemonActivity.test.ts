@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tempDir } from './helpers'
 import {
+    appendActivity,
     readActivity,
     ACTIVITY_MAX_LIMIT,
     type ActivityEvent,
@@ -155,4 +156,40 @@ test('since filters to events at or after the given instant', () => {
 test('an unparseable since is ignored rather than filtering everything out', () => {
     writeFileSync(join(logsDir, 'activity-2026-08-29.jsonl'), line({}) + '\n')
     expect(readActivity(daemonDir, { since: 'not a date' })).toHaveLength(1)
+})
+
+test('appendActivity adds a line to the day file the reader reads, beside the daemon\'s own', () => {
+    writeFileSync(
+        join(logsDir, 'activity-2026-08-29.jsonl'),
+        line({ ts: '2026-08-29T09:00:00.000Z' }) + '\n',
+    )
+    appendActivity(daemonDir, {
+        ts: '2026-08-29T10:30:00.000Z',
+        kind: 'doctor',
+        name: 'legacy.skills-dir',
+        event: 'repair',
+        outcome: 'success',
+        detail: 'delete ~/.bismuth/skills',
+    })
+    const all = readActivity(daemonDir)
+    expect(all.map(e => [e.kind, e.name])).toEqual([
+        ['doctor', 'legacy.skills-dir'],
+        ['cron', 'dream'],
+    ])
+    expect(readActivity(daemonDir, { kind: 'doctor' })[0].outcome).toBe('success')
+})
+
+test('appendActivity creates logs/ under an existing daemon dir and skips a missing one', () => {
+    rmSync(logsDir, { recursive: true })
+    const ev: ActivityEvent = {
+        ts: '2026-08-30T00:00:00.000Z',
+        kind: 'doctor',
+        name: 'x',
+        event: 'repair',
+    }
+    appendActivity(daemonDir, ev)
+    expect(readActivity(daemonDir).length).toBe(1)
+    const missing = join(daemonDir, 'nope')
+    expect(() => appendActivity(missing, ev)).not.toThrow()
+    expect(readActivity(missing)).toEqual([])
 })

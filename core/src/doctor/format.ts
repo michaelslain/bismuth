@@ -41,6 +41,8 @@ export function formatDoctorReport(report: DoctorReport): string {
             if (f.repair) {
                 line += `  -> ${f.repair.description} [${f.repair.risk}]`
                 if (f.repair.status === 'applied') line += ' // fixed'
+                if (f.repair.backup)
+                    line += ` // backup ${f.repair.backup.commit.slice(0, 7)}`
                 else if (f.repair.status === 'failed')
                     line += ` // failed: ${f.repair.warnings?.[0] ?? 'unknown error'}`
             }

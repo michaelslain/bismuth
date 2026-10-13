@@ -7,6 +7,10 @@
 //     developer who commits+pushes from the build-source clone still sees the update, and
 //   - on request, `git pull --ff-only` + `bun run tauri build`, then hand off to a detached
 //     script that waits for the app to quit, swaps the .app bundle, and relaunches.
+//   - when the clone and origin/main have DIVERGED (an upstream history rewrite, or local commits
+//     upstream never got), stop with `diverged` set instead of a bare pull failure; the owner's
+//     "reset to upstream" re-runs the pipeline with resetToUpstream, which saves HEAD on a
+//     backup/pre-update-<stamp> branch and resets to origin/main before installing.
 //
 // Self-disables when there's no source build (no build-origin.json or no BISMUTH_APP_PATH) — e.g.
 // dev (`bun run dev:browser`). Never throws; failures surface as an "error" phase / a reason.
@@ -34,6 +38,22 @@ export interface UpdateProgress {
     phase: UpdatePhase
     message?: string
     log?: string
+    /** Set on the error that stops an update because a fast-forward is impossible: `ahead` local
+     *  commits origin/main lacks, `behind` upstream commits the clone lacks. */
+    diverged?: { ahead: number; behind: number }
+    /** The branch that holds the clone's old HEAD after a reset to upstream. */
+    backupBranch?: string
+}
+
+export interface UpdateOptions {
+    /** Diverged clone: save HEAD on a backup branch and `git reset --hard origin/main` instead of
+     *  stopping. Only the owner's explicit action passes it. */
+    resetToUpstream?: boolean
+}
+
+/** `backup/pre-update-20261013T184405Z`: sorts by time and never collides within a second. */
+export function backupBranchName(now: Date): string {
+    return `backup/pre-update-${now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`
 }
 
 // PATH augmented with the dirs a from-source rebuild needs (git, bun, cargo/rustup),
@@ -260,7 +280,9 @@ export function getUpdateProgress(): UpdateProgress {
  * a real source build), sets phase=pulling, and fires the pipeline WITHOUT awaiting so the
  * HTTP request returns immediately — the frontend polls getUpdateProgress(). Never throws.
  */
-export async function startUpdate(): Promise<UpdateProgress> {
+export async function startUpdate(
+    opts: UpdateOptions = {},
+): Promise<UpdateProgress> {
     if (state.phase === 'pulling' || state.phase === 'building') return state
     // Claim the slot synchronously, BEFORE the first await, so a second concurrent caller
     // sees phase==="pulling" at the guard above and returns early (the guard ran before any
@@ -289,7 +311,7 @@ export async function startUpdate(): Promise<UpdateProgress> {
         return state
     }
     state = { phase: 'pulling', message: 'pulling latest…' }
-    void runPipeline(origin.repoRoot, appPath)
+    void runPipeline(origin.repoRoot, appPath, opts)
     return state
 }
 
@@ -301,12 +323,25 @@ interface PipelineDeps {
     signingIdentity?: () => Promise<string | null>
     spawnRelauncher?: (repoRoot: string, appPath: string) => void
     logPath?: string
+    now?: () => Date
+}
+
+/** `git rev-list --count <range>`, or null when git cannot answer. */
+async function countRange(
+    git: GitRunner,
+    repoRoot: string,
+    range: string,
+): Promise<number | null> {
+    const r = await git(repoRoot, ['rev-list', '--count', range])
+    if (r.code !== 0) return null
+    const n = parseInt(r.stdout.trim() || '0', 10)
+    return Number.isFinite(n) ? n : null
 }
 
 export async function runPipeline(
     repoRoot: string,
     appPath: string,
-    deps: PipelineDeps = {},
+    deps: PipelineDeps & UpdateOptions = {},
 ): Promise<void> {
     const git = deps.git ?? realGit
     const proc = deps.proc ?? runProc
@@ -314,20 +349,61 @@ export async function runPipeline(
     const relaunch = deps.spawnRelauncher ?? spawnRelauncher
     const logPath = deps.logPath ?? join(tmpdir(), 'bismuth-update-build.log')
     resetUpdateLog(logPath)
+    let backupBranch: string | undefined
     try {
-        const pullArgs = ['pull', '--ff-only', 'origin', 'main']
-        const pull = await git(repoRoot, pullArgs, 120_000)
-        appendUpdateLog(logPath, `git ${pullArgs.join(' ')}`, pull)
-        if (pull.code !== 0) {
+        // A fast-forward is impossible when both sides have commits the other lacks. Measured
+        // against the fetched origin/main (startUpdate's status check fetched it); a count git
+        // cannot answer falls through to the pull, which then reports its own failure.
+        const ahead = await countRange(git, repoRoot, 'origin/main..HEAD')
+        const behind = await countRange(git, repoRoot, 'HEAD..origin/main')
+        const diverged = !!ahead && !!behind
+        if (diverged && !deps.resetToUpstream) {
+            appendUpdateLog(logPath, 'diverged', {
+                code: 1,
+                stdout: `${ahead} local commits origin/main lacks, ${behind} upstream commits HEAD lacks\n`,
+                stderr: '',
+            })
             state = {
                 phase: 'error',
-                message: `git pull failed (diverged or conflict) — full log: ${logPath}`,
-                log: tail(`${pull.stderr}\n${pull.stdout}`),
+                message: `the Bismuth clone has ${ahead} ${ahead === 1 ? 'commit' : 'commits'} origin/main lacks — reset saves them on a backup branch and moves to origin/main`,
+                diverged: { ahead, behind },
             }
             return
         }
+        if (diverged) {
+            backupBranch = backupBranchName((deps.now ?? (() => new Date()))())
+            for (const args of [
+                ['branch', backupBranch, 'HEAD'],
+                ['reset', '--hard', 'origin/main'],
+            ]) {
+                const r = await git(repoRoot, args, 60_000)
+                appendUpdateLog(logPath, `git ${args.join(' ')}`, r)
+                if (r.code !== 0) {
+                    state = {
+                        phase: 'error',
+                        message: `git ${args[0]} failed — full log: ${logPath}`,
+                        log: tail(`${r.stderr}\n${r.stdout}`),
+                        ...(args[0] === 'reset' ? { backupBranch } : {}),
+                    }
+                    return
+                }
+            }
+        } else {
+            const pullArgs = ['pull', '--ff-only', 'origin', 'main']
+            const pull = await git(repoRoot, pullArgs, 120_000)
+            appendUpdateLog(logPath, `git ${pullArgs.join(' ')}`, pull)
+            if (pull.code !== 0) {
+                state = {
+                    phase: 'error',
+                    message: `git pull failed — full log: ${logPath}`,
+                    log: tail(`${pull.stderr}\n${pull.stdout}`),
+                }
+                return
+            }
+        }
+        const kept = backupBranch ? { backupBranch } : {}
 
-        state = { phase: 'building', message: 'installing dependencies…' }
+        state = { phase: 'building', message: 'installing dependencies…', ...kept }
         // Resolve bun from PATH: in the COMPILED sidecar process.execPath is the sidecar
         // binary, NOT bun, so we must look bun up (buildPath includes ~/.bun/bin).
         const bun = Bun.which('bun', { PATH: buildPath() }) ?? 'bun'
@@ -344,6 +420,7 @@ export async function runPipeline(
             state = {
                 phase: 'error',
                 message: `bun install failed — full log: ${logPath}`,
+                ...kept,
                 log: tail(`${install.stderr}\n${install.stdout}`),
             }
             return
@@ -352,6 +429,7 @@ export async function runPipeline(
         state = {
             phase: 'building',
             message: 'rebuilding Bismuth (this takes a few minutes)…',
+            ...kept,
         }
         // `bun run tauri build --bundles app` in app/ — rebuilds frontend + sidecar + tools +
         // the .app, but SKIPS the .dmg: self-update only swaps the .app, and the dmg packaging
@@ -378,16 +456,18 @@ export async function runPipeline(
             state = {
                 phase: 'error',
                 message: `build failed — full log: ${logPath}`,
+                ...kept,
                 log: tail(`${build.stderr}\n${build.stdout}`),
             }
             return
         }
         relaunch(repoRoot, appPath)
-        state = { phase: 'ready', message: 'update ready — relaunching…' }
+        state = { phase: 'ready', message: 'update ready — relaunching…', ...kept }
     } catch (e) {
         state = {
             phase: 'error',
             message: e instanceof Error ? e.message : String(e),
+            ...(backupBranch ? { backupBranch } : {}),
         }
     }
 }

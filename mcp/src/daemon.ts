@@ -141,7 +141,7 @@ export const daemonTools = [
                 },
                 kind: {
                     type: 'string',
-                    enum: ['cron', 'process', 'daemon', 'session'],
+                    enum: ['cron', 'process', 'daemon', 'session', 'doctor'],
                     description: 'Only events of this kind.',
                 },
                 name: {

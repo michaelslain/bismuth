@@ -99,8 +99,15 @@ export default function systemRoutes(
             return ok(await getUpdateStatus())
         },
 
-        'POST /update/apply': async (_, __) => {
-            return ok(await startUpdate())
+        // `{ reset: true }` moves the clone's branch (its old HEAD kept on a backup branch), so
+        // only the owner may send it; a plain apply stays open as before.
+        'POST /update/apply': async req => {
+            const body = await req.json().catch(() => ({}))
+            const reset =
+                !!body && typeof body === 'object' && body.reset === true
+            if (reset && requestChannel(req) !== 'owner')
+                return error('forbidden', 403)
+            return ok(await startUpdate({ resetToUpstream: reset }))
         },
 
         'GET /update/progress': async (_, __) => {

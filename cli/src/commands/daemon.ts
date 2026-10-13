@@ -117,7 +117,7 @@ export const commands: CommandMap = {
     'daemon logs': {
         summary:
             "Print this vault's daemon activity log (cron outcomes, process lifecycle, brain starts), newest first",
-        usage: '--vault <dir> [--limit n] [--kind cron|process|daemon|session] [--name <name>] [--since <iso>] [--pretty]',
+        usage: '--vault <dir> [--limit n] [--kind cron|process|daemon|session|doctor] [--name <name>] [--since <iso>] [--pretty]',
         run: args => {
             const limit = flag(args, 'limit')
             out(

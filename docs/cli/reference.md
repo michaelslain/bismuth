@@ -277,7 +277,7 @@ Setup is in [daemon setup](../daemon/setup.md) and the file formats in [crons an
 | `daemon stop` | none | Unloads the service (`launchctl unload`, or `systemctl stop` plus `disable`). It does not restart on its own. Exits `1` on failure. | no |
 | `daemon restart` | none | Restarts the service in place without rewriting its config. Exits `1` on failure. | no |
 | `daemon graph` | `--vault <dir>` | Prints the vault's daemon graph (daemon hub, crons, processes). | no |
-| `daemon logs` | `--vault <dir> [--limit n] [--kind cron\|process\|daemon\|session] [--name <name>] [--since <iso>]` | Prints the activity log, newest first. | no |
+| `daemon logs` | `--vault <dir> [--limit n] [--kind cron\|process\|daemon\|session\|doctor] [--name <name>] [--since <iso>]` | Prints the activity log, newest first. | no |
 | `daemon cron create` | `<name...> --vault <dir>` | Creates a cron from a template, disabled. | no |
 | `daemon cron delete` | `<name...> --vault <dir>` | Deletes a cron definition. | no |
 | `daemon cron toggle` | `<name> --vault <dir> [--off]` | Sets the cron's `enabled` frontmatter. | no |

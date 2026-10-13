@@ -63,7 +63,7 @@ A trigger file's name is its payload and its presence is the signal: the file's 
 
 ## Activity log (`logs/activity-YYYY-MM-DD.jsonl`)
 
-The activity log is the daemon's history: every cron outcome, background-process lifecycle moment and brain start, one JSON object per line, one file per UTC day. `crons/.last-fired.json` keeps only the latest result per cron; the log is the only place to see what an earlier failure was.
+The activity log is the daemon's history: every cron outcome, background-process lifecycle moment and brain start, plus every repair the [doctor](../overview/doctor.md) applies, one JSON object per line, one file per UTC day. `crons/.last-fired.json` keeps only the latest result per cron; the log is the only place to see what an earlier failure was.
 
 ```json
 {
@@ -80,8 +80,8 @@ The activity log is the daemon's history: every cron outcome, background-process
 | Field | Type | Meaning |
 |---|---|---|
 | `ts` | ISO-8601 UTC | When the event was logged |
-| `kind` | `cron`, `process`, `daemon` or `session` | What produced it |
-| `name` | string | The cron or process name; the daemon's name for `daemon` events |
+| `kind` | `cron`, `process`, `daemon`, `session` or `doctor` | What produced it |
+| `name` | string | The cron or process name; the daemon's name for `daemon` events; `doctor` for doctor events |
 | `event` | string | The moment, from the table below |
 | `outcome` | `success`, `failed`, `unknown`, `killed` or `skipped` | Only on an event that ends a unit of work |
 | `cause` | `environment`, `timeout` or `job` | Why a run failed or was killed |
@@ -101,6 +101,7 @@ The activity log is the daemon's history: every cron outcome, background-process
 | `process` | `spawn-failed` | The command could not start; the process is not restarted |
 | `daemon` | `brain-started` | A vault's brain came online; carries no `detail` |
 | `daemon` | `cron-retired` | `reconcileSeeds` renamed a merged cron to `.disabled` |
+| `doctor` | `repair` | The doctor applied one repair. `outcome` is `success` or `failed`; `detail` is the finding id, what the repair did, the backup commit for a destructive one, and the first warning of a failed one, joined with ` // ` |
 
 Read it with `bismuth daemon logs --vault <vault>` (flags `--limit`, `--kind`, `--name`, `--since`), `GET /daemon/logs`, or the `daemon_logs` MCP tool. Files older than 30 days are deleted when a vault's brain starts. The log is append-only, so a crash costs at most a truncated last line, and a full disk never fails a cron.
 
@@ -121,6 +122,7 @@ Bismuth's local git snapshots of a vault (`vault.backupOnSave`) track `identity.
 - Disable pauses. Turning a vault's daemon off, or dropping it from `vaults.json`, stops its processes and watchers and deletes nothing.
 - Memory has no index. The graph is recomputed from the markdown on every read. The daemon passes `<vault>/.daemon/memory` explicitly, and tools read it from `BISMUTH_MEMORY_DIR`.
 - Core writes only control files. Bismuth writes `owner.json`, a cron or process's `enabled` frontmatter, trigger files, pages and their sidecars, and the vault registry. Every reader in core tolerates a missing or malformed file and returns an empty value.
+- Core appends `doctor` events. The doctor runs in core and the CLI, not in the daemon, so `appendActivity` in core writes them: to the vault the doctor ran with, or to every vault in `vaults.json` when it ran with none, and only to a vault whose `.daemon` folder exists. Each event is one whole-line append, the same discipline the daemon's writer keeps.
 - Writes to state files are queued. Writes to `.last-fired.json`, `.running.json` and the activity log go through a per-file queue in `daemon/src/lib/writeQueue.ts`, so concurrent runs do not lose updates.
 
 Source: `daemon/src/lib/{config,device,owner,registry,activityLog,writeQueue}.ts`, `daemon/src/daemon/{index,cron,process,seeds,sessionIds,pages}.ts`, `core/src/{daemon,daemonState,daemonGraph,daemonActivity,daemonPages,backup,chatDaemonLegacy}.ts`

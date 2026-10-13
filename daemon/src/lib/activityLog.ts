@@ -29,7 +29,9 @@ import { join } from 'node:path'
 import { enqueueWrite } from './writeQueue'
 import { ACTIVITY_RETENTION_DAYS, type VaultContext } from './config'
 
-export type ActivityKind = 'cron' | 'process' | 'daemon' | 'session'
+/** `doctor` is never written here: core appends it, one event per repair the doctor applies
+ *  (core/src/daemonActivity.ts appendActivity). Listed so the vocabulary lives in one place. */
+export type ActivityKind = 'cron' | 'process' | 'daemon' | 'session' | 'doctor'
 
 /** Mirrors LastFiredEntry['result'] (daemon/src/daemon/cron.ts) so the log and `.last-fired.json`
  *  never disagree about vocabulary. */

@@ -216,6 +216,7 @@ function checkBaseViews(
             repair: {
                 risk: 'destructive',
                 description: `rewrite ${n} ${n === 1 ? 'base' : 'bases'} with ${n === 1 ? 'its' : 'their'} single view flattened to top-level keys`,
+                touches: single.map(rel => join(vault, rel)),
                 apply: async () => {
                     const warnings: string[] = []
                     for (const rel of single) {
@@ -280,6 +281,7 @@ function checkInkDir(vault: string): Finding[] {
             repair: {
                 risk: 'destructive',
                 description: 'delete the .ink folder',
+                touches: [dir],
                 apply: () =>
                     guarded(() => {
                         // Re-verify at apply time: only ever delete a folder that is still all empty.

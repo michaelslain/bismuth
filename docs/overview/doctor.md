@@ -33,7 +33,8 @@ A healthy machine prints `bismuth doctor // all clear`. Otherwise a header
 `bismuth doctor // <n> findings // <d> need consent` is followed by one line per finding:
 `<mark> <id>  <title>`, and `  -> <what the repair does> [<risk>]` when it has one. Marks are `✗`
 error, `!` warn, `·` info, `✓` ok. Findings whose repair is destructive come first. With `--fix`,
-each repaired line ends ` // fixed` or ` // failed: <first warning>`. `--only` with an id that matches
+each repaired line ends ` // fixed` or ` // failed: <first warning>`, and a destructive repair adds
+` // backup <commit>`. `--only` with an id that matches
 no finding applies nothing and prints `unknown id: <id>`.
 
 A section that throws never stops the others: it becomes one `<section>.check-failed` error finding.
@@ -49,6 +50,46 @@ Every repair carries a risk.
   notes in a way boot does not already.
 
 A repair never throws. It returns warnings, and a second run finds nothing left to do.
+
+## See what the doctor repaired
+
+Every repair the doctor applies, from the boot pass, the launch toast or `bismuth doctor --fix`,
+becomes one `doctor` event in the daemon activity log. Open the daemon page's log, or ask for it:
+
+```bash
+bismuth daemon logs --vault <path> --kind doctor
+```
+
+Each event reads `doctor  repair success` (or `repair failed`), and its note is the finding id, what
+the repair did, the backup commit for a destructive repair, and the first warning of a failed one:
+
+```text
+legacy.claude-bot-home // delete /Users/you/.claude-bot // backup 3f9c2ab in /Users/you/.bismuth/doctor-backups
+```
+
+A run with a vault logs to that vault; a run without one (the boot pass with no vault, or the CLI
+without `--vault`) logs to every vault Bismuth has registered. A vault whose daemon has never run
+has no log, so it gets no event. The MCP twin is `daemon_logs` with `kind: "doctor"`. A dry run, and a
+repair that `--only` or `--safe-only` left out, logs nothing.
+
+## Restore what a destructive repair removed
+
+A destructive repair runs only after the doctor commits what it is about to delete or rewrite to a
+local git repo, `~/.bismuth/doctor-backups`. If that backup fails, the repair is not applied and
+reports `failed: backup failed, nothing changed: <reason>`. Safe repairs delete without a backup.
+
+Each backup is one commit holding a tar archive of the touched paths. The repo's work tree stays
+empty; the archive lives in the commit. To put the files back, take the commit from the log line or
+the ` // backup <commit>` suffix:
+
+```bash
+git -C ~/.bismuth/doctor-backups log --oneline              # one "<id> // <what>" commit per backup
+git -C ~/.bismuth/doctor-backups show --stat <commit>       # the archive's file name
+git -C ~/.bismuth/doctor-backups show <commit>:<file> | tar -xzf - -C /
+```
+
+Restoring a service file does not reload the service. Nothing prunes the backup repo; delete it once
+the copies are not needed.
 
 ## What boot does
 
@@ -130,9 +171,24 @@ Ids are unique within a report. The human report pads the id column to at most 3
 ## How it works
 
 One engine in `core/src/doctor/` runs each section (`sections/*.ts`) against a context, applies the
-eligible repairs and builds one sorted report. The CLI command, the two core routes and the app's
+eligible repairs and builds one sorted report.
+
+A destructive `Repair` must list `touches`, the paths it deletes or rewrites; the type makes it
+required. Before applying one, `runDoctor` calls the context's `backup`, which in the real context is
+`gitBackup` (`gitBackup.ts`): it archives the paths relative to `/` with `tar` (their parent
+directories resolved, because tar will not extract through a symlinked ancestor such as macOS's
+`/var`), commits the archive, then removes it from the work tree in a second commit. Every git call
+runs under `env -u` for the variables that redirect which repo git targets, the same list
+`core/src/backup.ts` strips. The backup lands in the report as `repair.backup` (`{repo, commit, file}`).
+
+After each attempted repair, `runDoctor` calls the context's `logActivity`. The real context's
+`activityVaults()` picks the run's vault, else `registeredVaultRoots()` from `vaults.json`, and
+`appendActivity()` in `core/src/daemonActivity.ts` appends the event to each vault's
+`.daemon/logs/activity-<day>.jsonl`.
+ The CLI command, the two core routes and the app's
 launch toast all call it, so they never disagree. Related: [install](install.md),
 [self-update](self-update.md), [status messages](status-messages.md).
 
 Source: `core/src/doctor/run.ts`, `core/src/doctor/format.ts`, `core/src/doctor/routes.ts`,
-`core/src/doctor/sections/`, `cli/src/commands/doctor.ts`, `app/src/doctorToast.ts`
+`core/src/doctor/context.ts`, `core/src/doctor/gitBackup.ts`, `core/src/doctor/sections/`,
+`core/src/daemonActivity.ts`, `cli/src/commands/doctor.ts`, `app/src/doctorToast.ts`

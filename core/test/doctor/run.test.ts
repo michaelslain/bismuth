@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { runDoctor } from '../../src/doctor/run'
+import type { ActivityEvent } from '../../src/daemonActivity'
 import type { DoctorSection, Finding } from '../../src/doctor/types'
 import { fakeCtx } from './fakeCtx'
 
@@ -55,6 +56,7 @@ describe('runDoctor', () => {
                     repair: {
                         risk: 'destructive',
                         description: 'd',
+                        touches: [],
                         apply: noop,
                     },
                 },
@@ -77,6 +79,7 @@ describe('runDoctor', () => {
             repair: {
                 risk,
                 description: id,
+                touches: [],
                 apply: async () => {
                     applied.push(id)
                     return []
@@ -159,5 +162,119 @@ describe('runDoctor', () => {
             sec('b', () => [{ id: 'b.x', severity: 'warn', title: 'x' }]),
         ])
         expect(r.findings.map(f => f.id)).toEqual(['b.x'])
+    })
+    test('a destructive repair is backed up first and the report carries the backup', async () => {
+        const order: string[] = []
+        const r = await runDoctor(
+            fakeCtx({
+                backup: async (id, _d, paths) => {
+                    order.push(`backup ${id} ${paths.join(',')}`)
+                    return { repo: '/r', commit: 'abc1234def', file: 'f.tar.gz' }
+                },
+            }),
+            { fix: true },
+            [
+                sec('s', () => [
+                    {
+                        id: 's.d',
+                        severity: 'warn',
+                        title: 'd',
+                        repair: {
+                            risk: 'destructive',
+                            description: 'delete /x',
+                            touches: ['/x'],
+                            apply: async () => {
+                                order.push('apply')
+                                return []
+                            },
+                        },
+                    },
+                ]),
+            ],
+        )
+        expect(order).toEqual(['backup s.d /x', 'apply'])
+        expect(r.findings[0].repair!.backup).toEqual({
+            repo: '/r',
+            commit: 'abc1234def',
+            file: 'f.tar.gz',
+        })
+    })
+    test('a failed backup leaves the repair unapplied and failed', async () => {
+        let applied = false
+        const r = await runDoctor(
+            fakeCtx({
+                backup: async () => {
+                    throw new Error('disk full')
+                },
+            }),
+            { fix: true },
+            [
+                sec('s', () => [
+                    {
+                        id: 's.d',
+                        severity: 'warn',
+                        title: 'd',
+                        repair: {
+                            risk: 'destructive',
+                            description: 'delete /x',
+                            touches: ['/x'],
+                            apply: async () => {
+                                applied = true
+                                return []
+                            },
+                        },
+                    },
+                ]),
+            ],
+        )
+        expect(applied).toBe(false)
+        expect(r.failed).toBe(1)
+        expect(r.findings[0].repair!.warnings![0]).toBe(
+            'backup failed, nothing changed: disk full',
+        )
+    })
+    test('every attempted repair becomes one doctor event; skipped and dry-run ones log nothing', async () => {
+        const events: ActivityEvent[] = []
+        const ctx = fakeCtx({
+            backup: async () => ({ repo: '/r', commit: 'abc1234def', file: 'f' }),
+            logActivity: e => events.push(e),
+        })
+        const sections = [
+            sec('s', () => [
+                {
+                    id: 's.ok',
+                    severity: 'warn',
+                    title: 'ok title',
+                    repair: { risk: 'safe', description: 'do ok', apply: async () => [] },
+                },
+                {
+                    id: 's.bad',
+                    severity: 'warn',
+                    title: 'bad title',
+                    repair: { risk: 'safe', description: 'do bad', apply: async () => ['boom'] },
+                },
+                {
+                    id: 's.del',
+                    severity: 'info',
+                    title: 'del title',
+                    repair: {
+                        risk: 'destructive',
+                        description: 'delete /x',
+                        touches: ['/x'],
+                        apply: async () => [],
+                    },
+                },
+            ]),
+        ]
+        await runDoctor(ctx, {}, sections)
+        await runDoctor(ctx, { fix: true, only: ['nothing'] }, sections)
+        expect(events).toEqual([])
+        await runDoctor(ctx, { fix: true }, sections)
+        expect(events.map(e => [e.kind, e.name, e.event, e.outcome, e.detail])).toEqual([
+            ['doctor', 'doctor', 'repair', 'success', 's.del // delete /x // backup abc1234 in /r'],
+            ['doctor', 'doctor', 'repair', 'failed', 's.bad // do bad // boom'],
+            ['doctor', 'doctor', 'repair', 'success', 's.ok // do ok'],
+        ])
+        expect(Number.isNaN(Date.parse(events[0].ts))).toBe(false)
     })
 })

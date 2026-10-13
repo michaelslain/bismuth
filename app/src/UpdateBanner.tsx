@@ -13,7 +13,11 @@
 // ViewBar's — below its floor tier the message scrolls under the fade mask and the actions stay
 // pinned, exactly as a toolbar's lead does.
 import { createSignal, Show } from 'solid-js'
-import { updateStatus, applyUpdateAndRelaunch } from './updateCheck'
+import {
+    updateStatus,
+    applyUpdateAndRelaunch,
+    showUpdateFailure,
+} from './updateCheck'
 import { pushToast } from './ui/ToastHost'
 import type { UpdatePhase } from '../../core/src/selfUpdate'
 import { plural } from './plural'
@@ -55,7 +59,7 @@ export function UpdateBanner(props: UpdateBannerProps) {
         try {
             const r = await applyUpdateAndRelaunch(setPhase)
             if (r.result === 'relaunching') return // quitting; relauncher takes over
-            if (r.result === 'error') pushToast(r.message ?? 'Update failed')
+            if (r.result === 'error') showUpdateFailure(r)
             setWorking(false) // error or already up to date
         } catch (e) {
             pushToast(`Update failed: ${(e as Error).message}`)
