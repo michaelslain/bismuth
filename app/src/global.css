@@ -844,6 +844,76 @@ body { background: var(--bg); color: var(--fg); }
 .bismuth-cell-list { margin: 0; padding-left: 0.2em; }
 .bismuth-cell-list li { margin: 0.05em 0; }
 
+/* --- Markdown tables ----------------------------------------------------------------------
+   One table, wherever markdown renders one: a note's editable table widget and a chat message
+   both hand their <table> to ui/table/typeTable.ts, which adds `bismuth-table`, types every cell's
+   `+ - | =` edges (DESIGN.md's Typed Grid Rule: no `border` anywhere) and puts <wbr>s at the joints
+   of every code token. Global because both tables are runtime-built DOM, never a component's own
+   markup.
+
+   Columns size by the browser's auto table layout, between each column's narrowest content (its
+   longest unbreakable run) and its widest (one line); both ends have to be honest:
+   - `overflow-wrap: normal`, never the `anywhere` that a note line and a chat message inherit for
+     prose: `anywhere` makes every cell's narrowest width a single letter, so the layout handed whole
+     columns one letter per line. Not `break-word` either: auto layout already gives a column its
+     longest word, but rounds the column a fraction of a pixel under it, and `break-word` then
+     split that word (`Anothe|r Note`). `word-break: normal` stops CodeMirror's legacy
+     `word-break: break-word` (which means `anywhere`) re-asserting it. A table whose column widths
+     a person dragged (`data-fixed-columns`, the note editor's resize) no longer sizes from content,
+     so there a word too long for its column does break.
+   - inline code wraps at its <wbr>s, where prose code is one unbreakable token; in a cell that token
+     would make the whole path its column's minimum width.
+   Each cell is the `position: relative` host of its edge overlay, which overhangs it by half a
+   corner tile on every side; the table's container leaves that much room. Content sits about 1ch
+   in from a `|`. */
+.bismuth-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.bismuth-table th,
+.bismuth-table td {
+  position: relative;
+  padding: var(--sp-3) var(--ascii-tile-w, 1ch);
+  /* a table row is denser than a prose line; the note editor's widget sets --cm-td-lh so both of its
+     cell faces (display and edit) share this one line box */
+  line-height: var(--cm-td-lh, 1.3);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.bismuth-table[data-fixed-columns] th,
+.bismuth-table[data-fixed-columns] td {
+  overflow-wrap: break-word;
+}
+.bismuth-table th {
+  font-weight: var(--fw-bold);
+}
+/* A table's sideways scroller (the note widget's and chat's frame) fades the side that hides more
+   table (ui/table/scrollFade.ts sets the marks), so a cut-off column reads as "scroll", not as a
+   broken table. A mask reads only alpha, so the opaque --bg is "show".  */
+[data-more-right] {
+  -webkit-mask-image: linear-gradient(to right, var(--bg) calc(100% - 4ch), transparent);
+  mask-image: linear-gradient(to right, var(--bg) calc(100% - 4ch), transparent);
+}
+[data-more-left] {
+  -webkit-mask-image: linear-gradient(to left, var(--bg) calc(100% - 4ch), transparent);
+  mask-image: linear-gradient(to left, var(--bg) calc(100% - 4ch), transparent);
+}
+[data-more-left][data-more-right] {
+  -webkit-mask-image: linear-gradient(to right, transparent, var(--bg) 4ch, var(--bg) calc(100% - 4ch), transparent);
+  mask-image: linear-gradient(to right, transparent, var(--bg) 4ch, var(--bg) calc(100% - 4ch), transparent);
+}
+.bismuth-table th code,
+.bismuth-table td code {
+  display: inline;
+  white-space: normal;
+  max-width: none;
+  overflow: visible;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
 /* --- Rendered-markdown callouts (cards / transclusion) ------------------------------------- */
 /* These `.callout` classes are emitted by bases/markdown.ts renderMarkdown — used on every
    in-app rendered-note surface (card faces, `.md` transclusion). Moved here verbatim from the

@@ -13,6 +13,8 @@ This page covers editing a table as a user and, last, how the widget works. For 
 
 A table is a header row, a separator row of dashes, and body rows. Editing keeps the markdown column-aligned as above.
 
+A note's table is the same table a chat message shows: its grid is typed with `+ - | =` (a doubled `=` under the header), and each column sizes to its content. Its editing controls stay in that register: hovering shows a `+` past the right edge (add a column) and below the bottom (add a row) and `[∞]` above, a column's `|` turns accent under the pointer where it can be dragged to resize, and the cell being edited takes an accent wash. A one-word column takes that word's width, a prose column takes the wrapping, words wrap only between whole words, and a code path wraps at its `/` and `.`.
+
 ## Write a table in markdown
 
 The separator row sets each column's alignment:
@@ -72,7 +74,7 @@ Header cells cannot be merged. The hidden cells keep their text in the file; onl
 
 ## Extend a wide table
 
-Hover a table and press `∞` (Extend table horizontally) to let it grow past the page width and scroll sideways instead of squeezing its columns. Press it again to go back.
+A table whose columns cannot fit the page even at their narrowest scrolls sideways inside its own box, and the side with more table to scroll to fades out. Hover a table and press `[∞]` (Extend table horizontally) to put every cell on one line and scroll the table sideways instead of wrapping its columns. Press it again to go back.
 
 ## Where table layout is stored
 
@@ -108,6 +110,7 @@ The cursor never rests on a rendered table's boundary, so clicking beside a tabl
 | `cellBlockRender.ts` | The idle (display) face of a cell, rendered with the note reader's engine |
 | `tableResizeDrag.ts` | Column-resize drag lifecycle and `∞` helpers |
 | `cellList.ts` | The `<br>`-separated list convention, shared with `bases/markdown.ts` |
+| `ui/table/typeTable.ts`, `tableEdges.ts`, `codeBreaks.ts`, `scrollFade.ts` | The table shared with chat: the typed grid, the cell rules, the code-token breaks, the scroller's edge fade |
 
 `groupTableBlocks(doc)` finds table blocks (a separator row under a line with a pipe, then every following line with a pipe) and is memoized per document. `parseTableBlock` returns a rectangular `{ cells, aligns }` grid with the separator row removed; `serializeTable` writes it back padded by display width (CJK and emoji count as two columns), with `|` re-escaped. Parsing then serializing returns the same cells.
 
@@ -116,6 +119,8 @@ The cursor never rests on a rendered table's boundary, so clicking beside a tabl
 Each cell has two faces. The display face is `renderCellBlockHtml(src)`, the reader's `renderNoteBody` over the cell source with `<br>` turned into newlines; embeds are swapped in after sanitizing so a PDF iframe survives. The edit face is a nested `EditorView` mounted by `mountCellEditor`, loaded with `cellSourceToBlockMarkdown` and read back with `cmDocToCellSource`. `cellEditor.ts` is imported dynamically (it pulls in `livePreview`'s Solid components, which the headless test transform cannot compile); `toDOM` pre-warms the chunk so the first click mounts synchronously.
 
 `commit` runs when focus leaves the whole table. It re-reads each cell from the DOM (the live editor doc for a cell in edit mode, `data-src` for the rest), computes the new markdown, and dispatches the smallest changed span, so undo and the save-time merge touch only the edited region. An in-place edit goes through `surgicalTableEdit` (changed row lines only); structural operations go through `formatTable`. Dispatches use `dispatchKeepScroll`, which pins the scroll position while CodeMirror re-measures the taller widget. The cell to focus after a rebuild is stashed in `pendingCellFocus` and claimed by document position.
+
+The widget hands its `<table>` to `typeTable` (`app/src/ui/table/typeTable.ts`), the same call a chat message's table goes through. The `bismuth-table` class picks up global.css's "Markdown tables" section: cell padding, top alignment, `overflow-wrap: normal` so auto layout sizes each column from its longest word, and `break-word` only on a table carrying `data-fixed-columns` (set once a column is resized). `typeTable` puts `<wbr>` at the joints `codeBreaks` finds in each code token and mounts an `AsciiCellEdges` overlay in every shown cell, with the edges it owns decided by `cellEdges` from the cell's place and span, so a merged cell types the outline of its whole rectangle. The module mounts Solid roots, so the widget imports it dynamically like `cellEditor.ts` and sets the `bismuth-table` class itself; a cell's display or edit face rewrite puts its overlay back with `reattach`, and every merge re-types the grid through the wrap's `_retype`.
 
 Merges, `∞` and widths live in `localStorage` under `bismuth:table-size:<notePath>`, a map from the JSON of the header row to `{ cols, rows, infinity, merges }`. `rows` is always empty. `reshapeVisual` carries state to a new key when a structural edit changes the header. A merge dispatches a no-document-change transaction carrying `setTableMergesEffect`; `tableMergeUndo` registers the inverse effect so merges join the editor's undo history.
 
@@ -129,4 +134,4 @@ A file dropped on a cell is handled twice. In a browser, capture-phase `dragover
 
 The context menu is delivered as a `bismuth-context-menu` window event, the same one the note editor uses, and rendered by the app's shared menu.
 
-Source: `app/src/editor/tableModel.ts`, `app/src/editor/tableState.ts`, `app/src/editor/tableWidget.ts`, `app/src/editor/tableResizeDrag.ts`, `app/src/editor/cellEditor.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/cellBlockRender.ts`, `app/src/editor/cellList.ts`, `app/src/editor/livePreview.ts`, `app/src/nativeDrop.ts`, `app/src/Editor.tsx`
+Source: `app/src/editor/tableModel.ts`, `app/src/editor/tableState.ts`, `app/src/editor/tableWidget.ts`, `app/src/editor/tableResizeDrag.ts`, `app/src/editor/cellEditor.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/cellBlockRender.ts`, `app/src/editor/cellList.ts`, `app/src/editor/livePreview.ts`, `app/src/ui/table/typeTable.ts`, `app/src/ui/table/tableEdges.ts`, `app/src/ui/table/codeBreaks.ts`, `app/src/ui/table/scrollFade.ts`, `app/src/global.css`, `app/src/nativeDrop.ts`, `app/src/Editor.tsx`

@@ -71,11 +71,16 @@ export const CodeFence: Story = {
             if (!el) throw new Error('fence not rendered yet')
             return el as HTMLElement
         })
-        const prosePitch = parseFloat(getComputedStyle(canvasElement.querySelector('p')!).lineHeight)
+        const prosePitch = parseFloat(
+            getComputedStyle(canvasElement.querySelector('p')!).lineHeight,
+        )
         const cs = getComputedStyle(pre)
         const lines = pre.textContent!.replace(/\n$/, '').split('\n').length
         const fencePitch =
-            (pre.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / lines
+            (pre.clientHeight -
+                parseFloat(cs.paddingTop) -
+                parseFloat(cs.paddingBottom)) /
+            lines
         await expect(lines).toBe(3)
         await expect(Math.abs(fencePitch - prosePitch)).toBeLessThan(0.5)
     },
@@ -104,14 +109,18 @@ export const LongInlineCode: Story = {
         await expect(long.textContent!.length).toBeGreaterThanOrEqual(120)
         // the span did not push anything past the 360px column
         await expect(column.scrollWidth).toBeLessThanOrEqual(column.clientWidth)
-        await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(canvasElement.clientWidth)
+        await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(
+            canvasElement.clientWidth,
+        )
         await expect(long.getBoundingClientRect().width).toBeLessThanOrEqual(
             column.getBoundingClientRect().width,
         )
         // ...it scrolls inside itself instead
         await expect(long.scrollWidth).toBeGreaterThan(long.clientWidth)
         // and the short span the `nowrap` exists for is still one unbroken box
-        await expect(canvas.getByText('--since').getClientRects().length).toBe(1)
+        await expect(canvas.getByText('--since').getClientRects().length).toBe(
+            1,
+        )
     },
 }
 
@@ -128,7 +137,8 @@ const baselineOffset = (el: Element) => {
     const inside = mark()
     el.parentNode!.insertBefore(outside, el)
     el.insertBefore(inside, el.firstChild)
-    const d = inside.getBoundingClientRect().top - outside.getBoundingClientRect().top
+    const d =
+        inside.getBoundingClientRect().top - outside.getBoundingClientRect().top
     outside.remove()
     inside.remove()
     return d
@@ -151,7 +161,9 @@ export const InlineBaseline: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         for (const text of ['###', '## Questions']) {
-            await expect(Math.abs(baselineOffset(canvas.getByText(text)))).toBeLessThanOrEqual(0.5)
+            await expect(
+                Math.abs(baselineOffset(canvas.getByText(text))),
+            ).toBeLessThanOrEqual(0.5)
         }
         const math = await waitFor(() => {
             const el = canvasElement.querySelector('.katex')
@@ -172,7 +184,9 @@ export const User: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('Summarize the vault.')).toBeInTheDocument()
+        await expect(
+            canvas.getByText('Summarize the vault.'),
+        ).toBeInTheDocument()
     },
 }
 
@@ -202,7 +216,9 @@ export const TypedTable: Story = {
             await expect(cs.borderLeftWidth).toBe('0px')
             await expect(cell.querySelector('[data-edges]')).not.toBeNull()
         }
-        const header = canvasElement.querySelector('th [data-edges]') as HTMLElement
+        const header = canvasElement.querySelector(
+            'th [data-edges]',
+        ) as HTMLElement
         await expect(header.dataset.heavy).toBe('bottom')
         // PAINTED, not just mounted: the overlay has a box, and its mask is the glyph sprite (a
         // data: PNG) rather than the transparent placeholder that holds until the UI font installs
@@ -216,8 +232,41 @@ export const TypedTable: Story = {
             ),
         )
         // the first body row omits `top` — the header's `=` is that line
-        const firstBody = canvasElement.querySelector('tbody tr td [data-edges]') as HTMLElement
+        const firstBody = canvasElement.querySelector(
+            'tbody tr td [data-edges]',
+        ) as HTMLElement
         await expect(firstBody.dataset.edges).not.toContain('top')
+    },
+}
+
+/** A table as an agent writes one, in the 360px transcript: ChatTable sizes the columns — a path
+ *  wraps at its `/` and `.` joints, the prose column takes the wrapping, `done` stays one word. */
+export const NarrowTable: Story = {
+    render: () => (
+        <div style={{ width: '360px' }}>
+            <ChatTextBubble
+                text={[
+                    'Here is what changed:',
+                    '',
+                    '| file | what changed | status |',
+                    '| --- | --- | --- |',
+                    '| `app/src/chat/ChatTextBubble.module.css` | cells keep whole words, so a short column never splits mid-letter | done |',
+                    '| `core/src/vault.ts` | rename moves the companion note with the file | done |',
+                ].join('\n')}
+                role="assistant"
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const bubble = canvasElement.querySelector(
+            '[data-chat-bubble]',
+        ) as HTMLElement
+        await expect(bubble.scrollWidth).toBeLessThanOrEqual(
+            bubble.clientWidth + 1,
+        )
+        await waitFor(() =>
+            expect(canvasElement.querySelector('td code wbr')).not.toBeNull(),
+        )
     },
 }
 

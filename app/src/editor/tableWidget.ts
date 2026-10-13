@@ -71,6 +71,7 @@ import {
     cmDocToCellSource,
 } from './cellBlockRender'
 import { minimalChange } from './normalizeFrontmatter'
+import { watchScrollFade } from '../ui/table/scrollFade'
 import { api } from '../api'
 import { parseWikilink, resolveNotePath, wikilinkOpenPath } from './wikilink'
 // A synchronous, Solid-free read of "is a gallery modal open?" (galleryState.ts is a plain .ts, so
@@ -97,6 +98,30 @@ function loadCellEditor(): Promise<CellEditorModule> {
             return m
         })
     return cellEditorPromise
+}
+
+// The shared table typer (ui/table/typeTable.ts: the `+ - | =` grid, the cell rules, the code-token
+// breaks — the same table a chat message renders) mounts Solid roots, so it is loaded DYNAMICALLY for
+// the same reason as the cell editor: bun's headless test transform runs `solid-js/web`'s server
+// build, where `render` throws. Until it lands (and in those tests) the table is untyped.
+type TypeTableModule = typeof import('../ui/table/typeTable')
+let typeTableModule: TypeTableModule | null = null
+let typeTablePromise: Promise<TypeTableModule> | null = null
+function loadTypeTable(): Promise<TypeTableModule> {
+    if (typeTableModule) return Promise.resolve(typeTableModule)
+    if (!typeTablePromise)
+        typeTablePromise = import('../ui/table/typeTable').then(m => {
+            typeTableModule = m
+            return m
+        })
+    return typeTablePromise
+}
+
+/** A rendered wrap's grid typer: re-run whenever the visible cell layout changes (a merge, its undo). */
+type WrapWithTyping = HTMLElement & {
+    _retype?: () => void
+    _untype?: () => void
+    _unfade?: () => void
 }
 
 // Visual column widths / row heights have no representation in GFM markdown, so they are
@@ -527,6 +552,8 @@ function applyMergeRegionsToWrap(
         const el = cellAt(r, c)
         if (el) el.style.display = 'none'
     }
+    // a merge moves which cell owns which edge of the typed grid
+    ;(wrap as WrapWithTyping)._retype?.()
 }
 
 /** Persist a merge change + apply it to every rendered table in the view whose header matches the
@@ -813,7 +840,25 @@ export class TableWidget extends WidgetType {
         root.setAttribute('contenteditable', 'false')
 
         const table = document.createElement('table')
-        table.className = 'cm-table-rendered'
+        // `bismuth-table` (global.css's "Markdown tables") is set here, not left to typeTable, so the
+        // cells wrap between whole words from the first frame, before the typer module lands.
+        table.className = 'cm-table-rendered bismuth-table'
+        // The shared table typing (see loadTypeTable). `typed` is null until the module lands; every
+        // cell-face rewrite below puts its edges back through `reattach`.
+        let typed: import('../ui/table/typeTable').TypedTable | null = null
+        const retype = (): void => {
+            typed?.dispose()
+            typed = typeTableModule ? typeTableModule.typeTable(table) : null
+        }
+        ;(root as WrapWithTyping)._retype = retype
+        ;(root as WrapWithTyping)._untype = () => {
+            typed?.dispose()
+            typed = null
+        }
+        if (!typeTableModule)
+            void loadTypeTable()
+                .then(retype)
+                .catch(() => {})
 
         // A cell has two faces: a DISPLAY face (the FULL BLOCK markdown render — the same reading
         // engine a note body uses, so lists/paragraphs in a cell look exactly like reading mode, #15)
@@ -850,6 +895,7 @@ export class TableWidget extends WidgetType {
             if (isEmpty)
                 cell.innerHTML =
                     '<span class="cm-td-ph" aria-hidden="true"> </span>'
+            typed?.reattach(cell) // the rewrite dropped the cell's typed edges
         }
         // Enter edit mode: clear the display face and mount a nested CodeMirror editor. The editor
         // module is loaded DYNAMICALLY (its live-preview stack pulls in Solid `.tsx` that would taint
@@ -869,6 +915,7 @@ export class TableWidget extends WidgetType {
             }
             cell.dataset.editing = '1'
             cell.replaceChildren()
+            typed?.reattach(cell) // the edit face keeps the cell's typed edges
             const getNotes = view.state.facet(noteNamesFacet)
             const getTags = view.state.facet(tagNamesFacet)
             // `checkFocus` guards ONLY the async (cold-chunk) path: if the user moved focus to a genuinely
@@ -1152,9 +1199,9 @@ export class TableWidget extends WidgetType {
             rowEls.push(tr)
         })
 
-        // The table lives in a dedicated scroll container so INFINITY mode can scroll it horizontally
-        // (`overflow-x:auto`) WITHOUT clipping the hover toolbar / `+` edge bars, which sit on the
-        // (non-clipping) wrap outside this box (#62). In normal mode the scroll box is inert.
+        // The table lives in a dedicated scroll container so a table wider than the note (or any table
+        // in INFINITY mode) scrolls horizontally (`overflow-x:auto`) WITHOUT clipping the hover toolbar
+        // / `+` edge bars, which sit on the (non-clipping) wrap outside this box (#62).
         const scroll = document.createElement('div')
         scroll.className = 'cm-table-scroll'
         scroll.appendChild(table)
@@ -1232,7 +1279,7 @@ export class TableWidget extends WidgetType {
             btn.title = label
             btn.setAttribute('aria-label', label)
             btn.setAttribute('aria-pressed', active ? 'true' : 'false')
-            btn.textContent = glyph
+            btn.textContent = `[${glyph}]` // a bracket button, the app's text-button idiom
             btn.addEventListener('mousedown', e => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -1457,6 +1504,7 @@ export class TableWidget extends WidgetType {
         const stored = visual
         if (stored && stored.cols.some(w => w != null)) {
             table.style.tableLayout = 'fixed'
+            table.dataset.fixedColumns = '' // global.css: a fixed column breaks an over-long word
             stored.cols.forEach((w, c) => {
                 if (w != null && colEls[c]) colEls[c].style.width = `${w}px`
             })
@@ -2019,6 +2067,7 @@ export class TableWidget extends WidgetType {
                                         `${cell.offsetWidth}px`
                             })
                             table.style.tableLayout = 'fixed'
+                            table.dataset.fixedColumns = ''
                         }
                         return (
                             parseFloat(colEls[c].style.width) ||
@@ -2049,6 +2098,7 @@ export class TableWidget extends WidgetType {
         // ∞ mode scrolls the table horizontally inside `scroll`; re-place the resize handles + grips on
         // every scroll so they track the visible column borders instead of drifting off (#70a).
         scroll.addEventListener('scroll', () => layout())
+        ;(root as WrapWithTyping)._unfade = watchScrollFade(scroll)
         if (typeof ResizeObserver !== 'undefined') {
             const ro = new ResizeObserver(() => layout())
             ro.observe(table)
@@ -2113,6 +2163,8 @@ export class TableWidget extends WidgetType {
         ;(
             wrap as unknown as { _tableRO?: ResizeObserver } | null
         )?._tableRO?.disconnect()
+        ;(wrap as WrapWithTyping | null)?._untype?.()
+        ;(wrap as WrapWithTyping | null)?._unfade?.()
         // Destroy any live nested cell editor so a commit-rebuild (or view teardown) leaks no EditorView.
         for (const cell of Array.from(
             dom.querySelectorAll<HTMLElement>('[data-cell]'),

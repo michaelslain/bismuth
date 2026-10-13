@@ -170,25 +170,6 @@
     border-top: var(--rule-soft);
     margin: 0.8em 0;
 }
-/* TABLES ARE A TYPED GRID, not drawn (DESIGN.md's Typed Grid Rule): no `border` anywhere. Each cell
-   is the host of its own `+ - | =` edges (ui/ascii/AsciiCellEdges, mounted onto the cells by
-   typeBubbleTables.ts once the markdown string has landed), so it is `position: relative` and does
-   not clip. The glyphs overhang the cell by half a corner tile on every side, so the table gets that
-   much margin; content is inset about 1ch from a `|` and evenly above and below. */
-.chat-bubble table {
-    border-collapse: separate;
-    border-spacing: 0;
-    margin: calc(0.55em + var(--ascii-tile-h, 1.5em) / 2) calc(var(--ascii-corner-w, 1ch) / 2);
-}
-.chat-bubble th,
-.chat-bubble td {
-    position: relative;
-    padding: var(--sp-3) var(--ascii-tile-w, 1ch);
-    text-align: left;
-}
-.chat-bubble th {
-    font-weight: var(--fw-bold);
-}
 .chat-bubble :global(.bismuth-tag) {
     color: var(--accent);
     font-family: var(--ui-font-stack);

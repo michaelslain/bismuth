@@ -17,6 +17,7 @@ import { expect, waitFor } from 'storybook/test'
 import { EditorView } from '@codemirror/view'
 import { openSearchPanel } from '@codemirror/search'
 import { Editor } from './Editor'
+import ChatTextBubble from './chat/ChatTextBubble'
 import { setTransport } from './api'
 import {
     startCompletion,
@@ -24,9 +25,21 @@ import {
     completionStatus,
 } from '@codemirror/autocomplete'
 import { taskDescStart } from './editor/taskComplete'
-import { settings, setSettings, CODE_SCALES, DEFAULT_CODE_SCALE } from './settings'
+import {
+    settings,
+    setSettings,
+    CODE_SCALES,
+    DEFAULT_CODE_SCALE,
+} from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
-import { expectProseFace, expectUiFace, expectCodeSize, expectBoundToUiFont, expectFamilyReallyLoaded, codeFontPx } from './ui/_fontFace'
+import {
+    expectProseFace,
+    expectUiFace,
+    expectCodeSize,
+    expectBoundToUiFont,
+    expectFamilyReallyLoaded,
+    codeFontPx,
+} from './ui/_fontFace'
 import { CONTENT_PAD_BOTTOM, SCROLL_PAD_VAR } from './editor/drawScrollSpace'
 import {
     insertDrawBlock,
@@ -179,7 +192,7 @@ const CODE_LANGUAGES_TEXT = [
     '```matlab',
     'function y = mean_of(x)',
     '    % average of a vector',
-    "    y = sum(x) / numel(x);",
+    '    y = sum(x) / numel(x);',
     "    disp('done')",
     'end',
     '```',
@@ -192,7 +205,9 @@ const CODE_LANGUAGES_TEXT = [
 export const CodeLanguages: Story = {
     render: () => {
         setTransport(
-            fakeTransport({ files: { 'Code Languages.md': CODE_LANGUAGES_TEXT } }),
+            fakeTransport({
+                files: { 'Code Languages.md': CODE_LANGUAGES_TEXT },
+            }),
         )
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
@@ -299,7 +314,9 @@ After the callout.
 const px = (v: string) => Math.round(parseFloat(v))
 const styleOf = (el: Element | null) => (el ? getComputedStyle(el) : null)
 const lineWith = (root: ParentNode, re: RegExp) =>
-    [...root.querySelectorAll('.cm-line')].find(l => re.test(l.textContent ?? ''))
+    [...root.querySelectorAll('.cm-line')].find(l =>
+        re.test(l.textContent ?? ''),
+    )
 
 /** ONE ROW RHYTHM. A note sets prose in the proportional face (`--prose-font`, Libron) and pulls
  *  code/frontmatter back to the mono face — but every one of those rows must still sit on the same leading, or a code fence reads
@@ -336,7 +353,8 @@ export const MixedTypography: Story = {
         const rhythm = px(scroller.lineHeight)
         const codeLine = lineWith(canvasElement, /type: base/)
         const fmLine = lineWith(canvasElement, /tags:/)
-        if (!codeLine || !fmLine) throw new Error('code / frontmatter line not rendered')
+        if (!codeLine || !fmLine)
+            throw new Error('code / frontmatter line not rendered')
         // The regression this story exists for: a code fence on its own tighter leading.
         await expect(px(styleOf(codeLine)!.lineHeight)).toBe(rhythm)
         await expect(px(styleOf(fmLine)!.lineHeight)).toBe(rhythm)
@@ -347,14 +365,23 @@ export const MixedTypography: Story = {
         // regression pass every check while measuring a fiction.
         const codePx = codeFontPx()
         await expect(Number.isFinite(codePx) && codePx > 0).toBe(true)
-        const inlineCode = canvasElement.querySelector('.cm-inline-code') as HTMLElement
-        const tops = [...canvasElement.querySelectorAll('.cm-block-top')] as HTMLElement[]
-        const bottoms = [...canvasElement.querySelectorAll('.cm-block-bottom')] as HTMLElement[]
+        const inlineCode = canvasElement.querySelector(
+            '.cm-inline-code',
+        ) as HTMLElement
+        const tops = [
+            ...canvasElement.querySelectorAll('.cm-block-top'),
+        ] as HTMLElement[]
+        const bottoms = [
+            ...canvasElement.querySelectorAll('.cm-block-bottom'),
+        ] as HTMLElement[]
         // One frontmatter panel + one fenced block: two opening rows, two closing rows.
         await expect(tops.length).toBe(2)
         await expect(bottoms.length).toBe(2)
         for (const el of [codeLine, fmLine, inlineCode, ...tops, ...bottoms])
-            await expect(parseFloat(styleOf(el)!.fontSize)).toBeCloseTo(codePx, 3)
+            await expect(parseFloat(styleOf(el)!.fontSize)).toBeCloseTo(
+                codePx,
+                3,
+            )
         // ...and that size is the prose face's measured code scale (settings.ts CODE_SCALES), so
         // code reads at the size of the sentence it sits in rather than a fixed step under it.
         await expect(codePx / parseFloat(scroller.fontSize)).toBeCloseTo(
@@ -368,13 +395,16 @@ export const MixedTypography: Story = {
         for (const pair of [tops, bottoms]) {
             const [a, b] = pair.map(r => r.getBoundingClientRect().height)
             await expect(Math.abs(a! - b!)).toBeLessThan(0.5)
-            await expect(styleOf(pair[0]!)!.padding).toBe(styleOf(pair[1]!)!.padding)
+            await expect(styleOf(pair[0]!)!.padding).toBe(
+                styleOf(pair[1]!)!.padding,
+            )
             await expect(styleOf(fenceText(pair[0]!))!.color).toBe(
                 styleOf(fenceText(pair[1]!))!.color,
             )
         }
         // A yaml block's keys read like frontmatter keys (muted), not like accent syntax.
-        const keyColor = (el: Element) => styleOf(el.firstElementChild ?? el)!.color
+        const keyColor = (el: Element) =>
+            styleOf(el.firstElementChild ?? el)!.color
         const fmKey = fmLine.querySelector('.cm-fm-key')!
         const yamlKey = codeLine.querySelector('.cm-fm-key')
         await expect(yamlKey).not.toBeNull()
@@ -389,13 +419,17 @@ export const MixedTypography: Story = {
         // cannot: it reports true for a family that doesn't exist at all (the fallback is
         // usable) and false for a registered-but-not-yet-laid-out webface, so it is green when
         // the face is absent and red when it is present. Measuring instead catches both.
-        expectProseFace(canvasElement.querySelector('.cm-scroller') as HTMLElement)
+        expectProseFace(
+            canvasElement.querySelector('.cm-scroller') as HTMLElement,
+        )
         expectProseFace(canvasElement.querySelector('.cm-h1') as HTMLElement)
         await expectFamilyReallyLoaded('Libron')
         await expect(styleOf(codeLine)!.fontFamily).toMatch(/Monaspace/)
         // Tables are PROSE. Asserted against --prose-font rather than a literal family name — see
         // the story doc comment above.
-        const tableCell = canvasElement.querySelector('.cm-table, .cm-table-rendered') as HTMLElement
+        const tableCell = canvasElement.querySelector(
+            '.cm-table, .cm-table-rendered',
+        ) as HTMLElement
         await expect(tableCell).not.toBeNull()
         expectProseFace(tableCell)
     },
@@ -428,7 +462,9 @@ const LINE_RHYTHM_TEXT = [
  *  which carry deliberate padding. */
 export const LineRhythm: Story = {
     render: () => {
-        setTransport(fakeTransport({ files: { 'Line Rhythm.md': LINE_RHYTHM_TEXT } }))
+        setTransport(
+            fakeTransport({ files: { 'Line Rhythm.md': LINE_RHYTHM_TEXT } }),
+        )
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
                 <Editor
@@ -444,20 +480,37 @@ export const LineRhythm: Story = {
     },
     play: async ({ canvasElement }) => {
         await waitFor(() => {
-            for (const sel of ['.cm-tag', '.cm-link', '.cm-inline-code', '.cm-math', '.cm-task-checkbox', '.cm-codeblock'])
-                if (!canvasElement.querySelector(sel)) throw new Error(`${sel} not rendered yet`)
+            for (const sel of [
+                '.cm-tag',
+                '.cm-link',
+                '.cm-inline-code',
+                '.cm-math',
+                '.cm-task-checkbox',
+                '.cm-codeblock',
+            ])
+                if (!canvasElement.querySelector(sel))
+                    throw new Error(`${sel} not rendered yet`)
             return true
         })
         await document.fonts.ready
-        const pitch = px(styleOf(canvasElement.querySelector('.cm-scroller'))!.lineHeight)
+        const pitch = px(
+            styleOf(canvasElement.querySelector('.cm-scroller'))!.lineHeight,
+        )
         await expect(pitch).toBeGreaterThan(0)
-        const lines = [...canvasElement.querySelectorAll('.cm-content > .cm-line')] as HTMLElement[]
+        const lines = [
+            ...canvasElement.querySelectorAll('.cm-content > .cm-line'),
+        ] as HTMLElement[]
         const rows = lines.filter(
-            l => !l.classList.contains('cm-block-top') && !l.classList.contains('cm-block-bottom'),
+            l =>
+                !l.classList.contains('cm-block-top') &&
+                !l.classList.contains('cm-block-bottom'),
         )
         await expect(rows.length).toBeGreaterThanOrEqual(12)
         const off = rows
-            .map(l => ({ text: l.textContent!.slice(0, 40), h: Math.round(l.getBoundingClientRect().height * 100) / 100 }))
+            .map(l => ({
+                text: l.textContent!.slice(0, 40),
+                h: Math.round(l.getBoundingClientRect().height * 100) / 100,
+            }))
             .filter(r => Math.abs(r.h - pitch) > 0.5)
         await expect(off).toEqual([])
     },
@@ -528,7 +581,9 @@ const CALLOUT_SELECTION_TEXT =
 export const CalloutSelection: Story = {
     render: () => {
         setTransport(
-            fakeTransport({ files: { 'CalloutSelection.md': CALLOUT_SELECTION_TEXT } }),
+            fakeTransport({
+                files: { 'CalloutSelection.md': CALLOUT_SELECTION_TEXT },
+            }),
         )
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
@@ -549,7 +604,9 @@ export const CalloutSelection: Story = {
         if (!view) throw new Error('could not find EditorView')
 
         // Rendered first: the widget is present, the raw source is not.
-        await expect(canvasElement.querySelector('.cm-callout-wrap')).not.toBeNull()
+        await expect(
+            canvasElement.querySelector('.cm-callout-wrap'),
+        ).not.toBeNull()
         await expect(canvasElement.textContent).not.toMatch(/\[!note\]/)
 
         // Select from the prose above the callout to the prose below it.
@@ -650,7 +707,10 @@ export const QueryBlockSizing: Story = {
         await expect(Number.isFinite(proseScale) && proseScale > 0).toBe(true)
         // toBeCloseTo, not a 2-decimal round: Libron's 0.97 lands on 13.095px, which the
         // browser keeps exact while Math.round(… * 100) / 100 makes 13.1.
-        await expect(parseFloat(queryFontSize)).toBeCloseTo(editorPx * proseScale, 2)
+        await expect(parseFloat(queryFontSize)).toBeCloseTo(
+            editorPx * proseScale,
+            2,
+        )
     },
 }
 
@@ -784,8 +844,95 @@ export const DenseTable: Story = {
         await expect(brokenWords).toEqual([])
         // And the pair of properties that together decide it, so a future edit that re-asserts
         // either one is caught at the source rather than only in the pixels.
-        await expect(getComputedStyle(cell).overflowWrap).toBe('break-word')
+        await expect(getComputedStyle(cell).overflowWrap).toBe('normal')
         await expect(getComputedStyle(cell).wordBreak).toBe('normal')
+    },
+}
+
+const SHARED_TABLE = [
+    '| file | what changed | status |',
+    '| --- | --- | --- |',
+    '| `app/src/ui/table/typeTable.ts` | one table for notes and chat | done |',
+    '| `core/src/vault.ts` | rename moves the companion note with the file | done |',
+].join('\n')
+
+/** A table in a note IS the table in a chat message: the same markdown, rendered by the note editor
+ *  (left) and by a chat bubble (right), at the same width. Both go through ui/table/typeTable.ts, so
+ *  both type the `+ - | =` grid with a heavy `=` under the header, pad and align their cells by the
+ *  same rules, and break a code path at its `/` and `.` joints. The note's table also edits; chat's
+ *  only reads. */
+export const TableMatchesChat: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Shared Table.md': SHARED_TABLE } }),
+        )
+        return (
+            <div style={{ display: 'flex', gap: '32px', height: STORY_H }}>
+                <div style={{ width: '520px' }} data-testid="note">
+                    <Editor
+                        path="Shared Table.md"
+                        initialText={SHARED_TABLE}
+                        onSaved={noop}
+                        noteNames={() => NOTE_NAMES}
+                        memoryNames={() => MEMORY_NAMES}
+                        tagNames={() => TAG_NAMES}
+                    />
+                </div>
+                <div style={{ width: '520px' }} data-testid="chat">
+                    <ChatTextBubble text={SHARED_TABLE} role="assistant" />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const side = (id: string) =>
+            canvasElement.querySelector(`[data-testid="${id}"]`) as HTMLElement
+        // the note's edges arrive once the lazily loaded typer lands
+        const typed = (id: string) =>
+            waitFor(() => {
+                const cells = Array.from(side(id).querySelectorAll('th, td'))
+                if (
+                    !cells.length ||
+                    cells.some(c => !c.querySelector('[data-edges]'))
+                )
+                    throw new Error(`${id} table not typed yet`)
+                return cells as HTMLElement[]
+            })
+        const note = await typed('note')
+        const chat = await typed('chat')
+        await expect(note.length).toBe(chat.length)
+        for (const [i, cell] of note.entries()) {
+            const other = chat[i]
+            await expect(
+                cell.closest('table')!.classList.contains('bismuth-table'),
+            ).toBe(true)
+            await expect(
+                other.closest('table')!.classList.contains('bismuth-table'),
+            ).toBe(true)
+            // the same edges, the same weights
+            const edges = (c: HTMLElement) =>
+                c.querySelector<HTMLElement>('[data-edges]')!.dataset
+            await expect(edges(cell).edges).toBe(edges(other).edges)
+            await expect(edges(cell).heavy).toBe(edges(other).heavy)
+            // the same cell box rules, and no drawn border
+            const a = getComputedStyle(cell)
+            const b = getComputedStyle(other)
+            for (const prop of [
+                'paddingLeft',
+                'paddingTop',
+                'lineHeight',
+                'verticalAlign',
+                'overflowWrap',
+                'borderTopWidth',
+            ] as const)
+                await expect(a[prop]).toBe(b[prop])
+            await expect(a.borderTopWidth).toBe('0px')
+        }
+        // the same code path breaks at the same joints
+        const wbrs = (id: string) =>
+            side(id).querySelector('td code')!.querySelectorAll('wbr').length
+        await expect(wbrs('note')).toBeGreaterThan(0)
+        await expect(wbrs('note')).toBe(wbrs('chat'))
     },
 }
 
@@ -814,7 +961,9 @@ A paragraph with **bold text**, a #demo-tag, and \`inline code\`.
  *  reliable approach CalloutSelection uses instead of synthesising clicks. */
 export const RevealedMarks: Story = {
     render: () => {
-        setTransport(fakeTransport({ files: { 'Reveal Marks.md': REVEAL_TEXT } }))
+        setTransport(
+            fakeTransport({ files: { 'Reveal Marks.md': REVEAL_TEXT } }),
+        )
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
                 <Editor
@@ -922,7 +1071,11 @@ export const ListMarkerCaret: Story = {
         view.dispatch({ selection: { anchor: 0, head: 0 } })
         await new Promise(r => setTimeout(r, 50))
         const rendered: Record<string, DOMRect> = {}
-        for (const needle of ['- bullet item', '1. ordered item', '- [ ] task item'])
+        for (const needle of [
+            '- bullet item',
+            '1. ordered item',
+            '- [ ] task item',
+        ])
             rendered[needle] = listMarkerRect(
                 listLineWith(
                     dom as HTMLElement,
@@ -936,7 +1089,8 @@ export const ListMarkerCaret: Story = {
             fitsColumn: boolean,
         ) => {
             const at = LIST_CARET_TEXT.indexOf(needle)
-            if (at < 0) throw new Error(`fixture lost ${JSON.stringify(needle)}`)
+            if (at < 0)
+                throw new Error(`fixture lost ${JSON.stringify(needle)}`)
             const line = view.state.doc.lineAt(at)
             view.dispatch({ selection: { anchor: line.from, head: line.from } })
             await new Promise(r => setTimeout(r, 50))
@@ -947,7 +1101,10 @@ export const ListMarkerCaret: Story = {
                     `${needle}: no .cm-list-marker revealed — nothing to measure`,
                 )
             const box = el.getBoundingClientRect()
-            expect(box.width, `${needle}: marker box has no width`).toBeGreaterThan(0)
+            expect(
+                box.width,
+                `${needle}: marker box has no width`,
+            ).toBeGreaterThan(0)
             // THE LEFT EDGE IS THE ANCHOR FOR EVERY KIND. A revealed marker wider than the
             // column (`- [ ] `, six mono advances) is meant to GROW RIGHTWARD off its
             // `max-content` width rather than hang off the left, so only the markers that fit
@@ -965,7 +1122,10 @@ export const ListMarkerCaret: Story = {
             let prev = -Infinity
             for (let pos = line.from; pos < line.from + markerLen; pos++) {
                 const c = view.coordsAtPos(pos)
-                expect(c, `${needle}: no coords for pos ${pos - line.from}`).toBeTruthy()
+                expect(
+                    c,
+                    `${needle}: no coords for pos ${pos - line.from}`,
+                ).toBeTruthy()
                 const left = c!.left
                 expect(
                     left,
@@ -1013,8 +1173,7 @@ export const ListMarkerCaret: Story = {
         })
         await new Promise(r => setTimeout(r, 50))
         const emptyEl = (dom as HTMLElement).querySelector('.cm-list-marker')
-        if (!emptyEl)
-            throw new Error('empty item: no .cm-list-marker revealed')
+        if (!emptyEl) throw new Error('empty item: no .cm-list-marker revealed')
         const emptyBox = emptyEl.getBoundingClientRect()
         const endCoords = view.coordsAtPos(emptyLine.to)
         expect(endCoords, 'empty item: no coords at end of line').toBeTruthy()
@@ -1058,7 +1217,9 @@ const LINK_COVERAGE_TEXT = [
 export const LinkCoverage: Story = {
     render: () => {
         setTransport(
-            fakeTransport({ files: { 'Link Coverage.md': LINK_COVERAGE_TEXT } }),
+            fakeTransport({
+                files: { 'Link Coverage.md': LINK_COVERAGE_TEXT },
+            }),
         )
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
@@ -1094,8 +1255,12 @@ export const LinkCoverage: Story = {
         await expect(hasText('.cm-link', 'docs')).toBe(true)
         await expect(hasText('.cm-link', 'full spec')).toBe(true)
         // Bare URLs — mid-sentence and at end-of-line — render as the full URL, nothing hidden.
-        await expect(hasText('.cm-link', 'https://example.com/bare-mid')).toBe(true)
-        await expect(hasText('.cm-link', 'https://example.com/bare-end')).toBe(true)
+        await expect(hasText('.cm-link', 'https://example.com/bare-mid')).toBe(
+            true,
+        )
+        await expect(hasText('.cm-link', 'https://example.com/bare-end')).toBe(
+            true,
+        )
         // Wikilinks — mid-sentence and at end-of-line — render as the bare basename.
         await expect(hasText('.cm-wikilink', 'Another Note')).toBe(true)
         await expect(hasText('.cm-wikilink', 'Project Plan')).toBe(true)
@@ -1103,9 +1268,8 @@ export const LinkCoverage: Story = {
         // 80b1e30b's invariant: every off-cursor hidden-syntax run is genuinely zero-width,
         // not just small. The length check is load-bearing — without it the loop below is
         // vacuous and passes having measured nothing.
-        const hidden = canvasElement.querySelectorAll<HTMLElement>(
-            '.cm-hidden-syntax',
-        )
+        const hidden =
+            canvasElement.querySelectorAll<HTMLElement>('.cm-hidden-syntax')
         await expect(hidden.length).toBeGreaterThan(0)
         for (const el of hidden) {
             await expect(el.getBoundingClientRect().width).toBeLessThan(0.5)
@@ -1140,7 +1304,9 @@ const TAG_TYPOGRAPHY_TEXT = [
 export const TagTypography: Story = {
     render: () => {
         setTransport(
-            fakeTransport({ files: { 'Tag Typography.md': TAG_TYPOGRAPHY_TEXT } }),
+            fakeTransport({
+                files: { 'Tag Typography.md': TAG_TYPOGRAPHY_TEXT },
+            }),
         )
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
@@ -1214,7 +1380,11 @@ const TASK_FIELDS_TEXT = [
 // recognised date, which is exactly the drift `isFieldText` (core/src/taskFields.ts) exists to
 // prevent — the parser's disambiguation rule that keeps a mistyped/impossible date visible as
 // plain text would otherwise be silently defeated by the editor's own rendering.
-const NON_FIELD_BRACKETS = ['[chapter 3]', '[chapter 2026-09-14]', '[due 2026-02-30]']
+const NON_FIELD_BRACKETS = [
+    '[chapter 3]',
+    '[chapter 2026-09-14]',
+    '[due 2026-02-30]',
+]
 
 /** Regression for livePreview.ts's bracket task-field chip (tasks-replacement plan, Task 6):
  *  `[due 2026-09-14]`, `[high]`, `[every week]` each render wrapped in `.cm-task-field`. It is
@@ -1253,7 +1423,8 @@ export const TaskFields: Story = {
             return true
         })
 
-        const fields = canvasElement.querySelectorAll<HTMLElement>('.cm-task-field')
+        const fields =
+            canvasElement.querySelectorAll<HTMLElement>('.cm-task-field')
         await expect(fields.length).toBe(5)
         for (const el of fields) {
             expectUiFace(el)
@@ -1273,7 +1444,8 @@ export const TaskFields: Story = {
         }
         // And they are still PRESENT as ordinary text (parseFields leaves them in the
         // description) — this is "no chip", never "the text vanished".
-        const editorText = canvasElement.querySelector('.cm-editor')?.textContent ?? ''
+        const editorText =
+            canvasElement.querySelector('.cm-editor')?.textContent ?? ''
         for (const raw of NON_FIELD_BRACKETS) {
             await expect(editorText).toContain(raw)
         }
@@ -1289,9 +1461,8 @@ export const TaskFields: Story = {
         view.dispatch({ selection: { anchor: at, head: at } })
         await new Promise(r => setTimeout(r, 50))
 
-        const onCursorLine = canvasElement.querySelectorAll<HTMLElement>(
-            '.cm-task-field',
-        )
+        const onCursorLine =
+            canvasElement.querySelectorAll<HTMLElement>('.cm-task-field')
         await expect(onCursorLine.length).toBe(5)
         for (const el of onCursorLine) {
             await expect(el.getBoundingClientRect().width).toBeGreaterThan(0)
@@ -1500,7 +1671,9 @@ export const ASettingsChangeThatIsNotAKeybindingStillRebuildsTheViewAsBefore: St
     {
         render: () => {
             setTransport(
-                fakeTransport({ files: { 'Rebuild Still Works.md': DRAW_TOGGLE_TEXT } }),
+                fakeTransport({
+                    files: { 'Rebuild Still Works.md': DRAW_TOGGLE_TEXT },
+                }),
             )
             return (
                 <div style={{ height: STORY_H, width: '100%' }}>
@@ -1602,7 +1775,8 @@ const A_LOT_OF_PROSE = [
     '',
     ...Array.from(
         { length: 60 },
-        (_, i) => `Paragraph ${i + 1}, long enough that the note scrolls on its own.`,
+        (_, i) =>
+            `Paragraph ${i + 1}, long enough that the note scrolls on its own.`,
     ),
     '',
 ].join('\n')
@@ -1728,7 +1902,9 @@ export const DrawModeScrollSpace: Story = {
         // Two exact checks that do not depend on the height estimator, because a scrollbar left
         // stretched by even a fraction of the space is the second of this feature's two risks:
         // the space is gone at its source…
-        const content = canvasElement.querySelector('.cm-content') as HTMLElement
+        const content = canvasElement.querySelector(
+            '.cm-content',
+        ) as HTMLElement
         await waitFor(() =>
             expect(
                 Math.round(parseFloat(getComputedStyle(content).paddingBottom)),
@@ -1783,7 +1959,8 @@ export const InkStaysPutWhenTheSpaceAppears: Story = {
         await new Promise(r => setTimeout(r, 400))
 
         // The committed-ink canvas is the FIRST of the overlay's two (base, then live).
-        const canvas = canvasElement.querySelectorAll<HTMLCanvasElement>('canvas')[0]
+        const canvas =
+            canvasElement.querySelectorAll<HTMLCanvasElement>('canvas')[0]
         await expect(canvas).toBeDefined()
 
         /** The painted ink AND the position of the paragraph it annotates, read together at
@@ -1811,7 +1988,8 @@ export const InkStaysPutWhenTheSpaceAppears: Story = {
             const rows = inkedRows(canvas)
             if (!rows) throw new Error('no ink on the committed canvas')
             const line = lineWith(canvasElement, /^Paragraph 1,/)
-            if (!line) throw new Error('the annotated paragraph is not rendered')
+            if (!line)
+                throw new Error('the annotated paragraph is not rendered')
             return {
                 ...rows,
                 lineTop: Math.round(
@@ -1821,7 +1999,8 @@ export const InkStaysPutWhenTheSpaceAppears: Story = {
             }
         }
         /** How far the ink sits below the paragraph it belongs to. */
-        const glue = (s: Awaited<ReturnType<typeof sample>>) => s.top - s.lineTop
+        const glue = (s: Awaited<ReturnType<typeof sample>>) =>
+            s.top - s.lineTop
 
         await waitFor(() => expect(inkedRows(canvas)).not.toBeNull())
         const baseline = await sample()
@@ -1834,7 +2013,10 @@ export const InkStaysPutWhenTheSpaceAppears: Story = {
         // active flag and the toolbar are all held still — one variable, and it is this feature's.
         // Everything is compared IN FULL here: adding three thousand pixels of scroll space must
         // move neither the painted ink nor the text by a single row.
-        view.dom.style.setProperty(SCROLL_PAD_VAR, `${CONTENT_PAD_BOTTOM + 3000}px`)
+        view.dom.style.setProperty(
+            SCROLL_PAD_VAR,
+            `${CONTENT_PAD_BOTTOM + 3000}px`,
+        )
         await waitFor(() =>
             expect(scroller.scrollHeight).toBeGreaterThanOrEqual(
                 natural + viewport,
@@ -1939,7 +2121,8 @@ export const DrawModeScrollSpaceOnAShortNote: Story = {
         // the overlay's two.
         scroller.scrollTop = natural
         await new Promise(r => setTimeout(r, 200))
-        const live = canvasElement.querySelectorAll<HTMLCanvasElement>('canvas')[1]
+        const live =
+            canvasElement.querySelectorAll<HTMLCanvasElement>('canvas')[1]
         await expect(live).toBeDefined()
         const r = live.getBoundingClientRect()
         const y = r.top + r.height * 0.6
@@ -1983,7 +2166,9 @@ export const DrawModeScrollSpaceOnAShortNote: Story = {
                 viewport,
             ),
         )
-        const content = canvasElement.querySelector('.cm-content') as HTMLElement
+        const content = canvasElement.querySelector(
+            '.cm-content',
+        ) as HTMLElement
         await expect(
             Math.round(parseFloat(getComputedStyle(content).paddingBottom)),
         ).toBe(CONTENT_PAD_BOTTOM)
@@ -2186,8 +2371,12 @@ export const FindPanelOpen: Story = {
         input.value = 'Editor'
         input.dispatchEvent(new Event('input', { bubbles: true }))
 
-        await expect(canvasElement.querySelector('.bismuth-find-prompt')).not.toBeNull()
-        await expect(canvasElement.querySelector('.bismuth-find-field')).not.toBeNull()
+        await expect(
+            canvasElement.querySelector('.bismuth-find-prompt'),
+        ).not.toBeNull()
+        await expect(
+            canvasElement.querySelector('.bismuth-find-field'),
+        ).not.toBeNull()
         await waitFor(() => {
             const count = canvasElement.querySelector('.bismuth-find-count')
             if (!count || !/\d+\/\d+/.test(count.textContent ?? '')) {
@@ -2197,4 +2386,3 @@ export const FindPanelOpen: Story = {
         })
     },
 }
-

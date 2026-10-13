@@ -143,7 +143,9 @@ const blockTopRule = Decoration.line({ class: 'cm-block-top' })
 const blockBottomRule = Decoration.line({ class: 'cm-block-bottom' })
 // A code fence's own rows also carry `cm-code-fence`, which points the block fill at --code-bg.
 const codeTopRule = Decoration.line({ class: 'cm-block-top cm-code-fence' })
-const codeBottomRule = Decoration.line({ class: 'cm-block-bottom cm-code-fence' })
+const codeBottomRule = Decoration.line({
+    class: 'cm-block-bottom cm-code-fence',
+})
 // The fence text itself (frontmatter `---`, a code block's closing ```) renders ALWAYS VISIBLE in
 // very dim mono — never `display:none`-hidden. Two reasons: (1) the original #10 ask, pixel-matched
 // by the user's reference: the em dashes are faintly visible INSIDE the container at its top and
@@ -622,8 +624,7 @@ function buildDecorations(
     // The callout blocks (by header line) currently revealed for raw editing, if any. A rendered
     // (non-active) callout is covered by the CalloutWidget block-replace, so the per-line pass skips
     // its lines; an active one falls through to render as a raw blockquote.
-    const activeCalloutLines =
-        view.state.field(activeCalloutField, false) ?? []
+    const activeCalloutLines = view.state.field(activeCalloutField, false) ?? []
 
     for (const { from, to } of view.visibleRanges) {
         let pos = from
@@ -861,7 +862,9 @@ function buildDecorations(
                 // Field ranges start past `prefixEnd`, so they can never overlap the `hide` range
                 // on the indent or `listMarkerMark` on the checkbox.
                 FIELD_SCAN.lastIndex = 0
-                for (const fm of text.slice(taskMatch[0].length).matchAll(FIELD_SCAN)) {
+                for (const fm of text
+                    .slice(taskMatch[0].length)
+                    .matchAll(FIELD_SCAN)) {
                     if (!isFieldText(fm[1]!)) continue
                     const from = prefixEnd + fm.index!
                     deco.push(fieldMark.range(from, from + fm[0].length))
@@ -1286,7 +1289,8 @@ const activeCalloutField = StateField.define<readonly number[]>({
             // Caret-only move: stay revealed only while the caret is still inside a block that
             // was ALREADY revealed. A single click into a rendered callout does NOT reveal it
             // (double-click does) — that is deliberate, not an oversight.
-            if (tr.selection) return at != null && value.includes(at) ? [at] : []
+            if (tr.selection)
+                return at != null && value.includes(at) ? [at] : []
             return value
         })()
         return sameLines(next, value) ? value : next
@@ -1671,7 +1675,10 @@ export const livePreview = [
         // theming section; the token's default IS MONO_FONT's stack, so this is a no-op under default
         // settings. The SIZE comes from that section's size list (a class that sets font-family
         // inline here needs an entry there — see that comment).
-        '.cm-tag': { color: 'var(--accent)', 'font-family': 'var(--ui-font-stack)' },
+        '.cm-tag': {
+            color: 'var(--accent)',
+            'font-family': 'var(--ui-font-stack)',
+        },
         // `??slug` memory refs read VIOLET: they are links (they navigate, so they keep .cm-wikilink's
         // pointer + soft underline) but they point at the THIRD brain, not a vault note — blue stays
         // "vault link", teal stays "tag". Declared after .cm-wikilink so the hue override wins on
@@ -2028,34 +2035,16 @@ export const livePreview = [
             'max-width': '100%',
             '--cm-td-lh': '1.5',
         },
+        // The cells' grid, padding, alignment and wrapping are the shared markdown table's
+        // (ui/table/typeTable.ts + global.css's "Markdown tables" section), so a table in a note is
+        // the table a chat message shows: typed `+ - | =` edges, never a `border`. Only what the
+        // editable widget adds lives here: a floor width so an empty column stays clickable. The cell
+        // line-height is the shared rule's `var(--cm-td-lh)`, set on the wrap below.
         '.cm-table-rendered': {
-            'border-collapse': 'collapse',
             'table-layout': 'auto',
         },
-        // `overflow-wrap: break-word`, NOT the `anywhere` a cell inherits from CodeMirror's own
-        // line-wrapping rule. `anywhere` lets the browser break INSIDE a word even when the word
-        // would fit on a line of its own, which is exactly what a narrow table column is: every
-        // cell came out as `platfor/m`, `shippe/d`, `Anothe/r Note`, `Est/.`
-        // (`editor-editor--dense-table`). `break-word` breaks a word only when it cannot fit
-        // alone — so a genuinely unbreakable token (a long URL, a hash) still wraps rather than
-        // blowing the column out, and ordinary words stay whole.
-        // `word-break: normal` IS REQUIRED WITH IT, and overriding overflow-wrap alone did
-        // nothing: CodeMirror's `.cm-lineWrapping` also sets the legacy `word-break: break-word`,
-        // which the spec defines as "overflow-wrap: anywhere" wearing another property's name — so
-        // the inherited value kept re-asserting exactly what the line above is trying to undo.
         '.cm-table-rendered th, .cm-table-rendered td': {
-            border: '1px solid color-mix(in srgb, var(--fg) 18%, transparent)',
-            padding: '0.32em 0.6em',
-            'text-align': 'left',
-            'vertical-align': 'top',
-            'line-height': 'var(--cm-td-lh, 1.5)',
             'min-width': '2.5em',
-            'overflow-wrap': 'break-word',
-            'word-break': 'normal',
-        },
-        '.cm-table-rendered th': {
-            'font-weight': '600',
-            background: 'var(--surface-2)',
         },
         // Inline markdown rendered INSIDE a cell's display face (see inlineMarkdown.ts).
         // `marked` emits native <code>/<a>/<del>; mirror the prose inline-mark styling so a
@@ -2068,50 +2057,47 @@ export const livePreview = [
             'border-bottom': '1px solid var(--accent-soft)',
         },
         '.cm-table-rendered del': { opacity: '0.7' },
-        // The cell shows its accent focus ring while its nested editor (cellEditor.ts) holds focus —
+        // The cell takes an accent wash while its nested editor (cellEditor.ts) holds focus — a wash,
+        // not a ring, because a ring would draw a second box inside the typed `+ - | =` grid.
         // `:focus-within` because focus lands on the mounted editor's contentDOM, not the <td> itself.
         '.cm-td:focus, .cm-td:focus-within': {
             outline: 'none',
-            'box-shadow': 'inset 0 0 0 2px var(--accent)',
-            'border-radius': '2px',
+            background: 'color-mix(in srgb, var(--accent) 7%, transparent)',
         },
-        // `+` edge bars: a thin add-column bar just off the right border and an add-row bar
-        // just below the bottom border. Faint, fade in on hover, accent on their own hover.
+        // `+` edge strips: an add-column strip just off the right edge and an add-row strip just below
+        // the bottom edge. Each is a bare `+` in the grid's own ink and face — no box, since the table
+        // is typed, not drawn — that appears on table hover and takes the accent under the pointer.
+        // The strip is the hit area; only its glyph paints.
         '.cm-table-edge': {
             position: 'absolute',
             display: 'flex',
             'align-items': 'center',
             'justify-content': 'center',
             padding: '0',
-            color: 'color-mix(in srgb, var(--fg) 45%, transparent)',
-            background: 'color-mix(in srgb, var(--fg) 6%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--fg) 12%, transparent)',
+            color: 'var(--faint)',
+            background: 'transparent',
+            border: 'none',
             cursor: 'pointer',
-            'font-family': MONO_FONT,
-            'font-size': '0.85em',
+            'font-family': 'var(--ui-font-stack)',
+            'font-size': 'var(--fs-ui)',
             'line-height': '1',
             opacity: '0',
-            transition: 'opacity var(--dur), background var(--dur), color var(--dur)',
+            transition: 'opacity var(--dur), color var(--dur)',
         },
         '.cm-table-wrap:hover .cm-table-edge': { opacity: '1' },
-        '.cm-table-edge:hover': {
-            background: 'color-mix(in srgb, var(--accent) 18%, transparent)',
-            color: 'var(--accent)',
-        },
-        // Add-column: full-height bar hugging the right border. Add-row: full-width bar under it.
+        '.cm-table-edge:hover': { color: 'var(--accent)' },
+        // Add-column: full-height strip off the right edge. Add-row: full-width strip under it.
         '.cm-table-add-col': {
             top: '0',
             bottom: '0',
-            right: '-0.95em',
-            width: '0.8em',
-            'border-radius': 'var(--r-0)',
+            right: '-1.2ch',
+            width: '1.6ch',
         },
         '.cm-table-add-row': {
             left: '0',
             right: '0',
-            bottom: '-0.95em',
-            height: '0.8em',
-            'border-radius': 'var(--r-0)',
+            bottom: '-0.6em',
+            height: '1.2em',
         },
         // Drag-to-resize: an absolutely-positioned overlay of wide hit strips centered on each
         // COLUMN border (column WIDTH only — row height is auto, #52). Each strip contains a visible
@@ -2133,57 +2119,47 @@ export const livePreview = [
             cursor: 'col-resize',
             'pointer-events': 'auto',
         },
-        // The grip is a FULL-HEIGHT, SQUARE hairline sitting exactly on the column border, and it
-        // is invisible until the table is hovered. Before: a 2px-rounded bar inset to 80% of the
-        // row, painted at 0.55 opacity all the time — so every column border read as TWO borders,
-        // one of them stopping short at both ends. State is told by ink here, never by opacity
-        // (DESIGN.md:426-428): at rest the grip is fully transparent, on table hover it takes the
-        // same hairline ink the cell borders use, and under the pointer it takes the accent.
+        // The grip is a FULL-HEIGHT, 1px accent line sitting exactly on the column's `|`, shown only
+        // while the pointer is on its hit strip or dragging it. At rest, and on plain table hover, it
+        // is transparent: the typed `|` already marks every boundary, and a grip there too drew each
+        // border twice.
         '.cm-col-resize-grip': {
             position: 'absolute',
             top: '0',
             height: '100%',
             left: '50%',
-            width: '3px',
+            width: '1px',
             transform: 'translateX(-50%)',
-            'border-radius': 'var(--r-0)',
             background: 'transparent',
             transition: 'background var(--dur) var(--ease)',
         },
-        '.cm-table-wrap:hover .cm-col-resize-grip': {
-            background: 'color-mix(in srgb, var(--fg) 30%, transparent)',
-        },
-        '.cm-col-resize:hover .cm-col-resize-grip': {
-            background: 'color-mix(in srgb, var(--accent) 75%, transparent)',
-        },
-        '.cm-col-resize:hover': {
-            background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
-        },
-        '.cm-col-resize--dragging .cm-col-resize-grip': {
-            background: 'var(--accent)',
-        },
-        // ── #62 compact density: tighter padding + line-height, matching Claude-chat tables ────────
+        '.cm-col-resize:hover .cm-col-resize-grip, .cm-col-resize--dragging .cm-col-resize-grip':
+            { background: 'var(--accent)' },
+        // ── #62 compact density: a tighter line-height ──────────────────────────────────────────────
         // Set the shared line-height on the WRAP (compact class rides the wrap) so it flows to BOTH
         // faces + the placeholder via `--cm-td-lh` — never on the display cells alone, or the edit face
         // would keep the 1.5 default and the cell would shrink on blur (the #62 regression). The
         // compound `.cm-table-wrap.cm-table-compact` (higher specificity) wins the var over the plain
         // `.cm-table-wrap` default regardless of source order.
         '.cm-table-wrap.cm-table-compact': { '--cm-td-lh': '1.3' },
-        '.cm-table-compact .cm-table-rendered th, .cm-table-compact .cm-table-rendered td':
-            {
-                padding: '0.1em 0.45em',
-            },
-        // The inert-by-default scroll box that holds the <table>. INFINITY mode turns it into a
-        // horizontal scroller (below); normal mode leaves it transparent so layout is unchanged.
-        '.cm-table-scroll': { width: 'fit-content', 'max-width': '100%' },
+        // The scroll box that holds the <table>: a table whose narrowest layout is wider than the note
+        // scrolls sideways here instead of spilling under the `+` edge bars — the frame a chat
+        // message gives the same table (chat/ChatTable.module.css). INFINITY mode (below) widens
+        // the table to one line per cell and scrolls it the same way. Its padding is the typed grid's
+        // overhang (each cell's `+ - | =` sits half a corner tile outside the cell), so the edges
+        // stay inside the box it clips to.
+        '.cm-table-scroll': {
+            width: 'fit-content',
+            'max-width': '100%',
+            'overflow-x': 'auto',
+            'box-sizing': 'border-box',
+            padding:
+                'calc(var(--ascii-tile-h, 1.5em) / 2) calc(var(--ascii-corner-w, 1ch) / 2)',
+        },
         // ── #62 infinity extend: the INNER scroll box scrolls horizontally and the table takes its
         //    natural content width (cells stop wrapping) instead of squashing columns to page width.
         //    Only the inner box clips — the wrap keeps the toolbar + `+` edge bars visible.
         '.cm-table-infinity.cm-table-wrap': { width: '100%' },
-        '.cm-table-infinity .cm-table-scroll': {
-            'max-width': '100%',
-            'overflow-x': 'auto',
-        },
         '.cm-table-infinity .cm-table-rendered': {
             width: 'max-content',
             'table-layout': 'auto',
@@ -2192,48 +2168,38 @@ export const livePreview = [
         '.cm-table-infinity .cm-td[data-editing="1"]': {
             'white-space': 'pre-wrap',
         },
-        // ── #62 hover toolbar (top-right): the ∞ + compact toggles, styled like the `+` edge bars ──
+        // ── #62 hover toolbar (top-right): the ∞ toggle ─────────────────────────────────────────────
         '.cm-table-toolbar': {
             position: 'absolute',
-            top: '-1.7em',
+            top: '-1.2em',
             right: '0',
             display: 'flex',
-            gap: '3px',
+            gap: '1ch',
             opacity: '0',
             transition: 'opacity var(--dur)',
             'z-index': '5',
         },
         '.cm-table-wrap:hover .cm-table-toolbar': { opacity: '1' },
+        // A bracket text button (`[∞]`), the app's text-button idiom: no box, faint ink at rest,
+        // full ink under the pointer, accent while the toggle is on.
         '.cm-table-tool': {
             display: 'flex',
             'align-items': 'center',
-            'justify-content': 'center',
-            width: '1.5em',
-            height: '1.4em',
             padding: '0',
             cursor: 'pointer',
-            color: 'color-mix(in srgb, var(--fg) 55%, transparent)',
-            background: 'color-mix(in srgb, var(--fg) 6%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--fg) 12%, transparent)',
-            'border-radius': 'var(--r-0)',
+            color: 'var(--faint)',
+            background: 'transparent',
+            border: 'none',
             'font-family': 'var(--ui-font-stack)',
-            'font-size': '0.9em',
+            'font-size': 'var(--fs-ui)',
             'line-height': '1',
-            transition: 'background var(--dur), color var(--dur)',
+            transition: 'color var(--dur)',
         },
-        '.cm-table-tool:hover': {
-            background: 'color-mix(in srgb, var(--accent) 18%, transparent)',
-            color: 'var(--accent)',
-        },
-        '.cm-table-tool.active': {
-            background: 'color-mix(in srgb, var(--accent) 30%, transparent)',
-            color: 'var(--accent)',
-            'border-color': 'var(--accent)',
-        },
+        '.cm-table-tool:hover': { color: 'var(--fg)' },
+        '.cm-table-tool.active': { color: 'var(--accent)' },
         // ── #62 shift-click selected cells + merged (spanned) anchor cell ──────────────────────────
         '.cm-td.cm-td-selected': {
-            'box-shadow': 'inset 0 0 0 2px var(--accent)',
-            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+            background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
         },
         // ── #69 drag-to-reorder grips: the standard 2×3-dot grip icon (Lucide grip-horizontal above a
         //    column / grip-vertical at a row's left edge), invisible by default and revealed ONLY for the
@@ -2246,7 +2212,7 @@ export const livePreview = [
             'justify-content': 'center',
             cursor: 'grab',
             'pointer-events': 'auto',
-            color: 'color-mix(in srgb, var(--fg) 45%, transparent)',
+            color: 'var(--faint)',
             opacity: '0',
             transition: 'opacity var(--dur), color var(--dur)',
         },
