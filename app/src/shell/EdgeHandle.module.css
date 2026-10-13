@@ -33,8 +33,12 @@
 .edge.fixed { cursor: pointer; }
 /* A FULLY hidden panel's strip is the window's edge — widen it to a reveal zone so moving toward
    that side of the screen is enough to bring the button out (a 6px sliver had to be hunted for).
-   Wider than the 6px slot it sits in on purpose: the slot does not clip. */
-.edge.reveal { width: var(--sp-7); }
+   Wider than the 6px slot it sits in on purpose: the slot does not clip. NO WIDER THAN `--sp-4`:
+   the zone lies over the editor's 40px left gutter, and the gutter's own controls begin 12px from
+   the pane edge (an image/PDF's frontmatter fold chevron, a note's heading fold arrows). A zone
+   reaching under them takes their clicks — the press lands on the strip, which runs the sidebar's
+   toggle instead of the fold. The window edge itself is the target, so 8px is plenty of reach. */
+.edge.reveal { width: var(--sp-4); }
 /* Mirrored: a hidden panel on the window's RIGHT has its strip against the right edge, so the reveal
    zone anchors to the slot's right and widens LEFTWARD over the editor (not off-screen). */
 .edge.reveal.button-left { left: auto; right: 0; }
@@ -59,8 +63,8 @@
 }
 
 /* ANCHORED TO THE LINE, NOT TO THE STRIP'S FAR EDGE. The strip's width varies — 6px on a visible
-   panel, 24px as a hidden sidebar's reveal zone — and hanging the button off `left: 100%` put the
-   glyph 10px from the line in one state and 28px in the other. Starting at the line's own outer
+   panel, 8px as a hidden sidebar's reveal zone — and hanging the button off `left: 100%` put the
+   glyph at a different distance from the line in each state. Starting at the line's own outer
    edge (`--sp-1`, the line's 2px width) makes the gap one number in every state — and no padding
    on top: the button's own side room is the whole gap, so the glyph reads as the line's handle
    rather than a separate control floating beside it. The pop overlaps

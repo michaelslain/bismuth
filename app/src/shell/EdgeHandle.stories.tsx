@@ -12,6 +12,7 @@ import { expect } from 'storybook/test'
 import EdgeHandle from './EdgeHandle'
 import { dragWidth } from '../edgeResize'
 import Text from '../ui/Text'
+import IconButton from '../ui/IconButton'
 
 const COLLAPSED_RAIL = 46
 
@@ -167,6 +168,48 @@ function RailLeftDemo() {
     )
 }
 
+/** The editor's left gutter with a control in it, under a HIDDEN sidebar's reveal zone: an
+ *  `IconButton` placed exactly as an image/PDF's frontmatter fold chevron sits (centred 20px from
+ *  the pane edge, preview/CompanionFrontmatter.module.css). Clicking it folds; the sidebar stays
+ *  hidden. */
+function GutterControlDemo() {
+    const [visible, setVisible] = createSignal(false)
+    const [folded, setFolded] = createSignal(false)
+    return frame(
+        <>
+            {panel(visible() ? '266px' : '0px', 'left', visible() ? 'sidebar' : '')}
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'relative', padding: 'var(--sp-4) 40px' }}>
+                    <IconButton
+                        data-testid="gutter-chevron"
+                        style={{
+                            position: 'absolute',
+                            left: '20px',
+                            top: '18px',
+                            transform: 'translate(-50%, -50%)',
+                        }}
+                        icon={folded() ? 'ChevronRight' : 'ChevronDown'}
+                        label={folded() ? 'unfold frontmatter' : 'fold frontmatter'}
+                        onClick={() => setFolded(v => !v)}
+                    />
+                    <Text register="prose">{folded() ? '--- tags: 2' : '---'}</Text>
+                </div>
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: '6px' }}>
+                    <EdgeHandle
+                        panel="sidebar"
+                        edge="left"
+                        open={visible()}
+                        combo="Alt+S"
+                        resizable={visible()}
+                        reveal={!visible()}
+                        onActivate={() => setVisible(v => !v)}
+                    />
+                </div>
+            </div>
+        </>,
+    )
+}
+
 const meta = {
     title: 'Shell/EdgeHandle',
     component: EdgeHandle,
@@ -201,11 +244,11 @@ export const SidebarButton: Story = {
     play: async ({ canvasElement }) => focusEdge(canvasElement),
 }
 
-/** Hidden sidebar: its line is the window's left edge, widened to a 24px reveal zone so reaching
+/** Hidden sidebar: its line is the window's left edge, widened to an 8px reveal zone so reaching
  *  toward the left of the screen brings out `›` — show it. */
 export const SidebarHiddenButton: Story = {
     render: () => <SidebarDemo hidden />,
-    play: async ({ canvasElement }) => focusEdge(canvasElement, 24),
+    play: async ({ canvasElement }) => focusEdge(canvasElement, 8),
 }
 
 /** The rail's line, mirrored: the chevron springs out LEFTWARD, `‹` — pin the rail open. */
@@ -224,12 +267,12 @@ export const SidebarRightButton: Story = {
     play: async ({ canvasElement }) => focusEdge(canvasElement),
 }
 
-/** Hidden right sidebar: its line is the window's RIGHT edge, the 24px reveal zone widens leftward
+/** Hidden right sidebar: its line is the window's RIGHT edge, the 8px reveal zone widens leftward
  *  from it, and the chevron pops out leftward pointing `left` — show it. */
 export const SidebarRightHiddenButton: Story = {
     render: () => <SidebarRightDemo hidden />,
     play: async ({ canvasElement }) => {
-        await focusEdge(canvasElement, 24)
+        await focusEdge(canvasElement, 8)
         const edge = canvasElement.querySelector<HTMLElement>('[data-edge-handle]')!
         const slot = edge.parentElement!.getBoundingClientRect()
         const r = edge.getBoundingClientRect()
@@ -241,4 +284,25 @@ export const SidebarRightHiddenButton: Story = {
 export const RailLeftButton: Story = {
     render: () => <RailLeftDemo />,
     play: async ({ canvasElement }) => focusEdge(canvasElement),
+}
+
+/** Hidden sidebar over a gutter control: the reveal zone ends before the editor's gutter controls
+ *  begin, so every point of the fold chevron is the chevron's — a click there folds and never
+ *  opens the sidebar. */
+export const SidebarHiddenGutterControl: Story = {
+    render: () => <GutterControlDemo />,
+    play: async ({ canvasElement }) => {
+        const chevron = canvasElement.querySelector<HTMLElement>('[data-testid="gutter-chevron"]')!
+        const edge = canvasElement.querySelector<HTMLElement>('[data-edge-handle]')!
+        const c = chevron.getBoundingClientRect()
+        await expect(edge.getBoundingClientRect().right).toBeLessThanOrEqual(c.left)
+        for (const x of [c.left + 1, c.left + c.width / 2, c.right - 1]) {
+            const hit = document.elementFromPoint(x, c.top + c.height / 2)
+            await expect(chevron.contains(hit)).toBe(true)
+        }
+        chevron.click()
+        await expect(chevron.getAttribute('aria-label')).toBe('unfold frontmatter')
+        const toggle = canvasElement.querySelector('[data-edge-button] button')!
+        await expect(toggle.getAttribute('aria-label')).toBe('show sidebar (⌥S)')
+    },
 }
