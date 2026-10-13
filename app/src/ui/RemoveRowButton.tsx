@@ -6,6 +6,7 @@ export type RemoveRowButtonProps = {
     label: string
     onClick: (e: MouseEvent) => void
     class?: string
+    disabled?: boolean
 }
 
 /** The `[x]` that removes one row from an editable list (a property, a category, a card field).
@@ -16,6 +17,7 @@ const RemoveRowButton: Component<RemoveRowButtonProps> = props => (
         danger="hover"
         label={props.label}
         class={props.class}
+        disabled={props.disabled}
         onClick={e => props.onClick(e)}
     />
 )

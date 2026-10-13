@@ -7,6 +7,7 @@
 // look over. Presentational: the panel owns the store and hands down the three edits.
 import { createSignal, Show } from 'solid-js'
 import type { Bookmark } from '../../../core/src/drawing/model'
+import RemoveRowButton from '../ui/RemoveRowButton'
 import IconButton from '../ui/IconButton'
 import InlineTextInput from '../ui/InlineTextInput'
 import Label from '../ui/Label'
@@ -92,11 +93,9 @@ function BookmarkRow(props: BookmarkRowProps) {
                     disabled={!props.ready}
                     onClick={() => setEditing(true)}
                 />
-                <IconButton
-                    icon="Trash2"
+                <RemoveRowButton
                     label="Delete bookmark"
                     disabled={!props.ready}
-                    danger
                     onClick={() => props.onRemove(props.bookmark.id)}
                 />
             </div>
