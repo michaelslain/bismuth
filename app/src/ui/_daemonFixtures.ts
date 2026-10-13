@@ -201,9 +201,13 @@ export function sampleDaemonSnapshot(
  * `pid` detail and NO outcome; `exited` has an outcome from its code/signal. Pass `overrides` to replace
  * the whole list (e.g. a single event for a detail story).
  */
+/** Stamps each event with its UTC day file, the way core's readActivity does. */
+const withDayFile = (events: ActivityEvent[]): ActivityEvent[] =>
+    events.map(e => ({ ...e, file: `activity-${e.ts.slice(0, 10)}.jsonl` }))
+
 export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
     if (overrides) return overrides
-    return [
+    return withDayFile([
         {
             ts: iso(-2 * MIN),
             kind: 'cron',
@@ -295,6 +299,6 @@ export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
             name: 'daemon',
             event: 'brain-started',
         },
-    ]
+    ])
 }
 

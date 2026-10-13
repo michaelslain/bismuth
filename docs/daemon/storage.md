@@ -103,7 +103,7 @@ The activity log is the daemon's history: every cron outcome, background-process
 | `daemon` | `cron-retired` | `reconcileSeeds` renamed a merged cron to `.disabled` |
 | `doctor` | `repair` | The doctor applied one repair. `outcome` is `success` or `failed`; `detail` is the finding id, what the repair did, the backup commit for a destructive one, and the first warning of a failed one, joined with ` // ` |
 
-Read it with `bismuth daemon logs --vault <vault>` (flags `--limit`, `--kind`, `--name`, `--since`), `GET /daemon/logs`, or the `daemon_logs` MCP tool. Files older than 30 days are deleted when a vault's brain starts. The log is append-only, so a crash costs at most a truncated last line, and a full disk never fails a cron.
+Read it with `bismuth daemon logs --vault <vault>` (flags `--limit`, `--kind`, `--name`, `--since`), `GET /daemon/logs`, or the `daemon_logs` MCP tool. Files older than 30 days are deleted when a vault's brain starts. The daemon only appends, so a crash costs at most a truncated last line, and a full disk never fails a cron. A log row's `[ delete ]` on the daemon page removes one entry by rewriting its day file; the rewrite starts over when the daemon appended meanwhile, so no new line is lost.
 
 ## Which vaults the daemon serves
 

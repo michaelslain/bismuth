@@ -86,11 +86,18 @@
     overflow-wrap: anywhere;
     user-select: text;
 }
+/* The log file the event lives in — what `[ open ]` and `[ copy path ]` act on. */
+.path {
+    overflow-wrap: anywhere;
+    user-select: text;
+}
 .tone-fail .text {
     color: var(--danger);
 }
+/* The detail's actions sit on a line of their own, so they take a wider gap than a row's inline
+   actions: at --sp-3 the bracket labels read as one run of text. */
 .actions {
     display: flex;
-    gap: var(--sp-3);
+    gap: var(--sp-5);
     padding-top: var(--sp-1);
 }

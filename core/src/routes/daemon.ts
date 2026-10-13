@@ -11,7 +11,7 @@ import {
     daemonIdentityName,
 } from '../daemon'
 import { daemonSnapshot } from '../daemonGraph'
-import { readActivity } from '../daemonActivity'
+import { readActivity, deleteActivityEntry } from '../daemonActivity'
 import {
     listDaemonPages,
     resolvePage,
@@ -155,6 +155,26 @@ export default function daemonRoutes(
                 return error('missing name', 400)
             deleteCron(name, vaultDaemonDir(cfg.vault))
             return ok({ ok: true })
+        },
+
+        // One event out of the activity log (the daemon page's `[ delete ]` on a log row). The
+        // body names the event's day file and its identifying fields; 404 when no line matches.
+        'POST /daemon/logs/delete': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const b = (await req.json()) as Record<string, unknown>
+            const str = (k: string) =>
+                typeof b[k] === 'string' ? (b[k] as string) : ''
+            if (!str('file') || !str('ts') || !str('kind') || !str('event'))
+                return error('missing file, ts, kind or event', 400)
+            const removed = deleteActivityEntry(vaultDaemonDir(cfg.vault), {
+                file: str('file'),
+                ts: str('ts'),
+                kind: str('kind'),
+                name: str('name'),
+                event: str('event'),
+                outcome: str('outcome') || undefined,
+            })
+            return removed ? ok({ ok: true }) : error('no such log entry', 404)
         },
 
         'POST /daemon/process/delete': async req => {

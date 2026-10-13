@@ -1,7 +1,7 @@
 // app/src/daemon/logDetail.ts
-// Pure helpers behind an expanded daemon log row and the log's one-name filter: a stable key per
-// event (so an expanded row survives the 5s re-poll that replaces every event object), the long
-// timestamp and meta line the detail shows, and the filter itself. No framework imports.
+// Pure helpers behind an expanded daemon log row: a stable key per event (so an expanded row
+// survives the 5s re-poll that replaces every event object), the long timestamp and meta line the
+// detail shows, and the vault path of the day file the event lives in. No framework imports.
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 
 /** Identity for one event across polls — the poll hands back fresh objects every time. */
@@ -34,11 +34,8 @@ export function detailMeta(e: ActivityEvent): string {
     return parts.filter(Boolean).join(' // ')
 }
 
-/** Events owned by `name`, order kept; a null filter passes everything through. */
-export function filterEvents(
-    events: ActivityEvent[],
-    name: string | null,
-): ActivityEvent[] {
-    if (!name) return events
-    return events.filter(e => e.name === name)
+/** The vault-relative path of the log file holding `e` — `.daemon/logs/activity-YYYY-MM-DD.jsonl`
+ *  — or null for an event read without one. */
+export function logPath(e: ActivityEvent): string | null {
+    return e.file ? `.daemon/logs/${e.file}` : null
 }

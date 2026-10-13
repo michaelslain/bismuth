@@ -486,6 +486,16 @@ export const api = {
         post('/daemon/cron/delete', { name }).then(() => {}),
     deleteProcess: (name: string) =>
         post('/daemon/process/delete', { name }).then(() => {}),
+    // Remove one event from the activity log's day file; an entry no longer there rejects (404).
+    deleteDaemonLogEntry: (e: ActivityEvent) =>
+        post('/daemon/logs/delete', {
+            file: e.file,
+            ts: e.ts,
+            kind: e.kind,
+            name: e.name,
+            event: e.event,
+            outcome: e.outcome,
+        }).then(() => {}),
     graphViews: () =>
         getJson<{ second: ViewLayout; third: ViewLayout }>('/graph/views'),
     tree: () => getJson<TreeEntry[]>('/tree'),

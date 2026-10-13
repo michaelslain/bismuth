@@ -1,6 +1,6 @@
 // Visual spec for <DaemonLogRow> — one daemon log event: the mono line, and the detail it unfolds.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fn, within } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import DaemonLogRow from './DaemonLogRow'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 
@@ -23,6 +23,7 @@ const failed: ActivityEvent = {
     cause: 'schedule',
     durationMs: 4200,
     detail: 'timeout calling gmail api\n  at fetchInbox (gmail.ts:88)\n  at run (answer-emails.md)',
+    file: `activity-${NOW.toISOString().slice(0, 10)}.jsonl`,
 }
 
 /** Folded: only the line, the way every row in the log rests. */
@@ -38,16 +39,17 @@ export const Folded: Story = {
     },
 }
 
-/** Unfolded failure: time // kind // exact duration // cause, the multi-line error kept as
- *  written, then `[ only answer-emails ]` `[ open ]`. */
+/** Unfolded failure: time // kind // exact duration // cause, the log file it lives in, the
+ *  multi-line error kept as written, then `[ open ]` `[ copy path ]` `[ delete ]` on that file. */
 export const ExpandedFailure: Story = {
     args: {
         event: failed,
         now: NOW,
         expanded: true,
         onToggle: fn(),
-        onFilter: fn(),
-        onOpenDefinition: fn(),
+        onOpenLog: fn(),
+        onCopyPath: fn(),
+        onDelete: fn(async () => {}),
     },
     render: args => (
         <div style={{ width: '420px' }}>
@@ -57,8 +59,35 @@ export const ExpandedFailure: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(/cause schedule/)).toBeInTheDocument()
-        await expect(canvas.getByRole('button', { name: /only answer-emails/ })).toBeInTheDocument()
-        await expect(canvas.getByRole('button', { name: /open/ })).toBeInTheDocument()
+        await expect(canvas.getByText(/^\.daemon\/logs\/activity-.*\.jsonl$/)).toBeInTheDocument()
+        await expect(canvas.getByRole('button', { name: /copy path/ })).toBeInTheDocument()
+        await expect(canvas.getByRole('button', { name: /delete/ })).toBeInTheDocument()
+    },
+}
+
+/** `[ delete ]` clicked once: the actions give way to `[ delete ] [ cancel ]` before anything is
+ *  removed. */
+export const ConfirmDelete: Story = {
+    args: {
+        event: failed,
+        now: NOW,
+        expanded: true,
+        onToggle: fn(),
+        onOpenLog: fn(),
+        onCopyPath: fn(),
+        onDelete: fn(async () => {}),
+    },
+    render: args => (
+        <div style={{ width: '420px' }}>
+            <DaemonLogRow {...args} />
+        </div>
+    ),
+    play: async ({ canvasElement, args }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(canvas.getByRole('button', { name: /delete/ }))
+        await expect(canvas.getByRole('button', { name: /cancel/ })).toBeInTheDocument()
+        await expect(canvas.queryByRole('button', { name: /copy path/ })).toBeNull()
+        await expect(args.onDelete).not.toHaveBeenCalled()
     },
 }
 

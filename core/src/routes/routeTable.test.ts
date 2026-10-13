@@ -63,6 +63,7 @@ const EXPECTED = [
     'POST /daemon/cron/delete',
     'POST /daemon/cron/run',
     'POST /daemon/cron/toggle',
+    'POST /daemon/logs/delete',
     'POST /daemon/owner',
     'POST /daemon/pages',
     'POST /daemon/pages/archive',

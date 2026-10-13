@@ -367,6 +367,7 @@ Concepts are in the [daemon docs](../daemon/setup.md).
 | `GET /daemon/devices` | none | `{devices: [{deviceId, label, lastSeenISO, isOwner, isThis}], ownerDeviceId}` | open; none |
 | `GET /daemon/snapshot` | none | `{daemon, crons, processes, identity}` for this vault. | open; none |
 | `GET /daemon/logs` | `?limit=&kind=&name=&since=` | Activity events, newest first. | open; none |
+| `POST /daemon/logs/delete` | `{file, ts, kind, name, event, outcome?}` | `{ok: true}`. `404` when no line matches. | owner only; rewrites one day file under `.daemon/logs/` |
 | `GET /daemon/install` | none | `{installed, running, binPath}` | open; none |
 | `POST /daemon/setup` | none | `{ok, binPath, error?}` | open; none |
 | `POST /daemon/update` | none | `{ok, binPath, error?}`, the same action as setup. | open; none |
@@ -400,10 +401,12 @@ The cron and process routes return `400` for a missing field and `404` for an un
 
 ### GET /daemon/logs
 
-`GET /daemon/logs` reads `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` and returns events newest first as `{ts, kind, name, event, outcome?, cause?, durationMs?, detail?}`.
+`GET /daemon/logs` reads `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` and returns events newest first as `{ts, kind, name, event, outcome?, cause?, durationMs?, detail?, summary?, file}`, where `file` is the day file the event was read from.
 All four query parameters are optional: `limit` defaults to 100 and is capped at 1000, `kind` is `cron`, `process`, `daemon`, `session` or `doctor`, `name` is a cron or process name, and `since` is an ISO instant.
 The route never fails; it returns `[]` when the daemon has never run in this vault.
 The event vocabulary and retention are in [daemon storage](../daemon/storage.md).
+
+`POST /daemon/logs/delete` removes the first line in `file` whose `ts`, `kind`, `name`, `event` and `outcome` match the body, rewriting the day file in place. `file` must be a day-file name (`activity-YYYY-MM-DD.jsonl`, no directory); anything else returns `404`, as does a body that matches no line. It returns `400` when `file`, `ts`, `kind` or `event` is missing.
 
 ### Daemon pages
 

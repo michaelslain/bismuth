@@ -1,6 +1,7 @@
 // Visual spec for <DaemonLog> — the daemon page's activity log panel: one mono row per event,
 // newest first, toned by activityLine.ts's ActivityTone.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createSignal } from 'solid-js'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import DaemonLog from './DaemonLog'
 import { sampleActivity } from '../ui/_daemonFixtures'
@@ -123,22 +124,18 @@ export const Full: Story = {
     },
 }
 
-/** Every event's owner that still has a definition — `[ open ]` shows for these crons/services. */
-const definitionFor = (e: ActivityEvent) =>
-    e.kind === 'cron' || e.kind === 'process'
-        ? `.daemon/${e.kind === 'cron' ? 'crons' : 'processes'}/${e.name}.md`
-        : undefined
-
-/** Clicking a row's line unfolds its detail: the exact time // kind // duration, the daemon's
- *  detail text (here the failure), and `[ only answer-emails ]` `[ open ]`. A second click folds it. */
+/** Clicking a row's line unfolds its detail: the exact time // kind // duration, the log file the
+ *  event lives in, the daemon's detail text (here the failure), and `[ open ]` `[ copy path ]`
+ *  `[ delete ]`, all acting on that log file. A second row's click folds the first. */
 export const Expanded: Story = {
-    args: { onOpen: fn() },
+    args: { onOpen: fn(), onCopyPath: fn() },
     render: args => (
         <div style={{ width: '420px' }}>
             <DaemonLog
                 events={sampleActivity()}
-                definitionFor={definitionFor}
                 onOpen={args.onOpen}
+                onCopyPath={args.onCopyPath}
+                onDelete={async () => {}}
             />
         </div>
     ),
@@ -149,53 +146,58 @@ export const Expanded: Story = {
         await userEvent.click(line)
         await expect(line.getAttribute('aria-expanded')).toBe('true')
         const detail = within(first).getByTestId('daemon-log-detail')
+        const path = `.daemon/logs/${sampleActivity()[0].file}`
+        await expect(within(detail).getByText(path)).toBeInTheDocument()
         await expect(within(detail).getByText('the gmail api timed out twice')).toBeInTheDocument()
         await expect(within(detail).getByText(/cron \/\/ 4\.2s/)).toBeInTheDocument()
         await userEvent.click(within(detail).getByRole('button', { name: /open/ }))
-        await expect(args.onOpen).toHaveBeenCalledWith('.daemon/crons/answer-emails.md')
+        await expect(args.onOpen).toHaveBeenCalledWith(path)
+        await userEvent.click(within(detail).getByRole('button', { name: /copy path/ }))
+        await expect(args.onCopyPath).toHaveBeenCalledWith(path)
         // One open at a time: opening another row folds the first.
         await userEvent.click((logRows(canvasElement)[3] as HTMLElement).querySelector('button')!)
         await expect(canvas.getAllByTestId('daemon-log-detail')).toHaveLength(1)
         await expect(line.getAttribute('aria-expanded')).toBe('false')
+        // Fold it again so the story rests the way the log does.
+        await userEvent.click((logRows(canvasElement)[3] as HTMLElement).querySelector('button')!)
     },
 }
 
-const filterOpened = fn()
+const deleteOpened = fn()
 
-/** `[ only answer-emails ]` narrows the log to that cron, under an `only answer-emails //
- *  [ clear ]` line; `[ clear ]` brings every event back. The box stays a box throughout. */
-export const Filtered: Story = {
+/** `[ delete ]` asks first — `[ delete ] [ cancel ]` — and the confirmed delete takes the entry
+ *  out of the log. Neither click opens the section, though each unmounts before it bubbles. */
+export const Delete: Story = {
     render: () => {
-        const events = [
-            ...sampleActivity(),
-            {
-                ts: new Date(NOW - 3 * 60 * MIN).toISOString(),
-                kind: 'cron',
-                name: 'answer-emails',
-                event: 'finished',
-                outcome: 'success',
-                durationMs: 3100,
-            },
-        ]
+        const [events, setEvents] = createSignal(sampleActivity())
         return (
             <div style={{ width: '420px' }}>
-                <DaemonLog events={events} onOpenSection={filterOpened} />
+                <DaemonLog
+                    events={events()}
+                    onOpenSection={deleteOpened}
+                    onOpen={() => {}}
+                    onCopyPath={() => {}}
+                    onDelete={async gone => {
+                        setEvents(list => list.filter(e => e !== gone))
+                    }}
+                />
             </div>
         )
     },
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        filterOpened.mockClear()
+        deleteOpened.mockClear()
         const total = logRows(canvasElement).length
-        await userEvent.click((logRows(canvasElement)[0] as HTMLElement).querySelector('button')!)
-        await userEvent.click(canvas.getByRole('button', { name: /only answer-emails/ }))
-        await expect(canvas.getByTestId('daemon-log-filter')).toBeInTheDocument()
-        const owned = sampleActivity().filter(e => e.name === 'answer-emails').length + 1
-        await expect(logRows(canvasElement).length).toBe(owned)
-        await userEvent.click(canvas.getByRole('button', { name: /clear/ }))
-        await expect(logRows(canvasElement).length).toBe(total)
-        // Neither button opens the section, though each unmounts before its click bubbles to the box.
-        await expect(filterOpened).not.toHaveBeenCalled()
+        const first = logRows(canvasElement)[0] as HTMLElement
+        await userEvent.click(first.querySelector('button')!)
+        const detail = within(first).getByTestId('daemon-log-detail')
+        await userEvent.click(within(detail).getByRole('button', { name: /delete/ }))
+        await expect(within(detail).getByRole('button', { name: /cancel/ })).toBeInTheDocument()
+        await userEvent.click(within(detail).getByRole('button', { name: /cancel/ }))
+        await expect(within(detail).queryByRole('button', { name: /cancel/ })).toBeNull()
+        await userEvent.click(within(detail).getByRole('button', { name: /delete/ }))
+        await userEvent.click(within(detail).getByRole('button', { name: /delete/ }))
+        await expect(logRows(canvasElement).length).toBe(total - 1)
+        await expect(deleteOpened).not.toHaveBeenCalled()
     },
 }
 

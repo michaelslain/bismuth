@@ -3,7 +3,7 @@ import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import {
     detailMeta,
     eventKey,
-    filterEvents,
+    logPath,
     fullDuration,
     fullTime,
 } from './logDetail'
@@ -42,10 +42,10 @@ describe('logDetail', () => {
         )
     })
 
-    test('filterEvents keeps only the named owner, null passes all', () => {
-        const list = [ev(), ev({ name: 'sync' }), ev({ event: 'started' })]
-        expect(filterEvents(list, null)).toHaveLength(3)
-        expect(filterEvents(list, 'answer-emails')).toHaveLength(2)
-        expect(filterEvents(list, 'nope')).toHaveLength(0)
+    test('logPath names the day file under .daemon/logs, null without one', () => {
+        expect(logPath(ev({ file: 'activity-2026-10-12.jsonl' }))).toBe(
+            '.daemon/logs/activity-2026-10-12.jsonl',
+        )
+        expect(logPath(ev())).toBeNull()
     })
 })

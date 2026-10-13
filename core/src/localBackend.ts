@@ -507,6 +507,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
             case 'POST /daemon/process/toggle':
             case 'POST /daemon/cron/delete':
             case 'POST /daemon/process/delete':
+            case 'POST /daemon/logs/delete':
                 return notSupported(route)
 
             default:

@@ -2,12 +2,13 @@
 // core/test/daemonGraph.test.ts: a real temp dir, hand-built files, and assertions against both
 // well-formed and deliberately broken input.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tempDir } from './helpers'
 import {
     appendActivity,
     readActivity,
+    deleteActivityEntry,
     ACTIVITY_MAX_LIMIT,
     type ActivityEvent,
 } from '../src/daemonActivity'
@@ -192,4 +193,50 @@ test('appendActivity creates logs/ under an existing daemon dir and skips a miss
     const missing = join(daemonDir, 'nope')
     expect(() => appendActivity(missing, ev)).not.toThrow()
     expect(readActivity(missing)).toEqual([])
+})
+
+test('every event names the day file it was read from', () => {
+    writeFileSync(join(logsDir, 'activity-2026-08-29.jsonl'), line({}) + '\n')
+    expect(readActivity(daemonDir)[0].file).toBe('activity-2026-08-29.jsonl')
+})
+
+test('deleteActivityEntry removes only the matching line and keeps the rest byte-for-byte', () => {
+    const file = 'activity-2026-08-29.jsonl'
+    const keep1 = line({ ts: '2026-08-29T09:00:00.000Z', name: 'a' })
+    const gone = line({ ts: '2026-08-29T10:00:00.000Z', name: 'b', outcome: 'failed' })
+    const keep2 = line({ ts: '2026-08-29T11:00:00.000Z', name: 'c' })
+    writeFileSync(join(logsDir, file), [keep1, gone, keep2].join('\n') + '\n')
+    const target = readActivity(daemonDir).find(e => e.name === 'b')!
+    expect(deleteActivityEntry(daemonDir, { ...target, file })).toBe(true)
+    expect(readFileSync(join(logsDir, file), 'utf-8')).toBe(
+        [keep1, keep2].join('\n') + '\n',
+    )
+})
+
+test('deleteActivityEntry tells an outcome apart and reports a miss', () => {
+    const file = 'activity-2026-08-29.jsonl'
+    writeFileSync(join(logsDir, file), line({ outcome: 'success' }) + '\n')
+    const ref = {
+        file,
+        ts: '2026-08-29T10:00:00.000Z',
+        kind: 'cron',
+        name: 'dream',
+        event: 'finished',
+    }
+    expect(deleteActivityEntry(daemonDir, { ...ref, outcome: 'failed' })).toBe(false)
+    expect(deleteActivityEntry(daemonDir, { ...ref, outcome: 'success' })).toBe(true)
+    expect(readActivity(daemonDir)).toEqual([])
+})
+
+test('deleteActivityEntry refuses a file name that is not a day file', () => {
+    writeFileSync(join(daemonDir, 'crons.md'), line({}) + '\n')
+    const ref = {
+        ts: '2026-08-29T10:00:00.000Z',
+        kind: 'cron',
+        name: 'dream',
+        event: 'finished',
+    }
+    expect(deleteActivityEntry(daemonDir, { ...ref, file: '../crons.md' })).toBe(false)
+    expect(deleteActivityEntry(daemonDir, { ...ref, file: 'activity-2026-08-30.jsonl' })).toBe(false)
+    expect(readFileSync(join(daemonDir, 'crons.md'), 'utf-8')).toBe(line({}) + '\n')
 })

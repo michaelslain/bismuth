@@ -2,10 +2,11 @@
  * core/src/daemonActivity.ts — core's window onto the daemon's activity log.
  *
  * The daemon writes `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` (one JSON object per line,
- * one file per UTC day; see daemon/src/lib/activityLog.ts). Core reads it, and appends exactly one
- * kind of its own: `doctor`, one event per repair the doctor applies (appendActivity), so a repair
- * shows up beside the daemon's events in the daemon page and `bismuth daemon logs`. Appending a
- * whole line is the daemon's own write discipline, so the two writers never corrupt each other.
+ * one file per UTC day; see daemon/src/lib/activityLog.ts). Core reads it, and writes it in two
+ * places: appendActivity (`doctor`, one event per repair the doctor applies, so a repair shows up
+ * beside the daemon's events in the daemon page and `bismuth daemon logs`) and deleteActivityEntry
+ * (the daemon page's `[ delete ]` on a log row). Appending a whole line is the daemon's own write
+ * discipline, so the writers never corrupt each other.
  *
  * NEVER THROWS, like every other reader in this family: a missing dir, an unreadable file, a
  * truncated line, or a hand-edited file degrades to fewer events, never an exception. A cron
@@ -19,6 +20,7 @@
  * field degrades to skipping those lines.
  */
 import { appendFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import { writeFileAtomicSync } from './atomicWrite'
 import { join } from 'node:path'
 
 export interface ActivityEvent {
@@ -32,6 +34,9 @@ export interface ActivityEvent {
     detail?: string
     /** A cron's closing report line, on `finished`. */
     summary?: string
+    /** The day file the event was read from (`activity-YYYY-MM-DD.jsonl`, under `.daemon/logs/`).
+     *  Set by readActivity, never written by the daemon. */
+    file?: string
 }
 
 export interface ActivityQuery {
@@ -118,7 +123,7 @@ export function readActivity(
                 const ms = Date.parse(e.ts)
                 if (Number.isNaN(ms) || ms < sinceMs) continue
             }
-            inFile.push(e as unknown as ActivityEvent)
+            inFile.push({ ...(e as unknown as ActivityEvent), file })
         }
 
         // Within one day file the lines are already append-ordered (oldest first); reverse for
@@ -155,4 +160,60 @@ export function appendActivity(daemonDir: string, event: ActivityEvent): void {
     } catch {
         // observability, not work: a full disk must not fail the repair it describes
     }
+}
+
+/** What identifies one logged event inside its day file. */
+export type ActivityEntryRef = Pick<
+    ActivityEvent,
+    'ts' | 'kind' | 'name' | 'event' | 'outcome'
+> & { file: string }
+
+const sameEntry = (e: Record<string, unknown>, ref: ActivityEntryRef) =>
+    e.ts === ref.ts &&
+    e.kind === ref.kind &&
+    e.name === ref.name &&
+    e.event === ref.event &&
+    (e.outcome ?? undefined) === (ref.outcome ?? undefined)
+
+/**
+ * Remove one event's line from its day file; true when a line was removed. Only the first match
+ * goes, so two identical lines lose one per call. The file name must be a day file (no path), so a
+ * caller cannot reach outside `logs/`.
+ *
+ * The daemon appends to today's file while this rewrites it. The rewrite re-reads just before the
+ * rename and starts over when the file grew, so an append that lands while it runs is kept.
+ */
+export function deleteActivityEntry(
+    daemonDir: string,
+    ref: ActivityEntryRef,
+): boolean {
+    if (!FILE_RE.test(ref.file)) return false
+    const path = join(daemonDir, 'logs', ref.file)
+    for (let attempt = 0; attempt < 5; attempt++) {
+        let text: string
+        try {
+            text = readFileSync(path, 'utf-8')
+        } catch {
+            return false
+        }
+        const lines = text.split('\n')
+        const at = lines.findIndex(raw => {
+            try {
+                const parsed: unknown = JSON.parse(raw.trim())
+                return (
+                    !!parsed &&
+                    typeof parsed === 'object' &&
+                    sameEntry(parsed as Record<string, unknown>, ref)
+                )
+            } catch {
+                return false
+            }
+        })
+        if (at === -1) return false
+        lines.splice(at, 1)
+        if (readFileSync(path, 'utf-8') !== text) continue
+        writeFileAtomicSync(path, lines.join('\n'))
+        return true
+    }
+    return false
 }

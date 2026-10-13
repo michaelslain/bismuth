@@ -1,20 +1,7 @@
 /* app/src/daemon/DaemonLog.module.css — DaemonLog.tsx is the ONLY importer.
-   The list's own furniture: day labels, the narrowed-to line and the opened measure. Each event
+   The list's own furniture: day labels and the opened measure. Each event
    row's look lives in DaemonLogRow.module.css. The scroll + bottom fade is DaemonSection's own
    `fill` variant. */
-/* `only <name> // [ clear ]` — heads the list while it is narrowed to one cron or service, on
-   the rows' own left edge. */
-.log-filter {
-    display: flex;
-    align-items: baseline;
-    gap: var(--sp-3);
-    padding: var(--sp-1) var(--sp-4) var(--sp-2);
-}
-/* A narrowed box with nothing for that name — the rows' left edge, not the section's empty slot. */
-.log-empty {
-    display: block;
-    padding: var(--sp-1) var(--sp-4);
-}
 /* Day label above a day's rows in the full variant — same left edge as the rows' text. */
 .log-day {
     display: block;

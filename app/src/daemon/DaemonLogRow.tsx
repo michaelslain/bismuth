@@ -2,16 +2,17 @@
 // One daemon log event: the mono `time  who  what  note  duration` line (activityLine.ts formats it;
 // the note says why it ran, why it failed or what it reported),
 // which is a button that unfolds the event's detail underneath — the second-precision time, kind,
-// exact duration and cause (logDetail.ts), any detail text the daemon wrote (error output), and
-// `[ only <name> ]` / `[ open ]` actions. Only the line toggles; clicks inside the detail never
-// collapse it, so its text can be selected. The actions stop their click: `[ only … ]` unmounts
-// itself before the click bubbles, and the log box (DaemonSection) opens the section on any click
-// it cannot trace to an item still inside it.
-import { Show } from 'solid-js'
+// exact duration and cause (logDetail.ts), the log file the event lives in, any detail text the
+// daemon wrote (error output), and actions on that log: `[ open ]` the file, `[ copy path ]`, and
+// `[ delete ]` this entry, which asks `[ delete ] [ cancel ]` first. Only the line toggles; clicks
+// inside the detail never collapse it, so its text can be selected. The actions stop their click:
+// the log box (DaemonSection) opens the section on any click it cannot trace to an item still
+// inside it, and the confirm swap unmounts the button that was clicked.
+import { createSignal, Show } from 'solid-js'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import activityLine from './activityLine'
 import { clockTime } from './logDays'
-import { detailMeta } from './logDetail'
+import { detailMeta, logPath } from './logDetail'
 import PlainButton from '../ui/PlainButton'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
@@ -24,17 +25,34 @@ export type DaemonLogRowProps = {
     clock?: boolean
     expanded: boolean
     onToggle: () => void
-    /** Narrows the log to this event's owner. Omitted → no `[ only … ]` action. */
-    onFilter?: () => void
-    /** Opens this event's cron/service definition. Omitted → no `[ open ]` action. */
-    onOpenDefinition?: () => void
+    /** Opens the log file this event lives in. Omitted → no `[ open ]`. */
+    onOpenLog?: () => void
+    /** Copies that log file's path. Omitted → no `[ copy path ]`. */
+    onCopyPath?: () => void
+    /** Removes this event from its log file; the row stays in its confirm state until it settles.
+     *  Omitted → no `[ delete ]`. */
+    onDelete?: () => Promise<void>
     class?: string
 }
 
 function DaemonLogRow(props: DaemonLogRowProps) {
     const line = () => activityLine(props.event, props.now)
+    const path = () => logPath(props.event)
     const hasActions = () =>
-        props.onFilter !== undefined || props.onOpenDefinition !== undefined
+        props.onOpenLog !== undefined ||
+        props.onCopyPath !== undefined ||
+        props.onDelete !== undefined
+    const [confirming, setConfirming] = createSignal(false)
+    const [busy, setBusy] = createSignal(false)
+    const commitDelete = async () => {
+        setBusy(true)
+        try {
+            await props.onDelete?.()
+        } finally {
+            setBusy(false)
+            setConfirming(false)
+        }
+    }
 
     return (
         <div
@@ -79,6 +97,13 @@ function DaemonLogRow(props: DaemonLogRowProps) {
                     <Text as="span" size="micro" tone="muted">
                         {detailMeta(props.event)}
                     </Text>
+                    <Show when={path()}>
+                        {p => (
+                            <Text as="span" size="micro" tone="muted" class={styles.path}>
+                                {p()}
+                            </Text>
+                        )}
+                    </Show>
                     <Show when={props.event.detail}>
                         {d => (
                             <Text as="span" size="micro" inherit class={styles.text}>
@@ -88,29 +113,68 @@ function DaemonLogRow(props: DaemonLogRowProps) {
                     </Show>
                     <Show when={hasActions()}>
                         <div class={styles.actions}>
-                            <Show when={props.onFilter}>
-                                {f => (
+                            <Show
+                                when={!confirming()}
+                                fallback={
+                                    <>
+                                        <TextButton
+                                            danger
+                                            disabled={busy()}
+                                            aria-busy={busy()}
+                                            onClick={e => {
+                                                e.stopPropagation()
+                                                void commitDelete()
+                                            }}
+                                        >
+                                            {busy() ? '…' : 'delete'}
+                                        </TextButton>
+                                        <TextButton
+                                            disabled={busy()}
+                                            onClick={e => {
+                                                e.stopPropagation()
+                                                setConfirming(false)
+                                            }}
+                                        >
+                                            cancel
+                                        </TextButton>
+                                    </>
+                                }
+                            >
+                                <Show when={props.onOpenLog}>
+                                    {o => (
+                                        <TextButton
+                                            onClick={e => {
+                                                e.stopPropagation()
+                                                o()()
+                                            }}
+                                        >
+                                            open
+                                        </TextButton>
+                                    )}
+                                </Show>
+                                <Show when={props.onCopyPath}>
+                                    {c => (
+                                        <TextButton
+                                            onClick={e => {
+                                                e.stopPropagation()
+                                                c()()
+                                            }}
+                                        >
+                                            copy path
+                                        </TextButton>
+                                    )}
+                                </Show>
+                                <Show when={props.onDelete}>
                                     <TextButton
+                                        danger="hover"
                                         onClick={e => {
                                             e.stopPropagation()
-                                            f()()
+                                            setConfirming(true)
                                         }}
                                     >
-                                        {`only ${props.event.name}`}
+                                        delete
                                     </TextButton>
-                                )}
-                            </Show>
-                            <Show when={props.onOpenDefinition}>
-                                {o => (
-                                    <TextButton
-                                        onClick={e => {
-                                            e.stopPropagation()
-                                            o()()
-                                        }}
-                                    >
-                                        open
-                                    </TextButton>
-                                )}
+                                </Show>
                             </Show>
                         </div>
                     </Show>

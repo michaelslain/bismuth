@@ -39,6 +39,7 @@ import { createChatDropTarget } from '../chat/createChatDropTarget'
 import DropCue from '../ui/DropCue'
 import styles from './DaemonPageHost.module.css'
 import { pushToast } from '../ui/toastStore'
+import { copyChatText } from '../chat/copyChatText'
 import DaemonChat from './DaemonChat'
 import DaemonOverview, {
     type DaemonOverviewProps,
@@ -92,7 +93,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     )
     const [opened, setOpened] = createSignal<DaemonSectionKey | null>(null)
     // The cron/service name the log is narrowed to — shared by the box and the opened log.
-    const [logFilter, setLogFilter] = createSignal<string | null>(null)
     const [now, setNow] = createSignal(Date.now())
     const enabled = () => settings.daemon.enabled
     const session = () => chatSession(DAEMON_CHAT_ID)
@@ -110,7 +110,6 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         try {
             const ev = await api.daemonLogs({
                 limit: full ? FULL_LOG_LIMIT : LOG_LIMIT,
-                name: logFilter() ?? undefined,
             })
             setEvents(full ? ev.slice(0, LOG_LIMIT) : ev)
             if (full) setFullEvents(ev)
@@ -121,18 +120,24 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     createEffect(
         on(opened, k => (k === 'log' ? void fetchLogs() : setFullEvents(null))),
     )
-    createEffect(on(logFilter, () => void fetchLogs(), { defer: true }))
-    // A log event's owner → its definition file, while that cron/service still exists.
-    const definitionFor = (e: ActivityEvent): string | undefined => {
-        if (e.kind === 'cron') {
-            const c = snapshot().crons.find(x => x.name === e.name)
-            return c ? `.daemon/crons/${c.file}.md` : undefined
+    // A log row's `[ copy path ]` copies the ABSOLUTE path, so it pastes into any chat or terminal.
+    const onCopyLogPath = async (path: string) => {
+        const vault = await api
+            .terminalInfo()
+            .then(i => i.vault.replace(/\/+$/, ''))
+            .catch(() => '')
+        copyChatText(vault ? `${vault}/${path}` : path, {
+            ok: 'Copied path',
+            fail: "Couldn't copy path",
+        })
+    }
+    const onDeleteLogEntry = async (e: ActivityEvent): Promise<void> => {
+        try {
+            await api.deleteDaemonLogEntry(e)
+        } catch (err) {
+            pushToast((err as Error).message || "couldn't delete the log entry")
         }
-        if (e.kind === 'process') {
-            const p = snapshot().processes.find(x => x.name === e.name)
-            return p ? `.daemon/processes/${p.file}.md` : undefined
-        }
-        return undefined
+        await fetchLogs()
     }
 
     createEffect(() => {
@@ -351,10 +356,9 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                     <DaemonLog
                         variant="full"
                         events={fullEvents() ?? events()}
-                        filter={logFilter()}
-                        onFilter={setLogFilter}
-                        {...{ definitionFor }}
                         onOpen={props.onOpen}
+                        onCopyPath={path => void onCopyLogPath(path)}
+                        onDelete={onDeleteLogEntry}
                     />
                 </DaemonTakeover>
             </Match>
@@ -421,10 +425,9 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                                 events={events()}
                                 limit={limit()}
                                 onOpenSection={() => setOpened('log')}
-                                filter={logFilter()}
-                                onFilter={setLogFilter}
-                                {...{ definitionFor }}
                                 onOpen={props.onOpen}
+                                onCopyPath={path => void onCopyLogPath(path)}
+                                onDelete={onDeleteLogEntry}
                             />
                         )}
                     />
