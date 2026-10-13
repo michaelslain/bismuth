@@ -42,6 +42,7 @@ import {
     declaredCategoriesWith,
     newStoredTaskNote,
     sourcedTaskBody,
+    pastDayNotice,
     taskFileTargetId,
 } from './tasksCalendarWrites'
 import { statusFromChar } from '../../../core/src/taskReorder'
@@ -179,17 +180,21 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
                 )
                 return
             }
+            let hidden = false
             if (props.config && vc) {
                 const prospective = prospectiveStoredTaskRow(
                     props.basePath,
                     note,
                     0,
                 )
-                if (!newTaskVisible(props.config, prospective))
+                hidden = !newTaskVisible(props.config, prospective)
+                if (hidden)
                     pushToast(
                         `Added to ${props.basePath} — it does not match this view's filters, so it will not appear here`,
                     )
             }
+            const past = hidden ? undefined : pastDayNotice(date, todayISO(), props.basePath)
+            if (past) pushToast(past)
             props.onChange?.()
             return
         }
@@ -216,13 +221,18 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
             return
         }
         // Feed the scope check the path the write RETURNED, not a client-side guess.
+        let hidden = false
         if (props.config && vc) {
             const prospective = prospectiveLineTaskRow(dest, body)
-            if (prospective && !newTaskVisible(props.config, prospective))
+            hidden = !!prospective && !newTaskVisible(props.config, prospective)
+            if (hidden)
                 pushToast(
                     `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
                 )
         }
+        // A past day's unfinished task is drawn on today, not on the cell that was clicked.
+        const past = hidden ? undefined : pastDayNotice(date, todayISO(), dest)
+        if (past) pushToast(past)
         props.onChange?.()
     }
 

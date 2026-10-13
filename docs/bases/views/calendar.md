@@ -167,6 +167,8 @@ Under the input, a `→` line names where the task will be written. With two or 
 
 A task written outside the view's own filters is still written. A toast names the file it went to and says it will not appear in this view.
 
+A task composed on a day before today is written with that day as its `scheduled` date, and, being unfinished, it draws on today as overdue instead of in the cell you clicked. A toast names the file and the date and says the task shows on today.
+
 ### Task calendar settings
 
 In the tasks register the settings gear opens a task calendar settings dialog. Choosing "not set" removes the key from the file.

@@ -103,6 +103,14 @@ export function sourcedTaskBody(text: string, date: string): string {
     return `${text} [scheduled ${date}]`
 }
 
+/** The toast for a task composed on a day before `today`. An unfinished task dated in the past
+ *  is drawn on today as overdue (taskPlacement.ts's `placeRows`), so it never lands in the cell
+ *  that was clicked — without this the composer clears and the task seems not to exist. */
+export function pastDayNotice(date: string, today: string, dest: string): string | undefined {
+    if (date >= today) return undefined
+    return `Added to ${dest} for ${date} — that day has passed, so it shows on today as overdue`
+}
+
 /** The base's whole `categories:` array with `name` set to `color` — every other declared
  *  category preserved, the picked one replaced in place or appended when new. */
 export function declaredCategoriesWith<C extends { name: string; color?: string }>(

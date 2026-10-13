@@ -4,6 +4,7 @@ import {
     composeTargets,
     declaredCategoriesWith,
     newStoredTaskNote,
+    pastDayNotice,
     sourcedTaskBody,
     taskFileTargetId,
 } from './tasksCalendarWrites'
@@ -76,4 +77,12 @@ test('declaredCategoriesWith replaces in place or appends', () => {
         { name: 'a', color: 'teal' },
         { name: 'b', color: 'rose' },
     ])
+})
+
+test('pastDayNotice names where a task composed on a past day went', () => {
+    expect(pastDayNotice('2026-10-09', '2026-10-12', 'tasks/General Tasks.md')).toBe(
+        'Added to tasks/General Tasks.md for 2026-10-09 — that day has passed, so it shows on today as overdue',
+    )
+    expect(pastDayNotice('2026-10-12', '2026-10-12', 'a.md')).toBeUndefined()
+    expect(pastDayNotice('2026-10-13', '2026-10-12', 'a.md')).toBeUndefined()
 })
