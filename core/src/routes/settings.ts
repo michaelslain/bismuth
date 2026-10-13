@@ -2,6 +2,7 @@ import { themesFeed } from '../theme/themeFiles'
 import {
     setSettingInFile,
     getVaultSchema,
+    getPropertySchemaSet,
     serializeSettingsForFrontend,
     SETTINGS_FILE,
 } from '../settings'
@@ -81,6 +82,12 @@ export default function settingsRoutes(
         'GET /schema': async (_, __) => {
             // Property registry (from settings.yaml `properties:`) for note validation + autocomplete.
             return ok(await getVaultSchema(cfg.vault))
+        },
+
+        'GET /property-schemas': async (_, __) => {
+            // The registry + named `schemas:` + `folderSchemas:`, so the editor resolves each
+            // note's effective schema live (core/src/schema/namedSchemas.ts).
+            return ok(await getPropertySchemaSet(cfg.vault))
         },
     }
 }

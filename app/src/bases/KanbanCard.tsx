@@ -14,7 +14,7 @@ import { columnLabel } from './columnLabel'
 import { metaVisible, titleOf, writableKey } from './kanbanMeta'
 import { canWriteStoredRow } from './taskWrite'
 import { propertyEditKind } from './propertyEdit'
-import { propertyRegistry } from '../propertyRegistry'
+import { rowSchema } from '../propertyRegistry'
 import { isActivateKey } from '../ui/widgetKeys'
 import { CardEditModal } from './CardEditModal'
 import BooleanValue from './BooleanValue'
@@ -110,7 +110,7 @@ export function KanbanCard(props: {
             metaVisible(
                 id,
                 resolveProperty(id, displayRow()),
-                propertyRegistry(),
+                rowSchema(displayRow()),
             ),
         )
 
@@ -244,7 +244,7 @@ export function KanbanCard(props: {
                                 propertyEditKind(
                                     id,
                                     value(),
-                                    propertyRegistry(),
+                                    rowSchema(displayRow()),
                                     props.siblingValues(id),
                                     declType(),
                                 )

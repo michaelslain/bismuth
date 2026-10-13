@@ -86,8 +86,8 @@ Channel `chat` hides notes marked `hidden`; channel `daemon` hides `hidden` and 
 | Tier | Commands | Behaviour |
 |---|---|---|
 | Always allowed | `backends`, `backup`, `daemon`, `docs`, `doctor`, `folder-icon`, `install`, `memory`, `page`, `uninstall`, `app`, `settings get`, `settings schema`, `settings deny-list`, `checkpoint advance`, `checkpoint ref` | Cannot print a note body. |
-| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop`, `render` | Refused when an argument names a restricted note or folder. |
-| Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily`, `map`, `brain`, `checkpoint diff` | Run, with restricted notes dropped before any count, group or summary. |
+| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop` (except `prop check`), `render` | Refused when an argument names a restricted note or folder. |
+| Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily`, `map`, `brain`, `checkpoint diff`, `prop check` | Run, with restricted notes dropped before any count, group or summary. |
 | Refused | `api`, `serve`, `export`, `chat`, `update`, `settings set`, `settings status-bar`, `folder-visibility`, any unlisted command | Exit non-zero with a reason. |
 
 Three rules apply on top of the tiers:
@@ -507,12 +507,15 @@ Sets and deletes frontmatter properties without disturbing YAML formatting.
 |---|---|---|---|
 | `prop set` | `<file> <key> <value>` | Sets a property. The value is parsed as JSON, else kept as a string. | no |
 | `prop delete` | `<file> <key>` | Deletes a property. | no |
+| `prop schema` | `<file>` | Prints the schemas the note follows and the merged property map it is checked against. | no |
+| `prop check` | `[<file\|folder>]` | Checks a note, a folder or the whole vault against each note's schemas; prints `{ok, checked, problems}` and exits `1` on any error. | no |
 
 On a `.base.jsonl` base both commands edit the config on line 1 and leave every row line as written; they need the full file name, because `prop` does not resolve an extensionless path.
 An image or PDF has no frontmatter of its own, so both commands route it to its companion note, `<file>.<ext>.md` (for example `paper.pdf.md`).
 `prop set` creates the companion on first use; `prop delete` on a missing companion succeeds without doing anything.
 Both fail with `ENOENT` when the binary itself does not exist, so a typo cannot create an orphan companion.
-See [frontmatter](../vault/frontmatter.md).
+`prop check` lists notes, so for an agent it runs in the filtered tier and leaves out notes the agent may not read.
+See [frontmatter](../vault/frontmatter.md) and its [named schemas](../vault/frontmatter.md#hold-notes-to-a-named-schema).
 
 ## relay
 

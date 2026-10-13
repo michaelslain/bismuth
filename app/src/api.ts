@@ -127,6 +127,7 @@ import type { Task } from '../../core/src/tasks'
 import type { Card } from '../../core/src/srs/types'
 import type { Row, ParsedBase, SourceSpec } from '../../core/src/bases/types'
 import type { Schema } from '../../core/src/schema/types'
+import type { PropertySchemaSet } from '../../core/src/schema/namedSchemas'
 import type { ThemesFeed } from '../../core/src/theme/customTheme'
 import type { DoctorReport } from '../../core/src/doctor/types'
 import type { FeedbackPayload } from '../../core/src/feedbackContract'
@@ -546,6 +547,7 @@ export const api = {
     // path before inserting it at the terminal prompt.
     terminalInfo: () => getJson<{ vault: string }>('/terminal/info'),
     schema: () => getJson<Schema>('/schema'),
+    propertySchemas: () => getJson<PropertySchemaSet>('/property-schemas'),
     settings: () => getJson<Record<string, unknown>>('/settings'),
     base: (file: string) =>
         getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),

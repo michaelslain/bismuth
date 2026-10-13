@@ -15,6 +15,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { EditorView } from '@codemirror/view'
+import { forEachDiagnostic } from '@codemirror/lint'
 import { openSearchPanel } from '@codemirror/search'
 import { Editor } from './Editor'
 import ChatTextBubble from './chat/ChatTextBubble'
@@ -32,6 +33,9 @@ import {
     DEFAULT_CODE_SCALE,
 } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
+import { onCleanup } from 'solid-js'
+import { setPropertySchemas } from './propertyRegistry'
+import { loadSchemaSet } from '../../core/src/schema/namedSchemas'
 import {
     expectProseFace,
     expectUiFace,
@@ -2384,5 +2388,170 @@ export const FindPanelOpen: Story = {
             }
             return true
         })
+    },
+}
+
+
+/** A note under a folder bound to a named schema (`folderSchemas: { Books: book }`): `author` is
+ *  required and missing, `rating` is above the schema's max, and `genre` is not one of the enum's
+ *  values. Each offending line carries the purple property mark; the vault-wide `due: date` still
+ *  applies beside the schema. */
+const NAMED_SCHEMA_TEXT = [
+    '---',
+    'rating: 9',
+    'genre: romance',
+    'due: 2026-10-12',
+    '---',
+    'A note in `Books/`, so it follows the `book` schema.',
+    '',
+].join('\n')
+
+export const NamedSchema: Story = {
+    render: () => {
+        setPropertySchemas(
+            loadSchemaSet({
+                properties: { due: 'date' },
+                schemas: {
+                    book: {
+                        author: { type: 'string', required: true },
+                        rating: { type: 'number', min: 0, max: 5 },
+                        genre: { type: { enum: ['sf', 'fantasy', 'literary'] } },
+                    },
+                },
+                folderSchemas: { Books: 'book' },
+            }),
+        )
+        // The schema set is a module singleton: put the built-ins back when the story unmounts.
+        onCleanup(() => setPropertySchemas(loadSchemaSet(null)))
+        setTransport(
+            fakeTransport({ files: { 'Books/Dune.md': NAMED_SCHEMA_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Books/Dune.md"
+                    initialText={NAMED_SCHEMA_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const view = schemaView(canvasElement)
+        // Each schema problem lands on its own key's line; the vault-wide `due: date` is clean.
+        await waitFor(
+            () => {
+                const by = diagnosticsByLine(view)
+                expect(by[2]).toEqual(
+                    expect.arrayContaining([
+                        'missing required property: author',
+                        'expected a value <= 5',
+                    ]),
+                )
+                expect(by[3]).toEqual([
+                    'expected one of: sf, fantasy, literary',
+                ])
+                expect(by[4]).toBeUndefined()
+            },
+            { timeout: 4000 },
+        )
+    },
+}
+
+/** The story's EditorView. */
+function schemaView(canvasElement: HTMLElement): EditorView {
+    const dom = canvasElement.querySelector('.cm-editor')
+    const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+    if (!view) throw new Error('could not find EditorView')
+    return view
+}
+
+/** Lint messages keyed by 1-based document line. */
+function diagnosticsByLine(view: EditorView): Record<number, string[]> {
+    const out: Record<number, string[]> = {}
+    forEachDiagnostic(view.state, d => {
+        const line = view.state.doc.lineAt(d.from).number
+        ;(out[line] ??= []).push(d.message)
+    })
+    return out
+}
+
+/** A note outside every bound folder that does not name a schema yet: `verdict` is just an unknown
+ *  key. The play adds `schema: review` to the frontmatter and the same line turns into an enum
+ *  error, so the schema is re-resolved from the live text, not from the file on disk. */
+const SCHEMA_KEY_TEXT = [
+    '---',
+    'verdict: maybe',
+    '---',
+    'A note that opts into the `review` schema by typing it.',
+    '',
+].join('\n')
+
+export const NamedSchemaFromFrontmatter: Story = {
+    render: () => {
+        setPropertySchemas(
+            loadSchemaSet({
+                schemas: {
+                    review: { verdict: { type: { enum: ['yes', 'no'] } } },
+                },
+                folderSchemas: { Books: 'review' },
+            }),
+        )
+        onCleanup(() => setPropertySchemas(loadSchemaSet(null)))
+        setTransport(
+            fakeTransport({ files: { 'Inbox/Take.md': SCHEMA_KEY_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Inbox/Take.md"
+                    initialText={SCHEMA_KEY_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const view = schemaView(canvasElement)
+        await waitFor(
+            () =>
+                expect(diagnosticsByLine(view)[2]).toEqual([
+                    'unknown property: verdict',
+                ]),
+            { timeout: 4000 },
+        )
+        // Type the schema name into the frontmatter.
+        const at = view.state.doc.line(2).from
+        view.dispatch({ changes: { from: at, insert: 'schema: review\n' } })
+        await waitFor(
+            () => {
+                const by = diagnosticsByLine(view)
+                expect(by[2]).toBeUndefined() // `schema: review` is a declared name
+                expect(by[3]).toEqual(['expected one of: yes, no'])
+            },
+            { timeout: 4000 },
+        )
+        // A misspelt name is an error on the schema line itself.
+        view.dispatch({
+            changes: {
+                from: view.state.doc.line(2).from,
+                to: view.state.doc.line(2).to,
+                insert: 'schema: reveiw',
+            },
+        })
+        await waitFor(
+            () => {
+                const by = diagnosticsByLine(view)
+                expect(by[2]?.[0]).toMatch(/^expected one of: review/)
+                expect(by[3]).toEqual(['unknown property: verdict'])
+            },
+            { timeout: 4000 },
+        )
     },
 }

@@ -156,6 +156,11 @@ describe('decideCliGate', () => {
         expect(decideCliGate(['ocr', 'papers/x.pdf'], RESTRICTED).allowed).toBe(true)
         expect(decideCliGate(['ocr', 'Private/secret.md'], RESTRICTED).allowed).toBe(false)
     })
+    test('`prop check` is filtered — it lists notes and drops restricted ones itself; other `prop` subcommands stay path-scoped', () => {
+        expect(commandTier(['prop', 'check'])).toBe('filtered')
+        expect(commandTier(['prop', 'schema', 'a.md'])).toBe('path-scoped')
+        expect(commandTier(['prop', 'set', 'a.md', 'k', 'v'])).toBe('path-scoped')
+    })
     test('`checkpoint diff` is filtered, not refused — it prints paths only, which the command filters', () => {
         // `git diff --name-status` carries no note body; checkpoint.ts drops restricted paths itself.
         expect(commandTier(['checkpoint', 'diff'])).toBe('filtered')

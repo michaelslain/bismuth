@@ -50,6 +50,7 @@ import { normalizeStatusBar } from './statusBarItems'
 import { evaluateStatusBar, countTree } from './statusBarEval'
 import { DEFAULTS as SETTINGS_DEFAULTS } from './schema/settingsSchema'
 import { serializeSettingsFromText } from './settingsSerialize'
+import { loadSchemaSet } from './schema/namedSchemas'
 import { THEMES_DIR } from './theme/customTheme'
 import { themesFeedFromFiles } from './theme/themeFeed'
 import type { SourceSpec } from './bases/types'
@@ -181,6 +182,18 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
             }
             case 'GET /schema':
                 return { properties: {} }
+            case 'GET /property-schemas': {
+                const raw = await readOrNull('.settings')
+                let data: Record<string, unknown> | null = null
+                if (raw !== null) {
+                    try {
+                        data = parseYaml(raw) as Record<string, unknown> | null
+                    } catch {
+                        data = null
+                    }
+                }
+                return loadSchemaSet(data)
+            }
             case 'GET /templates':
                 return [] // listTemplates needs a dir walk — follow-up
             case 'GET /file': {

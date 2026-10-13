@@ -2502,6 +2502,15 @@
     "max": null,
     "required": false
   },
+  "folderSchemas": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "folderVisibility": {
     "type": {
       "kind": "object"
@@ -3201,6 +3210,15 @@
     "required": false
   },
   "properties": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "schemas": {
     "type": {
       "kind": "object"
     },

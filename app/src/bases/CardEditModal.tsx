@@ -38,7 +38,7 @@ import DropCue from '../ui/DropCue'
 import MilkdownField from '../ui/MilkdownField'
 import PropertyControl from './PropertyControl'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
-import { propertyRegistry } from '../propertyRegistry'
+import { rowSchema } from '../propertyRegistry'
 import { columnLabel } from './columnLabel'
 import { titleOf, writableKey } from './kanbanMeta'
 import { isImagePath } from './kanbanImageDrop'
@@ -106,7 +106,7 @@ export function CardEditModal(props: {
         propertyEditKind(
             id,
             value(id),
-            propertyRegistry(),
+            rowSchema(props.row),
             props.siblingValues(id),
             declType(id),
         )

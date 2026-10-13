@@ -18,15 +18,40 @@
 // binary is present, so that orphan would show up as an ordinary visible note (the same
 // stray-note failure this command exists to stop agents from causing). `delete` refuses too,
 // for symmetry with `set`, rather than treating a missing binary as "nothing to delete."
+//
+// `prop schema` and `prop check` read the named property schemas (core/src/schema/namedSchemas.ts):
+// `schema` prints the effective schema one note follows, `check` validates one note, a folder or the
+// whole vault against each note's own schema. `check` lists many notes, so the visibility gate
+// classifies it as filtered (core/src/visibilityCliGate.ts) and it drops restricted notes itself.
+import { statSync } from 'node:fs'
+import { join } from 'node:path'
 import type { CommandMap } from '../types'
 import { out, fail, parseValue, positionals, requireVault } from '../args'
 import {
     setBaseConfigKey,
     deleteBaseConfigKey,
 } from '../../../core/src/bases/baseFile'
-import { readNote, writeNote, fileExists } from '../../../core/src/files'
+import {
+    readNote,
+    writeNote,
+    fileExists,
+    listMarkdown,
+} from '../../../core/src/files'
 import { isCompanionable, companionPathFor } from '../../../core/src/fileKinds'
 import { createError } from '../../../core/src/error'
+import { parseFrontmatter } from '../../../core/src/frontmatter'
+import { getPropertySchemaSet } from '../../../core/src/settings'
+import {
+    appliedSchemas,
+    resolveNoteSchema,
+    type PropertySchemaSet,
+} from '../../../core/src/schema/namedSchemas'
+import { validateDocument } from '../../../core/src/schema/validate'
+import type { Diagnostic } from '../../../core/src/schema/types'
+import {
+    agentDenyEntries,
+    filterByPath,
+} from '../../../core/src/visibilityFilter'
 
 function isEnoent(err: unknown): boolean {
     return (
@@ -41,7 +66,136 @@ function propNotePath(file: string): string {
     return isCompanionable(file) ? companionPathFor(file) : file
 }
 
+/** One note's result from `prop check`. */
+interface NoteCheck {
+    path: string
+    schemas: string[]
+    diagnostics: (Omit<Diagnostic, 'path'> & { key: string })[]
+}
+
+/** Validate one note's frontmatter against its own effective schema. */
+function checkNote(
+    set: PropertySchemaSet,
+    path: string,
+    md: string,
+    resolveLink: (target: string) => boolean,
+): NoteCheck {
+    const { data } = parseFrontmatter(md)
+    const applied = appliedSchemas(set, path, data)
+    const diags = validateDocument(data, resolveNoteSchema(set, path, data), {
+        mode: 'frontmatter',
+        ctx: { resolveLink },
+    }).filter(d => d.severity !== 'info')
+    for (const a of applied)
+        if (!a.known)
+            diags.push({
+                path: [
+                    a.source === 'folder'
+                        ? `folderSchemas.${a.folder}`
+                        : 'schema',
+                ],
+                severity: 'warning',
+                message: `unknown schema: ${a.name}`,
+            })
+    return {
+        path,
+        schemas: applied.filter(a => a.known).map(a => a.name),
+        diagnostics: diags.map(({ path: p, ...d }) => ({
+            key: p.join('.'),
+            ...d,
+        })),
+    }
+}
+
+/** `[[Target]]` / path resolution for `file` properties, over every note in the vault. */
+function linkResolver(notes: string[]): (target: string) => boolean {
+    const known = new Set<string>()
+    for (const n of notes) {
+        const id = n.replace(/\.md$/, '')
+        known.add(id)
+        known.add(n)
+        known.add(id.split('/').pop() ?? id)
+    }
+    return target => known.has(target)
+}
+
 export const commands: CommandMap = {
+    'prop schema': {
+        summary:
+            'Print the effective property schema a note follows: the vault registry plus the named schemas its folder binds and its own `schema:` key names',
+        usage: '<file>',
+        run: async args => {
+            const vault = requireVault(args)
+            const [file] = positionals(args)
+            if (!file) fail('usage: prop schema <file>')
+            const notePath = propNotePath(file)
+            let md = ''
+            try {
+                md = await readNote(vault, notePath)
+            } catch (err) {
+                if (!isEnoent(err)) throw err
+            }
+            const set = await getPropertySchemaSet(vault)
+            const { data } = parseFrontmatter(md)
+            out(
+                {
+                    path: notePath,
+                    schemas: appliedSchemas(set, notePath, data),
+                    properties: resolveNoteSchema(set, notePath, data),
+                },
+                args,
+            )
+        },
+    },
+    'prop check': {
+        summary:
+            'Check notes against their property schemas (a note, a folder, or the whole vault); exits 1 when any note has an error',
+        usage: '[<file|folder>]',
+        run: async args => {
+            const vault = requireVault(args)
+            const [target] = positionals(args)
+            const all = await listMarkdown(vault)
+            const scope = (target ?? '').replace(/^\.\/|\/+$/g, '')
+            let isDir = scope === ''
+            if (!isDir) {
+                try {
+                    isDir = statSync(join(vault, scope)).isDirectory()
+                } catch {
+                    throw createError(
+                        'ENOENT',
+                        `prop check: no such file: ${scope}`,
+                    )
+                }
+            }
+            const picked = isDir
+                ? all.filter(p => scope === '' || p.startsWith(`${scope}/`))
+                : [propNotePath(scope)]
+            const notes = filterByPath(
+                picked,
+                await agentDenyEntries(vault),
+                p => p,
+            )
+            const set = await getPropertySchemaSet(vault)
+            const resolveLink = linkResolver(all)
+            const problems: NoteCheck[] = []
+            for (const p of notes) {
+                let md: string
+                try {
+                    md = await readNote(vault, p)
+                } catch (err) {
+                    if (isEnoent(err)) continue
+                    throw err
+                }
+                const r = checkNote(set, p, md, resolveLink)
+                if (r.diagnostics.length) problems.push(r)
+            }
+            const ok = !problems.some(r =>
+                r.diagnostics.some(d => d.severity === 'error'),
+            )
+            out({ ok, checked: notes.length, problems }, args)
+            process.exitCode = ok ? 0 : 1
+        },
+    },
     'prop set': {
         summary:
             "Set a frontmatter property on a note, or on an image/PDF's companion note (creating it if needed) — value parsed as JSON, else raw string",

@@ -93,7 +93,7 @@ The schema in `core/src/schema/settingsSchema.ts` (`SETTINGS_SCHEMA`) is the sin
   It leaves a file with YAML errors, or a top-level value that is not a map, untouched, and writes only when something changed.
 - `setSettingInFile(vault, path, value)` is the one backend write path. It reconciles, sets one path in the parsed YAML document, and writes the result, so comments, order and unknown keys survive. A per-vault mutex serializes concurrent writes. `POST /set-setting` calls it.
 - `serializeSettingsFromText` in `core/src/settingsSerialize.ts` builds the `GET /settings` response: it clones `DEFAULTS`, then overlays each valid value from the file.
-  It applies the checks in [What happens to a wrong value](#what-happens-to-a-wrong-value), drops `properties` (served by `GET /schema`), and folds the settings that alias tokens into `appearance.tokens`.
+  It applies the checks in [What happens to a wrong value](#what-happens-to-a-wrong-value), drops `properties`, `schemas` and `folderSchemas` (served by `GET /schema` and `GET /property-schemas`), and folds the settings that alias tokens into `appearance.tokens`.
 - Top-level scalar keys are not overlaid, so a stored `homePage` never reaches the app. A top-level list such as `statusBar` is overlaid per index onto the default list; the status bar itself re-reads the raw file, so only `settings get` shows the overlaid list.
 
 The settings routes (`GET /settings`, `GET /schema`, `GET /config`, `POST /set-setting`) are listed in the [HTTP reference](../api/http-reference.md).

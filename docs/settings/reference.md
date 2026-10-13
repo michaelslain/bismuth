@@ -488,6 +488,35 @@ properties:
 
 ---
 
+## `schemas`
+
+A free-form map from a schema name to a property map in the same form as `properties`. A note follows a named schema when a `folderSchemas` entry binds its folder or its own `schema:` frontmatter key names it, and a named schema's `required` keys are enforced. It is served by `GET /property-schemas` rather than `GET /settings`.
+
+```yaml
+schemas:
+  book:
+    author:
+      type: string
+      required: true
+    rating: number
+```
+
+[Named schemas](../vault/frontmatter.md#hold-notes-to-a-named-schema) covers precedence and checking.
+
+---
+
+## `folderSchemas`
+
+A free-form map from a folder path to a schema name or a list of names declared under `schemas`. Every note under the folder, at any depth, follows them. A name that is not declared binds nothing, and the `.settings` editor marks it with a warning.
+
+```yaml
+folderSchemas:
+  Reading/Books: book
+  Reading/Books/Fiction: [book, review]
+```
+
+---
+
 ## `folderIcons`
 
 A free-form map from a folder path to an icon name or emoji. The file tree's **Set icon** context action writes it; you can also edit it by hand. Empty or non-string values are dropped.
@@ -625,6 +654,6 @@ keybindings:
 The enums for `theme`, `chat.provider` and `daemon.backend` are derived from the theme tokens and the agent-backend catalog, `keybindings` from `KEYBINDING_CATALOG`, `toolbar.command` from `COMMAND_IDS`, and `appearance.tokens` from `DESIGN_TOKENS`, so none needs a schema edit when the source grows.
 Lint and autocomplete read the same schema.
 
-`DEFAULTS` is `deriveDefaults(SETTINGS_SCHEMA)`: every leaf's `default`, recursively. Free-form map sections (`properties`, `folderIcons`, `folderVisibility`) materialize to `{}`. The settings overview describes [how defaults and wrong values behave](overview.md#what-happens-to-a-wrong-value).
+`DEFAULTS` is `deriveDefaults(SETTINGS_SCHEMA)`: every leaf's `default`, recursively. Free-form map sections (`properties`, `schemas`, `folderSchemas`, `folderIcons`, `folderVisibility`) materialize to `{}`. The settings overview describes [how defaults and wrong values behave](overview.md#what-happens-to-a-wrong-value).
 
 Source: `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/settingsSerialize.ts`, `core/src/theme/tokens.ts`, `core/src/theme/fontFamilies.ts`, `core/src/keybindings.ts`, `core/src/commands.ts`, `core/src/agentBackends/catalog.ts`

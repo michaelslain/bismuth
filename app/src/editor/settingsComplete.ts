@@ -205,8 +205,8 @@ function scopeAt(
     ctx: CompletionContext,
     lineNumber: number,
     indent: number,
-): { schema: Schema; sectionKey: string | null } {
-    if (indent === 0) return { schema: root, sectionKey: null }
+): { schema: Schema; sectionKey: string | null; parentKey: string | null } {
+    if (indent === 0) return { schema: root, sectionKey: null, parentKey: null }
     // Walk up to the nearest SECTION HEADER ("key:" with no inline value) that is
     // less-indented than this line — skipping sibling `key: value` lines. That
     // header's nested fields are the scope. Stop at a top-level non-section line.
@@ -217,17 +217,26 @@ function scopeAt(
             // A nested header (appearance > tokens) resolves through its own parent's scope.
             const parent =
                 header[1].length === 0
-                    ? root
-                    : scopeAt(root, ctx, n, header[1].length).schema
+                    ? null
+                    : scopeAt(root, ctx, n, header[1].length)
             return {
-                schema: fieldsOf(parent[header[2]]) ?? {},
+                schema: fieldsOf((parent?.schema ?? root)[header[2]]) ?? {},
                 sectionKey: header[2],
+                parentKey: parent?.sectionKey ?? null,
             }
         }
         const lineIndent = (text.match(/^\s*/)?.[0] ?? '').length
         if (text.trim() && lineIndent === 0 && !header) break // hit a top-level scalar — no enclosing section
     }
-    return { schema: root, sectionKey: null }
+    return { schema: root, sectionKey: null, parentKey: null }
+}
+
+/** True inside a property→type map: `properties:` itself, or one named schema under `schemas:`. */
+function inTypeMap(scope: {
+    sectionKey: string | null
+    parentKey: string | null
+}): boolean {
+    return scope.sectionKey === 'properties' || scope.parentKey === 'schemas'
 }
 
 /**
@@ -569,16 +578,11 @@ export function settingsCompletionSource(
         // value match below.
         const fullVal = before.match(/^\s*-?\s*([\w-]+):\s*(.*)$/)
         if (fullVal) {
-            const { schema, sectionKey } = scopeAt(
-                root,
-                ctx,
-                line.number,
-                indent,
-            )
-            const ft =
-                sectionKey === 'properties'
-                    ? 'string'
-                    : (schema[fullVal[1]]?.type ?? 'string')
+            const scope = scopeAt(root, ctx, line.number, indent)
+            const { schema } = scope
+            const ft = inTypeMap(scope)
+                ? 'string'
+                : (schema[fullVal[1]]?.type ?? 'string')
             if (ft === 'keybind') return keybindCompletions(ctx, fullVal[2])
             if (typeof ft === 'object' && ft.kind === 'path') {
                 if (!ctx.explicit && fullVal[2].length === 0) return null
@@ -604,16 +608,11 @@ export function settingsCompletionSource(
         if (val) {
             const [, key, typed] = val
             if (!ctx.explicit && typed.length === 0) return null
-            const { schema, sectionKey } = scopeAt(
-                root,
-                ctx,
-                line.number,
-                indent,
-            )
-            // Inside `properties:`, a value is a TYPE name (scalar or composite snippet),
-            // not a typed field — handle it before the icon/enum/path branches below.
-            if (sectionKey === 'properties')
-                return propertyTypeCompletions(ctx, typed)
+            const scope = scopeAt(root, ctx, line.number, indent)
+            const { schema } = scope
+            // Inside `properties:` or a named schema, a value is a TYPE name (scalar or composite
+            // snippet), not a typed field — handle it before the icon/enum/path branches below.
+            if (inTypeMap(scope)) return propertyTypeCompletions(ctx, typed)
             const fieldType = schema[key]?.type ?? 'string'
 
             // icon-typed field -> a "open icon gallery" action (always first) + icon
@@ -721,13 +720,9 @@ export function settingsCompletionSource(
         if (keyM) {
             const typed = keyM[1]
             if (!ctx.explicit && typed.length === 0) return null
-            const { schema, sectionKey } = scopeAt(
-                root,
-                ctx,
-                line.number,
-                indent,
-            )
-            if (sectionKey === 'properties') return null
+            const scope = scopeAt(root, ctx, line.number, indent)
+            const { schema } = scope
+            if (inTypeMap(scope)) return null
             const options = Object.entries(schema)
                 .filter(([name]) =>
                     name.toLowerCase().startsWith(typed.toLowerCase()),

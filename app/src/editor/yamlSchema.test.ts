@@ -23,6 +23,23 @@ test('empty array when the doc has no frontmatter', () => {
     )
 })
 
+test('a note with no frontmatter under a schema that requires keys marks its first line', () => {
+    const required: Schema = { author: { type: 'string', required: true } }
+    const diags = diagnosticsForFrontmatter(
+        'Dune\nbody',
+        required,
+        resolveLink,
+    )
+    expect(diags).toEqual([
+        {
+            from: 0,
+            to: 4,
+            severity: 'error',
+            message: 'missing required property: author',
+        },
+    ])
+})
+
 test("type error maps to the offending key's line range", () => {
     const doc = '---\nrating: four\n---\nbody'
     const diags = diagnosticsForFrontmatter(doc, schema, resolveLink)

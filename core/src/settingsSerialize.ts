@@ -160,7 +160,10 @@ export function serializeSettingsFromText(
             (data.appearance as Record<string, unknown> | undefined)?.tokens,
         ).tokens,
     }
+    // The property registry and the named schemas reach the app through GET /property-schemas.
     delete (out as Record<string, unknown>).properties
+    delete (out as Record<string, unknown>).schemas
+    delete (out as Record<string, unknown>).folderSchemas
     return out
 }
 

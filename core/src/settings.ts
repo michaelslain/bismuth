@@ -25,6 +25,7 @@ import {
 } from 'yaml'
 import { readNote, writeNote } from './files'
 import { loadRegistry, BUILTIN_PROPERTIES } from './schema/registry'
+import { loadSchemaSet, type PropertySchemaSet } from './schema/namedSchemas'
 import { SETTINGS_SCHEMA, DEFAULTS } from './schema/settingsSchema'
 import { listCustomThemes } from './theme/themeFiles'
 import {
@@ -241,6 +242,14 @@ export async function getVaultSchema(vault: string): Promise<Schema> {
     const res = await readSettings(vault)
     if (!res) return { ...BUILTIN_PROPERTIES }
     return { ...BUILTIN_PROPERTIES, ...loadRegistry(res.data.properties) }
+}
+
+/** The vault registry, the named `schemas:` and the `folderSchemas:` bindings, parsed together. */
+export async function getPropertySchemaSet(
+    vault: string,
+): Promise<PropertySchemaSet> {
+    const res = await readSettings(vault)
+    return loadSchemaSet(res?.data ?? null)
 }
 
 /** What a brand-new vault's `.settings` holds: no keys at all. `.settings` is SPARSE — it carries

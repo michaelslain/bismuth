@@ -14,6 +14,7 @@ import type { Extension } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import { parse as parseYaml } from 'yaml'
 import { validateDocument } from '../../../core/src/schema/validate'
+import { hasRequired } from '../../../core/src/schema/namedSchemas'
 import type { Schema, ValidateMode } from '../../../core/src/schema/types'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
 
@@ -54,7 +55,7 @@ export function diagnosticsForFrontmatter(
         bodyFrom = 0
     } else {
         const fm = extractFrontmatterBoundary(doc)
-        if (!fm) return []
+        if (!fm) return missingFrontmatterDiagnostics(doc, schema)
         bodyText = fm.text
         bodyFrom = fm.from
     }
@@ -112,6 +113,22 @@ export function diagnosticsForFrontmatter(
         })
     }
     return out
+}
+
+/** A note with no frontmatter block under a schema that requires keys: each missing key is marked
+ *  on the note's first line, since there is no key line to mark. */
+function missingFrontmatterDiagnostics(
+    doc: string,
+    schema: Schema,
+): RangedDiagnostic[] {
+    if (!hasRequired(schema)) return []
+    const to = doc.split('\n')[0].trimEnd().length
+    return validateDocument({}, schema, { mode: 'frontmatter' }).map(d => ({
+        from: 0,
+        to,
+        severity: d.severity,
+        message: d.message,
+    }))
 }
 
 function escapeRe(s: string): string {

@@ -66,11 +66,15 @@ test('frontmatter mode: an unknown key is INFO', () => {
     expect(d.message).toBe('unknown property: nope')
 })
 
-test('frontmatter mode: a missing required key is NOT flagged', () => {
+test('frontmatter mode: a missing required key is an ERROR', () => {
+    // A note's schema carries `required` only from named schemas (namedSchemas.ts strips it from
+    // the vault registry), so the validator itself enforces whatever reaches it.
     const diags = validateDocument({ title: 'Hi' }, schema, {
         mode: 'frontmatter',
     })
-    expect(diags.some(d => d.path[0] === 'api_key')).toBe(false)
+    const d = diags.find(x => x.path[0] === 'api_key')!
+    expect(d.severity).toBe('error')
+    expect(d.message).toBe('missing required property: api_key')
 })
 
 test('settings mode: an unknown key is a WARNING', () => {

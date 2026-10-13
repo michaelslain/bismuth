@@ -285,6 +285,9 @@ const COMPOUND_OVERRIDES: Record<string, CommandTier> = {
     'checkpoint diff': 'filtered',
     'checkpoint advance': 'always-safe',
     'checkpoint ref': 'always-safe',
+    // `prop check` with a folder (or nothing) validates every note under it, so it filters its
+    // own list through `agentDenyEntries`; the rest of `prop` stays path-scoped.
+    'prop check': 'filtered',
     // The status bar preview can count notes by a `query` filter, which leaks counts of hidden notes.
     'settings status-bar': 'refuse-when-restricted',
     // Rewriting `.settings` rewrites the visibility rules themselves (`settings set folderVisibility

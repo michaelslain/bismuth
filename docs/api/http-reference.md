@@ -295,13 +295,14 @@ Card syntax and scheduling are in [flashcards](../flashcards/srs.md).
 | `GET /settings` | none | Parsed settings merged over defaults. | open; none |
 | `GET /themes` | none | A `ThemesFeed` of custom themes. | open; none |
 | `GET /schema` | none | The property registry from `.settings`. | open; none |
+| `GET /property-schemas` | none | `{properties, schemas, folderSchemas}`: the registry over the built-ins, the named schemas, and each bound folder's schema names. | open; none |
 | `GET /status-bar` | none | `{segments}` from the `statusBar:` setting. | owner only; none |
 | `POST /set-setting` | `{path: string[], value}` | `{ok: true}`. `400 bad path` unless `path` is an array of strings. | invalidates `.settings` |
 | `POST /folder-icon` | `{path, icon?}` | `ok`. An empty or null `icon` clears it. | invalidates `.settings` |
 | `POST /folder-visibility` | `{path, visibility?}` | `ok`. | invalidates `.settings` |
 | `POST /status-bar/trust` | `{command}` | `{ok: true}` | owner only; none |
 
-`GET /settings` omits the `properties` registry (read it from `GET /schema`). `appearance.tokens` is the vault's token overrides as a flat map of token key to value, containing only keys the file sets. Settings keys and defaults are in the [settings reference](../settings/reference.md).
+`GET /settings` omits the `properties` registry and the `schemas` and `folderSchemas` maps (read them from `GET /schema` and `GET /property-schemas`). `appearance.tokens` is the vault's token overrides as a flat map of token key to value, containing only keys the file sets. Settings keys and defaults are in the [settings reference](../settings/reference.md).
 
 `POST /set-setting` merges one value at a path such as `["appearance", "uiFont"]`, preserving comments, the property registry and unknown keys. A dotted string like `"appearance.theme"` is rejected.
 

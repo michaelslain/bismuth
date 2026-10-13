@@ -305,6 +305,17 @@ describe('property-type completion inside `properties:`', () => {
     })
 })
 
+describe('property-type completion inside a named schema', () => {
+    it('offers the type vocabulary for a property under `schemas: <name>:`', () => {
+        const res = complete('schemas:\n  book:\n    rating: nu')
+        expect(res?.options.map(o => o.label)).toEqual(['number'])
+    })
+
+    it('stays silent at a property-name position inside a schema', () => {
+        expect(complete('schemas:\n  book:\n    ')).toBeNull()
+    })
+})
+
 // The core of BUG #27: typing in the `.settings` file must surface top-level section keys and
 // nested keys/enum values from the schema. These lock the candidate generation the settings
 // buffer depends on (the original wiring bug lived in editor SELECTION, not in this source).

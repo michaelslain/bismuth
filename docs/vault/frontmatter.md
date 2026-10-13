@@ -2,7 +2,7 @@
 
 Frontmatter is the YAML block at the top of a note that holds its properties: tags, an icon, a status, a due date.
 Bismuth reads it for the graph, for Bases queries and for editor autocomplete, edits one key at a time without reformatting the rest, and lets a vault declare a type for each key.
-Read this page to write frontmatter, set it from the CLI, or declare property types; images and PDFs keep theirs in a [companion note](#companion-notes-frontmatter-for-binary-files-imagespdfs).
+Read this page to write frontmatter, set it from the CLI, declare property types, or hold a folder of notes to a named schema; images and PDFs keep theirs in a [companion note](#companion-notes-frontmatter-for-binary-files-imagespdfs).
 
 ```markdown
 ---
@@ -57,6 +57,7 @@ If the YAML does not parse (duplicate keys, a stray `:`), Bismuth treats the pro
 | `aliases`, `cssclasses` | Declared as string lists, so the editor does not flag them as unknown. |
 | `visibility` | `chat-only` or `hidden` limits what the daemon and chat can read. See [Visibility controls](visibility.md). |
 | `type: base` | Makes the note a base. See [Bases overview](../bases/overview.md). |
+| `schema` | Names the [named schemas](#hold-notes-to-a-named-schema) the note follows: one name, a comma-separated string or a list. |
 
 Every other key is yours. It is available in Bases as `note.<key>`; declare it under `properties:` (below) to get autocomplete and lint for it.
 
@@ -126,13 +127,75 @@ The same validator checks note frontmatter and the `.settings` file, with differ
 | Situation | In a note | In `.settings` |
 |---|---|---|
 | Key not in the registry | info | warning |
-| Missing `required` key | ignored | error |
+| Missing `required` key from a [named schema](#hold-notes-to-a-named-schema) | error | error |
 | Wrong type | error | error |
 | Number outside `min`/`max` | warning | warning |
 
 ### What does autocomplete offer?
 
-Typing in frontmatter suggests declared keys that start with what you typed, and completes values for booleans (`true`, `false`) and enums, including enums inside a list. Open-ended types (`string`, `number`, `date`, `file`, `icon`) suggest nothing.
+Typing in frontmatter suggests the keys the note's schemas declare that start with what you typed, and completes values for booleans (`true`, `false`) and enums, including enums inside a list. Open-ended types (`string`, `number`, `date`, `file`, `icon`) suggest nothing.
+
+## Hold notes to a named schema
+
+A named schema is a property set declared once under `schemas:` in `.settings` and applied to a folder of notes or to one note.
+Bind a schema to a folder with `folderSchemas:` in `.settings`; every note under that folder, at any depth, follows it.
+Opt one note in with a `schema:` key in its frontmatter.
+
+```yaml
+# .settings
+schemas:
+  book:
+    author:
+      type: string
+      required: true
+    rating:
+      type: number
+      min: 0
+      max: 5
+  review:
+    verdict:
+      type:
+        enum: [yes, no]
+folderSchemas:
+  Reading/Books: book
+  Reading/Books/Fiction: [book, review]
+```
+
+```markdown
+---
+schema: review
+verdict: yes
+---
+```
+
+Each schema's entries use the same forms as `properties:` (a bare type name or an object with `type`, `required`, `default`, `doc`, `min` and `max`).
+A `folderSchemas:` value is one schema name or a list; a leading `./` and leading or trailing slashes on the folder path are ignored.
+A note follows, in order: the vault-wide `properties:`, the schemas bound to each enclosing folder from the outermost to the innermost, then the names in its own `schema:` key.
+When two of them declare the same key, the later one wins.
+
+A named schema's `required` keys are enforced: a note missing one gets an error on its first frontmatter line, or on its first line when it has no frontmatter block.
+A `required` flag in the vault-wide `properties:` stays ignored in notes, because it would ask every note in the vault for the key.
+A base note (`type: base`) follows no named schema, since its frontmatter is the base's configuration.
+
+The `schema:` key completes from the declared schema names, and a name that is not declared is an error with the nearest names as fixes.
+A `folderSchemas:` entry that names an undeclared schema binds nothing; the `.settings` editor marks it with a warning.
+Renaming or moving a folder does not rewrite its `folderSchemas:` key, so a moved folder stops following its schema until you update the path.
+
+### Check notes against their schemas from the CLI
+
+Run `bismuth prop check` on a note, a folder, or with no argument for the whole vault.
+It prints the notes that break their schema and exits `1` when any of them has an error.
+
+```bash
+bismuth prop check Reading/Books
+```
+
+```json
+{"ok":false,"checked":3,"problems":[{"path":"Reading/Books/Bad.md","schemas":["book"],"diagnostics":[{"key":"author","severity":"error","message":"missing required property: author"}]}]}
+```
+
+`bismuth prop schema <file>` prints which schemas a note follows (each with `source` `folder` or `note`) and the merged property map it is checked against.
+Unknown keys, which the editor reports as info, are left out of `prop check`.
 
 ## How does frontmatter feed Bases?
 
@@ -209,7 +272,13 @@ If the block is malformed it falls back to `parseFrontmatterData` plus `yaml.str
 `loadRegistry` in `core/src/schema/registry.ts` accepts a bare type string or an object, unwraps nested `type` keys, and parses `enum`, `list` and `fields` forms.
 The recognised scalar names are `SCALAR_PROPERTY_TYPES`; anything else becomes `string`.
 
+`core/src/schema/namedSchemas.ts` resolves a note's effective schema.
+`loadSchemaSet` parses `properties`, `schemas` and `folderSchemas` into a `PropertySchemaSet`, `appliedSchemas` lists the schemas a path and its frontmatter pick up, and `resolveNoteSchema` merges them, strips `required` from the vault registry and adds the `schema` key as a list of declared names.
+`getPropertySchemaSet(vault)` in `core/src/settings.ts` reads it for `GET /property-schemas` and the `prop schema` and `prop check` commands in `cli/src/commands/prop.ts`.
+`app/src/propertyRegistry.ts` holds the set in a signal; `noteSchemaForText` resolves the open note from its live text for the editor's lint, autocomplete and date picker, and `rowSchema` gives Bases' typed cell editors a note row's own schema.
+
 `validateDocument(parsed, schema, { mode })` in `core/src/schema/validate.ts` produces the diagnostics, with `mode` either `frontmatter` or `settings`.
+A missing `required` key is an error in both modes; in `settings` mode it also flags `folderSchemas` entries naming an undeclared schema.
 `app/src/editor/yamlSchema.ts` maps them to editor ranges and calls it with a `resolveLink` callback for `file` properties.
 Open-map sections (an object with empty `fields`, such as `properties` and `folderIcons`) are never recursed into.
 `keySuggestions` and `valueSuggestions` in `core/src/schema/suggest.ts` back autocomplete.
@@ -231,4 +300,4 @@ The `list` type accepts a comma-separated string through `parseList` in `core/sr
 `resolveCompanionTarget` in `app/src/App.tsx`, shared by `openFile` and `openTool`, swaps a companion path for its binary when the sidebar still lists that binary.
 `listTree` in `core/src/files.ts` does the hiding.
 
-Source: `core/src/frontmatter.ts`, `core/src/schema/registry.ts`, `core/src/schema/validate.ts`, `core/src/schema/suggest.ts`, `core/src/schema/coerce.ts`, `core/src/schema/types.ts`, `core/src/settings.ts`, `core/src/basesData.ts`, `core/src/fileKinds.ts`, `core/src/scratchNotes.ts`, `core/src/routes/vault.ts`, `cli/src/commands/prop.ts`, `app/src/editor/yamlSchema.ts`, `app/src/preview/companionDoc.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/frontmatterSummary.ts`, `app/src/App.tsx`
+Source: `core/src/frontmatter.ts`, `core/src/schema/registry.ts`, `core/src/schema/namedSchemas.ts`, `app/src/propertyRegistry.ts`, `core/src/schema/validate.ts`, `core/src/schema/suggest.ts`, `core/src/schema/coerce.ts`, `core/src/schema/types.ts`, `core/src/settings.ts`, `core/src/basesData.ts`, `core/src/fileKinds.ts`, `core/src/scratchNotes.ts`, `core/src/routes/vault.ts`, `cli/src/commands/prop.ts`, `app/src/editor/yamlSchema.ts`, `app/src/preview/companionDoc.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/frontmatterSummary.ts`, `app/src/App.tsx`

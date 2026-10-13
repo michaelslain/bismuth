@@ -143,8 +143,8 @@ The gate classifies every command by name into four tiers, and a command nobody 
 | Tier | Commands | Agent behaviour |
 |---|---|---|
 | Always safe | `backends` `doctor` `docs` `install` `uninstall` `app` `daemon` `agent-graph` `folder-icon` `backup` `page` `memory`, most of `settings`, `checkpoint advance` and `checkpoint ref` | Runs. None can return a note body. |
-| Path-scoped | `read` `write` `move` `delete` `restore` `mkdir` `prop` `render` `ocr` | Runs unless an argument names a restricted path. |
-| Filtered | `tree` `templates` `graph` `search` `map` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` `checkpoint diff` | Runs with hidden notes left out; an explicit restricted path is still refused. |
+| Path-scoped | `read` `write` `move` `delete` `restore` `mkdir` `prop` (except `prop check`) `render` `ocr` | Runs unless an argument names a restricted path. |
+| Filtered | `tree` `templates` `graph` `search` `map` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` `checkpoint diff` `prop check` | Runs with hidden notes left out; an explicit restricted path is still refused. |
 | Refused when the vault restricts anything | `api` `serve` `export` `chat` `history` `update` `checkpoint` (other than `diff`, `advance`, `ref`) `folder-visibility` `settings set` `settings unset` `settings status-bar`, and anything unclassified | Refused. |
 
 Why each refused command stays refused:

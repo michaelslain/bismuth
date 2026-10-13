@@ -17,7 +17,7 @@ import {
     propertyType,
     coercePropertyValue,
 } from '../../../core/src/bases/properties'
-import { propertyRegistry } from '../propertyRegistry'
+import { rowSchema } from '../propertyRegistry'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import PlainButton from '../ui/PlainButton'
@@ -57,7 +57,7 @@ const TableCell: Component<TableCellProps> = props => {
         propertyEditKind(
             props.col,
             value(),
-            propertyRegistry(),
+            rowSchema(props.row),
             siblings,
             propertyType(props.config, props.col),
         )

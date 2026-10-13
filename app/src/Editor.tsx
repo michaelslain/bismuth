@@ -72,7 +72,7 @@ import { isConfigBuffer, isSettingsBuffer } from './editor/settingsBuffer'
 import { InkOverlay } from './editor/InkOverlay'
 import { settingsSchemaFor } from '../../core/src/schema/themedSettingsSchema'
 import { customThemes, customThemeOverrides } from './customThemes'
-import { propertyRegistry } from './propertyRegistry'
+import { propertySchemas, noteSchemaForText } from './propertyRegistry'
 import {
     parseWikilink,
     resolveNotePath,
@@ -1225,7 +1225,7 @@ export function Editor(props: {
     // doc changes, so an external registry update needs an explicit re-lint or the
     // note would keep showing stale "unknown property" marks.
     createEffect(() => {
-        propertyRegistry() // track: re-run whenever the registry signal updates
+        propertySchemas() // track: re-run whenever the registry or a named schema changes
         customThemes() // track: a theme file edit changes the settings schema's theme enum
         if (view) requestRelint(view) // forceLinting alone no-ops on a settled linter
     })
@@ -1241,6 +1241,10 @@ export function Editor(props: {
         const owner = getOwner()
         const path = currentPath()
         activePath = path
+        // This note's effective property schema: the vault registry plus the named schemas its
+        // folder binds and its own `schema:` key names, re-resolved from the live frontmatter.
+        const noteSchema = () =>
+            noteSchemaForText(path ?? '', view?.state.doc.toString() ?? '')
         // Flush a pending save, then destroy the previous view when this effect re-runs
         // (path changed or cleanup) — so switching files can't drop an unsaved edit.
         // Snapshot scrollTop first so a tab switch (which destroys this view) can restore
@@ -1621,7 +1625,7 @@ export function Editor(props: {
                           getNotes: props.noteNames,
                           getMemories: props.memoryNames,
                           getTags: props.tagNames,
-                          getSchema: propertyRegistry,
+                          getSchema: noteSchema,
                           getIconNames: completionIconNames,
                           inFrontmatter: isInFrontmatter,
                           // `[[Note#heading]]` completion fetches the target note's body to list its headings.
@@ -1637,7 +1641,7 @@ export function Editor(props: {
                   drawBlockExtension(),
                   embedBlock(props.noteNames),
                   yamlSchema({
-                      getSchema: propertyRegistry,
+                      getSchema: noteSchema,
                       mode: 'frontmatter',
                       // Filename-based link resolution: a [[Target]] resolves when some note
                       // candidate's label matches (wikilink semantics — name, not path).
@@ -1645,8 +1649,8 @@ export function Editor(props: {
                           props.noteNames().some(n => n.label === target),
                   }),
                   // Calendar popover for `date`/`datetime` frontmatter properties (registered in
-                  // the propertyRegistry): native date/time inputs + relative-date quick options.
-                  datePropertyPicker(propertyRegistry),
+                  // this note's schema): native date/time inputs + relative-date quick options.
+                  datePropertyPicker(noteSchema),
                   // A machine-owned note (a daemon page) hides its frontmatter; display only.
                   ...(props.hideFrontmatter ? [hideFrontmatter()] : []),
                   notePathFacet.of(path),

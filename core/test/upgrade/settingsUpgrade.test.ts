@@ -188,7 +188,9 @@ describe('upgrading an old-era settings file through reconcile', () => {
             await import('../../src/schema/settingsSchema')
         expect(data).not.toHaveProperty('terminal')
         for (const key of Object.keys(SETTINGS_SCHEMA)) {
-            if (key === 'properties') continue // delivered via GET /schema, never in the feed
+            // Delivered via GET /schema and GET /property-schemas, never in the feed.
+            if (['properties', 'schemas', 'folderSchemas'].includes(key))
+                continue
             expect(merged).toHaveProperty(key)
         }
         rmSync(vault, { recursive: true, force: true })

@@ -11,6 +11,11 @@ import { isRealCalendarDate } from '../dates'
 import { extractWikilinks } from '../wikilinks'
 import { parseList } from './coerce'
 import { checkTokenValue, suggestTokenKey, tokenDef } from '../theme/designTokens'
+import {
+    loadSchemaSet,
+    normalizeFolder,
+    unknownFolderBindings,
+} from './namedSchemas'
 
 /** Pull the link target from a value: "[[Target|Display]]" -> "Target", else the raw string. */
 function linkTarget(value: string): string {
@@ -306,17 +311,35 @@ export function validateDocument(
         if (diag) out.push({ ...diag, path: [key, ...diag.path] })
     }
 
+    for (const [key, entry] of Object.entries(schema)) {
+        if (!entry.required) continue
+        const v = obj[key]
+        if (v === undefined || v === null) {
+            out.push({
+                path: [key],
+                severity: 'error',
+                message: `missing required property: ${key}`,
+            })
+        }
+    }
+
     if (opts.mode === 'settings') {
-        for (const [key, entry] of Object.entries(schema)) {
-            if (!entry.required) continue
-            const v = obj[key]
-            if (v === undefined || v === null) {
-                out.push({
-                    path: [key],
-                    severity: 'error',
-                    message: `missing required property: ${key}`,
-                })
-            }
+        // A folderSchemas binding naming an undeclared schema binds nothing — the same silent
+        // no-op as a typo'd type name, so say so where the binding is written.
+        const set = loadSchemaSet(obj)
+        const declared = Object.keys(set.schemas)
+        for (const { folder, name } of unknownFolderBindings(set)) {
+            const rawKey =
+                Object.keys(
+                    (obj.folderSchemas ?? {}) as Record<string, unknown>,
+                ).find(k => normalizeFolder(k) === folder) ?? folder
+            const suggestions = nearestEnum(declared, name).slice(0, 3)
+            out.push({
+                path: ['folderSchemas', rawKey],
+                severity: 'warning',
+                message: `unknown schema: ${name}`,
+                ...(suggestions.length ? { suggestions } : {}),
+            })
         }
 
         // Toolbar items may carry either `command` (single) or `commands` (list); a

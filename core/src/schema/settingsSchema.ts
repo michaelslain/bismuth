@@ -797,6 +797,18 @@ export const SETTINGS_SCHEMA: Schema = {
         type: { kind: 'object', fields: {} },
         doc: 'Vault property registry: map each frontmatter key to a type.',
     },
+    // Named property schemas. Free-form `{name: {key: typeString}}`, each value parsed like
+    // `properties:` by core/src/schema/namedSchemas.ts loadSchemaSet.
+    schemas: {
+        type: { kind: 'object', fields: {} },
+        doc: 'Named property schemas: map a schema name to a property→type map. Bind one to a folder with folderSchemas, or to a note with `schema: <name>` in its frontmatter.',
+    },
+    // Per-folder schema bindings. Free-form `{folderPath: name | [names]}`; every note under the
+    // folder (at any depth) follows the named schemas.
+    folderSchemas: {
+        type: { kind: 'object', fields: {} },
+        doc: 'Per-folder property schemas: map a folder path to a schema name (or a list). Every note under the folder follows it.',
+    },
     // Per-folder icons. Free-form `{folderPath: iconName}` (folders have no
     // frontmatter), seeded empty and written via POST /folder-icon.
     folderIcons: {
