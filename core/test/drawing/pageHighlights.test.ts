@@ -2,6 +2,8 @@ import { test, expect, describe } from 'bun:test'
 import {
     addHighlight,
     highlightAt,
+    highlightPlainText,
+    listHighlights,
     mergeLineRects,
     removeHighlight,
     resolveHighlightColor,
@@ -200,5 +202,36 @@ describe('mergeLineRects', () => {
         const copy = rects.map(r => ({ ...r }))
         mergeLineRects(rects)
         expect(rects).toEqual(copy)
+    })
+})
+
+describe('highlightPlainText', () => {
+    test('joins a word hyphenated across a line break and turns other breaks into spaces', () => {
+        expect(
+            highlightPlainText('land values have been noto-\nriously piecemeal and\nsubject'),
+        ).toBe('land values have been notoriously piecemeal and subject')
+    })
+
+    test('keeps a hyphen before an uppercase letter', () => {
+        expect(highlightPlainText('the post-\nWar period')).toBe('the post-War period')
+    })
+})
+
+describe('listHighlights', () => {
+    test('lists every page in reading order, 1-based, with resolved colour and plain text', () => {
+        const r = (y: number, x = 10) => [{ x, y, w: 100, h: 15 }]
+        let doc: DrawingDoc = emptyDoc()
+        doc = addHighlight(doc, 2, r(500), { text: 'lower', id: 'b' })
+        doc = addHighlight(doc, 2, r(100), { text: 'upper\nline', id: 'a' })
+        doc = addHighlight(doc, 0, r(50), { c: '#FF00AA', id: 'c' })
+        expect(listHighlights(doc)).toEqual([
+            { page: 1, id: 'c', color: '#FF00AA', text: null },
+            { page: 3, id: 'a', color: PDF_HIGHLIGHT_YELLOW, text: 'upper line' },
+            { page: 3, id: 'b', color: PDF_HIGHLIGHT_YELLOW, text: 'lower' },
+        ])
+    })
+
+    test('a doc with no highlights lists nothing', () => {
+        expect(listHighlights(emptyDoc())).toEqual([])
     })
 })

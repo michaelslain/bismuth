@@ -18,9 +18,15 @@ import { server } from '../src/server'
 // know to ask for one.
 // Raised 280 → 320 for the history pointer: asked "what did we talk about yesterday", a chat
 // recalled September facts, then searched .daemon/logs and journals before the user said "logs".
+// Raised 320 → 350 for the highlights pointer: asked to paraphrase a PDF's highlights, the daemon
+// read the PDF page by page, saw no marks (they live in the .draw sidecar) and said there were none.
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(320)
+    expect(words).toBeLessThan(350)
+})
+
+test('SERVER_INSTRUCTIONS sends PDF highlight questions to bismuth highlights', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('bismuth highlights <file.pdf>')
 })
 
 test('SERVER_INSTRUCTIONS sends past-conversation questions to bismuth history', () => {

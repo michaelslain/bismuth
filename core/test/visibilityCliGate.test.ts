@@ -161,6 +161,11 @@ describe('decideCliGate', () => {
         expect(commandTier(['prop', 'schema', 'a.md'])).toBe('path-scoped')
         expect(commandTier(['prop', 'set', 'a.md', 'k', 'v'])).toBe('path-scoped')
     })
+    test('`highlights` is path-scoped: a visible PDF runs, a hidden one refuses', () => {
+        expect(commandTier(['highlights', 'papers/x.pdf'])).toBe('path-scoped')
+        expect(decideCliGate(['highlights', 'papers/x.pdf'], RESTRICTED).allowed).toBe(true)
+        expect(decideCliGate(['highlights', 'Private/secret.md'], RESTRICTED).allowed).toBe(false)
+    })
     test('`checkpoint diff` is filtered, not refused — it prints paths only, which the command filters', () => {
         // `git diff --name-status` carries no note body; checkpoint.ts drops restricted paths itself.
         expect(commandTier(['checkpoint', 'diff'])).toBe('filtered')

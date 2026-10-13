@@ -86,7 +86,7 @@ Channel `chat` hides notes marked `hidden`; channel `daemon` hides `hidden` and 
 | Tier | Commands | Behaviour |
 |---|---|---|
 | Always allowed | `backends`, `backup`, `daemon`, `docs`, `doctor`, `folder-icon`, `install`, `memory`, `page`, `uninstall`, `app`, `settings get`, `settings schema`, `settings deny-list`, `checkpoint advance`, `checkpoint ref` | Cannot print a note body. |
-| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop` (except `prop check`), `render` | Refused when an argument names a restricted note or folder. |
+| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop` (except `prop check`), `render`, `ocr`, `highlights` | Refused when an argument names a restricted note or folder. |
 | Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily`, `map`, `brain`, `checkpoint diff`, `prop check` | Run, with restricted notes dropped before any count, group or summary. |
 | Refused | `api`, `serve`, `export`, `chat`, `update`, `settings set`, `settings status-bar`, `folder-visibility`, any unlisted command | Exit non-zero with a reason. |
 
@@ -316,12 +316,13 @@ An agent always runs with safe repairs only, and the `vault` section is dropped 
 
 ## export and render
 
-Turns a note, base, sheet or drawing into a file. Everything is headless. PDF and PNG of notes, bases and sheets drive a headless Chrome against the same HTML the app's exporter produces.
+Turns a note, base, sheet or drawing into a file, and reads a PDF's highlights back out as text. Everything is headless. PDF and PNG of notes, bases and sheets drive a headless Chrome against the same HTML the app's exporter produces.
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
 | `export` | `<file> [--format md\|html\|png\|pdf\|csv] [--out FILE] [--mode data\|visual] [--cal-start YYYY-MM-DD] [--cal-span month\|week\|3day\|day] [--no-frontmatter] [--markdown-syntax] [--theme dark\|light] [--vault <dir>]` | Exports a file and prints `wrote <path>`. | no |
 | `render` | `<file.draw> [--pdf] [--out FILE] [--theme dark\|light]` | Renders a drawing to PNG, or PDF with `--pdf`. | no |
+| `highlights` | `<file.pdf> [--json] [--vault <dir>]` | Prints the text highlighted in a PDF or image, page by page. Takes the file or its `.draw` sidecar. | no |
 
 `--format` defaults to `md`, or `png` for a `.draw` file. A `.draw` file exports only to `png` or `pdf` and needs no vault. `--theme` defaults to `dark`; any other value fails. `--out` defaults to a name derived from the input (`<file>.png` or `<file>.pdf` for drawings).
 
@@ -329,7 +330,18 @@ Turns a note, base, sheet or drawing into a file. Everything is headless. PDF an
 `--no-frontmatter` drops the frontmatter from the output, and `--markdown-syntax` keeps Markdown markers in it.
 Prose leading, code scale and fonts follow the vault's `editor.lineHeight` and `appearance` settings; colours use the built-in palette for the chosen theme, because no live theme is available headlessly.
 
-`export` is refused for an agent in a restricted vault. `render` is path-scoped.
+`highlights` reads the file's `<file>.draw` sidecar, because highlights are never written into the PDF. Pages count from 1, highlights run top to bottom within a page, and a word hyphenated across a line break is joined. A PDF with no sidecar prints `0 highlights`. `--json` prints `{ path, sidecar, count, highlights: [{ page, id, color, text }] }`, where `text` is null for a highlight saved without its text.
+
+```text
+$ bismuth highlights "readings/week 8 reading 1.pdf"
+readings/week 8 reading 1.pdf: 19 highlights
+
+p. 1
+- market data on land values have been notoriously piecemeal and subject to numerous measurement challenges
+- Metropolitan Statistical Areas (MSAs)
+```
+
+`export` is refused for an agent in a restricted vault. `render` and `highlights` are path-scoped.
 
 ## feedback
 

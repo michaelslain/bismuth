@@ -120,3 +120,39 @@ export function mergeLineRects(
     }
     return merged
 }
+
+/** A selection's text as one line of prose: the PDF's line breaks become spaces, and a word the
+ *  layout hyphenated across a line break (`noto-\nriously`) is joined back up. A hyphen before an
+ *  uppercase letter or a digit stays, since that is more often a real compound than a split. */
+export function highlightPlainText(text: string): string {
+    return text
+        .replace(/(\p{Ll})-\s*\n\s*(\p{Ll})/gu, '$1$2')
+        .replace(/-\s*\n\s*/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim()
+}
+
+/** One highlight as an agent or a person reads it: 1-based page, colour, and its text. */
+export interface HighlightEntry {
+    page: number
+    id: string
+    color: string
+    text: string | null
+}
+
+/** Every highlight in `doc`, page by page, top to bottom (then left to right) within a page —
+ *  the order a reader meets them, not the order they were made. `text` is null for a highlight
+ *  saved without its selected text. */
+export function listHighlights(doc: DrawingDoc): HighlightEntry[] {
+    const top = (h: Highlight) => h.rects[0] ?? { x: 0, y: 0 }
+    return doc.pages.flatMap((pg, i) =>
+        [...(pg.highlights ?? [])]
+            .sort((a, b) => top(a).y - top(b).y || top(a).x - top(b).x)
+            .map(h => ({
+                page: i + 1,
+                id: h.id,
+                color: resolveHighlightColor(h.c),
+                text: h.text ? highlightPlainText(h.text) : null,
+            })),
+    )
+}

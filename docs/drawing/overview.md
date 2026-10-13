@@ -75,6 +75,15 @@ The bar also shows the current page (click it to type a page number), the zoom c
 
 An outline entry whose destination cannot be resolved shows dimmed and does nothing. Highlights default to yellow.
 
+## Read a PDF's highlights from the shell or an agent
+
+A PDF's highlights live only in its `<file>.draw` sidecar, never in the PDF, so a tool that reads or renders the PDF shows none of them. `bismuth highlights <file.pdf>` prints the highlighted text page by page, and an agent reaches it through the `bismuth_cli` MCP tool. The [CLI reference](../cli/reference.md#export-and-render) has its flags and output.
+
+```bash
+bismuth highlights "readings/week 8 reading 1.pdf"
+bismuth highlights "readings/week 8 reading 1.pdf" --json
+```
+
 On an image, the scratch strip appears only when its sidecar already carries a `margin`; the preview bar has no scratch button for images.
 
 ## Scratch notes
