@@ -546,7 +546,7 @@ The relay plugin's hooks post to the four ingest routes; they are best-effort an
 For `GET /relay/snapshot`, a non-owner request gets the same shape with each subagent's `lastMessage` removed; every bookkeeping field is returned to everyone.
 
 `POST /ui/command` sends `action` to the target window over its `/ui` socket.
-The route requires only a non-empty `action`; the app handles `list-tabs`, `open-tab`, `close-tab`, `focus-tab`, `rename-tab`, `pin-tab`, `reorder-tab` and `run-command`.
+The route requires only a non-empty `action`; the app handles `list-tabs`, `open-tab`, `close-tab`, `focus-tab`, `rename-tab`, `pin-tab`, `reorder-tab`, `scroll-pane` and `run-command`.
 Without `windowId`, the single open window is used: none open is `404 no Bismuth window is open`, several is `409`.
 A window that never answers resolves `{ok: false}` after about 8 seconds.
 Two guards run first: `run-command` with an id outside the app-control allow-list is `403`, and `open-tab` with `::chat:` content is `403`.

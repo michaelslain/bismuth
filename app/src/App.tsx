@@ -51,7 +51,11 @@ import { showDoctorToast } from './doctorToast'
 import { settingsToCssVars, setCssVars } from './settingsCssVars'
 import { matchesKeybinding, toMenuAccelerator } from './keybindings'
 import { initZoom, zoomIn, zoomOut, zoomReset } from './zoom'
-import { lastChange, currentConnectionState, serverVersion } from './serverVersion'
+import {
+    lastChange,
+    currentConnectionState,
+    serverVersion,
+} from './serverVersion'
 import { serverErrorText } from './serverError'
 import { debounce } from './debounce'
 import { ToastHost, pushToast, dismissToast, updateToast } from './ui/ToastHost'
@@ -71,7 +75,11 @@ import { GcalConnectModal } from './GcalConnectModal'
 import StatusTrustDialog from './shell/StatusTrustDialog'
 import { EditDictionaryModal } from './EditDictionaryModal'
 import { UpdateBanner } from './UpdateBanner'
-import { refreshDaemonPages, anyWorking, dueCount } from './daemon/daemonInboxApi'
+import {
+    refreshDaemonPages,
+    anyWorking,
+    dueCount,
+} from './daemon/daemonInboxApi'
 import {
     daemonSnapshot,
     daemonSnapshotLoaded,
@@ -129,7 +137,11 @@ import { publishEditorTabs } from './chat/chatContext'
 import { startAppSelectionTracking } from './chat/appSelection'
 import { EditorView } from '@codemirror/view'
 import QuickAskHost from './quickAsk/QuickAskHost'
-import { openQuickAsk, quickAskChatId, quickAskOpen } from './quickAsk/quickAskState'
+import {
+    openQuickAsk,
+    quickAskChatId,
+    quickAskOpen,
+} from './quickAsk/quickAskState'
 import { notePathFacet } from './editor/tableState'
 import { paneContextLabel } from './chat/paneContextLabel'
 import {
@@ -138,6 +150,11 @@ import {
     type UiTabsSnapshot,
 } from './uiControlClient'
 import { UI_CONTROL_BLOCKLIST } from '../../core/src/commands'
+import {
+    findScroller,
+    targetTop,
+    position as scrollPosition,
+} from './paneScroll'
 import {
     type Tab,
     type PaneNode,
@@ -227,9 +244,7 @@ import './global.css'
 import ChatColorDot from './chat/ChatColorDot'
 import { migrationPollDelays } from './migrationPoll'
 import { isMacPlatform } from './platform'
-import {
-    THEME_VARS_KEY,
-} from './storageKeys'
+import { THEME_VARS_KEY } from './storageKeys'
 import { runFirstRunHandoff } from './intro/firstRunHandoff'
 import { detectAiActive as detectAi } from './ai/detectAiActive'
 
@@ -422,7 +437,9 @@ export default function App() {
     // separate floating "default view", so when nothing is restored we open with it. The no-empty-state effect keeps this
     // invariant (a graph tab always exists) at runtime.
     const initialTabs =
-        restored.tabs.length > 0 ? restored.tabs : [makeTab(homeContent(settings.homePage))]
+        restored.tabs.length > 0
+            ? restored.tabs
+            : [makeTab(homeContent(settings.homePage))]
     const [tabs, setTabs] = createSignal<Tab[]>(initialTabs)
     const [activeTabId, setActiveTabId] = createSignal<string | null>(
         restored.activeTabId ?? initialTabs[0]?.id ?? null,
@@ -441,9 +458,16 @@ export default function App() {
                     const want = homeContent(settings.homePage)
                     setTabs(ts =>
                         ts.map(t => {
-                            if (t.id !== seedId || t.root.kind !== 'leaf') return t
-                            const next = retargetSeed(t.root.content, seedContent, want)
-                            return next === undefined ? t : { ...t, root: { ...t.root, content: next } }
+                            if (t.id !== seedId || t.root.kind !== 'leaf')
+                                return t
+                            const next = retargetSeed(
+                                t.root.content,
+                                seedContent,
+                                want,
+                            )
+                            return next === undefined
+                                ? t
+                                : { ...t, root: { ...t.root, content: next } }
                         }),
                     )
                 },
@@ -767,7 +791,11 @@ export default function App() {
     const toggleStatusBar = () =>
         setSettings('layout', 'statusBar', !statusBarVisible())
     const togglePdfDarkMode = () =>
-        setSettings('appearance', 'pdfDarkMode', !settings.appearance.pdfDarkMode)
+        setSettings(
+            'appearance',
+            'pdfDarkMode',
+            !settings.appearance.pdfDarkMode,
+        )
     // Panel edge drags (shell/EdgeHandle on the sidebar's and the rail's lines). The width is the
     // `.settings` value itself (appearance.sidebarWidth / tabRailWidth), written live as the pointer
     // moves — the settings store debounces the PATCH, so one drag is one write. `edgeResizing` turns
@@ -1136,8 +1164,7 @@ export default function App() {
         recordNav(tab.root.id, content)
     }
     const openSettings = () => openTool(SETTINGS_FILE)
-    const openTerminal = () =>
-        openTool(TERMINAL_PREFIX + crypto.randomUUID())
+    const openTerminal = () => openTool(TERMINAL_PREFIX + crypto.randomUUID())
     // Open a terminal in a SPECIFIC pane (the EmptyPane "new terminal" button). Unlike
     // openTerminal, which loads into the focused pane, this targets `leafId` directly:
     // the button stops mousedown propagation (so it doesn't focus its pane first), so
@@ -1487,10 +1514,10 @@ export default function App() {
         const active = document.activeElement
         const view =
             active instanceof HTMLElement
-                ? EditorView.findFromDOM(active) ??
+                ? (EditorView.findFromDOM(active) ??
                   EditorView.findFromDOM(
                       active.closest<HTMLElement>('.cm-editor') ?? active,
-                  )
+                  ))
                 : null
         // Only the note Editor provides notePathFacet; the chat composer, Bases fields and table
         // cell editors are CodeMirror too, and `[ insert ]` must never write into those.
@@ -1816,7 +1843,7 @@ export default function App() {
     }
 
     // Open the core→frontend control channel now that the tab helpers it drives exist. Wires the
-    // app-control actions (list/open/close/focus/rename/pin/reorder tabs, run-command) to App state;
+    // app-control actions (list/open/close/focus/rename/pin/reorder tabs, scroll a pane, run-command) to App state;
     // the blocklist + chat exclusion are enforced here (and again on the server) so opening a live
     // recursive Agent-SDK chat stays off the app-control surface.
     onMount(() => {
@@ -1867,6 +1894,46 @@ export default function App() {
                     return { ok: false, error: `no tab "${tabId}"` }
                 setTabs(ts => reorderTabs(ts, tabId, index))
                 return { ok: true }
+            },
+            scrollPane: ({ tabId, leafId, op }) => {
+                // Only the active tab's panes are mounted, so a background tab has nothing to
+                // scroll: say so rather than silently focusing it.
+                const tab = activeTab()
+                if (!tab) return { ok: false, error: 'no tab is open' }
+                if (tabId && tabId !== tab.id)
+                    return {
+                        ok: false,
+                        error: tabs().some(t => t.id === tabId)
+                            ? `tab "${tabId}" is not the active tab — run \`bismuth app focus ${tabId}\` first`
+                            : `no tab "${tabId}"`,
+                    }
+                const id = leafId ?? tab.focusId
+                const leaf = leaves(tab.root).find(l => l.id === id)
+                if (!leaf)
+                    return {
+                        ok: false,
+                        error: `no pane "${id}" in the active tab`,
+                    }
+                const root = document.querySelector<HTMLElement>(
+                    leaf.content.startsWith(TERMINAL_PREFIX)
+                        ? `[data-terminal-overlay="${CSS.escape(leaf.content)}"]`
+                        : `[data-pane-leaf="${CSS.escape(leaf.id)}"]`,
+                )
+                const el = root && findScroller(root)
+                if (!el)
+                    return {
+                        ok: false,
+                        error: `nothing scrolls in pane "${contentLabel(leaf.content)}"`,
+                    }
+                if (op) el.scrollTop = targetTop(op, el)
+                return {
+                    ok: true,
+                    result: {
+                        leafId: leaf.id,
+                        content: leaf.content,
+                        ...scrollPosition(el),
+                    },
+                }
             },
             runCommand: async ({ id }) => {
                 if (UI_CONTROL_BLOCKLIST.includes(id))
@@ -2430,8 +2497,7 @@ export default function App() {
         if (!settings.daemon.enabled) return
         // The snapshot rides the same timer so the status bar's daemon readout tracks the
         // daemon page's (both read daemonSnapshotStore).
-        const fast =
-            anyWorking() || daemonSnapshot().crons.some(c => c.running)
+        const fast = anyWorking() || daemonSnapshot().crons.some(c => c.running)
         const tick = () => {
             void refreshInbox()
             void refreshDaemonSnapshot()
@@ -3141,8 +3207,7 @@ export default function App() {
     const copyStatusLocation = () => {
         const c = focusedContent()
         const vp = vaultPath().replace(/\/+$/, '')
-        const target =
-            c && !isSentinel(c) ? (vp ? `${vp}/${c}` : c) : vp
+        const target = c && !isSentinel(c) ? (vp ? `${vp}/${c}` : c) : vp
         if (!target) return
         navigator.clipboard
             .writeText(target)
@@ -3168,7 +3233,9 @@ export default function App() {
                         open={sidebarVisible()}
                         combo={settings.keybindings['toggle-sidebar']}
                         resizable={sidebarVisible()}
-                        reveal={!sidebarVisible() && sidebarSide() !== tabRailSide()}
+                        reveal={
+                            !sidebarVisible() && sidebarSide() !== tabRailSide()
+                        }
                         onResizeStart={() => startEdgeResize('sidebarWidth')}
                         onResize={dx =>
                             resizeEdge(
@@ -3271,7 +3338,11 @@ export default function App() {
                                     }))
                                 }
                                 onMenu={(leafId, x, y) =>
-                                    setPaneMenu({ x, y, items: paneMenuItems(leafId) })
+                                    setPaneMenu({
+                                        x,
+                                        y,
+                                        items: paneMenuItems(leafId),
+                                    })
                                 }
                                 onClose={closePane}
                                 dragState={drag}
@@ -3326,6 +3397,7 @@ export default function App() {
                             return (
                                 <PaneOverlay
                                     kind="terminal"
+                                    content={id}
                                     rect={rect()}
                                     // The overlay covers the pane-leaf, so re-trigger the leaf's pane menu
                                     // (split/close/equalize) on right-click instead of the browser default.
@@ -3382,7 +3454,9 @@ export default function App() {
                                 edge={tabRailSide()}
                                 open={tabRailPinned()}
                                 combo={settings.keybindings['toggle-tab-rail']}
-                                onResizeStart={() => startEdgeResize('tabRailWidth')}
+                                onResizeStart={() =>
+                                    startEdgeResize('tabRailWidth')
+                                }
                                 onResize={dx =>
                                     resizeEdge(
                                         'tabRailWidth',

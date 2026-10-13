@@ -18,6 +18,9 @@ import styles from './PaneOverlay.module.css'
 
 export function PaneOverlay(props: {
     kind: 'terminal'
+    /** The content id overlaid, written to `data-terminal-overlay` so app control's scroll can find
+     *  this terminal's scroller (app/src/paneScroll.ts). */
+    content: string
     rect?: Rect
     onContextMenu?: (e: MouseEvent) => void
     children: JSX.Element
@@ -25,6 +28,7 @@ export function PaneOverlay(props: {
     return (
         <div
             class={styles['terminal-overlay']}
+            data-terminal-overlay={props.content}
             onContextMenu={props.onContextMenu}
             style={{
                 position: 'absolute',

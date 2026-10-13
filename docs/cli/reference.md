@@ -40,7 +40,7 @@ These commands call a running core server (the app, or `bismuth serve`) and fail
 | Commands | Why a server |
 |---|---|
 | `api` | Calls any route. |
-| `app windows`, `app tabs`, `app open`, `app close`, `app focus`, `app rename`, `app pin`, `app reorder`, `app run` | Drive a window through the server's `/ui/*` channel. `app commands` is the exception: it prints a list and needs nothing. |
+| `app windows`, `app tabs`, `app open`, `app close`, `app focus`, `app rename`, `app pin`, `app reorder`, `app scroll`, `app run` | Drive a window through the server's `/ui/*` channel. `app commands` is the exception: it prints a list and needs nothing. |
 | `chat list`, `chat read`, `chat search` | Read chat history through owner-only routes. |
 | `gcal status`, `gcal connect`, `gcal sync`, `gcal disconnect` | The OAuth and sync lifecycle lives in the server. `gcal targets` and `gcal health` are headless. |
 | `relay list` | The relay registry is in-memory in the server process. |
@@ -138,6 +138,7 @@ Run `app windows` for window ids and `app tabs` for tab ids.
 | `app rename` | `<tabId> <name> [--window <id>]` | Sets a custom tab label. | yes |
 | `app pin` | `<tabId> [--off] [--window <id>]` | Pins a tab to the start of the strip. `--off` unpins. | yes |
 | `app reorder` | `<tabId> <index> [--window <id>]` | Moves a tab to a 0-based position. | yes |
+| `app scroll` | `[<tabId>] [--pane <leafId>] [--by <px> \| --pages <n> \| --to top\|bottom\|<0-1>] [--window <id>]` | Scrolls a pane in the active tab and prints its position; no motion flag only reads it. | yes |
 | `app run` | `<commandId> [--window <id>]` | Runs a UI command by id. Chat and heavyweight commands are blocked. | yes |
 | `app commands` | none | Lists the ids `app run` accepts. | no |
 

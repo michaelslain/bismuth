@@ -58,6 +58,24 @@ export interface RunCommandResult {
     note?: string
 }
 
+/** How a `scroll-pane` command moves a pane: by pixels (negative is up), by pages (one page is 90%
+ *  of the visible height), or to an absolute place — the top, the bottom, or a fraction 0–1 of the
+ *  way down. */
+export type UiScrollOp =
+    { by: number } | { pages: number } | { to: 'top' | 'bottom' | number }
+
+/** A `scroll-pane` reply's `result`: the pane scrolled and where it now sits. `top` is the scroll
+ *  offset in pixels, `max` the largest offset, `height` the visible height, and `fraction` is
+ *  `top / max` (0 when nothing overflows). */
+export interface UiScrollPosition {
+    leafId: string
+    content: string
+    top: number
+    max: number
+    height: number
+    fraction: number
+}
+
 /** The outcome of a command dispatched to a window. NEVER rejects — a timeout / vanished window
  *  resolves `{ok:false, error}` so the caller (and the daemon) treats "no response" as data, not a
  *  thrown exception to retry-loop on. For `run-command`, `result` (when present) is a
@@ -70,13 +88,14 @@ export interface UiReply {
 
 /** The command frame pushed down the socket to a window; it answers with a matching `reply`.
  *  `action` is one of `list-tabs` | `open-tab` | `close-tab` | `focus-tab` | `run-command` |
- *  `rename-tab` | `pin-tab` | `reorder-tab` — kept as a plain `string` (not a literal union) since
+ *  `rename-tab` | `pin-tab` | `reorder-tab` | `scroll-pane` — kept as a plain `string` (not a literal union) since
  *  server.ts's `/ui/command` reads it out of an untyped JSON body and relays it opaquely; the
  *  client (`app/src/uiControlClient.ts`) is where each action's `args` shape is actually enforced.
  *  `rename-tab` takes `{tabId, name}`, `pin-tab` takes `{tabId, pinned}`, `reorder-tab` takes
  *  `{tabId, index}` — all three delegate to the pure `app/src/panes.ts` helpers and reply
  *  `{ok:true}` or `{ok:false, error}` (an unknown `tabId` is the one failure mode), same shape as
- *  `close-tab`/`focus-tab`. */
+ *  `close-tab`/`focus-tab`. `scroll-pane` takes `{tabId?, leafId?, op?}` (a `UiScrollOp`; none
+ *  only reads the position) and replies a `UiScrollPosition`. */
 export interface UiCommandFrame {
     type: 'command'
     reqId: string

@@ -42,7 +42,12 @@ const rect = { x: 10, y: 10, w: 260, h: 160 }
 export const Terminal: Story = {
     render: () => (
         <Wrap>
-            <PaneOverlay kind="terminal" rect={rect} onContextMenu={noop}>
+            <PaneOverlay
+                kind="terminal"
+                content="::term:story"
+                rect={rect}
+                onContextMenu={noop}
+            >
                 <div style={{ padding: '8px', color: 'var(--text-muted)' }}>
                     [terminal]
                 </div>
@@ -61,7 +66,9 @@ export const Hidden: Story = {
     play: async ({ canvasElement }) => {
         // the INNERMOST div reading `[terminal]` — its ancestors share the same textContent
         const child = Array.from(canvasElement.querySelectorAll('div')).find(
-            d => d.childElementCount === 0 && d.textContent?.trim() === '[terminal]',
+            d =>
+                d.childElementCount === 0 &&
+                d.textContent?.trim() === '[terminal]',
         )
         await expect(child).toBeTruthy()
         const overlay = child!.parentElement!
@@ -71,7 +78,11 @@ export const Hidden: Story = {
     },
     render: () => (
         <Wrap>
-            <PaneOverlay kind="terminal" onContextMenu={noop}>
+            <PaneOverlay
+                kind="terminal"
+                content="::term:story"
+                onContextMenu={noop}
+            >
                 <div style={{ padding: '8px', color: 'var(--text-muted)' }}>
                     [terminal]
                 </div>

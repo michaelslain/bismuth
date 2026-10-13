@@ -10,7 +10,13 @@
 import { wsBase } from './api'
 import { UI_CONTROL_BLOCKLIST } from '../../core/src/commands'
 import { CHAT_PREFIX } from './tabIds'
-import type { UiTabsSnapshot, RunCommandResult } from '../../core/src/uiControl'
+import type {
+    UiTabsSnapshot,
+    RunCommandResult,
+    UiScrollOp,
+    UiScrollPosition,
+} from '../../core/src/uiControl'
+import { parseScrollOp } from './paneScroll'
 
 export type { UiTabsSnapshot, RunCommandResult }
 
@@ -44,6 +50,11 @@ export interface UiControlHandlers {
     reorderTab(args: { tabId: string; index: number }): {
         ok: boolean
         error?: string
+    }
+    scrollPane(args: { tabId?: string; leafId?: string; op?: UiScrollOp }): {
+        ok: boolean
+        error?: string
+        result?: UiScrollPosition
     }
 }
 
@@ -166,6 +177,29 @@ export function connectUiControl(
                             error: 'reorder-tab requires an integer index',
                         }
                     return handlers.reorderTab({ tabId, index })
+                }
+                case 'scroll-pane': {
+                    const tabId = args?.tabId
+                    const leafId = args?.leafId
+                    if (
+                        tabId !== undefined &&
+                        (typeof tabId !== 'string' || !tabId)
+                    )
+                        return {
+                            ok: false,
+                            error: 'scroll-pane tabId must be a tab id',
+                        }
+                    if (
+                        leafId !== undefined &&
+                        (typeof leafId !== 'string' || !leafId)
+                    )
+                        return {
+                            ok: false,
+                            error: 'scroll-pane leafId must be a pane id',
+                        }
+                    const op = parseScrollOp(args?.op)
+                    if (typeof op === 'string') return { ok: false, error: op }
+                    return handlers.scrollPane({ tabId, leafId, op })
                 }
                 case 'run-command': {
                     const id = args?.id

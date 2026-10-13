@@ -1,6 +1,6 @@
 # App control
 
-App control lets an AI agent or a shell script operate a running Bismuth window: list windows and tabs, open, close, focus, rename, pin and reorder tabs, run a safe command, and author an inbox page. It is the only outside route into the live window. It adds no MCP tools: an agent reaches it through `bismuth_cli`, using the `app` command group for window operations and the `page` group for inbox pages. See [the MCP overview](overview.md) for why the tool list stays short.
+App control lets an AI agent or a shell script operate a running Bismuth window: list windows and tabs, open, close, focus, rename, pin and reorder tabs, scroll a pane, run a safe command, and author an inbox page. It is the only outside route into the live window. It adds no MCP tools: an agent reaches it through `bismuth_cli`, using the `app` command group for window operations and the `page` group for inbox pages. See [the MCP overview](overview.md) for why the tool list stays short.
 
 ```bash
 bismuth app windows --pretty
@@ -22,6 +22,7 @@ The `app` commands need a running app. When none answers they fail with `could n
 | `bismuth app rename <tabId> <name> [--window <id>]` | Give a tab a custom label |
 | `bismuth app pin <tabId> [--off] [--window <id>]` | Pin a tab so it leads the strip; `--off` unpins |
 | `bismuth app reorder <tabId> <index> [--window <id>]` | Move a tab to a 0-based position |
+| `bismuth app scroll [<tabId>] [--pane <leafId>] [--by <px> \| --pages <n> \| --to <where>] [--window <id>]` | Scroll a pane in the active tab and print where it sits |
 | `bismuth app run <commandId> [--window <id>]` | Run a command from the palette's catalog |
 | `bismuth app commands` | List the ids `app run` accepts |
 
@@ -43,6 +44,34 @@ The `page` group works on the daemon inbox with no running app. `page create` wr
 | `bismuth page mark-failed <page-path>` | Force a stuck `working` page to `failed` |
 
 All of them take `--vault <dir>`. The format and lifecycle are in [pages](../daemon/pages.md).
+
+## Scroll a pane
+
+`app scroll` scrolls a pane in the window's active tab: a note, a PDF, a base, a terminal's scrollback, or any other view with content taller than its pane. It targets the focused pane unless `--pane <leafId>` names another pane of the active tab; leaf ids come from `app tabs`.
+
+```bash
+bismuth app scroll --pages 1        # down one page
+bismuth app scroll --by -400        # up 400 pixels
+bismuth app scroll --to 0.5         # halfway down
+bismuth app scroll --to bottom
+bismuth app scroll                  # read the position, move nothing
+```
+
+| Flag | Moves |
+|---|---|
+| `--by <px>` | By pixels; negative scrolls up |
+| `--pages <n>` | By pages; one page is 90% of the visible height, so a line of context carries over |
+| `--to top`, `--to bottom`, `--to <0-1>` | To the top, the bottom, or a fraction of the way down |
+
+Pass at most one of the three. Every call prints where the pane ended up, which a reader of a long note uses to know when it reached the end:
+
+```json
+{ "leafId": "250d6653-…", "content": "long.md", "top": 8718, "max": 17436, "height": 759, "fraction": 0.5 }
+```
+
+`top` is the scroll offset in pixels, `max` the largest offset, `height` the visible height, and `fraction` is `top / max`. A scroll past either end stops there without an error. A note's `max` can shift by a few pixels after a jump, because the editor measures the lines it has scrolled into view.
+
+Only the active tab's panes are on screen, so naming another tab fails with `tab "<id>" is not the active tab` and names `bismuth app focus <id>` as the step to run first. A pane whose content fits fails with `nothing scrolls in pane "<label>"`.
 
 ## Run a command
 
@@ -88,8 +117,11 @@ Each open window holds a control WebSocket to core at `/ui?w=<windowId>` (`app/s
 | `rename-tab` | `{tabId, name}` |
 | `pin-tab` | `{tabId, pinned}` |
 | `reorder-tab` | `{tabId, index}` |
+| `scroll-pane` | `{tabId?, leafId?, op?}`, `op` one of `{by}`, `{pages}`, `{to}`. Replies the position as `result` |
 | `run-command` | `{id}` |
+
+`scroll-pane` searches the pane's element for its main scroller, the largest descendant that overflows vertically and is styled to scroll, and sets its `scrollTop`; every view listens to its scroller's own scroll event, so this drives it the way a wheel does (`app/src/paneScroll.ts`). A terminal's xterm sits in an overlay above its pane, marked `data-terminal-overlay`, so the search starts there.
 
 The two refusals run twice, in the route before dispatch and again in the window's handler. `UI_CONTROL_BLOCKLIST` in `core/src/commands.ts` holds the blocked command ids, and the commands that only open a dialog carry `interactive: true` in `COMMAND_CATALOG` in the same file.
 
-Source: `core/src/uiControl.ts`, `core/src/routes/relay.ts`, `core/src/runRegistry.ts`, `core/src/commands.ts`, `core/src/daemonPages.ts`, `app/src/uiControlClient.ts`, `cli/src/commands/{app,page}.ts`, `cli/src/http.ts`
+Source: `core/src/uiControl.ts`, `core/src/routes/relay.ts`, `core/src/runRegistry.ts`, `core/src/commands.ts`, `core/src/daemonPages.ts`, `app/src/uiControlClient.ts`, `app/src/paneScroll.ts`, `cli/src/commands/{app,page}.ts`, `cli/src/http.ts`

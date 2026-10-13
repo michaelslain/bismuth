@@ -1099,7 +1099,10 @@ function lineHeightPxFromHtml(html: string): number {
     // "p { … line-height: <N>px; …" — the prose leading rule (htmlTemplate.ts). `p` and `li` are
     // separate rules (not a combined `p, li` selector), so match `p`'s alone.
     const m = /(?:^|[\s}])p\s*\{[^}]*line-height:\s*([\d.]+)px/.exec(html)
-    if (!m) throw new Error('could not find "p { … line-height: …px" in exported html')
+    if (!m)
+        throw new Error(
+            'could not find "p { … line-height: …px" in exported html',
+        )
     return parseFloat(m[1])
 }
 
@@ -1133,7 +1136,7 @@ async function exportNoteHtml(lineHeight: number): Promise<string> {
     return rf(outPath, 'utf8')
 }
 
-test('`export --format html` renders prose line-height from the vault\'s own editor.lineHeight, not a fixed default', async () => {
+test("`export --format html` renders prose line-height from the vault's own editor.lineHeight, not a fixed default", async () => {
     const tight = await exportNoteHtml(1.2)
     const loose = await exportNoteHtml(1.5)
     const tightPx = lineHeightPxFromHtml(tight)
@@ -1348,8 +1351,7 @@ test('`base migrate-queries` writes a priority sort instead of refusing to conve
 
 test('`base validate` on a base with an unknown view type reports it AND exits non-zero', async () => {
     const vault = makeVault({
-        'Bad.md':
-            '---\ntype: base\nview: gantt\n---\n',
+        'Bad.md': '---\ntype: base\nview: gantt\n---\n',
     })
     const result = await runCli(vault, 'base', 'validate', 'Bad.md')
     expect(result.code).toBe(1)
@@ -1366,8 +1368,7 @@ test('`base validate` on a base with an unknown view type reports it AND exits n
 
 test('`base validate` on a well-formed base returns ok: true, exit 0', async () => {
     const vault = makeVault({
-        'Good.md':
-            '---\ntype: base\nsource: notes\nview: table\n---\n',
+        'Good.md': '---\ntype: base\nsource: notes\nview: table\n---\n',
     })
     const result = await runCli(vault, 'base', 'validate', 'Good.md')
     expect(result.code).toBe(0)
@@ -1651,7 +1652,7 @@ test('`base render` on a stat base returns a computed aggregate, not the row lis
     expect(byKey.B).toBe(5)
 })
 
-test('`base render` runs the base\'s one view, and reads a legacy single-entry views list', async () => {
+test("`base render` runs the base's one view, and reads a legacy single-entry views list", async () => {
     const vault = makeVault({
         'Flat.md': '---\ntype: base\nsource: notes\nview: list\n---\n',
         'Legacy.md':
@@ -1974,9 +1975,9 @@ test('`daemon cron create <name> --vault <dir>` creates a display-named cron; `d
     ])
     expect(delCode).toBe(0)
     expect(delOut.trim()).toBe('ok')
-    expect(existsSync(join(vault, '.daemon', 'crons', 'answer-emails.md'))).toBe(
-        false,
-    )
+    expect(
+        existsSync(join(vault, '.daemon', 'crons', 'answer-emails.md')),
+    ).toBe(false)
 })
 
 test('`daemon process create <name> --vault <dir>` creates a display-named process; `daemon process delete` removes it', async () => {
@@ -2034,7 +2035,7 @@ test('`daemon process create <name> --vault <dir>` creates a display-named proce
     ).toBe(false)
 })
 
-test('`daemon cron create` SUCCEEDS under BISMUTH_AGENT_CHANNEL=daemon — the daemon\'s own chat must be able to supervise its crons, not just read/write vault notes', async () => {
+test("`daemon cron create` SUCCEEDS under BISMUTH_AGENT_CHANNEL=daemon — the daemon's own chat must be able to supervise its crons, not just read/write vault notes", async () => {
     const vault = makeVault({})
     const proc = Bun.spawn(
         [
@@ -4863,9 +4864,18 @@ test('`prop set`/`prop delete` (missing required args) fail with a usage message
 test('`prop set <binary> <key> <value>` on a PDF operates on its companion note, creating it on first use', async () => {
     const { readNote } = await import('../../core/src/files')
     const { parseFrontmatter } = await import('../../core/src/frontmatter')
-    const vault = makeVault({ 'paper.pdf': 'not real pdf bytes, just a placeholder' })
+    const vault = makeVault({
+        'paper.pdf': 'not real pdf bytes, just a placeholder',
+    })
 
-    const result = await runCli(vault, 'prop', 'set', 'paper.pdf', 'tags', '["reading"]')
+    const result = await runCli(
+        vault,
+        'prop',
+        'set',
+        'paper.pdf',
+        'tags',
+        '["reading"]',
+    )
     expect(result.code).toBe(0)
     expect(result.json).toEqual({ ok: true, path: 'paper.pdf.md' })
     expect(existsSync(join(vault, 'paper.pdf'))).toBe(true) // the binary itself is untouched
@@ -4880,7 +4890,8 @@ test('a second `prop set` on the same PDF companion preserves the first key it w
     const vault = makeVault({ 'paper.pdf': 'placeholder' })
 
     expect(
-        (await runCli(vault, 'prop', 'set', 'paper.pdf', 'tags', '["reading"]')).code,
+        (await runCli(vault, 'prop', 'set', 'paper.pdf', 'tags', '["reading"]'))
+            .code,
     ).toBe(0)
     expect(
         (await runCli(vault, 'prop', 'set', 'paper.pdf', 'rating', '5')).code,
@@ -4910,7 +4921,8 @@ test('`prop delete <binary> <key>` on a PDF with an existing companion removes t
 
 test('`prop delete` on a PDF with no companion yet is a no-op success — nothing gets written, and the binary itself is never touched even when its bytes happen to look like frontmatter', async () => {
     const { readNote } = await import('../../core/src/files')
-    const binaryBytes = '---\ntags: [oops]\n---\nnot actually yaml, just pdf-shaped bytes'
+    const binaryBytes =
+        '---\ntags: [oops]\n---\nnot actually yaml, just pdf-shaped bytes'
     const vault = makeVault({ 'paper.pdf': binaryBytes })
 
     const result = await runCli(vault, 'prop', 'delete', 'paper.pdf', 'tags')
@@ -4923,7 +4935,14 @@ test('`prop delete` on a PDF with no companion yet is a no-op success — nothin
 test('`prop set <binary> <key> <value>` on a companionable path whose binary does NOT exist refuses — no orphan companion note is written', async () => {
     const vault = makeVault({ 'Papers/real.pdf': 'placeholder' })
 
-    const result = await runCli(vault, 'prop', 'set', 'Papers/typo.pdf', 'tags', '["reading"]')
+    const result = await runCli(
+        vault,
+        'prop',
+        'set',
+        'Papers/typo.pdf',
+        'tags',
+        '["reading"]',
+    )
     expect(result.code).toBe(1)
     expect(result.err).toContain('no such file')
     expect(existsSync(join(vault, 'Papers/typo.pdf.md'))).toBe(false)
@@ -4932,7 +4951,13 @@ test('`prop set <binary> <key> <value>` on a companionable path whose binary doe
 test('`prop delete <binary> <key>` on a companionable path whose binary does NOT exist also refuses, for symmetry with `set`', async () => {
     const vault = makeVault({ 'Papers/real.pdf': 'placeholder' })
 
-    const result = await runCli(vault, 'prop', 'delete', 'Papers/typo.pdf', 'tags')
+    const result = await runCli(
+        vault,
+        'prop',
+        'delete',
+        'Papers/typo.pdf',
+        'tags',
+    )
     expect(result.code).toBe(1)
     expect(result.err).toContain('no such file')
     expect(existsSync(join(vault, 'Papers/typo.pdf.md'))).toBe(false)
@@ -4943,14 +4968,27 @@ test('`prop set`/`prop delete` on a plain note are unaffected by the companion r
     const { parseFrontmatter } = await import('../../core/src/frontmatter')
     const vault = makeVault({ 'Note.md': '---\ntitle: X\n---\nbody\n' })
 
-    const setResult = await runCli(vault, 'prop', 'set', 'Note.md', 'done', 'true')
+    const setResult = await runCli(
+        vault,
+        'prop',
+        'set',
+        'Note.md',
+        'done',
+        'true',
+    )
     expect(setResult.code).toBe(0)
     expect(setResult.json).toEqual({ ok: true, path: 'Note.md' })
 
     const { data } = parseFrontmatter(await readNote(vault, 'Note.md'))
     expect(data.done).toBe(true)
 
-    const deleteResult = await runCli(vault, 'prop', 'delete', 'Note.md', 'done')
+    const deleteResult = await runCli(
+        vault,
+        'prop',
+        'delete',
+        'Note.md',
+        'done',
+    )
     expect(deleteResult.code).toBe(0)
     expect(deleteResult.json).toEqual({ ok: true, path: 'Note.md' })
 })
@@ -5171,4 +5209,63 @@ test('`bismuth task list --query` surfaces an unrecognised leaf as a diagnostic,
     expect(tasks.map((t: any) => t.description)).toEqual(['one'])
     // But the typo is surfaced, unlike a bare array that gives no signal at all.
     expect(errors).toEqual(['unrecognized filter: banana'])
+})
+
+const runApp = (...rest: string[]) =>
+    Bun.spawn(['bun', 'run', 'cli/src/index.ts', 'app', ...rest], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+    })
+
+test('`bismuth app scroll` dispatches scroll-pane with the op its flag names', async () => {
+    const position = {
+        leafId: 'l1',
+        content: 'a.md',
+        top: 400,
+        max: 1500,
+        height: 500,
+        fraction: 0.267,
+    }
+    const mock = mockUiControlServer({ ok: true, result: position })
+    try {
+        const cases: [string[], unknown][] = [
+            [['--by', '-400'], { by: -400 }],
+            [['--pages', '2'], { pages: 2 }],
+            [['--to', 'bottom'], { to: 'bottom' }],
+            [['--to', '0.5'], { to: 0.5 }],
+            [['t1', '--pane', 'l1', '--by', '10'], { by: 10 }],
+            [[], undefined],
+        ]
+        for (const [flags] of cases) {
+            const proc = runApp('scroll', ...flags, '--api', mock.url)
+            expect(await proc.exited).toBe(0)
+        }
+        expect(mock.calls.map(c => c.action)).toEqual(
+            cases.map(() => 'scroll-pane'),
+        )
+        cases.forEach(([, op], i) => expect(mock.calls[i].args.op).toEqual(op))
+        expect(mock.calls[4].args).toMatchObject({ tabId: 't1', leafId: 'l1' })
+        const proc = runApp('scroll', '--api', mock.url)
+        expect(await proc.exited).toBe(0)
+        expect(JSON.parse(await new Response(proc.stdout).text())).toEqual(
+            position,
+        )
+    } finally {
+        mock.stop()
+    }
+})
+
+test('`bismuth app scroll` rejects a bad or doubled motion flag before reaching the network', async () => {
+    for (const flags of [
+        ['--by', 'far'],
+        ['--to', 'middle'],
+        ['--to', '1.5'],
+        ['--by', '1', '--pages', '1'],
+    ]) {
+        const proc = runApp('scroll', ...flags, '--api', 'http://localhost:1')
+        expect(await proc.exited).not.toBe(0)
+        expect(await new Response(proc.stderr).text()).not.toContain(
+            'could not reach',
+        )
+    }
 })

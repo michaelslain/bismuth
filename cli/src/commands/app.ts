@@ -1,5 +1,5 @@
 // The `app` command group: drive a RUNNING Bismuth window's tabs from the shell (and, through the
-// bismuth_cli MCP tool, from a Claude session) — list/open/close/focus/rename/pin/reorder tabs,
+// bismuth_cli MCP tool, from a Claude session) — list/open/close/focus/rename/pin/reorder tabs, scroll a pane,
 // run a safe command.
 // Everything hits the running core's /ui/* routes, which relay over the per-window control socket
 // the app holds open (core/src/uiControl.ts). A headless CLI has no window, so — unlike the
@@ -141,6 +141,41 @@ export const commands: CommandMap = {
             if (!Number.isInteger(index))
                 fail(`invalid index "${indexRaw}" — must be an integer`)
             out(await command(args, 'reorder-tab', { tabId, index }), args)
+        },
+    },
+    'app scroll': {
+        summary:
+            'Scroll a pane in the active tab (by pixels, by pages, or to top/bottom/a fraction) and print where it sits; no motion flag only reads the position',
+        usage: '[<tabId>] [--pane <leafId>] [--by <px> | --pages <n> | --to top|bottom|<0-1>] [--window <id>]',
+        run: async args => {
+            const [tabId] = positionals(args)
+            const leafId = flag(args, 'pane')
+            const by = flag(args, 'by')
+            const pages = flag(args, 'pages')
+            const to = flag(args, 'to')
+            const given = [by, pages, to].filter(v => v !== undefined)
+            if (given.length > 1) fail('pass only one of --by, --pages, --to')
+            const num = (name: string, raw: string): number => {
+                const n = Number(raw)
+                if (raw.trim() === '' || !Number.isFinite(n))
+                    fail(`invalid --${name} "${raw}" — must be a number`)
+                return n
+            }
+            let op: Record<string, unknown> | undefined
+            if (by !== undefined) op = { by: num('by', by) }
+            else if (pages !== undefined) op = { pages: num('pages', pages) }
+            else if (to !== undefined) {
+                if (to === 'top' || to === 'bottom') op = { to }
+                else {
+                    const f = num('to', to)
+                    if (f < 0 || f > 1)
+                        fail(
+                            `invalid --to "${to}" — must be top, bottom or a fraction from 0 to 1`,
+                        )
+                    op = { to: f }
+                }
+            }
+            out(await command(args, 'scroll-pane', { tabId, leafId, op }), args)
         },
     },
     'app run': {
