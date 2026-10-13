@@ -544,12 +544,12 @@ export const Folded: Story = {
                 Math.abs(foldedRect.height - fenceH),
             ).toBeLessThanOrEqual(1)
 
-            // The panel shrinks to exactly: fence height + FoldedFence's 6px margin-top + its own
+            // The panel shrinks to exactly: fence height + FoldedFence's 4px margin-top + its own
             // top/bottom padding (read off the live element, no literal).
             expect(
                 Math.abs(
                     panel.getBoundingClientRect().height -
-                        (fenceH + 6 + 2 * panelPaddingTop),
+                        (fenceH + 4 + 2 * panelPaddingTop),
                 ),
             ).toBeLessThanOrEqual(1)
         })

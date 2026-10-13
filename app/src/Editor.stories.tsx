@@ -440,6 +440,10 @@ export const MixedTypography: Story = {
 }
 
 const LINE_RHYTHM_TEXT = [
+    '---',
+    'status: active',
+    'tags: [demo]',
+    '---',
     'Plain prose to hold the caret.',
     'A line with **bold** and *italic* runs.',
     'A line with `inline code` in it.',
@@ -462,8 +466,9 @@ const LINE_RHYTHM_TEXT = [
  *  bold grew to 27.5px (the hidden `**`/`](url)` marks carried the absolute row line-height at
  *  font-size 0), lines with a #tag to 24.5px (mono metrics), and list/task rows sat at their own
  *  20.3px. The prose looked like it had random gaps. This story puts each construct on its own
- *  single-row line and asserts every one is exactly the scroller's pitch — fence rows excepted,
- *  which carry deliberate padding. */
+ *  single-row line and asserts every one is exactly the scroller's pitch — the `---` and ```
+ *  fence rows of a frontmatter panel and a code block included, which carried their own padding
+ *  and margin and sat taller than the rows they enclose. */
 export const LineRhythm: Story = {
     render: () => {
         setTransport(
@@ -491,6 +496,7 @@ export const LineRhythm: Story = {
                 '.cm-math',
                 '.cm-task-checkbox',
                 '.cm-codeblock',
+                '.cm-frontmatter',
             ])
                 if (!canvasElement.querySelector(sel))
                     throw new Error(`${sel} not rendered yet`)
@@ -504,18 +510,17 @@ export const LineRhythm: Story = {
         const lines = [
             ...canvasElement.querySelectorAll('.cm-content > .cm-line'),
         ] as HTMLElement[]
-        const rows = lines.filter(
-            l =>
-                !l.classList.contains('cm-block-top') &&
-                !l.classList.contains('cm-block-bottom'),
-        )
-        await expect(rows.length).toBeGreaterThanOrEqual(12)
-        const off = rows
+        await expect(
+            lines.filter(l => l.classList.contains('cm-block-top')).length,
+        ).toBe(2)
+        await expect(lines.length).toBeGreaterThanOrEqual(18)
+        const off = lines
             .map(l => ({
                 text: l.textContent!.slice(0, 40),
                 h: Math.round(l.getBoundingClientRect().height * 100) / 100,
+                margin: styleOf(l)!.marginTop + ' ' + styleOf(l)!.marginBottom,
             }))
-            .filter(r => Math.abs(r.h - pitch) > 0.5)
+            .filter(r => Math.abs(r.h - pitch) > 0.5 || r.margin !== '0px 0px')
         await expect(off).toEqual([])
     },
 }

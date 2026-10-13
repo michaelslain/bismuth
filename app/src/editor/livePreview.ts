@@ -1855,23 +1855,21 @@ export const livePreview = [
         },
         // The `---` / opening-``` fence row: same flat surface as the body, just its
         // own row — no rounding, no distinct band color, so the whole block reads as one continuous
-        // flat card (killing the old rounded-corner "darker band" treatment). The tiny top margin
-        // separates this block from ANY content above it (e.g. an adjacent block's closing fence);
-        // inside the block there are no margins, so the container stays one continuous piece.
-        // Size: global.css's size-reset list (--code-font-size), so a `---` and a ``` fence row
-        // are the same size by construction.
+        // flat card. Size: global.css's size-reset list (--code-font-size), so a `---` and a ```
+        // fence row are the same size by construction.
+        // NO VERTICAL PADDING OR MARGIN: a fence row is exactly one scroller pitch, like the body
+        // rows between the fences and the prose rows around the block. Any padding here makes
+        // the `---` rows visibly taller than the property rows they enclose, and breaks the note's
+        // row rhythm at both ends of every block.
         '.cm-block-top': {
             'font-family': MONO_FONT,
-            padding: '0.15em 0.5em',
-            margin: '2px 0 0',
+            padding: '0 0.5em',
         },
         // A block's BOTTOM fence row (frontmatter closing `---`, code closing ```): mirror of
-        // `.cm-block-top` — same flat surface, no rounding, bottom margin for
-        // adjacent-block separation.
+        // `.cm-block-top`.
         '.cm-block-bottom': {
             'font-family': MONO_FONT,
-            padding: '0.15em 0.5em',
-            margin: '0 0 2px',
+            padding: '0 0.5em',
         },
         // WHY THE BLOCK FILL IS A PSEUDO-ELEMENT AND NOT A `background` ON THE LINE.
         // CodeMirror paints a text selection into `.cm-selectionLayer`, an absolutely-positioned

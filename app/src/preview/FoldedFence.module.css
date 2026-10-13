@@ -8,7 +8,8 @@
    line-height: mirrors Editor.tsx's own scroller line-height (Editor.tsx:188,
    `calc(var(--row-h, 18px) * var(--prose-line-height, 1))`), so a folded row lands on the same
    row rhythm as a note.
-   padding: mirrors `.cm-block-top`'s own `0.15em 0.5em` (livePreview.ts ~1780).
+   padding: mirrors `.cm-block-top`'s own `0 0.5em` (livePreview.ts): a fence row is exactly one
+   row pitch, with no vertical padding.
    background: mirrors the block fill `.cm-block-top::after`'s `var(--surface-1)`
    (livePreview.ts ~1820).
    color: mirrors `.cm-fence-syntax`'s dim (livePreview.ts FENCE_TONE,
@@ -17,11 +18,11 @@
     font-family: var(--ui-font-stack);
     font-size: var(--code-font-size);
     line-height: calc(var(--row-h, 18px) * var(--prose-line-height, 1));
-    padding: 0.15em 0.5em;
-    /* mirrors `.cm-content` padding-top 4px + `.cm-block-top` margin-top 2px (livePreview.ts
-       ~1784): folding removes those two offsets from above the row (the field that carried them
-       is hidden), so this margin puts the folded row back exactly where the opening fence sat. */
-    margin-top: 6px;
+    padding: 0 0.5em;
+    /* mirrors `.cm-content`'s padding-top 4px (a CodeMirror baseTheme rule): folding removes that
+       offset from above the row (the field that carried it is hidden), so this margin puts the
+       folded row back exactly where the opening fence sat. */
+    margin-top: var(--sp-2);
     background: var(--surface-1);
     color: color-mix(in srgb, var(--fg) 30%, transparent);
     white-space: nowrap;

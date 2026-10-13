@@ -124,7 +124,7 @@ Note editor behaviour.
 | `wrapSelection` | boolean | `true` | | With text selected, typing a wrapping character surrounds the selection. |
 | `wrapSelectionChars` | list of string | `` ["*", "_", "~", "`"] `` | | Characters that wrap a selection when typed. |
 
-`lineHeight` 1.25 gives 22.5px of leading, so four prose lines span exactly five tree rows. Every row of a note takes this height, whatever it holds: paragraphs, list items, tasks, code-block lines, and lines with links, inline code, tags or inline math. Headings and the fence rows that open and close a code block or frontmatter are taller. Chat messages and terminal tabs use the same row height, and code in all three is the same size, so `lineHeight` and `appearance.editorFontSize` set the text of every one of them. A `wrapSelectionChars` entry surrounds the selection with itself; `(`, `[`, `{` and `<` pair with their closers. Brackets and quotes already wrap through auto-close, so they are not in the default.
+`lineHeight` 1.25 gives 22.5px of leading, so four prose lines span exactly five tree rows. Every row of a note takes this height, whatever it holds: paragraphs, list items, tasks, code-block and frontmatter lines, the fence rows that open and close them, and lines with links, inline code, tags or inline math. Headings are taller. Chat messages and terminal tabs use the same row height, and code in all three is the same size, so `lineHeight` and `appearance.editorFontSize` set the text of every one of them. A `wrapSelectionChars` entry surrounds the selection with itself; `(`, `[`, `{` and `<` pair with their closers. Brackets and quotes already wrap through auto-close, so they are not in the default.
 
 ```yaml
 editor:
