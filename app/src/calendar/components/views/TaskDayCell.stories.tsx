@@ -10,6 +10,8 @@ import { placeRows } from '../../taskPlacement'
 import type { TaskComposeProps } from '../../taskCompose'
 import { taskRow } from '../../../ui/_calendarAssertions'
 import { todayISO } from '../../../../../core/src/dates'
+import MonthCell from './MonthCell'
+import { TaskAllDayStrip } from './TaskAllDayStrip'
 
 const meta = {
     title: 'Calendar/Views/TaskDayCell',
@@ -24,11 +26,72 @@ const today = todayISO()
 const tasks = () =>
     placeRows(
         [
-            taskRow('call the plumber about [[Home]] #chore', { line: 1, scheduled: today }),
-            taskRow('file the **quarterly** taxes', { line: 2, scheduled: today, resolved: true }),
+            taskRow('call the plumber about [[Home]] #chore', {
+                line: 1,
+                scheduled: today,
+            }),
+            taskRow('file the **quarterly** taxes', {
+                line: 2,
+                scheduled: today,
+                resolved: true,
+            }),
         ],
         today,
     ).get(today)!
+
+const manyTasks = () =>
+    placeRows(
+        [
+            taskRow('call the plumber about the leaking kitchen tap', {
+                line: 1,
+                scheduled: today,
+            }),
+            taskRow('file the quarterly taxes', {
+                line: 2,
+                scheduled: today,
+                resolved: true,
+            }),
+            taskRow('book flights #travel', { line: 3, scheduled: today }),
+            taskRow('reply to the landlord', { line: 4, scheduled: today }),
+        ],
+        today,
+    ).get(today)!
+
+const compose = (): TaskComposeProps => ({
+    date: null,
+    destination: 'tasks',
+    targets: [{ id: 'tasks.md', label: 'tasks' }],
+    target: 'tasks.md',
+    setTarget: () => {},
+    open: () => {},
+    commit: () => {},
+    cancel: () => {},
+})
+
+/** The add button's box overlaps no chip's box: it holds its own row after the day's chips. */
+const expectClearOfChips = (root: HTMLElement, add: HTMLElement) => {
+    const ab = add.getBoundingClientRect()
+    expect(ab.width, 'the add button is laid out').toBeGreaterThan(0)
+    const chips = [
+        ...root.querySelectorAll<HTMLElement>('[role="checkbox"]'),
+    ].map(m => m.closest<HTMLElement>('[role="button"]')!)
+    expect(chips.length).toBeGreaterThan(0)
+    for (const chip of chips) {
+        const cb = chip.getBoundingClientRect()
+        const overlaps =
+            ab.left < cb.right &&
+            ab.right > cb.left &&
+            ab.top < cb.bottom &&
+            ab.bottom > cb.top
+        expect(overlaps, `add button overlaps chip "${chip.textContent}"`).toBe(
+            false,
+        )
+        expect(
+            ab.top,
+            'add button sits below the chips',
+        ).toBeGreaterThanOrEqual(cb.bottom)
+    }
+}
 
 const Harness = () => {
     const [composeDate, setComposeDate] = createSignal<string | null>(null)
@@ -46,9 +109,22 @@ const Harness = () => {
         cancel: () => setComposeDate(null),
     }
     return (
-        <div style={{ position: 'relative', width: '240px', 'min-height': '120px', padding: '8px', margin: '12px' }}>
+        <div
+            style={{
+                position: 'relative',
+                width: '240px',
+                'min-height': '120px',
+                padding: '8px',
+                margin: '12px',
+            }}
+        >
             <AsciiCellEdges edges={['top', 'right', 'bottom', 'left']} />
-            <TaskDayCell date={today} tasks={tasks()} compose={compose} onToggleTask={() => setToggled(n => n + 1)} />
+            <TaskDayCell
+                date={today}
+                tasks={tasks()}
+                compose={compose}
+                onToggleTask={() => setToggled(n => n + 1)}
+            />
             <output data-testid="toggled">{toggled()}</output>
         </div>
     )
@@ -68,18 +144,66 @@ export const ChipsAndAddButton: Story = {
         // the button is quiet at rest, the composer takes over when it is pressed
         const add = c.getByRole('button', { name: 'Add task' })
         expect(getComputedStyle(add).opacity).toBe('0')
-        // revealed, the button sits inside the cell's typed edges: never above the top `-` run's
-        // centre line (it is centred in the cell's first typed row, level with the day number), and
-        // at least one `ch` clear of the right `|` stem. The overlay overhangs the host by half a
-        // tile, so the stem (centre of the right-edge tile) is the HOST's right edge.
-        const host = add.parentElement!.getBoundingClientRect()
-        const tileW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ascii-tile-w'))
-        expect(tileW, 'the glyph tiles are installed').toBeGreaterThan(0)
-        const ab = add.getBoundingClientRect()
-        expect(host.right - ab.right, 'add button clears the right | by at least 1ch').toBeGreaterThanOrEqual(tileW - 0.5)
-        expect(ab.top - host.top, 'add button never rises above the top - run').toBeGreaterThanOrEqual(0)
-        expect(ab.top - host.top, 'add button is centred in the first typed row, not dropped below it').toBeLessThanOrEqual(tileW)
+        expectClearOfChips(canvasElement, add)
         await fireEvent.click(add)
         expect(c.queryByRole('button', { name: 'Add task' })).toBeNull()
+    },
+}
+
+/** A month cell holding four chips, the button revealed by focus (MonthCell's `:focus-within`). */
+export const InMonthCellRevealed: Story = {
+    render: () => (
+        <div style={{ width: '200px', margin: '12px' }}>
+            <MonthCell
+                date={today}
+                day={Number(today.slice(8))}
+                inMonth
+                today={false}
+                onOpen={() => {}}
+                isLastCol
+                isLastRow
+            >
+                <TaskDayCell
+                    date={today}
+                    tasks={manyTasks()}
+                    compose={compose()}
+                />
+            </MonthCell>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const add = within(canvasElement).getByRole('button', {
+            name: 'Add task',
+        })
+        add.focus()
+        expectClearOfChips(canvasElement, add)
+    },
+}
+
+/** The week/3-day/day strip, where no day number leads the chips: the button still follows them. */
+export const InStripRevealed: Story = {
+    render: () => (
+        <div
+            style={{
+                width: '300px',
+                height: '220px',
+                display: 'flex',
+                'flex-direction': 'column',
+                margin: '12px',
+            }}
+        >
+            <TaskAllDayStrip
+                dates={[new Date(today + 'T00:00:00')]}
+                placed={new Map([[today, manyTasks()]])}
+                compose={compose()}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const add = within(canvasElement).getByRole('button', {
+            name: 'Add task',
+        })
+        add.focus()
+        expectClearOfChips(canvasElement, add)
     },
 }
