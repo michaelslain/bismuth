@@ -58,6 +58,7 @@ const EXPECTED = [
     'POST /chat/search',
     'POST /convert/heic',
     'POST /convert/pdf-markdown',
+    'POST /convert/pdf-markdown/cancel',
     'POST /create',
     'POST /daemon/cron/delete',
     'POST /daemon/cron/run',

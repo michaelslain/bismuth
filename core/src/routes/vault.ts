@@ -21,7 +21,7 @@ import { setBaseConfigKey, deleteBaseConfigKey } from '../bases/baseFile'
 import type { TreeEntry } from '../graph'
 import { invalidateChatVisibility } from '../chat'
 import { convertHeicToJpeg } from '../heic'
-import { pdfMarkdownJob, startPdfMarkdownJob } from '../pdfMarkdown'
+import { cancelPdfMarkdownJob, pdfMarkdownJob, startPdfMarkdownJob } from '../pdfMarkdown'
 import { stageTmpFile } from '../tmpFiles'
 import {
     reconcileSettings,
@@ -391,6 +391,14 @@ export default function vaultRoutes(
         'GET /convert/pdf-markdown': async (req, url) => {
             if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             return ok(pdfMarkdownJob(cfg.vault, requireQueryParam(url, 'path')))
+        },
+
+        // Stop a running conversion: Marker is stopped, no note is written, and the job reads
+        // `{ state: 'cancelled', note }`. Anything not running answers its state unchanged.
+        'POST /convert/pdf-markdown/cancel': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const { path } = (await req.json()) as { path: string }
+            return ok(cancelPdfMarkdownJob(cfg.vault, path))
         },
 
         // Stage bytes at a real filesystem path OUTSIDE the vault (tmpFiles.ts) and return that

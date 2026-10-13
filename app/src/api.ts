@@ -694,13 +694,15 @@ export const api = {
         }),
 
     // PDF → markdown (core/src/pdfMarkdown.ts): start Marker on a PDF in the background, then poll
-    // its job until `done` (or `error`). `exists` means the note is already there.
+    // its job until `done` (or `error`, or `cancelled`). `exists` means the note is already there.
     startPdfMarkdown: (path: string, replace = false) =>
         postJson<PdfMarkdownStart>('/convert/pdf-markdown', { path, replace }),
     pdfMarkdownStatus: (path: string) =>
         getJson<PdfMarkdownJob>(
             `/convert/pdf-markdown?path=${encodeURIComponent(path)}`,
         ),
+    cancelPdfMarkdown: (path: string) =>
+        postJson<PdfMarkdownJob>('/convert/pdf-markdown/cancel', { path }),
 
     setProperty: (path: string, key: string, value: unknown) =>
         post('/set-property', { path, key, value }),

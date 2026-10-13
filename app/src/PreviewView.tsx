@@ -93,7 +93,12 @@ import { Loading } from './ui/EmptyState'
 import { isTauri } from './platform'
 import { openPathInDefaultApp, revealPath } from './appWindow'
 import { pushToast } from './ui/ToastHost'
-import { convertPdf, isConverting, watchPdf } from './preview/pdfMarkdownJobs'
+import {
+    cancelConversion,
+    convertPdf,
+    isConverting,
+    watchPdf,
+} from './preview/pdfMarkdownJobs'
 import { settings } from './settings'
 import { matchesKeybinding } from './keybindings'
 import styles from './PreviewView.module.css'
@@ -747,6 +752,7 @@ export function PreviewView(props: {
                 onTogglePanel={() => setPanelOpen(v => !v)}
                 converting={() => isConverting(path())}
                 onConvert={() => void convertPdf(path())}
+                onCancelConvert={() => void cancelConversion(path())}
                 nativeActions={nativeActions}
                 onOpenExternal={reveal => void openExternal(reveal)}
                 imageSize={imageSize}

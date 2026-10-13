@@ -1,12 +1,14 @@
 import { describe, test, expect } from 'bun:test'
 import { makeVault } from './helpers'
 import {
+    cancelPdfMarkdownJob,
     checkPdfMarkdown,
     pdfMarkdownJob,
     pdfMarkdownPath,
     startPdfMarkdownJob,
+    type PdfMarkdownOptions,
 } from '../src/pdfMarkdown'
-import { sourcedNote, tidyMarkdown } from '../src/marker'
+import { runTool, sourcedNote, tidyMarkdown } from '../src/marker'
 
 describe('pdf → markdown', () => {
     test('the note sits beside the PDF with the extension swapped', () => {
@@ -80,5 +82,78 @@ describe('pdf → markdown', () => {
             state: 'error',
             message: 'marker exited 1',
         })
+    })
+
+    test('cancel aborts the run, reads cancelled, and a late finish does not overwrite it', async () => {
+        const vault = makeVault({ 'a.pdf': '%PDF' })
+        let signal!: AbortSignal
+        let finish!: (note: string) => void
+        const convert = (_v: string, _f: string, opts: PdfMarkdownOptions = {}) => {
+            signal = opts.signal!
+            return new Promise<string>(r => (finish = r))
+        }
+        startPdfMarkdownJob(vault, 'a.pdf', {}, convert)
+        expect(signal.aborted).toBe(false)
+        expect(cancelPdfMarkdownJob(vault, 'a.pdf')).toEqual({ state: 'cancelled', note: 'a.md' })
+        expect(signal.aborted).toBe(true)
+        finish('a.md')
+        await new Promise(r => setTimeout(r, 0))
+        expect(pdfMarkdownJob(vault, 'a.pdf')).toEqual({ state: 'cancelled', note: 'a.md' })
+    })
+
+    test('cancel leaves a job that is not running as it is', () => {
+        const vault = makeVault({ 'a.pdf': '%PDF' })
+        expect(cancelPdfMarkdownJob(vault, 'a.pdf')).toEqual({ state: 'idle' })
+    })
+
+    test('a start after a cancel waits for the stopped engine to exit', async () => {
+        const vault = makeVault({ 'a.pdf': '%PDF' })
+        const finishes: ((note: string) => void)[] = []
+        const convert = () => new Promise<string>(r => finishes.push(r))
+        startPdfMarkdownJob(vault, 'a.pdf', {}, convert)
+        cancelPdfMarkdownJob(vault, 'a.pdf')
+        expect(startPdfMarkdownJob(vault, 'a.pdf', {}, convert).state).toBe('running')
+        await new Promise(r => setTimeout(r, 0))
+        expect(finishes.length).toBe(1)
+        finishes[0]!('a.md')
+        await new Promise(r => setTimeout(r, 0))
+        expect(finishes.length).toBe(2)
+        finishes[1]!('a.md')
+        await new Promise(r => setTimeout(r, 0))
+        expect(pdfMarkdownJob(vault, 'a.pdf')).toEqual({ state: 'done', note: 'a.md' })
+    })
+
+    test('a queued start cancelled before its turn never runs the engine', async () => {
+        const vault = makeVault({ 'a.pdf': '%PDF' })
+        const finishes: ((note: string) => void)[] = []
+        const convert = () => new Promise<string>(r => finishes.push(r))
+        startPdfMarkdownJob(vault, 'a.pdf', {}, convert)
+        cancelPdfMarkdownJob(vault, 'a.pdf')
+        startPdfMarkdownJob(vault, 'a.pdf', {}, convert)
+        cancelPdfMarkdownJob(vault, 'a.pdf')
+        finishes[0]!('a.md')
+        await new Promise(r => setTimeout(r, 0))
+        expect(finishes.length).toBe(1)
+        expect(pdfMarkdownJob(vault, 'a.pdf').state).toBe('cancelled')
+    })
+
+    test('aborting a tool run ends it and every process it started', async () => {
+        // One helper detached from the pipes (llama-server logs to a file), one still holding
+        // stdout; both must go, or the run would hang on the pipe or leave an orphan.
+        const abort = new AbortController()
+        const started = Date.now()
+        const run = runTool(
+            '/bin/sh',
+            ['-c', 'sleep 31 >/dev/null 2>&1 & echo $! >&2; sleep 32 & wait'],
+            abort.signal,
+        )
+        await new Promise(r => setTimeout(r, 300))
+        abort.abort()
+        const r = await run
+        expect(Date.now() - started).toBeLessThan(5000)
+        await new Promise(r => setTimeout(r, 100))
+        const helper = Number(r.stderr.trim())
+        expect(helper).toBeGreaterThan(0)
+        expect(() => process.kill(helper, 0)).toThrow()
     })
 })

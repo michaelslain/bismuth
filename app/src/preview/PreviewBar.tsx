@@ -4,7 +4,7 @@
 // in the app uses. Left to right:
 //
 //   identity  file icon + filename (ellipsizes first, never vanishes)
-//   readouts  p. N / M (pdf) + `// converting to markdown` while it runs // W × H (image)
+//   readouts  p. N / M (pdf) + `// converting to markdown [ cancel ]` while it runs // W × H (image)
 //   config    [− 100% + fit]   [highlight draw scratch]   [dark]   pdf  ·  [− 100% + fit] [draw] on an image
 //   actions   [to markdown] [bookmarks]  [open-externally reveal]   pdf only · file actions Tauri
 //
@@ -27,7 +27,9 @@
 // row.
 import { type JSX, Show } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
+import BarLabel from '../ui/BarLabel'
 import IconButton from '../ui/IconButton'
+import TextButton from '../ui/TextButton'
 import Label from '../ui/Label'
 import PageReadout from './PageReadout'
 import PdfZoom from './PdfZoom'
@@ -64,6 +66,8 @@ export type PreviewBarProps = {
     /** pdf → markdown: true while the conversion runs (the button is disabled, a readout says so) */
     converting?: () => boolean
     onConvert?: () => void
+    /** stop the running conversion; no note is written */
+    onCancelConvert?: () => void
     /** pdf panel */
     panelOpen?: () => boolean
     onTogglePanel?: () => void
@@ -109,19 +113,25 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                         </div>
                     </Show>
                     {/* After the page readout, `//` between them (the app's one separator), so the
-                        two never read as one phrase; drops with it at level 2, leaving the
-                        disabled button and its tooltip. */}
+                        two never read as one phrase; the `//` drops with the readout at level 2.
+                        The words shorten to `converting` but stay, so `[ cancel ]` never reads as
+                        cancelling whatever control sits next to it; it never drops, since it is
+                        the only way to stop the run. */}
                     <Show when={pdf() && props.converting?.()}>
-                        <div
-                            class={styles.group}
-                            data-bar-drop="2"
-                            data-testid="preview-converting"
-                        >
+                        <div class={styles.group} data-testid="preview-converting">
                             <Label tone="muted">
-                                {(props.pageCount?.() ?? 0) > 0
-                                    ? '// converting to markdown'
-                                    : 'converting to markdown'}
+                                <Show when={(props.pageCount?.() ?? 0) > 0}>
+                                    <Label data-bar-drop="2">{'// '}</Label>
+                                </Show>
+                                <BarLabel long="converting to markdown" short="converting" />
                             </Label>
+                            <TextButton
+                                title="Stop converting; no note is written"
+                                data-testid="preview-convert-cancel"
+                                onClick={() => props.onCancelConvert?.()}
+                            >
+                                cancel
+                            </TextButton>
                         </div>
                     </Show>
                     <Show when={props.kind() === 'image' && props.imageSize?.()}>

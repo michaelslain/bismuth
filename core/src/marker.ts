@@ -167,20 +167,72 @@ export function requireTool(name: string, verb = 'ocr'): string {
 
 export type ToolRun = { code: number; stdout: string; stderr: string }
 
-/** Run an engine to completion with the widened PATH. Never throws on a non-zero exit. */
-export async function runTool(bin: string, argv: string[]): Promise<ToolRun> {
+/** How long a stopped engine's helpers get to exit on SIGTERM before SIGKILL. */
+export const STOP_GRACE_MS = 10_000
+
+/** Every process below `pid`, read from `ps` (children before grandchildren). */
+export function descendants(pid: number): number[] {
+    const out = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=']).stdout.toString()
+    const kids = new Map<number, number[]>()
+    for (const line of out.split('\n')) {
+        const [c, p] = line.trim().split(/\s+/).map(Number)
+        if (!c || p === undefined) continue
+        kids.set(p, [...(kids.get(p) ?? []), c])
+    }
+    const found: number[] = []
+    const queue = [pid]
+    while (queue.length) {
+        for (const c of kids.get(queue.shift()!) ?? []) {
+            found.push(c)
+            queue.push(c)
+        }
+    }
+    return found
+}
+
+const signal = (pid: number, sig: NodeJS.Signals) => {
+    try {
+        process.kill(pid, sig)
+    } catch {}
+}
+
+/** Run an engine to completion with the widened PATH. Never throws on a non-zero exit.
+ *  Aborting `stop` ends the engine and everything it started. Marker ignores SIGINT and stops
+ *  llama-server (spawned in its own session) only from a Python `atexit`, which no signal reliably
+ *  reaches, so the engine is frozen, its descendants listed, the engine killed, and each
+ *  descendant sent SIGTERM, then SIGKILL after `STOP_GRACE_MS`. */
+export async function runTool(
+    bin: string,
+    argv: string[],
+    stop?: AbortSignal,
+): Promise<ToolRun> {
     const proc = Bun.spawn([bin, ...argv], {
         env: { ...process.env, PATH: toolPath() },
         stdin: 'ignore',
         stdout: 'pipe',
         stderr: 'pipe',
     })
-    const [stdout, stderr, code] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-        proc.exited,
-    ])
-    return { code, stdout, stderr }
+    const end = () => {
+        signal(proc.pid, 'SIGSTOP')
+        const helpers = descendants(proc.pid)
+        signal(proc.pid, 'SIGKILL')
+        for (const pid of helpers) signal(pid, 'SIGTERM')
+        setTimeout(() => {
+            for (const pid of helpers) signal(pid, 'SIGKILL')
+        }, STOP_GRACE_MS).unref()
+    }
+    if (stop?.aborted) end()
+    else stop?.addEventListener('abort', end, { once: true })
+    try {
+        const [stdout, stderr, code] = await Promise.all([
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+            proc.exited,
+        ])
+        return { code, stdout, stderr }
+    } finally {
+        stop?.removeEventListener('abort', end)
+    }
 }
 
 /** The last few non-empty lines of an engine's stderr, for an error message. */
@@ -205,17 +257,20 @@ function findMarkdown(outDir: string): string | null {
 }
 
 /** Transcribe the file at absolute path `abs` with Marker (math as LaTeX); returns the raw
- *  markdown. `verb` names the caller in a missing-engine error. */
+ *  markdown. `verb` names the caller in a missing-engine error. Aborting `signal` stops Marker
+ *  and rejects with a CANCELLED error. */
 export async function markerTranscribe(
     abs: string,
     opts: OcrOptions = {},
     verb = 'ocr',
+    signal?: AbortSignal,
 ): Promise<string> {
     const bin = requireTool('marker_single', verb)
     requireTool('llama-server', verb)
     const outDir = mkdtempSync(join(tmpdir(), 'bismuth-marker-'))
     try {
-        const r = await runTool(bin, markerArgs(abs, outDir, opts))
+        const r = await runTool(bin, markerArgs(abs, outDir, opts), signal)
+        if (signal?.aborted) throw createError('CANCELLED', `${verb} cancelled`)
         const md = findMarkdown(outDir)
         if (r.code !== 0 || !md)
             throw createError(

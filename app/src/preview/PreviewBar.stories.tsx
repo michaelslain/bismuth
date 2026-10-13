@@ -72,6 +72,7 @@ function Harness(props: HarnessProps): JSX.Element {
                 onTogglePanel={() => setPanel(v => !v)}
                 converting={converting}
                 onConvert={() => setConverting(true)}
+                onCancelConvert={() => setConverting(false)}
                 nativeActions={() => props.native ?? false}
                 onOpenExternal={() => {}}
                 imageSize={() => props.imageSize}
@@ -202,8 +203,8 @@ export const PdfDarkOn: Story = {
 }
 
 /** Convert to markdown pressed: the button disables (it runs for minutes; a second press would
- *  only rejoin the same job) and `// converting to markdown` reads after the page readout. The
- *  PDF is untouched, so nothing else in the bar changes. */
+ *  only rejoin the same job) and `// converting to markdown [ cancel ]` reads after the page
+ *  readout. The PDF is untouched, so nothing else in the bar changes. */
 export const PdfConverting: Story = {
     render: () => <Harness width={1000} kind="pdf" />,
     play: async ({ canvasElement }) => {
@@ -211,10 +212,11 @@ export const PdfConverting: Story = {
         const canvas = within(bar)
         const convert = canvas.getByLabelText('Convert to markdown') as HTMLButtonElement
         await expect(convert.disabled).toBe(false)
-        await expect(canvas.queryByText('// converting to markdown')).toBeNull()
+        await expect(canvas.queryByTestId('preview-converting')).toBeNull()
         await fireEvent.click(convert)
         await waitFor(() => expect(convert.disabled).toBe(true))
-        await expect(canvas.getByText('// converting to markdown')).toBeTruthy()
+        const said = canvas.getByTestId('preview-converting').innerText.replace(/\s+/g, ' ').trim()
+        await expect(said).toBe('// converting to markdown cancel')
         await expect(convert.title).toBe('Converting to markdown…')
         // probeBar measures controls only, so the label's own spacing is checked here: the page
         // readout sits one icon gap before it (the readouts region's own gap; the `//` is what
@@ -224,11 +226,49 @@ export const PdfConverting: Story = {
         const label = canvas.getByTestId('preview-converting').getBoundingClientRect()
         const readout = canvas.getByTestId('page-readout').getBoundingClientRect()
         const zoomOut = canvas.getByLabelText('Zoom out').getBoundingClientRect()
+        const words = canvas.getByTestId('preview-converting').firstElementChild!.getBoundingClientRect()
+        const cancel = canvas.getByTestId('preview-convert-cancel').getBoundingClientRect()
         await expect(label.left - readout.right, 'readout → label').toBeCloseTo(iconGap, 0)
+        await expect(cancel.left - words.right, 'words → cancel').toBeCloseTo(iconGap, 0)
         await expect(zoomOut.left - label.right, 'label → zoom').toBeCloseTo(crumbGap, 0)
         const p = probeBar(bar)
         await expect(p.selectedCount, 'converting is not a toggle').toBe(0)
         await expect(p.frames).toBe(0)
+        await expect(p.overlaps).toEqual([])
+        await expect(p.maxCentreOffset).toBeLessThanOrEqual(1)
+    },
+}
+
+/** `[ cancel ]` while converting: the words and the button go, and convert is pressable again. */
+export const PdfConvertCancel: Story = {
+    render: () => <Harness width={1000} kind="pdf" converting />,
+    play: async ({ canvasElement }) => {
+        const bar = barOf(canvasElement)
+        const canvas = within(bar)
+        const convert = canvas.getByLabelText('Convert to markdown') as HTMLButtonElement
+        await expect(convert.disabled).toBe(true)
+        const cancel = canvas.getByTestId('preview-convert-cancel')
+        await expect(cancel.textContent).toContain('cancel')
+        await fireEvent.click(cancel)
+        await waitFor(() => expect(canvas.queryByTestId('preview-converting')).toBeNull())
+        await expect(convert.disabled).toBe(false)
+        await expect(probeBar(bar).overlaps).toEqual([])
+    },
+}
+
+/** A narrow pane while converting: the page readout and the `//` drop, the words shorten to
+ *  `converting`, and `[ cancel ]` stays — it is the only way to stop the run, and the word keeps it
+ *  from reading as cancelling the zoom beside it. */
+export const PdfConvertingNarrow: Story = {
+    render: () => <Harness width={460} kind="pdf" converting />,
+    play: async ({ canvasElement }) => {
+        const bar = barOf(canvasElement)
+        const canvas = within(bar)
+        const label = canvas.getByTestId('preview-converting')
+        await expect(label.innerText.replace(/\s+/g, ' ').trim()).toBe('converting cancel')
+        const cancel = canvas.getByTestId('preview-convert-cancel')
+        await expect(cancel.getBoundingClientRect().width).toBeGreaterThan(0)
+        const p = probeBar(bar)
         await expect(p.overlaps).toEqual([])
         await expect(p.maxCentreOffset).toBeLessThanOrEqual(1)
     },

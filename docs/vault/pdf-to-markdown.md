@@ -30,11 +30,19 @@ $$\theta_{t+1} = \theta_t - \eta \nabla_{\theta} L(\theta_t)$$
 
 ## Convert from the PDF bar
 
-The PDF bar's convert-to-markdown button (a page glyph beside the bookmarks button) starts the conversion. While it runs, the button is disabled and the bar reads `// converting to markdown` after the page number. When it finishes, the new note opens in its own tab and a `converted to <name>.md` toast offers `open`. A long PDF takes minutes; close the PDF meanwhile and the toast still arrives when it is done.
-
-If the note already exists, the button opens it instead and the toast offers `rewrite`, which converts again over it.
+The PDF bar's convert-to-markdown button (a page glyph beside the bookmarks button) starts the conversion. While it runs, the button is disabled and the bar reads `// converting to markdown [ cancel ]` after the page number. When it finishes, the new note opens in its own tab and a `converted to <name>.md` toast offers `open`. A long PDF takes minutes; close the PDF meanwhile and the toast still arrives when it is done.
 
 The button hides in a pane narrower than 650px, together with the file actions. On iPad and iPhone, conversion is unavailable and the button reports an error, because the engines run on a desktop.
+
+## Cancel a conversion
+
+Press `[ cancel ]` in the PDF bar while a conversion runs. The engine stops at once, no note is written, the convert button works again, and a `cancelled converting <name>.pdf` toast confirms it. An existing note the conversion would have rewritten is left as it was. In a narrow pane the bar shortens to `converting [ cancel ]`, and `[ cancel ]` never hides.
+
+A conversion started again right after a cancel waits for the stopped engine to exit, then runs from the first page.
+
+## Rewrite an existing note
+
+If the note already exists, the button opens it instead and the toast offers `rewrite`, which converts again over it.
 
 ## What the note holds
 
@@ -66,6 +74,8 @@ To give a scanned PDF a selectable text layer instead, which does change the PDF
 
 The CLI command is `pdf md` in `cli/src/commands/pdf.ts`. The MCP tool is `pdf_to_markdown` in `mcp/src/server.ts`, which runs the command through `pdfToMarkdownCliArgs` with `OCR_TIMEOUT_MS`. `pdf` is in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
 
-The button cannot hold one HTTP request open for the whole run, since Bun drops a request idle for 255 seconds. `POST /convert/pdf-markdown` calls `startPdfMarkdownJob`, which starts the conversion in the background and answers at once; `GET /convert/pdf-markdown` reads the job's state from `pdfMarkdownJob`. A start while a job for the same PDF runs joins it. `app/src/preview/pdfMarkdownJobs.ts` polls the job, raises the toasts and opens the note; it is module-level, so a job outlives the PDF's tab. The note is written like any external write, and the file watcher picks it up.
+The button cannot hold one HTTP request open for the whole run, since Bun drops a request idle for 255 seconds. `POST /convert/pdf-markdown` calls `startPdfMarkdownJob`, which starts the conversion in the background and answers at once; `GET /convert/pdf-markdown` reads the job's state from `pdfMarkdownJob`. A start while a job for the same PDF runs joins it. `POST /convert/pdf-markdown/cancel` calls `cancelPdfMarkdownJob`, which marks the job `cancelled` and aborts it; a start that follows waits for the stopped run to settle, because the stopping Marker would tear down the llama-server a new run attaches to.
+
+Marker ignores SIGINT, and it stops the llama-server it spawned only from a Python `atexit`. So `runTool` in `core/src/marker.ts` stops an engine by freezing it, listing its descendants with `descendants`, killing it, and sending each descendant SIGTERM, then SIGKILL after `STOP_GRACE_MS`. Surya replaces the llama-server sentinel the killed run leaves behind on its next start. `app/src/preview/pdfMarkdownJobs.ts` polls the job, raises the toasts and opens the note, and `cancelConversion` wakes the poll so the bar clears at once; it is module-level, so a job outlives the PDF's tab. The note is written like any external write, and the file watcher picks it up.
 
 Source: `core/src/pdfMarkdown.ts`, `core/src/marker.ts`, `core/src/routes/vault.ts`, `cli/src/commands/pdf.ts`, `mcp/src/server.ts`, `app/src/preview/pdfMarkdownJobs.ts`, `app/src/preview/PreviewBar.tsx`
