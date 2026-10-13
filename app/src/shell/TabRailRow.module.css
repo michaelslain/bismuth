@@ -16,14 +16,9 @@
    `active` AND `pinned` hash too, as co-riding state classes on `.tab-rail-row` — both fully local
    to this file/component, reached via `classList={{ [styles.active]: …, [styles.pinned]: … }}`.
 
-   `dragging` is a DELIBERATE bare string literal, not an oversight. TabRailRow.tsx has always
-   carried a `dragging` class candidate in its `classList`, but no `.tab-rail-row.dragging` rule
-   exists anywhere in this stylesheet (only the unrelated, dead `.tab.dragging` on the removed
-   horizontal strip). Giving it a module lookup here would resolve to `undefined` and land a
-   literal `class="undefined"` on the row, so it stays bare. The `TabRailRow` `Dragging` story
-   exists to document this: it renders `dragging: true` and looks identical to `Default`, on
-   purpose, so a future `.tab-rail-row.dragging` rule cannot land unmeasured against a story that
-   never noticed the change.
+   `dragging` and `sliding` are the tab-drag states (the live reorder preview; TabRailRow.tsx
+   carries the account): every row eases to its preview offset under `sliding`, and the dragged
+   row itself is the drop slot.
 
    THREE IMPERATIVE `.closest()` REFERENCES used to reach `.tab-x`/`.tab-pin`/`.tab-rename` as bare
    strings (TabRailRow.tsx, moved from App.tsx). They were rewritten against this module's
@@ -210,3 +205,17 @@
    size="inherit" tone="inherit" weight="inherit">` (task 11) rather than a bare `<span>`; the
    inherit trio emits no font-size/color/weight of its own, so this stays visually a no-op. */
 .tab-rail-controls { display: contents; }
+
+/* Tab drag: rows ease to the slot they take once the drop lands (the inline translateY), the way
+   kanban cards slide apart; same 180ms curve as the kanban FLIP. The transition exists only while
+   the drag is live, so the drop's reorder and the offsets clearing land in one frame with no ease
+   back. The dragged row is the drop slot: its content hidden, the one drop-outline recipe
+   (--rule-drop) around it, like a kanban drop placeholder. */
+.tab-rail-row.sliding {
+  transition: transform calc(180ms * var(--motion-scale)) cubic-bezier(.2, .7, .2, 1);
+}
+.tab-rail-row.dragging {
+  outline: var(--rule-drop); outline-offset: -1.5px;
+  background: transparent; z-index: 1;
+}
+.tab-rail-row.dragging > * { visibility: hidden; }

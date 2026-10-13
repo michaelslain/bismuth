@@ -38,6 +38,7 @@ Where a drag starts does not change what it does. Dragging out of Finder while F
 - **The quick ask popover** (`Mod+K`, see [quick ask](../chat/overview.md#how-do-i-ask-a-quick-question)) accepts everything a chat tab does. It floats over a note, and a drop on the popover goes to its chat, never to the note underneath.
 - **The daemon page** has no chat session until a person arms it, and a drop arms it: a drop is a real user gesture that app control cannot forge. The dropped item waits until the session exists. A disabled daemon (`daemon.enabled: false`) accepts no drops. See [daemon setup](../daemon/setup.md).
 - **Terminal tabs** accept an OS or browser file drop: the file is uploaded into the attachment folder and its shell-quoted absolute path is typed at the prompt.
+- **The tab rail** reorders tabs. While a tab is dragged over the rail, the other tabs slide apart to open a dashed slot where it lands, and the drop puts it there; a dragged tab stays on its own side of the pinned tabs. A pane dropped on the rail becomes its own tab at that slot, and a sidebar note opens as a tab there.
 - **A Bases card** accepts an image file, which is uploaded and embedded in the card; see [Kanban](../bases/views/kanban.md).
 
 ## How it works
@@ -45,7 +46,7 @@ Where a drag starts does not change what it does. Dragging out of Finder while F
 Every draggable arrives one of two ways, and a surface handles both.
 
 - **From outside the app** (Finder, a browser, Photos, Messages, another editor). In the packaged app, Tauri's native drag-drop handler intercepts these and `app/src/nativeDrop.ts` re-broadcasts them as a `bismuth-native-drag` window event carrying real absolute paths and the cursor position.
-- **From inside the app** (sidebar rows, tabs, panes). These are pointer drags (`app/src/dnd/viewDrag.ts`), resolved by `App.tsx`'s drop handler with the pure predicates in `app/src/dnd/noteRef.ts`.
+- **From inside the app** (sidebar rows, tabs, panes). These are pointer drags (`app/src/dnd/viewDrag.ts`), resolved by `App.tsx`'s drop handler with the pure predicates in `app/src/dnd/noteRef.ts`. On the tab rail, `app/src/shell/railDragPreview.ts` offsets each row to the slot `reorderTabs` gives it for the live drop index, and `viewDrag.ts` measures rows without those offsets so the index stays put under a still pointer.
 
 The native event's `x` and `y` are in page CSS pixels. The bridge multiplies Tauri's raw coordinates once by a measured `nativeDragScale`, because the raw units differ per engine: WKWebView and WebKitGTK report logical points, WebView2 reports physical pixels. Consumers hit-test `x` and `y` as given and never re-correct. The [Tables](../editor/tables.md) page has the same coordinate note.
 
@@ -66,4 +67,4 @@ One predicate, `editorReferencePath` in `noteRef.ts`, decides both the drop cue 
 
 The drag-over cue on every chat surface is `ui/DropCue`.
 
-Source: `app/src/nativeDrop.ts`, `app/src/nativeDropRouting.ts`, `app/src/dropIntake.ts`, `app/src/dnd/viewDrag.ts`, `app/src/dnd/noteRef.ts`, `app/src/dnd/geometry.ts`, `app/src/chat/createChatDropTarget.ts`, `app/src/chat/chatDrop.ts`, `app/src/quickAsk/QuickAsk.tsx`, `app/src/daemon/daemonChatArming.ts`, `app/src-tauri/src/lib.rs`
+Source: `app/src/nativeDrop.ts`, `app/src/nativeDropRouting.ts`, `app/src/dropIntake.ts`, `app/src/dnd/viewDrag.ts`, `app/src/dnd/noteRef.ts`, `app/src/dnd/geometry.ts`, `app/src/shell/railDragPreview.ts`, `app/src/chat/createChatDropTarget.ts`, `app/src/chat/chatDrop.ts`, `app/src/quickAsk/QuickAsk.tsx`, `app/src/daemon/daemonChatArming.ts`, `app/src-tauri/src/lib.rs`

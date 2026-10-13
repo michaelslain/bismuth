@@ -81,6 +81,12 @@ const IDLE: DragState = {
 
 const THRESHOLD = 5 // px of travel before a press becomes a drag (vs a click)
 
+/** The vertical translate an element is painted at right now, mid-transition included. */
+function slideY(el: Element): number {
+    const t = getComputedStyle(el).transform
+    return t && t !== 'none' ? new DOMMatrix(t).m42 : 0
+}
+
 export type ViewDrag = {
     state: Accessor<DragState>
     // `onTap` fires on pointerup when the press never crossed the drag threshold —
@@ -146,11 +152,14 @@ export function createViewDrag(
         const strip = el.closest('[data-tabstrip]')
         if (strip) {
             const vertical = strip.getAttribute('data-tabstrip') === 'vertical'
+            // The rail's rows slide (a translateY) to preview the drop, so a row's slot is its rect
+            // minus its live transform: measuring the slid rect would move the index under a still
+            // pointer, and the rows would chase it.
             const chips = [...strip.querySelectorAll('[data-tab-chip]')].map(
                 c => {
                     const r = c.getBoundingClientRect()
                     return vertical
-                        ? { y: r.top, h: r.height }
+                        ? { y: r.top - slideY(c), h: r.height }
                         : { x: r.left, w: r.width }
                 },
             )

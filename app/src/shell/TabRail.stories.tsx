@@ -54,7 +54,11 @@ import { TabRailRow } from './TabRailRow'
 import { CommandButton } from './CommandButton'
 import EdgeHandle from './EdgeHandle'
 import { dragWidth } from '../edgeResize'
-import { createSignal } from 'solid-js'
+import { Index, Show, createSignal } from 'solid-js'
+import { DragGhost } from './DragGhost'
+import { createRailDragPreview } from './railDragPreview'
+import { createViewDrag } from '../dnd/viewDrag'
+import { makeTab, reorderTabs, type Tab } from '../panes'
 import styles from './TabRail.module.css'
 
 const noop = () => {}
@@ -540,5 +544,127 @@ export const WithEdgeLeft: Story = {
         await waitFor(() =>
             expect(getComputedStyle(chevron).visibility).toBe('visible'),
         )
+    },
+}
+
+const leafName = (t: Tab) =>
+    t.root.kind === 'leaf' ? t.root.content.replace(/\.md$/, '') : t.id
+
+/** A live tab drag on a pinned rail, wired exactly as App wires it: the real `createViewDrag`
+ *  controller, the real `createRailDragPreview` offsets and `reorderTabs` on drop. Press a row and
+ *  drag it: the rows slide apart to open the drop slot under the pointer, and the drop lands there.
+ *  The first tab is pinned, so a drag past the pin boundary shows the clamp the drop applies. */
+export const DragReorder: Story = {
+    render: () => {
+        const [tabs, setTabs] = createSignal<Tab[]>(
+            [
+                'inbox.md',
+                'design-notes.md',
+                'reading-list.md',
+                'weekly-review.md',
+                'ideas.md',
+            ].map((c, i) => ({ ...makeTab(c), pinned: i === 0 })),
+        )
+        const [active, setActive] = createSignal(tabs()[1].id)
+        const viewDrag = createViewDrag((d, target) => {
+            if (d.kind === 'tab' && target.kind === 'tabstrip')
+                setTabs(ts => reorderTabs(ts, d.tabId, target.index))
+        })
+        const drag = viewDrag.state
+        const preview = createRailDragPreview(drag, tabs)
+        return (
+            <Wrap>
+                <TabRail actions={<></>} pinned={true}>
+                    <Index each={tabs()}>
+                        {(t, i) => (
+                            <TabRailRow
+                                label={leafName(t())}
+                                icon="File"
+                                active={active() === t().id}
+                                pinned={!!t().pinned}
+                                dragging={preview.draggingTabId() === t().id}
+                                sliding={preview.draggingTabId() !== null}
+                                shift={preview.shifts()[i] ?? 0}
+                                renaming={false}
+                                onActivate={() => setActive(t().id)}
+                                onPointerDown={e =>
+                                    viewDrag.startTab(
+                                        e,
+                                        t().id,
+                                        leafName(t()),
+                                        () => setActive(t().id),
+                                    )
+                                }
+                                onAuxClick={noop}
+                                onDblClick={noop}
+                                onContextMenu={noop}
+                                onClose={noop}
+                                onUnpin={noop}
+                                onCommitRename={noop}
+                                onCancelRename={noop}
+                            />
+                        )}
+                    </Index>
+                </TabRail>
+                <Show when={drag().active && drag().descriptor}>
+                    <DragGhost
+                        label={drag().descriptor?.label ?? ''}
+                        pane={false}
+                        x={drag().x - Math.min(drag().grabDX, 200)}
+                        y={drag().y - drag().grabDY}
+                        width={Math.min(drag().descriptor?.width ?? 0, 200)}
+                    />
+                </Show>
+            </Wrap>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const rows = () => [
+            ...canvasElement.querySelectorAll<HTMLElement>('[data-tab-chip]'),
+        ]
+        const labels = () => rows().map(r => r.title)
+        const [, src, , target] = rows()
+        const pitch = rows()[1].offsetTop - rows()[0].offsetTop
+        const at = (el: HTMLElement, f: number) => {
+            const r = el.getBoundingClientRect()
+            return {
+                clientX: r.left + r.width / 2,
+                clientY: r.top + r.height * f,
+            }
+        }
+        const opts = { bubbles: true, button: 0, pointerId: 1, isPrimary: true }
+        src.dispatchEvent(
+            new PointerEvent('pointerdown', { ...opts, ...at(src, 0.5) }),
+        )
+        // Past the drag threshold, then into the lower half of the fourth row.
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { ...opts, ...at(src, 1.2) }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { ...opts, ...at(target, 0.8) }),
+        )
+        // The dragged row moves two slots down to the drop slot; the two it passes move up one.
+        await waitFor(() =>
+            expect(rows().map(r => r.style.transform)).toEqual([
+                '',
+                `translateY(${2 * pitch}px)`,
+                `translateY(${-pitch}px)`,
+                `translateY(${-pitch}px)`,
+                '',
+            ]),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { ...opts, ...at(target, 0.8) }),
+        )
+        await waitFor(() =>
+            expect(labels()).toEqual([
+                'inbox',
+                'reading-list',
+                'weekly-review',
+                'design-notes',
+                'ideas',
+            ]),
+        )
+        await expect(rows().every(r => r.style.transform === '')).toBe(true)
     },
 }

@@ -171,6 +171,7 @@ import { StatusBar } from './shell/StatusBar'
 import { CommandButton } from './shell/CommandButton'
 import { Sidebar } from './shell/Sidebar'
 import { DragGhost } from './shell/DragGhost'
+import { createRailDragPreview } from './shell/railDragPreview'
 import { GraphFloater } from './shell/GraphFloater'
 import { PaneOverlay } from './shell/PaneOverlay'
 import {
@@ -2284,18 +2285,11 @@ export default function App() {
         if (d.target?.kind === 'root') return ''
         return null
     }
-    // Which tab is mid-drag — the rail row uses it for its `dragging` class.
-    //
-    // The neighbour-slide helpers that lived here (tabShift / stripDropIndex / dragFromIndex) went with
-    // the horizontal strip: they computed a px offset to slide CHIPS sideways and open a gap at the drop
-    // slot, which only means anything for a left-to-right strip of variable-width chips. The rail's rows
-    // are fixed-height and reorder without that affordance.
-    const draggingTabId = (): string | null => {
-        const d = drag()
-        return d.active && d.descriptor?.kind === 'tab'
-            ? d.descriptor.tabId
-            : null
-    }
+    // Which tab is mid-drag, and the live reorder preview that slides the rail's rows apart.
+    const { draggingTabId, shifts: railShiftsNow } = createRailDragPreview(
+        drag,
+        tabs,
+    )
 
     // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
     // folder), collapsing splits; remove a tab if its tree empties.
@@ -3399,7 +3393,7 @@ export default function App() {
                         }
                     >
                         <Index each={tabs()}>
-                            {t => {
+                            {(t, i) => {
                                 const railColor = createMemo(() => {
                                     const tab = t()
                                     const leaf =
@@ -3424,6 +3418,8 @@ export default function App() {
                                         active={activeTabId() === t().id}
                                         pinned={!!t().pinned}
                                         dragging={draggingTabId() === t().id}
+                                        sliding={draggingTabId() !== null}
+                                        shift={railShiftsNow()[i] ?? 0}
                                         renaming={renamingTabId() === t().id}
                                         onActivate={() =>
                                             setActiveTabId(t().id)

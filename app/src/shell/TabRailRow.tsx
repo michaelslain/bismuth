@@ -11,21 +11,15 @@
 // `[data-tab-rail]`/`[data-rail-pinned]` attributes TabRail.tsx sets on itself, rather than a class
 // selector this file's module can no longer share. See TabRailRow.module.css's header.
 //
-// `active` AND `pinned` are hashed module locals, reached via `classList={{ [styles['active']]: …,
-// [styles['pinned']]: … }}`. `dragging` stays a bare string literal DELIBERATELY — no
-// `.tab-rail-row.dragging` rule exists anywhere in the stylesheet, so a module lookup would resolve
-// to `undefined` and land a literal `class="undefined"` on the row (Trap 2). See the module header.
+// `active`, `pinned`, `dragging` and `sliding` are hashed module locals, reached via `classList`.
+// During a tab drag every row is offset by `shift` px to the slot it takes once the drop lands
+// (`railDragPreview.ts` computes it), easing there under `sliding`; the dragged row itself becomes
+// the drop slot, an empty dashed outline, like a kanban card's.
 //
 // THE THREE IMPERATIVE `.closest()` REFERENCES (App.tsx:3047,3058,3084 before extraction) are now
 // rewritten against `styles` below. Note the third guard (dblclick → rename) tests only
 // `.tab-x`/`.tab-pin`, NOT `.tab-rename` — that asymmetry is preserved verbatim, not "fixed" into
 // consistency, per the plan's explicit instruction.
-//
-// `style={{}}` on the row is a preserved no-op: the original read `style={railStyle()}` where
-// `railStyle = createMemo(() => ({}))` — a memo with no dependencies that always evaluated to an
-// empty object. It carried no data and read no signal, so this extraction inlines the resolved
-// constant rather than threading a vestigial no-op prop through App.tsx; the rendered output is
-// identical either way (an empty style object applies nothing).
 import { Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import { IconButton } from '../ui/IconButton'
@@ -43,6 +37,10 @@ export function TabRailRow(props: {
     active: boolean
     pinned: boolean
     dragging: boolean
+    /** A tab drag is live: rows ease to their `shift` instead of jumping there. */
+    sliding?: boolean
+    /** Vertical px offset previewing where this row sits once the dragged tab drops. */
+    shift?: number
     renaming: boolean
     onActivate: () => void
     onPointerDown: (e: PointerEvent) => void
@@ -73,12 +71,15 @@ export function TabRailRow(props: {
             classList={{
                 [styles['active']]: props.active,
                 [styles['pinned']]: props.pinned,
-                dragging: props.dragging,
+                [styles['dragging']]: props.dragging,
+                [styles['sliding']]: props.sliding,
             }}
             data-tab-chip="true"
             // Native tooltip surfaces the name while the rail is collapsed to icons.
             title={props.renaming ? undefined : props.label}
-            style={{}}
+            style={
+                props.shift ? { transform: `translateY(${props.shift}px)` } : {}
+            }
             onClick={() => props.onActivate()}
             onPointerDown={e => props.onPointerDown(e)}
             // Middle-click closes any tab (incl. a pinned one) — the escape hatch.

@@ -9,7 +9,7 @@
 // reveal rules in `TabRailRow.module.css` key off that attribute, not a class.
 //
 // SEVEN STORIES: `Default` (rest). `Active` — `.active` + its `::before` gradient bar. `Pinned` —
-// the pin glyph replaces the close X. `Dragging` — `.dragging`. `Renaming` — the `.tab-rename`
+// the pin glyph replaces the close X. `Dragging` — `.dragging`, the row as the drop slot. `Renaming` — the `.tab-rename`
 // input in place of the label. `Colored` — a chat tint on the icon (`color` prop). `LongLabel` —
 // the ellipsis. Rendered inside `Shell/TabRail`'s own `.tab-rail`/`.tab-rail-inner`/
 // `.tab-rail-list` ancestry (not bare), since the row's own rules (icon column alignment, hover
@@ -121,7 +121,7 @@ export const Pinned: Story = {
     },
 }
 
-/** `.dragging` — mid tab-drag visual state. */
+/** `.dragging` — the dragged tab's own row, drawn as the empty drop slot it will land in. */
 export const Dragging: Story = {
     render: () => (
         <Wrap>
