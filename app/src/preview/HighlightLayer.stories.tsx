@@ -684,6 +684,59 @@ export const ControllerHighlightsExistingSelection: Story = {
     },
 }
 
+/** Highlighting a selection that overlaps an existing highlight extends that highlight rather
+ *  than stacking a second translucent mark over the shared words: two overlapping real text
+ *  selections over one span leave ONE highlight, painted as ONE rect from the first selection's
+ *  left edge to the second's right edge, with the whole span's text. */
+export const OverlappingSelectionExtendsHighlight: Story = {
+    render: ControllerHighlightsExistingSelection.render,
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                const span = canvasElement.querySelector<HTMLElement>(
+                    '[data-pdf-page="0"] span',
+                )
+                expect(span).toBeTruthy()
+                expect(span!.getBoundingClientRect().width).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        if (!controllerForPlay) throw new Error('no controller handed over')
+        const span = canvasElement.querySelector(
+            '[data-pdf-page="0"] span',
+        ) as HTMLElement
+        const textNode = span.firstChild as Text
+        const len = textNode.length
+        expect(len, 'the span has enough text to select two overlapping parts').toBeGreaterThan(5)
+        const select = (start: number, end: number) => {
+            const range = document.createRange()
+            range.setStart(textNode, start)
+            range.setEnd(textNode, end)
+            const sel = window.getSelection()!
+            sel.removeAllRanges()
+            sel.addRange(range)
+        }
+        select(0, Math.ceil((len * 2) / 3))
+        expect(controllerForPlay.highlightSelection()).toBe(true)
+        select(Math.floor(len / 3), len)
+        expect(controllerForPlay.highlightSelection()).toBe(true)
+
+        const highlights = storeForPlay?.doc()?.pages[0]?.highlights ?? []
+        expect(highlights.length, 'the overlap extended the first highlight').toBe(1)
+        expect(highlights[0]!.text).toBe(span.textContent)
+        const spanRect = span.getBoundingClientRect()
+        await waitFor(() => {
+            const rects = canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="highlight-rect"]',
+            )
+            expect(rects.length, 'one painted mark, not two stacked').toBe(1)
+            const r = rects[0]!.getBoundingClientRect()
+            expect(Math.abs(r.left - spanRect.left)).toBeLessThan(4)
+            expect(Math.abs(r.width - spanRect.width)).toBeLessThan(4)
+        })
+    },
+}
+
 // Module-level (not component state), reset per render — the same pattern PdfPages.stories.tsx
 // uses for `lastBoxes`/`overlayMounts` — so play() (which runs outside the component tree) can
 // reach the live store/DOM node the render created.

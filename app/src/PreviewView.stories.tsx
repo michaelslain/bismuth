@@ -1687,6 +1687,84 @@ export const PdfHighlightOneShot: Story = {
     },
 }
 
+/** Selects characters `start`..`end` of `span`'s text — a drag-select that starts or ends
+ *  mid-line. */
+function selectSpanPart(span: HTMLElement, start: number, end: number) {
+    const text = span.firstChild as Text
+    const range = document.createRange()
+    range.setStart(text, start)
+    range.setEnd(text, end)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+}
+
+/** Waits for page 1's text layer, highlights the first half of its first line through the bar's
+ *  HIGHLIGHT button, and hands back what the extend stories need. */
+async function highlightFirstHalf(canvasElement: HTMLElement) {
+    const canvas = within(canvasElement)
+    await waitFor(
+        () => {
+            const span = canvasElement.querySelector<HTMLElement>('[data-pdf-page="0"] span')
+            expect(span).toBeTruthy()
+            expect(span!.getBoundingClientRect().width).toBeGreaterThan(0)
+        },
+        { timeout: 5000 },
+    )
+    const hlBtn = canvas.getByLabelText('Highlight text') as HTMLButtonElement
+    await waitFor(() => expect(hlBtn.disabled).toBe(false))
+    const line = canvasElement.querySelector<HTMLElement>('[data-pdf-page="0"] span')!
+    const len = (line.firstChild as Text).length
+    const rects = () =>
+        Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('[data-testid="highlight-rect"]'),
+        )
+    selectSpanPart(line, 0, Math.ceil(len / 2))
+    await fireEvent.click(hlBtn)
+    await waitFor(() => expect(rects().length).toBe(1))
+    return { hlBtn, line, len, rects }
+}
+
+/** Highlighting a selection that overlaps an existing highlight EXTENDS it, through PreviewView's
+ *  own wiring: half a line highlighted, then a selection from mid-highlight to the line's end plus
+ *  HIGHLIGHT leaves ONE highlight, painted as one mark over the whole line, saved with the whole
+ *  line's text — never a second translucent mark stacked on the shared words. */
+export const PdfHighlightExtendsExisting: Story = {
+    render: PdfHighlightOneShot.render,
+    play: async ({ canvasElement }) => {
+        const { hlBtn, line, len, rects } = await highlightFirstHalf(canvasElement)
+        selectSpanPart(line, Math.floor(len / 4), len)
+        await fireEvent.click(hlBtn)
+        const lineRect = line.getBoundingClientRect()
+        await waitFor(() => {
+            expect(rects().length, 'one mark, not two stacked').toBe(1)
+            const r = rects()[0]!.getBoundingClientRect()
+            expect(Math.abs(r.left - lineRect.left)).toBeLessThan(3)
+            expect(Math.abs(r.width - lineRect.width)).toBeLessThan(3)
+        })
+        await waitFor(
+            () => {
+                const saved = sidecarPuts.at(-1)?.pages[0]?.highlights ?? []
+                expect(saved.length).toBe(1)
+                expect(saved[0]!.text).toBe(line.textContent)
+            },
+            { timeout: 3000 },
+        )
+    },
+}
+
+/** For trying the extend by hand: a real PDF preview that opens with the first half of page 1's
+ *  first line highlighted. Select from inside that highlight to the end of the line (or across
+ *  both lines) and press HIGHLIGHT — the existing mark grows instead of a darker second one
+ *  landing on top. */
+export const PdfHighlightTryExtending: Story = {
+    render: PdfHighlightOneShot.render,
+    play: async ({ canvasElement }) => {
+        await highlightFirstHalf(canvasElement)
+        window.getSelection()?.removeAllRanges()
+    },
+}
+
 /** Undo/redo for a highlight removal reaches OUTSIDE draw mode (final review — before this fix,
  *  `store.undo`/`redo` were bound only inside PageInk's own draw-mode keydown, so a highlight
  *  deleted by a plain click in highlight mode had NO way back short of entering draw mode — and

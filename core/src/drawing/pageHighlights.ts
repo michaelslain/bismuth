@@ -28,7 +28,12 @@ function makeHighlightId(): string {
 
 /** Add one highlight (its rects — one per selected line, see `mergeLineRects`) to `page`,
  *  padding `doc` with empty pages as needed. A selection that resolved to no rects (e.g. it
- *  landed entirely off every page) is dropped rather than recording an empty highlight. Pure:
+ *  landed entirely off every page) is dropped rather than recording an empty highlight.
+ *
+ *  A selection that overlaps (or abuts, on the same line) an existing highlight of the same
+ *  colour extends that highlight instead of stacking a second translucent mark over it: every
+ *  touched highlight and the new rects become one highlight, keeping the first touched one's id
+ *  and its place in the list, with the rects re-merged per line and the texts joined. Pure:
  *  `doc` is never mutated. */
 export function addHighlight(
     doc: DrawingDoc,
@@ -40,14 +45,84 @@ export function addHighlight(
     const base = ensurePages(doc, page + 1)
     const pages = base.pages.slice()
     const existing = pages[page]?.highlights ?? []
-    const highlight: Highlight = {
-        id: opts?.id ?? makeHighlightId(),
-        c: opts?.c ?? 'hl',
+    const c = opts?.c ?? 'hl'
+    const touched = existing.filter(
+        h => h.c === c && h.rects.some(a => rects.some(b => rectsTouch(a, b))),
+    )
+    if (touched.length === 0) {
+        const highlight: Highlight = {
+            id: opts?.id ?? makeHighlightId(),
+            c,
+            rects,
+            ...(opts?.text ? { text: opts.text } : {}),
+        }
+        pages[page] = { ...pages[page], highlights: [...existing, highlight] }
+        return { ...base, pages }
+    }
+    const fresh: Highlight = {
+        id: '',
+        c,
         rects,
         ...(opts?.text ? { text: opts.text } : {}),
     }
-    pages[page] = { ...pages[page], highlights: [...existing, highlight] }
+    const parts = [...touched, fresh].sort(
+        (a, b) =>
+            readingOrder(a.rects) - readingOrder(b.rects) ||
+            a.rects[0]!.x - b.rects[0]!.x,
+    )
+    const text = parts.reduce<string | undefined>(
+        (acc, h) =>
+            h.text ? (acc ? joinOverlapping(acc, h.text) : h.text) : acc,
+        undefined,
+    )
+    const merged: Highlight = {
+        id: touched[0]!.id,
+        c,
+        rects: mergeLineRects(parts.flatMap(h => h.rects)),
+        ...(text ? { text } : {}),
+    }
+    const highlights = existing.flatMap(h =>
+        h === touched[0] ? [merged] : touched.includes(h) ? [] : [h],
+    )
+    pages[page] = { ...pages[page], highlights }
     return { ...base, pages }
+}
+
+/** True when `a` and `b` sit on the same text line (their vertical bands overlap by at least
+ *  half the shorter one) and meet horizontally — overlapping, or with a gap of at most
+ *  `gap`, so a selection that starts exactly where a highlight ends still extends it. */
+function rectsTouch(a: HighlightRect, b: HighlightRect, gap = 2): boolean {
+    const vOverlap = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+    if (vOverlap < Math.min(a.h, b.h) / 2) return false
+    return a.x <= b.x + b.w + gap && b.x <= a.x + a.w + gap
+}
+
+/** The top of a highlight's first line, for ordering parts top to bottom. */
+function readingOrder(rects: HighlightRect[]): number {
+    return Math.min(...rects.map(r => r.y))
+}
+
+/** `a` then `b`, with the longest suffix of `a` that is also a prefix of `b` written once —
+ *  two overlapping selections' texts joined into the text of their union. Whitespace is
+ *  compared loosely, since a PDF selection's line breaks vary with where it starts. A seam
+ *  shorter than three characters counts only on word edges. When one
+ *  text already contains the other, the longer one is kept. */
+function joinOverlapping(a: string, b: string): string {
+    const norm = (t: string) => t.replace(/\s+/g, ' ')
+    const na = norm(a)
+    const nb = norm(b)
+    if (na.includes(nb)) return a
+    if (nb.includes(na)) return b
+    // A drag can start mid-word, so a seam of 3+ characters counts anywhere; a shorter one only
+    // on word edges, so `cat` + `tiger` never fuses on the shared t.
+    const wordEdge = (t: string, i: number) =>
+        i <= 0 || i >= t.length || t[i] === ' ' || t[i - 1] === ' '
+    for (let k = Math.min(na.length, nb.length); k > 0; k--) {
+        if (!na.endsWith(nb.slice(0, k))) continue
+        if (k >= 3 || (wordEdge(na, na.length - k) && wordEdge(nb, k)))
+            return na + nb.slice(k)
+    }
+    return `${na} ${nb}`
 }
 
 /** Remove the highlight `id` from `page`. A no-op (returns `doc` itself) when the page or the id

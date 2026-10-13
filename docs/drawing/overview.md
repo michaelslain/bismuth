@@ -73,7 +73,7 @@ A PDF's preview bar adds three more tools, each saved in the same `<file>.draw` 
 
 The bar also shows the current page (click it to type a page number), the zoom controls and a `fit` button that returns to fit-to-width. In the desktop app it adds open-in-default-app and reveal-in-file-manager buttons. Narrow panes drop the zoom steps and file actions first; the highlight, draw, scratch and bookmark controls stay at every width.
 
-An outline entry whose destination cannot be resolved shows dimmed and does nothing. Highlights default to yellow.
+An outline entry whose destination cannot be resolved shows dimmed and does nothing. Highlights default to yellow. Highlighting a selection that overlaps or touches an existing highlight on the same line extends that highlight into one mark, joining their text, instead of stacking a second mark on the shared words.
 
 ## Read a PDF's highlights from the shell or an agent
 

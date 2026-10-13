@@ -74,14 +74,123 @@ describe('addHighlight', () => {
     })
 })
 
+describe('addHighlight extends an overlapping highlight', () => {
+    const line = (x: number, w: number, y = 100) => ({ x, y, w, h: 12 })
+
+    test('a selection overlapping a highlight grows it instead of adding a second', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 100)], {
+            id: 'h1',
+            text: 'the quick brown',
+        })
+        const out = addHighlight(doc, 0, [line(80, 100)], {
+            text: 'brown fox jumps',
+        })
+        expect(out.pages[0]!.highlights).toEqual([
+            {
+                id: 'h1',
+                c: 'hl',
+                rects: [line(10, 170)],
+                text: 'the quick brown fox jumps',
+            },
+        ])
+    })
+
+    test('a selection starting exactly where a highlight ends extends it', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 50)], {
+            id: 'h1',
+            text: 'one',
+        })
+        const out = addHighlight(doc, 0, [line(60, 40)], { text: 'two' })
+        const hs = out.pages[0]!.highlights!
+        expect(hs).toHaveLength(1)
+        expect(hs[0]!.rects).toEqual([line(10, 90)])
+        expect(hs[0]!.text).toBe('one two')
+    })
+
+    test('a selection inside a highlight leaves one highlight with the same text', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 200)], {
+            id: 'h1',
+            text: 'a long highlighted line',
+        })
+        const out = addHighlight(doc, 0, [line(50, 30)], {
+            text: 'highlighted',
+        })
+        expect(out.pages[0]!.highlights).toEqual([
+            {
+                id: 'h1',
+                c: 'hl',
+                rects: [line(10, 200)],
+                text: 'a long highlighted line',
+            },
+        ])
+    })
+
+    test('a selection bridging two highlights merges all three into the first', () => {
+        let doc = addHighlight(emptyDoc(), 0, [line(10, 40)], {
+            id: 'a',
+            text: 'alpha',
+        })
+        doc = addHighlight(doc, 0, [line(200, 40)], { id: 'b', text: 'gamma' })
+        doc = addHighlight(doc, 0, [line(300, 10, 400)], { id: 'far' })
+        const out = addHighlight(doc, 0, [line(40, 170)], {
+            text: 'alpha beta gamma',
+        })
+        const hs = out.pages[0]!.highlights!
+        expect(hs.map(h => h.id)).toEqual(['a', 'far'])
+        expect(hs[0]!.rects).toEqual([line(10, 230)])
+        expect(hs[0]!.text).toBe('alpha beta gamma')
+    })
+
+    test('a multi-line selection extending a highlight keeps one rect per line', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 100)], {
+            id: 'h1',
+            text: 'end of',
+        })
+        const out = addHighlight(doc, 0, [line(60, 140), line(10, 80, 114)], {
+            text: 'of line\nnext line',
+        })
+        const hs = out.pages[0]!.highlights!
+        expect(hs).toHaveLength(1)
+        expect(hs[0]!.rects).toEqual([line(10, 190), line(10, 80, 114)])
+        expect(hs[0]!.text).toBe('end of line next line')
+    })
+
+    test('a selection starting mid-word joins on the shared characters', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 80)], { id: 'h1', text: 'Highlight test l' })
+        const out = addHighlight(doc, 0, [line(40, 90)], { text: 'ht test line one' })
+        expect(out.pages[0]!.highlights![0]!.text).toBe('Highlight test line one')
+    })
+
+    test('texts that share only a letter at the seam are joined with a space, not fused', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 50)], {
+            id: 'h1',
+            text: 'cat',
+        })
+        const out = addHighlight(doc, 0, [line(55, 50)], { text: 'tiger' })
+        expect(out.pages[0]!.highlights![0]!.text).toBe('cat tiger')
+    })
+
+    test('a highlight on the next line or of another colour is not extended', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 100)], { id: 'h1' })
+        expect(
+            addHighlight(doc, 0, [line(10, 100, 114)]).pages[0]!.highlights,
+        ).toHaveLength(2)
+        expect(
+            addHighlight(doc, 0, [line(50, 100)], { c: '#123456' }).pages[0]!
+                .highlights,
+        ).toHaveLength(2)
+    })
+})
+
 describe('removeHighlight', () => {
     function docWith(highlights: { id: string }[]): DrawingDoc {
         let doc = emptyDoc()
-        for (const h of highlights) {
-            doc = addHighlight(doc, 0, [{ x: 0, y: 0, w: 10, h: 10 }], {
+        highlights.forEach((h, i) => {
+            // Apart from each other, so addHighlight keeps them separate.
+            doc = addHighlight(doc, 0, [{ x: i * 50, y: 0, w: 10, h: 10 }], {
                 id: h.id,
             })
-        }
+        })
         return doc
     }
 
@@ -136,8 +245,10 @@ describe('highlightAt', () => {
             [{ x: 0, y: 0, w: 100, h: 100 }],
             { id: 'under' },
         )
+        // A different colour, so it stacks instead of extending 'under'.
         doc = addHighlight(doc, 0, [{ x: 20, y: 20, w: 40, h: 40 }], {
             id: 'over',
+            c: '#123456',
         })
         expect(highlightAt(doc, 0, { x: 30, y: 30 })?.id).toBe('over')
         // Still resolves the one underneath outside the overlap.
