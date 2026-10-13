@@ -193,7 +193,7 @@ const LABEL: Record<DaemonMood, string> = {
     busy: 'working',
     alert: 'needs you',
     hurt: 'hurt',
-    listening: 'listening',
+    listening: 'waiting',
     talking: 'talking',
     thinking: 'thinking',
 }
@@ -208,7 +208,7 @@ const WORD: Record<DaemonMood, string> = {
     busy: 'working',
     alert: 'needs you',
     hurt: 'hurt',
-    listening: 'listening',
+    listening: 'waiting',
     talking: 'talking',
     thinking: 'thinking',
 }

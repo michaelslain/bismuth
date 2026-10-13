@@ -184,7 +184,7 @@ test('mood labels', () => {
         'working',
         'needs you',
         'hurt',
-        'listening',
+        'waiting',
         'talking',
         'thinking',
     ])

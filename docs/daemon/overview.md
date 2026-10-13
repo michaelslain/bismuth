@@ -77,7 +77,7 @@ The status at the top right is one of:
 | `watching // last: dream 12m ago` | Idle; the most recent run |
 | `watching // nothing has run yet` | Idle; nothing has fired |
 
-The face changes with the same state, first match wins: asleep when off or not running; talking or thinking while the chat replies; listening while you type in the chat; hurt when a cron failed in the last 30 minutes; busy while a cron or an approved page runs; alert when pages wait for review; idle otherwise.
+The face changes with the same state, first match wins: asleep when off or not running; talking or thinking while the chat replies; waiting while you type in the chat; hurt when a cron failed in the last 30 minutes; busy while a cron or an approved page runs; alert when pages wait for review; idle otherwise.
 
 The chat under the face is an ordinary Bismuth chat shown under the daemon's name. It is not the session that runs crons, and it does not use `identity.md`. Opening the page starts no session: the chat starts only when you click or focus its composer, so an agent that opens the page through app control cannot start one. With the daemon off, the page shows the sleeping face and `set daemon.enabled: true in .settings to wake it`.
 
