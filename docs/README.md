@@ -14,6 +14,25 @@ server.
 The graph joins both, so a note and a memory about it sit in one structure. The 3rd brain exists
 only when the [daemon](daemon/overview.md) is enabled.
 
+## Quickstart: install Bismuth on macOS
+
+Bismuth installs by building it from source. You need [Bun](https://bun.sh/docs/installation) and
+Rust:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+Clone, install and build:
+
+```bash
+git clone https://github.com/michaelslain/bismuth.git
+cd bismuth
+bun install
+bun run build:app
+```
+
 ## Start here
 
 - [Getting started](overview/getting-started.md) — first run: pick a vault, write and link notes, open the graph
