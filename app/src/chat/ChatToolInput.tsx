@@ -3,8 +3,8 @@
 // one-line argument summary on a permission prompt. Was two divergent recipes — bright / 1px rule /
 // an `INPUT` caption / 320px (the tool row) against muted / 2px rule / no caption / 160px (the
 // permission card) — so the same JSON read as two different things depending on which card held it.
-// The look is `ui/CodeBlock`'s own (surface fill, hairline, `--code-font-size` mono); this adds the
-// optional lowercase caption, a tone, and a height cap.
+// The look is `ui/CodeBlock`'s own (surface fill, hairline, mono); this adds the optional
+// lowercase caption, a tone, a height cap, and the `--fs-ui` chrome size for tool mechanism.
 import { Show, type Component } from 'solid-js'
 import CodeBlock from '../ui/CodeBlock'
 import SectionLabel from '../ui/SectionLabel'

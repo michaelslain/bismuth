@@ -243,6 +243,7 @@ const TYPE_SCALE: TokenDef[] = [
     typeScale('fs-nano', 'length', '9.5px', 'Smallest text.'),
     typeScale('fs-micro', 'length', '10.5px', 'Fine print and captions.'),
     typeScale('fs-ui', 'length', '11.5px', 'Chrome text: tabs, menus, rows, 11 to 16px. Also scales the ASCII cell width. Also set by appearance.uiFontSize.', { setting: 'appearance.uiFontSize' }),
+    typeScale('fs-ui-prose', 'length', 'calc(var(--fs-ui) * var(--prose-scale) * 1.06)', 'The prose face set at the chrome step: user-written text inside chrome, such as a chip or card title, at the optical size of --fs-ui.'),
     typeScale('fs-body', 'length', '13px', 'Dense body text.'),
     typeScale('fs-body-lg', 'length', '13.5px', 'Prose body text.'),
     typeScale('fs-lead', 'length', '15px', 'Lead paragraphs.'),

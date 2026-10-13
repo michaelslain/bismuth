@@ -2,9 +2,11 @@
    leading chevron, `aria-expanded`, the body's hang indent) is ui/Disclosure's; this file owns the
    summary LINE inside it and the stack of input/result blocks under it.
 
-   MECHANISM TEXT. The name, the argument summary and the blocks below are tool mechanism, so they
-   are mono at `--code-font-size` — set ONCE, on `.chat-tool-line`, and inherited by the name and
-   the summary (they were 11.5px and 10.5px, a size of their own). The blocks are ChatToolInput's.
+   MECHANISM TEXT. The name and the argument summary are tool mechanism, not content: chrome
+   register 1, `--fs-ui`, set ONCE on `.chat-tool-line` and inherited by both. They were at
+   `--code-font-size`, but Monaspace's tall x-height made `Bash bun test …` read LARGER than the
+   serif prose line above it at the same nominal size. Mechanism sits under the prose, so it takes
+   the chrome size. The expanded blocks are ChatToolInput's and take the same `--fs-ui`.
 
    THE STATUS-MARK FIX (kept): `.chat-tool-summary` is `flex: 0 1 auto`, not `1 1 auto` — a flex item
    that GROWS fills the row regardless of how short its text is, which pinned the status mark ~900px
@@ -20,7 +22,7 @@
     gap: var(--sp-4);
     min-width: 0;
     font-family: var(--ui-font-stack);
-    font-size: var(--code-font-size);
+    font-size: var(--fs-ui);
     line-height: var(--lh-ui);
 }
 .chat-tool-icon {

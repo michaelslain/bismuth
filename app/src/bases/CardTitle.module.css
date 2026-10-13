@@ -2,7 +2,7 @@
    default tone); size and line-height are the card's own. `--card-title-lh` lets a host that sits
    on the character grid (CardCover's band) set its own line-height without a competing rule. */
 .cardTitle {
-  font-size: var(--prose-font-size);
+  font-size: var(--fs-ui-prose);
   line-height: var(--card-title-lh, 1.3);
   overflow-wrap: anywhere;
 }

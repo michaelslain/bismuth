@@ -100,7 +100,7 @@ const PropertyDisplay: Component<PropertyDisplayProps> = props => {
                 <Text
                     as="div"
                     register="prose"
-                    size="body"
+                    size="inherit"
                     class={styles.markdown}
                     innerHTML={renderMarkdown(src)}
                 />

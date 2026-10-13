@@ -1,5 +1,8 @@
 /* ChatToolInput.module.css — ChatToolInput.tsx is the ONLY importer. The look is ui/CodeBlock's;
-   this owns only the caption gap, the scroll cap, and the two inks a tool block can take. */
+   this owns only the caption gap, the scroll cap, the two inks a tool block can take, and the size:
+   tool mechanism is chrome register 1 (`--fs-ui`), the same as ChatToolRow's line and
+   ChatPermissionCard's text, not the `--code-font-size` CodeBlock defaults to. CodeBlock's defaults are
+   `:where()` (zero specificity), so this rule wins on its own. */
 .chat-tool-input {
     display: flex;
     flex-direction: column;
@@ -9,7 +12,8 @@
 .chat-tool-input-label {
     margin: 0;
 }
-.chat-tool-input-body {
+.chat-tool-input .chat-tool-input-body {
+    font-size: var(--fs-ui);
     overflow: auto;
     line-height: var(--lh-ui);
 }

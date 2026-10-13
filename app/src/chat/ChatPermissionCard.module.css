@@ -2,7 +2,8 @@
    ui/Card (proposal: bordered, with the accent left edge); this file adds only what is chat's:
      - the chat tint, through Card's `--card-bg` seam (a tinted chat pane blends it; in Storybook,
        where no chat host localises `--chat-surface-1`, the plain --surface-1 fallback applies);
-     - the mechanism size, `--code-font-size` in mono, set ONCE here on the root;
+     - the mechanism size, `--fs-ui` (chrome register 1, the same as ChatToolRow's line and
+       ChatToolInput's block), set ONCE here on the root;
      - the SETTLED state, which is ink and edge, never opacity (DESIGN.md: no state is shown by
        opacity). It used to fade the whole card to 0.65 — the title, the outcome and the summary
        all dropped together, and the outcome line fell under 3:1 in the light themes. Now the edge
@@ -12,7 +13,7 @@
     --card-bg: var(--chat-surface-1, var(--surface-1));
     --card-border: 1px solid var(--chat-border, var(--border));
     font-family: var(--ui-font-stack);
-    font-size: var(--code-font-size);
+    font-size: var(--fs-ui);
     line-height: var(--lh-ui);
 }
 .chat-permission.answered {

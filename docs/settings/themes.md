@@ -111,6 +111,7 @@ Custom themes: parsing and validation are pure, in `core/src/theme/customTheme.t
 | Each Monaspace face | `'<name>', ui-monospace, monospace` | `1.04` (the default for a face with no entry) |
 
 The scales come from measured x-heights against Monaspace Xenon. `--prose-font-size` is `calc(var(--editor-font-size) * var(--prose-scale))`, never a literal.
+`--fs-ui-prose` is `calc(var(--fs-ui) * var(--prose-scale) * 1.06)`: the prose face at the chrome step, set 6% over x-height parity because a serif at matched x-height reads smaller than the mono beside it,, for your own words set inside chrome (a calendar event title, a card title), so they read at the same optical size as the mono interface around them.
 `--code-font-size` is the prose size times `--code-scale` times `--mono-scale`; `--code-scale` is measured per prose face (0.95 for Libron, 0.89 for IBM Plex Serif and Lora) so code reads at the size of the sentence around it,, and it is the one size for monospace inside prose. `font-variant-ligatures: none` is set app-wide so Monaspace's coding ligatures do not break the character grid.
 
 A stack must lead with the family name the font package actually declares. Lora's is `Lora Variable`; plain `Lora` resolves nothing and falls silently through to Georgia.

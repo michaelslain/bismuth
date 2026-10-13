@@ -36,6 +36,14 @@ export const Ok: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('Read')).toBeInTheDocument()
+        // Mechanism text is chrome register 1: the name computes to --fs-ui, not --code-font-size.
+        const probe = document.createElement('span')
+        probe.style.fontSize = 'var(--fs-ui)'
+        canvasElement.appendChild(probe)
+        await expect(getComputedStyle(canvas.getByText('Read')).fontSize).toBe(
+            getComputedStyle(probe).fontSize,
+        )
+        probe.remove()
     },
 }
 

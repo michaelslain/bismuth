@@ -140,7 +140,7 @@ export const EveryStatus: Story = {
 }
 
 /** The same four statuses as `EveryStatus`, but `variant="card"` — the register a kanban or
- *  masonry card renders in: no 18px list gutter, `--fs-micro` instead of `--fs-ui`. Proves the
+ *  masonry card renders in: no 18px list gutter, same `--fs-ui` text size as the list. Proves the
  *  variant prop actually reaches the row (via `.inCard`, not just visually) rather than only
  *  ever being exercised implicitly by KanbanView/EditCardsModal call sites. */
 export const Card: Story = {
@@ -180,6 +180,11 @@ export const Card: Story = {
         expect(rows.length).toBe(4)
         for (const row of rows)
             expect(row.classList.contains(styles.inCard)).toBe(true)
+        // The card register no longer drops to --fs-micro: the task line stays at --fs-ui.
+        const body = canvasElement.querySelector(`.${styles.taskBody}`)!
+        expect(parseFloat(getComputedStyle(body).fontSize)).toBeGreaterThan(
+            parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fs-micro')),
+        )
     },
 }
 

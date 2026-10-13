@@ -83,7 +83,7 @@ Start one from your worktree on its own port and pass that port: `bench/verify.t
 | `font-size-off-scale` | A font size off the chrome type ladder (the `--fs-*` tokens) |
 
 Note prose is deliberately off that ladder.
-Its sizes derive from `--prose-font-size` and `--code-font-size`, so the check resolves them from the live page instead of listing literals.
+Its sizes derive from `--prose-font-size`, `--code-font-size` and `--fs-ui-prose`, so the check resolves them from the live page instead of listing literals.
 Third-party DOM is skipped, because a stylesheet cannot fix it: CodeMirror, Milkdown, xterm, the pdf.js text layer, KaTeX and Univer popups.
 The wrappers you style around them are still checked.
 

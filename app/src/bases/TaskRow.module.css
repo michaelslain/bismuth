@@ -10,8 +10,8 @@
    strings. app/src/cssLayering.test.ts guards the distinction. */
 .taskItem {
   padding: var(--sp-1) var(--view-gutter);
-  /* --fs-ui in the list view's own gutter; a `card` (bullets/cards/kanban) drops to
-     --fs-micro below, TaskChip's own size, since it already sits inside a tighter frame. */
+  /* --fs-ui in the list view and inside a card alike: a card's other fields (KanbanCard's meta)
+     read at --fs-ui, and a task line is body text of the row, not an eyebrow. */
   line-height: 1.45;
   cursor: text;
 }
@@ -22,6 +22,5 @@
    It was `opacity: .55` AND a 52% colour mix: dimmed twice, measured 2.3:1. */
 .taskBody.done { text-decoration: line-through; color: var(--text-muted); }
 /* Inside a kanban card or a masonry card the row supplies its own padding, so drop the
-   list's gutter — the card already has one — and drop to --fs-micro, TaskChip's size. */
+   list's gutter — the card already has one. */
 .inCard { padding-left: 0; padding-right: 0; }
-.inCard .line { font-size: var(--fs-micro); }

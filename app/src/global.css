@@ -151,6 +151,23 @@
      "Nano" entry. Default to --fs-micro. */
   --fs-nano: 9.5px;
   --fs-ui: 11.5px;      /* rail, tabs, tables, chrome — the workhorse (== asciiGrid.ts FONT_PX) */
+  /* The prose face at the chrome step: a user-written title inside chrome (a calendar chip, a card)
+     sits at the optical size of --fs-ui mono, not at the mono's nominal px. --prose-scale is the
+     per-face x-height correction (settingsCssVars.ts repoints it from appearance.proseFont).
+     Residual x-height at this step against Monaspace Xenon at --fs-ui (canvas, ink top row of an
+     'x' at a 1000px em on the real faces, bench/chromeSession.ts driving the FontSpecimen story;
+     Xenon 518; prose ink x-height x its --prose-scale, over 518):
+       Libron         531 x 0.97 = 515.1 -> -0.6%   (5.92px at 11.5px against 5.96px)
+       IBM Plex Serif 516 x 1.00 = 516.0 -> -0.4%
+       Lora           500 x 1.04 = 520.0 -> +0.4%
+       Monaspace as prose face, at DEFAULT_PROSE_SCALE 1.04: Xenon 538.7 -> +4.0%, Neon / Argon /
+                      Krypton (514) 534.6 -> +3.2%, Radon (537) 558.5 -> +7.8%.
+     Every serif lands inside 1%, so the one shared product holds. Radon is the only face past the
+     5% line, and only when it is chosen as the PROSE face; a per-face factor for it is open.
+     THE 1.06 LIFT: x-height parity reads small by eye beside the mono — the serif's thinner strokes
+     and narrower set carry less ink per letter — so the step sits 6% over parity (Libron 11.82px
+     against the 11.5px mono). Judged by eye on calendar chips and card titles, like --code-scale. */
+  --fs-ui-prose: calc(var(--fs-ui) * var(--prose-scale) * 1.06);
   --fs-body: 13px;      /* note prose in panels */
   /* --fs-body-lg used to be its own step (13.5px, note prose in the full editor column) — the
      audit (§2.2) found it 4% off --fs-body, an invisible distinction costing a token and a

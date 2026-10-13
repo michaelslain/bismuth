@@ -9,7 +9,7 @@
    font-SIZE lives here (never a font-family literal in this stylesheet); weight 500, not
    bold, so it reads as a heading without shouting. Clicking opens the modal. */
 .kbCardTitle {
-  font-size: var(--prose-font-size); font-weight: var(--fw-medium); color: var(--fg);
+  font-size: var(--fs-ui-prose); font-weight: var(--fw-medium); color: var(--fg);
   line-height: 1.3; overflow-wrap: anywhere;
 }
 .kbEditable { cursor: text; }

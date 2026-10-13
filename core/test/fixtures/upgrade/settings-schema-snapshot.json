@@ -779,6 +779,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.fs-ui-prose": {
+    "type": {
+      "kind": "token",
+      "token": "fs-ui-prose"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.fs-wordmark-display": {
     "type": {
       "kind": "token",

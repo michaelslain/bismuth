@@ -30,7 +30,7 @@ const json = JSON.stringify(
     2,
 )
 
-/** The input a user is deciding on — full ink, a lowercase caption, `--code-font-size` mono. */
+/** The input a user is deciding on — full ink, a lowercase caption, `--fs-ui` mono. */
 export const Default: Story = {
     render: () => (
         <div style={{ width: '600px' }}>
@@ -42,9 +42,9 @@ export const Default: Story = {
         const label = canvas.getByText('input')
         await expect(getComputedStyle(label).textTransform).toBe('none')
         const body = canvasElement.querySelector('pre') as HTMLElement
-        // The mechanism size: a probe set to --code-font-size resolves to the same px.
+        // The mechanism size: a probe set to --fs-ui resolves to the same px.
         const probe = document.createElement('span')
-        probe.style.fontSize = 'var(--code-font-size)'
+        probe.style.fontSize = 'var(--fs-ui)'
         canvasElement.appendChild(probe)
         await expect(getComputedStyle(body).fontSize).toBe(
             getComputedStyle(probe).fontSize,

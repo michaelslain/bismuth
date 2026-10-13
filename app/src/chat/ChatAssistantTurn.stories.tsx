@@ -61,6 +61,14 @@ export const ToolCalls: Story = {
         await expect(canvas.getByText('Grep')).toBeInTheDocument()
         await expect(canvas.getByText('Bash')).toBeInTheDocument()
         await expect(canvas.getByText('Read')).toBeInTheDocument()
+        // The tool line sits at the chrome size (--fs-ui), under the prose line, not over it.
+        const probe = document.createElement('span')
+        probe.style.fontSize = 'var(--fs-ui)'
+        canvasElement.appendChild(probe)
+        await expect(getComputedStyle(canvas.getByText('Bash')).fontSize).toBe(
+            getComputedStyle(probe).fontSize,
+        )
+        probe.remove()
     },
 }
 

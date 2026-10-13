@@ -62,6 +62,11 @@ typography:
     fontSize: "9.5px"
     fontWeight: 400
     lineHeight: 1.3
+  ui-prose:
+    fontFamily: "Libron, Georgia, serif"
+    fontSize: "calc(var(--fs-ui) * var(--prose-scale) * 1.06)"
+    fontWeight: 400
+    lineHeight: 1.7
   prose:
     fontFamily: "Libron, Georgia, serif"
     fontSize: "calc(var(--editor-font-size) * var(--prose-scale))"
@@ -294,6 +299,10 @@ Plex, drawn beside a mono — for the part a person actually wrote. The two neve
   for `--fs-micro`. It is not a general "small" size. Its only consumer today is
   `EventChip.module.css`; a new one needs this entry amended first, naming the use and why
   `--fs-micro` cannot serve it.
+- **UI prose** (`--fs-ui-prose` = `--fs-ui` × the face's `--prose-scale` × 1.06): the user's own
+  words inside chrome, such as a calendar chip title or a card title. The prose face at the chrome
+  step, set 6% over x-height parity with the `--fs-ui` mono beside it, because a serif at matched
+  x-height reads smaller than the mono.
 - **Prose** (`--prose-font-size` = the user's editor size × the face's `--prose-scale`: 1.00 for Plex,
   1.04 for Lora): note body, note headings,
   note tables, chat messages and the chat composer.
@@ -302,6 +311,22 @@ Plex, drawn beside a mono — for the part a person actually wrote. The two neve
   (`--fs-rel-code`, the same ratio off `1em`), `#tags`, task checkboxes and fields, list and syntax
   marks. One step below prose because Monaspace at prose x-height is 24% wider and carries 16% more
   ink than Lora; 0.89 is ink parity, and holds for Plex too (code/prose ink 1.10 vs Lora's 1.11). KaTeX output is not code and keeps its own size.
+
+### The three registers
+Text is set in exactly one of three registers, each with one size:
+
+1. **Chrome:** mono at `--fs-ui` (meta text at `--fs-micro`). Labels, rows, readouts, buttons.
+   Anything the app or an agent emits as mechanism, such as a tool name, a command line or a path
+   summary, is chrome even when it is mono.
+2. **The user's words inside chrome:** the prose face at `--fs-ui-prose`. A chip title, a card title
+   or a row label that is note or event text. Never `--fs-ui` and never a prose or body size.
+   Two sanctioned exceptions. A compact in-grid event chip (a slot of 30 minutes or less) keeps its
+   title at the chip's `--fs-micro`, so the time and the title fit one line. Task text (TaskChip,
+   TaskRow) stays in the chrome register, mono, beside its mono bracket marker and fields.
+3. **Reading prose:** the prose face at `--prose-font-size`, with mono runs inside it at
+   `--code-font-size`.
+
+`FontSpecimen` → `Registers` shows the three side by side.
 
 ### The content heading ramp
 Markdown headings in every surface read `--fs-h1` … `--fs-h6`. h1/h2 are never smaller than prose,

@@ -97,6 +97,8 @@ const CHECKS = `(() => {
             const code = resolve('var(--code-font-size)');
             const sizes = [base, base * 0.88];
             if (code && isFinite(code)) sizes.push(code);
+            const uiProse = resolve('var(--fs-ui-prose)');
+            if (uiProse && isFinite(uiProse)) sizes.push(uiProse);
             return sizes.map(v => Math.round(v * 100) / 100);
         } catch { return []; }
     })();

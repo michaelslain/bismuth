@@ -31,8 +31,10 @@
    the start stays whole — "8:00", never "8:00 —…" or a dot sitting on the 9. */
 .event-chip-time { --time-line: calc(var(--fs-micro) * 1.3); display: flex; flex-wrap: wrap; flex: 1; min-width: 0; height: var(--time-line); overflow: hidden; font-size: var(--fs-micro); color: var(--text-muted); line-height: var(--time-line); white-space: nowrap; font-family: var(--ui-font-stack); }
 /* The title is written text, so it is in the prose face (`<Text register="prose">` in EventChip —
-   DESIGN.md's Register Rule: a card title is prose). No font-family here, or it would race that. */
-.event-chip-title { font-weight: var(--fw-bold); font-size: var(--fs-ui); white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
+   DESIGN.md's Register Rule: a card title is prose). No font-family here, or it would race that.
+   Regular weight at the prose size: Libron ships only 400 and 700, and a bold serif dominates the cell
+   beside the mono time, so the hierarchy comes from --fg against the muted time instead. */
+.event-chip-title { font-weight: var(--fw-regular); font-size: var(--fs-ui-prose); white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
 .event-chip-meta { display: flex; align-items: center; gap: var(--sp-2); overflow: hidden; flex-shrink: 1; min-height: 0; }
 /* line-height must be set explicitly: the app shell (shell/AppFrame.module.css) sets an ABSOLUTE `line-height: var(--row-h)`
    (18px), so any descendant that doesn't override it inherits 18px regardless of its own
@@ -50,7 +52,7 @@
    swatch), at the head row's trailing edge, centred on its first line. In flow and unshrinkable,
    so they take their room from the time (whose end drops) instead of overlapping it. */
 .event-chip-dots { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; margin-left: auto; height: calc(var(--fs-micro) * 1.3); }
-.event-chip-head[data-untimed] .event-chip-dots { height: calc(var(--fs-ui) * 1.3); }
+.event-chip-head[data-untimed] .event-chip-dots { height: calc(var(--fs-ui-prose) * 1.3); }
 
 /* ---- in-grid: the chip fills an absolutely-positioned time-grid slot ---- */
 /* A size container, so the title can clamp to what the slot's HEIGHT holds (below). */
@@ -72,7 +74,7 @@
   .event-chip.in-grid:not(.compact):not(.timeless) .event-chip-title { -webkit-line-clamp: 1; line-clamp: 1; }
 }
 /* In the grid the title runs at line-height 1.15, so a title-led head centres its dots on that. */
-.event-chip.in-grid .event-chip-head[data-untimed] .event-chip-dots { height: calc(var(--fs-ui) * 1.15); }
+.event-chip.in-grid .event-chip-head[data-untimed] .event-chip-dots { height: calc(var(--fs-ui-prose) * 1.15); }
 /* Genuinely tiny blocks (a back-to-back 30-min slot is only ~33px tall): time, title and dots on
    ONE line. The head row dissolves into the chip's row so the dots can follow the title. */
 /* Baseline-aligned (the mono time and serif title share one baseline, not one centre line), with

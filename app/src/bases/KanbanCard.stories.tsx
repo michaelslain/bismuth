@@ -152,7 +152,7 @@ export const HideLabels: Story = {
     ),
 }
 
-/** A declared `markdown` property body (acceptance 9) — prose register at `--fs-body`, no key,
+/** A declared `markdown` property body (acceptance 9) — prose register at `--fs-ui-prose`, no key,
  *  spanning the full card width. */
 export const MarkdownDescription: Story = {
     render: () => {
