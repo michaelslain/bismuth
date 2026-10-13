@@ -23,6 +23,23 @@ export function hasRecentFailure(crons: DaemonCron[], nowMs: number): boolean {
     })
 }
 
+/** The daemon's state in one word — the single derivation the status bar's `daemon:` readout
+ *  and the page's caption both read, so the two never disagree. `stopped` is enabled in
+ *  .settings but the machine process is not running. `working` counts a running cron OR an
+ *  inbox page mid-run. */
+export type DaemonState = 'off' | 'stopped' | 'idle' | 'working'
+
+export function daemonState(i: {
+    enabled: boolean
+    running: boolean
+    cronsRunning: number
+    inboxWorking: boolean
+}): DaemonState {
+    if (!i.enabled) return 'off'
+    if (!i.running) return 'stopped'
+    return i.cronsRunning > 0 || i.inboxWorking ? 'working' : 'idle'
+}
+
 /** The one status string, `//` separated — the view bar's (now only) readout. `enabled`
  *  disambiguates the two ways the face can be asleep: `daemon.enabled: false` in .settings (the
  *  user turned it off) vs enabled but the machine daemon process isn't actually running (not
@@ -33,13 +50,20 @@ export function faceCaption(
     mood: DaemonMood,
     nowMs: number,
     enabled: boolean,
+    inboxWorking = false,
 ): string {
-    if (mood === 'asleep' || !snap.daemon.running)
-        return enabled
-            ? 'asleep // daemon not running'
-            : 'asleep // daemon is off'
     const running = snap.crons.filter(c => c.running)
-    if (running.length > 0) {
+    const state = daemonState({
+        enabled,
+        running: snap.daemon.running,
+        cronsRunning: running.length,
+        inboxWorking,
+    })
+    if (state === 'off') return 'asleep // daemon is off'
+    if (state === 'stopped' || mood === 'asleep')
+        return 'asleep // daemon not running'
+    if (state === 'working') {
+        if (running.length === 0) return 'working // inbox page'
         const more = running.length > 1 ? ` +${running.length - 1}` : ''
         return `working // ${running[0].name}${more}`
     }

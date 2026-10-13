@@ -114,6 +114,7 @@
    bench/cssBaseline.ts as a decision — the next person to change `.status-daemon` would silently
    drag the off state along with it. Stating it pins the intent. */
 .status-daemon-state--off { color: var(--text-muted); }
+.status-daemon-state--stopped { color: var(--danger); }
 .status-daemon-state--idle { color: var(--gold); }
 .status-daemon-state--working { color: var(--green); }
 

@@ -109,7 +109,7 @@ The status bar renders the `statusBar:` list in `.settings`. With no `statusBar:
 | a path | The focused file's full absolute path. A graph, terminal, chat or daemon pane, or no focus, shows `<vault path> // <label>` instead. Hover for the full text; click to copy it. |
 | `connection lost — polling` | Appears only while the live connection is down. |
 | `inbox: <n>` | Daemon inbox pages awaiting review; present at zero while the daemon is on, with a gold dot when something waits. Click it to open the inbox. Hidden when the daemon is off. |
-| `daemon: off`, `daemon: idle` or `daemon: working` | Whether this machine's daemon is running for this vault and whether it is busy. |
+| `daemon: off`, `daemon: not running`, `daemon: idle` or `daemon: working` | The daemon page's status in one word: turned off in `.settings`, enabled but the service is not up, idle, or running a cron or an inbox page. |
 
 A `statusBar:` list can also hold templated text, query counts and `run:` shell segments. A `run:` command a vault asks for does not execute until you approve it on this machine: until then the bar shows the truncated command as an `[ allow ]` prompt, and clicking it opens the trust dialog. See [status bar and home page](../settings/status-bar.md).
 

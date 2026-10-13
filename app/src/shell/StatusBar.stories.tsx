@@ -133,7 +133,13 @@ export const DaemonIdle: Story = {
     render: () => <StatusBar {...base} daemon="idle" />,
 }
 
-/** `anyWorking()` true while `settings.daemon.enabled` — reads "daemon: working" in --green. */
+/** Enabled in .settings but the machine process is not running — reads "daemon: not running"
+ *  in --danger, the same state the daemon page captions "asleep // daemon not running". */
+export const DaemonStopped: Story = {
+    render: () => <StatusBar {...base} daemon="stopped" />,
+}
+
+/** A cron or an inbox page mid-run — reads "daemon: working" in --green. */
 export const DaemonWorking: Story = {
     render: () => <StatusBar {...base} daemon="working" />,
 }

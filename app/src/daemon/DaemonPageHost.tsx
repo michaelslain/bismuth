@@ -21,7 +21,6 @@ import {
     Match,
     Switch,
 } from 'solid-js'
-import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import { api } from '../api'
 import { settings } from '../settings'
@@ -59,6 +58,11 @@ import {
 import { cronNeedsAttention, processNeedsAttention } from './daemonAttention'
 import { deriveMood } from './daemonFaceModel'
 import { barReadouts, faceCaption, hasRecentFailure } from './daemonPageModel'
+import {
+    daemonSnapshot,
+    daemonSnapshotLoaded,
+    refreshDaemonSnapshot,
+} from './daemonSnapshotStore'
 import DaemonPage from './DaemonPage'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
@@ -76,19 +80,12 @@ const LOG_LIMIT = 60
 /** The opened log section shows up to this many events. */
 const FULL_LOG_LIMIT = 500
 
-/** Before the first snapshot lands: nothing configured, not (yet) known to be running. */
-const NO_SNAPSHOT: DaemonSnapshot = {
-    daemon: { label: 'daemon', running: false, home: '' },
-    crons: [],
-    processes: [],
-    identity: { name: 'daemon', blurb: '' },
-}
-
 const isHidden = () => document.visibilityState === 'hidden'
 
 function DaemonPageHost(props: DaemonPageHostProps) {
-    const [snapshot, setSnapshot] = createSignal<DaemonSnapshot>(NO_SNAPSHOT)
-    const [loaded, setLoaded] = createSignal(false)
+    // The snapshot is the shared store the status bar also reads — one source, one status.
+    const snapshot = daemonSnapshot
+    const loaded = daemonSnapshotLoaded
     const [events, setEvents] = createSignal<ActivityEvent[]>([])
     const [fullEvents, setFullEvents] = createSignal<ActivityEvent[] | null>(
         null,
@@ -103,12 +100,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
 
     // Best-effort: a failed poll keeps the last good data on screen rather than blanking it.
     const fetchSnapshot = async () => {
-        try {
-            setSnapshot(await api.daemonSnapshot())
-            setLoaded(true)
-        } catch {
-            /* keep the previous snapshot */
-        }
+        await refreshDaemonSnapshot()
         setNow(Date.now())
     }
     // The poll serves both the box (60) and an opened log (FULL_LOG_LIMIT), so an opened log stays
@@ -207,7 +199,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     const status = () =>
         enabled() && !loaded()
             ? 'waking // reading the daemon'
-            : faceCaption(snapshot(), mood(), now(), enabled())
+            : faceCaption(snapshot(), mood(), now(), enabled(), anyWorking())
 
     // ── Section callbacks: every one wired to `api`, each swallowing after its toast — matching
     // the rows' own commit helpers, which have no catch of their own to feed. There is no create:

@@ -3,6 +3,7 @@ import {
     hasRecentFailure,
     faceCaption,
     barReadouts,
+    daemonState,
     RECENT_FAILURE_MS,
 } from './daemonPageModel'
 import type { DaemonSnapshot, DaemonCron } from '../../../core/src/daemonGraph'
@@ -144,4 +145,33 @@ test('bar readouts are the status alone', () => {
         'watching // last: dream 4m ago',
     ])
     expect(barReadouts('')).toEqual([])
+})
+
+test('daemonState: one derivation for the status bar and the page', () => {
+    const s = (o: Partial<Parameters<typeof daemonState>[0]>) =>
+        daemonState({
+            enabled: true,
+            running: true,
+            cronsRunning: 0,
+            inboxWorking: false,
+            ...o,
+        })
+    expect(s({ enabled: false, running: false })).toBe('off')
+    expect(s({ running: false })).toBe('stopped')
+    expect(s({ running: false, inboxWorking: true })).toBe('stopped')
+    expect(s({})).toBe('idle')
+    expect(s({ cronsRunning: 1 })).toBe('working')
+    expect(s({ inboxWorking: true })).toBe('working')
+})
+
+test('caption agrees with daemonState: an inbox page mid-run reads as working', () => {
+    expect(faceCaption(snap([]), 'busy', NOW, true, true)).toBe(
+        'working // inbox page',
+    )
+    expect(faceCaption(snap([]), 'idle', NOW, true, false)).toBe(
+        'watching // nothing has run yet',
+    )
+    expect(faceCaption(snap([], false), 'asleep', NOW, true, true)).toBe(
+        'asleep // daemon not running',
+    )
 })

@@ -68,6 +68,12 @@ import StatusTrustDialog from './shell/StatusTrustDialog'
 import { EditDictionaryModal } from './EditDictionaryModal'
 import { UpdateBanner } from './UpdateBanner'
 import { refreshDaemonPages, anyWorking, dueCount } from './daemon/daemonInboxApi'
+import {
+    daemonSnapshot,
+    daemonSnapshotLoaded,
+    refreshDaemonSnapshot,
+} from './daemon/daemonSnapshotStore'
+import { daemonState } from './daemon/daemonPageModel'
 import { openAppWindow, pickFolder, rememberLastVault } from './appWindow'
 import { resolveWindowId, tabsStorageKey } from './windowId'
 import { pushClosedSession, popClosedSession } from './closedSession'
@@ -2429,9 +2435,16 @@ export default function App() {
     // interval whenever it flips.
     createEffect(() => {
         if (!settings.daemon.enabled) return
-        const fast = anyWorking()
-        void refreshInbox()
-        const t = setInterval(() => void refreshInbox(), fast ? 5000 : 30000)
+        // The snapshot rides the same timer so the status bar's daemon readout tracks the
+        // daemon page's (both read daemonSnapshotStore).
+        const fast =
+            anyWorking() || daemonSnapshot().crons.some(c => c.running)
+        const tick = () => {
+            void refreshInbox()
+            void refreshDaemonSnapshot()
+        }
+        tick()
+        const t = setInterval(tick, fast ? 5000 : 30000)
         onCleanup(() => clearInterval(t))
     })
 
@@ -3661,13 +3674,18 @@ export default function App() {
                 <StatusBar
                     location={statusLocation()}
                     connected={currentConnectionState() === 'connected'}
-                    daemon={
-                        settings.daemon.enabled
-                            ? anyWorking()
-                                ? 'working'
-                                : 'idle'
-                            : 'off'
-                    }
+                    daemon={daemonState({
+                        enabled: settings.daemon.enabled,
+                        // Unknown until the first snapshot lands: read as running rather than
+                        // flash "not running" on every launch.
+                        running:
+                            !daemonSnapshotLoaded() ||
+                            daemonSnapshot().daemon.running,
+                        cronsRunning: daemonSnapshot().crons.filter(
+                            c => c.running,
+                        ).length,
+                        inboxWorking: anyWorking(),
+                    })}
                     inboxCount={dueCount()}
                     onCopyLocation={copyStatusLocation}
                     onOpenInbox={openDaemon}

@@ -8,6 +8,7 @@ import Text from '../ui/Text'
 import Caret from '../ui/Caret'
 import { InboxIndicator } from './InboxIndicator'
 import StatusSegment from './StatusSegment'
+import type { DaemonState } from '../daemon/daemonPageModel'
 import styles from './StatusBar.module.css'
 
 // The status bar field-log line (bismuth-design/ascii/README.md "App shell", §2), lifted out of App.tsx
@@ -35,9 +36,10 @@ import styles from './StatusBar.module.css'
 // this component. `.status-dot` (owned by ui/StatusDot.tsx, in global.css's `ui/ui.css` section)
 // is unrelated and never appears here despite the shared
 // `status-` prefix.
-// The daemon state as the bar SAYS it, distinct from the state itself. The prop keeps the three
-// bare state names ('off' | 'idle' | 'working') because that is what App.tsx computes from
-// `settings.daemon.enabled` + `anyWorking()`; only the wording and the tone are decided here.
+// The daemon state as the bar SAYS it, distinct from the state itself. The prop is
+// daemonPageModel's `DaemonState`, the same derivation the daemon page's caption reads, so the bar
+// and the page never disagree; only the wording and the tone are decided here. `stopped` (enabled
+// but the process is not running) says "not running", matching the page.
 //
 // WHY NOT "on - idle" / "on - working". That WAS the wording, for one commit, to make the
 // daemon's on-ness explicit rather than inferred from the absence of "off". Colour now carries
@@ -45,8 +47,9 @@ import styles from './StatusBar.module.css'
 // orange / daemon, working, green"), so the prefix is dead weight — it padded the two most
 // common states with five characters that said nothing the colour does not, in the narrowest
 // type in the app. The word alone plus a tone is both shorter and louder.
-const DAEMON_TEXT: Record<'off' | 'idle' | 'working', string> = {
+const DAEMON_TEXT: Record<DaemonState, string> = {
     off: 'off',
+    stopped: 'not running',
     idle: 'idle',
     working: 'working',
 }
@@ -66,7 +69,7 @@ export function StatusBar(props: {
      *  absolute path, or `vaultPath // label` for a sentinel pane / no focus. See issue #10. */
     location: string
     connected: boolean
-    daemon: 'off' | 'idle' | 'working'
+    daemon: DaemonState
     /** Daemon-inbox pages awaiting review (App.tsx's `dueCount()`). */
     inboxCount: number
     onCopyLocation: () => void
@@ -169,6 +172,8 @@ export function StatusBar(props: {
                 classList={{
                     [styles['status-daemon-state--off']]:
                         props.daemon === 'off',
+                    [styles['status-daemon-state--stopped']]:
+                        props.daemon === 'stopped',
                     [styles['status-daemon-state--idle']]:
                         props.daemon === 'idle',
                     [styles['status-daemon-state--working']]:
