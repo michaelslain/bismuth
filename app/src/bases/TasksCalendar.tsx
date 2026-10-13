@@ -8,7 +8,7 @@ import {
     type Component,
 } from 'solid-js'
 import { EventStore, MemoryBackend } from '../calendar/EventStore'
-import { currentView, showCalendarSettings } from '../calendar/state'
+import { useCalendarNav, showCalendarSettings } from '../calendar/state'
 import { MonthView } from '../calendar/components/views/MonthView'
 import { WeekView } from '../calendar/components/views/WeekView'
 import { ThreeDayView } from '../calendar/components/views/ThreeDayView'
@@ -81,6 +81,7 @@ export type TasksCalendarProps = {
  * listened to — in the tasks register it looked live and did nothing).
  */
 const TasksCalendar: Component<TasksCalendarProps> = props => {
+    const nav = useCalendarNav()
     const rows = createMemo(
         () => props.result?.groups.flatMap(g => g.rows) ?? [],
     )
@@ -398,16 +399,16 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
                     <WeekView store={store} {...taskProps} />
                 }
             >
-                <Match when={currentView.value === 'month'}>
+                <Match when={nav.view.value === 'month'}>
                     <MonthView store={store} {...taskProps} />
                 </Match>
-                <Match when={currentView.value === 'week'}>
+                <Match when={nav.view.value === 'week'}>
                     <WeekView store={store} {...taskProps} />
                 </Match>
-                <Match when={currentView.value === '3day'}>
+                <Match when={nav.view.value === '3day'}>
                     <ThreeDayView store={store} {...taskProps} />
                 </Match>
-                <Match when={currentView.value === 'day'}>
+                <Match when={nav.view.value === 'day'}>
                     <DayView store={store} {...taskProps} />
                 </Match>
             </Switch>

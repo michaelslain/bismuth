@@ -2,15 +2,10 @@ import { onMount, createEffect, Show, Switch, Match, type Component } from 'soli
 import { lastChange } from '../serverVersion'
 import { EventStore, MemoryBackend } from '../calendar/EventStore'
 import {
-    currentView,
-    currentDate,
+    useCalendarNav,
     settings,
     showEventModal,
     showCalendarSettings,
-    applyDefaultView,
-    userSwitchedView,
-    reconcileDefaultView,
-    resetUserSwitchedView,
 } from '../calendar/state'
 import { refreshEvents } from '../calendar/refresh'
 import { MonthView } from '../calendar/components/views/MonthView'
@@ -38,41 +33,26 @@ export type EventsCalendarProps = {
  * it (see the comment on `CalendarView` above) instead of leaving `backend`/`store`
  * frozen at whatever they were when the component first mounted.
  *
- * Note: reuses the calendar's global view/date signals, so a single calendar shows at
- * a time (same as the standalone Calendar tab).
+ * Its period and date come from the calendar's own nav (`useCalendarNav`), which BaseView
+ * keys by base path.
  */
 const EventsCalendar: Component<EventsCalendarProps> = props => {
     const backend = props.basePath ? new BaseBackend(props.basePath) : null
     const store = new EventStore(backend ?? new MemoryBackend())
+    const nav = useCalendarNav()
 
     onMount(async () => {
-        // Clear any prior manual-switch flag so this fresh mount honors the saved
-        // defaultView (the flag is module-level and survives remounts otherwise).
-        resetUserSwitchedView()
         if (backend) await backend.init()
         await store.load()
-        await refreshEvents(store)
-    })
-
-    // The settings store seeds synchronously from DEFAULTS ('week') and hydrates
-    // settings.yaml asynchronously, so `currentView` captured the seed at module load
-    // and never saw the user's saved defaultView. Reconcile once hydration lands — but
-    // stop the moment the user manually switches views, so we never clobber that switch.
-    createEffect(() => {
-        const next = reconcileDefaultView(
-            settings.value.defaultView,
-            currentView.value,
-            userSwitchedView,
-        )
-        if (next !== null) applyDefaultView(next)
+        await refreshEvents(store, nav)
     })
 
     createEffect(() => {
         // re-derive the visible range whenever the view mode, focused date, or week-start changes
-        currentView.value
-        currentDate.value
+        nav.view.value
+        nav.date.value
         settings.value.weekStartsOnMonday
-        void refreshEvents(store)
+        void refreshEvents(store, nav)
     })
 
     // Re-read the base file when it changes on disk underneath us (e.g. a background Google
@@ -92,26 +72,26 @@ const EventsCalendar: Component<EventsCalendarProps> = props => {
         void b.reloadIfChanged().then(async changed => {
             if (!changed) return
             await store.load()
-            await refreshEvents(store)
+            await refreshEvents(store, nav)
         })
     })
 
     return (
         <>
-            {/* Fallback to week view so an unrecognized currentView (e.g. a typo'd
+            {/* Fallback to week view so an unrecognized view (e.g. a typo'd
           defaultView in settings.yaml, or a transient during hydration) still
           renders a calendar instead of blanking the whole grid. */}
             <Switch fallback={<WeekView store={store} />}>
-                <Match when={currentView.value === 'month'}>
+                <Match when={nav.view.value === 'month'}>
                     <MonthView store={store} />
                 </Match>
-                <Match when={currentView.value === 'week'}>
+                <Match when={nav.view.value === 'week'}>
                     <WeekView store={store} />
                 </Match>
-                <Match when={currentView.value === '3day'}>
+                <Match when={nav.view.value === '3day'}>
                     <ThreeDayView store={store} />
                 </Match>
-                <Match when={currentView.value === 'day'}>
+                <Match when={nav.view.value === 'day'}>
                     <DayView store={store} />
                 </Match>
             </Switch>

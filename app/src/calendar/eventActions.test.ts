@@ -2,6 +2,9 @@ import { test, expect } from 'bun:test'
 import { EventStore, MemoryBackend } from './EventStore'
 import { deleteEventWithUndo, duplicateEvent } from './eventActions'
 import { toasts, dismissToast } from '../ui/toastStore'
+import { createCalendarNav } from './state'
+
+const nav = createCalendarNav()
 
 async function freshStore() {
     const s = new EventStore(new MemoryBackend())
@@ -28,7 +31,7 @@ test('delete then undo restores a plain event identically', async () => {
         category: 'a',
     })
     const before = masters(s)
-    await deleteEventWithUndo(s, ev)
+    await deleteEventWithUndo(s, nav, ev)
     expect(masters(s)).toEqual([])
     expect(toasts().some(t => t.message === 'deleted Lunch')).toBe(true)
     clickUndo()
@@ -55,7 +58,7 @@ for (const scope of ['one', 'following', 'all'] as const) {
         const occ = s
             .getEventsForRange('2026-05-01', '2026-05-31')
             .find(e => e.date === '2026-05-13')!
-        await deleteEventWithUndo(s, occ, scope)
+        await deleteEventWithUndo(s, nav, occ, scope)
         const days = s
             .getEventsForRange('2026-05-01', '2026-05-31')
             .map(e => e.date)
@@ -76,7 +79,7 @@ test('duplicateEvent makes an independent copy with a fresh id and series', asyn
         date: '2026-05-01',
         recurrence: { type: 'daily', startDate: '2026-05-01', seriesId: 'sid' },
     })
-    const copy = await duplicateEvent(s, ev)
+    const copy = await duplicateEvent(s, nav, ev)
     expect(copy.id).not.toBe(ev.id)
     expect(copy.title).toBe('R')
     expect(copy.recurrence!.seriesId).not.toBe('sid')

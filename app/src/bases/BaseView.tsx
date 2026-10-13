@@ -48,7 +48,11 @@ import {
 import ChartConfigBar from './ChartConfigBar'
 import { CalendarView } from './CalendarView'
 import { calendarSlots } from '../calendar/components/Toolbar'
-import { showCalendarSettings } from '../calendar/state'
+import {
+    showCalendarSettings,
+    calendarNavFor,
+    createCalendarNav,
+} from '../calendar/state'
 import { FlashcardsView } from './FlashcardsView'
 import { BaseSettings } from './BaseSettings'
 import AddRowAction from './AddRowAction'
@@ -509,8 +513,8 @@ export function BaseView(props: {
      *  remember not to render a second one beside it.
      *
      *  THE TWO ARMS REACH THEIR SLOTS DIFFERENTLY, and that asymmetry is real rather than sloppy.
-     *  `calendarSlots()` is PULLED — the calendar's state is module-level signals (calendar/
-     *  state.ts), so anyone may call it. A deck's queue, tally and cram flag are per-instance and
+     *  `calendarSlots()` is PULLED — BaseView holds the calendar's nav (`calendarNav` below),
+     *  so it can hand the same nav to the slots and to the grid. A deck's queue, tally and cram flag are per-instance and
      *  restored per basePath, so `<FlashcardsView>` PUSHES its slots up through `onBarSlots` once
      *  it mounts, and clears them on unmount. Lifting a deck's session to a module store just to
      *  make the two arms symmetric would be a far larger change than deleting a header bar.
@@ -521,6 +525,14 @@ export function BaseView(props: {
      *  times per bar and threw three away, each with its own live reactive subscriptions to
      *  currentView/currentDate/showCategoryPanel. That was survivable only while the calendar
      *  returned one effect-free block; splitting it across four regions is what makes it wrong. */
+    /** The calendar's period and date, one per base path, so each calendar keeps its own pick
+     *  across tab switches. A query block with no base file gets one for this pane alone. */
+    const ownCalendarNav = createCalendarNav()
+    const calendarNav = createMemo(() => {
+        const path = data()?.basePath
+        return path ? calendarNavFor(path) : ownCalendarNav
+    })
+
     const [flashcardsSlots, setFlashcardsSlots] = createSignal<
         ViewBarSlots | undefined
     >()
@@ -578,7 +590,10 @@ export function BaseView(props: {
             // The tasks register's bar contributes no `actions` control any more — task
             // creation lives in the grid's own cells (see CalendarView.tsx's TasksCalendar) —
             // so `calendarSlots()` only needs to know which register is showing.
-            return calendarSlots({ isTasks: activeMode() === 'tasks' })
+            return calendarSlots({
+                isTasks: activeMode() === 'tasks',
+                nav: calendarNav(),
+            })
         }
         if (activeType() === 'flashcards') return flashcardsSlots()
         return chartConfigSlot()
@@ -893,7 +908,12 @@ export function BaseView(props: {
                                 />
                             </Match>
                             <Match when={activeType() === 'calendar'}>
+                                {/* Keyed on the nav so another base's calendar remounts under its
+                                    own nav rather than inheriting this one's. */}
+                                <Show when={calendarNav()} keyed>
+                                    {nav => (
                                 <CalendarView
+                                    nav={nav}
                                     basePath={data()!.basePath}
                                     result={result() ?? undefined}
                                     config={data()!.config}
@@ -908,6 +928,8 @@ export function BaseView(props: {
                                     // suspend and remount on its own write.
                                     onChange={revalidateAll}
                                 />
+                                    )}
+                                </Show>
                             </Match>
                         </Switch>
                     </Show>

@@ -52,7 +52,7 @@ A calendar draws events when `mode` is absent or `normal`, and tasks when `mode:
 
 ## Move around the calendar
 
-The view bar's grid toggle switches between month, week, 3 day and day. The arrows step by one grid unit: a month, 7 days, 3 days or 1 day. The date between the arrows names the visible range and, when clicked, jumps to today; a **today** button beside the arrows does the same.
+The view bar's grid toggle switches between month, week, 3 day and day. Each calendar base keeps its own grid and date: picking 3 day on one calendar leaves every other calendar on its own grid, and reopening a calendar or switching back to its tab brings back what it showed, until the app reloads. A calendar you have not switched shows the `defaultView` setting. The arrows step by one grid unit: a month, 7 days, 3 days or 1 day. The date between the arrows names the visible range and, when clicked, jumps to today; a **today** button beside the arrows does the same.
 
 A week, 3-day or day grid opens scrolled so its earliest timed event sits at the top, just under the header. Each new range scrolls once, when its events load; a range with no timed events leaves the scroll where it is.
 
@@ -185,7 +185,7 @@ These `.settings` keys under `calendar:` change how every calendar looks. They a
 
 | Key | Type | Default | Effect |
 |---|---|---|---|
-| `defaultView` | `month`, `week`, `3day`, `day` | `week` | Grid shown when a calendar first opens |
+| `defaultView` | `month`, `week`, `3day`, `day` | `week` | Grid a calendar shows until you pick another on it |
 | `weekStartsOnMonday` | boolean | `true` | Week starts Monday instead of Sunday |
 | `militaryTime` | boolean | `false` | 24-hour times on chips and the hour gutter |
 | `monthCellMinHeight` | number, 50 to 160 | `80` | Minimum day-cell height in month view, in pixels |
@@ -208,7 +208,7 @@ These `.settings` keys under `calendar:` change how every calendar looks. They a
 
 The opening scroll of the week, 3-day and day grids is `firstEventTop` (`app/src/calendar/components/views/timeGridLayout.ts`), applied by `TimeGrid` once per date range.
 
-The calendar contributes controls to the base's single view bar through `calendarSlots()`, which `BaseView` reads; the view renders no bar of its own. Grid state (current view, date, open dialogs) is module-level signals in `app/src/calendar/state.ts`, which is why one calendar renders at a time.
+The calendar contributes controls to the base's single view bar through `calendarSlots()`, which `BaseView` reads; the view renders no bar of its own. Each calendar's grid and date are a `CalendarNav` (`app/src/calendar/state.ts`): `BaseView` takes one per base path from `calendarNavFor`, hands it to `calendarSlots()` for the bar and to `CalendarView`, which provides it to the grid through `CalendarNavContext`. The navs live in a module-level map, so they survive a remount but not a reload. A nav's view reads `defaultView` until a pick is written to it. The loaded events, categories and open dialogs are module-level signals in the same file, shared by every events calendar.
 
 Task placement, the overdue carry and category colours are pure functions in `app/src/calendar/taskPlacement.ts` and `taskCategory.ts`. The chip's writability, the drag payload and the reschedule target all come from `isWritableTask` and `taskRowRef`, so the marker, the drag and the shortcuts cannot disagree. Writes go through the same endpoints as the other task views: `POST /tasks/toggle`, `POST /tasks/reschedule` and `POST /tasks/create` for checkbox lines, and `POST /rows/update` and `POST /rows` for a base's own rows; see [HTTP API reference](../../api/http-reference.md). `POST /tasks/create` resolves `taskFile` server-side in `resolveTaskFilePath`. An own-rows base runs each row through `normalizeStoredTaskRow` before the tasks register sees it.
 

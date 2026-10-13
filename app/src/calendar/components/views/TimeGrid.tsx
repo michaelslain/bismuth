@@ -3,7 +3,13 @@ import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
 import { formatGutterHour } from '../../dates'
 import { todayISO } from '../../../../../core/src/dates'
-import { showEventModal, dragState, settings, recurrenceAction } from '../../state'
+import {
+    showEventModal,
+    dragState,
+    settings,
+    recurrenceAction,
+    useCalendarNav,
+} from '../../state'
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
 import Text from '../../../ui/Text'
@@ -31,6 +37,7 @@ interface Props {
 }
 
 export function TimeGrid(props: Props) {
+    const nav = useCalendarNav()
     const today = todayISO(new Date())
     const colRefs: Record<string, HTMLDivElement | undefined> = {}
     let body: HTMLDivElement | undefined
@@ -210,7 +217,7 @@ export function TimeGrid(props: Props) {
                     }
                 } else {
                     await props.store.updateEvent(event.id, updates)
-                    await refreshEvents(props.store)
+                    await refreshEvents(props.store, nav)
                 }
             }
         }

@@ -13,7 +13,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { RecurrenceDialog } from './RecurrenceDialog'
 import { EventStore, MemoryBackend } from '../EventStore'
-import { recurrenceAction, events, currentDate } from '../state'
+import { recurrenceAction, events, currentDate, currentView } from '../state'
 import { refreshEvents } from '../refresh'
 import { ToastHost } from '../../ui/ToastHost'
 import { toasts, dismissToast } from '../../ui/toastStore'
@@ -153,7 +153,7 @@ export const DeleteOneWithUndo: Story = {
         const { id: _id, ...rest } = MASTER
         store.addEvent(rest).then(async master => {
             storedMasterId = master.id
-            await refreshEvents(store)
+            await refreshEvents(store, { view: currentView, date: currentDate })
             recurrenceAction.value = {
                 type: 'delete',
                 masterId: master.id,

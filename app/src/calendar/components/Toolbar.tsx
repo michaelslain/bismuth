@@ -4,6 +4,8 @@ import {
     showEventModal,
     currentView,
     currentDate,
+    CalendarNavContext,
+    type CalendarNav,
 } from '../state'
 import ViewBar, { type ViewBarSlots } from '../../ui/ViewBar'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
@@ -35,6 +37,9 @@ const VIEWS: { id: ViewType; label: string; short: string }[] = [
  *  tasks register — both fall back to the events "+ event" action unchanged. */
 export interface CalendarSlotsCtx {
     isTasks: boolean
+    /** The calendar on screen's own period and date. Omitted, the slots drive the fallback nav
+     *  that stories seed through `currentView` / `currentDate`. */
+    nav?: CalendarNav
 }
 
 /**
@@ -55,14 +60,17 @@ export interface CalendarSlotsCtx {
  * remember.
  */
 export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
+    const nav = ctx?.nav ?? { view: currentView, date: currentDate }
     return {
         locus: (
-            <>
+            // The slots are built in BaseView, outside the calendar's own tree, so DateNav gets the
+            // nav from a provider of its own here.
+            <CalendarNavContext.Provider value={nav}>
                 <DateNav />
                 <SegmentedToggle
                     class={styles.views}
-                    value={currentView.value}
-                    onChange={id => (currentView.value = id)}
+                    value={nav.view.value}
+                    onChange={id => (nav.view.value = id)}
                     size="sm"
                     options={VIEWS.map(v => ({
                         id: v.id,
@@ -70,7 +78,7 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                         label: <BarLabel long={v.label} short={v.short} />,
                     }))}
                 />
-            </>
+            </CalendarNavContext.Provider>
         ),
         config: (
             /* EVENTS REGISTER ONLY. `CategoryPanel` is mounted by `EventsCalendar`, so in the tasks
@@ -106,7 +114,7 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                     label="New event"
                     onClick={() =>
                         (showEventModal.value = {
-                            date: todayISO(currentDate.value),
+                            date: todayISO(nav.date.value),
                         })
                     }
                 />

@@ -1,17 +1,18 @@
 import { Show } from 'solid-js'
-import { currentDate, events, categories } from '../../state'
+import { useCalendarNav, events, categories } from '../../state'
 import { EventStore } from '../../EventStore'
 import { TimeGrid } from './TimeGrid'
 import { TaskAllDayStrip } from './TaskAllDayStrip'
 import type { TaskViewProps } from './MonthView'
 
 export function DayView(props: { store: EventStore } & TaskViewProps) {
+    const nav = useCalendarNav()
     return (
         <Show
             when={props.placed}
             fallback={
                 <TimeGrid
-                    dates={[currentDate.value]}
+                    dates={[nav.date.value]}
                     events={events.value}
                     categories={categories.value}
                     store={props.store}
@@ -20,7 +21,7 @@ export function DayView(props: { store: EventStore } & TaskViewProps) {
         >
             {placed => (
                 <TaskAllDayStrip
-                    dates={[currentDate.value]}
+                    dates={[nav.date.value]}
                     {...props}
                     placed={placed()}
                 />

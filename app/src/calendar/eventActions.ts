@@ -1,7 +1,9 @@
 // Final signatures:
 //   type RecurrenceScope = 'one' | 'following' | 'all'   (the RecurrenceDialog's stored scopes)
-//   deleteEventWithUndo(store: EventStore, event: CalendarEvent, scope?: RecurrenceScope): Promise<void>
-//   duplicateEvent(store: EventStore, event: CalendarEvent): Promise<CalendarEvent>
+//   deleteEventWithUndo(store: EventStore, nav: CalendarNav, event: CalendarEvent, scope?: RecurrenceScope): Promise<void>
+//   duplicateEvent(store: EventStore, nav: CalendarNav, event: CalendarEvent): Promise<CalendarEvent>
+//
+// `nav` is the calendar's own period and date, which picks the range the refresh re-reads.
 //
 // `event` is what a chip/modal holds: for a recurring event that is an expanded occurrence, so
 // `event.id` is the master id and `event.date` the occurrence date. A non-recurring event ignores
@@ -15,6 +17,7 @@
 import type { CalendarEvent, EventsFile } from './types'
 import { EventStore, uuid } from './EventStore'
 import { refreshEvents } from './refresh'
+import type { CalendarNav } from './state'
 import { pushUndoToast } from '../undoToast'
 
 export type RecurrenceScope = 'one' | 'following' | 'all'
@@ -26,6 +29,7 @@ const withoutId = ({ id: _id, ...rest }: CalendarEvent) => rest
 
 export async function deleteEventWithUndo(
     store: EventStore,
+    nav: CalendarNav,
     event: CalendarEvent,
     scope: RecurrenceScope = 'one',
 ): Promise<void> {
@@ -41,19 +45,20 @@ export async function deleteEventWithUndo(
     else if (scope === 'following')
         await store.deleteFollowing(event.id, event.date)
     else await store.deleteOccurrence(event.id, event.date)
-    await refreshEvents(store)
+    await refreshEvents(store, nav)
 
     pushUndoToast(`deleted ${event.title}`, async () => {
         // a split ('one') can leave extra masters under the seriesId with fresh ids: clear them,
         // then put the snapshot back under its ORIGINAL ids so gcal links survive.
         if (seriesId) await store.deleteSeries(seriesId)
         await store.restoreEvents(snapshot)
-        await refreshEvents(store)
+        await refreshEvents(store, nav)
     })
 }
 
 export async function duplicateEvent(
     store: EventStore,
+    nav: CalendarNav,
     event: CalendarEvent,
 ): Promise<CalendarEvent> {
     const { localUpdated: _stamp, ...rest } = withoutId(event)
@@ -63,6 +68,6 @@ export async function duplicateEvent(
             ? { recurrence: { ...event.recurrence, seriesId: uuid() } }
             : {}),
     })
-    await refreshEvents(store)
+    await refreshEvents(store, nav)
     return copy
 }

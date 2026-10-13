@@ -1,6 +1,6 @@
 import { createSignal, Show } from 'solid-js'
 import { createStore, unwrap } from 'solid-js/store'
-import { showEventModal, recurrenceAction } from '../state'
+import { showEventModal, recurrenceAction, useCalendarNav } from '../state'
 import { EventStore, uuid } from '../EventStore'
 import { prettyDate } from '../dates'
 import { todayISO } from '../../../../core/src/dates'
@@ -31,6 +31,7 @@ import RecurrenceField from './RecurrenceField'
 import styles from './EventModal.module.css'
 
 export function EventModal(props: { store: EventStore }) {
+    const nav = useCalendarNav()
     const modal = showEventModal.value
     if (!modal) return null
     const editing = modal.event
@@ -74,7 +75,7 @@ export function EventModal(props: { store: EventStore }) {
                 close()
                 return
             }
-            await deleteEventWithUndo(props.store, editing)
+            await deleteEventWithUndo(props.store, nav, editing)
             close()
         })
 
@@ -85,10 +86,10 @@ export function EventModal(props: { store: EventStore }) {
         run('Could not duplicate the event', async () => {
             if (!editing) return
             if (!formDirty(snapshot(), opened))
-                await duplicateEvent(props.store, editing)
+                await duplicateEvent(props.store, nav, editing)
             else {
                 await props.store.addEvent(buildEventData(snapshot(), uuid()))
-                await refreshEvents(props.store)
+                await refreshEvents(props.store, nav)
             }
             close()
         })
@@ -111,7 +112,7 @@ export function EventModal(props: { store: EventStore }) {
             }
             if (editing) await props.store.updateEvent(editing.id, data)
             else await props.store.addEvent(data)
-            await refreshEvents(props.store)
+            await refreshEvents(props.store, nav)
             close()
         })
 

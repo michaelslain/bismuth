@@ -1,5 +1,5 @@
 import { Show } from 'solid-js'
-import { currentDate, events, categories, settings } from '../../state'
+import { useCalendarNav, events, categories, settings } from '../../state'
 import { EventStore } from '../../EventStore'
 import { TimeGrid } from './TimeGrid'
 import { TaskAllDayStrip } from './TaskAllDayStrip'
@@ -7,8 +7,9 @@ import type { TaskViewProps } from './MonthView'
 import { addDays, startOfWeek } from '../../dates'
 
 export function WeekView(props: { store: EventStore } & TaskViewProps) {
+    const nav = useCalendarNav()
     const dates = () => {
-        const d = currentDate.value
+        const d = nav.date.value
         const weekStart = startOfWeek(d, settings.value.weekStartsOnMonday)
         return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
     }

@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { CalendarEvent, Category } from '../types'
-import { showEventModal, settings, recurrenceAction } from '../state'
+import { showEventModal, settings, recurrenceAction, useCalendarNav } from '../state'
 import { deleteEventWithUndo, duplicateEvent } from '../eventActions'
 import { openableHref } from '../openableUrl'
 import CalendarChip from './CalendarChip'
@@ -32,6 +32,7 @@ interface Props {
 }
 
 export function EventChip(props: Props) {
+    const nav = useCalendarNav()
     // The chip is drawn in its categories' colours (a theme token → var(--token), or a custom
     // colour): an even 1px frame and a faint wash of the FIRST category behind
     // --fg ink. A 2+ category event splits its frame into one hard band per category and shows a
@@ -76,7 +77,7 @@ export function EventChip(props: Props) {
             }
         } else {
             try {
-                await deleteEventWithUndo(props.store, props.event)
+                await deleteEventWithUndo(props.store, nav, props.event)
             } catch (e) {
                 pushToast(`Could not delete: ${(e as Error).message}`)
             }
@@ -84,7 +85,7 @@ export function EventChip(props: Props) {
     }
 
     async function handleDuplicate(): Promise<void> {
-        await duplicateEvent(props.store, props.event)
+        await duplicateEvent(props.store, nav, props.event)
     }
 
     const label = () =>

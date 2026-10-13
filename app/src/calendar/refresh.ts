@@ -1,11 +1,14 @@
 import { EventStore } from './EventStore'
-import { events, categories, currentView, currentDate, settings } from './state'
+import { events, categories, settings, type CalendarNav } from './state'
 import { addDays, weekRange } from './dates'
 import { todayISO } from '../../../core/src/dates'
 
-export async function refreshEvents(store: EventStore): Promise<void> {
-    const d = currentDate.value
-    const v = currentView.value
+export async function refreshEvents(
+    store: EventStore,
+    nav: CalendarNav,
+): Promise<void> {
+    const d = nav.date.value
+    const v = nav.view.value
     const mondayFirst = settings.value.weekStartsOnMonday
     let start: string, end: string
     if (v === 'month') {

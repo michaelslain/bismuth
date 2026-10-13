@@ -1,6 +1,6 @@
 import { For, Index, Show } from 'solid-js'
 import {
-    currentDate,
+    useCalendarNav,
     events as eventsSignal,
     categories,
     showEventModal,
@@ -40,12 +40,13 @@ export type MonthViewProps = {
 } & TaskViewProps
 
 export function MonthView(props: MonthViewProps) {
+    const nav = useCalendarNav()
     const mondayFirst = () => settings.value.weekStartsOnMonday
     const today = todayISO(new Date())
     const cells = () =>
         monthGrid(
-            currentDate.value.getFullYear(),
-            currentDate.value.getMonth(),
+            nav.date.value.getFullYear(),
+            nav.date.value.getMonth(),
             mondayFirst(),
         )
     const allEvents = () => props.events ?? eventsSignal.value

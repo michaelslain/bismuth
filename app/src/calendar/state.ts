@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js'
+import { createContext, createSignal, useContext } from 'solid-js'
 import { CalendarEvent, Category, ViewType, CalendarSettings } from './types'
 import { settings as appSettings, setSettings } from '../settings'
 
@@ -36,57 +36,58 @@ export const settings = {
         })
     },
 }
-// `userSwitchedView` flips the first time anything writes `currentView.value`
-// (e.g. the Toolbar view buttons). CalendarView's one-shot hydration effect uses
-// it to avoid clobbering a manual view switch with the saved defaultView once the
-// async settings hydration lands. The box value itself is seeded from the
-// synchronous DEFAULTS; the saved defaultView is reconciled in CalendarView.
-export let userSwitchedView = false
-
-// Reset the manual-switch flag. `userSwitchedView` is module-level and persists
-// across CalendarView remounts, so without this a single manual view switch would
-// make every later remount ignore the saved defaultView for the rest of the
-// session. CalendarView calls this at the start of onMount, before reconciling.
-export function resetUserSwitchedView(): void {
-    userSwitchedView = false
+/** One calendar's navigation: which period it shows and which date anchors it. Every calendar
+ *  owns its own, so a period picked on one calendar never shows up on another.
+ *
+ *  `view` reads the saved `defaultView` until this calendar picks one, then keeps its own pick.
+ *  Settings hydrate asynchronously, so a calendar opened before the hydration lands still ends
+ *  up on the saved default rather than the DEFAULTS seed. */
+export type CalendarNav = {
+    view: { value: ViewType }
+    date: { value: Date }
 }
-let setCurrentViewRaw: (v: ViewType) => void
-function createViewBox(initial: ViewType) {
-    const [get, set] = createSignal<ViewType>(initial)
-    setCurrentViewRaw = (v: ViewType) => set(() => v)
+
+export function createCalendarNav(): CalendarNav {
+    const [picked, setPicked] = createSignal<ViewType | undefined>()
     return {
-        get value() {
-            return get()
+        view: {
+            get value() {
+                return picked() ?? settings.value.defaultView
+            },
+            set value(v: ViewType) {
+                setPicked(() => v)
+            },
         },
-        set value(v: ViewType) {
-            userSwitchedView = true
-            set(() => v)
-        },
+        date: createBox<Date>(new Date()),
     }
 }
-export const currentView = createViewBox(settings.value.defaultView)
 
-// Apply the saved defaultView WITHOUT marking it as a manual user switch. Used by
-// CalendarView's one-shot hydration effect so the box reconciles with the
-// asynchronously-hydrated settings.value.defaultView on first paint.
-export function applyDefaultView(v: ViewType) {
-    setCurrentViewRaw(v)
+// Keyed by the base's path. Module scope so a calendar keeps its period and date across a tab
+// switch or a pane remount, but not across an app reload, matching the flashcards session store.
+const navs = new Map<string, CalendarNav>()
+
+/** The nav for the calendar base at `path`, created on first use. */
+export function calendarNavFor(path: string): CalendarNav {
+    let nav = navs.get(path)
+    if (!nav) {
+        nav = createCalendarNav()
+        navs.set(path, nav)
+    }
+    return nav
 }
 
-// Pure decision for CalendarView's hydration effect: given the (possibly just
-// hydrated) saved default, the current view, and whether the user has manually
-// switched, return the view to apply or null for "leave it alone". A manual
-// switch always wins; otherwise reconcile the seeded view to the saved default.
-export function reconcileDefaultView(
-    savedDefault: ViewType,
-    current: ViewType,
-    switched: boolean,
-): ViewType | null {
-    if (switched) return null
-    if (current === savedDefault) return null
-    return savedDefault
+/** The nav a calendar reads when no base supplies one: stories and fixtures render a calendar on
+ *  its own and seed it through `currentView` / `currentDate`. */
+const fallbackNav = createCalendarNav()
+export const currentView = fallbackNav.view
+export const currentDate = fallbackNav.date
+
+/** BaseView provides the nav of the base on screen. Everything below it reads it from here. */
+export const CalendarNavContext = createContext<CalendarNav>(fallbackNav)
+
+export function useCalendarNav(): CalendarNav {
+    return useContext(CalendarNavContext)
 }
-export const currentDate = createBox<Date>(new Date())
 export const events = createBox<CalendarEvent[]>([])
 export const categories = createBox<Category[]>([])
 export const showEventModal = createBox<{

@@ -5,7 +5,7 @@
 //
 // Four controls, in this order: TODAY, prev, the date, next. TODAY is the explicit one-shot jump;
 // the date stays clickable too, as a secondary jump back (see its own comment below).
-import { currentView, currentDate, settings } from '../state'
+import { useCalendarNav, settings } from '../state'
 import { TextButton } from '../../ui/TextButton'
 import { IconButton } from '../../ui/IconButton'
 import { PlainButton } from '../../ui/PlainButton'
@@ -20,19 +20,20 @@ export type DateNavProps = {
 }
 
 export function DateNav(props: DateNavProps) {
+    const nav = useCalendarNav()
     const label = () =>
         rangeLabel(
-            currentDate.value,
-            currentView.value,
+            nav.date.value,
+            nav.view.value,
             settings.value.weekStartsOnMonday,
         )
     const step = (dir: -1 | 1) => () =>
-        (currentDate.value = stepDate(
-            currentDate.value,
-            currentView.value,
+        (nav.date.value = stepDate(
+            nav.date.value,
+            nav.view.value,
             dir,
         ))
-    const jumpToToday = () => (currentDate.value = new Date())
+    const jumpToToday = () => (nav.date.value = new Date())
 
     return (
         <div class={`${styles.nav} ${props.class ?? ''}`}>

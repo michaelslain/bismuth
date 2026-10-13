@@ -1,4 +1,4 @@
-import { recurrenceAction, events } from '../state'
+import { recurrenceAction, events, useCalendarNav } from '../state'
 import { EventStore } from '../EventStore'
 import { refreshEvents } from '../refresh'
 import { deleteEventWithUndo, type RecurrenceScope } from '../eventActions'
@@ -16,6 +16,7 @@ import RowList from '../../ui/RowList'
 type Scope = RecurrenceScope
 
 export function RecurrenceDialog(props: { store: EventStore }) {
+    const nav = useCalendarNav()
     async function handle(scope: Scope): Promise<void> {
         const action = recurrenceAction.value
         if (!action) return
@@ -28,6 +29,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                 if (master)
                     await deleteEventWithUndo(
                         props.store,
+                        nav,
                         { ...master, date: occurrenceDate },
                         scope,
                     )
@@ -64,7 +66,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
             }
 
             await props.store.load()
-            await refreshEvents(props.store)
+            await refreshEvents(props.store, nav)
         } catch (e) {
             pushToast(`Could not save: ${(e as Error).message}`)
         } finally {

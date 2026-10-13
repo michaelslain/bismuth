@@ -25,8 +25,9 @@ import { toasts } from '../ui/toastStore'
 import taskRowStyles from './TaskRow.module.css'
 import tableViewStyles from './TableView.module.css'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
-import { currentView } from '../calendar/state'
+import { calendarNavFor } from '../calendar/state'
 import { taskRow } from '../ui/_calendarAssertions'
+import { TextButton } from '../ui/TextButton'
 import { start as startServerVersion } from '../serverVersion'
 import type { Transport } from '../api'
 
@@ -1709,12 +1710,13 @@ export const CalendarTasksToggleKeepsPane: Story = {
                 taskRow('water the plants', { line: 2, scheduled: today }),
             ],
         })
-        const prevView = currentView.value
+        const nav = calendarNavFor(path)
+        const prevView = nav.view.value
         onMount(() => {
-            currentView.value = 'month'
+            nav.view.value = 'month'
         })
         onCleanup(() => {
-            currentView.value = prevView
+            nav.view.value = prevView
             disposeVersion()
         })
         // The real pane wraps BaseView (inside FileView) in a <Suspense> — PaneContent.tsx's
@@ -1911,5 +1913,79 @@ export const KanbanLateStaleResolve: Story = {
 
         expect(canvas.getByText('Fresh Card')).toBeInTheDocument()
         expect(canvas.queryByText('Stale Card')).not.toBeInTheDocument()
+    },
+}
+
+const CAL_LEFT = 'boards/calendar-left.md'
+const CAL_RIGHT = 'boards/calendar-right.md'
+const CAL_BODY = '---\ntype: base\nmode: tasks\nview: calendar\nsource:\n  kind: tasks\n---\n'
+
+/** The pressed option of the period switcher inside `pane`, by its label. */
+function pressedPeriod(pane: HTMLElement): string | undefined {
+    const pressed = pane.querySelector<HTMLElement>('[aria-pressed="true"][title]')
+    return pressed?.getAttribute('title') ?? undefined
+}
+
+const monthGrid = (pane: HTMLElement) => pane.querySelector('[data-testid="month-scroller"]')
+
+/** Two calendar bases side by side, the left one closable. Each calendar keeps its own period:
+ *  picking "3 day" on the left leaves the right on its own pick, and closing and reopening the
+ *  left brings back "3 day" rather than the default or the right calendar's pick. */
+export const TwoCalendarsKeepTheirOwnPeriod: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: { [CAL_LEFT]: CAL_BODY, [CAL_RIGHT]: CAL_BODY },
+                rows: [taskRow('walk the dog', { line: 1, scheduled: todayISO() })],
+            }),
+        )
+        const [leftOpen, setLeftOpen] = createSignal(true)
+        const pane = { height: '560px', display: 'flex', 'flex-direction': 'column', overflow: 'hidden' } as const
+        return (
+            <div>
+                <TextButton data-testid="toggle-left" onClick={() => setLeftOpen(o => !o)}>
+                    {leftOpen() ? 'close left' : 'reopen left'}
+                </TextButton>
+                <div style={{ display: 'grid', 'grid-template-columns': '1fr 1fr', gap: '12px' }}>
+                    <div data-testid="cal-left" style={pane}>
+                        <Show when={leftOpen()}>
+                            <BaseView path={CAL_LEFT} body={CAL_BODY} />
+                        </Show>
+                    </div>
+                    <div data-testid="cal-right" style={pane}>
+                        <BaseView path={CAL_RIGHT} body={CAL_BODY} />
+                    </div>
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const left = () => canvas.getByTestId('cal-left')
+        const right = canvas.getByTestId('cal-right')
+        const option = (pane: HTMLElement, title: string) => {
+            const el = pane.querySelector<HTMLElement>(`[aria-pressed][title="${title}"]`)
+            expect(el, `no "${title}" option`).toBeTruthy()
+            return el!
+        }
+
+        await waitFor(() => expect(pressedPeriod(right)).toBeDefined())
+        await waitFor(() => expect(pressedPeriod(left())).toBeDefined())
+
+        await userEvent.click(option(right, 'month'))
+        await userEvent.click(option(left(), '3 day'))
+        await waitFor(() => expect(pressedPeriod(left())).toBe('3 day'))
+        expect(pressedPeriod(right), 'the right calendar took the left one\'s pick').toBe('month')
+        // The grids, not only the switchers: each pane renders the period its own bar shows.
+        await waitFor(() => expect(monthGrid(right)).toBeTruthy())
+        expect(monthGrid(left()), 'the left grid is not the 3 day grid').toBeNull()
+
+        await userEvent.click(canvas.getByTestId('toggle-left'))
+        await waitFor(() => expect(pressedPeriod(left())).toBeUndefined())
+        await userEvent.click(canvas.getByTestId('toggle-left'))
+        await waitFor(() => expect(pressedPeriod(left())).toBe('3 day'))
+        expect(monthGrid(left())).toBeNull()
+        expect(pressedPeriod(right)).toBe('month')
+        expect(monthGrid(right)).toBeTruthy()
     },
 }

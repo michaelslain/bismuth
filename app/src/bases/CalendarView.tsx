@@ -4,6 +4,11 @@ import { viewMode } from '../../../core/src/bases/types'
 import CalendarFrame from '../calendar/components/CalendarFrame'
 import EventsCalendar from './EventsCalendar'
 import TasksCalendar from './TasksCalendar'
+import {
+    CalendarNavContext,
+    useCalendarNav,
+    type CalendarNav,
+} from '../calendar/state'
 
 /**
  * Calendar view type — one Bases view kind with two registers, gated on `mode: 'normal' |
@@ -28,56 +33,63 @@ export function CalendarView(props: {
     /** Opens the base's generic settings panel (kind, filters, source) — reachable from the
      *  calendar's own settings modal, whose gear the bar routes here instead. */
     onOpenBaseSettings?: () => void
+    /** This calendar's own period and date. Omitted, it reads the fallback nav that stories
+     *  seed through `currentView` / `currentDate`. */
+    nav?: CalendarNav
 }) {
     // `props.result` only exists for the tasks register (BaseView's `result()` memo
     // skips computing it for an events calendar — see fullPane() there).
     const isTasks = () =>
         props.result ? viewMode(props.result.view) === 'tasks' : false
 
+    const nav = props.nav ?? useCalendarNav()
+
     return (
-        <CalendarFrame>
-            {/* No <Toolbar /> here any more — the calendar contributes SLOTS to the host's
-                <ViewBar> regions (see `calendarSlots()` in calendar/components/Toolbar.tsx), so a
-                calendar base shows one bar instead of two stacked ones. The import stays gone rather
-                than being kept "just in case": a second call site is exactly how the two bars
-                appeared. */}
-            <Show
-                when={isTasks()}
-                fallback={
-                    // Keyed on `basePath` so switching from one events calendar straight to
-                    // another REMOUNTS EventsCalendar instead of reusing it — otherwise its
-                    // `backend`/`store` (built once at mount from `props.basePath`) stay bound
-                    // to the FIRST calendar's file, and a later save would write into the wrong
-                    // one. See CalendarView.tsx's own comment on `EventsCalendar` above.
-                    <Show
-                        when={props.basePath}
-                        keyed
-                        fallback={
-                            <EventsCalendar
-                                onChange={props.onChange}
-                                onOpenBaseSettings={props.onOpenBaseSettings}
-                            />
-                        }
-                    >
-                        {basePath => (
-                            <EventsCalendar
-                                basePath={basePath}
-                                onChange={props.onChange}
-                                onOpenBaseSettings={props.onOpenBaseSettings}
-                            />
-                        )}
-                    </Show>
-                }
-            >
-                <TasksCalendar
-                    result={props.result}
-                    config={props.config}
-                    basePath={props.basePath}
-                    ownsRows={props.ownsRows ?? false}
-                    onOpenBaseSettings={props.onOpenBaseSettings}
-                    onChange={props.onChange}
-                />
-            </Show>
-        </CalendarFrame>
+        <CalendarNavContext.Provider value={nav}>
+            <CalendarFrame>
+                {/* No <Toolbar /> here any more — the calendar contributes SLOTS to the host's
+                    <ViewBar> regions (see `calendarSlots()` in calendar/components/Toolbar.tsx), so a
+                    calendar base shows one bar instead of two stacked ones. The import stays gone rather
+                    than being kept "just in case": a second call site is exactly how the two bars
+                    appeared. */}
+                <Show
+                    when={isTasks()}
+                    fallback={
+                        // Keyed on `basePath` so switching from one events calendar straight to
+                        // another REMOUNTS EventsCalendar instead of reusing it — otherwise its
+                        // `backend`/`store` (built once at mount from `props.basePath`) stay bound
+                        // to the FIRST calendar's file, and a later save would write into the wrong
+                        // one. See CalendarView.tsx's own comment on `EventsCalendar` above.
+                        <Show
+                            when={props.basePath}
+                            keyed
+                            fallback={
+                                <EventsCalendar
+                                    onChange={props.onChange}
+                                    onOpenBaseSettings={props.onOpenBaseSettings}
+                                />
+                            }
+                        >
+                            {basePath => (
+                                <EventsCalendar
+                                    basePath={basePath}
+                                    onChange={props.onChange}
+                                    onOpenBaseSettings={props.onOpenBaseSettings}
+                                />
+                            )}
+                        </Show>
+                    }
+                >
+                    <TasksCalendar
+                        result={props.result}
+                        config={props.config}
+                        basePath={props.basePath}
+                        ownsRows={props.ownsRows ?? false}
+                        onOpenBaseSettings={props.onOpenBaseSettings}
+                        onChange={props.onChange}
+                    />
+                </Show>
+            </CalendarFrame>
+        </CalendarNavContext.Provider>
     )
 }
