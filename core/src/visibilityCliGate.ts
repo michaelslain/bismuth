@@ -236,6 +236,8 @@ const PATH_SCOPED_COMMANDS = new Set([
     'mkdir',
     'prop',
     'render',
+    // `ocr` reads one PDF or image and writes its text layer, or a `<name>.ocr.md` beside it.
+    'ocr',
 ])
 
 /** Tier B2 — lists, searches or aggregates vault content, so it cannot be judged from argv alone,

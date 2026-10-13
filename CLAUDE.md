@@ -174,6 +174,7 @@ They override framework habits, and most violations compile, render and pass tes
 | feedback page, `bismuth feedback`, the hosted relay in `services/feedback/` | `docs/overview/feedback.md` |
 | visibility (what agents may read) | `docs/vault/visibility.md` |
 | vault semantic search, embeddings switch | `docs/vault/semantic-search.md` |
+| OCR of PDFs and images, `bismuth ocr`, the `ocr` MCP tool | `docs/vault/ocr.md` |
 | mobile | `docs/mobile/overview.md` |
 | on-disk layout | `docs/overview/storage.md` |
 

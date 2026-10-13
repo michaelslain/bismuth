@@ -3,7 +3,7 @@ import { tempDir, sweepTempDirs } from './tempDirs'
 import { writeFileSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
-import { handleCallTool, doctorCliArgs, server, ALL_TOOL_NAMES } from '../src/server'
+import { handleCallTool, doctorCliArgs, ocrCliArgs, OCR_TIMEOUT_MS, server, ALL_TOOL_NAMES } from '../src/server'
 
 // Reviewer's point: reverting just the one-line `bismuth_cli`/`bismuth_cli_help` wiring in
 // server.ts (while leaving cliToolResult/cliHelp themselves intact) passed every test in
@@ -74,6 +74,7 @@ test('outside a daemon-enabled vault the server lists exactly the eight always-o
             'bismuth_doctor',
             'vault_map',
             'brain',
+            'ocr',
             'bismuth_cli',
             'bismuth_cli_help',
         ])
@@ -101,7 +102,7 @@ test('remember type description lists profile and hub', () => {
 test('ALL_TOOL_NAMES covers the always-on, memory and daemon tools with no duplicates', () => {
     expect(new Set(ALL_TOOL_NAMES).size).toBe(ALL_TOOL_NAMES.length)
     expect(ALL_TOOL_NAMES).toEqual(expect.arrayContaining(['bismuth_doctor', 'remember', 'recall', 'forget', 'daemon_status', 'page_resolve']))
-    expect(ALL_TOOL_NAMES).toHaveLength(8 + 3 + 11)
+    expect(ALL_TOOL_NAMES).toHaveLength(9 + 3 + 11)
 })
 
 test('doctorCliArgs: no input is a bare json report', () => {
@@ -220,3 +221,21 @@ test('vault_map and brain outside any vault say so without erroring', async () =
         if (origMem !== undefined) process.env.BISMUTH_MEMORY_DIR = origMem
     }
 }, 60_000)
+
+test('ocrCliArgs maps every input to its CLI flag and pins the vault', () => {
+    expect(ocrCliArgs({ path: 'p/x.pdf' }, '/v')).toEqual(['ocr', 'p/x.pdf', '--vault', '/v'])
+    expect(
+        ocrCliArgs({ path: 'x.pdf', math: true, force: true, replace: true, lang: 'eng+deu', pages: '1-3' }, '/v'),
+    ).toEqual(['ocr', 'x.pdf', '--math', '--force', '--replace', '--lang', 'eng+deu', '--pages', '1-3', '--vault', '/v'])
+    expect(ocrCliArgs({ path: 'x.pdf', math: false, lang: '', pages: '' }, '/v')).toEqual(['ocr', 'x.pdf', '--vault', '/v'])
+})
+
+test('ocr outlives bismuth_cli by minutes', () => {
+    expect(OCR_TIMEOUT_MS).toBeGreaterThan(10 * 60_000)
+})
+
+test('dispatching ocr without a path is an error, not a CLI run', async () => {
+    const result = await callTool('ocr', {})
+    expect(result.isError).toBe(true)
+    expect(result.content[0]).toMatchObject({ text: 'ocr needs a path.' })
+})

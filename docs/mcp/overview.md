@@ -31,10 +31,11 @@ An agent runs the same search with `bismuth_docs_search`, then `bismuth_docs_rea
 | `bismuth_doctor` | `fix?`, `safeOnly?`, `only?`, `section?`, `vault?` | The `bismuth doctor --json` report: leftovers from older builds, version skew, pending migrations. `fix: true` repairs |
 | `vault_map` | `folder?`, `around?` | The `bismuth map` output: folders, clusters, hub notes, tags and surfaces; `around: <note>` returns where one note sits (links, siblings, memories) |
 | `brain` | none | The `bismuth brain` output: who the agent works with, the vault map and the memory index |
+| `ocr` | `path`, `math?`, `force?`, `lang?`, `pages?`, `replace?` | The `bismuth ocr` result: a PDF's text layer added in place, and with `math: true` (or for an image) a `<name>.ocr.md` transcription with LaTeX math. See [OCR](../vault/ocr.md) |
 | `bismuth_cli` | `args: string[]` | stdout, stderr and exit code of the `bismuth` CLI, for example `["task","list","--vault","…"]` |
 | `bismuth_cli_help` | `group?` | The CLI reference, all commands or one group such as `daemon` |
 
-Every vault feature rides `bismuth_cli`: notes, search, tasks, bases, flashcards, settings, calendar events, and so on. There are no per-feature tools, so a new CLI command is available to agents the moment it ships. [The CLI reference](../cli/reference.md) lists every command. `bismuth_doctor` takes `section` values `legacy`, `install`, `daemon`, `runtime`, `vault` and `backends`; if Bismuth misbehaves after an update (missing CLI, stale MCP, daemon not running), run it first.
+Every vault feature rides `bismuth_cli`: notes, search, tasks, bases, flashcards, settings, calendar events, and so on, so a new CLI command is available to agents the moment it ships. `ocr` is the one per-feature tool, because OCR of a long PDF outlasts `bismuth_cli`'s timeout; it waits up to 30 minutes. [The CLI reference](../cli/reference.md) lists every command. `bismuth_doctor` takes `section` values `legacy`, `install`, `daemon`, `runtime`, `vault` and `backends`; if Bismuth misbehaves after an update (missing CLI, stale MCP, daemon not running), run it first.
 
 A tool call that the CLI answers with a non-zero exit comes back as an error, including a refusal by the vault's visibility settings. `bismuth_cli` times out after 30 seconds.
 

@@ -478,6 +478,16 @@ An id that matches nothing, or an index out of range, fails with the valid value
 
 For an agent, a hidden template makes `note new --template` fail with `refused: that template is not visible to this agent`, and a missing template gives the same message so names do not leak. A hidden default template yields a blank note and a `warning:` line on stderr.
 
+## ocr
+
+Gives a PDF a selectable text layer, and transcribes a PDF or image into a note with math as LaTeX. Headless; it drives `ocrmypdf` and Marker installed on the machine. Engines, output and failure modes are in [OCR](../vault/ocr.md).
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `ocr` | `<file> [--math] [--force] [--lang <codes>] [--pages <spec>] [--replace] [--vault <dir>]` | Adds the text layer to a PDF in place; `--math`, or any image, also writes `<name>.ocr.md`. Prints `{ok, path, layer?, note?, engine?}`. | no |
+
+`ocr` refuses with `EEXIST` when `<name>.ocr.md` exists, unless `--replace` is given. The MCP tool `ocr` runs this command with a 30-minute timeout. `ocr` is path-scoped.
+
 ## page
 
 Manages the daemon inbox, the pages under `<vault>/.daemon/pages`. All four commands work on files. Page format and states are in [daemon pages](../daemon/pages.md).
@@ -643,6 +653,7 @@ The visibility gate in `core/src/visibilityCliGate.ts` runs once in `index.ts` b
 Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `call` attaches the owner token and turns failures into messages.
 The run registry is `core/src/runRegistry.ts`.
 `history` parses each session log with `memory/src/sessionHistory.ts`, which reuses the turn folding in `memory/src/transcript.ts`.
+`cli/src/ocr.ts` builds the engine argv for `ocr`.
 `cli/src/semantic.ts` serves the semantic commands: it posts to `/search/semantic` on the vault's running server, and falls back to `core/src/vaultEmbed.ts` in process.
 
-Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`
+Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`

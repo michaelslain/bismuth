@@ -13,6 +13,7 @@ export const CLI_TWINS: Record<string, string | null> = {
     bismuth_doctor: 'doctor',
     vault_map: 'map',
     brain: 'brain',
+    ocr: 'ocr',
     bismuth_cli: null,
     bismuth_cli_help: null,
     // daemon-gated: memory

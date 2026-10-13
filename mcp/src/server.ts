@@ -151,6 +151,43 @@ const tools = [
         },
     },
     {
+        name: 'ocr',
+        description:
+            "OCR a vault PDF or image. A PDF gets a selectable, highlightable text layer in place; math:true also transcribes it, math as LaTeX, to <name>.ocr.md beside it; an image always gets that note. Minutes on a long file. (bismuth ocr)",
+        inputSchema: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: "Vault-relative PDF or image, e.g. 'papers/x.pdf'.",
+                },
+                math: {
+                    type: 'boolean',
+                    description:
+                        'Also write <name>.ocr.md: markdown with $LaTeX$ math (Marker).',
+                },
+                force: {
+                    type: 'boolean',
+                    description:
+                        'OCR every page even where text exists; for a garbage text layer. Grows the PDF.',
+                },
+                lang: {
+                    type: 'string',
+                    description: "Tesseract languages, e.g. 'eng+deu'. Default eng.",
+                },
+                pages: {
+                    type: 'string',
+                    description: "1-based pages, e.g. '1-3,7'. Default all.",
+                },
+                replace: {
+                    type: 'boolean',
+                    description: 'Rewrite an existing <name>.ocr.md.',
+                },
+            },
+            required: ['path'],
+        },
+    },
+    {
         name: 'bismuth_cli',
         description:
             "Run the bismuth CLI with these args (e.g. ['task','list','--vault','/path']). Returns stdout/stderr/exit code.",
@@ -312,6 +349,21 @@ export function doctorCliArgs(a: Record<string, unknown>): string[] {
     return argv
 }
 
+/** OCR runs Marker's models over every page, far past bismuth_cli's 30 s. */
+export const OCR_TIMEOUT_MS = 30 * 60_000
+
+/** PURE: the CLI argv an ocr call runs against `vault`. */
+export function ocrCliArgs(a: Record<string, unknown>, vault: string): string[] {
+    const argv = ['ocr', String(a.path ?? '')]
+    if (a.math === true) argv.push('--math')
+    if (a.force === true) argv.push('--force')
+    if (a.replace === true) argv.push('--replace')
+    if (typeof a.lang === 'string' && a.lang.length > 0) argv.push('--lang', a.lang)
+    if (typeof a.pages === 'string' && a.pages.length > 0) argv.push('--pages', a.pages)
+    argv.push('--vault', vault)
+    return argv
+}
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools,
 }))
@@ -394,6 +446,17 @@ export async function handleCallTool(
                 const argv =
                     name === 'brain' ? ['brain'] : vaultMapCliArgs(args)
                 return cliToolResult(await runCli(repoRoot, [...argv, '--vault', root]))
+            }
+            case 'ocr': {
+                if (typeof args.path !== 'string' || args.path.length === 0)
+                    return textResult('ocr needs a path.', true)
+                const root = daemonVaultRoot()
+                if (!root) return textResult('Not in a Bismuth vault: ocr needs one.', true)
+                return cliToolResult(
+                    await runCli(repoRoot, ocrCliArgs(args, root), {
+                        timeoutMs: OCR_TIMEOUT_MS,
+                    }),
+                )
             }
             case 'bismuth_cli': {
                 const cliArgs = Array.isArray(args.args)

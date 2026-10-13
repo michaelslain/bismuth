@@ -22,7 +22,7 @@ import {
 } from './fileKinds'
 
 /** Resolve a vault-relative path to an absolute path, throwing if it escapes the vault root. */
-function resolveInVault(root: string, rel: string): string {
+export function resolveInVault(root: string, rel: string): string {
     const rootAbs = resolve(root)
     const abs = resolve(rootAbs, rel)
     if (abs !== rootAbs && !abs.startsWith(rootAbs + sep)) {
