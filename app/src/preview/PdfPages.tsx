@@ -116,6 +116,9 @@ export type PdfPagesProps = {
     /** When set, the loaded document survives unmount in a session cache keyed by this string,
      *  so a remount with the same key skips fetch + parse and paints its last frame at once. */
     cacheKey?: string
+    /** PDF dark mode: every page raster renders inverted + hue-rotated (PdfPageCanvas). The
+     *  scratch strip beside a page is not a page and keeps its own ground. */
+    dark?: boolean
     /** Applied once per loaded document, as soon as the scroll element is measured. */
     initialPosition?: PdfPosition
     /** Fires on every scroll of the ready scroll element and after a jump or restore. Never fires
@@ -763,6 +766,7 @@ function PdfPages(props: PdfPagesProps) {
                                                 pdfjs={() => pdfjs}
                                                 stash={stash()}
                                                 scrolling={scrolling}
+                                                dark={() => props.dark ?? false}
                                             />
                                         </Show>
                                         <Show when={box().marginW > 0}>

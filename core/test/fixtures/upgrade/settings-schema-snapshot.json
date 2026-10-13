@@ -75,6 +75,13 @@
     "max": 1,
     "required": false
   },
+  "appearance.pdfDarkMode": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.proseFont": {
     "type": {
       "kind": "enum",

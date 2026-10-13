@@ -140,6 +140,7 @@ These are the built-in commands, grouped by area. `COMMAND_CATALOG` in `core/src
 | `move-sidebar-side` | Move sidebar to other side | `Columns2` |  |
 | `move-tab-rail-side` | Move tab rail to other side | `Columns2` |  |
 | `toggle-status-bar` | Toggle status bar | `PanelBottom` |  |
+| `toggle-pdf-dark-mode` | Toggle PDF dark mode default | `Moon` |  |
 | `zoom-in` | Zoom In | `ZoomIn` |  |
 | `zoom-out` | Zoom Out | `ZoomOut` |  |
 | `zoom-reset` | Reset Zoom | `RotateCcw` |  |

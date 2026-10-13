@@ -197,6 +197,11 @@ export const SETTINGS_SCHEMA: Schema = {
             max: 2,
             doc: 'Text cursor blink cycle (seconds), shared by every cursor in the app.',
         },
+        pdfDarkMode: {
+            type: 'boolean',
+            default: false,
+            doc: 'Default PDF dark mode, for a PDF you have not set yourself: pages render inverted (invert 100%, hue-rotate 180deg), so a white page turns dark while colours keep their hue. The moon button in the PDF bar sets one PDF and remembers it in that PDF\'s .draw sidecar. Also toggled by the "Toggle PDF dark mode default" command.',
+        },
     }),
     graph: object({
         spin: {

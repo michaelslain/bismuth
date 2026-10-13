@@ -84,6 +84,9 @@ export interface DrawingDoc {
     bookmarks?: Bookmark[]
     /** In-place PDF drawing margin (a binary's sidecar only). */
     margin?: PageMargin
+    /** PDF dark mode for this one file (a binary's sidecar only). Absent = follow the
+     *  `appearance.pdfDarkMode` default; `false` keeps a file light under a dark default. */
+    dark?: boolean
 }
 // `border`/`borderSoft` feed the paper ground (grid/dot/ruled) so it tracks the theme's
 // own hairline tokens (bismuth-design/ascii-extended/PORTING.md §2c) instead of a derived wash.

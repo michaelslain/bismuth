@@ -55,3 +55,15 @@
        how it reads. Named + tokenized (not a literal) per the token-literals sweep, task 1. */
     border-radius: var(--r-mark);
 }
+
+/* PDF dark mode (PdfPageCanvas's `.pdf-canvas-dark`): the page raster is shown inverted, so
+   multiply would only darken black paper and the mark would vanish. Screen is multiply's dual for
+   a dark page: over black paper it lays down the highlight's own colour at this alpha (a clear
+   tint), and over a white glyph it leaves white, so the text stays the brightest thing on the
+   line. The colour is NOT inverted with the page: an inverted yellow is a near-black brown that
+   reads as no highlight at all on black. Where the blend is dropped (WebKit), the rect is plain
+   source-over at this alpha: a pale wash over the glyph, still legible. */
+.rect-dark {
+    mix-blend-mode: screen;
+    opacity: 0.4;
+}

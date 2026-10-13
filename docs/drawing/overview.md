@@ -71,9 +71,22 @@ A PDF's preview bar adds three more tools, each saved in the same `<file>.draw` 
 | **Scratch paper** | Adds a drawable strip to the right of every page, or removes it |
 | **Bookmarks** | Opens a right-hand panel with your bookmarks (add the current page, jump, rename, delete) above the PDF's own outline |
 
-The bar also shows the current page (click it to type a page number), the zoom controls and a `fit` button that returns to fit-to-width. In the desktop app it adds open-in-default-app and reveal-in-file-manager buttons. Narrow panes drop the zoom steps and file actions first; the highlight, draw, scratch and bookmark controls stay at every width.
+The bar also shows the current page (click it to type a page number), the zoom controls and a `fit` button that returns to fit-to-width. In the desktop app it adds open-in-default-app and reveal-in-file-manager buttons. Narrow panes drop the zoom steps, the dark-mode moon and the file actions first; the highlight, draw, scratch and bookmark controls stay at every width.
 
 An outline entry whose destination cannot be resolved shows dimmed and does nothing. Highlights default to yellow. Highlighting a selection that overlaps or touches an existing highlight on the same line extends that highlight into one mark, joining their text, instead of stacking a second mark on the shared words.
+
+## Read a PDF in dark mode
+
+PDF dark mode shows a PDF's pages inverted with their hues kept: white paper turns black, black text turns white, and a red figure stays red. Press the moon button in a PDF's preview bar to switch that PDF; the choice is remembered for that PDF alone, so it opens the same way next time. The moon stays disabled until the sidecar has loaded.
+
+The choice is saved in the PDF's `<file>.pdf.draw` sidecar, beside its highlights, and undoes with Mod+Z like the scratch strip. The PDF itself is untouched. A PDF you have never switched follows the default in `.settings`, which the **Toggle PDF dark mode default** command also flips:
+
+```yaml
+appearance:
+  pdfDarkMode: true
+```
+
+In dark mode, highlights show as a tint behind the white text, pen ink in the default colour turns light, and the scratch paper strip keeps its own ground.
 
 ## Read a PDF's highlights from the shell or an agent
 
@@ -112,6 +125,7 @@ The header line holds these keys.
 | `pageCount` | `number` | How many pages the drawing has, empty ones included. A non-negative integer |
 | `bookmarks` | `Bookmark[]?` | Image and PDF sidecars only |
 | `margin` | `{ right: number }?` | Image and PDF sidecars only |
+| `dark` | `boolean?` | PDF sidecars only |
 
 Any other top-level key in the header is kept when the file is read and rewritten.
 
@@ -157,13 +171,14 @@ Images on a page are `{ src, x, y, w, h }`. `src` is a `data:image/...;base64,..
 
 ### Highlights, bookmarks and margin
 
-An image or PDF sidecar can carry three extra fields.
+An image or PDF sidecar can carry these extra fields.
 
 | Field | Shape | Notes |
 |---|---|---|
 | A page line's `highlights` | `{ id, c, rects, text? }[]` | `rects` are one `{x, y, w, h}` per line of selected text, in page units. `c` is a hex colour or `"hl"` for the default yellow |
 | `bookmarks` | `{ id, page, label }[]` | `page` is 0-based; `label` defaults to `Page N` |
 | `margin` | `{ right }` | Strip width as a fraction of the page's rendered width, clamped to 0..2. Turning the strip on sets 0.4; turning it off removes the key |
+| `dark` | `boolean` | This PDF's dark mode, written by the moon button. `false` keeps the PDF light under a dark `appearance.pdfDarkMode` default; an absent key follows that default |
 
 The PDF's outline is not stored; it is read from the PDF each time.
 
@@ -231,6 +246,8 @@ Decoded images are cached module-wide in an LRU of 32 entries, shared by every c
 
 The margin strip paints in two passes (`paintSplit`): each stroke against the page's colour bucket, and against the strip's dark bucket when a strip exists, split at `box.x + box.w`. `PdfPages` lays a page and its strip out together inside the zoom width.
 
+PDF dark mode is CSS only. `PreviewView` reads it with `darkOf` (`core/src/drawing/pageDark.ts`): the sidecar's `dark` flag, else `appearance.pdfDarkMode`; the moon writes the flag with `setDark` through the annotation store. `PdfPageCanvas` puts `filter: invert(1) hue-rotate(180deg)` on each page canvas, so the stashed raster and the text layer stay as rendered. `HighlightLayer` switches its rects from `multiply` to `screen` at a lower alpha, because multiply over black paper paints nothing. `PageInk` resolves page ink against the dark bucket instead of the light one.
+
 PDF documents are cached by vault path (`pdfDocCache.ts`, 3 documents) and share one pdf.js worker. A raster stash keeps the last 4 rendered (page, width) canvases so a remounted tab paints instantly. An SSE change that names the exact path invalidates an entry; a sidecar's own edits do not evict its PDF. `PdfPages` keeps the reader's place (page and fraction under the viewport's middle) across reflows. Zoom (`zoomGesture.ts`, `createPreviewZoom.ts`) treats a Chrome-style pinch as ctrl+wheel with factor `exp(-deltaY x 0.01)`, clamps a wheel notch to about 1.3x, handles Safari `gesture*` events for WKWebView, and keeps the point under the pointer fixed. The zoom buttons glide for 160 ms, and a page re-renders sharp once its size has held still for 140 ms. While the page stack scrolls, a page that comes into view paints its raster but builds its selectable text layer only once 150 ms pass with no scroll event, and the stack's per-page visibility checks re-run only when a page enters or leaves the rendered window. An image zooms from fit up to 8x.
 
 Scratch notes: `createCompanionStore.ts` is the one owner of a binary's companion note while its preview is open. Tags (`CompanionFrontmatter`) and blocks (`ScratchTextLayer`) both write through it, with one debounced write and one conflict-reload path, so neither drops the other's content. `core/src/scratchNotes.ts` parses and writes the block regions. Only pages within two of the current page mount a block editor.
@@ -255,4 +272,4 @@ The browser export pane rasterises with `app/src/export/drawingRaster.ts`, which
 - A stored `images[0]` box wins over a fit computed from the source's natural size, because the strokes were drawn against it.
 - `PaneContent.tsx` matches the `.draw` route before the preview route, so a sidecar such as `photo.png.draw` opened directly opens as a drawing.
 
-Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/render2d.ts`, `core/src/drawing/export.ts`, `core/src/drawing/pageInk.ts`, `core/src/drawing/pageHighlights.ts`, `core/src/drawing/pageBookmarks.ts`, `core/src/drawing/pageMargin.ts`, `core/src/scratchNotes.ts`, `core/src/fileKinds.ts`, `core/src/theme/tokens.ts`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/store.ts`, `app/src/drawing/input.ts`, `app/src/preview/PageInk.tsx`, `app/src/preview/createAnnotationStore.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/PreviewBar.tsx`, `app/src/preview/pdfDocCache.ts`, `app/src/preview/PdfPages.tsx`, `app/src/preview/PdfPageCanvas.tsx`, `app/src/PreviewView.tsx`, `app/src/export/drawingRaster.ts`, `app/src/export/inkHtml.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`
+Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/render2d.ts`, `core/src/drawing/export.ts`, `core/src/drawing/pageInk.ts`, `core/src/drawing/pageHighlights.ts`, `core/src/drawing/pageBookmarks.ts`, `core/src/drawing/pageMargin.ts`, `core/src/drawing/pageDark.ts`, `core/src/scratchNotes.ts`, `core/src/fileKinds.ts`, `core/src/theme/tokens.ts`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/store.ts`, `app/src/drawing/input.ts`, `app/src/preview/PageInk.tsx`, `app/src/preview/createAnnotationStore.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/PreviewBar.tsx`, `app/src/preview/pdfDocCache.ts`, `app/src/preview/PdfPages.tsx`, `app/src/preview/PdfPageCanvas.tsx`, `app/src/preview/HighlightLayer.tsx`, `app/src/PreviewView.tsx`, `app/src/export/drawingRaster.ts`, `app/src/export/inkHtml.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`

@@ -93,6 +93,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'move-sidebar-side', label: 'Move sidebar to other side', icon: 'Columns2' },
     { id: 'move-tab-rail-side', label: 'Move tab rail to other side', icon: 'Columns2' },
     { id: 'toggle-status-bar', label: 'Toggle status bar', icon: 'PanelBottom' },
+    { id: 'toggle-pdf-dark-mode', label: 'Toggle PDF dark mode default', icon: 'Moon' },
     {
         id: 'daemon-owner',
         label: 'Set daemon owner device…',

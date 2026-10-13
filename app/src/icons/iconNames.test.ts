@@ -9,11 +9,11 @@
 import { test, expect } from 'bun:test'
 import { ICON_NAMES } from './iconNames'
 
-test('exactly 142 canonical names', () => {
+test('exactly 143 canonical names', () => {
     // Absolute, not a lower bound — plan §10's whole coverage table (133/140, 135/140 etc.) is
     // measured against this exact figure, so a silent add/drop here invalidates every percentage
     // quoted in the plan and in iconMap.ts's comments without any test noticing.
-    expect(ICON_NAMES.length).toBe(142)
+    expect(ICON_NAMES.length).toBe(143)
 })
 
 test('every name is unique', () => {

@@ -17,18 +17,18 @@ test('every canonical name is covered exactly once — mapped XOR declared missi
     expect({ uncovered, both }).toEqual({ uncovered: [], both: [] })
 })
 
-test('ICON_MAP has no stray entries beyond the canonical 142', () => {
+test('ICON_MAP has no stray entries beyond the canonical 143', () => {
     const names = new Set(ICON_NAMES)
     const stray = Object.keys(ICON_MAP).filter(n => !names.has(n))
     expect(stray).toEqual([])
 })
 
-test('counts: 140 slug entries, 2 custom, 0 known-missing', () => {
+test('counts: 141 slug entries, 2 custom, 0 known-missing', () => {
     const entries = Object.values(ICON_MAP)
-    expect(entries.filter(e => e.kind === 'slug').length).toBe(140)
+    expect(entries.filter(e => e.kind === 'slug').length).toBe(141)
     expect(entries.filter(e => e.kind === 'custom').length).toBe(2)
     expect(KNOWN_MISSING.length).toBe(0)
-    // 140 + 2 + 0 === 142, the whole canonical set, asserted directly rather than trusting addition.
+    // 141 + 2 + 0 === 143, the whole canonical set, asserted directly rather than trusting addition.
     expect(entries.length + KNOWN_MISSING.length).toBe(ICON_NAMES.length)
 })
 

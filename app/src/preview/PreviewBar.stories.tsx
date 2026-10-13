@@ -32,6 +32,8 @@ type HarnessProps = {
     imageSize?: { w: number; h: number }
     /** A PDF → markdown conversion already running. */
     converting?: boolean
+    /** PDF dark mode on. */
+    dark?: boolean
 }
 
 /** A live bar: every toggle flips its own signal, so a play() can press it and read the result. */
@@ -43,6 +45,7 @@ function Harness(props: HarnessProps): JSX.Element {
     const [scratch, setScratch] = createSignal(props.scratch ?? false)
     const [panel, setPanel] = createSignal(props.panel ?? false)
     const [converting, setConverting] = createSignal(props.converting ?? false)
+    const [dark, setDark] = createSignal(props.dark ?? false)
     return (
         <div style={{ width: `${props.width}px` }} data-testid="bar-frame">
             <PreviewBar
@@ -62,6 +65,8 @@ function Harness(props: HarnessProps): JSX.Element {
                 onHighlight={() => setArmed(v => !v)}
                 scratchOn={scratch}
                 onToggleScratch={() => setScratch(v => !v)}
+                darkOn={dark}
+                onToggleDark={() => setDark(v => !v)}
                 drawKey={() => 'Mod+Shift+D'}
                 panelOpen={panel}
                 onTogglePanel={() => setPanel(v => !v)}
@@ -108,7 +113,7 @@ export const Pdf: Story = {
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
         const canvas = within(bar)
-        const p = expectCalm(bar, 3, 2)
+        const p = expectCalm(bar, 4, 2)
         await expect(p.frames, 'accent frames at rest').toBe(0)
         await expect(p.selectedCount, 'selected controls at rest').toBe(0)
         const fit = canvas.getByLabelText('Fit width')
@@ -125,7 +130,7 @@ export const Pdf: Story = {
         await expect(probeBar(bar).frames, 'accent frames, scratch on + bookmarks open').toBe(0)
         await expect(probeBar(bar).selectedCount, 'scratch on + bookmarks open').toBe(2)
         // Toggling on never moves anything: no frame is drawn, so nothing shifts.
-        expectCalm(bar, 3, 2)
+        expectCalm(bar, 4, 2)
         await fireEvent.click(scratch)
         await fireEvent.click(bookmarks)
         await waitFor(() => expect(probeBar(bar).selectedCount).toBe(0))
@@ -168,7 +173,7 @@ export const PdfModesOn: Story = {
     render: () => <Harness width={1000} kind="pdf" draw scratch panel />,
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
-        const p = expectCalm(bar, 3, 2)
+        const p = expectCalm(bar, 4, 2)
         await expect(p.frames, 'accent frames').toBe(0)
         await expect(p.selectedCount).toBe(3)
         for (const label of ['Draw', 'Scratch paper', 'Bookmarks']) {
@@ -177,6 +182,22 @@ export const PdfModesOn: Story = {
         await expect(within(bar).getByLabelText('Highlight text').getAttribute('aria-pressed')).toBe(
             'false',
         )
+    },
+}
+
+/** Dark mode on: the moon is the one selected control, in its own group after the annotate
+ *  tools, and pressing it turns it off again. */
+export const PdfDarkOn: Story = {
+    render: () => <Harness width={1000} kind="pdf" dark />,
+    play: async ({ canvasElement }) => {
+        const bar = barOf(canvasElement)
+        const moon = within(bar).getByLabelText('Dark mode')
+        await expect(moon.getAttribute('aria-pressed')).toBe('true')
+        await expect(probeBar(bar).selectedCount).toBe(1)
+        await expect(probeBar(bar).frames).toBe(0)
+        await fireEvent.click(moon)
+        await waitFor(() => expect(moon.getAttribute('aria-pressed')).toBe('false'))
+        await expect(probeBar(bar).selectedCount).toBe(0)
     },
 }
 
@@ -326,7 +347,7 @@ export const WithNativeActions: Story = {
     render: () => <Harness width={1000} kind="pdf" native />,
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
-        const p = expectCalm(bar, 4, 2)
+        const p = expectCalm(bar, 5, 2)
         await expect(p.frames).toBe(0)
         const open = within(bar).getByLabelText('Open in default app')
         const draw = within(bar).getByLabelText('Draw')

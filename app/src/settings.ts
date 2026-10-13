@@ -50,6 +50,7 @@ export interface Settings {
         cursorWidth: number // px — the one text cursor, everywhere
         cursorGlideMs: number // ms
         cursorBlinkSeconds: number // s
+        pdfDarkMode: boolean // default PDF dark mode; each PDF's sidecar `dark` flag wins
     }
     graph: {
         spin: boolean

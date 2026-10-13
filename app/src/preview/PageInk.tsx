@@ -102,6 +102,9 @@ export type PageInkProps = {
     /** The sidecar's owner, when one already exists (e.g. PreviewView also drives highlights or
      *  bookmarks off it). Absent means this component creates its own — see the header. */
     store?: AnnotationStore
+    /** PDF dark mode: the page renders dark, so ink on the page proper resolves against the dark
+     *  bucket (light ink), like the strip. */
+    darkPage?: () => boolean
 }
 
 // Tool choice follows the user across previews for the session, like note ink's.
@@ -179,7 +182,7 @@ function PageInk(props: PageInkProps) {
     // stroke twice, clipped to each region, rather than picking one bucket per stroke, so a single
     // stroke that crosses from page onto strip renders in both colours at once, split exactly
     // where the geometry itself splits.
-    const theme = () => themeColors('light')
+    const theme = () => themeColors(props.darkPage?.() ? 'dark' : 'light')
     const stripTheme = () => themeColors('dark')
     const dpr = () => Math.min(window.devicePixelRatio || 1, DPR_CAP)
 

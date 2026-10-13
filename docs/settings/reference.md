@@ -52,6 +52,7 @@ Theme, logo mark, fonts, sizes and the text cursor. The theme is the single sour
 | `cursorWidth` | number | `2` | 1 to 4 | Text cursor width in px, in every editor, field and terminal. |
 | `cursorGlideMs` | number | `70` | 20 to 200 | Cursor glide between positions, in ms. |
 | `cursorBlinkSeconds` | number | `1.2` | 0.6 to 2 | Cursor blink cycle in seconds. |
+| `pdfDarkMode` | boolean | `false` | | Default dark mode for a PDF you have not switched yourself: pages show inverted with their hues kept (`invert(1) hue-rotate(180deg)`). The moon button in the PDF bar sets one PDF and remembers it in that PDF's sidecar; the `toggle-pdf-dark-mode` command flips this default. See [PDF dark mode](../drawing/overview.md#read-a-pdf-in-dark-mode). |
 | `tokens` | map | `{}` | token name to value | Per-vault design-token overrides, applied over the selected theme. |
 
 `tokens` maps a token key (the CSS variable name without `--`) to a value:

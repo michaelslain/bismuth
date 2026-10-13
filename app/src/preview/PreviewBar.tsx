@@ -5,7 +5,7 @@
 //
 //   identity  file icon + filename (ellipsizes first, never vanishes)
 //   readouts  p. N / M (pdf) + `// converting to markdown` while it runs // W × H (image)
-//   config    [− 100% + fit]   [highlight draw scratch]    pdf  ·  [− 100% + fit] [draw] on an image
+//   config    [− 100% + fit]   [highlight draw scratch]   [dark]   pdf  ·  [− 100% + fit] [draw] on an image
 //   actions   [to markdown] [bookmarks]  [open-externally reveal]   pdf only · file actions Tauri
 //
 // GROUPS ARE SPACING, NOT DIVIDERS. Inside a group controls sit at `--bar-icon-gap` — the annotate
@@ -15,13 +15,14 @@
 // hand-rolled margins (see PreviewBar.module.css).
 //
 // ONE THING MEANS ONE THING. Only a toggle that is ON renders `variant="selected"` (HIGHLIGHT while
-// armed, DRAW, SCRATCH, BOOKMARKS) — accent brackets + accent glyph, no box (Button.module.css draws
+// armed, DRAW, SCRATCH, DARK, BOOKMARKS) — accent brackets + accent glyph, no box (Button.module.css draws
 // no border for a selected state). FIT is a one-shot command — never selected — and the `%` beside
 // it already says whether the page is at fit width. A freshly opened PDF therefore has no control
 // in its selected state at all.
 //
 // NARROW PANES use the shared collapse ladder only (`data-bar-drop`, ui/ViewBar.module.css): the
-// file actions and the zoom steps at 4 (650px), the page readout at 2 (500px). FIT, the mode
+// file actions, the zoom steps and DARK at 4 (650px; the `.settings` default and its palette
+// command still set it), the page readout at 2 (500px). FIT, the mode
 // toggles and BOOKMARKS never drop — they are the only way into what they open. There is no second
 // row.
 import { type JSX, Show } from 'solid-js'
@@ -54,6 +55,10 @@ export type PreviewBarProps = {
     onHighlight?: () => void
     scratchOn?: () => boolean
     onToggleScratch?: () => void
+    /** pdf dark mode, remembered per file in its sidecar (`appearance.pdfDarkMode` is the
+     *  default); disabled with the annotate tools until the sidecar has loaded */
+    darkOn?: () => boolean
+    onToggleDark?: () => void
     /** settings.keybindings['toggle-draw-mode'], for the tooltip */
     drawKey: () => string
     /** pdf → markdown: true while the conversion runs (the button is disabled, a readout says so) */
@@ -181,6 +186,22 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             />
                         </Show>
                     </div>
+                    {/* How the page is shown, not what is done to it, so its own group after
+                        the annotate tools. */}
+                    <Show when={pdf()}>
+                        <div class={styles.group} data-bar-drop="4">
+                            <IconButton
+                                icon="Moon"
+                                label="Dark mode"
+                                title="Dark mode: invert the pages, keep their colours"
+                                variant={props.darkOn?.() ? 'selected' : 'unselected'}
+                                aria-pressed={props.darkOn?.() ?? false}
+                                disabled={!props.annotReady()}
+                                data-testid="preview-dark"
+                                onClick={() => props.onToggleDark?.()}
+                            />
+                        </div>
+                    </Show>
                 </Show>
             }
             actions={

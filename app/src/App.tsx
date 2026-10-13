@@ -756,6 +756,8 @@ export default function App() {
         setSettings('layout', 'tabRailSide', otherSide(tabRailSide()))
     const toggleStatusBar = () =>
         setSettings('layout', 'statusBar', !statusBarVisible())
+    const togglePdfDarkMode = () =>
+        setSettings('appearance', 'pdfDarkMode', !settings.appearance.pdfDarkMode)
     // Panel edge drags (shell/EdgeHandle on the sidebar's and the rail's lines). The width is the
     // `.settings` value itself (appearance.sidebarWidth / tabRailWidth), written live as the pointer
     // moves — the settings store debounces the PATCH, so one drag is one write. `edgeResizing` turns
@@ -1600,6 +1602,7 @@ export default function App() {
                 moveSidebarSide,
                 moveTabRailSide,
                 toggleStatusBar,
+                togglePdfDarkMode,
                 openFolder,
                 newWindow,
                 exportActive,

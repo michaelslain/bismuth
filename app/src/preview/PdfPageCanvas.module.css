@@ -8,6 +8,13 @@
     height: 100%;
 }
 
+/* PDF dark mode (`appearance.pdfDarkMode`): white paper turns black and black text white, and the
+   180deg hue turn puts every colour back on its own hue, so a red figure stays red rather than
+   going cyan. HighlightLayer and PageInk switch with it so marks over the page stay legible. */
+.pdf-canvas-dark {
+    filter: invert(1) hue-rotate(180deg);
+}
+
 /* pdf.js's own TextLayer paints transparent, precisely-positioned <span>s into this — invisible
    glyphs over the canvas raster that make the page's text selectable/copyable/searchable by the
    browser's native find. */

@@ -27,6 +27,7 @@ import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { jsPDF } from 'jspdf'
 import { PreviewView } from './PreviewView'
 import { setTransport, type Transport } from './api'
+import { setSettings } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
 import { clearPdfView, loadPdfView } from './preview/pdfViewMemory'
 import { anchorAt, positionAt } from './preview/pageLayout'
@@ -1176,7 +1177,7 @@ function MeasureFirstLine(props: { done: (doc: DrawingDoc) => void }) {
 /** Mounts PreviewView over the annotated PDF once its seeded highlight has been MEASURED (see
  *  MeasureFirstLine) — the fake transport is installed only then, so the store's first GET /file
  *  already sees the measured sidecar. */
-function SeededAnnotatedPreview(props: { width: string }) {
+function SeededAnnotatedPreview(props: { width: string; dark?: boolean }) {
     const [seeded, setSeeded] = createSignal(false)
     return (
         <>
@@ -1186,7 +1187,10 @@ function SeededAnnotatedPreview(props: { width: string }) {
                         seededLine = line
                         setTransport(
                             recordingTransport({
-                                [ANNOT_SIDECAR]: serializeDoc(annotatedDoc(line)),
+                                [ANNOT_SIDECAR]: serializeDoc({
+                                    ...annotatedDoc(line),
+                                    ...(props.dark === undefined ? {} : { dark: props.dark }),
+                                }),
                             }),
                         )
                         setSeeded(true)
@@ -1472,6 +1476,73 @@ export const PdfHighlightMarginBookmarks: Story = {
 /** The SCRATCH toggle (the sidecar's `margin`) edits through the store: on writes the sidecar with `margin`, off writes it
  *  WITHOUT the key (setMarginRatio removes it rather than storing a zero), and the margin paper
  *  appears and goes with it. */
+/** PDF dark mode, remembered PER FILE: the seeded sidecar holds `dark: true` while the
+ *  `appearance.pdfDarkMode` default stays off, and the PDF still opens dark. Every page raster
+ *  renders through `invert(1) hue-rotate(180deg)`, the highlight screens its colour so it reads as
+ *  a tint behind white text, and the scratch strip keeps its own raised ground. Pressing the moon
+ *  writes `dark: false` into this PDF's sidecar and puts the pages back. */
+export const PdfDarkMode: Story = {
+    render: () => {
+        sidecarPuts = []
+        seededLine = undefined
+        setTransport(recordingTransport({}))
+        setSettings('appearance', 'pdfDarkMode', false)
+        return <SeededAnnotatedPreview width="1000px" dark />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const pageCanvases = () =>
+            canvasElement.querySelectorAll<HTMLCanvasElement>(
+                `.${styles['preview-body']} [data-pdf-page] > canvas`,
+            )
+        await waitFor(() => expect(pageCanvases().length).toBeGreaterThan(0), {
+            timeout: 8000,
+        })
+        const moon = canvas.getByLabelText('Dark mode')
+        await expect(pressedOf(moon)).toBe('true')
+        for (const c of pageCanvases()) {
+            await expect(getComputedStyle(c).filter).toContain('invert(1)')
+        }
+        await waitFor(
+            () => {
+                const rect = canvasElement.querySelector<HTMLElement>(
+                    '[data-testid="highlight-rect"]',
+                )
+                expect(rect).not.toBeNull()
+                expect(getComputedStyle(rect!).mixBlendMode).toBe('screen')
+            },
+            { timeout: 5000 },
+        )
+        // The strip is not a page: no filter reaches it.
+        await waitFor(() => {
+            const strip = canvasElement.querySelector<HTMLElement>('[data-pdf-margin="0"]')
+            expect(strip).not.toBeNull()
+            expect(getComputedStyle(strip!).filter).toBe('none')
+        })
+
+        await waitFor(() => expect((moon as HTMLButtonElement).disabled).toBe(false))
+        await fireEvent.click(moon)
+        await waitFor(() => expect(pressedOf(moon)).toBe('false'))
+        // The choice is this file's: it lands in the PDF's own sidecar, not in `.settings`.
+        await waitFor(() => expect(sidecarPuts.at(-1)?.dark).toBe(false), {
+            timeout: 5000,
+        })
+        for (const c of pageCanvases()) {
+            await expect(getComputedStyle(c).filter).toBe('none')
+        }
+        await expect(
+            getComputedStyle(
+                canvasElement.querySelector<HTMLElement>('[data-testid="highlight-rect"]')!,
+            ).mixBlendMode,
+        ).toBe('multiply')
+        await fireEvent.click(moon)
+        await waitFor(() => expect(pressedOf(moon)).toBe('true'))
+        await waitFor(() => expect(sidecarPuts.at(-1)?.dark).toBe(true), {
+            timeout: 5000,
+        })
+    },
+}
+
 export const PdfMarginToggleSaves: Story = {
     render: () => {
         sidecarPuts = []
@@ -2065,11 +2136,11 @@ export const PdfViewBarLayout: Story = {
         const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
         await waitFor(() => expect(drawBtn.disabled).toBe(false))
 
-        // Two spacings, four group boundaries, two annotate within-group gaps (highlight/draw/
+        // Two spacings, five group boundaries, two annotate within-group gaps (highlight/draw/
         // scratch), one glyph size, one icon box, zero frames at rest.
         const rest = probeBar(bar)
         expect(rest.strayGaps, `gaps ${JSON.stringify(rest.gaps)}`).toEqual([])
-        expect(rest.groupBoundaries, `group boundaries in ${JSON.stringify(rest.gaps)}`).toBe(4)
+        expect(rest.groupBoundaries, `group boundaries in ${JSON.stringify(rest.gaps)}`).toBe(5)
         expect(rest.annotateGaps, `annotate within-group gaps in ${JSON.stringify(rest.gaps)}`).toBe(2)
         expect(rest.glyphSizes).toEqual(['12x12'])
         expect(rest.iconBoxes).toHaveLength(1)

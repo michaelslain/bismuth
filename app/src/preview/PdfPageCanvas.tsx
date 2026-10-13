@@ -48,6 +48,9 @@ export type PdfPageCanvasProps = {
     /** True while the page stack is being scrolled. A text layer is built only once it is false,
      *  so a scroll never pays for one. Absent = never scrolling. */
     scrolling?: () => boolean
+    /** PDF dark mode: the raster is shown inverted and hue-rotated 180deg, a CSS filter on the
+     *  canvas alone, so the stashed raster and the text layer's selection colour are untouched. */
+    dark?: () => boolean
 }
 
 function PdfPageCanvas(props: PdfPageCanvasProps) {
@@ -303,7 +306,11 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
 
     return (
         <>
-            <canvas class={styles['pdf-canvas']} ref={canvasRef} />
+            <canvas
+                class={styles['pdf-canvas']}
+                classList={{ [styles['pdf-canvas-dark']]: props.dark?.() ?? false }}
+                ref={canvasRef}
+            />
             {/* data-testid, not a class: bench/invariants.ts's FOREIGN exemption list (the same
                 one that already skips CodeMirror/ProseMirror/xterm's own DOM) needs a selector
                 that survives CSS-module hashing to know this subtree is pdf.js's own text-layer

@@ -50,6 +50,7 @@ export interface CommandHandlers {
     moveSidebarSide: () => void
     moveTabRailSide: () => void
     toggleStatusBar: () => void
+    togglePdfDarkMode: () => void
     // Tab lifecycle + per-pane navigation history.
     newTab: () => void
     closeActiveTab: () => void
@@ -175,6 +176,7 @@ export function bindCommands(
         'move-sidebar-side': h.moveSidebarSide,
         'move-tab-rail-side': h.moveTabRailSide,
         'toggle-status-bar': h.toggleStatusBar,
+        'toggle-pdf-dark-mode': h.togglePdfDarkMode,
         'daemon-owner': h.openDaemonOwner,
         'daemon-setup': h.openDaemonSetup,
         'daemon-update': h.updateDaemon,

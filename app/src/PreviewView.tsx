@@ -86,6 +86,7 @@ import {
     marginRatioOf,
     setMarginRatio,
 } from '../../core/src/drawing/pageMargin'
+import { darkOf, setDark } from '../../core/src/drawing/pageDark'
 import { inkSidecarFor } from '../../core/src/fileKinds'
 import { IconTextButton } from './ui/IconTextButton'
 import { Loading } from './ui/EmptyState'
@@ -321,6 +322,12 @@ export function PreviewView(props: {
     )
     const annotReady = () => store()?.loadState() === 'ready'
     const marginRatio = createMemo(() => marginRatioOf(store()?.doc() ?? null))
+    // PDF dark mode is remembered PER FILE, in the sidecar's `dark` flag beside `margin`;
+    // `appearance.pdfDarkMode` is only the default for a PDF that holds no flag yet. The moon
+    // writes the flag through the same store as scratch paper, so it saves and undoes the same way.
+    const pdfDark = () => darkOf(store()?.doc() ?? null, settings.appearance.pdfDarkMode)
+    const togglePdfDark = () => store()?.edit(d => setDark(d, !pdfDark()))
+
     const toggleMargin = () =>
         store()?.edit(d =>
             setMarginRatio(
@@ -733,6 +740,8 @@ export function PreviewView(props: {
                 onHighlight={pressHighlight}
                 scratchOn={() => marginRatio() > 0}
                 onToggleScratch={toggleMargin}
+                darkOn={pdfDark}
+                onToggleDark={togglePdfDark}
                 drawKey={() => settings.keybindings['toggle-draw-mode']}
                 panelOpen={panelOpen}
                 onTogglePanel={() => setPanelOpen(v => !v)}
@@ -882,6 +891,7 @@ export function PreviewView(props: {
                             cacheKey={
                                 props.pdfCacheKey ?? (props.pdfLoad ? undefined : path())
                             }
+                            dark={pdfDark()}
                             initialPosition={
                                 pdfMemoryKey()
                                     ? loadPdfView(pdfMemoryKey()!)?.position
@@ -915,6 +925,7 @@ export function PreviewView(props: {
                                         onHighlighted={() => setHighlightArmed(false)}
                                         controller={c => (highlighter = c)}
                                         contentEl={pdfScrollEl}
+                                        dark={pdfDark}
                                     />
                                     <Show when={companion()}>
                                         <ScratchTextLayer
@@ -935,6 +946,7 @@ export function PreviewView(props: {
                                         active={drawMode}
                                         onExit={exitDraw}
                                         store={store()}
+                                        darkPage={pdfDark}
                                     />
                                 </>
                             }

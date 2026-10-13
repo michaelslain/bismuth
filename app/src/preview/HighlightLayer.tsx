@@ -58,6 +58,9 @@ export type HighlightLayerProps = {
     /** The element selection/click listeners attach to — PdfPages' scroll content (an ancestor
      *  of every page's pdf.js text layer), NOT this layer's own host. */
     contentEl: () => HTMLElement | undefined
+    /** PDF dark mode: the page beneath is inverted, so each rect screens its colour instead of
+     *  multiplying it — a tint on the dark paper that leaves light glyphs light. */
+    dark?: () => boolean
     class?: string
 }
 
@@ -209,6 +212,7 @@ function HighlightLayer(props: HighlightLayerProps) {
                 {p => (
                     <div
                         class={styles.rect}
+                        classList={{ [styles['rect-dark']]: props.dark?.() ?? false }}
                         data-testid="highlight-rect"
                         style={{
                             left: `${p.left}px`,
