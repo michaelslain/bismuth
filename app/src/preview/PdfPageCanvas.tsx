@@ -17,7 +17,7 @@
 // pdf.js busy on renders that were cancelled before they landed, and the zoom stuttered behind
 // them. Once a page has a raster, a size change only stretches it (CSS, free) and the sharp
 // re-render runs `RESIZE_SETTLE_MS` after the size stops moving.
-import { createEffect, createMemo, on, onCleanup } from 'solid-js'
+import { createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js'
 import type { PageBox } from './pageLayout'
 import styles from './PdfPageCanvas.module.css'
 
@@ -45,6 +45,9 @@ export type PdfPageCanvasProps = {
         get: (index: number, w: number) => HTMLCanvasElement | undefined
         put: (index: number, w: number, canvas: HTMLCanvasElement) => void
     }
+    /** True while the page stack is being scrolled. A text layer is built only once it is false,
+     *  so a scroll never pays for one. Absent = never scrolling. */
+    scrolling?: () => boolean
 }
 
 function PdfPageCanvas(props: PdfPageCanvasProps) {
@@ -66,6 +69,9 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
     // taken), and re-probing would then call the wrong cancel function, which fails silently
     // instead of throwing and leaks the scheduled build into a page that's moved on.
     let textLayerIdleKind: 'idle' | 'timeout' | undefined
+    // A text-layer build waiting for the scroll to settle (`props.scrolling`), not yet handed to
+    // the idle/timeout scheduler. Cleared by a newer run, by unmount, and when it is handed on.
+    const [pendingText, setPendingText] = createSignal<(() => void) | undefined>()
     let firstRun = true
     // The CSS width the visible canvas's CURRENT bitmap was actually rendered at — read on
     // cleanup to decide whether it's worth stashing (a bitmap mid-render at a stale width is not).
@@ -118,7 +124,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
      *  `requestIdleCallback` isn't available, e.g. Safari/WebKit) — NEVER dropped: `mine` is
      *  re-checked when it actually runs, so a page whose scroll has already moved on by then
      *  simply never builds a text layer nobody will read, but a page that's still current gets one
-     *  exactly once idle, which in practice means "once scrolling settles". */
+     *  exactly once: after the scroll settles (`props.scrolling`), then at the next idle moment. */
     function scheduleTextLayer(
         mine: number,
         mod: PdfjsModule,
@@ -133,6 +139,15 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
             if (disposed || mine !== generation) return
             void renderTextLayer(mod, page, w, h, cssScale)
         }
+        // Mid-scroll, park the build: the effect below hands it on once the scroll settles.
+        if (props.scrolling?.()) {
+            setPendingText(() => fire)
+            return
+        }
+        idleSchedule(fire)
+    }
+
+    function idleSchedule(fire: () => void) {
         // `timeout` matters here, not just as a nicety: an UNBOUNDED requestIdleCallback can be
         // starved indefinitely on a busy page (measured — a 30-page automated scroll test never
         // went idle within a 5s assertion timeout without this), which would silently turn "defer
@@ -148,7 +163,15 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         }
     }
 
+    createEffect(() => {
+        const fire = pendingText()
+        if (!fire || props.scrolling?.()) return
+        setPendingText(undefined)
+        idleSchedule(fire)
+    })
+
     function cancelScheduledTextLayer() {
+        setPendingText(undefined)
         if (textLayerIdleId === undefined) return
         if (textLayerIdleKind === 'idle') cancelIdleCallback(textLayerIdleId)
         else window.clearTimeout(textLayerIdleId)

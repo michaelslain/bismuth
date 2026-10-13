@@ -1919,3 +1919,77 @@ export const TextSelectionSurvivesScroll: Story = {
         )
     },
 }
+
+let settleBoxes: PageBox[] = []
+let settleScrollEl: HTMLElement | undefined
+
+/** A page that scrolls INTO view builds no text layer until the scroll settles, then builds one.
+ *  The app's webview has no `requestIdleCallback`, so "build when idle" alone fell back to a timer
+ *  that fired mid-scroll on every arriving page. The play scrolls frame by frame and, on every
+ *  frame, requires an empty text layer on each page that mounted during the scroll; a frame that
+ *  arrives more than 100ms after the last one is skipped, since a gap that long can legitimately
+ *  count as settled. Then the last page must end with its own text ("Page 6") once scrolling stops. */
+export const TextLayerWaitsForScrollToSettle: Story = {
+    render: () => {
+        settleBoxes = []
+        settleScrollEl = undefined
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages
+                    load={loadSixPages}
+                    zoom={1}
+                    onLayout={l => {
+                        settleBoxes = l.boxes
+                        settleScrollEl = l.scrollEl
+                    }}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(settleBoxes.length).toBe(6)
+                expect(settleBoxes[5]!.h).toBeGreaterThan(0)
+                expect(settleScrollEl!.scrollHeight).toBeGreaterThan(
+                    settleScrollEl!.clientHeight,
+                )
+            },
+            { timeout: 4000 },
+        )
+        const scroller = settleScrollEl!
+        const textOf = (i: number) =>
+            canvasElement.querySelector(
+                `[data-pdf-page="${i}"] [data-testid="pdf-text-layer"]`,
+            )?.textContent ?? ''
+        const mountedBefore = new Set(
+            [...canvasElement.querySelectorAll('[data-pdf-page]')]
+                .filter(p => p.querySelector('canvas'))
+                .map(p => p.getAttribute('data-pdf-page')),
+        )
+        const end = scroller.scrollHeight - scroller.clientHeight
+        const built: string[] = []
+        await new Promise<void>(resolve => {
+            let last = performance.now()
+            const step = (t: number) => {
+                const gap = t - last
+                last = t
+                if (gap < 100) {
+                    for (const p of canvasElement.querySelectorAll('[data-pdf-page]')) {
+                        const i = p.getAttribute('data-pdf-page')!
+                        if (mountedBefore.has(i) || !p.querySelector('canvas')) continue
+                        if (textOf(Number(i)).trim()) built.push(i)
+                    }
+                }
+                if (scroller.scrollTop >= end) return resolve()
+                scroller.scrollTop = Math.min(end, scroller.scrollTop + 24)
+                requestAnimationFrame(step)
+            }
+            requestAnimationFrame(step)
+        })
+        await expect(built).toEqual([])
+        await waitFor(() => expect(textOf(5).trim()).toBe('Page 6'), {
+            timeout: 2500,
+        })
+    },
+}

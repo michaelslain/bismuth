@@ -539,13 +539,20 @@ function PageInk(props: PageInkProps) {
                 {(page, i) => {
                     const [near, setNear] = createSignal(false)
                     const [base, setBase] = createSignal<HTMLCanvasElement>()
+                    // Watched only while this page could show a canvas (draw mode, or ink on it):
+                    // the browser recomputes every observed target on every scrolled frame, and a
+                    // long PDF with no ink would otherwise pay one per page for nothing.
                     const observe = (el: HTMLDivElement) => {
                         nearSetters.set(el, setNear)
-                        io.observe(el)
-                        onCleanup(() => {
-                            io.unobserve(el)
-                            nearSetters.delete(el)
+                        createEffect(() => {
+                            if (!props.active() && !hasInkOn(i)) {
+                                setNear(false)
+                                return
+                            }
+                            io.observe(el)
+                            onCleanup(() => io.unobserve(el))
                         })
+                        onCleanup(() => nearSetters.delete(el))
                     }
                     // Paint the committed strokes whenever the ink, the page's geometry or the
                     // canvas itself changes.

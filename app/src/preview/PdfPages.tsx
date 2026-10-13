@@ -69,6 +69,12 @@ import styles from './PdfPages.module.css'
 
 const GAP = 16 // px between stacked pages
 const OVERSCAN = 1 // pages rendered beyond the viewport on each side
+// How long the scroll element must go without a scroll event before it counts as settled — what
+// PdfPageCanvas waits for before building a text layer (see its `scrolling` prop).
+const SCROLL_SETTLE_MS = 150
+
+const sameRange = (a: [number, number], b: [number, number]) =>
+    a[0] === b[0] && a[1] === b[1]
 
 // The margin is the SCRATCH surface, not more of the page: it takes
 // the raised `--surface-1` note surface, one step above the `--editor` desk, + hairline
@@ -424,8 +430,14 @@ function PdfPages(props: PdfPagesProps) {
         if (avgPageH <= 0) return OVERSCAN
         return Math.max(OVERSCAN, Math.ceil(containerH() / avgPageH))
     })
-    const visible = createMemo(() =>
-        visiblePageRange(layout().boxes, scrollTop(), containerH(), overscanPages()),
+    // Equal ranges do not notify: every page row's `<Show>` reads this, so a fresh `[first, last]`
+    // tuple per scrolled frame re-ran one condition per PAGE per frame — on an 895-page book that
+    // was the bulk of the scroll's main-thread work. Now the rows re-check only when a page
+    // actually enters or leaves the window.
+    const visible = createMemo(
+        () => visiblePageRange(layout().boxes, scrollTop(), containerH(), overscanPages()),
+        undefined,
+        { equals: sameRange },
     )
 
     // -1 while nothing is loaded, so the first real value of every document is a change.
@@ -645,6 +657,23 @@ function PdfPages(props: PdfPagesProps) {
     // live off `scrollRef`, not captured from the triggering event). `captureAnchor()` still runs
     // at event time (below, in `onScroll`) — it's a cheap synchronous read, and the reflow-anchor
     // effect above needs the anchor current even between painted frames.
+    // True from a scroll event until SCROLL_SETTLE_MS pass without one. The webview the app ships
+    // in has no `requestIdleCallback`, so a page's "idle" text-layer build fell back to a plain
+    // timer and ran mid-scroll on every page that entered view; pages wait on this instead.
+    const [scrolling, setScrolling] = createSignal(false)
+    let settleTimer: number | undefined
+    function markScrolling() {
+        if (!untrack(scrolling)) setScrolling(true)
+        if (settleTimer !== undefined) window.clearTimeout(settleTimer)
+        settleTimer = window.setTimeout(() => {
+            settleTimer = undefined
+            setScrolling(false)
+        }, SCROLL_SETTLE_MS)
+    }
+    onCleanup(() => {
+        if (settleTimer !== undefined) window.clearTimeout(settleTimer)
+    })
+
     let scrollRafId: number | undefined
     function scheduleScrollFlush() {
         if (scrollRafId !== undefined) return
@@ -695,6 +724,7 @@ function PdfPages(props: PdfPagesProps) {
                             // element, so a stale scroll never even queues a frame.
                             if (e.currentTarget !== scrollRef) return
                             captureAnchor()
+                            markScrolling()
                             scheduleScrollFlush()
                         }}
                     >
@@ -732,6 +762,7 @@ function PdfPages(props: PdfPagesProps) {
                                                 getPage={getPage}
                                                 pdfjs={() => pdfjs}
                                                 stash={stash()}
+                                                scrolling={scrolling}
                                             />
                                         </Show>
                                         <Show when={box().marginW > 0}>

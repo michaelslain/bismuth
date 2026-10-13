@@ -529,13 +529,19 @@ export function PreviewView(props: {
      *  beyond that (final review, finding 2). `scrollTick` forces this to be read again on every
      *  scroll of the PDF's own scroll element (a plain DOM read otherwise has nothing to notify
      *  Solid that it changed). Overscan 2, matching the old window's reach either side. */
-    const scratchVisibleRange = (): [number, number] => {
-        scrollTick()
-        const el = pdfScrollEl()
-        const boxes = pdfBoxes()
-        if (!el || !boxes.length) return [0, -1]
-        return visiblePageRange(boxes, el.scrollTop, el.clientHeight, 2)
-    }
+    const scratchVisibleRange = createMemo(
+        (): [number, number] => {
+            scrollTick()
+            const el = pdfScrollEl()
+            const boxes = pdfBoxes()
+            if (!el || !boxes.length) return [0, -1]
+            return visiblePageRange(boxes, el.scrollTop, el.clientHeight, 2)
+        },
+        undefined,
+        // Equal ranges do not notify, so a scroll only re-runs what reads this when a page
+        // actually enters or leaves the range — not once per scroll event.
+        { equals: (a, b) => a[0] === b[0] && a[1] === b[1] },
+    )
 
     // Matches + segmented render, only for code/text with a live query.
     const matches = createMemo(() =>
