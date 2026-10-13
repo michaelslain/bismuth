@@ -38,6 +38,7 @@ import createCompanionStore from './createCompanionStore'
 import type { CompanionStore } from './annotationTypes'
 import { isFrontmatterFolded, setFrontmatterFolded } from './frontmatterFold'
 import FoldedFence from './FoldedFence'
+import { summarizeFrontmatter } from './frontmatterSummary'
 import IconButton from '../ui/IconButton'
 import MarkdownField from '../ui/MarkdownField'
 import styles from './CompanionFrontmatter.module.css'
@@ -100,7 +101,7 @@ function CompanionFrontmatter(props: CompanionFrontmatterProps) {
                     onClick={toggle}
                 />
                 <Show when={folded()}>
-                    <FoldedFence />
+                    <FoldedFence summary={summarizeFrontmatter(store.frontmatter())} />
                 </Show>
                 <div class={styles.field}>
                     <MarkdownField value={store.frontmatter()} onInput={onInput} />

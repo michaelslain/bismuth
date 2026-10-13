@@ -163,6 +163,7 @@ Never create a separate `<name>.md` that only embeds the binary (`![[paper.pdf]]
 ### How the app treats a companion note
 
 - Created on first edit. Opening an image or PDF creates nothing. The companion is written when you edit the tags strip under the preview's header or type a scratch note, never before.
+- Folds to one line. The chevron beside the tags strip collapses it to a single row that previews its properties between the fences, such as `--- tags: trip, 2026 // source: phone ---`. Empty properties are left out, a preview too long for the row ends in `…`, and a strip with nothing set shows `--- … ---`.
 - Hidden in the tree. The sidebar hides `<file>.md` while `<file>` is present. The companion still exists on disk and still appears in the graph, search and Bases.
 - Opening it opens the binary. A graph click, the Cmd+O switcher, a wikilink, a Bases card or app control that targets the companion opens the binary's preview tab instead, with the tags strip below its header.
 - An orphan is a normal note. If the binary is deleted outside the app, the companion shows in the tree and opens as itself.
@@ -224,10 +225,10 @@ The `list` type accepts a comma-separated string through `parseList` in `core/sr
 `core/src/fileKinds.ts` defines `isCompanionable`, `companionPathFor` and `binaryForCompanion`.
 `cli/src/commands/prop.ts` routes `prop set` and `prop delete` at the companion whenever the file is companionable.
 `app/src/preview/companionDoc.ts` (`shouldWriteCompanionDoc`, `splitCompanion`, `joinCompanion`) decides when to write and keeps the hand-written body.
-`app/src/preview/CompanionFrontmatter.tsx` is the tags strip.
+`app/src/preview/CompanionFrontmatter.tsx` is the tags strip; folded, it renders `FoldedFence.tsx` with the one-line preview from `summarizeFrontmatter` (`app/src/preview/frontmatterSummary.ts`).
 `app/src/preview/createCompanionStore.ts` is the one store behind both the strip and every scratch block, so a save from either cannot drop the other's content.
 `core/src/scratchNotes.ts` parses and serializes the scratch regions.
 `resolveCompanionTarget` in `app/src/App.tsx`, shared by `openFile` and `openTool`, swaps a companion path for its binary when the sidebar still lists that binary.
 `listTree` in `core/src/files.ts` does the hiding.
 
-Source: `core/src/frontmatter.ts`, `core/src/schema/registry.ts`, `core/src/schema/validate.ts`, `core/src/schema/suggest.ts`, `core/src/schema/coerce.ts`, `core/src/schema/types.ts`, `core/src/settings.ts`, `core/src/basesData.ts`, `core/src/fileKinds.ts`, `core/src/scratchNotes.ts`, `core/src/routes/vault.ts`, `cli/src/commands/prop.ts`, `app/src/editor/yamlSchema.ts`, `app/src/preview/companionDoc.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/App.tsx`
+Source: `core/src/frontmatter.ts`, `core/src/schema/registry.ts`, `core/src/schema/validate.ts`, `core/src/schema/suggest.ts`, `core/src/schema/coerce.ts`, `core/src/schema/types.ts`, `core/src/settings.ts`, `core/src/basesData.ts`, `core/src/fileKinds.ts`, `core/src/scratchNotes.ts`, `core/src/routes/vault.ts`, `cli/src/commands/prop.ts`, `app/src/editor/yamlSchema.ts`, `app/src/preview/companionDoc.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/frontmatterSummary.ts`, `app/src/App.tsx`

@@ -471,7 +471,7 @@ export const MatchesNoteFrontmatter: Story = {
     },
 }
 
-/** Folded: the chevron collapses the strip to FoldedFence's single `--- … ---` row, landing
+/** Folded: the chevron collapses the strip to FoldedFence's single `--- tags: trip, 2026 ---` row, landing
  *  exactly where the opening fence row sat before the fold (Review Focus: findings 2 + 3). */
 export const Folded: Story = {
     render: () => {
@@ -506,7 +506,9 @@ export const Folded: Story = {
             expect(chevron).toHaveAttribute('aria-expanded', 'false')
         })
         await waitFor(() =>
-            expect(canvas.getByText('--- … ---')).toBeInTheDocument(),
+            expect(canvas.getByTestId('folded-summary').textContent).toBe(
+                'tags: trip, 2026',
+            ),
         )
 
         // The field is hidden and the folded fence lands where the opening fence row was, at its

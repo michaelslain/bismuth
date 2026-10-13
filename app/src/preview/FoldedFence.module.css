@@ -1,4 +1,4 @@
-/* app/src/preview/FoldedFence.module.css — the folded frontmatter's single `--- … ---` row.
+/* app/src/preview/FoldedFence.module.css — the folded frontmatter's single `--- <preview> ---` row.
    Every value mirrors the note editor's own frontmatter fence chrome, so a folded strip reads as
    the same fence, just collapsed to one line — never a restyle of it. imported ONLY by
    FoldedFence.tsx.
@@ -25,4 +25,22 @@
     background: var(--surface-1);
     color: color-mix(in srgb, var(--fg) 30%, transparent);
     white-space: nowrap;
+    /* one row: the fences keep their width, the preview between them takes the rest and is cut
+       with an ellipsis, so the closing `---` always shows */
+    display: flex;
+    gap: 1ch;
+    min-width: 0;
+}
+
+.fence {
+    flex: none;
+}
+
+/* the property preview is content, not structure: muted rather than the fences' 30% dim */
+.summary {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-muted);
 }
