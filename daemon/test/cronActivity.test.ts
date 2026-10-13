@@ -6,7 +6,12 @@ import { test, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { cronActivityEvent } from '../src/daemon/cron'
+import {
+    cronActivityEvent,
+    cronResultDetail,
+    cronStartDetail,
+    parseCronResult,
+} from '../src/daemon/cron'
 import {
     logActivity,
     parseActivityLines,
@@ -138,4 +143,47 @@ test('a started event and its finished event round-trip through the log in order
     const events = readAll()
     expect(events.map(e => e.event)).toEqual(['started', 'finished'])
     expect(events[1]!.durationMs).toBe(1200)
+})
+
+test('a FAILURE marker carries its reason; a bare one and a missing one say what is missing', () => {
+    const failed = parseCronResult(
+        'did work\n[CRON_RESULT:FAILURE] the memory graph was unreachable\n',
+    )
+    expect(failed).toEqual({
+        result: 'failed',
+        reason: 'the memory graph was unreachable',
+    })
+    expect(cronResultDetail(failed)).toBe('the memory graph was unreachable')
+    expect(cronResultDetail(parseCronResult('x\n[CRON_RESULT:FAILURE]'))).toBe(
+        'the run reported failure without a reason',
+    )
+    expect(cronResultDetail(parseCronResult('no marker at all'))).toBe(
+        'the run ended without a [CRON_RESULT] marker',
+    )
+    expect(parseCronResult('[CRON_RESULT:SUCCESS]')).toEqual({
+        result: 'success',
+    })
+    expect(cronResultDetail({ result: 'success' })).toBe(undefined)
+})
+
+test('the last marker wins, so an earlier FAILURE quoted in the output is not the verdict', () => {
+    expect(
+        parseCronResult('[CRON_RESULT:FAILURE] old\n[CRON_RESULT:SUCCESS]').result,
+    ).toBe('success')
+})
+
+test('a started event says why the run began and the model the cron asked for', () => {
+    expect(cronStartDetail('schedule', {})).toBe('on schedule')
+    expect(cronStartDetail('catch-up', { model: 'sonnet', effort: 'high' })).toBe(
+        'catching up on a missed run // sonnet // high effort',
+    )
+    expect(cronStartDetail('trigger', { tier: 'deep' })).toBe(
+        'run on request // tier deep',
+    )
+    expect(cronStartDetail('recovery', {})).toBe(
+        'resumed after a daemon restart',
+    )
+    expect(cronStartDetail('file-change', {}, ['a.md', 'b/c.md'])).toBe(
+        'file changed: a.md, b/c.md',
+    )
 })

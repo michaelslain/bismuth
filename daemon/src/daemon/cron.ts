@@ -641,7 +641,6 @@ export async function loadRunning(
 }
 
 async function markRunning(ctx: VaultContext, name: string): Promise<void> {
-    console.log(`[cron] markRunning: ${name}`)
     await enqueueWrite(ctx.runningFile, async () => {
         const data = await loadRunning(ctx)
         data[name] = { startedAt: new Date().toISOString() }
@@ -650,7 +649,6 @@ async function markRunning(ctx: VaultContext, name: string): Promise<void> {
 }
 
 async function markDone(ctx: VaultContext, name: string): Promise<void> {
-    console.log(`[cron] markDone: ${name}`)
     await enqueueWrite(ctx.runningFile, async () => {
         const data = await loadRunning(ctx)
         delete data[name]
@@ -874,7 +872,7 @@ export function shouldFireOnTick(
     return shouldCatchUp(job, lastFired, now.getTime())
 }
 
-const CRON_RESULT_INSTRUCTION = `\n\nIMPORTANT: When you are done, print exactly [CRON_RESULT:SUCCESS] if the task completed successfully, or [CRON_RESULT:FAILURE] if it failed. This must be the last thing you print.`
+const CRON_RESULT_INSTRUCTION = `\n\nIMPORTANT: When you are done, print exactly [CRON_RESULT:SUCCESS] if the task completed successfully, or [CRON_RESULT:FAILURE] <one plain sentence saying what failed> if it failed. This must be the last thing you print.`
 
 const CRON_NOTIFY_INSTRUCTION = `\n\nIMPORTANT: This cron has notifications enabled. Just before the [CRON_RESULT:...] marker, print one line of the form:\n[NOTIFY: <one short plain-text sentence, max ~120 chars, no markdown, no backticks, no emoji, no newlines>]\nThis line is shown verbatim as a macOS notification — keep it concise and human-readable.`
 
@@ -943,13 +941,74 @@ export function buildCronPrompt(p: {
     )
 }
 
-function parseCronResult(output: string): 'success' | 'failed' | 'unknown' {
-    // Search from the end for the last marker
+/** The session's verdict from its last `[CRON_RESULT:…]` marker, plus the reason a FAILURE marker
+ *  carries on its own line (`[CRON_RESULT:FAILURE] the vault was locked`). Exported for tests. */
+export function parseCronResult(output: string): {
+    result: 'success' | 'failed' | 'unknown'
+    reason?: string
+} {
     const successIdx = output.lastIndexOf('[CRON_RESULT:SUCCESS]')
     const failureIdx = output.lastIndexOf('[CRON_RESULT:FAILURE]')
-    if (successIdx === -1 && failureIdx === -1) return 'unknown'
-    if (successIdx > failureIdx) return 'success'
-    return 'failed'
+    if (successIdx === -1 && failureIdx === -1) return { result: 'unknown' }
+    if (successIdx > failureIdx) return { result: 'success' }
+    const rest = output
+        .slice(failureIdx + '[CRON_RESULT:FAILURE]'.length)
+        .split(/\r?\n/)[0]!
+        .trim()
+    return rest
+        ? { result: 'failed', reason: rest.slice(0, 300) }
+        : { result: 'failed' }
+}
+
+/** What set a cron run off. Only the start line of the activity log shows it. */
+export type FireReason =
+    | 'schedule'
+    | 'catch-up'
+    | 'trigger'
+    | 'file-change'
+    | 'recovery'
+
+/** The `started` event's detail: why the run began, then the model it asked for (when the cron
+ *  names one), joined with ` // `. Pure, so the wording is pinned by a test. */
+export function cronStartDetail(
+    reason: FireReason,
+    job: { model?: string; tier?: string; effort?: string },
+    changedPaths?: string[],
+): string {
+    const why =
+        reason === 'schedule'
+            ? 'on schedule'
+            : reason === 'catch-up'
+              ? 'catching up on a missed run'
+              : reason === 'trigger'
+                ? 'run on request'
+                : reason === 'recovery'
+                  ? 'resumed after a daemon restart'
+                  : `file changed: ${(changedPaths ?? []).join(', ')}`
+    const parts = [why]
+    if (job.model) parts.push(job.model)
+    else if (job.tier) parts.push(`tier ${job.tier}`)
+    if (job.effort) parts.push(`${job.effort} effort`)
+    return parts.join(' // ')
+}
+
+/** The activity log's detail for a run the session itself graded: the failure's own reason, or a
+ *  plain statement of what was missing. Undefined on success, where `summary` says enough. */
+export function cronResultDetail(parsed: {
+    result: 'success' | 'failed' | 'unknown'
+    reason?: string
+}): string | undefined {
+    if (parsed.result === 'failed')
+        return parsed.reason ?? 'the run reported failure without a reason'
+    if (parsed.result === 'unknown')
+        return 'the run ended without a [CRON_RESULT] marker'
+    return undefined
+}
+
+/** `12s` / `3m 4s` — the service log's run length. */
+function secondsLabel(ms: number): string {
+    const s = Math.round(ms / 1000)
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
 }
 
 function parseNotifyMessage(output: string): string | null {
@@ -1169,8 +1228,10 @@ async function fireJob(
     ctx: VaultContext,
     job: CronJob,
     lastFired: Record<string, LastFiredEntry>,
-    opts?: { triggerContext?: string },
+    opts: { reason: FireReason; changedPaths?: string[] },
 ): Promise<void> {
+    const tag = `[cron:${ctx.name}] "${job.name}"`
+    const triggerContext = opts.changedPaths?.join(', ')
     let promptOverride: string | undefined
     let checkpoint: IncrementalRunPlan | undefined
     // Measured once, before the gate: the agenda decides whether an unchanged vault still runs, and
@@ -1202,7 +1263,7 @@ async function fireJob(
                     detail: note,
                 }),
             )
-            console.log(`[cron] "${job.name}": ${note}`)
+            console.log(`${tag} ${note}`)
             return
         }
         promptOverride = plan.prompt
@@ -1215,7 +1276,14 @@ async function fireJob(
     jobAbortControllers.set(key, ac)
     const startedAt = Date.now()
     await markRunning(ctx, job.name)
-    await logActivity(ctx, { kind: 'cron', name: job.name, event: 'started' })
+    const startDetail = cronStartDetail(opts.reason, job, opts.changedPaths)
+    await logActivity(ctx, {
+        kind: 'cron',
+        name: job.name,
+        event: 'started',
+        detail: startDetail,
+    })
+    console.log(`${tag} started (${startDetail})`)
 
     // Guard only the running cron's OWN definition file, not the entire
     // crons directory. The old approach (snapshotDir of all .md) reverted
@@ -1241,7 +1309,7 @@ async function fireJob(
                       )
                     : (promptOverride ?? job.prompt),
                 memoryDir: ctx.memoryDir,
-                triggerContext: opts?.triggerContext,
+                triggerContext,
                 notify: job.notify,
             })
             const response = await sendMessage(prompt, ctx, {
@@ -1273,7 +1341,10 @@ async function fireJob(
                 }
             }
 
-            const result = parseCronResult(response.result)
+            const parsed = parseCronResult(response.result)
+            const result = parsed.result
+            const detail = cronResultDetail(parsed)
+            const endedAt = Date.now()
             lastFired[job.name] = await updateLastFired(ctx, job.name, prev =>
                 nextLastFired(prev, { result, agenda: agendaKey }),
             )
@@ -1281,10 +1352,17 @@ async function fireJob(
                 ctx,
                 cronActivityEvent(job.name, {
                     result,
+                    // A failure the session reported is the job's own, never the environment's.
+                    cause: result === 'failed' ? 'job' : undefined,
+                    detail,
                     startedAt,
-                    endedAt: Date.now(),
+                    endedAt,
                     summary: lastReportLine(response.result),
                 }),
+            )
+            console.log(
+                `${tag} finished ${result} in ${secondsLabel(endedAt - startedAt)}` +
+                    (detail ? ` — ${detail}` : ''),
             )
 
             // Advance the checkpoint ONLY on a reported success — not "unknown" (the model may not have
@@ -1339,15 +1417,15 @@ async function fireJob(
                         detail: `aborted after ${job.timeout ?? 'default'}s`,
                     }),
                 )
+                console.warn(
+                    `${tag} killed after ${secondsLabel(Date.now() - startedAt)} (timeout ${job.timeout ?? 'default'}s)`,
+                )
                 return
             }
             // The cause is logged, not just stored: the on-disk entry only keeps the LATEST outcome, so
             // the log is the only place a post-mortem can see which class of failure drove a backoff.
             const cause = classifyFailure(err)
-            console.error(
-                `[cron] Failed to fire job "${job.name}" (${cause}):`,
-                err,
-            )
+            console.error(`${tag} failed to run (${cause}):`, err)
             lastFired[job.name] = await updateLastFired(ctx, job.name, prev =>
                 nextLastFired(prev, {
                     result: 'failed',
@@ -1386,14 +1464,14 @@ async function fireJob(
                     const current = await readFile(ownCronFile, 'utf-8')
                     if (current !== ownCronContent) {
                         console.warn(
-                            `[cron] Guard: "${job.name}" modified its own definition — reverting`,
+                            `${tag} modified its own definition — reverting`,
                         )
                         await writeFile(ownCronFile, ownCronContent, 'utf-8')
                     }
                 } catch {
                     // File deleted by session — restore it
                     console.warn(
-                        `[cron] Guard: "${job.name}" deleted its own definition — restoring`,
+                        `${tag} deleted its own definition — restoring`,
                     )
                     await writeFile(ownCronFile, ownCronContent, 'utf-8')
                 }
@@ -1408,7 +1486,7 @@ async function fireJob(
 
     // Catch unhandled rejections from the background session
     sessionPromise.catch(err =>
-        console.error(`[cron] Unhandled error in "${job.name}":`, err),
+        console.error(`${tag} unhandled error:`, err),
     )
 }
 
@@ -1429,16 +1507,14 @@ export async function fireFileChangeCron(
     const key = jobKey(ctx, job.file)
     if (runningJobs.has(key)) {
         console.log(
-            `[cron] File-change trigger for "${job.name}" ignored — already running`,
+            `[cron:${ctx.name}] "${job.name}" file change ignored — already running`,
         )
         return
     }
     const lastFired = await loadLastFired(ctx)
-    console.log(
-        `[cron] File-change firing: ${job.name} (${changedPaths.join(', ')})`,
-    )
     await fireJob(ctx, job, lastFired, {
-        triggerContext: changedPaths.join(', '),
+        reason: 'file-change',
+        changedPaths,
     })
 }
 
@@ -1472,9 +1548,8 @@ export async function recoverInterruptedCrons(
     for (const name of names) {
         const job = jobMap.get(name)
         if (job && job.enabled && !runningJobs.has(jobKey(ctx, job.file))) {
-            console.log(`[cron] Re-firing interrupted cron: ${name}`)
             // Await fireJob to ensure .running.json + in-memory state are set before continuing
-            await fireJob(ctx, job, lastFired)
+            await fireJob(ctx, job, lastFired, { reason: 'recovery' })
         } else {
             // Job no longer exists or is disabled — clean up stale entry
             await markDone(ctx, name)
@@ -1501,8 +1576,9 @@ export function startCronScheduler(): void {
                     shouldCatchUp(job, lastFired) &&
                     !runningJobs.has(jobKey(ctx, job.file))
                 ) {
-                    console.log(`[cron] Catch-up firing: ${job.name}`)
-                    await fireJob(ctx, job, lastFired) // await ensures .running.json is written before next iteration
+                    await fireJob(ctx, job, lastFired, {
+                        reason: 'catch-up',
+                    }) // await ensures .running.json is written before next iteration
                 }
             }
         }
@@ -1539,7 +1615,9 @@ export function startCronScheduler(): void {
                         // backoff is and, crucially, is NOT applied — lives in shouldFireOnTick, which the replay
                         // tests drive directly; do not re-add gates here.
                         if (shouldFireOnTick(job, lastFired, now)) {
-                            fireJob(ctx, job, lastFired)
+                            fireJob(ctx, job, lastFired, {
+                                reason: 'schedule',
+                            })
                         }
                     }
                 }
@@ -1634,18 +1712,19 @@ async function processTriggers(ctx: VaultContext): Promise<void> {
 
         if (runningJobs.has(jobKey(ctx, name))) {
             console.log(
-                `[cron] Trigger for "${name}" ignored — already running`,
+                `[cron:${ctx.name}] "${name}" run request ignored — already running`,
             )
             continue
         }
 
         const job = await loadCronJob(name, ctx)
         if (!job) {
-            console.warn(`[cron] Trigger for unknown job "${name}" — skipping`)
+            console.warn(
+                `[cron:${ctx.name}] run request for unknown cron "${name}" — skipping`,
+            )
             continue
         }
 
-        console.log(`[cron] Trigger firing: ${name}`)
-        await fireJob(ctx, job, lastFired)
+        await fireJob(ctx, job, lastFired, { reason: 'trigger' })
     }
 }

@@ -211,7 +211,8 @@ export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
             event: 'finished',
             outcome: 'failed',
             durationMs: 4200,
-            detail: 'timeout calling gmail api',
+            cause: 'job',
+            detail: 'the gmail api timed out twice',
         },
         {
             ts: iso(-5 * MIN),
@@ -225,6 +226,7 @@ export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
             kind: 'cron',
             name: 'morning-brief',
             event: 'started',
+            detail: 'on schedule // sonnet',
         },
         {
             ts: iso(-20 * MIN),
@@ -263,6 +265,7 @@ export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
             event: 'finished',
             outcome: 'success',
             durationMs: 3100,
+            summary: 'replied to 3 // archived 12',
         },
         {
             ts: iso(-3 * HOUR),
@@ -284,6 +287,7 @@ export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
             kind: 'process',
             name: 'web-search',
             event: 'restarting',
+            detail: 'in 2000ms (restart #1)',
         },
         {
             ts: iso(-1 * DAY),

@@ -26,6 +26,8 @@ bismuth daemon setup              # (re)register the service
 | Restart policy | `RunAtLoad` and `KeepAlive` | `Restart=always`, `RestartSec=5` |
 | Output | `~/.bismuth/daemon/logs/bismuth-daemon.stdout.log` and `.stderr.log` | the same files |
 
+Every line the daemon prints to those files opens with its ISO-8601 UTC time, and a cron or process line names its vault: `[cron:<daemon name>] "<cron>" finished failed in 6s — <reason>`. Warnings that the runtime prints on its own, without going through the daemon's console, carry no time.
+
 The binary is `~/.bismuth/bin/bismuth-daemon` (override: `BISMUTH_DAEMON_BIN`). The service's `PATH` is the launch `PATH` with `/usr/local/bin`, `/opt/homebrew/bin`, `~/.bismuth/bin`, `~/.bun/bin` and `~/.local/bin` appended, so crons find the `bismuth` command even though launchd starts the service with a minimal `PATH`. Every session the daemon starts gets the same widened `PATH`.
 
 ## Daemon timing
@@ -100,4 +102,4 @@ A crash or `SIGKILL` leaves `daemon.pid` behind. Liveness checks therefore send 
 
 Core reads `~/.bismuth/daemon/daemon.pid` and signals the pid (`isDaemonAlive` in `core/src/daemonState.ts`) to fill `running` in `GET /daemon/status` and the snapshot. The daemon page and `bismuth daemon status` use that. See [the overview](overview.md#how-the-app-reads-the-daemon).
 
-Source: `daemon/src/daemon/index.ts`, `daemon/src/lib/{config,platform,safeTick}.ts`, `core/src/{daemonInstall,daemonState}.ts`, `cli/src/commands/daemon.ts`
+Source: `daemon/src/daemon/index.ts`, `daemon/src/lib/{config,platform,safeTick,stampConsole}.ts`, `core/src/{daemonInstall,daemonState}.ts`, `cli/src/commands/daemon.ts`

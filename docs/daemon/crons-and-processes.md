@@ -49,7 +49,7 @@ restart: on-failure
 | `incremental` | `true` | off | Skip runs when nothing relevant changed; see below |
 | `checkpointDirs` | `vault`, `memory`, or both comma-separated | `vault` | Which areas an incremental cron checks. `checkpointDir` takes a single value |
 
-The body of the file is the prompt. The daemon appends to it: the memory directory and a rule to write memory only through `remember`, an instruction to end with `[CRON_RESULT:SUCCESS]` or `[CRON_RESULT:FAILURE]`, and, with `notify: true`, an instruction to print one `[NOTIFY: …]` line. A session that prints neither marker records the result `unknown`.
+The body of the file is the prompt. The daemon appends to it: the memory directory and a rule to write memory only through `remember`, an instruction to end with `[CRON_RESULT:SUCCESS]`, or with `[CRON_RESULT:FAILURE]` followed on the same line by one sentence saying what failed, and, with `notify: true`, an instruction to print one `[NOTIFY: …]` line. A session that prints neither marker records the result `unknown`.
 
 A cron session cannot rewrite its own file or the process definitions. When the session ends, the daemon reverts a changed cron file, restores a deleted one, and removes any process file the session added.
 
@@ -188,11 +188,11 @@ Crons and processes are read by `daemon/src/lib/frontmatter.ts`, which is not a 
 `fireJob` in `daemon/src/daemon/cron.ts` runs these steps; the scheduler does not wait for the session:
 
 1. When the body contains `{{brainReport}}`, build the report and its agenda fingerprint (`resolveBrainAgenda` in `daemon/src/daemon/brainReport.ts`). For an incremental cron, resolve the checkpoint plan, passing whether the agenda is pending (`agendaPending`). A skip records the result and returns before any bookkeeping.
-2. Add the job to the in-memory running set, write it to `.running.json`, and log `started`.
+2. Add the job to the in-memory running set, write it to `.running.json`, and log `started` with `cronStartDetail`'s line: the caller's `FireReason` and the cron's model.
 3. Snapshot the cron's own file and the processes folder, and list the existing inbox pages.
 4. Replace `{{brainReport}}` in the body with the report built in step 1, build the prompt with `buildCronPrompt`, and call `sendMessage` with `newSession: true`, the cron's `model`, `effort`, `tier` and `timeout`.
 5. If `waitFor` is set, poll `pgrep -f` every 5 seconds until it stops matching or the time runs out.
-6. Parse the last result marker, write `.last-fired.json` with the agenda fingerprint, log `finished` with the report line (`lastReportLine`), advance the incremental bookmarks on success, and send the `notify` notification.
+6. Parse the last result marker with `parseCronResult` (a `FAILURE` marker's same-line text is the reason), write `.last-fired.json` with the agenda fingerprint, log `finished` with the report line (`lastReportLine`) and `cronResultDetail`'s reason, advance the incremental bookmarks on success, and send the `notify` notification.
 7. A timeout or shutdown abort records `killed`; any other error records `failed` with its classified cause.
 8. In every case: announce new inbox pages ([pages](pages.md#how-you-are-told-a-page-exists)), run the file guards, remove the job from `.running.json` and the running set.
 

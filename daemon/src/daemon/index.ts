@@ -47,6 +47,7 @@ import {
     vaultPaths,
     type VaultContext,
 } from '../lib/config.ts'
+import stampConsole from '../lib/stampConsole'
 
 // ONE machine process, many brains. Machine-level identity/runtime state lives in
 // MACHINE_DIR; each enabled vault's brain (crons, processes, session) is booted
@@ -56,9 +57,9 @@ import {
 const activeVaults = new Set<string>()
 let reconcileInterval: ReturnType<typeof setInterval> | null = null
 
+/** A daemon lifecycle line. stampConsole (called first in main) adds the time. */
 function log(message: string): void {
-    const timestamp = new Date().toISOString()
-    console.log(`[${timestamp}] ${message}`)
+    console.log(message)
 }
 
 /** Machine-level dirs: the single PID/logs/identity home (NOT per-vault). */
@@ -247,6 +248,7 @@ async function reconcileVaults(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+    stampConsole()
     await ensureDirs()
     await writePid()
     log(`Daemon starting (PID ${process.pid})`)

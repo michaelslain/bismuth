@@ -62,7 +62,7 @@ The left column is the daemon: a face, its name, and a chat. The right column ha
 | inbox | One line per open page: status dot, title, age | Click to open the page; `[ archive ]` on hover deletes it |
 | crons | Name, schedule or watched path, last result | `[ run ]` on hover; right-click for Run now, Enable or Disable, Delete |
 | services | One per background process, `on` or `off` | Right-click for Enable or Disable, Delete |
-| log | Recent activity events, newest first | None |
+| log | Recent activity events, newest first: time, name, what happened, then why (the run's trigger and model, a failure's reason, a skip's reason, the run's report line) | None |
 
 Click a box heading to open that section across the whole page; Esc or **close** returns. Rows that need you (a due or failed page, a failed cron) sort first, and a box too short for its rows ends with a `+N more` line that opens the section. A trailing `N resolved` line opens resolved inbox pages, and disabled crons sort last, collapsed behind a `show N disabled` line that expands them in place. The page has no create control: ask the daemon in its chat for a cron or a service, and approve the command it runs.
 
@@ -148,4 +148,4 @@ Core reads and lightly writes the daemon's files; it never calls the daemon proc
 
 The bundled app ships the compiled daemon. On every launch it copies a newer build to `~/.bismuth/bin/bismuth-daemon` and runs `--ensure-installed` (`core/src/daemonInstall.ts`). The daemon updates with the app. [Lifecycle](lifecycle.md#install) has the details.
 
-Source: `daemon/src/daemon/{index,session,codexSession,persona,tier,fileWatch,cron,seeds}.ts`, `daemon/src/lib/{config,registry,owner,bismuthPaths,coreBrain}.ts`, `core/src/brain.ts`, `core/src/{daemon,daemonGraph,daemonInstall}.ts`, `core/src/schema/settingsSchema.ts`, `app/src/daemon/{DaemonPage,DaemonPageHost,DaemonHub,daemonFaceModel,daemonPageModel}.ts*`
+Source: `daemon/src/daemon/{index,session,codexSession,persona,tier,fileWatch,cron,seeds}.ts`, `daemon/src/lib/{config,registry,owner,bismuthPaths,coreBrain}.ts`, `core/src/brain.ts`, `core/src/{daemon,daemonGraph,daemonInstall}.ts`, `core/src/schema/settingsSchema.ts`, `app/src/daemon/{DaemonPage,DaemonPageHost,DaemonHub,DaemonLog,activityLine,daemonFaceModel,daemonPageModel}.ts*`

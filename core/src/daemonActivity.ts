@@ -28,6 +28,8 @@ export interface ActivityEvent {
     cause?: string
     durationMs?: number
     detail?: string
+    /** A cron's closing report line, on `finished`. */
+    summary?: string
 }
 
 export interface ActivityQuery {

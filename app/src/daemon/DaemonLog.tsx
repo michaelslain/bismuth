@@ -1,6 +1,7 @@
 // app/src/daemon/DaemonLog.tsx
-// The daemon page's activity log panel: one mono row per event (`time  who  what  duration`),
-// newest first as `events` already arrives (api.daemonLogs()). Formatting is entirely
+// The daemon page's activity log panel: one mono row per event (`time  who  what  note  duration`),
+// newest first as `events` already arrives (api.daemonLogs()). The note (why it ran, why it failed,
+// what it reported) clips to one line in the box and wraps in the full variant. Formatting is entirely
 // activityLine.ts's job — this component only renders what that returns. `limit` row-caps the
 // list (newest-first order is unchanged) behind a `+N more` line that opens the section; `variant="full"`
 // shows every row grouped under day labels (logDays.ts).
@@ -54,13 +55,17 @@ function DaemonLog(props: DaemonLogProps) {
                 <Text as="span" inherit class={styles['log-who']}>
                     {line.who}
                 </Text>
+                <Text as="span" inherit class={styles['log-what']}>
+                    {line.what}
+                </Text>
                 <Text
                     as="span"
                     inherit
-                    class={styles['log-what']}
-                    title={line.what}
+                    class={styles['log-note']}
+                    classList={{ [styles['note-wrap']]: clock }}
+                    title={line.note ?? undefined}
                 >
-                    {line.what}
+                    {line.note ?? ''}
                 </Text>
                 <Text as="span" inherit class={styles['log-duration']}>
                     {line.duration ?? ''}

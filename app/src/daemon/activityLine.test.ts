@@ -21,6 +21,7 @@ test('a failed cron today', () => {
         what: 'fired failed',
         tone: 'fail',
         duration: '42s',
+        note: null,
     })
 })
 
@@ -101,4 +102,87 @@ test('tones and durations', () => {
             now,
         ).duration,
     ).toBe('3m')
+})
+
+test('the note says why: an environment cause, detail, then a report line the detail did not already give', () => {
+    const at = new Date('2026-09-14T14:00:00').toISOString()
+    expect(
+        activityLine(
+            {
+                ts: at,
+                kind: 'cron',
+                name: 'dream',
+                event: 'finished',
+                outcome: 'failed',
+                cause: 'job',
+                detail: 'the memory graph was unreachable',
+                summary: 'vault=5 memory=1',
+            },
+            now,
+        ).note,
+    ).toBe('the memory graph was unreachable // vault=5 memory=1')
+    expect(
+        activityLine(
+            {
+                ts: at,
+                kind: 'cron',
+                name: 'dream',
+                event: 'skipped',
+                outcome: 'skipped',
+                detail: 'skipped: no changes since 2026-10-12T18:17:52-07:00',
+            },
+            now,
+        ).note,
+    ).toBe('no changes since 2026-10-12T18:17:52-07:00')
+    expect(
+        activityLine(
+            {
+                ts: at,
+                kind: 'cron',
+                name: 'dream',
+                event: 'started',
+                detail: 'on schedule',
+            },
+            now,
+        ).note,
+    ).toBe('on schedule')
+})
+
+test('a skip says skipped once, and only an environment cause is named', () => {
+    const at = new Date('2026-09-14T14:00:00').toISOString()
+    const skip = { ts: at, kind: 'cron', name: 'dream', outcome: 'skipped' }
+    expect(activityLine({ ...skip, event: 'skipped' }, now).what).toBe('skipped')
+    expect(activityLine({ ...skip, event: 'finished' }, now).what).toBe('skipped')
+    expect(
+        activityLine(
+            { ...skip, event: 'finished', detail: 'skipped: no changes' },
+            now,
+        ).note,
+    ).toBe('no changes')
+    const killed = activityLine(
+        {
+            ts: at,
+            kind: 'cron',
+            name: 'dream',
+            event: 'finished',
+            outcome: 'killed',
+            cause: 'timeout',
+            detail: 'aborted after 600s',
+        },
+        now,
+    )
+    expect(killed.note).toBe('aborted after 600s')
+    const env = activityLine(
+        {
+            ts: at,
+            kind: 'cron',
+            name: 'dream',
+            event: 'finished',
+            outcome: 'failed',
+            cause: 'environment',
+            detail: 'claude not found on PATH',
+        },
+        now,
+    )
+    expect(env.note).toBe('environment // claude not found on PATH')
 })

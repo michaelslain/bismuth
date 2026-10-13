@@ -122,3 +122,64 @@ export const Full: Story = {
         await expect(logRows(canvasElement).length).toBe(5)
     },
 }
+
+/** Why each run began and how it ended, opened: a self-reported failure with its reason and the
+ *  run's report line, a timeout, a skip, a start on schedule. The opened log wraps the note, so
+ *  the long reason reads whole instead of clipping. */
+export const Reasons: Story = {
+    render: () => {
+        const at = (min: number) => new Date(NOW - min * MIN).toISOString()
+        const events: ActivityEvent[] = [
+            {
+                ts: at(1),
+                kind: 'cron',
+                name: 'dream',
+                event: 'finished',
+                outcome: 'failed',
+                cause: 'job',
+                durationMs: 16583,
+                detail: 'the housing note is still oversized and I did not rewrite it',
+                summary: 'vault=5 memory=1 transcripts=1 merged=0 pages=0 notes=140',
+            },
+            {
+                ts: at(2),
+                kind: 'cron',
+                name: 'dream',
+                event: 'started',
+                detail: 'catching up on a missed run // haiku',
+            },
+            {
+                ts: at(30),
+                kind: 'cron',
+                name: 'vault-review',
+                event: 'finished',
+                outcome: 'killed',
+                cause: 'timeout',
+                durationMs: 600000,
+                detail: 'aborted after 600s',
+            },
+            {
+                ts: at(60),
+                kind: 'cron',
+                name: 'dream',
+                event: 'skipped',
+                outcome: 'skipped',
+                detail: 'skipped: no changes since 2026-10-12T18:17:52-07:00',
+            },
+        ]
+        return (
+            <div style={{ width: '420px' }}>
+                <DaemonLog variant="full" events={events} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvas.getByText(/^the housing note is still oversized/),
+        ).toBeInTheDocument()
+        await expect(
+            canvas.getByText('no changes since 2026-10-12T18:17:52-07:00'),
+        ).toBeInTheDocument()
+    },
+}

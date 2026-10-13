@@ -459,7 +459,7 @@ function markSpawnFailed(mp: ManagedProcess, err: unknown): void {
     const code = (err as NodeJS.ErrnoException).code ?? 'error'
     const message = err instanceof Error ? err.message : String(err)
     mp.lastError = `${code}: ${message}`
-    console.error(`[process] Failed to start "${def.name}": ${mp.lastError}`)
+    console.error(`[process:${ctx.name}] Failed to start "${def.name}": ${mp.lastError}`)
     void logActivity(
         mp.ctx,
         processActivityEvent(def.name, {
@@ -478,7 +478,7 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     const stalePid = await readPidFile(ctx, def.file)
     if (stalePid && stalePid !== mp.proc?.pid && pidAlive(stalePid)) {
         console.warn(
-            `[process] Stale pid ${stalePid} for "${def.name}" — killing before spawn`,
+            `[process:${ctx.name}] Stale pid ${stalePid} for "${def.name}" — killing before spawn`,
         )
         await killAndConfirm(stalePid)
     }
@@ -489,7 +489,7 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     for (const o of orphans) {
         if (!pidAlive(o.pid)) continue
         console.warn(
-            `[process] Orphan pid ${o.pid} matches "${def.name}" (${o.command}) — killing before spawn`,
+            `[process:${ctx.name}] Orphan pid ${o.pid} matches "${def.name}" (${o.command}) — killing before spawn`,
         )
         await killAndConfirm(o.pid)
     }
@@ -523,14 +523,14 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     mp.lastStart = Date.now()
     const spawnedPid = mp.proc.pid
     if (spawnedPid) {
-        console.log(`[process] Started "${def.name}" (PID ${spawnedPid})`)
+        console.log(`[process:${ctx.name}] Started "${def.name}" (PID ${spawnedPid})`)
         void logActivity(
             mp.ctx,
             processActivityEvent(def.name, { event: 'started', pid: spawnedPid }),
         )
         void writePidFile(ctx, def.file, spawnedPid).catch(err => {
             console.error(
-                `[process] Failed to write pid file for "${def.name}": ${err}`,
+                `[process:${ctx.name}] Failed to write pid file for "${def.name}": ${err}`,
             )
         })
     }
@@ -544,7 +544,7 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
         void removePidFile(ctx, def.file)
         if (mp.stopping || mp.lastError) return
         const exitInfo = signal ? `signal ${signal}` : `code ${code}`
-        console.log(`[process] "${def.name}" exited with ${exitInfo}`)
+        console.log(`[process:${ctx.name}] "${def.name}" exited with ${exitInfo}`)
         void logActivity(
             mp.ctx,
             processActivityEvent(def.name, { event: 'exited', code, signal }),
@@ -569,7 +569,7 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
         }
 
         console.log(
-            `[process] Restarting "${def.name}" in ${mp.backoff}ms (restart #${mp.restarts})`,
+            `[process:${ctx.name}] Restarting "${def.name}" in ${mp.backoff}ms (restart #${mp.restarts})`,
         )
         void logActivity(
             mp.ctx,
@@ -637,7 +637,7 @@ export async function reapOrphans(ctx: VaultContext): Promise<void> {
         const stalePid = await readPidFile(ctx, def.file)
         if (stalePid && pidAlive(stalePid)) {
             console.warn(
-                `[process] Reaping orphan pid ${stalePid} for "${def.name}" (stale pid file)`,
+                `[process:${ctx.name}] Reaping orphan pid ${stalePid} for "${def.name}" (stale pid file)`,
             )
             void logActivity(
                 ctx,
@@ -658,7 +658,7 @@ export async function reapOrphans(ctx: VaultContext): Promise<void> {
         for (const o of orphans) {
             if (!pidAlive(o.pid)) continue
             console.warn(
-                `[process] Reaping orphan pid ${o.pid} for "${def.name}" (argv match: ${o.command})`,
+                `[process:${ctx.name}] Reaping orphan pid ${o.pid} for "${def.name}" (argv match: ${o.command})`,
             )
             void logActivity(
                 ctx,
@@ -710,7 +710,7 @@ async function stopAndClear(
     for (const [, mp] of active) {
         if (mp.proc?.pid && pidAlive(mp.proc.pid)) {
             console.warn(
-                `[process] "${mp.def.name}" (PID ${mp.proc.pid}) did not exit on SIGTERM — sending SIGKILL`,
+                `[process:${mp.ctx.name}] "${mp.def.name}" (PID ${mp.proc.pid}) did not exit on SIGTERM — sending SIGKILL`,
             )
             forceKill(mp)
         }
@@ -805,7 +805,7 @@ export async function stopProcess(
 
     if (pidAlive(pid)) {
         console.warn(
-            `[process] "${name}" (PID ${pid}) did not exit on SIGTERM — sending SIGKILL`,
+            `[process:${ctx.name}] "${name}" (PID ${pid}) did not exit on SIGTERM — sending SIGKILL`,
         )
         forceKill(mp)
         const hardDeadline = Date.now() + 2000
@@ -852,7 +852,7 @@ export async function listProcesses(
                 // Child died but exit handler hasn't fired (or was missed). Clear
                 // the stale ref so process_start can succeed.
                 console.warn(
-                    `[process] "${mp.def.name}" pid ${mp.proc.pid} no longer alive — clearing stale ref`,
+                    `[process:${mp.ctx.name}] "${mp.def.name}" pid ${mp.proc.pid} no longer alive — clearing stale ref`,
                 )
                 mp.proc = null
                 status = 'stale'
@@ -1015,7 +1015,7 @@ export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
         // so reject anything with path separators that could escape the dir.
         if (name.includes('/') || name.includes('\\')) {
             console.warn(
-                `[process] Trigger with invalid name "${name}" — skipping`,
+                `[process:${ctx.name}] Trigger with invalid name "${name}" — skipping`,
             )
             continue
         }
@@ -1026,7 +1026,7 @@ export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
         if (!loaded.ok) {
             if (!loaded.missing) {
                 console.warn(
-                    `[process] Trigger for "${name}" missing required "command" — skipping`,
+                    `[process:${ctx.name}] Trigger for "${name}" missing required "command" — skipping`,
                 )
                 continue
             }
@@ -1035,11 +1035,11 @@ export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
                 mp.stopping = true
                 if (mp.proc) await stopProcess(name, ctx)
                 console.log(
-                    `[process] Trigger for deleted process "${name}" — stopped`,
+                    `[process:${ctx.name}] Trigger for deleted process "${name}" — stopped`,
                 )
             } else {
                 console.warn(
-                    `[process] Trigger for unknown process "${name}" — skipping`,
+                    `[process:${ctx.name}] Trigger for unknown process "${name}" — skipping`,
                 )
             }
             continue
@@ -1049,11 +1049,11 @@ export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
         // Reconcile runtime ↔ disk using the existing enable/disable/start funcs.
         const running = isRunning(ctx, def.file)
         if (def.enabled && !running) {
-            console.log(`[process] Trigger starting: ${name}`)
+            console.log(`[process:${ctx.name}] Trigger starting: ${name}`)
             await enableProcess(name, ctx)
             startProcess(def.file, ctx)
         } else if (!def.enabled && running) {
-            console.log(`[process] Trigger stopping: ${name}`)
+            console.log(`[process:${ctx.name}] Trigger stopping: ${name}`)
             await disableProcess(name, ctx)
         }
         // else: runtime already matches disk — no-op
