@@ -4,6 +4,7 @@
 //   • DRAG it to resize the panel (a pointer that travels more than DRAG_SLOP px is a drag);
 //   • CLICK it to run the panel's toggle (hide/show the sidebar, pin/unpin the rail) — the same
 //     command as its keybinding, so the line and Alt+S / Alt+Shift+S are one action;
+//     (Without `onActivate` the strip only resizes: no click action, no button.)
 //   • HOVER it (or focus it) and a chevron button springs out at the line's vertical centre,
 //     pointing the way the panel will move — the same toggle, as a visible target. Its tooltip
 //     names the action and the live keybinding.
@@ -20,7 +21,7 @@ import IconButton from '../ui/IconButton'
 import { gestureStops } from '../ui/stopGestures'
 import { parseCombo } from '../ui/ascii/parseCombo'
 import { isActivateKey } from '../ui/widgetKeys'
-import { createSignal } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import { edgeHandleView, type EdgePanel, type EdgeSide } from './edgeHandleLogic'
 
 /** Pixels a pressed pointer may wander before the press counts as a drag rather than a click. */
@@ -49,8 +50,9 @@ export type EdgeHandleProps = {
     /** Running offset from the press point, in px (+ = rightward). */
     onResize?: (dx: number) => void
     onResizeEnd?: () => void
-    /** The click: run the panel's toggle. */
-    onActivate: () => void
+    /** The click: run the panel's toggle. Omitted, the strip only resizes: a click does nothing
+     *  and no button pops out (an image's scratch line, which has no bar toggle to undo a hide). */
+    onActivate?: () => void
     className?: string
 }
 
@@ -95,13 +97,13 @@ function EdgeHandle(props: EdgeHandleProps) {
             // A strip focused earlier (Tab, or a story's play) would otherwise keep the rail open
             // through `:focus-within` after a pointer click — the pointer is now the input.
             el.blur()
-            props.onActivate()
+            props.onActivate?.()
         }
     }
     // Keyboard: a focused strip (Tab reaches it) runs its toggle on the activate key — the same
     // Enter/Space every button-like widget reads (ui/widgetKeys.ts). Resizing is pointer-only.
     const onKeyDown = (e: KeyboardEvent) => {
-        if (!isActivateKey(e)) return
+        if (!isActivateKey(e) || !props.onActivate) return
         e.preventDefault()
         props.onActivate()
     }
@@ -136,29 +138,31 @@ function EdgeHandle(props: EdgeHandleProps) {
             onKeyDown={onKeyDown}
         >
             <div class={styles['line']} />
-            <div
-                class={styles['pop']}
-                data-edge-button
-                {...gestureStops}
-                // Not focused by a click either: focus left on this button would hold the rail
-                // open through `:focus-within` after the click that just unpinned it.
-                onMouseDown={e => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                }}
-            >
-                <div class={styles['chip']}>
-                    <IconButton
-                        icon={view().direction === 'left' ? 'ChevronLeft' : 'ChevronRight'}
-                        label={tooltip()}
-                        tabIndex={-1}
-                        onClick={() => {
-                            rootEl?.blur()
-                            props.onActivate()
-                        }}
-                    />
+            <Show when={props.onActivate}>
+                <div
+                    class={styles['pop']}
+                    data-edge-button
+                    {...gestureStops}
+                    // Not focused by a click either: focus left on this button would hold the rail
+                    // open through `:focus-within` after the click that just unpinned it.
+                    onMouseDown={e => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                    }}
+                >
+                    <div class={styles['chip']}>
+                        <IconButton
+                            icon={view().direction === 'left' ? 'ChevronLeft' : 'ChevronRight'}
+                            label={tooltip()}
+                            tabIndex={-1}
+                            onClick={() => {
+                                rootEl?.blur()
+                                props.onActivate?.()
+                            }}
+                        />
+                    </div>
                 </div>
-            </div>
+            </Show>
         </div>
     )
 }

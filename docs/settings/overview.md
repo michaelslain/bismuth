@@ -44,7 +44,7 @@ If the YAML itself does not parse, every key reads as its default and the app le
 
 Some actions in the app write `.settings` directly, one key at a time:
 
-- Dragging the sidebar or tab rail edge writes `appearance.sidebarWidth` and `appearance.tabRailWidth`; each edge snaps onto its default within 12px.
+- Dragging the sidebar, tab rail or PDF bookmarks panel edge writes `appearance.sidebarWidth`, `appearance.tabRailWidth` or `appearance.pdfBookmarksWidth`; each edge snaps onto its default within 12px.
 - The commands **Move sidebar to other side**, **Move tab rail to other side** and **Toggle status bar** write the `layout` keys.
 - Setting a folder icon from the file tree writes `folderIcons`.
 

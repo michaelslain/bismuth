@@ -24,6 +24,8 @@ describe('edgeHandleView', () => {
         expect(edgeHandleView('sidebar', 'left', false).action).toBe('show sidebar')
         expect(edgeHandleView('tab rail', 'right', true).action).toBe('unpin tab rail')
         expect(edgeHandleView('tab rail', 'right', false).action).toBe('pin tab rail')
+        expect(edgeHandleView('bookmarks', 'right', true).action).toBe('hide bookmarks')
+        expect(edgeHandleView('scratch', 'right', true).action).toBe('hide scratch')
     })
 
     test('the strip is named for its panel', () => {

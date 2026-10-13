@@ -4,7 +4,7 @@
 // unit-tested (edgeHandleLogic.test.ts) — and so the four places that wired an EdgeHandle by hand stop
 // re-deriving it, two of them wrongly (a chevron pointing the way the panel was NOT about to move).
 
-export type EdgePanel = 'sidebar' | 'tab rail'
+export type EdgePanel = 'sidebar' | 'tab rail' | 'bookmarks' | 'scratch'
 export type EdgeSide = 'left' | 'right'
 
 export type EdgeHandleView = {
@@ -20,10 +20,13 @@ export type EdgeHandleView = {
 
 const opposite = (side: EdgeSide): EdgeSide => (side === 'left' ? 'right' : 'left')
 
-/** The sidebar hides/shows; the rail pins/unpins. */
+/** The sidebar, a PDF's bookmarks column and a preview's scratch strip hide/show; the rail
+ *  pins/unpins. */
 const ACTIONS: Record<EdgePanel, { open: string; closed: string }> = {
     sidebar: { open: 'hide sidebar', closed: 'show sidebar' },
     'tab rail': { open: 'unpin tab rail', closed: 'pin tab rail' },
+    bookmarks: { open: 'hide bookmarks', closed: 'show bookmarks' },
+    scratch: { open: 'hide scratch', closed: 'show scratch' },
 }
 
 export function edgeHandleView(

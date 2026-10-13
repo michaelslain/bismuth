@@ -6,7 +6,7 @@ import { SETTINGS_SCHEMA } from '../../core/src/schema/settingsSchema'
 import type { SchemaEntry } from '../../core/src/schema/types'
 
 /** The appearance widths an edge drag writes. */
-export type EdgeWidthKey = 'sidebarWidth' | 'tabRailWidth'
+export type EdgeWidthKey = 'sidebarWidth' | 'tabRailWidth' | 'pdfBookmarksWidth'
 
 /** Pixels either side of the default width within which a drag snaps onto it — enough to catch
  *  the line as it passes, small enough that a deliberate near-default width is still reachable. */

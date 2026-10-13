@@ -306,3 +306,35 @@ export const SidebarHiddenGutterControl: Story = {
         await expect(toggle.getAttribute('aria-label')).toBe('show sidebar (⌥S)')
     },
 }
+
+function ResizeOnlyDemo() {
+    const [width, setWidth] = createSignal(232)
+    let start = 0
+    return frame(
+        <>
+            {editor(
+                <EdgeHandle
+                    panel="scratch"
+                    edge="right"
+                    open
+                    onResizeStart={() => (start = width())}
+                    onResize={dx => setWidth(dragWidth('tabRailWidth', start, dx, -1))}
+                />,
+                'right',
+            )}
+            {panel(`${width()}px`, 'right', `scratch // ${width()}px`)}
+        </>,
+    )
+}
+
+/** No `onActivate` (an image's scratch line): focused or hovered, the line lights but no chevron
+ *  springs out, and a click does nothing — the strip only resizes. */
+export const ResizeOnly: Story = {
+    render: () => <ResizeOnlyDemo />,
+    play: async ({ canvasElement }) => {
+        const edge = canvasElement.querySelector<HTMLElement>('[data-edge-handle]')!
+        edge.focus()
+        await expect(edge.querySelector('[data-edge-button]')).toBeNull()
+        await expect(edge.getAttribute('aria-label')).toBe('scratch edge')
+    },
+}

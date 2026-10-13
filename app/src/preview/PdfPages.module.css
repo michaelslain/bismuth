@@ -78,6 +78,14 @@
     pointer-events: none;
 }
 
+/* The slot on the line between a page and its scratch strip, holding PreviewView's EdgeHandle
+   (`scratchEdge`). Zero-width, so the handle inside places itself against the line; after
+   `.pdf-overlay` in the DOM, so it paints and takes pointer events above the ink and note layers. */
+.pdf-scratch-edge {
+    position: absolute;
+    width: 0;
+}
+
 /* The load-failure block: the EmptyState message, then (optionally) PdfPages' `errorAction`
    centred beneath it — one column, the same shape as PreviewView's `.preview-external`. */
 .pdf-error {

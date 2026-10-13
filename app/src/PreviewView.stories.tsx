@@ -2627,3 +2627,121 @@ export const PdfLeaveAndReturnKeepsHighlights: Story = {
         )
     },
 }
+
+const EDGES_VIEW_KEY = 'story:pdf-panel-edges'
+
+/** Scratch on and the bookmarks column open, each with the sidebar's grab strip on its line: one
+ *  on every visible page|scratch line (drag to move the line, click to hide scratch) and one on
+ *  the column's left border (drag to resize it, writing `appearance.pdfBookmarksWidth`; click to
+ *  hide it). Hover a line and its chevron springs out over the page. Draw mode removes the
+ *  scratch strips so a stroke that starts on the line still draws. */
+export const PdfPanelEdges: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: {
+                    [ANNOT_SIDECAR]: serializeDoc({
+                        ...emptyDoc(),
+                        margin: { right: DEFAULT_MARGIN_RATIO },
+                    }),
+                },
+            }),
+        )
+        setSettings('appearance', 'pdfBookmarksWidth', 260)
+        clearPdfView(EDGES_VIEW_KEY)
+        return (
+            <div style={{ height: '100vh' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                    pdfViewKey={EDGES_VIEW_KEY}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const scratchEdges = () =>
+            [...canvasElement.querySelectorAll<HTMLElement>('[aria-label="scratch edge"]')]
+        const bookmarksEdge = () =>
+            canvasElement.querySelector<HTMLElement>('[aria-label="bookmarks edge"]')
+        await waitFor(() => expect(scratchEdges().length).toBeGreaterThan(0), {
+            timeout: 8000,
+        })
+        // Each strip stands on its page's right edge — the line onto the scratch strip.
+        for (const edge of scratchEdges()) {
+            const slot = edge.parentElement!.getBoundingClientRect()
+            await expect(Math.abs(edge.getBoundingClientRect().right - slot.left)).toBeLessThan(1)
+            await expect(edge.querySelector('[data-edge-button]')).not.toBeNull()
+        }
+        const first = canvasElement.querySelector<HTMLElement>('[data-pdf-page="0"]')!
+        await expect(
+            Math.abs(
+                scratchEdges()[0]!.getBoundingClientRect().right -
+                    first.getBoundingClientRect().right,
+            ),
+        ).toBeLessThan(1)
+
+        fireEvent.click(canvas.getByLabelText('Bookmarks'))
+        await waitFor(() => expect(bookmarksEdge()).not.toBeNull())
+        const column = bookmarksEdge()!.nextElementSibling as HTMLElement
+        await expect(column.getBoundingClientRect().width).toBe(260)
+        await expect(
+            Math.abs(
+                bookmarksEdge()!.getBoundingClientRect().right -
+                    column.getBoundingClientRect().left,
+            ),
+        ).toBeLessThan(1)
+
+        // Draw mode: no scratch strips; leaving it brings them back.
+        fireEvent.click(canvas.getByLabelText('Draw'))
+        await waitFor(() => expect(scratchEdges().length).toBe(0))
+        fireEvent.click(canvas.getByLabelText('Draw'))
+        await waitFor(() => expect(scratchEdges().length).toBeGreaterThan(0))
+
+        // The bookmarks line's chevron hides the column, the same as the bar's toggle.
+        fireEvent.click(bookmarksEdge()!.querySelector('[data-edge-button] button')!)
+        await waitFor(() => expect(bookmarksEdge()).toBeNull())
+        await expect(pressedOf(canvas.getByLabelText('Bookmarks') as HTMLButtonElement)).toBe(
+            'false',
+        )
+    },
+}
+
+/** An image whose sidecar carries a scratch strip: one grab strip on the picture|scratch line.
+ *  It only resizes — no chevron, no click action — because the bar has no scratch toggle for
+ *  images to bring a hidden strip back. */
+export const ImageScratchEdge: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: {
+                    [inkSidecarFor(MEASURED_IMAGE_PATH)]: serializeDoc({
+                        ...measuredImageDoc(),
+                        margin: { right: DEFAULT_MARGIN_RATIO },
+                    }),
+                },
+            }),
+        )
+        return (
+            <div style={{ width: '900px', height: '400px' }}>
+                <PreviewView
+                    path={MEASURED_IMAGE_PATH}
+                    tagNames={NO_TAGS}
+                    imageSrc={measuredPhotoPng}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const edge = () =>
+            canvasElement.querySelector<HTMLElement>('[aria-label="scratch edge"]')
+        await waitFor(() => expect(edge()).not.toBeNull(), { timeout: 5000 })
+        const img = canvasElement.querySelector<HTMLElement>('[data-testid="preview-image"]')!
+        await expect(
+            Math.abs(edge()!.getBoundingClientRect().right - img.getBoundingClientRect().right),
+        ).toBeLessThan(1)
+        await expect(edge()!.querySelector('[data-edge-button]')).toBeNull()
+    },
+}

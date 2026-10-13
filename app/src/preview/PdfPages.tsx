@@ -100,6 +100,10 @@ export type PdfPagesProps = {
     /** Margin paper to the right of every page, as a fraction of the page's rendered width.
      *  Page + margin together keep the `zoom` width. 0 / omitted = no margin. */
     marginRatio?: number
+    /** The grab strip for the line between page `index` and its scratch strip (PreviewView's
+     *  EdgeHandle). Rendered for every visible page that has a strip, in a slot standing on that
+     *  line, AFTER `overlay` so it sits above the ink and scratch-note layers. */
+    scratchEdge?: (index: number) => JSX.Element
     /** Once per loaded document: its embedded outline, `[]` when it has none. */
     onOutline?: (outline: OutlineNode[]) => void
     /** The page one third down the viewport (0-based); fires when it changes, and once per
@@ -789,6 +793,32 @@ function PdfPages(props: PdfPagesProps) {
                                 nor `.pdf-page` carries a z-index any more. */}
                             <Show when={overlay()}>
                                 <div class={styles['pdf-overlay']}>{overlay()}</div>
+                            </Show>
+                            <Show when={props.scratchEdge}>
+                                {edge => (
+                                    <Index each={layout().boxes}>
+                                        {(box, i) => (
+                                            <Show
+                                                when={
+                                                    box().marginW > 0 &&
+                                                    i >= visible()[0] &&
+                                                    i <= visible()[1]
+                                                }
+                                            >
+                                                <div
+                                                    class={styles['pdf-scratch-edge']}
+                                                    style={{
+                                                        top: `${box().top}px`,
+                                                        left: `${box().left + box().w}px`,
+                                                        height: `${box().h}px`,
+                                                    }}
+                                                >
+                                                    {edge()(i)}
+                                                </div>
+                                            </Show>
+                                        )}
+                                    </Index>
+                                )}
                             </Show>
                         </div>
                     </div>

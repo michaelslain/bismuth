@@ -9,13 +9,16 @@ import type { DrawingDoc } from './model'
  *  page keeps 71% of the fit-width column (1 / 1.4) instead of shrinking to 62.5%. */
 export const DEFAULT_MARGIN_RATIO = 0.4
 
+/** The widest strip a ratio may describe: twice the page's own width. */
+export const MAX_MARGIN_RATIO = 2
+
 /** The doc's margin ratio, or 0 when there is none (no `margin` key, or a non-finite value —
  *  never let a corrupt sidecar produce NaN/Infinity math downstream). Clamped to [0, 2]: 0 is
  *  "off", and doubling the page's own width is already more scratch space than anyone needs. */
 export function marginRatioOf(doc: DrawingDoc | null): number {
     const r = doc?.margin?.right
     if (typeof r !== 'number' || !Number.isFinite(r)) return 0
-    return Math.max(0, Math.min(2, r))
+    return Math.max(0, Math.min(MAX_MARGIN_RATIO, r))
 }
 
 /** `doc` with its margin ratio set to `ratio`. A ratio `<= 0` REMOVES the `margin` key entirely

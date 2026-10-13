@@ -24,6 +24,9 @@ export type ImagePaneProps = {
     onError: () => void
     /** The ScratchTextLayer + PageInk, painted over the same stage as the picture. */
     overlay?: JSX.Element
+    /** The grab strip for the line between the picture and its scratch strip (PreviewView's
+     *  EdgeHandle), in a slot standing on that line, after the overlay so it sits above it. */
+    scratchEdge?: JSX.Element
 }
 
 const ImagePane: Component<ImagePaneProps> = props => {
@@ -86,6 +89,18 @@ const ImagePane: Component<ImagePaneProps> = props => {
             <Show when={props.hasPages}>
                 <div class={styles['preview-image-overlay']} style={props.stageStyle}>
                     {props.overlay}
+                </div>
+            </Show>
+            <Show when={props.scratch && (props.page?.marginW ?? 0) > 0 && props.scratchEdge}>
+                <div
+                    class={styles['preview-image-scratch-edge']}
+                    style={{
+                        left: `${rendered()!.left + rendered()!.w}px`,
+                        top: `${rendered()!.top}px`,
+                        height: `${rendered()!.h}px`,
+                    }}
+                >
+                    {props.scratchEdge}
                 </div>
             </Show>
         </>

@@ -55,11 +55,21 @@
   min-width: 0;
 }
 
-/* The bookmarks + outline column, fixed on the right of the page stack — capped so a narrow pane
-   still keeps most of its width for the pages. */
+/* The bookmarks + outline column, fixed on the right of the page stack at the dragged width
+   (`--bookmarks-w`, set inline from appearance.pdfBookmarksWidth) — capped so a narrow pane still
+   keeps most of its width for the pages. Positioned so its edge handle can stand on its left line. */
 .preview-bookmarks {
-  flex: 0 0 min(260px, 45%);
+  position: relative;
+  flex: 0 0 min(var(--bookmarks-w, 260px), 60%);
   min-width: 0;
+}
+
+/* A panel edge handle (shell/EdgeHandle) standing on the EDITOR side of its line: the bookmarks
+   column's left border, or a page's line onto its scratch strip (a zero-width slot on that line,
+   PdfPages' / ImagePane's `scratchEdge`). The handle's own highlight is drawn flush against the
+   line on its right edge. */
+.panel-edge {
+  right: 100%;
 }
 
 /* The root is focusable (tabindex) so Cmd+F reaches the keydown handler — nothing draws focus. */

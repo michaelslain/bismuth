@@ -5,6 +5,7 @@ describe('edgeResize', () => {
     test('bounds come from the settings schema', () => {
         expect(widthBounds('sidebarWidth')).toEqual([200, 600])
         expect(widthBounds('tabRailWidth')).toEqual([160, 480])
+        expect(widthBounds('pdfBookmarksWidth')).toEqual([180, 520])
     })
     test('a left panel grows with rightward travel', () => {
         expect(dragWidth('sidebarWidth', 266, 40, 1)).toBe(306)
@@ -23,6 +24,7 @@ describe('edgeResize', () => {
     test('defaults come from the settings schema', () => {
         expect(defaultWidth('sidebarWidth')).toBe(266)
         expect(defaultWidth('tabRailWidth')).toBe(232)
+        expect(defaultWidth('pdfBookmarksWidth')).toBe(260)
     })
     test('snaps onto the default width within SNAP_DISTANCE, either side', () => {
         expect(dragWidth('sidebarWidth', 400, -(400 - 266) + SNAP_DISTANCE, 1)).toBe(266)

@@ -155,6 +155,13 @@ export const SETTINGS_SCHEMA: Schema = {
             max: 480,
             doc: "Right tab rail's open width (px) — hovered or pinned; collapsed it is always the 46px icon column. Set by dragging the rail's edge, which snaps onto this default within 12px.",
         },
+        pdfBookmarksWidth: {
+            type: 'number',
+            default: 260,
+            min: 180,
+            max: 520,
+            doc: "Width (px) of a PDF preview's bookmarks + outline column. Set by dragging the column's edge, which snaps onto this default within 12px; a narrow pane caps it at 60% of the preview.",
+        },
         uiFontSize: {
             type: 'number',
             default: 11.5,

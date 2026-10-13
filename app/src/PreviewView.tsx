@@ -66,6 +66,9 @@ import CodePane from './preview/CodePane'
 import ImagePane from './preview/ImagePane'
 import PreviewUnavailable from './preview/PreviewUnavailable'
 import BookmarksPanel from './preview/BookmarksPanel'
+import EdgeHandle from './shell/EdgeHandle'
+import { dragWidth, widthBounds } from './edgeResize'
+import { dragMarginRatio, fixedUnitLine, type ScratchLineAt } from './preview/scratchResize'
 import createAnnotationStore from './preview/createAnnotationStore'
 import createCompanionStore from './preview/createCompanionStore'
 import type {
@@ -99,7 +102,7 @@ import {
     isConverting,
     watchPdf,
 } from './preview/pdfMarkdownJobs'
-import { settings } from './settings'
+import { settings, setSettings } from './settings'
 import { matchesKeybinding } from './keybindings'
 import styles from './PreviewView.module.css'
 
@@ -326,7 +329,12 @@ export function PreviewView(props: {
             : undefined,
     )
     const annotReady = () => store()?.loadState() === 'ready'
-    const marginRatio = createMemo(() => marginRatioOf(store()?.doc() ?? null))
+    // A live drag of the page|strip line (scratchEdge below) previews its ratio here and writes the
+    // sidecar once, on release — so one drag is one undo step, not one per pointer move.
+    const [scratchDrag, setScratchDrag] = createSignal<number | null>(null)
+    const marginRatio = createMemo(
+        () => scratchDrag() ?? marginRatioOf(store()?.doc() ?? null),
+    )
     // PDF dark mode is remembered PER FILE, in the sidecar's `dark` flag beside `margin`;
     // `appearance.pdfDarkMode` is only the default for a PDF that holds no flag yet. The moon
     // writes the flag through the same store as scratch paper, so it saves and undoes the same way.
@@ -409,6 +417,7 @@ export function PreviewView(props: {
                 setImagePages([])
                 setPdfPages([])
                 setPdfBoxes([])
+                setScratchDrag(null)
             },
         ),
     )
@@ -505,6 +514,17 @@ export function PreviewView(props: {
         if (bodyRef) ro.observe(bodyRef)
         onCleanup(() => ro.disconnect())
     }
+    // A ratio change with the strip already on (an edge drag, an undo) keeps the same `<img>`, so
+    // neither its ref nor its ResizeObserver fires: re-lay the picture + strip out here.
+    createEffect(
+        on(
+            marginRatio,
+            () => {
+                if (imgEl && kind() === 'image') measureImage(imgEl)
+            },
+            { defer: true },
+        ),
+    )
     /** Run `apply` (a zoom change), re-lay the image out at once, and scroll so the picture point
      *  under client (`x`, `y`) — the body's centre for a button glide — stays put. */
     const imageZoomAt = (apply: () => void, x?: number, y?: number) => {
@@ -726,6 +746,74 @@ export function PreviewView(props: {
         }
     }
 
+    // --- Panel edges (shell/EdgeHandle, the sidebar's own grab strip) -------------------------
+    // SCRATCH: one strip on every page|scratch line (each PDF page's, the image's). Dragging moves
+    // the line. Clicking hides scratch on a PDF; an image's line only resizes, since the bar has
+    // no scratch toggle for images to bring a hidden strip back. Absent while drawing or arming a
+    // highlight, so it never takes a stroke or a selection that starts on the line.
+    const scratchEditable = () => annotReady() && !drawMode() && !highlightArmed()
+    // The line's layout at press time (ratio → its x) and where it sat; the drag solves for the
+    // ratio whose line lands under the pointer (preview/scratchResize.ts).
+    let scratchLineAt: ScratchLineAt | undefined
+    let scratchStartLine = 0
+    const startScratchResize = (index: number) => {
+        scratchLineAt = undefined
+        if (kind() === 'pdf') {
+            const box = pdfBoxes()[index]
+            if (box) scratchLineAt = fixedUnitLine(box.w, box.marginW)
+        } else {
+            const body = bodyRef
+            const natW = imgEl?.naturalWidth || imageSize()?.w || 0
+            const natH = imgEl?.naturalHeight || imageSize()?.h || 0
+            if (body && natW && natH) {
+                // The same layout measureImage runs, at any ratio.
+                const area = { w: body.clientWidth, h: body.clientHeight }
+                const gutter = parseFloat(getComputedStyle(body).getPropertyValue('--sp-6')) || 0
+                const zoom = imageZoom()
+                scratchLineAt = ratio => {
+                    const { rendered } = imageZoomLayout(area, gutter, natW, natH, ratio, zoom)
+                    return rendered.left + rendered.w
+                }
+            }
+        }
+        scratchStartLine = scratchLineAt?.(marginRatio()) ?? 0
+        setScratchDrag(marginRatio())
+    }
+    const resizeScratch = (dx: number) => {
+        if (scratchLineAt) setScratchDrag(dragMarginRatio(scratchLineAt, scratchStartLine, dx))
+    }
+    const endScratchResize = () => {
+        const ratio = scratchDrag()
+        if (ratio !== null && ratio !== marginRatioOf(store()?.doc() ?? null))
+            store()?.edit(d => setMarginRatio(d, ratio))
+        setScratchDrag(null)
+    }
+    const scratchEdge = (index: number) => (
+        <EdgeHandle
+            panel="scratch"
+            edge="right"
+            open
+            className={styles['panel-edge']}
+            onResizeStart={() => startScratchResize(index)}
+            onResize={resizeScratch}
+            onResizeEnd={endScratchResize}
+            onActivate={kind() === 'pdf' ? toggleMargin : undefined}
+        />
+    )
+    // BOOKMARKS: the column's left edge. Dragging writes `appearance.pdfBookmarksWidth` live (the
+    // settings store debounces the save, as for the sidebar), capped at 60% of the preview so the
+    // stored width is always the width on screen; clicking hides the column.
+    let bookmarksStartW = 0
+    const resizeBookmarks = (dx: number) => {
+        const [min] = widthBounds('pdfBookmarksWidth')
+        const cap = Math.max(min, Math.floor((bodyRef?.clientWidth ?? Infinity) * 0.6))
+        setSettings(
+            'appearance',
+            'pdfBookmarksWidth',
+            Math.min(cap, dragWidth('pdfBookmarksWidth', bookmarksStartW, dx, -1)),
+        )
+    }
+
     return (
         <div class={styles['preview-app']} tabindex={-1} ref={rootRef}>
             <PreviewBar
@@ -845,6 +933,7 @@ export function PreviewView(props: {
                                     })
                                     measureImage(img)
                                 }}
+                                scratchEdge={scratchEditable() ? scratchEdge(0) : undefined}
                                 onError={() => {
                                     setImgFailed(true)
                                     setImageSize(undefined)
@@ -889,6 +978,7 @@ export function PreviewView(props: {
                             load={pdfLoad()}
                             zoom={pdfZoom()}
                             marginRatio={marginRatio()}
+                            scratchEdge={scratchEditable() ? scratchEdge : undefined}
                             // The doc cache is keyed on the REAL path only, never `pdfViewKey` — a
                             // story proving view-memory restore (`pdfViewKey` set) must still get
                             // no cache, exactly like every other `pdfLoad` story, so it only ever
@@ -958,13 +1048,30 @@ export function PreviewView(props: {
                             }
                         />
                         <Show when={panelOpen()}>
-                            <BookmarksPanel
+                            <div
                                 class={styles['preview-bookmarks']}
-                                store={store()!}
-                                outline={outline}
-                                currentPage={currentPage}
-                                onJump={i => pdfController?.scrollToPage(i)}
-                            />
+                                style={{
+                                    '--bookmarks-w': `${settings.appearance.pdfBookmarksWidth}px`,
+                                }}
+                            >
+                                <EdgeHandle
+                                    panel="bookmarks"
+                                    edge="right"
+                                    open
+                                    className={styles['panel-edge']}
+                                    onResizeStart={() =>
+                                        (bookmarksStartW = settings.appearance.pdfBookmarksWidth)
+                                    }
+                                    onResize={resizeBookmarks}
+                                    onActivate={() => setPanelOpen(false)}
+                                />
+                                <BookmarksPanel
+                                    store={store()!}
+                                    outline={outline}
+                                    currentPage={currentPage}
+                                    onJump={i => pdfController?.scrollToPage(i)}
+                                />
+                            </div>
                         </Show>
                     </Match>
                     <Match when={kind() === 'code'}>

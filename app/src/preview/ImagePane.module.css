@@ -39,6 +39,14 @@
   pointer-events: none;
 }
 
+/* The slot on the line between the picture and its strip, holding PreviewView's EdgeHandle
+   (`scratchEdge`). Zero-width, so the handle inside places itself against the line; after the
+   overlay in the DOM, so it takes pointer events above the ink and note layers. */
+.preview-image-scratch-edge {
+  position: absolute;
+  width: 0;
+}
+
 /* The image's strip (ScratchPaper, passed this class via its `class` prop) — the same hard lift
    and left-clip `.pdf-margin` gives a PDF page's strip (PdfPages.module.css), so an image's strip
    reads as part of the same system rather than flat paper with no edge (final review, finding 5).

@@ -44,6 +44,7 @@ export interface Settings {
         sidebarWidth: number // px
         sidebarGraphHeight: number // px
         tabRailWidth: number // px
+        pdfBookmarksWidth: number // px
         uiFontSize: number // px
         monoScale: number // optical-size multiplier for Monaspace (mono UI/code)
         iconSize: number // px

@@ -50,7 +50,7 @@ An image or PDF opens in a preview tab, and you draw on it right there. Press Mo
 
 Your marks save to a sidecar named after the file with `.draw` added: `photo.png` becomes `photo.png.draw`, `report.pdf` becomes `report.pdf.draw`. The file tree hides the sidecar while its image or PDF exists, and the sidecar moves with it. Nothing is written until you draw something.
 
-Mod+Z and Mod+Shift+Z undo and redo on the focused preview whether or not draw mode is on. One history covers strokes, highlights, bookmarks and the scratch-paper toggle together, and it resets when a different file opens.
+Mod+Z and Mod+Shift+Z undo and redo on the focused preview whether or not draw mode is on. One history covers strokes, highlights, bookmarks and the scratch strip (on, off and its width) together, and it resets when a different file opens.
 
 Saving is debounced by 600 ms and flushes when you leave draw mode, click out of the pane, switch files or close the tab. Three cases protect existing data:
 
@@ -72,6 +72,17 @@ A PDF's preview bar adds three more tools, each saved in the same `<file>.draw` 
 | **Bookmarks** | Opens a right-hand panel with your bookmarks (add the current page, jump, rename, delete) above the PDF's own outline |
 
 The bar also shows the current page (click it to type a page number), the zoom controls and a `fit` button that returns to fit-to-width. In the desktop app it adds open-in-default-app and reveal-in-file-manager buttons. Narrow panes drop the zoom steps, the dark-mode moon and the file actions first; the highlight, draw, scratch and bookmark controls stay at every width.
+
+### Resize the scratch strip and the bookmarks panel
+
+Drag the line between a page and its scratch strip, or the left edge of the bookmarks panel, the same way you drag the sidebar's edge. Hover either line and it lights up, with a chevron button at its middle; a click on the line or the chevron hides that strip or panel.
+
+| Line | Drag | Saved in | Snaps onto |
+|---|---|---|---|
+| Page and scratch strip | Left widens the strip, right narrows it, from a tenth of the page's width to twice it | The PDF's sidecar, so each PDF keeps its own width | The 0.4 default, within 12px |
+| Bookmarks panel's left edge | Left widens the panel, up to 60% of the preview | `appearance.pdfBookmarksWidth` in `.settings`, shared by every PDF | The 260px default, within 12px |
+
+One drag of the scratch line is one Mod+Z step. The scratch line is hidden in draw mode and while highlight is armed, so a stroke or selection that starts on it is never taken as a drag.
 
 An outline entry whose destination cannot be resolved shows dimmed and does nothing. Highlights default to yellow. Highlighting a selection that overlaps or touches an existing highlight on the same line extends that highlight into one mark, joining their text, instead of stacking a second mark on the shared words.
 
@@ -97,7 +108,7 @@ bismuth highlights "readings/week 8 reading 1.pdf"
 bismuth highlights "readings/week 8 reading 1.pdf" --json
 ```
 
-On an image, the scratch strip appears only when its sidecar already carries a `margin`; the preview bar has no scratch button for images.
+On an image, the scratch strip appears only when its sidecar already carries a `margin`; the preview bar has no scratch button for images. Dragging the line between the image and its strip resizes the strip, and a click on that line does nothing, since nothing in the bar could bring a hidden strip back.
 
 ## Scratch notes
 
@@ -177,7 +188,7 @@ An image or PDF sidecar can carry these extra fields.
 |---|---|---|
 | A page line's `highlights` | `{ id, c, rects, text? }[]` | `rects` are one `{x, y, w, h}` per line of selected text, in page units. `c` is a hex colour or `"hl"` for the default yellow |
 | `bookmarks` | `{ id, page, label }[]` | `page` is 0-based; `label` defaults to `Page N` |
-| `margin` | `{ right }` | Strip width as a fraction of the page's rendered width, clamped to 0..2. Turning the strip on sets 0.4; turning it off removes the key |
+| `margin` | `{ right }` | Strip width as a fraction of the page's rendered width, clamped to 0..2. Turning the strip on sets 0.4, dragging its line sets 0.1 to 2, turning it off removes the key |
 | `dark` | `boolean` | This PDF's dark mode, written by the moon button. `false` keeps the PDF light under a dark `appearance.pdfDarkMode` default; an absent key follows that default |
 
 The PDF's outline is not stored; it is read from the PDF each time.
@@ -244,6 +255,8 @@ Decoded images are cached module-wide in an LRU of 32 entries, shared by every c
 
 `PageInk.tsx` renders sidecar ink over an image or PDF page, driven by one annotation store (`createAnnotationStore.ts`) that `PreviewView` creates for the open file and shares with `PageInk`, `HighlightLayer` and `BookmarksPanel`. The coordinate rules live in `core/src/drawing/pageInk.ts` (`pageBoxFor`, `screenToLogical`, `logicalToScreen`, `ensurePages`, which pads a sidecar when ink first lands on a later page and never truncates one). An image measures the painted `<img>` rect letterboxed by `object-fit: contain`; a PDF hands `PageInk` to `PdfPages` as an overlay and feeds it page boxes from its layout callback. Canvases exist only for pages near the viewport, tracked by an `IntersectionObserver` that watches a page only while draw mode is on or the page has ink.
 
+The page|strip line and the bookmarks panel's edge are `shell/EdgeHandle`, the sidebar's grab strip. `PdfPages` and `ImagePane` render the scratch line's handle through their `scratchEdge` slot, after the ink overlay so it takes the pointer first. `preview/scratchResize.ts` turns a drag into a ratio: it takes the surface's own layout as a function from ratio to line position (`fixedUnitLine` for a PDF page, `imageZoomLayout` for an image) and solves for the ratio that puts the line under the pointer. `PreviewView` previews that ratio in a signal while the pointer moves and writes the sidecar once on release. The bookmarks width goes through `edgeResize.ts`'s `dragWidth`, as the sidebar's does.
+
 The margin strip paints in two passes (`paintSplit`): each stroke against the page's colour bucket, and against the strip's dark bucket when a strip exists, split at `box.x + box.w`. `PdfPages` lays a page and its strip out together inside the zoom width.
 
 PDF dark mode is CSS only. `PreviewView` reads it with `darkOf` (`core/src/drawing/pageDark.ts`): the sidecar's `dark` flag, else `appearance.pdfDarkMode`; the moon writes the flag with `setDark` through the annotation store. `PdfPageCanvas` puts `filter: invert(1) hue-rotate(180deg)` on each page canvas, so the stashed raster and the text layer stay as rendered. `HighlightLayer` switches its rects from `multiply` to `screen` at a lower alpha, because multiply over black paper paints nothing. `PageInk` resolves page ink against the dark bucket instead of the light one.
@@ -272,4 +285,4 @@ The browser export pane rasterises with `app/src/export/drawingRaster.ts`, which
 - A stored `images[0]` box wins over a fit computed from the source's natural size, because the strokes were drawn against it.
 - `PaneContent.tsx` matches the `.draw` route before the preview route, so a sidecar such as `photo.png.draw` opened directly opens as a drawing.
 
-Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/render2d.ts`, `core/src/drawing/export.ts`, `core/src/drawing/pageInk.ts`, `core/src/drawing/pageHighlights.ts`, `core/src/drawing/pageBookmarks.ts`, `core/src/drawing/pageMargin.ts`, `core/src/drawing/pageDark.ts`, `core/src/scratchNotes.ts`, `core/src/fileKinds.ts`, `core/src/theme/tokens.ts`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/store.ts`, `app/src/drawing/input.ts`, `app/src/preview/PageInk.tsx`, `app/src/preview/createAnnotationStore.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/PreviewBar.tsx`, `app/src/preview/pdfDocCache.ts`, `app/src/preview/PdfPages.tsx`, `app/src/preview/PdfPageCanvas.tsx`, `app/src/preview/HighlightLayer.tsx`, `app/src/PreviewView.tsx`, `app/src/export/drawingRaster.ts`, `app/src/export/inkHtml.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`
+Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/render2d.ts`, `core/src/drawing/export.ts`, `core/src/drawing/pageInk.ts`, `core/src/drawing/pageHighlights.ts`, `core/src/drawing/pageBookmarks.ts`, `core/src/drawing/pageMargin.ts`, `core/src/drawing/pageDark.ts`, `core/src/scratchNotes.ts`, `core/src/fileKinds.ts`, `core/src/theme/tokens.ts`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/store.ts`, `app/src/drawing/input.ts`, `app/src/preview/PageInk.tsx`, `app/src/preview/createAnnotationStore.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/PreviewBar.tsx`, `app/src/preview/pdfDocCache.ts`, `app/src/preview/PdfPages.tsx`, `app/src/preview/PdfPageCanvas.tsx`, `app/src/preview/HighlightLayer.tsx`, `app/src/preview/scratchResize.ts`, `app/src/preview/ImagePane.tsx`, `app/src/shell/EdgeHandle.tsx`, `app/src/edgeResize.ts`, `app/src/PreviewView.tsx`, `app/src/export/drawingRaster.ts`, `app/src/export/inkHtml.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`

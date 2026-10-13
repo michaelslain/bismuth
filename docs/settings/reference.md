@@ -49,6 +49,7 @@ Theme, logo mark, fonts, sizes and the text cursor. The theme is the single sour
 | `sidebarWidth` | number | `266` | 200 to 600 | Sidebar width in px. Dragging the sidebar edge writes it, and the edge snaps onto this default within 12px. |
 | `sidebarGraphHeight` | number | `305` | 200 to 500 | Height in px of the mini graph panel in the sidebar. |
 | `tabRailWidth` | number | `232` | 160 to 480 | Open width in px of the tab rail. Dragging its edge writes it, and the edge snaps onto this default within 12px. Collapsed, the rail is always 46px wide. |
+| `pdfBookmarksWidth` | number | `260` | 180 to 520 | Width in px of a PDF preview's bookmarks panel. Dragging its left edge writes it, and the edge snaps onto this default within 12px. A narrow pane shows at most 60% of the preview. |
 | `cursorWidth` | number | `2` | 1 to 4 | Text cursor width in px, in every editor, field and terminal. |
 | `cursorGlideMs` | number | `70` | 20 to 200 | Cursor glide between positions, in ms. |
 | `cursorBlinkSeconds` | number | `1.2` | 0.6 to 2 | Cursor blink cycle in seconds. |
