@@ -29,13 +29,28 @@ const Field = (props: { width: string; children: any }) => (
 
 const readout = { nodes: 2262, edges: 5274, mode: 'both brains', zoom: 100 }
 
-/** Hovering a note: folder faint, file name in fg, readout faint on the right. */
+/** Hovering a note: folder faint, file name in fg, readout faint on the right. Every text box on
+ *  the strip clips (overflow: hidden for its ellipsis), so each one's line box must hold the font's
+ *  whole ascent-to-descent run — a 1em line box shaves the glyph tops. */
 export const Hovering: Story = {
     render: () => (
         <Field width="900px">
             <GraphStatusLine hover="reading/quotes/On Attention.md" {...readout} />
         </Field>
     ),
+    play: async ({ canvasElement }) => {
+        const strip = canvasElement.querySelector('[data-testid="graph-status"]')!
+        const walker = document.createTreeWalker(strip, NodeFilter.SHOW_TEXT)
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            if (!n.textContent?.trim()) continue
+            const range = document.createRange()
+            range.selectNodeContents(n)
+            const text = range.getBoundingClientRect()
+            const box = n.parentElement!.getBoundingClientRect()
+            expect(text.top).toBeGreaterThanOrEqual(box.top - 0.5)
+            expect(text.bottom).toBeLessThanOrEqual(box.bottom + 0.5)
+        }
+    },
 }
 
 /** Nothing hovered: the left side is empty, the readout does not move. */

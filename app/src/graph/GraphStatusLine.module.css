@@ -5,7 +5,9 @@
    same --rule-soft that band draws under itself, mirrored to the top. The ground is --pop-bg (the
    HUD surface every graph overlay uses, --bg at .88) so field glyphs drifting under the strip dim
    out instead of colliding with the text. Height is --h-control: one row of --fs-ui text with air
-   above and below; --h-row would crowd it against the hairline. */
+   above and below; --h-row would crowd it against the hairline. Line height is --lh-ui, the same
+   line box ui/Readout gives the right side: every text box here clips (overflow: hidden for the
+   ellipsis), and a 1em line box is shorter than the font's ascent and shaves the glyph tops. */
 .status {
   position: absolute;
   left: 0;
@@ -22,7 +24,7 @@
   background: var(--pop-bg);
   font-family: inherit;
   font-size: var(--fs-ui);
-  line-height: 1;
+  line-height: var(--lh-ui);
   white-space: nowrap;
   pointer-events: none;
 }
