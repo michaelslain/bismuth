@@ -20,9 +20,15 @@ import { server } from '../src/server'
 // recalled September facts, then searched .daemon/logs and journals before the user said "logs".
 // Raised 320 → 350 for the highlights pointer: asked to paraphrase a PDF's highlights, the daemon
 // read the PDF page by page, saw no marks (they live in the .draw sidecar) and said there were none.
+// Raised 350 → 380 for the app open pointer: asked to open a textbook, a chat grepped the shell's
+// `bismuth --help`, found the CLI was not on its PATH, and only then reached `app open`.
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(350)
+    expect(words).toBeLessThan(380)
+})
+
+test('SERVER_INSTRUCTIONS sends open-a-file requests to bismuth app open', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('app open <vault-relative path>')
 })
 
 test('SERVER_INSTRUCTIONS sends PDF highlight questions to bismuth highlights', () => {

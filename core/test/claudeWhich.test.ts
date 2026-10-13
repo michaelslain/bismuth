@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import {
     nvmBinPaths,
     claudeLookupPath,
+    BISMUTH_BIN_DIR,
     claudeSpawnEnv,
     FREE_AGENT_BIN_DIR,
 } from '../src/claudeWhich'
@@ -91,6 +92,11 @@ describe('claudeLookupPath', () => {
         const out = claudeLookupPath({})
         for (const dir of ['/usr/bin', '/bin', '/usr/sbin', '/sbin'])
             expect(out.split(':')).toContain(dir)
+    })
+
+    // In-app chat's Bash runs on this PATH; a bare `bismuth` must resolve with no PATH symlink.
+    test('includes the bismuth CLI install dir', () => {
+        expect(claudeLookupPath({}).split(':')).toContain(BISMUTH_BIN_DIR)
     })
 
     // A user's own opencode (homebrew, npm) must outrank Bismuth's managed download.

@@ -88,7 +88,7 @@ function errorMessageOf(text: string): string {
     } catch {
         /* not JSON — fall through to the raw text */
     }
-    return text.slice(0, 200)
+    return text.slice(0, 500)
 }
 
 /** Fetch `method base+path` (optional JSON `body`), returning parsed JSON, else the raw

@@ -88,6 +88,7 @@ Three things to know before you rely on it:
 ## How it works
 
 Chat, terminal tabs and the daemon each start the agent CLI themselves and differ in the channel they stamp on it. A chat session sets `BISMUTH_AGENT_CHANNEL=chat` and the daemon sets `daemon`; the `bismuth` CLI and the HTTP routes read that variable to filter hidden notes.
-A terminal tab deliberately sets no channel, because whoever types in it is the vault owner. The relay plugin, MCP registration and the backend catalog are described on the pages linked above.
+A terminal tab deliberately sets no channel, because whoever types in it is the vault owner.
+A chat session's environment carries the augmented search path from `claudeSpawnEnv` (`core/src/claudeWhich.ts`): the app's own `PATH`, then Homebrew, `~/.local/bin`, `~/.bismuth/bin` and the other install directories. The session's shell therefore runs a bare `bismuth` even when the app was opened from the Finder with launchd's minimal `PATH`. The relay plugin, MCP registration and the backend catalog are described on the pages linked above.
 
-Source: `core/src/agentBackends/catalog.ts`, `core/src/chat.ts`, `core/src/terminal.ts`, `core/src/bismuthInstall.ts`, `core/src/visibilityFilter.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/install.ts`, `cli/src/commands/relay.ts`
+Source: `core/src/agentBackends/catalog.ts`, `core/src/chat.ts`, `core/src/claudeWhich.ts`, `core/src/terminal.ts`, `core/src/bismuthInstall.ts`, `core/src/visibilityFilter.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/install.ts`, `cli/src/commands/relay.ts`

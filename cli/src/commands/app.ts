@@ -66,7 +66,7 @@ export const commands: CommandMap = {
     },
     'app open': {
         summary:
-            'Open a note path or sentinel (::graph/::daemon/.settings/::term:<uuid>) in a window',
+            'Open a vault file (vault-relative path, any type) or sentinel (::graph/::daemon/.settings/::term:<uuid>) in its own tab',
         usage: '<content> [--new-tab] [--window <id>]',
         run: async args => {
             const [content] = positionals(args)

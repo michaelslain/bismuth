@@ -14,7 +14,7 @@ import {
     type SDKUserMessage,
     type SessionMessage,
 } from '@anthropic-ai/claude-agent-sdk'
-import { whichClaude } from './claudeWhich'
+import { claudeSpawnEnv, whichClaude } from './claudeWhich'
 import { recallServiceFor, recallWithin } from './memoryRecall'
 import { loadSessionModel, saveSessionModel } from './chatModelStore'
 import { can } from './agentBackends/catalog'
@@ -1324,10 +1324,14 @@ function spawnChatQuery(
                 // always-on session daemon/src/daemon/session.ts spawns.
                 // A local-model chat drops the cloud credentials/routing the user exported (withoutCloudEnv),
                 // so a real key is never sent to the local host and Bedrock/Vertex can't bypass the base URL.
+                // claudeSpawnEnv adds the augmented PATH: a Finder-launched app hands core launchd's
+                // bare PATH, and without it the session's own Bash cannot find `bismuth`.
                 env: {
-                    ...(session.local
-                        ? withoutCloudEnv('claude', process.env)
-                        : process.env),
+                    ...claudeSpawnEnv(
+                        session.local
+                            ? withoutCloudEnv('claude', process.env)
+                            : process.env,
+                    ),
                     ...session.local?.env,
                     BISMUTH_AGENT_CHANNEL: 'chat',
                 },

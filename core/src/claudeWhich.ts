@@ -6,6 +6,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 // Where Bismuth's one-click "free agent" puts the opencode binary it downloads (core/src/freeAgent.ts).
 // Appended LAST to claudeLookupPath, so a user's own install always wins over the managed copy.
 export const FREE_AGENT_BIN_DIR = bismuthHome('agents', 'bin')
+// Where the app installs the bismuth CLI and MCP binaries (core/src/bismuthInstall.ts).
+export const BISMUTH_BIN_DIR = bismuthHome('bin')
 
 // nvm installs node — and globally-installed CLIs like `claude` (`npm i -g
 // @anthropic-ai/claude-code`) — under $NVM_DIR/versions/node/<version>/bin, a dir a
@@ -66,6 +68,9 @@ export function claudeLookupPath(
         '/usr/local/bin',
         join(homedir(), '.bun', 'bin'),
         join(homedir(), '.local', 'bin'),
+        // The bismuth CLI itself: a shell an agent runs from here (in-app chat's Bash) resolves a
+        // bare `bismuth` even when no PATH symlink was installed or the link dir is not on PATH.
+        BISMUTH_BIN_DIR,
         ...nvmBinPaths(env),
         '/usr/bin',
         '/bin',
@@ -124,8 +129,8 @@ function realUsername(): string | null {
 // process actually ends up with, not a claim that launchd itself omits them.) The Agent SDK's
 // `env` option REPLACES the child's environment when set (never merged with `process.env`), so
 // passing `env` at all means the caller owns building a COMPLETE one — this is that builder,
-// reused by every `query()` call that spawns the user's own `claude` (currently searchPrompt.ts;
-// chat.ts should adopt it too).
+// reused by every `query()` call that spawns the user's own `claude` (searchPrompt.ts and
+// chat.ts).
 //
 // `agentChannel`, when given, stamps `BISMUTH_AGENT_CHANNEL` into the returned env — the signal
 // core/src/visibilityCliGate.ts's CLI-dispatch gate reads to tell an agent's own hand from the

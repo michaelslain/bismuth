@@ -217,7 +217,7 @@ const tools = [
     {
         name: 'bismuth_cli',
         description:
-            "Run the bismuth CLI with these args (e.g. ['task','list','--vault','/path']). Returns stdout/stderr/exit code.",
+            "Run the bismuth CLI with these args (e.g. ['task','list','--vault','/path']; ['app','open','notes/x.md'] opens a file as a tab in the running app). Returns stdout/stderr/exit code.",
         inputSchema: {
             type: 'object',
             properties: {

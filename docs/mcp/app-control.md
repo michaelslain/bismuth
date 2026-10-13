@@ -16,7 +16,7 @@ The `app` commands need a running app. When none answers they fail with `could n
 |---|---|
 | `bismuth app windows` | List open windows: id, label, active tab, tab count |
 | `bismuth app tabs [--window <id>]` | List a window's tabs and the panes in each |
-| `bismuth app open <content> [--new-tab] [--window <id>]` | Open a note path or a sentinel in its own tab |
+| `bismuth app open <content> [--new-tab] [--window <id>]` | Open a vault file of any type, or a sentinel, in its own tab, and print `{"opened": "<content>"}` |
 | `bismuth app close <tabId> [--window <id>]` | Close a tab and its panes |
 | `bismuth app focus <tabId> [--window <id>]` | Make a tab active |
 | `bismuth app rename <tabId> <name> [--window <id>]` | Give a tab a custom label |
@@ -26,7 +26,9 @@ The `app` commands need a running app. When none answers they fail with `could n
 | `bismuth app run <commandId> [--window <id>]` | Run a command from the palette's catalog |
 | `bismuth app commands` | List the ids `app run` accepts |
 
-`content` for `app open` is a vault path such as `reading/x.md`, or one of the sentinels `::graph`, `::daemon`, `.settings` and `::term:<uuid>`. Opening a file always opens its own tab, and `--new-tab` is accepted without effect. Search is the Cmd+O switcher inside the window, so there is no sentinel for it. Tab ids come from `app tabs`.
+`content` for `app open` is a vault-relative path such as `reading/x.md` or `papers/y.pdf`, or one of the sentinels `::graph`, `::daemon`, `.settings` and `::term:<uuid>`. An absolute path inside the vault is accepted and opened as its vault-relative path, and a path with no extension that names a note opens that note (`reading/x` opens `reading/x.md`). Opening a file always opens its own tab, and `--new-tab` is accepted without effect.
+
+A path that names no file fails with exit code 1 and `404: no file "<path>" in the vault`, and no tab opens. `app open` opens the whole file: a `#page=` or `#heading` suffix is not a jump target, so `papers/y.pdf#page=12` is refused as a missing file. Search is the Cmd+O switcher inside the window, so there is no sentinel for it. Tab ids come from `app tabs`.
 
 With one window open, every command targets it. With none, the command fails with `no Bismuth window is open`; with several it fails and asks for `--window <id>`, which `app windows` lists.
 
@@ -91,6 +93,7 @@ An ordinary command replies `{ "ok": true }`. Read `result.interactive` to tell 
 |---|---|
 | `app run` with `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` or `quick-ask` | Heavy or system-level actions, or a live agent session, that an unattended caller should not fire blindly. A quick ask opens a live agent session |
 | `app open` with any `::chat:` content | A chat is a live agent session, a different trust boundary from opening a note |
+| `app open` with a path that names no file in the vault (404) | A tab for a missing file opens blank, and the caller would read the reply as success |
 
 Both refusals return HTTP 403 with a message. `app commands` lists the ids that remain. Opening the daemon page (`::daemon`) is allowed because its chat starts nothing until a person clicks or focuses the composer, and app control cannot produce that gesture.
 
@@ -122,6 +125,6 @@ Each open window holds a control WebSocket to core at `/ui?w=<windowId>` (`app/s
 
 `scroll-pane` searches the pane's element for its main scroller, the largest descendant that overflows vertically and is styled to scroll, and sets its `scrollTop`; every view listens to its scroller's own scroll event, so this drives it the way a wheel does (`app/src/paneScroll.ts`). A terminal's xterm sits in an overlay above its pane, marked `data-terminal-overlay`, so the search starts there.
 
-The two refusals run twice, in the route before dispatch and again in the window's handler. `UI_CONTROL_BLOCKLIST` in `core/src/commands.ts` holds the blocked command ids, and the commands that only open a dialog carry `interactive: true` in `COMMAND_CATALOG` in the same file.
+Before dispatching `open-tab`, the route resolves `content` against the vault with `resolveOpenTarget` (`core/src/openTarget.ts`) and sends the window the vault-relative result; a path that names no file returns 404 without reaching the window. The two refusals run twice, in the route before dispatch and again in the window's handler. `UI_CONTROL_BLOCKLIST` in `core/src/commands.ts` holds the blocked command ids, and the commands that only open a dialog carry `interactive: true` in `COMMAND_CATALOG` in the same file.
 
-Source: `core/src/uiControl.ts`, `core/src/routes/relay.ts`, `core/src/runRegistry.ts`, `core/src/commands.ts`, `core/src/daemonPages.ts`, `app/src/uiControlClient.ts`, `app/src/paneScroll.ts`, `cli/src/commands/{app,page}.ts`, `cli/src/http.ts`
+Source: `core/src/uiControl.ts`, `core/src/openTarget.ts`, `core/src/routes/relay.ts`, `core/src/runRegistry.ts`, `core/src/commands.ts`, `core/src/daemonPages.ts`, `app/src/uiControlClient.ts`, `app/src/paneScroll.ts`, `cli/src/commands/{app,page}.ts`, `cli/src/http.ts`

@@ -113,10 +113,15 @@ export function connectUiControl(
                             ok: false,
                             error: 'opening chat tabs via app control is disabled',
                         }
-                    return handlers.openTab({
+                    // `opened` rides in `result` (the wire reply carries only {ok,result,error}), so
+                    // `bismuth app open` prints which content id the window opened.
+                    const r = handlers.openTab({
                         content,
                         newTab: args?.newTab === true,
                     })
+                    return r.ok
+                        ? { ok: true, result: { opened: r.opened ?? content } }
+                        : r
                 }
                 case 'close-tab': {
                     const tabId = args?.tabId

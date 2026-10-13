@@ -33,6 +33,8 @@ export const SERVER_INSTRUCTIONS =
     'settings deny-list`, never grep; an agent gets only a count by design, so give it and have ' +
     'the user run it for paths (vault/visibility.md). If Bismuth misbehaves after an update (missing CLI, stale MCP, ' +
     'daemon not running), run bismuth_doctor first. ' +
+    'Asked to open or show a file in Bismuth: bismuth_cli `app open <vault-relative path>` opens it ' +
+    'in its own tab in the running app; `app tabs` lists what is open. ' +
     'In a Bismuth vault, when your session context holds no `# Vault map` section inside a `<bismuth-memory>` block, ' +
     'call `brain` once at the start; use `vault_map` with `around` to see where a note sits ' +
     'before reorganising or linking it.'

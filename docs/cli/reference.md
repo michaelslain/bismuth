@@ -132,7 +132,7 @@ Run `app windows` for window ids and `app tabs` for tab ids.
 |---|---|---|---|
 | `app windows` | `[--api <url>]` | Lists open windows: id, label, active tab, tab count. | yes |
 | `app tabs` | `[--window <id>]` | Lists the open tabs and panes in a window. | yes |
-| `app open` | `<content> [--new-tab] [--window <id>]` | Opens a note path or a sentinel (`::graph`, `::daemon`, `.settings`, `::term:<uuid>`). | yes |
+| `app open` | `<content> [--new-tab] [--window <id>]` | Opens a vault file of any type (vault-relative path) or a sentinel (`::graph`, `::daemon`, `.settings`, `::term:<uuid>`) in its own tab. A path that names no file exits `1`. | yes |
 | `app close` | `<tabId> [--window <id>]` | Closes a tab. | yes |
 | `app focus` | `<tabId> [--window <id>]` | Activates a tab. | yes |
 | `app rename` | `<tabId> <name> [--window <id>]` | Sets a custom tab label. | yes |

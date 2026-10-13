@@ -3310,6 +3310,69 @@ test('app control: run-command blocklist + open-tab chat exclusion are enforced 
     }
 })
 
+test('app control: open-tab resolves the path against the vault and refuses a missing file (404)', async () => {
+    resetUiControl()
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    const received: unknown[] = []
+    const ws = new WebSocket(`ws://localhost:${server.port}/ui?w=w1`)
+    try {
+        await new Promise<void>((res, rej) => {
+            ws.onopen = () => res()
+            ws.onerror = () => rej(new Error('ws error'))
+        })
+        ws.onmessage = e => {
+            const msg = JSON.parse(e.data as string)
+            if (msg.type !== 'command') return
+            received.push(msg.args)
+            ws.send(
+                JSON.stringify({
+                    type: 'reply',
+                    reqId: msg.reqId,
+                    ok: true,
+                    result: { opened: msg.args.content },
+                }),
+            )
+        }
+        ws.send(
+            JSON.stringify({
+                type: 'tabs',
+                snapshot: { activeTabId: null, tabs: [] },
+            }),
+        )
+        await until(
+            async () =>
+                (await (await fetch(`${base}/ui/windows`)).json()) as unknown[],
+            w => w.length === 1,
+        )
+        const openTab = (content: string) =>
+            fetch(`${base}/ui/command`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ action: 'open-tab', args: { content } }),
+            })
+
+        // An absolute path inside the vault reaches the window vault-relative.
+        const abs = await openTab(join(vault, 'essay.md'))
+        expect(abs.status).toBe(200)
+        expect(await abs.json()).toEqual({
+            ok: true,
+            result: { opened: 'essay.md' },
+        })
+
+        // A path naming no file never reaches the window.
+        const missing = await openTab('essay.md#page=3')
+        expect(missing.status).toBe(404)
+        expect(await missing.text()).toContain('no file')
+        expect(received).toHaveLength(1)
+    } finally {
+        ws.close()
+        server.stop(true)
+        resetUiControl()
+    }
+}, 20000)
+
 test("app control: run-command refuses an id that isn't in the catalog at all (403)", async () => {
     resetUiControl()
     const { vault, memory } = await makeSampleVault()

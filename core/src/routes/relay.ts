@@ -8,12 +8,14 @@ import {
 } from '../relay'
 import { listWindows, resolveTarget, sendCommand } from '../uiControl'
 import { isUiControlAllowed } from '../commands'
+import { getFileAccess } from '../fileAccess'
+import { resolveOpenTarget } from '../openTarget'
 import { ok, error, type Handler, type RouteContext } from './context'
 
 export default function relayRoutes(
     ctx: RouteContext,
 ): Record<string, Handler> {
-    const { requestChannel } = ctx
+    const { requestChannel, cfg } = ctx
     return {
         // Relay ingest endpoints — posted to by the relay plugin's hooks (loaded
         // per-session via `claude --plugin-dir <relay>` only inside app terminals). They
@@ -121,6 +123,7 @@ export default function relayRoutes(
                         403,
                     )
             }
+            let sendArgs = args
             if (action === 'open-tab') {
                 const content = (args as { content?: unknown } | undefined)
                     ?.content
@@ -133,10 +136,22 @@ export default function relayRoutes(
                         403,
                     )
                 }
+                // A path naming no file is refused here (404) instead of opening a blank tab the
+                // caller reads as success; a resolvable one is rewritten vault-relative.
+                if (typeof content !== 'string' || !content)
+                    return error('open-tab requires args.content', 400)
+                const fa = await getFileAccess()
+                const resolved = await resolveOpenTarget(
+                    cfg.vault,
+                    content,
+                    async rel => (await fa.statNote(cfg.vault, rel)) != null,
+                )
+                if (!resolved.ok) return error(resolved.error, 404)
+                sendArgs = { ...(args as object), content: resolved.content }
             }
             const target = resolveTarget(windowId)
             if (!target.ok) return error(target.error, target.status)
-            return ok(await sendCommand(target.id, action, args))
+            return ok(await sendCommand(target.id, action, sendArgs))
         },
     }
 }
