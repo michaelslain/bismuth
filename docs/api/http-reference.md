@@ -159,6 +159,8 @@ These routes move binary data. None of them invalidates caches, because attachme
 | `POST /asset` | `?path=` target, raw bytes as the body | `{path}` actually used; a name clash gets a unique suffix. | open; none |
 | `POST /asset/fetch` | `{url, path}` | `{path}` actually used. | owner only; none |
 | `POST /convert/heic` | raw HEIC or HEIF bytes | JPEG bytes, `Content-Type: image/jpeg`. `400` when undecodable. | open; none |
+| `POST /convert/pdf-markdown` | `{path, replace?}`, a vault PDF | Answers at once: `{state: 'running', note, startedAt}` as the conversion starts in the background, or `{state: 'exists', note}` when `<name>.md` exists and `replace` is not set. `400 not a PDF`, `404 no such file`. See [Convert a PDF to markdown](../vault/pdf-to-markdown.md) | owner only; writes `<name>.md` when the job finishes |
+| `GET /convert/pdf-markdown` | `?path=` the PDF | The job: `{state: 'idle'}`, `{state: 'running', note, startedAt}`, `{state: 'done', note}` or `{state: 'error', message}`. | owner only; none |
 | `POST /tmp-file` | `?name=` required, raw bytes | `{path}`, an absolute path outside the vault. | open; none |
 
 Uploads cap at 100 MB and return `413` above it. `POST /asset` and `POST /asset/fetch` reject a target with an empty, `.`, `..` or dot-prefixed segment (`400 invalid attachment path`), which keeps writes out of `.git/`.

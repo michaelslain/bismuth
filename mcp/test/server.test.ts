@@ -3,7 +3,7 @@ import { tempDir, sweepTempDirs } from './tempDirs'
 import { writeFileSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
-import { handleCallTool, doctorCliArgs, ocrCliArgs, OCR_TIMEOUT_MS, server, ALL_TOOL_NAMES } from '../src/server'
+import { handleCallTool, doctorCliArgs, ocrCliArgs, pdfToMarkdownCliArgs, OCR_TIMEOUT_MS, server, ALL_TOOL_NAMES } from '../src/server'
 
 // Reviewer's point: reverting just the one-line `bismuth_cli`/`bismuth_cli_help` wiring in
 // server.ts (while leaving cliToolResult/cliHelp themselves intact) passed every test in
@@ -75,6 +75,7 @@ test('outside a daemon-enabled vault the server lists exactly the eight always-o
             'vault_map',
             'brain',
             'ocr',
+            'pdf_to_markdown',
             'bismuth_cli',
             'bismuth_cli_help',
         ])
@@ -102,7 +103,7 @@ test('remember type description lists profile and hub', () => {
 test('ALL_TOOL_NAMES covers the always-on, memory and daemon tools with no duplicates', () => {
     expect(new Set(ALL_TOOL_NAMES).size).toBe(ALL_TOOL_NAMES.length)
     expect(ALL_TOOL_NAMES).toEqual(expect.arrayContaining(['bismuth_doctor', 'remember', 'recall', 'forget', 'daemon_status', 'page_resolve']))
-    expect(ALL_TOOL_NAMES).toHaveLength(9 + 3 + 11)
+    expect(ALL_TOOL_NAMES).toHaveLength(10 + 3 + 11)
 })
 
 test('doctorCliArgs: no input is a bare json report', () => {
@@ -238,4 +239,17 @@ test('dispatching ocr without a path is an error, not a CLI run', async () => {
     const result = await callTool('ocr', {})
     expect(result.isError).toBe(true)
     expect(result.content[0]).toMatchObject({ text: 'ocr needs a path.' })
+})
+
+test('pdfToMarkdownCliArgs maps every input to its CLI flag and pins the vault', () => {
+    expect(pdfToMarkdownCliArgs({ path: 'p/x.pdf' }, '/v')).toEqual(['pdf', 'md', 'p/x.pdf', '--vault', '/v'])
+    expect(
+        pdfToMarkdownCliArgs({ path: 'x.pdf', force: true, replace: true, pages: '1-3' }, '/v'),
+    ).toEqual(['pdf', 'md', 'x.pdf', '--force', '--replace', '--pages', '1-3', '--vault', '/v'])
+})
+
+test('dispatching pdf_to_markdown without a path is an error, not a CLI run', async () => {
+    const result = await callTool('pdf_to_markdown', {})
+    expect(result.isError).toBe(true)
+    expect(result.content[0]).toMatchObject({ text: 'pdf_to_markdown needs a path.' })
 })

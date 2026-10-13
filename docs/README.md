@@ -30,6 +30,7 @@ only when the [daemon](daemon/overview.md) is enabled.
 - [Vault map](vault/map.md) — the folders, hubs, clusters and surfaces overview agents get at session start, and `bismuth map`
 - [Semantic search](vault/semantic-search.md) — find notes by meaning with `bismuth search --semantic`, the `embeddings.enabled` switch and what it costs
 - [Frontmatter and properties](vault/frontmatter.md) — YAML properties, their types, and companion notes for images and PDFs
+- [Convert a PDF to markdown](vault/pdf-to-markdown.md) — a new note beside the PDF with LaTeX math and a `source` link back, from the PDF bar, `bismuth pdf md` or the `pdf_to_markdown` MCP tool
 - [OCR for PDFs and images](vault/ocr.md) — make a scanned PDF's text selectable and transcribe PDFs and images to notes with LaTeX math, with `bismuth ocr` or the `ocr` MCP tool
 - [Wikilinks and tags](vault/wikilinks-tags.md) — `[[links]]` matched by file name, `#tags`, and how each resolves
 - [Attachments and embeds](vault/attachments.md) — `![[file]]` and `![](url)` embeds, sizing, and where pasted files go

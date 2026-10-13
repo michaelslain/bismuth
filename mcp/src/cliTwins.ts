@@ -14,6 +14,7 @@ export const CLI_TWINS: Record<string, string | null> = {
     vault_map: 'map',
     brain: 'brain',
     ocr: 'ocr',
+    pdf_to_markdown: 'pdf md',
     bismuth_cli: null,
     bismuth_cli_help: null,
     // daemon-gated: memory

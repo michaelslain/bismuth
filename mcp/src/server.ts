@@ -188,6 +188,33 @@ const tools = [
         },
     },
     {
+        name: 'pdf_to_markdown',
+        description:
+            "Convert a vault PDF to a new markdown note beside it (x.pdf → x.md): headings, lists, tables, math as $LaTeX$ (Marker), with a `source` property linking back. The PDF is not modified. Minutes on a long file. (bismuth pdf md)",
+        inputSchema: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: "Vault-relative PDF, e.g. 'papers/x.pdf'.",
+                },
+                pages: {
+                    type: 'string',
+                    description: "1-based pages, e.g. '1-3,7'. Default all.",
+                },
+                force: {
+                    type: 'boolean',
+                    description: 'OCR every page even where text exists; for a garbage text layer.',
+                },
+                replace: {
+                    type: 'boolean',
+                    description: 'Rewrite an existing x.md.',
+                },
+            },
+            required: ['path'],
+        },
+    },
+    {
         name: 'bismuth_cli',
         description:
             "Run the bismuth CLI with these args (e.g. ['task','list','--vault','/path']). Returns stdout/stderr/exit code.",
@@ -349,7 +376,7 @@ export function doctorCliArgs(a: Record<string, unknown>): string[] {
     return argv
 }
 
-/** OCR runs Marker's models over every page, far past bismuth_cli's 30 s. */
+/** OCR and pdf_to_markdown run Marker's models over every page, far past bismuth_cli's 30 s. */
 export const OCR_TIMEOUT_MS = 30 * 60_000
 
 /** PURE: the CLI argv an ocr call runs against `vault`. */
@@ -359,6 +386,16 @@ export function ocrCliArgs(a: Record<string, unknown>, vault: string): string[] 
     if (a.force === true) argv.push('--force')
     if (a.replace === true) argv.push('--replace')
     if (typeof a.lang === 'string' && a.lang.length > 0) argv.push('--lang', a.lang)
+    if (typeof a.pages === 'string' && a.pages.length > 0) argv.push('--pages', a.pages)
+    argv.push('--vault', vault)
+    return argv
+}
+
+/** PURE: the CLI argv a pdf_to_markdown call runs against `vault`. */
+export function pdfToMarkdownCliArgs(a: Record<string, unknown>, vault: string): string[] {
+    const argv = ['pdf', 'md', String(a.path ?? '')]
+    if (a.force === true) argv.push('--force')
+    if (a.replace === true) argv.push('--replace')
     if (typeof a.pages === 'string' && a.pages.length > 0) argv.push('--pages', a.pages)
     argv.push('--vault', vault)
     return argv
@@ -454,6 +491,18 @@ export async function handleCallTool(
                 if (!root) return textResult('Not in a Bismuth vault: ocr needs one.', true)
                 return cliToolResult(
                     await runCli(repoRoot, ocrCliArgs(args, root), {
+                        timeoutMs: OCR_TIMEOUT_MS,
+                    }),
+                )
+            }
+            case 'pdf_to_markdown': {
+                if (typeof args.path !== 'string' || args.path.length === 0)
+                    return textResult('pdf_to_markdown needs a path.', true)
+                const root = daemonVaultRoot()
+                if (!root)
+                    return textResult('Not in a Bismuth vault: pdf_to_markdown needs one.', true)
+                return cliToolResult(
+                    await runCli(repoRoot, pdfToMarkdownCliArgs(args, root), {
                         timeoutMs: OCR_TIMEOUT_MS,
                     }),
                 )

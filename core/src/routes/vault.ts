@@ -21,6 +21,7 @@ import { setBaseConfigKey, deleteBaseConfigKey } from '../bases/baseFile'
 import type { TreeEntry } from '../graph'
 import { invalidateChatVisibility } from '../chat'
 import { convertHeicToJpeg } from '../heic'
+import { pdfMarkdownJob, startPdfMarkdownJob } from '../pdfMarkdown'
 import { stageTmpFile } from '../tmpFiles'
 import {
     reconcileSettings,
@@ -369,6 +370,27 @@ export default function vaultRoutes(
                     'Cache-Control': 'no-store',
                 },
             })
+        },
+
+        // PDF → markdown (pdfMarkdown.ts): start Marker on a vault PDF in the background and
+        // answer at once with the job's state, `{ state: 'running', note }`. A long PDF outlasts the
+        // request idle timeout, so the PDF bar polls GET for `done` (then opens `note`) or `error`.
+        // Not a mutatingHandler: the note is written minutes later, and the watcher picks it up
+        // like any external write. An existing note answers `{ state: 'exists', note }` unless
+        // `replace` is set.
+        // Owner only: it runs an engine for minutes and writes into the vault.
+        'POST /convert/pdf-markdown': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const { path, replace } = (await req.json()) as {
+                path: string
+                replace?: boolean
+            }
+            return ok(startPdfMarkdownJob(cfg.vault, path, { replace: replace === true }))
+        },
+
+        'GET /convert/pdf-markdown': async (req, url) => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            return ok(pdfMarkdownJob(cfg.vault, requireQueryParam(url, 'path')))
         },
 
         // Stage bytes at a real filesystem path OUTSIDE the vault (tmpFiles.ts) and return that

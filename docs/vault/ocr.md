@@ -39,6 +39,8 @@ A page whose only real text is a publisher watermark (a "Downloaded from …" li
 
 ## Transcribe math to LaTeX
 
+To convert a PDF into a note without touching the PDF, use [Convert a PDF to markdown](pdf-to-markdown.md).
+
 `--math` also writes a transcription beside the file: `paper.pdf` gives `paper.ocr.md`, a visible note whose `source` property links back to the PDF. Marker writes the text as markdown, inline math as `$…$` and display math as `$$…$$`, which the editor renders with KaTeX:
 
 ```markdown
@@ -81,10 +83,10 @@ An agent calls the `ocr` MCP tool with `path` and the arguments listed in the op
 
 ## How it works
 
-`cli/src/commands/ocr.ts` is the command; `cli/src/ocr.ts` holds the pure argv builders, page parsing, note shaping and engine lookup, unit-tested in `cli/test/ocr.test.ts` against a fixture scan with a watermark.
+`cli/src/commands/ocr.ts` is the command; `cli/src/ocr.ts` holds the pure argv builders and note shaping, and `core/src/marker.ts` holds Marker, page parsing and engine lookup, shared with [PDF to markdown](pdf-to-markdown.md); both are unit-tested in `cli/test/ocr.test.ts` against a fixture scan with a watermark.
 
 The text layer comes from `ocrmypdf --redo-ocr --output-type pdf`. `--redo-ocr` keeps visible vector text and OCRs the rest without rasterising the page; `--skip-text` would skip any page with a watermark. `--output-type pdf` skips the PDF/A conversion through Ghostscript. ocrmypdf writes a hidden `.<file>.ocr-tmp.pdf` beside the original, which is renamed over it, so the watcher sees one change and a reader never sees a half-written file.
 
 With `--math`, Marker runs before the text layer is added and always with `--strip_existing_ocr`, so tesseract's reading of an equation from an earlier run never reaches the note. `tidyMarkdown` collapses Marker's padding around inline math. The MCP tool is `ocr` in `mcp/src/server.ts`; `ocrCliArgs` builds its argv and `OCR_TIMEOUT_MS` sets its timeout. `ocr` is in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
 
-Source: `cli/src/commands/ocr.ts`, `cli/src/ocr.ts`, `mcp/src/server.ts`, `core/src/visibilityCliGate.ts`
+Source: `cli/src/commands/ocr.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `mcp/src/server.ts`, `core/src/visibilityCliGate.ts`

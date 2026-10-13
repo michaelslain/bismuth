@@ -132,6 +132,7 @@ import type { ThemesFeed } from '../../core/src/theme/customTheme'
 import type { DoctorReport } from '../../core/src/doctor/types'
 import type { FeedbackPayload } from '../../core/src/feedbackContract'
 import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
+import type { PdfMarkdownJob, PdfMarkdownStart } from '../../core/src/pdfMarkdown'
 import type { DaemonSnapshot } from '../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../core/src/daemonActivity'
 import type { DaemonPage, ResolveResult } from '../../core/src/daemonPages'
@@ -691,6 +692,15 @@ export const api = {
                   }
                 : {}),
         }),
+
+    // PDF → markdown (core/src/pdfMarkdown.ts): start Marker on a PDF in the background, then poll
+    // its job until `done` (or `error`). `exists` means the note is already there.
+    startPdfMarkdown: (path: string, replace = false) =>
+        postJson<PdfMarkdownStart>('/convert/pdf-markdown', { path, replace }),
+    pdfMarkdownStatus: (path: string) =>
+        getJson<PdfMarkdownJob>(
+            `/convert/pdf-markdown?path=${encodeURIComponent(path)}`,
+        ),
 
     setProperty: (path: string, key: string, value: unknown) =>
         post('/set-property', { path, key, value }),

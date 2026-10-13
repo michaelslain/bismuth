@@ -4,9 +4,9 @@
 // in the app uses. Left to right:
 //
 //   identity  file icon + filename (ellipsizes first, never vanishes)
-//   readouts  p. N / M (pdf) // W × H (image)
+//   readouts  p. N / M (pdf) + `// converting to markdown` while it runs // W × H (image)
 //   config    [− 100% + fit]   [highlight draw scratch]    pdf  ·  [− 100% + fit] [draw] on an image
-//   actions   [bookmarks]      [open-externally reveal]    bookmarks pdf only · file actions Tauri
+//   actions   [to markdown] [bookmarks]  [open-externally reveal]   pdf only · file actions Tauri
 //
 // GROUPS ARE SPACING, NOT DIVIDERS. Inside a group controls sit at `--bar-icon-gap` — the annotate
 // group (highlight/draw/scratch) included, so two adjacent ON toggles (e.g. DRAW + SCRATCH) read as
@@ -56,6 +56,9 @@ export type PreviewBarProps = {
     onToggleScratch?: () => void
     /** settings.keybindings['toggle-draw-mode'], for the tooltip */
     drawKey: () => string
+    /** pdf → markdown: true while the conversion runs (the button is disabled, a readout says so) */
+    converting?: () => boolean
+    onConvert?: () => void
     /** pdf panel */
     panelOpen?: () => boolean
     onTogglePanel?: () => void
@@ -98,6 +101,22 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 count={() => props.pageCount?.() ?? 0}
                                 onGo={i => props.onGoToPage?.(i)}
                             />
+                        </div>
+                    </Show>
+                    {/* After the page readout, `//` between them (the app's one separator), so the
+                        two never read as one phrase; drops with it at level 2, leaving the
+                        disabled button and its tooltip. */}
+                    <Show when={pdf() && props.converting?.()}>
+                        <div
+                            class={styles.group}
+                            data-bar-drop="2"
+                            data-testid="preview-converting"
+                        >
+                            <Label tone="muted">
+                                {(props.pageCount?.() ?? 0) > 0
+                                    ? '// converting to markdown'
+                                    : 'converting to markdown'}
+                            </Label>
                         </div>
                     </Show>
                     <Show when={props.kind() === 'image' && props.imageSize?.()}>
@@ -172,6 +191,23 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             only flips the inner svg (PLACEMENT of the glyph, not the button's look —
                             no border/background/padding/size changes here). */}
                         <div class={styles.group}>
+                            {/* A new note beside the PDF, `x.pdf` → `x.md`; the PDF is untouched.
+                                Minutes on a long file, so it stays disabled while it runs and the
+                                readout says so. Drops with the file actions at level 4: the file
+                                tree's PDF and `bismuth pdf md` are other ways in. */}
+                            <IconButton
+                                icon="FileText"
+                                label="Convert to markdown"
+                                title={
+                                    props.converting?.()
+                                        ? 'Converting to markdown…'
+                                        : 'Convert to a markdown note beside this PDF'
+                                }
+                                disabled={props.converting?.() ?? false}
+                                data-testid="preview-convert"
+                                data-bar-drop="4"
+                                onClick={() => props.onConvert?.()}
+                            />
                             <IconButton
                                 icon="PanelRight"
                                 label="Bookmarks"

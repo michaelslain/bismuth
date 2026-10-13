@@ -8,7 +8,7 @@ import { createSignal, type JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import PreviewBar, { type PreviewBarProps } from './PreviewBar'
-import { probeBar } from '../ui/_previewBarAssertions'
+import { probeBar, tokenPx } from '../ui/_previewBarAssertions'
 
 const meta = {
     title: 'Preview/PreviewBar',
@@ -30,6 +30,8 @@ type HarnessProps = {
     /** `annotReady` — false until the sidecar has loaded (default true). */
     ready?: boolean
     imageSize?: { w: number; h: number }
+    /** A PDF → markdown conversion already running. */
+    converting?: boolean
 }
 
 /** A live bar: every toggle flips its own signal, so a play() can press it and read the result. */
@@ -40,6 +42,7 @@ function Harness(props: HarnessProps): JSX.Element {
     const [armed, setArmed] = createSignal(false)
     const [scratch, setScratch] = createSignal(props.scratch ?? false)
     const [panel, setPanel] = createSignal(props.panel ?? false)
+    const [converting, setConverting] = createSignal(props.converting ?? false)
     return (
         <div style={{ width: `${props.width}px` }} data-testid="bar-frame">
             <PreviewBar
@@ -62,6 +65,8 @@ function Harness(props: HarnessProps): JSX.Element {
                 drawKey={() => 'Mod+Shift+D'}
                 panelOpen={panel}
                 onTogglePanel={() => setPanel(v => !v)}
+                converting={converting}
+                onConvert={() => setConverting(true)}
                 nativeActions={() => props.native ?? false}
                 onOpenExternal={() => {}}
                 imageSize={() => props.imageSize}
@@ -172,6 +177,39 @@ export const PdfModesOn: Story = {
         await expect(within(bar).getByLabelText('Highlight text').getAttribute('aria-pressed')).toBe(
             'false',
         )
+    },
+}
+
+/** Convert to markdown pressed: the button disables (it runs for minutes; a second press would
+ *  only rejoin the same job) and `// converting to markdown` reads after the page readout. The
+ *  PDF is untouched, so nothing else in the bar changes. */
+export const PdfConverting: Story = {
+    render: () => <Harness width={1000} kind="pdf" />,
+    play: async ({ canvasElement }) => {
+        const bar = barOf(canvasElement)
+        const canvas = within(bar)
+        const convert = canvas.getByLabelText('Convert to markdown') as HTMLButtonElement
+        await expect(convert.disabled).toBe(false)
+        await expect(canvas.queryByText('// converting to markdown')).toBeNull()
+        await fireEvent.click(convert)
+        await waitFor(() => expect(convert.disabled).toBe(true))
+        await expect(canvas.getByText('// converting to markdown')).toBeTruthy()
+        await expect(convert.title).toBe('Converting to markdown…')
+        // probeBar measures controls only, so the label's own spacing is checked here: the page
+        // readout sits one icon gap before it (the readouts region's own gap; the `//` is what
+        // separates them), the zoom group one crumb gap after it.
+        const crumbGap = tokenPx(bar, '--bar-crumb-gap')
+        const iconGap = tokenPx(bar, '--bar-icon-gap')
+        const label = canvas.getByTestId('preview-converting').getBoundingClientRect()
+        const readout = canvas.getByTestId('page-readout').getBoundingClientRect()
+        const zoomOut = canvas.getByLabelText('Zoom out').getBoundingClientRect()
+        await expect(label.left - readout.right, 'readout → label').toBeCloseTo(iconGap, 0)
+        await expect(zoomOut.left - label.right, 'label → zoom').toBeCloseTo(crumbGap, 0)
+        const p = probeBar(bar)
+        await expect(p.selectedCount, 'converting is not a toggle').toBe(0)
+        await expect(p.frames).toBe(0)
+        await expect(p.overlaps).toEqual([])
+        await expect(p.maxCentreOffset).toBeLessThanOrEqual(1)
     },
 }
 

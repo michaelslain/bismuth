@@ -1,23 +1,20 @@
 // `bismuth ocr` — make a PDF's text selectable, and transcribe a PDF or image (math as LaTeX) into a
-// sibling note. The engines and every argv shape live in cli/src/ocr.ts; this file is the I/O.
+// sibling note. The argv shapes live in cli/src/ocr.ts and Marker in core/src/marker.ts; this file is the I/O.
 //
 // A PDF always gets its text layer, written to a hidden temp file beside it and renamed over the
 // original, so an open tab never reads a half-written PDF and the file watcher sees one change.
 // `--math` (and any image, which has no text layer to add) also writes `<name>.ocr.md`.
-import { existsSync, mkdtempSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { existsSync, renameSync, rmSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { tmpdir } from 'node:os'
 import type { CommandMap } from '../types'
 import { BOOLEAN_FLAGS, bool, fail, flag, out, positionals, requireVault } from '../args'
 import { fileExists, resolveInVault, writeNote } from '../../../core/src/files'
 import { isPdfPath } from '../../../core/src/fileKinds'
 import { createError } from '../../../core/src/error'
+import { markerTranscribe, requireTool } from '../../../core/src/marker'
 import {
-    INSTALL_HINTS,
     findTool,
     isOcrablePath,
-    markerArgs,
     ocrNote,
     ocrNotePath,
     ocrmypdfArgs,
@@ -29,17 +26,6 @@ import {
 } from '../ocr'
 
 const BOOLS = [...BOOLEAN_FLAGS, 'math', 'force', 'replace']
-
-/** The engine's absolute path, or an error naming the install command. */
-function requireTool(name: string): string {
-    const bin = findTool(name)
-    if (!bin)
-        throw createError(
-            'ENOENT',
-            `ocr needs ${name}, which is not installed — run: ${INSTALL_HINTS[name] ?? name}`,
-        )
-    return bin
-}
 
 /** Words pdftotext finds, or null when pdftotext is not installed. */
 async function pdfWords(abs: string): Promise<number | null> {
@@ -80,37 +66,6 @@ async function addTextLayer(abs: string, opts: OcrOptions): Promise<LayerResult>
         wordsBefore,
         wordsAfter: await pdfWords(abs),
     }
-}
-
-/** Transcribe with Marker (math as LaTeX); returns the markdown. */
-async function markerTranscribe(abs: string, opts: OcrOptions): Promise<string> {
-    const bin = requireTool('marker_single')
-    requireTool('llama-server')
-    const outDir = mkdtempSync(join(tmpdir(), 'bismuth-ocr-'))
-    try {
-        const r = await runTool(bin, markerArgs(abs, outDir, opts))
-        const md = findMarkdown(outDir)
-        if (r.code !== 0 || !md)
-            throw createError(
-                'INTERNAL_ERROR',
-                `marker exited ${r.code}:\n${stderrTail(r.stderr)}`,
-                500,
-            )
-        return await readFile(md, 'utf8')
-    } finally {
-        rmSync(outDir, { recursive: true, force: true })
-    }
-}
-
-/** Marker writes `<outDir>/<stem>/<stem>.md`; take the one markdown file it produced. */
-function findMarkdown(outDir: string): string | null {
-    for (const sub of readdirSync(outDir)) {
-        const dir = join(outDir, sub)
-        if (!statSync(dir).isDirectory()) continue
-        const md = readdirSync(dir).find(f => f.endsWith('.md'))
-        if (md) return join(dir, md)
-    }
-    return null
 }
 
 /** Plain-text OCR of an image with tesseract. */

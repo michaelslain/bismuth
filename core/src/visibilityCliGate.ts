@@ -240,6 +240,8 @@ const PATH_SCOPED_COMMANDS = new Set([
     'ocr',
     // `highlights` reads one PDF's or image's `.draw` sidecar and prints its highlighted text.
     'highlights',
+    // `pdf md` reads one PDF and writes `<name>.md` beside it.
+    'pdf',
 ])
 
 /** Tier B2 — lists, searches or aggregates vault content, so it cannot be judged from argv alone,

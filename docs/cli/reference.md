@@ -86,7 +86,7 @@ Channel `chat` hides notes marked `hidden`; channel `daemon` hides `hidden` and 
 | Tier | Commands | Behaviour |
 |---|---|---|
 | Always allowed | `backends`, `backup`, `daemon`, `docs`, `doctor`, `folder-icon`, `install`, `memory`, `page`, `uninstall`, `app`, `settings get`, `settings schema`, `settings deny-list`, `checkpoint advance`, `checkpoint ref` | Cannot print a note body. |
-| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop` (except `prop check`), `render`, `ocr`, `highlights` | Refused when an argument names a restricted note or folder. |
+| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop` (except `prop check`), `render`, `ocr`, `highlights`, `pdf` | Refused when an argument names a restricted note or folder. |
 | Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily`, `map`, `brain`, `checkpoint diff`, `prop check` | Run, with restricted notes dropped before any count, group or summary. |
 | Refused | `api`, `serve`, `export`, `chat`, `update`, `settings set`, `settings status-bar`, `folder-visibility`, any unlisted command | Exit non-zero with a reason. |
 
@@ -500,6 +500,16 @@ Gives a PDF a selectable text layer, and transcribes a PDF or image into a note 
 
 `ocr` refuses with `EEXIST` when `<name>.ocr.md` exists, unless `--replace` is given. The MCP tool `ocr` runs this command with a 30-minute timeout. `ocr` is path-scoped.
 
+## pdf
+
+Converts a PDF into a new markdown note beside it, with math as LaTeX and a `source` link back; the PDF is not changed. Headless; it drives Marker installed on the machine. Output and options are in [Convert a PDF to markdown](../vault/pdf-to-markdown.md).
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `pdf md` | `<file.pdf> [--pages <spec>] [--force] [--replace] [--vault <dir>]` | Writes `<name>.md` beside the PDF. Prints `{ok, path, note}`. | no |
+
+`pdf md` refuses with `EEXIST` when `<name>.md` exists, unless `--replace` is given. The MCP tool `pdf_to_markdown` runs this command with a 30-minute timeout. `pdf md` is path-scoped.
+
 ## page
 
 Manages the daemon inbox, the pages under `<vault>/.daemon/pages`. All four commands work on files. Page format and states are in [daemon pages](../daemon/pages.md).
@@ -668,7 +678,7 @@ The visibility gate in `core/src/visibilityCliGate.ts` runs once in `index.ts` b
 Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `call` attaches the owner token and turns failures into messages.
 The run registry is `core/src/runRegistry.ts`.
 `history` parses each session log with `memory/src/sessionHistory.ts`, which reuses the turn folding in `memory/src/transcript.ts`.
-`cli/src/ocr.ts` builds the engine argv for `ocr`.
+`cli/src/ocr.ts` builds the engine argv for `ocr`; Marker and engine lookup, shared with `pdf md`, are in `core/src/marker.ts`.
 `cli/src/semantic.ts` serves the semantic commands: it posts to `/search/semantic` on the vault's running server, and falls back to `core/src/vaultEmbed.ts` in process.
 
-Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`
+Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`

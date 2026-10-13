@@ -92,6 +92,7 @@ import { Loading } from './ui/EmptyState'
 import { isTauri } from './platform'
 import { openPathInDefaultApp, revealPath } from './appWindow'
 import { pushToast } from './ui/ToastHost'
+import { convertPdf, isConverting, watchPdf } from './preview/pdfMarkdownJobs'
 import { settings } from './settings'
 import { matchesKeybinding } from './keybindings'
 import styles from './PreviewView.module.css'
@@ -158,6 +159,13 @@ export function PreviewView(props: {
     // does, so a click that merely refocuses a pane can never reboot the PDF/zoom/ink state below.
     const path = createMemo(() => props.path)
     const kind = (): PreviewKind => previewKind(path()) ?? 'external'
+
+    // PDF → markdown: a conversion started from this PDF (here, in another pane, or before a
+    // reload) shows in the bar while it runs; the job itself lives in preview/pdfMarkdownJobs.
+    createEffect(() => {
+        if (kind() !== 'pdf') return
+        onCleanup(watchPdf(path()))
+    })
     const name = () => path().split('/').pop() ?? path()
     // `src` for the image <img>: GET /asset, resolved filename-first by the backend. Built
     // through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/` encoding that lets
@@ -728,6 +736,8 @@ export function PreviewView(props: {
                 drawKey={() => settings.keybindings['toggle-draw-mode']}
                 panelOpen={panelOpen}
                 onTogglePanel={() => setPanelOpen(v => !v)}
+                converting={() => isConverting(path())}
+                onConvert={() => void convertPdf(path())}
                 nativeActions={nativeActions}
                 onOpenExternal={reveal => void openExternal(reveal)}
                 imageSize={imageSize}
