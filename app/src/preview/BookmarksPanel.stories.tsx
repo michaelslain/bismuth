@@ -35,6 +35,8 @@ function stubStore(
         undo: () => {},
         redo: () => {},
         resetHistory: () => {},
+        setPdfHighlights: () => {},
+        highlightStore: () => 'sidecar' as const,
         flush: async () => {},
     }
 }

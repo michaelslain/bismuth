@@ -37,6 +37,9 @@ export type PdfPageCanvasProps = {
     index: number
     box: PageBox
     getPage: (i: number) => PDFPageProxy
+    /** Awaited before every raster render: marks the page's `/Highlight` annotations as not
+     *  viewable so pdf.js leaves them off the canvas (HighlightLayer draws them). */
+    hideHighlights?: (page: PDFPageProxy) => Promise<void>
     pdfjs: () => PdfjsModule | undefined
     /** Last-frame rasters that outlive this component. On mount, a stashed canvas for this page
      *  at this width is painted at once and the pdf.js raster render is skipped; on cleanup the
@@ -226,9 +229,18 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         offscreen.width = Math.max(1, Math.round(renderViewport.width))
         offscreen.height = Math.max(1, Math.round(renderViewport.height))
 
+        try {
+            await props.hideHighlights?.(page)
+        } catch {
+            /* unreadable annotations: render without hiding rather than not at all */
+        }
+        if (disposed || mine !== generation) return
+        // ENABLE_STORAGE: every annotation kind still paints, minus those `noView` in the
+        // document's annotation storage (the highlights).
         const task = page.render({
             canvas: offscreen,
             viewport: renderViewport,
+            annotationMode: mod.AnnotationMode.ENABLE_STORAGE,
         })
         renderTask = task
         try {

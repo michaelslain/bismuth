@@ -62,7 +62,15 @@ import {
     type PointAnchor,
     type ReadingAnchor,
 } from './pageLayout'
+import type { Highlight } from '../../../core/src/drawing/model'
+import type { PdfPageGeom } from '../../../core/src/drawing/pdfHighlights'
 import { pdfCache, rasterStash, type LoadedPdf } from './pdfDocCache'
+import {
+    hideHighlightPainting,
+    loadHighlightDeps,
+    readDocHighlights,
+    type HideStorage,
+} from './pdfAnnotHighlights'
 import PdfPageCanvas from './PdfPageCanvas'
 import ScratchPaper from './ScratchPaper'
 import styles from './PdfPages.module.css'
@@ -111,6 +119,13 @@ export type PdfPagesProps = {
     onCurrentPage?: (index: number) => void
     /** The loaded document's page count, once per document. */
     onPageCount?: (n: number) => void
+    /** Once per loaded document (and again when it reloads after an external change): every
+     *  page's `/Highlight` annotations as Bismuth highlights, `length` = page count. pdf.js is told
+     *  not to paint these itself, so HighlightLayer is the only thing that draws a highlight. */
+    onPdfHighlights?: (pages: Highlight[][]) => void
+    /** Once per loaded document (cache hit or fresh): every page's `/MediaBox`+`/CropBox` view and
+     *  `/Rotate`, which a PDF highlight's id is hashed over. */
+    onPageGeoms?: (g: PdfPageGeom[]) => void
     /** Handed the navigation controller once the scroll element exists (again after a reload
      *  recreates it). */
     controller?: (c: PdfPagesController) => void
@@ -192,6 +207,9 @@ function PdfPages(props: PdfPagesProps) {
 
     let pdfjs: PdfjsModule | undefined
     let pages: PDFPageProxy[] = []
+    // The document's annotation storage: highlight annotations are marked `noView` in it, and
+    // every page render uses it (PdfPageCanvas), so pdf.js never paints a highlight itself.
+    let annotStorage: HideStorage | undefined
     // Bumped on every (re)load so a slow load() that resolves after a newer one started can't
     // clobber state it no longer owns.
     let loadToken = 0
@@ -221,6 +239,30 @@ function PdfPages(props: PdfPagesProps) {
     let pointAnchor: PointAnchor | undefined
     let pointPinTop = false
 
+    function reportHighlights(token: number, highlights: Promise<Highlight[][]>) {
+        void highlights.then(
+            h => {
+                if (token === loadToken) props.onPdfHighlights?.(h)
+            },
+            () => {
+                /* a document whose annotations cannot be read just has none to show */
+            },
+        )
+    }
+
+    /** Called by a page canvas right before it renders: marks the page's highlights `noView`. */
+    const hidePageHighlights = async (page: PDFPageProxy) => {
+        if (annotStorage) await hideHighlightPainting(page, annotStorage)
+    }
+
+    function reportPageGeoms() {
+        props.onPageGeoms?.(
+            pages.map(p => ({
+                view: [...p.view] as [number, number, number, number],
+                rotate: p.rotate,
+            })),
+        )
+    }
     async function boot() {
         const token = ++loadToken
         anchor = undefined
@@ -238,17 +280,20 @@ function PdfPages(props: PdfPagesProps) {
             cacheRelease = hit.release
             pdfjs = hit.value.doc.pdfjs
             pages = hit.value.doc.pages
+            annotStorage = hit.value.doc.annotationStorage
             setSizes(hit.value.doc.sizes)
             setScrollTop(0)
             readyToken = token
             // A different document than the one shown recreates the scroll element + rows (a
             // fresh element starts at offset 0); the same document re-acquired keeps them.
             setDocId(hit.value.doc.id)
+            reportPageGeoms()
             setStatus('ready')
             if (props.initialPosition) setPendingJump({ restore: true })
             void hit.value.doc.outline.then(o => {
                 if (token === loadToken) props.onOutline?.(o)
             })
+            reportHighlights(token, hit.value.doc.highlights)
             return
         }
 
@@ -311,11 +356,18 @@ function PdfPages(props: PdfPagesProps) {
                     if (token === loadToken) props.onOutline?.(o)
                 })
             }
+            annotStorage = doc.annotationStorage
+            // Read in the background — the pages never wait on it. Hiding happens per page,
+            // just before that page renders (PdfPageCanvas), so a render never beats it.
+            const highlights = loadHighlightDeps().then(deps =>
+                readDocHighlights(pages, deps),
+            )
             const loadedSizes = pages.map(p => {
                 const v = p.getViewport({ scale: 1 })
                 return { w: v.width, h: v.height }
             })
             setSizes(loadedSizes)
+            reportPageGeoms()
             const id = nextDocId++
             if (cacheKey) {
                 const entry: LoadedPdf = {
@@ -324,6 +376,8 @@ function PdfPages(props: PdfPagesProps) {
                     pages,
                     sizes: loadedSizes,
                     outline,
+                    highlights,
+                    annotationStorage: doc.annotationStorage,
                 }
                 cacheRelease = pdfCache.put(cacheKey, {
                     doc: entry,
@@ -337,6 +391,7 @@ function PdfPages(props: PdfPagesProps) {
             readyToken = token
             setDocId(id)
             setStatus('ready')
+            reportHighlights(token, highlights)
             if (props.initialPosition) setPendingJump({ restore: true })
         } catch {
             if (token === loadToken) setStatus('error')
@@ -767,6 +822,7 @@ function PdfPages(props: PdfPagesProps) {
                                                 index={i}
                                                 box={box()}
                                                 getPage={getPage}
+                                                hideHighlights={hidePageHighlights}
                                                 pdfjs={() => pdfjs}
                                                 stash={stash()}
                                                 scrolling={scrolling}

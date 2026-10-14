@@ -91,6 +91,8 @@ const EXPECTED = [
     'POST /opencode/auth',
     'POST /opencode/oauth/authorize',
     'POST /opencode/oauth/callback',
+    'POST /pdf/highlights',
+    'POST /pdf/highlights/migrate',
     'POST /relay/session',
     'POST /relay/session/end',
     'POST /relay/subagent/start',

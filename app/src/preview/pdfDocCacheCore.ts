@@ -122,3 +122,22 @@ export function createPdfDocCache<D>(opts: { max: number }): PdfDocCache<D> {
         },
     }
 }
+
+/** Paths whose NEXT change notification is the echo of this window's own write. `expect` arms a
+ *  path (arming twice still covers one echo); `consume` answers whether a change naming it is that
+ *  echo, and disarms it so the change after that is treated as external. */
+export function createSelfWriteGate() {
+    const armed = new Set<string>()
+    return {
+        expect(path: string): void {
+            armed.add(path)
+        },
+        consume(path: string): boolean {
+            return armed.delete(path)
+        },
+        /** Disarms a path whose write failed, so no echo is expected for it. */
+        cancel(path: string): void {
+            armed.delete(path)
+        },
+    }
+}

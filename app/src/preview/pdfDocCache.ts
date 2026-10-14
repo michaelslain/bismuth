@@ -7,9 +7,15 @@
 // the freshness wiring that keeps it correct as files change underneath it. Mirrors
 // `noteCache.ts`'s shape for the SSE + rename/delete listeners.
 import { onServerChange } from '../serverVersion'
+import type { Highlight } from '../../../core/src/drawing/model'
 import type { OutlineNode } from './annotationTypes'
 import type { PageSize } from './pageLayout'
-import { createPdfDocCache, type PdfDocCache } from './pdfDocCacheCore'
+import type { HideStorage } from './pdfAnnotHighlights'
+import {
+    createPdfDocCache,
+    createSelfWriteGate,
+    type PdfDocCache,
+} from './pdfDocCacheCore'
 
 export { createPdfDocCache, type CachedPdf, type PdfDocCache } from './pdfDocCacheCore'
 
@@ -24,6 +30,10 @@ export type LoadedPdf = {
     pages: PDFPageProxy[]
     sizes: PageSize[]
     outline: Promise<OutlineNode[]>
+    /** Every page's `/Highlight` annotations, read once at load (index = page). */
+    highlights: Promise<Highlight[][]>
+    /** The document's annotation storage; highlight annotations are `noView` in it. */
+    annotationStorage: HideStorage
 }
 
 /** Every open PDF pane shares this one cache — at most 3 parsed documents retained at once
@@ -105,9 +115,25 @@ export const rasterStash = {
 // (a poll catch-up after the SSE stream missed an event) and clears everything. Mirrors
 // `noteCache.ts:36-51`.
 let lastVersion = 0
+// Paths this window is about to write itself (a highlight save rewrites the PDF): the echo of
+// that write must not throw away the document that already shows the result.
+const selfWrites = createSelfWriteGate()
+
+/** The next server change naming `path` leaves that cached document and its stashed rasters in
+ *  place; the change after that invalidates as usual. Call before the write that causes it. */
+export function expectSelfWrite(path: string): void {
+    selfWrites.expect(path)
+}
+
+/** Disarms `expectSelfWrite(path)` after the write failed (the server publishes nothing then). */
+export function cancelSelfWrite(path: string): void {
+    selfWrites.cancel(path)
+}
+
 onServerChange(c => {
     if (c.paths.length > 0) {
         for (const p of c.paths) {
+            if (selfWrites.consume(p)) continue
             pdfCache.invalidate(p)
             dropStashFor(p)
         }

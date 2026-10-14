@@ -31,6 +31,12 @@ import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
 import { parseFrontmatter } from '../../../core/src/frontmatter'
 import {
+    editPdfHighlights,
+    migrateSidecarHighlights,
+    type HighlightIO,
+    type PdfHighlightEdits,
+} from '../../../core/src/pdfHighlightStore'
+import {
     setBaseConfigKey,
     deleteBaseConfigKey,
 } from '../../../core/src/bases/baseFile'
@@ -87,6 +93,9 @@ export interface FakeTransportSeed {
     opencodeMode?: 'loading' | 'missing'
     /** Vault-relative path -> file contents. Drives GET/PUT /file and the default /tree. */
     files?: Record<string, string>
+    /** Vault-relative path -> raw bytes (a PDF). POST /pdf/highlights and /pdf/highlights/migrate
+     *  rewrite these with the core functions, so a story's PDF gains the annotation it adds. */
+    binaries?: Record<string, Uint8Array>
     /** GET /daemon/status — components that gate on the daemon being enabled read this on mount. */
     daemonStatus?: unknown
     /** GET /daemon/pages — the inbox. */
@@ -274,6 +283,20 @@ function searchChatHistory(
 
 export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
     const files = new Map<string, string>(Object.entries(seed.files ?? {}))
+    const binaries = new Map<string, Uint8Array>(
+        Object.entries(seed.binaries ?? {}),
+    )
+    /** The store's IO over the in-memory maps — the same code the server and the iPad run. */
+    const highlightIO: HighlightIO = {
+        readBinary: async rel => binaries.get(rel) ?? null,
+        writeBinary: async (rel, bytes) => {
+            binaries.set(rel, bytes)
+        },
+        readText: async rel => files.get(rel) ?? null,
+        writeText: async (rel, text) => {
+            files.set(rel, text)
+        },
+    }
     const tree =
         seed.tree ??
         [...files.keys()].map((path): TreeEntry => ({ path, kind: 'file' }))
@@ -645,6 +668,24 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 if (!title?.trim()) throw new Error('title is required')
                 if (!text?.trim()) throw new Error('body is required')
                 return { id: 'fb_story' } as unknown as T
+            }
+            if (pathname === '/pdf/highlights') {
+                const { path: p, edits } = body as {
+                    path: string
+                    edits: PdfHighlightEdits
+                }
+                return (await editPdfHighlights(
+                    highlightIO,
+                    p,
+                    edits,
+                )) as unknown as T
+            }
+            if (pathname === '/pdf/highlights/migrate') {
+                const { path: p } = body as { path: string }
+                return (await migrateSidecarHighlights(
+                    highlightIO,
+                    p,
+                )) as unknown as T
             }
             if (pathname === '/delete') {
                 const { path: p } = body as { path: string }

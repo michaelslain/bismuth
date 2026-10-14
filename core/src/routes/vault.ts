@@ -23,6 +23,14 @@ import { invalidateChatVisibility } from '../chat'
 import { convertHeicToJpeg } from '../heic'
 import { cancelPdfMarkdownJob, pdfMarkdownJob, startPdfMarkdownJob } from '../pdfMarkdown'
 import { stageTmpFile } from '../tmpFiles'
+import { getFileAccess } from '../fileAccess'
+import {
+    editPdfHighlights,
+    highlightIOFor,
+    migrateSidecarHighlights,
+    type PdfHighlightEdits,
+} from '../pdfHighlightStore'
+import { inkSidecarFor } from '../fileKinds'
 import {
     reconcileSettings,
     SETTINGS_FILE,
@@ -655,6 +663,32 @@ export function vaultMutatingRoutes(
                 return ok()
             },
             b => b.to,
+        ),
+
+        // A PDF's highlights are annotations inside the PDF (core/src/pdfHighlightStore.ts). A PDF
+        // Bismuth cannot rewrite answers 409 PDF_NOT_WRITABLE and nothing is written.
+        'POST /pdf/highlights': mutatingHandler(
+            async req => {
+                const { path, edits } = (await req.json()) as {
+                    path: string
+                    edits: PdfHighlightEdits
+                }
+                const io = highlightIOFor(await getFileAccess(), cfg.vault)
+                return Response.json(await editPdfHighlights(io, path, edits))
+            },
+            b => b.path,
+        ),
+
+        'POST /pdf/highlights/migrate': mutatingHandler(
+            async req => {
+                const { path } = (await req.json()) as { path: string }
+                const io = highlightIOFor(await getFileAccess(), cfg.vault)
+                return Response.json(await migrateSidecarHighlights(io, path))
+            },
+            b =>
+                typeof b.path === 'string'
+                    ? [b.path, inkSidecarFor(b.path)]
+                    : undefined,
         ),
 
         'POST /create': mutatingHandler(

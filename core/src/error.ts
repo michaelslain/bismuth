@@ -69,6 +69,13 @@ export const ERROR_CODES = {
         message: 'Base composition cycle detected',
     },
 
+    // A PDF Bismuth cannot safely rewrite (encrypted, signed, unreadable).
+    PDF_NOT_WRITABLE: {
+        code: 'PDF_NOT_WRITABLE',
+        statusCode: 409,
+        message: 'This PDF cannot be rewritten',
+    },
+
     // Generic server errors
     INTERNAL_ERROR: {
         code: 'INTERNAL_ERROR',

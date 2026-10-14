@@ -139,6 +139,7 @@ They override framework habits, and most violations compile, render and pass tes
 - **Google sync state is keyed by base path** (`~/.bismuth/gcal/sync.json`). Anything that moves or
   renames a base goes through `moveEntrySynced` (`core/src/gcal/moveSynced.ts`), never bare
   `moveEntry`, or the next sync duplicates every event. Tests set `BISMUTH_GCAL_DIR` to a temp dir.
+- **A PDF's highlights live in the PDF** as standard `/Highlight` annotations (`core/src/drawing/pdfHighlights.ts`), so Preview and other viewers share them; its `.draw` sidecar holds ink, bookmarks and margin. An encrypted or signed PDF keeps highlights in the sidecar. Never write highlights into a writable PDF's sidecar.
 - **A binary's tags live in its companion note `<file>.<ext>.md`**, created on first edit.
 - **The daemon session's MCP wiring is explicit** (`buildQueryOptions()`, `settingSources: []`);
   `inheritUserMcp` adds user scope only, because the session's cwd is the vault. `chat.ts` differs

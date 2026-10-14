@@ -23,6 +23,12 @@ import { buildGraph } from './engine'
 import { attachLayout, computeViewLayouts } from './layout-cache'
 import { getFileAccess } from './fileAccess'
 import {
+    editPdfHighlights,
+    highlightIOFor,
+    migrateSidecarHighlights,
+} from './pdfHighlightStore'
+import { inkSidecarFor } from './fileKinds'
+import {
     parseFrontmatter,
 } from './frontmatter'
 import { parseBaseFile } from './bases/parse'
@@ -482,6 +488,19 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                     b.scope,
                 )
                 emit(b.scope && b.scope !== 'vault' ? [b.scope] : [])
+                return result
+            }
+
+            case 'POST /pdf/highlights': {
+                const io = highlightIOFor(await fa(), vault)
+                const result = await editPdfHighlights(io, b.path, b.edits)
+                emit([b.path])
+                return result
+            }
+            case 'POST /pdf/highlights/migrate': {
+                const io = highlightIOFor(await fa(), vault)
+                const result = await migrateSidecarHighlights(io, b.path)
+                if (result.moved) emit([b.path, inkSidecarFor(b.path)])
                 return result
             }
 

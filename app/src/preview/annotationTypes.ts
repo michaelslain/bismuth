@@ -3,7 +3,7 @@
 // binary's `.draw` sidecar, and the PDF navigation seams (outline + scroll controller). Types
 // only — `createAnnotationStore.ts` implements the store, `PdfPages.tsx` the controller.
 import type { Accessor } from 'solid-js'
-import type { DrawingDoc } from '../../../core/src/drawing/model'
+import type { DrawingDoc, Highlight } from '../../../core/src/drawing/model'
 import type { ScratchBlock } from '../../../core/src/scratchTypes'
 
 export type AnnotationLoadState = 'loading' | 'ready' | 'failed'
@@ -23,6 +23,18 @@ export type AnnotationStore = {
     resetHistory: () => void
     /** Write any pending edit now. */
     flush: () => Promise<void>
+    /** A PDF's highlights as they are in the PDF file (index = page): replaces the doc's
+     *  highlights without an undo entry and resets the undo history. Called when a document loads
+     *  or reloads after an external change. Arriving while edits are unsaved, it saves them first
+     *  and keeps them on top of what arrived. Ignored while `highlightStore` is 'sidecar'. */
+    setPdfHighlights: (pages: Highlight[][]) => void
+    /** Where this file's highlights save: 'pdf' = inside the PDF (the default for a PDF), 'sidecar'
+     *  = in the `.draw` file (an image, or a PDF Bismuth cannot rewrite). */
+    highlightStore: Accessor<'pdf' | 'sidecar'>
+    /** True once the loaded file's highlights are final: the sidecar has loaded and, for a PDF,
+     *  the open document's highlight report has been taken in (merged with any migrate). False
+     *  again from the next load. Optional so a story's stand-in store can leave it out. */
+    highlightsSettled?: Accessor<boolean>
 }
 
 /** One node of a PDF's embedded outline; `page` is 0-based, null when the destination can't

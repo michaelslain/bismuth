@@ -76,6 +76,8 @@ function settingsOnly(raw: string | null): FileAccess {
         readNote: async (_root, rel) =>
             rel === '.settings' && raw !== null ? raw : missing(),
         writeNote: async () => {},
+        readBinary: async () => new Uint8Array(),
+        writeBinary: async () => {},
         statNote: async (_root, rel) =>
             rel === '.settings' && raw !== null
                 ? { size: raw.length, mtimeMs: 0, ctimeMs: 0, birthtimeMs: 0 }

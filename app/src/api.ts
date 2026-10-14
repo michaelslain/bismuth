@@ -149,6 +149,7 @@ import type { FreeAgentStatus, FreeAgentProgress } from '../../core/src/freeAgen
 import type { GcalStatus } from '../../core/src/gcal'
 import type { SyncResult } from '../../core/src/gcal/sync'
 import { serializeDoc, type DrawingDoc } from '../../core/src/drawing/model'
+import type { PdfHighlightEdits } from '../../core/src/pdfHighlightStore'
 import { plural } from './plural'
 import type {
     ChatFrame,
@@ -742,6 +743,20 @@ export const api = {
     // write path as notes — there is no dedicated /drawing/save route.
     saveDrawing: (path: string, doc: DrawingDoc) =>
         put('/file', { path, contents: serializeDoc(doc) }).then(() => {}),
+
+    // A PDF's highlights are annotations inside the PDF file. One call is one read-modify-write of
+    // the file; a PDF Bismuth cannot rewrite rejects (409 PDF_NOT_WRITABLE).
+    editPdfHighlights: (path: string, edits: PdfHighlightEdits) =>
+        postJson<{ ok: true }>('/pdf/highlights', { path, edits }).then(
+            () => {},
+        ),
+    // Moves the sidecar's highlights into the PDF; `writable: false` = the PDF cannot be rewritten
+    // and its highlights stay in the sidecar.
+    migratePdfHighlights: (path: string) =>
+        postJson<{ moved: number; writable: boolean }>(
+            '/pdf/highlights/migrate',
+            { path },
+        ),
 
     // Daemon supervision. Status (running + this device + owner, augmented server-side with this
     // vault's identity name), the list of heartbeating devices, and claiming a device as the owner

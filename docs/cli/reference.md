@@ -324,6 +324,7 @@ Turns a note, base, sheet or drawing into a file, and reads a PDF's highlights b
 | `export` | `<file> [--format md\|html\|png\|pdf\|csv] [--out FILE] [--mode data\|visual] [--cal-start YYYY-MM-DD] [--cal-span month\|week\|3day\|day] [--no-frontmatter] [--markdown-syntax] [--theme dark\|light] [--vault <dir>]` | Exports a file and prints `wrote <path>`. | no |
 | `render` | `<file.draw> [--pdf] [--out FILE] [--theme dark\|light]` | Renders a drawing to PNG, or PDF with `--pdf`. | no |
 | `highlights` | `<file.pdf> [--json] [--vault <dir>]` | Prints the text highlighted in a PDF or image, page by page. Takes the file or its `.draw` sidecar. | no |
+| `highlights migrate` | `<file.pdf> \| --all [--vault <dir>]` | Moves a PDF's sidecar highlights into the PDF. `--all` does every vault PDF whose sidecar has highlights. | no |
 
 `--format` defaults to `md`, or `png` for a `.draw` file. A `.draw` file exports only to `png` or `pdf` and needs no vault. `--theme` defaults to `dark`; any other value fails. `--out` defaults to a name derived from the input (`<file>.png` or `<file>.pdf` for drawings).
 
@@ -331,7 +332,10 @@ Turns a note, base, sheet or drawing into a file, and reads a PDF's highlights b
 `--no-frontmatter` drops the frontmatter from the output, and `--markdown-syntax` keeps Markdown markers in it.
 Prose leading, code scale and fonts follow the vault's `editor.lineHeight` and `appearance` settings; colours use the built-in palette for the chosen theme, because no live theme is available headlessly.
 
-`highlights` reads the file's `<file>.draw` sidecar, because highlights are never written into the PDF. Pages count from 1, highlights run top to bottom within a page, and a word hyphenated across a line break is joined. A PDF with no sidecar prints `0 highlights`. `--json` prints `{ path, sidecar, count, highlights: [{ page, id, color, text }] }`, where `text` is null for a highlight saved without its text.
+`highlights` lists a PDF's own highlights, which are standard annotations inside the file, so highlights made in other PDF apps appear too. It also lists any still in the file's `<file>.draw` sidecar. An image has only the sidecar. Pages count from 1 and highlights run top to bottom within a page. A word hyphenated across a line break is joined. A PDF with neither prints `0 highlights`.
+`--json` prints `{ path, sidecar, count, highlights: [{ page, id, color, text, store }] }`. `store` is `pdf` or `sidecar`, and `text` is null for a highlight over no text.
+
+`highlights migrate` moves sidecar highlights into the PDF and prints one line per file: `<path>: moved N`, or `<path>: kept in sidecar (<reason>)` when the PDF cannot be written. The reason is `encrypted`, `signed` or `unreadable`. The sidecar keeps its ink and loses only the moved highlights.
 
 ```text
 $ bismuth highlights "readings/week 8 reading 1.pdf"
@@ -342,7 +346,7 @@ p. 1
 - Metropolitan Statistical Areas (MSAs)
 ```
 
-`export` is refused for an agent in a restricted vault. `render` and `highlights` are path-scoped.
+`export` is refused for an agent in a restricted vault. `render`, `highlights` and `highlights migrate` are path-scoped.
 
 ## feedback
 

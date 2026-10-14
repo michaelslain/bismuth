@@ -1,4 +1,4 @@
-import { join, dirname, resolve, sep } from 'node:path'
+import { join, dirname, resolve, sep, basename } from 'node:path'
 import {
     mkdirSync,
     renameSync,
@@ -6,6 +6,8 @@ import {
     writeFileSync,
     statSync,
     rmSync,
+    realpathSync,
+    chmodSync,
 } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
@@ -395,6 +397,44 @@ export async function writeBinary(
     const full = resolveInVault(root, rel)
     mkdirSync(dirname(full), { recursive: true })
     await Bun.write(full, bytes)
+}
+
+/** Read a vault-relative file's raw bytes. Rejects when the file is missing. */
+export async function readBinary(
+    root: string,
+    rel: string,
+): Promise<Uint8Array> {
+    return new Uint8Array(
+        await Bun.file(resolveInVault(root, rel)).arrayBuffer(),
+    )
+}
+
+/** Write raw bytes through a sibling temp file and a rename, so a reader (or a crash) never sees
+ *  a half-written file. The temp name is dot-prefixed, so the tree walk skips it. Finder tags and
+ *  other xattrs on the old file are not carried over. */
+export async function writeBinaryAtomic(
+    root: string,
+    rel: string,
+    bytes: Uint8Array,
+): Promise<void> {
+    const asked = resolveInVault(root, rel)
+    // An existing file is replaced through its real path, so a symlinked PDF stays a symlink and
+    // the target gets the bytes; its mode carries over to the replacement.
+    const exists = existsSync(asked)
+    if (!exists) mkdirSync(dirname(asked), { recursive: true })
+    const full = exists ? realpathSync(asked) : asked
+    const tmp = join(
+        dirname(full),
+        `.${basename(full)}.${process.pid}.${Date.now()}.tmp`,
+    )
+    try {
+        await Bun.write(tmp, bytes)
+        if (exists) chmodSync(tmp, statSync(full).mode & 0o7777)
+        renameSync(tmp, full)
+    } catch (e) {
+        rmSync(tmp, { force: true })
+        throw e
+    }
 }
 
 /** Pick a non-colliding vault-relative path for `rel` by appending " 1", " 2", … to the

@@ -27,6 +27,8 @@ function memVault(initial: Record<string, string>): {
         writeNote: async (_root, rel, contents) => {
             files[rel] = contents
         },
+        readBinary: async () => new Uint8Array(),
+        writeBinary: async () => {},
         statNote: async (_root, rel) =>
             rel in files
                 ? {

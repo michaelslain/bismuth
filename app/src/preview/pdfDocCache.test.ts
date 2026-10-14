@@ -3,7 +3,11 @@
 // singleton/wiring in pdfDocCache.ts, which pulls in serverVersion (and with it the api/transport
 // stack) and isn't meant to load under Bun's test runner.
 import { describe, expect, mock, test } from 'bun:test'
-import { createPdfDocCache, type CachedPdf } from './pdfDocCacheCore'
+import {
+    createPdfDocCache,
+    createSelfWriteGate,
+    type CachedPdf,
+} from './pdfDocCacheCore'
 
 function fakeDoc(): CachedPdf<Record<string, never>> {
     return { doc: {}, destroy: mock(() => {}) }
@@ -132,5 +136,50 @@ describe('createPdfDocCache', () => {
         const hit = cache.acquire('a')
         expect(hit?.value).toBe(a)
         hit?.release()
+    })
+})
+
+describe('createSelfWriteGate', () => {
+    test('an expected path is consumed once, the change after that is external', () => {
+        const gate = createSelfWriteGate()
+        gate.expect('a.pdf')
+        expect(gate.consume('a.pdf')).toBe(true)
+        expect(gate.consume('a.pdf')).toBe(false)
+    })
+
+    test('a path nobody expected is never consumed, and paths are independent', () => {
+        const gate = createSelfWriteGate()
+        gate.expect('a.pdf')
+        expect(gate.consume('b.pdf')).toBe(false)
+        expect(gate.consume('a.pdf')).toBe(true)
+    })
+
+    test('a cancelled path is no longer expected, so the next change is external', () => {
+        const gate = createSelfWriteGate()
+        gate.expect('a.pdf')
+        gate.cancel('a.pdf')
+        expect(gate.consume('a.pdf')).toBe(false)
+        gate.cancel('never-armed.pdf')
+    })
+
+    test('the gate drives the cache: an echo leaves the document, the next change invalidates', () => {
+        const cache = createPdfDocCache<Record<string, never>>({ max: 3 })
+        const gate = createSelfWriteGate()
+        const a = fakeDoc()
+        cache.put('a.pdf', a)()
+        // the same decision pdfDocCache.ts makes per named path of a server change
+        const onChange = (p: string) => {
+            if (gate.consume(p)) return
+            cache.invalidate(p)
+        }
+        gate.expect('a.pdf')
+        onChange('a.pdf')
+        expect(a.destroy).not.toHaveBeenCalled()
+        const hit = cache.acquire('a.pdf')
+        expect(hit?.value).toBe(a)
+        hit?.release()
+        onChange('a.pdf')
+        expect(a.destroy).toHaveBeenCalledTimes(1)
+        expect(cache.acquire('a.pdf')).toBeUndefined()
     })
 })

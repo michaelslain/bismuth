@@ -1,4 +1,5 @@
 import { test as bunTest, expect } from 'bun:test'
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { makeVault } from '../../core/test/helpers'
 
@@ -58,6 +59,7 @@ test('--json carries page, colour and text; the sidecar path works too', async (
         id: 'a',
         color: '#FF00AA',
         text: 'notoriously piecemeal',
+        store: 'sidecar',
     })
 })
 
@@ -76,4 +78,76 @@ test('an agent is refused a hidden PDF and its sidecar', async () => {
         expect(r.code, path).not.toBe(0)
         expect(r.stdout + r.stderr, path).not.toContain('piecemeal')
     }
+})
+
+// --- highlights stored in the PDF itself ---
+const FIX = join(import.meta.dir, '..', '..', 'core', 'test', 'drawing', 'fixtures')
+
+// The same two highlights on page 1, which the one-page fixture PDF has.
+const SIDECAR_P1 = SIDECAR.replace('"page":2', '"page":0')
+
+function pdfVault(sidecar?: string, pdf = 'pdfkit-highlights.pdf'): string {
+    const vault = makeVault(sidecar ? { 'p/a.pdf.draw': sidecar } : {})
+    mkdirSync(join(vault, 'p'), { recursive: true })
+    copyFileSync(join(FIX, pdf), join(vault, 'p/a.pdf'))
+    return vault
+}
+
+test('lists the highlights a PDF carries itself, with their text and store', async () => {
+    const r = await run(['highlights', 'p/a.pdf', '--json'], pdfVault())
+    const body = JSON.parse(r.stdout)
+    expect(body.count).toBe(7)
+    expect(body.highlights.every((h: { store: string }) => h.store === 'pdf')).toBe(true)
+    expect(body.highlights[0].page).toBe(1)
+    expect(body.highlights[0].color).toMatch(/^#/)
+    expect(body.highlights[0].text).toBe('Hello highlighted w')
+    const plain = await run(['highlights', 'p/a.pdf'], pdfVault())
+    expect(plain.stdout).toContain('p/a.pdf: 7 highlights\n\np. 1\n- Hello highlighted w')
+})
+
+test('a mixed PDF and sidecar lists both, marked by store', async () => {
+    const r = await run(['highlights', 'p/a.pdf', '--json'], pdfVault(SIDECAR_P1))
+    const body = JSON.parse(r.stdout)
+    expect(body.count).toBe(9)
+    const stores = body.highlights.map((h: { store: string }) => h.store)
+    expect(stores.filter((s: string) => s === 'pdf')).toHaveLength(7)
+    expect(stores.filter((s: string) => s === 'sidecar')).toHaveLength(2)
+    expect(body.highlights.every((h: { page: number }) => h.page === 1)).toBe(true)
+})
+
+test('migrate moves sidecar highlights into the PDF', async () => {
+    const vault = pdfVault(SIDECAR_P1)
+    const m = await run(['highlights', 'migrate', 'p/a.pdf'], vault)
+    expect(m.code, m.stderr).toBe(0)
+    expect(m.stdout.trim()).toBe('p/a.pdf: moved 2')
+    const body = JSON.parse((await run(['highlights', 'p/a.pdf', '--json'], vault)).stdout)
+    expect(body.highlights.filter((h: { store: string }) => h.store === 'sidecar')).toHaveLength(0)
+    expect(readFileSync(join(vault, 'p/a.pdf.draw'), 'utf8')).not.toContain('piecemeal')
+})
+
+test('migrate --all handles every PDF whose sidecar has highlights', async () => {
+    const vault = pdfVault(SIDECAR_P1)
+    writeFileSync(join(vault, 'p/none.pdf'), '%PDF-1.4')
+    copyFileSync(join(FIX, 'encrypted.pdf'), join(vault, 'p/enc.pdf'))
+    writeFileSync(join(vault, 'p/enc.pdf.draw'), SIDECAR_P1)
+    const m = await run(['highlights', 'migrate', '--all'], vault)
+    expect(m.code, m.stderr).toBe(0)
+    expect(m.stdout.trim().split('\n')).toEqual([
+        'p/a.pdf: moved 2',
+        'p/enc.pdf: kept in sidecar (encrypted)',
+    ])
+})
+
+test('migrate on an encrypted PDF keeps the sidecar', async () => {
+    const vault = pdfVault(SIDECAR_P1, 'encrypted.pdf')
+    const m = await run(['highlights', 'migrate', 'p/a.pdf'], vault)
+    expect(m.stdout.trim()).toBe('p/a.pdf: kept in sidecar (encrypted)')
+    expect(readFileSync(join(vault, 'p/a.pdf.draw'), 'utf8')).toContain('piecemeal')
+})
+
+test('an agent is refused migrating a hidden PDF', async () => {
+    const vault = makeVault(files())
+    const r = await run(['highlights', 'migrate', 'papers/secret.pdf'], vault, true)
+    expect(r.code).not.toBe(0)
+    expect(readFileSync(join(vault, 'papers/secret.pdf.draw'), 'utf8')).toContain('piecemeal')
 })

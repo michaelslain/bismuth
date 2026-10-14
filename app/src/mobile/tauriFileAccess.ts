@@ -8,6 +8,10 @@
 import {
     readTextFile,
     writeTextFile,
+    readFile,
+    writeFile,
+    rename,
+    remove,
     readDir,
     stat,
 } from '@tauri-apps/plugin-fs'
@@ -96,6 +100,21 @@ export function tauriFileAccess(): FileAccess {
         readNote: (root, rel) => readTextFile(join(root, rel)),
         writeNote: (root, rel, contents) =>
             writeTextFile(join(root, rel), contents),
+
+        readBinary: (root, rel) => readFile(join(root, rel)),
+        // Temp file + rename, so a reader never sees a half-written PDF. The temp name has no
+        // leading dot: plugin-fs scope globs refuse dot-prefixed names by default.
+        writeBinary: async (root, rel, bytes) => {
+            const full = join(root, rel)
+            const tmp = `${full}.${Date.now()}.tmp`
+            try {
+                await writeFile(tmp, bytes)
+                await rename(tmp, full)
+            } catch (e) {
+                await remove(tmp).catch(() => {})
+                throw e
+            }
+        },
 
         statNote: async (root, rel): Promise<FileStat | null> => {
             try {

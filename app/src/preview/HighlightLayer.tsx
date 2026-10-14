@@ -20,8 +20,8 @@
 // text selection and scrolling are never blocked by it.
 //
 // THE GEOMETRY (core/src/drawing/pageInk.ts owns the math, same as PageInk): a highlight's rects
-// live in the sidecar's 816x1056 logical page space; `pageBoxFor` resolves the box source page
-// `i` occupies inside it; `logicalToScreen`/`screenToLogical` convert through a page's `rendered`
+// live in the 816x1056 logical page space; `fitImage` of a page's natural size is the box it
+// occupies inside it, the same box a PDF's quad points convert through; `logicalToScreen`/`screenToLogical` convert through a page's `rendered`
 // rect (host px). `selectionRects.ts`'s `rectsToPages` is the same conversion run the other way,
 // for a browser selection's client rects.
 import { createEffect, createMemo, For, onCleanup } from 'solid-js'
@@ -29,8 +29,9 @@ import type { AnnotationStore } from './annotationTypes'
 import type { PageInkPage } from './PageInk'
 import {
     logicalToScreen,
-    logicalToScreenScale,
+    fitImage,
     pageBoxFor,
+    logicalToScreenScale,
     screenToLogical,
 } from '../../../core/src/drawing/pageInk'
 import {
@@ -76,12 +77,16 @@ type PaintedRect = {
 function HighlightLayer(props: HighlightLayerProps) {
     let hostRef: HTMLDivElement | undefined
 
-    // `pageBoxFor` needs A DrawingDoc even to compute the FIT box for a page with no stored
-    // legacy image — never null-checked at every call site, so a shared fallback here instead.
     const docOrEmpty = () => props.store.doc() ?? emptyDoc()
 
+    // In 'pdf' mode a highlight's rects are in the FIT box of the page's natural size: the box the
+    // PDF's quad points convert through (core/src/drawing/pdfHighlights.ts). In sidecar mode
+    // (encrypted/signed PDFs, legacy sidecars) the box is PageInk's own, so highlights draw and
+    // select against the same box as the ink.
     const boxFor = (i: number, page: PageInkPage) =>
-        pageBoxFor(docOrEmpty(), i, page.nat.w, page.nat.h)
+        props.store.highlightStore() === 'pdf'
+            ? fitImage(page.nat.w, page.nat.h)
+            : pageBoxFor(docOrEmpty(), i, page.nat.w, page.nat.h)
 
     // ── Painting (unconditional — see header) ─────────────────────────────────────────────────
     const painted = createMemo<PaintedRect[]>(() => {
@@ -207,6 +212,8 @@ function HighlightLayer(props: HighlightLayerProps) {
             ref={el => (hostRef = el)}
             class={`${styles['highlight-layer']} ${props.class ?? ''}`}
             data-testid="highlight-layer"
+            // Test-only settled seam: stories wait on it; nothing in the app reads it.
+            data-highlights-settled={props.store.highlightsSettled?.() ? 'true' : undefined}
         >
             <For each={painted()}>
                 {p => (

@@ -28,8 +28,8 @@ export const SERVER_INSTRUCTIONS =
     'file (e.g. `![[paper.pdf]]`) to hold tags; that makes a duplicate note, not a companion. ' +
     'See bismuth_docs_read on ' +
     'vault/frontmatter.md for more. Asked about what the user highlighted or marked in a PDF or ' +
-    'image: run `bismuth highlights <file.pdf>`; highlights and ink live in its <file>.<ext>.draw ' +
-    'sidecar, never in the PDF, so reading or rendering the PDF shows none. Asked what is hidden or off-limits to AI: run `bismuth ' +
+    'image: run `bismuth highlights <file.pdf>`; a PDF holds its highlights as standard annotations (other apps see them); ink lives in ' +
+    '<file>.<ext>.draw. Asked what is hidden or off-limits to AI: run `bismuth ' +
     'settings deny-list`, never grep; an agent gets only a count by design, so give it and have ' +
     'the user run it for paths (vault/visibility.md). If Bismuth misbehaves after an update (missing CLI, stale MCP, ' +
     'daemon not running), run bismuth_doctor first. ' +

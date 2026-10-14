@@ -56,6 +56,8 @@ function makeStubStore(initial: DrawingDoc | null): AnnotationStore {
         undo: () => {},
         redo: () => {},
         resetHistory: () => {},
+        setPdfHighlights: () => {},
+        highlightStore: () => 'sidecar' as const,
         flush: () => Promise.resolve(),
     }
 }

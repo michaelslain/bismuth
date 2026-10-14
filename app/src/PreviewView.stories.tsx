@@ -48,6 +48,20 @@ import {
 } from '../../core/src/drawing/pageInk'
 import { DEFAULT_MARGIN_RATIO } from '../../core/src/drawing/pageMargin'
 import {
+    applyPdfHighlightEdits,
+    pdfHighlightId,
+    readPdfHighlights,
+    rectsToQuads,
+    type PdfHighlightEdits,
+} from '../../core/src/drawing/pdfHighlights'
+import {
+    editPdfHighlights,
+    migrateSidecarHighlights,
+    type HighlightIO,
+} from '../../core/src/pdfHighlightStore'
+import encryptedFixtureUrl from '../../core/test/drawing/fixtures/encrypted.pdf?url'
+import pdfkitFixtureUrl from '../../core/test/drawing/fixtures/pdfkit-highlights-lines.pdf?url'
+import {
     addHighlight,
     mergeLineRects,
 } from '../../core/src/drawing/pageHighlights'
@@ -995,10 +1009,28 @@ const ANNOT_SIDECAR = inkSidecarFor(ANNOT_PDF_PATH)
 
 /** Every sidecar write the store makes, parsed, in order. */
 let sidecarPuts: DrawingDoc[] = []
-/** The fake transport, with PUT /file observed on the way through (it still stores the file). */
-function recordingTransport(files: Record<string, string>): Transport {
-    const t = fakeTransport({ files })
+/** Every PDF-highlight route call that succeeded, in order, with its request body and response. */
+let hlCalls: { url: string; body: any; result: any }[] = []
+/** The fake transport, with PUT /file and the PDF-highlight routes observed on the way through
+ *  (they still do their work). `binaries` seeds the server-side PDF bytes the routes rewrite. */
+function recordingTransport(
+    files: Record<string, string>,
+    binaries?: Record<string, Uint8Array>,
+): Transport {
+    const t = fakeTransport({ files, binaries })
     const put = t.put
+    // The fake transport keeps its PDF bytes private, so the two highlight routes run here over
+    // a map the story can read back (`servedPdf`): the same core functions, the same text files.
+    served = new Map(Object.entries(binaries ?? {}))
+    const io: HighlightIO = {
+        readBinary: async rel => served.get(rel) ?? null,
+        writeBinary: async (rel, bytes) => void served.set(rel, bytes),
+        readText: async rel =>
+            (await t.getText(`/file?path=${encodeURIComponent(rel)}`)) || null,
+        writeText: async (rel, text) => {
+            await put('/file', { path: rel, contents: text })
+        },
+    }
     return {
         ...t,
         put: async (path, body) => {
@@ -1008,8 +1040,21 @@ function recordingTransport(files: Record<string, string>): Transport {
             }
             return put(path, body)
         },
+        postJson: async <T,>(path: string, body: unknown) => {
+            if (path !== '/pdf/highlights' && path !== '/pdf/highlights/migrate')
+                return t.postJson<T>(path, body)
+            const p = (body as { path: string }).path
+            const result =
+                path === '/pdf/highlights'
+                    ? await editPdfHighlights(io, p, (body as { edits: PdfHighlightEdits }).edits)
+                    : await migrateSidecarHighlights(io, p)
+            hlCalls.push({ url: path, body, result })
+            return result as T
+        },
     }
 }
+/** The server-side PDF bytes `recordingTransport`'s highlight routes read and rewrite. */
+let served = new Map<string, Uint8Array>()
 
 const scrollElOf = (root: HTMLElement) =>
     root.querySelector(`.${pdfPagesStyles['pdf-scroll']}`) as HTMLElement | null
@@ -2743,5 +2788,368 @@ export const ImageScratchEdge: Story = {
             Math.abs(edge()!.getBoundingClientRect().right - img.getBoundingClientRect().right),
         ).toBeLessThan(1)
         await expect(edge()!.querySelector('[data-edge-button]')).toBeNull()
+    },
+}
+
+// ── Highlights saved INTO the PDF (annotation store → api.editPdfHighlights) ─────────────────────
+// The fake transport's PDF routes run the same read-modify-write the server does, over the bytes a
+// story seeds in `binaries`. `hlCalls` records each successful route call, so a story waits on the
+// call itself (a deterministic seam) instead of a delay.
+
+let pdfkitBytes: Uint8Array | undefined
+async function pdfkitFixture(): Promise<Uint8Array> {
+    pdfkitBytes ??= new Uint8Array(await (await fetch(pdfkitFixtureUrl)).arrayBuffer())
+    return pdfkitBytes
+}
+async function pdfkitLoad(): Promise<ArrayBuffer> {
+    return (await pdfkitFixture()).slice().buffer as ArrayBuffer
+}
+const PDFKIT_PATH = 'docs/pdfkit.pdf'
+/** The highlight layer once the store has taken in the document's highlight report. */
+const settledLayer = (root: HTMLElement) =>
+    root.querySelector('[data-testid="highlight-layer"][data-highlights-settled]')
+const hlRects = (root: HTMLElement) =>
+    Array.from(
+        root.querySelectorAll<HTMLElement>('[data-testid="highlight-rect"]'),
+    )
+const annotatedBinary = () => new Uint8Array(buildAnnotatedPdf())
+
+/** A PDF a PDF editor wrote highlights into shows in Bismuth in its own colours: five
+ *  highlights, one per text line, each painted in its own colour over the white page. */
+export const PdfPreviewHighlightFromPreview: Story = {
+    render: () => {
+        sidecarPuts = []
+        hlCalls = []
+        setTransport(
+            recordingTransport(
+                {},
+                { [PDFKIT_PATH]: new Uint8Array(pdfkitBytes ?? []) },
+            ),
+        )
+        return (
+            <div style={{ height: '100vh', width: '900px' }}>
+                <Show when={pdfkitBytes} fallback={<Text>loading fixture</Text>}>
+                    <PreviewView
+                        path={PDFKIT_PATH}
+                        tagNames={NO_TAGS}
+                        pdfLoad={pdfkitLoad}
+                    />
+                </Show>
+            </div>
+        )
+    },
+    loaders: [async () => void (await pdfkitFixture())],
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                const rects = hlRects(canvasElement)
+                expect(rects.length).toBe(5)
+                for (const r of rects) {
+                    expect(r.getBoundingClientRect().width).toBeGreaterThan(0)
+                }
+            },
+            { timeout: 8000 },
+        )
+        const colors = new Set(
+            hlRects(canvasElement).map(r => getComputedStyle(r).backgroundColor),
+        )
+        await expect(colors.has('rgb(0, 255, 0)')).toBe(true)
+        await expect(colors.has('rgb(219, 52, 242)')).toBe(true)
+        await expect(colors.size).toBe(5)
+        // One colour per line, so multiply over the white page leaves each its own.
+        await expect(new Set(hlRects(canvasElement).map(r => r.getBoundingClientRect().top)).size).toBe(5)
+
+    },
+}
+
+/** A click while HIGHLIGHT is armed removes a highlight another app wrote the way it removes a
+ *  Bismuth one: one `/pdf/highlights` call, the edit names the clicked highlight's PDF id, and
+ *  the file that edit leaves still holds the other four. */
+export const PdfPreviewHighlightRemoveFromPreview: Story = {
+    render: () => {
+        sidecarPuts = []
+        hlCalls = []
+        setTransport(
+            recordingTransport(
+                {},
+                { [PDFKIT_PATH]: new Uint8Array(pdfkitBytes ?? []) },
+            ),
+        )
+        return (
+            <div style={{ height: '100vh', width: '900px' }}>
+                <Show when={pdfkitBytes} fallback={<Text>loading fixture</Text>}>
+                    <PreviewView
+                        path={PDFKIT_PATH}
+                        tagNames={NO_TAGS}
+                        pdfLoad={pdfkitLoad}
+                    />
+                </Show>
+            </div>
+        )
+    },
+    loaders: [async () => void (await pdfkitFixture())],
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(
+            () => {
+                const rects = hlRects(canvasElement)
+                expect(rects.length).toBe(5)
+                for (const r of rects) {
+                    expect(r.getBoundingClientRect().width).toBeGreaterThan(0)
+                }
+            },
+            { timeout: 8000 },
+        )
+        const hlBtn = canvas.getByLabelText('Highlight text') as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false))
+        await fireEvent.click(hlBtn)
+        await expect(pressedOf(hlBtn)).toBe('true')
+        // The purple one is on the last line.
+        const purple = hlRects(canvasElement).find(
+            r => getComputedStyle(r).backgroundColor === 'rgb(219, 52, 242)',
+        )!
+        const box = purple.getBoundingClientRect()
+        window.getSelection()?.removeAllRanges()
+        scrollElOf(canvasElement)!.dispatchEvent(
+            new PointerEvent('pointerup', {
+                bubbles: true,
+                clientX: box.left + box.width / 2,
+                clientY: box.top + box.height / 2,
+            }),
+        )
+        await waitFor(() => expect(hlRects(canvasElement).length).toBe(4))
+        await waitFor(() => expect(hlCalls.length).toBe(1), { timeout: 5000 })
+        const call = hlCalls[0]!
+        await expect(call.url).toBe('/pdf/highlights')
+        const edits = call.body.edits as PdfHighlightEdits
+        await expect(edits.add).toEqual([])
+        const fixtureHl = (await readPdfHighlights(await pdfkitFixture())).pages[0]!
+        const purpleHl = fixtureHl.find(h => h.c === '#db34f2')!
+        await expect(edits.remove).toEqual([
+            { page: 0, id: purpleHl.id },
+        ])
+        // The same edit applied to the same bytes leaves four highlights and not the purple one.
+        const left = await readPdfHighlights(
+            await applyPdfHighlightEdits(await pdfkitFixture(), edits),
+        )
+        await expect(left.pages[0]!.map(h => h.c).sort()).toEqual(
+            ['#0091ff', '#00ff00', '#ff375f', '#ffff00'],
+        )
+        // Highlights live in the PDF: no sidecar was written for the removal.
+        await expect(sidecarPuts.length).toBe(0)
+    },
+}
+
+/** The migrate stories: a sidecar holding one highlight, the PDF without it, and a `pdfLoad`
+ *  that hands pdf.js either the bytes from before the move or the ones the server holds after. */
+function renderMigrate(after: boolean) {
+    sidecarPuts = []
+    hlCalls = []
+    const before = annotatedBinary()
+    setTransport(
+        recordingTransport(
+            { [ANNOT_SIDECAR]: serializeDoc(annotatedDoc()) },
+            { [ANNOT_PDF_PATH]: before },
+        ),
+    )
+    const load = async (): Promise<ArrayBuffer> => {
+        if (!after) return before.slice().buffer as ArrayBuffer
+        // The migrate route's answer is the seam: once it is recorded, `served` holds the move.
+        await waitFor(() => expect(hlCalls.length).toBe(1), { timeout: 8000 })
+        return served.get(ANNOT_PDF_PATH)!.slice().buffer as ArrayBuffer
+    }
+    return (
+        <div style={{ height: '100vh', width: '900px' }}>
+            <PreviewView path={ANNOT_PDF_PATH} tagNames={NO_TAGS} pdfLoad={load} />
+        </div>
+    )
+}
+
+/** A sidecar that still holds highlights is moved into the PDF when the PDF opens: they stay
+ *  on screen, the migrate route reports them moved, and the sidecar is rewritten without a
+ *  `highlights` key while its ink, margin and bookmarks stay. Nothing is written back afterwards.
+ *  Here the document was read before the move, so its report holds none of them. */
+export const PdfHighlightMigratesFromSidecar: Story = {
+    render: () => renderMigrate(false),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(hlCalls.length).toBe(1), { timeout: 8000 })
+        await expect(hlCalls[0]!.url).toBe('/pdf/highlights/migrate')
+        await expect(hlCalls[0]!.result.writable).toBe(true)
+        await expect(hlCalls[0]!.result.moved).toBe(1)
+        // The end state, read once the store has settled (the document's highlight report taken
+        // in): exactly one highlight stays, in the multiply blend. The document here was read
+        // before the move, so its report holds none; the store keeps the moved one.
+        await waitFor(() => expect(settledLayer(canvasElement)).not.toBeNull(), {
+            timeout: 8000,
+        })
+        await expect(hlRects(canvasElement).length).toBe(1)
+        await expect(hlRects(canvasElement)[0]!.getBoundingClientRect().width).toBeGreaterThan(0)
+        await expect(getComputedStyle(hlRects(canvasElement)[0]!).mixBlendMode).toBe('multiply')
+        const { api } = await import('./api')
+        const side = parseDoc(await api.read(ANNOT_SIDECAR))
+        await expect(side.pages.some(p => p.highlights?.length)).toBe(false)
+        await expect(side.pages[0]!.strokes.length).toBe(1)
+        await expect(side.bookmarks?.length).toBe(1)
+        await expect(side.margin).toEqual({ right: DEFAULT_MARGIN_RATIO })
+        // The move is the only write: the store does not save anything back.
+        await expect(sidecarPuts.length).toBe(0)
+        await expect(hlCalls.length).toBe(1)
+    },
+}
+
+/** The same move with the document read AFTER it: the report already holds the moved highlight
+ *  (under the id the PDF gives its geometry), so the store shows it once, not twice. The sidecar's
+ *  margin makes its page box differ from the PDF's, so the id only matches if the store re-boxes
+ *  the sidecar rects the way the migrate route does. */
+export const PdfHighlightMigratesFromSidecarLoadedAfter: Story = {
+    render: () => renderMigrate(true),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(hlCalls.length).toBe(1), { timeout: 8000 })
+        await expect(hlCalls[0]!.result).toEqual({ moved: 1, writable: true })
+        await waitFor(() => expect(settledLayer(canvasElement)).not.toBeNull(), {
+            timeout: 8000,
+        })
+        const inPdf = await readPdfHighlights(served.get(ANNOT_PDF_PATH)!)
+        await expect(inPdf.pages.flat().length).toBe(1)
+        await expect(hlRects(canvasElement).length).toBe(1)
+        await expect(hlRects(canvasElement)[0]!.getBoundingClientRect().width).toBeGreaterThan(0)
+        await expect(sidecarPuts.length).toBe(0)
+        await expect(hlCalls.length).toBe(1)
+    },
+}
+
+/** A PDF Bismuth cannot rewrite (here AES-encrypted on the server side) keeps its highlights in
+ *  the sidecar exactly as before: the migrate route says not writable, the highlight stays
+ *  painted, removing it saves the sidecar and never touches the PDF, and no toast appears. */
+export const PdfHighlightEncryptedStaysInSidecar: Story = {
+    render: () => {
+        sidecarPuts = []
+        hlCalls = []
+        setTransport(
+            recordingTransport(
+                { [ANNOT_SIDECAR]: serializeDoc(annotatedDoc()) },
+                { [ANNOT_PDF_PATH]: new Uint8Array(encryptedBytes ?? []) },
+            ),
+        )
+        return (
+            <div style={{ height: '100vh', width: '900px' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                />
+            </div>
+        )
+    },
+    loaders: [
+        async () => {
+            encryptedBytes ??= new Uint8Array(
+                await (await fetch(encryptedFixtureUrl)).arrayBuffer(),
+            )
+        },
+    ],
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => expect(hlCalls.length).toBe(1), { timeout: 8000 })
+        await expect(hlCalls[0]!.url).toBe('/pdf/highlights/migrate')
+        await expect(hlCalls[0]!.result).toEqual({ moved: 0, writable: false })
+        await waitFor(() => {
+            expect(hlRects(canvasElement).length).toBe(1)
+            expect(hlRects(canvasElement)[0]!.getBoundingClientRect().width).toBeGreaterThan(0)
+        })
+        const hlBtn = canvas.getByLabelText('Highlight text') as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false))
+        await fireEvent.click(hlBtn)
+        const box = hlRects(canvasElement)[0]!.getBoundingClientRect()
+        window.getSelection()?.removeAllRanges()
+        scrollElOf(canvasElement)!.dispatchEvent(
+            new PointerEvent('pointerup', {
+                bubbles: true,
+                clientX: box.left + box.width / 2,
+                clientY: box.top + box.height / 2,
+            }),
+        )
+        await waitFor(() => expect(hlRects(canvasElement).length).toBe(0))
+        // Saved to the sidecar, highlight list now empty; the PDF routes saw nothing more.
+        await waitFor(
+            () => expect(sidecarPuts.at(-1)?.pages[0]?.highlights ?? []).toEqual([]),
+            { timeout: 5000 },
+        )
+        await expect(hlCalls.length).toBe(1)
+        await expect(document.querySelector('[role="status"]')?.textContent ?? '').not.toMatch(
+            /save/i,
+        )
+    },
+}
+let encryptedBytes: Uint8Array | undefined
+
+/** Three edits inside the 600 ms debounce are ONE read-modify-write of the PDF, and an undo after
+ *  that save writes a remove for the highlight the first save added, under the id the PDF knows it
+ *  by (not the in-memory one). */
+export const PdfHighlightSaveBatchesAndUndoes: Story = {
+    render: () => {
+        sidecarPuts = []
+        hlCalls = []
+        setTransport(
+            recordingTransport({}, { [ANNOT_PDF_PATH]: annotatedBinary() }),
+        )
+        return (
+            <div style={{ height: '100vh', width: '900px' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const root = canvasElement.querySelector(`.${styles['preview-app']}`) as HTMLElement
+        await waitFor(
+            () => {
+                const spans = canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-pdf-page="0"] span',
+                )
+                expect(spans.length).toBeGreaterThanOrEqual(2)
+                expect(spans[1]!.getBoundingClientRect().width).toBeGreaterThan(0)
+            },
+            { timeout: 8000 },
+        )
+        const hlBtn = canvas.getByLabelText('Highlight text') as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false))
+        const [first, second] = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('[data-pdf-page="0"] span'),
+        ) as [HTMLElement, HTMLElement]
+        // Edit 1 and 2: highlight each line. Edit 3: undo the second.
+        selectSpan(first)
+        await fireEvent.click(hlBtn)
+        selectSpan(second)
+        await fireEvent.click(hlBtn)
+        await waitFor(() => expect(hlRects(canvasElement).length).toBe(2))
+        await expect(undoKey(root)).toBe(false)
+        await waitFor(() => expect(hlRects(canvasElement).length).toBe(1))
+        await waitFor(() => expect(hlCalls.length).toBe(1), { timeout: 5000 })
+        const edits = hlCalls[0]!.body.edits as PdfHighlightEdits
+        await expect(edits.remove).toEqual([])
+        await expect(edits.add.length).toBe(1)
+        const added = edits.add[0]!.highlight
+        // The id the PDF will know it by: its quads, hashed (US Letter, unrotated, origin zero).
+        const pdfId = pdfHighlightId(
+            0,
+            rectsToQuads(added.rects, { view: [0, 0, 612, 792], rotate: 0 }),
+            '#ffe14d',
+        )
+        // Nothing but the highlight changed, so the sidecar was never written.
+        await expect(sidecarPuts.length).toBe(0)
+
+        // Undo AFTER the save: the highlight leaves the PDF.
+        await expect(undoKey(root)).toBe(false)
+        await waitFor(() => expect(hlRects(canvasElement).length).toBe(0))
+        await waitFor(() => expect(hlCalls.length).toBe(2), { timeout: 5000 })
+        const undo = hlCalls[1]!.body.edits as PdfHighlightEdits
+        await expect(undo.add).toEqual([])
+        await expect(undo.remove).toEqual([{ page: 0, id: pdfId }])
+        await expect(pdfId.startsWith('pdf-')).toBe(true)
     },
 }

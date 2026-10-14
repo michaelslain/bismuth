@@ -1993,3 +1993,77 @@ export const TextLayerWaitsForScrollToSettle: Story = {
         })
     },
 }
+
+/** A one-page 200x200 PDF built by hand with two annotations that each carry an appearance
+ *  stream: a /Highlight whose appearance fills its quad RED (so a pdf.js paint is unmistakable)
+ *  and an /Ink whose appearance fills a BLACK bar. Offsets in the xref are computed, not typed. */
+function buildHighlightAndInkPdf(): ArrayBuffer {
+    const fill = (rgb: string, x: number, y: number, w: number, h: number) =>
+        `${rgb} rg ${x} ${y} ${w} ${h} re f`
+    // BBox == the annotation's /Rect, so the appearance maps onto the page 1:1
+    const form = (bbox: string, body: string) =>
+        `<< /Type /XObject /Subtype /Form /BBox [${bbox}] /Length ${body.length} >>\nstream\n${body}\nendstream`
+    const objs: string[] = [
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Annots [5 0 R 6 0 R] >>',
+        '<< /Length 0 >>\nstream\n\nendstream',
+        '<< /Type /Annot /Subtype /Highlight /Rect [40 100 140 120] /QuadPoints [40 120 140 120 40 100 140 100] /C [1 0 0] /F 4 /AP << /N 7 0 R >> >>',
+        '<< /Type /Annot /Subtype /Ink /Rect [40 150 140 170] /InkList [[40 160 140 160]] /C [0 0 0] /F 4 /AP << /N 8 0 R >> >>',
+        form('40 100 140 120', fill('1 0 0', 40, 100, 100, 20)),
+        form('40 150 140 170', fill('0 0 0', 40, 150, 100, 20)),
+    ]
+    let out = '%PDF-1.7\n'
+    const offsets: number[] = []
+    objs.forEach((o, i) => {
+        offsets.push(out.length)
+        out += `${i + 1} 0 obj\n${o}\nendobj\n`
+    })
+    const xref = out.length
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`
+    for (const o of offsets) out += `${String(o).padStart(10, '0')} 00000 n \n`
+    out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+    return new TextEncoder().encode(out).buffer as ArrayBuffer
+}
+
+const highlightAndInkBytes = buildHighlightAndInkPdf()
+
+/** pdf.js paints no /Highlight annotation (HighlightLayer is the only thing that draws one) while
+ *  every other annotation kind still paints. The page carries a highlight whose appearance is red
+ *  and an ink annotation whose appearance is black; no HighlightLayer is mounted, so the pixel
+ *  inside the highlight quad must be the page's white and the pixel inside the ink bar must be
+ *  inked. Settled signal: the ink pixel going dark, since both annotations come out of one render. */
+export const HidesPdfJsHighlightsKeepsInk: Story = {
+    render: () => (
+        <div style={{ height: '640px' }}>
+            <PdfPages load={async () => highlightAndInkBytes.slice(0)} zoom={1} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        // PDF user space is y-up on a 200pt page: the highlight quad is y 100..120 (canvas
+        // 80..100 from the top), the ink bar y 150..170 (canvas 30..50). Centres sampled.
+        const sample = (canvas: HTMLCanvasElement, xPt: number, yTopPt: number) => {
+            const s = canvas.width / 200
+            const px = canvas
+                .getContext('2d')!
+                .getImageData(Math.round(xPt * s), Math.round(yTopPt * s), 1, 1).data
+            return [px[0], px[1], px[2], px[3]]
+        }
+        let canvas: HTMLCanvasElement | undefined
+        await waitFor(
+            () => {
+                canvas = canvasElement.querySelector('canvas') as HTMLCanvasElement
+                expect(canvas).toBeTruthy()
+                expect(canvas.width).toBeGreaterThan(0)
+                const ink = sample(canvas, 90, 40)
+                expect(ink[3]).toBe(255)
+                expect(ink[0] + ink[1] + ink[2]).toBeLessThan(60)
+            },
+            { timeout: 15000 },
+        )
+        const hl = sample(canvas!, 90, 90)
+        expect(hl).toEqual([255, 255, 255, 255])
+        const page = sample(canvas!, 10, 10)
+        expect(page).toEqual([255, 255, 255, 255])
+    },
+}

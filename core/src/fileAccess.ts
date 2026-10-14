@@ -28,6 +28,11 @@ export interface FileAccess {
     readNote(root: string, rel: string): Promise<string>
     /** Write one note's UTF-8 contents (vault-relative path). */
     writeNote(root: string, rel: string, contents: string): Promise<void>
+    /** Read one file's raw bytes (vault-relative path). Rejects when the file is missing. */
+    readBinary(root: string, rel: string): Promise<Uint8Array>
+    /** Write raw bytes to a vault-relative path, creating parent dirs. Atomic where the platform
+     *  allows: a reader never sees a half-written file. */
+    writeBinary(root: string, rel: string, bytes: Uint8Array): Promise<void>
     /** Stat one note; resolves null if it vanished since listing. */
     statNote(root: string, rel: string): Promise<FileStat | null>
     /** Entry names (files and folders, no path prefix) directly inside a vault-relative dir, dotfiles
@@ -59,6 +64,8 @@ export async function getFileAccess(): Promise<FileAccess> {
         listTree: files.listTree,
         readNote: files.readNote,
         writeNote: files.writeNote,
+        readBinary: files.readBinary,
+        writeBinary: files.writeBinaryAtomic,
         statNote: async (root, rel) => {
             const st = await stat(join(root, rel)).catch(() => null)
             if (!st) return null

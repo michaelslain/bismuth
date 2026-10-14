@@ -70,6 +70,9 @@ import EdgeHandle from './shell/EdgeHandle'
 import { dragWidth, widthBounds } from './edgeResize'
 import { dragMarginRatio, fixedUnitLine, type ScratchLineAt } from './preview/scratchResize'
 import createAnnotationStore from './preview/createAnnotationStore'
+import { pdfCache } from './preview/pdfDocCache'
+import type { PdfPageGeom } from '../../core/src/drawing/pdfHighlights'
+import type { Highlight } from '../../core/src/drawing/model'
 import createCompanionStore from './preview/createCompanionStore'
 import type {
     AnnotationStore,
@@ -321,10 +324,38 @@ export function PreviewView(props: {
     // keeps the same store, whose own `on(sidecarPath)` effect flushes the old file and loads the
     // new one. `untrack` keeps the store's setup reads out of this memo's dependencies.
     const inkableKind = createMemo(inkable)
+    // The key PdfPages caches its document under; the store reads page geometry from that entry.
+    const pdfDocKey = () =>
+        props.pdfCacheKey ?? (props.pdfLoad ? undefined : path())
+    /** A PDF page's `/MediaBox`+`/CropBox` view and `/Rotate`, which the PDF's highlight ids are
+     *  hashed over: the shown document's own, reported by PdfPages on every load (cache hit or
+     *  fresh), else the unrotated, origin-zero page the laid-out size implies until it reports. */
+    let pdfGeoms: PdfPageGeom[] = []
+    const pdfPageGeom = (page: number): PdfPageGeom | undefined => {
+        const g = pdfGeoms[page]
+        if (g) return g
+        const nat = untrack(pdfPages)[page]?.nat
+        return nat ? { view: [0, 0, nat.w, nat.h], rotate: 0 } : undefined
+    }
+    /** After a save into the PDF the cached document still carries the highlights it was loaded
+     *  with; a returning tab reports those, so hand it the saved set instead. */
+    const rememberPdfHighlights = (pages: Highlight[][]) => {
+        const key = pdfDocKey()
+        const hit = key ? pdfCache.acquire(key) : undefined
+        if (!hit) return
+        try {
+            hit.value.doc.highlights = Promise.resolve(pages)
+        } finally {
+            hit.release()
+        }
+    }
     const store = createMemo<AnnotationStore | undefined>(() =>
         inkableKind()
             ? untrack(() =>
-                  createAnnotationStore(() => inkSidecarFor(path()), path),
+                  createAnnotationStore(() => inkSidecarFor(path()), path, {
+                      pageGeom: pdfPageGeom,
+                      onPdfSaved: rememberPdfHighlights,
+                  }),
               )
             : undefined,
     )
@@ -416,6 +447,7 @@ export function PreviewView(props: {
                 setPageCount(0)
                 setImagePages([])
                 setPdfPages([])
+                pdfGeoms = []
                 setPdfBoxes([])
                 setScratchDrag(null)
             },
@@ -984,9 +1016,8 @@ export function PreviewView(props: {
                             // no cache, exactly like every other `pdfLoad` story, so it only ever
                             // proves the memory seam it asked for. `pdfCacheKey` is the separate,
                             // explicit opt-in for a story that means to exercise the cache.
-                            cacheKey={
-                                props.pdfCacheKey ?? (props.pdfLoad ? undefined : path())
-                            }
+                            cacheKey={pdfDocKey()}
+                            onPageGeoms={g => (pdfGeoms = g)}
                             dark={pdfDark()}
                             initialPosition={
                                 pdfMemoryKey()
@@ -998,6 +1029,7 @@ export function PreviewView(props: {
                                 if (key) savePdfView(key, { position: pos })
                             }}
                             onLayout={onPdfLayout}
+                            onPdfHighlights={pages => store()?.setPdfHighlights(pages)}
                             controller={c => (pdfController = c)}
                             onOutline={o => setOutline(o)}
                             onCurrentPage={setCurrentPage}

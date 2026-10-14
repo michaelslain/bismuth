@@ -62,7 +62,7 @@ A sidecar created by drawing in place holds strokes on blank paper, without a co
 
 ## Highlight, bookmark and add a margin on a PDF
 
-A PDF's preview bar adds three more tools, each saved in the same `<file>.draw` sidecar. They stay disabled until the sidecar has loaded.
+A PDF's preview bar adds three more tools. Highlights are saved inside the PDF itself; bookmarks and the scratch strip are saved in the same `<file>.draw` sidecar as ink. The tools stay disabled until the sidecar has loaded.
 
 | Control | What it does |
 |---|---|
@@ -86,11 +86,19 @@ One drag of the scratch line is one Mod+Z step. The scratch line is hidden in dr
 
 An outline entry whose destination cannot be resolved shows dimmed and does nothing. Highlights default to yellow. Highlighting a selection that overlaps or touches an existing highlight on the same line extends that highlight into one mark, joining their text, instead of stacking a second mark on the shared words.
 
+## Share highlights with Preview, Okular, Edge and Acrobat
+
+A highlight you make on a PDF in Bismuth is a standard PDF highlight annotation written into the PDF file, the format macOS Preview, Okular and Evince on Linux, and Windows viewers such as Edge, Acrobat and SumatraPDF read and write. In the other direction, a highlight any of those apps saved into the PDF shows in Bismuth in its own colour, and a click on it while **Highlight text** is armed removes it from the file. Mod+Z undoes a highlight add or remove in the file too.
+
+- **Existing sidecar highlights move into the PDF** the first time Bismuth opens that PDF, and leave the sidecar. `bismuth highlights migrate --all` moves every PDF's at once.
+- **A PDF Bismuth cannot rewrite safely keeps its highlights in the sidecar**: an encrypted PDF, or one carrying a digital signature, whose signature a rewrite would break. Highlights other apps put in such a file still show, and are never copied into the sidecar.
+- **Highlights that cover the same spot are one mark to Bismuth.** Removing one removes every highlight drawn over exactly the same lines.
+
 ## Read a PDF in dark mode
 
 PDF dark mode shows a PDF's pages inverted with their hues kept: white paper turns black, black text turns white, and a red figure stays red. Press the moon button in a PDF's preview bar to switch that PDF; the choice is remembered for that PDF alone, so it opens the same way next time. The moon stays disabled until the sidecar has loaded.
 
-The choice is saved in the PDF's `<file>.pdf.draw` sidecar, beside its highlights, and undoes with Mod+Z like the scratch strip. The PDF itself is untouched. A PDF you have never switched follows the default in `.settings`, which the **Toggle PDF dark mode default** command also flips:
+The choice is saved in the PDF's `<file>.pdf.draw` sidecar, beside its ink, and undoes with Mod+Z like the scratch strip. The PDF itself is untouched. A PDF you have never switched follows the default in `.settings`, which the **Toggle PDF dark mode default** command also flips:
 
 ```yaml
 appearance:
@@ -101,7 +109,7 @@ In dark mode, highlights show as a tint behind the white text, pen ink in the de
 
 ## Read a PDF's highlights from the shell or an agent
 
-A PDF's highlights live only in its `<file>.draw` sidecar, never in the PDF, so a tool that reads or renders the PDF shows none of them. `bismuth highlights <file.pdf>` prints the highlighted text page by page, and an agent reaches it through the `bismuth_cli` MCP tool. The [CLI reference](../cli/reference.md#export-and-render) has its flags and output.
+A PDF's highlights are standard annotations inside the file, so other PDF apps show them. `bismuth highlights <file.pdf>` prints the highlighted text page by page, including any still in the `<file>.draw` sidecar; `bismuth highlights migrate <file.pdf>` moves those into the PDF. An agent reaches both through the `bismuth_cli` MCP tool. The [CLI reference](../cli/reference.md#export-and-render) has its flags and output.
 
 ```bash
 bismuth highlights "readings/week 8 reading 1.pdf"
@@ -186,7 +194,7 @@ An image or PDF sidecar can carry these extra fields.
 
 | Field | Shape | Notes |
 |---|---|---|
-| A page line's `highlights` | `{ id, c, rects, text? }[]` | `rects` are one `{x, y, w, h}` per line of selected text, in page units. `c` is a hex colour or `"hl"` for the default yellow |
+| A page line's `highlights` | `{ id, c, rects, text? }[]` | Only on an image's sidecar or a PDF that cannot be rewritten; any other PDF keeps its highlights in the file. `rects` are one `{x, y, w, h}` per line of selected text, in page units. `c` is a hex colour or `"hl"` for the default yellow |
 | `bookmarks` | `{ id, page, label }[]` | `page` is 0-based; `label` defaults to `Page N` |
 | `margin` | `{ right }` | Strip width as a fraction of the page's rendered width, clamped to 0..2. Turning the strip on sets 0.4, dragging its line sets 0.1 to 2, turning it off removes the key |
 | `dark` | `boolean` | This PDF's dark mode, written by the moon button. `false` keeps the PDF light under a dark `appearance.pdfDarkMode` default; an absent key follows that default |
@@ -259,6 +267,16 @@ The page|strip line and the bookmarks panel's edge are `shell/EdgeHandle`, the s
 
 The margin strip paints in two passes (`paintSplit`): each stroke against the page's colour bucket, and against the strip's dark bucket when a strip exists, split at `box.x + box.w`. `PdfPages` lays a page and its strip out together inside the zoom width.
 
+### PDF highlight annotations
+
+`core/src/drawing/pdfHighlights.ts` reads and writes a PDF's highlights with pdf-lib, and runs unchanged in the iPad's in-process core. Each highlight is a `/Subtype /Highlight` annotation with one quad per line in `/QuadPoints`, in upper-left, upper-right, lower-left, lower-right order, plus an `/AP` appearance whose resources carry an ExtGState with `/BM /Multiply`. PDFKit and Poppler regenerate a highlight from its quads unless that ExtGState is present, and both draw counter-clockwise quads as a bowtie, so both details are load-bearing. `/C`, `/CA`, `/F 4`, `/M`, `/NM` and `/T (Bismuth)` complete the dictionary.
+
+A highlight's id is `pdfHighlightId(page, quads)`, a hash of the page and the quads rounded to half a point. Preview drops `/NM` on save and object numbers change on every rewrite, so geometry is the only identity both pdf-lib and pdf.js see. Page geometry follows pdf.js: the CropBox clipped to the MediaBox and `/Rotate`, both inherited from the page tree, mapped into the 816 by 1056 logical page through `fitImage`.
+
+`readPdfHighlights` reports a file as not writable when it is encrypted, signed (a `/Sig` field, `/SigFlags`, or `/Perms` DocMDP or UR3), or unreadable, and `applyPdfHighlightEdits` refuses those with `PDF_NOT_WRITABLE` (HTTP 409). Edits are `{ add, remove }` applied to the file as it is on disk, so a highlight another app added since Bismuth read the file survives. `core/src/pdfHighlightStore.ts` runs them through `POST /pdf/highlights` and moves sidecar highlights with `POST /pdf/highlights/migrate`; the PDF is written through a temporary file and a rename onto the real path, keeping a symlink and the file mode. `core/src/drawing/pdfHighlightText.ts` recovers the text under each highlight with pdf.js for `bismuth highlights`, because Preview stores none.
+
+In the app, `PdfPageCanvas` renders with `annotationMode: ENABLE_STORAGE` and marks every Highlight annotation `noView` in the document's annotation storage, so pdf.js paints ink, stamps and other annotations but never a highlight. `PdfPages` reads the highlights with `getAnnotations()` (`pdfAnnotHighlights.ts`) and reports them through `onPdfHighlights`, with page geometry through `onPageGeoms`. The annotation store holds them in the same in-memory document as ink, so undo, extend-on-overlap and dark mode work unchanged. On save it sends `diffHighlights` of the last saved set and calls `expectSelfWrite` first, so the open document is not reloaded by its own write; a failed write cancels that and retries with backoff.
+
 PDF dark mode is CSS only. `PreviewView` reads it with `darkOf` (`core/src/drawing/pageDark.ts`): the sidecar's `dark` flag, else `appearance.pdfDarkMode`; the moon writes the flag with `setDark` through the annotation store. `PdfPageCanvas` puts `filter: invert(1) hue-rotate(180deg)` on each page canvas, so the stashed raster and the text layer stay as rendered. `HighlightLayer` switches its rects from `multiply` to `screen` at a lower alpha, because multiply over black paper paints nothing. `PageInk` resolves page ink against the dark bucket instead of the light one.
 
 PDF documents are cached by vault path (`pdfDocCache.ts`, 3 documents) and share one pdf.js worker. A raster stash keeps the last 4 rendered (page, width) canvases so a remounted tab paints instantly. An SSE change that names the exact path invalidates an entry; a sidecar's own edits do not evict its PDF. `PdfPages` keeps the reader's place (page and fraction under the viewport's middle) across reflows. Zoom (`zoomGesture.ts`, `createPreviewZoom.ts`) treats a Chrome-style pinch as ctrl+wheel with factor `exp(-deltaY x 0.01)`, clamps a wheel notch to about 1.3x, handles Safari `gesture*` events for WKWebView, and keeps the point under the pointer fixed. The zoom buttons glide for 160 ms, and a page re-renders sharp once its size has held still for 140 ms. While the page stack scrolls, a page that comes into view paints its raster but builds its selectable text layer only once 150 ms pass with no scroll event, and the stack's per-page visibility checks re-run only when a page enters or leaves the rendered window. An image zooms from fit up to 8x.
@@ -285,4 +303,4 @@ The browser export pane rasterises with `app/src/export/drawingRaster.ts`, which
 - A stored `images[0]` box wins over a fit computed from the source's natural size, because the strokes were drawn against it.
 - `PaneContent.tsx` matches the `.draw` route before the preview route, so a sidecar such as `photo.png.draw` opened directly opens as a drawing.
 
-Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/render2d.ts`, `core/src/drawing/export.ts`, `core/src/drawing/pageInk.ts`, `core/src/drawing/pageHighlights.ts`, `core/src/drawing/pageBookmarks.ts`, `core/src/drawing/pageMargin.ts`, `core/src/drawing/pageDark.ts`, `core/src/scratchNotes.ts`, `core/src/fileKinds.ts`, `core/src/theme/tokens.ts`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/store.ts`, `app/src/drawing/input.ts`, `app/src/preview/PageInk.tsx`, `app/src/preview/createAnnotationStore.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/PreviewBar.tsx`, `app/src/preview/pdfDocCache.ts`, `app/src/preview/PdfPages.tsx`, `app/src/preview/PdfPageCanvas.tsx`, `app/src/preview/HighlightLayer.tsx`, `app/src/preview/scratchResize.ts`, `app/src/preview/ImagePane.tsx`, `app/src/shell/EdgeHandle.tsx`, `app/src/edgeResize.ts`, `app/src/PreviewView.tsx`, `app/src/export/drawingRaster.ts`, `app/src/export/inkHtml.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`
+Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/render2d.ts`, `core/src/drawing/export.ts`, `core/src/drawing/pageInk.ts`, `core/src/drawing/pageHighlights.ts`, `core/src/drawing/pageBookmarks.ts`, `core/src/drawing/pageMargin.ts`, `core/src/drawing/pageDark.ts`, `core/src/scratchNotes.ts`, `core/src/fileKinds.ts`, `core/src/theme/tokens.ts`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/store.ts`, `app/src/drawing/input.ts`, `app/src/preview/PageInk.tsx`, `app/src/preview/createAnnotationStore.ts`, `app/src/preview/createCompanionStore.ts`, `app/src/preview/PreviewBar.tsx`, `app/src/preview/pdfDocCache.ts`, `app/src/preview/PdfPages.tsx`, `app/src/preview/PdfPageCanvas.tsx`, `app/src/preview/HighlightLayer.tsx`, `core/src/drawing/pdfHighlights.ts`, `core/src/drawing/pdfHighlightText.ts`, `core/src/pdfHighlightStore.ts`, `app/src/preview/pdfAnnotHighlights.ts`, `app/src/preview/highlightSaveDiff.ts`, `app/src/preview/scratchResize.ts`, `app/src/preview/ImagePane.tsx`, `app/src/shell/EdgeHandle.tsx`, `app/src/edgeResize.ts`, `app/src/PreviewView.tsx`, `app/src/export/drawingRaster.ts`, `app/src/export/inkHtml.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`
