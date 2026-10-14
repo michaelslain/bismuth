@@ -23,6 +23,7 @@ import {
     buildCronPrompt,
     lastReportLine,
     notifyNewPages,
+    notificationsEnabled,
     announcesNewPages,
     listPageSlugs,
     type FailureCause,
@@ -1101,6 +1102,36 @@ test('notifyNewPages: a page is announced once across concurrent runs; another c
         await notifyNewPages(pctx, before, send, 'dream')
         await notifyNewPages(pctx, before, send, 'dream')
         expect(calls).toEqual([['m: Mine', 'New in your inbox']])
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+test('notificationsEnabled: on unless the vault sets daemon.notifications: false', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-notify-'))
+    try {
+        expect(await notificationsEnabled(root)).toBe(true)
+        writeFileSync(join(root, '.settings'), 'daemon:\n  notifications: true\n')
+        expect(await notificationsEnabled(root)).toBe(true)
+        writeFileSync(join(root, '.settings'), 'daemon:\n  notifications: false\n')
+        expect(await notificationsEnabled(root)).toBe(false)
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+test('notifyNewPages: a vault with daemon.notifications: false announces nothing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-pages-'))
+    try {
+        const pagesDir = join(root, 'pages')
+        mkdirSync(pagesDir)
+        writeFileSync(join(root, '.settings'), 'daemon:\n  notifications: false\n')
+        const pctx = { pagesDir, name: 'm', root } as unknown as VaultContext
+        const before = await listPageSlugs(pagesDir)
+        const calls: [string, string][] = []
+        writeFileSync(join(pagesDir, 'quiet.md'), '---\ntitle: "Quiet"\n---\nx')
+        await notifyNewPages(pctx, before, (t, b) => void calls.push([t, b]))
+        expect(calls).toEqual([])
     } finally {
         rmSync(root, { recursive: true, force: true })
     }

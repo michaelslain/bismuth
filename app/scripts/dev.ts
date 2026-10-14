@@ -28,10 +28,14 @@
 // The cost of the empty field, stated so it is a choice and not a surprise: a bare `bun run tauri
 // dev` no longer brings its own frontend up, so it paints an empty window. `dev:app` is the entry
 // point; run that.
+import { spawnSync } from 'node:child_process'
+import { existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { concurrently } from 'concurrently'
 import { resolveDevVault, describeChoice } from './devVault'
 
 const native = process.argv.includes('--app')
+const binariesDir = join(import.meta.dir, '..', 'src-tauri', 'binaries')
 
 const choice = resolveDevVault()
 console.log(describeChoice(choice))
@@ -52,6 +56,17 @@ const commands = [
     },
     { name: 'vite', command: 'vite', env: { VITE_OWNER_TOKEN: token } },
 ]
+
+// Tauri refuses to start while any externalBin is missing. bismuth-notify is the one small enough
+// to build on the spot (a few seconds of swiftc), so a fresh checkout does not fail on it.
+if (
+    native &&
+    !(
+        existsSync(binariesDir) &&
+        readdirSync(binariesDir).some(f => f.startsWith('bismuth-notify-'))
+    )
+)
+    spawnSync('bun', ['run', 'scripts/build-notifier.ts'], { stdio: 'inherit' })
 
 if (native)
     commands.push({

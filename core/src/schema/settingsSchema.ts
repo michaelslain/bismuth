@@ -598,6 +598,11 @@ export const SETTINGS_SCHEMA: Schema = {
             max: 90,
             doc: "How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker.",
         },
+        notifications: {
+            type: 'boolean',
+            default: true,
+            doc: "Show a desktop notification when the daemon files an inbox page, and for crons marked `notify: true`. On macOS it shows Bismuth's name and icon once the installed app has launched; allow Bismuth in System Settings → Notifications. Off = the daemon posts no desktop notifications for this vault; the inbox and its in-app toast are unchanged.",
+        },
         backend: {
             type: enumType(DAEMON_BACKEND_IDS),
             default: DEFAULT_BACKEND,

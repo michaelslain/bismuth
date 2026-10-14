@@ -73,6 +73,7 @@ The exclusion rules live in `.git/info/exclude` and are kept current on every sn
 | `trusted-commands.json` | Approved `run:` status-bar commands per vault | Yes; each command asks for approval again |
 | `models/`, `cache/recall/` | The embedding and relevance models and the memory vectors for recall | Yes; they download or recompute |
 | `agents/bin/` | The free agent's binary | Yes; set it up again from the chat setup |
+| `notifier` | The path of the notification helper inside the installed app | Yes; the app rewrites it on launch |
 | `.daemon-installed`, `.mcp-registrations.json` | Install markers and the MCP registration ledger | Avoid; the install logic reads them |
 
 Environment variables can relocate several of these; the names are listed under [Machine directory](#machine-directory).
@@ -132,4 +133,4 @@ The Bases row cache is held in memory only and clears when the server version ad
 
 `app/src/viewCache.ts` wraps every `localStorage` access in `try`/`catch` and scopes caches with `scopedKey(key, apiBase)`. `localStorage` is shared by every window of one origin, which is why the tab layout is keyed by window id (`app/src/windowId.ts`) and the tree and graph caches by backend. The theme-variable key is declared in `app/src/storageKeys.ts` and read by the inline script in `app/index.html`. Bump `GRAPH_CACHE_KEY` in `app/src/App.tsx` whenever the layout `CACHE_VERSION` changes.
 
-Source: `core/src/files.ts`, `core/src/fileKinds.ts`, `core/src/backup.ts`, `core/src/bismuthHome.ts`, `core/src/layout-cache.ts`, `core/src/runRegistry.ts`, `core/src/tmpFiles.ts`, `core/src/chatModelStore.ts`, `core/src/statusBarTrust.ts`, `core/src/bismuthInstall.ts`, `core/src/gcal/manifest.ts`, `core/src/schema/settingsSchema.ts`, `app/src-tauri/src/lib.rs`, `app/src/viewCache.ts`, `app/src/windowId.ts`, `app/src/storageKeys.ts`, `app/src/App.tsx`, `app/src/settings.ts`
+Source: `core/src/files.ts`, `core/src/fileKinds.ts`, `core/src/backup.ts`, `core/src/bismuthHome.ts`, `core/src/layout-cache.ts`, `core/src/runRegistry.ts`, `core/src/tmpFiles.ts`, `core/src/chatModelStore.ts`, `core/src/statusBarTrust.ts`, `core/src/bismuthInstall.ts`, `core/src/notifierPointer.ts`, `core/src/gcal/manifest.ts`, `core/src/schema/settingsSchema.ts`, `app/src-tauri/src/lib.rs`, `app/src/viewCache.ts`, `app/src/windowId.ts`, `app/src/storageKeys.ts`, `app/src/App.tsx`, `app/src/settings.ts`

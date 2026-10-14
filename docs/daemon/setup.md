@@ -126,6 +126,7 @@ These `.settings` keys control the daemon. Every key is per vault; [the settings
 | `daemon.enabled` | boolean | `false` | Master switch for the vault's daemon and memory. |
 | `daemon.backend` | `claude` or `codex` | `claude` | Which agent CLI runs the daemon's sessions. |
 | `daemon.inboxRetentionDays` | number, 1 to 90 | `7` | Days a resolved inbox page stays listed. |
+| `daemon.notifications` | boolean | `true` | A desktop notification per new inbox page and per `notify: true` cron run. See [how you are told a page exists](pages.md#how-you-are-told-a-page-exists). |
 | `daemon.inheritUserMcp` | boolean | `false` | Lets daemon sessions use your own `claude` MCP servers and plugins. |
 | `daemon.recall.enabled` | boolean | `true` | Automatic memory injection into agent sessions. |
 | `daemon.recall.midTurn` | boolean | `true` | Also recall after each batch of tool calls. |

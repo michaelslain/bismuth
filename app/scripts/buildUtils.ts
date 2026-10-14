@@ -1,6 +1,7 @@
 // Shared helpers for the app/scripts/build-*.ts prebuild steps.
 import { existsSync, statSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 // A stranded scratch file is only swept once it is this old. No compile in this repo takes
 // anywhere near ten minutes (core is the biggest at ~68MB and finishes in well under a second),
@@ -77,4 +78,22 @@ export function assertBuiltBinary(
     console.log(
         `✓ ${label} built: ${path} (${(statSync(path).size / 1e6).toFixed(0)}MB)`,
     )
+}
+
+// Target triple Tauri expects in an externalBin filename (`<name>-<triple>`) — taken from the Rust
+// host. Exits the process when rustc is missing or its output cannot be parsed.
+export function targetTriple(): string {
+    const r = spawnSync('rustc', ['-Vv'], { encoding: 'utf8' })
+    if (r.status !== 0) {
+        console.error(
+            'rustc not found — needed to resolve the sidecar target triple',
+        )
+        process.exit(1)
+    }
+    const host = r.stdout.split('\n').find(l => l.startsWith('host:'))
+    if (!host) {
+        console.error('could not parse `host:` from rustc -Vv')
+        process.exit(1)
+    }
+    return host.replace('host:', '').trim()
 }

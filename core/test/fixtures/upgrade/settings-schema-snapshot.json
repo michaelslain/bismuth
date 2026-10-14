@@ -2360,6 +2360,13 @@
     "max": null,
     "required": false
   },
+  "daemon.notifications": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "daemon.recall": {
     "type": {
       "kind": "object"

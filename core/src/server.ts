@@ -111,6 +111,7 @@ import {
 } from './daemon'
 import { DAEMON_PAGE_RE } from './daemonPages'
 import { installDaemonFromBundle } from './daemonInstall'
+import { recordNotifierPath } from './notifierPointer'
 import { ensureBismuthInstalled } from './bismuthInstall'
 import { bootDoctor } from './doctor/routes'
 import { status as gcalStatus, sync as gcalSync } from './gcal'
@@ -305,6 +306,9 @@ export function createServer(cfg: CoreConfig) {
     // Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
     // running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
     void installDaemonFromBundle()
+    // Boot-time: tell the daemon where bismuth-notify is, so its notifications carry Bismuth's
+    // name and icon. No-op in dev (no BISMUTH_APP_PATH).
+    recordNotifierPath()
 
     // Boot-time: make this vault DISCOVERABLE to the daemon by registering its root in the
     // machine-level vaults.json registry (daemon/src/lib/registry.ts's loadEnabledVaults()

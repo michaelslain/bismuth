@@ -309,19 +309,72 @@ export function readDaemonPid(file: string = MACHINE_PID_FILE): number | null {
 
 // ── Notifications ────────────────────────────────────────────────────────────
 
+/** `~/.bismuth/notifier` — the path of bismuth-notify inside Bismuth.app, written by core on every
+ *  app boot (core/src/notifierPointer.ts). A literal duplicate of that module's path, like
+ *  bismuthHome in bismuthPaths.ts: the daemon must not import across into @bismuth/core. */
+export function notifierPointerPath(): string {
+    return join(homedir(), '.bismuth', 'notifier')
+}
+
+/** The bismuth-notify helper to post through, or null when the app never recorded one or the
+ *  recorded bundle has since moved or been deleted. */
+export function notifierHelper(
+    pointer: string = notifierPointerPath(),
+): string | null {
+    try {
+        const helper = readFileSync(pointer, 'utf-8').trim()
+        return helper && statSync(helper).isFile() ? helper : null
+    } catch {
+        return null
+    }
+}
+
+/** bismuth-notify's exit code for "the user turned Bismuth notifications off in macOS". Every
+ *  other non-zero code means the helper itself failed, and the notice falls back to osascript. */
+export const NOTIFIER_DENIED = 2
+
+/** Should a bismuth-notify exit code fall back to osascript? Not on success, and not when the
+ *  user denied Bismuth: posting the same notice as Script Editor would get around their choice. */
+export function notifierFallsBack(code: number | null): boolean {
+    return code !== 0 && code !== NOTIFIER_DENIED
+}
+
+function osascriptNotify(title: string, body: string): void {
+    const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    Bun.spawnSync([
+        'osascript',
+        '-e',
+        `display notification "${esc(body)}" with title "${esc(title)}"`,
+    ])
+}
+
+/** Post one desktop notification. On macOS it goes through bismuth-notify so it shows Bismuth's
+ *  name and icon; osascript (which shows Script Editor's) is the fallback when the app has not
+ *  recorded the helper. Fire-and-forget: the helper's first run waits on the permission prompt,
+ *  which must never block a cron. Whether to notify at all is the caller's call
+ *  (settings.daemon.notifications, read in cron.ts). */
 export function notify(title: string, message: string): void {
     try {
-        const trimmed = message.replace(/\s+/g, ' ').trim().slice(0, 200)
+        const body = message.replace(/\s+/g, ' ').trim().slice(0, 200)
         if (IS_LINUX) {
-            Bun.spawnSync(['notify-send', title, trimmed])
-        } else {
-            const escaped = trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-            Bun.spawnSync([
-                'osascript',
-                '-e',
-                `display notification "${escaped}" with title "${title}"`,
-            ])
+            Bun.spawnSync(['notify-send', title, body])
+            return
         }
+        const helper = notifierHelper()
+        if (!helper) {
+            osascriptNotify(title, body)
+            return
+        }
+        const proc = Bun.spawn([helper, title, body], {
+            stdout: 'ignore',
+            stderr: 'ignore',
+        })
+        void proc.exited.then(
+            code => {
+                if (notifierFallsBack(code)) osascriptNotify(title, body)
+            },
+            err => console.error('[notify]', err),
+        )
     } catch (err) {
         console.error('[notify]', err)
     }

@@ -20,6 +20,7 @@ import {
 
 const execFileAsync = promisify(execFile)
 import { notify } from '../lib/platform'
+import { readVaultSettingsDoc } from '../lib/vaultSettings'
 import { parseFrontmatter } from '../lib/frontmatter'
 import { enqueueWrite } from '../lib/writeQueue'
 import { consumeTrigger, listTriggers } from '../lib/drainTriggers'
@@ -1170,6 +1171,28 @@ export async function pageNoticeTitle(
     }
 }
 
+/** settings.daemon.notifications, read at send time so a toggle reaches the very next notice.
+ *  Absent, malformed or unreadable reads as on, the schema default. */
+export async function notificationsEnabled(root: string): Promise<boolean> {
+    try {
+        const doc = (await readVaultSettingsDoc(root)) as {
+            daemon?: { notifications?: unknown }
+        } | null
+        return doc?.daemon?.notifications !== false
+    } catch {
+        return true
+    }
+}
+
+/** {@link notify}, unless this vault turned desktop notifications off. */
+async function notifyVault(
+    ctx: VaultContext,
+    title: string,
+    body: string,
+): Promise<void> {
+    if (await notificationsEnabled(ctx.root)) notify(title, body)
+}
+
 /** Pages already announced, keyed `${root}::${slug}`, so two crons running at once in one vault
  *  (each diffing against its own before-set) never announce the same page twice. */
 const announcedPages = new Set<string>()
@@ -1189,6 +1212,7 @@ export async function notifyNewPages(
     send: (title: string, body: string) => void = notify,
     jobFile?: string,
 ): Promise<void> {
+    if (!(await notificationsEnabled(ctx.root))) return
     const after = await listPageSlugs(ctx.pagesDir)
     for (const slug of [...after].sort()) {
         if (before.has(slug)) continue
@@ -1383,7 +1407,8 @@ async function fireJob(
                 // composeBackendRefusalNote: this cron's own OS notification is the only place a silent
                 // settings.daemon.backend downgrade (hidden notes forced this run onto Claude) would ever
                 // reach the user — see session.ts's resolveDaemonBackend.
-                notify(
+                await notifyVault(
+                    ctx,
                     `${ctx.name}: ${job.name}`,
                     composeBackendRefusalNote(
                         notifyMsg,
@@ -1444,7 +1469,11 @@ async function fireJob(
                 }),
             )
             if (job.notify) {
-                notify(`${ctx.name}: ${job.name}`, `Failed: ${err}`)
+                await notifyVault(
+                    ctx,
+                    `${ctx.name}: ${job.name}`,
+                    `Failed: ${err}`,
+                ).catch(() => {})
             }
         } finally {
             // Inbox pages filed during the run notify whatever the outcome - a failed run's page

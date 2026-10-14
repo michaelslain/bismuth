@@ -83,6 +83,20 @@ While `daemon.enabled` is on, the app reads the inbox at launch, every 30 second
 
 The notification comes from the daemon, not from the model, so a cron needs no instruction to send it.
 
+On macOS the notification shows Bismuth's name and icon, and Bismuth gets its own entry in System Settings → Notifications. The first one asks you to allow Bismuth. Two cases show it under Script Editor instead: the installed app has never been launched, so the daemon does not know where the app is, or the permission prompt went unanswered for six hours. If you deny Bismuth, the daemon posts nothing for that notice.
+
+### Turn desktop notifications off
+
+Set `daemon.notifications` to `false` in the vault's `.settings`:
+
+```yaml
+# .settings
+daemon:
+  notifications: false
+```
+
+The daemon reads the key each time it would post, so the change applies to the next notice. Off silences both the per-page notification and the per-run one from a cron with `notify: true`. The in-app toast and the inbox badge still appear.
+
 ## Approve, dismiss or retry
 
 Open a page from the inbox. Its action bar is pinned under the editor. Edit the body if you want, then press a button.
@@ -124,8 +138,16 @@ A page's status lives in a JSON sidecar, `pages/.state/<slug>.json`, never in th
 
 A non-owner device deletes the trigger without acting. Execution is runtime code, not a cron, so deleting a cron cannot break the inbox.
 
+### Desktop notifications
+
+`notifyNewPages` in `daemon/src/daemon/cron.ts` diffs the pages folder after each cron run and sends one notice per new page. It and the `notify: true` per-run notice go through `notifyVault`, which checks `daemon.notifications` (`notificationsEnabled`) before calling `notify` in `daemon/src/lib/platform.ts`.
+
+On macOS, `notify` runs `bismuth-notify`, a Swift helper (`app/src-tauri/notifier/main.swift`) that ships as a Tauri `externalBin` and so sits in `Bismuth.app/Contents/MacOS`. A process there resolves to the app's bundle, which is what gives the notification Bismuth's identity and icon. macOS also requires the helper's code-signing identifier to equal the bundle id, so `app/scripts/build-notifier.ts` embeds `app/src-tauri/notifier/Info.plist` (`CFBundleIdentifier` `com.bismuth.app`) in the binary, and `codesign` takes the identifier from it. With any other identifier every request is refused as not allowed, with no prompt. The daemon runs from `~/.bismuth/bin` and cannot find the bundle itself, so core writes the helper's absolute path to `~/.bismuth/notifier` on every launch (`recordNotifierPath`, `core/src/notifierPointer.ts`).
+
+The helper exits `0` once posted, `2` when the user denied Bismuth, and `1` on any other failure, including a permission prompt left unanswered for six hours. The helper waits that long because exiting while the prompt is up gets Bismuth recorded as not allowed, which silences every later notification. `notify` falls back to `osascript` on `1` or a missing pointer, and on `2` posts nothing. On Linux it runs `notify-send`.
+
 ### Where the inbox shows
 
 A `type: daemon-page` note opens in `InboxPageView` (`app/src/InboxPageView.tsx`), the standard editor with the action bar under it. The inbox box on the daemon page is `DaemonInbox`, a flat list of due pages, then failed, then scheduled. The sidebar toolbar button `open-inbox` is hidden while the daemon is off.
 
-Source: `core/src/daemonPages.ts`, `core/src/routes/daemon.ts`, `daemon/src/daemon/{pages,pagesGuide,cron}.ts`, `cli/src/commands/page.ts`, `app/src/{InboxPageView,InboxActionBar,inboxPageMeta}.ts*`, `app/src/daemon/{DaemonInbox,InboxRow,daemonInboxApi,daemonInboxLogic}.ts*`
+Source: `core/src/daemonPages.ts`, `core/src/routes/daemon.ts`, `core/src/notifierPointer.ts`, `daemon/src/daemon/{pages,pagesGuide,cron}.ts`, `daemon/src/lib/platform.ts`, `app/src-tauri/notifier/main.swift`, `cli/src/commands/page.ts`, `app/src/{InboxPageView,InboxActionBar,inboxPageMeta}.ts*`, `app/src/daemon/{DaemonInbox,InboxRow,daemonInboxApi,daemonInboxLogic}.ts*`

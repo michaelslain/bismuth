@@ -1,9 +1,36 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { spawnSync as realSpawnSync } from 'node:child_process'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
     planEnsureInstalled,
     generateDaemonConfig,
+    notifierHelper,
+    notifierFallsBack,
 } from '../src/lib/platform.ts'
+
+describe('notifierHelper', () => {
+    test('returns the recorded helper while it exists, null otherwise', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'notifier-'))
+        const pointer = join(dir, 'notifier')
+        const helper = join(dir, 'bismuth-notify')
+        expect(notifierHelper(pointer)).toBeNull()
+        writeFileSync(pointer, `${helper}\n`)
+        expect(notifierHelper(pointer)).toBeNull()
+        writeFileSync(helper, '')
+        expect(notifierHelper(pointer)).toBe(helper)
+    })
+})
+
+describe('notifierFallsBack', () => {
+    test('falls back to osascript only when the helper itself failed', () => {
+        expect(notifierFallsBack(0)).toBe(false)
+        expect(notifierFallsBack(2)).toBe(false) // the user denied Bismuth notifications
+        expect(notifierFallsBack(1)).toBe(true)
+        expect(notifierFallsBack(null)).toBe(true) // killed by a signal
+    })
+})
 
 // `--ensure-installed` runs on EVERY app boot (core's installDaemonFromBundle → runSetup), not
 // only when a new daemon binary ships. It used to unconditionally unload+load the service, so

@@ -160,7 +160,7 @@ The sidecar signs with `app/src-tauri/Entitlements.plist`, which grants `allow-j
 
 A Finder-launched app has no shell environment, so `lib.rs` reads the saved vault from `config.json` in the app config directory, `~/Library/Application Support/com.bismuth.app/`. A saved vault must exist as a directory; memory is always `<vault>/.daemon/memory`. `set_last_vault` rewrites `config.json` when you open another folder as a new brain.
 
-The `beforeBuildCommand` runs `predmg:clean`, `prebundle:relay`, `build:bismuth-tools`, `build`, `build:core-sidecar` and `build:daemon-sidecar` in order. `predmg:clean` detaches leftover `dmg.*` scratch volumes and mounted Bismuth installer volumes under `/Volumes`, and deletes `rw.*.dmg` files that a failed earlier build can leave behind, so a rebuild repairs itself.
+The `beforeBuildCommand` runs `predmg:clean`, `prebundle:relay`, `build:bismuth-tools`, `build`, `build:core-sidecar`, `build:daemon-sidecar` and `build:notifier` in order. `predmg:clean` detaches leftover `dmg.*` scratch volumes and mounted Bismuth installer volumes under `/Volumes`, and deletes `rw.*.dmg` files that a failed earlier build can leave behind, so a rebuild repairs itself.
 
 Three resources are staged next to the sidecar, and `lib.rs` passes their paths to it:
 
@@ -169,6 +169,8 @@ Three resources are staged next to the sidecar, and `lib.rs` passes their paths 
 | `resources/relay` | `BISMUTH_RELAY_BUNDLE` | Terminal tabs load the relay shim from it |
 | `resources/bismuth-tools` | `BISMUTH_INSTALL_SRC` | `ensureBismuthInstalled` copies the CLI, MCP and `docs/` to `~/.bismuth`, links `bismuth` onto `PATH` and registers the MCP; skipped when the bundled hash in `~/.bismuth/.version` is unchanged |
 | `resources/daemon` | `BISMUTH_DAEMON_BUNDLE` | `installDaemonFromBundle` copies the daemon binary to `~/.bismuth/bin` and registers the launchd or systemd service |
+
+A second `externalBin`, `bismuth-notify`, is the daemon's desktop-notification helper. `app/scripts/build-notifier.ts` compiles `app/src-tauri/notifier/main.swift` with `swiftc` into `binaries/bismuth-notify-<target-triple>`; off macOS it writes a stub, because Tauri refuses to build while any `externalBin` is missing. `dev:app` builds it on the spot when it is absent. [Pages](../daemon/pages.md#desktop-notifications) covers how the daemon uses it.
 
 The daemon is a standalone service, not a Tauri child, because it must outlive the app to keep firing crons. It updates with the app, so there is no separate daemon updater.
 
@@ -186,4 +188,4 @@ The shortcut Cmd+Ctrl+Opt+Shift+R calls `reset_first_run`, which deletes the `in
 
 Core answers every request with `Access-Control-Allow-Origin: *`, methods `GET,PUT,POST,OPTIONS`, and headers `Content-Type, X-Bismuth-Token`, so Vite on any port and the Tauri webview reach it with no proxy.
 
-Source: `package.json`, `app/package.json`, `app/scripts/dev.ts`, `app/scripts/devVault.ts`, `app/scripts/tauri.ts`, `app/scripts/signingIdentity.ts`, `app/scripts/build-core-sidecar.ts`, `app/scripts/build-daemon-sidecar.ts`, `app/scripts/postbuild-clean.ts`, `app/vite.config.ts`, `app/src-tauri/tauri.conf.json`, `app/src-tauri/Entitlements.plist`, `app/src-tauri/src/lib.rs`, `app/src/index.tsx`, `app/src/api.ts`, `app/src/intro/introSlides.ts`, `app/src/storageKeys.ts`, `core/src/server.ts`, `core/src/routes/context.ts`, `core/src/bismuthInstall.ts`, `core/src/daemonInstall.ts`, `cli/src/commands/install.ts`
+Source: `package.json`, `app/package.json`, `app/scripts/dev.ts`, `app/scripts/devVault.ts`, `app/scripts/tauri.ts`, `app/scripts/signingIdentity.ts`, `app/scripts/build-core-sidecar.ts`, `app/scripts/build-daemon-sidecar.ts`, `app/scripts/build-notifier.ts`, `app/scripts/buildUtils.ts`, `app/scripts/postbuild-clean.ts`, `app/vite.config.ts`, `app/src-tauri/tauri.conf.json`, `app/src-tauri/Entitlements.plist`, `app/src-tauri/src/lib.rs`, `app/src/index.tsx`, `app/src/api.ts`, `app/src/intro/introSlides.ts`, `app/src/storageKeys.ts`, `core/src/server.ts`, `core/src/routes/context.ts`, `core/src/bismuthInstall.ts`, `core/src/daemonInstall.ts`, `cli/src/commands/install.ts`

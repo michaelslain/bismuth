@@ -286,6 +286,7 @@ When `enabled` is off the daemon is dormant: its state stays on disk and the `.d
 |---|---|---|---|---|
 | `enabled` | boolean | `false` | | Master switch for this vault's daemon. The first-run intro sets it. |
 | `inboxRetentionDays` | number | `7` | 1 to 90 | Days a resolved inbox page (sent, discarded or failed) stays listed. |
+| `notifications` | boolean | `true` | | A desktop notification per new inbox page and per `notify: true` cron run. On macOS it shows Bismuth's name and icon. |
 | `backend` | enum | `claude` | `claude`, `codex` | Agent CLI that runs the daemon's brain. |
 | `inheritUserMcp` | boolean | `false` | | Let daemon sessions use the MCP servers and plugins of your own `claude` CLI. |
 | `recall.enabled` | boolean | `true` | | Master switch for automatic memory injection into agent sessions. Needs `daemon.enabled`. |

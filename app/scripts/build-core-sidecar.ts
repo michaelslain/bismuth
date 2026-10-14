@@ -20,7 +20,6 @@
 //
 // Run: cd app && bun run scripts/build-core-sidecar.ts   (or `bun run build:core-sidecar`)
 // Wired into beforeBuildCommand so `tauri build` always has a fresh sidecar.
-import { spawnSync } from 'node:child_process'
 import {
     copyFileSync,
     existsSync,
@@ -32,7 +31,7 @@ import {
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
-import { assertBuiltBinary, compileCwd } from './buildUtils'
+import { assertBuiltBinary, compileCwd, targetTriple } from './buildUtils'
 
 const here = import.meta.dir
 const appDir = join(here, '..') // app/
@@ -48,23 +47,6 @@ const outDir = join(appDir, 'src-tauri', 'binaries')
 // `resources`). The compiled binary cannot carry them: an embedded `.node` is extracted without its
 // sibling `libonnxruntime` (the rpath is `@loader_path`), so the loader looks beside the sidecar.
 const ortOutDir = join(appDir, 'src-tauri', 'resources', 'ort')
-
-// Target triple Tauri expects in the sidecar filename — taken from the Rust host.
-function targetTriple(): string {
-    const r = spawnSync('rustc', ['-Vv'], { encoding: 'utf8' })
-    if (r.status !== 0) {
-        console.error(
-            'rustc not found — needed to resolve the sidecar target triple',
-        )
-        process.exit(1)
-    }
-    const host = r.stdout.split('\n').find(l => l.startsWith('host:'))
-    if (!host) {
-        console.error('could not parse `host:` from rustc -Vv')
-        process.exit(1)
-    }
-    return host.replace('host:', '').trim()
-}
 
 const triple = targetTriple()
 const outFile = join(outDir, `bismuth-core-${triple}`)
