@@ -371,6 +371,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `dur` | duration | `calc(120ms * var(--motion-scale))` | Standard transitions. |
 | `dur-grow` | duration | `calc(140ms * var(--motion-scale))` | A surface growing into another: a daemon-page box opening to fill the page. |
 | `dur-pop` | duration | `calc(260ms * var(--motion-scale))` | Popovers and larger movements. |
+| `dur-tooltip` | duration | `calc(400ms * var(--motion-scale))` | The hover delay before an icon button's name bubble shows. |
 | `ease` | easing | `cubic-bezier(0.22, 1, 0.36, 1)` | The standard ease-out. |
 | `ease-spring` | easing | `cubic-bezier(0.34, 1.56, 0.64, 1)` | A small overshoot. |
 | `ease-std` | easing | `ease` | The browser ease curve many components use. |

@@ -516,6 +516,12 @@ the accent. An outline appears only when it means something.
     checked `[x]`. Rejected alongside: brackets on hover only (they flicker in and out under the
     pointer) and a boxed "ghost cell" (breaks no-box).
 
+### Tooltip
+- **One bubble names an icon-only control:** `TooltipHost`, mounted once per document, reads `data-tooltip="<text>"` from the element under the pointer or holding keyboard focus-visible. The text is the control's name as written: no case change, no tracking.
+- **Recipe:** `--fs-ui` text in `--fg` on `--bg`, a `--rule` hairline, square, `--lift`, padding `--sp-1` block and `--sp-3` inline, one line. Centred `--sp-2` under the control, above it when there is no room below, clamped inside the window.
+- **Timing:** `--dur-tooltip` after the pointer settles; moving straight onto another named control swaps the text with no new delay. Keyboard focus-visible shows it at once; mouse focus does not. It hides on leave, blur, Escape, press and scroll.
+- **Inert:** fixed-positioned, `pointer-events: none`, `aria-hidden` (the control's `aria-label` already names it), so it never shifts layout, takes focus or intercepts a click. A disabled control shows it too.
+
 ### Chips
 - **Chip toggle:** no box (no border, no fill) — `[label]` bracket text in the same register as
   the text button and `SegmentedToggle`'s bracket look. Unselected `--faint`, selected tints

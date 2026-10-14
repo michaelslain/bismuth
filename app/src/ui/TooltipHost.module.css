@@ -1,0 +1,26 @@
+/* app/src/ui/TooltipHost.module.css — the hover-name bubble behind TooltipHost.tsx. Same recipe as
+   the Popover menu: opaque --bg, --rule hairline, square, --lift. Fixed-positioned by the host from
+   a measured size, so it never shifts layout; it never takes the pointer or focus. */
+
+.bubble {
+  position: fixed;
+  top: 0;
+  left: 0;
+  visibility: hidden; /* until the host has measured and placed it */
+  z-index: var(--z-popover);
+  box-sizing: border-box;
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--rule);
+  border-radius: var(--r-0);
+  box-shadow: var(--lift);
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  line-height: var(--row-h);
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}

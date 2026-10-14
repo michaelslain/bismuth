@@ -69,7 +69,7 @@ import styles from './PreviewView.module.css'
 import pdfPagesStyles from './preview/PdfPages.module.css'
 import PdfPages from './preview/PdfPages'
 import { rectsToPages } from './preview/selectionRects'
-import { barItems, probeBar } from './ui/_previewBarAssertions'
+import { barItems, median, probeBar } from './ui/_previewBarAssertions'
 import TextButton from './ui/TextButton'
 import Text from './ui/Text'
 
@@ -2055,7 +2055,10 @@ export const PdfViewBarNarrow: Story = {
             expect(b.height, `${w}px: bar height`).toBeCloseTo(36, 0)
 
             const p = probeBar(bar)
-            expect(p.strayGaps, `${w}px: gaps ${JSON.stringify(p.gaps)}`).toEqual([])
+            expect(
+                p.strayGaps,
+                `${w}px: ink gaps ${JSON.stringify(p.inkGaps)}: within ${JSON.stringify(p.withinGaps)}, seams ${JSON.stringify(p.seamGaps)}, seam margin ${p.seamMargin}`,
+            ).toEqual([])
             expect(p.outside, `${w}px: controls outside the bar`).toEqual([])
             expect(p.overlaps, `${w}px: overlapping controls`).toEqual([])
             expect(p.maxCentreOffset, `${w}px: one centre line`).toBeLessThanOrEqual(1)
@@ -2181,12 +2184,17 @@ export const PdfViewBarLayout: Story = {
         const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
         await waitFor(() => expect(drawBtn.disabled).toBe(false))
 
-        // Two spacings, five group boundaries, two annotate within-group gaps (highlight/draw/
+        // Two ink-to-ink spacings (16px inside a group, 24px across a seam), five group seams, two annotate within-group gaps (highlight/draw/
         // scratch), one glyph size, one icon box, zero frames at rest.
         const rest = probeBar(bar)
-        expect(rest.strayGaps, `gaps ${JSON.stringify(rest.gaps)}`).toEqual([])
-        expect(rest.groupBoundaries, `group boundaries in ${JSON.stringify(rest.gaps)}`).toBe(5)
-        expect(rest.annotateGaps, `annotate within-group gaps in ${JSON.stringify(rest.gaps)}`).toBe(2)
+        expect(
+            rest.strayGaps,
+            `ink gaps ${JSON.stringify(rest.inkGaps)}: within ${JSON.stringify(rest.withinGaps)}, seams ${JSON.stringify(rest.seamGaps)}, seam margin ${rest.seamMargin}`,
+        ).toEqual([])
+        expect(median(rest.withinGaps), `within ink gaps ${JSON.stringify(rest.withinGaps)}`).toBeCloseTo(16, 0)
+        expect(median(rest.seamGaps), `seam ink gaps ${JSON.stringify(rest.seamGaps)}`).toBeCloseTo(24, 0)
+        expect(rest.groupBoundaries, `group seams in ink gaps ${JSON.stringify(rest.inkGaps)}`).toBe(5)
+        expect(rest.annotateGaps, `annotate within-group gaps in ink gaps ${JSON.stringify(rest.inkGaps)}`).toBe(2)
         expect(rest.glyphSizes).toEqual(['12x12'])
         expect(rest.iconBoxes).toHaveLength(1)
         expect(rest.outside).toEqual([])
@@ -2226,7 +2234,7 @@ export const PdfViewBarLayout: Story = {
         const on = probeBar(bar)
         expect(on.frames, 'accent frames, scratch on').toBe(0)
         expect(on.selectedCount, 'scratch on').toBe(1)
-        expect(on.gaps).toEqual(rest.gaps)
+        expect(on.inkGaps).toEqual(rest.inkGaps)
         // put the fixture back (the store wrote a margin; turn it off again)
         await fireEvent.click(scratchBtn)
         await waitFor(() => expect(pressedOf(scratchBtn)).toBe('false'))

@@ -44,3 +44,10 @@ export const Default: Story = {
         await waitFor(() => expect(pct()).toContain('100%'))
     },
 }
+
+/** `wide`: one step further apart, for a bar whose icons carry unpainted bracket room (the
+ *  preview tab's bar). Bare, as here, the gaps read roomier than the default; inside PreviewBar
+ *  they land on the bar's own glyph-to-glyph distance. */
+export const Wide: Story = {
+    args: { zoom: () => 1, onZoomBy: () => {}, onFit: () => {}, wide: true },
+}

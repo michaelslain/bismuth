@@ -38,20 +38,66 @@ export function accentColor(el: HTMLElement): string {
     return c
 }
 
+/** The visible extent of one control, the thing a person measures spacing against: an icon button's
+ *  glyph (its `svg`; the unpainted `[ ]` room around it is not ink), a lone percentage's text
+ *  (a Range over its text nodes), a text button's own box (Button pulls its bracket bearing in, so
+ *  its box edge is its `[` / `]` ink edge — pinned by the numbers in the task 4a report). */
+export function inkRect(el: HTMLElement): DOMRect {
+    const svg = el.querySelector('svg')
+    if (svg && !(el.textContent ?? '').trim()) return svg.getBoundingClientRect()
+    if (el.tagName !== 'BUTTON') {
+        const range = document.createRange()
+        range.selectNodeContents(el)
+        return range.getBoundingClientRect()
+    }
+    return el.getBoundingClientRect()
+}
+
+/** An ink gap at or above this is a group seam; below it, a neighbour inside a group. The bar's two
+ *  distances are 16px and 24px, so the cut sits between them. */
+export const SEAM_INK_GAP = 22
+
+/** Every within-group gap must sit this close to the median within-group gap (likewise seams). */
+export const INK_GAP_TOLERANCE = 1
+
+/** How much wider a seam must read than a within-group gap, ink to ink. */
+export const SEAM_MARGIN = 5
+
+/** The bar's design distances, ink to ink: neighbours inside a group, and across a group seam. */
+export const WITHIN_INK_GAP = 16
+export const SEAM_DESIGN_INK_GAP = 24
+
+export const median = (xs: number[]) => {
+    const s = [...xs].sort((a, b) => a - b)
+    return s.length ? s[Math.floor((s.length - 1) / 2)]! : 0
+}
+
 export type BarProbe = {
-    /** Horizontal distance between each pair of adjacent controls. */
+    /** Horizontal distance between the BOXES of each pair of adjacent controls (diagnostic only —
+     *  the bar's rule is about ink, below). */
     gaps: number[]
-    iconGap: number
-    crumbGap: number
-    /** Gaps that are neither known token (±0.5px). Want 0. */
+    /** Horizontal distance between the visible ink of each pair of adjacent controls. */
+    inkGaps: number[]
+    /** Ink gaps below SEAM_INK_GAP: neighbours inside a group. */
+    withinGaps: number[]
+    /** Ink gaps at or above SEAM_INK_GAP: one per group boundary. */
+    seamGaps: number[]
+    /** Within-group ink gaps farther than INK_GAP_TOLERANCE from their median. Want none. */
+    unevenWithin: number[]
+    /** Seam ink gaps farther than INK_GAP_TOLERANCE from their median. Want none. */
+    unevenSeams: number[]
+    /** Narrowest seam minus widest within-group gap, ink to ink; Infinity when either is absent.
+     *  Want at least SEAM_MARGIN. */
+    seamMargin: number
+    /** Gaps the bar's rule rejects, as one list: uneven within, uneven seams, and a seam that does
+     *  not stand clear of the within-group gaps. Want []. */
     strayGaps: number[]
-    /** Gaps equal to --bar-crumb-gap: one per group boundary. */
+    /** Seam count. */
     groupBoundaries: number
     /** Adjacent-control pairs INSIDE the annotate group (highlight/draw/scratch) — found
-     *  structurally (painted buttons under `[data-testid="preview-annotate"]`, not by gap value:
-     *  the annotate group's internal gap is `iconGap`, same as every other group, so a pixel probe
-     *  can no longer tell it apart). 2 painted buttons -> 1 gap, 3 -> 2. Each one still has to land
-     *  in `iconGap`, which `strayGaps` already enforces. */
+     *  structurally (painted buttons under `[data-testid="preview-annotate"]`, not by gap value: its internal
+     *  gap is the same as every other group's, so a pixel probe cannot tell it apart). 2 painted buttons -> 1 gap, 3 -> 2. Each one still has to land
+     *  among the within-group ink gaps, which `strayGaps` already enforces. */
     annotateGaps: number
     /** Elements in the bar painting an accent border. DESIGN.md: "states are colour and weight,
      *  nothing drawn" — under the button family a selected control draws no border/frame, so this
@@ -82,10 +128,28 @@ const nameOf = (el: HTMLElement) =>
 export function probeBar(bar: HTMLElement): BarProbe {
     const items = barItems(bar)
     const rects = items.map(el => el.getBoundingClientRect())
-    const iconGap = tokenPx(bar, '--bar-icon-gap')
-    const crumbGap = tokenPx(bar, '--bar-crumb-gap')
     const gaps = rects.slice(1).map((r, i) => Math.round((r.left - rects[i]!.right) * 10) / 10)
-    const near = (a: number, b: number) => Math.abs(a - b) <= 0.5
+    const inks = items.map(inkRect)
+    const inkGaps = inks
+        .slice(1)
+        .map((r, i) => Math.round((r.left - inks[i]!.right) * 10) / 10)
+    const withinGaps = inkGaps.filter(g => g < SEAM_INK_GAP)
+    const seamGaps = inkGaps.filter(g => g >= SEAM_INK_GAP)
+    const uneven = (xs: number[]) => {
+        const m = median(xs)
+        return xs.filter(g => Math.abs(g - m) > INK_GAP_TOLERANCE)
+    }
+    const unevenWithin = uneven(withinGaps)
+    const unevenSeams = uneven(seamGaps)
+    const seamMargin =
+        withinGaps.length && seamGaps.length
+            ? Math.min(...seamGaps) - Math.max(...withinGaps)
+            : Infinity
+    const strayGaps = [
+        ...unevenWithin,
+        ...unevenSeams,
+        ...(seamMargin < SEAM_MARGIN ? [seamMargin] : []),
+    ]
     const accent = accentColor(bar)
     const frames = Array.from(bar.querySelectorAll<HTMLElement>('*')).filter(el => {
         if (!painted(el)) return false
@@ -151,10 +215,14 @@ export function probeBar(bar: HTMLElement): BarProbe {
         : []
     return {
         gaps,
-        iconGap,
-        crumbGap,
-        strayGaps: gaps.filter(g => !near(g, iconGap) && !near(g, crumbGap)),
-        groupBoundaries: gaps.filter(g => near(g, crumbGap)).length,
+        inkGaps,
+        withinGaps,
+        seamGaps,
+        unevenWithin,
+        unevenSeams,
+        seamMargin,
+        strayGaps,
+        groupBoundaries: seamGaps.length,
         annotateGaps: Math.max(0, annotateButtons.length - 1),
         frames,
         selectedCount,

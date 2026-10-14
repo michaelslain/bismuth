@@ -353,6 +353,8 @@
      a bounce on ordinary chrome reads as noise. */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --dur-pop: calc(260ms * var(--motion-scale));
+  /* --dur-tooltip: the hover delay before an icon button's name bubble shows (ui/TooltipHost). */
+  --dur-tooltip: calc(400ms * var(--motion-scale));
 
   /* ── Spacing — NEW (§2.2, §7 wave 0). A 2/4/6/8 grid, not 4/8: the existing radius ladder
      (2/3/4/5) and row unit (18px) already say this app is denser than an 8-grid product. No

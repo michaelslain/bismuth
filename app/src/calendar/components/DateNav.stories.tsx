@@ -172,7 +172,7 @@ export const ClickDateJumpsToToday: Story = {
             ...canvasElement.querySelectorAll<HTMLButtonElement>('button'),
         ]
         // Exactly four controls, in order: TODAY, prev, the date, next.
-        expect(buttons.map(b => b.getAttribute('title'))).toEqual([
+        expect(buttons.map(b => b.getAttribute('title') ?? b.getAttribute('data-tooltip'))).toEqual([
             'Today',
             'Previous',
             'Jump to today',

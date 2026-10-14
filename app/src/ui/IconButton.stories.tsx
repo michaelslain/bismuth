@@ -1,6 +1,6 @@
 // Visual spec for <IconButton> — the icon-only wrapper over the base <Button kind="icon">.
 //
-// Props: icon (icon name, required), label (required a11y label → aria-label + title),
+// Props: icon (icon name, required), label (required a11y label → aria-label + the hover name `data-tooltip`),
 // variant ("normal" default | "selected" | "unselected"), danger, size, iconSize, plus any
 // native <button> attribute (disabled, onClick, …).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
@@ -288,5 +288,25 @@ export const PickOneGroup: Story = {
             const [a, b] = rows.map(r => r.getBoundingClientRect().width)
             expect(Math.abs(a! - b!)).toBeLessThan(0.5)
         }
+    },
+}
+
+/** The hover name. An icon button publishes `title ?? label` as `data-tooltip` and carries no
+ *  native `title`; the bubble itself comes from the global TooltipHost (mounted once in the app
+ *  and in Storybook's preview), not from this component. `play` pins the attribute contract. */
+export const Tooltip: Story = {
+    render: () => (
+        <Row wrap={false} gap="var(--bar-icon-gap)">
+            <IconButton icon="Star" label="Star" />
+            <IconButton icon="Search" label="Search" title="Search (Mod+F)" />
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const [star, search] = [...canvasElement.querySelectorAll('button')]
+        expect(star!.getAttribute('data-tooltip')).toBe('Star')
+        expect(search!.getAttribute('data-tooltip')).toBe('Search (Mod+F)')
+        expect(star!.getAttribute('aria-label')).toBe('Star')
+        expect(star!.hasAttribute('title')).toBe(false)
+        expect(search!.hasAttribute('title')).toBe(false)
     },
 }

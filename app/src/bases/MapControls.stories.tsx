@@ -56,7 +56,7 @@ export const ReadOnly: Story = {
     play: async ({ canvasElement }) => {
         const add = within(canvasElement).getByTestId('map-add-pin')
         expect(add).toBeDisabled()
-        expect(add.getAttribute('title')).toContain('not backed by a base file')
+        expect(add.getAttribute('data-tooltip')).toContain('not backed by a base file')
     },
 }
 
@@ -75,7 +75,7 @@ export const ArmedToggle: Story = {
         expect(add.getAttribute('aria-pressed')).toBe('false')
         await userEvent.click(add)
         expect(add.getAttribute('aria-pressed')).toBe('true')
-        expect(add.getAttribute('title')).toContain('Cancel placing pin')
+        expect(add.getAttribute('data-tooltip')).toContain('Cancel placing pin')
         await userEvent.click(add)
         expect(add.getAttribute('aria-pressed')).toBe('false')
     },

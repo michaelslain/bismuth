@@ -73,7 +73,12 @@ function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
                                 : undefined
                         }
                         class={`${props.segmentClass ?? ''} ${opt.class ?? ''}`}
-                        title={opt.title}
+                        title={kind() === 'icon' ? undefined : opt.title}
+                        data-tooltip={
+                            kind() === 'icon'
+                                ? (opt.title ?? opt.ariaLabel)
+                                : undefined
+                        }
                         aria-label={opt.ariaLabel}
                         disabled={opt.disabled}
                         onClick={() => props.onChange(opt.id)}

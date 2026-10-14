@@ -71,9 +71,9 @@ export const Full: Story = {
     play: async ({ canvasElement }) => {
         // Every group is here — EXCEPT the lasso, which is note-ink only. This surface has no
         // selection model, so a lasso segment on it would be a control that does nothing.
-        expect(canvasElement.querySelector('[title="Pen"]')).not.toBeNull()
-        expect(canvasElement.querySelector('[title="Eraser"]')).not.toBeNull()
-        expect(canvasElement.querySelector('[title="Lasso"]')).toBeNull()
+        expect(canvasElement.querySelector('[data-tooltip="Pen"]')).not.toBeNull()
+        expect(canvasElement.querySelector('[data-tooltip="Eraser"]')).not.toBeNull()
+        expect(canvasElement.querySelector('[data-tooltip="Lasso"]')).toBeNull()
         // Undo/redo + the zoom group now compose SegmentedToggle via SegmentedOption's
         // `ariaLabel`/`class` — same aria-labels as before the composition, and the percent
         // readout keeps its fixed-width class.
@@ -176,13 +176,13 @@ export const Minimal: Story = {
     },
     play: async ({ canvasElement }) => {
         const lasso = canvasElement.querySelector<HTMLElement>(
-            '[title="Lasso"]',
+            '[data-tooltip="Lasso"]',
         )
         expect(lasso).not.toBeNull()
-        expect(canvasElement.querySelector('[title="Paper"]')).toBeNull()
+        expect(canvasElement.querySelector('[data-tooltip="Paper"]')).toBeNull()
         // It is a real segment in the mutually-exclusive tool row, not a stray button: picking
         // it deselects the pen.
-        const pen = canvasElement.querySelector<HTMLElement>('[title="Pen"]')!
+        const pen = canvasElement.querySelector<HTMLElement>('[data-tooltip="Pen"]')!
         // Attribute read, not a class: Button stamps data-state on its root as
         // 'normal'/'selected'/'unselected', so this reads the real state directly.
         const selected = (el: HTMLElement) =>

@@ -13,22 +13,72 @@
    is the one override left on a button element, and it only flips the inner svg glyph (placement of
    the icon, not the button's look). */
 
-/* ── Two spacings, nothing else ────────────────────────────────────────────────────────────────
-   A group is a run of controls at `--bar-icon-gap` (the same gap every ViewBar region uses). Where
-   two groups share a region (config: zoom · annotate; actions: bookmarks · file actions) the
-   region's gap becomes `--bar-crumb-gap`, the gap the trailing group already puts between regions —
-   so every group boundary in the bar measures the same, and a group the ladder hides
-   (`display: none`) takes its gap with it. Only DIRECT children of those regions are groups, so
-   nothing else is respaced. */
+/* ── Two distances, ink to ink ─────────────────────────────────────────────────────────────────
+   ~18px between neighbours inside a group, ~26px across a group seam (measured glyph to glyph).
+   `.group` is a readout group (text); `.tools` an icon group. Where two groups share a region
+   (config: zoom · annotate; actions: bookmarks · file actions) and between regions, the gap is
+   --sp-6, and a group the ladder hides (`display: none`) takes its gap with it. Only DIRECT
+   children of those regions are groups, so nothing else is respaced. */
 .group {
   display: inline-flex;
   align-items: center;
   gap: var(--bar-icon-gap);
   flex: 0 0 auto;
 }
+/* The readouts are all text (`p. N / M`, `// converting to markdown [cancel]`, `W × H`): text has no
+   bracket room, so the plain --bar-icon-gap left them 8px apart beside 18px icon pairs. --sp-6
+   lands text-to-text on the same distance as everything else inside a group. */
+.readouts,
+.readouts > .group {
+  gap: var(--sp-6);
+}
 .config,
 .actions {
-  gap: var(--bar-crumb-gap);
+  gap: var(--sp-6);
+}
+
+/* ── One footprint for every icon ──────────────────────────────────────────────────────────────
+   An OFF toggle (highlight, draw, scratch, dark, bookmarks) keeps its `[ ]` laid out but unpainted
+   so flipping it moves nothing; a plain icon (zoom steps, to markdown, open, reveal) has no bracket
+   room at all. Side by side that made the icon-to-icon distance depend on which kind each icon
+   was: 10.5px between two plain icons, 18.5px between two toggles, 23px across a group seam. Here
+   every icon reserves the same unpainted brackets (keyed on Button's `data-state` runtime hook), so
+   every icon has one footprint and the gaps below are the only thing that varies. */
+.bar [data-kind='icon'][data-state='normal'] {
+  padding-inline: 0;
+}
+.bar [data-kind='icon'][data-state='normal']::before {
+  content: '[' / '';
+  visibility: hidden;
+}
+.bar [data-kind='icon'][data-state='normal']::after {
+  content: ']' / '';
+  visibility: hidden;
+}
+
+/* An icon group. Its icons already carry their unpainted bracket room either side, so the gap
+   between boxes stays --bar-icon-gap: glyph to glyph that is ~18px, the same as `−` `100%` `+`
+   `fit` (PdfZoom `wide`) and the text readouts, and two ON toggles keep 8px bracket to bracket
+   rather than fusing into one frame. */
+.tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bar-icon-gap);
+  flex: 0 0 auto;
+}
+
+/* A group whose left neighbour ends in text (a readout, `fit`) rather than an icon: text has no
+   bracket room, so the seam would read narrower than an icon-to-icon seam. This adds back the
+   difference, so every group seam in the bar measures the same. */
+.afterText {
+  margin-inline-start: var(--sp-2);
+}
+
+/* The image's `W × H` readout: digits carry no descenders, so the line reads high beside the icons;
+   the same 1px drop `Button.module.css` gives a button label (and PdfZoom gives its `%`). */
+.readout {
+  position: relative;
+  top: 1px;
 }
 
 /* BOOKMARKS: PanelRight resolves to Phosphor's `sidebar-simple`, drawn with the panel on the LEFT —
@@ -59,12 +109,12 @@
    already keeps") — right for a bar whose trailing controls are meant to read as one continuous
    bracket run once nothing else is left to shed (the chat bar, the calendar). Wrong here: this
    bar's groups (zoom · annotate · bookmarks · file actions) must stay visibly grouped at every
-   width, narrow included — the whole point of --bar-crumb-gap. `.bar .trail` (two classes) ties
+   width, narrow included — the whole point of the wider seam. `.bar .trail` (two classes) ties
    `.viewbar .vb-trail`'s specificity at the floor tier; PreviewBar.module.css loads after
    ViewBar.module.css (PreviewBar.tsx imports ViewBar first), so this wins the tie outright,
    the same trick `.bar .lead` uses above for the mask-image override. */
 .bar .trail {
-  gap: var(--bar-crumb-gap);
+  gap: var(--sp-6);
 }
 .lead {
   flex-shrink: 1000;

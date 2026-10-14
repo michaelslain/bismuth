@@ -91,6 +91,25 @@ setTransport(
     }),
 )
 
+// ── Tooltip host ──────────────────────────────────────────────────────────────
+// The app mounts ONE TooltipHost at its shell root (App.tsx); a story has no shell, so it is
+// mounted once here for every story. Rendered into <body> as a sibling of the story root, and it
+// renders nothing until a `data-tooltip` element is hovered or focus-visible, so no story's DOM
+// changes.
+import { render } from 'solid-js/web'
+import { createComponent } from 'solid-js'
+import TooltipHost from '../src/ui/TooltipHost'
+
+// Idempotent under hot reload: the disposer of the previous mount runs before this module re-evaluates.
+// Mounted into a container the host owns: Solid's disposer sets `textContent = ''` on its mount
+// element, which for document.body would wipe #storybook-root. The bubble portals to body itself.
+const tooltipRoot = document.body.appendChild(document.createElement('div'))
+const disposeTooltipHost = render(() => createComponent(TooltipHost, {}), tooltipRoot)
+import.meta.hot?.dispose(() => {
+    disposeTooltipHost()
+    tooltipRoot.remove()
+})
+
 const preview: Preview = {
     // ── Theme axis ────────────────────────────────────────────────────────────────────────────
     // The catalog used to project ONE theme (the schema default, `ink`) at module scope, so all 465

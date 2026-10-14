@@ -12,7 +12,7 @@ export type IconButtonVariant = ButtonState
 export type IconButtonProps = {
     /** icon name (any casing / Li-Lu legacy). Must resolve to an icon — not a literal glyph or emoji. */
     icon: string
-    /** Required accessible label — sets aria-label and title. */
+    /** Required accessible label — sets aria-label and the hover name (`data-tooltip`, shown by TooltipHost). */
     label: string
     /** "normal" (standalone, default) | "selected" | "unselected" (toggle/series member). */
     variant?: IconButtonVariant
@@ -58,7 +58,7 @@ function IconButton(props: IconButtonProps) {
             state={local.variant ?? 'normal'}
             size={size()}
             aria-label={local.label}
-            title={local.title ?? local.label}
+            data-tooltip={local.title ?? local.label}
             {...rest}
         >
             <Icon value={local.icon} size={iconSize()} />

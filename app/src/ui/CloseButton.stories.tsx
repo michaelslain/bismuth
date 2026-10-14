@@ -24,12 +24,13 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** The default — reads `[x]`, named by `label` for assistive tech and the tooltip. */
+/** The default — reads `[x]`, named by `label` for assistive tech and the hover tooltip. */
 export const Default: Story = {
     play: async ({ canvas, args }) => {
         const button = canvas.getByRole('button', { name: 'close' })
         expect(button.textContent).toBe('x')
-        expect(button.getAttribute('title')).toBe('close')
+        expect(button.getAttribute('data-tooltip')).toBe('close')
+        expect(button.hasAttribute('title')).toBe(false)
         await userEvent.click(button)
         expect(args.onClick).toHaveBeenCalledOnce()
     },

@@ -70,7 +70,7 @@ const ColorChip: Component<ColorChipProps> = props => {
                 <PlainButton
                     class={styles['trigger']}
                     aria-label="Choose colour"
-                    title="Choose colour"
+                    data-tooltip="Choose colour"
                     aria-pressed={props.open ? 'true' : undefined}
                     onClick={() => props.onToggle()}
                 >

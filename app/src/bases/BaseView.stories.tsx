@@ -818,7 +818,7 @@ export const TasksListStored: Story = {
     play: async ({ canvasElement }) => {
         await expectStoredToggle({ canvasElement })
         // "+ task" on a base that owns its rows appends a ROW.
-        await userEvent.click(within(canvasElement).getByTitle('New task'))
+        await userEvent.click(within(canvasElement).getByLabelText('New task'))
         const created = await waitFor(() => {
             const p = taskPosts.find(
                 x =>
@@ -840,7 +840,7 @@ export const TasksListQuery: Story = {
         await expectQueryToggle({ canvasElement })
         // "+ task" on a SOURCED base appends a checkbox LINE to its declared `taskFile` —
         // the same `appendTaskLine` the calendar's own "+ task" calls.
-        await userEvent.click(within(canvasElement).getByTitle('New task'))
+        await userEvent.click(within(canvasElement).getByLabelText('New task'))
         const written = await waitFor(() => {
             const p = taskPosts.find(x => x.path === '/tasks/create')
             expect(p).toBeTruthy()
@@ -1490,7 +1490,7 @@ export const AddTaskRejected: Story = {
     },
     play: ({ canvasElement }) =>
         expectWriteToast(canvasElement, 'tasks.md is read-only', async canvas =>
-            userEvent.click(await waitFor(() => canvas.getByTitle('New task'))),
+            userEvent.click(await waitFor(() => canvas.getByLabelText('New task'))),
         ),
 }
 
@@ -1512,7 +1512,7 @@ export const AddTaskOutOfScope: Story = {
     },
     play: ({ canvasElement }) =>
         expectWriteToast(canvasElement, 'does not match this view', async canvas =>
-            userEvent.click(await waitFor(() => canvas.getByTitle('New task'))),
+            userEvent.click(await waitFor(() => canvas.getByLabelText('New task'))),
         ),
 }
 

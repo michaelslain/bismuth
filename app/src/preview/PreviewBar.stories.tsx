@@ -1,14 +1,21 @@
 // app/src/preview/PreviewBar.stories.tsx
 // Visual + behavioural spec for <PreviewBar> — the preview tab's view bar for images and PDFs. Every
 // play() probes what a person sees (ui/_previewBarAssertions.ts): the gaps between adjacent
-// controls are only the bar's two spacing tokens (icon-gap inside a group, including the annotate
-// group; crumb-gap between groups), the number of accent frames, one glyph size and one icon box,
-// and nothing leaving the 36px band.
+// controls are the bar's two ink distances (within a group, the annotate group included, ~16px;
+// across a group seam ~24px; measured glyph to glyph), the number of accent frames, one glyph size
+// and one icon box, and nothing leaving the 36px band.
 import { createSignal, type JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import PreviewBar, { type PreviewBarProps } from './PreviewBar'
-import { probeBar, tokenPx } from '../ui/_previewBarAssertions'
+import {
+    inkRect,
+    INK_GAP_TOLERANCE,
+    median,
+    probeBar,
+    SEAM_DESIGN_INK_GAP,
+    WITHIN_INK_GAP,
+} from '../ui/_previewBarAssertions'
 
 const meta = {
     title: 'Preview/PreviewBar',
@@ -83,16 +90,25 @@ function Harness(props: HarnessProps): JSX.Element {
 
 const barOf = (root: HTMLElement) => root.querySelector('[data-viewbar]') as HTMLElement
 
-/** The checks every shape shares: two spacings and nothing else (`--bar-icon-gap` inside a group,
- *  including the annotate group; `--bar-crumb-gap` between groups), one glyph size, one icon box,
- *  all inside the band on one centre line, and a visible filename. `annotatePairs` is the number
+/** The checks every shape shares: two spacings and nothing else, measured ink to ink (visible glyph
+ *  to visible glyph, never box to box) — neighbours inside a group (the annotate group too) all
+ *  within 1px of one another and of 16px, group seams all within 1px of one another and of 24px, and at
+ *  least 5px wider than any within-group gap — one glyph size, one icon box (every icon reserves
+ *  the same unpainted `[ ]` room, so the box is the same whether the control is a toggle or a plain
+ *  icon), all inside the band on one centre line, and a visible filename. `annotatePairs` is the number
  *  of adjacent-control pairs INSIDE the annotate group — 2 for highlight+draw+scratch (pdf), 0 for
  *  draw alone (image). */
 function expectCalm(bar: HTMLElement, groups: number, annotatePairs: number) {
     const p = probeBar(bar)
-    expect(p.strayGaps, `gaps ${JSON.stringify(p.gaps)}`).toEqual([])
-    expect(p.groupBoundaries, `group boundaries in ${JSON.stringify(p.gaps)}`).toBe(groups)
-    expect(p.annotateGaps, `annotate within-group gaps in ${JSON.stringify(p.gaps)}`).toBe(
+    expect(
+        p.strayGaps,
+        `ink gaps ${JSON.stringify(p.inkGaps)}: within ${JSON.stringify(p.withinGaps)}, seams ${JSON.stringify(p.seamGaps)}, seam margin ${p.seamMargin}`,
+    ).toEqual([])
+    const said = `ink gaps ${JSON.stringify(p.inkGaps)}: want within ${WITHIN_INK_GAP}, seams ${SEAM_DESIGN_INK_GAP}`
+    if (p.withinGaps.length) expect(median(p.withinGaps), said).toBeCloseTo(WITHIN_INK_GAP, 0)
+    if (p.seamGaps.length) expect(median(p.seamGaps), said).toBeCloseTo(SEAM_DESIGN_INK_GAP, 0)
+    expect(p.groupBoundaries, `group seams in ink gaps ${JSON.stringify(p.inkGaps)}`).toBe(groups)
+    expect(p.annotateGaps, `annotate within-group gaps in ink gaps ${JSON.stringify(p.inkGaps)}`).toBe(
         annotatePairs,
     )
     expect(p.glyphSizes, 'glyph sizes').toEqual(['12x12'])
@@ -217,21 +233,31 @@ export const PdfConverting: Story = {
         await waitFor(() => expect(convert.disabled).toBe(true))
         const said = canvas.getByTestId('preview-converting').innerText.replace(/\s+/g, ' ').trim()
         await expect(said).toBe('// converting to markdown cancel')
-        await expect(convert.title).toBe('Converting to markdown…')
-        // probeBar measures controls only, so the label's own spacing is checked here: the page
-        // readout sits one icon gap before it (the readouts region's own gap; the `//` is what
-        // separates them), the zoom group one crumb gap after it.
-        const crumbGap = tokenPx(bar, '--bar-crumb-gap')
-        const iconGap = tokenPx(bar, '--bar-icon-gap')
-        const label = canvas.getByTestId('preview-converting').getBoundingClientRect()
-        const readout = canvas.getByTestId('page-readout').getBoundingClientRect()
-        const zoomOut = canvas.getByLabelText('Zoom out').getBoundingClientRect()
-        const words = canvas.getByTestId('preview-converting').firstElementChild!.getBoundingClientRect()
-        const cancel = canvas.getByTestId('preview-convert-cancel').getBoundingClientRect()
-        await expect(label.left - readout.right, 'readout → label').toBeCloseTo(iconGap, 0)
-        await expect(cancel.left - words.right, 'words → cancel').toBeCloseTo(iconGap, 0)
-        await expect(zoomOut.left - label.right, 'label → zoom').toBeCloseTo(crumbGap, 0)
+        await expect(convert.getAttribute('data-tooltip')).toBe('Converting to markdown…')
+        // probeBar measures controls only, so the label's own spacing is checked here, ink to ink
+        // against the bar's own distances: the page readout → `// converting to markdown` and the
+        // words → `[ cancel ]` are neighbours inside a group, the label → zoom group a seam.
         const p = probeBar(bar)
+        const range = (el: Element) => {
+            const r = document.createRange()
+            r.selectNodeContents(el)
+            return r.getBoundingClientRect()
+        }
+        const label = canvas.getByTestId('preview-converting')
+        const readout = inkRect(canvas.getByTestId('page-readout').querySelector('button')!)
+        const words = range(label.firstElementChild!)
+        const cancel = inkRect(canvas.getByTestId('preview-convert-cancel'))
+        const zoomOut = inkRect(canvas.getByLabelText('Zoom out'))
+        const withinMid = median(p.withinGaps)
+        const seam = median(p.seamGaps)
+        const near = (g: number, want: number) => Math.abs(g - want) <= INK_GAP_TOLERANCE
+        const rg = Math.round((words.left - readout.right) * 10) / 10
+        const cg = Math.round((cancel.left - words.right) * 10) / 10
+        const zg = Math.round((zoomOut.left - cancel.right) * 10) / 10
+        const said2 = `ink gaps: readout → label ${rg}, words → cancel ${cg}, label → zoom ${zg}; bar within ${withinMid}, seam ${seam}`
+        await expect(near(rg, withinMid), said2).toBe(true)
+        await expect(near(cg, withinMid), said2).toBe(true)
+        await expect(near(zg, seam), said2).toBe(true)
         await expect(p.selectedCount, 'converting is not a toggle').toBe(0)
         await expect(p.frames).toBe(0)
         await expect(p.overlaps).toEqual([])
@@ -390,10 +416,11 @@ export const WithNativeActions: Story = {
         const p = expectCalm(bar, 5, 2)
         await expect(p.frames).toBe(0)
         const open = within(bar).getByLabelText('Open in default app')
-        const draw = within(bar).getByLabelText('Draw')
+        const zoomIn = within(bar).getByLabelText('Zoom in')
         await expect(open.textContent?.trim()).toBe('')
-        await expect(open.getAttribute('title')).toBe('Open in default app')
-        await expect(getComputedStyle(open).color).toBe(getComputedStyle(draw).color)
+        await expect(open.getAttribute('data-tooltip')).toBe('Open in default app')
+        // a plain icon (Button `normal`), same ink as the other plain icons: not louder than zoom
+        await expect(getComputedStyle(open).color).toBe(getComputedStyle(zoomIn).color)
     },
 }
 

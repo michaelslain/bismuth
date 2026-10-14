@@ -8,11 +8,12 @@
 //   config    [− 100% + fit]   [highlight draw scratch]   [dark]   pdf  ·  [− 100% + fit] [draw] on an image
 //   actions   [to markdown] [bookmarks]  [open-externally reveal]   pdf only · file actions Tauri
 //
-// GROUPS ARE SPACING, NOT DIVIDERS. Inside a group controls sit at `--bar-icon-gap` — the annotate
-// group (highlight/draw/scratch) included, so two adjacent ON toggles (e.g. DRAW + SCRATCH) read as
-// separate bracket buttons, never a fused frame; between groups — whether that boundary is ViewBar's
-// own region gap or two groups sharing a region — it is `--bar-crumb-gap`. Nothing else: no
-// hand-rolled margins (see PreviewBar.module.css).
+// GROUPS ARE SPACING, NOT DIVIDERS, and the bar has exactly two visible distances, ink to ink:
+// ~18px between neighbours inside a group, ~26px across a group seam. Every icon carries the same
+// unpainted bracket room (a plain icon reserves `[ ]` like an off toggle), so the distance never
+// depends on which kind of icon sits where; two adjacent ON toggles (e.g. DRAW + SCRATCH) keep 8px
+// bracket to bracket, never a fused frame. Text (readouts, `fit`) has no bracket room, so its gaps
+// are a step wider to land on the same distances (see PreviewBar.module.css, PdfZoom `wide`).
 //
 // ONE THING MEANS ONE THING. Only a toggle that is ON renders `variant="selected"` (HIGHLIGHT while
 // armed, DRAW, SCRATCH, DARK, BOOKMARKS) — accent brackets + accent glyph, no box (Button.module.css draws
@@ -89,6 +90,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
             parts={{
                 lead: styles.lead,
                 identity: styles.identity,
+                readouts: styles.readouts,
                 config: styles.config,
                 actions: styles.actions,
                 trail: styles.trail,
@@ -137,7 +139,9 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                     <Show when={props.kind() === 'image' && props.imageSize?.()}>
                         {size => (
                             <div class={styles.group} data-bar-drop="2">
-                                <Label tone="muted">{`${size().w} × ${size().h}`}</Label>
+                                <Label tone="muted" class={styles.readout}>
+                                    {`${size().w} × ${size().h}`}
+                                </Label>
                             </div>
                         )}
                     </Show>
@@ -146,11 +150,16 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
             config={
                 <Show when={inkable()}>
                     <PdfZoom
+                        wide
+                        class={styles.afterText}
                         zoom={() => props.zoom?.() ?? 1}
                         onZoomBy={f => props.onZoomBy?.(f)}
                         onFit={() => props.onFit?.()}
                     />
-                    <div class={styles.group} data-testid="preview-annotate">
+                    <div
+                        class={`${styles.tools} ${styles.afterText}`}
+                        data-testid="preview-annotate"
+                    >
                         <Show when={pdf()}>
                             <IconButton
                                 icon="Highlighter"
@@ -199,7 +208,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                     {/* How the page is shown, not what is done to it, so its own group after
                         the annotate tools. */}
                     <Show when={pdf()}>
-                        <div class={styles.group} data-bar-drop="4">
+                        <div class={styles.tools} data-bar-drop="4">
                             <IconButton
                                 icon="Moon"
                                 label="Dark mode"
@@ -221,7 +230,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             mirrored so it reads as the right-hand panel this control opens. `.mirror`
                             only flips the inner svg (PLACEMENT of the glyph, not the button's look —
                             no border/background/padding/size changes here). */}
-                        <div class={styles.group}>
+                        <div class={styles.tools}>
                             {/* A new note beside the PDF, `x.pdf` → `x.md`; the PDF is untouched.
                                 Minutes on a long file, so it stays disabled while it runs and the
                                 readout says so. Drops with the file actions at level 4: the file
@@ -257,7 +266,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                         the least used controls in the bar and must not be its loudest. */}
                     <Show when={props.nativeActions()}>
                         <div
-                            class={styles.group}
+                            class={styles.tools}
                             data-bar-drop="4"
                             data-testid="preview-file-actions"
                         >

@@ -59,6 +59,7 @@ import {
 } from './serverVersion'
 import { serverErrorText } from './serverError'
 import { debounce } from './debounce'
+import TooltipHost from './ui/TooltipHost'
 import { ToastHost, pushToast, dismissToast, updateToast } from './ui/ToastHost'
 import {
     applyUpdateAndRelaunch,
@@ -3759,6 +3760,7 @@ export default function App() {
                         />
                     </Show>
                     <ToastHost />
+                    <TooltipHost />
                     <GalleryHost />
                     <QuickAskHost
                         daemonEnabled={settings.daemon.enabled}

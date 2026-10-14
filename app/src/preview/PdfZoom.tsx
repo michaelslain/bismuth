@@ -17,17 +17,21 @@ export type PdfZoomProps = {
     zoom: () => number
     onZoomBy: (factor: number) => void
     onFit: () => void
+    /** The surrounding bar gives every icon unpainted bracket room (preview/PreviewBar): the
+     *  controls here then sit one step further apart, so `−` `100%` `+` `fit` keep the bar's
+     *  glyph-to-glyph distance. Off (the in-note embed, export) keeps --bar-icon-gap. */
+    wide?: boolean
     class?: string
 }
 
 function PdfZoom(props: PdfZoomProps) {
     return (
         <div
-            class={`${styles.group} ${props.class ?? ''}`}
+            class={`${styles.group} ${props.wide ? styles.wide : ''} ${props.class ?? ''}`}
             data-testid="pdf-zoom-cluster"
         >
             <div
-                class={styles.group}
+                class={`${styles.group} ${props.wide ? styles.wide : ''}`}
                 data-bar-drop="4"
                 data-testid="pdf-zoom-steps"
             >

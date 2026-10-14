@@ -1347,7 +1347,7 @@ function lassoBox(
 
 /** Turn the lasso tool on through the real toolbar, the way a user does. */
 function pickLasso(root: HTMLElement): void {
-    const btn = root.querySelector<HTMLElement>('[title="Lasso"]')
+    const btn = root.querySelector<HTMLElement>('[data-tooltip="Lasso"]')
     expect(btn).not.toBeNull()
     btn!.click()
 }
@@ -2024,7 +2024,7 @@ export const DrawingNeverDisplacesText: Story = {
 
 /** Turn a tool on through the real toolbar, the way a user does. */
 function pickTool(root: HTMLElement, title: string): void {
-    const btn = root.querySelector<HTMLElement>(`[title="${title}"]`)
+    const btn = root.querySelector<HTMLElement>(`[data-tooltip="${title}"]`)
     expect(btn).not.toBeNull()
     btn!.click()
 }

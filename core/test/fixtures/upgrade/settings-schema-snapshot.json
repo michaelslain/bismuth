@@ -533,6 +533,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.dur-tooltip": {
+    "type": {
+      "kind": "token",
+      "token": "dur-tooltip"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.ease": {
     "type": {
       "kind": "token",

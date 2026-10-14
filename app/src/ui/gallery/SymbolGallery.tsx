@@ -211,7 +211,7 @@ function SymbolGallery(props: Props) {
                             classList={{ [styles.current]: active() === i() }}
                             aria-label={item.label}
                             aria-selected={active() === i()}
-                            title={item.label}
+                            data-tooltip={item.label}
                             // Hover-to-select fires on real pointer MOVEMENT, not `mouseenter`.
                             // When you type, the grid re-renders and the top result becomes the
                             // default selection (the createEffect above). WebKit (the packaged app's

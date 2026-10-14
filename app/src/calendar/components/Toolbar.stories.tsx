@@ -114,7 +114,7 @@ export const Default: Story = {
         const addEvent = canvasElement.querySelector<HTMLButtonElement>(
             '[aria-label="New event"]',
         )!
-        expect(addEvent.title).toBe('New event')
+        expect(addEvent.getAttribute('data-tooltip')).toBe('New event')
         expect(addEvent.textContent?.trim()).toBe('')
     },
 }
@@ -428,10 +428,10 @@ export const TasksRegisterHasNoActionButton: Story = {
         return <InTasksBar ctx={{ isTasks: true }} />
     },
     play: async ({ canvasElement }) => {
-        expect(canvasElement.querySelector('[title="New task"]')).toBeNull()
-        expect(canvasElement.querySelector('[title="New event"]')).toBeNull()
-        const settings = canvasElement.querySelector('[title="Settings"]')
-        const code = canvasElement.querySelector('[title="Source"]')
+        expect(canvasElement.querySelector('[data-tooltip="New task"]')).toBeNull()
+        expect(canvasElement.querySelector('[data-tooltip="New event"]')).toBeNull()
+        const settings = canvasElement.querySelector('[data-tooltip="Settings"]')
+        const code = canvasElement.querySelector('[data-tooltip="Source"]')
         expect(settings).not.toBeNull()
         expect(code).not.toBeNull()
         expect(

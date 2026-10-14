@@ -14,7 +14,7 @@ function CloseButton(props: CloseButtonProps) {
     return (
         <TextButton
             aria-label={local.label}
-            title={local.title ?? local.label}
+            data-tooltip={local.title ?? local.label}
             {...rest}
         >
             x
