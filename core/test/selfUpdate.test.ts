@@ -2,9 +2,11 @@ import { test, expect } from 'bun:test'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+    cancelUpdate,
     getUpdateProgress,
     getUpdateStatus,
     runPipeline,
+    runProc,
     type GitRunner,
     type ProcRunner,
 } from '../src/selfUpdate'
@@ -403,4 +405,110 @@ test('a failed backup branch stops before the reset', async () => {
     expect(calls.some(c => c.startsWith('git reset'))).toBe(false)
     expect(getUpdateProgress().phase).toBe('error')
     expect(getUpdateProgress().message).toContain('git branch failed')
+})
+
+/** A build that runs until its signal aborts, then exits the way a killed process does. */
+const killableBuild =
+    (calls: string[]): ProcRunner =>
+    (cmd, opts) => {
+        calls.push(cmd.join(' '))
+        if (!cmd.includes('build')) return Promise.resolve({ code: 0, stdout: '', stderr: '' })
+        return new Promise(resolve =>
+            opts?.signal?.addEventListener('abort', () =>
+                resolve({ code: 143, stdout: '', stderr: 'killed' }),
+            ),
+        )
+    }
+
+test('a cancel mid-build kills the build and ends cancelled, not failed, with no relaunch', async () => {
+    const calls: string[] = []
+    const abort = new AbortController()
+    let relaunched = false
+    const run = runPipeline('/repo', '/Applications/Bismuth.app', {
+        git: async () => ({ code: 0, stdout: '', stderr: '' }),
+        proc: killableBuild(calls),
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {
+            relaunched = true
+        },
+        logPath: testLogPath('cancel-build'),
+        signal: abort.signal,
+    })
+    while (!calls.some(c => c.includes('build'))) await Bun.sleep(1)
+    abort.abort()
+    await run
+    expect(relaunched).toBe(false)
+    expect(getUpdateProgress()).toEqual({ phase: 'cancelled', message: 'update cancelled' })
+})
+
+test('a cancel during the pull lets the pull finish and never installs', async () => {
+    const abort = new AbortController()
+    const procCalls: string[][] = []
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git: async (_repo, args) => {
+            if (args[0] === 'pull') abort.abort()
+            return { code: 0, stdout: '', stderr: '' }
+        },
+        proc: async cmd => {
+            procCalls.push(cmd)
+            return { code: 0, stdout: '', stderr: '' }
+        },
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {},
+        logPath: testLogPath('cancel-pull'),
+        signal: abort.signal,
+    })
+    expect(procCalls).toEqual([])
+    expect(getUpdateProgress().phase).toBe('cancelled')
+})
+
+test('a cancel after a reset keeps naming the backup branch', async () => {
+    const abort = new AbortController()
+    const calls: string[] = []
+    const base = divergedGit(calls)
+    await runPipeline('/repo', '/Applications/Bismuth.app', {
+        git: async (repo, args, t) => {
+            const r = await base(repo, args, t)
+            if (args[0] === 'reset') abort.abort()
+            return r
+        },
+        proc: async () => ({ code: 0, stdout: '', stderr: '' }),
+        signingIdentity: async () => null,
+        spawnRelauncher: () => {},
+        logPath: testLogPath('cancel-reset'),
+        resetToUpstream: true,
+        now: () => new Date('2026-10-13T18:44:05Z'),
+        signal: abort.signal,
+    })
+    expect(getUpdateProgress()).toEqual({
+        phase: 'cancelled',
+        message: 'update cancelled',
+        backupBranch: 'backup/pre-update-20261013T184405Z',
+    })
+})
+
+test('cancelUpdate with nothing running returns the state unchanged', async () => {
+    const before = getUpdateProgress()
+    expect(await cancelUpdate()).toBe(before)
+})
+
+test('runProc kills the process when its signal aborts', async () => {
+    const abort = new AbortController()
+    const t0 = Date.now()
+    const run = runProc(['sleep', '30'], { signal: abort.signal })
+    setTimeout(() => abort.abort(), 50)
+    const r = await run
+    expect(r.code).not.toBe(0)
+    expect(Date.now() - t0).toBeLessThan(5000)
+})
+
+test('runProc kills the whole process group, so a child cannot outlive the cancel', async () => {
+    const abort = new AbortController()
+    const run = runProc(['bash', '-c', 'sleep 31.75; echo done'], { signal: abort.signal })
+    await Bun.sleep(200)
+    abort.abort()
+    const r = await run
+    expect(r.stdout).toBe('')
+    const left = Bun.spawnSync(['pgrep', '-f', 'sleep 31.75']).stdout.toString().trim()
+    expect(left).toBe('')
 })

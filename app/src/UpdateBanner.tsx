@@ -1,8 +1,8 @@
 // app/src/UpdateBanner.tsx
 // A slim top bar shown when the source-built app is behind origin/main (auto-detected by
-// updateCheck.ts). The Update button starts the background self-update (POST /update/apply),
-// polls progress (GET /update/progress), and when the build is ready invokes the Tauri
-// `quit_app` command so the detached relauncher can swap the .app bundle + reopen it.
+// updateCheck.ts), and for as long as an update runs. `update` starts the shared run (updateRun.ts),
+// the same one the commands, auto-update and the CLI drive, so the phase readout and the `cancel`
+// that replaces `update` mid-run match the progress toast whoever started it.
 //
 // It IS a ViewBar, not a callout: the message is the identity, the phase is a readout, update +
 // dismiss are the actions. That is what puts it on the toolbars' edges — same --h-band height, the
@@ -13,21 +13,17 @@
 // ViewBar's — below its floor tier the message scrolls under the fade mask and the actions stay
 // pinned, exactly as a toolbar's lead does.
 import { createSignal, Show } from 'solid-js'
-import {
-    updateStatus,
-    applyUpdateAndRelaunch,
-    showUpdateFailure,
-} from './updateCheck'
-import { pushToast } from './ui/ToastHost'
-import type { UpdatePhase } from '../../core/src/selfUpdate'
+import { updateStatus, updateRun, applyUpdateAndRelaunch, cancelUpdate } from './updateCheck'
+import type { UpdateRunView } from './updateRun'
 import { plural } from './plural'
 import ViewBar from './ui/ViewBar'
 import Text from './ui/Text'
 import { TextButton } from './ui/TextButton'
 import CloseButton from './ui/CloseButton'
 
-function phaseLabel(p: UpdatePhase | ''): string {
-    switch (p) {
+function phaseLabel(r: UpdateRunView): string {
+    if (r.cancelling) return 'Cancelling…'
+    switch (r.phase) {
         case 'pulling':
             return 'Pulling…'
         case 'building':
@@ -46,26 +42,13 @@ export type UpdateBannerProps = {
 
 export function UpdateBanner(props: UpdateBannerProps) {
     const [dismissed, setDismissed] = createSignal(false)
-    const [working, setWorking] = createSignal(false)
-    const [phase, setPhase] = createSignal<UpdatePhase | ''>('')
 
     const behind = () => updateStatus()?.behind ?? 0
-    const show = () => !!updateStatus()?.available && !dismissed()
-
-    const update = async () => {
-        if (working()) return
-        setWorking(true)
-        setPhase('pulling')
-        try {
-            const r = await applyUpdateAndRelaunch(setPhase)
-            if (r.result === 'relaunching') return // quitting; relauncher takes over
-            if (r.result === 'error') showUpdateFailure(r)
-            setWorking(false) // error or already up to date
-        } catch (e) {
-            pushToast(`Update failed: ${(e as Error).message}`)
-            setWorking(false)
-        }
-    }
+    // The run is shared (updateRun.ts): one started from the command, auto-update or the CLI shows
+    // here too, even after the banner was dismissed.
+    const run = updateRun
+    const show = () =>
+        !!run() || (!!updateStatus()?.available && !dismissed())
 
     return (
         <Show when={show()}>
@@ -73,32 +56,51 @@ export function UpdateBanner(props: UpdateBannerProps) {
                 class={props.class}
                 identity={
                     <Text as="span" size="ui" tone="muted">
-                        Bismuth update available — {plural(behind(), 'commit')}{' '}
-                        behind
+                        <Show
+                            when={updateStatus()?.available}
+                            fallback="Updating Bismuth"
+                        >
+                            Bismuth update available — {plural(behind(), 'commit')}{' '}
+                            behind
+                        </Show>
                     </Text>
                 }
                 readouts={
-                    <Show when={working()}>
-                        <Text as="span" size="micro" tone="muted">
-                            {phaseLabel(phase())}
-                        </Text>
+                    <Show when={run()}>
+                        {r => (
+                            <Text as="span" size="micro" tone="muted">
+                                {phaseLabel(r())}
+                            </Text>
+                        )}
                     </Show>
                 }
                 actions={
-                    <>
-                        <TextButton
-                            onClick={update}
-                            disabled={working()}
-                            primary
-                        >
-                            {working() ? 'updating…' : 'update'}
-                        </TextButton>
-                        <CloseButton
-                            label="Dismiss"
-                            onClick={() => setDismissed(true)}
-                            disabled={working()}
-                        />
-                    </>
+                    <Show
+                        when={run()}
+                        fallback={
+                            <>
+                                <TextButton
+                                    onClick={() => void applyUpdateAndRelaunch()}
+                                    primary
+                                >
+                                    update
+                                </TextButton>
+                                <CloseButton
+                                    label="Dismiss"
+                                    onClick={() => setDismissed(true)}
+                                />
+                            </>
+                        }
+                    >
+                        {r => (
+                            <TextButton
+                                onClick={() => void cancelUpdate()}
+                                disabled={r().cancelling || r().phase === 'ready'}
+                            >
+                                {r().cancelling ? 'cancelling…' : 'cancel'}
+                            </TextButton>
+                        )}
+                    </Show>
                 }
             />
         </Show>

@@ -80,6 +80,8 @@ export interface CommandHandlers {
     // Manually update the Bismuth app (same pipeline as the UpdateBanner button) — for when
     // the banner was dismissed or missed. No-op-with-toast when already up to date / in dev.
     updateApp: () => void | Promise<void>
+    // Cancel the running app update (the banner's and the progress toast's `cancel`).
+    cancelAppUpdate: () => void
     // Open the modal to view/remove the user's custom spellcheck dictionary words.
     openEditDictionary: () => void
     // Permanently remove completed/cancelled tasks — from the active note, or all notes.
@@ -183,6 +185,7 @@ export function bindCommands(
         'bismuth-install': h.openBismuthInstall,
         'free-agent-setup': h.openFreeAgentSetup,
         'update-app': h.updateApp,
+        'cancel-update': h.cancelAppUpdate,
         'edit-dictionary': h.openEditDictionary,
         'gcal-connect': h.gcalConnect,
         'gcal-sync': h.gcalSync,

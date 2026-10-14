@@ -787,6 +787,7 @@ export const api = {
     applyUpdate: (opts: { reset?: boolean } = {}) =>
         postJson<UpdateProgress>('/update/apply', opts.reset ? { reset: true } : {}),
     updateProgress: () => getJson<UpdateProgress>('/update/progress'),
+    cancelUpdate: () => postJson<UpdateProgress>('/update/cancel', {}),
     // One-click free agent: opencode download state + start (idempotent server-side).
     freeAgentStatus: () => getJson<FreeAgentStatus>('/agents/free'),
     freeAgentInstall: () => postJson<FreeAgentProgress>('/agents/free/install', {}),

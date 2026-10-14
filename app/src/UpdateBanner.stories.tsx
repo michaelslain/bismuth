@@ -14,6 +14,10 @@
 // The banner is a ViewBar so it shares the toolbars' edges; `AboveAToolbar` is the story that
 // proves it, stacking the banner over a real view header the way EditorPane stacks it over a
 // pane's bar. A banner rendered alone cannot show alignment.
+//
+// The run stories (Updating, Cancelling, Cancelled, StartedElsewhere) render the ToastHost beside
+// the banner: the run is shared (updateRun.ts), so the progress toast and the banner must agree on
+// the phase and both offer the same cancel.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import type { JSX } from 'solid-js'
@@ -27,6 +31,7 @@ import ViewBar, { Crumb } from './ui/ViewBar'
 import { IconButton } from './ui/IconButton'
 import { SegmentedToggle } from './ui/SegmentedToggle'
 import Text from './ui/Text'
+import { ToastHost } from './ui/ToastHost'
 
 function status(behind: number): UpdateStatus {
     return {
@@ -39,28 +44,51 @@ function status(behind: number): UpdateStatus {
     }
 }
 
-/** The shared fake plus the three update routes. Apply starts a build that never finishes, so
- *  the working state holds still for as long as the story is open. */
-function updateTransport(s: UpdateStatus): Transport {
+type Backend = {
+    /** The phase the backend is already in when the story opens (a run some other caller began). */
+    phase?: 'idle' | 'building'
+    /** How a cancel answers: at once with `cancelled`, or never (the run is still winding down). */
+    cancel?: 'stops' | 'hangs'
+}
+
+/** The shared fake plus the four update routes, as a tiny backend: apply starts a build that
+ *  never finishes on its own, so the working state holds still for as long as the story is open. */
+function updateTransport(s: UpdateStatus, b: Backend = {}): Transport {
     const base = fakeTransport()
+    let phase: string = b.phase ?? 'idle'
+    let cancelling = false
     return {
         ...base,
         getJson: async <T,>(path: string): Promise<T> => {
             if (path === '/update/status') return s as unknown as T
-            if (path === '/update/progress')
-                return { phase: 'building' } as unknown as T
+            if (path === '/update/progress') {
+                if (phase === 'pulling') phase = 'building'
+                return (
+                    cancelling ? { phase, cancelling } : { phase }
+                ) as unknown as T
+            }
             return base.getJson<T>(path)
         },
         postJson: async <T,>(path: string, body: unknown): Promise<T> => {
-            if (path === '/update/apply')
-                return { phase: 'pulling' } as unknown as T
+            if (path === '/update/apply') {
+                phase = 'pulling'
+                return { phase } as unknown as T
+            }
+            if (path === '/update/cancel') {
+                if (b.cancel === 'hangs') {
+                    cancelling = true
+                    return new Promise<T>(() => {})
+                }
+                phase = 'cancelled'
+                return { phase, message: 'update cancelled' } as unknown as T
+            }
             return base.postJson<T>(path, body)
         },
     }
 }
 
-function seed(behind: number) {
-    setTransport(updateTransport(status(behind)))
+function seed(behind: number, b?: Backend) {
+    setTransport(updateTransport(status(behind), b))
     recheckUpdate()
 }
 
@@ -163,25 +191,97 @@ export const AboveAToolbar: Story = {
     },
 }
 
-/** Mid-update: after `update` is pressed the phase readout appears on the right, the button
- *  reads `updating…`, and both controls are disabled. The fake build never finishes. */
-export const Updating: Story = {
-    render: () => {
-        seed(5)
-        return (
+/** A banner over its column, with the toast stack the shared run reports to. */
+function RunColumn() {
+    return (
+        <>
             <Column>
                 <UpdateBanner />
             </Column>
-        )
+            <ToastHost />
+        </>
+    )
+}
+
+/** Mid-update: after `update` is pressed the phase readout appears, `cancel` replaces `update`
+ *  and the dismiss [x], and the progress toast shows the same phase with its own `cancel`. The
+ *  fake build never finishes. */
+export const Updating: Story = {
+    render: () => {
+        seed(5)
+        return <RunColumn />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const button = await canvas.findByRole('button', { name: /update/ })
-        await userEvent.click(button)
-        await waitFor(() => expect(canvas.getByText(/updating…/)).toBeTruthy())
+        await userEvent.click(await canvas.findByRole('button', { name: 'update' }))
         await waitFor(() =>
-            expect(canvas.getByText(/Pulling…|Building…/)).toBeTruthy(),
+            expect(canvas.getAllByRole('button', { name: 'cancel' })).toHaveLength(2),
         )
+        await waitFor(() => expect(canvas.getByText('Building… (a few min)')).toBeTruthy(), {
+            timeout: 5000,
+        })
+        expect(canvas.getByText('Building update… (a few min)')).toBeTruthy()
+        expect(canvas.queryByRole('button', { name: 'Dismiss' })).toBeNull()
+    },
+}
+
+/** Cancel pressed while the backend is still stopping the run: the banner reads `cancelling…`
+ *  (disabled) and the toast reads `Cancelling update…` with no second cancel. */
+export const Cancelling: Story = {
+    render: () => {
+        seed(5, { cancel: 'hangs' })
+        return <RunColumn />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(await canvas.findByRole('button', { name: 'update' }))
+        const cancels = await canvas.findAllByRole('button', { name: 'cancel' })
+        await userEvent.click(cancels[0])
+        await waitFor(() =>
+            expect(
+                (canvas.getByRole('button', { name: 'cancelling…' }) as HTMLButtonElement)
+                    .disabled,
+            ).toBe(true),
+        )
+        expect(canvas.getByText('Cancelling update…')).toBeTruthy()
+        expect(canvas.getByText('Cancelling…')).toBeTruthy()
+        expect(canvas.queryByRole('button', { name: 'cancel' })).toBeNull()
+    },
+}
+
+/** Cancel from the toast: the run stops, the banner is back to `update` + dismiss, and the toast
+ *  says `Update cancelled`. */
+export const Cancelled: Story = {
+    render: () => {
+        seed(5)
+        return <RunColumn />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(await canvas.findByRole('button', { name: 'update' }))
+        const cancels = await canvas.findAllByRole('button', { name: 'cancel' })
+        await userEvent.click(cancels[cancels.length - 1])
+        await waitFor(() => expect(canvas.getByText('Update cancelled')).toBeTruthy(), {
+            timeout: 5000,
+        })
+        expect(canvas.getByRole('button', { name: 'update' })).toBeTruthy()
+        expect(canvas.getByRole('button', { name: 'Dismiss' })).toBeTruthy()
+    },
+}
+
+/** A run the window did not start (the CLI's `bismuth update apply`, or one that outlived a
+ *  reload): the status check adopts it, so the banner and the toast show it with no click. */
+export const StartedElsewhere: Story = {
+    render: () => {
+        seed(5, { phase: 'building' })
+        return <RunColumn />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() =>
+            expect(canvas.getAllByRole('button', { name: 'cancel' })).toHaveLength(2),
+        )
+        expect(canvas.getByText('Building update… (a few min)')).toBeTruthy()
     },
 }
 

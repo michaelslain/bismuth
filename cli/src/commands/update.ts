@@ -45,4 +45,19 @@ export const commands: CommandMap = {
                 args,
             ),
     },
+    'update cancel': {
+        summary:
+            'Cancel a running update (answers once it has stopped: phase `cancelled`, or `ready` if too late)',
+        usage: '[--api <url>] [--pretty]',
+        run: async args =>
+            out(
+                await call(
+                    resolveCore(args),
+                    'POST',
+                    '/update/cancel',
+                    undefined,
+                ),
+                args,
+            ),
+    },
 }

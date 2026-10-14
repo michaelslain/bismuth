@@ -2,20 +2,19 @@
 // updateCheck.ts (which polls at import time): the pipeline that re-runs the update is injected, so
 // a headless test can drive the whole flow.
 import type { UpdatePhase, UpdateProgress } from '../../core/src/selfUpdate'
-import { dismissToast, pushToast, updateToast } from './ui/toastStore'
+import { pushToast } from './ui/toastStore'
 
 export type UpdateOutcome = {
-    result: 'relaunching' | 'up-to-date' | 'error'
+    result: 'relaunching' | 'up-to-date' | 'error' | 'cancelled'
     message?: string
     /** The error stopped the update because the clone and origin/main diverged. */
     diverged?: boolean
 }
 
 export type UpdateFailureDeps = {
-    /** Re-run the update with `reset` (backup branch + reset to origin/main), reporting phases. */
-    reapply: (
-        onPhase: (p: UpdatePhase | '', progress?: UpdateProgress) => void,
-    ) => Promise<UpdateOutcome>
+    /** Re-run the update with `reset` (backup branch + reset to origin/main). It runs as the shared
+     *  update run (updateRun.ts), whose toast reports progress and whose outcome toasts close it. */
+    reapply: () => Promise<UpdateOutcome>
 }
 
 const ASK_TTL = 20_000
@@ -34,13 +33,15 @@ export function updatePhaseText(
           ? `Building update… (a few min)${kept}`
           : p === 'ready'
             ? 'Relaunching…'
-            : 'Updating…'
+            : p === 'cancelled'
+              ? 'Update cancelled'
+              : 'Updating…'
 }
 
 /**
  * `Update failed: <message>`. A diverged clone gets a `reset` action: it re-runs the
- * update with `reset`, which keeps the clone's own commits on a backup branch, and reports progress
- * in a toast of its own. Nothing resets without that click.
+ * update with `reset`, which keeps the clone's own commits on a backup branch; the shared run's
+ * toast reports its progress. Nothing resets without that click.
  */
 export function showUpdateFailureWith(
     r: UpdateOutcome,
@@ -56,23 +57,7 @@ export function showUpdateFailureWith(
         ttl: ASK_TTL,
         action: {
             label: 'reset',
-            onClick: () => void resetToUpstream(deps),
+            onClick: () => void deps.reapply(),
         },
     })
-}
-
-async function resetToUpstream(deps: UpdateFailureDeps): Promise<void> {
-    const id = pushToast('Resetting to upstream…', undefined, 0)
-    const r = await deps
-        .reapply((p, progress) => updateToast(id, updatePhaseText(p, progress)))
-        .catch(
-            (e): UpdateOutcome => ({
-                result: 'error',
-                message: (e as Error).message,
-            }),
-        )
-    if (r.result === 'relaunching') return
-    dismissToast(id)
-    if (r.result === 'error') showUpdateFailureWith(r, deps)
-    else pushToast('Bismuth is already up to date')
 }

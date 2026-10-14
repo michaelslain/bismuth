@@ -61,8 +61,9 @@ import { debounce } from './debounce'
 import { ToastHost, pushToast, dismissToast, updateToast } from './ui/ToastHost'
 import {
     applyUpdateAndRelaunch,
-    showUpdateFailure,
-    updatePhaseText,
+    cancelUpdate,
+    showUpdateToast,
+    updateRun,
 } from './updateCheck'
 import GalleryHost from './ui/gallery/GalleryHost'
 import { FolderPrompt } from './FolderPrompt'
@@ -1339,9 +1340,11 @@ export default function App() {
     const freeAgentSetupOpen = () => modal() === 'free-agent-setup'
     const openFreeAgentSetup = () => openModal('free-agent-setup')
     // Manual "Update Bismuth" command — for when the UpdateBanner was dismissed/missed. Checks
-    // fresh, then runs the same apply→build→relaunch pipeline as the banner, reporting progress
-    // in a persistent toast. Cleanly says "up to date" when there's nothing to pull (incl. dev).
+    // fresh, then starts the shared run (updateRun.ts) the banner uses, handing it this toast as
+    // its progress toast. Mid-run it only brings that toast back. Cleanly says "up to date" when
+    // there's nothing to pull (incl. dev).
     const updateApp = async () => {
+        if (updateRun()) return showUpdateToast()
         const id = pushToast('Checking for a Bismuth update…', undefined, 0)
         let status
         try {
@@ -1371,13 +1374,12 @@ export default function App() {
             id,
             `Updating Bismuth (${plural(status.behind, 'commit')} behind)…`,
         )
-        const r = await applyUpdateAndRelaunch((p, progress) =>
-            updateToast(id, updatePhaseText(p, progress)),
-        )
-        if (r.result === 'relaunching') return // quitting; the relauncher swaps + reopens
-        dismissToast(id)
-        if (r.result === 'error') showUpdateFailure(r)
-        else pushToast('Bismuth is already up to date')
+        void applyUpdateAndRelaunch({ toastId: id })
+    }
+    // "Cancel Bismuth update" — the same cancel as the banner's and the progress toast's.
+    const cancelAppUpdate = () => {
+        if (!updateRun()) pushToast('No Bismuth update is running')
+        else void cancelUpdate()
     }
     // Custom spellcheck dictionary editor — view/remove the user's added words.
     const editDictionaryOpen = () => modal() === 'edit-dictionary'
@@ -1644,6 +1646,7 @@ export default function App() {
                 openBismuthInstall,
                 openFreeAgentSetup,
                 updateApp,
+                cancelAppUpdate,
                 openEditDictionary,
                 archiveTasks,
                 archiveAllTasks,

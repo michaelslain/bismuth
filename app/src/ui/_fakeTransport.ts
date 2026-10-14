@@ -546,6 +546,8 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                         ?.frames ?? []
                 return { frames } as unknown as T
             }
+            if (pathname === '/update/progress')
+                return { phase: 'idle' } as unknown as T
             if (pathname === '/update/status') {
                 return (seed.updateStatus ?? {
                     current: '0.0.0',

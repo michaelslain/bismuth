@@ -156,6 +156,7 @@ These are the built-in commands, grouped by area. `COMMAND_CATALOG` in `core/src
 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | yes |
 | `free-agent-setup` | Set up free agent… | `Download` | yes |
 | `update-app` | Update Bismuth… | `RefreshCw` |  |
+| `cancel-update` | Cancel Bismuth update | `X` |  |
 
 ### Google Calendar
 
@@ -186,7 +187,7 @@ Notes on individual commands:
 - Pane commands run the same logic as the matching [keybindings](keybindings.md).
 - Layout commands. `move-sidebar-side`, `move-tab-rail-side` and `toggle-status-bar` flip the `layout` keys and write `.settings`; `toggle-sidebar` and `toggle-tab-rail` show or pin the panels. See [shell layout](layout.md).
   The panel edge lines run the same toggles: drag one to resize, click it to toggle.
-- `daemon-update` and `update-app`. They run the daemon and app updates by hand, for when the update banner was dismissed or missed.
+- `daemon-update` and `update-app`. They run the daemon and app updates by hand, for when the update banner was dismissed or missed. While an app update runs, `update-app` brings its progress toast back instead of starting another, and `cancel-update` cancels it like the banner's **cancel**.
 - `free-agent-setup`. It downloads opencode and defaults chats to a rotating free model, with no account. The intro's free-agent option runs the same setup.
 - `zoom-in`, `zoom-out`, `zoom-reset`. They zoom the whole window like a browser's page zoom. The level is a per-machine preference, not a `.settings` value.
 - Several commands share an icon. That is allowed; only ids are unique.

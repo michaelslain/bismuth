@@ -7,72 +7,46 @@
 import { createSignal } from 'solid-js'
 import { api } from './api'
 import { settings } from './settings'
-import { showUpdateFailureWith, type UpdateOutcome } from './updateFailure'
+import { showUpdateFailureWith } from './updateFailure'
 export { updatePhaseText } from './updateFailure'
-import type {
-    UpdateProgress,
-    UpdateStatus,
-    UpdatePhase,
-} from '../../core/src/selfUpdate'
+import { createUpdateRun, type StartOptions } from './updateRun'
+import type { UpdateStatus } from '../../core/src/selfUpdate'
 
 const [updateStatus, setUpdateStatus] = createSignal<UpdateStatus | null>(null)
 export { updateStatus }
 
+/** The one shared run (updateRun.ts) behind the banner, the update and cancel commands,
+ *  auto-update and the diverged-clone reset. */
+const shared = createUpdateRun({
+    apply: opts => api.applyUpdate(opts),
+    progress: () => api.updateProgress(),
+    cancel: () => api.cancelUpdate(),
+    quit: async () => {
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('quit_app') // the detached relauncher swaps the .app + reopens
+    },
+    recheck: () => recheckUpdate(),
+    showFailure: r =>
+        showUpdateFailureWith(r, {
+            reapply: () => shared.start({ reset: true }),
+        }),
+    wait: ms => new Promise(r => setTimeout(r, ms)),
+})
+
+/** The run in flight (phase, progress, cancelling), or null. The banner renders from it. */
+export const updateRun = shared.run
+
 /**
- * Apply the pending app update, poll progress to completion, and on `ready` invoke the Tauri
- * `quit_app` command so the detached relauncher swaps the .app bundle + reopens it. The single
- * shared pipeline behind the UpdateBanner button, the opt-in auto-update, and the manual
- * "Update Bismuth" command. `onPhase` reports progress for UI; resolves with the outcome
- * (`relaunching` = build done + quitting, `up-to-date` = nothing to do, `error`).
+ * Apply the pending update: pull, rebuild, and on `ready` quit so the relauncher swaps the bundle.
+ * Joins the run already in flight instead of starting a second. Progress, cancel and the outcome
+ * toasts are the shared run's; resolves with the outcome.
  */
-export async function applyUpdateAndRelaunch(
-    onPhase?: (p: UpdatePhase | '', progress?: UpdateProgress) => void,
-    opts: { reset?: boolean } = {},
-): Promise<UpdateOutcome> {
-    const started = await api.applyUpdate(opts)
-    if (started.phase === 'error')
-        return { result: 'error', message: started.message }
-    onPhase?.(started.phase, started)
-    return await new Promise(resolve => {
-        const poll = setInterval(async () => {
-            let p
-            try {
-                p = await api.updateProgress()
-            } catch {
-                return // transient; keep polling
-            }
-            onPhase?.(p.phase, p)
-            if (p.phase === 'ready') {
-                clearInterval(poll)
-                try {
-                    const { invoke } = await import('@tauri-apps/api/core')
-                    await invoke('quit_app') // detached relauncher swaps the .app + reopens
-                } catch {
-                    /* not in Tauri / already quit */
-                }
-                resolve({ result: 'relaunching' })
-            } else if (p.phase === 'error') {
-                clearInterval(poll)
-                resolve({
-                    result: 'error',
-                    message: p.message,
-                    ...(p.diverged ? { diverged: true } : {}),
-                })
-            } else if (p.phase === 'idle') {
-                clearInterval(poll)
-                recheckUpdate() // already up to date — refresh the banner signal
-                resolve({ result: 'up-to-date' })
-            }
-        }, 2000)
-    })
+export function applyUpdateAndRelaunch(opts: StartOptions = {}) {
+    return shared.start(opts)
 }
 
-/** The failure toast, wired to re-run this pipeline with `reset` from its action. */
-export function showUpdateFailure(r: UpdateOutcome): void {
-    showUpdateFailureWith(r, {
-        reapply: onPhase => applyUpdateAndRelaunch(onPhase, { reset: true }),
-    })
-}
+export const cancelUpdate = shared.cancel
+export const showUpdateToast = shared.showToast
 
 // Opt-in (settings.update.autoUpdate): when an update is available, apply it in the
 // background and relaunch when the rebuild is ready — no banner click. A no-op in dev
@@ -83,20 +57,26 @@ async function maybeAutoUpdate(): Promise<void> {
     if (!updateStatus()?.available) return
     if (!settings.update?.autoUpdate) return
     autoStarted = true
-    const r = await applyUpdateAndRelaunch()
-    // A diverged clone needs the owner's click, so ask once and stop retrying this session.
-    if (r.diverged) showUpdateFailure(r)
-    else if (r.result !== 'relaunching') autoStarted = false // let a later check retry
+    const r = await applyUpdateAndRelaunch({ quiet: true })
+    // A diverged clone needs the owner's click (its toast asks once), and a cancel is the owner
+    // saying no: neither retries this session. Anything else lets a later check retry.
+    if (r.result === 'error' && !r.diverged) autoStarted = false
+    else if (r.result === 'up-to-date') autoStarted = false
 }
 
 const PERIODIC_MS = 5 * 60 * 1000 // re-check every 5 min once the backend is reachable
 const BOOT_RETRY_MS = 4000 // retry the first check this often until the sidecar answers
 const BOOT_MAX_TRIES = 60 // ~4 min of boot retries before falling back to the periodic poll
 
-/** One status check. Returns false when the backend isn't reachable yet (don't surface). */
+/** One status check. Returns false when the backend isn't reachable yet (don't surface). Also
+ *  adopts a run this window did not start (the CLI's, or one that outlived a reload). */
 async function check(): Promise<boolean> {
     try {
         setUpdateStatus(await api.updateStatus())
+        if (!updateRun())
+            shared.adopt(
+                await api.updateProgress().catch(() => ({ phase: 'idle' as const })),
+            )
         void maybeAutoUpdate()
         return true
     } catch {

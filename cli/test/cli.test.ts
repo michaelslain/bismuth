@@ -2068,9 +2068,9 @@ test("`daemon cron create` SUCCEEDS under BISMUTH_AGENT_CHANNEL=daemon — the d
 // --- `update status` / `update apply` (commands/update.ts) — dispatch + route JSON passthrough --
 
 /** Spin up a throwaway HTTP server that records every request and answers GET /update/status /
- *  POST /update/apply with the given payloads. Caller must `stop()` it. */
+ *  POST /update/apply / POST /update/cancel with the given payloads. Caller must `stop()` it. */
 function mockUpdateServer(
-    replies: { status?: unknown; apply?: unknown } = {},
+    replies: { status?: unknown; apply?: unknown; cancel?: unknown } = {},
 ): {
     url: string
     calls: { method: string; path: string }[]
@@ -2087,6 +2087,14 @@ function mockUpdateServer(
                     JSON.stringify(
                         replies.status ?? { available: false, behind: 0 },
                     ),
+                    {
+                        headers: { 'content-type': 'application/json' },
+                    },
+                )
+            }
+            if (req.method === 'POST' && pathname === '/update/cancel') {
+                return new Response(
+                    JSON.stringify(replies.cancel ?? { phase: 'idle' }),
                     {
                         headers: { 'content-type': 'application/json' },
                     },
@@ -5267,5 +5275,30 @@ test('`bismuth app scroll` rejects a bad or doubled motion flag before reaching 
         expect(await new Response(proc.stderr).text()).not.toContain(
             'could not reach',
         )
+    }
+})
+
+test("`bismuth update cancel` POSTs /update/cancel and prints the route's JSON", async () => {
+    const mockSrv = mockUpdateServer({
+        cancel: { phase: 'cancelled', message: 'update cancelled' },
+    })
+    try {
+        const proc = Bun.spawn(
+            ['bun', 'run', 'cli/src/index.ts', 'update', 'cancel', '--api', mockSrv.url],
+            { stdout: 'pipe', stderr: 'pipe' },
+        )
+        const [outText, , code] = await Promise.all([
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+            proc.exited,
+        ])
+        expect(code).toBe(0)
+        expect(mockSrv.calls).toEqual([{ method: 'POST', path: '/update/cancel' }])
+        expect(JSON.parse(outText)).toEqual({
+            phase: 'cancelled',
+            message: 'update cancelled',
+        })
+    } finally {
+        mockSrv.stop()
     }
 })

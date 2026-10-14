@@ -120,6 +120,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
         interactive: true,
     },
     { id: 'update-app', label: 'Update Bismuth…', icon: 'RefreshCw' },
+    { id: 'cancel-update', label: 'Cancel Bismuth update', icon: 'X' },
     {
         id: 'gcal-connect',
         label: 'Connect Google Calendar…',

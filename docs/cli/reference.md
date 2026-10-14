@@ -44,7 +44,7 @@ These commands call a running core server (the app, or `bismuth serve`) and fail
 | `chat list`, `chat read`, `chat search` | Read chat history through owner-only routes. |
 | `gcal status`, `gcal connect`, `gcal sync`, `gcal disconnect` | The OAuth and sync lifecycle lives in the server. `gcal targets` and `gcal health` are headless. |
 | `relay list` | The relay registry is in-memory in the server process. |
-| `update status`, `update apply` | Self-update runs in the server. |
+| `update status`, `update apply`, `update cancel` | Self-update runs in the server. |
 
 The server address resolves in this order:
 
@@ -660,6 +660,7 @@ Checks for and applies a git-based self-update. It applies only to a source buil
 |---|---|---|---|
 | `update status` | `[--api <url>]` | Reports whether this build is behind `origin/main`. | yes |
 | `update apply` | `[--api <url>]` | Pulls, rebuilds and relaunches in the background, then returns immediately. Poll `update status` for progress. | yes |
+| `update cancel` | `[--api <url>]` | Cancels a running update and prints the progress once it has stopped: phase `cancelled`, or `ready` when it was too late. | yes |
 
 An agent is refused `update` in a restricted vault. The flow is described in [self-update](../overview/self-update.md).
 

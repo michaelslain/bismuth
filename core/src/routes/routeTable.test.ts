@@ -119,6 +119,7 @@ const EXPECTED = [
     'POST /tmp-file',
     'POST /ui/command',
     'POST /update/apply',
+    'POST /update/cancel',
     'PUT /file',
 ]
 

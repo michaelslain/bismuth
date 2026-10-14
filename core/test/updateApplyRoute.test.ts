@@ -53,3 +53,18 @@ test('reset to upstream is owner-only; a plain apply is not gated', async () => 
         server.stop(true)
     }
 })
+
+test('cancel with nothing running answers with the current phase', async () => {
+    const server = createServer({ vault: makeVault({ 'a.md': '# a\n' }), port: 0 })
+    try {
+        const r = await fetch(`http://localhost:${server.port}/update/cancel`, {
+            method: 'POST',
+        })
+        expect(r.status).toBe(200)
+        const body = await r.json()
+        expect(body.phase).not.toBe('cancelled')
+        expect(body.cancelling).toBeUndefined()
+    } finally {
+        server.stop(true)
+    }
+})

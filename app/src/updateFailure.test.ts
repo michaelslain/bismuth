@@ -34,17 +34,11 @@ describe('showUpdateFailureWith', () => {
         ])
         expect(reapplied).toBe(false)
     })
-    test('a diverged clone asks first; the action re-runs with reset and reports the backup branch', async () => {
-        const phases: string[] = []
+    test('a diverged clone asks first; the action re-runs the update (with reset)', () => {
         let calls = 0
         showUpdateFailureWith(DIVERGED, {
-            reapply: async onPhase => {
+            reapply: async () => {
                 calls++
-                onPhase('building', {
-                    phase: 'building',
-                    backupBranch: 'backup/pre-update-20261013T184405Z',
-                })
-                phases.push(toasts().at(-1)!.message)
                 return { result: 'relaunching' }
             },
         })
@@ -53,22 +47,7 @@ describe('showUpdateFailureWith', () => {
         expect(ask.message).toBe(`Update failed: ${DIVERGED.message}`)
         expect(ask.action?.label).toBe('reset')
         ask.action!.onClick()
-        await new Promise(r => setTimeout(r, 0))
         expect(calls).toBe(1)
-        expect(phases).toEqual([
-            'Building update… (a few min) (old commits on backup/pre-update-20261013T184405Z)',
-        ])
-    })
-    test('a reset that fails again shows the failure in place of the progress toast', async () => {
-        showUpdateFailureWith(DIVERGED, {
-            reapply: async () => ({ result: 'error', message: 'git reset failed' }),
-        })
-        toasts()[0].action!.onClick()
-        await new Promise(r => setTimeout(r, 0))
-        expect(toasts().map(t => t.message)).toEqual([
-            `Update failed: ${DIVERGED.message}`,
-            'Update failed: git reset failed',
-        ])
     })
 })
 
@@ -76,5 +55,14 @@ test('updatePhaseText names each phase', () => {
     expect(updatePhaseText('pulling')).toBe('Pulling update…')
     expect(updatePhaseText('building')).toBe('Building update… (a few min)')
     expect(updatePhaseText('ready')).toBe('Relaunching…')
+    expect(updatePhaseText('cancelled')).toBe('Update cancelled')
+    expect(
+        updatePhaseText('building', {
+            phase: 'building',
+            backupBranch: 'backup/pre-update-20261013T184405Z',
+        }),
+    ).toBe(
+        'Building update… (a few min) (old commits on backup/pre-update-20261013T184405Z)',
+    )
     expect(updatePhaseText('')).toBe('Updating…')
 })

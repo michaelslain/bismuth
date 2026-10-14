@@ -1,7 +1,12 @@
 import { formatEvent } from '../sse'
 import { getBismuthStatus, ensureBismuthInstalled } from '../bismuthInstall'
 import { doctorApply, doctorDryRun, doctorFixOptions } from '../doctor/routes'
-import { getUpdateStatus, startUpdate, getUpdateProgress } from '../selfUpdate'
+import {
+    getUpdateStatus,
+    startUpdate,
+    getUpdateProgress,
+    cancelUpdate,
+} from '../selfUpdate'
 import { submitFeedback } from '../feedback'
 import { ok, error, type Handler, type RouteContext } from './context'
 
@@ -112,6 +117,12 @@ export default function systemRoutes(
 
         'GET /update/progress': async (_, __) => {
             return ok(getUpdateProgress())
+        },
+
+        // Stops a run in flight and answers once it has stopped (`cancelled`, or `ready` when the
+        // relauncher already ran). Open like apply: a cancel only ever leaves the app as it is.
+        'POST /update/cancel': async (_, __) => {
+            return ok(await cancelUpdate())
         },
 
         // Feedback to Bismuth's developer (core/src/feedback.ts): validated here, forwarded to the

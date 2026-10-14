@@ -14,7 +14,22 @@ The app checks for updates at launch and every 5 minutes after that. To update:
 2. Wait while the button shows **Pulling…**, then **Building… (a few min)**. The build takes several minutes, and the app stays usable until it finishes.
 3. The app quits when the build is ready, and a helper relaunches the new copy. Your tabs and vault are unchanged.
 
-Dismiss the banner with the **x** button; it comes back on the next launch. The palette command answers with a toast: it says `Bismuth is up to date` when nothing is pending, and reports why when it cannot check (see the next section).
+Dismiss the banner with the **x** button; it comes back on the next launch. The palette command answers with a toast: it says `Bismuth is up to date` when nothing is pending, and reports why when it cannot check (see the section on a missing banner).
+
+The banner, the progress toast and the palette show one update, whichever of them started it. A running update shows in the banner even after you dismissed it, and in a progress toast at the bottom of the window. Closing that toast with its **x** hides it until you run **Update Bismuth…** again, which brings it back instead of starting a second update. An update started from the CLI (`bismuth update apply`) appears in both within one status check.
+
+## Cancel an update
+
+Click **cancel** in the banner or in the progress toast, or run **Cancel Bismuth update** from the command palette. Both controls then read **cancelling…** until the update stops, and a toast says `Update cancelled`; the banner goes back to **update**.
+
+```text
+Bismuth update available — 3 commits behind          Building… (a few min)  [ cancel ]
+Building update… (a few min)  [ cancel ]  [x]
+```
+
+A cancel stops the dependency install or the build at once. A `git pull` or reset in progress is allowed to finish first, because a pull cut off halfway leaves the clone with uncommitted changes and every later update refuses a dirty clone. The installed app is untouched. The clone may already hold the pulled commits, so the next update skips straight to the build.
+
+An update that has reached **Relaunching…** has already swapped in its helper and cannot be cancelled. Cancelling an automatic update stops automatic updating for the rest of the session. From the CLI, `bismuth update cancel` does the same and prints the final progress.
 
 An update needs the same tools as the original build: `git`, `bun` and Rust. Keep the clone you built from on disk, because the app updates by pulling that clone. Local commits that `origin/main` also has, or that sit on top of it, update normally; a clone whose history has split from `origin/main` needs the reset in the next section.
 
@@ -31,7 +46,7 @@ update:
 |---|---|---|---|
 | `update.autoUpdate` | boolean | `false` | Apply an available update at launch and relaunch when the rebuild is ready |
 
-Automatic updating runs at most once per session. If an attempt ends in an error, a later check tries again, except for a diverged clone, which waits for your click on the reset toast. A relaunch still quits your app, so leave this off if you want to choose when that happens.
+Automatic updating runs at most once per session. An automatic update shows the same banner progress and cancellable toast as a clicked one, but an ordinary failure leaves no toast. If an attempt ends in an error, a later check tries again, except for a diverged clone, which waits for your click on the reset toast, and a cancelled update, which waits for the next launch. A relaunch still quits your app, so leave this off if you want to choose when that happens.
 
 ## Update a clone that has diverged from origin/main
 
@@ -90,14 +105,16 @@ build time   build-bismuth-tools.ts writes build-origin.json { repoRoot, sha, bu
 run time     updateCheck.ts ──poll──> GET /update/status        (selfUpdate.ts)
                 │                        └─ git fetch, then builtSha..origin/main
                 ▼
-             UpdateBanner.tsx  ── click ──> POST /update/apply  (returns at once)
+             updateRun.ts  <── banner, palette, auto-update, reset, adopt
+                │  ── start ──> POST /update/apply  (returns at once)
                                               diverged? stop, or with {reset: true}:
                                                 git branch backup/pre-update-<t> + git reset --hard origin/main
                                               else git pull --ff-only
                                               bun install --frozen-lockfile
                                               bun run tauri build --bundles app
                                               spawn the detached relauncher
-                poll GET /update/progress: pulling, building, ready
+                poll GET /update/progress: pulling, building, ready, cancelled
+                on cancel: POST /update/cancel ──> kill install/build, stop before the next step
                 on ready: invoke the Tauri command quit_app
                                               ▼
              relauncher waits for the app pid, swaps the .app with ditto, reopens it
@@ -135,7 +152,13 @@ The steps are: read the origin (`reason: "not-a-source-build"` without it), prob
 2. `bun install --frozen-lockfile` in the clone (300 seconds). A plain `bun install` could rewrite the committed `bun.lock` and leave the clone dirty, which would block the next update.
 3. `bun run tauri build --bundles app` in `app/` (900 seconds). `--bundles app` skips the dmg, because only the `.app` is swapped and dmg packaging is the flakiest step. If a signing identity exists (see [install](install.md#macos-folder-permissions-surviving-updates)) it is passed as `APPLE_SIGNING_IDENTITY`.
 
-`bun` is found with `Bun.which` over `buildPath()`: `claudeLookupPath()` from `core/src/claudeWhich.ts` plus `~/.cargo/bin`. A Finder-launched sidecar inherits only the minimal launchd `PATH`, so git, bun and cargo would not resolve otherwise. `GET /update/progress` returns the in-memory `{ phase, message?, log?, diverged?, backupBranch? }`, where `phase` is `idle`, `pulling`, `building`, `ready` or `error` and `log` is the last 2000 characters of the failing step. Every command, with its full output and exit code, goes to `bismuth-update-build.log`, truncated at the start of each run.
+`bun` is found with `Bun.which` over `buildPath()`: `claudeLookupPath()` from `core/src/claudeWhich.ts` plus `~/.cargo/bin`. A Finder-launched sidecar inherits only the minimal launchd `PATH`, so git, bun and cargo would not resolve otherwise. `GET /update/progress` returns the in-memory `{ phase, message?, log?, diverged?, backupBranch?, cancelling? }`, where `phase` is `idle`, `pulling`, `building`, `ready`, `error` or `cancelled` and `log` is the last 2000 characters of the failing step. Every command, with its full output and exit code, goes to `bismuth-update-build.log`, truncated at the start of each run.
+
+### Cancel
+
+`startUpdate()` records the run in flight as an `AbortController` plus the promise that settles when it stops. `cancelUpdate()` aborts it, marks the state `cancelling: true` with the message `cancelling…`, waits for that promise and returns the final state; with no run, or once the phase is `ready`, it returns the state unchanged. `POST /update/cancel` calls it and answers only after the run has stopped.
+
+The pipeline passes the signal to `runProc()`, which kills the running `bun install` or `tauri build` on abort. Each step runs in its own process group and the whole group is killed, on a cancel or a time limit, because `bun run tauri build` runs the real build as a child that would otherwise keep running and hold the output pipes open. The git runner gets no signal, so a pull, branch or reset runs to completion. After every step the pipeline checks the signal before it reads the exit code, because a killed process exits non-zero and that exit is the cancel, not a failure. A stopped run ends in `{ phase: 'cancelled', message: 'update cancelled' }`, keeping `backupBranch` when a reset already ran, and the build log ends with a `cancelled` entry. A cancel during `startUpdate()`'s own status check ends the same way without starting the pipeline.
 
 ### Relauncher
 
@@ -143,7 +166,13 @@ The steps are: read the origin (`reason: "not-a-source-build"` without it), prob
 
 ### Frontend
 
-`app/src/updateCheck.ts` holds the status signal. It retries the first check every 4 seconds for up to 60 tries while the sidecar is still starting, then re-checks every 5 minutes. `applyUpdateAndRelaunch()` is the shared pipeline behind the banner button, the palette command and automatic updating: it posts `/update/apply`, polls `/update/progress` every 2 seconds, and on `ready` imports `@tauri-apps/api/core` and invokes `quit_app`. Outside Tauri that call fails silently. On `idle` it re-checks the status; on `error` it returns the message and whether the clone diverged. `showUpdateFailureWith()` in `app/src/updateFailure.ts` turns a failure into the red toast, and for a diverged clone adds the **reset** action, which re-runs the pipeline with `{reset: true}` and reports phases through `updatePhaseText()`. `maybeAutoUpdate()` runs after each successful check when `settings.update.autoUpdate` is true and an update is available, guarded by a once-per-session flag that resets after an error or an idle result; a diverged clone instead shows the reset toast and keeps the flag set. `app/src/UpdateBanner.tsx` renders the bar and the phase labels.
+`app/src/updateCheck.ts` holds the status signal. It retries the first check every 4 seconds for up to 60 tries while the sidecar is still starting, then re-checks every 5 minutes. Each successful check with no run in flight also reads `/update/progress` and adopts a run that is `pulling` or `building`, which is how a CLI-started run or one that outlived a webview reload reaches the window.
+
+`createUpdateRun()` in `app/src/updateRun.ts` is the one run every surface shares; `updateCheck.ts` wires the real instance and exports `updateRun` (the signal), `applyUpdateAndRelaunch()`, `cancelUpdate()` and `showUpdateToast()`. A start while a run is in flight joins it and returns the same promise. The run posts `/update/apply`, polls `/update/progress` every 2 seconds, and on `ready` imports `@tauri-apps/api/core` and invokes `quit_app`; outside Tauri that call fails silently. It owns one persistent progress toast, worded by `updatePhaseText()`, that carries a **cancel** action while the phase is `pulling` or `building`. A caller's own toast passed as `toastId` (the palette's `Checking for a Bismuth update…`) becomes that progress toast. A toast the person closed stays closed until `showToast()`.
+
+The run ends in one outcome and shows its toast once: `Update cancelled`, `Bismuth is already up to date`, or the failure from `showUpdateFailureWith()` in `app/src/updateFailure.ts`. A `quiet` start (automatic updating) skips the up-to-date toast and every failure toast except a diverged clone's, and a loud start joining it makes it loud. The diverged failure's **reset** action starts the shared run with `{reset: true}`.
+
+`maybeAutoUpdate()` runs after each successful check when `settings.update.autoUpdate` is true and an update is available, guarded by a once-per-session flag that resets after an ordinary error or an up-to-date result; a diverged clone or a cancel keeps the flag set. `app/src/UpdateBanner.tsx` renders from `updateRun`: it stays visible while a run is in flight, shows the phase readout, and swaps **update** and its dismiss for **cancel**. The palette commands `update-app` and `cancel-update` call the same functions.
 
 ### Tauri shell
 
@@ -153,4 +182,4 @@ When the bundled app spawns its sidecar, `app/src-tauri/src/lib.rs` sets three v
 
 On every boot the sidecar calls `installDaemonFromBundle()` in `core/src/daemonInstall.ts` without awaiting it. With no `BISMUTH_DAEMON_BUNDLE` it does nothing. Otherwise it compares the bundled binary's `size:mtime` with the marker `~/.bismuth/.daemon-installed`; on a match it only re-ensures the service, and on a mismatch it copies the binary to `~/.bismuth/bin/bismuth-daemon` through a temp file and an atomic rename (a direct copy fails with `ETXTBSY` while the old service runs) and rewrites the marker. `runSetup()` runs `<bin> --ensure-installed`, which registers launchd `com.bismuth.daemon` or systemd `bismuth-daemon`. It never throws, so a failed daemon install cannot block the app. `POST /daemon/update` calls the same `runSetup()`.
 
-Source: `core/src/selfUpdate.ts`, `core/src/claudeWhich.ts`, `core/src/daemonInstall.ts`, `core/src/server.ts`, `core/src/doctor/routes.ts`, `core/src/schema/settingsSchema.ts`, `app/src/updateCheck.ts`, `app/src/updateFailure.ts`, `app/src/UpdateBanner.tsx`, `app/src/App.tsx`, `app/src/api.ts`, `app/src-tauri/src/lib.rs`, `app/scripts/build-bismuth-tools.ts`
+Source: `core/src/selfUpdate.ts`, `core/src/claudeWhich.ts`, `core/src/daemonInstall.ts`, `core/src/server.ts`, `core/src/doctor/routes.ts`, `core/src/schema/settingsSchema.ts`, `app/src/updateCheck.ts`, `app/src/updateRun.ts`, `app/src/updateFailure.ts`, `app/src/UpdateBanner.tsx`, `core/src/routes/system.ts`, `cli/src/commands/update.ts`, `app/src/App.tsx`, `app/src/api.ts`, `app/src-tauri/src/lib.rs`, `app/scripts/build-bismuth-tools.ts`

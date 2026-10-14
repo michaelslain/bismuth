@@ -565,7 +565,8 @@ These routes act on the machine rather than the vault. They never invalidate vau
 | `POST /feedback` | `{kind, title, body, contact?, meta?}` | `{id}` | owner only; sends the feedback to the hosted relay |
 | `GET /update/status` | none | `{available, behind, localSha, remoteSha, builtSha, dirty, reason?}` | open; none |
 | `POST /update/apply` | `{reset?: true}` | The initial `UpdateProgress`. | open; starts a rebuild. `reset` is owner only |
-| `GET /update/progress` | none | `{phase, message?, log?, diverged?, backupBranch?}` | open; none |
+| `GET /update/progress` | none | `{phase, message?, log?, diverged?, backupBranch?, cancelling?}` | open; none |
+| `POST /update/cancel` | none | The `UpdateProgress` once the run has stopped. | open; stops a running update |
 
 `POST /bismuth/install` runs the idempotent, version-gated install of the CLI and MCP server from `BISMUTH_INSTALL_SRC`.
 `action` is `up-to-date`, `installed`, `updated`, `would-install`, `would-update` or `skipped-no-src`; the last means the source is unset, as in a dev run.
@@ -577,9 +578,10 @@ See [install](../overview/install.md).
 
 `GET /update/status` fetches `origin/main` and compares it with `HEAD`.
 It reports `available: false` with a `reason` when this is not a source build (`not-a-source-build`), `not-a-git-repo`, `access-denied`, `repo-missing`, `git-not-found` or `no-upstream`.
-`POST /update/apply` starts `git pull` and a rebuild in the background and returns at once; poll `GET /update/progress`, whose `phase` is `idle`, `pulling`, `building`, `ready` or `error`.
+`POST /update/apply` starts `git pull` and a rebuild in the background and returns at once; poll `GET /update/progress`, whose `phase` is `idle`, `pulling`, `building`, `ready`, `error` or `cancelled`.
 It answers with an error phase for a non-source build or a dirty working tree, and `idle` when already up to date.
 When the clone and `origin/main` have diverged, the run ends in an error phase carrying `diverged: {ahead, behind}`; `POST /update/apply` with `{reset: true}` then saves the clone's HEAD on a `backup/pre-update-<stamp>` branch, resets to `origin/main` and rebuilds, and `backupBranch` names that branch in later progress. `reset` from any caller but the owner is `403`.
+`POST /update/cancel` kills a running install or build, lets a git step finish, and answers once the run has stopped, with phase `cancelled`; `progress` reports `cancelling: true` meanwhile. With nothing running, or once the phase is `ready`, it answers with the current state unchanged.
 See [self-update](../overview/self-update.md).
 
 ## Server state and change events

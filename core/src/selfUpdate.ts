@@ -7,6 +7,9 @@
 //     developer who commits+pushes from the build-source clone still sees the update, and
 //   - on request, `git pull --ff-only` + `bun run tauri build`, then hand off to a detached
 //     script that waits for the app to quit, swaps the .app bundle, and relaunches.
+//   - on request, cancel a run in flight: the running install/build process is killed, a git step
+//     is let finish (a fast-forward killed mid-checkout would leave the clone dirty, which blocks
+//     every later update), and the pipeline stops before its next step in the `cancelled` phase.
 //   - when the clone and origin/main have DIVERGED (an upstream history rewrite, or local commits
 //     upstream never got), stop with `diverged` set instead of a bare pull failure; the owner's
 //     "reset to upstream" re-runs the pipeline with resetToUpstream, which saves HEAD on a
@@ -33,7 +36,13 @@ export interface UpdateStatus {
     reason?: string
 }
 
-export type UpdatePhase = 'idle' | 'pulling' | 'building' | 'ready' | 'error'
+export type UpdatePhase =
+    | 'idle'
+    | 'pulling'
+    | 'building'
+    | 'ready'
+    | 'error'
+    | 'cancelled'
 export interface UpdateProgress {
     phase: UpdatePhase
     message?: string
@@ -43,6 +52,8 @@ export interface UpdateProgress {
     diverged?: { ahead: number; behind: number }
     /** The branch that holds the clone's old HEAD after a reset to upstream. */
     backupBranch?: string
+    /** A cancel was asked for and the run is winding down (a git step is let finish). */
+    cancelling?: boolean
 }
 
 export interface UpdateOptions {
@@ -83,12 +94,13 @@ async function findSigningIdentity(): Promise<string | null> {
     return line?.match(/"([^"]+)"/)?.[1] ?? null
 }
 
-async function runProc(
+export async function runProc(
     cmd: string[],
     opts: {
         cwd?: string
         timeoutMs?: number
         env?: Record<string, string>
+        signal?: AbortSignal
     } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
     try {
@@ -98,10 +110,22 @@ async function runProc(
             stdin: 'ignore',
             stdout: 'pipe',
             stderr: 'pipe',
+            // Its own process group, killed whole: `bun run tauri build` runs the real build as a
+            // child, and killing only the parent leaves that child running and holding the output
+            // pipes open, so the run would never settle.
+            detached: true,
         })
-        const timer = opts.timeoutMs
-            ? setTimeout(() => proc.kill(), opts.timeoutMs)
-            : undefined
+        const kill = () => {
+            try {
+                process.kill(-proc.pid, 'SIGTERM')
+            } catch {
+                proc.kill() // the group is already gone; make sure the leader is too
+            }
+        }
+        const timer = opts.timeoutMs ? setTimeout(kill, opts.timeoutMs) : undefined
+        const onAbort = kill
+        if (opts.signal?.aborted) onAbort()
+        else opts.signal?.addEventListener('abort', onAbort, { once: true })
         try {
             const [stdout, stderr, code] = await Promise.all([
                 new Response(proc.stdout).text(),
@@ -111,6 +135,7 @@ async function runProc(
             return { code, stdout, stderr }
         } finally {
             if (timer) clearTimeout(timer)
+            opts.signal?.removeEventListener('abort', onAbort)
         }
     } catch (e) {
         return {
@@ -135,7 +160,12 @@ const realGit: GitRunner = (repoRoot, args, timeoutMs = 15_000) =>
  *  order and failure handling is unit-testable without spawning real processes. */
 export type ProcRunner = (
     cmd: string[],
-    opts?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> },
+    opts?: {
+        cwd?: string
+        timeoutMs?: number
+        env?: Record<string, string>
+        signal?: AbortSignal
+    },
 ) => Promise<{ code: number; stdout: string; stderr: string }>
 
 function tail(s: string, n = 2000): string {
@@ -275,6 +305,11 @@ export function getUpdateProgress(): UpdateProgress {
     return state
 }
 
+/** The run in flight: its abort switch, and the promise that settles once it has stopped. */
+let active: { abort: AbortController; settled: Promise<unknown> } | null = null
+
+const CANCELLED = 'update cancelled'
+
 /**
  * Kick off an update (idempotent while running). Validates first (must be available, clean,
  * a real source build), sets phase=pulling, and fires the pipeline WITHOUT awaiting so the
@@ -297,12 +332,22 @@ export async function startUpdate(
         }
         return state
     }
-    const status = await getUpdateStatus()
+    const abort = new AbortController()
+    const checking = getUpdateStatus()
+    active = { abort, settled: checking }
+    const status = await checking
+    if (abort.signal.aborted) {
+        active = null
+        state = { phase: 'cancelled', message: CANCELLED }
+        return state
+    }
     if (!status.available) {
+        active = null
         state = { phase: 'idle', message: 'already up to date' }
         return state
     }
     if (status.dirty) {
+        active = null
         state = {
             phase: 'error',
             message:
@@ -311,7 +356,30 @@ export async function startUpdate(
         return state
     }
     state = { phase: 'pulling', message: 'pulling latest…' }
-    void runPipeline(origin.repoRoot, appPath, opts)
+    const run = runPipeline(origin.repoRoot, appPath, {
+        ...opts,
+        signal: abort.signal,
+    })
+    active = { abort, settled: run }
+    void run.finally(() => {
+        if (active?.abort === abort) active = null
+    })
+    return state
+}
+
+/**
+ * Cancel the run in flight and resolve once it has stopped, with the final state: `cancelled`, or
+ * whatever the run had already reached — a run past `ready` has spawned its relauncher and cannot
+ * be called back, and with nothing running this returns the current state unchanged. Never throws.
+ */
+export async function cancelUpdate(): Promise<UpdateProgress> {
+    const run = active
+    if (!run || state.phase === 'ready') return state
+    if (!run.abort.signal.aborted) {
+        run.abort.abort()
+        state = { ...state, message: 'cancelling…', cancelling: true }
+    }
+    await run.settled.catch(() => {})
     return state
 }
 
@@ -324,6 +392,8 @@ interface PipelineDeps {
     spawnRelauncher?: (repoRoot: string, appPath: string) => void
     logPath?: string
     now?: () => Date
+    /** Aborted by cancelUpdate: kills the running install/build and stops before the next step. */
+    signal?: AbortSignal
 }
 
 /** `git rev-list --count <range>`, or null when git cannot answer. */
@@ -348,9 +418,23 @@ export async function runPipeline(
     const getSigningIdentity = deps.signingIdentity ?? findSigningIdentity
     const relaunch = deps.spawnRelauncher ?? spawnRelauncher
     const logPath = deps.logPath ?? join(tmpdir(), 'bismuth-update-build.log')
+    const signal = deps.signal
     resetUpdateLog(logPath)
     let backupBranch: string | undefined
+    // Checked after every step, BEFORE its exit code is read: a killed process exits non-zero,
+    // and that is the cancel, not a failure.
+    const stopped = (): boolean => {
+        if (!signal?.aborted) return false
+        appendUpdateLog(logPath, 'cancelled', { code: 0, stdout: '', stderr: '' })
+        state = {
+            phase: 'cancelled',
+            message: CANCELLED,
+            ...(backupBranch ? { backupBranch } : {}),
+        }
+        return true
+    }
     try {
+        if (stopped()) return
         // A fast-forward is impossible when both sides have commits the other lacks. Measured
         // against the fetched origin/main (startUpdate's status check fetched it); a count git
         // cannot answer falls through to the pull, which then reports its own failure.
@@ -376,6 +460,7 @@ export async function runPipeline(
                 ['branch', backupBranch, 'HEAD'],
                 ['reset', '--hard', 'origin/main'],
             ]) {
+                if (args[0] === 'reset' && stopped()) return
                 const r = await git(repoRoot, args, 60_000)
                 appendUpdateLog(logPath, `git ${args.join(' ')}`, r)
                 if (r.code !== 0) {
@@ -392,6 +477,7 @@ export async function runPipeline(
             const pullArgs = ['pull', '--ff-only', 'origin', 'main']
             const pull = await git(repoRoot, pullArgs, 120_000)
             appendUpdateLog(logPath, `git ${pullArgs.join(' ')}`, pull)
+            if (stopped()) return
             if (pull.code !== 0) {
                 state = {
                     phase: 'error',
@@ -402,6 +488,7 @@ export async function runPipeline(
             }
         }
         const kept = backupBranch ? { backupBranch } : {}
+        if (stopped()) return
 
         state = { phase: 'building', message: 'installing dependencies…', ...kept }
         // Resolve bun from PATH: in the COMPILED sidecar process.execPath is the sidecar
@@ -414,8 +501,10 @@ export async function runPipeline(
         const install = await proc([bun, ...installArgs], {
             cwd: repoRoot,
             timeoutMs: 300_000,
+            signal,
         })
         appendUpdateLog(logPath, `${bun} ${installArgs.join(' ')}`, install)
+        if (stopped()) return
         if (install.code !== 0) {
             state = {
                 phase: 'error',
@@ -443,15 +532,18 @@ export async function runPipeline(
         // docs/overview/install.md), pass it to Tauri (APPLE_SIGNING_IDENTITY) so the identity
         // stays stable across rebuilds and grants survive. Opt-in: no cert → same as before.
         const signingIdentity = await getSigningIdentity()
+        if (stopped()) return
         const buildArgs = ['run', 'tauri', 'build', '--bundles', 'app']
         const build = await proc([bun, ...buildArgs], {
             cwd: join(repoRoot, 'app'),
             timeoutMs: 900_000,
+            signal,
             ...(signingIdentity
                 ? { env: { APPLE_SIGNING_IDENTITY: signingIdentity } }
                 : {}),
         })
         appendUpdateLog(logPath, `${bun} ${buildArgs.join(' ')}`, build)
+        if (stopped()) return
         if (build.code !== 0) {
             state = {
                 phase: 'error',
@@ -464,6 +556,7 @@ export async function runPipeline(
         relaunch(repoRoot, appPath)
         state = { phase: 'ready', message: 'update ready — relaunching…', ...kept }
     } catch (e) {
+        if (stopped()) return
         state = {
             phase: 'error',
             message: e instanceof Error ? e.message : String(e),
