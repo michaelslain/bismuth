@@ -28,3 +28,13 @@
     border: var(--rule-soft);
     border-radius: var(--r-0);
 }
+
+/* `language` tokens (CodeBlock's tagHighlighter): the editor's code palette from
+   editor/codeHighlight.ts, so a highlighted block reads like the same text in a note. */
+.tok-key { color: var(--accent); }
+.tok-string { color: var(--green); }
+.tok-number { color: var(--gold); }
+.tok-comment { color: var(--text-muted); font-style: italic; }
+.tok-keyword { color: var(--accent-purple); }
+.tok-heading { font-weight: var(--fw-bold); }
+.tok-punct { color: var(--text-muted); }

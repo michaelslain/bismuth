@@ -1,12 +1,15 @@
 /* app/src/intro/VaultIntro.tsx — first-run "open your vault" intro.
    A full-window takeover shown only on first launch (gated in index.tsx): a short slideshow
-   (welcome -> theme -> three brains -> daemon -> agents -> pick an agent -> power-ups -> begin).
+   (welcome -> theme -> three brains -> daemon -> agents -> pick an agent -> power-ups -> name your
+   daemon -> obsidian -> chat -> settings -> begin). The slides after power-ups that describe a
+   power-up show only while it is selected (`requires` in the table; visibleSlides), so the pager
+   and the footer count run over the visible list.
 
    This file is state plus composition and nothing else. What each slide says and shows is the
    table in ./introSlides; the pager arithmetic, key mapping, theme painting and the CTA's
    effects are the pure modules ./introPager, ./introKeys, ./introTheme and ./introEnterVault;
    everything it draws is a component (IntroWindow, IntroFooter, IntroGraph, IntroHero, IntroCopy,
-   ThemePicker, PowerUpList). Nothing here asks which slide is showing — a
+   ThemePicker, PowerUpList, DaemonNameField, SettingsSamples). Nothing here asks which slide is showing — a
    slide's table row says which pieces it wants.
 
    The graph slide draws a real 3D knowledge graph inside its art box (dummy unlabeled nodes, the
@@ -35,12 +38,16 @@ import {
 import { DEFAULTS } from '../settings'
 import { DEFAULT_THEME, type ThemeName } from '../themes'
 import { isTauri } from '../platform'
+import { pickFolder } from '../appWindow'
 import IntroCopy from './IntroCopy'
 import IntroGraph, { type IntroGraphStage } from './IntroGraph'
 import IntroFooter from './IntroFooter'
 import IntroHero from './IntroHero'
 import IntroWindow from './IntroWindow'
 import PowerUpList from './PowerUpList'
+import DaemonNameField from './DaemonNameField'
+import ObsidianSourceField, { type VaultStart } from './ObsidianSourceField'
+import SettingsSamples from './SettingsSamples'
 import {
     binariesFor,
     defaultIntroAgent,
@@ -50,6 +57,7 @@ import {
 import { AUTO_ORDER } from '../../../core/src/agentBackends/catalog'
 import ThemePicker from './ThemePicker'
 import {
+    convertSourceMissing,
     enterVault,
     type EnterVaultChoice,
     type EnterVaultResult,
@@ -59,9 +67,9 @@ import { step, startIndex, type PagerMove } from './introPager'
 import {
     DEFAULT_POWERUPS,
     POWER_UPS,
-    SLIDES,
     slideBody,
     togglePowerUp,
+    visibleSlides,
     type SlideKey,
 } from './introSlides'
 import { applyIntroTheme, snapshotRootTheme } from './introTheme'
@@ -76,10 +84,21 @@ export type VaultIntroProps = {
     initialTheme?: ThemeName
     /** Seam for the CTA. Default: introEnterVault.enterVault with the real Tauri/env deps. A
      *  story passes a never-resolving promise to hold the busy state. */
-    onEnter?: (choice: EnterVaultChoice) => Promise<EnterVaultResult>
+    onEnter?: (
+        choice: EnterVaultChoice,
+        onError: (message: string) => void,
+    ) => Promise<EnterVaultResult>
     /** Backend ids already installed on this machine. Given, it replaces detection (stories);
      *  absent, the intro asks the Tauri shell on mount and falls back to none. */
     detectedAgents?: string[]
+    /** Seeds the selected power-ups (real first run: DEFAULT_POWERUPS). Lets a story show the
+     *  slides a cleared power-up hides. */
+    initialPowerups?: string[]
+    /** Seeds the Obsidian vault to convert. Lets a story show the picked state and the CTA. */
+    initialObsidianSource?: string
+    /** Seeds the new vault / from obsidian choice (default: `from obsidian` when a source is
+     *  seeded, else `new vault`). Lets a story show `from obsidian` with nothing picked. */
+    initialVaultStart?: VaultStart
 }
 
 /** Ask the Tauri shell which agent CLIs are installed (the intro has no backend to ask). Outside
@@ -98,7 +117,10 @@ const detectInstalledAgents = async (): Promise<string[]> => {
 }
 
 /** The CTA with the real effects: the Tauri command, localStorage, and a hard navigation. */
-const enterWithRealDeps = (choice: EnterVaultChoice) => {
+const enterWithRealDeps = (
+    choice: EnterVaultChoice,
+    onError: (message: string) => void,
+) => {
     let storage: Storage | undefined
     try {
         storage = localStorage
@@ -117,16 +139,45 @@ const enterWithRealDeps = (choice: EnterVaultChoice) => {
             location.href = href
         },
         log: console,
+        onError,
     })
 }
 
 const VaultIntro: Component<VaultIntroProps> = props => {
-    const [index, setIndex] = createSignal(startIndex(SLIDES, props.startAt))
+    const [powerups, setPowerups] = createSignal(
+        props.initialPowerups ?? DEFAULT_POWERUPS,
+    )
+    const slides = createMemo(() => visibleSlides(powerups()))
+    const [index, setIndex] = createSignal(
+        startIndex(slides(), props.startAt),
+    )
+    const [daemonName, setDaemonName] = createSignal('')
+    const [obsidianSource, setObsidianSource] = createSignal(
+        props.initialObsidianSource ?? '',
+    )
+    // `new vault` unless the user picks `from obsidian` (a story seeding a source starts there).
+    const [vaultStart, setVaultStart] = createSignal<VaultStart>(
+        props.initialVaultStart ??
+            (props.initialObsidianSource ? 'obsidian' : 'new'),
+    )
+    // The source a conversion would use: only when `from obsidian` is picked AND cli + mcp is on
+    // (the obsidian slide shows only then), so the CTA offers a conversion only then too.
+    const convertSource = () =>
+        powerups().includes('cli') && vaultStart() === 'obsidian'
+            ? obsidianSource()
+            : ''
+    const converting = () => !!convertSource().trim()
+    // `from obsidian` with nothing picked: the CTA waits for a vault rather than opening the folder
+    // picker, which would read as a second, different pick.
+    const sourceMissing = () =>
+        convertSourceMissing(powerups(), vaultStart(), obsidianSource())
     const [theme, setTheme] = createSignal<ThemeName>(
         props.initialTheme ?? DEFAULT_THEME,
     )
     const [busy, setBusy] = createSignal(false)
-    const [powerups, setPowerups] = createSignal(DEFAULT_POWERUPS)
+    // Why the last enter failed (Rust refusing a typed Obsidian path), shown as the last slide's
+    // body until the next attempt.
+    const [enterError, setEnterError] = createSignal('')
     const [detected, setDetected] = createSignal<string[]>(
         props.detectedAgents ?? [],
     )
@@ -136,7 +187,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     // installed agent once detection returns).
     const agent = () => picked() ?? defaultIntroAgent(agentOptions())
     const noneFound = () => detected().length === 0
-    const slide = () => SLIDES[index()]
+    const slide = () => slides()[index()]
     /** Where the intro graph stands on this slide, or nothing: at full strength over the art on the
      *  palette slide (so a theme pick shows on it) and the three-brains slide. */
     const graphStage = (): IntroGraphStage | undefined =>
@@ -150,16 +201,22 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     createEffect(() => applyIntroTheme(theme()))
 
     const enter = async () => {
-        if (busy()) return
+        if (busy() || sourceMissing()) return
         setBusy(true)
+        setEnterError('')
         let result: EnterVaultResult = 'failed'
         try {
-            result = await (props.onEnter ?? enterWithRealDeps)({
-                theme: theme(),
-                icon: DEFAULTS.appearance.icon,
-                powerups: powerups(),
-                agent: agent(),
-            })
+            result = await (props.onEnter ?? enterWithRealDeps)(
+                {
+                    theme: theme(),
+                    icon: DEFAULTS.appearance.icon,
+                    powerups: powerups(),
+                    agent: agent(),
+                    daemonName: daemonName(),
+                    obsidianSource: convertSource(),
+                },
+                setEnterError,
+            )
         } finally {
             // 'opened' leaves the intro busy: the app is relaunching (or navigating) away.
             if (result !== 'opened') setBusy(false)
@@ -167,7 +224,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     }
 
     const move = (m: PagerMove, target?: number) => {
-        const next = step(index(), SLIDES.length, m, target)
+        const next = step(index(), slides().length, m, target)
         setIndex(next.index)
         if (next.enter) void enter()
     }
@@ -228,6 +285,30 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                         onToggle={setPicked}
                                     />
                                 </Show>
+                                <Show when={s.extra === 'name'}>
+                                    <DaemonNameField
+                                        value={daemonName()}
+                                        onInput={setDaemonName}
+                                        onSubmit={() => move('next')}
+                                    />
+                                </Show>
+                                <Show when={s.extra === 'obsidian'}>
+                                    <ObsidianSourceField
+                                        start={vaultStart()}
+                                        onStartChange={setVaultStart}
+                                        value={obsidianSource()}
+                                        onInput={setObsidianSource}
+                                        onBrowse={() =>
+                                            void pickFolder().then(r => {
+                                                if (r.status === 'picked')
+                                                    setObsidianSource(r.path)
+                                            })
+                                        }
+                                    />
+                                </Show>
+                                <Show when={s.extra === 'samples'}>
+                                    <SettingsSamples />
+                                </Show>
                                 <Show when={s.extra === 'powerups'}>
                                     <PowerUpList
                                         items={POWER_UPS}
@@ -248,7 +329,15 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                         {s => (
                             <IntroCopy
                                 title={s.title}
-                                body={slideBody(s, noneFound())}
+                                body={
+                                    s.extra !== 'cta'
+                                        ? slideBody(s, noneFound())
+                                        : sourceMissing()
+                                          ? 'Pick the Obsidian vault to convert on the obsidian slide, or switch it to new vault.'
+                                          : enterError()
+                                            ? `Couldn't open the vault: ${enterError()}`
+                                            : slideBody(s, noneFound())
+                                }
                             />
                         )}
                     </Show>
@@ -256,9 +345,11 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 footer={
                     <IntroFooter
                         index={index()}
-                        count={SLIDES.length}
+                        count={slides().length}
                         label={slide().label}
                         busy={busy()}
+                        convert={converting() || sourceMissing()}
+                        blocked={sourceMissing()}
                         onPrev={() => move('prev')}
                         onNext={() => move('next')}
                     />

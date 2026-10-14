@@ -260,8 +260,34 @@ fn detect_agents(binaries: Vec<String>) -> Vec<String> {
 // OR an existing vault (its own settings.yaml is left untouched — see seed_vault_settings).
 // Returns Ok(false) if the user cancels the picker. On success the app restarts.
 #[tauri::command]
-async fn choose_first_vault(app: tauri::AppHandle, theme: String, icon: String) -> Result<bool, String> {
+async fn choose_first_vault(
+    app: tauri::AppHandle,
+    theme: String,
+    icon: String,
+    handoff: Option<String>,
+    convert_from: Option<String>,
+) -> Result<bool, String> {
     use tauri_plugin_dialog::DialogExt;
+    // The intro's choices for the first launch after this one (localStorage key → value). Written
+    // to disk here, before the relaunch, because localStorage reaches disk lazily and a relaunch
+    // milliseconds after the write can lose it; `take_first_run` hands it back.
+    let mut entries: serde_json::Map<String, serde_json::Value> = handoff
+        .and_then(|h| serde_json::from_str(&h).ok())
+        .unwrap_or_default();
+    // An Obsidian vault to convert: open `<source>-bismuth` with no picker, and leave the resolved
+    // source and target for the post-relaunch chat that converts one into the other.
+    if let Some(from) = convert_from.filter(|p| !p.trim().is_empty()) {
+        let source = resolve_convert_source(&from)?;
+        let target = format!("{source}-bismuth");
+        let target_path = std::path::Path::new(&target);
+        if target_path.exists() && !target_path.is_dir() {
+            return Err(format!("{target} exists and is not a folder"));
+        }
+        let job = serde_json::json!({ "source": source, "target": target }).to_string();
+        entries.insert(FIRST_RUN_CONVERT_KEY.to_string(), serde_json::Value::String(job));
+        write_first_run(&app, &entries);
+        return Ok(open_first_vault(&app, target, &theme, &icon));
+    }
     // Use a channel so we can await the async pick_folder callback without blocking the main thread
     // (blocking_pick_folder can be suppressed on macOS when called from a non-main thread).
     let (tx, rx) = std::sync::mpsc::channel();
@@ -275,20 +301,88 @@ async fn choose_first_vault(app: tauri::AppHandle, theme: String, icon: String) 
     let Some(path) = picked else {
         return Ok(false);
     };
-    let vault = path.to_string_lossy().to_string();
+    write_first_run(&app, &entries);
+    Ok(open_first_vault(&app, path.to_string_lossy().to_string(), &theme, &icon))
+}
+
+/// The localStorage key the app reads an Obsidian conversion from (app/src/storageKeys.ts
+/// FIRST_RUN_CONVERT_KEY); the value is `{source, target}` JSON.
+const FIRST_RUN_CONVERT_KEY: &str = "bismuth-first-run-convert-obsidian";
+
+fn first_run_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    Some(app.path().app_config_dir().ok()?.join("first-run.json"))
+}
+
+fn write_first_run(app: &tauri::AppHandle, entries: &serde_json::Map<String, serde_json::Value>) {
+    let Some(path) = first_run_path(app) else { return };
+    if entries.is_empty() {
+        let _ = std::fs::remove_file(path);
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(text) = serde_json::to_string(entries) {
+        let _ = std::fs::write(path, text);
+    }
+}
+
+// The intro's hand-off (see choose_first_vault), returned once and deleted: the first app launch
+// after the intro copies it into localStorage before running its first-run steps.
+#[tauri::command]
+fn take_first_run(app: tauri::AppHandle) -> Option<String> {
+    let path = first_run_path(&app)?;
+    let text = std::fs::read_to_string(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+    Some(text)
+}
+
+/// The Obsidian vault to convert, as an absolute path to an existing folder: a leading `~`
+/// expanded, trailing slashes dropped. Anything else is refused with a message the intro shows.
+fn resolve_convert_source(typed: &str) -> Result<String, String> {
+    let expanded = expand_home(typed.trim());
+    let source = expanded.trim_end_matches('/');
+    if source.is_empty() || !std::path::Path::new(source).is_absolute() {
+        return Err(format!("{typed} is not a full path to a folder"));
+    }
+    if !std::path::Path::new(source).is_dir() {
+        return Err(format!("no folder at {source}"));
+    }
+    Ok(source.to_string())
+}
+
+/// A typed path's leading `~` (alone or as `~/…`) → $HOME, so a hand-typed conversion target never
+/// creates a literal `~` folder.
+fn expand_home(path: &str) -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    if home.is_empty() {
+        return path.to_string();
+    }
+    if path == "~" {
+        return home;
+    }
+    match path.strip_prefix("~/") {
+        Some(rest) => format!("{home}/{rest}"),
+        None => path.to_string(),
+    }
+}
+
+/// Create (if needed) and seed `vault`, save it as the vault to open, mark the intro seen and
+/// relaunch into it. Shared by the picker and the given-path forms of `choose_first_vault`.
+fn open_first_vault(app: &tauri::AppHandle, vault: String, theme: &str, icon: &str) -> bool {
     let _ = std::fs::create_dir_all(&vault);
     let memory = vault_memory_dir(&vault);
     let _ = std::fs::create_dir_all(&memory);
-    seed_vault_settings(&vault, &theme, &icon);
-    write_config(&app, &AppConfig { vault, memory });
-    mark_intro_seen(&app); // global flag: don't replay the intro on future launches
+    seed_vault_settings(&vault, theme, icon);
+    write_config(app, &AppConfig { vault, memory });
+    mark_intro_seen(app); // global flag: don't replay the intro on future launches
     // In dev (tauri dev), app.restart() tears down the beforeDevCommand backend → white screen,
     // and the vault comes from BISMUTH_VAULT env anyway. So skip the restart in debug builds; the
     // frontend navigates into the app instead. Release does the real relaunch into the new vault.
     if !cfg!(debug_assertions) {
         app.restart();
     }
-    Ok(true)
+    true
 }
 
 // Persist `vault` as the last-opened vault in config.json, so the next cold launch reopens
@@ -847,7 +941,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, detect_agents, finish_intro, reset_first_run, set_last_vault, set_ui_zoom, read_drag_pasteboard, print_pdf::print_pdf])
+        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, take_first_run, detect_agents, finish_intro, reset_first_run, set_last_vault, set_ui_zoom, read_drag_pasteboard, print_pdf::print_pdf])
         .setup(|app| {
             // One-time: carry an existing user's saved vault config across the bundle-id
             // rename. Must run before any config read below (the config dir is id-keyed).

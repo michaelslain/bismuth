@@ -764,6 +764,10 @@ export const api = {
     daemonStatus: () =>
         getJson<DaemonStatus & { name: string }>('/daemon/status'),
     daemonDevices: () => getJson<DeviceList>('/daemon/devices'),
+    // Rename this vault's daemon (`name:` in .daemon/identity.md; the route creates the file when
+    // the daemon has not seeded it yet). Resolves the stored, trimmed name.
+    setDaemonName: (name: string) =>
+        postJson<{ name: string }>('/daemon/name', { name }),
     setDaemonOwner: (deviceId: string) =>
         postJson<Owner>('/daemon/owner', { deviceId }),
     // Daemon install probe (read-only) + the idempotent, adopt-only setup action

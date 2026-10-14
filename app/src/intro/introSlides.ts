@@ -10,9 +10,20 @@ export type SlideKey =
     | 'agents'
     | 'pickagent'
     | 'powerups'
+    | 'name'
+    | 'obsidian'
+    | 'chat'
+    | 'settings'
     | 'begin'
 export type SlideHero = 'wordmark' | 'daemon' | 'agents'
-export type SlideExtra = 'themes' | 'pickagent' | 'powerups' | 'cta'
+export type SlideExtra =
+    | 'themes'
+    | 'pickagent'
+    | 'powerups'
+    | 'name'
+    | 'obsidian'
+    | 'samples'
+    | 'cta'
 
 export type Slide = {
     key: SlideKey
@@ -26,6 +37,9 @@ export type Slide = {
     /** Art drawn in the art box (the graph slide is identified by its key). */
     hero?: SlideHero
     extra?: SlideExtra
+    /** A power-up id (POWER_UPS): the slide shows only while that power-up is selected, since it
+     *  describes something the power-up sets up. Absent: always shown. */
+    requires?: string
 }
 
 export const SLIDES: Slide[] = [
@@ -80,6 +94,37 @@ export const SLIDES: Slide[] = [
         extra: 'powerups',
     },
     {
+        key: 'name',
+        label: 'name',
+        title: 'Name your daemon',
+        body: 'It answers to this name in chat. Rename it anytime in .daemon/identity.md.',
+        extra: 'name',
+        requires: 'daemon',
+    },
+    {
+        key: 'obsidian',
+        label: 'obsidian',
+        title: 'Coming from Obsidian?',
+        body: 'Pick your Obsidian vault and Bismuth opens a converted copy beside it. Chat does the conversion through the Bismuth MCP and never touches the original.',
+        extra: 'obsidian',
+        requires: 'cli',
+    },
+    {
+        key: 'chat',
+        label: 'chat',
+        title: 'Ask chat anything',
+        body: 'Chat searches the Bismuth docs through the MCP, so ask it how anything works, or have it do the thing for you.',
+        hero: 'agents',
+        requires: 'cli',
+    },
+    {
+        key: 'settings',
+        label: 'settings',
+        title: 'Settings are a file',
+        body: "There is no settings screen: .settings opens in the editor like any note. A note's own properties live in its frontmatter, the YAML block at its top.",
+        extra: 'samples',
+    },
+    {
         key: 'begin',
         label: 'open vault',
         title: 'Open your vault',
@@ -116,6 +161,31 @@ export const POWER_UPS: PowerUp[] = [
         desc: 'Operate Bismuth from your terminal and chat.',
     },
 ]
+
+/** Where a converted Obsidian vault goes: a sibling folder named `<source>-bismuth`, the target
+ *  the conversion guide writes to. Trailing slashes are dropped; blank → ''. */
+export function convertedVaultPath(source: string): string {
+    const src = source.trim().replace(/[\\/]+$/, '')
+    return src ? `${src}-bismuth` : ''
+}
+
+/** The daemon's name until the user types one; the same default the daemon seeds. */
+export const DEFAULT_DAEMON_NAME = 'daemon'
+
+/** The typed name, trimmed to one line; blank → DEFAULT_DAEMON_NAME. */
+export function daemonName(typed: string): string {
+    const name = typed.replace(/\s+/g, ' ').trim()
+    return name || DEFAULT_DAEMON_NAME
+}
+
+/** The slides shown for this power-up selection, in table order: a slide whose `requires` names
+ *  an unselected power-up is left out of paging and the footer count. */
+export function visibleSlides(
+    selected: readonly string[],
+    slides: readonly Slide[] = SLIDES,
+): Slide[] {
+    return slides.filter(s => !s.requires || selected.includes(s.requires))
+}
 
 /** All on by default. Re-running their setup is idempotent, so it is safe to leave them checked
  *  even when already installed (CLI+MCP re-syncs on boot, daemon auto-updates on launch). */

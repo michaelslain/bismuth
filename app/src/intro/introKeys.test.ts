@@ -31,4 +31,14 @@ describe('introKeyAction', () => {
     })
     it('Escape with a modifier is not the dismiss key', () =>
         expect(key('Escape', { metaKey: true })).toBeNull())
+    it('a key typed into a text field is never a pager move', () => {
+        const win = new GlobalWindow()
+        for (const tag of ['input', 'textarea']) {
+            const field = win.document.createElement(tag)
+            win.document.body.appendChild(field)
+            const e = new KE('keydown', { key: 'ArrowLeft' })
+            Object.defineProperty(e, 'target', { value: field })
+            expect(introKeyAction(e)).toBeNull()
+        }
+    })
 })

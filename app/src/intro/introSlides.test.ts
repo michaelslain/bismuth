@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'bun:test'
 import {
+    DEFAULT_DAEMON_NAME,
     DEFAULT_POWERUPS,
     POWER_UPS,
     SLIDES,
+    convertedVaultPath,
+    daemonName,
     powerUpCommands,
     slideBody,
     togglePowerUp,
+    visibleSlides,
 } from './introSlides'
 
 describe('SLIDES', () => {
-    it('has the eight slides in order', () => {
+    it('has the twelve slides in order', () => {
         expect(SLIDES.map(s => s.key)).toEqual([
             'welcome',
             'theme',
@@ -18,6 +22,10 @@ describe('SLIDES', () => {
             'agents',
             'pickagent',
             'powerups',
+            'name',
+            'obsidian',
+            'chat',
+            'settings',
             'begin',
         ])
     })
@@ -37,6 +45,10 @@ describe('SLIDES', () => {
         expect(by.theme.extra).toBe('themes')
         expect(by.powerups.extra).toBe('powerups')
         expect(by.begin.extra).toBe('cta')
+        expect(by.name.extra).toBe('name')
+        expect(by.obsidian.extra).toBe('obsidian')
+        expect(by.chat.hero).toBe('agents')
+        expect(by.settings.extra).toBe('samples')
     })
     it('pins every title and body', () => {
         expect(SLIDES.map(s => [s.key, s.title, s.body])).toEqual([
@@ -76,6 +88,26 @@ describe('SLIDES', () => {
                 'Pick what to set up. Bismuth turns them on once you open your vault, or you can do it anytime from the command palette.',
             ],
             [
+                'name',
+                'Name your daemon',
+                'It answers to this name in chat. Rename it anytime in .daemon/identity.md.',
+            ],
+            [
+                'obsidian',
+                'Coming from Obsidian?',
+                'Pick your Obsidian vault and Bismuth opens a converted copy beside it. Chat does the conversion through the Bismuth MCP and never touches the original.',
+            ],
+            [
+                'chat',
+                'Ask chat anything',
+                'Chat searches the Bismuth docs through the MCP, so ask it how anything works, or have it do the thing for you.',
+            ],
+            [
+                'settings',
+                'Settings are a file',
+                "There is no settings screen: .settings opens in the editor like any note. A note's own properties live in its frontmatter, the YAML block at its top.",
+            ],
+            [
                 'begin',
                 'Open your vault',
                 '',
@@ -91,6 +123,10 @@ describe('SLIDES', () => {
             'agents',
             'agent',
             'power-ups',
+            'name',
+            'obsidian',
+            'chat',
+            'settings',
             'open vault',
         ])
     })
@@ -103,6 +139,10 @@ describe('SLIDES', () => {
             'Bring your own agent',
             'Pick an agent',
             'Optional power-ups',
+            'Name your daemon',
+            'Coming from Obsidian?',
+            'Ask chat anything',
+            'Settings are a file',
             'Open your vault',
         ])
         for (const s of SLIDES) expect(s.title.endsWith('.')).toBe(false)
@@ -116,7 +156,7 @@ describe('SLIDES', () => {
     })
     it('keeps the authored copy', () => {
         expect(SLIDES[0].title).toBe('Notes that think')
-        expect(SLIDES[7].title).toBe('Open your vault')
+        expect(SLIDES[SLIDES.length - 1].title).toBe('Open your vault')
         expect(SLIDES.every(s => s.title)).toBe(true)
     })
 })
@@ -152,5 +192,60 @@ describe('power-ups', () => {
     it('toggles an id on and off', () => {
         expect(togglePowerUp(['daemon'], 'cli')).toEqual(['daemon', 'cli'])
         expect(togglePowerUp(['daemon', 'cli'], 'daemon')).toEqual(['cli'])
+    })
+})
+
+describe('visibleSlides', () => {
+    const keys = (selected: string[]) => visibleSlides(selected).map(s => s.key)
+    it('shows every slide with both power-ups on', () => {
+        expect(keys(['daemon', 'cli'])).toEqual(SLIDES.map(s => s.key))
+    })
+    it('drops the name slide without the daemon', () => {
+        expect(keys(['cli'])).not.toContain('name')
+        expect(keys(['cli'])).toContain('obsidian')
+    })
+    it('drops the obsidian and chat slides without cli + mcp', () => {
+        const k = keys(['daemon'])
+        expect(k).not.toContain('obsidian')
+        expect(k).not.toContain('chat')
+        expect(k).toContain('name')
+    })
+    it('always keeps the slides that require nothing, in table order', () => {
+        expect(keys([])).toEqual([
+            'welcome',
+            'theme',
+            'graph',
+            'daemon',
+            'agents',
+            'pickagent',
+            'powerups',
+            'settings',
+            'begin',
+        ])
+    })
+    it('every requires names a real power-up', () => {
+        const ids = POWER_UPS.map(p => p.id)
+        for (const s of SLIDES) if (s.requires) expect(ids).toContain(s.requires)
+    })
+})
+
+describe('daemonName', () => {
+    it('trims and collapses whitespace to one line', () => {
+        expect(daemonName('  ada\n lovelace ')).toBe('ada lovelace')
+    })
+    it('falls back to the seeded default when blank', () => {
+        expect(daemonName('   ')).toBe(DEFAULT_DAEMON_NAME)
+        expect(DEFAULT_DAEMON_NAME).toBe('daemon')
+    })
+})
+
+describe('convertedVaultPath', () => {
+    it('is the sibling `<source>-bismuth`, trailing slashes dropped', () => {
+        expect(convertedVaultPath('/a/Notes')).toBe('/a/Notes-bismuth')
+        expect(convertedVaultPath(' /a/Notes/ ')).toBe('/a/Notes-bismuth')
+        expect(convertedVaultPath('~/vault')).toBe('~/vault-bismuth')
+    })
+    it('is empty for a blank source', () => {
+        expect(convertedVaultPath('  ')).toBe('')
     })
 })

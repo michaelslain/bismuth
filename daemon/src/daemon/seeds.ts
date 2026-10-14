@@ -19,7 +19,7 @@ import { writeFile, mkdir, readFile, rename } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import type { VaultContext } from '../lib/config.ts'
-import { DEFAULT_DAEMON_IDENTITY } from './persona.ts'
+import { identitySeed } from '../../../core/src/daemonIdentity.ts'
 import { DEFAULT_CRONS, RETIRED_CRONS } from './defaultCrons.ts'
 import { logActivity } from '../lib/activityLog.ts'
 import { PAGES_GUIDE } from './pagesGuide.ts'
@@ -105,7 +105,7 @@ export function seedsFor(ctx: VaultContext): Seed[] {
         // The daemon's identity (name in frontmatter + personality body).
         {
             path: ctx.identityFile,
-            content: `---\nname: daemon\n---\n\n${DEFAULT_DAEMON_IDENTITY}\n`,
+            content: identitySeed(),
         },
         // The default background jobs — versioned/refreshable (see PRIOR_SEED_HASHES).
         ...DEFAULT_CRONS.map(c => ({
@@ -157,8 +157,19 @@ export async function reconcileSeeds(
         try {
             if (!existsSync(seed.path)) {
                 await mkdir(dirname(seed.path), { recursive: true })
-                await writeFile(seed.path, seed.content, 'utf-8')
-                result.written.push(seed.path)
+                // Exclusive create: core can write identity.md at the same moment (the first-run
+                // rename, core/src/daemonIdentity.ts), and a seed must never replace that file.
+                const created = await writeFile(seed.path, seed.content, {
+                    encoding: 'utf-8',
+                    flag: 'wx',
+                }).then(
+                    () => true,
+                    (e: NodeJS.ErrnoException) => {
+                        if (e.code === 'EEXIST') return false
+                        throw e
+                    },
+                )
+                if (created) result.written.push(seed.path)
                 continue
             }
 

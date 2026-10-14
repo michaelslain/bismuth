@@ -1,0 +1,14 @@
+/* DaemonNameField.module.css — the face centred over the name field. The field is the standard
+   TextInput with no override; this file stacks the two and gives the field's wrapper a card's
+   width, so the stock input is sized by its box rather than restyled. */
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-6);
+  width: 100%;
+}
+.field {
+  width: calc(32 * var(--cell-w));
+  max-width: 100%;
+}

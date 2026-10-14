@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'bun:test'
 import {
     FIRST_RUN_AGENT_KEY,
+    FIRST_RUN_CONVERT_KEY,
+    FIRST_RUN_DAEMON_NAME_KEY,
     FIRST_RUN_POWERUPS_KEY,
     THEME_VARS_KEY,
 } from '../storageKeys'
-import { enterVault, type EnterVaultDeps } from './introEnterVault'
+import {
+    convertSourceMissing,
+    enterVault,
+    type EnterVaultDeps,
+} from './introEnterVault'
 import { introThemeVars } from './introTheme'
 
 const choice = { theme: 'paper' as const, icon: 'hopper-crystal', powerups: ['cli', 'daemon', 'x'], agent: 'free-agent' }
@@ -13,6 +19,8 @@ function rig(over: Partial<EnterVaultDeps> & { ok?: boolean } = {}) {
     const calls = {
         invoke: [] as unknown[],
         set: [] as [string, string][],
+        removed: [] as string[],
+        errors: [] as string[],
         nav: [] as string[],
         info: [] as unknown[][],
         error: [] as unknown[][],
@@ -24,7 +32,11 @@ function rig(over: Partial<EnterVaultDeps> & { ok?: boolean } = {}) {
             calls.invoke.push([cmd, args])
             return over.ok ?? true
         },
-        storage: { setItem: (k, v) => void calls.set.push([k, v]) },
+        storage: {
+            setItem: (k, v) => void calls.set.push([k, v]),
+            removeItem: k => void calls.removed.push(k),
+        },
+        onError: m => void calls.errors.push(m),
         navigate: href => void calls.nav.push(href),
         log: {
             info: (...a) => void calls.info.push(a),
@@ -35,17 +47,97 @@ function rig(over: Partial<EnterVaultDeps> & { ok?: boolean } = {}) {
     return { calls, deps }
 }
 
+describe('convertSourceMissing', () => {
+    it('from obsidian with no vault picked waits for one', () => {
+        expect(convertSourceMissing(['cli'], 'obsidian', '')).toBe(true)
+        expect(convertSourceMissing(['cli'], 'obsidian', '   ')).toBe(true)
+    })
+    it('a picked vault, new vault, or cli + mcp off never waits', () => {
+        expect(convertSourceMissing(['cli'], 'obsidian', '/a/Notes')).toBe(false)
+        expect(convertSourceMissing(['cli'], 'new', '')).toBe(false)
+        expect(convertSourceMissing([], 'obsidian', '')).toBe(false)
+    })
+})
+
 describe('enterVault', () => {
-    it('prod + picked: persists all three keys, invokes, opened', async () => {
+    // The hand-off object Rust writes to disk before the relaunch, for a given choice.
+    const handoffOf = (args: unknown) =>
+        JSON.parse((args as { handoff: string }).handoff) as Record<string, string>
+    const argsOf = (calls: { invoke: unknown[] }) =>
+        (calls.invoke[0] as [string, Record<string, unknown>])[1]
+
+    it('prod + picked: hands the three keys to Rust, mirrors them to storage, opened', async () => {
         const { calls, deps } = rig()
         expect(await enterVault(choice, deps)).toBe('opened')
-        expect(calls.invoke).toEqual([['choose_first_vault', { theme: 'paper', icon: 'hopper-crystal' }]])
-        expect(calls.set).toEqual([
-            [FIRST_RUN_POWERUPS_KEY, JSON.stringify(['daemon-setup', 'bismuth-install'])],
-            [FIRST_RUN_AGENT_KEY, 'free-agent'],
-            [THEME_VARS_KEY, JSON.stringify(introThemeVars('paper'))],
-        ])
+        const expected = {
+            [FIRST_RUN_POWERUPS_KEY]: JSON.stringify(['daemon-setup', 'bismuth-install']),
+            [FIRST_RUN_AGENT_KEY]: 'free-agent',
+            [THEME_VARS_KEY]: JSON.stringify(introThemeVars('paper')),
+        }
+        const args = argsOf(calls)
+        expect(args.theme).toBe('paper')
+        expect(args.icon).toBe('hopper-crystal')
+        expect(args.convertFrom).toBeUndefined()
+        expect(handoffOf(args)).toEqual(expected)
+        expect(Object.fromEntries(calls.set)).toEqual(expected)
         expect(calls.nav).toEqual([])
+    })
+
+    it('prod: clears name and conversion keys left by an earlier attempt', async () => {
+        const { calls, deps } = rig()
+        await enterVault(choice, deps)
+        expect(calls.removed).toEqual([FIRST_RUN_DAEMON_NAME_KEY, FIRST_RUN_CONVERT_KEY])
+    })
+
+    it('prod: hands over a typed daemon name, and the Obsidian source for Rust to resolve', async () => {
+        const { calls, deps } = rig()
+        await enterVault(
+            { ...choice, daemonName: '  ada  ', obsidianSource: '/v/Notes/' },
+            deps,
+        )
+        const args = argsOf(calls)
+        expect(handoffOf(args)[FIRST_RUN_DAEMON_NAME_KEY]).toBe('ada')
+        // Rust resolves the source and adds the conversion job; the app never writes it.
+        expect(args.convertFrom).toBe('/v/Notes')
+        expect(handoffOf(args)[FIRST_RUN_CONVERT_KEY]).toBeUndefined()
+    })
+
+    it('prod: the default or a blank name hands over no name key', async () => {
+        for (const daemonName of ['daemon', '   ']) {
+            const { calls, deps } = rig()
+            await enterVault({ ...choice, daemonName }, deps)
+            expect(handoffOf(argsOf(calls))[FIRST_RUN_DAEMON_NAME_KEY]).toBeUndefined()
+        }
+    })
+
+    it('prod: a choice whose power-up was cleared is dropped', async () => {
+        const { calls, deps } = rig()
+        await enterVault(
+            { ...choice, powerups: [], daemonName: 'ada', obsidianSource: '/v/Notes' },
+            deps,
+        )
+        const args = argsOf(calls)
+        expect(handoffOf(args)[FIRST_RUN_DAEMON_NAME_KEY]).toBeUndefined()
+        // Without cli + mcp there is no conversion, so the picker opens as usual.
+        expect(args.convertFrom).toBeUndefined()
+    })
+
+    it('a refused source path is reported in words and fails', async () => {
+        const { calls, deps } = rig({
+            invoke: async () => {
+                throw 'no folder at /v/Nope'
+            },
+        })
+        expect(await enterVault({ ...choice, obsidianSource: '/v/Nope' }, deps)).toBe('failed')
+        expect(calls.errors).toEqual(['no folder at /v/Nope'])
+    })
+
+    it('dev: never converts, so no folder is made beside the real Obsidian vault', async () => {
+        const { calls, deps } = rig({ dev: true })
+        await enterVault({ ...choice, obsidianSource: '/v/Notes' }, deps)
+        expect(calls.invoke).toEqual([
+            ['choose_first_vault', { theme: 'paper', icon: 'hopper-crystal' }],
+        ])
     })
 
     it('prod + picker dismissed: cancelled', async () => {

@@ -1,0 +1,20 @@
+/* ObsidianSourceField.module.css — the new/obsidian choice centred in the art box; under it, once
+   `from obsidian` is picked, the path row with the target line starting at its left edge. */
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-5);
+  width: 100%;
+}
+.source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: calc(56 * var(--cell-w));
+  max-width: 100%;
+  text-align: left;
+}
+.target {
+  overflow-wrap: anywhere;
+}

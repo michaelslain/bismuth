@@ -3751,3 +3751,34 @@ test('a rejected mutation (destination already exists) does not leave its paths 
         server.stop(true)
     }
 })
+
+// The first-run intro names the daemon through this route, often before the daemon's first
+// brain-start has seeded identity.md: owner-gated like the other /daemon/* writes, 400 on a
+// blank name, and it creates the stock seed with the name when the file is absent.
+test('POST /daemon/name: owner-gated, validates, writes identity.md, status reads it back', async () => {
+    const { vault } = await makeSampleVault()
+    const server = createServer({ vault, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const token = readRunRecords().find(r => r.vault === vault)?.token
+        expect(token).toBeTruthy()
+        const post = (body: unknown, withToken = true) =>
+            fetch(`${base}/daemon/name`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(withToken ? { 'X-Bismuth-Token': token! } : {}),
+                },
+                body: JSON.stringify(body),
+            })
+        expect((await post({ name: 'ada' }, false)).status).toBe(403)
+        expect((await post({ name: '  ' })).status).toBe(400)
+        const res = await post({ name: ' ada ' })
+        expect(res.status).toBe(200)
+        expect(await res.json()).toEqual({ name: 'ada' })
+        const status = await (await fetch(`${base}/daemon/status`)).json()
+        expect(status.name).toBe('ada')
+    } finally {
+        server.stop(true)
+    }
+})

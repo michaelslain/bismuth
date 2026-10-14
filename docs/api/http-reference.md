@@ -365,6 +365,7 @@ Concepts are in the [daemon docs](../daemon/setup.md).
 |---|---|---|---|
 | `GET /daemon/status` | none | `{running, thisDeviceId, owner, name}`. `owner` is `{ownerDeviceId, ownerLabel, updatedAt}` or `null`. | open; none |
 | `GET /daemon/devices` | none | `{devices: [{deviceId, label, lastSeenISO, isOwner, isThis}], ownerDeviceId}` | open; none |
+| `POST /daemon/name` | `{name}` | `{name}`, trimmed to one line. `400` for a blank name. | owner only; sets `name:` in `.daemon/identity.md`, creating the stock file when it is absent |
 | `GET /daemon/snapshot` | none | `{daemon, crons, processes, identity}` for this vault. | open; none |
 | `GET /daemon/logs` | `?limit=&kind=&name=&since=` | Activity events, newest first. | open; none |
 | `POST /daemon/logs/delete` | `{file, ts, kind, name, event, outcome?}` | `{ok: true}`. `404` when no line matches. | owner only; rewrites one day file under `.daemon/logs/` |

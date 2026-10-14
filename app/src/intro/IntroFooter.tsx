@@ -13,6 +13,10 @@ export type IntroFooterProps = {
     label: string
     /** Last slide only: the enter action is in flight. */
     busy?: boolean
+    /** Last slide only: an Obsidian vault is set to convert, so the enter action converts it. */
+    convert?: boolean
+    /** Last slide only: the enter action is waiting on a choice (an Obsidian vault to convert). */
+    blocked?: boolean
     onPrev: () => void
     /** Also the enter action on the last slide. */
     onNext: () => void
@@ -36,10 +40,15 @@ const IntroFooter: Component<IntroFooterProps> = props => {
                 </TextButton>
                 <TextButton
                     primary
-                    disabled={isLast() && props.busy}
+                    disabled={isLast() && (props.busy || props.blocked)}
                     onClick={props.onNext}
                 >
-                    {nextLabel(props.index, props.count, !!props.busy)}
+                    {nextLabel(
+                        props.index,
+                        props.count,
+                        !!props.busy,
+                        !!props.convert,
+                    )}
                 </TextButton>
             </div>
         </Band>

@@ -380,3 +380,13 @@ test('a missing crons dir (never seeded before) still yields written for the def
     expect(dreamBody).toContain('{{changedSinceLastRun}}')
     expect(result.written.length).toBeGreaterThan(0)
 })
+
+test('a name the first-run intro wrote through core survives the daemon seeding identity.md', async () => {
+    const { setDaemonIdentityName, identitySeed } = await import(
+        '../../core/src/daemonIdentity.ts'
+    )
+    setDaemonIdentityName(ctx.identityFile, 'ada')
+    const res = await reconcileSeeds(ctx)
+    expect(res.written).not.toContain(ctx.identityFile)
+    expect(readFileSync(ctx.identityFile, 'utf-8')).toBe(identitySeed('ada'))
+})

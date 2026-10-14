@@ -12,3 +12,10 @@ export const THEME_VARS_KEY = 'bismuth-theme-vars-v1'
 export const FIRST_RUN_POWERUPS_KEY = 'bismuth-first-run-powerups'
 /** The intro's chosen agent: 'free-agent' or a backend id. Read + removed once by App after the first vault opens. */
 export const FIRST_RUN_AGENT_KEY = 'bismuth-first-run-agent'
+/** The daemon name typed on the intro, written only when the daemon power-up is on and the name
+ *  differs from the default. Read + removed once by App, which writes it to .daemon/identity.md. */
+export const FIRST_RUN_DAEMON_NAME_KEY = 'bismuth-first-run-daemon-name'
+/** `{source, target}` JSON when the intro's obsidian slide asked for a conversion (cli + mcp on),
+ *  written by Rust's choose_first_vault into the hand-off file. Read + removed once by App, which
+ *  opens a chat that sends the conversion request. */
+export const FIRST_RUN_CONVERT_KEY = 'bismuth-first-run-convert-obsidian'

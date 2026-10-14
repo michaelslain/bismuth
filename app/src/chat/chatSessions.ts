@@ -5,13 +5,16 @@
 // up with `chatSession(id)`. Each session lives in its OWN `createRoot` — never owned by the effect
 // that retained it, so the effect re-running cannot dispose it — and is torn down only when its id
 // leaves the retained set.
-import { createRoot, createSignal, untrack } from 'solid-js'
+import { createEffect, createRoot, createSignal, untrack } from 'solid-js'
 import { createChatSession, type ChatSession } from './chatSession'
 import { applyChatDrop, type ChatDropAction } from './chatDrop'
 
 // Drops that landed on a chat surface before its session existed (the daemon page's chat is armed by
 // the drop itself, and its session is created a tick later). Spent the moment that session appears.
 const pendingDrops = new Map<string, ChatDropAction[]>()
+// Chats asked to send their draft as soon as they are ready (the first-run Obsidian conversion).
+// Armed the moment the session appears, like a pending drop.
+const pendingSends = new Set<string>()
 
 type Entry = { session: ChatSession; disposeRoot: () => void }
 
@@ -47,6 +50,7 @@ export function retainChatSessions(chatIds: readonly string[]): void {
                 pendingDrops.delete(id)
                 for (const a of queued) void applyChatDrop(entry.session, a)
             }
+            if (pendingSends.delete(id)) sendOnReady(entry.session)
         }
         if (changed)
             setLive(new Map([...entries].map(([id, e]) => [id, e.session])))
@@ -69,4 +73,26 @@ export function deliverChatDrop(chatId: string, action: ChatDropAction): void {
     const q = pendingDrops.get(chatId) ?? []
     q.push(action)
     pendingDrops.set(chatId, q)
+}
+
+/** Send chat `chatId`'s draft once the chat is ready to take it: its backend has answered with a
+ *  manifest (the socket is open and the agent spawned). Queued when the session does not exist yet.
+ *  A chat that never becomes ready keeps the draft, unsent, for the user. */
+export function sendChatWhenReady(chatId: string): void {
+    const s = entries.get(chatId)?.session
+    if (s) sendOnReady(s)
+    else pendingSends.add(chatId)
+}
+
+function sendOnReady(s: ChatSession): void {
+    createRoot(dispose => {
+        createEffect(() => {
+            if (!s.manifest()) return
+            dispose()
+            // A microtask later: the session's first-manifest handler sets the permission mode,
+            // effort and model right after publishing the manifest, and those must reach the
+            // backend before this turn does.
+            queueMicrotask(() => s.send())
+        })
+    })
 }

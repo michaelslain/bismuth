@@ -1,6 +1,6 @@
 // The first-run intro takeover — one story per slide, rendered in the framed IntroWindow.
 //
-// `startAt` seeds the slide signal so each of the eight slides can be looked at on its own. The real
+// `startAt` seeds the slide signal so each slide can be looked at on its own. The real
 // first run still opens on 'welcome'.
 //
 // `layout: 'fullscreen'` is required: .vi-root is `position: fixed; inset: 0`, so a padded or
@@ -74,7 +74,118 @@ export const PickAgentSome: Story = {
 /** Slide 7 — the two power-up cards, both on by default. */
 export const PowerUps: Story = { args: { startAt: 'powerups' } }
 
-/** Slide 8 — the hero wordmark over the copy; the footer's primary, `[enter your vault]`, is the
+/** Slide 8 (daemon power-up on) — the daemon face idling over the empty name field. */
+export const Name: Story = { args: { startAt: 'name' } }
+
+/** Slide 9 (cli + mcp on), as it opens: `new vault` picked, no path field. */
+export const Obsidian: Story = { args: { startAt: 'obsidian' } }
+
+/** Slide 9 with `from obsidian` picked and a vault chosen: the line names the converted copy. */
+export const ObsidianPicked: Story = {
+    args: {
+        startAt: 'obsidian',
+        initialObsidianSource: '/Users/ada/Documents/Notes',
+    },
+    play: async ({ canvasElement }) => {
+        await expect(canvasElement.textContent).toContain(
+            'opens as /Users/ada/Documents/Notes-bismuth',
+        )
+    },
+}
+
+/** Slide 9 with a vault chosen, then `new vault` picked: the field goes and the conversion is off,
+ *  so skipping to the last slide offers `[enter your vault]` again. */
+export const ObsidianBackToNew: Story = {
+    args: {
+        startAt: 'obsidian',
+        initialObsidianSource: '/Users/ada/Documents/Notes',
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await userEvent.click(c.getByRole('button', { name: /new vault/ }))
+        await waitFor(() =>
+            expect(canvasElement.querySelector('input')).toBeNull(),
+        )
+        // Escape is the intro's skip key: it jumps to the last slide.
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() =>
+            expect(
+                c.getByRole('button', { name: /enter your vault/ }),
+            ).toBeTruthy(),
+        )
+    },
+}
+
+/** The last slide after Rust refused a typed Obsidian path: the reason replaces the empty body
+ *  and the button is live again for another try. */
+export const BeginConvertRefused: Story = {
+    args: {
+        startAt: 'begin',
+        initialObsidianSource: '/Users/ada/Nope',
+        onEnter: async (_choice: unknown, onError: (message: string) => void) => {
+            onError('no folder at /Users/ada/Nope')
+            return 'failed'
+        },
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await userEvent.click(c.getByRole('button', { name: /convert and open/ }))
+        await waitFor(() =>
+            expect(canvasElement.textContent).toContain(
+                "Couldn't open the vault: no folder at /Users/ada/Nope",
+            ),
+        )
+    },
+}
+
+/** `from obsidian` with no vault picked: the primary waits (disabled) and the body says where to
+ *  pick one, instead of the CTA opening a folder picker for a second pick. */
+export const BeginConvertNoVault: Story = {
+    args: { startAt: 'begin', initialVaultStart: 'obsidian' },
+    play: async ({ canvasElement }) => {
+        await expect(
+            within(canvasElement).getByRole('button', { name: /convert and open/ }),
+        ).toBeDisabled()
+        await expect(canvasElement.textContent).toContain(
+            'Pick the Obsidian vault to convert on the obsidian slide',
+        )
+    },
+}
+
+/** The last slide with a vault picked: the primary reads `[convert and open]`. */
+export const BeginConvert: Story = {
+    args: {
+        startAt: 'begin',
+        initialObsidianSource: '/Users/ada/Documents/Notes',
+    },
+    play: async ({ canvasElement }) => {
+        await expect(
+            within(canvasElement).getByRole('button', { name: /convert and open/ }),
+        ).toBeTruthy()
+    },
+}
+
+/** Slide 10 (cli + mcp on) — the agents glyph scene over the ask-chat copy. */
+export const Chat: Story = { args: { startAt: 'chat' } }
+
+/** Slide 11 — a `.settings` file and a note's frontmatter, side by side. */
+export const Settings: Story = { args: { startAt: 'settings' } }
+
+/** Power-ups both cleared: the name, obsidian and chat slides drop out, so next from power-ups
+ *  lands on settings and the footer counts nine slides. */
+export const PowerUpsNoneSkips: Story = {
+    args: { startAt: 'powerups', initialPowerups: [] },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('7/9 // power-ups')).toBeTruthy()
+        await userEvent.click(canvas.getByRole('button', { name: /next/ }))
+        await waitFor(() =>
+            expect(canvas.getByText('8/9 // settings')).toBeTruthy(),
+        )
+    },
+}
+
+/** Slide 12 — the hero wordmark over the copy; the footer's primary, `[enter your vault]`, is the
  *  slide's one call to action. */
 export const Begin: Story = { args: { startAt: 'begin' } }
 
@@ -103,7 +214,7 @@ export const PowerUpOff: Story = {
     },
 }
 
-/** Slide 8 while the native folder picker is open: the primary reads `[opening…]` and is
+/** The last slide while the native folder picker is open: the primary reads `[opening…]` and is
  *  disabled. The never-resolving `onEnter` holds that state. */
 export const BeginBusy: Story = {
     args: { startAt: 'begin', onEnter: () => new Promise(() => {}) },
@@ -118,7 +229,7 @@ export const BeginBusy: Story = {
 }
 
 /** The window is the same size on every slide, and each slide's art and copy sit centred in the
- *  body as one group. Walks all eight slides with the real next button (stopping before the last,
+ *  body as one group. Walks every slide (both power-ups on, so all of them show) with the real next button (stopping before the last,
  *  which enters the vault). */
 export const Geometry: Story = {
     args: { startAt: 'welcome' },

@@ -98,3 +98,30 @@ export const ChromedWithCallerClass: Story = {
         expect(parseFloat(cs.borderTopWidth)).toBeGreaterThan(0)
     },
 }
+
+/** `language="yaml"`: keys in the accent, punctuation muted, plain values in the foreground. */
+export const YamlHighlighted: Story = {
+    args: {
+        language: 'yaml',
+        children: 'appearance:\n  theme: paper\n  editorFontSize: 15\ntags: [book, "quoted"]',
+    },
+    play: async ({ canvasElement }) => {
+        const spans = [...canvasElement.querySelectorAll('pre span')]
+        const key = spans.find(s => s.textContent === 'appearance')!
+        const value = spans.find(s => s.textContent === 'paper')
+        expect(key).toBeTruthy()
+        expect(getComputedStyle(key).color).not.toBe(
+            getComputedStyle(canvasElement.querySelector('pre')!).color,
+        )
+        expect(canvasElement.querySelector('pre')!.textContent).toContain('theme: paper')
+        expect(value).toBeTruthy()
+    },
+}
+
+/** `language="markdown"`: a note — its frontmatter highlighted as YAML, then the body. */
+export const MarkdownHighlighted: Story = {
+    args: {
+        language: 'markdown',
+        children: '---\ntags: [book, fiction]\nstatus: reading\n---\n# Gamma',
+    },
+}

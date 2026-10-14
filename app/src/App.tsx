@@ -208,7 +208,11 @@ import {
     armDaemonChatForDrop,
 } from './daemon/daemonChatArm'
 import { stayArmed } from './daemon/daemonChatArming'
-import { retainChatSessions, deliverChatDrop } from './chat/chatSessions'
+import {
+    retainChatSessions,
+    deliverChatDrop,
+    sendChatWhenReady,
+} from './chat/chatSessions'
 import {
     feedbackInterviewChatId,
     endFeedbackInterview,
@@ -246,7 +250,10 @@ import ChatColorDot from './chat/ChatColorDot'
 import { migrationPollDelays } from './migrationPoll'
 import { isMacPlatform } from './platform'
 import { THEME_VARS_KEY } from './storageKeys'
-import { runFirstRunHandoff } from './intro/firstRunHandoff'
+import {
+    restoreFirstRunHandoff,
+    runFirstRunHandoff,
+} from './intro/firstRunHandoff'
 import { detectAiActive as detectAi } from './ai/detectAiActive'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
@@ -2602,12 +2609,31 @@ export default function App() {
     })
 
     // First-run hand-off from the intro (agent choice + power-ups): see intro/firstRunHandoff.ts.
-    onMount(() => {
+    onMount(async () => {
+        // The intro's choices reach this launch from disk (Rust's `take_first_run`), since
+        // localStorage written just before the relaunch may never have been flushed.
+        if (isTauri()) {
+            try {
+                const { invoke } = await import('@tauri-apps/api/core')
+                restoreFirstRunHandoff(
+                    await invoke<string | null>('take_first_run'),
+                    localStorage,
+                )
+            } catch {
+                /* no hand-off file: a normal launch */
+            }
+        }
         runFirstRunHandoff({
             api,
             storage: localStorage,
             pushToast,
             setAgentStatus,
+            openChatAndSend: text => {
+                const chatId = crypto.randomUUID()
+                openTool(CHAT_PREFIX + chatId)
+                deliverChatDrop(chatId, { kind: 'text', text })
+                sendChatWhenReady(chatId)
+            },
         })
     })
     // Global keyboard shortcuts. Every combo is read from settings.keybindings

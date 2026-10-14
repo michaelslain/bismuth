@@ -58,3 +58,23 @@ export const LastBusy: Story = {
         ).toBeDisabled()
     },
 }
+
+/** The last slide with an Obsidian vault set to convert: the primary converts and opens it. */
+export const LastConvert: Story = {
+    args: { index: 6, label: 'open vault', convert: true },
+    play: async ({ canvasElement }) => {
+        await expect(
+            within(canvasElement).getByRole('button', { name: /convert and open/ }),
+        ).toBeEnabled()
+    },
+}
+
+/** `from obsidian` with no vault picked yet: the primary waits instead of opening a folder picker. */
+export const LastConvertBlocked: Story = {
+    args: { index: 6, label: 'open vault', convert: true, blocked: true },
+    play: async ({ canvasElement }) => {
+        await expect(
+            within(canvasElement).getByRole('button', { name: /convert and open/ }),
+        ).toBeDisabled()
+    },
+}

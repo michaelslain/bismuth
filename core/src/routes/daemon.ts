@@ -10,7 +10,9 @@ import {
     vaultDaemonDir,
     daemonIdentityName,
 } from '../daemon'
+import { join } from 'node:path'
 import { daemonSnapshot } from '../daemonGraph'
+import { setDaemonIdentityName } from '../daemonIdentity'
 import { readActivity, deleteActivityEntry } from '../daemonActivity'
 import {
     listDaemonPages,
@@ -37,6 +39,23 @@ export default function daemonRoutes(
             return ok({
                 ...daemonStatus(),
                 name: daemonIdentityName(cfg.vault),
+            })
+        },
+
+        // Rename THIS vault's daemon: `name:` in .daemon/identity.md, created as the stock seed when
+        // the daemon has not seeded it yet (the first-run intro names the daemon before its first
+        // brain-start). A daemon file, not a vault note, so a READ route like the toggles below, and
+        // owner-gated like them.
+        'POST /daemon/name': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const { name } = (await req.json()) as { name?: unknown }
+            if (typeof name !== 'string' || !name.trim())
+                return error('name must be a non-empty string', 400)
+            return ok({
+                name: setDaemonIdentityName(
+                    join(vaultDaemonDir(cfg.vault), 'identity.md'),
+                    name,
+                ),
             })
         },
 
