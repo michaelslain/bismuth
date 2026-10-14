@@ -155,9 +155,13 @@ test('disableProcess stops a running child keyed by the FILE slug, never the dis
         logsDir,
     } as unknown as VaultContext
 
+    // The duration carries this test process's pid: spawnProcess reaps any machine-wide `ps` row
+    // whose argv matches the def as an orphan, so a fixed `sleep 100` gets SIGTERMed by a second
+    // `bun test` running at the same time (another worktree's suite) and this child reads as dead.
+    const secs = `100.${process.pid}`
     procFile(
         'web-search',
-        'command: sleep\nargs: ["100"]\nname: "Web Search"\nrestart: never\nenabled: true',
+        `command: sleep\nargs: ["${secs}"]\nname: "Web Search"\nrestart: never\nenabled: true`,
     )
 
     await startProcesses(ctx2)

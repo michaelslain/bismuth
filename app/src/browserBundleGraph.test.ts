@@ -48,6 +48,9 @@ const FORBIDDEN_FILE = join(CORE_SRC, 'files.ts')
 
 function walk(dir: string, out: string[] = []): string[] {
     for (const entry of readdirSync(dir)) {
+        // Dot-entries are never part of the bundle, and bench/affected.test.ts creates and deletes
+        // `app/src/.affectedProbe` mid-run: a concurrent suite that lists it then stats it gets ENOENT.
+        if (entry.startsWith('.')) continue
         const p = join(dir, entry)
         const st = statSync(p)
         if (st.isDirectory()) walk(p, out)
