@@ -677,6 +677,56 @@ test('adding then removing a .png on disk marks dirty.tree in the SSE payload (c
     }
 })
 
+test('rewriting an existing .pdf and .pdf.draw names the path but dirties neither graph nor tree', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await Bun.write(join(vault, 'paper.pdf'), 'pdf-v1')
+    await Bun.write(join(vault, 'paper.pdf.draw'), 'draw-v1')
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        await fetch(`${base}/file`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: 'prime.md', contents: 'x' }),
+        })
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+        const waitForPath = async (path: string) => {
+            const start = Date.now()
+            while (Date.now() - start < 3000) {
+                const { value, done } = await reader.read()
+                if (done) break
+                buf += decoder.decode(value)
+                const frames = buf.split('\n\n')
+                buf = frames.pop() ?? ''
+                for (const f of frames) {
+                    if (!f.startsWith('data: ')) continue
+                    const payload = JSON.parse(f.slice(6))
+                    if (
+                        Array.isArray(payload.paths) &&
+                        payload.paths.includes(path)
+                    )
+                        return payload
+                }
+            }
+            throw new Error(`no SSE frame mentioned ${path}; buf=${buf}`)
+        }
+        await Bun.write(join(vault, 'paper.pdf'), 'pdf-v2')
+        const a = await waitForPath('paper.pdf')
+        expect(a.dirty.graph).toBe(false)
+        expect(a.dirty.tree).toBe(false)
+        await Bun.write(join(vault, 'paper.pdf.draw'), 'draw-v2')
+        const b = await waitForPath('paper.pdf.draw')
+        expect(b.dirty.graph).toBe(false)
+        expect(b.dirty.tree).toBe(false)
+        await reader.cancel()
+    } finally {
+        server.stop(true)
+    }
+})
+
 test('GET /daemon/pages + POST /daemon/pages/resolve round-trip end-to-end', async () => {
     const { vault, memory } = await makeSampleVault()
     await writeNote(

@@ -111,6 +111,8 @@ test('OPTIONS preflight for X-Bismuth-Token: Access-Control-Allow-Headers must n
             .split(',')
             .map(h => h.trim().toLowerCase())
         expect(allowed).toContain('x-bismuth-token')
+        expect(allowed).toContain('range')
+        expect(allowed).toContain('if-none-match')
     } finally {
         server.stop(true)
     }

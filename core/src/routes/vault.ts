@@ -254,9 +254,22 @@ export default function vaultRoutes(
             const file = Bun.file(abs)
             // Short cache so re-opening a note doesn't re-fetch (and re-walk the vault for the
             // filename-first resolution) every time; `private` keeps it out of shared proxies.
+            // A validator from size + mtime: any rewrite of the file changes it. A PDF is revalidated
+            // on every use (`no-cache`) instead of trusted for a minute, so a remount or reconnect
+            // costs a 304, not the whole file, and an edited PDF is never served stale.
+            const etag = `W/"${file.size.toString(16)}-${Math.floor(file.lastModified).toString(16)}"`
+            const isPdf = /\.pdf$/i.test(abs)
             const headers: Record<string, string> = {
                 'Content-Type': file.type || 'application/octet-stream',
-                'Cache-Control': 'private, max-age=60',
+                'Cache-Control': isPdf ? 'private, no-cache' : 'private, max-age=60',
+                // pdf.js range-loads only a file that advertises it.
+                'Accept-Ranges': 'bytes',
+                ETag: etag,
+                'Last-Modified': new Date(file.lastModified).toUTCString(),
+            }
+            const inm = req.headers.get('if-none-match')
+            if (inm && inm.split(',').some(t => t.trim() === etag || t.trim() === '*')) {
+                return new Response(null, { status: 304, headers })
             }
             // SECURITY — a `.html` asset embedded via `![[viz.html]]` is served as text/html and framed
             // as a LIVE document (sandboxed iframe, sandbox="allow-scripts", opaque origin — see

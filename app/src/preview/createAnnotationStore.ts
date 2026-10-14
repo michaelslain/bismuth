@@ -63,7 +63,7 @@ import type {
 } from '../../../core/src/drawing/pdfHighlights'
 import { pushToast } from '../ui/ToastHost'
 import { registerSidecarFlush } from '../editorRegistry'
-import { cancelSelfWrite, expectSelfWrite } from './pdfDocCache'
+import { cancelSelfWrite, expectSelfWrite, pdfReplaced } from './pdfDocCache'
 import {
     applyEditsToPages,
     diffHighlights,
@@ -316,7 +316,8 @@ export default function createAnnotationStore(
             try {
                 const sent = await withPdfIds(sess, edits)
                 expectSelfWrite(sess.binary)
-                await api.editPdfHighlights(sess.binary, sent)
+                const res = await api.editPdfHighlights(sess.binary, sent)
+                if (res.rewrote) pdfReplaced(sess.binary)
                 failStreak = false
                 retryDelay = SAVE_DELAY
                 sess.saved = next
@@ -593,6 +594,7 @@ export default function createAnnotationStore(
                         .catch(() => ({ moved: 0, writable: false }))
                     if (token !== loadToken) return
                     if (!moved.writable || moved.moved === 0) cancelSelfWrite(bin)
+                    else if ('rewrote' in moved && moved.rewrote) pdfReplaced(bin)
                     if (moved.writable) {
                         // The PDF now holds the sidecar's highlights and its own: show both, from
                         // the document's report whenever it lands (before this, or after).

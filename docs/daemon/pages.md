@@ -74,7 +74,7 @@ The same operations are the `page_list`, `page_create` and `page_resolve` tools 
 
 A page is due when its status is `pending` and the current time is at or after `deliverAt`, or at or after `createdAt` when `deliverAt` is absent. The app works this out each time it reads the inbox; there is no delivery step. A page with a future `deliverAt` is listed as scheduled, with no urgency, until its time comes, even if the app never closed.
 
-While `daemon.enabled` is on, the app reads the inbox at launch, every 30 seconds (every 5 seconds while a page is running), and whenever the vault's file tree changes.
+While `daemon.enabled` is on, the app reads the inbox at launch, every 30 seconds (every 5 seconds while a page or a cron is running), and whenever the vault's file tree changes.
 
 ## How you are told a page exists
 

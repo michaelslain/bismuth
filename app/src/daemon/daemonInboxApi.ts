@@ -10,6 +10,7 @@ import { api } from '../api'
 import type { DaemonPage } from '../../../core/src/daemonPages'
 import { isDue, dueSorted } from './daemonInboxLogic'
 import { pushToast } from '../ui/ToastHost'
+import { reuseEqual } from './snapshotEquality'
 
 const [pages, setPages] = createSignal<DaemonPage[]>([])
 
@@ -46,7 +47,8 @@ export async function refreshDaemonPages(onReview?: () => void): Promise<void> {
     } catch {
         return
     }
-    setPages(next)
+    // An unchanged payload keeps the same array (and row objects): no signal write, no re-run.
+    setPages(prev => reuseEqual(prev, next))
 
     const now = Date.now()
     const nowDue = next.filter(p => isDue(p, now))

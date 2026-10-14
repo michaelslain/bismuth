@@ -9,7 +9,7 @@
 // size container below 760px) drops the measurement for a static per-section cap instead:
 // measuring this component's own height there is a feedback loop, since the stage scrolls as a
 // whole and this component's height is `auto`.
-import { createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js'
 import styles from './DaemonOverview.module.css'
 import { allocateRows, boxChromeHeight, rowUnits, type RowLimit } from './daemonRowBudget'
 
@@ -113,8 +113,10 @@ function DaemonOverview(props: DaemonOverviewProps) {
     })
 
     // Re-measure on a data change too (a poll landing new totals), not only on a resize.
+    // Keyed on the values, not the object: rows() rebuilds its object on every poll.
+    const rowsKey = createMemo(() => JSON.stringify(props.rows))
     createEffect(() => {
-        void props.rows
+        rowsKey()
         measure()
     })
 

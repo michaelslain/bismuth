@@ -5,7 +5,9 @@
 import { describe, expect, mock, test } from 'bun:test'
 import {
     createPdfDocCache,
+    createReplacedListeners,
     createSelfWriteGate,
+    routePathChange,
     type CachedPdf,
 } from './pdfDocCacheCore'
 
@@ -139,6 +141,59 @@ describe('createPdfDocCache', () => {
     })
 })
 
+describe('revalidateAll', () => {
+    test('a path-less change keeps an unchanged doc and drops a changed one', async () => {
+        const cache = createPdfDocCache<Record<string, never>>({ max: 3 })
+        const same = fakeDoc()
+        const changed = fakeDoc()
+        cache.put('same.pdf', same)()
+        cache.put('changed.pdf', changed)()
+        await cache.revalidateAll(async key => key === 'same.pdf')
+        expect(same.destroy).not.toHaveBeenCalled()
+        expect(changed.destroy).toHaveBeenCalledTimes(1)
+        const hit = cache.acquire('same.pdf')
+        expect(hit?.value).toBe(same)
+        hit?.release()
+        expect(cache.acquire('changed.pdf')).toBeUndefined()
+    })
+
+    test('a check that throws keeps the doc (offline is not a change)', async () => {
+        const cache = createPdfDocCache<Record<string, never>>({ max: 3 })
+        const a = fakeDoc()
+        cache.put('a.pdf', a)()
+        await cache.revalidateAll(async () => {
+            throw new Error('offline')
+        })
+        expect(a.destroy).not.toHaveBeenCalled()
+        expect(cache.acquire('a.pdf')?.value).toBe(a)
+    })
+
+    test('a doc replaced while the check ran is not dropped by the stale verdict', async () => {
+        const cache = createPdfDocCache<Record<string, never>>({ max: 3 })
+        const old = fakeDoc()
+        const fresh = fakeDoc()
+        cache.put('a.pdf', old)()
+        const pending = cache.revalidateAll(async () => {
+            cache.put('a.pdf', fresh)()
+            return false
+        })
+        await pending
+        expect(fresh.destroy).not.toHaveBeenCalled()
+        expect(cache.acquire('a.pdf')?.value).toBe(fresh)
+    })
+
+    test('a retained changed doc leaves the map at once and is destroyed on release', async () => {
+        const cache = createPdfDocCache<Record<string, never>>({ max: 3 })
+        const a = fakeDoc()
+        const release = cache.put('a.pdf', a)
+        await cache.revalidateAll(async () => false)
+        expect(cache.acquire('a.pdf')).toBeUndefined()
+        expect(a.destroy).not.toHaveBeenCalled()
+        release()
+        expect(a.destroy).toHaveBeenCalledTimes(1)
+    })
+})
+
 describe('createSelfWriteGate', () => {
     test('an expected path is consumed once, the change after that is external', () => {
         const gate = createSelfWriteGate()
@@ -181,5 +236,24 @@ describe('createSelfWriteGate', () => {
         onChange('a.pdf')
         expect(a.destroy).toHaveBeenCalledTimes(1)
         expect(cache.acquire('a.pdf')).toBeUndefined()
+    })
+})
+
+describe('pdf replaced notifications', () => {
+    test('a non-self-write change fires the listener; a self-write-consumed one does not; unsubscribe works', () => {
+        const bus = createReplacedListeners()
+        const gate = createSelfWriteGate()
+        const cb = mock(() => {})
+        const off = bus.on('a.pdf', cb)
+        routePathChange(['a.pdf'], gate, p => bus.fire(p))
+        expect(cb).toHaveBeenCalledTimes(1)
+        gate.expect('a.pdf')
+        routePathChange(['a.pdf'], gate, p => bus.fire(p))
+        expect(cb).toHaveBeenCalledTimes(1)
+        routePathChange(['b.pdf'], gate, p => bus.fire(p))
+        expect(cb).toHaveBeenCalledTimes(1)
+        off()
+        routePathChange(['a.pdf'], gate, p => bus.fire(p))
+        expect(cb).toHaveBeenCalledTimes(1)
     })
 })

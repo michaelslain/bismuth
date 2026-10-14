@@ -13,6 +13,9 @@
 export type CachedPdf<D> = {
     doc: D
     destroy: () => void
+    /** The file's validator (its ETag) as of load, when known — what `revalidateAll`'s check
+     *  compares against the server. Opaque here. */
+    validator?: Promise<string | undefined>
 }
 
 export type PdfDocCache<D> = {
@@ -27,6 +30,13 @@ export type PdfDocCache<D> = {
      *  retains it. */
     invalidate: (key: string) => void
     invalidateAll: () => void
+    /** The extent of a change is unknown (a path-less server event, e.g. the stream's connect
+     *  snapshot): ask `isFresh` about every live entry and drop only those answering false. A
+     *  throwing check keeps its entry (offline is not a change). An entry replaced while its check
+     *  was in flight is left alone. */
+    revalidateAll: (
+        isFresh: (key: string, value: CachedPdf<D>) => Promise<boolean>,
+    ) => Promise<void>
     rename: (from: string, to: string) => void
     /** Deleted: same as invalidate. */
     remove: (key: string) => void
@@ -110,6 +120,19 @@ export function createPdfDocCache<D>(opts: { max: number }): PdfDocCache<D> {
         invalidateAll() {
             for (const key of [...entries.keys()]) evictKey(key)
         },
+        async revalidateAll(isFresh) {
+            await Promise.all(
+                [...entries].map(async ([key, entry]) => {
+                    let fresh = true
+                    try {
+                        fresh = await isFresh(key, entry.value)
+                    } catch {
+                        return
+                    }
+                    if (!fresh && entries.get(key) === entry) evictKey(key)
+                }),
+            )
+        },
         rename(from, to) {
             const entry = entries.get(from)
             if (!entry || !entry.live) return
@@ -139,5 +162,39 @@ export function createSelfWriteGate() {
         cancel(path: string): void {
             armed.delete(path)
         },
+    }
+}
+
+/** Subscribers told that a path's file was rewritten under an open document (its range reads
+ *  would otherwise hit the new bytes at the old offsets). */
+export function createReplacedListeners() {
+    const listeners = new Map<string, Set<() => void>>()
+    return {
+        on(key: string, cb: () => void): () => void {
+            let set = listeners.get(key)
+            if (!set) listeners.set(key, (set = new Set()))
+            set.add(cb)
+            return () => {
+                set.delete(cb)
+                if (set.size === 0 && listeners.get(key) === set) listeners.delete(key)
+            }
+        },
+        fire(key: string): void {
+            const set = listeners.get(key)
+            if (set) for (const f of [...set]) f()
+        },
+    }
+}
+
+/** A server change naming `paths`: every path the self-write gate does not consume was written by
+ *  someone else (or another window) and goes to `replaced`. */
+export function routePathChange(
+    paths: readonly string[],
+    gate: ReturnType<typeof createSelfWriteGate>,
+    replaced: (path: string) => void,
+): void {
+    for (const p of paths) {
+        if (gate.consume(p)) continue
+        replaced(p)
     }
 }

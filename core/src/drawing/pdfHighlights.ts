@@ -13,6 +13,7 @@
 // geometry: `pdfHighlightId(page, quads)`.
 import {
     PDFArray,
+    PDFContext,
     PDFDict,
     PDFDocument,
     PDFName,
@@ -20,6 +21,7 @@ import {
     PDFRef,
     PDFString,
     EncryptedPDFError,
+    type PDFObject,
     type PDFPage,
 } from 'pdf-lib'
 import { AppError } from '../error'
@@ -27,6 +29,12 @@ import { PDF_HIGHLIGHT_YELLOW } from '../theme/tokens'
 import { fitImage } from './pageInk'
 import { resolveHighlightColor } from './pageHighlights'
 import type { Highlight, HighlightRect } from './model'
+import {
+    buildIncrement,
+    openLightPdf,
+    type IncrementObjects,
+    type LightPdf,
+} from './pdfLight'
 
 export type PdfPageGeom = {
     view: [number, number, number, number]
@@ -232,10 +240,31 @@ function numbers(arr: unknown): number[] | null {
     return out
 }
 
-function boxOf(page: PDFPage, key: string): [number, number, number, number] | null {
-    // MediaBox and CropBox are inheritable from the Pages tree, as in pdf.js
-    const v = page.node.getInheritableAttribute(PDFName.of(key))
-    const n = numbers(page.doc.context.lookupMaybe(v, PDFArray))
+/** A page as the helpers below see it: its dictionary, the context that resolves its refs, and its
+ *  own ref when it has one. Both the full pdf-lib load and the light reader produce these. */
+type PageLike = { dict: PDFDict; ctx: PDFContext; ref: PDFRef | null }
+
+const pageLikeOf = (p: PDFPage): PageLike => ({
+    dict: p.node,
+    ctx: p.doc.context,
+    ref: p.ref,
+})
+
+/** An attribute inherited down the Pages tree (MediaBox, CropBox, Rotate), as in pdf.js. */
+function inherited(page: PageLike, key: string) {
+    const name = PDFName.of(key)
+    let d: PDFDict | undefined = page.dict
+    for (let i = 0; d && i < 64; i++) {
+        const v = d.get(name)
+        if (v) return v
+        d = d.lookupMaybe(PDFName.of('Parent'), PDFDict)
+    }
+    return undefined
+}
+
+function boxOf(page: PageLike, key: string): [number, number, number, number] | null {
+    const v = inherited(page, key)
+    const n = numbers(page.ctx.lookupMaybe(v, PDFArray))
     if (!n || n.length < 4) return null
     return [
         Math.min(n[0], n[2]),
@@ -246,7 +275,7 @@ function boxOf(page: PDFPage, key: string): [number, number, number, number] | n
 }
 
 /** The page's geometry as pdf.js reports it. */
-function pageGeom(page: PDFPage): PdfPageGeom {
+function pageGeom(page: PageLike): PdfPageGeom {
     const media = boxOf(page, 'MediaBox') ?? LETTER
     const crop = boxOf(page, 'CropBox')
     let view = media
@@ -258,8 +287,8 @@ function pageGeom(page: PDFPage): PdfPageGeom {
         // pdf.js falls back to the MediaBox when the intersection is empty
         if (x1 > x0 && y1 > y0) view = [x0, y0, x1, y1]
     }
-    const rv = page.node.getInheritableAttribute(PDFName.of('Rotate'))
-    const rot = page.doc.context.lookupMaybe(rv, PDFNumber)
+    const rv = inherited(page, 'Rotate')
+    const rot = page.ctx.lookupMaybe(rv, PDFNumber)
     return { view, rotate: normRotate(rot ? rot.asNumber() : 0) }
 }
 
@@ -279,11 +308,11 @@ function colorOf(annot: PDFDict): string {
 
 type Found = { index: number; ref: PDFRef | null; dict: PDFDict; highlight: Highlight }
 
-function annotsOf(page: PDFPage): PDFArray | undefined {
-    return page.node.lookupMaybe(PDFName.of('Annots'), PDFArray)
+function annotsOf(page: PageLike): PDFArray | undefined {
+    return page.dict.lookupMaybe(PDFName.of('Annots'), PDFArray)
 }
 
-function highlightsOnPage(page: PDFPage, pageIndex: number): Found[] {
+function highlightsOnPage(page: PageLike, pageIndex: number): Found[] {
     const annots = annotsOf(page)
     if (!annots) return []
     const g = pageGeom(page)
@@ -329,11 +358,11 @@ function hasSigField(node: PDFDict, inherited: PDFName | undefined, seen: Set<PD
 
 /** A signature a full save would invalidate: SigFlags bit 1, a DocMDP/UR3 permission, or any
  *  /FT /Sig field under /AcroForm /Fields. */
-function hasSignature(doc: PDFDocument): boolean {
-    const form = doc.catalog.lookupMaybe(PDFName.of('AcroForm'), PDFDict)
+function hasSignature(catalog: PDFDict): boolean {
+    const form = catalog.lookupMaybe(PDFName.of('AcroForm'), PDFDict)
     const flags = form?.lookupMaybe(PDFName.of('SigFlags'), PDFNumber)
     if (flags && (flags.asNumber() & 1) !== 0) return true
-    const perms = doc.catalog.lookupMaybe(PDFName.of('Perms'), PDFDict)
+    const perms = catalog.lookupMaybe(PDFName.of('Perms'), PDFDict)
     if (perms?.has(PDFName.of('DocMDP')) || perms?.has(PDFName.of('UR3'))) return true
     const fields = form?.lookupMaybe(PDFName.of('Fields'), PDFArray)
     if (!fields) return false
@@ -360,7 +389,7 @@ async function open(bytes: Uint8Array): Promise<Opened> {
         return { ok: false, reason: encrypted ? 'encrypted' : 'unreadable' }
     }
     try {
-        if (hasSignature(doc)) return { ok: false, reason: 'signed' }
+        if (hasSignature(doc.catalog)) return { ok: false, reason: 'signed' }
         doc.getPages()
     } catch {
         return { ok: false, reason: 'unreadable' }
@@ -368,13 +397,59 @@ async function open(bytes: Uint8Array): Promise<Opened> {
     return { ok: true, doc }
 }
 
+/** The light reader's view of `bytes`, parsed once per buffer (read, page sizes and apply of one
+ *  migration share it). null when the file is outside what it handles. */
+const lightCache = new WeakMap<Uint8Array, LightPdf | null>()
+
+function lightOf(bytes: Uint8Array): LightPdf | null {
+    if (lightCache.has(bytes)) return lightCache.get(bytes)!
+    let doc: LightPdf | null = null
+    try {
+        doc = openLightPdf(bytes)
+    } catch {
+        doc = null
+    }
+    lightCache.set(bytes, doc)
+    return doc
+}
+
+const lightPage = (doc: LightPdf, i: number): PageLike | null => {
+    const p = doc.pages[i]
+    return p ? { dict: p.dict, ctx: doc.context, ref: p.ref } : null
+}
+
+/** Unrotated viewport size of a 0-based page (pdf.js `getViewport({ scale: 1 })`), through the
+ *  light reader. Throws when the file needs the full load. */
+export async function pageNatSizeOf(
+    bytes: Uint8Array,
+    page: number,
+): Promise<{ w: number; h: number }> {
+    const doc = lightOf(bytes)
+    const p = doc && !doc.encrypted ? lightPage(doc, page) : null
+    if (!p) throw new Error('page not reachable through the light reader')
+    return pageNatSize(pageGeom(p))
+}
+
 export async function readPdfHighlights(bytes: Uint8Array): Promise<PdfHighlightRead> {
+    const light = lightOf(bytes)
+    if (light) {
+        if (light.encrypted) return { writable: false, reason: 'encrypted', pages: [] }
+        try {
+            if (hasSignature(light.catalog)) return { writable: false, reason: 'signed', pages: [] }
+            const pages = light.pages.map((_, i) =>
+                highlightsOnPage(lightPage(light, i)!, i).map(f => f.highlight),
+            )
+            return { writable: true, pages }
+        } catch {
+            // fall through to the full load
+        }
+    }
     const o = await open(bytes)
     if (!o.ok) return { writable: false, reason: o.reason, pages: [] }
     try {
         const pages = o.doc
             .getPages()
-            .map((p, i) => highlightsOnPage(p, i).map(f => f.highlight))
+            .map((p, i) => highlightsOnPage(pageLikeOf(p), i).map(f => f.highlight))
         return { writable: true, pages }
     } catch {
         return { writable: false, reason: 'unreadable', pages: [] }
@@ -386,20 +461,25 @@ function pdfDate(now: Date): string {
     return `D:${now.getUTCFullYear()}${p(now.getUTCMonth() + 1)}${p(now.getUTCDate())}${p(now.getUTCHours())}${p(now.getUTCMinutes())}${p(now.getUTCSeconds())}Z`
 }
 
-function addAnnotation(
-    doc: PDFDocument,
-    page: PDFPage,
+type NewObject = { ref: PDFRef; body: PDFObject }
+
+/** The annotation and its appearance stream for one highlight, built in `ctx`; `alloc` hands out
+ *  object numbers. Returns null for a highlight that is empty or already on the page. */
+function buildAnnotation(
+    ctx: PDFContext,
+    alloc: () => PDFRef,
+    page: PageLike,
     pageIndex: number,
     h: Highlight,
     now: Date,
     existing: Set<string>,
-): void {
+): { annotRef: PDFRef; objects: NewObject[] } | null {
     const g = pageGeom(page)
     const color = resolveHighlightColor(h.c).toLowerCase()
     const quads = rectsToQuads(h.rects, g)
-    if (!quads.length) return
+    if (!quads.length) return null
     const id = pdfHighlightId(pageIndex, quads, color)
-    if (existing.has(id)) return
+    if (existing.has(id)) return null
     existing.add(id)
     const rgb = hexToRgb01(color).map(r3)
     const xs: number[] = [],
@@ -418,7 +498,6 @@ function addAnnotation(
             y = Math.min(...qy)
         content += `${x} ${y} ${r3(Math.max(...qx) - x)} ${r3(Math.max(...qy) - y)} re f\n`
     }
-    const ctx = doc.context
     const gs = ctx.obj({
         Type: 'ExtGState',
         BM: 'Multiply',
@@ -434,7 +513,8 @@ function addAnnotation(
         Matrix: [1, 0, 0, 1, 0, 0],
         Resources: ctx.obj({ ExtGState: ctx.obj({ GS0: gs }) }),
     })
-    const apRef = ctx.register(ap)
+    const apRef = alloc()
+    const annotRef = alloc()
     const annot = ctx.obj({
         Type: 'Annot',
         Subtype: 'Highlight',
@@ -447,52 +527,119 @@ function addAnnotation(
         M: PDFString.of(pdfDate(now)),
         NM: PDFString.of(id),
         T: PDFString.of('Bismuth'),
-        P: page.ref,
+        ...(page.ref ? { P: page.ref } : {}),
         AP: ctx.obj({ N: apRef }),
     })
-    page.node.addAnnot(ctx.register(annot))
+    return {
+        annotRef,
+        objects: [
+            { ref: apRef, body: ap },
+            { ref: annotRef, body: annot },
+        ],
+    }
 }
 
-export async function applyPdfHighlightEdits(
-    bytes: Uint8Array,
-    edits: PdfHighlightEdits,
-    now: Date = new Date(),
-): Promise<Uint8Array> {
-    const o = await open(bytes)
-    if (!o.ok) {
-        throw new AppError(
-            'PDF_NOT_WRITABLE',
-            `This PDF cannot be rewritten (${o.reason})`,
-            409,
-        )
+/** Which annotation entries of a page the removal drops: the matching highlights and their popups. */
+function removedEntries(
+    page: PageLike,
+    found: Found[],
+    wanted: Set<string>,
+): { drop: Set<PDFDict>; hit: Found[] } {
+    const hit = found.filter(f => wanted.has(f.highlight.id))
+    const drop = new Set<PDFDict>(hit.map(f => f.dict))
+    for (const f of hit) {
+        const pop = f.dict.get(PDFName.of('Popup'))
+        if (pop instanceof PDFRef) {
+            const pd = page.ctx.lookupMaybe(pop, PDFDict)
+            if (pd) drop.add(pd)
+        }
     }
-    const doc = o.doc
+    return { drop, hit }
+}
+
+/** The incremental update: only the touched pages' /Annots and the new objects are written. Returns
+ *  the bytes to append, or null when nothing changes. */
+function applyIncremental(
+    doc: LightPdf,
+    edits: PdfHighlightEdits,
+    now: Date,
+): Uint8Array | null {
+    const out: IncrementObjects = new Map()
+    const scratch = PDFContext.create()
+    let next = doc.nextNum
+    const alloc = () => PDFRef.of(next++)
+    const touched = new Set<number>()
+    for (const r of edits.remove) touched.add(r.page)
+    for (const a of edits.add) touched.add(a.page)
+
+    for (const pi of touched) {
+        const page = lightPage(doc, pi)
+        if (!page) continue
+        const found = highlightsOnPage(page, pi)
+        const wanted = new Set(
+            edits.remove.filter(r => r.page === pi).map(r => r.id),
+        )
+        const { drop, hit } = removedEntries(page, found, wanted)
+        const annots = annotsOf(page)
+        const kept: PDFObject[] = []
+        let dropped = 0
+        for (let i = 0; annots && i < annots.size(); i++) {
+            const d = annots.lookupMaybe(i, PDFDict)
+            if (d && drop.has(d)) dropped++
+            else kept.push(annots.get(i))
+        }
+        const existing = new Set(
+            found.filter(f => !hit.includes(f)).map(f => f.highlight.id),
+        )
+        const added: PDFRef[] = []
+        for (const a of edits.add.filter(a => a.page === pi)) {
+            const b = buildAnnotation(scratch, alloc, page, pi, a.highlight, now, existing)
+            if (!b) continue
+            for (const o of b.objects) out.set(o.ref.objectNumber, { gen: 0, body: o.body })
+            added.push(b.annotRef)
+        }
+        if (!dropped && !added.length) continue
+
+        const arr = PDFArray.withContext(scratch)
+        for (const k of kept) arr.push(k)
+        for (const r of added) arr.push(r)
+        const raw = page.dict.get(PDFName.of('Annots'))
+        if (raw instanceof PDFRef && page.ctx.lookup(raw) instanceof PDFArray) {
+            // /Annots is its own object: rewrite just that array
+            out.set(raw.objectNumber, { gen: raw.generationNumber, body: arr })
+        } else {
+            // the page dictionary may live in an object stream; a top-level copy supersedes it
+            if (!page.ref) throw new Error('page is not an indirect object')
+            const copy = PDFDict.fromMapWithContext(new Map(page.dict.entries()), scratch)
+            copy.set(PDFName.of('Annots'), arr)
+            out.set(page.ref.objectNumber, { gen: page.ref.generationNumber, body: copy })
+        }
+    }
+    return out.size ? buildIncrement(doc, out, next) : null
+}
+
+function applyFull(doc: PDFDocument, edits: PdfHighlightEdits, now: Date): Promise<Uint8Array> {
     const pages = doc.getPages()
     const touched = new Set<number>()
     for (const r of edits.remove) touched.add(r.page)
     for (const a of edits.add) touched.add(a.page)
 
     for (const pi of touched) {
-        const page = pages[pi]
-        if (!page) continue
+        const pdfPage = pages[pi]
+        if (!pdfPage) continue
+        const page = pageLikeOf(pdfPage)
         const wanted = new Set(
             edits.remove.filter(r => r.page === pi).map(r => r.id),
         )
         if (wanted.size) {
-            const found = highlightsOnPage(page, pi).filter(f =>
-                wanted.has(f.highlight.id),
-            )
+            const found = highlightsOnPage(page, pi)
+            const { drop, hit } = removedEntries(page, found, wanted)
             const annots = annotsOf(page)
-            const drop = new Set<PDFDict>(found.map(f => f.dict))
             const delRefs: PDFRef[] = []
-            for (const f of found) {
+            for (const f of hit) {
                 if (f.ref) delRefs.push(f.ref)
                 const pop = f.dict.get(PDFName.of('Popup'))
-                if (pop instanceof PDFRef) {
-                    delRefs.push(pop)
-                    const pd = doc.context.lookupMaybe(pop, PDFDict)
-                    if (pd) drop.add(pd)
-                }
+                if (pop instanceof PDFRef) delRefs.push(pop)
                 const apn = f.dict
                     .lookupMaybe(PDFName.of('AP'), PDFDict)
                     ?.get(PDFName.of('N'))
@@ -511,10 +658,70 @@ export async function applyPdfHighlightEdits(
             const existing = new Set(
                 highlightsOnPage(page, pi).map(f => f.highlight.id),
             )
+            const ctx = doc.context
             for (const a of adds) {
-                addAnnotation(doc, page, pi, a.highlight, now, existing)
+                const b = buildAnnotation(ctx, () => ctx.nextRef(), page, pi, a.highlight, now, existing)
+                if (!b) continue
+                for (const o of b.objects) ctx.assign(o.ref, o.body)
+                pdfPage.node.addAnnot(b.annotRef)
             }
         }
     }
     return doc.save()
+}
+
+const notWritable = (reason: string) =>
+    new AppError('PDF_NOT_WRITABLE', `This PDF cannot be rewritten (${reason})`, 409)
+
+/** What an edit does to the file: nothing, append bytes after the current contents (the input
+ *  stays a byte-identical prefix), or replace the contents. */
+export type PdfHighlightIncrement =
+    | { kind: 'none' }
+    | { kind: 'append'; suffix: Uint8Array }
+    | { kind: 'replace'; bytes: Uint8Array }
+
+/** Add and remove highlights. A PDF the light reader handles gets an incremental update; the rest
+ *  is re-saved through a full pdf-lib load. Encrypted and signed PDFs throw PDF_NOT_WRITABLE. */
+export async function applyPdfHighlightIncrement(
+    bytes: Uint8Array,
+    edits: PdfHighlightEdits,
+    now: Date = new Date(),
+): Promise<PdfHighlightIncrement> {
+    const light = lightOf(bytes)
+    if (light) {
+        if (light.encrypted) throw notWritable('encrypted')
+        let signed = false
+        try {
+            signed = hasSignature(light.catalog)
+        } catch {
+            signed = false
+        }
+        if (signed) throw notWritable('signed')
+        try {
+            const suffix = applyIncremental(light, edits, now)
+            return suffix ? { kind: 'append', suffix } : { kind: 'none' }
+        } catch (e) {
+            if (e instanceof AppError) throw e
+            // outside what the light writer handles: full load below
+        }
+    }
+    const o = await open(bytes)
+    if (!o.ok) throw notWritable(o.reason)
+    return { kind: 'replace', bytes: await applyFull(o.doc, edits, now) }
+}
+
+/** `applyPdfHighlightIncrement` as whole-file bytes; an edit that changes nothing returns `bytes`
+ *  itself (same reference). */
+export async function applyPdfHighlightEdits(
+    bytes: Uint8Array,
+    edits: PdfHighlightEdits,
+    now: Date = new Date(),
+): Promise<Uint8Array> {
+    const r = await applyPdfHighlightIncrement(bytes, edits, now)
+    if (r.kind === 'none') return bytes
+    if (r.kind === 'replace') return r.bytes
+    const out = new Uint8Array(bytes.length + r.suffix.length)
+    out.set(bytes, 0)
+    out.set(r.suffix, bytes.length)
+    return out
 }

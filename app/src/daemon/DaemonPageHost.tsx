@@ -15,6 +15,7 @@
 import {
     createEffect,
     createMemo,
+    untrack,
     createSignal,
     on,
     onCleanup,
@@ -64,6 +65,7 @@ import {
     daemonSnapshotLoaded,
     refreshDaemonSnapshot,
 } from './daemonSnapshotStore'
+import { reuseEqual } from './snapshotEquality'
 import DaemonPage from './DaemonPage'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
@@ -106,13 +108,15 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     // The poll serves both the box (60) and an opened log (FULL_LOG_LIMIT), so an opened log stays
     // live; closing it clears the full list so a reopen never shows the previous open's events.
     const fetchLogs = async () => {
-        const full = opened() === 'log'
+        const full = untrack(opened) === 'log'
         try {
             const ev = await api.daemonLogs({
                 limit: full ? FULL_LOG_LIMIT : LOG_LIMIT,
             })
-            setEvents(full ? ev.slice(0, LOG_LIMIT) : ev)
-            if (full) setFullEvents(ev)
+            setEvents(prev =>
+                reuseEqual(prev, full ? ev.slice(0, LOG_LIMIT) : ev),
+            )
+            if (full) setFullEvents(prev => reuseEqual(prev ?? [], ev))
         } catch {
             /* keep the previous log */
         }

@@ -4,6 +4,7 @@ import {
     diffFingerprints,
     createChangeTracker,
     createThemeFileTracker,
+    createPresenceTracker,
     flushDelayMs,
     MAX_COALESCE_INTERVALS,
 } from '../src/changeClassifier'
@@ -230,4 +231,48 @@ test('jsonl base: icon on line 1 changes the fingerprint, a row edit does not', 
     expect(diffFingerprints(fp(a), fp(rowEdit))).toEqual({ graph: false, tree: false })
     expect(diffFingerprints(fp(a), fp(iconEdit))).toEqual({ graph: false, tree: true })
     expect(diffFingerprints(fp(a), fp(hidden))).toEqual({ graph: false, tree: true })
+})
+
+test('presence tracker: a new or removed folder is structural, a rewrite of a listed file is not', () => {
+    const t = createPresenceTracker()
+    t.seed(['paper.pdf', 'Old Folder'], 1000)
+    const born = (ms: number) => ({ exists: true, bornMs: ms })
+    const gone = { exists: false, bornMs: 0 }
+    expect(t.classify('paper.pdf', born(500))).toBe(false) // rewrite of a boot-time file
+    expect(t.classify('paper.pdf', born(500))).toBe(false) // and again
+    expect(t.classify('BrandNewFolder', born(2000))).toBe(true) // folder created after boot
+    expect(t.classify('BrandNewFolder', born(2000))).toBe(false) // later event on it
+    expect(t.classify('Old Folder', gone)).toBe(true) // folder deleted
+    expect(t.classify('photo.png', born(2000))).toBe(true) // file created
+    expect(t.classify('photo.png', gone)).toBe(true) // file removed
+})
+
+test('presence tracker: before the seed lands every event is structural, and the event wins over the walk', () => {
+    const t = createPresenceTracker()
+    expect(t.classify('early.pdf', { exists: true, bornMs: 900 })).toBe(true)
+    expect(t.classify('removed.png', { exists: false, bornMs: 0 })).toBe(true)
+    // the walk listed both before the events reached it
+    t.seed(['early.pdf', 'removed.png'], 800)
+    expect(t.classify('early.pdf', { exists: true, bornMs: 900 })).toBe(false)
+    expect(t.classify('removed.png', { exists: true, bornMs: 1500 })).toBe(true)
+})
+
+test('presence tracker: a listed file born after the walk began is a create on its first event', () => {
+    const t = createPresenceTracker()
+    t.seed(['late.pdf', 'same-ms.pdf'], 1000)
+    // the walk listed it before its own create event arrived
+    expect(t.classify('late.pdf', { exists: true, bornMs: 1001 })).toBe(true)
+    expect(t.classify('late.pdf', { exists: true, bornMs: 1001 })).toBe(false)
+    // written in the same millisecond the walk began: counts as already there
+    expect(t.classify('same-ms.pdf', { exists: true, bornMs: 1000.7 })).toBe(
+        false,
+    )
+})
+
+test('presence tracker: deleting a path never seen individually (child of a moved folder) is structural', () => {
+    const t = createPresenceTracker()
+    t.seed(['a', 'a/x.pdf'], 1000)
+    expect(t.classify('a', { exists: false, bornMs: 0 })).toBe(true)
+    expect(t.classify('b', { exists: true, bornMs: 2000 })).toBe(true)
+    expect(t.classify('b/x.pdf', { exists: false, bornMs: 0 })).toBe(true)
 })

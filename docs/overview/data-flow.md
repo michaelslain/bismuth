@@ -50,7 +50,8 @@ The graph is built from wikilinks, tags and frontmatter; the file tree shows str
 | Wikilink targets or tags changed | true | false |
 | Frontmatter `icon` or `visibility` changed | false | true |
 | Prose or other frontmatter only | false | false |
-| A non-markdown file added, changed or removed | true | true |
+| A non-markdown file or a folder added, removed or renamed | true | true |
+| An existing non-markdown file rewritten (a PDF highlight save, a `.draw` sidecar autosave) | false | false |
 | `.settings` changed | true | true |
 | Other files inside `.daemon` (logs, pids, cron state, triggers) | ignored | ignored |
 | A note inside `.daemon/memory` | true | per the note rules above |
@@ -132,7 +133,7 @@ A burst of writes never defers the update forever: a batch flushes at the latest
 
 `extractFingerprint` reduces a note to its sorted, deduplicated wikilink targets, its tags, its `icon` and its `visibility`. `createChangeTracker` stores one fingerprint per path; `diffFingerprints` compares old and new. A missing old or new fingerprint means a new or deleted note and dirties both flags. Otherwise links or tags dirty the graph, and icon or visibility dirty the tree. `tracker.seed` records a baseline without classifying, and the boot-time task-syntax scan calls it for every note.
 
-`classifyVault` in `core/src/server.ts` wraps the tracker with the path rules from the table above. A `.settings` change also reloads the runtime config asynchronously, then re-invalidates the daemon-gated caches (the `.daemon` tree folder and the 3rd-brain graph) and publishes a second event, so a `daemon.enabled` toggle shows up live.
+`classifyVault` in `core/src/server.ts` wraps the tracker with the path rules from the table above. Non-markdown files and folders go through `createPresenceTracker` (`core/src/changeClassifier.ts`), which knows which paths exist: a path that appears, or any delete, is structural, and a rewrite of a path it already knows is not. Its set is seeded by an async `walkDir` after boot that skips dot-folders; an event that lands before the walk finishes counts as structural, so an early create is never missed. The rewritten path still rides the event's `paths`, which is how an open PDF view learns its file changed. A `.settings` change also reloads the runtime config asynchronously, then re-invalidates the daemon-gated caches (the `.daemon` tree folder and the 3rd-brain graph) and publishes a second event, so a `daemon.enabled` toggle shows up live.
 
 `applyDirty(paths, dirty, vaultTouched)` is the single publishing step. It drops the graph and tree caches as flagged, and, when the vault was touched, patches the search index, the rows feed (`patchVaultRows`) and the tasks feed (`patchTaskRows`) for the known paths, or drops them for an unknown extent. The rows and tasks patches are awaited before the event is published, so a client that refetches on the event sees the patched feed. The search patch is fire-and-forget and can be one edit stale for a moment. Finally it increments `version` and calls `sse.publish`.
 

@@ -14,6 +14,25 @@ const WIKILINK_REGEX = /(?<!!)\[\[([^\]]+?)\]\]/g
  * Shared by extractWikilinks and extractTags. Mirrors the editor's live-preview, which
  * also skips code fences when rendering links/tags.
  */
+/** Same length as `s`, newlines kept, every other char a space. Walks newlines with
+ *  indexOf and repeats spaces per line instead of a per-character regex callback. */
+function blankKeepingNewlines(s: string): string {
+    if (s.indexOf('\n') === -1) return ' '.repeat(s.length)
+    const parts: string[] = []
+    let from = 0
+    for (;;) {
+        const nl = s.indexOf('\n', from)
+        if (nl === -1) {
+            if (from < s.length) parts.push(' '.repeat(s.length - from))
+            break
+        }
+        if (nl > from) parts.push(' '.repeat(nl - from))
+        parts.push('\n')
+        from = nl + 1
+    }
+    return parts.join('')
+}
+
 export function stripCode(md: string): string {
     // Fast path: the only code regions stripped below are backtick spans/fences and
     // `~~~` fences. A note containing neither delimiter has nothing to strip, so return
@@ -23,7 +42,7 @@ export function stripCode(md: string): string {
 
     // Replace each matched code region with a same-length run that keeps newlines but
     // drops every other character, so nothing inside reads as a tag or link.
-    const blank = (s: string): string => s.replace(/[^\n]/g, ' ')
+    const blank = blankKeepingNewlines
 
     let out = md
     // Fenced blocks first: a fence opener (``` or ~~~, optional info string) on its own

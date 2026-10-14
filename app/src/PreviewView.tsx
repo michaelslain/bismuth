@@ -204,6 +204,12 @@ export function PreviewView(props: {
             props.pdfLoad ? props.pdfLoad() : fetch(url).then(r => r.arrayBuffer())
     })
 
+    // pdf.js loads the PDF from this URL itself (range requests, streamed). Not available for a
+    // story's `pdfLoad` seam or a backend with no HTTP URL (mobile runs core in-process), which
+    // keep the buffered `pdfLoad` above.
+    const pdfUrl = () =>
+        props.pdfLoad || !/^https?:/.test(apiBase()) ? undefined : assetUrl()
+
     // `pdfViewMemory`'s key for the CURRENT path, or undefined when a story supplies `pdfLoad`
     // (same condition PdfPages' own `cacheKey` uses) — several PreviewView stories share one
     // literal path (`ANNOT_PDF_PATH`) across separate stories with `pdfLoad` set, so saving/
@@ -1008,6 +1014,7 @@ export function PreviewView(props: {
                         <PdfPages
                             class={styles['preview-pdf']}
                             load={pdfLoad()}
+                            url={pdfUrl()}
                             zoom={pdfZoom()}
                             marginRatio={marginRatio()}
                             scratchEdge={scratchEditable() ? scratchEdge : undefined}

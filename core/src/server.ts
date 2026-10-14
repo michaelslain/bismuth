@@ -8,7 +8,7 @@ import { createSelfWriteMarks } from './selfWriteMarks'
 import { watchLive, type LiveWatcher } from './liveWatch'
 import { buildGraph } from './engine'
 import { attachLayout, computeViewLayouts, layoutEpoch } from './layout-cache'
-import { listTree, readNote } from './files'
+import { listTree, readNote, walkDir } from './files'
 import { scheduleBackup, snapshotMessage } from './backup'
 import {
     runTaskMigration,
@@ -81,6 +81,8 @@ import {
 import {
     createChangeTracker,
     createThemeFileTracker,
+    createPresenceTracker,
+    type PathStat,
     isSettingsPath,
     flushDelayMs,
 } from './changeClassifier'
@@ -475,6 +477,25 @@ export function createServer(cfg: CoreConfig) {
             /* unreadable at boot: its first edit counts as a first sighting */
         }
     }
+    // Non-markdown files and folders (pdfs, images, `.draw` sidecars): a write to an existing file
+    // changes nothing the tree or graph shows, so only a create/delete/rename is structural. The
+    // listing comes from an async walkDir (dot-entries skipped, as the watcher drops them) that runs
+    // off the boot path; createPresenceTracker treats every event before it lands as structural.
+    const otherFiles = createPresenceTracker()
+    const pathStat = (rel: string): PathStat => {
+        try {
+            const st = statSync(join(cfg.vault, rel))
+            return { exists: true, bornMs: st.birthtimeMs || st.ctimeMs }
+        } catch {
+            return { exists: false, bornMs: 0 }
+        }
+    }
+    {
+        const startedMs = Date.now()
+        walkDir(cfg.vault, (_d, rel) => !rel.endsWith('.md'))
+            .then(entries => otherFiles.seed(entries.map(e => e.rel), startedMs))
+            .catch(() => otherFiles.seed([], startedMs))
+    }
     const themeFiles = createThemeFileTracker(
         (() => {
             try {
@@ -644,8 +665,13 @@ export function createServer(cfg: CoreConfig) {
                 continue
             }
             if (!p.endsWith('.md')) {
-                graph = true
-                tree = true
+                // A file or folder appearing or vanishing is structural. A content-only rewrite of an
+                // existing file (a pdf highlight save, a `.draw` autosave) rides the SSE `paths`, but
+                // the tree and graph are unchanged.
+                if (otherFiles.classify(p, pathStat(p))) {
+                    graph = true
+                    tree = true
+                }
                 continue
             }
             notePaths.push(p)

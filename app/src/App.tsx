@@ -6,6 +6,7 @@ import {
     onCleanup,
     For,
     Index,
+    untrack,
     createMemo,
     createEffect,
     on,
@@ -2503,16 +2504,21 @@ export default function App() {
     // 30s normally, tightened to ~5s while any page is mid-run so a just-approved action's
     // done/failed status shows up promptly. Reading anyWorking() here (tracked) re-arms the
     // interval whenever it flips.
+    // `fast` is a memo so the effect re-arms only when the boolean flips, never on a new snapshot
+    // object; the tick runs untracked so its own writes cannot feed back into the effect.
+    const daemonPollFast = createMemo(
+        () => anyWorking() || daemonSnapshot().crons.some(c => c.running),
+    )
     createEffect(() => {
         if (!settings.daemon.enabled) return
         // The snapshot rides the same timer so the status bar's daemon readout tracks the
         // daemon page's (both read daemonSnapshotStore).
-        const fast = anyWorking() || daemonSnapshot().crons.some(c => c.running)
+        const fast = daemonPollFast()
         const tick = () => {
             void refreshInbox()
             void refreshDaemonSnapshot()
         }
-        tick()
+        untrack(tick)
         const t = setInterval(tick, fast ? 5000 : 30000)
         onCleanup(() => clearInterval(t))
     })

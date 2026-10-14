@@ -6,14 +6,19 @@
 // testable under Bun); this file is the module-scope singleton PdfPages.tsx actually uses, plus
 // the freshness wiring that keeps it correct as files change underneath it. Mirrors
 // `noteCache.ts`'s shape for the SSE + rename/delete listeners.
+import { apiBase } from '../api'
 import { onServerChange } from '../serverVersion'
+import { buildAssetUrl } from './assetUrl'
 import type { Highlight } from '../../../core/src/drawing/model'
 import type { OutlineNode } from './annotationTypes'
 import type { PageSize } from './pageLayout'
 import type { HideStorage } from './pdfAnnotHighlights'
 import {
     createPdfDocCache,
+    createReplacedListeners,
     createSelfWriteGate,
+    routePathChange,
+    type CachedPdf,
     type PdfDocCache,
 } from './pdfDocCacheCore'
 
@@ -112,7 +117,8 @@ export const rasterStash = {
 // A named `paths` change invalidates exactly those keys — a change to `x.pdf.draw` or
 // `x.pdf.md` never touches `x.pdf`'s cached document, since these are plain string-equality
 // keys, not prefix matches. An EMPTY `paths` with an advancing version is an unknown extent
-// (a poll catch-up after the SSE stream missed an event) and clears everything. Mirrors
+// (a poll catch-up after the SSE stream missed an event, or the stream's connect snapshot) and
+// re-validates every cached document against the server, dropping only those whose file changed. Mirrors
 // `noteCache.ts:36-51`.
 let lastVersion = 0
 // Paths this window is about to write itself (a highlight save rewrites the PDF): the echo of
@@ -130,17 +136,51 @@ export function cancelSelfWrite(path: string): void {
     selfWrites.cancel(path)
 }
 
+/** Is the cached document for `key` still the file on disk? Asks the server with the validator the
+ *  document was loaded under: 304 = unchanged, anything else = the file changed or went away. A
+ *  document with no validator (a story's seam, the in-process backend) is never second-guessed, and
+ *  a failed request keeps it (offline is not a change). */
+async function stillFresh(key: string, value: CachedPdf<LoadedPdf>): Promise<boolean> {
+    const etag = await value.validator
+    const base = apiBase()
+    if (!etag || !/^https?:/.test(base)) return true
+    const ac = new AbortController()
+    try {
+        const r = await fetch(buildAssetUrl(base, key), {
+            headers: { 'If-None-Match': etag },
+            cache: 'no-store',
+            signal: ac.signal,
+        })
+        const fresh = r.status === 304
+        if (!fresh) dropStashFor(key)
+        return fresh
+    } finally {
+        ac.abort() // a 200 would stream the whole file; only the status mattered
+    }
+}
+
+const replacedListeners = createReplacedListeners()
+
+/** Subscribe to `key`'s file being rewritten under an open document (a range-loaded document
+ *  reads unfetched pages from the new bytes at the old offsets, so it must reload). */
+export function onPdfReplaced(key: string, cb: () => void): () => void {
+    return replacedListeners.on(key, cb)
+}
+
+/** `key`'s file was rewritten: drop its cache entry + rasters and tell open views to reload. */
+export function pdfReplaced(key: string): void {
+    pdfCache.invalidate(key)
+    dropStashFor(key)
+    replacedListeners.fire(key)
+}
+
 onServerChange(c => {
     if (c.paths.length > 0) {
-        for (const p of c.paths) {
-            if (selfWrites.consume(p)) continue
-            pdfCache.invalidate(p)
-            dropStashFor(p)
-        }
+        routePathChange(c.paths, selfWrites, pdfReplaced)
     } else if (c.version > lastVersion) {
-        pdfCache.invalidateAll()
-        stash.clear()
-        stashOrder.length = 0
+        // The connect snapshot and poll catch-ups land here too: re-validate rather than wipe, so
+        // a reconnect does not re-download a PDF that did not change.
+        void pdfCache.revalidateAll(stillFresh)
     }
     if (c.version > lastVersion) lastVersion = c.version
 })

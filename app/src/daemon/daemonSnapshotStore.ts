@@ -5,6 +5,7 @@
 import { createSignal } from 'solid-js'
 import { api } from '../api'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
+import { shareSnapshot } from './snapshotEquality'
 
 /** Before the first snapshot lands: nothing configured, not (yet) known to be running. */
 export const NO_SNAPSHOT: DaemonSnapshot = {
@@ -24,7 +25,9 @@ export const daemonSnapshotLoaded = loaded
 /** Best-effort: a failed fetch keeps the last good snapshot rather than blanking it. */
 export async function refreshDaemonSnapshot(): Promise<void> {
     try {
-        setSnapshot(await api.daemonSnapshot())
+        const next = await api.daemonSnapshot()
+        // Equal data keeps the same object, so nothing that reads the signal re-runs.
+        setSnapshot(prev => shareSnapshot(prev, next))
         setLoaded(true)
     } catch {
         /* keep the previous snapshot */

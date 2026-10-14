@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { extractWikilinks } from '../src/wikilinks'
+import { extractWikilinks, stripCode } from '../src/wikilinks'
 
 test('extracts targets, strips alias and heading, dedupes', () => {
     const md = `See [[internship]] and [[housing|my place]] and [[essay#intro]] and [[internship]].`
@@ -114,4 +114,75 @@ test('tilde-fenced code block also hides wikilinks', () => {
 test('unterminated fenced block hides links to end of document', () => {
     const md = '[[Before]]\n```\n[[StillHidden]]\nno closing fence'
     expect(extractWikilinks(md)).toEqual(['Before'])
+})
+
+// Oracle: the pre-optimisation stripCode, kept verbatim so the linear-time blanking
+// is proven byte-identical.
+function oldStripCode(md: string): string {
+    if (md.indexOf('`') === -1 && md.indexOf('~~~') === -1) return md
+    const blank = (s: string): string => s.replace(/[^\n]/g, ' ')
+    let out = md
+    out = out.replace(
+        /(^|\n)([ \t]*)(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n[ \t]*\3[^\n]*(?=\n|$)|$)/g,
+        m => blank(m),
+    )
+    out = out.replace(/(`+)(?:(?!\1)[^\n])*?\1/g, m => blank(m))
+    return out
+}
+
+const big = (n: number) => 'AbC+/=\u00e9 '.repeat(Math.ceil(n / 9)).slice(0, n)
+
+const stripCases: Record<string, string> = {
+    plain: 'no code [[Link]] #tag',
+    fenced: 'a\n```js\nconst x = [[In]]\n```\nb [[Out]]',
+    tilde: '[[B]]\n~~~\n[[H]]\n~~~\n[[A]]',
+    unterminated: '[[B]]\n```\n[[H]]\nno close',
+    unterminatedTilde: 'x\n~~~ info\nbody\nmore',
+    longerClose: '````\n```\ninner\n```\n````\nafter',
+    nestedBackticks: 'a ``b ` c`` d ```` e `f` g',
+    inline: 'Use `[[X]]` and ``a`b`` and `` ` `` and `unclosed',
+    crlf: 'a\r\n```\r\n[[In]]\r\n```\r\nb `c`\r\n',
+    indentedFence: '  ```\n  x\n  ```\ny',
+    emptyFence: '```\n```\n',
+    fenceAtEnd: 'x\n```',
+    onlyBackticks: '```',
+    trailingNewlines: '```\nx\n\n\n',
+    twoBlocks: '```\na\n```\nmid\n~~~\nb\n~~~\nend',
+    bigFence: 'before\n```json\n' + big(2_000_000) + '\n```\nafter [[X]]',
+    bigMultiline:
+        '```\n' +
+        Array.from({ length: 20000 }, (_, i) => 'line ' + i + ' `x`').join('\n') +
+        '\n```\n`tail`',
+    bigUnterminated: 'a\n```\n' + big(1_000_000),
+    bigTilde: '~~~\n' + big(500_000) + '\n~~~',
+}
+
+for (const [name, md] of Object.entries(stripCases)) {
+    test(`stripCode matches the old implementation: ${name}`, () => {
+        const got = stripCode(md)
+        expect(got.length).toBe(md.length)
+        expect(got === oldStripCode(md)).toBe(true)
+    })
+}
+
+test('stripCode matches the old implementation on generated mixes', () => {
+    const pieces = ['`', '``', '```', '~~~', '\n', '\r\n', ' ', 'a', '[[L]]', '#t', '  ', '\t']
+    let seed = 12345
+    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
+    for (let i = 0; i < 400; i++) {
+        let md = ''
+        const n = 1 + Math.floor(rnd() * 40)
+        for (let j = 0; j < n; j++) md += pieces[Math.floor(rnd() * pieces.length)]
+        expect(stripCode(md) === oldStripCode(md)).toBe(true)
+    }
+})
+
+test('stripCode blanks a 2.7 MB fenced block in under 30ms', () => {
+    const md = 'x\n```json\n' + big(2_700_000) + '\n```\ny'
+    stripCode(md)
+    const t0 = performance.now()
+    stripCode(md)
+    const ms = performance.now() - t0
+    console.log('stripCode 2.7MB ms', ms.toFixed(1))
+    expect(ms).toBeLessThan(30)
 })

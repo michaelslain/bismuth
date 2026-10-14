@@ -33,6 +33,9 @@ export interface FileAccess {
     /** Write raw bytes to a vault-relative path, creating parent dirs. Atomic where the platform
      *  allows: a reader never sees a half-written file. */
     writeBinary(root: string, rel: string, bytes: Uint8Array): Promise<void>
+    /** Append bytes to an existing file that must still be `expectedSize` long (rejects otherwise).
+     *  Optional: a PDF increment then falls back to writeBinary of the whole file. */
+    appendBinary?(root: string, rel: string, bytes: Uint8Array, expectedSize: number): Promise<void>
     /** Stat one note; resolves null if it vanished since listing. */
     statNote(root: string, rel: string): Promise<FileStat | null>
     /** Entry names (files and folders, no path prefix) directly inside a vault-relative dir, dotfiles
@@ -66,6 +69,7 @@ export async function getFileAccess(): Promise<FileAccess> {
         writeNote: files.writeNote,
         readBinary: files.readBinary,
         writeBinary: files.writeBinaryAtomic,
+        appendBinary: files.appendBinary,
         statNote: async (root, rel) => {
             const st = await stat(join(root, rel)).catch(() => null)
             if (!st) return null

@@ -9,7 +9,7 @@ import {
     realpathSync,
     chmodSync,
 } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
+import { appendFile, readdir, stat } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { parseFrontmatter } from './frontmatter'
 import { createError } from './error'
@@ -44,7 +44,7 @@ const THEME_FILE_RE = /^\.themes\/[^/]+\.yaml$/
  *
  * Directories are always recursed; filtering only applies to whether they're included in results.
  */
-async function walkDir<T>(
+export async function walkDir<T>(
     absRoot: string,
     filter: (entry: Dirent, rel: string) => boolean | { data: T },
     allowDot: (rel: string) => boolean = () => false,
@@ -435,6 +435,22 @@ export async function writeBinaryAtomic(
         rmSync(tmp, { force: true })
         throw e
     }
+}
+
+/** Append bytes to an existing file, which must still be `expectedSize` long: the caller computed the
+ *  bytes against that exact content (a PDF incremental update), so a file that changed since is
+ *  refused instead of corrupted. A symlink is followed to its target. */
+export async function appendBinary(
+    root: string,
+    rel: string,
+    bytes: Uint8Array,
+    expectedSize: number,
+): Promise<void> {
+    const full = realpathSync(resolveInVault(root, rel))
+    if (statSync(full).size !== expectedSize) {
+        throw createError('ECHANGED', `${rel} changed while it was being edited`, 409)
+    }
+    await appendFile(full, bytes)
 }
 
 /** Pick a non-colliding vault-relative path for `rel` by appending " 1", " 2", … to the

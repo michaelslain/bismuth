@@ -94,7 +94,7 @@ describe('POST /pdf/highlights', () => {
             }
             const r = await post('/pdf/highlights', { path: 'a.pdf', edits })
             expect(r.status).toBe(200)
-            expect(await r.json()).toEqual({ ok: true })
+            expect(await r.json()).toEqual({ ok: true, rewrote: false })
             const once = new Uint8Array(readFileSync(join(vault, 'a.pdf')))
             expect(await count(once)).toBe(before + 1)
             // no temp file left behind by the atomic write
@@ -166,7 +166,7 @@ describe('POST /pdf/highlights/migrate', () => {
             const before = await count(pdfkit())
             const r = await post('/pdf/highlights/migrate', { path: 'a.pdf' })
             expect(r.status).toBe(200)
-            expect(await r.json()).toEqual({ moved: 2, writable: true })
+            expect(await r.json()).toEqual({ moved: 2, writable: true, rewrote: false })
             expect(
                 await count(new Uint8Array(readFileSync(join(vault, 'a.pdf')))),
             ).toBe(before + 2)
@@ -253,12 +253,12 @@ describe('in-process backend', () => {
                     remove: [],
                 },
             })
-            expect(edit).toEqual({ ok: true })
+            expect(edit).toEqual({ ok: true, rewrote: false })
             expect(await count(bin.get('a.pdf')!)).toBe(before + 1)
             const moved = await be.dispatch('POST', '/pdf/highlights/migrate', {
                 path: 'a.pdf',
             })
-            expect(moved).toEqual({ moved: 1, writable: true })
+            expect(moved).toEqual({ moved: 1, writable: true, rewrote: false })
             expect(seen).toEqual(['a.pdf', 'a.pdf', 'a.pdf.draw'])
         } finally {
             setFileAccess(undefined as unknown as FileAccess)

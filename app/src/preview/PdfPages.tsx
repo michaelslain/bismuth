@@ -64,7 +64,7 @@ import {
 } from './pageLayout'
 import type { Highlight } from '../../../core/src/drawing/model'
 import type { PdfPageGeom } from '../../../core/src/drawing/pdfHighlights'
-import { pdfCache, rasterStash, type LoadedPdf } from './pdfDocCache'
+import { onPdfReplaced, pdfCache, rasterStash, type LoadedPdf } from './pdfDocCache'
 import {
     hideHighlightPainting,
     loadHighlightDeps,
@@ -94,7 +94,11 @@ const sameRange = (a: [number, number], b: [number, number]) =>
 // this strip against the DARK bucket (note ink) — see PageInk.tsx's header for why.
 
 export type PdfPagesProps = {
-    load: () => Promise<ArrayBuffer> // data seam — PreviewView passes fetch(assetUrl).arrayBuffer()
+    load: () => Promise<ArrayBuffer> // data seam — the buffered path: stories, the in-process (mobile) backend
+    /** The document's URL (an http(s) `/asset` URL). When set, pdf.js streams it with range
+     *  requests — page 1 paints before the file has finished transferring, and no copy of the
+     *  bytes is made on this side — and `load` is not called. Unset: `load` supplies the bytes. */
+    url?: string
     zoom: number // 1 = fit width
     class?: string
     /** Called whenever layout changes; Task 5 positions one ink canvas per page from these. */
@@ -153,6 +157,17 @@ type PDFPageProxy = import('pdfjs-dist').PDFPageProxy
 
 type PdfjsSetupModule = typeof import('./pdfjsSetup')
 let pdfjsSetupPromise: Promise<PdfjsSetupModule> | undefined
+
+/** The ETag `/asset` serves for `url` right now (a 1-byte range request), or undefined when the
+ *  request fails or the server sends none. */
+async function readValidator(url: string): Promise<string | undefined> {
+    try {
+        const r = await fetch(url, { headers: { Range: 'bytes=0-0' } })
+        return r.headers.get('etag') ?? undefined
+    } catch {
+        return undefined
+    }
+}
 
 /** Load pdfjs-dist + its shared worker (see pdfjsSetup.ts), exactly once per session, behind a
  *  dynamic import so pdfjs stays out of the boot bundle. */
@@ -310,17 +325,36 @@ function PdfPages(props: PdfPagesProps) {
         loadingTask = undefined
         if (staleTask) void staleTask.destroy()
         try {
+            const url = props.url
             const [setup, bytes] = await Promise.all([
                 loadPdfjsSetup(),
-                props.load(),
+                url ? undefined : props.load(),
             ])
             if (token !== loadToken) return
             const mod = setup.pdfjs
             pdfjs = mod
-            // getDocument transfers the buffer to the worker (detaching it) — hand it a copy so
-            // a caller still holding `bytes` never sees it go detached out from under it.
-            const data = new Uint8Array(bytes.slice(0))
-            const task = mod.getDocument({ data, worker: setup.sharedWorker() })
+            // URL: pdf.js range-loads and streams it. Bytes: getDocument transfers the buffer to
+            // the worker (detaching it) — hand it a copy so a caller still holding `bytes` never
+            // sees it go detached out from under it.
+            const task = mod.getDocument(
+                url
+                    ? {
+                          url,
+                          worker: setup.sharedWorker(),
+                          // Ranges only. With streaming on, pdf.js also reads the WHOLE body to
+                          // its end alongside the ranges (88 MB for a scan); streaming off makes
+                          // its first request a ranged one and fetches the rest on demand.
+                          disableStream: true,
+                          disableAutoFetch: true,
+                          rangeChunkSize: 262144,
+                      }
+                    : {
+                          data: new Uint8Array(bytes!.slice(0)),
+                          worker: setup.sharedWorker(),
+                      },
+            )
+            // The file's validator as of this load, for the cache's reconnect revalidation.
+            const validator = url ? readValidator(url) : undefined
             loadingTask = task
             const doc = await task.promise
             if (token !== loadToken) {
@@ -382,6 +416,7 @@ function PdfPages(props: PdfPagesProps) {
                 cacheRelease = pdfCache.put(cacheKey, {
                     doc: entry,
                     destroy: () => void task.destroy(),
+                    validator,
                 })
                 // Ownership of the task's lifecycle now belongs to the cache entry's `destroy`
                 // (called on eviction/invalidate once nothing retains it) — this component's own
@@ -416,7 +451,15 @@ function PdfPages(props: PdfPagesProps) {
     // `load` closure (a different file was opened) OR a fresh `cacheKey`. In production the key
     // only changes together with `load`; this also re-runs for a caller (e.g. a story) that
     // changes `cacheKey` alone.
-    createEffect(on([() => props.load, () => props.cacheKey], () => void boot()))
+    createEffect(
+        on([() => props.load, () => props.url, () => props.cacheKey], () => {
+            void boot()
+            // A range-loaded document reads unfetched pages from the file on disk: if the file is
+            // rewritten under it, reload rather than parse new bytes at old offsets.
+            const key = props.cacheKey
+            if (props.url && key) onCleanup(onPdfReplaced(key, () => void boot()))
+        }),
+    )
 
     // ResizeObserver setup lives in the scroll div's REF CALLBACK, not a plain `onMount` — the
     // div itself only exists once `status()` is 'ready' (it's inside `<Show>` below), and

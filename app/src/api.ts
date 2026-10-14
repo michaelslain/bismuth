@@ -747,13 +747,14 @@ export const api = {
     // A PDF's highlights are annotations inside the PDF file. One call is one read-modify-write of
     // the file; a PDF Bismuth cannot rewrite rejects (409 PDF_NOT_WRITABLE).
     editPdfHighlights: (path: string, edits: PdfHighlightEdits) =>
-        postJson<{ ok: true }>('/pdf/highlights', { path, edits }).then(
-            () => {},
-        ),
+        postJson<{ ok: true; rewrote?: boolean }>('/pdf/highlights', {
+            path,
+            edits,
+        }),
     // Moves the sidecar's highlights into the PDF; `writable: false` = the PDF cannot be rewritten
     // and its highlights stay in the sidecar.
     migratePdfHighlights: (path: string) =>
-        postJson<{ moved: number; writable: boolean }>(
+        postJson<{ moved: number; writable: boolean; rewrote?: boolean }>(
             '/pdf/highlights/migrate',
             { path },
         ),

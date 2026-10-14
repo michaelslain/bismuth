@@ -182,3 +182,75 @@ export function createThemeFileTracker(
         },
     }
 }
+
+/** One stat of a changed path: whether it exists (a file OR a folder) and when it was born. */
+export interface PathStat {
+    exists: boolean
+    /** Birth time in epoch ms (ctime where the filesystem records no birth time); 0 when absent. */
+    bornMs: number
+}
+
+/**
+ * Tracks which non-markdown files and folders exist, so a change event can be told apart as a
+ * create/delete (structural: tree + graph) or a content-only rewrite of an existing file (neither).
+ * It starts empty and is seeded from an async walk that runs off the boot path:
+ * - before the seed lands, every event is structural, since what was there before is unknown;
+ * - a path an event saw before the seed landed keeps what the event saw, not what the walk listed;
+ * - a listed path born after the walk started may be a create whose own event is still in flight,
+ *   so its first event after the seed is structural.
+ */
+export interface PresenceTracker {
+    /** Record a change to `path`; true when the tree and graph are dirty (it appeared or vanished). */
+    classify(path: string, now: PathStat): boolean
+    /** Merge the boot walk's listing; `startedMs` is when the walk began (epoch ms). */
+    seed(paths: Iterable<string>, startedMs: number): void
+}
+
+export function createPresenceTracker(): PresenceTracker {
+    const present = new Set<string>()
+    // Paths an event classified before the seed landed.
+    const touched = new Set<string>()
+    // Paths the seed listed that no event has classified since.
+    const listed = new Set<string>()
+    let walkStartedMs: number | null = null
+    const record = (path: string, exists: boolean) => {
+        if (exists) present.add(path)
+        else present.delete(path)
+    }
+    return {
+        classify(path, now) {
+            if (walkStartedMs === null) {
+                touched.add(path)
+                record(path, now.exists)
+                return true
+            }
+            let wasKnown = present.has(path)
+            if (
+                listed.delete(path) &&
+                now.exists &&
+                Math.floor(now.bornMs) > walkStartedMs
+            )
+                wasKnown = false
+            if (!now.exists) {
+                // a folder's children are listed once at boot and never pruned by folder events
+                for (const q of present)
+                    if (q.startsWith(path + '/')) present.delete(q)
+                record(path, false)
+                // any delete is structural; dot-prefixed atomic-write temp names are dropped by
+                // isWatchIgnored before they reach the classifier
+                return true
+            }
+            record(path, true)
+            return !wasKnown
+        },
+        seed(paths, startedMs) {
+            for (const p of paths) {
+                if (touched.has(p)) continue
+                present.add(p)
+                listed.add(p)
+            }
+            touched.clear()
+            walkStartedMs = startedMs
+        },
+    }
+}

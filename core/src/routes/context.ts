@@ -61,7 +61,13 @@ export type RouteContext = {
 const CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Bismuth-Token',
+    // If-None-Match: the PDF cache's revalidation request (a 304 instead of an 88 MB re-download).
+    // Range: pdf.js range reads; named so a strict cross-origin preflight (WKWebView) passes.
+    'Access-Control-Allow-Headers': 'Content-Type, X-Bismuth-Token, If-None-Match, Range',
+    // A cross-origin page (Vite on :1420, the Tauri webview) can read only the safelisted response
+    // headers unless named here. pdf.js needs Content-Length/Accept-Ranges/Content-Range to decide a
+    // file is range-loadable, and the PDF cache reads ETag.
+    'Access-Control-Expose-Headers': 'ETag, Content-Length, Content-Range, Accept-Ranges',
     // Lets the browser cache a preflight response instead of re-sending OPTIONS before every
     // request to a new URL — each one otherwise costs a full round trip AND occupies one of the
     // browser's 6 per-host connections. 600s (10min) is the value itself: WebKit/Safari caps

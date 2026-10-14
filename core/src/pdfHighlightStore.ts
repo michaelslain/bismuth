@@ -13,6 +13,9 @@ export type HighlightIO = {
     writeBinary(rel: string, bytes: Uint8Array): Promise<void>
     readText(rel: string): Promise<string | null>
     writeText(rel: string, text: string): Promise<void>
+    /** Append bytes to the file, which must still be `expectedSize` long. Optional: without it an
+     *  incremental edit is written as the whole file. */
+    appendBinary?(rel: string, bytes: Uint8Array, expectedSize: number): Promise<void>
 }
 
 // Local mirrors of the pdfHighlights.ts header signatures (Task 1 owns the module). They keep this
@@ -49,6 +52,16 @@ type PdfApi = {
         view: [number, number, number, number]
         rotate: number
     }) => PageSize
+    /** Page size through the light reader, which parses a buffer once; throws when it can't. */
+    applyPdfHighlightIncrement?: (
+        bytes: Uint8Array,
+        edits: PdfHighlightEdits,
+    ) => Promise<
+        | { kind: 'none' }
+        | { kind: 'append'; suffix: Uint8Array }
+        | { kind: 'replace'; bytes: Uint8Array }
+    >
+    pageNatSizeOf?: (bytes: Uint8Array, page: number) => Promise<PageSize>
 }
 
 async function loadPdfApi(): Promise<PdfApi> {
@@ -63,6 +76,12 @@ function defaultNatSize(): NonNullable<PdfHighlightDeps['natSize']> {
     let loaded: Promise<{ doc: any; api: PdfApi }> | null = null
     let loadedFor: Uint8Array | null = null
     return async (bytes, page) => {
+        try {
+            const api = await loadPdfApi()
+            if (api.pageNatSizeOf) return await api.pageNatSizeOf(bytes, page)
+        } catch {
+            // the full load below
+        }
         if (!loaded || loadedFor !== bytes) {
             loadedFor = bytes
             loaded = (async () => {
@@ -95,6 +114,8 @@ async function resolveDeps(deps?: PdfHighlightDeps) {
     return {
         read: deps?.read ?? real!.readPdfHighlights,
         apply: deps?.apply ?? real!.applyPdfHighlightEdits,
+        // the real module only: an injected apply is the caller's whole contract
+        increment: deps?.apply ? undefined : real?.applyPdfHighlightIncrement,
         natSize: deps?.natSize ?? defaultNatSize(),
     }
 }
@@ -115,6 +136,42 @@ function asConflict(e: unknown): unknown {
     return e
 }
 
+/** Apply `edits` to `bytes` and write the result. An incremental update is appended when the IO can
+ *  (no second copy of the file in memory); an edit that changes nothing writes nothing, so the
+ *  file's mtime stays. */
+async function applyAndWrite(
+    io: HighlightIO,
+    pdf: string,
+    bytes: Uint8Array,
+    edits: PdfHighlightEdits,
+    d: Awaited<ReturnType<typeof resolveDeps>>,
+): Promise<'none' | 'append' | 'replace'> {
+    try {
+        if (d.increment) {
+            const r = await d.increment(bytes, edits)
+            if (r.kind === 'none') return 'none'
+            if (r.kind === 'append' && io.appendBinary) {
+                await io.appendBinary(pdf, r.suffix, bytes.length)
+                return 'append'
+            }
+            const whole =
+                r.kind === 'replace' ? r.bytes : new Uint8Array(bytes.length + r.suffix.length)
+            if (r.kind === 'append') {
+                whole.set(bytes, 0)
+                whole.set(r.suffix, bytes.length)
+            }
+            await io.writeBinary(pdf, whole)
+            return r.kind === 'replace' ? 'replace' : 'append'
+        }
+        const next = await d.apply(bytes, edits)
+        if (next === bytes) return 'none'
+        await io.writeBinary(pdf, next)
+        return 'replace'
+    } catch (e) {
+        throw asConflict(e)
+    }
+}
+
 /** One read-modify-write of the PDF: removes match by geometry id against the file as it is now,
  *  adds that already exist are skipped, every other object is kept. */
 export async function editPdfHighlights(
@@ -122,20 +179,15 @@ export async function editPdfHighlights(
     pdf: string,
     edits: PdfHighlightEdits,
     deps?: PdfHighlightDeps,
-): Promise<{ ok: true }> {
+): Promise<{ ok: true; rewrote: boolean }> {
     assertPdfPath(pdf)
     const bytes = await io.readBinary(pdf)
     if (!bytes) throw new AppError('ENOENT', `not found: ${pdf}`, 404)
-    if (!edits.add.length && !edits.remove.length) return { ok: true }
-    const { apply } = await resolveDeps(deps)
-    let next: Uint8Array
-    try {
-        next = await apply(bytes, edits)
-    } catch (e) {
-        throw asConflict(e)
-    }
-    await io.writeBinary(pdf, next)
-    return { ok: true }
+    if (!edits.add.length && !edits.remove.length) return { ok: true, rewrote: false }
+    const d = await resolveDeps(deps)
+    const r = await applyAndWrite(io, pdf, bytes, edits, d)
+    // `rewrote`: the file's existing bytes changed, so an open document's range reads are stale.
+    return { ok: true, rewrote: r === 'replace' }
 }
 
 /** A rect in the box `from` re-expressed in the box `to` (same normalised position and size). */
@@ -169,11 +221,12 @@ export async function migrateSidecarHighlights(
     io: HighlightIO,
     pdf: string,
     deps?: PdfHighlightDeps,
-): Promise<{ moved: number; writable: boolean }> {
+): Promise<{ moved: number; writable: boolean; rewrote?: boolean }> {
     assertPdfPath(pdf)
     const bytes = await io.readBinary(pdf)
     if (!bytes) throw new AppError('ENOENT', `not found: ${pdf}`, 404)
-    const { read, apply, natSize } = await resolveDeps(deps)
+    const d = await resolveDeps(deps)
+    const { read, natSize } = d
     const state = await read(bytes)
     if (!state.writable) return { moved: 0, writable: false }
 
@@ -206,17 +259,11 @@ export async function migrateSidecarHighlights(
     }
     if (!add.length) return { moved: 0, writable: true }
 
-    let next: Uint8Array
-    try {
-        next = await apply(bytes, { add, remove: [] })
-    } catch (e) {
-        throw asConflict(e)
-    }
-    await io.writeBinary(pdf, next)
+    const r = await applyAndWrite(io, pdf, bytes, { add, remove: [] }, d)
 
     for (const page of doc.pages) delete page.highlights
     await io.writeText(sidecar, serializeDoc(doc))
-    return { moved: add.length, writable: true }
+    return { moved: add.length, writable: true, rewrote: r === 'replace' }
 }
 
 /** HighlightIO over the active FileAccess (Bun files on desktop, tauri-plugin-fs on iPad). A missing
@@ -227,5 +274,8 @@ export function highlightIOFor(fa: FileAccess, root: string): HighlightIO {
         writeBinary: (rel, bytes) => fa.writeBinary(root, rel, bytes),
         readText: rel => fa.readNote(root, rel).catch(() => null),
         writeText: (rel, text) => fa.writeNote(root, rel, text),
+        appendBinary: fa.appendBinary
+            ? (rel, bytes, size) => fa.appendBinary!(root, rel, bytes, size)
+            : undefined,
     }
 }

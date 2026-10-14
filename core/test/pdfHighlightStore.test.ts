@@ -74,6 +74,7 @@ describe('editPdfHighlights', () => {
         const edits = { add: [{ page: 0, highlight: hl('x') }], remove: [] }
         expect(await editPdfHighlights(io, 'a.pdf', edits, deps)).toEqual({
             ok: true,
+            rewrote: true,
         })
         expect(applied).toEqual([edits])
         expect(writes).toEqual(['a.pdf'])
@@ -163,6 +164,7 @@ describe('migrateSidecarHighlights', () => {
         expect(await migrateSidecarHighlights(io, 'a.pdf', deps)).toEqual({
             moved: 2,
             writable: true,
+            rewrote: true,
         })
         expect(applied[0].add.map(a => [a.page, a.highlight.id])).toEqual([
             [0, 'h1'],
