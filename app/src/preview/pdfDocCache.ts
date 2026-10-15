@@ -14,11 +14,11 @@ import type { OutlineNode } from './annotationTypes'
 import type { PageSize } from './pageLayout'
 import type { HideStorage } from './pdfAnnotHighlights'
 import {
+    createFreshness,
     createPdfDocCache,
     createReplacedListeners,
     createSelfWriteGate,
-    routePathChange,
-    type CachedPdf,
+    createServerChangeRouter,
     type PdfDocCache,
 } from './pdfDocCacheCore'
 
@@ -120,7 +120,6 @@ export const rasterStash = {
 // (a poll catch-up after the SSE stream missed an event, or the stream's connect snapshot) and
 // re-validates every cached document against the server, dropping only those whose file changed. Mirrors
 // `noteCache.ts:36-51`.
-let lastVersion = 0
 // Paths this window is about to write itself (a highlight save rewrites the PDF): the echo of
 // that write must not throw away the document that already shows the result.
 const selfWrites = createSelfWriteGate()
@@ -136,28 +135,12 @@ export function cancelSelfWrite(path: string): void {
     selfWrites.cancel(path)
 }
 
-/** Is the cached document for `key` still the file on disk? Asks the server with the validator the
- *  document was loaded under: 304 = unchanged, anything else = the file changed or went away. A
- *  document with no validator (a story's seam, the in-process backend) is never second-guessed, and
- *  a failed request keeps it (offline is not a change). */
-async function stillFresh(key: string, value: CachedPdf<LoadedPdf>): Promise<boolean> {
-    const etag = await value.validator
-    const base = apiBase()
-    if (!etag || !/^https?:/.test(base)) return true
-    const ac = new AbortController()
-    try {
-        const r = await fetch(buildAssetUrl(base, key), {
-            headers: { 'If-None-Match': etag },
-            cache: 'no-store',
-            signal: ac.signal,
-        })
-        const fresh = r.status === 304
-        if (!fresh) dropStashFor(key)
-        return fresh
-    } finally {
-        ac.abort() // a 200 would stream the whole file; only the status mattered
-    }
-}
+const stillFresh = createFreshness<LoadedPdf>({
+    apiBase,
+    buildUrl: buildAssetUrl,
+    fetch: (url, init) => fetch(url, init),
+    dropStash: dropStashFor,
+})
 
 const replacedListeners = createReplacedListeners()
 
@@ -174,16 +157,15 @@ export function pdfReplaced(key: string): void {
     replacedListeners.fire(key)
 }
 
-onServerChange(c => {
-    if (c.paths.length > 0) {
-        routePathChange(c.paths, selfWrites, pdfReplaced)
-    } else if (c.version > lastVersion) {
-        // The connect snapshot and poll catch-ups land here too: re-validate rather than wipe, so
-        // a reconnect does not re-download a PDF that did not change.
-        void pdfCache.revalidateAll(stillFresh)
-    }
-    if (c.version > lastVersion) lastVersion = c.version
-})
+// The connect snapshot and poll catch-ups land in `revalidate` too: re-validate rather than wipe,
+// so a reconnect does not re-download a PDF that did not change.
+onServerChange(
+    createServerChangeRouter({
+        gate: selfWrites,
+        replaced: pdfReplaced,
+        revalidate: () => void pdfCache.revalidateAll(stillFresh),
+    }),
+)
 
 if (typeof window !== 'undefined') {
     window.addEventListener('bismuth-moved', e => {

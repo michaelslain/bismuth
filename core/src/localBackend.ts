@@ -25,6 +25,7 @@ import { getFileAccess } from './fileAccess'
 import {
     editPdfHighlights,
     highlightIOFor,
+    readStoredPdfHighlights,
     migrateSidecarHighlights,
 } from './pdfHighlightStore'
 import { inkSidecarFor } from './fileKinds'
@@ -491,6 +492,12 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 return result
             }
 
+            case 'GET /pdf/highlights': {
+                const io = highlightIOFor(await fa(), vault)
+                const read = await readStoredPdfHighlights(io, q('path'))
+                if (!read) throw new AppError('ENOENT', 'pdf not found', 404)
+                return read
+            }
             case 'POST /pdf/highlights': {
                 const io = highlightIOFor(await fa(), vault)
                 const result = await editPdfHighlights(io, b.path, b.edits)

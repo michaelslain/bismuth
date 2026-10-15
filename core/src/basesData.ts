@@ -1,9 +1,5 @@
 import { getFileAccess, type FileStat } from './fileAccess'
-import { readAllNotes } from './readAllNotes'
-import { mapWithConcurrency } from './concurrency'
-import { parseFrontmatter } from './frontmatter'
-import { extractTags } from './tags'
-import { extractWikilinks } from './wikilinks'
+import { getParsedNote, getParsedNotes, type ParsedNote } from './parsedNotes'
 import { pathParts } from './vault'
 import type { FileMeta, Row } from './bases/types'
 
@@ -39,27 +35,26 @@ function fileMeta(
     }
 }
 
-/** Build the single feed Row for one note from its raw content + stat. Shared by the
- *  full-vault build and the incremental patch so a patched row is byte-identical to a
- *  rebuilt one. */
-function rowFor(rel: string, raw: string, st: FileStat | null): Row {
-    const { data, body } = parseFrontmatter(raw)
-    const tags = extractTags(data, body)
-    const links = extractWikilinks(raw)
-    return { file: fileMeta(rel, st, tags, links), note: data, formula: {} }
+/** Build the single feed Row for one parsed note. Shared by the full-vault build and the
+ *  incremental patch so a patched row is byte-identical to a rebuilt one. The tag and link
+ *  arrays are copied (the cached note's are frozen); `note` is the cached frontmatter object
+ *  itself, frozen, so a consumer that tried to edit it would throw instead of corrupting the
+ *  cache. The freeze is shallow: nested values inside `note` are shared with the cache and must
+ *  not be mutated. */
+function rowFor(p: ParsedNote): Row {
+    return {
+        file: fileMeta(p.rel, p.stat, [...p.tags], [...p.links]),
+        note: p.data as Row['note'],
+        formula: {},
+    }
 }
 
 export async function buildVaultRows(root: string): Promise<Row[]> {
-    const { listMarkdown, statNote } = await getFileAccess()
-    const files = await listMarkdown(root)
-    // Read bodies through the bounded pool (a note deleted since the listing is skipped),
-    // then stat each one the same way. statNote() resolves to null on failure (file deleted
-    // since list) — matching the old try/catch-to-zero behavior.
-    const notes = await readAllNotes(root, files)
-    const stats = await mapWithConcurrency(notes, 32, ({ rel }) =>
-        statNote(root, rel),
-    )
-    return notes.map(({ rel, content }, i) => rowFor(rel, content, stats[i]))
+    const { listMarkdown } = await getFileAccess()
+    // Parsed notes come from the shared cache (a note deleted since the listing is skipped);
+    // its stat is the one the cache validated against, so there is no second stat loop.
+    const notes = await getParsedNotes(root, await listMarkdown(root))
+    return notes.map(rowFor)
 }
 
 /**
@@ -96,19 +91,12 @@ export async function patchVaultRows(
         return
     }
     const known = new Set(current.map(r => r.file.path))
-    const { readNote, statNote, listMarkdown } = await getFileAccess()
+    const { listMarkdown } = await getFileAccess()
     // Re-parse each changed note (null row = gone from disk).
     const reparsed = await Promise.all(
         mdPaths.map(async (rel): Promise<{ rel: string; row: Row | null }> => {
-            try {
-                const [raw, st] = await Promise.all([
-                    readNote(root, rel),
-                    statNote(root, rel),
-                ])
-                return { rel, row: rowFor(rel, raw, st) }
-            } catch {
-                return { rel, row: null } // unreadable / removed
-            }
+            const note = await getParsedNote(root, rel)
+            return { rel, row: note ? rowFor(note) : null } // null = unreadable / removed
         }),
     )
     const byPath = new Map(reparsed.map(({ rel, row }) => [rel, row] as const))

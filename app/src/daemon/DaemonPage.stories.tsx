@@ -479,13 +479,19 @@ function sectionBadgeCount(section: HTMLElement): number | null {
     return badge ? Number(badge.textContent!.trim()) : null
 }
 
-/** The number of rows a section actually rendered — real row components only (DaemonRow,
- *  InboxRow), never a section's own structural children (heading, badge, trailing "N resolved"
- *  line). */
+/** The number of rows a section accounts for — real row components only (DaemonRow, InboxRow),
+ *  never a section's own structural children (heading, badge, trailing "N resolved" line), plus the
+ *  N hidden behind a `show N disabled` line (disabled crons collapse into it; the badge still
+ *  counts them). */
 function sectionRowCount(section: HTMLElement): number {
-    return section.querySelectorAll(
+    const rendered = section.querySelectorAll(
         '[data-testid="daemon-row"], [data-testid="inbox-row"]',
     ).length
+    const collapsed = [...section.querySelectorAll<HTMLElement>('*')]
+        .filter(el => el.children.length === 0)
+        .map(el => /^show (\d+) disabled$/.exec((el.textContent ?? '').trim()))
+        .reduce((n, m) => n + (m ? Number(m[1]) : 0), 0)
+    return rendered + collapsed
 }
 
 /** Enabled, every section carrying rows: the four sections render in order, no facet toggle

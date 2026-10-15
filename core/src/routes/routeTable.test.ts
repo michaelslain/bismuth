@@ -33,6 +33,7 @@ const EXPECTED = [
     'GET /graph/views',
     'GET /meta',
     'GET /opencode/providers',
+    'GET /pdf/highlights',
     'GET /property-schemas',
     'GET /relay/snapshot',
     'GET /schema',

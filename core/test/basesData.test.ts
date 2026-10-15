@@ -1,11 +1,14 @@
 import { tempDir } from './helpers'
-import { test, expect } from 'bun:test'
+import { test, expect, afterEach } from 'bun:test'
 import { buildVaultRows, patchVaultRows } from '../src/basesData'
 import { createAsyncCache } from '../src/asyncCache'
 import { getFileAccess, setFileAccess } from '../src/fileAccess'
 import { writeNote } from '../src/files'
-import { rmSync } from 'node:fs'
+import { configureParsedNotes } from '../src/parsedNotes'
+import { rmSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
+
+afterEach(() => configureParsedNotes())
 
 test('buildVaultRows returns a row per note with file meta + frontmatter', async () => {
     const vault = tempDir('bismuth-rows-')
@@ -149,4 +152,21 @@ test('patchVaultRows: empty cache and non-md paths are safe no-ops', async () =>
     cache.invalidate()
     await patchVaultRows(vault, ['a.md'], cache)
     expect(cache.peek()).toBeNull()
+})
+
+test('buildVaultRows with the raw-bytes budget spent still returns every row, text-derived fields intact', async () => {
+    configureParsedNotes({ maxRawBytes: 1 })
+    const vault = tempDir('bismuth-rows-budget-')
+    await writeNote(vault, 'a.md', '---\nstatus: open\ntags: [x]\n---\nsee [[b]] #one')
+    await writeNote(vault, 'b.md', '---\ntitle: B\n---\nplain body')
+    const old = new Date('2020-01-01T00:00:00Z')
+    for (const n of ['a.md', 'b.md']) utimesSync(join(vault, n), old, old)
+
+    const rows = await buildVaultRows(vault)
+    expect(rows.map(r => r.file.path).sort()).toEqual(['a.md', 'b.md'])
+    const a = rows.find(r => r.file.name === 'a')!
+    expect(a.file.tags.sort()).toEqual(['one', 'x'])
+    expect(a.file.links).toEqual(['b'])
+    expect(a.note.status).toBe('open')
+    expect(rows.find(r => r.file.name === 'b')!.note.title).toBe('B')
 })

@@ -1,5 +1,17 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import {
+    closeSync,
+    existsSync,
+    mkdirSync,
+    openSync,
+    readFileSync,
+    fsyncSync,
+    readdirSync,
+    renameSync,
+    statSync,
+    unlinkSync,
+    writeSync,
+} from 'node:fs'
 import { basename, join } from 'node:path'
 import { noteHash } from '@bismuth/memory'
 import type { MemoryNote } from '@bismuth/memory'
@@ -370,6 +382,15 @@ export type VectorStoreOptions = {
      *  every stale note. The vault store sets it so a long first pass yields the shared embedder
      *  between slices and a query is never queued behind the whole pass. */
     batchNotes?: number
+    /** Test seams for the commit path: the durability barrier and the atomic swap. */
+    fs?: {
+        fsync?: (fd: number, path: string) => void
+        rename?: (from: string, to: string) => void
+        /** Reads of the index and the bin in `loadV2`. */
+        readFile?: (path: string) => Buffer
+    }
+    /** Age at which another writer's lock is presumed dead and broken. Default 30s. */
+    lockBreakMs?: number
 }
 
 export type VectorStore = {
@@ -390,14 +411,35 @@ export type VectorStore = {
     flush(): Promise<void>
 }
 
-/** All of a note's chunk vectors, flat: `dim` floats per chunk, concatenated. */
-type Stored = { hash: string; dim: number; vecs: Float32Array }
+/** All of a note's chunk vectors, flat: `dim` floats per chunk, concatenated. `at` is the byte offset
+ *  of its record in the committed bin file, or -1 while it is not on disk yet. */
+type Stored = { hash: string; dim: number; vecs: Float32Array; at: number }
 
 const CHUNKED_FORMAT = 'chunked-v1'
+const BIN_FORMAT = 'chunked-bin-v2'
+const binName = (gen: number) => `vectors-v2.${gen}.bin`
 
-/** Vectors live under `<cacheDir>/<sha1(memoryDir)>/vectors-chunked.json`, so a restart embeds nothing
- *  the last process already had. The older single-vector `vectors.json` beside it belongs to older
- *  builds sharing this cache: it is never read here and never rewritten. */
+const hashes = new WeakMap<MemoryNote, string>()
+/** `noteHash` memoized by object identity: a note object stays the same object while its file is
+ *  unchanged, so one edit hashes one note instead of the whole vault on every pass. */
+export function hashOf(n: MemoryNote): string {
+    let h = hashes.get(n)
+    if (h === undefined) {
+        h = noteHash(n)
+        hashes.set(n, h)
+    }
+    return h
+}
+
+const sane = (dim: unknown, n: unknown): boolean =>
+    Number.isInteger(dim) && (dim as number) > 0 && Number.isInteger(n) && (n as number) > 0
+
+/** Vectors live under `<cacheDir>/<sha1(memoryDir)>/`: an append-only `vectors-v2.<gen>.bin` of
+ *  little-endian float32 records plus `vectors-v2.json`, the index that is the commit point (written
+ *  via temp + rename after the bin append). A restart embeds nothing the last process already had, and
+ *  one edit appends one note's bytes instead of rewriting the vault. The v1 `vectors-chunked.json`
+ *  beside it is read once to migrate and is never written or deleted; the older single-vector
+ *  `vectors.json` belongs to older builds sharing this cache and is never read. */
 export function createVectorStore(
     cacheDir: string,
     memoryDir: string,
@@ -405,6 +447,7 @@ export function createVectorStore(
 ): VectorStore {
     const dir = join(cacheDir, createHash('sha1').update(memoryDir).digest('hex'))
     const file = join(dir, 'vectors-chunked.json')
+    const indexFile = join(dir, 'vectors-v2.json')
     const debounceMs = opts.debounceMs ?? REEMBED_DEBOUNCE_MS
     let entries: Map<string, Stored> | null = null
     let latest: MemoryNote[] = []
@@ -413,55 +456,317 @@ export function createVectorStore(
     // Set when a run failed or the channel was paused: nothing re-arms until the next real sync()
     // (a recall), so a failing embedder costs one attempt per recall, never a background loop.
     let halted = false
+    // Committed state of the bin file, and what a persist still owes it.
+    let gen = 0
+    let bytes = 0
+    let dead = 0
+    let orphan: string | null = null
+    // Set when the bin is missing or shorter than the index claims: the next persist rewrites it whole.
+    let forceCompact = false
+    const fsyncFd = opts.fs?.fsync ?? ((fd: number) => fsyncSync(fd))
+    const renameFile = opts.fs?.rename ?? renameSync
+    const readBytes = opts.fs?.readFile ?? ((path: string) => readFileSync(path))
+    const lockBreakMs = opts.lockBreakMs ?? 30_000
+    const lockPath = join(dir, 'vectors-v2.lock')
+    const dirty = new Set<string>()
+    let indexDirty = false
+
+    /** Run `fn` holding the store dir's write lock; false (and `fn` not run) when another writer holds
+     *  it. The lock file carries the owner's pid: release unlinks it only if it is still ours, and a
+     *  lock older than `lockBreakMs` is broken. */
+    const withLock = (fn: () => void): boolean => {
+        const mine = String(process.pid)
+        const take = (): number | null => {
+            try {
+                const fd = openSync(lockPath, 'wx')
+                try {
+                    writeSync(fd, mine)
+                } catch {}
+                return fd
+            } catch {
+                return null
+            }
+        }
+        let lockFd = take()
+        if (lockFd === null) {
+            try {
+                if (Date.now() - statSync(lockPath).mtimeMs > lockBreakMs) unlinkSync(lockPath)
+            } catch {}
+            lockFd = take()
+            if (lockFd === null) return false
+        }
+        try {
+            fn()
+        } finally {
+            try {
+                closeSync(lockFd)
+            } catch {}
+            try {
+                if (readFileSync(lockPath, 'utf8') === mine) unlinkSync(lockPath)
+            } catch {}
+        }
+        return true
+    }
+
+    /** Delete `vectors-v2.<n>.bin` files the index does not reference (a crash between writing a new
+     *  generation and committing, or before unlinking the old one). Under the lock so a live
+     *  compaction's uncommitted bin is never swept; skipped when the lock is held. */
+    const sweepOrphans = () => {
+        try {
+            withLock(() => {
+                // the CURRENT index's bin, read under the lock: a compaction committed since our
+                // own read has made a newer bin the only live one
+                let keep: unknown
+                try {
+                    keep = JSON.parse(readFileSync(indexFile, 'utf8'))?.bin
+                } catch {
+                    return
+                }
+                if (typeof keep !== 'string') return
+                for (const f of readdirSync(dir))
+                    if (/^vectors-v2\.\d+\.bin$/.test(f) && f !== keep) {
+                        try {
+                            unlinkSync(join(dir, f))
+                        } catch {}
+                    }
+            })
+        } catch {}
+    }
+
+    const BIN_GONE = Symbol('bin gone')
+
+    /** The v2 index + bin, or null when there is none for this model. A torn tail past the index's
+     *  `bytes` is ignored, and an entry running past the file is dropped (so it re-embeds). A bin that
+     *  vanished (another process compacted) is chased once through a fresh read of the index; a bin
+     *  still missing or short after that forces the next persist to compact. */
+    const loadV2 = (): Map<string, Stored> | null => {
+        const first = loadV2Once(true)
+        return first === BIN_GONE ? (loadV2Once(false) as Map<string, Stored> | null) : first
+    }
+
+    const loadV2Once = (retry: boolean): Map<string, Stored> | null | typeof BIN_GONE => {
+        let j: {
+            format?: string
+            model?: string
+            bin?: string
+            bytes?: number
+            entries?: Record<string, { hash: string; dim: number; at: number; n: number }>
+        }
+        try {
+            j = JSON.parse(readBytes(indexFile).toString('utf8'))
+        } catch {
+            return null
+        }
+        const m = j?.format === BIN_FORMAT && typeof j.bin === 'string' ? /^vectors-v2\.(\d+)\.bin$/.exec(j.bin) : null
+        if (!m || !j.entries) return null
+        gen = Number(m[1])
+        if (j.model !== EMBED_MODEL) {
+            gen++
+            orphan = j.bin!
+            return null
+        }
+        let buf: Buffer
+        try {
+            buf = readBytes(join(dir, j.bin!))
+        } catch {
+            if (retry) return BIN_GONE
+            buf = Buffer.alloc(0)
+        }
+        if (buf.length < (j.bytes ?? 0)) forceCompact = true
+        let base: ArrayBufferLike = buf.buffer
+        let off = buf.byteOffset
+        if (off % 4) {
+            const c = new Uint8Array(buf.length)
+            c.set(buf)
+            base = c.buffer
+            off = 0
+        }
+        const eff = Math.min(Math.max(0, Math.floor((j.bytes ?? 0) / 4) * 4), buf.length)
+        const out = new Map<string, Stored>()
+        let live = 0
+        for (const [name, v] of Object.entries(j.entries)) {
+            if (!sane(v.dim, v.n) || !Number.isInteger(v.at) || v.at < 0 || v.at % 4 !== 0) continue
+            const len = v.n * v.dim * 4
+            if (v.at + len > eff) continue
+            out.set(name, {
+                hash: v.hash,
+                dim: v.dim,
+                at: v.at,
+                vecs: new Float32Array(base, off + v.at, v.n * v.dim),
+            })
+            live += len
+        }
+        bytes = eff
+        dead = eff - live
+        if (out.size < Object.keys(j.entries).length) indexDirty = true
+        sweepOrphans()
+        return out
+    }
+
+    /** The v1 JSON, for the one-time migration; never written. */
+    const loadV1 = (): Map<string, Stored> => {
+        const out = new Map<string, Stored>()
+        try {
+            if (!existsSync(file)) return out
+            const j = JSON.parse(readFileSync(file, 'utf8')) as {
+                format?: string
+                model: string
+                vectors: Record<string, { hash: string; dim: number; vecs: string }>
+            }
+            if (j.format === CHUNKED_FORMAT && j.model === EMBED_MODEL)
+                for (const [name, v] of Object.entries(j.vectors)) {
+                    const b = Buffer.from(v.vecs, 'base64')
+                    // a zero or ragged dim would make bestChunk loop forever
+                    if (!Number.isInteger(v.dim) || v.dim <= 0 || b.byteLength % (4 * v.dim) !== 0) continue
+                    out.set(name, {
+                        hash: v.hash,
+                        dim: v.dim,
+                        at: -1,
+                        vecs: new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)),
+                    })
+                }
+        } catch {
+            return new Map() // a torn or corrupt file just means re-embedding
+        }
+        return out
+    }
 
     const read = (): Map<string, Stored> => {
         if (entries) return entries
         entries = new Map()
         try {
-            if (existsSync(file)) {
-                const j = JSON.parse(readFileSync(file, 'utf8')) as {
-                    format?: string
-                    model: string
-                    vectors: Record<string, { hash: string; dim: number; vecs: string }>
-                }
-                if (j.format === CHUNKED_FORMAT && j.model === EMBED_MODEL)
-                    for (const [name, v] of Object.entries(j.vectors)) {
-                        const b = Buffer.from(v.vecs, 'base64')
-                        // a zero or ragged dim would make bestChunk loop forever
-                        if (!Number.isInteger(v.dim) || v.dim <= 0 || b.byteLength % (4 * v.dim) !== 0)
-                            continue
-                        entries.set(name, {
-                            hash: v.hash,
-                            dim: v.dim,
-                            vecs: new Float32Array(
-                                b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength),
-                            ),
-                        })
-                    }
+            const v2 = loadV2()
+            if (v2) {
+                entries = v2
+                return entries
             }
         } catch {
-            entries = new Map() // a torn or corrupt file just means re-embedding
+            entries = new Map() // a torn or corrupt index just means re-embedding
+            return entries
+        }
+        entries = loadV1()
+        if (entries.size) {
+            for (const name of entries.keys()) dirty.add(name)
+            try {
+                persist()
+            } catch {} // stays dirty: the next persist retries
         }
         return entries
     }
 
-    const persist = () => {
-        const vectors: Record<string, { hash: string; dim: number; vecs: string }> = {}
-        for (const [name, s] of read())
-            vectors[name] = {
+    /** Append the dirty records to the bin, then commit by writing the index. Compacts into the next
+     *  generation first when dead bytes exceed live bytes. Returns false when a held lock left
+     *  everything dirty (the caller re-arms), true when written or nothing was owed. */
+    const persist = (): boolean => {
+        if (!dirty.size && !indexDirty) return true
+        mkdirSync(dir, { recursive: true })
+        // One writer at a time per store dir: an append at a stale offset would overwrite bytes another
+        // process's index points at.
+        return withLock(persistLocked)
+    }
+
+    const persistLocked = () => {
+        const e = entries!
+        let live = 0
+        for (const s of e.values()) live += s.vecs.byteLength
+        // Another process committed since this one loaded: never write into a region its index references.
+        let diskGen = gen
+        let foreign = false
+        try {
+            const d = JSON.parse(readFileSync(indexFile, 'utf8')) as { model?: string; bin?: string; bytes?: number }
+            const m = typeof d.bin === 'string' ? /^vectors-v2\.(\d+)\.bin$/.exec(d.bin) : null
+            if (m && d.model === EMBED_MODEL) {
+                diskGen = Number(m[1])
+                foreign = d.bin !== binName(gen) || d.bytes !== bytes
+            }
+        } catch {}
+        // A bin that is gone or shorter than the committed bytes cannot take an append at `bytes`
+        // (it would leave a hole of zeros under live offsets): rewrite it whole.
+        let binShort = forceCompact
+        if (!binShort && bytes > 0) {
+            try {
+                binShort = statSync(join(dir, binName(gen))).size < bytes
+            } catch {
+                binShort = true
+            }
+        }
+        const compact = foreign || binShort || dead > live
+        const nextGen = compact ? Math.max(gen, diskGen) + 1 : gen
+        const start = compact ? 0 : bytes
+        const names = compact ? [...e.keys()] : [...dirty].filter(k => e.has(k))
+        const parts: Buffer[] = []
+        const placed = new Map<string, number>()
+        let at = start
+        for (const name of names) {
+            const s = e.get(name)!
+            placed.set(name, at)
+            parts.push(Buffer.from(s.vecs.buffer, s.vecs.byteOffset, s.vecs.byteLength))
+            at += s.vecs.byteLength
+        }
+        const binPath = join(dir, binName(nextGen))
+        if (parts.length) {
+            const fd = openSync(binPath, existsSync(binPath) ? 'r+' : 'w+')
+            try {
+                writeSync(fd, Buffer.concat(parts), 0, at - start, start)
+                fsyncFd(fd, binPath) // the bytes are durable before any index can point at them
+            } finally {
+                closeSync(fd)
+            }
+        } else if (!existsSync(binPath)) closeSync(openSync(binPath, 'w'))
+        const index: Record<string, { hash: string; dim: number; at: number; n: number }> = {}
+        for (const [name, s] of e)
+            index[name] = {
                 hash: s.hash,
                 dim: s.dim,
-                vecs: Buffer.from(s.vecs.buffer, s.vecs.byteOffset, s.vecs.byteLength).toString('base64'),
+                at: placed.get(name) ?? s.at,
+                n: s.vecs.length / s.dim,
             }
-        mkdirSync(dir, { recursive: true })
-        const tmp = `${file}.${process.pid}.tmp`
-        writeFileSync(tmp, JSON.stringify({ format: CHUNKED_FORMAT, model: EMBED_MODEL, vectors }))
-        renameSync(tmp, file)
+        const tmp = `${indexFile}.${process.pid}.tmp`
+        const tmpFd = openSync(tmp, 'w')
+        try {
+            writeSync(
+                tmpFd,
+                JSON.stringify({
+                    format: BIN_FORMAT,
+                    model: EMBED_MODEL,
+                    bin: binName(nextGen),
+                    bytes: at,
+                    dead: compact ? 0 : dead,
+                    entries: index,
+                }),
+            )
+            fsyncFd(tmpFd, tmp) // the index is durable before the rename makes it the commit point
+        } finally {
+            closeSync(tmpFd)
+        }
+        renameFile(tmp, indexFile)
+        // Committed.
+        for (const [name, o] of placed) e.get(name)!.at = o
+        if (compact) {
+            orphan = binName(gen)
+            if (diskGen !== gen) {
+                try {
+                    unlinkSync(join(dir, binName(diskGen)))
+                } catch {}
+            }
+        }
+        forceCompact = false
+        gen = nextGen
+        bytes = at
+        if (compact) dead = 0
+        dirty.clear()
+        indexDirty = false
+        if (orphan && orphan !== binName(gen)) {
+            try {
+                unlinkSync(join(dir, orphan))
+            } catch {}
+            orphan = null
+        }
     }
 
     const stale = (notes: MemoryNote[]) => {
         const e = read()
-        return notes.filter(n => e.get(n.name)?.hash !== noteHash(n))
+        return notes.filter(n => e.get(n.name)?.hash !== hashOf(n))
     }
 
     const run = async () => {
@@ -472,11 +777,15 @@ export function createVectorStore(
         let pruned = false
         for (const name of [...e.keys()])
             if (!live.has(name)) {
+                const old = e.get(name)!
+                if (old.at >= 0) dead += old.vecs.byteLength
                 e.delete(name)
+                dirty.delete(name)
+                indexDirty = true
                 pruned = true
             }
         const step = opts.batchNotes && opts.batchNotes > 0 ? opts.batchNotes : todo.length
-        if (pruned) persist()
+        if (pruned) persist() // a held lock leaves it dirty: fire() re-arms
         const PERSIST_EVERY_MS = 10_000
         let lastPersist = Date.now()
         for (let from = 0; from < todo.length; from += step) {
@@ -491,7 +800,10 @@ export function createVectorStore(
                 const dim = mine[0]!.length
                 const flat = new Float32Array(dim * mine.length)
                 mine.forEach((v, k) => flat.set(v, k * dim))
-                e.set(n.name, { hash: noteHash(n), dim, vecs: flat })
+                const old = e.get(n.name)
+                if (old && old.at >= 0) dead += old.vecs.byteLength
+                e.set(n.name, { hash: hashOf(n), dim, vecs: flat, at: -1 })
+                dirty.add(n.name)
             })
             opts.onEmbed?.(slice.length)
             if (from + step >= todo.length || Date.now() - lastPersist >= PERSIST_EVERY_MS) {
@@ -499,6 +811,8 @@ export function createVectorStore(
                 lastPersist = Date.now()
             }
         }
+        // Nothing stale, but an earlier persist was turned away by a held lock: land it now.
+        if (!todo.length) persist()
     }
 
     const fire = () => {
@@ -511,7 +825,8 @@ export function createVectorStore(
             .finally(() => {
                 running = null
                 // Notes that changed while this run was embedding get their own run.
-                if (!halted && !timer && stale(latest).length) arm()
+                // ...and so do writes a held lock turned away.
+                if (!halted && !timer && (stale(latest).length || dirty.size || indexDirty)) arm()
             })
     }
 
@@ -560,7 +875,7 @@ export function createVectorStore(
             const out: [string, number][] = []
             for (const n of notes) {
                 const s = e.get(n.name)
-                if (s && s.hash === noteHash(n)) out.push([n.name, bestChunk(queryVec, s)])
+                if (s && s.hash === hashOf(n)) out.push([n.name, bestChunk(queryVec, s)])
             }
             out.sort((a, b) => b[1] - a[1])
             return new Map(out.slice(0, k))

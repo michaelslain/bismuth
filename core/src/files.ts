@@ -8,8 +8,9 @@ import {
     rmSync,
     realpathSync,
     chmodSync,
+    constants,
 } from 'node:fs'
-import { appendFile, readdir, stat } from 'node:fs/promises'
+import { open, readdir, stat } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { parseFrontmatter } from './frontmatter'
 import { createError } from './error'
@@ -445,12 +446,20 @@ export async function appendBinary(
     rel: string,
     bytes: Uint8Array,
     expectedSize: number,
+    afterResolve?: () => void, // test seam: runs between resolve and open
 ): Promise<void> {
     const full = realpathSync(resolveInVault(root, rel))
-    if (statSync(full).size !== expectedSize) {
-        throw createError('ECHANGED', `${rel} changed while it was being edited`, 409)
+    afterResolve?.()
+    // no O_CREAT: a file that vanished since resolve is an error, never a fresh empty file
+    const fh = await open(full, constants.O_WRONLY | constants.O_APPEND)
+    try {
+        if ((await fh.stat()).size !== expectedSize) {
+            throw createError('ECHANGED', `${rel} changed while it was being edited`, 409)
+        }
+        await fh.appendFile(bytes)
+    } finally {
+        await fh.close()
     }
-    await appendFile(full, bytes)
 }
 
 /** Pick a non-colliding vault-relative path for `rel` by appending " 1", " 2", … to the

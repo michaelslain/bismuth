@@ -33,6 +33,7 @@ import { parseFrontmatter } from '../../../core/src/frontmatter'
 import {
     editPdfHighlights,
     migrateSidecarHighlights,
+    readStoredPdfHighlights,
     type HighlightIO,
     type PdfHighlightEdits,
 } from '../../../core/src/pdfHighlightStore'
@@ -592,6 +593,14 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             if (pathname === '/meta') {
                 const p = params.get('path') ?? ''
                 return parseFrontmatter(files.get(p) ?? '').data as unknown as T
+            }
+            if (pathname === '/pdf/highlights') {
+                const read = await readStoredPdfHighlights(
+                    highlightIO,
+                    params.get('path') ?? '',
+                )
+                if (!read) throw new Error('pdf not found')
+                return read as unknown as T
             }
             // Deliberately THROWS rather than returning empty: a silent {} lets a component render a
             // blank shell that looks like a passing story. A loud failure names the missing route.

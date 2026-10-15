@@ -285,3 +285,22 @@ describe.each(['omit', 'free'] as const)('hybrid-reference file (%s)', variant =
         expect(inc.kind).not.toBe('none')
     })
 })
+
+describe('malformed /AcroForm', () => {
+    async function malformed(): Promise<Uint8Array> {
+        const doc = await PDFDocument.create()
+        doc.addPage([612, 792])
+        doc.catalog.set(PDFName.of('AcroForm'), doc.context.obj(5))
+        return doc.save({ useObjectStreams: false })
+    }
+
+    test('is never appended to', async () => {
+        let kind: string
+        try {
+            kind = (await applyPdfHighlightIncrement(await malformed(), add(0, hl('a', 100)))).kind
+        } catch {
+            kind = 'throw'
+        }
+        expect(kind).not.toBe('append')
+    })
+})

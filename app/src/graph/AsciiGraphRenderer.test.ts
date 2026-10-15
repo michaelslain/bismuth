@@ -738,7 +738,7 @@ describe('AsciiGraphRenderer — the field rasterizes into characters', () => {
      *  field stayed pinned to its 1×1 bootstrap grid forever — every node off-grid, every cell empty.
      *  The loop now reconciles the box itself. (The harness's ResizeObserver is a no-op, so this test
      *  reproduces exactly the "no RO delivery ever arrives" case.) */
-    it('picks the host box up from the render loop when no ResizeObserver notification arrives', () => {
+    it('picks the host box up on the next wake when no ResizeObserver notification arrives', () => {
         const restoreBox = { ...BOX }
         BOX.width = 0
         BOX.height = 0
@@ -758,6 +758,7 @@ describe('AsciiGraphRenderer — the field rasterizes into characters', () => {
 
             BOX.width = 800
             BOX.height = 600 // App places + sizes the floater; no RO callback fires
+            r.setSearchMatches(new Set()) // the loop idled; the next input wakes it and re-measures
             frame(32)
             expect(nodeRuns().length).toBeGreaterThan(0)
             expect(painted.at(-1)).toBeGreaterThan(0)
@@ -8332,5 +8333,118 @@ describe('fitBottomRows — the fit rect leaves the floor clear', () => {
         expect(reserved.low).toBeLessThanOrEqual(reserved.gridRows - 2)
         // ...and the reservation is what did it: the unreserved fit runs lower.
         expect(whole.low).toBeGreaterThan(reserved.low)
+    })
+})
+
+describe('the render loop idles when settled and wakes on input', () => {
+    it('stops rescheduling once nothing is dirty or gliding', () => {
+        const { r } = mountRenderer('2d')
+        settle(200)
+        // Pump until the queue drains: a settled field stops requesting frames.
+        frame(20000)
+        expect(rafQueue.length).toBe(0)
+        r.destroy()
+    })
+
+    it('wakes on a setter, a wheel, a resize event and setVisible', () => {
+        const { r, viewport } = mountRenderer('2d')
+        settle(200)
+        frame(20000)
+        expect(rafQueue.length).toBe(0)
+
+        r.setSearchMatches(new Set(['n0']))
+        expect(rafQueue.length).toBe(1)
+        settle(200)
+        frame(30000)
+        expect(rafQueue.length).toBe(0)
+
+        viewport.dispatchEvent(
+            new WheelEvent('wheel', { deltaY: -120, cancelable: true }),
+        )
+        expect(rafQueue.length).toBe(1)
+        settle(300)
+        frame(40000)
+        expect(rafQueue.length).toBe(0)
+
+        r.setVisible(false)
+        rafQueue = []
+        r.setVisible(true)
+        expect(rafQueue.length).toBe(1)
+        r.destroy()
+    })
+
+    it('reports an fps reading when the loop idles before a 500ms window fills', () => {
+        const { r } = mountRenderer('2d')
+        const fps: number[] = []
+        r.setFpsCallback(f => fps.push(f))
+        r.frameSubset(['n0'])
+        settle(300)
+        frame(90000)
+        expect(rafQueue.length).toBe(0)
+        expect(fps.length).toBeGreaterThan(0)
+        r.destroy()
+    })
+
+    it('holds the last full-window fps reading when the loop idles on a slow tail', () => {
+        const { r } = mountRenderer('2d')
+        const fps: number[] = []
+        r.setFpsCallback(f => fps.push(f))
+        r.frameSubset(['n0'])
+        let t = 16
+        for (let i = 0; i < 400 && rafQueue.length; i++) {
+            t += i > 40 ? 40 : 16
+            frame(t)
+        }
+        expect(rafQueue.length).toBe(0)
+        expect(fps.length).toBeGreaterThan(0)
+        // Before the fix the idle flush appended a partial-window 37 (amber) after the 63.
+        expect(fps[fps.length - 1]).toBeGreaterThanOrEqual(50)
+        r.destroy()
+    })
+
+    it('repaints synchronously in a ResizeObserver callback that changes the box', () => {
+        let roCb: (() => void) | undefined
+        ;(globalThis as Record<string, unknown>).ResizeObserver = class {
+            constructor(cb: () => void) {
+                roCb = cb
+            }
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+        }
+        const { r } = mountRenderer('2d')
+        settle(200)
+        frame(20000)
+        expect(rafQueue.length).toBe(0)
+        expect(roCb).toBeDefined()
+        const host = (r as unknown as { host: HTMLElement }).host
+        const orig = host.getBoundingClientRect
+        host.getBoundingClientRect = () =>
+            ({
+                ...orig.call(host),
+                width: BOX.width + 40,
+                height: BOX.height + 20,
+                right: BOX.width + 40,
+                bottom: BOX.height + 20,
+            }) as DOMRect
+        const before = ctx.fills.length + ctx.strokes.length
+        roCb!()
+        // Drawn inside the callback: no rAF was pumped.
+        expect(ctx.fills.length + ctx.strokes.length).toBeGreaterThan(before)
+        r.destroy()
+    })
+
+    it('does not schedule while hidden, and keeps running through a glide', () => {
+        const { r } = mountRenderer('2d')
+        r.setVisible(false)
+        rafQueue = []
+        r.setSearchMatches(new Set(['n0']))
+        expect(rafQueue.length).toBe(0)
+        r.setVisible(true)
+        r.frameSubset(['n0'])
+        frame(50000)
+        // mid-glide: still asking for frames
+        expect(rafQueue.length).toBe(1)
+        r.destroy()
     })
 })

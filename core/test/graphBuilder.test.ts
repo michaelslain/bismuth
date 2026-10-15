@@ -3,6 +3,7 @@ import { test, expect, describe, afterEach } from 'bun:test'
 import { buildGraphFromNotes } from '../src/graphBuilder'
 import { setFileAccess, type FileAccess } from '../src/fileAccess'
 import type { GraphNode } from '../src/graph'
+import type { ParsedNote } from '../src/parsedNotes'
 
 // A no-disk FileAccess backed by an in-memory map — what a tauri-plugin-fs impl
 // stands in for on iPad. Only listMarkdown/readNote matter for graph building.
@@ -42,9 +43,9 @@ describe('buildGraphFromNotes FileAccess seam (the mobile in-process path)', () 
             '/ignored-root',
             node,
             // minimal edge extractor: one "link" edge per [[wikilink]] resolved via byBase
-            (nodeId, content, byBase) => {
+            (nodeId, note, byBase) => {
                 const out = []
-                for (const m of content.matchAll(/\[\[([^\]]+)\]\]/g)) {
+                for (const m of (note.raw ?? '').matchAll(/\[\[([^\]]+)\]\]/g)) {
                     const target = byBase.get(m[1])
                     if (target)
                         out.push({
@@ -87,12 +88,12 @@ describe('buildGraphFromNotes byBase tie-break for duplicate basenames', () => {
     // via byBase, the same seam vault.ts/memory.ts use for real link resolution.
     const edgeExtractor = (
         nodeId: string,
-        content: string,
+        note: ParsedNote,
         byBase: Map<string, string>,
         byPath: Map<string, string>,
     ) => {
         const out = []
-        for (const m of content.matchAll(/\[\[([^\]]+)\]\]/g)) {
+        for (const m of (note.raw ?? '').matchAll(/\[\[([^\]]+)\]\]/g)) {
             const target = byPath.get(m[1]) ?? byBase.get(m[1])
             if (target) out.push({ from: nodeId, to: target, kind: 'link' as const })
         }

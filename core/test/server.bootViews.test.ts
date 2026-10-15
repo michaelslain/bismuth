@@ -69,6 +69,9 @@ t(
             delete process.env.BISMUTH_NO_TASK_MIGRATE
         }
         const base = `http://localhost:${server.port}`
+        // The warm-up builds nothing while no SSE client is connected, so an app window must be open.
+        const events = await fetch(`${base}/events`)
+        const reader = events.body!.getReader()
         // Hold the one layout worker with a job that never ends on its own (no fixedIds, so no early
         // exit), queued now, ahead of the first graph build, which starts only after its async vault
         // walk. The warm-up waits on that build, so it cannot start until the hold is released. Without
@@ -109,6 +112,7 @@ t(
             expect(g?.views?.third?.pos3d['mem:m']).toBeDefined()
         } finally {
             hold.abort()
+            await reader.cancel().catch(() => {})
             server.stop(true)
         }
     },
@@ -137,6 +141,9 @@ t(
             delete process.env.BISMUTH_NO_TASK_MIGRATE
         }
         const base = `http://localhost:${server.port}`
+        // The warm-up builds nothing while no SSE client is connected, so an app window must be open.
+        const events = await fetch(`${base}/events`)
+        const reader = events.body!.getReader()
         const viewsCover = async (id: string): Promise<Graph | undefined> => {
             let g: Graph | undefined
             const deadline = Date.now() + 20_000
@@ -164,6 +171,7 @@ t(
             expect(g?.views?.second?.pos3d['d']).toBeDefined()
             expect(g?.views?.third?.pos3d['mem:m']).toBeDefined()
         } finally {
+            await reader.cancel().catch(() => {})
             server.stop(true)
         }
     },

@@ -1,5 +1,10 @@
 import { test, expect, spyOn } from 'bun:test'
-import { writeFileSync, mkdirSync } from 'node:fs'
+import {
+    writeFileSync,
+    mkdirSync,
+    renameSync,
+    utimesSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
@@ -11,6 +16,8 @@ import { readRunRecords } from '../src/runRegistry'
 import { searchPromptDeps } from '../src/searchPrompt'
 import { makeSampleVault, tempDir } from './helpers'
 import * as visibility from '../src/visibility'
+import * as engine from '../src/engine'
+import { configureParsedNotes, parsedNoteStats } from '../src/parsedNotes'
 
 // Isolate the daemon machine dir + the legacy claude-bot source for the WHOLE file. A
 // daemon-enabled server (the merged-brain test) runs migrateDaemonState on boot AND again from
@@ -3832,3 +3839,198 @@ test('POST /daemon/name: owner-gated, validates, writes identity.md, status read
         server.stop(true)
     }
 })
+
+/** Resolves once the boot task-migration scan has reported (`ran` stays null until it does). */
+async function migrationSettled(base: string): Promise<void> {
+    await until(
+        async () => (await (await fetch(`${base}/tasks/migration`)).json()).ran,
+        ran => ran !== null,
+    )
+}
+
+test('an edit through the API is parsed once, then served to /graph and the rows feed from the cache', async () => {
+    // A note edited seconds ago is inside the cache's racy window and is never stored; a clock ten
+    // seconds ahead makes every note storable so the count below is the cache's, not the window's.
+    configureParsedNotes({ now: () => Date.now() + 10_000 })
+    const { vault, memory } = await makeSampleVault()
+    await initializeSettings(vault)
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        await migrationSettled(base)
+        await fetch(`${base}/graph`)
+        await fetch(`${base}/vault-data`)
+        const before = parsedNoteStats()
+        expect(before.entries).toBeGreaterThan(0)
+
+        const put = await fetch(`${base}/file`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                path: 'essay.md',
+                contents: '# Essay\n\nnow tagged #parsedonce\n',
+            }),
+        })
+        expect(put.status).toBe(200)
+
+        const graph = await (await fetch(`${base}/graph`)).json()
+        expect(graph.nodes.map((n: any) => n.id)).toContain('tag:parsedonce')
+        const rows = await (await fetch(`${base}/vault-data`)).json()
+        const essay = rows.find((r: any) => r.file.path === 'essay.md')
+        expect(essay.file.tags).toContain('parsedonce')
+
+        const after = parsedNoteStats()
+        expect(after.misses - before.misses).toBe(1) // essay.md, once, for classify + rows patch + graph
+        expect(after.hits).toBeGreaterThan(before.hits)
+    } finally {
+        server.stop(true)
+        configureParsedNotes()
+    }
+}, 20000)
+
+test('an external delete or folder rename of cached notes leaves no stale parse entry', async () => {
+    configureParsedNotes({ now: () => Date.now() + 10_000 })
+    const { vault, memory } = await makeSampleVault()
+    mkdirSync(join(vault, 'pile'), { recursive: true })
+    writeFileSync(join(vault, 'pile', 'one.md'), '# One\n')
+    writeFileSync(join(vault, 'pile', 'two.md'), '# Two\n')
+    await initializeSettings(vault)
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        await migrationSettled(base)
+        await fetch(`${base}/graph`)
+        await fetch(`${base}/vault-data`)
+        await new Promise(r => setTimeout(r, 800)) // let boot watcher noise flush
+        const settle = () => new Promise(r => setTimeout(r, 900)) // spans the debounce
+        const start = parsedNoteStats().entries
+
+        rmSync(join(vault, 'essay.md'))
+        await settle()
+        const afterDelete = parsedNoteStats().entries
+        expect(afterDelete).toBe(start - 1)
+
+        renameSync(join(vault, 'pile'), join(vault, 'heap'))
+        await settle()
+        expect(parsedNoteStats().entries).toBe(afterDelete - 2)
+    } finally {
+        server.stop(true)
+        configureParsedNotes()
+    }
+}, 30000)
+
+test('a note mv-d into the vault during boot (old birthtime, fresh ctime) is not seeded, so its first change is structural', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await initializeSettings(vault)
+    const outside = tempDir('mv-in-')
+    const src = join(outside, 'moved.md')
+    writeFileSync(src, '# Moved\n')
+    const old = new Date('2020-01-01T00:00:00Z')
+    utimesSync(src, old, old) // pulls birthtime back on macOS; a rename keeps it
+    // hold the boot scan so the rename always lands before it, and the scan always runs before the
+    // watcher's debounced flush
+    let release!: () => void
+    const held = new Promise<void>(resolve => (release = resolve))
+    const server = createServer({
+        vault,
+        memory,
+        port: 0,
+        beforeTaskMigration: () => held,
+    })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        const waves: { dirty: { graph: boolean; tree: boolean } }[] = []
+        const pump = (async () => {
+            while (true) {
+                const { value, done } = await reader.read()
+                if (done) break
+                for (const line of decoder.decode(value).split('\n\n')) {
+                    if (!line.startsWith('data:')) continue
+                    const evt = JSON.parse(line.slice(5))
+                    if (evt.paths?.includes('moved.md')) waves.push(evt)
+                }
+            }
+        })()
+        renameSync(src, join(vault, 'moved.md')) // during boot: old birthtime, fresh ctime
+        release()
+        await migrationSettled(base)
+        await until(
+            async () => waves.length,
+            n => n > 0,
+        )
+        reader.cancel()
+        await pump.catch(() => {})
+        expect(waves.length).toBeGreaterThan(0)
+        expect(waves[0]!.dirty.tree).toBe(true)
+    } finally {
+        release()
+        server.stop(true)
+    }
+}, 30000)
+
+test('structural edits with no SSE client build no graph; a later GET /graph is fresh', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await initializeSettings(vault)
+    const build = spyOn(engine, 'buildGraph')
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    const create = (path: string) =>
+        fetch(`${base}/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, kind: 'file' }),
+        })
+    try {
+        await fetch(`${base}/graph`) // the boot build, shared with the boot warm-up
+        const baseline = build.mock.calls.length
+        for (const name of ['One.md', 'Two.md', 'Three.md']) await create(name)
+        // An absence cannot be polled for: the warm-up would have started building in the same turn
+        // as the invalidation, so a short settle is enough to see it had it been going to.
+        await new Promise(r => setTimeout(r, 150))
+        expect(build.mock.calls.length).toBe(baseline)
+
+        const graph = await (await fetch(`${base}/graph`)).json()
+        expect(graph.nodes.map((n: any) => n.id)).toEqual(
+            expect.arrayContaining(['One', 'Two', 'Three']),
+        )
+        expect(build.mock.calls.length).toBe(baseline + 1)
+    } finally {
+        build.mockRestore()
+        server.stop(true)
+    }
+}, 20000)
+
+test('with an SSE client connected, a structural edit rebuilds the graph once for the view warm-up', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await initializeSettings(vault)
+    const build = spyOn(engine, 'buildGraph')
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    const events = await fetch(`${base}/events`)
+    const reader = events.body!.getReader()
+    try {
+        await fetch(`${base}/graph`)
+        // The client's arrival lets the parked warm-up run; wait for its pass on the current graph.
+        await migrationSettled(base)
+        await new Promise(r => setTimeout(r, 100))
+        const baseline = build.mock.calls.length
+        await fetch(`${base}/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: 'Warm.md', kind: 'file' }),
+        })
+        await until(
+            async () => build.mock.calls.length,
+            n => n === baseline + 1,
+        )
+        await new Promise(r => setTimeout(r, 100))
+        expect(build.mock.calls.length).toBe(baseline + 1)
+    } finally {
+        await reader.cancel().catch(() => {})
+        build.mockRestore()
+        server.stop(true)
+    }
+}, 20000)

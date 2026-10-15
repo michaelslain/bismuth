@@ -32,6 +32,7 @@ import BarLabel from '../ui/BarLabel'
 import IconButton from '../ui/IconButton'
 import TextButton from '../ui/TextButton'
 import Label from '../ui/Label'
+import Text from '../ui/Text'
 import PageReadout from './PageReadout'
 import PdfZoom from './PdfZoom'
 import styles from './PreviewBar.module.css'
@@ -123,7 +124,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                         <div class={styles.group} data-testid="preview-converting">
                             <Label tone="muted">
                                 <Show when={(props.pageCount?.() ?? 0) > 0}>
-                                    <Label data-bar-drop="2">{'// '}</Label>
+                                    <Text as="span" inherit data-bar-drop="2">{'// '}</Text>
                                 </Show>
                                 <BarLabel long="converting to markdown" short="converting" />
                             </Label>

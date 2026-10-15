@@ -73,7 +73,7 @@ A hidden or chat-only note never appears in the hits, the `similar:` line or an 
 
 ## How it works
 
-`core/src/vaultEmbed.ts` holds one vector store per vault root, persisted under `~/.bismuth/cache/vault-vectors` in a folder named by a hash of the vault path. A note becomes chunks that each lead with its path, its title (the first heading, else the file name) and its tags, so those words count toward the meaning of every chunk. A hit's excerpt is the best chunk with that header removed.
+`core/src/vaultEmbed.ts` holds one vector store per vault root, persisted under `~/.bismuth/cache/vault-vectors` in a folder named by a hash of the vault path, in the same append-only format as recall's vectors ([Memory injection](../daemon/communication.md)). Each note is parsed once per change through the shared note cache, and its hash is computed once per change, so an edit re-embeds and writes only that note. A note becomes chunks that each lead with its path, its title (the first heading, else the file name) and its tags, so those words count toward the meaning of every chunk. A hit's excerpt is the best chunk with that header removed.
 
 `syncVaultEmbeddings` is the entry point for background work. The server calls it at boot and on each file change that touches the vault, and it debounces by 1.5 seconds. A pass embeds 8 notes per call so a query slips in between slices, and the store writes to disk at the end of a pass and at most every 10 seconds during one.
 A query waits up to 20 seconds for the model, including a cold load, before it answers `warming`.

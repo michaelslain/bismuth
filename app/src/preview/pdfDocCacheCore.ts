@@ -198,3 +198,58 @@ export function routePathChange(
         replaced(p)
     }
 }
+
+/** A server change, routed: a change naming paths goes per path through `routePathChange`; a
+ *  path-less change with a version past every one seen so far means an unknown extent and calls
+ *  `revalidate` once. A repeated or older version does nothing. The version gate lives here, so
+ *  the wiring keeps no counter of its own. */
+export function createServerChangeRouter(deps: {
+    gate: ReturnType<typeof createSelfWriteGate>
+    replaced: (path: string) => void
+    revalidate: () => void
+}): (c: { paths: readonly string[]; version: number }) => void {
+    let lastVersion = 0
+    return c => {
+        if (c.paths.length > 0) {
+            routePathChange(c.paths, deps.gate, deps.replaced)
+        } else if (c.version > lastVersion) {
+            deps.revalidate()
+        }
+        if (c.version > lastVersion) lastVersion = c.version
+    }
+}
+
+/** The freshness check behind a path-less server change: is the cached document for `key` still
+ *  the file on disk? Asks the server with the validator the document was loaded under: 304 =
+ *  unchanged, anything else = the file changed or went away. A document that cannot be asked (no
+ *  validator, or a base that is not http) is dropped, since its file may have changed during the
+ *  unknown extent; a failed request keeps it (offline is not a change). Every dependency is
+ *  injected so this stays free of the api/transport stack. */
+export function createFreshness<D>(deps: {
+    apiBase: () => string
+    buildUrl: (base: string, key: string) => string
+    fetch: (url: string, init: RequestInit) => Promise<{ status: number }>
+    dropStash: (key: string) => void
+}): (key: string, value: CachedPdf<D>) => Promise<boolean> {
+    return async (key, value) => {
+        const etag = await value.validator
+        const base = deps.apiBase()
+        if (!etag || !/^https?:/.test(base)) {
+            deps.dropStash(key)
+            return false
+        }
+        const ac = new AbortController()
+        try {
+            const r = await deps.fetch(deps.buildUrl(base, key), {
+                headers: { 'If-None-Match': etag },
+                cache: 'no-store',
+                signal: ac.signal,
+            })
+            const fresh = r.status === 304
+            if (!fresh) deps.dropStash(key)
+            return fresh
+        } finally {
+            ac.abort() // a 200 would stream the whole file; only the status mattered
+        }
+    }
+}

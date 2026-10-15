@@ -1,0 +1,81 @@
+/* ui/Sheen.module.css — scoped chrome for ui/Sheen.tsx (the only importer).
+
+   THE SHEEN RUNS ON THE COMPOSITOR. A gradient layer three boxes wide, tiled with the box-wide
+   `--grad` ramp stretched to two boxes, slides left by two boxes over
+   `--sheen`, and the glyph shape is a STATIC mask over the clipped wrapper. The old
+   `background-clip: text` + animated `background-position` repainted the glyphs on every frame
+   (~12% of a core for the daemon face plus the top wordmark in WKWebView); this moves a pre-painted
+   layer with `transform` and costs nothing per frame. One slide is one full period of the two-box
+   tile, so the loop is seamless and identical to the pan it replaces, hard seam included.
+
+   The mask is an inline SVG <mask><text>, not an HTML clip: WebKit renders `mask: url(#id)` for
+   SVG text but draws nothing for a <foreignObject> mask. The <svg> sits inside the host so the
+   host's font, size, tracking and custom properties cascade into the text. */
+
+.sheen {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.layer {
+    position: absolute;
+    inset: 0;
+    animation: slide var(--sheen, 8s) linear infinite;
+    /* A host that must hold still (the asleep daemon face) sets --sheen-play: paused. */
+    animation-play-state: var(--sheen-play, running);
+    /* A negative delay with --sheen-play: paused freezes the slide at a phase (the visual spec). */
+    animation-delay: var(--sheen-delay, 0s);
+    will-change: transform;
+}
+
+/* The three-box-wide gradient lives on a pseudo-element so the layer ELEMENT stays exactly the
+   host's box (a 300% wide element would report a right edge past the viewport to every layout
+   check, though `.sheen` clips it). Tile = two boxes (`--grad` at 200% of the box), so a slide of
+   two layer-widths is one whole period. */
+.layer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 300%;
+    background: var(--grad) 0 0 / 66.6667% 100% repeat-x;
+}
+
+@keyframes slide {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(-200%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .layer {
+        animation: none;
+    }
+}
+
+.defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+}
+
+/* Opaque ink for an alpha mask (`mask-type="alpha"`): the colour never shows, only the coverage.
+   The baseline sits `--sheen-baseline` below the host's top edge, snapped to the device pixel the
+   way the HTML line box snaps its own baseline (0.775em of the font at line-height 1). A host
+   whose box is trimmed (`text-box`) or padded overrides the variable. */
+.text {
+    fill: var(--fg);
+    font: inherit;
+    letter-spacing: inherit;
+    font-variant-ligatures: inherit;
+    font-kerning: inherit;
+    white-space: pre;
+    transform: translateY(var(--sheen-baseline, round(0.775em, 0.5px)));
+}

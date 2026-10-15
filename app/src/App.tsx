@@ -3625,7 +3625,7 @@ export default function App() {
                         <GraphView
                             fill
                             mini={floaterDocked()}
-                            visible={!floaterParked()}
+                            visible={!floaterParked() && !(floaterDocked() && !sidebarVisible())}
                             graph={displayGraph()}
                             communitySource={graph()}
                             onOpen={id => {

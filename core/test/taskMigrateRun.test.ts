@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs'
 import { $ } from 'bun'
 import { makeVault } from './helpers'
 import { runTaskMigration } from '../src/taskMigrateRun'
+import { extractFingerprint } from '../src/changeClassifier'
 import { getFileAccess, setFileAccess, type FileAccess } from '../src/fileAccess'
 
 const read = (root: string, rel: string) => Bun.file(join(root, rel)).text()
@@ -78,12 +79,15 @@ test('onScanned receives every scanned note with its actual content', async () =
     const root = makeVault({ 'a.md': 'content of a', 'b.md': 'content of b' })
     const seen = new Map<string, string>()
     await runTaskMigration(root, {
-        onScanned: (rel, text) => seen.set(rel, text),
+        onScanned: note => {
+            seen.set(note.rel, note.raw ?? '')
+            expect(note.fingerprint).toEqual(extractFingerprint(note.raw ?? ''))
+        },
     })
     expect([...seen.keys()].sort()).toEqual(['a.md', 'b.md'])
     // Wave 3 review (I2): the original test only checked which paths were reported, never the
     // text handed alongside them — server.ts seeds the change tracker's FINGERPRINT from this
-    // exact string (tracker.seed(rel, text)), so wrong/stale/swapped text here would seed the
+    // exact text (tracker.seed(note.rel, note.fingerprint)), so wrong/stale/swapped text here would seed the
     // tracker with the wrong baseline and this test would never notice.
     expect(seen.get('a.md')).toBe('content of a')
     expect(seen.get('b.md')).toBe('content of b')

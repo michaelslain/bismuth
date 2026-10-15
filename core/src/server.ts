@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { statSync, readdirSync, readFileSync } from 'node:fs'
 import { isBasePath, BASE_EXT } from './bases/baseFile'
 import { createSseRegistry } from './sse'
+import { forgetParsedNotes, getParsedNote } from './parsedNotes'
 import { createAsyncCache, type AsyncCache } from './asyncCache'
 import { createSelfWriteMarks } from './selfWriteMarks'
 import { watchLive, type LiveWatcher } from './liveWatch'
@@ -80,8 +81,10 @@ import {
 } from './watchSkip'
 import {
     createChangeTracker,
+    extractFingerprint,
     createThemeFileTracker,
     createPresenceTracker,
+    type Fingerprint,
     type PathStat,
     isSettingsPath,
     flushDelayMs,
@@ -148,6 +151,9 @@ export interface CoreConfig {
     /** Test seam for the /opencode/* routes: resolves the shared opencode server's client, or null
      *  when opencode is absent. Defaults to the real lookup. A rejection counts as null. */
     opencodeClient?: () => Promise<Awaited<ReturnType<typeof opencodeClient>>>
+    /** Test seam: awaited after the tree build settles and before the boot task-migration scan
+     *  starts, so a test can write a note while the scan is held and release it afterwards. */
+    beforeTaskMigration?: () => Promise<void>
 }
 
 const enc = new TextEncoder()
@@ -448,6 +454,13 @@ export function createServer(cfg: CoreConfig) {
     // without changing its connections — e.g. a bot status file restamped every
     // couple of seconds.
     const tracker = createChangeTracker()
+    // When this server booted (epoch ms). A note born at or after it may be a create whose own
+    // watcher event is still in flight, so the boot scan must not record its fingerprint.
+    const bootStartedMs = Date.now()
+    // The fingerprint a changed path currently has, read through the shared parse cache
+    // (parsedNotes.ts) so a classify costs no second parse of a note the graph or rows build has.
+    const readFingerprint = async (p: string): Promise<Fingerprint | null> =>
+        (await getParsedNote(cfg.vault, p))?.fingerprint ?? null
     // Fingerprints of `*.base.jsonl` line 1 (icon/visibility), seeded below at boot.
     const baseTracker = createChangeTracker()
     // `.themes/*.yaml` files already present at boot, so the first autosave of one is an edit.
@@ -472,7 +485,10 @@ export function createServer(cfg: CoreConfig) {
     const baseFiles = createThemeFileTracker(bootBases)
     for (const rel of bootBases) {
         try {
-            baseTracker.seed(rel, readFileSync(join(cfg.vault, rel), 'utf8'))
+            baseTracker.seed(
+                rel,
+                extractFingerprint(readFileSync(join(cfg.vault, rel), 'utf8')),
+            )
         } catch {
             /* unreadable at boot: its first edit counts as a first sighting */
         }
@@ -490,12 +506,9 @@ export function createServer(cfg: CoreConfig) {
             return { exists: false, bornMs: 0 }
         }
     }
-    {
-        const startedMs = Date.now()
-        walkDir(cfg.vault, (_d, rel) => !rel.endsWith('.md'))
-            .then(entries => otherFiles.seed(entries.map(e => e.rel), startedMs))
-            .catch(() => otherFiles.seed([], startedMs))
-    }
+    walkDir(cfg.vault, (_d, rel) => !rel.endsWith('.md'))
+        .then(entries => otherFiles.seed(entries.map(e => e.rel), bootStartedMs))
+        .catch(() => otherFiles.seed([], bootStartedMs))
     const themeFiles = createThemeFileTracker(
         (() => {
             try {
@@ -653,9 +666,7 @@ export function createServer(cfg: CoreConfig) {
             if (isBasePath(p)) {
                 if (baseFiles.classify(p, themeFileExists(p))) {
                     // record (create) or clear (delete) the line-1 fingerprint too
-                    await baseTracker.classify([p], q =>
-                        readNoteOrNull(cfg.vault, q),
-                    )
+                    await baseTracker.classify([p], readFingerprint)
                     graph = true
                     tree = true
                     continue
@@ -676,12 +687,8 @@ export function createServer(cfg: CoreConfig) {
             }
             notePaths.push(p)
         }
-        const d = await tracker.classify(notePaths, p =>
-            readNoteOrNull(cfg.vault, p),
-        )
-        const b = await baseTracker.classify(basePaths, p =>
-            readNoteOrNull(cfg.vault, p),
-        )
+        const d = await tracker.classify(notePaths, readFingerprint)
+        const b = await baseTracker.classify(basePaths, readFingerprint)
         return {
             graph: graph || d.graph || b.graph,
             tree: tree || d.tree || b.tree,
@@ -691,6 +698,9 @@ export function createServer(cfg: CoreConfig) {
     // Single entry point for vault content/structure changes (API mutations +
     // file-watch). With no paths the change extent is unknown, so refresh both.
     async function invalidate(...paths: string[]) {
+        // The write that triggered this may land inside the parse cache's racy window or keep its
+        // mtime and size, so drop the changed notes before anything below reads them.
+        forgetParsedNotes(cfg.vault, paths.length ? paths : undefined)
         const dirty =
             paths.length === 0
                 ? { graph: true, tree: true }
@@ -731,6 +741,12 @@ export function createServer(cfg: CoreConfig) {
                 pendingMemory = false
                 void (async () => {
                     let dirty = { graph: false, tree: false }
+                    // An external delete, rename or edit may keep its mtime and size, or leave a
+                    // dead key behind; drop every flushed path (all of them when the extent is
+                    // unknown) before anything reads the notes again.
+                    if (unknown) forgetParsedNotes(cfg.vault)
+                    else if (vaultPaths.length)
+                        forgetParsedNotes(cfg.vault, vaultPaths)
                     if (unknown) {
                         dirty = { graph: true, tree: true }
                     } else if (vaultPaths.length) {
@@ -1058,9 +1074,24 @@ export function createServer(cfg: CoreConfig) {
         void treeCache
             .get()
             .catch(() => {})
+            .then(() => cfg.beforeTaskMigration?.())
             .then(() =>
                 runTaskMigration(cfg.vault, {
-                    onScanned: (rel, text) => tracker.seed(rel, text),
+                    // A note born during boot is left unseeded: its watcher event may not have been
+                    // classified yet, and a seeded baseline would report it content-only (dirty
+                    // neither graph nor tree) so it never reaches the sidebar.
+                    onScanned: note => {
+                        if (
+                            Math.floor(
+                                Math.max(
+                                    note.stat.birthtimeMs,
+                                    note.stat.ctimeMs,
+                                ),
+                            ) >= bootStartedMs
+                        )
+                            return
+                        tracker.seed(note.rel, note.fingerprint)
+                    },
                 }),
             )
             .then(r => {
@@ -1089,8 +1120,15 @@ export function createServer(cfg: CoreConfig) {
     // paid a cold subgraph layout — and an edit landing DURING the boot pass aborted it for good. A pass is
     // speculative, so it never holds the layout worker ahead of a requested rebuild; a burst of edits
     // costs one aborted pass per invalidation and one completed pass once the graph settles.
+    //
+    // It builds nothing while no SSE client is connected: the warmed layouts only serve a connected app's
+    // next brain-mode switch, and a structural edit made with no client (a sync, an agent, a CLI run) used
+    // to cost a graph build and a force-sim pass nobody asked for. It parks until a client subscribes, then
+    // warms the graph as it is by then; GET /graph and GET /graph/views build on demand either way.
     const warmViews = async (): Promise<void> => {
         while (!stopped) {
+            await sse.whenSubscribed()
+            if (stopped) return
             // Armed BEFORE reading the graph, so an invalidation during the read or the pass is never lost.
             const invalidated = new Promise<void>(r => (wakeViewWarmup = r))
             const g = await graphCache.get().catch(() => null)

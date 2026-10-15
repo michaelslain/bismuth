@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { renameLayoutIds } from '../layout-cache'
 import {
@@ -8,6 +9,7 @@ import {
     deleteEntry,
     createEntry,
     resolveAsset,
+    resolveInVault,
     writeBinary,
     uniqueAssetPath,
 } from '../files'
@@ -28,6 +30,7 @@ import {
     editPdfHighlights,
     highlightIOFor,
     migrateSidecarHighlights,
+    readStoredPdfHighlights,
     type PdfHighlightEdits,
 } from '../pdfHighlightStore'
 import { inkSidecarFor } from '../fileKinds'
@@ -206,6 +209,29 @@ export default function vaultRoutes(
             return ok()
         },
 
+        // The PDF's highlights through the light reader, so the viewer never asks pdf.js for every
+        // page's annotations (which text-extracts, and range-fetches, each highlighted page).
+        // Deny-checked on the raw AND the symlink-resolved path, like /asset.
+        'GET /pdf/highlights': async (req, url) => {
+            const path = requireQueryParam(url, 'path')
+            const abs = resolveInVault(cfg.vault, path)
+            const denied = await denyEntriesForRequest(req)
+            if (isDeniedPath(denied, path)) return error('forbidden', 403)
+            try {
+                const real = relative(
+                    realpathSync(cfg.vault),
+                    realpathSync(abs),
+                )
+                if (isDeniedPath(denied, real)) return error('forbidden', 403)
+            } catch {
+                return error('pdf not found', 404)
+            }
+            const io = highlightIOFor(await getFileAccess(), cfg.vault)
+            const read = await readStoredPdfHighlights(io, path)
+            if (!read) return error('pdf not found', 404)
+            return Response.json(read)
+        },
+
         // Serve a vault file as BINARY (image/PDF/audio/video) for `![[...]]` embeds. Resolves
         // FILENAME-FIRST (resolveAsset), streams the bytes with a Content-Type inferred from the
         // extension (Bun.file). Read-only; traversal is guarded inside resolveAsset/resolveInVault.
@@ -225,17 +251,31 @@ export default function vaultRoutes(
             // Channel-filtered like every other content-returning read route. This route serves BYTES —
             // a hidden PDF, image or drawing is exactly the kind of note someone hides, and it is one
             // `curl` away otherwise. The owner (the app, which carries the token) is never filtered, so
-            // ordinary <img src>/<embed> rendering is unaffected. Checked AFTER resolution so the
-            // symlink-resolved path is what gets tested, matching how the deny list is built.
+            // ordinary <img src>/<embed> rendering is unaffected. Checked AFTER resolution against the
+            // requested path, the resolved path and the vault-relative REALPATH of the resolved file, so
+            // a symlink to a hidden file is denied like the file itself, matching GET /pdf/highlights.
+            // A symlink whose target is outside the vault matches no deny entry and is served.
             if (abs) {
                 const denied = await denyEntriesForRequest(req)
-                if (
-                    denied.length > 0 &&
-                    (isDeniedPath(denied, abs) || isDeniedPath(denied, path))
-                ) {
-                    return error('forbidden', 403, {
-                        'Cache-Control': 'no-store',
-                    })
+                if (denied.length > 0) {
+                    let real: string | null = null
+                    try {
+                        real = relative(
+                            realpathSync(cfg.vault),
+                            realpathSync(abs),
+                        )
+                    } catch {
+                        real = null
+                    }
+                    if (
+                        isDeniedPath(denied, path) ||
+                        isDeniedPath(denied, relative(cfg.vault, abs)) ||
+                        (real !== null && isDeniedPath(denied, real))
+                    ) {
+                        return error('forbidden', 403, {
+                            'Cache-Control': 'no-store',
+                        })
+                    }
                 }
             }
             // `no-store` on the miss (#38): a "not found" is only ever a TRANSIENT fact about a

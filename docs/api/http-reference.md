@@ -156,6 +156,7 @@ These routes move binary data. None of them invalidates caches, because attachme
 | Route | Request | Response | Access and effects |
 |---|---|---|---|
 | `GET /asset` | `?path=` required, resolved filename-first | The file's bytes with a `Content-Type` from its extension, `Accept-Ranges: bytes`, an `ETag` and `Last-Modified` from the file's size and modification time, and `Cache-Control: private, max-age=60` (`private, no-cache` for a PDF). A `Range` request gets `206`; a matching `If-None-Match` gets `304`. `404 asset not found`. | path-gated on both the resolved and raw path; none |
+| `GET /pdf/highlights` | `?path=` the PDF | `{writable, pages}`, the highlights the PDF file holds per page, read without pdf.js; `writable: false` carries a `reason`. `404 pdf not found`. | path-gated on both the resolved and raw path; none |
 | `POST /asset` | `?path=` target, raw bytes as the body | `{path}` actually used; a name clash gets a unique suffix. | open; none |
 | `POST /asset/fetch` | `{url, path}` | `{path}` actually used. | owner only; none |
 | `POST /convert/heic` | raw HEIC or HEIF bytes | JPEG bytes, `Content-Type: image/jpeg`. `400` when undecodable. | open; none |

@@ -1,8 +1,6 @@
-import { parseFrontmatter } from './frontmatter'
-import { extractTags } from './tags'
-import { extractWikilinks } from './wikilinks'
 import { buildGraphFromNotes } from './graphBuilder'
 import { noteId } from './pathUtils'
+import type { ParsedNote } from './parsedNotes'
 import type { GraphData, GraphNode, GraphEdge } from './graph'
 
 // Re-exported for existing importers (e.g. memory.ts) — the canonical definition lives in
@@ -69,22 +67,20 @@ export async function buildVaultGraph(root: string): Promise<VaultGraphResult> {
 
     const edgeExtractor = (
         nodeId: string,
-        content: string,
+        note: ParsedNote,
         byBase: Map<string, string>,
         byPath: Map<string, string>,
     ): GraphEdge[] => {
         const edges: GraphEdge[] = []
-        const { data, body } = parseFrontmatter(content)
-
         // Wikilink edges: create edges to existing notes only. Resolve path-qualified
         // links ([[folder/Note]]) by full path, falling back to basename ([[Note]]).
-        for (const target of extractWikilinks(content)) {
+        for (const target of note.links) {
             const toId = resolveLinkTarget(target, byBase, byPath)
             if (toId) edges.push({ from: nodeId, to: toId, kind: 'link' })
         }
 
         // Tag edges and nodes: create nodes on first reference
-        for (const tag of extractTags(data, body)) {
+        for (const tag of note.tags) {
             const tagId = `tag:${tag}`
             tagNodes.set(
                 tagId,

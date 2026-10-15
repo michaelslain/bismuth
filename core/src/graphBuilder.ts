@@ -1,16 +1,17 @@
 import type { GraphNode, GraphEdge } from './graph'
 import { getFileAccess } from './fileAccess'
-import { readAllNotes } from './readAllNotes'
+import { getParsedNotes, type ParsedNote } from './parsedNotes'
 import { noteId } from './pathUtils'
 import { preferId } from './linkTarget'
 
 /**
  * Shared graph builder for vault and memory notes.
- * Handles the common pattern: list files → read in parallel → extract nodes/edges.
+ * Handles the common pattern: list files → read each through the parsed-note cache → extract
+ * nodes/edges.
  *
  * @param root - Directory to scan for markdown files
  * @param nodeBuilder - Function to create a GraphNode from rel path
- * @param edgeExtractor - Function to extract edges from a node id and content; receives byBase/byPath for link resolution
+ * @param edgeExtractor - Function to extract edges from a node id and its parsed note; receives byBase/byPath for link resolution
  * @returns nodes, edges, and index maps (byBase, byPath)
  */
 export async function buildGraphFromNotes(
@@ -18,7 +19,7 @@ export async function buildGraphFromNotes(
     nodeBuilder: (relPath: string) => GraphNode,
     edgeExtractor: (
         nodeId: string,
-        content: string,
+        note: ParsedNote,
         byBase: Map<string, string>,
         byPath: Map<string, string>,
     ) => GraphEdge[],
@@ -30,7 +31,7 @@ export async function buildGraphFromNotes(
 }> {
     const { listMarkdown } = await getFileAccess()
     // A note that vanished since the listing is skipped entirely (no node, no edges).
-    const notes = await readAllNotes(root, await listMarkdown(root))
+    const notes = await getParsedNotes(root, await listMarkdown(root))
     const nodes: GraphNode[] = []
     const byBase = new Map<string, string>()
     const byPath = new Map<string, string>()
@@ -58,9 +59,9 @@ export async function buildGraphFromNotes(
 
     // Extract edges in a single pass, with access to index maps for link resolution
     const edges: GraphEdge[] = []
-    for (const { rel, content } of notes) {
-        const node = nodeMap.get(rel)!
-        edges.push(...edgeExtractor(node.id, content, byBase, byPath))
+    for (const note of notes) {
+        const node = nodeMap.get(note.rel)!
+        edges.push(...edgeExtractor(node.id, note, byBase, byPath))
     }
 
     return { nodes, edges, byBase, byPath }

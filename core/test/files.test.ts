@@ -1,6 +1,6 @@
 import { tempDir } from './helpers'
 import { test, expect, afterEach } from 'bun:test'
-import { mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, existsSync, readdirSync, rmSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     listMarkdown,
@@ -10,6 +10,7 @@ import {
     writeNote,
     deleteEntry,
     createEntry,
+    appendBinary,
 } from '../src/files'
 import { AppError } from '../src/error'
 
@@ -726,4 +727,39 @@ test('listTree lists .themes and its top-level *.yaml only', async () => {
     await Bun.write(join(dir, 'a.md'), '# A')
     const paths = (await listTree(dir)).map(e => e.path).sort()
     expect(paths).toEqual(['.themes', '.themes/dusk.yaml', 'a.md'])
+})
+
+test('appendBinary appends when the size matches and refuses with the file untouched when it does not', async () => {
+    const dir = tempDir('bismuth-append-')
+    created.push(dir)
+    await Bun.write(join(dir, 'a.bin'), 'abc')
+    await appendBinary(dir, 'a.bin', new TextEncoder().encode('de'), 3)
+    expect(readFileSync(join(dir, 'a.bin'), 'utf8')).toBe('abcde')
+    const e = await appendBinary(dir, 'a.bin', new Uint8Array([1]), 3).catch(x => x)
+    expect(e).toBeInstanceOf(AppError)
+    expect(e.code).toBe('ECHANGED')
+    expect(readFileSync(join(dir, 'a.bin'), 'utf8')).toBe('abcde')
+})
+
+test('appendBinary errors and creates no file when the target vanishes between resolve and open', async () => {
+    const dir = tempDir('bismuth-append-')
+    created.push(dir)
+    await Bun.write(join(dir, 'a.bin'), 'abc')
+    const e = await appendBinary(dir, 'a.bin', new Uint8Array([1]), 3, () =>
+        rmSync(join(dir, 'a.bin')),
+    ).catch(x => x)
+    expect(e.code).toBe('ENOENT')
+    expect(existsSync(join(dir, 'a.bin'))).toBe(false)
+})
+
+test('appendBinary closes its file handle on both paths', async () => {
+    const dir = tempDir('bismuth-append-')
+    created.push(dir)
+    await Bun.write(join(dir, 'a.bin'), 'abc')
+    const before = readdirSync('/dev/fd').length
+    for (let i = 0; i < 300; i++) {
+        await appendBinary(dir, 'a.bin', new Uint8Array([1]), 3 + i)
+        await appendBinary(dir, 'a.bin', new Uint8Array([1]), 0).catch(() => {})
+    }
+    expect(readdirSync('/dev/fd').length).toBeLessThanOrEqual(before)
 })

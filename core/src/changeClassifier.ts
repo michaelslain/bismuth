@@ -31,14 +31,25 @@ export interface Dirty {
     tree: boolean
 }
 
-const norm = (xs: string[]): string => [...new Set(xs)].sort().join('\n')
+const norm = (xs: readonly string[]): string =>
+    [...new Set(xs)].sort().join('\n')
 
-/** Derive the graph/tree-relevant fingerprint of a note from its raw content. */
-export function extractFingerprint(content: string): Fingerprint {
+/**
+ * The fingerprint of a note whose fields are already parsed (see parsedNotes.ts), so the
+ * tracker never re-parses a note the rest of core has parsed. `raw` is still needed to tell a
+ * JSON Lines base apart; for one, `data`/`links`/`tags` are ignored. Deep-equal to
+ * `extractFingerprint(raw)` for the fields that function would have derived itself.
+ */
+export function fingerprintOfParsed(
+    raw: string,
+    data: Record<string, unknown>,
+    links: readonly string[],
+    tags: readonly string[],
+): Fingerprint {
     // A JSON Lines base: only line 1 (the config) shows in the tree; its rows feed neither
     // the graph nor the tree, so a row-only edit fingerprints identically.
-    if (baseFormatOf(content) === 'jsonl') {
-        const cfg = readBaseConfigRaw(content) ?? {}
+    if (baseFormatOf(raw) === 'jsonl') {
+        const cfg = readBaseConfigRaw(raw) ?? {}
         return {
             links: '',
             tags: '',
@@ -46,13 +57,25 @@ export function extractFingerprint(content: string): Fingerprint {
             visibility: typeof cfg.visibility === 'string' ? cfg.visibility : '',
         }
     }
-    const { data, body } = parseFrontmatter(content)
     return {
-        links: norm(extractWikilinks(content)),
-        tags: norm(extractTags(data, body)),
+        links: norm(links),
+        tags: norm(tags),
         icon: typeof data.icon === 'string' ? data.icon : '',
         visibility: typeof data.visibility === 'string' ? data.visibility : '',
     }
+}
+
+/** Derive the graph/tree-relevant fingerprint of a note from its raw content. */
+export function extractFingerprint(content: string): Fingerprint {
+    if (baseFormatOf(content) === 'jsonl')
+        return fingerprintOfParsed(content, {}, [], [])
+    const { data, body } = parseFrontmatter(content)
+    return fingerprintOfParsed(
+        content,
+        data,
+        extractWikilinks(content),
+        extractTags(data, body),
+    )
 }
 
 /**
@@ -111,8 +134,8 @@ export function diffFingerprints(
     }
 }
 
-/** Reads a note's current content, or null if it no longer exists. */
-export type ReadContent = (path: string) => Promise<string | null>
+/** Reads a note's current fingerprint, or null if it no longer exists. */
+export type ReadFingerprint = (path: string) => Promise<Fingerprint | null>
 
 export interface ChangeTracker {
     /**
@@ -120,15 +143,15 @@ export interface ChangeTracker {
      * aggregate dirtiness. Updates the internal store as it goes, so the next call
      * compares against this one.
      */
-    classify(paths: string[], read: ReadContent): Promise<Dirty>
+    classify(paths: string[], read: ReadFingerprint): Promise<Dirty>
     /**
      * Record `path`'s fingerprint WITHOUT going through classify — for the boot-time
-     * task-migration scan, which reads every note anyway and can hand its content over so the
+     * task-migration scan, which reads every note anyway and can hand its fingerprint over so the
      * tracker already knows every note's baseline before the first save lands. A no-op if the
      * path already has a fingerprint (from an earlier seed OR an earlier classify), so a boot
      * scan can never clobber state a real change has already recorded.
      */
-    seed(path: string, content: string): void
+    seed(path: string, fp: Fingerprint): void
 }
 
 /** Stateful tracker of per-file fingerprints, decoupled from any file system. */
@@ -139,10 +162,8 @@ export function createChangeTracker(): ChangeTracker {
             let graph = false
             let tree = false
             for (const p of paths) {
-                const content = await read(p)
+                const next = await read(p)
                 const prev = fps.get(p)
-                const next =
-                    content === null ? null : extractFingerprint(content)
                 const d = diffFingerprints(prev, next)
                 graph ||= d.graph
                 tree ||= d.tree
@@ -151,8 +172,8 @@ export function createChangeTracker(): ChangeTracker {
             }
             return { graph, tree }
         },
-        seed(path, content) {
-            if (!fps.has(path)) fps.set(path, extractFingerprint(content))
+        seed(path, fp) {
+            if (!fps.has(path)) fps.set(path, fp)
         },
     }
 }

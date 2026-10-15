@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test'
 import {
     extractFingerprint,
+    fingerprintOfParsed,
     diffFingerprints,
     createChangeTracker,
     createThemeFileTracker,
@@ -96,10 +97,25 @@ test('diffFingerprints: a deleted file (no next fingerprint) is both dirty', () 
     expect(diffFingerprints(prev, null)).toEqual({ graph: true, tree: true })
 })
 
+test('fingerprintOfParsed matches extractFingerprint for the same parsed fields', () => {
+    const fm = { icon: '📕', visibility: 'hidden' }
+    expect(
+        fingerprintOfParsed('x', fm, ['b', 'a', 'a'], ['t', 'u']),
+    ).toEqual({ links: 'a\nb', tags: 't\nu', icon: '📕', visibility: 'hidden' })
+    const text = '---\nicon: 📕\nvisibility: hidden\n---\n[[b]] [[a]] [[a]] #t #u'
+    expect(
+        fingerprintOfParsed(text, fm, ['b', 'a', 'a'], ['t', 'u']),
+    ).toEqual(extractFingerprint(text))
+})
+
+/** The fingerprint of a note's text, or null for a note that no longer exists. */
+const fp = (content: string | null) =>
+    content === null ? null : extractFingerprint(content)
+
 test('createChangeTracker tracks per-file state across a sequence of edits', async () => {
     const tracker = createChangeTracker()
     const fs = new Map<string, string | null>()
-    const read = async (p: string) => fs.get(p) ?? null
+    const read = async (p: string) => fp(fs.get(p) ?? null)
 
     // First sighting of a file is structural (it's a new node + tree entry).
     fs.set('a.md', '[[X]] hello')
@@ -136,7 +152,7 @@ test('createChangeTracker aggregates dirtiness across multiple changed paths', a
         ['a.md', 'plain'],
         ['b.md', 'plain'],
     ])
-    const read = async (p: string) => fs.get(p) ?? null
+    const read = async (p: string) => fp(fs.get(p) ?? null)
     await tracker.classify(['a.md', 'b.md'], read) // baseline both
 
     // Only b gains a tag; the batch is graph-dirty (from b) but not tree-dirty.
@@ -152,17 +168,21 @@ test('createChangeTracker aggregates dirtiness across multiple changed paths', a
 
 test('a seeded note whose edit touches no link or tag is not structural', async () => {
     const t = createChangeTracker()
-    t.seed('a.md', '# a\n[[b]] #x')
+    t.seed('a.md', extractFingerprint('# a\n[[b]] #x'))
     expect(
-        await t.classify(['a.md'], async () => '# a edited\n[[b]] #x'),
+        await t.classify(['a.md'], async () =>
+            extractFingerprint('# a edited\n[[b]] #x'),
+        ),
     ).toEqual({ graph: false, tree: false })
 })
 
 test('seed never overwrites a fingerprint classify already recorded', async () => {
     const t = createChangeTracker()
-    await t.classify(['a.md'], async () => '[[b]]')
-    t.seed('a.md', '[[c]]')
-    expect(await t.classify(['a.md'], async () => '[[b]] more')).toEqual({
+    await t.classify(['a.md'], async () => extractFingerprint('[[b]]'))
+    t.seed('a.md', extractFingerprint('[[c]]'))
+    expect(
+        await t.classify(['a.md'], async () => extractFingerprint('[[b]] more')),
+    ).toEqual({
         graph: false,
         tree: false,
     })

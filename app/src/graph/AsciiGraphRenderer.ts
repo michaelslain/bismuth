@@ -1034,7 +1034,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
     private raf = 0
     private running = false
     private visible = true
-    private dirty = true
+    /** Dirty flag as an accessor: every setter that changes what is drawn sets `dirty = true`, and
+     *  that is also the wake-up for an idled loop (see `wake()`). Nothing needs a second call. */
+    private _dirty = true
+    private get dirty() {
+        return this._dirty
+    }
+    private set dirty(v: boolean) {
+        this._dirty = v
+        if (v) this.wake()
+    }
     private lastFrameT = 0
     private fpsAccum = 0
     private fpsFrames = 0
@@ -1064,8 +1073,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.readTokens()
         this.measure()
         this.ro = new ResizeObserver(() => {
-            this.measure()
-            this.fit()
+            // Replaces the old per-frame syncSize() poll: the loop idles when settled, so a box change
+            // has to arrive as an event. syncSize() re-measures only when the box really moved.
+            // Resizing a canvas clears it, so a changed box repaints HERE, in the callback, before the
+            // browser presents: waiting for the next rAF would show one cleared frame.
+            if (this.syncSize() && this.running && this.ensureContext()) {
+                this.repaintNow()
+            }
+            this.wake()
         })
         this.ro.observe(el)
 
@@ -1940,7 +1955,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
 
     /**
-     * Reconcile the grid with the host's CURRENT box, once per frame.
+     * Reconcile the grid with the host's CURRENT box.
+     *
+     * Two callers: the ResizeObserver callback (the normal path; it repaints synchronously when this
+     * returns true) and frame() while `!boxReady` (the per-frame fallback described below).
      *
      * measure() is also driven by mount()/render()/the ResizeObserver, but every one of those is a
      * one-shot: the knowledge graph is a SINGLE floating element that App re-places and re-sizes
@@ -1957,18 +1975,29 @@ export class AsciiGraphRenderer implements GraphRenderer {
      * invalidated (the loop only writes to the canvas), and measure()/fit() only run when the box
      * actually differs from the grid we last built.
      */
-    private syncSize() {
-        if (!this.host) return
+    private syncSize(): boolean {
+        if (!this.host) return false
         const r = this.host.getBoundingClientRect()
-        if (!isUsableBox(r.width, r.height)) return
+        if (!isUsableBox(r.width, r.height)) return false
         if (
             this.boxReady &&
             Math.abs(r.width - this.W) < 0.5 &&
             Math.abs(r.height - this.H) < 0.5
         )
-            return
+            return false
         this.measure()
         this.fit()
+        return true
+    }
+
+    /** Draws the current state now, outside the rAF loop (the ResizeObserver callback uses it so a
+     *  resized, therefore cleared, canvas is never presented empty). */
+    private repaintNow() {
+        this.rasterize(this.cfg.viewMode === '2d')
+        this.paint()
+        this.emitZoom()
+        this.emitBloom()
+        this.dirty = false
     }
 
     /** The world→px fit SCALE for a given dimension (`fitScaleForBox`'s box-fill law for 2D, or
@@ -2066,12 +2095,18 @@ export class AsciiGraphRenderer implements GraphRenderer {
     private start() {
         if (this.running || !this.visible || !this.host) return
         this.running = true
-        this.raf = requestAnimationFrame(this.tick)
+        this.lastFrameT = 0
+        this.wake()
     }
     private stop() {
         this.running = false
         if (this.raf) cancelAnimationFrame(this.raf)
         this.raf = 0
+    }
+    /** Schedule a frame if the loop is enabled and none is pending. Idempotent. */
+    private wake() {
+        if (!this.running || this.raf) return
+        this.raf = requestAnimationFrame(this.tick)
     }
 
     /**
@@ -2088,8 +2123,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
      * otherwise flood the console at 60Hz and bury its own first occurrence.
      */
     private tick = (t: number) => {
+        this.raf = 0
+        let busy = true
         try {
-            this.frame(t)
+            busy = this.frame(t)
         } catch (err) {
             if (!this.frameErrorLogged) {
                 this.frameErrorLogged = true
@@ -2099,16 +2136,39 @@ export class AsciiGraphRenderer implements GraphRenderer {
                 )
             }
         } finally {
-            if (this.running) this.raf = requestAnimationFrame(this.tick)
+            // Reschedule only while something is still moving (or a frame failed, so it can recover).
+            // A settled field stops here; wake() restarts it on the next input.
+            if (this.running && (busy || this._dirty)) this.wake()
+            else {
+                this.lastFrameT = 0
+                this.flushFps()
+            }
         }
     }
 
     private frameErrorLogged = false
+    private fpsEver = false
 
-    private frame = (t: number) => {
-        if (!this.running) return
-        if (!this.ensureContext()) return
-        this.syncSize()
+    /** The loop idled mid-window. Only when no full-window reading exists yet is the partial window
+     *  reported (a short animation that never filled 500ms still leaves a reading); afterwards the
+     *  status line keeps the last full-window reading, because a few tail frames are a noisy sample
+     *  (a slow first or last frame read amber for a field that ran at 60). */
+    private flushFps() {
+        if (!this.fpsEver && this.fpsFrames >= 2 && this.fpsAccum > 0) {
+            this.fpsEver = true
+            this.onFps?.(Math.round((this.fpsFrames * 1000) / this.fpsAccum))
+        }
+        this.fpsAccum = 0
+        this.fpsFrames = 0
+    }
+
+    /** Draws one frame; returns whether another is needed (a glide, morph or spin is in flight). */
+    private frame = (t: number): boolean => {
+        if (!this.running) return false
+        if (!this.ensureContext()) return true
+        // Box polling is gone (the ResizeObserver delivers changes); only an unmeasured grid, e.g. a
+        // context that just came back, re-measures here.
+        if (!this.boxReady) this.syncSize()
         // Real elapsed ms since the last tick — clamped to [1, 100]: never zero/negative (defensive
         // against a non-monotonic or repeated rAF timestamp, which would otherwise divide-by-zero-ish or
         // run the ease backwards) and capped so one slow/late frame can't snap the glide most of the way
@@ -2121,6 +2181,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
             this.fpsAccum += t - this.lastFrameT
             this.fpsFrames++
             if (this.fpsAccum >= 500) {
+                this.fpsEver = true
                 this.onFps?.(
                     Math.round((this.fpsFrames * 1000) / this.fpsAccum),
                 )
@@ -2209,7 +2270,35 @@ export class AsciiGraphRenderer implements GraphRenderer {
             this.emitBloom()
             this.dirty = false
         }
+        return (
+            this.modeMorph !== null ||
+            this.res !== this.goalRes ||
+            this.targetMoving() ||
+            this.spinning(is2d) ||
+            // Until one reading exists, run until two frames are timed so the fps badge has a real
+            // number to show once the field settles (a settled field draws no frames to time).
+            (!this.fpsEver && this.fpsFrames < 2)
+        )
         // NB: the reschedule lives in tick()'s `finally`, not here — see its doc comment.
+    }
+
+    private targetMoving(): boolean {
+        return (
+            Math.hypot(
+                this.goalTarget[0] - this.target[0],
+                this.goalTarget[1] - this.target[1],
+                this.goalTarget[2] - this.target[2],
+            ) > 0.3
+        )
+    }
+    private spinning(is2d: boolean): boolean {
+        return (
+            !is2d &&
+            !!this.cfg.spin &&
+            this.nodes.length <= 350 &&
+            !this.userTook &&
+            !this.dragging
+        )
     }
 
     private emitZoom() {

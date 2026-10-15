@@ -150,6 +150,7 @@ import type { GcalStatus } from '../../core/src/gcal'
 import type { SyncResult } from '../../core/src/gcal/sync'
 import { serializeDoc, type DrawingDoc } from '../../core/src/drawing/model'
 import type { PdfHighlightEdits } from '../../core/src/pdfHighlightStore'
+import type { PdfHighlightRead } from '../../core/src/drawing/pdfHighlights'
 import { plural } from './plural'
 import type {
     ChatFrame,
@@ -751,6 +752,11 @@ export const api = {
             path,
             edits,
         }),
+    // The PDF's highlights as the server's light reader sees them; no pdf.js text extraction.
+    pdfHighlights: (path: string) =>
+        getJson<PdfHighlightRead>(
+            `/pdf/highlights?path=${encodeURIComponent(path)}`,
+        ),
     // Moves the sidecar's highlights into the PDF; `writable: false` = the PDF cannot be rewritten
     // and its highlights stay in the sidecar.
     migratePdfHighlights: (path: string) =>

@@ -1,6 +1,19 @@
-import { test, expect, afterAll } from 'bun:test'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { test, expect, afterAll, spyOn } from 'bun:test'
+import * as memory from '@bismuth/memory'
+import {
+    appendFileSync,
+    existsSync,
+    fsyncSync,
+    mkdirSync,
+    readFileSync,
+    renameSync,
+    statSync,
+    truncateSync,
+    unlinkSync,
+    utimesSync,
+    writeFileSync,
+} from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 import createEmbedder, {
     backoffFor,
     workerAvailable,
@@ -321,7 +334,8 @@ test('an old-format vectors.json is never read as chunked and never rewritten', 
     await store.flush()
     expect(state.embedded.length).toBe(1) // re-embedded from scratch
     expect(readFileSync(join(sub, 'vectors.json'), 'utf8')).toBe(oldBody)
-    expect(JSON.parse(readFileSync(join(sub, 'vectors-chunked.json'), 'utf8')).format).toBe('chunked-v1')
+    expect(readFileSync(join(sub, 'vectors-chunked.json'), 'utf8')).toBe(oldBody) // v1 is never written
+    expect(JSON.parse(readFileSync(join(sub, 'vectors-v2.json'), 'utf8')).format).toBe('chunked-bin-v2')
 })
 
 test('noteChunks: every window is led by name, description and tags', () => {
@@ -766,7 +780,7 @@ test('scores takes an optional k; the vault pass batches notes per embed call', 
 test('a multi-slice pass persists once at the end, not after every slice', async () => {
     const dir = tempDir('vec-')
     const seen: boolean[] = []
-    const file = join(dir, createHash('sha1').update('/vault').digest('hex'), 'vectors-chunked.json')
+    const file = join(dir, createHash('sha1').update('/vault').digest('hex'), 'vectors-v2.json')
     const embedder: Embedder = {
         embed: async t => (seen.push(existsSync(file)), t.map(() => new Float32Array([1, 0]))),
         dispose() {},
@@ -795,4 +809,373 @@ test('pause during a multi-slice pass stops further embed calls', async () => {
     store.sync(Array.from({ length: 6 }, (_, i) => mkNote(`n${i}`, `alpha ${i}`)))
     await sleep(200)
     expect(calls).toBe(1)
+})
+
+// --- v2 chunked-bin store ----------------------------------------------------------------------
+
+const subOf = (dir: string, mem = '/mem') => join(dir, createHash('sha1').update(mem).digest('hex'))
+const flatEmbedder = (): { embedder: Embedder; texts: string[] } => {
+    const texts: string[] = []
+    return {
+        texts,
+        embedder: {
+            embed: async t => (texts.push(...t), t.map(x => Float32Array.from(vecOf(x)))),
+            dispose() {},
+        },
+    }
+}
+
+test('v1 json migrates to v2 once: identical vectors, v1 file byte-identical', async () => {
+    const dir = tempDir('vec-')
+    const sub = subOf(dir)
+    mkdirSync(sub, { recursive: true })
+    const notes = [mkNote('a', 'alpha one'), mkNote('b', 'beta two')]
+    const { EMBED_MODEL } = await import('../src/embedModel')
+    const vec = (x: number[]) => Buffer.from(Float32Array.from(x).buffer).toString('base64')
+    const v1 = JSON.stringify({
+        format: 'chunked-v1',
+        model: EMBED_MODEL,
+        vectors: {
+            a: { hash: memory.noteHash(notes[0]!), dim: 2, vecs: vec([1, 0]) },
+            b: { hash: memory.noteHash(notes[1]!), dim: 2, vecs: vec([0, 1, 1, 0]) },
+        },
+    })
+    writeFileSync(join(sub, 'vectors-chunked.json'), v1)
+    const { embedder, texts } = flatEmbedder()
+    const s1 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    expect(s1.size()).toBe(2)
+    expect(readFileSync(join(sub, 'vectors-chunked.json'), 'utf8')).toBe(v1)
+    expect(existsSync(join(sub, 'vectors-v2.json'))).toBe(true)
+    // Second process: v2 wins, even with the v1 file changed underneath.
+    writeFileSync(join(sub, 'vectors-chunked.json'), '{}')
+    const s2 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    const got = await s2.scores(Float32Array.from([0, 1]), notes)
+    expect(texts.length).toBe(0)
+    expect(got.get('a')).toBe(0)
+    expect(got.get('b')).toBe(1)
+    expect(s2.centroid('b')).toEqual(s1.centroid('b'))
+    expect(s2.bestChunk(Float32Array.from([1, 0]), 'b')).toBe(1)
+})
+
+test('a torn tail past the index bytes is ignored and overwritten by the next append', async () => {
+    const dir = tempDir('vec-')
+    const { embedder, texts } = flatEmbedder()
+    const s1 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    const notes = [mkNote('a', 'alpha one')]
+    await s1.scores(Float32Array.from([1, 0]), notes)
+    await s1.flush()
+    const bin = join(subOf(dir), 'vectors-v2.0.bin')
+    const committed = statSync(bin).size
+    appendFileSync(bin, Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9]))
+    const s2 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    expect((await s2.scores(Float32Array.from([1, 0]), notes)).get('a')).toBe(1)
+    expect(texts.length).toBe(1)
+    const more = [...notes, mkNote('b', 'beta two')]
+    await s2.scores(Float32Array.from([0, 1]), more)
+    await s2.flush()
+    expect(JSON.parse(readFileSync(join(subOf(dir), 'vectors-v2.json'), 'utf8')).bytes).toBe(committed + 8)
+    const s3 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    expect((await s3.scores(Float32Array.from([0, 1]), more)).get('b')).toBe(1)
+    expect(texts.length).toBe(2)
+})
+
+test('an entry running past the end of the bin is re-embedded', async () => {
+    const dir = tempDir('vec-')
+    const { embedder, texts } = flatEmbedder()
+    const notes = [mkNote('a', 'alpha one'), mkNote('b', 'beta two')]
+    const s1 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    await s1.scores(Float32Array.from([1, 0]), notes)
+    await s1.flush()
+    expect(texts.length).toBe(2)
+    const bin = join(subOf(dir), 'vectors-v2.0.bin')
+    truncateSync(bin, statSync(bin).size - 4) // b loses half its vector
+    const s2 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    expect(s2.size()).toBe(1)
+    await s2.scores(Float32Array.from([1, 0]), notes)
+    await s2.flush()
+    expect(texts.length).toBe(3)
+    expect(texts[2]).toContain('beta')
+    const s3 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    expect(s3.size()).toBe(2)
+})
+
+test('compaction moves to the next generation and keeps every live vector', async () => {
+    const dir = tempDir('vec-')
+    const { embedder } = flatEmbedder()
+    const s1 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    let notes = [mkNote('a', 'alpha one'), mkNote('b', 'beta two')]
+    await s1.scores(Float32Array.from([1, 0]), notes)
+    await s1.flush()
+    for (let i = 0; i < 3; i++) {
+        notes = [mkNote('a', `alpha edit ${i}`), notes[1]!]
+        await s1.scores(Float32Array.from([1, 0]), notes)
+        await s1.flush()
+    }
+    const sub = subOf(dir)
+    const idx = JSON.parse(readFileSync(join(sub, 'vectors-v2.json'), 'utf8'))
+    expect(idx.bin).not.toBe('vectors-v2.0.bin')
+    expect(existsSync(join(sub, 'vectors-v2.0.bin'))).toBe(false)
+    expect(idx.dead).toBeLessThanOrEqual(statSync(join(sub, idx.bin)).size / 2)
+    const s2 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    const got = await s2.scores(Float32Array.from([0, 1]), notes)
+    expect(got.get('b')).toBe(1)
+    expect(got.get('a')).toBe(0)
+})
+
+test('a v2 index for another model is rejected, not served', async () => {
+    const dir = tempDir('vec-')
+    const sub = subOf(dir)
+    mkdirSync(sub, { recursive: true })
+    writeFileSync(join(sub, 'vectors-v2.7.bin'), Buffer.from(Float32Array.from([1, 0]).buffer))
+    const notes = [mkNote('a', 'alpha one')]
+    writeFileSync(
+        join(sub, 'vectors-v2.json'),
+        JSON.stringify({
+            format: 'chunked-bin-v2',
+            model: 'other-model',
+            bin: 'vectors-v2.7.bin',
+            bytes: 8,
+            dead: 0,
+            entries: { a: { hash: memory.noteHash(notes[0]!), dim: 2, at: 0, n: 1 } },
+        }),
+    )
+    const { embedder, texts } = flatEmbedder()
+    const s = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    expect(s.size()).toBe(0)
+    await s.scores(Float32Array.from([1, 0]), notes)
+    await s.flush()
+    expect(texts.length).toBe(1)
+    expect(JSON.parse(readFileSync(join(sub, 'vectors-v2.json'), 'utf8')).bin).toBe('vectors-v2.8.bin')
+})
+
+test('one edit hashes one note and appends only that note to the bin', async () => {
+    const dir = tempDir('vec-')
+    const { embedder, texts } = flatEmbedder()
+    const store = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    const notes = Array.from({ length: 20 }, (_, i) => mkNote(`n${i}`, `alpha ${i}`))
+    await store.scores(Float32Array.from([1, 0]), notes)
+    await store.flush()
+    const bin = join(subOf(dir), 'vectors-v2.0.bin')
+    const before = statSync(bin).size
+    const spy = spyOn(memory, 'noteHash')
+    try {
+        const edited = notes.map((n, i) => (i === 3 ? mkNote('n3', 'alpha changed') : n))
+        await store.scores(Float32Array.from([1, 0]), edited)
+        await store.flush()
+        await store.scores(Float32Array.from([1, 0]), edited)
+        expect(spy.mock.calls.length).toBe(1)
+    } finally {
+        spy.mockRestore()
+    }
+    expect(texts.length).toBe(21)
+    expect(statSync(bin).size).toBe(before + 8)
+})
+
+test('two stores on one dir never overwrite each other: a third reads each note own vector', async () => {
+    const dir = tempDir('vec-')
+    const q = Float32Array.from([1, 0])
+    const a = createVectorStore(dir, '/mem', { embedder: countingEmbedder().embedder, debounceMs: 10 })
+    const b = createVectorStore(dir, '/mem', { embedder: countingEmbedder().embedder, debounceMs: 10 })
+    // both load the (empty) store before either commits
+    await a.scores(q, [])
+    await b.scores(q, [])
+    await a.scores(q, [mkNote('a', 'alpha one')])
+    await a.flush()
+    await b.scores(q, [mkNote('b', 'beta two')])
+    await b.flush()
+    const c = countingEmbedder()
+    const third = createVectorStore(dir, '/mem', { embedder: c.embedder, debounceMs: 10 })
+    const notes = [mkNote('a', 'alpha one'), mkNote('b', 'beta two')]
+    await third.scores(q, notes)
+    await third.flush()
+    // b committed last so it is kept as written; a is either kept or re-embedded, never another note's bytes
+    const got = await third.scores(q, notes)
+    expect(got.get('b')).toBe(0)
+    expect(got.get('a')).toBe(1)
+    expect(existsSync(join(dir, createHash('sha1').update('/mem').digest('hex'), 'vectors-v2.lock'))).toBe(false)
+})
+
+const lockOf = (dir: string) => join(subOf(dir), 'vectors-v2.lock')
+
+test('a persist that meets a held lock is retried and lands once the lock frees', async () => {
+    const dir = tempDir('vec-')
+    const sub = subOf(dir)
+    mkdirSync(sub, { recursive: true })
+    writeFileSync(lockOf(dir), '999999') // another writer, fresh
+    const { embedder } = flatEmbedder()
+    const store = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    const notes = [mkNote('a', 'alpha one')]
+    await store.scores(Float32Array.from([1, 0]), notes)
+    await store.flush()
+    expect(existsSync(join(sub, 'vectors-v2.json'))).toBe(false)
+    expect(readFileSync(lockOf(dir), 'utf8')).toBe('999999') // never unlinked by us
+    unlinkSync(lockOf(dir))
+    await sleep(80) // the re-armed run persists although nothing is stale
+    await store.flush()
+    const again = flatEmbedder()
+    const s2 = createVectorStore(dir, '/mem', { embedder: again.embedder, debounceMs: 10 })
+    expect((await s2.scores(Float32Array.from([1, 0]), notes)).get('a')).toBe(1)
+    expect(again.texts.length).toBe(0)
+})
+
+test('a reader whose bin was compacted away re-reads the index once and loads the vectors', async () => {
+    const dir = tempDir('vec-')
+    const sub = subOf(dir)
+    const { embedder } = flatEmbedder()
+    const notes = [mkNote('a', 'alpha one'), mkNote('b', 'beta two')]
+    const s1 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    await s1.scores(Float32Array.from([1, 0]), notes)
+    await s1.flush()
+    const indexPath = join(sub, 'vectors-v2.json')
+    const stale = JSON.parse(readFileSync(indexPath, 'utf8'))
+    let indexReads = 0
+    const again = flatEmbedder()
+    const s2 = createVectorStore(dir, '/mem', {
+        embedder: again.embedder,
+        debounceMs: 10,
+        fs: {
+            readFile: path => {
+                if (path === indexPath) indexReads++
+                if (path === join(sub, stale.bin) && indexReads === 1) {
+                    // another process compacts between our index read and our bin read
+                    renameSync(path, join(sub, 'vectors-v2.5.bin'))
+                    writeFileSync(indexPath, JSON.stringify({ ...stale, bin: 'vectors-v2.5.bin' }))
+                }
+                return readFileSync(path)
+            },
+        },
+    })
+    expect(s2.size()).toBe(2)
+    expect(indexReads).toBe(2)
+    expect(again.texts.length).toBe(0)
+})
+
+test('the orphan sweep keeps the bin the index names under the lock, not the one this loader read', async () => {
+    const dir = tempDir('vec-')
+    const sub = subOf(dir)
+    const { embedder } = flatEmbedder()
+    const notes = [mkNote('a', 'alpha one'), mkNote('b', 'beta two')]
+    const s1 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    await s1.scores(Float32Array.from([1, 0]), notes)
+    await s1.flush()
+    const indexPath = join(sub, 'vectors-v2.json')
+    const idx0 = JSON.parse(readFileSync(indexPath, 'utf8'))
+    const s2 = createVectorStore(dir, '/mem', {
+        embedder: flatEmbedder().embedder,
+        debounceMs: 10,
+        fs: {
+            readFile: path => {
+                const buf = readFileSync(path)
+                if (path === join(sub, idx0.bin)) {
+                    // another process commits a compaction after our bin read, before our sweep
+                    writeFileSync(join(sub, 'vectors-v2.1.bin'), buf)
+                    writeFileSync(indexPath, JSON.stringify({ ...idx0, bin: 'vectors-v2.1.bin' }))
+                    unlinkSync(path)
+                }
+                return buf
+            },
+        },
+    })
+    s2.size()
+    expect(existsSync(join(sub, 'vectors-v2.1.bin'))).toBe(true)
+    expect(createVectorStore(dir, '/mem', { embedder: flatEmbedder().embedder, debounceMs: 10 }).size()).toBe(2)
+})
+
+test('release never unlinks a lock holding another pid; a stale lock is broken', async () => {
+    const dir = tempDir('vec-')
+    const sub = subOf(dir)
+    mkdirSync(sub, { recursive: true })
+    const { embedder } = flatEmbedder()
+    const notes = [mkNote('a', 'alpha one')]
+    writeFileSync(lockOf(dir), '999999')
+    const old = new Date(Date.now() - 60_000)
+    utimesSync(lockOf(dir), old, old)
+    const store = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    await store.scores(Float32Array.from([1, 0]), notes)
+    await store.flush()
+    expect(existsSync(join(sub, 'vectors-v2.json'))).toBe(true) // stale lock broken
+    expect(existsSync(lockOf(dir))).toBe(false) // ours, released
+    // someone else's lock replaces ours mid-persist: our release leaves it alone
+    const s2 = createVectorStore(dir, '/mem', {
+        embedder,
+        debounceMs: 10,
+        fs: {
+            fsync: fd => {
+                fsyncSync(fd)
+                writeFileSync(lockOf(dir), '424242')
+            },
+        },
+    })
+    await s2.scores(Float32Array.from([1, 0]), [...notes, mkNote('b', 'beta two')])
+    await s2.flush()
+    expect(readFileSync(lockOf(dir), 'utf8')).toBe('424242')
+})
+
+test('a missing or short bin forces a compaction and a reload yields vectors', async () => {
+    const dir = tempDir('vec-')
+    const sub = subOf(dir)
+    const { embedder, texts } = flatEmbedder()
+    const notes = [mkNote('a', 'alpha one'), mkNote('b', 'beta two')]
+    const s1 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    await s1.scores(Float32Array.from([1, 0]), notes)
+    await s1.flush()
+    unlinkSync(join(sub, 'vectors-v2.0.bin'))
+    const s2 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    expect(s2.size()).toBe(0)
+    await s2.scores(Float32Array.from([1, 0]), notes)
+    await s2.flush()
+    expect(texts.length).toBe(4)
+    const idx = JSON.parse(readFileSync(join(sub, 'vectors-v2.json'), 'utf8'))
+    expect(idx.bin).toBe('vectors-v2.1.bin') // compacted, not appended into a recreated hole
+    const s3 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    expect(s3.size()).toBe(2)
+    expect((await s3.scores(Float32Array.from([0, 1]), notes)).get('b')).toBe(1)
+    // short bin
+    const bin = join(sub, idx.bin)
+    truncateSync(bin, statSync(bin).size - 4)
+    const s4 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    await s4.scores(Float32Array.from([1, 0]), notes)
+    await s4.flush()
+    expect(JSON.parse(readFileSync(join(sub, 'vectors-v2.json'), 'utf8')).bin).toBe('vectors-v2.2.bin')
+    expect(createVectorStore(dir, '/mem', { embedder, debounceMs: 10 }).size()).toBe(2)
+})
+
+test('loadV2 deletes an orphan bin left by a crash and keeps the index bin', async () => {
+    const dir = tempDir('vec-')
+    const sub = subOf(dir)
+    const { embedder } = flatEmbedder()
+    const notes = [mkNote('a', 'alpha one')]
+    const s1 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    await s1.scores(Float32Array.from([1, 0]), notes)
+    await s1.flush()
+    writeFileSync(join(sub, 'vectors-v2.9.bin'), Buffer.alloc(16))
+    const s2 = createVectorStore(dir, '/mem', { embedder, debounceMs: 10 })
+    expect(s2.size()).toBe(1)
+    expect(existsSync(join(sub, 'vectors-v2.9.bin'))).toBe(false)
+    expect(existsSync(join(sub, 'vectors-v2.0.bin'))).toBe(true)
+})
+
+test('the bin fd and the temp index are fsynced before the rename (injected fs seam)', async () => {
+    const dir = tempDir('vec-')
+    const log: string[] = []
+    const { embedder } = flatEmbedder()
+    const store = createVectorStore(dir, '/mem', {
+        embedder,
+        debounceMs: 10,
+        fs: {
+            fsync: (fd, path) => {
+                log.push(`fsync ${basename(path)}`)
+                fsyncSync(fd)
+            },
+            rename: (from, to) => {
+                log.push(`rename ${basename(to)}`)
+                renameSync(from, to)
+            },
+        },
+    })
+    await store.scores(Float32Array.from([1, 0]), [mkNote('a', 'alpha one')])
+    await store.flush()
+    expect(log[0]).toBe('fsync vectors-v2.0.bin')
+    expect(log[1]).toMatch(/^fsync vectors-v2\.json\.\d+\.tmp$/)
+    expect(log[2]).toBe('rename vectors-v2.json')
 })

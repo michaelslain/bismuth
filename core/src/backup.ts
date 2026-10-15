@@ -292,14 +292,31 @@ interface PendingBackup {
     timer: ReturnType<typeof setTimeout>
     first: number
     message: () => string
+    /** Resolves once this burst has been handed to the commit chain. */
+    fired: Promise<void>
+    release: () => void
 }
 const pendingBackups = new Map<string, PendingBackup>()
+// One in-flight commit chain per directory: the timer path and the max-wait path queue behind
+// each other instead of running two `commitVault`s (and fighting over index.lock) at once.
+const commitChains = new Map<string, Promise<boolean | null>>()
+
+function chainCommit(dir: string, message: string): void {
+    const next = (commitChains.get(dir) ?? Promise.resolve(null)).then(() =>
+        commitVault(dir, message).catch(() => null),
+    )
+    commitChains.set(dir, next)
+    void next.then(() => {
+        if (commitChains.get(dir) === next) commitChains.delete(dir)
+    })
+}
 
 function fireBackup(dir: string): void {
     const p = pendingBackups.get(dir)
     if (!p) return
     pendingBackups.delete(dir)
-    void commitVault(dir, p.message()).catch(() => {})
+    chainCommit(dir, p.message())
+    p.release()
 }
 
 /** Coalesce rapid autosave commits for `dir` into one (see above). `message` is a thunk so the
@@ -312,14 +329,36 @@ export function scheduleBackup(dir: string, message: () => string): void {
     // Deferred too long already (continuous editing) → commit now instead of pushing it out further.
     if (now - first >= maxWaitMs()) {
         pendingBackups.delete(dir)
-        void commitVault(dir, message()).catch(() => {})
+        chainCommit(dir, message())
+        existing?.release()
         return
     }
+    let release!: () => void
+    const fired = existing?.fired ?? new Promise<void>(r => (release = r))
     pendingBackups.set(dir, {
         first,
         message,
+        fired,
+        release: existing?.release ?? release,
         timer: setTimeout(() => fireBackup(dir), debounceMs()),
     })
+}
+
+/** Resolves once every backup scheduled for `dir` has committed: `true` if the last commit made
+ *  a snapshot, `false` if there was nothing to commit, `null` if none was pending or the commit
+ *  failed (the chain does `.catch(() => null)`). */
+export async function backupSettled(dir: string): Promise<boolean | null> {
+    let result: boolean | null = null
+    for (;;) {
+        const pending = pendingBackups.get(dir)
+        if (pending) {
+            await pending.fired
+            continue
+        }
+        const chain = commitChains.get(dir)
+        if (!chain) return result
+        result = await chain
+    }
 }
 
 // ── Checkpoints ──────────────────────────────────────────────────────────────

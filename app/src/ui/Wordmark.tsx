@@ -1,6 +1,7 @@
 import type { Component } from 'solid-js'
 import Text from './Text'
 import Caret from './Caret'
+import Sheen from './Sheen'
 import styles from './Wordmark.module.css'
 
 export type WordmarkProps = {
@@ -14,14 +15,14 @@ export type WordmarkProps = {
 
 /**
  * The word `bismuth` in the `.asc-wordmark` gradient sheen: the app's one name mark, in the
- * corner of the top strip. `.asc-wordmark` stays a bare global string
- * (global.css, with its `@keyframes asc-sheen` and reduced-motion rule) — this component is the
- * one place that writes it for the word `bismuth`, so call sites compose <Wordmark> instead of
- * the class. `DaemonFace` uses the class for its own face.
+ * corner of the top strip. `.asc-wordmark` stays a bare global string (global.css: transparent
+ * text, the positioned host) and <Sheen> paints the gradient through a glyph mask on the
+ * compositor — this component is the one place that writes the class for the word `bismuth`, so
+ * call sites compose <Wordmark> instead of the class. `DaemonFace` does the same for its face.
  *
  * The caret sits BESIDE the word inside a flex wrapper, never inside the `.asc-wordmark` span:
- * that span paints through `background-clip: text` with transparent text, and a child glyph
- * inside it would take on the gradient instead of the caret's own accent colour.
+ * that span's text is transparent under the gradient layer, and a child glyph inside it would
+ * take on the gradient instead of the caret's own accent colour.
  */
 const Wordmark: Component<WordmarkProps> = props => {
     return (
@@ -39,6 +40,7 @@ const Wordmark: Component<WordmarkProps> = props => {
                 .join(' ')}
         >
             <Text as="span" inherit class={`asc-wordmark ${styles.word}`}>
+                <Sheen parts={[{ text: 'bismuth' }]} />
                 bismuth
             </Text>
             {props.caret !== false && <Caret class={styles.caret} />}

@@ -1,5 +1,6 @@
-import { test, expect, afterAll, afterEach } from 'bun:test'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { test, expect, afterAll, afterEach, spyOn } from 'bun:test'
+import * as memory from '@bismuth/memory'
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createSemanticChannel } from '../src/memoryEmbed'
 import type { LiveEmbedder } from '../src/memoryEmbed'
@@ -10,10 +11,14 @@ import {
     vaultSemanticNeighbours,
     vaultSemanticSearch,
 } from '../src/vaultEmbed'
+import { configureParsedNotes } from '../src/parsedNotes'
 import { tempDir, sweepTempDirs } from './tempDirs'
 
 afterAll(sweepTempDirs)
-afterEach(() => configureVaultEmbed())
+afterEach(() => {
+    configureVaultEmbed()
+    configureParsedNotes()
+})
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -224,4 +229,50 @@ test('build: a pass that outlasts the budget answers warming with its progress',
     const r = await vaultSemanticSearch(f.vault, 'alpha', { waitMs: 50, build: true })
     expect(r).toMatchObject({ unavailable: 'warming' })
     expect(isSemanticUnavailable(r) && r.message).toContain('0 of 1 notes embedded')
+})
+
+const OLD = new Date('2020-01-01T00:00:00Z')
+const OLDER = new Date('2020-06-01T00:00:00Z')
+const backdate = (f: { vault: string }, rel: string, d: Date) => utimesSync(join(f.vault, rel), d, d)
+
+test('one edit hashes one note: unchanged notes keep their MemoryNote across a full rescan', async () => {
+    const f = fixture()
+    f.put('a.md', '# a\nalpha one')
+    f.put('b.md', '# b\nbeta two')
+    backdate(f, 'a.md', OLD) // out of the racy window, so the parse is stored and its identity is stable
+    backdate(f, 'b.md', OLD)
+    await settled(() => vaultSemanticSearch(f.vault, 'beta', { waitMs: 2000 }))
+    await sleep(200)
+
+    const spy = spyOn(memory, 'noteHash')
+    try {
+        syncVaultEmbeddings(f.vault) // full rescan
+        await sleep(300)
+        expect(spy.mock.calls.length).toBe(0)
+
+        f.put('a.md', '# a\nalpha one edited')
+        backdate(f, 'a.md', OLDER)
+        syncVaultEmbeddings(f.vault, ['a.md'])
+        for (let i = 0; i < 50 && spy.mock.calls.length < 1; i++) await sleep(50)
+        await sleep(100)
+        expect(spy.mock.calls.length).toBe(1)
+    } finally {
+        spy.mockRestore()
+    }
+}, 20_000)
+
+test('a spent raw-bytes budget still indexes: the note text is re-read and the excerpt survives', async () => {
+    const f = fixture()
+    configureParsedNotes({ maxRawBytes: 1 })
+    f.put('a.md', '# a note\nalpha words here')
+    f.put('b.md', '# b note\nbeta words here')
+    backdate(f, 'a.md', OLD)
+    backdate(f, 'b.md', OLD)
+    const r = (await settled(() => vaultSemanticSearch(f.vault, 'beta', { waitMs: 2000 }))) as {
+        path: string
+        excerpt: string
+    }[]
+    expect(r.map(h => h.path).sort()).toEqual(['a.md', 'b.md'])
+    expect(r[0]!.path).toBe('b.md')
+    expect(r.find(h => h.path === 'a.md')!.excerpt).toContain('alpha words here')
 })

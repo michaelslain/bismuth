@@ -18,7 +18,7 @@
     min-width: 0;
 }
 
-/* THE RAINBOW IS THE WORDMARK'S. The glyph row also carries the global `.asc-wordmark` class
+/* THE RAINBOW IS THE WORDMARK'S. The stage around the glyph row carries the global `.asc-wordmark` class
    (global.css's app shell section's ASCII register: the --grad sheen, bold weight), the same
    class the top strip's
    `bismuth` and the intro hero use — never a copied gradient. This rule sets only the knobs
@@ -28,28 +28,40 @@
    cell carries the gap to its right (see GAP in DaemonFace.tsx). The arms and brackets close up
    tighter than the wordmark's own -0.22em so they read as one shape; the eyes keep nearly their
    natural advance so `00` stays two eyes instead of fusing into `∞`. Monospace, so a character swap
-   (0 → -, o, =) still never reflows. The last cell's trailing gap would pull the row left of centre,
-   so the end padding gives it back. */
-.face {
+   (0 → -, o, =) still never reflows. The last cell's trailing gap would pull the row left of centre;
+   `.face` gives it back with its end padding (see there). */
+.stage {
     --wordmark-size: var(--glyph);
     --gap-arm: -0.32em;
     --gap-edge: -0.14em;
     --gap-eyes: -0.02em;
     --wordmark-tracking: var(--gap-arm);
     display: inline-block;
-    padding-inline-end: calc(var(--gap-arm) * -1);
-    /* `background-clip: text` paints the gradient only inside this box, and `.asc-wordmark` pins
-       line-height to 1 — so the bracket glyphs, which reach past the em box, lost their feet (the
-       rainbow simply stopped). The block padding grows the painted box to cover the full glyph
-       height; the matching negative margin keeps the layout exactly where it was. */
+    /* The gradient shows only inside this box (Sheen's layer is clipped to it), and `.asc-wordmark`
+       pins line-height to 1 — so the bracket glyphs, which reach past the em box, would lose their
+       feet (the rainbow simply stopping). The block padding grows the painted box to cover the full
+       glyph height; the matching negative margin keeps the layout exactly where it was. The mask
+       text's baseline moves down by the same padding. */
     padding-block: 0.2em;
     margin-block: -0.2em;
+    --sheen-baseline: calc(0.2em + round(0.775em, 0.5px));
     font-family: var(--ui-font-stack);
     font-variant-ligatures: none;
     font-kerning: none;
     white-space: pre;
     user-select: none;
     cursor: default;
+}
+
+/* The glyph row proper (role=img, the pointer handlers): plain text inside the stage, which owns
+   the box, the font and the gradient layer. It stays free of the mask copy of its text, so its
+   textContent is exactly the eight cells. The end padding returns the last cell's trailing
+   letter-spacing, so the glyph row's OWN box (what layout checks measure as the face) spans the ink
+   symmetrically and centres where the ink does; the stage shrink-wraps it, so the gradient layer
+   and mask cover the same box either way. */
+.face {
+    display: block;
+    padding-inline-end: calc(var(--gap-arm) * -1);
 }
 
 /* Every glyph shows the parent's clipped gradient, so each cell's own ink stays transparent. */
@@ -70,14 +82,16 @@
 }
 
 /* Asleep: the same rainbow, dimmed and holding still. */
-.face[data-mood='asleep'] {
+.stage:has(> .face[data-mood='asleep']) {
     opacity: 0.45;
-    animation-play-state: paused;
+    --sheen-play: paused;
 }
 
 /* Hurt: the one state that breaks the rainbow — `><` in solid danger ink paints over the gradient. */
 .face[data-mood='hurt'] .eye {
     color: var(--danger);
+    /* Positioned so it paints above Sheen's absolutely-positioned gradient layer, which precedes the cells. */
+    position: relative;
 }
 
 /* The daemon page's conversing state: the one-line HEADER form — a small glyph with the caption
@@ -110,7 +124,7 @@
    right of the box — measured 2.3px at 15px against the prose column's first letters. Pulled back
    by that much the dot's ink sits on the same left edge as the name-only rows and the reply text
    below. In glyph ems (this is the .face, whose font-size IS the glyph), so it tracks the token. */
-.avatar .face {
+.avatar .stage {
     margin-inline-start: -0.15em;
 }
 

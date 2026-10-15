@@ -26,6 +26,7 @@
 // scroll element itself (falling back to `16` if that ever fails to parse) — never a hand-typed
 // literal, so it follows the token rather than a copy of it. `errorAction` is an optional extra
 // control (e.g. PreviewView's "open in default app") rendered under the load-failure message.
+import { api } from '../api'
 import {
     batch,
     children,
@@ -139,6 +140,10 @@ export type PdfPagesProps = {
     /** When set, the loaded document survives unmount in a session cache keyed by this string,
      *  so a remount with the same key skips fetch + parse and paints its last frame at once. */
     cacheKey?: string
+    /** The document's vault-relative path. With `url` set, its highlights come from the server's
+     *  light reader (`api.pdfHighlights`) instead of `getAnnotations()` on every page, which makes
+     *  pdf.js text-extract (and range-fetch) each highlighted page. */
+    highlightsPath?: string
     /** PDF dark mode: every page raster renders inverted + hue-rotated (PdfPageCanvas). The
      *  scratch strip beside a page is not a page and keeps its own ground. */
     dark?: boolean
@@ -336,6 +341,8 @@ function PdfPages(props: PdfPagesProps) {
             // URL: pdf.js range-loads and streams it. Bytes: getDocument transfers the buffer to
             // the worker (detaching it) — hand it a copy so a caller still holding `bytes` never
             // sees it go detached out from under it.
+            // Started before the document: it is one 1-byte range request and needs nothing from it.
+            const validator = url ? readValidator(url) : undefined
             const task = mod.getDocument(
                 url
                     ? {
@@ -353,8 +360,6 @@ function PdfPages(props: PdfPagesProps) {
                           worker: setup.sharedWorker(),
                       },
             )
-            // The file's validator as of this load, for the cache's reconnect revalidation.
-            const validator = url ? readValidator(url) : undefined
             loadingTask = task
             const doc = await task.promise
             if (token !== loadToken) {
@@ -369,6 +374,7 @@ function PdfPages(props: PdfPagesProps) {
                     doc.getPage(i + 1),
                 ),
             )
+            const docPages = pages
             if (token !== loadToken) return
             // Resolved in the background — the pages never wait on it. Computed whenever a
             // caller wants it NOW (onOutline) or LATER (a future cache-hit remount that passes
@@ -393,8 +399,25 @@ function PdfPages(props: PdfPagesProps) {
             annotStorage = doc.annotationStorage
             // Read in the background — the pages never wait on it. Hiding happens per page,
             // just before that page renders (PdfPageCanvas), so a render never beats it.
-            const highlights = loadHighlightDeps().then(deps =>
-                readDocHighlights(pages, deps),
+            const highlights = (
+                url && props.highlightsPath
+                    ? api
+                          .pdfHighlights(props.highlightsPath)
+                          .then(r =>
+                              r.writable
+                                  ? r.pages
+                                  : loadHighlightDeps().then(deps =>
+                                        readDocHighlights(docPages, deps),
+                                    ),
+                          )
+                          .catch(() =>
+                              loadHighlightDeps().then(deps =>
+                                  readDocHighlights(docPages, deps),
+                              ),
+                          )
+                    : loadHighlightDeps().then(deps =>
+                          readDocHighlights(docPages, deps),
+                      )
             )
             const loadedSizes = pages.map(p => {
                 const v = p.getViewport({ scale: 1 })

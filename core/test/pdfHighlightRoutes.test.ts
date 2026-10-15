@@ -2,7 +2,13 @@
 // real server and against the in-process backend, with the REAL pdf operations
 // (core/src/drawing/pdfHighlights.ts). Needs that module; runs after it merges.
 import { test, expect, beforeAll, afterAll, describe } from 'bun:test'
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
+import {
+    readFileSync,
+    writeFileSync,
+    existsSync,
+    readdirSync,
+    symlinkSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
 import { createLocalBackend } from '../src/localBackend'
@@ -81,6 +87,83 @@ function withServer<T>(
         }
     }
 }
+
+describe('GET /pdf/highlights', () => {
+    const get = (vault: string, route: string) => {
+        const server = createServer({ vault, port: 0 })
+        return fetch(`http://localhost:${server.port}${route}`, {
+            headers: { 'X-Bismuth-Token': TOKEN },
+        }).finally(() => server.stop(true))
+    }
+    realTest('returns the highlights the pdf holds', async () => {
+        const vault = makeVault({})
+        writeFileSync(join(vault, 'a.pdf'), pdfkit())
+        const r = await get(vault, '/pdf/highlights?path=a.pdf')
+        expect(r.status).toBe(200)
+        const body = (await r.json()) as { writable: boolean; pages: unknown[][] }
+        expect(body.writable).toBe(true)
+        expect(body.pages.flat().length).toBe(await count(pdfkit()))
+    })
+    realTest('an encrypted pdf reads as not writable', async () => {
+        const vault = makeVault({})
+        writeFileSync(join(vault, 'e.pdf'), encrypted())
+        const r = await get(vault, '/pdf/highlights?path=e.pdf')
+        expect(r.status).toBe(200)
+        const body = (await r.json()) as { writable: boolean }
+        expect(body.writable).toBe(false)
+    })
+    realTest('a path outside the vault is is 400', async () => {
+        const r = await get(makeVault({}), '/pdf/highlights?path=../x.pdf')
+        expect(r.status).toBe(400)
+    })
+    realTest('a symlink to a hidden pdf is denied', async () => {
+        const vault = makeVault({
+            'secret/h.pdf.md': '---\nvisibility: hidden\n---\n',
+        })
+        writeFileSync(join(vault, 'secret/h.pdf'), pdfkit())
+        symlinkSync(join(vault, 'secret/h.pdf'), join(vault, 'link.pdf'))
+        const server = createServer({ vault, port: 0 })
+        try {
+            const base = `http://localhost:${server.port}`
+            // tokenless = an agent, the strictest channel
+            const direct = await fetch(`${base}/pdf/highlights?path=secret/h.pdf`)
+            expect(direct.status).toBe(403)
+            const viaLink = await fetch(`${base}/pdf/highlights?path=link.pdf`)
+            expect(viaLink.status).toBe(403)
+            const owner = await fetch(`${base}/pdf/highlights?path=link.pdf`, {
+                headers: { 'X-Bismuth-Token': TOKEN },
+            })
+            expect(owner.status).toBe(200)
+        } finally {
+            server.stop(true)
+        }
+    })
+    realTest('GET /asset denies a symlink to a hidden pdf', async () => {
+        const vault = makeVault({
+            'secret/h.pdf.md': '---\nvisibility: hidden\n---\n',
+            'ok.pdf.md': '# ok\n',
+        })
+        writeFileSync(join(vault, 'secret/h.pdf'), pdfkit())
+        writeFileSync(join(vault, 'ok.pdf'), pdfkit())
+        symlinkSync(join(vault, 'secret/h.pdf'), join(vault, 'link.pdf'))
+        const server = createServer({ vault, port: 0 })
+        try {
+            const base = `http://localhost:${server.port}`
+            expect((await fetch(`${base}/asset?path=link.pdf`)).status).toBe(403)
+            expect((await fetch(`${base}/asset?path=ok.pdf`)).status).toBe(200)
+            const owner = await fetch(`${base}/asset?path=link.pdf`, {
+                headers: { 'X-Bismuth-Token': TOKEN },
+            })
+            expect(owner.status).toBe(200)
+        } finally {
+            server.stop(true)
+        }
+    })
+    realTest('a missing file is 404', async () => {
+        const r = await get(makeVault({}), '/pdf/highlights?path=nope.pdf')
+        expect(r.status).toBe(404)
+    })
+})
 
 describe('POST /pdf/highlights', () => {
     realTest(

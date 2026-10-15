@@ -266,6 +266,20 @@ export async function migrateSidecarHighlights(
     return { moved: add.length, writable: true, rewrote: r === 'replace' }
 }
 
+/** The PDF's highlights through the light reader (no pdf.js, no page text extraction); null when the
+ *  file does not exist. */
+export async function readStoredPdfHighlights(
+    io: HighlightIO,
+    path: string,
+): Promise<PdfHighlightRead | null> {
+    const bytes = await io.readBinary(path)
+    if (!bytes) return null
+    const mod = (await import('./drawing/pdfHighlights')) as unknown as {
+        readPdfHighlights(b: Uint8Array): Promise<PdfHighlightRead>
+    }
+    return mod.readPdfHighlights(bytes)
+}
+
 /** HighlightIO over the active FileAccess (Bun files on desktop, tauri-plugin-fs on iPad). A missing
  *  file reads as null. */
 export function highlightIOFor(fa: FileAccess, root: string): HighlightIO {

@@ -112,7 +112,9 @@ function expectCalm(bar: HTMLElement, groups: number, annotatePairs: number) {
         annotatePairs,
     )
     expect(p.glyphSizes, 'glyph sizes').toEqual(['12x12'])
-    expect(p.iconBoxes, 'icon-only boxes').toHaveLength(1)
+    expect(p.iconHeights, 'icon-only heights').toHaveLength(1)
+    expect(p.iconWidths.normal.length, 'normal icon widths').toBeLessThanOrEqual(1)
+    expect(p.iconWidths.toggle.length, 'toggle icon widths').toBeLessThanOrEqual(1)
     expect(p.outside, 'controls outside the bar').toEqual([])
     expect(p.overlaps, 'overlapping controls').toEqual([])
     expect(p.maxCentreOffset, 'controls on the bar centre line').toBeLessThanOrEqual(1)
@@ -407,7 +409,7 @@ export const Narrow: Story = {
     },
 }
 
-/** The full desktop PDF bar: the file actions are icon-only, muted like every other glyph, and the
+/** The full desktop PDF bar: the file actions are icon-only, one ink between them, and the
  *  fourth group boundary. */
 export const WithNativeActions: Story = {
     render: () => <Harness width={1000} kind="pdf" native />,

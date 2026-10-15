@@ -54,7 +54,7 @@
 // WebView.
 import { commitVault, trackedPaths } from './backup'
 import { getFileAccess } from './fileAccess'
-import { readAllNotes } from './readAllNotes'
+import { getParsedNotes, type ParsedNote } from './parsedNotes'
 import { hasLegacySignifier } from './taskLegacy'
 import { migrateContent } from './taskMigrate'
 
@@ -147,8 +147,9 @@ export interface RunTaskMigrationOptions {
      *  pre-filter — so it fires for every note, not just ones this pass ends up touching.
      *  server.ts uses it to seed the ChangeTracker (changeClassifier.ts) with each note's
      *  boot-time fingerprint, so a note's first save after boot can be classified content-only
-     *  instead of forced structural. */
-    onScanned?: (rel: string, text: string) => void
+     *  instead of forced structural. The note comes from the shared parse cache
+     *  (parsedNotes.ts), so the scan parses nothing a graph or rows build has already parsed. */
+    onScanned?: (note: ParsedNote) => void
 }
 
 export async function runTaskMigration(
@@ -181,7 +182,7 @@ export async function runTaskMigration(
     const skipped: SkippedFile[] = []
     const pending: Pending[] = []
     const readErrors = new Map<string, string>()
-    const scanned = await readAllNotes(root, rels, (rel, err) =>
+    const scanned = await getParsedNotes(root, rels, (rel, err) =>
         readErrors.set(rel, message(err)),
     )
     for (const rel of rels) {
@@ -190,8 +191,18 @@ export async function runTaskMigration(
         warn(`could not read ${rel}`, error)
         skipped.push({ file: rel, reason: 'unreadable', error })
     }
-    for (const { rel, content: text } of scanned) {
-        opts?.onScanned?.(rel, text)
+    for (const note of scanned) {
+        const rel = note.rel
+        opts?.onScanned?.(note)
+        // The cache drops the text of a note past its raw-bytes budget; read that one again.
+        let text: string
+        try {
+            text = note.raw ?? (await readNote(root, rel))
+        } catch (err) {
+            warn(`could not read ${rel}`, err)
+            skipped.push({ file: rel, reason: 'unreadable', error: message(err) })
+            continue
+        }
         // Cheap whole-file pre-filter: most notes hold no signifier at all and never reach
         // the per-line work. migrateContent gates AGAIN per line, which is what stops a note
         // holding one emoji task from having its already-correct lines reformatted too.

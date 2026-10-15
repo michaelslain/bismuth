@@ -216,3 +216,46 @@ export const Narrow: Story = {
         await expect(canvas.getAllByText(/^event \d+$/).length).toBe(10)
     },
 }
+
+type Swap = {
+    equal: () => void
+    changed: () => void
+}
+let swapRows: Swap | undefined
+
+/** A poll that rebuilds `rows` as a NEW object with equal values must not re-measure; one that
+ *  changes a total must. The play counts `getComputedStyle(overview)` calls (what `measure()`
+ *  always makes first) across a synchronous signal write, so there is nothing to wait on. */
+export const SameValuesPoll: Story = {
+    render: () => {
+        const counts = { inbox: 8, crons: 12, services: 10, log: 60 }
+        const base = overviewProps(counts)
+        const [rows, setRows] = createSignal(buildRows(counts))
+        swapRows = {
+            equal: () => setRows(buildRows(counts)),
+            changed: () => setRows(buildRows({ ...counts, log: 61 })),
+        }
+        return (
+            <Frame width="900px" height="600px">
+                <DaemonOverview {...base} rows={rows()} />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const overview = canvasElement.querySelector<HTMLElement>('[data-testid="daemon-overview"]')!
+        const real = window.getComputedStyle
+        let measures = 0
+        window.getComputedStyle = ((el: Element, pseudo?: string | null) => {
+            if (el === overview) measures += 1
+            return real.call(window, el, pseudo)
+        }) as typeof window.getComputedStyle
+        try {
+            swapRows!.equal()
+            await expect(measures).toBe(0)
+            swapRows!.changed()
+            await expect(measures).toBeGreaterThan(0)
+        } finally {
+            window.getComputedStyle = real
+        }
+    },
+}

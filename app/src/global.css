@@ -768,10 +768,9 @@ body { background: var(--bg); color: var(--fg); }
    bases/CardEditModal.module.css both use it, correctly) because names inside it are not hashed.
    The test allows that form and only that form.
 
-   DEPENDENCY: the sheen rule below animates `asc-sheen`, whose `@keyframes` still lives in
-   global.css below, beside `.asc-wordmark`. CSS Modules hash keyframe names too, so if `.asc-wordmark`
-   ever migrates into a module the keyframes block has to stay global or this rule silently
-   stops animating — a blank-looking word, not an error. */
+   DEPENDENCY: the sheen rule below animates `asc-sheen`, whose `@keyframes` lives in global.css
+   below, beside `.asc-wordmark`. CSS Modules hash keyframe names too, so the keyframes block has
+   to stay global or this rule silently stops animating — a blank-looking word, not an error. */
 /* Iridescent "bismuth" — every literal, whole-word occurrence of the word "bismuth" is painted
    with a shimmering bismuth-crystal gradient (the rainbow oxide iridescence of real bismuth:
    magenta → purple → blue → teal → green → gold) via background-clip:text. Shared by the
@@ -779,11 +778,12 @@ body { background: var(--bg); color: var(--fg); }
    decoration (`.cm-bismuth`, editor/livePreview.ts). The gradient is oversized and slowly pans for
    a gentle shimmer; reduced-motion users get the static ramp. Theme-independent by design — the
    crystal colors read the same on every theme; the effect never uses a theme-accent color.
-   Reuses the wordmark's own `asc-sheen`/`--sheen` animation (defined below, with `.asc-wordmark`)
-   rather than a second infinite loop — PORTING.md §7 permits exactly one decorative sheen. */
+   Pans with the `asc-sheen` keyframes and `--sheen` duration defined below, with `.asc-wordmark`.
+   These words pan `background-position` (CSS alone cannot mask live text); the wordmark and the
+   daemon face use ui/Sheen's compositor layer for the same look. */
 .bismuth-word, .cm-bismuth {
   /* THE SAME GRADIENT AS THE TOP-STRIP WORDMARK, deliberately — `--grad`, exactly what
-     `.asc-wordmark` paints with (defined below). This used to be a bespoke saturated rainbow
+     `.asc-wordmark`'s sheen paints with (defined below). This used to be a bespoke saturated rainbow
      (#ff6ec7 → #a06bff → #4d8bff → #22d3d6 → #5ff0a8 → #ffd36e) that shared only the sheen
      animation, so the app's two iridescent surfaces were two different brands. One mark, one
      gradient.
@@ -1017,12 +1017,13 @@ details.callout > summary::-webkit-details-marker {
      hardcoded default with a descendant selector. --fs-lead stays the default (the crystal's
      presence argument above), and the top strip overrides it. */
   font-size: var(--wordmark-size, var(--fs-lead)); line-height: 1; font-weight: var(--fw-bold, 600); letter-spacing: var(--wordmark-tracking, -0.22em);
-  background: var(--grad); background-size: 200% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: asc-sheen var(--sheen, 8s) linear infinite;
+  /* The text is transparent and only lays out: the gradient is ui/Sheen's layer, slid by `transform`
+     on the compositor and cut to the glyphs by a static SVG mask (Sheen.module.css). `position` +
+     `isolation` make this box Sheen's containing block and keep its layers out of the page's stacking. */
+  position: relative; isolation: isolate; color: transparent;
 }
+/* `asc-sheen` stays: `.bismuth-word` / `.cm-bismuth` (runtime HTML, CSS only) still pan `background-position`. */
 @keyframes asc-sheen { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
-@media (prefers-reduced-motion: reduce) { .asc-wordmark { animation: none; } }
 
 /* The shell grid (`.layout` + its sidebar-hidden / has-rail / rail-pinned / switcher-active states and the
    reduced-motion rule) moved into shell/AppFrame.module.css; it reads the data attributes AppFrame writes. */

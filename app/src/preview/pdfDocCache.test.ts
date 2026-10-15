@@ -4,9 +4,11 @@
 // stack) and isn't meant to load under Bun's test runner.
 import { describe, expect, mock, test } from 'bun:test'
 import {
+    createFreshness,
     createPdfDocCache,
     createReplacedListeners,
     createSelfWriteGate,
+    createServerChangeRouter,
     routePathChange,
     type CachedPdf,
 } from './pdfDocCacheCore'
@@ -255,5 +257,94 @@ describe('pdf replaced notifications', () => {
         off()
         routePathChange(['a.pdf'], gate, p => bus.fire(p))
         expect(cb).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('createServerChangeRouter', () => {
+    function setup() {
+        const gate = createSelfWriteGate()
+        const bus = createReplacedListeners()
+        const revalidate = mock(() => {})
+        const replaced = mock((p: string) => bus.fire(p))
+        const route = createServerChangeRouter({ gate, replaced, revalidate })
+        return { route, replaced, revalidate, bus }
+    }
+
+    test('named paths route per path and never revalidate', () => {
+        const { route, replaced, revalidate } = setup()
+        route({ paths: ['a.pdf', 'b.pdf'], version: 1 })
+        expect(replaced.mock.calls.map(c => c[0])).toEqual(['a.pdf', 'b.pdf'])
+        expect(revalidate).not.toHaveBeenCalled()
+    })
+
+    test('empty paths with an advancing version revalidate once; repeated or older do not', () => {
+        const { route, revalidate } = setup()
+        route({ paths: [], version: 5 })
+        expect(revalidate).toHaveBeenCalledTimes(1)
+        route({ paths: [], version: 5 })
+        route({ paths: [], version: 3 })
+        expect(revalidate).toHaveBeenCalledTimes(1)
+        route({ paths: [], version: 6 })
+        expect(revalidate).toHaveBeenCalledTimes(2)
+    })
+
+    test('a named-path change advances the gate too', () => {
+        const { route, revalidate } = setup()
+        route({ paths: ['a.pdf'], version: 9 })
+        route({ paths: [], version: 8 })
+        expect(revalidate).not.toHaveBeenCalled()
+    })
+
+    test('a replaced-PDF notification reaches the listener', () => {
+        const { route, bus } = setup()
+        const cb = mock(() => {})
+        bus.on('a.pdf', cb)
+        route({ paths: ['a.pdf'], version: 1 })
+        expect(cb).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('path-less change freshness', () => {
+    let base = ''
+    let status = 304
+    const dropped: string[] = []
+    const stillFresh = createFreshness<any>({
+        apiBase: () => base,
+        buildUrl: (b, k) => `${b}/${k}`,
+        fetch: async () => ({ status }),
+        dropStash: k => dropped.push(k),
+    })
+
+    function entry(validator?: string): CachedPdf<any> {
+        return { doc: {}, destroy: mock(() => {}), validator: Promise.resolve(validator) }
+    }
+
+    test('no validator + path-less change is dropped; named-path change is unchanged', async () => {
+        base = ''
+        const cache = createPdfDocCache<any>({ max: 5 })
+        const a = entry()
+        cache.put('nv.pdf', a)()
+        await cache.revalidateAll(stillFresh)
+        expect(a.destroy).toHaveBeenCalledTimes(1)
+        expect(cache.acquire('nv.pdf')).toBeUndefined()
+        expect(dropped).toContain('nv.pdf')
+        const b = entry()
+        cache.put('other.pdf', b)()
+        const gate = createSelfWriteGate()
+        routePathChange(['x.pdf'], gate, p => cache.invalidate(p))
+        expect(b.destroy).not.toHaveBeenCalled()
+    })
+
+    test('etag doc: 304 kept, 200 dropped', async () => {
+        base = 'http://localhost:1'
+        const cache = createPdfDocCache<any>({ max: 5 })
+        const a = entry('"v1"')
+        cache.put('e.pdf', a)()
+        status = 304
+        await cache.revalidateAll(stillFresh)
+        expect(a.destroy).not.toHaveBeenCalled()
+        status = 200
+        await cache.revalidateAll(stillFresh)
+        expect(a.destroy).toHaveBeenCalledTimes(1)
     })
 })

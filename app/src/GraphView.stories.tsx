@@ -132,7 +132,7 @@ export const FindPanelOpen: Story = {
         const canvas = within(canvasElement)
         const findButton = await canvas.findByText('find')
         findButton.click()
-        await canvas.findByPlaceholderText(/search/i)
+        await canvas.findByPlaceholderText('nodes')
     },
 }
 

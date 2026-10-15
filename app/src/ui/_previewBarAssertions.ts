@@ -112,7 +112,10 @@ export type BarProbe = {
     /** Distinct rendered sizes (`WxH`) of every trail glyph. Want exactly one. */
     glyphSizes: string[]
     /** Distinct box sizes of the icon-only controls. Want exactly one. */
-    iconBoxes: string[]
+    /** Distinct icon-only button heights across the whole bar (one expected). */
+    iconHeights: number[]
+    /** Distinct widths per state: `normal` bare glyph buttons, `toggle` (data-state selected/unselected). */
+    iconWidths: { normal: number[]; toggle: number[] }
     /** Controls whose rect leaves the bar's rect. Want none. */
     outside: string[]
     /** Pairs of controls that overlap. Want none. */
@@ -174,16 +177,22 @@ export function probeBar(bar: HTMLElement): BarProbe {
                 }),
         ),
     ]
-    const iconBoxes = [
-        ...new Set(
-            items
-                .filter(el => el.tagName === 'BUTTON' && !(el.textContent ?? '').trim())
-                .map(el => {
-                    const r = el.getBoundingClientRect()
-                    return `${Math.round(r.width)}x${Math.round(r.height)}`
-                }),
-        ),
-    ]
+    const iconOnly = items
+        .filter(el => el.tagName === 'BUTTON' && !(el.textContent ?? '').trim())
+        .map(el => {
+            const r = el.getBoundingClientRect()
+            return {
+                toggle: el.dataset.state === 'selected' || el.dataset.state === 'unselected',
+                w: Math.round(r.width),
+                h: Math.round(r.height),
+            }
+        })
+    const uniq = (xs: number[]) => [...new Set(xs)]
+    const iconHeights = uniq(iconOnly.map(i => i.h))
+    const iconWidths = {
+        normal: uniq(iconOnly.filter(i => !i.toggle).map(i => i.w)),
+        toggle: uniq(iconOnly.filter(i => i.toggle).map(i => i.w)),
+    }
     const b = bar.getBoundingClientRect()
     const outside = items
         .filter((_, i) => {
@@ -227,7 +236,8 @@ export function probeBar(bar: HTMLElement): BarProbe {
         frames,
         selectedCount,
         glyphSizes,
-        iconBoxes,
+        iconHeights,
+        iconWidths,
         outside,
         overlaps,
         maxCentreOffset,

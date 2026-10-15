@@ -2196,7 +2196,9 @@ export const PdfViewBarLayout: Story = {
         expect(rest.groupBoundaries, `group seams in ink gaps ${JSON.stringify(rest.inkGaps)}`).toBe(5)
         expect(rest.annotateGaps, `annotate within-group gaps in ink gaps ${JSON.stringify(rest.inkGaps)}`).toBe(2)
         expect(rest.glyphSizes).toEqual(['12x12'])
-        expect(rest.iconBoxes).toHaveLength(1)
+        expect(rest.iconHeights, 'icon-only heights').toHaveLength(1)
+        expect(rest.iconWidths.normal.length, 'normal icon widths').toBeLessThanOrEqual(1)
+        expect(rest.iconWidths.toggle.length, 'toggle icon widths').toBeLessThanOrEqual(1)
         expect(rest.outside).toEqual([])
         expect(rest.frames, 'accent frames at rest').toBe(0)
         const fitBtn = canvas.getByLabelText('Fit width') as HTMLButtonElement

@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
-import { extractWikilinks } from './wikilinks'
 import { noteId, resolveLinkTarget } from './vault'
 import { buildGraphFromNotes } from './graphBuilder'
+import type { ParsedNote } from './parsedNotes'
 import type { GraphData, GraphNode, GraphEdge } from './graph'
 
 const MEM = (base: string) => `mem:${base}`
@@ -22,12 +22,12 @@ export async function buildMemoryGraph(root: string): Promise<MemoryGraph> {
 
     const edgeExtractor = (
         nodeId: string,
-        content: string,
+        note: ParsedNote,
         byBase: Map<string, string>,
         byPath: Map<string, string>,
     ): GraphEdge[] => {
         const edges: GraphEdge[] = []
-        const targets = extractWikilinks(content)
+        const targets = [...note.links]
 
         // Key by the full relative id (format: "mem:<relative-path>") so subfolder
         // notes reconstruct their real node id and same-basename notes stay distinct.

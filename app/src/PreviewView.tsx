@@ -1024,6 +1024,7 @@ export function PreviewView(props: {
                             // proves the memory seam it asked for. `pdfCacheKey` is the separate,
                             // explicit opt-in for a story that means to exercise the cache.
                             cacheKey={pdfDocKey()}
+                            highlightsPath={path()}
                             onPageGeoms={g => (pdfGeoms = g)}
                             dark={pdfDark()}
                             initialPosition={

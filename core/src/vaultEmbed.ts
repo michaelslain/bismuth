@@ -3,6 +3,7 @@ import { bismuthHome } from './bismuthHome'
 import { getFileAccess } from './fileAccess'
 import { readEmbeddingsEnabledSync } from './embeddingsSetting'
 import { parseFrontmatter } from './frontmatter'
+import { getParsedNote, type ParsedNote } from './parsedNotes'
 import { createVectorStore, noteChunks, QUERY_PREFIX, sharedSemanticChannel } from './memoryEmbed'
 import type { SemanticChannel, VectorStore } from './memoryEmbed'
 import { mapWithConcurrency } from './concurrency'
@@ -92,15 +93,14 @@ const titleOf = (path: string, body: string): string => {
 
 /** A vault note in the shape the shared store hashes and chunks: the path is the name, the title the
  *  description, so every chunk leads with path, title and tags. */
-function toNote(path: string, raw: string): MemoryNote {
-    const { data, body } = parseFrontmatter(raw)
+function memoryNote(path: string, body: string, tags: readonly string[]): MemoryNote {
     return {
         name: path,
         content: body,
         backlinks: [],
         frontmatter: {
             type: 'fact',
-            tags: extractTags(data, body),
+            tags: [...tags],
             created: '',
             updated: '',
             description: titleOf(path, body),
@@ -108,13 +108,33 @@ function toNote(path: string, raw: string): MemoryNote {
     } as MemoryNote
 }
 
+/** One MemoryNote per ParsedNote: the object stays the same while the file is unchanged, which is
+ *  what lets the store memoize its content hash by identity (memoryEmbed.ts). */
+const memoryNotes = new WeakMap<ParsedNote, MemoryNote>()
+
+async function toNote(vault: string, p: ParsedNote): Promise<MemoryNote> {
+    const known = memoryNotes.get(p)
+    if (known) return known
+    let note: MemoryNote
+    if (p.body !== null) note = memoryNote(p.rel, p.body, p.tags)
+    else {
+        // The cache dropped this note's text (raw-bytes budget): parse a fresh copy, uncached.
+        const { readNote } = await getFileAccess()
+        const { data, body } = parseFrontmatter(await readNote(vault, p.rel))
+        note = memoryNote(p.rel, body, extractTags(data, body))
+    }
+    memoryNotes.set(p, note)
+    return note
+}
+
 async function readInto(vault: string, notes: Map<string, MemoryNote>, paths: string[]) {
-    const { readNote } = await getFileAccess()
     await mapWithConcurrency(paths, READ_CONCURRENCY, async p => {
         try {
-            notes.set(p, toNote(p, await readNote(vault, p)))
+            const parsed = await getParsedNote(vault, p)
+            if (parsed) notes.set(p, await toNote(vault, parsed))
+            else notes.delete(p) // gone from disk or unreadable
         } catch {
-            notes.delete(p) // gone from disk or unreadable
+            notes.delete(p)
         }
     })
 }

@@ -304,6 +304,7 @@ A per-backend lock is useless beside an open window. These surfaces leak on ever
 An installed `bismuth-mcp` binary is a compiled copy (`core/src/bismuthInstall.ts`). If it predates a gate change, relaunch the app or run `bismuth install`; `bismuth install --status` shows the installed version.
 
 `GET /asset` applies the same per-channel filter to the bytes it serves. A native `<img>` or `<video>` element cannot send the owner token header, so a request from one resolves to the `daemon` channel.
+The check runs on the symlink-resolved path as well as the requested one, so a symlink inside the vault that points at a hidden file is denied like the file itself. A symlink whose target is outside the vault matches no deny entry and is served.
 
 ### Claude Code enforcement
 

@@ -29,6 +29,11 @@ function fakeWatch() {
 
 const tick = () => new Promise(r => setTimeout(r, 5))
 
+async function until(cond: () => boolean, ms = 5000) {
+    const deadline = Date.now() + ms
+    while (!cond() && Date.now() < deadline) await tick()
+}
+
 async function settle(root: string, fake: ReturnType<typeof fakeWatch>) {
     const deadline = Date.now() + 2000
     while (fake.probeOf(root) && Date.now() < deadline) await tick()
@@ -157,4 +162,73 @@ test('with the real fs.watch, a write made the moment watchLive returns is repor
     } finally {
         w.close()
     }
+})
+
+test('a write dropped while a sibling watcher opens or closes is still delivered', async () => {
+    const root = tempDir('live-watch-')
+    const other = tempDir('live-watch-')
+    const fake = fakeWatch()
+    const got: (string | null)[] = []
+    const w = watchLive(root, f => got.push(f), { watchFn: fake.watchFn })
+    fake.goLive(root)
+    await settle(root, fake)
+    expect(got).toEqual([])
+
+    // The sibling's open drops this write: it is on disk, the watcher never reports it.
+    const sib = watchLive(other, () => {}, { watchFn: fake.watchFn })
+    writeFileSync(join(root, 'dropped-on-open.md'), 'x')
+    fake.goLive(other)
+    await settle(other, fake)
+    await until(() => got.length >= 1)
+    expect(got).toEqual(['dropped-on-open.md'])
+
+    // And so does its close.
+    writeFileSync(join(root, 'dropped-on-close.md'), 'x')
+    sib.close()
+    await until(() => got.length >= 2)
+    expect(got.sort()).toEqual(['dropped-on-close.md', 'dropped-on-open.md'])
+
+    // A path already reported is not reported again by the next rescan.
+    writeFileSync(join(root, 'seen.md'), 'x')
+    fake.emit(root, 'seen.md')
+    const sib2 = watchLive(other, () => {}, { watchFn: fake.watchFn })
+    await new Promise(r => setTimeout(r, 600))
+    expect(got.filter(f => f === 'seen.md')).toHaveLength(1)
+    sib2.close()
+    w.close()
+})
+
+test('a disjoint sibling opened just after going live does not make a rescan report anything', async () => {
+    const root = tempDir('live-watch-')
+    const other = tempDir('live-watch-')
+    writeFileSync(join(root, 'a.md'), 'x')
+    const fake = fakeWatch()
+    const got: (string | null)[] = []
+    const w = watchLive(root, f => got.push(f), { watchFn: fake.watchFn })
+    fake.goLive(root)
+    await settle(root, fake)
+    await new Promise(r => setTimeout(r, 60))
+    const sib = watchLive(other, () => {}, { watchFn: fake.watchFn })
+    fake.goLive(other)
+    await new Promise(r => setTimeout(r, 700))
+    expect(got).toEqual([])
+    sib.close()
+    w.close()
+})
+
+test('a sibling opened inside the root long after going live does not read as a lost child', async () => {
+    const root = tempDir('live-watch-')
+    mkdirSync(join(root, 'inner'))
+    const fake = fakeWatch()
+    const got: (string | null)[] = []
+    const w = watchLive(root, f => got.push(f), { watchFn: fake.watchFn })
+    fake.goLive(root)
+    await settle(root, fake)
+    await new Promise(r => setTimeout(r, 600))
+    const sib = watchLive(join(root, 'inner'), () => {}, { watchFn: fake.watchFn })
+    fake.goLive(join(root, 'inner'))
+    await new Promise(r => setTimeout(r, 700))
+    expect(got).toEqual([])
+    sib.close()
+    w.close()
 })

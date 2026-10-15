@@ -690,19 +690,21 @@ export async function applyPdfHighlightIncrement(
     const light = lightOf(bytes)
     if (light) {
         if (light.encrypted) throw notWritable('encrypted')
-        let signed = false
+        let signed: boolean | null = null
         try {
             signed = hasSignature(light.catalog)
         } catch {
-            signed = false
+            // malformed form or perms: the full load below classifies it
         }
         if (signed) throw notWritable('signed')
-        try {
-            const suffix = applyIncremental(light, edits, now)
-            return suffix ? { kind: 'append', suffix } : { kind: 'none' }
-        } catch (e) {
-            if (e instanceof AppError) throw e
-            // outside what the light writer handles: full load below
+        if (signed === false) {
+            try {
+                const suffix = applyIncremental(light, edits, now)
+                return suffix ? { kind: 'append', suffix } : { kind: 'none' }
+            } catch (e) {
+                if (e instanceof AppError) throw e
+                // outside what the light writer handles: full load below
+            }
         }
     }
     const o = await open(bytes)

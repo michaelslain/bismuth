@@ -27,7 +27,9 @@ import { makeSampleVault } from './helpers'
 // real margin via bun:test's third `test()` argument, matching cli/test/cli.test.ts's style.
 const TEST_TIMEOUT_MS = 15_000
 
-/** Read SSE frames until `match` accepts one, or `timeoutMs` elapses. Returns the frame. */
+/** Read SSE frames until `match` accepts one, or `timeoutMs` elapses. Returns the frame. The read
+ *  races the deadline, so a stream that goes quiet fails at `timeoutMs` instead of hanging until the
+ *  test's own timeout, and the error lists every frame that arrived without matching. */
 async function waitForFrame(
     base: string,
     match: (payload: {
@@ -45,24 +47,36 @@ async function waitForFrame(
     const res = await fetch(`${base}/events`)
     const reader = res.body!.getReader()
     const decoder = new TextDecoder()
+    const seen: string[] = []
+    const deadline = Date.now() + timeoutMs
     try {
         await trigger()
         let buf = ''
-        const start = Date.now()
-        while (Date.now() - start < timeoutMs) {
-            const { value, done } = await reader.read()
-            if (done) break
-            buf += decoder.decode(value)
+        while (true) {
+            const left = deadline - Date.now()
+            if (left <= 0) break
+            let timer: ReturnType<typeof setTimeout> | undefined
+            const next = await Promise.race([
+                reader.read(),
+                new Promise<'timeout'>(resolve => {
+                    timer = setTimeout(() => resolve('timeout'), left)
+                }),
+            ]).finally(() => clearTimeout(timer))
+            if (next === 'timeout' || next.done) break
+            buf += decoder.decode(next.value)
             const frames = buf.split('\n\n')
             buf = frames.pop() ?? ''
             for (const f of frames) {
                 if (!f.startsWith('data: ')) continue // skip `: keepalive` comments
                 const payload = JSON.parse(f.slice(6))
                 if (match(payload)) return payload
+                seen.push(f.slice(6))
             }
         }
         throw new Error(
-            `no matching SSE frame within ${timeoutMs}ms; trailing buf=${buf}`,
+            `no matching SSE frame within ${timeoutMs}ms; non-matching frames: ${
+                seen.length ? seen.join(' | ') : '(none)'
+            }; trailing buf=${buf}`,
         )
     } finally {
         await reader.cancel().catch(() => {})
@@ -222,6 +236,52 @@ test(
             )
             expect(frame.dirty?.tree).toBe(false)
         } finally {
+            server.stop(true)
+        }
+    },
+    TEST_TIMEOUT_MS,
+)
+
+test(
+    'a note created while the boot task-migration scan is held is structural on its first event',
+    async () => {
+        // The boot scan seeds the change tracker with every note it reads. A note born AFTER the server
+        // started may have its watcher event still in flight, so seeding it would make that event
+        // classify as "unchanged" (dirty to neither graph nor tree) and the note would never reach the
+        // sidebar. beforeTaskMigration holds the scan so the note can be written first and the scan
+        // released straight after; the watcher's debounce then flushes after the scan has finished.
+        const { vault, memory } = await makeSampleVault()
+        await initializeSettings(vault)
+        let release!: () => void
+        const held = new Promise<void>(resolve => (release = resolve))
+        const server = createServer({
+            vault,
+            memory,
+            port: 0,
+            beforeTaskMigration: () => held,
+        })
+        const base = `http://localhost:${server.port}`
+        try {
+            const frame = await waitForFrame(
+                base,
+                p => p.paths.includes('BootBorn.md'),
+                async () => {
+                    writeFileSync(join(vault, 'BootBorn.md'), '# born at boot\n')
+                    release()
+                    // The scan has seeded (or declined to seed) every note once it reports.
+                    for (let i = 0; i < 200; i++) {
+                        const r = await (await fetch(`${base}/tasks/migration`)).json()
+                        if (r.ran !== null) return
+                        await new Promise(resolve => setTimeout(resolve, 10))
+                    }
+                },
+                8000,
+            )
+            expect(frame.dirty?.tree).toBe(true)
+            const tree = await (await fetch(`${base}/tree`)).text()
+            expect(tree).toContain('BootBorn')
+        } finally {
+            release()
             server.stop(true)
         }
     },

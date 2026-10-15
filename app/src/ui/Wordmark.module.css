@@ -1,7 +1,7 @@
 /* ui/Wordmark.module.css — scoped chrome for ui/Wordmark.tsx.
 
-   `.asc-wordmark` does NOT live here: it is the global gradient-sheen class in global.css
-   (with its `@keyframes asc-sheen` and reduced-motion rule), written bare by Wordmark.tsx.
+   `.asc-wordmark` does NOT live here: it is the global sheen-host class in global.css (the
+   gradient itself is ui/Sheen), written bare by Wordmark.tsx.
    This module only sets the two tokens `.asc-wordmark` reads, per instance.
 
    `--wordmark-tracking` IS THE WHOLE POINT. `.asc-wordmark` defaults to -0.22em, which was
@@ -33,6 +33,11 @@
 .wordmark--body .word,
 .wordmark--body .caret {
   text-box: trim-both cap alphabetic;
+}
+/* The trimmed box ends at the baseline, cap-height (0.73em) below its top: where Sheen's mask text
+   has to sit, snapped down to a whole px like the line box. */
+.wordmark--body .word {
+  --sheen-baseline: round(down, 0.73em, 1px);
 }
 .wordmark--hero {
   --wordmark-size: var(--fs-wordmark-display);

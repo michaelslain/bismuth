@@ -26,6 +26,7 @@ import {
     type Component,
     type JSX,
 } from 'solid-js'
+import Sheen from '../ui/Sheen'
 import Text from '../ui/Text'
 import {
     BLINK_MS,
@@ -272,23 +273,34 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
             <div
                 // `asc-wordmark` is a bare global on purpose — the app's one gradient flourish
                 // (global.css's app shell section), shared with the top strip and intro hero; see
-                // DaemonFace.module.css `.face`.
-                class={`${styles.face} asc-wordmark`}
-                role="img"
-                aria-label={`${props.label ?? 'daemon'} — ${moodLabel(renderedMood())}`}
-                data-mood={renderedMood()}
-                data-testid="daemon-face"
-                onPointerEnter={() => setHovered(true)}
-                onPointerLeave={() => setHovered(false)}
-                onClick={wink}
+                // DaemonFace.module.css `.stage`. The stage owns the box and Sheen's layer and
+                // mask; the glyph row inside it holds only the eight cells.
+                class={`${styles.stage} asc-wordmark`}
             >
-                <Index each={cells()}>
-                    {(c, i) => (
-                        <Text as="span" inherit class={cellClass(i)}>
-                            {c()}
-                        </Text>
-                    )}
-                </Index>
+                <Sheen
+                    parts={cells().map((c, i) => ({
+                        text: c,
+                        spacing: `var(--gap-${GAP[i]})`,
+                    }))}
+                />
+                <div
+                    class={styles.face}
+                    role="img"
+                    aria-label={`${props.label ?? 'daemon'} — ${moodLabel(renderedMood())}`}
+                    data-mood={renderedMood()}
+                    data-testid="daemon-face"
+                    onPointerEnter={() => setHovered(true)}
+                    onPointerLeave={() => setHovered(false)}
+                    onClick={wink}
+                >
+                    <Index each={cells()}>
+                        {(c, i) => (
+                            <Text as="span" inherit class={cellClass(i)}>
+                                {c()}
+                            </Text>
+                        )}
+                    </Index>
+                </div>
             </div>
             <Show when={props.size !== 'avatar' && props.caption}>
                 {/* Text (ui/Text.tsx) now forwards every other HTML attribute, incl. data-*, so

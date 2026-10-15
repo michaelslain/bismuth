@@ -126,3 +126,104 @@ export const AcrossThemes: Story = {
         </div>
     ),
 }
+
+/** Phases the old/new comparison freezes the sheen at, as fractions of one `--sheen` traverse. */
+const PHASES = [0, 0.25, 0.5, 0.75]
+
+/** Freezes the new sheen at a phase: `--sheen-play` pauses the slide, a negative `--sheen-delay` sets where. */
+const frozen = (phase: number) => ({
+    '--sheen-play': 'paused',
+    '--sheen-delay': `calc(var(--sheen) * ${-phase})`,
+})
+
+/** The sheen as it was drawn before it moved to the compositor: `background-clip: text` over an
+ *  oversized `--grad`, panned with `background-position` (keyframes `asc-sheen`, still global for
+ *  `.bismuth-word`). Kept here only as the reference the new compositor sheen is judged against. */
+const OldMark = (props: { phase: number; size: 'body' | 'hero' }) => (
+    <span
+        style={{
+            'font-size': props.size === 'hero' ? 'var(--fs-wordmark-display)' : 'var(--fs-body)',
+            'line-height': '1',
+            'font-weight': 'var(--fw-bold)',
+            'letter-spacing': '0.04em',
+            background: 'var(--grad)',
+            'background-size': '200% 100%',
+            '-webkit-background-clip': 'text',
+            'background-clip': 'text',
+            color: 'transparent',
+            animation: 'asc-sheen var(--sheen) linear infinite paused',
+            'animation-delay': `calc(var(--sheen) * ${-props.phase})`,
+            'text-box': props.size === 'body' ? 'trim-both cap alphabetic' : undefined,
+        }}
+    >
+        bismuth
+    </span>
+)
+
+/** Old (left) vs new (right) at four frozen phases, in the light (paper) and dark (ink) themes,
+ *  at the top-strip and hero sizes: same gradient colours, same glyph edges, no band or tint
+ *  outside the letters. The new column is the real <Wordmark> with its slide frozen by
+ *  `--sheen-play` + `--sheen-delay`. */
+export const CompositorSheenVsOld: Story = {
+    render: () => (
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
+            {['ink', 'paper'].map(name => {
+                const vars = settingsToCssVars({
+                    ...(DEFAULTS as unknown as Settings),
+                    appearance: {
+                        ...(DEFAULTS as unknown as Settings).appearance,
+                        theme: name,
+                    },
+                })
+                return (
+                    <div
+                        data-theme-row={name}
+                        style={{
+                            ...vars,
+                            background: 'var(--bg)',
+                            color: 'var(--fg)',
+                            padding: '14px 18px',
+                            display: 'grid',
+                            'grid-template-columns': 'repeat(2, auto)',
+                            gap: '14px 28px',
+                            'align-items': 'center',
+                        }}
+                    >
+                        {PHASES.map(p => (
+                            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+                                <div style={{ display: 'flex', gap: '24px', 'align-items': 'baseline' }}>
+                                    <OldMark phase={p} size="body" />
+                                    <span style={frozen(p)}>
+                                        <Wordmark size="body" caret={false} />
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px', 'align-items': 'flex-start' }}>
+                                    <OldMark phase={p} size="hero" />
+                                    <span style={frozen(p)}>
+                                        <Wordmark size="hero" caret={false} />
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )
+            })}
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        // Every new mark must actually paint: its sheen layer is wider than the glyph box and
+        // its mask resolves to a real SVG <mask>, not a dangling url().
+        const marks = canvasElement.querySelectorAll('.asc-wordmark')
+        await expect(marks.length).toBe(16)
+        for (const m of marks) {
+            const sheen = m.querySelector('span[aria-hidden]') as HTMLElement
+            const maskId = getComputedStyle(sheen).maskImage.match(/#([^")]+)/)?.[1]
+            await expect(maskId).toBeTruthy()
+            await expect(m.querySelector(`mask[id="${maskId}"]`)).not.toBeNull()
+            const layer = sheen.firstElementChild as HTMLElement
+            await expect(
+                parseFloat(getComputedStyle(layer, '::before').width),
+            ).toBeGreaterThan(sheen.getBoundingClientRect().width * 2.9)
+        }
+    },
+}
