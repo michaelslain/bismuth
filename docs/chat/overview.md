@@ -142,6 +142,7 @@ Each session holds one long-lived Agent SDK `query()`, an input mailbox that fee
   `resumeSession` binds a chat id to an existing session with `options.resume`, pushing no turn, so the `init` manifest streams in; an existing session is closed first.
 
 On the frontend, `app/src/chat/chatSessions.ts` retains one `ChatSession` (`chatSession.ts`) per open chat id, in its own reactive root, holding the WebSocket, transcript, draft, queue and picker state. `ChatView` is a disposable view over it.
+Each transcript frame is folded into the store by `applyChatFrame` (`chatTranscriptLogic.ts`), and the store write returns the store proxy rather than going through `setTranscript(produce(…))`, so a streamed token costs the same in a long chat as in a short one: Solid deep-unwraps a raw array on every write. `ChatTranscript` lays its rows out in block flow for the same reason, since a flex column re-lays out every turn when the streaming one grows. `bench/chatStreamPerf.ts` measures both.
 Only a tab or pane close disposes a session, and its clean `ws.close(1000)` tears the backend session down. A chat tab is a pane content id `::chat:<chat id>` (`CHAT_PREFIX` in `tabIds.ts`) routed by `PaneContent.tsx`.
 
 ### The /chat WebSocket

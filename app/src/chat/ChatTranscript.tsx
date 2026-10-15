@@ -205,6 +205,7 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
                     [styles['chat-list--flush']]: props.inset === 'flush',
                 }}
                 ref={list!}
+                data-chat-list
                 onClick={onListClick}
                 onScroll={onListScroll}
                 onMouseUp={onListMouseUp}

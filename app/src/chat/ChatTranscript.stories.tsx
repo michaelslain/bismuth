@@ -5,7 +5,15 @@
 // context menu's Reply.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
+import type { Component } from 'solid-js'
+import { createStore, produce } from 'solid-js/store'
+import type { ChatFrame } from '../../../core/src/chat'
 import ChatTranscript from './ChatTranscript'
+import {
+    applyChatFrame,
+    buildTranscript,
+    type TurnItem,
+} from './chatTranscriptLogic'
 import EmptyState from '../ui/EmptyState'
 import {
     COMMAND_OUTPUT_ITEMS,
@@ -387,4 +395,124 @@ export const Images: Story = {
             canvas.getByText('Got the screenshot — looking now.'),
         ).toBeInTheDocument()
     },
+}
+
+/** A long conversation (`turns` exchanges, each with prose, a list, code and a tool call) held in
+ *  a Solid store and grown through `applyChatFrame` exactly as chatSession.ts does, so streaming
+ *  into it costs what it costs in the app. `window.__chatStream(text)` appends one assistant delta
+ *  and pings the append seam; bench/chatStreamPerf.ts drives it to time a token at length. */
+function longFrames(turns: number): ChatFrame[] {
+    const frames: ChatFrame[] = []
+    for (let i = 0; i < turns; i++) {
+        frames.push({
+            type: 'user-message',
+            text: `Question ${i}: how does the watcher handle a rename?`,
+        })
+        frames.push({
+            type: 'assistant-text',
+            text: [
+                `Answer ${i}. The watcher sees **two events** for a rename and pairs them:`,
+                '',
+                '- the `unlink` of the old path',
+                '- the `add` of the new path, within the debounce window',
+                '',
+                '```ts',
+                'const pair = pending.get(inode)',
+                'if (pair) emit({ kind: "rename", from: pair, to: path })',
+                '```',
+                '',
+                'See [[watcher]] for the full rules.',
+            ].join('\n'),
+        })
+        frames.push({
+            type: 'tool-use',
+            id: `t${i}`,
+            name: 'Read',
+            input: { file_path: `core/src/watch${i}.ts` },
+        })
+        frames.push({
+            type: 'tool-result',
+            id: `t${i}`,
+            content: 'x'.repeat(400),
+            isError: false,
+        })
+        frames.push({
+            type: 'result',
+            isError: false,
+            numTurns: 2,
+            costUsd: 0.01,
+        })
+    }
+    return frames
+}
+
+const LongStream: Component<{ turns: number }> = props => {
+    const [items, setItems] = createStore<TurnItem[]>(
+        buildTranscript(longFrames(props.turns)),
+    )
+    const listeners = new Set<(force: boolean) => void>()
+    ;(
+        window as unknown as { __chatStream?: (text: string) => void }
+    ).__chatStream = text => {
+        let touched = false
+        // The same write chatSession.ts's applyFrameToTranscript makes, so the bench times it.
+        setItems(raw => {
+            produce<TurnItem[]>(
+                m =>
+                    void (touched = applyChatFrame(m, {
+                        type: 'assistant-text',
+                        text,
+                    })),
+            )(raw)
+            return items as TurnItem[]
+        })
+        if (touched) for (const l of listeners) l(false)
+    }
+    return (
+        <div style={{ width: '760px', height: '720px', display: 'flex' }}>
+            <ChatTranscript
+                items={items}
+                persona="bismuth"
+                awaitingReply={false}
+                turnError={null}
+                subscribeAppend={l => {
+                    listeners.add(l)
+                    return () => listeners.delete(l)
+                }}
+                {...noop}
+            />
+        </div>
+    )
+}
+
+/** 400 exchanges — the long chat a streamed token has to stay cheap in. */
+export const LongConversation: Story = {
+    render: () => <LongStream turns={400} />,
+    play: async ({ canvasElement }) => {
+        // Streaming into the tail keeps a following list pinned to the bottom, and the new prose
+        // renders: the block-flow list and the store write chatStreamPerf.ts times still behave.
+        const list = canvasElement
+            .querySelector<HTMLElement>('[data-chat-bubble]')!
+            .closest<HTMLElement>('[data-chat-list]')!
+        list.scrollTop = list.scrollHeight
+        const stream = (
+            window as unknown as { __chatStream: (t: string) => void }
+        ).__chatStream
+        for (let i = 0; i < 20; i++) {
+            stream(`streamed token ${i} `)
+            await new Promise(r => requestAnimationFrame(r))
+        }
+        await expect(
+            list.scrollHeight - list.scrollTop - list.clientHeight,
+        ).toBeLessThan(40)
+        await expect(
+            within(canvasElement).getByText(/streamed token 19/),
+        ).toBeTruthy()
+    },
+}
+
+/** The same shape at 10 exchanges, the short baseline bench/chatStreamPerf.ts compares against. */
+export const ShortConversation: Story = {
+    render: () => <LongStream turns={10} />,
+    play: LongConversation.play,
 }

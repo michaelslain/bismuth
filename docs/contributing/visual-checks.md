@@ -261,6 +261,7 @@ These tools measure rather than judge. Each takes its own flags; read the header
 | Tool | Measures | Run |
 |---|---|---|
 | `bench/tableRenderPerf.ts` | The Bases table on `bases-tableview--large-table`: median cold render time and scroll frames per second | `bun bench/tableRenderPerf.ts --port <n>` (`--port` required) |
+| `bench/chatStreamPerf.ts` | What one streamed chat token costs at 10 and at 400 exchanges (`chat-chattranscript--short-conversation` / `--long-conversation`): main-thread time per token, split into store write and layout, and the frame interval; the long chat should stay close to the short one | `bun bench/chatStreamPerf.ts --base <url> [--deltas <n>] [--css '<rules>']` |
 | `bench/pdfScroll.ts` | Whether PDF pages paint before the reader scrolls to them, in `preview-pdfpages--many-pages` by default | `bun bench/pdfScroll.ts [<story-id>] --base <url> --duration <ms>` |
 | `bench/appShots.ts` | Deterministic screenshots of the running app (not Storybook), waiting for canvas ink to settle | `bun bench/appShots.ts --base http://localhost:1422 --out shots/ [--shot <name>]` |
 | `bench/layoutquality.ts` | Graph layout quality over a real vault through the production cold path; read-only, so use a copy | `bun bench/layoutquality.ts --vault <path> [--label <name>] [--out <file>]` |

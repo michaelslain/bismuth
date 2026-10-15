@@ -23,9 +23,15 @@
     /* the side gutter is the shared token (the composer's inset reads it too), so the two cannot
        drift; the shorthand above keeps its vertical literals */
     padding-inline: var(--note-gutter);
-    display: flex;
-    flex-direction: column;
-    gap: 26px;
+    /* Block flow, not a flex column: a flex column re-runs flex layout over every turn whenever the
+       streaming one grows, so a token in a 400-exchange chat cost ~5x the layout of block flow
+       (bench/chatStreamPerf.ts). The rows are spaced by the sibling margin below. */
+    display: block;
+}
+/* The 26px between rows. Every row's root is a ChatTurnColumn (or the empty slot), whose centring
+   sets only inline margins, so this block margin is the row's own spacing and nothing else's. */
+.chat-list > * + * {
+    margin-top: 26px;
 }
 /* `inset="flush"` (default is "pane") — zero INLINE padding only, so the turn column's left edge
    is the host's left edge (the daemon page aligns transcript, composer and controls on one edge).
@@ -38,7 +44,7 @@
 /* Empty transcript: the caller's `empty` JSX centred in the space above the composer (Acceptance:
    "Empty transcript: the greeting is centred in the transcript area; no dead band"). */
 .chat-empty {
-    flex: 1 1 auto;
+    min-height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;

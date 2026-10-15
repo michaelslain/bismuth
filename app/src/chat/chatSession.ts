@@ -480,9 +480,18 @@ export function createChatSession(chatId: string): ChatSession {
         return true
     }
 
+    // Every streamed token lands here. `setTranscript(produce(fn))` hands Solid back the RAW array,
+    // and setStore deep-unwraps whatever it is given — a walk over every turn and part of the chat,
+    // per token. Returning the store proxy instead ends that walk at once (it unwraps to the very
+    // array being updated), while produce still writes through Solid's setters so every read updates.
     const applyFrameToTranscript = (frame: ChatFrame) => {
         let touched = false
-        setTranscript(produce(m => void (touched = applyChatFrame(m, frame))))
+        setTranscript(raw => {
+            produce<TurnItem[]>(m => void (touched = applyChatFrame(m, frame)))(
+                raw,
+            )
+            return transcript as TurnItem[]
+        })
         if (touched) emitAppend()
     }
 
@@ -1212,8 +1221,7 @@ export function createChatSession(chatId: string): ChatSession {
             // Seed the new connector's model + effort where a fresh session reads them, then switch:
             // the first manifest enforces both (onFrame's `modeEnforced` branch), so no frame is
             // sent to a socket that is about to close.
-            if (preset.model)
-                persistModel(storage, next, chatId, preset.model)
+            if (preset.model) persistModel(storage, next, chatId, preset.model)
             if (preset.effort) persistEffort(storage, preset.effort)
             switchProvider(next)
             return

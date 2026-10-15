@@ -3,5 +3,5 @@
 .chat-turn-column {
     width: 100%;
     max-width: var(--chat-column);
-    margin: 0 auto;
+    margin-inline: auto;
 }
