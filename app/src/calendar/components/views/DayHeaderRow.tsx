@@ -15,6 +15,7 @@ export type DayHeaderRowProps = {
      *  nothing to align to and the column is empty. */
     gutter?: boolean
     class?: string
+    ref?: (el: HTMLDivElement) => void
 }
 
 /** The weekday + date header over a run of day columns, typed as ASCII cells: each header types its
@@ -23,7 +24,7 @@ export type DayHeaderRowProps = {
  *  the events time grid and the tasks strip, so the two registers can never disagree about column
  *  geometry. */
 const DayHeaderRow: Component<DayHeaderRowProps> = props => (
-    <div class={[styles.row, props.class ?? ''].filter(Boolean).join(' ')}>
+    <div ref={el => props.ref?.(el)} class={[styles.row, props.class ?? ''].filter(Boolean).join(' ')}>
         <Show when={props.gutter !== false}><DayGutter /></Show>
         <For each={props.dates}>
             {(d, i) => {

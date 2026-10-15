@@ -12,6 +12,8 @@ export type TaskDayCellProps = {
     /** `YYYY-MM-DD` */
     date: string
     tasks: PlacedTask[]
+    /** Extra class for the inline composer — the week strip pins it in view with this. */
+    composerClass?: string
 } & Omit<TaskViewProps, 'placed'>
 
 /** What one day of the tasks register holds — shared by the month grid's cell and the
@@ -53,6 +55,7 @@ const TaskDayCell: Component<TaskDayCellProps> = props => (
         </Show>
         <Show when={props.compose?.date === props.date}>
             <TaskCellComposer
+                class={props.composerClass}
                 destination={props.compose!.destination}
                 color={props.compose!.color}
                 targets={props.compose!.targets}

@@ -13,3 +13,11 @@
 /* The "add a task" button (TaskDayCell's `[data-add-task]`) is quiet at rest and shown when this
    cell is hovered or holds focus. */
 .cellInner:hover [data-add-task], .cellInner:focus-within [data-add-task] { opacity: 1; }
+/* The inline composer follows its day's chips, so in a quiet column it sits near the top of a
+   strip the busiest day has made tall. Scrolled down, it would open out of view and focusing it
+   would scroll the whole strip back up. Sticky under the header, it opens where the person is
+   looking, and focus finds it already in view. Its offset is the header plus AllDayRow's cell
+   padding-top, the band the header's heavy `=` ring hangs into, so it pins where a first chip sits;
+   the --bg keeps it legible over chips that slide under it. */
+.composer { position: sticky; top: calc(var(--strip-head-h, 0px) + var(--ascii-tile-h, var(--cell-h)) / 2 + var(--sp-1));
+    z-index: 1; background: var(--bg); }

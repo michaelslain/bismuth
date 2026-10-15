@@ -379,3 +379,76 @@ export const ComposerBelowChips: Story = {
         expect(marker.style.getPropertyValue('--task-check-color')).toBe('var(--blue)')
     },
 }
+
+/** One busy day makes the strip tall; scrolled to the bottom, a click low in a quiet column opens
+ *  that column's composer, whose place in the flow (right after its few chips) is far above the
+ *  viewport. It must open pinned in view under the header, so focusing it and committing a task
+ *  leave the scroll where the person put it instead of jumping the strip back to the top. */
+export const ComposerKeepsScroll: Story = {
+    render: () => {
+        const [openDate, setOpenDate] = createSignal<string | null>(null)
+        const busy = Array.from({ length: 60 }, (_, i) =>
+            task(`overdue errand ${i + 1}`, '2026-09-01', 8),
+        )
+        return (
+            <div style={{ width: '700px', height: '400px' }}>
+                <CalendarFrame>
+                    <TaskAllDayStrip
+                        dates={dates(7)}
+                        placed={new Map([['2026-09-09', busy]])}
+                        onToggleTask={() => {}}
+                        onOpenTask={() => {}}
+                        compose={{
+                            date: openDate(),
+                            destination: 'General Tasks',
+                            targets: [],
+                            target: '',
+                            setTarget: () => {},
+                            open: d => setOpenDate(d),
+                            commit: () => {},
+                            cancel: () => setOpenDate(null),
+                        }}
+                    />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const frame = () => new Promise(r => requestAnimationFrame(() => r(null)))
+        const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="task-day-cell"]')]
+        // the strip is the ancestor that scrolls: overflow auto AND a box (AllDayRow's
+        // `display: contents` wrapper also says overflow auto, but has no box)
+        let strip = cells[0].parentElement!
+        while (getComputedStyle(strip).overflowY !== 'auto' || strip.clientHeight === 0)
+            strip = strip.parentElement!
+        expect(strip.scrollHeight).toBeGreaterThan(strip.clientHeight * 2)
+        strip.scrollTop = strip.scrollHeight
+        await frame()
+        const before = strip.scrollTop
+        expect(before).toBeGreaterThan(0)
+
+        const quiet = cells[2]
+        const r = quiet.getBoundingClientRect()
+        const sr = strip.getBoundingClientRect()
+        await userEvent.pointer({
+            keys: '[MouseLeft]',
+            target: quiet,
+            coords: { clientX: r.left + r.width / 2, clientY: sr.bottom - 20 },
+        })
+        await frame()
+        await frame()
+        const input = quiet.querySelector<HTMLElement>('[data-testid="task-cell-composer-input"]')!
+        expect(input).not.toBeNull()
+        expect(document.activeElement).toBe(input)
+        expect(strip.scrollTop, 'opening scrolled the strip').toBe(before)
+        // pinned in view, under the sticky header rather than behind it
+        const head = canvasElement.querySelector<HTMLElement>('[data-testid="day-header"]')!
+        const ir = input.getBoundingClientRect()
+        expect(ir.top).toBeGreaterThanOrEqual(head.getBoundingClientRect().bottom)
+        expect(ir.bottom).toBeLessThanOrEqual(sr.bottom)
+
+        await userEvent.type(input, 'buy stamps{Enter}')
+        await frame()
+        expect(strip.scrollTop, 'committing scrolled the strip').toBe(before)
+    },
+}

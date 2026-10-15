@@ -1,4 +1,4 @@
-import type { Component } from 'solid-js'
+import { createSignal, onCleanup, type Component } from 'solid-js'
 import { todayISO } from '../../../../../core/src/dates'
 import { readTaskDrop } from '../../taskDrag'
 import DayHeaderRow from './DayHeaderRow'
@@ -24,9 +24,22 @@ export type TaskAllDayStripProps = {
  */
 export const TaskAllDayStrip: Component<TaskAllDayStripProps> = props => {
     const today = todayISO(new Date())
+    // The sticky header's height, so a pinned composer sits just under it (see `.composer`).
+    const [headH, setHeadH] = createSignal(0)
+    const watchHead = (el: HTMLDivElement) => {
+        const ro = new ResizeObserver(() => setHeadH(el.offsetHeight))
+        ro.observe(el)
+        onCleanup(() => ro.disconnect())
+    }
     return (
-        <div class={styles.strip}>
-            <DayHeaderRow class={styles.head} dates={props.dates} today={today} gutter={false} />
+        <div class={styles.strip} style={{ '--strip-head-h': `${headH()}px` }}>
+            <DayHeaderRow
+                ref={watchHead}
+                class={styles.head}
+                dates={props.dates}
+                today={today}
+                gutter={false}
+            />
             <AllDayRow
                 fill
                 gutter={false}
@@ -56,6 +69,7 @@ export const TaskAllDayStrip: Component<TaskAllDayStripProps> = props => {
                             onSetTaskStatus={props.onSetTaskStatus}
                             onRescheduleTask={props.onRescheduleTask}
                             compose={props.compose}
+                            composerClass={styles.composer}
                             colorFor={props.colorFor}
                         />
                     </div>
