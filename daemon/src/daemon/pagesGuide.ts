@@ -32,7 +32,7 @@ actions:
     model: sonnet                           # optional; omit => sendMessage's haiku default
     timeout: 300                            # optional session timeout, seconds (default 300)
     prompt: |                               # PRESENT => "approve" (you get re-invoked to act).
-      The user approved these replies; the body below reflects their edits. Send each
+      The user approved these replies; the body below reflects any changes they asked for. Send each
       "## Reply to ..." section (To/Subject/Body) exactly as written using the configured
       mail tool. Do not alter wording. Report which were sent.
   - id: discard
@@ -53,9 +53,10 @@ Hi Jane, ...
   (a fresh, isolated session, never your persistent thread) once the user presses it; an action
   with no \`prompt\` is resolved instantly with no round-trip back to you at all. Don't add both a
   "just log it" action and a prompt — if nothing needs doing, omit \`prompt\`.
-- **The body is the editable draft and the source of truth.** The user can edit it in the normal
-  editor before pressing an action — write it so your \`prompt\` says "act on the body below
-  exactly as edited", never re-derive the content yourself.
+- **The body is the draft and the source of truth.** The user reads it as a message and changes it
+  by replying in words ("make it sunday instead"); the daemon rewrites the body before the action
+  runs. Write your \`prompt\` so it says "act on the body below exactly as it stands", never
+  re-derive the content yourself.
 - **\`deliverAt\` controls WHEN the user is nagged, not whether the page exists.** Omit it to
   surface the page immediately; set a future ISO instant to hold it (e.g. "don't bug me about
   this until end of day").

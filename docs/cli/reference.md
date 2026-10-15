@@ -27,6 +27,7 @@ Most commands need a vault. The vault comes from `--vault <dir>`, then the `BISM
 | `--json` | `backends`, `backends setup-free`, `doctor` | Prints JSON instead of a readable report. |
 | `--json '<body>'` | `api`, `row add`, `row update`, `calendar` writes | A JSON object value for the command's body. A different flag from the one above. |
 | `BISMUTH_DAEMON_DIR` | `daemon` | Machine-level daemon directory. Default `~/.bismuth/daemon`. Per-vault crons and processes live under `<vault>/.daemon` and are addressed with `--vault`. |
+| `BISMUTH_EMAIL_CONFIG` | `daemon email` | The email bridge's mail-account file. Default `~/.bismuth/email.json`. |
 | `BISMUTH_MEMORY_DIR` | `memory` | Memory directory when `--memory` is absent. The app's terminal tabs set it. |
 | `BISMUTH_DOCS_DIR` | `docs` | Directory of doc pages to read. Falls back to the repo's `docs/`, then `~/.bismuth/docs`. |
 | `BISMUTH_INSTALL_SRC` | `install` | Source directory when `--src` is absent. |
@@ -75,7 +76,7 @@ Every command prints through one helper.
 | A string | The string as-is, such as `ok` or `wrote out.pdf`. |
 | An object or array | One line of JSON, or two-space indented with `--pretty`. |
 
-Errors print `error: <message>` to stderr and exit `1`. `base validate`, `theme validate`, `daemon stop`, `daemon restart` and `backends setup-free` also exit `1` when their result reports failure, after printing it.
+Errors print `error: <message>` to stderr and exit `1`. `base validate`, `theme validate`, `daemon stop`, `daemon restart`, `daemon email status`, `daemon email test` and `backends setup-free` also exit `1` when their result reports failure, after printing it.
 
 ## Use the CLI as an AI agent
 
@@ -286,10 +287,15 @@ Setup is in [daemon setup](../daemon/setup.md) and the file formats in [crons an
 | `daemon process create` | `<name...> --vault <dir>` | Creates a background process from a template, disabled. | no |
 | `daemon process delete` | `<name...> --vault <dir>` | Deletes a process definition. | no |
 | `daemon process toggle` | `<name> --vault <dir> [--off]` | Sets the process's `enabled` frontmatter. | no |
+| `daemon email init` | none | Writes the mail-account template to `~/.bismuth/email.json`, readable by your user only. Never overwrites. | no |
+| `daemon email status` | none | Prints the mail account without passwords, or the first problem with it. Exits `1` on a problem. | no |
+| `daemon email test` | none | Logs in to the SMTP and IMAP servers and prints whether each worked. Sends nothing. Exits `1` on failure. | no |
 
 `create` and `delete` join all positionals into the name, so a multi-word name needs no quotes. The name is a display name; the file is its slug. `create` refuses an empty slug and an existing file.
 
 `cron run` drops a trigger file the daemon polls, so it succeeds (prints `ok`) even when the daemon is not running, and nothing happens until it is. `cron delete` refuses a cron the daemon has recorded as running.
+
+`daemon email` manages the mail account of the [inbox by email](../daemon/email.md) bridge.
 
 `daemon stop` and `daemon restart` call the daemon's service control directly, so they need no server. An agent may run the whole `daemon` group.
 
@@ -524,6 +530,7 @@ Manages the daemon inbox, the pages under `<vault>/.daemon/pages`. All four comm
 | `page list` | `[--vault <dir>] [--retention-days <n>]` | Lists pages, each merged with its state sidecar. Retention defaults to 7 days. | no |
 | `page create` | `<slug> [--title <t>] [--body <md>] [--actions '<json>'] [--source <s>] [--deliver-at <iso>] [--vault <dir>]` | Creates a page with validated frontmatter. `--actions` is a JSON array of action buttons. | no |
 | `page resolve` | `<page-path> <actionId> [--vault <dir>]` | Presses an action. `approve` makes the daemon run the page's prompt; `dismiss` resolves it with no daemon. | no |
+| `page reply` | `<page-path> <text...> [--vault <dir>]` | Answers a page in plain words. The daemon presses the button the reply means, rewriting the draft first if asked, or asks a question back. | no |
 | `page mark-failed` | `<page-path> [--vault <dir>]` | Forces a stuck `working` page to `failed`. | no |
 
 ## prop

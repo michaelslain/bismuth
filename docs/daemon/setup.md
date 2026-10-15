@@ -89,8 +89,8 @@ Edit the note: set `schedule: 0 8 * * 1-5`, replace the comment with your prompt
 The daemon files an inbox page when something needs you. A toast reads "N pages ready for review", and the inbox section of the daemon page lists each page.
 
 1. Open the daemon page and click the page in the **inbox** section.
-2. Read the page and edit its body if you want. The body is the draft the daemon acts on.
-3. Press one of the buttons at the bottom. An approve button makes the daemon act on the page in a fresh session; a dismiss button closes the page without involving the daemon. The bar shows `working…` until the daemon finishes, then a result.
+2. Read the page. Its body is the draft the daemon acts on; to change it, say what to change at the reply prompt under it, and the daemon rewrites it.
+3. Press one of the buttons at the bottom. An approve button makes the daemon act on the page in a fresh session; a dismiss button closes the page without involving the daemon. The page shows `working…` until the daemon finishes, then a result.
 
 A page that fails keeps its buttons, so pressing again retries. The `[ archive ]` control on an inbox row deletes a page without answering it. Resolved pages are removed after `daemon.inboxRetentionDays` days. [Pages](pages.md) has the file format and the full lifecycle.
 
@@ -130,6 +130,8 @@ These `.settings` keys control the daemon. Every key is per vault; [the settings
 | `daemon.inheritUserMcp` | boolean | `false` | Lets daemon sessions use your own `claude` MCP servers and plugins. |
 | `daemon.recall.enabled` | boolean | `true` | Automatic memory injection into agent sessions. |
 | `daemon.recall.midTurn` | boolean | `true` | Also recall after each batch of tool calls. |
+| `daemon.email.enabled` | boolean | `false` | Mail new inbox pages to you and read your replies. See [inbox by email](email.md). |
+| `daemon.email.address` | address | empty | Fresh mail to this address becomes a request page. |
 
 Matching notes by meaning, not only by words, is the separate `embeddings.enabled` setting (boolean, default `false`). [The settings reference](../settings/reference.md#embeddings) has the cost.
 

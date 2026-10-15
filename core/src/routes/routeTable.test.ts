@@ -69,6 +69,7 @@ const EXPECTED = [
     'POST /daemon/pages',
     'POST /daemon/pages/archive',
     'POST /daemon/pages/mark-failed',
+    'POST /daemon/pages/reply',
     'POST /daemon/pages/resolve',
     'POST /daemon/process/delete',
     'POST /daemon/process/toggle',

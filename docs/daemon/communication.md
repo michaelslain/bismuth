@@ -149,7 +149,7 @@ bismuth daemon owner <deviceId>        # claim a device as owner
 bismuth daemon owner --pretty          # read the current owner
 ```
 
-`daemon owner <deviceId>` accepts only a device that has heartbeated. The command **Set daemon owner device…** opens the same choice in the app. A device id is the UUID in `~/.bismuth/daemon/device-id`, and the label is the machine's hostname. An inbox page approved on a non-owner device does nothing; the page's action bar warns when that is the case.
+`daemon owner <deviceId>` accepts only a device that has heartbeated. The command **Set daemon owner device…** opens the same choice in the app. A device id is the UUID in `~/.bismuth/daemon/device-id`, and the label is the machine's hostname. An inbox page approved on a non-owner device does nothing; the page warns above its buttons when that is the case.
 
 ## How it works
 

@@ -140,6 +140,10 @@ export interface Settings {
         notifications: boolean // desktop notification per new inbox page + per notify:true cron run (off: none for this vault)
         backend: string // which agent CLI runs this vault's brain: "claude" (default) | "codex" — a REQUEST; resolveDaemonBackend gates it on the vault's visibility settings
         inheritUserMcp: boolean // daemon sessions also get the machine's own user-scope MCP servers + plugins (off: bismuth only)
+        email: {
+            enabled: boolean // bridge the daemon inbox to email: pages mailed out, replies press buttons (account in ~/.bismuth/email.json)
+            address: string // address whose fresh mail becomes a new inbox page ('' = replies only)
+        }
         recall: {
             enabled: boolean // master switch for every automatic memory injection (prompt, mid-turn, session start, subagent); needs daemon.enabled
             midTurn: boolean // one recall per agent tool batch

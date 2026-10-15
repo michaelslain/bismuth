@@ -613,6 +613,18 @@ export const SETTINGS_SCHEMA: Schema = {
             default: false,
             doc: "Let this vault's daemon sessions use the MCP servers and plugins installed for your own `claude` CLI (user scope: ~/.claude.json servers + ~/.claude/settings.json plugins), on top of the always-present vault-targeted `bismuth` server. Off by default because a cron runs UNATTENDED with permissions bypassed and no confirmation prompt — turning this on hands it every tool those servers expose. Project- and local-scope settings are never loaded regardless: the session's cwd is the vault root, so a `.mcp.json` sitting in your notes would otherwise auto-execute.",
         },
+        email: object({
+            enabled: {
+                type: 'boolean',
+                default: false,
+                doc: "Bridge this vault's daemon inbox to email: each new inbox page is emailed to you, a reply whose first line names a button presses it (lines under it replace the draft first), and the result is mailed back in the same thread. Needs the mail account in ~/.bismuth/email.json (bismuth daemon email init) and daemon.enabled. Only the owner device sends and reads mail.",
+            },
+            address: {
+                type: 'string',
+                default: '',
+                doc: 'The address that turns a fresh email into a new inbox page for this vault, e.g. you+bismuth@gmail.com. Only mail from the account owner (the `to` address in ~/.bismuth/email.json) counts, and the page still waits for your reply or click before the daemon acts on it. Empty: only replies to inbox-page emails are read.',
+            },
+        }),
         recall: object({
             enabled: {
                 type: 'boolean',

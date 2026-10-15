@@ -29,7 +29,7 @@ Pressing **send** makes the daemon run the action's `prompt` followed by the pag
 
 | Key | Type | Effect |
 |---|---|---|
-| `type` | `daemon-page` | Marks the note as a page, so it opens with an action bar |
+| `type` | `daemon-page` | Marks the note as a page, so it opens as a transcript with a reply prompt |
 | `title` | text | The inbox row and the page heading; defaults to the file name |
 | `createdAt` | ISO instant | When the page was written |
 | `deliverAt` | ISO instant | Hold the page until then; omit it to show the page at once |
@@ -47,7 +47,7 @@ Each entry in `actions` has these keys.
 | `model` | model name | `haiku` | Model for the approved session. Set a stronger one for consequential actions |
 | `timeout` | seconds | 300 | Session limit for the approved action |
 
-An action missing `id` or `label` is skipped, and the page keeps its other buttons. The body is the editable draft and the source of truth: write `prompt` so it says to act on the body as edited. The daemon seeds `.daemon/PAGES.md`, a short authoring guide that any session can read to learn this format.
+An action missing `id` or `label` is skipped, and the page keeps its other buttons. The body is the draft and the source of truth: you change it by replying, the daemon rewrites it before acting, so write `prompt` so it says to act on the body as it stands. The daemon seeds `.daemon/PAGES.md`, a short authoring guide that any session can read to learn this format.
 
 ## Create a page from the CLI
 
@@ -66,6 +66,7 @@ It prints `{"path":".daemon/pages/reply-drafts.md","slug":"reply-drafts"}`. The 
 |---|---|
 | `bismuth page list --vault <vault>` | Every page with its status |
 | `bismuth page resolve <path> <actionId> --vault <vault>` | Press a button |
+| `bismuth page reply <path> <text...> --vault <vault>` | Answer in plain words, as the reply prompt does |
 | `bismuth page mark-failed <path> --vault <vault>` | Force a stuck page to `failed` |
 
 The same operations are the `page_list`, `page_create` and `page_resolve` tools in [the MCP daemon tools](../mcp/daemon-tools.md).
@@ -80,6 +81,8 @@ While `daemon.enabled` is on, the app reads the inbox at launch, every 30 second
 
 - In the app. A toast reads "N pages ready for review" (or the page's title when there is one) with a **Review** action that opens the daemon page, and a badge on the inbox toolbar button counts due pages. The inbox never opens by itself at launch.
 - From the OS. When a cron run ends and a page file exists that did not exist when it started, the daemon posts one notification titled `<daemon name>: <page title>` with the text `New in your inbox`. A cron with `notify: true` already sends its own notification and gets no per-page one. A page whose `source` names a different cron is left to that cron's run.
+
+- By email, when the vault has `daemon.email.enabled` on. You answer by replying in your own words; see [inbox by email](email.md).
 
 The notification comes from the daemon, not from the model, so a cron needs no instruction to send it.
 
@@ -99,14 +102,23 @@ The daemon reads the key each time it would post, so the change applies to the n
 
 ## Approve, dismiss or retry
 
-Open a page from the inbox. Its action bar is pinned under the editor. Edit the body if you want, then press a button.
+Open a page from the inbox. It reads as a transcript in one scrolling column: the title as the subject, then the body as the first message under a ruled head line (`── daemon // <source> ──── 2h ago`), then each reply and question as a message of the same shape. Under the last message come the page's buttons as bracket chips and a `>` reply prompt. The draft is read-only like every message; to change it, say so at the prompt. Then press a button, or let the daemon press the one your reply means.
 
-1. The app saves the page's current text to disk first, so the daemon acts on what is on screen.
-2. A dismiss button marks the page `dismissed`. Nothing else happens.
-3. An approve button marks it `working`, and the daemon runs the action within 5 seconds in a fresh session with the model and timeout from the action. The prompt is the action's `prompt`, a blank line, `---`, then the page body.
-4. When the session ends, the daemon writes `done` or `failed` with a note of up to 500 characters. The bar shows the status as `waiting on you`, `working…`, `done // <note>`, `failed // <note>` or `dismissed // 5m ago`.
+1. A dismiss button marks the page `dismissed`. Nothing else happens.
+2. An approve button marks it `working`, and the daemon runs the action within 5 seconds in a fresh session with the model and timeout from the action. The prompt is the action's `prompt`, a blank line, `---`, then the page body.
+3. When the session ends, the daemon writes `done` or `failed` with a note of up to 500 characters. A page that takes no reply ends with one status line instead of the chips and prompt: `working…`, `done // <note>` or `dismissed // 5m ago`. Why a page failed sits on a line above the chips.
 
 Pressing a button on a page that is `working`, `done` or `dismissed` does nothing and shows "Already resolved". The daemon, never the model, writes the final status.
+
+## Answer a page in your own words
+
+A pending page's `>` prompt takes your answer in your own words. Type what you want, as you would say it: "yes, but tell Jane Q3 is fine", "no", "make it shorter first". Enter sends and Shift+Enter starts a new line, as the hint under the prompt says (it names the `ui-confirm` binding); a **send** button also appears once you type. Your reply joins the thread as the newest message, the conversation so far with each reply marked `by email` when it came by mail, and the status line shows `reading your reply…` while the daemon reads it. Then one of these happens:
+
+- The button you meant is pressed, exactly as if you clicked it.
+- The draft is rewritten with the changes you asked for, then the button is pressed.
+- A question from the daemon joins the thread as the newest message, and the page waits on you again. Answer it at the same prompt.
+
+A reply that is exactly a button's id or label is pressed at once, with no model call. Otherwise one short model call decides which button you mean; it acts on nothing itself, and a decision naming a button the page does not have becomes a question. A failed page takes a reply too, which retries it. The same reply arrives from `bismuth page reply` and from [email](email.md).
 
 ### Retry a failed page
 
@@ -114,7 +126,7 @@ A `failed` page keeps its buttons. Pressing one again runs the approval again fr
 
 ### When a page is stuck on working
 
-A page that has read `working` for more than 10 minutes means the daemon probably died mid-run. The bar then offers **mark failed**, which sets `failed` without the daemon, and a stuck page's buttons stay hidden until you use it. If this device is not the owner, the bar warns that approving here will not fire: only the owner device's daemon acts. See [communication](communication.md#which-device-runs-the-daemon).
+A page that has read `working` for more than 10 minutes means the daemon probably died mid-run. The status line then offers **mark failed**, which sets `failed` without the daemon, and a stuck page's buttons stay hidden until you use it. If this device is not the owner, a line above the buttons warns that approving here will not fire, and the reply box is hidden: only the owner device's daemon acts. See [communication](communication.md#which-device-runs-the-daemon).
 
 If the daemon had already written `done` or `failed` by the time you mark it, the daemon's result stands.
 
@@ -126,7 +138,7 @@ The `[ archive ]` control on an inbox row deletes the page and its status file, 
 
 ### Two files per page
 
-A page's status lives in a JSON sidecar, `pages/.state/<slug>.json`, never in the page's own frontmatter. The editor's autosave writes the whole page, so a daemon write into the same file while you edit the body would be overwritten. The sidecar holds `status` (`pending`, `working`, `done`, `failed` or `dismissed`), `pressedAction`, `pressedAt`, the resolved `prompt`, `model`, `timeoutSecs`, `daemonNote` and `completedAt`. A page with no sidecar reads as `pending`. Both the `.state/` and `.triggers/` folders start with a dot, so they stay out of the file tree and their churn never marks the tree dirty. Only the page `.md` is visible to the watcher.
+A page's status lives in a JSON sidecar, `pages/.state/<slug>.json`, never in the page's own frontmatter. The editor's autosave writes the whole page, so a daemon write into the same file while you edit the body would be overwritten. The sidecar holds `status` (`pending`, `working`, `done`, `failed` or `dismissed`), `pressedAction`, `pressedAt`, the resolved `prompt`, `model`, `timeoutSecs`, `daemonNote` and `completedAt`, plus `reply` (a plain-language reply waiting to be read) and `thread` (every reply and question, each with `from`, `text`, `at` and, for a reply, `via`). A page with no sidecar reads as `pending`. Both the `.state/` and `.triggers/` folders start with a dot, so they stay out of the file tree and their churn never marks the tree dirty. Only the page `.md` is visible to the watcher.
 
 ### The press protocol
 
@@ -146,8 +158,15 @@ On macOS, `notify` runs `bismuth-notify`, a Swift helper (`app/src-tauri/notifie
 
 The helper exits `0` once posted, `2` when the user denied Bismuth, and `1` on any other failure, including a permission prompt left unanswered for six hours. The helper waits that long because exiting while the prompt is up gets Bismuth recorded as not allowed, which silences every later notification. `notify` falls back to `osascript` on `1` or a missing pointer, and on `2` posts nothing. On Linux it runs `notify-send`.
 
+### Read a reply in plain words
+
+1. The app calls `POST /daemon/pages/reply` with the page path and text. `replyToPage` in `core/src/daemonPages.ts` refuses a page that is `working`, `done` or `dismissed` with `alreadyResolved`; otherwise it writes `working` with the `reply`, appends it to the `thread` and drops the trigger.
+2. `processPageTriggers` sees a `working` sidecar with a `reply` and no `prompt`, and calls `readReply` in `daemon/src/daemon/pages.ts`.
+3. `exactAction` in `daemon/src/daemon/pageReply.ts` matches a reply that is a button's id or label. Anything else goes to `buildReplyPrompt`, sent to `sonnet` in a fresh session with a 120-second limit, and `parseDecision` validates the JSON answer against the page's buttons.
+4. A question is appended to the thread and the page returns to `pending`. A press writes the rewritten draft first with `replaceBody`, which keeps the frontmatter byte for byte, sets the page to `pending` and calls `resolvePage`, so it then runs the press protocol.
+
 ### Where the inbox shows
 
-A `type: daemon-page` note opens in `InboxPageView` (`app/src/InboxPageView.tsx`), the standard editor with the action bar under it. The inbox box on the daemon page is `DaemonInbox`, a flat list of due pages, then failed, then scheduled. The sidebar toolbar button `open-inbox` is hidden while the daemon is off.
+A `type: daemon-page` note opens in `InboxPageView` (`app/src/InboxPageView.tsx`), one scrolling column holding the subject, `InboxMessageHeader` (the `InboxMessageHead` ruled line `InboxThread` uses per message), the standard editor with `fitContent`, `hideTitle` and `readOnly` so it grows to its text and scrolls with the replies, `InboxThread`, and `InboxActionBar` (the chips, then `InboxReplyField`, the prompt). The inbox box on the daemon page is `DaemonInbox`, a flat list of due pages, then failed, then scheduled. The sidebar toolbar button `open-inbox` is hidden while the daemon is off.
 
-Source: `core/src/daemonPages.ts`, `core/src/routes/daemon.ts`, `core/src/notifierPointer.ts`, `daemon/src/daemon/{pages,pagesGuide,cron}.ts`, `daemon/src/lib/platform.ts`, `app/src-tauri/notifier/main.swift`, `cli/src/commands/page.ts`, `app/src/{InboxPageView,InboxActionBar,inboxPageMeta}.ts*`, `app/src/daemon/{DaemonInbox,InboxRow,daemonInboxApi,daemonInboxLogic}.ts*`
+Source: `core/src/daemonPages.ts`, `core/src/routes/daemon.ts`, `core/src/notifierPointer.ts`, `daemon/src/daemon/{pages,pageReply,pagesGuide,cron}.ts`, `daemon/src/lib/platform.ts`, `app/src-tauri/notifier/main.swift`, `cli/src/commands/page.ts`, `app/src/{InboxPageView,InboxMessageHeader,InboxMessageHead,InboxActionBar,InboxThread,InboxReplyField,inboxPageMeta}.ts*`, `app/src/daemon/{DaemonInbox,InboxRow,daemonInboxApi,daemonInboxLogic}.ts*`

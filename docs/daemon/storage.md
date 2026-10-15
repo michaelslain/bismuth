@@ -30,7 +30,7 @@ The daemon keeps its state in two places: one machine directory shared by every 
 | `logs/vault-registry.log` | text | A line each time a vault is dropped from `vaults.json` |
 | `.claude-bot-migrated` | vault path | The vault that received a copy of a standalone `~/.claude-bot` brain; see [migrating](../overview/migrating.md) |
 
-The service definition itself lives outside this directory: see [the service files](lifecycle.md#where-the-service-files-and-logs-are). The binary is `~/.bismuth/bin/bismuth-daemon`, and the install marker is `~/.bismuth/.daemon-installed`.
+The service definition itself lives outside this directory: see [the service files](lifecycle.md#where-the-service-files-and-logs-are). The binary is `~/.bismuth/bin/bismuth-daemon`, and the install marker is `~/.bismuth/.daemon-installed`. The email bridge's mail account is `~/.bismuth/email.json` ([inbox by email](email.md#account-keys)).
 
 ## Vault folder
 
@@ -50,6 +50,7 @@ The service definition itself lives outside this directory: see [the service fil
 | `pages/<slug>.md` | frontmatter plus body | One inbox page. See [pages](pages.md) |
 | `pages/.state/<slug>.json` | JSON | A page's status, kept apart from the page so an edit cannot clobber it |
 | `pages/.triggers/<slug>` | empty file | A pending "run the approved action" request |
+| `pages/.email/state.json` | JSON | Which pages the email bridge mailed, under which Message-ID. See [inbox by email](email.md#how-it-works) |
 | `memory/<name>.md`, `memory/<folder>/<name>.md` | markdown | The memory graph. See [memory](memory.md) |
 | `logs/activity-YYYY-MM-DD.jsonl` | JSON lines | The activity log, below |
 | `logs/<process>.{stdout,stderr}.log` | text | A background process's output, appended |

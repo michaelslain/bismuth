@@ -48,6 +48,7 @@ import {
     type VaultContext,
 } from '../lib/config.ts'
 import stampConsole from '../lib/stampConsole'
+import { startEmailBridge, stopEmailBridge } from './emailBridge'
 
 // ONE machine process, many brains. Machine-level identity/runtime state lives in
 // MACHINE_DIR; each enabled vault's brain (crons, processes, session) is booted
@@ -117,6 +118,7 @@ async function shutdown(signal: string): Promise<void> {
         reconcileInterval = null
     }
     stopCronScheduler()
+    stopEmailBridge()
     // stopProcessTriggers() + stopAllFileWatches() + stopProcesses() are global — they tear down
     // every vault's trigger loops, file watchers, + managed children in one pass.
     stopProcessTriggers()
@@ -270,6 +272,7 @@ async function main(): Promise<void> {
     // vault on each tick — it re-reads loadEnabledVaults(), so newly enabled vaults
     // get their crons fired without a restart).
     startCronScheduler()
+    startEmailBridge()
     log('Cron scheduler started')
 
     // Reconcile per-vault process supervision + sessions on a timer so the set of

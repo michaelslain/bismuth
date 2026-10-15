@@ -291,11 +291,15 @@ When `enabled` is off the daemon is dormant: its state stays on disk and the `.d
 | `inheritUserMcp` | boolean | `false` | | Let daemon sessions use the MCP servers and plugins of your own `claude` CLI. |
 | `recall.enabled` | boolean | `true` | | Master switch for automatic memory injection into agent sessions. Needs `daemon.enabled`. |
 | `recall.midTurn` | boolean | `true` | | Also recall memory once per tool batch inside a long turn. |
+| `email.enabled` | boolean | `false` | | Mail this vault's new inbox pages to you; a reply naming a button presses it. Needs `daemon.enabled` and `~/.bismuth/email.json`. |
+| `email.address` | string | `''` | | Fresh mail from you to this address becomes a request page. Empty: only replies are read. |
 
 `backend` is a request. For a vault with even one hidden or chat-only note, a non-Claude backend is refused and the brain runs on `claude`, with the reason logged, because only Claude Code can enforce the visibility gate. The `backend` enum lists the backends that can run a daemon at all.
 
 `inheritUserMcp` is off by default because a cron runs unattended with permissions bypassed: turning it on hands the daemon every tool those servers expose.
 User-scope servers (`~/.claude.json`) and plugins (`~/.claude/settings.json`) are loaded; project and local scope never are, because the session's working directory is the vault and a `.mcp.json` in your notes would otherwise run on its own.
+
+`email.enabled` and `email.address` are described in [inbox by email](../daemon/email.md); only the owner device sends and reads mail.
 
 `recall.midTurn` costs one extra lookup per tool batch. Both `recall` switches need `daemon.enabled`; meaning-based matching in recall is the separate [`embeddings.enabled`](#embeddings) switch.
 

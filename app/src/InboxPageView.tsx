@@ -1,18 +1,20 @@
 // app/src/InboxPageView.tsx
-// Chrome for a `type: daemon-page` note (core/src/daemonPages.ts): a ViewBar identity header on
-// top, the Editor body filling the space between (scrolls on its own), and an action bar — the
-// page's actions[] as buttons, or a status phrase once there's nothing left to press
-// — PINNED to the bottom of the pane, always visible regardless of scroll position. Chrome, not
-// inline markdown: keeps the daemon-authored controls physically separate from the user's
-// editable prose.
-import { createResource, createSignal, Show } from 'solid-js'
+// Chrome for a `type: daemon-page` note (core/src/daemonPages.ts), read like a terminal
+// transcript: a ViewBar on top, then ONE scrolling column — the page title as the subject, the
+// page's draft as the first message (a ruled head line over the read-only Editor, which grows to
+// fit instead of scrolling itself), every reply and question after it as messages of the same
+// shape, then the page's buttons as chips and the `>` reply prompt right under the last message.
+// Chrome, not inline markdown: keeps the daemon-authored controls apart from the draft.
+import { createEffect, createResource, createSignal, on, Show } from 'solid-js'
 import { Editor } from './Editor'
 import { api } from './api'
-import { flushEditorByPath } from './editorRegistry'
 import { pushToast } from './ui/ToastHost'
 import ViewBar, { Crumb } from './ui/ViewBar'
 import Readout from './ui/Readout'
 import InboxActionBar from './InboxActionBar'
+import InboxMessageHeader from './InboxMessageHeader'
+import InboxThread from './InboxThread'
+import Heading from './ui/Heading'
 import { inboxPageReadouts } from './inboxPageMeta'
 import { inboxPages, refreshDaemonPages } from './daemon/daemonInboxApi'
 import type { NoteCandidate } from './editor/wikilink'
@@ -59,11 +61,6 @@ export function InboxPageView(props: {
     async function press(actionId: string): Promise<void> {
         setPressingId(actionId)
         try {
-            // Flush THIS page's buffer to disk FIRST, so the daemon acts on exactly what's on
-            // screen — not a stale, still-debounced autosave. Scoped by path: in a split layout the
-            // last-focused view can be a DIFFERENT note, so a focused-editor flush would persist the
-            // wrong buffer and skip this one.
-            await flushEditorByPath(props.path)
             const res = await api.resolveDaemonPage(props.path, actionId)
             if (res.alreadyResolved) pushToast('Already resolved')
             await refreshDaemonPages()
@@ -73,6 +70,31 @@ export function InboxPageView(props: {
             setPressingId(null)
         }
     }
+
+    async function reply(text: string): Promise<void> {
+        setPressingId('reply')
+        try {
+            const res = await api.replyToDaemonPage(props.path, text)
+            if (res.alreadyResolved) pushToast('Already resolved')
+            await refreshDaemonPages()
+        } catch (e) {
+            pushToast(`Couldn't send the reply: ${(e as Error).message}`)
+        } finally {
+            setPressingId(null)
+        }
+    }
+
+    // A new message lands at the end of the thread: bring it into view, like a mail client does.
+    let scroller: HTMLDivElement | undefined
+    createEffect(
+        on(
+            () => page()?.thread?.length ?? 0,
+            (n, prev) => {
+                if (scroller && n > (prev ?? 0) && prev !== undefined)
+                    scroller.scrollTop = scroller.scrollHeight
+            },
+        ),
+    )
 
     async function markFailed(): Promise<void> {
         try {
@@ -105,7 +127,17 @@ export function InboxPageView(props: {
                     </Show>
                 }
             />
-            <div class={styles['inbox-page-body']}>
+            <div class={styles['inbox-page-body']} ref={scroller}>
+                <Show when={page()?.title}>
+                    {t => (
+                        <Heading level={1} register="chrome" class={styles.subject}>
+                            {t()}
+                        </Heading>
+                    )}
+                </Show>
+                <Show when={page()} keyed>
+                    {p => <InboxMessageHeader page={p} />}
+                </Show>
                 <Editor
                     path={props.path}
                     initialText={props.initialText}
@@ -113,29 +145,32 @@ export function InboxPageView(props: {
                     noteNames={props.noteNames}
                     memoryNames={props.memoryNames}
                     tagNames={props.tagNames}
-                    // THE SUBJECT LINE. Without this the heading falls back to the
-                    // filename, which for a daemon page is a slug — so the inbox row read
-                    // "3 reply drafts ready" and the page you landed on read
-                    // "reply-drafts". Same page, two names. `page()?.title` is the exact
-                    // field the inbox row renders, so the list and the page now agree.
-                    // Passed as an accessor because `page()` comes from a poll that can
-                    // settle after this mounts. READ-ONLY because the daemon owns the
-                    // title: it lives in the file's frontmatter, and the editable title
-                    // renames the FILE, which would desync the slug from the frontmatter
-                    // and break the daemon's own lookup by path.
-                    title={() => page()?.title}
-                    titleReadOnly
+                    // The subject heads the whole thread above, so the editor shows no title of
+                    // its own, and it grows to fit so the replies after it scroll with it. Read-only
+                    // like every other message: the draft changes by replying ("make it sunday"),
+                    // and the daemon's rewrite reaches the buffer over SSE.
+                    hideTitle
+                    fitContent
+                    readOnly
                     hideFrontmatter
                 />
+                <Show when={page()?.thread?.length}>
+                    <InboxThread
+                        class={`${styles.column} ${styles['after-draft']}`}
+                        entries={page()?.thread ?? []}
+                    />
+                </Show>
+                <InboxActionBar
+                    class={`${styles.column} ${styles.tail} ${page()?.thread?.length ? '' : styles['after-draft']}`}
+                    page={page()}
+                    notOwner={notOwner()}
+                    stuck={stuck()}
+                    pressingId={pressingId()}
+                    onPress={press}
+                    onReply={reply}
+                    onMarkFailed={markFailed}
+                />
             </div>
-            <InboxActionBar
-                page={page()}
-                notOwner={notOwner()}
-                stuck={stuck()}
-                pressingId={pressingId()}
-                onPress={press}
-                onMarkFailed={markFailed}
-            />
         </div>
     )
 }

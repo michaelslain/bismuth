@@ -1,0 +1,12 @@
+/* app/src/InboxMessageHeader.module.css
+   The draft's sender line, under the subject and on top of the draft: no rule under it, since it
+   belongs to the words below, the way each reply's head sits on its words. */
+.inbox-message-header {
+  box-sizing: border-box;
+  padding: var(--sp-6) var(--sp-6) var(--sp-2);
+}
+.column {
+  width: 100%;
+  max-width: var(--note-column);
+  margin: 0 auto;
+}

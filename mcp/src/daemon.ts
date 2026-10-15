@@ -176,7 +176,7 @@ export const daemonTools = [
                 body: {
                     type: 'string',
                     description:
-                        'Optional markdown body (the editable draft / question).',
+                        'Optional markdown body (the draft / question).',
                 },
                 actions: {
                     type: 'array',

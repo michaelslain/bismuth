@@ -43,6 +43,7 @@ The `page` group works on the daemon inbox with no running app. `page create` wr
 | `bismuth page list [--retention-days <n>]` | Pages with their status |
 | `bismuth page create <slug> [--title …] [--body …] [--actions '<json>'] [--source …] [--deliver-at <iso>]` | Write a page |
 | `bismuth page resolve <page-path> <actionId>` | Press a page's button |
+| `bismuth page reply <page-path> <text...>` | Answer a page in plain words |
 | `bismuth page mark-failed <page-path>` | Force a stuck `working` page to `failed` |
 
 All of them take `--vault <dir>`. The format and lifecycle are in [pages](../daemon/pages.md).

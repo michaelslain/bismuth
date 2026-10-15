@@ -21,6 +21,7 @@ A vault's daemon is a folder of plain markdown. This is `<vault>/.daemon/` for a
 | Background processes | Keep a long-lived command running, restart it when it exits | [crons-and-processes.md](crons-and-processes.md) |
 | Memory | The "3rd brain": notes the daemon and your agents read and write | [memory.md](memory.md) |
 | Inbox pages | Drafts that wait for you to approve or dismiss | [pages.md](pages.md) |
+| Inbox by email | Pages mailed to you; a reply presses a button | [email.md](email.md) |
 | Identity | The daemon's name and personality | below |
 | Daemon page | The app's view of all of it | below |
 

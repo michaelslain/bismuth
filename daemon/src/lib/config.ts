@@ -50,6 +50,9 @@ export interface VaultContext {
      *  `settingSources: ['user']` so the session also sees this machine's own MCP servers and
      *  plugins. Never 'project'/'local': cwd is the vault root, i.e. user content. */
     inheritUserMcp: boolean
+    /** settings.daemon.email — the inbox <-> email bridge (daemon/src/daemon/emailBridge.ts). Off
+     *  by default; `address` is where a fresh email becomes a new page ('' = replies only). */
+    email: { enabled: boolean; address: string }
     daemonDir: string
     memoryDir: string
     cronsDir: string
@@ -67,6 +70,8 @@ export interface VaultContext {
     pagesDir: string
     pageStateDir: string
     pageTriggerDir: string
+    /** <root>/.daemon/pages/.email/state.json — which pages were mailed under which Message-ID. */
+    emailStateFile: string
 }
 
 /** Compute a vault's brain paths under <root>/.daemon. */
@@ -87,6 +92,7 @@ export function vaultPaths(
         backend: backend.trim() || 'claude',
         codexWriteAgentsMd,
         inheritUserMcp,
+        email: { enabled: false, address: '' },
         daemonDir,
         memoryDir: join(daemonDir, 'memory'),
         cronsDir,
@@ -101,6 +107,7 @@ export function vaultPaths(
         pagesDir,
         pageStateDir: join(pagesDir, '.state'),
         pageTriggerDir: join(pagesDir, '.triggers'),
+        emailStateFile: join(pagesDir, '.email', 'state.json'),
     }
 }
 

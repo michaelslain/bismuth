@@ -25,7 +25,7 @@ import {
 import { stringify as yamlStringify } from 'yaml'
 import { writeFileAtomicSync } from './atomicWrite'
 import { parseFrontmatter } from './frontmatter'
-import { writeTrigger } from './daemon'
+import { writeTrigger } from './writeTrigger'
 import { AppError } from './error'
 
 /** One action button on a page — parsed straight from its frontmatter `actions[]`. Presence of
@@ -46,6 +46,15 @@ export interface PageAction {
 
 export type PageStatus = 'pending' | 'working' | 'done' | 'failed' | 'dismissed'
 
+/** One message in a page's reply thread: what the user wrote (in the app or by email) and the
+ *  daemon's clarifying questions back. */
+export interface ThreadEntry {
+    from: 'you' | 'daemon'
+    text: string
+    at: string
+    via?: 'app' | 'email'
+}
+
 /** The dynamic sidecar — everything that changes after the page is authored. A page with no
  *  sidecar yet reads as `pending` (the synthesized default in {@link listDaemonPages}). */
 export interface PageState {
@@ -59,6 +68,10 @@ export interface PageState {
     /** Set by the daemon when it finishes (success or failure) — never by the LLM itself. */
     daemonNote?: string
     completedAt?: string | null
+    /** A plain-language reply waiting for the daemon to read (status is `working` meanwhile). */
+    reply?: { text: string; at: string; via: 'app' | 'email' }
+    /** Every reply and every daemon question, oldest first. Carried across presses. */
+    thread?: ThreadEntry[]
 }
 
 /** A page merged with its sidecar — what `GET /daemon/pages` and the frontend actually consume. */
@@ -73,13 +86,17 @@ export interface DaemonPage {
     /** Provenance, display-only (e.g. "cron:answer-emails"). */
     source?: string
     actions: PageAction[]
-    /** Frontmatter-stripped body — the editable draft, used for the inbox row's snippet. */
+    /** Frontmatter-stripped body — the draft, used for the inbox row's snippet. */
     body: string
     status: PageStatus
     pressedAction?: string
     pressedAt?: string
     daemonNote?: string
     completedAt?: string | null
+    /** The daemon is reading a reply rather than running an action. Always set by listDaemonPages. */
+    replying?: boolean
+    /** Replies and daemon questions, oldest first. Always set by listDaemonPages. */
+    thread?: ThreadEntry[]
 }
 
 /** `<vault>/.daemon/pages` — where daemon-authored pages live. */
@@ -94,7 +111,7 @@ export function pageStateDir(vault: string): string {
 }
 
 /** Dot-prefixed trigger dir the daemon polls (~5s), matching the crons/processes `.triggers`
- *  contract in core/src/daemon.ts's `writeTrigger`. */
+ *  contract in core/src/writeTrigger.ts. */
 export function pageTriggerDir(vault: string): string {
     return join(vaultPagesDir(vault), '.triggers')
 }
@@ -240,6 +257,8 @@ export function listDaemonPages(
             pressedAt: state?.pressedAt,
             daemonNote: state?.daemonNote,
             completedAt: state?.completedAt ?? null,
+            replying: status === 'working' && !!state?.reply,
+            thread: state?.thread ?? [],
         })
     }
 
@@ -287,7 +306,9 @@ export function resolvePage(
         )
 
     const slug = slugOf(path)
-    const currentStatus = readPageState(vault, slug)?.status ?? 'pending'
+    const current = readPageState(vault, slug)
+    const currentStatus = current?.status ?? 'pending'
+    const thread = current?.thread?.length ? { thread: current.thread } : {}
     if (
         currentStatus === 'done' ||
         currentStatus === 'dismissed' ||
@@ -302,6 +323,7 @@ export function resolvePage(
             status: 'dismissed',
             pressedAction: actionId,
             pressedAt,
+            ...thread,
         })
         return { status: 'dismissed', alreadyResolved: false }
     }
@@ -313,6 +335,41 @@ export function resolvePage(
         prompt: action.prompt,
         model: action.model,
         timeoutSecs: action.timeout ?? 300,
+        ...thread,
+    })
+    writeTrigger(vaultPagesDir(vault), slug)
+    return { status: 'working', alreadyResolved: false }
+}
+
+/**
+ * Answer a page in plain words instead of pressing a button. The reply joins the page's thread
+ * and the page reads `working` while the daemon's `processPageTriggers` reads it: a reply that
+ * names a button presses it, one that means a button presses it (with a rewritten draft when the
+ * reply changes it), and an unclear one gets a question back and returns the page to `pending`.
+ * The same states as {@link resolvePage} refuse it: `working`, `done` and `dismissed`.
+ */
+export function replyToPage(
+    vault: string,
+    path: string,
+    text: string,
+    via: 'app' | 'email' = 'app',
+): ResolveResult {
+    assertPagePath(path)
+    const reply = text.trim()
+    if (!reply) throw new AppError('EINVAL', 'empty reply', 400)
+    if (!existsSync(join(vault, path)))
+        throw new AppError('ENOENT', `page not found: ${path}`, 404)
+    const slug = slugOf(path)
+    const current = readPageState(vault, slug)
+    const status = current?.status ?? 'pending'
+    if (status === 'done' || status === 'dismissed' || status === 'working')
+        return { status, alreadyResolved: true }
+    const at = new Date().toISOString()
+    writePageState(vault, slug, {
+        status: 'working',
+        pressedAt: at,
+        reply: { text: reply, at, via },
+        thread: [...(current?.thread ?? []), { from: 'you', text: reply, at, via }],
     })
     writeTrigger(vaultPagesDir(vault), slug)
     return { status: 'working', alreadyResolved: false }
@@ -328,7 +385,7 @@ export interface CreatePageInput {
     /** Filename stem (no extension, no path): the page lands at `.daemon/pages/<slug>.md`. */
     slug: string
     title?: string
-    /** The editable draft — the body markdown below the frontmatter. */
+    /** The draft — the body markdown below the frontmatter. */
     body?: string
     /** Action buttons; each with a `prompt` is an "approve" (daemon acts), each without a pure dismiss. */
     actions?: PageAction[]

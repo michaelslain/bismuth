@@ -1,0 +1,30 @@
+/* app/src/InboxReplyField.module.css
+   A prompt line, no box: the `>` in sage on the grid, the field filling the line beside it, the
+   hint under the field (indented to the field, not the `>`). The `>` sits on the field's first
+   baseline however many lines the reply grows to. */
+.inbox-reply-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+.prompt {
+  flex: 0 0 2ch;
+}
+/* What you type is prose you wrote: the messages' own face, size and line. */
+.input {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  font-family: var(--prose-font);
+  font-size: var(--prose-font-size);
+  line-height: var(--prose-row);
+  overflow-y: auto;
+}
+.hint {
+  padding-left: calc(2ch + var(--sp-3));
+}

@@ -9,6 +9,7 @@ import { requireVault, flag, positionals, fail, out } from '../args'
 import {
     listDaemonPages,
     resolvePage,
+    replyToPage,
     markPageFailed,
     createDaemonPage,
     type PageAction,
@@ -65,6 +66,17 @@ export const commands: CommandMap = {
             if (!path || !actionId)
                 fail('usage: bismuth page resolve <page-path> <actionId>')
             out(resolvePage(requireVault(args), path, actionId), args)
+        },
+    },
+    'page reply': {
+        summary:
+            'Answer a page in plain words; the daemon presses the button the reply means, or asks a question back',
+        usage: '<page-path> <text...> [--vault <dir>] [--pretty]',
+        run: args => {
+            const [path, ...words] = positionals(args)
+            if (!path || !words.length)
+                fail('usage: bismuth page reply <page-path> <text...>')
+            out(replyToPage(requireVault(args), path, words.join(' ')), args)
         },
     },
     'page mark-failed': {

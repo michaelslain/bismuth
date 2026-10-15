@@ -1,11 +1,21 @@
 // app/src/InboxActionBar.tsx
-// The action bar pinned to the bottom of an inbox page: status dot + phrase on the left, the
-// page's actions as buttons on the right with the primary LAST. Stuck and not-owner warnings
-// replace the phrase. Owns no signal and never fetches — the host passes everything in.
+// The end of an inbox page's transcript, right under the last message (no dock, no dead space):
+// the page's buttons as bracket chips, then the `>` reply prompt. A failure note or a stuck /
+// not-owner warning sits above the chips. A page that takes no reply right now (working, done,
+// dismissed) ends instead with one status line: a dot and a phrase. Owns no fetch; the host passes
+// everything in.
 import { For, Show, type Component } from 'solid-js'
 import type { DaemonPage } from '../../core/src/daemonPages'
 import { STATUS_COLOR } from './daemon/daemonInboxLogic'
-import { actionBarPhrase } from './inboxPageMeta'
+import {
+    actionBarNote,
+    actionBarPhrase,
+    canReply,
+    replyHint,
+    replyPlaceholder,
+} from './inboxPageMeta'
+import InboxReplyField from './InboxReplyField'
+import { settings } from './settings'
 import StatusDot from './ui/StatusDot'
 import Text from './ui/Text'
 import { TextButton } from './ui/TextButton'
@@ -17,6 +27,8 @@ export type InboxActionBarProps = {
     stuck: boolean
     pressingId: string | null
     onPress: (actionId: string) => void
+    /** Answer the page in words; the daemon reads it and presses or asks back. */
+    onReply: (text: string) => void | Promise<void>
     onMarkFailed: () => void
     class?: string
 }
@@ -33,66 +45,47 @@ const InboxActionBar: Component<InboxActionBarProps> = props => {
             (a, b) => Number(a.kind === 'primary') - Number(b.kind === 'primary'),
         )
     const live = (p: DaemonPage) => p.status === 'pending' || p.status === 'working'
-    const showButtons = (p: DaemonPage) =>
-        !props.stuck && (live(p) || p.status === 'failed')
+    const pressable = (p: DaemonPage) => canReply(p) && !props.stuck
+    const composing = (p: DaemonPage) => pressable(p) && !props.notOwner
+    const warning = (p: DaemonPage) =>
+        props.stuck
+            ? props.notOwner
+                ? NOT_OWNER_STUCK
+                : OFFLINE
+            : props.notOwner && live(p)
+              ? NOT_OWNER_LIVE
+              : null
 
     return (
         <div
             class={`${styles['inbox-action-bar']} ${props.class ?? ''}`}
             data-testid="inbox-page-actions"
         >
-            <div class={styles.row}>
-                <Show when={props.page} keyed>
-                    {p => (
-                        <>
-                            <div class={styles.lead}>
+            <Show when={props.page} keyed>
+                {p => (
+                    <>
+                        <Show when={warning(p) ?? (props.stuck ? null : actionBarNote(p))}>
+                            {note => (
+                                <Text
+                                    as="div"
+                                    size="ui"
+                                    tone={warning(p) ? 'warning' : 'danger'}
+                                    data-testid="inbox-page-note"
+                                >
+                                    {note()}
+                                </Text>
+                            )}
+                        </Show>
+                        <Show when={pressable(p) || props.stuck}>
+                            <div class={styles.chips}>
                                 <Show
-                                    when={props.stuck}
+                                    when={!props.stuck}
                                     fallback={
-                                        <Show
-                                            when={props.notOwner && live(p)}
-                                            fallback={
-                                                <>
-                                                    <StatusDot color={STATUS_COLOR[p.status]} />
-                                                    <Text
-                                                        as="span"
-                                                        size="ui"
-                                                        tone="muted"
-                                                        class={styles.phrase}
-                                                    >
-                                                        {actionBarPhrase(p)}
-                                                    </Text>
-                                                </>
-                                            }
-                                        >
-                                            <Text
-                                                as="span"
-                                                size="ui"
-                                                tone="inherit"
-                                                class={`${styles.phrase} ${styles.warn}`}
-                                            >
-                                                {NOT_OWNER_LIVE}
-                                            </Text>
-                                        </Show>
+                                        <TextButton onClick={props.onMarkFailed}>
+                                            mark failed
+                                        </TextButton>
                                     }
                                 >
-                                    <Text
-                                        as="span"
-                                        size="ui"
-                                        tone="inherit"
-                                        class={`${styles.phrase} ${styles.warn}`}
-                                    >
-                                        {props.notOwner ? NOT_OWNER_STUCK : OFFLINE}
-                                    </Text>
-                                </Show>
-                            </div>
-                            <div class={styles.buttons}>
-                                <Show when={props.stuck}>
-                                    <TextButton onClick={props.onMarkFailed}>
-                                        mark failed
-                                    </TextButton>
-                                </Show>
-                                <Show when={showButtons(p)}>
                                     <For each={actions(p)}>
                                         {a => (
                                             <TextButton
@@ -100,25 +93,44 @@ const InboxActionBar: Component<InboxActionBarProps> = props => {
                                                     a.kind === 'primary' ? 'selected' : 'normal'
                                                 }
                                                 danger={a.kind === 'danger'}
-                                                disabled={
-                                                    p.status === 'working' ||
-                                                    props.pressingId !== null
-                                                }
+                                                disabled={props.pressingId !== null}
                                                 onClick={() => props.onPress(a.id)}
                                             >
-                                                {p.status === 'working' &&
-                                                props.pressingId === a.id
-                                                    ? 'working…'
-                                                    : a.label.toLowerCase()}
+                                                {a.label.toLowerCase()}
                                             </TextButton>
                                         )}
                                     </For>
                                 </Show>
                             </div>
-                        </>
-                    )}
-                </Show>
-            </div>
+                        </Show>
+                        <Show
+                            when={composing(p)}
+                            fallback={
+                                <Show when={!pressable(p) && !props.stuck}>
+                                    <div class={styles.status} data-testid="inbox-page-status">
+                                        <StatusDot color={STATUS_COLOR[p.status]} />
+                                        <Text
+                                            as="span"
+                                            size="ui"
+                                            tone="muted"
+                                            class={styles.phrase}
+                                        >
+                                            {actionBarPhrase(p)}
+                                        </Text>
+                                    </div>
+                                </Show>
+                            }
+                        >
+                            <InboxReplyField
+                                placeholder={replyPlaceholder(p)}
+                                hint={replyHint(settings.keybindings['ui-confirm'])}
+                                disabled={props.pressingId !== null}
+                                onSubmit={props.onReply}
+                            />
+                        </Show>
+                    </>
+                )}
+            </Show>
         </div>
     )
 }

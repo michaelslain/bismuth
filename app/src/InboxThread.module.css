@@ -1,0 +1,26 @@
+/* app/src/InboxThread.module.css
+   The replies after a page's draft: each message is its ruled head line (the separator) over the
+   words, with the same space between messages as between the draft and the first reply. */
+.inbox-thread {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-top: var(--sp-6);
+}
+/* The same face, size, line and ink as the page's draft in the editor above, so a reply reads as
+   one more message of the thread rather than a caption under it. */
+.words {
+  margin: 0;
+  font-size: var(--prose-font-size);
+  line-height: var(--prose-row);
+  color: color-mix(in srgb, var(--fg) 88%, var(--text-muted));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

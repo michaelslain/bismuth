@@ -782,6 +782,8 @@ export const api = {
     daemonPages: () => getJson<DaemonPage[]>('/daemon/pages'),
     resolveDaemonPage: (path: string, actionId: string) =>
         postJson<ResolveResult>('/daemon/pages/resolve', { path, actionId }),
+    replyToDaemonPage: (path: string, text: string) =>
+        postJson<ResolveResult>('/daemon/pages/reply', { path, text }),
     markDaemonPageFailed: (path: string) =>
         post('/daemon/pages/mark-failed', { path }).then(() => {}),
     // Archive = delete the page (and its sidecar) outright, whatever its state — refused (409)

@@ -11,7 +11,7 @@
 // own default stub, which carries `owner: null` — the "no owner assigned" state `notOwner()`
 // is meant to handle.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { InboxPageView } from './InboxPageView'
 import { refreshDaemonPages } from './daemon/daemonInboxApi'
 import { setTransport } from './api'
@@ -112,6 +112,37 @@ function statusWithoutOwnerTransport(): Transport {
     }
 }
 
+/** A transport whose inbox REMEMBERS a reply, the way core's replyToPage does: POST
+ *  /daemon/pages/reply puts the reply in the page's thread and the page reads `working` +
+ *  `replying` until the daemon answers. Storybook has no daemon, so the page stays there — which is
+ *  exactly what the app shows while the daemon reads. `thread` seeds an earlier exchange. */
+function replyTransport(thread: unknown[] = []): Transport {
+    const base = fakeTransport({ files: PAGE_FILES })
+    const pages = sampleDaemonPages().map(p =>
+        p.path === REPLY_DRAFTS_PATH ? { ...p, thread: thread as never[] } : p,
+    )
+    return {
+        ...base,
+        getJson: async <T,>(path: string): Promise<T> => {
+            if (path === '/daemon/pages') return structuredClone(pages) as unknown as T
+            return base.getJson<T>(path)
+        },
+        postJson: async <T,>(path: string, body: unknown): Promise<T> => {
+            if (path === '/daemon/pages/reply') {
+                const { path: pagePath, text } = body as { path: string; text: string }
+                const page = pages.find(p => p.path === pagePath)!
+                const at = new Date().toISOString()
+                page.status = 'working'
+                page.replying = true
+                page.pressedAt = at
+                page.thread = [...(page.thread ?? []), { from: 'you', text, at, via: 'app' }]
+                return { status: 'working', alreadyResolved: false } as unknown as T
+            }
+            return base.postJson<T>(path, body)
+        },
+    }
+}
+
 const meta = {
     title: 'App/InboxPageView',
     component: InboxPageView,
@@ -141,30 +172,50 @@ function Pane(props: { w: string; children: any }) {
     )
 }
 
-/** The action bar's status phrase (the row's leading group) must start at the note text column's
- *  left edge (`.cm-content`'s left, within 2px) — the bar's CONTENT shares the editor's centred reading
- *  column (`--note-column`) instead of sitting at the pane's left edge. The bar's own top
- *  hairline still spans the full pane width — asserted separately below. */
+/** The reply prompt and the draft's head line must start where the body text starts (its first
+ *  glyph, within 2px) — everything shares the editor's centred reading column (`--note-column`)
+ *  — and the prompt must follow the draft directly, with no pinned-dock gap. */
 async function assertActionsAlignToText(canvasElement: HTMLElement) {
     const content = canvasElement.querySelector('.cm-content')
     const bar = canvasElement.querySelector(
         '[data-testid="inbox-page-actions"]',
     )
-    // bar > row > lead: the left group holding the status dot + phrase
-    const lead = bar?.firstElementChild?.firstElementChild ?? null
+    const lead = await waitFor(() => {
+        const el = canvasElement.querySelector('[data-testid="inbox-composer"]')
+        expect(el).not.toBeNull()
+        return el
+    })
+    const fromKey = canvasElement.querySelector('[data-testid="inbox-message-header"] > div')
     await expect(content).not.toBeNull()
     await expect(bar).not.toBeNull()
     await expect(lead).not.toBeNull()
-    const contentLeft = (content as HTMLElement).getBoundingClientRect().left
+    // Where the body TEXT starts, not `.cm-content`'s box: CodeMirror pads each `.cm-line` on
+    // its leading edge, so the box sits a few px left of the first glyph a reader lines things up
+    // against.
+    const contentLeft = await waitFor(() => {
+        for (const line of (content as HTMLElement).querySelectorAll('.cm-line')) {
+            if (!line.textContent?.trim()) continue
+            const walk = document.createTreeWalker(line, NodeFilter.SHOW_TEXT)
+            const n = walk.nextNode()
+            if (!n) continue
+            const r = document.createRange()
+            r.setStart(n, 0)
+            r.setEnd(n, 1)
+            return r.getBoundingClientRect().left
+        }
+        throw new Error('no body text yet')
+    })
     const leadLeft = (lead as HTMLElement).getBoundingClientRect().left
     await expect(Math.abs(leadLeft - contentLeft)).toBeLessThanOrEqual(2)
-    // The bar's own top hairline still spans the full pane — its rect, not its inner row, is as
-    // wide as the pane host that contains both it and the editor body.
-    const barRect = (bar as HTMLElement).getBoundingClientRect()
-    const host = (bar as HTMLElement).parentElement as HTMLElement
-    const hostRect = host.getBoundingClientRect()
-    await expect(barRect.left).toBeCloseTo(hostRect.left, 0)
-    await expect(barRect.width).toBeCloseTo(hostRect.width, 0)
+    await expect(fromKey).not.toBeNull()
+    const keyLeft = (fromKey as HTMLElement).getBoundingClientRect().left
+    await expect(Math.abs(keyLeft - contentLeft)).toBeLessThanOrEqual(2)
+    // No dead space: the prompt follows the draft directly, not pinned to the pane's bottom.
+    const draftLine = [...canvasElement.querySelectorAll('.cm-line')]
+        .filter(l => l.textContent?.trim())
+        .at(-1) as HTMLElement
+    const gap = (lead as HTMLElement).getBoundingClientRect().top - draftLine.getBoundingClientRect().bottom
+    await expect(gap).toBeLessThan(120)
 }
 
 /** The frontmatter block must be hidden from the editor's rendered text. */
@@ -207,6 +258,10 @@ export const Pending: Story = {
         await expect(barTop).toBeGreaterThan(bodyTop)
         await assertActionsAlignToText(canvasElement)
         await assertFrontmatterHidden(canvasElement)
+        // The draft is read-only like every other message; it changes by replying.
+        await expect(
+            canvasElement.querySelector('.cm-content')?.getAttribute('contenteditable'),
+        ).toBe('false')
     },
 }
 
@@ -255,6 +310,108 @@ export const Failed: Story = {
     },
 }
 
+/** Answer a page in your own words: type in the bar's field and press Enter. The page switches to
+ *  `reading your reply…` and the buttons step aside while the daemon reads it. */
+export const ReplyInWords: Story = {
+    render: () => {
+        setTransport(replyTransport())
+        void refreshDaemonPages()
+        return (
+            <Pane w="100%">
+                <InboxPageView
+                    path={REPLY_DRAFTS_PATH}
+                    initialText={REPLY_DRAFTS_TEXT}
+                    onSaved={noop}
+                    noteNames={() => []}
+                    memoryNames={() => []}
+                    tagNames={() => []}
+                />
+            </Pane>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const field = await waitFor(() => {
+            const f = canvasElement.querySelector<HTMLInputElement>(
+                '[data-testid="inbox-reply-input"]',
+            )
+            expect(f).not.toBeNull()
+            return f!
+        })
+        await expect(field.placeholder).toBe('reply in your own words')
+    },
+}
+
+/** The same page after a reply was sent: what the bar shows while the daemon reads it. */
+export const ReplySent: Story = {
+    render: ReplyInWords.render,
+    play: async ({ canvasElement }) => {
+        const field = await waitFor(() => {
+            const f = canvasElement.querySelector<HTMLInputElement>(
+                '[data-testid="inbox-reply-input"]',
+            )
+            expect(f).not.toBeNull()
+            return f!
+        })
+        await userEvent.type(field, 'send the first two, hold the one to Sam{Enter}')
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-testid="inbox-page-actions"]')?.textContent,
+            ).toMatch(/reading your reply…/),
+        )
+    },
+}
+
+/** The daemon could not tell what a reply meant and asked back: the thread shows your reply and
+ *  its question over the compose box, and the next reply answers it. */
+export const AskingBack: Story = {
+    render: () => {
+        const at = new Date().toISOString()
+        setTransport(
+            replyTransport([
+                { from: 'you', text: 'maybe hold the one to Sam', at, via: 'app' },
+                {
+                    from: 'daemon',
+                    text: 'Send the other two now and keep the reply to Sam as a draft?',
+                    at,
+                },
+            ]),
+        )
+        void refreshDaemonPages()
+        return (
+            <Pane w="100%">
+                <InboxPageView
+                    path={REPLY_DRAFTS_PATH}
+                    initialText={REPLY_DRAFTS_TEXT}
+                    onSaved={noop}
+                    noteNames={() => []}
+                    memoryNames={() => []}
+                    tagNames={() => []}
+                />
+            </Pane>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-testid="inbox-thread"] li[data-from="daemon"]')
+                    ?.textContent,
+            ).toMatch(/keep the reply to Sam as a draft\?/),
+        )
+        // One rhythm: the gap from the draft's last line to the first reply's head matches the gap
+        // from that reply's words to the next head.
+        const heads = [...canvasElement.querySelectorAll('[data-testid="inbox-thread"] li')]
+        const draftLine = [...canvasElement.querySelectorAll('.cm-line')]
+            .filter(l => l.textContent?.trim())
+            .at(-1) as HTMLElement
+        const top = (el: Element) => el.getBoundingClientRect().top
+        const bottom = (el: Element) => el.getBoundingClientRect().bottom
+        const head = (li: Element) => li.firstElementChild!
+        const afterDraft = top(head(heads[0])) - bottom(draftLine)
+        const afterReply = top(head(heads[1])) - bottom(heads[0].lastElementChild!)
+        await expect(Math.abs(afterDraft - afterReply)).toBeLessThanOrEqual(4)
+    },
+}
+
 /** The `/daemon/status` shape that used to CRASH this view: no `owner` key at all. The guard
  *  read `s.owner !== null`, which is true for `undefined`, so it walked into
  *  `s.owner.ownerDeviceId`. This story exists to fail if that strictness ever returns. */
@@ -300,6 +457,16 @@ export const Done: Story = {
     },
     play: async ({ canvasElement }) => {
         await assertFrontmatterHidden(canvasElement)
+        // The status line follows the draft and paints above the editor's empty last row; under
+        // it, the editor's ground would hide it.
+        const status = await waitFor(() => {
+            const el = canvasElement.querySelector('[data-testid="inbox-page-status"]')
+            expect(el).not.toBeNull()
+            return el as HTMLElement
+        })
+        const r = status.getBoundingClientRect()
+        const hit = document.elementFromPoint(r.left + 20, r.top + r.height / 2)
+        await expect(status.contains(hit)).toBe(true)
     },
 }
 

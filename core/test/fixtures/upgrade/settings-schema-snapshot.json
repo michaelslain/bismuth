@@ -2349,6 +2349,29 @@
     "max": null,
     "required": false
   },
+  "daemon.email": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.email.address": {
+    "type": "string",
+    "default": "",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.email.enabled": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "daemon.enabled": {
     "type": "boolean",
     "default": false,

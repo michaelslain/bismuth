@@ -1,0 +1,37 @@
+/* app/src/InboxMessageHead.module.css
+   A ruled header line on the character grid: a two-cell rule, the words, a rule filling the rest
+   of the line, the time. Both rules are pseudo-elements — hairlines at the text's middle, so they
+   read as `──` — the lead one on the line itself, the filling one on the time, which stretches to
+   take the free space and draws its rule in front of its text. */
+.inbox-message-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.inbox-message-head::before,
+.when::before {
+  content: '';
+  height: 0;
+  border-top: var(--rule);
+}
+.inbox-message-head::before {
+  flex: 0 0 2ch;
+}
+.detail {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.when {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  white-space: nowrap;
+}
+.when::before {
+  flex: 1;
+  min-width: var(--sp-4);
+}

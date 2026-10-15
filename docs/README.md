@@ -109,6 +109,7 @@ bun run build:app
 - [Set up the daemon](daemon/setup.md) — turn on the background brain, name it, approve its pages
 - [Daemon](daemon/overview.md) — what the daemon is, the machine and vault halves, its page
 - [Daemon pages](daemon/pages.md) — inbox pages awaiting your approval: format and lifecycle
+- [Inbox by email](daemon/email.md) — inbox pages mailed to you, answered by reply, and requests sent by email
 - [Crons and background processes](daemon/crons-and-processes.md) — scheduled jobs and long-running processes per vault
 - [Daemon memory](daemon/memory.md) — the markdown memory graph, recall, and the dream cycle
 - [Memory injection and device ownership](daemon/communication.md) — how memory reaches agent sessions, and which device runs the brain

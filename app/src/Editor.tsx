@@ -11,7 +11,7 @@ import {
     untrack,
 } from 'solid-js'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
-import { EditorState, Compartment, type Line } from '@codemirror/state'
+import { EditorState, Compartment, Prec, type Line } from '@codemirror/state'
 import {
     defaultKeymap,
     history,
@@ -151,6 +151,29 @@ import { cursor } from './editor/cursorTheme'
 // unit-tested): the annotation lets the autosave listener skip disk-pulled reloads, and
 // the spec builder also marks them addToHistory:false so undo never restores a disk
 // snapshot (#46 — that was the "file autoreverts on cmd+z" data loss).
+
+// `fitContent`: the editor takes the document's height and lets the host's scroller carry it, so
+// whatever the host puts after the editor scrolls with the text. The content's top padding and
+// bottom scroll space go (the host spaces what sits around it), and the content box moves left by CodeMirror's line inset (its
+// base theme's `.cm-line` padding-left, 6px) so a plain line's first glyph sits on the note
+// column's edge, where the host's own text starts (`left`, not a margin; see below); list lines keep their inline indents relative
+// to it. Highest precedence so it wins over editorTheme's `height: 100%` / `overflow: auto` /
+// content padding.
+const CM_LINE_INSET_PX = 6
+const fitContentTheme = Prec.highest(
+    EditorView.theme({
+        '&': { height: 'auto' },
+        '.cm-scroller': { overflow: 'visible' },
+        // `left`, not a negative margin: the scroller centres the content box, and a margin only
+        // moves a centred box by half its size.
+        '.cm-content': {
+            paddingTop: '0',
+            paddingBottom: '0',
+            position: 'relative',
+            left: `-${CM_LINE_INSET_PX}px`,
+        },
+    }),
+)
 
 // Prose font/size and selection tint come from CSS variables (set by App.tsx from
 // the Appearance settings), so they update live without rebuilding the editor.
@@ -746,6 +769,17 @@ export function Editor(props: {
     /** Hide the YAML frontmatter (display only — the text is kept and saved). For buffers whose
      *  frontmatter belongs to a machine, e.g. a daemon page. Read once at view creation. */
     hideFrontmatter?: boolean
+    /** Leave out the note title widget, for a host that shows the title itself (a daemon page's
+     *  subject heads its whole thread, not just this body). Read once at view creation. */
+    hideTitle?: boolean
+    /** Grow to the document's height instead of filling the parent and scrolling inside, so the
+     *  host can scroll the editor together with what follows it (a daemon page's reply thread).
+     *  Read once at view creation. */
+    fitContent?: boolean
+    /** Display only: the user cannot type into the buffer, while programmatic updates (an
+     *  external rewrite arriving over SSE) still land. For a buffer someone else writes, e.g. a
+     *  daemon page's draft, which changes by replying, not by editing. Read once at view creation. */
+    readOnly?: boolean
 }) {
     let host!: HTMLDivElement
     let wrapper!: HTMLDivElement
@@ -825,7 +859,7 @@ export function Editor(props: {
         if (!v) return
         v.dispatch({
             effects: [
-                editableCompartment.reconfigure(EditorView.editable.of(!on)),
+                editableCompartment.reconfigure(EditorView.editable.of(!on && !props.readOnly)),
                 drawSpaceCompartment.reconfigure(on ? drawScrollSpace : []),
             ],
         })
@@ -1455,7 +1489,9 @@ export function Editor(props: {
             // drawMode must not be a dependency of this effect): a real note switch reset it to
             // false above, while a settings-driven same-path rebuild preserves an active draw mode
             // instead of leaving an interactive ink overlay over a silently editable buffer.
-            editableCompartment.of(EditorView.editable.of(!untrack(drawMode))),
+            editableCompartment.of(
+                EditorView.editable.of(!untrack(drawMode) && !props.readOnly),
+            ),
             // Seeded from the CURRENT draw state for the same reason as the line above: a
             // settings-driven same-path rebuild must not drop the scroll space out from under an
             // active drawing session.
@@ -1606,7 +1642,7 @@ export function Editor(props: {
                   // The note title (`# <title>`) renders as a block widget at the very top of
                   // the document, so it lives inside the scroller and scrolls away with the
                   // content instead of staying pinned. Only real `.md` notes get a title.
-                  ...(path.endsWith('.md')
+                  ...(path.endsWith('.md') && !props.hideTitle
                       ? [
                             noteTitleWidget(path, {
                                 title: props.title,
@@ -1653,6 +1689,7 @@ export function Editor(props: {
                   datePropertyPicker(noteSchema),
                   // A machine-owned note (a daemon page) hides its frontmatter; display only.
                   ...(props.hideFrontmatter ? [hideFrontmatter()] : []),
+                  ...(props.fitContent ? [fitContentTheme] : []),
                   notePathFacet.of(path),
                   // Note candidates so a wikilink clicked inside a table cell resolves to its real vault
                   // path and opens (#33). A getter, not a snapshot, so it never goes stale.
@@ -2249,9 +2286,16 @@ export function Editor(props: {
         <div
             ref={wrapper}
             data-note-editor
-            style={{ height: '100%', overflow: 'hidden', position: 'relative' }}
+            style={
+                props.fitContent
+                    ? { position: 'relative' }
+                    : { height: '100%', overflow: 'hidden', position: 'relative' }
+            }
         >
-            <div ref={host} style={{ height: '100%', overflow: 'auto' }} />
+            <div
+                ref={host}
+                style={props.fitContent ? undefined : { height: '100%', overflow: 'auto' }}
+            />
             {/* Draw-anywhere note ink: a stroke layer over the text (real .md notes only). Paint-only
           in normal mode; the toggle-draw-mode keybinding makes it interactive + mounts the
           drawing toolbar. Lives here (not in a CM extension) so it's plain Solid over the view. */}

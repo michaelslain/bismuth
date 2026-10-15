@@ -52,6 +52,8 @@ interface DaemonSettings {
     codexWriteAgentsMd: boolean
     /** settings.daemon.inheritUserMcp — opt-in, default false; see VaultContext.inheritUserMcp. */
     inheritUserMcp: boolean
+    /** settings.daemon.email — off + '' on anything missing/malformed. */
+    email: { enabled: boolean; address: string }
 }
 
 /** A vault's daemon config: the `enabled` master switch + `backend`/`codexWriteAgentsMd` choices
@@ -63,12 +65,14 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
     let backend = 'claude'
     let codexWriteAgentsMd = false
     let inheritUserMcp = false
+    const email = { enabled: false, address: '' }
     // Settings live in the single `.settings` file; readVaultSettingsDoc walks the fallback shapes.
     const doc = (await readVaultSettingsDoc(root)) as {
         daemon?: {
             enabled?: unknown
             backend?: unknown
             inheritUserMcp?: unknown
+            email?: { enabled?: unknown; address?: unknown }
         }
         codex?: { writeAgentsMd?: unknown }
     } | null
@@ -78,6 +82,9 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
             backend = doc.daemon.backend.trim()
         codexWriteAgentsMd = doc.codex?.writeAgentsMd === true
         inheritUserMcp = doc.daemon?.inheritUserMcp === true
+        email.enabled = doc.daemon?.email?.enabled === true
+        if (typeof doc.daemon?.email?.address === 'string')
+            email.address = doc.daemon.email.address.trim()
     }
 
     let name = ''
@@ -90,7 +97,14 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
         // no identity.md → vaultPaths falls back to "daemon"
     }
 
-    return { enabled, name, backend, codexWriteAgentsMd, inheritUserMcp }
+    return {
+        enabled,
+        name,
+        backend,
+        codexWriteAgentsMd,
+        inheritUserMcp,
+        email,
+    }
 }
 
 interface CachedSettings {
@@ -266,16 +280,15 @@ export async function loadAllVaults(): Promise<
         // Dev vaults never reach the machine daemon — not the cron tick, not reconcile.
         if (isDevVaultRoot(root)) continue
         const s = await readDaemonSettingsCached(root)
-        out.push({
-            ctx: vaultPaths(
-                root,
-                s.name,
-                s.backend,
-                s.codexWriteAgentsMd,
-                s.inheritUserMcp,
-            ),
-            enabled: s.enabled,
-        })
+        const ctx = vaultPaths(
+            root,
+            s.name,
+            s.backend,
+            s.codexWriteAgentsMd,
+            s.inheritUserMcp,
+        )
+        ctx.email = s.email
+        out.push({ ctx, enabled: s.enabled })
     }
     return out
 }

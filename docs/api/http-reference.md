@@ -381,6 +381,7 @@ Concepts are in the [daemon docs](../daemon/setup.md).
 | `GET /daemon/pages` | none | `DaemonPage[]` | open; none |
 | `POST /daemon/pages` | `{slug, title?, body?, actions?, source?, deliverAt?}` | `{path, slug}` | invalidates the new page path |
 | `POST /daemon/pages/resolve` | `{path, actionId}` | `{status, alreadyResolved}` | open; none |
+| `POST /daemon/pages/reply` | `{path, text}` | `{status, alreadyResolved}` | open; none |
 | `POST /daemon/pages/mark-failed` | `{path}` | `{ok: true}` | open; none |
 | `POST /daemon/pages/archive` | `{path}` | `{ok: true}` | owner only; none |
 
@@ -423,6 +424,9 @@ A `DaemonPage` is `{path, slug, title, createdAt, deliverAt?, source?, actions, 
 An action with no `prompt` is a dismiss and resolves without the daemon; one with a `prompt` sets the page to `working` and drops a trigger file the daemon polls about every 5 seconds.
 A page already `done`, `dismissed` or `working` returns its status with `alreadyResolved: true`; `failed` is not final, so pressing again retries.
 Errors: `400 missing path/actionId`, `404 page not found: <path>`, `400 unknown action "<actionId>" on <path>`, `400 not a daemon page: <path>`.
+
+`POST /daemon/pages/reply` answers a page in plain words: it sets the page to `working` with the reply and drops a trigger, and the daemon presses the button the reply means or appends a question to the page's `thread` and sets it back to `pending`.
+A page already `done`, `dismissed` or `working` returns its status with `alreadyResolved: true`. Errors: `400 missing path/text`, `400 empty reply` (whitespace only), `404 page not found: <path>`.
 
 `POST /daemon/pages/mark-failed` sets a stuck `working` page to `failed`; it leaves a page already `done`, `failed` or `dismissed` unchanged. `POST /daemon/pages/archive` deletes the page and its sidecar whatever its status, and answers `409` while the page is `working`.
 

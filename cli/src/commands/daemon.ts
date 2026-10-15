@@ -34,6 +34,12 @@ import {
     restartDaemon,
     unloadDaemon,
 } from '../../../daemon/src/lib/platform'
+import {
+    emailStatus,
+    initEmailConfig,
+    readEmailConfig,
+} from '../../../daemon/src/lib/emailConfig'
+import { verifyMailAccount } from '../../../daemon/src/daemon/emailTransport'
 
 /** `daemon setup` — `daemon update` reuses it (same body, its own summary). */
 const daemonSetup: CommandMap[string] = {
@@ -220,6 +226,40 @@ export const commands: CommandMap = {
                 fail('usage: daemon process delete <name> --vault <dir>')
             deleteProcess(name, vaultDaemonDir(requireVault(args)))
             out('ok', args)
+        },
+    },
+    'daemon email init': {
+        summary:
+            'Write the mail-account template the inbox <-> email bridge reads (~/.bismuth/email.json, owner-only); never overwrites',
+        usage: '[--pretty]',
+        run: async args => {
+            out(await initEmailConfig(), args)
+        },
+    },
+    'daemon email status': {
+        summary:
+            'Print the mail account the inbox <-> email bridge uses, without passwords, or what is wrong with it',
+        usage: '[--pretty]',
+        run: async args => {
+            const status = await emailStatus()
+            out(status, args)
+            if (!status.ok) process.exit(1)
+        },
+    },
+    'daemon email test': {
+        summary:
+            "Log in to the bridge's SMTP and IMAP servers and print whether each worked; sends nothing",
+        usage: '[--pretty]',
+        run: async args => {
+            const read = await readEmailConfig()
+            if ('error' in read) fail(read.error)
+            try {
+                await verifyMailAccount(read.config)
+                out({ ok: true, smtp: 'ok', imap: 'ok' }, args)
+            } catch (e) {
+                out({ ok: false, error: e instanceof Error ? e.message : String(e) }, args)
+                process.exit(1)
+            }
         },
     },
 }

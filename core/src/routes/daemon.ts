@@ -17,6 +17,7 @@ import { readActivity, deleteActivityEntry } from '../daemonActivity'
 import {
     listDaemonPages,
     resolvePage,
+    replyToPage,
     markPageFailed,
     archivePage,
     createDaemonPage,
@@ -233,6 +234,18 @@ export default function daemonRoutes(
             }
             if (!path || !actionId) return error('missing path/actionId', 400)
             return ok(resolvePage(cfg.vault, path, actionId))
+        },
+
+        // Answer a page in plain words (replyToPage): the daemon reads the reply on its next
+        // trigger poll and presses the button it means, or asks a question back. Same READ-table
+        // reasoning as /resolve above.
+        'POST /daemon/pages/reply': async req => {
+            const { path, text } = (await req.json()) as {
+                path?: string
+                text?: string
+            }
+            if (!path || !text) return error('missing path/text', 400)
+            return ok(replyToPage(cfg.vault, path, text, 'app'))
         },
 
         // Belt-and-suspenders client escape hatch (plan §5): force the sidecar to "failed" with no

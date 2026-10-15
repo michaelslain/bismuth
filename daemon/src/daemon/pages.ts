@@ -14,10 +14,23 @@ import { isOwner } from '../lib/owner'
 import { consumeTrigger, listTriggers } from '../lib/drainTriggers'
 import type { VaultContext } from '../lib/config.ts'
 import { atomicWriteJson } from '../lib/atomicJson.ts'
+import {
+    listDaemonPages,
+    resolvePage,
+    type ThreadEntry,
+} from '../../../core/src/daemonPages.ts'
+import { writeFileAtomicSync } from '../../../core/src/atomicWrite.ts'
+import {
+    buildReplyPrompt,
+    exactAction,
+    parseDecision,
+    replaceBody,
+    type ReplyDecision,
+} from './pageReply'
 
 /** A page's dynamic sidecar, as written by core/src/daemonPages.ts. Only the fields this
  *  runtime reads/writes are typed here — core's PageState is the richer, canonical shape. */
-interface PageState {
+export interface PageState {
     status: 'pending' | 'working' | 'done' | 'failed' | 'dismissed'
     pressedAction?: string
     pressedAt?: string
@@ -26,6 +39,8 @@ interface PageState {
     timeoutSecs?: number
     daemonNote?: string
     completedAt?: string | null
+    reply?: { text: string; at: string; via: 'app' | 'email' }
+    thread?: ThreadEntry[]
 }
 
 // Keyed by `${ctx.root}::${slug}` — mirrors cron.ts's jobKey so two vaults' pages never collide
@@ -80,6 +95,12 @@ export async function processPageTriggers(ctx: VaultContext): Promise<void> {
         if (runningPages.has(key)) continue // already mid-run — trigger consumed, nothing more to do
 
         const state = await readPageState(ctx, slug)
+        // A plain-language reply (core's replyToPage): read it, then press or ask back.
+        if (state?.status === 'working' && state.reply && !state.prompt) {
+            runningPages.add(key)
+            void readReply(ctx, slug, state).finally(() => runningPages.delete(key))
+            continue
+        }
         // Core only drops a trigger after writing status "working" with a resolved prompt — a
         // missing sidecar, a non-"working" status, or a missing prompt means there's nothing
         // approved to run (a stale/duplicate trigger, or the page was already resolved elsewhere).
@@ -145,4 +166,85 @@ export async function processPageTriggers(ctx: VaultContext): Promise<void> {
             }
         })()
     }
+}
+
+/** Retention passed to listDaemonPages: the schema's maximum, so this read never deletes a page
+ *  sooner than the user's own daemon.inboxRetentionDays would. */
+const LIST_RETENTION_DAYS = 90
+
+/** Ask the model to classify a reply; returns its raw text. Injected so tests run without it. */
+export type ReplyClassifier = (prompt: string, ctx: VaultContext) => Promise<string>
+
+const classifyWithDaemon: ReplyClassifier = async (prompt, ctx) =>
+    (await sendMessage(prompt, ctx, { newSession: true, model: 'sonnet', timeoutSecs: 120 }))
+        .result
+
+/**
+ * Turn a reply into a press or a question (pageReply.ts decides; this writes). The page goes back
+ * to `pending` first, keeping its thread, because resolvePage refuses a `working` page; a press
+ * then drops the action's trigger, which the next poll runs like any click.
+ */
+export async function readReply(
+    ctx: VaultContext,
+    slug: string,
+    state: PageState,
+    classify: ReplyClassifier = classifyWithDaemon,
+): Promise<void> {
+    const reply = state.reply!
+    const thread = state.thread ?? []
+    const page = listDaemonPages(ctx.root, LIST_RETENTION_DAYS).find(
+        p => p.slug === slug,
+    )
+    if (!page) {
+        await writePageState(ctx, slug, {
+            ...state,
+            reply: undefined,
+            status: 'failed',
+            daemonNote: 'Page was deleted before its reply could be read.',
+            completedAt: new Date().toISOString(),
+        })
+        return
+    }
+
+    let decision: ReplyDecision
+    const exact = exactAction(page.actions, reply.text)
+    if (exact) decision = { kind: 'press', actionId: exact.id, draft: null }
+    else {
+        try {
+            decision = parseDecision(
+                await classify(buildReplyPrompt({ ...page, thread }, reply.text), ctx),
+                page.actions,
+            )
+        } catch (err) {
+            decision = {
+                kind: 'ask',
+                question: `I couldn't read your reply (${String(err).slice(0, 120)}). Reply again or press a button.`,
+            }
+        }
+    }
+
+    if (decision.kind === 'ask') {
+        await writePageState(ctx, slug, {
+            status: 'pending',
+            thread: [
+                ...thread,
+                { from: 'daemon', text: decision.question, at: new Date().toISOString() },
+            ],
+        })
+        console.log(`[pages] "${slug}": asked about the reply (${ctx.name})`)
+        return
+    }
+
+    if (decision.draft !== null) {
+        const file = join(ctx.root, page.path)
+        writeFileAtomicSync(
+            file,
+            replaceBody(await readFile(file, 'utf-8'), decision.draft),
+        )
+    }
+    await writePageState(ctx, slug, { status: 'pending', thread })
+    resolvePage(ctx.root, page.path, decision.actionId)
+    console.log(
+        `[pages] "${slug}": reply read as ${decision.actionId}${decision.draft !== null ? ' with a new draft' : ''} (${ctx.name})`,
+    )
 }

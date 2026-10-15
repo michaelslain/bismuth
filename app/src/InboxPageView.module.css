@@ -1,7 +1,8 @@
 /* app/src/InboxPageView.module.css
-   Chrome for a `type: daemon-page` note: a ViewBar identity header on top, the Editor body
-   filling the space between and scrolling on its own, and an InboxActionBar PINNED to the bottom of
-   the pane (its own module) — always visible, never scrolled away with a long page. */
+   Chrome for a `type: daemon-page` note, read like a terminal transcript: the ViewBar on top, then
+   ONE scrolling column — the subject, the draft as the first message, the replies, the chips and
+   the `>` prompt. Every block is centred in the note column so the subject, every ruled head,
+   every body and the prompt start at one x. */
 .inbox-page-host {
   display: flex;
   flex-direction: column;
@@ -12,4 +13,32 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  background: var(--editor);
+}
+.subject,
+.column {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--note-column) + 2 * var(--sp-6));
+  margin: 0 auto;
+  padding-left: var(--sp-6);
+  padding-right: var(--sp-6);
+}
+.subject {
+  padding-top: var(--sp-7);
+}
+/* The chips hang close under the last message; room under the prompt, so the last line never
+   sits on the pane's bottom edge. */
+.tail {
+  padding-top: var(--sp-4);
+  padding-bottom: var(--sp-7);
+}
+/* What directly follows the draft: the editor always ends on one empty line (a page file ends
+   in a newline, written or rewritten), so pull up by that one row and the draft is spaced like
+   every other message. */
+.after-draft {
+  margin-top: calc(-1 * var(--prose-row));
+  /* Positioned, and after the editor in the DOM, so it paints over the editor's empty last row
+     (whose ground would otherwise cover it) instead of under it. */
+  position: relative;
 }
