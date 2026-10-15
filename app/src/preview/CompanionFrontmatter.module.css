@@ -26,8 +26,13 @@
     line-height: calc(var(--row-h, 18px) * var(--prose-line-height, 1));
 }
 
-/* The chevron sits in the 40px left gutter: centred 20px from the strip's own left edge
-   (translateX(-50%) around `left: 20px`), and vertically centred on the opening `---` row.
+/* The chevron sits in the line-number column, on the opening `---` row (the one row with no
+   number): centred on a single digit, so it stacks over the `1` below it and keeps the numbers'
+   gap to the block. The digits hang at codeLineNumbers.ts's `left: -2.7em; width: 2em;
+   text-align: right` off the line's padding box, which is this strip's 40px inset, so a lone
+   digit's right edge is `40px - 0.7em` and its centre half a mono glyph (0.3em) further left:
+   `40px - 1em`, in the fence rows' own em (`--code-font-size`).
+   Vertically centred on the opening `---` row.
    `top` walks down to that row's own centre from the strip's padding-top:
    `var(--sp-4)` (this panel's own top padding) + 4px (the offset between the panel's padding
    edge and the fence row's own top: `.cm-content`'s 4px padding-top, a CodeMirror baseTheme
@@ -36,7 +41,7 @@
    measured pixel guess, so it stays correct if the row unit or line-height setting ever changes. */
 .chevron {
     position: absolute;
-    left: 20px;
+    left: calc(40px - var(--code-font-size));
     top: calc(var(--sp-4) + 4px + var(--row-h, 18px) * var(--prose-line-height, 1) / 2);
     transform: translate(-50%, -50%);
 }
