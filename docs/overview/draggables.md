@@ -23,6 +23,10 @@ The matrix lists every draggable against the three surfaces that accept all of t
 
 The `attachments.onDrop` setting (`copy` by default, or `reference`) chooses whether a file from outside the vault is copied into the attachment folder or referenced in place; holding Option while dropping always references. See [settings reference](../settings/reference.md).
 
+### Pasting a file into a chat
+
+A file copied in Finder and pasted into a chat tab, the daemon page or the quick ask popover behaves like dropping it: an image is attached, anything else puts its absolute path in the draft, and the file stays where it is. Only bytes with no file behind them (clipboard data that is not an image the chat accepts, or a file pasted in the browser build) are written to `~/.bismuth/tmp` so the agent has a path to read; entries there are deleted a day after they are written.
+
 ### Dropping a tab or pane on a note
 
 A tab or pane that shows a note, image or PDF does the same thing as the sidebar row for that file. Dropping in the middle of the note pane (everything except the outer 10% band) inserts a `[[wikilink]]` for a note or an `![[embed]]` for an image or PDF. Dropping on the outer band splits the pane. Anything else, and a pane dropped on itself, rearranges: split, graft or replace.
@@ -54,6 +58,8 @@ Each surface hit-tests the position against its own rect and claims the drop onc
 
 A drop with no paths (a browser image, a link, dragged text, a Photos or Messages file promise) is read off the OS drag pasteboard through the `read_drag_pasteboard` Tauri command and planned by `planDrop` in `dropIntake.ts`. In a browser (dev) build the same drags arrive as HTML5 `drop` events and go through the same planner via `pasteboardFromTransfer`.
 
+A paste never carries a real path inside the app: the webview hands the page a Finder-copied file as a `File` with only its basename and an empty `text/uri-list`. The chat composer's paste handler (`ChatComposerBar.tsx`) asks `readClipboardPaths` (`nativeClipboard.ts`), which calls the `read_clipboard_paths` Tauri command for the `public.file-url` entries on the general pasteboard, and `resolvePastedFiles` in `fileIntake.ts` prefers those paths over the bytes. With no paths the files go to `stageTmpFile` (`core/src/tmpFiles.ts`) through `POST /tmp-file`.
+
 One predicate, `editorReferencePath` in `noteRef.ts`, decides both the drop cue and the drop for a note pane, so the two never disagree. The 10% outer band is `REFERENCE_EDGE` in `app/src/dnd/geometry.ts`.
 
 | Surface | Entry points |
@@ -67,4 +73,4 @@ One predicate, `editorReferencePath` in `noteRef.ts`, decides both the drop cue 
 
 The drag-over cue on every chat surface is `ui/DropCue`.
 
-Source: `app/src/nativeDrop.ts`, `app/src/nativeDropRouting.ts`, `app/src/dropIntake.ts`, `app/src/dnd/viewDrag.ts`, `app/src/dnd/noteRef.ts`, `app/src/dnd/geometry.ts`, `app/src/shell/railDragPreview.ts`, `app/src/chat/createChatDropTarget.ts`, `app/src/chat/chatDrop.ts`, `app/src/quickAsk/QuickAsk.tsx`, `app/src/daemon/daemonChatArming.ts`, `app/src-tauri/src/lib.rs`
+Source: `app/src/nativeDrop.ts`, `app/src/nativeDropRouting.ts`, `app/src/dropIntake.ts`, `app/src/dnd/viewDrag.ts`, `app/src/dnd/noteRef.ts`, `app/src/dnd/geometry.ts`, `app/src/shell/railDragPreview.ts`, `app/src/chat/createChatDropTarget.ts`, `app/src/chat/chatDrop.ts`, `app/src/quickAsk/QuickAsk.tsx`, `app/src/daemon/daemonChatArming.ts`, `app/src/chat/ChatComposerBar.tsx`, `app/src/nativeClipboard.ts`, `app/src/fileIntake.ts`, `core/src/tmpFiles.ts`, `app/src-tauri/src/lib.rs`

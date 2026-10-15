@@ -933,6 +933,40 @@ fn read_drag_pasteboard() -> DragPasteboard {
     DragPasteboard::default()
 }
 
+// The real paths of files copied in Finder, read off the general pasteboard. WKWebView hands a
+// pasted file to the page as a `Files` item (basename + bytes) with an empty `text/uri-list`, so
+// the page cannot see where the file lives; without this, chat staged a copy of every pasted file
+// into ~/.bismuth/tmp instead of referencing it in place. A screenshot or copied text carries no
+// `public.file-url` and returns an empty list.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn read_clipboard_paths() -> Vec<String> {
+    use objc2_app_kit::NSPasteboard;
+    use objc2_foundation::{NSString, NSURL};
+
+    let pb = NSPasteboard::generalPasteboard();
+    let Some(items) = pb.pasteboardItems() else {
+        return Vec::new();
+    };
+    let file_url_type = NSString::from_str("public.file-url");
+    let mut out = Vec::new();
+    for i in 0..items.count() {
+        let item = items.objectAtIndex(i);
+        if let Some(s) = item.stringForType(&file_url_type) {
+            if let Some(path) = NSURL::URLWithString(&s).and_then(|u| u.path()) {
+                out.push(path.to_string());
+            }
+        }
+    }
+    out
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn read_clipboard_paths() -> Vec<String> {
+    Vec::new()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -941,7 +975,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, take_first_run, detect_agents, finish_intro, reset_first_run, set_last_vault, set_ui_zoom, read_drag_pasteboard, print_pdf::print_pdf])
+        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, take_first_run, detect_agents, finish_intro, reset_first_run, set_last_vault, set_ui_zoom, read_drag_pasteboard, read_clipboard_paths, print_pdf::print_pdf])
         .setup(|app| {
             // One-time: carry an existing user's saved vault config across the bundle-id
             // rename. Must run before any config read below (the config dir is id-keyed).

@@ -7,6 +7,7 @@ import {
     imageMimeFromName,
     isHeicName,
     jpegNameFor,
+    resolvePastedFiles,
 } from './fileIntake'
 
 describe('basename / extensionOf', () => {
@@ -194,5 +195,27 @@ describe('filePathsFromTransfer', () => {
                 dt({ 'text/uri-list': 'file:///a/%ZZ\nfile:///a/ok.png' }),
             ),
         ).toEqual(['/a/ok.png'])
+    })
+})
+
+describe('resolvePastedFiles', () => {
+    test('real paths from the OS pasteboard win over the pasted bytes', async () => {
+        const r = await resolvePastedFiles(['bytes'], async () => [
+            '/Users/me/Downloads/report.pdf',
+        ])
+        expect(r).toEqual({
+            kind: 'paths',
+            paths: ['/Users/me/Downloads/report.pdf'],
+        })
+    })
+    test('no paths (a screenshot) keeps the files', async () => {
+        const r = await resolvePastedFiles(['bytes'], async () => [])
+        expect(r).toEqual({ kind: 'files', files: ['bytes'] })
+    })
+    test('a failing reader falls back to the files', async () => {
+        const r = await resolvePastedFiles(['bytes'], async () => {
+            throw new Error('no native pasteboard')
+        })
+        expect(r).toEqual({ kind: 'files', files: ['bytes'] })
     })
 })

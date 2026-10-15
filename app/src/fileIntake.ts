@@ -129,3 +129,30 @@ export function filePathsFromTransfer(
     }
     return paths
 }
+
+/** What a paste of `kind:"file"` items should become. */
+export type PastedFileIntake<F> =
+    | { kind: 'paths'; paths: string[] }
+    | { kind: 'files'; files: F[] }
+
+/**
+ * Decide between a pasted file's real path and its bytes.
+ *
+ * The native webview (WKWebView) gives the page a file copied in Finder as a `File` with only a
+ * basename and an empty `text/uri-list`, so `filePathsFromTransfer` finds nothing. `readPaths`
+ * asks the OS pasteboard for the real paths; when it has any, those win and the file is
+ * referenced in place. A clipboard bitmap (a screenshot) has no path, so it stays a `File`.
+ * A failing reader falls back to the files rather than losing the paste.
+ */
+export async function resolvePastedFiles<F>(
+    files: F[],
+    readPaths: () => Promise<string[]>,
+): Promise<PastedFileIntake<F>> {
+    let paths: string[] = []
+    try {
+        paths = await readPaths()
+    } catch {
+        paths = []
+    }
+    return paths.length ? { kind: 'paths', paths } : { kind: 'files', files }
+}

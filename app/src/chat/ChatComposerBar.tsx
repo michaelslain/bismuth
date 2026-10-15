@@ -34,7 +34,8 @@ import {
     historyDown,
     type HistoryCursor,
 } from './chatHistory'
-import { filePathsFromTransfer } from '../fileIntake'
+import { filePathsFromTransfer, resolvePastedFiles } from '../fileIntake'
+import { readClipboardPaths } from '../nativeClipboard'
 import { addChatReference } from './chatContext'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
@@ -233,7 +234,13 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
         }
         if (!files.length) return
         e.preventDefault()
-        void session.addDroppedFiles(files)
+        // In the app a Finder-copied file arrives here as bytes with no path; the native pasteboard
+        // still has the path, so the file is referenced in place instead of staged as a copy.
+        void resolvePastedFiles(files, readClipboardPaths).then(r =>
+            r.kind === 'paths'
+                ? session.addDroppedPaths(r.paths)
+                : session.addDroppedFiles(r.files),
+        )
     }
 
     const onGesture = (e: PointerEvent | FocusEvent) => props.onGesture?.(e)

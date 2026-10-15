@@ -72,6 +72,7 @@ The composer is a small markdown editor: live preview, `[[wikilink]]`, `#tag` an
   `/rename <name>` titles the tab (empty reverts to the automatic title), and `/color <swatch|hex|clear>` tints the pane; both stay in the app and never reach the model.
 - Mention a note. Type `@` to search vault files, or drag a note from the file tree onto the chat pane. A referenced file is listed in the message's context for that one send.
 - Attach images. Drop or paste an image. PNG, JPEG, GIF and WebP up to 10 MB each, about 12 MB per message, are sent to the model as images. A slash command cannot carry an image; if one is staged, the send is refused with an inline error.
+- Hand over a file. Drop or paste any other file from Finder and its absolute path goes into the draft; the agent reads it where it is, and nothing is copied. See [draggables](../overview/draggables.md).
 - Queue a follow-up. A message sent while a reply streams is staged as a dimmed bubble and sent when the reply finishes. **Stop** restores staged messages and their images into the composer instead of discarding them.
 
 ### What does the agent know about my open notes?
