@@ -60,6 +60,8 @@ export type ChatSessionBodyProps = {
     /** Show ChatControls (model // mode // history // new chat) under the composer. Default true;
      *  a single-purpose chat (the feedback interview) turns it off. */
     controls?: boolean
+    /** Moves the conversation to its own chat tab (the `[↗]` open-in-chat icon in ChatControls). */
+    onOpenInChat?: () => void
     /** Test-only hook on the composer wrapper (column variant). */
     composerTestId?: string
 }
@@ -106,6 +108,7 @@ const ChatSessionBody: Component<ChatSessionBodyProps> = props => {
                         <ChatControls
                             session={props.session}
                             chatId={props.chatId}
+                            onOpenInChat={props.onOpenInChat}
                         />
                     )
                 }

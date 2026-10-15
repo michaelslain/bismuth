@@ -35,7 +35,13 @@ import {
 import { chatBusy, chatComposing, chatSpeaking } from '../chat/chatActivity'
 import { DAEMON_CHAT_ID } from '../tabIds'
 import { chatSession } from '../chat/chatSessions'
-import { armDaemonChat, armDaemonChatForDrop } from './daemonChatArm'
+import {
+    armDaemonChat,
+    armDaemonChatForDrop,
+    disarmDaemonChat,
+} from './daemonChatArm'
+import { handOffConversation } from '../chat/chatHandoff'
+import { browserStorage } from '../chat/chatSessionPrefs'
 import { createChatDropTarget } from '../chat/createChatDropTarget'
 import DropCue from '../ui/DropCue'
 import styles from './DaemonPageHost.module.css'
@@ -194,6 +200,30 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     // focus.
     const onGesture = (e: PointerEvent | FocusEvent) => {
         armDaemonChat(e)
+    }
+
+    // the `[↗]` open-in-chat icon: the conversation moves to its own chat tab (chat/chatHandoff.ts) and the
+    // page goes back to rest — disarmed, so the next message here starts a new conversation. This
+    // host can't reach the tab tree, so App opens the tab on `bismuth-open-chat`; dispatchEvent is
+    // synchronous, so the tab exists before the disarm releases the daemon's own session.
+    const onOpenInChat = () => {
+        const s = session()
+        if (!s) return
+        const chatId = crypto.randomUUID()
+        const moved = handOffConversation(
+            DAEMON_CHAT_ID,
+            chatId,
+            s.provider(),
+            browserStorage(),
+        )
+        if (!moved) {
+            pushToast('Nothing to open yet: the conversation has not started')
+            return
+        }
+        window.dispatchEvent(
+            new CustomEvent('bismuth-open-chat', { detail: { chatId } }),
+        )
+        disarmDaemonChat()
     }
 
     // The whole page is a drop target for the daemon's chat: a draggable dropped anywhere on it arms
@@ -448,6 +478,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                         name={daemonName()}
                         mood={mood()}
                         onGesture={onGesture}
+                        onOpenInChat={onOpenInChat}
                         noteNames={props.noteNames}
                         memoryNames={props.memoryNames}
                         tagNames={props.tagNames}

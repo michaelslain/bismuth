@@ -328,6 +328,62 @@ export const Conversation: Story = {
     },
 }
 
+/** the `[↗]` open-in-chat icon in a real conversation: it heads the controls row's actions, and a click
+ *  reaches the host's hand-off (DaemonPageHost moves the conversation to a chat tab). */
+let handoffs = 0
+export const OpenInChat: Story = {
+    render: () => {
+        handoffs = 0
+        return (
+            <Frame>
+                <DaemonChat
+                    session={makeStubChatSession({
+                        transcript: [...CONVERSATION_ITEMS],
+                        persona: 'daemon',
+                    })}
+                    name="daemon"
+                    onGesture={noop}
+                    onOpenInChat={() => handoffs++}
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const open = canvasElement.querySelector<HTMLButtonElement>(
+            '[data-testid="chat-open-in-chat"]',
+        )!
+        await expect(open).not.toBeNull()
+        await userEvent.click(open)
+        await waitFor(() => expect(handoffs).toBe(1))
+    },
+}
+
+/** Before anything is said the action is absent, so the resting composer and its row are exactly
+ *  what they were — the host passes `onOpenInChat` either way. */
+export const OpenInChatAbsentAtRest: Story = {
+    render: () => (
+        <Frame>
+            <DaemonChat
+                session={undefined}
+                name="daemon"
+                onGesture={noop}
+                onOpenInChat={noop}
+                noteNames={noNames}
+                memoryNames={noNames}
+                tagNames={noNames}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        await expect(
+            canvasElement.querySelector('[data-testid="chat-open-in-chat"]'),
+        ).toBeNull()
+    },
+}
+
 /** A narrow column (the daemon page's centre column at its 260px floor): the composer's box never
  *  exceeds the column width, same as the wide layout. */
 export const Narrow: Story = {

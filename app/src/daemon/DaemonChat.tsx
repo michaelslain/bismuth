@@ -36,6 +36,8 @@ export type DaemonChatProps = {
     noteNames: () => NoteCandidate[]
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
+    /** the `[↗]` open-in-chat icon: move this conversation to its own chat tab (DaemonPageHost). */
+    onOpenInChat?: () => void
     class?: string
 }
 
@@ -58,6 +60,7 @@ export default function DaemonChat(props: DaemonChatProps): JSX.Element {
                 memoryNames={props.memoryNames}
                 tagNames={props.tagNames}
                 onGesture={props.onGesture}
+                onOpenInChat={props.onOpenInChat}
                 chatId={DAEMON_CHAT_ID}
                 composerTestId="daemon-chat-composer"
             />

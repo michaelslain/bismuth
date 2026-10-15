@@ -16,8 +16,10 @@
 import { Show, type Component } from 'solid-js'
 import styles from './ChatControls.module.css'
 import type { ChatSession } from './chatSession'
+import { canHandOff } from './chatHandoff'
 import Select from '../ui/Select'
 import { IconTextButton } from '../ui/IconTextButton'
+import IconButton from '../ui/IconButton'
 import Text from '../ui/Text'
 import ChatModelMenu from './ChatModelMenu'
 import { providerCan, resolveChatProvider } from './chatProvider'
@@ -69,6 +71,7 @@ type RowActionProps = {
     testId?: string
     onClick: () => void
     title?: string
+    disabled?: boolean
 }
 
 const RowAction: Component<RowActionProps> = props => {
@@ -81,6 +84,7 @@ const RowAction: Component<RowActionProps> = props => {
             variant={variant()}
             data-testid={props.testId}
             title={props.title}
+            disabled={props.disabled}
             onClick={props.onClick}
         >
             <Text as="span" inherit data-row-label>
@@ -140,9 +144,27 @@ const Config: Component<{ session: ChatControlsView }> = props => {
  *  between them: brackets already separate adjacent commands, and `//` is reserved for separating
  *  readout GROUPS (Acceptance 7: "opus 4.8 // bypass // [history] [new chat]" — exactly two `//`,
  *  none inside the actions cluster itself). */
-const Actions: Component<{ session: ChatControlsView }> = props => {
+const Actions: Component<{
+    session: ChatControlsView
+    openInChat?: OpenInChat
+}> = props => {
     return (
         <div class={styles.actions}>
+            {/* The daemon page's hand-off: its conversation moves to its own chat tab. Icon only
+                (`[↗]`, named by its tooltip) — a secondary action beside the two worded ones. Only a
+                host that passes `onOpenInChat` gets it, and only once there is a conversation to
+                move; disabled while a turn streams, whose tail the move would cut off. */}
+            <Show when={props.openInChat}>
+                {open => (
+                    <IconButton
+                        icon="ExternalLink"
+                        label="open in chat"
+                        data-testid="chat-open-in-chat"
+                        disabled={open().disabled}
+                        onClick={open().onClick}
+                    />
+                )}
+            </Show>
             {/* NEVER DROPPED — a row with no way to reach past chats or start a new one is a
                 broken one, same reasoning as "New chat" below. The history itself is a dialog
                 ChatSessionBody opens over the chat (ChatHistoryModal), so this is just the
@@ -168,8 +190,14 @@ const Actions: Component<{ session: ChatControlsView }> = props => {
     )
 }
 
+/** The the `[↗]` open-in-chat icon action's state, built from the live session. */
+type OpenInChat = { onClick: () => void; disabled: boolean }
+
 export type ChatControlsProps = {
     session: ChatSession | undefined
+    /** Moves this conversation to its own chat tab — the daemon page passes it. Shown once the
+     *  session has a conversation; omitted, the row is unchanged. */
+    onOpenInChat?: () => void
     /** The chat id the disabled fallback should seed its provider/model from — the SAME id the real
      *  session will be created with once armed (the daemon page passes `DAEMON_CHAT_ID`). Omit when
      *  no chat id exists yet (e.g. no host chat id at all); the fallback then reads the global prefs
@@ -235,6 +263,17 @@ function buildDisabledSession(chatId?: string): ChatControlsView {
  *  omitted. With no session: renders the row disabled at the SAME height as the armed row at the
  *  same width, so arming the daemon chat doesn't shift the composer above it. */
 const ChatControls: Component<ChatControlsProps> = props => {
+    const openInChat = (s: ChatSession): OpenInChat | undefined => {
+        const onClick = props.onOpenInChat
+        if (!onClick || s.transcript.length === 0) return undefined
+        return {
+            onClick,
+            disabled: !canHandOff({
+                items: s.transcript.length,
+                streaming: s.streaming(),
+            }),
+        }
+    }
     return (
         <div
             class={`${styles.row} ${props.class ?? ''}`}
@@ -263,7 +302,10 @@ const ChatControls: Component<ChatControlsProps> = props => {
                     <>
                         <ChatModelMenu session={session()} />
                         <Config session={session()} />
-                        <Actions session={session()} />
+                        <Actions
+                            session={session()}
+                            openInChat={openInChat(session())}
+                        />
                     </>
                 )}
             </Show>

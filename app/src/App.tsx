@@ -1550,9 +1550,10 @@ export default function App() {
             key: focusedContent(),
         })
     }
-    // `[ open in chat ]`: the quick-ask chat continues in its own tab. The tab is added before the
-    // popover lets go of the id, so the retained set never loses it (no reconnect).
-    const openQuickAskInChat = (chatId: string) => {
+    // `[ open in chat ]`: a chat continues in its own tab — the quick-ask popover's (same id) and the
+    // daemon page's (a new id its conversation was handed to, chat/chatHandoff.ts). The tab is added
+    // before the popover lets go of the id, so the retained set never loses it (no reconnect).
+    const openChatInTab = (chatId: string) => {
         const tab = makeTab(CHAT_PREFIX + chatId)
         batch(() => {
             setTabs(ts => [...ts, tab])
@@ -2590,17 +2591,24 @@ export default function App() {
         // Chat auth popover's "Open terminal" (RE-FIX #90): ChatView can't reach the tab tree, so it
         // asks App to open a terminal tab (where the CLI-interactive `opencode auth login` runs).
         const onOpenTerminal = () => openTerminal()
+        // The daemon page's `[↗]` open-in-chat icon (DaemonPageHost): it can't reach the tab tree either.
+        const onOpenChat = (e: Event) => {
+            const chatId = (e as CustomEvent<{ chatId?: string }>).detail?.chatId
+            if (chatId) openChatInTab(chatId)
+        }
         window.addEventListener('bismuth-open', onOpen)
         window.addEventListener('bismuth-deleted', onDeleted)
         window.addEventListener('bismuth-moved', onMoved)
         window.addEventListener('bismuth-chat-rename', onChatRename)
         window.addEventListener('bismuth-open-terminal', onOpenTerminal)
+        window.addEventListener('bismuth-open-chat', onOpenChat)
         onCleanup(() => {
             window.removeEventListener('bismuth-open', onOpen)
             window.removeEventListener('bismuth-deleted', onDeleted)
             window.removeEventListener('bismuth-moved', onMoved)
             window.removeEventListener('bismuth-chat-rename', onChatRename)
             window.removeEventListener('bismuth-open-terminal', onOpenTerminal)
+            window.removeEventListener('bismuth-open-chat', onOpenChat)
         })
     }
 
@@ -3764,7 +3772,7 @@ export default function App() {
                     <GalleryHost />
                     <QuickAskHost
                         daemonEnabled={settings.daemon.enabled}
-                        onOpenChat={openQuickAskInChat}
+                        onOpenChat={openChatInTab}
                         noteNames={noteCandidates}
                         memoryNames={memoryCandidates}
                         tagNames={tagCandidates}

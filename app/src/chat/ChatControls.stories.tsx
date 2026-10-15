@@ -5,6 +5,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import ChatControls from './ChatControls'
 import { makeStubChatSession } from './_stubChatSession'
+import { CONVERSATION_ITEMS } from './_transcriptFixtures'
 import type { ChatManifest } from '../../../core/src/chat'
 import styles from './ChatControls.module.css'
 
@@ -192,7 +193,7 @@ export const NoSession: Story = {
  *  giving up its own floor. `scrollWidth <= clientWidth` is what actually proves "nothing spills
  *  past the container" — a row wider than its own box grows `scrollWidth` past `clientWidth` while
  *  `clientWidth` (and any height-based assertion) stays exactly the same. */
-const overflowProof = (widthPx: number) => ({
+const overflowProof = (widthPx: number, openInChat = false) => ({
     render: () => (
         <div style={{ width: `${widthPx}px` }}>
             <ChatControls
@@ -204,7 +205,9 @@ const overflowProof = (widthPx: number) => ({
                     permMode: 'bypassPermissions',
                     effortOptions: EFFORT_OPTIONS,
                     effortValue: 'medium',
+                    transcript: openInChat ? [...CONVERSATION_ITEMS] : [],
                 })}
+                onOpenInChat={openInChat ? () => {} : undefined}
             />
         </div>
     ),
@@ -232,6 +235,12 @@ const overflowProof = (widthPx: number) => ({
         )!
         const collapsed = getComputedStyle(newChatLabel).display === 'none'
         expect(collapsed).toBe(widthPx <= 280)
+        if (openInChat) {
+            const open = canvasElement.querySelector<HTMLElement>(
+                '[data-testid="chat-open-in-chat"]',
+            )!
+            expect(open.getClientRects().length).toBeGreaterThan(0)
+        }
     },
 })
 
@@ -251,6 +260,86 @@ export const Narrow260: Story = overflowProof(260)
  *  across it, not just at 240/260/360. */
 export const Narrow280: Story = overflowProof(280)
 export const Narrow320: Story = overflowProof(320)
+
+/** The daemon page's row once it has a conversation carries a fifth item, the `[↗]` open-in-chat
+ *  icon; it must still fit on one line at the column's widths. */
+export const Narrow360OpenInChat: Story = overflowProof(360, true)
+export const Narrow260OpenInChat: Story = overflowProof(260, true)
+
+/** `[↗]` open in chat — the daemon page's hand-off (only a host that passes `onOpenInChat` gets
+ *  it). Three rows at one width: nothing said yet (absent, so the resting row is unchanged), a
+ *  conversation (enabled, an icon-only bracket heading the actions cluster on history's line), and a
+ *  turn still streaming (shown but disabled — the move would cut the reply off). */
+export const OpenInChat: Story = {
+    render: () => {
+        const base = {
+            manifest: MANIFEST,
+            models: MODELS,
+            displayModel: 'opus',
+            displayModelValue: 'opus',
+            permMode: 'bypassPermissions',
+            effortOptions: EFFORT_OPTIONS,
+            effortValue: 'medium',
+        }
+        return (
+            <div
+                style={{
+                    display: 'flex',
+                    'flex-direction': 'column',
+                    gap: '24px',
+                    width: '520px',
+                }}
+            >
+                <ChatControls
+                    session={makeStubChatSession(base)}
+                    onOpenInChat={() => {}}
+                    class="at-rest"
+                />
+                <ChatControls
+                    session={makeStubChatSession({
+                        ...base,
+                        transcript: [...CONVERSATION_ITEMS],
+                    })}
+                    onOpenInChat={() => {}}
+                    class="conversing"
+                />
+                <ChatControls
+                    session={makeStubChatSession({
+                        ...base,
+                        transcript: [...CONVERSATION_ITEMS],
+                        streaming: true,
+                    })}
+                    onOpenInChat={() => {}}
+                    class="streaming"
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const open = (row: string) =>
+            canvasElement.querySelector<HTMLButtonElement>(
+                `.${row} [data-testid="chat-open-in-chat"]`,
+            )
+        await expect(open('at-rest')).toBeNull()
+        const live = open('conversing')!
+        await expect(live.disabled).toBe(false)
+        await expect(open('streaming')!.disabled).toBe(true)
+        // On its neighbours' line: one shared row top and one height.
+        const history = canvasElement.querySelector<HTMLElement>(
+            '.conversing [data-testid="chat-history"]',
+        )!
+        const a = live.getBoundingClientRect()
+        const b = history.getBoundingClientRect()
+        await expect(Math.abs(a.top - b.top)).toBeLessThan(1)
+        await expect(Math.abs(a.height - b.height)).toBeLessThan(1)
+        await expect(a.right).toBeLessThanOrEqual(b.left)
+        // Adding it never changes the row's height.
+        const rows = canvasElement.querySelectorAll<HTMLElement>(`.${styles.row}`)
+        await expect(
+            Math.abs(rows[0].offsetHeight - rows[1].offsetHeight),
+        ).toBeLessThan(1)
+    },
+}
 
 /** THE REAL GATE for Acceptance line 4 ("no pixel ladder" / the row can never overflow): a 240px
  *  container — narrower than either width sample above — with a DELIBERATELY LONG model label, the
