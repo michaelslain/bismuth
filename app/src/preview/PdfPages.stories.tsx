@@ -100,19 +100,19 @@ function inkedPct(canvas: HTMLCanvasElement): number {
 
 /** Rest state: all 3 pages laid out, at least one page's canvas actually painted with real
  *  pixels (not just present in the DOM). */
+let defaultPageCount = 0
+
 export const Default: Story = {
     render: () => (
         <div style={{ height: '640px' }}>
-            <PdfPages load={load} zoom={1} />
+            <PdfPages load={load} zoom={1} onPageCount={n => (defaultPageCount = n)} />
         </div>
     ),
     play: async ({ canvasElement }) => {
-        await waitFor(
-            () =>
-                expect(
-                    canvasElement.querySelectorAll('[data-pdf-page]').length,
-                ).toBe(3),
-            { timeout: 5000 },
+        defaultPageCount = 0
+        await waitFor(() => expect(defaultPageCount).toBe(3), { timeout: 5000 })
+        await waitFor(() =>
+            expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBeGreaterThan(0),
         )
         await waitFor(
             () => {
@@ -392,11 +392,13 @@ export const WithMargin: Story = {
         )
     },
     play: async ({ canvasElement }) => {
+        // Every page row carries its margin paper (rows exist only for the visible window).
         await waitFor(
-            () =>
-                expect(
-                    canvasElement.querySelectorAll('[data-pdf-margin]').length,
-                ).toBe(3),
+            () => {
+                const rows = canvasElement.querySelectorAll('[data-pdf-page]').length
+                expect(rows).toBeGreaterThan(0)
+                expect(canvasElement.querySelectorAll('[data-pdf-margin]').length).toBe(rows)
+            },
             { timeout: 5000 },
         )
         const box = lastBoxes[0]!
@@ -1758,6 +1760,8 @@ async function loadManyPages(): Promise<ArrayBuffer> {
     return manyPagesBytes.slice(0)
 }
 
+let manyPageCount = 0
+
 export const ManyPages: Story = {
     render: () => (
         // Narrower than the `Default` fixture's fullscreen width ON PURPOSE — a fit-width letter
@@ -1767,17 +1771,23 @@ export const ManyPages: Story = {
         // real reading pane's proportions keeps page height close to viewport height, which is the
         // condition bench/pdfScroll.ts's numbers are actually about.
         <div style={{ height: '1100px', width: '380px' }}>
-            <PdfPages load={loadManyPages} zoom={1} />
+            <PdfPages
+                load={loadManyPages}
+                zoom={1}
+                onPageCount={n => (manyPageCount = n)}
+            />
         </div>
     ),
     play: async ({ canvasElement }) => {
-        await waitFor(
-            () =>
-                expect(
-                    canvasElement.querySelectorAll('[data-pdf-page]').length,
-                ).toBe(30),
-            { timeout: 8000 },
-        )
+        // All 30 pages load, but only the visible window (viewport + overscan) gets a row: a row
+        // per page made every zoom frame rewrite the whole document.
+        manyPageCount = 0
+        await waitFor(() => expect(manyPageCount).toBe(30), { timeout: 8000 })
+        await waitFor(() => {
+            const rows = canvasElement.querySelectorAll('[data-pdf-page]').length
+            expect(rows).toBeGreaterThan(0)
+            expect(rows).toBeLessThan(30)
+        })
         await waitFor(
             () => {
                 const c = firstCanvas(canvasElement)
@@ -1804,17 +1814,23 @@ export const ManyPages: Story = {
 export const OverscanCoversAViewport: Story = {
     render: () => (
         <div style={{ height: '1100px', width: '380px' }}>
-            <PdfPages load={loadManyPages} zoom={1} />
+            <PdfPages
+                load={loadManyPages}
+                zoom={1}
+                onPageCount={n => (manyPageCount = n)}
+            />
         </div>
     ),
     play: async ({ canvasElement }) => {
-        await waitFor(
-            () =>
-                expect(
-                    canvasElement.querySelectorAll('[data-pdf-page]').length,
-                ).toBe(30),
-            { timeout: 8000 },
-        )
+        // All 30 pages load, but only the visible window (viewport + overscan) gets a row: a row
+        // per page made every zoom frame rewrite the whole document.
+        manyPageCount = 0
+        await waitFor(() => expect(manyPageCount).toBe(30), { timeout: 8000 })
+        await waitFor(() => {
+            const rows = canvasElement.querySelectorAll('[data-pdf-page]').length
+            expect(rows).toBeGreaterThan(0)
+            expect(rows).toBeLessThan(30)
+        })
         await waitFor(
             () => {
                 const mounted = canvasElement.querySelectorAll(

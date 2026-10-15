@@ -322,6 +322,8 @@ export function PreviewView(props: {
         return st ? { width: `${st.w}px`, height: `${st.h}px` } : undefined
     }
     const [pdfPages, setPdfPages] = createSignal<PageInkPage[]>([])
+    // The pages PdfPages gives DOM to; the ink and highlight overlays window themselves to it.
+    const [pdfVisibleRange, setPdfVisibleRange] = createSignal<[number, number]>([0, -1])
     // The loaded image's natural pixel size, for PreviewBar's readout slot — absent before load
     // and after a load error, matching the PDF page-count readout's own absent-until-known shape.
     const [imageSize, setImageSize] = createSignal<{ w: number; h: number }>()
@@ -1134,6 +1136,7 @@ export function PreviewView(props: {
                                 if (key) savePreviewView(key, { position: pos })
                             }}
                             onLayout={onPdfLayout}
+                            onVisibleRange={setPdfVisibleRange}
                             onPdfHighlights={pages => store()?.setPdfHighlights(pages)}
                             controller={c => (pdfController = c)}
                             onOutline={o => setOutline(o)}
@@ -1159,6 +1162,7 @@ export function PreviewView(props: {
                                         controller={c => (highlighter = c)}
                                         contentEl={pdfScrollEl}
                                         dark={pdfDark}
+                                        visibleRange={pdfVisibleRange}
                                     />
                                     <Show when={companion()}>
                                         <ScratchTextLayer
@@ -1180,6 +1184,7 @@ export function PreviewView(props: {
                                         onExit={exitDraw}
                                         store={store()}
                                         darkPage={pdfDark}
+                                        visibleRange={pdfVisibleRange}
                                     />
                                 </>
                             }

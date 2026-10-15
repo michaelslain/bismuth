@@ -45,7 +45,7 @@ import {
     createEffect,
     createMemo,
     createSignal,
-    Index,
+    For,
     onCleanup,
     Show,
     untrack,
@@ -105,6 +105,9 @@ export type PageInkProps = {
     /** PDF dark mode: the page renders dark, so ink on the page proper resolves against the dark
      *  bucket (light ink), like the strip. */
     darkPage?: () => boolean
+    /** Inclusive `[first, last]` page range to give slots (PdfPages' rows). Absent = every page.
+     *  A long PDF otherwise rewrites one slot per page on every zoom frame. */
+    visibleRange?: () => [number, number]
 }
 
 // Tool choice follows the user across previews for the session, like note ink's.
@@ -120,6 +123,10 @@ const setTools = (patch: Partial<ToolState>) =>
     setToolsSig(t => ({ ...t, ...patch }))
 
 const DPR_CAP = 2
+
+// A slot whose index the page list no longer has (the list shrinking under a live slot for one
+// tick).
+const NO_PAGE: PageInkPage = { rendered: { left: 0, top: 0, w: 0, h: 0 }, nat: { w: 0, h: 0 } }
 
 /** A sidecar created by the in-place surface: blank paper (the source IS the surface), and no
  *  embedded image — see the contract above. */
@@ -244,6 +251,21 @@ function PageInk(props: PageInkProps) {
      *  the gutter/margin and can push it left of the page's own edge. Every page in one document
      *  shares the same left/width (pageLayout.ts lays out one column), so this reduces to the
      *  first page's band in practice; the reduce stays generic rather than assuming that. */
+    // The page indices that get a slot: `visibleRange` clamped to the page list, else every page.
+    // An equal list does not notify, so a zoom frame that keeps the range leaves `<For>` alone.
+    const slotIndices = createMemo(
+        () => {
+            const n = props.pages().length
+            const r = props.visibleRange?.()
+            const first = r ? Math.max(0, r[0]) : 0
+            const last = r ? Math.min(n - 1, r[1]) : n - 1
+            const out: number[] = []
+            for (let i = first; i <= last; i++) out.push(i)
+            return out
+        },
+        undefined,
+        { equals: (a, b) => a.length === b.length && a[0] === b[0] },
+    )
     const dockBand = createMemo<{ left: number; width: number } | undefined>(
         () => {
             const list = props.pages()
@@ -538,8 +560,9 @@ function PageInk(props: PageInkProps) {
                 if (props.active()) host()?.focus({ preventScroll: true })
             }}
         >
-            <Index each={props.pages()}>
-                {(page, i) => {
+            <For each={slotIndices()}>
+                {i => {
+                    const page = () => props.pages()[i] ?? NO_PAGE
                     const [near, setNear] = createSignal(false)
                     const [base, setBase] = createSignal<HTMLCanvasElement>()
                     // Watched only while this page could show a canvas (draw mode, or ink on it):
@@ -624,7 +647,7 @@ function PageInk(props: PageInkProps) {
                         </div>
                     )
                 }}
-            </Index>
+            </For>
             <div
                 class={styles['page-ink-dock']}
                 style={

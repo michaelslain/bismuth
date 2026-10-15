@@ -1003,10 +1003,10 @@ export const PdfSurvivesParentChurn: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await waitFor(
-            () =>
-                expect(
-                    canvasElement.querySelectorAll('[data-pdf-page]').length,
-                ).toBe(6),
+            () => {
+                expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBeGreaterThan(0)
+                expect(readoutPageCount(canvasElement)).toBe(6)
+            },
             { timeout: 5000 },
         )
         await expect(churnLoadCalls).toBe(1)
@@ -1164,6 +1164,29 @@ let served = new Map<string, Uint8Array>()
 const scrollElOf = (root: HTMLElement) =>
     root.querySelector(`.${pdfPagesStyles['pdf-scroll']}`) as HTMLElement | null
 const pressedOf = (el: HTMLElement) => el.getAttribute('aria-pressed')
+/** The loaded document's page count, off the bar's page readout (`p. 3 / 10`). Page rows exist
+ *  only for the visible window, so counting `[data-pdf-page]` says nothing about the document. */
+const readoutPageCount = (root: HTMLElement) =>
+    Number(
+        root.querySelector('[data-testid="page-readout"]')?.textContent?.match(/\/\s*(\d+)/)?.[1] ??
+            0,
+    )
+/** Page `k`'s row, scrolling down until the visible window mounts it. */
+async function revealRow(root: HTMLElement, k: number): Promise<HTMLElement> {
+    await waitFor(
+        async () => {
+            const row = root.querySelector<HTMLElement>(`[data-pdf-page="${k}"]`)
+            if (!row) {
+                const el = scrollElOf(root)!
+                el.scrollTop += el.clientHeight / 2
+                await fireEvent.scroll(el)
+            }
+            expect(row).not.toBeNull()
+        },
+        { timeout: 5000 },
+    )
+    return root.querySelector<HTMLElement>(`[data-pdf-page="${k}"]`)!
+}
 /** The bar's BOOKMARKS toggle — by role, since the open panel's own section is also labelled
  *  "Bookmarks". */
 const bookmarksBtn = (root: HTMLElement) =>
@@ -1387,7 +1410,8 @@ export const PdfHighlightMarginBookmarks: Story = {
                     canvasElement.querySelectorAll(
                         `.${styles['preview-body']} [data-pdf-page]`,
                     ).length,
-                ).toBe(4)
+                ).toBeGreaterThan(0)
+                expect(readoutPageCount(canvasElement)).toBe(4)
             },
             { timeout: 8000 },
         )
@@ -1445,9 +1469,9 @@ export const PdfHighlightMarginBookmarks: Story = {
         // continuation of the page) and never the desk's own `--editor` ground either (Task 4
         // makes `--editor` the shared desk behind the page AND the image; the strip is the one
         // thing raised above it) — separated from the page by the `--rule-soft` hairline.
-        await expect(
-            canvasElement.querySelectorAll('[data-pdf-margin]').length,
-        ).toBe(4)
+        await expect(canvasElement.querySelectorAll('[data-pdf-margin]').length).toBe(
+            canvasElement.querySelectorAll('[data-pdf-page]').length,
+        )
         const marginEl = canvasElement.querySelector(
             '[data-pdf-margin="0"]',
         ) as HTMLElement
@@ -1612,7 +1636,10 @@ export const PdfHighlightMarginBookmarks: Story = {
         await fireEvent.scroll(scrollEl)
         await waitFor(() => {
             expect(scrollEl.scrollTop).toBe(0)
-            const pr = pageEl.getBoundingClientRect()
+            // Re-read: page 0's row left the visible window during the jumps and was remounted.
+            const pr = canvasElement
+                .querySelector('[data-pdf-page="0"]')!
+                .getBoundingClientRect()
             const sr = scrollEl.getBoundingClientRect()
             expect(Math.abs(pr.top - sr.top - pad)).toBeLessThanOrEqual(1)
             expect(Math.abs(pr.left - sr.left - pad)).toBeLessThanOrEqual(1)
@@ -1710,10 +1737,10 @@ export const PdfMarginToggleSaves: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await waitFor(
-            () =>
-                expect(
-                    canvasElement.querySelectorAll('[data-pdf-page]').length,
-                ).toBe(4),
+            () => {
+                expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBeGreaterThan(0)
+                expect(readoutPageCount(canvasElement)).toBe(4)
+            },
             { timeout: 5000 },
         )
         const marginBtn = canvas.getByLabelText(
@@ -1739,9 +1766,9 @@ export const PdfMarginToggleSaves: Story = {
         await expect(onStyle.borderColor).not.toBe(offBorderColor)
         await waitFor(
             () =>
-                expect(
-                    canvasElement.querySelectorAll('[data-pdf-margin]').length,
-                ).toBe(4),
+                expect(canvasElement.querySelectorAll('[data-pdf-margin]').length).toBe(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ),
             { timeout: 3000 },
         )
         await waitFor(
@@ -2351,7 +2378,7 @@ export const PdfViewBarLayout: Story = {
         await waitFor(() =>
             expect(scrollEl.scrollHeight).toBeGreaterThan(scrollEl.clientHeight + 200),
         )
-        const page2 = canvasElement.querySelector('[data-pdf-page="2"]') as HTMLElement
+        const page2 = await revealRow(canvasElement, 2)
         scrollEl.scrollTop = page2.offsetTop
         await fireEvent.scroll(scrollEl)
         await waitFor(() => expect(readoutBtn()?.textContent).toBe('p. 3 / 4'))
@@ -2361,7 +2388,7 @@ export const PdfViewBarLayout: Story = {
         await expect(input.value).toBe('3')
         input.value = '2'
         await fireEvent.keyDown(input, { key: 'Enter' })
-        const page1 = canvasElement.querySelector('[data-pdf-page="1"]') as HTMLElement
+        const page1 = await revealRow(canvasElement, 1)
         // The jump lands `pad` px above the page's own top (the page-frame gutter, PdfPages'
         // resolved `--sp-6`), not flush at its offsetTop.
         const pad = parseFloat(
@@ -2444,7 +2471,7 @@ export const PdfRemountRestoresView: Story = {
         // 1. Wait for inked pages (fit-width, page 0's canvas rasterized).
         await waitFor(
             () => {
-                expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBe(10)
+                expect(readoutPageCount(canvasElement)).toBe(10)
                 expect(
                     canvasHasInk(
                         canvasElement.querySelector('[data-pdf-page="0"] canvas'),
@@ -2472,6 +2499,7 @@ export const PdfRemountRestoresView: Story = {
         // width from its ResizeObserver a frame or more later. Recording before that measures a
         // layout about to change, so wait until two consecutive frames agree on both the scroll
         // element's width and page 5's row offset.
+        await revealRow(canvasElement, 5)
         const nextFrame = () => new Promise<void>(r => requestAnimationFrame(() => r()))
         const page5Top = () =>
             (canvasElement.querySelector('[data-pdf-page="5"]') as HTMLElement | null)?.offsetTop
@@ -2530,7 +2558,7 @@ export const PdfRemountRestoresView: Story = {
         // readout shows page 6 of 10, and scrollTop within 2px of the recorded value.
         await waitFor(
             () => {
-                expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBe(10)
+                expect(readoutPageCount(canvasElement)).toBe(10)
                 expect(
                     canvasHasInk(
                         canvasElement.querySelector('[data-pdf-page="5"] canvas') ??
@@ -2580,10 +2608,10 @@ export const PdfPanelAndScratchKeepPlace: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await waitFor(
-            () =>
-                expect(
-                    canvasElement.querySelectorAll('[data-pdf-page]').length,
-                ).toBe(4),
+            () => {
+                expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBeGreaterThan(0)
+                expect(readoutPageCount(canvasElement)).toBe(4)
+            },
             { timeout: 5000 },
         )
         const scrollEl = scrollElOf(canvasElement)!
@@ -2603,9 +2631,7 @@ export const PdfPanelAndScratchKeepPlace: Story = {
         // property assignment fires no native `scroll` event, and without one landing PdfPages
         // never captures the anchor the reflow effect needs (see scrollIntoPageThree's comment in
         // PdfPages.stories.tsx for the same trap).
-        const page2 = canvasElement.querySelector(
-            '[data-pdf-page="2"]',
-        ) as HTMLElement
+        const page2 = await revealRow(canvasElement, 2)
         scrollEl.scrollTop = page2.offsetTop + 40
         await fireEvent.scroll(scrollEl)
         await waitFor(() => expect(scrollEl.scrollTop).toBeGreaterThan(0))
@@ -2621,12 +2647,17 @@ export const PdfPanelAndScratchKeepPlace: Story = {
                 marginW: 0,
             }))
 
+        // Rows exist only for the visible window: `boxesOf()[0]` is the first MOUNTED page, so an
+        // index from the anchor math is offset by that row's page index.
+        const firstRow = () =>
+            Number(canvasElement.querySelector('[data-pdf-page]')!.getAttribute('data-pdf-page'))
         const checkKeptPlace = async (action: () => Promise<void> | void) => {
             const before = anchorAt(
                 boxesOf(),
                 scrollEl.scrollTop,
                 scrollEl.clientHeight,
             )
+            const beforeIndex = before.index + firstRow()
             const wBefore = boxesOf()[0]!.w
             await action()
             await waitFor(() => expect(boxesOf()[0]!.w).not.toBe(wBefore), {
@@ -2638,7 +2669,7 @@ export const PdfPanelAndScratchKeepPlace: Story = {
                     scrollEl.scrollTop,
                     scrollEl.clientHeight,
                 )
-                expect(after.index).toBe(before.index)
+                expect(after.index + firstRow()).toBe(beforeIndex)
                 expect(after.yFraction).toBeCloseTo(before.yFraction, 2)
                 // `boxesOf()` reads INTEGER `offsetTop`/`offsetHeight` (PreviewView exposes no
                 // onLayout seam to read the true float boxes through, unlike the PdfPages-only
@@ -2650,7 +2681,7 @@ export const PdfPanelAndScratchKeepPlace: Story = {
                 const remembered =
                     loadPreviewView(KEEP_PLACE_VIEW_KEY)?.position
                 expect(remembered).toBeDefined()
-                expect(remembered!.index).toBe(expected.index)
+                expect(remembered!.index).toBe(expected.index + firstRow())
                 expect(remembered!.yFraction).toBeCloseTo(expected.yFraction, 2)
             })
         }

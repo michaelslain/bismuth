@@ -24,7 +24,7 @@
 // occupies inside it, the same box a PDF's quad points convert through; `logicalToScreen`/`screenToLogical` convert through a page's `rendered`
 // rect (host px). `selectionRects.ts`'s `rectsToPages` is the same conversion run the other way,
 // for a browser selection's client rects.
-import { createEffect, createMemo, For, onCleanup } from 'solid-js'
+import { createEffect, createMemo, Index, onCleanup } from 'solid-js'
 import type { AnnotationStore } from './annotationTypes'
 import type { PageInkPage } from './PageInk'
 import {
@@ -62,6 +62,8 @@ export type HighlightLayerProps = {
     /** PDF dark mode: the page beneath is inverted, so each rect screens its colour instead of
      *  multiplying it — a tint on the dark paper that leaves light glyphs light. */
     dark?: () => boolean
+    /** Inclusive `[first, last]` page range to paint (PdfPages' rows). Absent = every page. */
+    visibleRange?: () => [number, number]
     class?: string
 }
 
@@ -92,8 +94,10 @@ function HighlightLayer(props: HighlightLayerProps) {
     const painted = createMemo<PaintedRect[]>(() => {
         const doc = docOrEmpty()
         const pages = props.pages()
+        const r = props.visibleRange?.()
         const out: PaintedRect[] = []
         pages.forEach((page, i) => {
+            if (r && (i < r[0] || i > r[1])) return
             const highlights = doc.pages[i]?.highlights
             if (!highlights?.length) return
             const box = boxFor(i, page)
@@ -215,22 +219,24 @@ function HighlightLayer(props: HighlightLayerProps) {
             // Test-only settled seam: stories wait on it; nothing in the app reads it.
             data-highlights-settled={props.store.highlightsSettled?.() ? 'true' : undefined}
         >
-            <For each={painted()}>
+            {/* `<Index>`: every zoom frame hands back fresh rect objects, which `<For>` would answer
+                by recreating every div; by position, a div just takes its new box. */}
+            <Index each={painted()}>
                 {p => (
                     <div
                         class={styles.rect}
                         classList={{ [styles['rect-dark']]: props.dark?.() ?? false }}
                         data-testid="highlight-rect"
                         style={{
-                            left: `${p.left}px`,
-                            top: `${p.top}px`,
-                            width: `${p.w}px`,
-                            height: `${p.h}px`,
-                            'background-color': p.color,
+                            left: `${p().left}px`,
+                            top: `${p().top}px`,
+                            width: `${p().w}px`,
+                            height: `${p().h}px`,
+                            'background-color': p().color,
                         }}
                     />
                 )}
-            </For>
+            </Index>
         </div>
     )
 }

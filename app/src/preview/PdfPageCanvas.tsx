@@ -2,11 +2,11 @@
 // One stacked PDF page: a raster canvas (at devicePixelRatio) plus pdf.js's text layer for
 // selection. Extracted from PdfPages.tsx (chunk-1 review: one component per PascalCase file,
 // with a colocated module imported only by that component) — PdfPages.tsx is its only importer.
-// Mounted/unmounted by PdfPages' `<Show>` as the page enters/leaves `visiblePageRange`, which is
+// Mounted/unmounted with its PdfPages row as the page enters/leaves `visiblePageRange`, which is
 // what makes an in-flight render/text-layer task get cancelled on scroll.
 //
 // NO BLANK FLASH ON RE-LAYOUT: a zoom, margin or pane-width change resizes the page's box but does
-// NOT remount this component (PdfPages' `<Index>` keeps the row). Instead the box's size is
+// NOT remount this component (PdfPages keys its rows by page index). Instead the box's size is
 // watched here: the canvas's CSS size follows its row at once (`.pdf-canvas` is 100% of the row
 // PdfPages sizes to the box, so the raster already on it just stretches), the page is re-rendered into an OFFSCREEN canvas at the new scale, and only when that
 // render lands is it blitted onto the visible canvas — resizing the canvas bitmap and drawing into
@@ -264,7 +264,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         scheduleTextLayer(mine, mod, page, w, h, cssScale)
     }
 
-    // `props.box` is <Index>'s item signal, and PdfPages' layout memo hands back a BRAND NEW box
+    // `props.box` reads the row's box from PdfPages' layout memo, which hands back a BRAND NEW box
     // object on every recompute even when a page's own width/height haven't moved (e.g. only an
     // EARLIER page's height shifted this one's `top`). `on()` has no equality check of its own
     // (chunk-1 review) — it re-runs whenever the tracked accessor is notified, not when the

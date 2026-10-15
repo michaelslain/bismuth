@@ -137,7 +137,7 @@ const waitReady = () => `(async () => {
       const ctx = canvas.getContext('2d')
       const d = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data
       if (d[3] > 0) {
-        const scroller = document.querySelector('[data-pdf-page="0"]').parentElement.parentElement
+        const scroller = document.querySelector('[data-pdf-page]').parentElement.parentElement
         const r = scroller.getBoundingClientRect()
         return JSON.stringify({ ok: true, pageCount: pages.length, rect: { x: r.left + r.width / 2, y: r.top + r.height / 2, top: r.top, bottom: r.bottom } })
       }
@@ -166,14 +166,14 @@ if (!ready.ok) {
     process.exit(2)
 }
 const { x, y } = ready.rect as { x: number; y: number }
-console.log(`story: ${ID}  pages: ${ready.pageCount}  scroll target: (${Math.round(x)}, ${Math.round(y)})`)
+console.log(`story: ${ID}  mounted rows: ${ready.pageCount}  scroll target: (${Math.round(x)}, ${Math.round(y)})`)
 
 /** In-page rAF sampler. Records `{ t, blank }` per frame for `durationMs`, `blank` = the page is
  *  showing at least one `.pdf-page` intersecting the scrollport with no canvas or a canvas that
  *  hasn't painted (see the file header's "what counts as blank"). Started as a fire-and-forget
  *  `Runtime.evaluate` (see the file header) so the caller can dispatch wheel input while it runs. */
 const samplerScript = (durationMs: number) => `(() => {
-  const scroller = document.querySelector('[data-pdf-page="0"]').parentElement.parentElement
+  const scroller = document.querySelector('[data-pdf-page]').parentElement.parentElement
   function isBlank(canvas) {
     if (!canvas || canvas.width === 0 || canvas.height === 0) return true
     const ctx = canvas.getContext('2d')
@@ -247,7 +247,7 @@ async function runPass(deltaY: number): Promise<Frame[]> {
 async function resetScroll(): Promise<void> {
     await page('Runtime.evaluate', {
         expression: `(() => {
-          const scroller = document.querySelector('[data-pdf-page="0"]').parentElement.parentElement
+          const scroller = document.querySelector('[data-pdf-page]').parentElement.parentElement
           scroller.scrollTop = 0
           scroller.dispatchEvent(new Event('scroll'))
         })()`,

@@ -33,7 +33,7 @@ import {
     createEffect,
     createMemo,
     createSignal,
-    Index,
+    For,
     on,
     onCleanup,
     Show,
@@ -82,6 +82,9 @@ const OVERSCAN = 1 // pages rendered beyond the viewport on each side
 // PdfPageCanvas waits for before building a text layer (see its `scrolling` prop).
 const SCROLL_SETTLE_MS = 150
 
+// A row whose index the layout no longer has (a document shrinking under a live row for one tick).
+const NO_BOX: PageBox = { top: 0, left: 0, w: 0, h: 0, marginW: 0 }
+
 const sameRange = (a: [number, number], b: [number, number]) =>
     a[0] === b[0] && a[1] === b[1]
 
@@ -108,6 +111,10 @@ export type PdfPagesProps = {
         sizes: PageSize[]
         scrollEl: HTMLElement
     }) => void
+    /** The inclusive `[first, last]` page range that has DOM (the viewport plus overscan); fires
+     *  when it changes. A per-page overlay windows itself to it, so its cost per zoom frame
+     *  follows what is on screen, not the document's page count. */
+    onVisibleRange?: (range: [number, number]) => void
     /** Rendered INSIDE the scroll content, above the page canvases, so it scrolls with them. */
     overlay?: JSX.Element
     /** Margin paper to the right of every page, as a fraction of the page's rendered width.
@@ -214,7 +221,7 @@ function PdfPages(props: PdfPagesProps) {
     const [containerH, setContainerH] = createSignal(0)
     const [scrollTop, setScrollTop] = createSignal(0)
     // The document currently shown (0 = none yet). A cache HIT switching A→B never leaves
-    // 'ready', so without this key the `<Show>`/`<Index>` below would REUSE A's scroll element
+    // 'ready', so without this key the `<Show>`/`<For>` below would REUSE A's scroll element
     // (native offset still A's) and A's page canvases, whose only re-render trigger is a box SIZE
     // change — two letter-size PDFs would keep A's pixels on screen under B.
     const [docId, setDocId] = createSignal(0)
@@ -567,6 +574,17 @@ function PdfPages(props: PdfPagesProps) {
         undefined,
         { equals: sameRange },
     )
+    // The page indices that get a row at all. A row per PAGE re-wrote every row's box on every
+    // pinch frame; on an 895-page book that was most of the frame. Keyed by index (`<For>` over
+    // numbers), so a row and its canvas survive a re-layout and only the edges of the range mount
+    // and unmount. The scroll content's height comes from `contentH`, not from the rows.
+    const rows = createMemo(() => {
+        const [first, last] = visible()
+        const out: number[] = []
+        for (let i = first; i <= last; i++) out.push(i)
+        return out
+    })
+    createEffect(() => props.onVisibleRange?.(visible()))
 
     // -1 while nothing is loaded, so the first real value of every document is a change.
     const currentPage = createMemo(() =>
@@ -860,29 +878,22 @@ function PdfPages(props: PdfPagesProps) {
                             class={styles['pdf-content']}
                             style={{ height: `${layout().contentH}px` }}
                         >
-                            {/* `<Index>`, not `<For>`: `layoutPages` returns fresh box objects on every
-                                zoom/margin/width change, and `<For>` keys rows by object identity — it
-                                would recreate every row, and with it every page canvas, blanking the
-                                whole stack until pdf.js re-rendered. Keyed by position, a row survives
-                                and PdfPageCanvas re-renders in place (see its header). The overscan
-                                `<Show>` still unmounts far pages. */}
-                            <Index each={layout().boxes}>
-                                {(box, i) => (
-                                    <div
-                                        class={styles['pdf-page']}
-                                        data-pdf-page={i}
-                                        style={{
-                                            top: `${box().top}px`,
-                                            left: `${box().left}px`,
-                                            width: `${box().w}px`,
-                                            height: `${box().h}px`,
-                                        }}
-                                    >
-                                        <Show
-                                            when={
-                                                i >= visible()[0] &&
-                                                i <= visible()[1]
-                                            }
+                            {/* Only the rows in `rows()`, keyed by page index: a row survives a
+                                zoom/margin/width re-layout and PdfPageCanvas re-renders in place
+                                (see its header), and a page leaving the range unmounts with it. */}
+                            <For each={rows()}>
+                                {i => {
+                                    const box = () => layout().boxes[i] ?? NO_BOX
+                                    return (
+                                        <div
+                                            class={styles['pdf-page']}
+                                            data-pdf-page={i}
+                                            style={{
+                                                top: `${box().top}px`,
+                                                left: `${box().left}px`,
+                                                width: `${box().w}px`,
+                                                height: `${box().h}px`,
+                                            }}
                                         >
                                             <PdfPageCanvas
                                                 index={i}
@@ -894,19 +905,19 @@ function PdfPages(props: PdfPagesProps) {
                                                 scrolling={scrolling}
                                                 dark={() => props.dark ?? false}
                                             />
-                                        </Show>
-                                        <Show when={box().marginW > 0}>
-                                            <ScratchPaper
-                                                index={i}
-                                                class={styles['pdf-margin']}
-                                                style={{
-                                                    width: `${box().marginW}px`,
-                                                }}
-                                            />
-                                        </Show>
-                                    </div>
-                                )}
-                            </Index>
+                                            <Show when={box().marginW > 0}>
+                                                <ScratchPaper
+                                                    index={i}
+                                                    class={styles['pdf-margin']}
+                                                    style={{
+                                                        width: `${box().marginW}px`,
+                                                    }}
+                                                />
+                                            </Show>
+                                        </div>
+                                    )
+                                }}
+                            </For>
                             {/* AFTER every page, in DOM order — not before + z-index (see
                                 PdfPages.module.css's `.pdf-overlay` comment): a highlight rect inside
                                 `overlay()` uses `mix-blend-mode: multiply` against the page canvas
@@ -918,28 +929,25 @@ function PdfPages(props: PdfPagesProps) {
                             </Show>
                             <Show when={props.scratchEdge}>
                                 {edge => (
-                                    <Index each={layout().boxes}>
-                                        {(box, i) => (
-                                            <Show
-                                                when={
-                                                    box().marginW > 0 &&
-                                                    i >= visible()[0] &&
-                                                    i <= visible()[1]
-                                                }
-                                            >
-                                                <div
-                                                    class={styles['pdf-scratch-edge']}
-                                                    style={{
-                                                        top: `${box().top}px`,
-                                                        left: `${box().left + box().w}px`,
-                                                        height: `${box().h}px`,
-                                                    }}
-                                                >
-                                                    {edge()(i)}
-                                                </div>
-                                            </Show>
-                                        )}
-                                    </Index>
+                                    <For each={rows()}>
+                                        {i => {
+                                            const box = () => layout().boxes[i] ?? NO_BOX
+                                            return (
+                                                <Show when={box().marginW > 0}>
+                                                    <div
+                                                        class={styles['pdf-scratch-edge']}
+                                                        style={{
+                                                            top: `${box().top}px`,
+                                                            left: `${box().left + box().w}px`,
+                                                            height: `${box().h}px`,
+                                                        }}
+                                                    >
+                                                        {edge()(i)}
+                                                    </div>
+                                                </Show>
+                                            )
+                                        }}
+                                    </For>
                                 )}
                             </Show>
                         </div>
