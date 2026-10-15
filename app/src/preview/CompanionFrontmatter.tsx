@@ -30,7 +30,7 @@
 //
 // FOLD: unremembered/local unless `props.foldKey` is passed, in which case fold state is kept in
 // frontmatterFold.ts's module-level Map for the session (a tab switch keeps it, a full reload
-// does not — same ruling pdfViewMemory.ts documents). The Map holds no signal of its own, so
+// does not). The Map holds no signal of its own, so
 // `foldVersion` is bumped on every toggle to force `folded()` to re-read it; `folded()` also
 // re-reads automatically when `props.foldKey` itself changes, since it is read inside the memo.
 import { createSignal, Show } from 'solid-js'

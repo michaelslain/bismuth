@@ -103,6 +103,7 @@ The app caches view state in `localStorage` so the next launch paints instantly.
 | `bismuth:ui:zoom` | The UI zoom percentage |
 | `bismuth-frecency-v1` | Decayed use counts that rank the command palette and the switcher |
 | `bismuth-folds:<note path>` | Fold blocks locked open in one note |
+| `bismuth-preview-view::<api base>` | Where each PDF and image was left: zoom, scroll position and the bookmarks panel, scoped to one backend |
 | `bismuth:table-size:<note path>` | Resized table column widths and row heights |
 | `bismuth.chat.*`, `bismuth-chat-sessions-v1`, `bismuth-chat-colors-v1` | Last chat provider, model, effort and permission mode, and each chat tab's session id and tint |
 | `bismuth.export.destFolder`, `bismuth.export.calSpan` | The export pane's last folder and calendar span |

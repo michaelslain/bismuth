@@ -29,7 +29,7 @@ import { PreviewView } from './PreviewView'
 import { setTransport, type Transport } from './api'
 import { setSettings } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
-import { clearPdfView, loadPdfView } from './preview/pdfViewMemory'
+import { clearPreviewView, loadPreviewView } from './preview/previewViewMemory'
 import { anchorAt, positionAt } from './preview/pageLayout'
 import { ZOOM_TWEEN_MS } from './preview/zoomGesture'
 import { inkSidecarFor } from '../../core/src/fileKinds'
@@ -335,6 +335,111 @@ export const ImagePinchZoom: Story = {
         await waitFor(() =>
             expect(img().getBoundingClientRect().width).toBeCloseTo(r0.width, 0),
         )
+    },
+}
+
+// ── Leave an image and come back ────────────────────────────────────────────────────────────────
+// The user's report: "PDF/image previews dont save scroll on cmd+shift+t ... it should save scroll
+// always, so that when u come back it comes back to the same place". `[ image ]` / `[ note ]`
+// unmount and remount PreviewView the way a tab switch or a closed-and-reopened tab does;
+// `pdfViewKey` opts this story into the view memory under a key of its own. Try it by hand: pinch
+// (ctrl+wheel) in, scroll somewhere, switch to the note, switch back. The play() below does the
+// same once and checks the same picture point is back under the centre of the view.
+const IMAGE_RETURN_KEY = 'story:image-leave-and-return'
+
+export const ImageLeaveAndReturnKeepsPlace: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        clearPreviewView(IMAGE_RETURN_KEY)
+        const [tab, setTab] = createSignal<'image' | 'note'>('image')
+        return (
+            <div style={{ height: '100vh', display: 'flex', 'flex-direction': 'column' }}>
+                <div style={{ display: 'flex', gap: '8px', padding: '8px' }}>
+                    <TextButton
+                        variant={tab() === 'image' ? 'selected' : 'unselected'}
+                        data-testid="image-return-tab-image"
+                        onClick={() => setTab('image')}
+                    >
+                        image
+                    </TextButton>
+                    <TextButton
+                        variant={tab() === 'note' ? 'selected' : 'unselected'}
+                        data-testid="image-return-tab-note"
+                        onClick={() => setTab('note')}
+                    >
+                        note
+                    </TextButton>
+                </div>
+                <div style={{ flex: '1', 'min-height': '0' }}>
+                    <Show
+                        when={tab() === 'image'}
+                        fallback={
+                            <div style={{ padding: '16px' }}>
+                                <Text tone="muted">
+                                    a note // the image is unmounted while this is open
+                                </Text>
+                            </div>
+                        }
+                    >
+                        <PreviewView
+                            path="assets/photo.png"
+                            tagNames={NO_TAGS}
+                            imageSrc={photoPng}
+                            pdfViewKey={IMAGE_RETURN_KEY}
+                        />
+                    </Show>
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const img = () => canvasElement.querySelector('img') as HTMLImageElement
+        const body = () =>
+            canvasElement.querySelector('[data-testid="preview-body"]') as HTMLElement
+        const frames = async (n: number) => {
+            for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r))
+        }
+        /** The picture point under the centre of the body, as fractions of the picture. */
+        const centrePoint = () => {
+            const r = img().getBoundingClientRect()
+            const b = body().getBoundingClientRect()
+            return {
+                fx: (b.left + body().clientWidth / 2 - r.left) / r.width,
+                fy: (b.top + body().clientHeight / 2 - r.top) / r.height,
+            }
+        }
+        await waitFor(() => expect(canvas.getByText('1600 × 900')).toBeInTheDocument())
+        const r0 = img().getBoundingClientRect()
+        for (let i = 0; i < 30; i++) {
+            body().dispatchEvent(
+                new WheelEvent('wheel', {
+                    deltaY: -3,
+                    ctrlKey: true,
+                    clientX: r0.left + r0.width * 0.3,
+                    clientY: r0.top + r0.height * 0.4,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        }
+        await waitFor(() => expect(canvas.getByText('246%')).toBeInTheDocument())
+        // Pan somewhere off the zoom's own anchor, then let the scroll event and its save land.
+        body().scrollLeft = body().scrollWidth * 0.6
+        body().scrollTop = body().scrollHeight * 0.5
+        await frames(3)
+        const before = centrePoint()
+
+        fireEvent.click(canvas.getByTestId('image-return-tab-note'))
+        await waitFor(() => expect(canvasElement.querySelector('img')).toBeNull())
+        fireEvent.click(canvas.getByTestId('image-return-tab-image'))
+
+        await waitFor(() => expect(canvas.getByText('246%')).toBeInTheDocument())
+        await waitFor(() => {
+            const after = centrePoint()
+            expect(Math.abs(after.fx - before.fx)).toBeLessThan(0.005)
+            expect(Math.abs(after.fy - before.fy)).toBeLessThan(0.005)
+        })
     },
 }
 
@@ -2281,7 +2386,7 @@ export const PdfViewBarLayout: Story = {
 // Proves the actual bug this whole plan exists to fix, at the PreviewView level: a real unmount +
 // remount (not just a parent-object churn, PdfSurvivesParentChurn's job above) must come back at
 // the SAME zoom, panel state and scroll position instead of resetting to fit-width/closed/top.
-// `pdfViewKey` (the Task 3 data seam on PreviewView) opts this story back into `pdfViewMemory` —
+// `pdfViewKey` (the Task 3 data seam on PreviewView) opts this story back into `previewViewMemory` —
 // without it every `pdfLoad` story is deliberately memory-less (see `pdfMemoryKey`'s own comment),
 // so there would be nothing here to restore.
 function buildRemountTestPdf(): ArrayBuffer {
@@ -2317,7 +2422,7 @@ let setRemountMounted: ((v: boolean) => void) | undefined
 export const PdfRemountRestoresView: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        clearPdfView(REMOUNT_VIEW_KEY)
+        clearPreviewView(REMOUNT_VIEW_KEY)
         const [mounted, setMounted] = createSignal(true)
         setRemountMounted = setMounted
         return (
@@ -2456,11 +2561,11 @@ const KEEP_PLACE_VIEW_KEY = 'story:PdfPanelAndScratchKeepPlace'
  *  scroll element exactly where it was — same `annotatedLoad` real-PDF seam `PdfMarginToggleSaves`
  *  uses (so bookmarks/scratch are the actual wired controls, not stand-ins) plus the `pdfViewKey`
  *  memory seam `PdfRemountRestoresView` uses (so the reflow's corrected position, not the raw
- *  drifted pixel one, is what `loadPdfView` would hand back on a tab return). */
+ *  drifted pixel one, is what `loadPreviewView` would hand back on a tab return). */
 export const PdfPanelAndScratchKeepPlace: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        clearPdfView(KEEP_PLACE_VIEW_KEY)
+        clearPreviewView(KEEP_PLACE_VIEW_KEY)
         return (
             <div style={{ height: '100vh', width: '900px' }}>
                 <PreviewView
@@ -2542,7 +2647,8 @@ export const PdfPanelAndScratchKeepPlace: Story = {
                 // rounding tolerance above (toBeCloseTo(_, 2), i.e. within 0.005), not float
                 // precision.
                 const expected = positionAt(boxesOf(), scrollEl.scrollTop, pad)
-                const remembered = loadPdfView(KEEP_PLACE_VIEW_KEY)?.position
+                const remembered =
+                    loadPreviewView(KEEP_PLACE_VIEW_KEY)?.position
                 expect(remembered).toBeDefined()
                 expect(remembered!.index).toBe(expected.index)
                 expect(remembered!.yFraction).toBeCloseTo(expected.yFraction, 2)
@@ -2703,7 +2809,7 @@ export const PdfPanelEdges: Story = {
             }),
         )
         setSettings('appearance', 'pdfBookmarksWidth', 260)
-        clearPdfView(EDGES_VIEW_KEY)
+        clearPreviewView(EDGES_VIEW_KEY)
         return (
             <div style={{ height: '100vh' }}>
                 <PreviewView

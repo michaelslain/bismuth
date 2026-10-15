@@ -85,7 +85,11 @@ import { imageZoomLayout } from './preview/imageZoomLayout'
 import createPreviewZoom from './preview/createPreviewZoom'
 import { attachZoomGestures } from './preview/zoomGesture'
 import { visiblePageRange, type PageBox, type PageSize } from './preview/pageLayout'
-import { loadPdfView, savePdfView } from './preview/pdfViewMemory'
+import {
+    loadPreviewView,
+    persistPreviewViewFor,
+    savePreviewView,
+} from './preview/previewViewMemory'
 import { containRect } from '../../core/src/drawing/pageInk'
 import {
     DEFAULT_MARGIN_RATIO,
@@ -210,7 +214,7 @@ export function PreviewView(props: {
     const pdfUrl = () =>
         props.pdfLoad || !/^https?:/.test(apiBase()) ? undefined : assetUrl()
 
-    // `pdfViewMemory`'s key for the CURRENT path, or undefined when a story supplies `pdfLoad`
+    // `previewViewMemory`'s key for the CURRENT path, or undefined when a story supplies `pdfLoad`
     // (same condition PdfPages' own `cacheKey` uses) — several PreviewView stories share one
     // literal path (`ANNOT_PDF_PATH`) across separate stories with `pdfLoad` set, so saving/
     // restoring zoom, panel-open or position under that path would leak one story's state
@@ -229,6 +233,12 @@ export function PreviewView(props: {
     // `imageSrc`, so this is always `path()` there.
     const foldKey = () =>
         props.pdfViewKey ?? (props.pdfLoad || props.imageSrc ? undefined : path())
+    // An image's `previewViewMemory` key: the same leak guard as `foldKey`, for the same reason.
+    const imageMemoryKey = foldKey
+
+    // The view memory outlives a reload: production backs it with this vault's localStorage. A
+    // story (`pdfLoad`/`imageSrc` set) never does, so a play() run cannot seed the next one.
+    if (!props.pdfLoad && !props.imageSrc) persistPreviewViewFor(apiBase())
 
     // Image load failure (a moved/renamed/unresolved src → 404) must NOT be a silent blank pane
     // — surface a clear state + the Open-externally affordance instead. Reset on every path
@@ -236,7 +246,7 @@ export function PreviewView(props: {
     const [imgFailed, setImgFailed] = createSignal(false)
 
     // PDF zoom — transient (not a `.settings` key, per the plan's ruling), restored per file
-    // from `pdfViewMemory` (fit-width the first time a file is opened this session). 1 = fit
+    // from `previewViewMemory` (fit-width the first time a file is opened). 1 = fit
     // width (PdfPages' own contract).
     // Pinch / ctrl+wheel apply at once, anchored at the pointer (PdfPages' `zoomAt`); the bar's
     // − / + / fit glide (preview/createPreviewZoom).
@@ -247,8 +257,15 @@ export function PreviewView(props: {
             pdfController ? pdfController.zoomAt(apply, x, y) : apply(),
     })
     const pdfZoom = pdfZoomCtl.zoom
-    // Image zoom — transient, back to the fit (1) on every open. Never below the fit: smaller than
-    // the pane shows nothing more. Anchored by `imageZoomAt` below.
+    // Image zoom — restored per file from `previewViewMemory` with the picture point that was at
+    // the centre of the view (fit the first time). Never below the fit: smaller than the pane shows
+    // nothing more. Anchored by `imageZoomAt` below.
+    // The picture point under the centre of the view, as fractions of the rendered picture, while
+    // the image is laid out explicitly (zoomed or with scratch). Every explicit re-layout scrolls
+    // back to it (`measureImage`), so the place survives a reflow — the companion strip settling
+    // above the body after a reopen, a pane resize — and opening a file seeds it from
+    // `previewViewMemory`. Each scroll of the body moves it.
+    let imageAnchor: { fx: number; fy: number } | undefined
     const imageZoomCtl = createPreviewZoom({
         min: 1,
         max: 8,
@@ -258,8 +275,11 @@ export function PreviewView(props: {
     createEffect(
         on(path, () => {
             const key = pdfMemoryKey()
-            pdfZoomCtl.set(key ? loadPdfView(key)?.zoom ?? 1 : 1)
-            imageZoomCtl.set(1)
+            pdfZoomCtl.set(key ? loadPreviewView(key)?.zoom ?? 1 : 1)
+            const imgKey = imageMemoryKey()
+            const saved = imgKey ? loadPreviewView(imgKey)?.image : undefined
+            imageAnchor = saved ? { fx: saved.fx, fy: saved.fy } : undefined
+            imageZoomCtl.set(saved?.zoom ?? 1)
         }),
     )
     const zoomCtl = () => (kind() === 'image' ? imageZoomCtl : pdfZoomCtl)
@@ -447,7 +467,7 @@ export function PreviewView(props: {
                 setDrawMode(false)
                 setHighlightArmed(false)
                 const key = pdfMemoryKey()
-                setPanelOpen(!!(key && loadPdfView(key)?.panelOpen))
+                setPanelOpen(!!(key && loadPreviewView(key)?.panelOpen))
                 setOutline([])
                 setCurrentPage(0)
                 setPageCount(0)
@@ -469,7 +489,7 @@ export function PreviewView(props: {
             [path, pdfZoom, panelOpen],
             ([, z, open]) => {
                 const key = pdfMemoryKey()
-                if (kind() === 'pdf' && key) savePdfView(key, { zoom: z, panelOpen: open })
+                if (kind() === 'pdf' && key) savePreviewView(key, { zoom: z, panelOpen: open })
             },
             { defer: true },
         ),
@@ -519,8 +539,10 @@ export function PreviewView(props: {
                     ...(ratio > 0 ? { marginW } : {}),
                 },
             ])
+            if (imageAnchor) scrollToImageAnchor(body, rendered, imageAnchor)
             return
         }
+        imageAnchor = undefined
         setImageStage(undefined)
         const br = body.getBoundingClientRect()
         const ir = img.getBoundingClientRect()
@@ -543,6 +565,75 @@ export function PreviewView(props: {
             },
         ])
     }
+    type Rect = { left: number; top: number; w: number; h: number }
+    // Where `scrollToImageAnchor` last left the body. The browser clamps an offset past the end, so
+    // during a transient layout (a taller body before the strip above it settles) this is not the
+    // anchor's own spot; the scroll event that echoes it must not move the anchor.
+    let anchorScroll: { left: number; top: number } | undefined
+    /** Scroll the body so the picture point `a` sits at the centre of the view. */
+    const scrollToImageAnchor = (
+        body: HTMLElement,
+        rendered: Rect,
+        a: { fx: number; fy: number },
+    ) => {
+        body.scrollLeft =
+            rendered.left + a.fx * rendered.w - body.clientWidth / 2
+        body.scrollTop =
+            rendered.top + a.fy * rendered.h - body.clientHeight / 2
+        anchorScroll = { left: body.scrollLeft, top: body.scrollTop }
+    }
+    /** The picture point at the centre of the body's view, as fractions of the rendered picture,
+     *  or undefined when the body is detached or unmeasured (a teardown reports a scroll of 0) or
+     *  the picture is not laid out. */
+    const imageCentre = () => {
+        const body = bodyRef
+        const page = imagePages()[0]
+        if (
+            !body?.isConnected ||
+            body.clientWidth <= 0 ||
+            body.clientHeight <= 0
+        )
+            return undefined
+        if (!page || page.rendered.w <= 0 || page.rendered.h <= 0)
+            return undefined
+        // Not clamped to 0..1: scrolled against an edge, the centre sits in the gutter past the
+        // picture, and only the unclamped fraction scrolls back to that edge.
+        const { left, top, w, h } = page.rendered
+        return {
+            fx: (body.scrollLeft + body.clientWidth / 2 - left) / w,
+            fy: (body.scrollTop + body.clientHeight / 2 - top) / h,
+        }
+    }
+    /** A scroll of the body: move the anchor at once (unless it is the echo of the anchor's own
+     *  scroll), and remember zoom + anchor at most once a frame. */
+    let imageSaveRaf: number | undefined
+    const onImageScroll = () => {
+        const body = bodyRef
+        if (kind() !== 'image' || !body) return
+        const echo =
+            anchorScroll?.left === body.scrollLeft &&
+            anchorScroll.top === body.scrollTop
+        anchorScroll = undefined
+        if (imageStage() && !echo) imageAnchor = imageCentre() ?? imageAnchor
+        scheduleImageSave()
+    }
+    const scheduleImageSave = () => {
+        if (imageSaveRaf !== undefined || kind() !== 'image') return
+        const key = imageMemoryKey()
+        if (!key) return
+        imageSaveRaf = requestAnimationFrame(() => {
+            imageSaveRaf = undefined
+            if (key !== imageMemoryKey() || kind() !== 'image') return
+            const zoom = imageZoom()
+            // At the fit nothing scrolls: the anchor is meaningless, the centre stands in for it.
+            const at = zoom === 1 ? { fx: 0.5, fy: 0.5 } : imageAnchor
+            if (at) savePreviewView(key, { image: { zoom, ...at } })
+        })
+    }
+    onCleanup(() => {
+        if (imageSaveRaf !== undefined) cancelAnimationFrame(imageSaveRaf)
+    })
+    createEffect(on(imageZoom, scheduleImageSave, { defer: true }))
     /** The image's ref: re-measure on load and whenever it or the body resizes (a pane resize
      *  can re-centre the picture without changing its size, hence both). */
     const attachImage = (img: HTMLImageElement) => {
@@ -910,6 +1001,12 @@ export function PreviewView(props: {
                 data-testid="preview-body"
                 ref={el => {
                     bodyRef = el
+                    el.addEventListener('scroll', onImageScroll, {
+                        passive: true,
+                    })
+                    onCleanup(() =>
+                        el.removeEventListener('scroll', onImageScroll),
+                    )
                     // Pinch / ctrl+wheel on an image or PDF zooms it; anything else keeps the
                     // webview's own behaviour (the listener only claims events for those kinds).
                     onCleanup(
@@ -1029,12 +1126,12 @@ export function PreviewView(props: {
                             dark={pdfDark()}
                             initialPosition={
                                 pdfMemoryKey()
-                                    ? loadPdfView(pdfMemoryKey()!)?.position
+                                    ? loadPreviewView(pdfMemoryKey()!)?.position
                                     : undefined
                             }
                             onPosition={pos => {
                                 const key = pdfMemoryKey()
-                                if (key) savePdfView(key, { position: pos })
+                                if (key) savePreviewView(key, { position: pos })
                             }}
                             onLayout={onPdfLayout}
                             onPdfHighlights={pages => store()?.setPdfHighlights(pages)}
