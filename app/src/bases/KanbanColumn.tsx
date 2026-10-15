@@ -202,22 +202,24 @@ const KanbanColumn: Component<KanbanColumnProps> = props => (
 
             {/* Add-card composer (Trello-style) — only when the column value is writable. */}
             <Show when={props.canAdd}>
-                <Show
-                    when={props.composing}
-                    fallback={
-                        <IconButton
-                            icon="Plus"
-                            label="Add a card"
-                            class={styles.kbAddBtn}
-                            onClick={props.onOpenComposer}
-                        />
+                <IconButton
+                    icon="Plus"
+                    label="Add a card"
+                    class={styles.kbAddBtn}
+                    variant={props.composing ? 'selected' : 'unselected'}
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={
+                        props.composing
+                            ? props.onCloseComposer
+                            : props.onOpenComposer
                     }
-                >
+                />
+                <Show when={props.composing}>
                     <TextInput
                         multiline
                         class={styles.kbComposer}
                         value={props.draft}
-                        placeholder="Card title…  (⏎ to add, Esc to close)"
+                        placeholder="card title (⏎ add, esc close)"
                         ref={el => queueMicrotask(() => el.focus())}
                         onInput={props.onDraft}
                         onKeyDown={e => {

@@ -24,7 +24,7 @@
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import type { OutlineNode } from './annotationTypes'
 import { outlinePrefix } from './outlinePrefix'
-import IconButton from '../ui/IconButton'
+import DisclosureChevron from '../ui/DisclosureChevron'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
 import styles from './OutlineTree.module.css'
@@ -209,9 +209,8 @@ function OutlineTree(props: OutlineTreeProps) {
                                     ).trimEnd()}
                                 </Label>
                                 {/* Disclosure slot — one character cell wide for a parent (its
-                                    chevron), zero width for a leaf (`--leaf`, OutlineTree.module.css)
-                                    so a leaf's title sits one cell after its connector instead of
-                                    three. A node's click is its own — it must not also jump. */}
+                                    chevron) and for a leaf (empty), so every title starts in the
+                                    same column. A node's click is its own — it must not also jump. */}
                                 <Text
                                     as="span"
                                     inherit
@@ -231,25 +230,18 @@ function OutlineTree(props: OutlineTreeProps) {
                                     }
                                 >
                                     <Show when={hasChildren()}>
-                                        <IconButton
-                                            icon={
-                                                open()
-                                                    ? 'ChevronDown'
-                                                    : 'ChevronRight'
-                                            }
+                                        <DisclosureChevron
+                                            open={open()}
                                             label={
                                                 open()
                                                     ? `Collapse ${node.title}`
                                                     : `Expand ${node.title}`
                                             }
-                                            aria-expanded={open()}
                                             class={
                                                 styles['outline-disclosure-btn']
                                             }
-                                            // Not a separate tab stop — the tree's roving
-                                            // handler above reaches it with `.click()`.
-                                            tabindex="-1"
-                                            onClick={() => setOpen(o => !o)}
+                                            tabindex={-1}
+                                            onToggle={() => setOpen(o => !o)}
                                         />
                                     </Show>
                                 </Text>

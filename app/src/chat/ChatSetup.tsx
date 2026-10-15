@@ -2,21 +2,19 @@
 // The "this chat can't run" screen ChatView.tsx renders INSTEAD of the transcript+composer: either
 // the active provider's CLI isn't installed (setupError), or this vault's hidden-notes policy can't
 // be honoured by the active backend (gateRefusal) — see core/src/chat.ts's "visibility-refused"
-// frame. Both are the same layout (a disabled illustration icon, a heading, one paragraph of
+// frame. Both are the same layout (an illustration icon, a heading, one paragraph of
 // guidance, one escape-hatch button) with different copy, so this is ONE parameterized component,
 // not three copy-pasted blocks. Extracted per the visual-unification audit §6/§9.8:
 // ChatSetup.module.css already existed as its own file with no component behind it.
 import { Show, type Component, type JSX } from 'solid-js'
 import styles from './ChatSetup.module.css'
-import { IconButton } from '../ui/IconButton'
+import { Icon } from '../icons/Icon'
 import { TextButton } from '../ui/TextButton'
 import Heading from '../ui/Heading'
 
 export type ChatSetupProps = {
-    /** Registry icon name for the large, disabled, decorative illustration mark. Absent = no icon. */
+    /** Registry icon name for the large, decorative illustration mark. Absent = no icon. */
     icon?: string
-    /** Accessible label for that icon (it renders disabled, so this is descriptive only). */
-    iconLabel?: string
     heading: JSX.Element
     body?: JSX.Element
     /** Extra block between the body and the action (e.g. the free-agent setup). */
@@ -35,7 +33,7 @@ const ChatSetup: Component<ChatSetupProps> = props => (
             {icon => (
                 <div class={styles['chat-setup-icon']}>
                     {/* icon-size-exempt: the chat-setup screen's oversized illustration mark, not chrome */}
-                    <IconButton icon={icon()} label={props.iconLabel ?? ''} iconSize={28} disabled />
+                    <Icon value={icon()} size={28} />
                 </div>
             )}
         </Show>

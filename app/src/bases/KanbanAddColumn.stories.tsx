@@ -58,22 +58,43 @@ export const Editing: Story = {
         const trigger = canvas.getByLabelText('Add a column')
         const restOrigin = restGlyphOrigin(ghost)
         const restWidths = boardWidths(canvasElement)
+        expect(trigger.getAttribute('aria-pressed')).toBe('false')
         await userEvent.click(trigger)
+        // `selected` while the composer is open (the trigger stays mounted under the input).
+        expect(trigger.getAttribute('aria-pressed')).toBe('true')
         const input = (await canvas.findByPlaceholderText(
             'name',
         )) as HTMLInputElement
         expect(input).toBe(document.activeElement)
-        // The swap must neither move the text nor resize the ghost (which would reflow a board's
-        // real columns) — the same measurement KanbanColumns.stories' AddColumn asserts.
-        const editOrigin = inputTextOrigin(input)
-        expect(Math.abs(editOrigin.x - restOrigin.x)).toBeLessThanOrEqual(1)
-        expect(Math.abs(editOrigin.y - restOrigin.y)).toBeLessThanOrEqual(1)
+        // The trigger stays visible as `[+]` (selected) and the input sits beside it, --sp-2 from
+        // its right edge; the glyph has not moved, and the ghost has not resized (which would
+        // reflow a board's real columns).
+        expect(trigger).toBeVisible()
+        expect(getComputedStyle(trigger).visibility).toBe('visible')
+        const gap =
+            input.getBoundingClientRect().left -
+            trigger.getBoundingClientRect().right
+        expect(Math.abs(gap - 4)).toBeLessThanOrEqual(1)
+        const editGlyph = restGlyphOrigin(ghost)
+        expect(Math.abs(editGlyph.x - restOrigin.x)).toBeLessThanOrEqual(1)
+        expect(
+            Math.abs(inputTextOrigin(input).y - restOrigin.y),
+        ).toBeLessThanOrEqual(1)
         expect(boardWidths(canvasElement)).toEqual(restWidths)
         await userEvent.type(input, '  Blocked  ')
         await userEvent.keyboard('{Enter}')
         expect(addedNames).toEqual(['Blocked'])
         // back to the ghost trigger after a successful add
         expect(canvas.getByLabelText('Add a column')).toBeVisible()
+        // the selected `[+]` toggles the composer closed
+        await userEvent.click(trigger)
+        await canvas.findByPlaceholderText('name')
+        expect(trigger.getAttribute('aria-pressed')).toBe('true')
+        await userEvent.click(trigger)
+        await waitFor(() =>
+            expect(canvas.queryByPlaceholderText('name')).toBeNull(),
+        )
+        expect(trigger.getAttribute('aria-pressed')).toBe('false')
     },
 }
 
@@ -91,12 +112,21 @@ export const DuplicateRefused: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        await fontsSettled()
         await userEvent.click(canvas.getByLabelText('Add a column'))
         const input = await canvas.findByPlaceholderText('name')
         await userEvent.type(input, 'Doing')
         await userEvent.keyboard('{Enter}')
         const error = await canvas.findByText('already a column')
         expect(error).toBeVisible()
+        // the refusal line must not push the input off the visible `[+]`: text centre == glyph centre
+        const dupInput = canvas.getByPlaceholderText('name') as HTMLInputElement
+        expect(
+            Math.abs(
+                inputTextOrigin(dupInput).y -
+                    restGlyphOrigin(ghostOf(canvasElement)).y,
+            ),
+        ).toBeLessThanOrEqual(1)
         expect(addedNames).toEqual([])
         // input is still open and still holds what was typed
         expect(canvas.getByPlaceholderText('name')).toHaveValue('Doing')

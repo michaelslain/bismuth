@@ -24,6 +24,7 @@
   align-items: center;
   flex: 0 0 auto;
   align-self: flex-start;
+  height: 0;
   height: var(--h-control);
   padding-left: var(--sp-7);
   box-sizing: border-box;
@@ -32,19 +33,24 @@
   position: relative;
 }
 /* Editing state (data-editing, set by KanbanAddColumn.tsx while its input is shown). The trigger
-   stays mounted but invisible, so the ghost keeps its exact rest footprint — the swap cannot
-   reflow the board by construction, whatever the input's own intrinsic width. */
-.ghost[data-editing] .trigger { visibility: hidden; }
-/* The input overlays the hidden trigger, out of flow. Its left/top are NOT set here: KanbanAddColumn
-   measures the trigger's "column" glyph box and the input's own text inset on entering edit mode
-   and sets them inline (kanbanAddColumnOverlay.ts), so the input's text lands on that glyph
-   whatever the trigger's leading geometry is — bracket glyph, icon size setting, gaps, and the
-   fixed --h-control height Button centres its label in. (A hand-measured px literal here went
-   stale twice: once when the icon was added ahead of the word, once when Button's fixed height
-   moved the label down 5px.) `right: 0` pins the field to the ghost's width. */
+   stays mounted AND visible: its `selected` variant draws `[+]` in the accent, the system's
+   "active = on". The input sits beside it in the ghost's flex row, --sp-2 from the trigger's right
+   edge, and takes the width the ghost's rest footprint leaves (`flex: 1 1 0` + `min-width: 0`), so
+   the swap cannot reflow the board whatever the input's own intrinsic width. KanbanAddColumn still
+   sets inline `left`/`top` from kanbanAddColumnOverlay.ts; `position: relative` makes `top` a
+   fine vertical nudge onto the glyph's centre and `left` (always 0) a no-op, so x is owned by the
+   flow and never goes stale when the trigger's bracket geometry changes. */
 .addField {
-  position: absolute;
-  right: 0;
+  position: relative;
+  /* Top-anchored and zero-height: a refusal line under the input overflows downward instead of
+     re-centring the input off the `[+]`. */
+  align-self: flex-start;
+  height: 0;
+  /* width 0 + grow: contributes nothing to the ghost's intrinsic width, then fills what is left. */
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  margin-left: var(--sp-2);
 }
 /* Outranks KanbanColumnNameInput's own `.field { min-width: 160px }` (two classes to its one), so
    the overlay never outgrows the ghost's rest footprint. */

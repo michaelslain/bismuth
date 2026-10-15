@@ -9,9 +9,10 @@ import {
 } from '../state'
 import ViewBar, { type ViewBarSlots } from '../../ui/ViewBar'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
-import { IconTextButton } from '../../ui/IconTextButton'
+import BarTwin from '../../ui/BarTwin'
 import { IconButton } from '../../ui/IconButton'
 import BarLabel from '../../ui/BarLabel'
+import Text from '../../ui/Text'
 import DateNav from './DateNav'
 import { ViewType } from '../types'
 import { todayISO } from '../../../../core/src/dates'
@@ -67,17 +68,21 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
             // nav from a provider of its own here.
             <CalendarNavContext.Provider value={nav}>
                 <DateNav />
-                <SegmentedToggle
-                    class={styles.views}
-                    value={nav.view.value}
-                    onChange={id => (nav.view.value = id)}
-                    size="sm"
-                    options={VIEWS.map(v => ({
-                        id: v.id,
-                        title: v.label,
-                        label: <BarLabel long={v.label} short={v.short} />,
-                    }))}
-                />
+                {/* data-bar-yields-identity: the bar drops its crumb title at the floor tier
+                    (ViewBar.module.css) so these segments keep the room. display: contents, so layout is unchanged. */}
+                <div data-bar-yields-identity class={styles.yields}>
+                    <SegmentedToggle
+                        class={styles.views}
+                        value={nav.view.value}
+                        onChange={id => (nav.view.value = id)}
+                        size="sm"
+                        options={VIEWS.map(v => ({
+                            id: v.id,
+                            title: v.label,
+                            label: <BarLabel long={v.label} short={v.short} />,
+                        }))}
+                    />
+                </div>
             </CalendarNavContext.Provider>
         ),
         config: (
@@ -91,17 +96,21 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                in a pane this narrow either, it is the only control here that is neither navigation
                nor the primary action, and its state is visible again the moment the pane widens. */
             <Show when={!ctx?.isTasks}>
-            <IconTextButton
-                data-bar-drop="1"
-                icon="Tag"
-                title="Categories"
-                variant={showCategoryPanel.value ? 'selected' : 'unselected'}
-                onClick={() =>
-                    (showCategoryPanel.value = !showCategoryPanel.value)
-                }
-            >
-                <BarLabel long="categories" drop="early" />
-            </IconTextButton>
+                {/* A worded/icon twin (ui/BarTwin.tsx): below the viewbar tier where the word goes, the
+                    bare icon takes over, so an OFF toggle never draws icon-only brackets. The wrapper
+                    carries data-bar-drop, so the floor hides the whole pair. */}
+                <Text as="span" inherit data-bar-drop="1">
+                    <BarTwin
+                        drop="early"
+                        icon="Tag"
+                        label="categories"
+                        title="Categories"
+                        active={showCategoryPanel.value}
+                        onClick={() =>
+                            (showCategoryPanel.value = !showCategoryPanel.value)
+                        }
+                    />
+                </Text>
             </Show>
         ),
         actions: (

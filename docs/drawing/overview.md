@@ -27,7 +27,7 @@ The toolbar above the page holds every control. Each page is a letter-sized shee
 | Smoothing | `sharp` keeps your raw path; `smooth` relaxes the stroke when you lift the pen |
 | Paper | blank, lines, grid, dots (shared by every page) |
 | Undo / redo | Whole-drawing history |
-| Zoom | 25% to 400%; Cmd/Ctrl + wheel or pinch zooms smoothly, the buttons step 5% |
+| Zoom | 25% to 400%, read as `− 100% +`; Cmd/Ctrl + wheel or pinch zooms smoothly, `−` and `+` step 5%, and `[reset]` returns to 100% |
 | Import image | Place a picture on page 1 |
 
 A new drawing starts on the pen, the 5 size, `smooth` and grid paper.

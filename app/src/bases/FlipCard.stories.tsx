@@ -6,6 +6,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import FlipCard from './FlipCard'
 import { IconButton } from '../ui/IconButton'
+import { TextButton } from '../ui/TextButton'
 import IconBar from '../ui/IconBar'
 
 const meta = {
@@ -32,7 +33,7 @@ const ANSWER = '<p><strong>Paris</strong> — on the <em>Seine</em></p>'
 const Actions = () => (
     <IconBar label="Card actions">
         <IconButton icon="Pencil" label="Edit this card" size="sm" onClick={() => {}} />
-        <IconButton icon="Trash2" label="Delete this card" danger size="sm" onClick={() => {}} />
+        <TextButton danger onClick={() => {}}>delete</TextButton>
     </IconBar>
 )
 

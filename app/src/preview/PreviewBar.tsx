@@ -175,7 +175,6 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                         ? 'selected'
                                         : 'unselected'
                                 }
-                                aria-pressed={props.highlightArmed?.() ?? false}
                                 disabled={!props.annotReady()}
                                 // Keep the PDF's text selection (and focus) where it is — the
                                 // press highlights THAT selection.
@@ -188,7 +187,6 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             label="Draw"
                             title={`Draw (${props.drawKey()})`}
                             variant={props.drawMode() ? 'selected' : 'unselected'}
-                            aria-pressed={props.drawMode()}
                             disabled={!props.annotReady()}
                             onClick={() => props.onToggleDraw()}
                         />
@@ -200,7 +198,6 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 variant={
                                     props.scratchOn?.() ? 'selected' : 'unselected'
                                 }
-                                aria-pressed={props.scratchOn?.() ?? false}
                                 disabled={!props.annotReady()}
                                 onClick={() => props.onToggleScratch?.()}
                             />
@@ -215,7 +212,6 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 label="Dark mode"
                                 title="Dark mode: invert the pages, keep their colours"
                                 variant={props.darkOn?.() ? 'selected' : 'unselected'}
-                                aria-pressed={props.darkOn?.() ?? false}
                                 disabled={!props.annotReady()}
                                 data-testid="preview-dark"
                                 onClick={() => props.onToggleDark?.()}
@@ -257,7 +253,6 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 variant={
                                     props.panelOpen?.() ? 'selected' : 'unselected'
                                 }
-                                aria-pressed={props.panelOpen?.() ?? false}
                                 onClick={() => props.onTogglePanel?.()}
                             />
                         </div>

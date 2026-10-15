@@ -20,5 +20,9 @@
   pointer-events: auto;
   cursor: default;
 }
+/* The unselected pin takes the zoom cluster's ink (`--fg`, the `normal` icon ink), not the toggle's
+   muted one, so it is not dimmer than its neighbours on the tinted map. `:not(:disabled)` leaves
+   the disabled pin to Button's own `--faint`. */
+.mapPlacement button[data-state='unselected']:not(:disabled) { color: var(--fg); }
 /* `Add pin` is disabled only when the map cannot create a row — say so under the pointer too. */
 .mapPlacement button:disabled { cursor: not-allowed; }

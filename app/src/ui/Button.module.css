@@ -92,11 +92,9 @@
    apart, and that sum scaled with each size's font (11.5 / 12 / 13.5px) — text buttons in a bar
    measured 10.5px, toolbar icons 11.5px, standalone icons 12.5px. Pulling each bracket's OUTER
    bearing in makes the box edge the ink edge, so the container's gap is the visible distance, one
-   number for every kind and size. Shared by `.btn--icon` below. */
-.btn--text::before,
-.btn--icon::before { margin-left: -0.175em; }
-.btn--text::after,
-.btn--icon::after { margin-right: -0.175em; }
+   number for every kind and size. The icon register's brackets carry the same pull in ui/IconBrackets.module.css. */
+.btn--text::before { margin-left: -0.175em; }
+.btn--text::after { margin-right: -0.175em; }
 .btn--text.btn--normal { color: var(--fg); }
 .btn--text.btn--unselected { color: var(--text-muted); }
 .btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); }
@@ -118,12 +116,20 @@
   text-decoration-thickness: 1px;
   text-underline-offset: var(--sp-1);
 }
+/* primary hover: the rest underline thickens to 2px, so the hover reads on a label that is already
+   underlined (the rule above only restates what primary draws at rest). */
+.btn--text.btn--primary:hover:not(:disabled) .textLabel { text-decoration-thickness: 2px; }
 /* Named `.textLabel`, not `.label`: this repo's CSS-module hash space is short enough that a
    second module also named `.label` (BarLabel.module.css) collided with this one under
    bench/moduleClassCheck.ts's hash-to-module attribution, making BarLabel misreport as a dead
    module. Renaming the local (an implementation-only identifier — nothing outside Button.tsx
    reads it) sidesteps the collision without touching BarLabel, which is out of this task. */
 .textLabel { display: inline-flex; align-items: center; gap: var(--sp-2); }
+/* The bold face (primary, selected) has a taller line box than the regular one, so the centred
+   leading icon lands ~0.07em above the label's x-height centre; nudge it back down.
+   ui-icontextbutton--collapse measures icon vs x-height centre to within 0.5px. */
+.btn--text.btn--primary .textLabel > [aria-hidden='true'],
+.btn--text.btn--selected .textLabel > [aria-hidden='true'] { transform: translateY(calc(var(--fs-ui) * 0.07)); }
 
 /* ── icon buttons: brackets mean "on" ────────────────────────────────────────
    BRACKETS = SELECTED (icon-brackets-on, 2026-10-02). An icon-only button draws `[▣]` ONLY when it
@@ -134,9 +140,10 @@
    one column — and the brackets now carry one meaning app-wide, the same one the tab rail's active
    tab and BracketToggle's `[x]` carry. Text buttons (`[label]`) and IconTextButton (`[▣ label]`)
    are unaffected: they are a worded command, and keep their brackets in every state.
-   The glyphs are `::before`/`::after` (`content: '[' / ''` — the `/ ''` empty alt text keeps them
-   out of the accessible name, same technique as the text register above). `gap: 0` keeps them
-   snug against the icon (`[▣]`, not `[ ▣ ]`). */
+   The glyphs are real aria-hidden spans drawn by ui/IconBrackets (the one owner of the recipe: size,
+   cap-height trim, lift, pull-in and edge bearing, shared with the tab rail's active mark), laid out
+   here as flex siblings of the icon. Button.tsx picks their state from the variant; no rule in this
+   file styles them. `gap: 0` keeps them snug against the icon (`[▣]`, not `[ ▣ ]`). */
 .btn--icon {
   gap: 0;
   border: none;
@@ -155,15 +162,14 @@
      own `iconSize` (stories only) still wins via --iconbar-glyph. */
   font-size: var(--iconbar-glyph, var(--icon));
 }
-.btn--icon::before { content: '[' / ''; color: var(--faint); }
-.btn--icon::after { content: ']' / ''; color: var(--faint); }
+/* A TEXT-glyph icon button (IconButton `glyph`, the match-case `Aa`) carries `data-glyph`: the
+   mark is text, so `[`, `Aa` and `]` draw at the UI text size — the editor find panel's `[Aa]` —
+   not at the SVG icon size above (--icon is for SVG icons only). */
+.btn--icon[data-glyph] { font-size: var(--fs-ui); }
 /* standalone: bare glyph, a hair of side room for the hit area */
 .btn--icon.btn--normal { padding: 0 var(--sp-1); }
-.btn--icon.btn--normal::before,
-.btn--icon.btn--normal::after { content: none; }
-/* off toggle member: brackets laid out but not painted — selecting a sibling moves no one */
-.btn--icon.btn--unselected::before,
-.btn--icon.btn--unselected::after { visibility: hidden; }
+/* off toggle member: Button.tsx hands IconBrackets `reserved` — brackets laid out but not painted,
+   so selecting a sibling moves no one */
 /* PICK-ONE group member (icon-gaps, 2026-10-05): the off members draw NO bracket space. Reserving
    it (the rule above) kept every icon still, but the eye groups `[▣]` as one unit: two off icons
    sat ~10px apart ink to ink while the on one's bracket sat ~6px from its neighbour, so the row
@@ -178,36 +184,14 @@
    --sp-1. `min-width: 0` drops the toolzone square floor, which would otherwise add slack outside
    the on member's brackets only. Three classes outrank ViewBar's `button[data-kind="icon"]`
    padding reset (a class, an attribute and a tag). */
-.btn--icon.btn--pick-one.btn--unselected::before,
-.btn--icon.btn--pick-one.btn--unselected::after { content: none; }
 .btn--icon.btn--pick-one.btn--selected,
 .btn--icon.btn--pick-one.btn--unselected {
   padding-inline: max(var(--sp-1), calc((var(--iconbar-box, 0px) - 1em) / 2));
   min-width: 0;
 }
-/* Optical centring + a tight gap (icon-brackets). Two separate defects, both measured from pixels:
-   - CENTRING. Flex-centring the brackets' LINE BOX put the icon 1.6px low in every toolbar and dead
-     centre at 13.5px, because Chrome rounds Monaspace's ascent/descent to whole pixels (12px ->
-     9/3, 13.5px -> 11/3), so where the `[` ink lands inside its line box jumps per font size.
-     `text-box: trim-both cap alphabetic` trims each bracket's box to baseline..cap-height, font
-     metrics the renderer does not round, so the box that gets centred scales linearly with the
-     font. The `[` ink itself runs about +0.80em/-0.20em around the baseline (centre +0.30em)
-     against a cap box centred near +0.35em, so the ink sits ~0.055em below the box centre at every
-     size; the translate lifts it back. Result: icon/bracket ink centres within 0.5px in every
-     sizing path (standalone sm/md/lg, IconBar, ViewBar).
-   - GAP. The `[`/`]` glyphs carry ~0.117em of side bearing and the icon's art ~1px of its own, so
-     the visible air between bracket and icon was 2-3px. -0.1em pulls each bracket in to ~1px.
-     The hit area is unchanged: min-width/height below still hold, and the width saved turns into
-     centring slack OUTSIDE the brackets. */
-.btn--icon::before,
-.btn--icon::after { text-box: trim-both cap alphabetic; translate: 0 -0.055em; }
-.btn--icon::before { margin-right: -0.1em; }
-.btn--icon::after { margin-left: -0.1em; }
-/* selected — the only state whose brackets paint; they follow the icon's own tone (--accent).
+/* selected — the only state whose brackets paint; they inherit the icon's own tone (--accent).
    No focus-visible treatment — see .btn:focus/.btn:focus-visible above: no button paints a focus
    indicator, on any kind, mouse or keyboard. */
-.btn--icon.btn--selected::before,
-.btn--icon.btn--selected::after { color: currentColor; }
 /* normal — standalone, full opacity; hover lifts the bare glyph to --accent (no brackets to light) */
 .btn--icon.btn--normal:hover:not(:disabled) { color: var(--accent); }
 /* None of the icon variants sets `opacity`: they used to say `opacity: 1`, which at two classes
@@ -335,11 +319,9 @@
    etc., which are two classes — the same specificity as `.btn--icon:disabled` (a class and a
    pseudo-class) — so only source order lets disabled win, and it must follow every one of them.
    (Every ink rule that is meant to yield to disabled above also carries `:not(:disabled)`.) The
-   brackets are repainted too: they carry their own colour, which `currentColor` would not reach. */
+   brackets inherit that ink. */
 .btn--text:disabled,
 .btn--icon:disabled {
   color: var(--faint);
   cursor: not-allowed;
 }
-.btn--icon:disabled::before,
-.btn--icon:disabled::after { color: var(--faint); }

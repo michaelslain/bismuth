@@ -1,0 +1,70 @@
+/* IconBrackets.module.css — the ONE recipe for the `[` `]` that wrap an icon, imported by
+   IconBrackets.tsx only. Button's icon kind and the tab rail's active row both render through
+   IconBrackets, so the two marks cannot drift.
+
+   The recipe, measured from pixels (icon-brackets, 2026-09-27 .. 2026-10-03):
+   - SIZE. The glyph draws at the icon size (--icon), one scale for `[`, glyph and `]`. Inline it is
+     the enclosing button's font-size (which already reads --icon / --iconbar-glyph); anchored it
+     states --icon itself because the icon's own span carries a px size, not a font-size.
+   - CENTRING. `text-box: trim-both cap alphabetic` trims each bracket's box to baseline..cap-height,
+     font metrics the renderer does not round. The `[` ink then sits ~0.055em below the trimmed box's
+     centre at every size, and the translate lifts it back (--bracket-lift).
+   - GAP. The glyphs carry ~0.117em of side bearing and the icon's art ~1px of its own, so
+     --bracket-pull (0.1em) pulls each bracket in to ~1px of air.
+   - EDGE. Inline only: the outer bearing (~0.175em) is pulled in too, all but 0.03em
+     (--bracket-bearing is the part pulled in, 0.145em), so across a selected member a bare glyph sits
+     8px ink to ink from the bracket in an IconBar (two brackets' margins meet there), the gap between
+     worded siblings.
+   Every selector that sets a margin or offset is two classes (`.group .start`) so it outranks
+   Text's `.text { margin: 0 }` whatever the stylesheet order. */
+
+.group {
+  --bracket-lift: 0.055em;
+  --bracket-pull: 0.1em;
+  --bracket-bearing: 0.145em;
+  display: contents;
+}
+
+/* Anchored: the brackets HANG outside the icon's own box (the group is their containing block), so
+   the icon stays on the exact axis every bare icon shares — inline brackets would widen the row and
+   shove the glyph right. */
+.group.anchored {
+  display: inline-flex;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.bracket {
+  text-box: trim-both cap alphabetic;
+  translate: 0 calc(0px - var(--bracket-lift));
+}
+
+.group .start { margin-left: calc(0px - var(--bracket-bearing)); margin-right: calc(0px - var(--bracket-pull)); }
+.group .end { margin-right: calc(0px - var(--bracket-bearing)); margin-left: calc(0px - var(--bracket-pull)); }
+
+.group.anchored .bracket {
+  position: absolute;
+  top: 50%;
+  margin: 0;
+  font-family: var(--ui-font-stack);
+  font-size: var(--icon);
+  line-height: 1;
+  translate: 0 calc(-50% - var(--bracket-lift));
+}
+.group.anchored .start { right: calc(100% - var(--bracket-pull)); }
+.group.anchored .end { left: calc(100% - var(--bracket-pull)); }
+
+/* A BOX child (a colour swatch) is not an svg: it fills its whole box, so it carries none of the ~1px
+   of art air an icon has and its box is the ink. The brackets match its 16px height; at that size the
+   glyph's own side bearing (~0.117em, 1.9px) is the air, so the pull-in is 1.9px (the whole bearing less 1px of air:)
+   between bracket and edge. `:has(svg)` is the discriminator, on the group (display: contents still
+   matches), so no caller passes a flag. */
+.group:not(:has(svg)) {
+  --bracket-pull: 1.2px;
+  --bracket-box: 16px;
+}
+.group:not(:has(svg)) .bracket { font-size: var(--bracket-box); }
+
+/* Laid out but not painted: an off toggle member keeps its brackets' space so a group never changes
+   width as its selection moves. */
+.reserved { visibility: hidden; }

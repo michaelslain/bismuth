@@ -74,20 +74,49 @@ export const Full: Story = {
         expect(canvasElement.querySelector('[data-tooltip="Pen"]')).not.toBeNull()
         expect(canvasElement.querySelector('[data-tooltip="Eraser"]')).not.toBeNull()
         expect(canvasElement.querySelector('[data-tooltip="Lasso"]')).toBeNull()
-        // Undo/redo + the zoom group now compose SegmentedToggle via SegmentedOption's
-        // `ariaLabel`/`class` — same aria-labels as before the composition, and the percent
-        // readout keeps its fixed-width class.
+        // Undo/redo are bare `normal` IconButtons; the zoom is the PDF zoom's `− 100% +` run.
         expect(
             canvasElement.querySelector('[aria-label="Undo"]'),
         ).not.toBeNull()
         expect(
             canvasElement.querySelector('[aria-label="Redo"]'),
         ).not.toBeNull()
+        for (const l of ['Undo', 'Redo']) {
+            const b = canvasElement.querySelector<HTMLElement>(
+                `[aria-label="${l}"]`,
+            )!
+            expect(b.getAttribute('data-state')).toBe('normal')
+            expect(b.hasAttribute('aria-pressed')).toBe(false)
+        }
+        const steps = canvasElement.querySelector('[data-testid="draw-zoom-steps"]')!
+        expect(steps.textContent).toContain('100%')
+        expect(canvasElement.querySelector('[aria-label="Zoom in"]')).not.toBeNull()
+        // Selected size dot: >= 1px of air between the dot's ink and each bracket's ink, at every size.
+        const inkOf = (el: Element) => {
+            const cs = getComputedStyle(el)
+            const ctx = document.createElement('canvas').getContext('2d')!
+            ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+            const m = ctx.measureText(el.textContent!.trim())
+            const r = el.getBoundingClientRect()
+            return [r.left - m.actualBoundingBoxLeft, r.left + m.actualBoundingBoxRight]
+        }
+        const sizeButtons = [...canvasElement.querySelectorAll<HTMLElement>('button')].filter(
+            b => b.getAttribute('data-tooltip')?.startsWith('Size ') && b.querySelector('svg > circle'),
+        )
+        expect(sizeButtons.length).toBe(5)
+        for (const b of sizeButtons) {
+            b.click()
+            const dot = b.querySelector('circle')!.getBoundingClientRect()
+            const [open, close] = [...b.querySelectorAll('[aria-hidden="true"]')].filter(e =>
+                /^[[\]]$/.test(e.textContent!.trim()),
+            )
+            expect(dot.left - inkOf(open)[1]).toBeGreaterThanOrEqual(1)
+            expect(inkOf(close)[0] - dot.right).toBeGreaterThanOrEqual(1)
+        }
         const resetZoom = canvasElement.querySelector<HTMLElement>(
             '[aria-label="Reset zoom"]',
         )!
         expect(resetZoom).not.toBeNull()
-        expect(resetZoom.textContent).toBe('100%')
     },
 }
 

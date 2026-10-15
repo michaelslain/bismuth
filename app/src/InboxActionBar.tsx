@@ -89,10 +89,14 @@ const InboxActionBar: Component<InboxActionBarProps> = props => {
                                     <For each={actions(p)}>
                                         {a => (
                                             <TextButton
-                                                variant={
-                                                    a.kind === 'primary' ? 'selected' : 'normal'
+                                                primary={
+                                                    a.kind === 'primary' &&
+                                                    p.status !== 'failed'
                                                 }
-                                                danger={a.kind === 'danger'}
+                                                danger={
+                                                    a.kind === 'danger' &&
+                                                    p.status !== 'failed'
+                                                }
                                                 disabled={props.pressingId !== null}
                                                 onClick={() => props.onPress(a.id)}
                                             >

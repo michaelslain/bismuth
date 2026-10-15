@@ -34,7 +34,7 @@ export const Empty: Story = {
 }
 
 /** A handful of custom words, alphabetized — the everyday populated state, each removable
- *  via its row's trash button. */
+ *  via its row's `[x]` button. */
 export const Populated: Story = {
     render: () => {
         resetWords()

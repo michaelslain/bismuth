@@ -190,7 +190,16 @@ export const AddCard: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await userEvent.click(canvas.getByLabelText('Add a card'))
+        const trigger = canvas.getByLabelText('Add a card')
+        expect(trigger.getAttribute('aria-pressed')).toBe('false')
+        await userEvent.click(trigger)
+        // The trigger stays mounted and reads `selected` while its composer is open.
+        await waitFor(() =>
+            expect(canvas.getByLabelText('Add a card')).toHaveAttribute(
+                'aria-pressed',
+                'true',
+            ),
+        )
         const input = await canvas.findByPlaceholderText(/card title/i)
         await userEvent.type(input, 'write the docs')
         await userEvent.keyboard('{Enter}')
@@ -203,6 +212,48 @@ export const AddCard: Story = {
         await userEvent.keyboard('{Escape}')
         await waitFor(() =>
             expect(canvas.getByLabelText('Add a card')).toBeVisible(),
+        )
+        // With an empty draft the trigger toggles the composer closed again (it must not blur-close
+        // then re-open).
+        await userEvent.click(canvas.getByLabelText('Add a card'))
+        await canvas.findByPlaceholderText(/card title/i)
+        await userEvent.click(canvas.getByLabelText('Add a card'))
+        await waitFor(() => {
+            expect(canvas.getByLabelText('Add a card')).toHaveAttribute(
+                'aria-pressed',
+                'false',
+            )
+            expect(canvas.queryByPlaceholderText(/card title/i)).toBeNull()
+        })
+    },
+}
+
+/** The composer left open (static args, the resting frame): `[+]` selected, the placeholder
+ *  `card title (⏎ add, esc close)` on one line, and `[delete]` revealed 8px from the count. */
+export const ComposerOpen: Story = {
+    args: { ...base, composing: true, hovered: true },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const input = await canvas.findByPlaceholderText(
+            'card title (⏎ add, esc close)',
+        )
+        // One line: the placeholder, measured in the field's own font, is narrower than the
+        // field's content box.
+        const cs = getComputedStyle(input)
+        const ruler = document.createElement('span')
+        ruler.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;font:${cs.font}`
+        ruler.textContent = input.getAttribute('placeholder')
+        document.body.appendChild(ruler)
+        const textWidth = ruler.getBoundingClientRect().width
+        ruler.remove()
+        const content =
+            input.clientWidth -
+            parseFloat(cs.paddingLeft) -
+            parseFloat(cs.paddingRight)
+        expect(textWidth).toBeLessThan(content)
+        expect(canvas.getByLabelText('Add a card')).toHaveAttribute(
+            'aria-pressed',
+            'true',
         )
     },
 }

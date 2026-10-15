@@ -4,7 +4,7 @@
 // ChatControls.stories.tsx instead. The crumb width cap rides the header's own root
 // (ChatHeader.module.css), so a story needs no host wrapper class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, within } from 'storybook/test'
 import ChatHeader from './ChatHeader'
 import { makeStubChatSession } from './_stubChatSession'
 import { chatOriginIcon } from './chatOrigin'
@@ -105,6 +105,12 @@ export const Default: Story = {
                 canvasElement.querySelector(`[data-testid="${testid}"]`),
             ).toBeNull()
         }
+        // …and no history / new-chat twin at ANY half, found by what a person would call them.
+        expect(
+            within(canvasElement).queryByRole('button', {
+                name: /history|new chat/i,
+            }),
+        ).toBeNull()
     },
 }
 

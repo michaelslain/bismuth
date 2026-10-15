@@ -81,25 +81,14 @@
    app's one "this is on" mark, the same `[▣]` a selected icon button draws. It replaced an
    accent-soft fill + a 2px left bar: the rail's action buttons above sat bracketed while the tabs
    below were bare, two idioms in one column; brackets now mean "on" everywhere.
-   The brackets are absolutely positioned OUTSIDE the icon's own box (the icon is their containing
-   block), so the active icon stays on the exact axis the inactive icons share — inline brackets
-   would widen the row's content and shove the glyph right. Same face, size, cap-height trim and
-   0.055em lift as Button.module.css's icon brackets, so the two read as one mark — and the same
-   -0.1em pull-in (rail-axis, 2026-10-03): the `[`/`]` side bearing left ~3px of air at `100% + 1px`,
-   so `[▣]` read much wider than the bare icons above it; at `100% - 0.1em` the air is ~1px, as on
-   a selected IconButton. The brackets HANG: they sit in the row's 10px padding, outside the icon
-   axis every rail icon shares, so nothing moves when the active tab changes. */
+   The brackets are ui/IconBrackets, `anchored`: the one recipe (face, size, cap-height trim, lift,
+   pull-in) lives in that component's stylesheet, shared with the icon button, so the two read as one
+   mark. They HANG outside the icon's own box, in the row's 10px padding, so the active icon stays on
+   the exact axis the inactive icons share and nothing moves when the active tab changes. Only the
+   ink is set here: accent, whatever tint the icon itself carries. A pinned tab's pin is a bare
+   `normal` IconButton (one "on" mark per row), so an active pinned tab shows only this one. */
 .tab-rail-row.active { color: var(--accent); }
-.tab-rail-row.active .tab-rail-icon { position: relative; }
-.tab-rail-row.active .tab-rail-icon::before,
-.tab-rail-row.active .tab-rail-icon::after {
-  position: absolute; top: 50%;
-  font-family: var(--ui-font-stack); font-size: var(--icon); line-height: 1;
-  text-box: trim-both cap alphabetic; translate: 0 calc(-50% - 0.055em);
-  color: var(--accent);
-}
-.tab-rail-row.active .tab-rail-icon::before { content: '[' / ''; right: calc(100% - 0.1em); }
-.tab-rail-row.active .tab-rail-icon::after { content: ']' / ''; left: calc(100% - 0.1em); }
+.tab-rail-brackets { color: var(--accent); }
 .tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
 .tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
 .tab-rail-row.active .tab-rail-icon { color: var(--accent); }
@@ -156,9 +145,8 @@
 }
 /* No color override here any more (one-button task 9): `.tab-x` is a `size="sm"` IconButton in
    its default "normal" state, which `Button.module.css`'s `.btn--icon.btn--sm.btn--normal` already
-   renders `--text-muted` — the exact tone this rule used to hardcode. `.tab-pin` carries
-   `variant="selected"` instead of a hardcoded `--accent` here, so its accent tone comes from the
-   button's own state prop rather than a class fighting it. */
+   renders `--text-muted` — the exact tone this rule used to hardcode. `.tab-pin` is a bare `normal`
+   IconButton too, so it reads the same muted tone and lifts to `--accent` on hover. */
 /* ANCESTOR REACHED VIA `[data-tab-rail]`/`[data-rail-pinned]` — see this file's header. */
 /* A pinned row keeps its pin visible, at FULL strength: it used to sit at 0.85, which is a state shown
    by opacity (and a pin that is the row's only mark of being pinned should not be dimmer than the X). */

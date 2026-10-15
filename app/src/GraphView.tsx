@@ -498,7 +498,6 @@ export function GraphView(props: {
             SegmentedToggle in `actions` below, unchanged. */}
                         <Show when={props.mini}>
                             <TextButton
-                                variant="unselected"
                                 title={
                                     graphViewMode() === '2d'
                                         ? 'Switch to 3D orbit'

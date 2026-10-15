@@ -226,14 +226,17 @@ const overflowProof = (widthPx: number, openInChat = false) => ({
             canvasElement.querySelector('[data-testid="chat-perm-mode"]')!.getClientRects()
                 .length,
         ).toBeGreaterThan(0)
-        // The row's one collapse tier: below 280px `data-row-label` (the word inside
-        // `[history]`/`[new chat]`) hides so the icon-only bracket frees room for the floored
+        // The row's one collapse tier: below 280px the worded twin (`data-row-label`) of
+        // `[history]`/`[new chat]` hides for its bare icon twin, which frees room for the floored
         // model word; at and above 280px the label stays. Read from the LIVE trigger's computed
         // style, not a hand-picked class, so this fails if the container-query threshold drifts.
-        const newChatLabel = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="chat-new"] [data-row-label]',
+        const newChatWorded = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="chat-new"]',
         )!
-        const collapsed = getComputedStyle(newChatLabel).display === 'none'
+        const newChatIcon = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="chat-new-icon"]',
+        )!
+        const collapsed = getComputedStyle(newChatWorded).display === 'none'
         expect(collapsed).toBe(widthPx <= 280)
         if (openInChat) {
             const open = canvasElement.querySelector<HTMLElement>(
@@ -241,6 +244,9 @@ const overflowProof = (widthPx: number, openInChat = false) => ({
             )!
             expect(open.getClientRects().length).toBeGreaterThan(0)
         }
+        // The twins swap: exactly one of the pair is ever laid out, and the bare icon never draws
+        // a bracket while off (it is a one-shot action, `normal`).
+        expect(getComputedStyle(newChatIcon).display === 'none').toBe(!collapsed)
     },
 })
 

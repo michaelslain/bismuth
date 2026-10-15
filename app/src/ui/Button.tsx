@@ -5,6 +5,7 @@ import {
     type ButtonState,
     type ButtonSize,
 } from './buttonClass'
+import IconBrackets, { type IconBracketsState } from './IconBrackets'
 import styles from './Button.module.css'
 
 export type { ButtonKind, ButtonState, ButtonSize }
@@ -52,6 +53,14 @@ function Button(props: ButtonProps) {
         'children',
     ])
     const kind = () => local.kind ?? 'text'
+    // Brackets mean ON: `selected` paints them, an `unselected` toggle member reserves their space,
+    // everything else (a standalone `normal` icon, a pick-one off member) is the bare glyph.
+    const brackets = (): IconBracketsState =>
+        local.state === 'selected'
+            ? 'on'
+            : local.state === 'unselected' && !local.pickOne
+              ? 'reserved'
+              : 'off'
     const style = (): JSX.CSSProperties | string | undefined => {
         if (!local.accent) return local.style
         if (typeof local.style === 'string') {
@@ -91,7 +100,7 @@ function Button(props: ButtonProps) {
             {kind() === 'text' ? (
                 <span class={styles.textLabel}>{local.children}</span>
             ) : (
-                local.children
+                <IconBrackets state={brackets()}>{local.children}</IconBrackets>
             )}
         </button>
     )

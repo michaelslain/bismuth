@@ -119,7 +119,6 @@ const ChatSetupGate: Component<ChatSetupGateProps> = props => {
                         {refusal => (
                             <ChatSetup
                                 icon="Lock"
-                                iconLabel="Visibility"
                                 heading={
                                     <>
                                         {providerLabel(

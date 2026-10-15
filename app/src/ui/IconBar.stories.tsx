@@ -121,16 +121,19 @@ export const Hosts: Story = {
                                 icon="Notebook"
                                 label="2nd brain"
                                 variant="selected"
+                                pickOne
                             />
                             <IconButton
                                 icon="Brain"
                                 label="3rd brain"
                                 variant="unselected"
+                                pickOne
                             />
                             <IconButton
                                 icon="Combine"
                                 label="Both brains"
                                 variant="unselected"
+                                pickOne
                             />
                         </IconBar>
                     }
@@ -214,5 +217,46 @@ export const BareColumn: Story = {
         expect(getComputedStyle(bar).rowGap).toBe(
             resolvedGap(canvasElement, '--bar-icon-gap'),
         )
+    },
+}
+
+/** Ink to ink across a selected member's bracket: the bracket's outer ink to the neighbouring bare
+ *  glyph's art is 8px, the air worded siblings keep. Measured from the aria-hidden
+ *  bracket spans (canvas text metrics for the glyph's ink) and the svg art's bbox, never pixels. */
+export const GlyphGap: Story = {
+    render: () => (
+        <div>
+            <IconBar label="Glyph gap" data-glyphs>
+                <IconButton icon="Search" label="Search" variant="unselected" />
+                <IconButton icon="Inbox" label="Inbox" variant="selected" />
+                <IconButton icon="Settings" label="Settings" variant="unselected" />
+            </IconBar>
+        </div>
+    ),
+    play: ({ canvasElement }) => {
+        const bracketInk = (el: Element) => {
+            const cs = getComputedStyle(el)
+            const ctx = document.createElement('canvas').getContext('2d')!
+            ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+            const m = ctx.measureText(el.textContent!.trim())
+            const r = el.getBoundingClientRect()
+            return [r.left - m.actualBoundingBoxLeft, r.left + m.actualBoundingBoxRight]
+        }
+        const artInk = (svg: SVGSVGElement) => {
+            const b = svg.getBBox()
+            const r = svg.getBoundingClientRect()
+            const k = r.width / svg.viewBox.baseVal.width
+            return [r.left + b.x * k, r.left + (b.x + b.width) * k]
+        }
+        const brackets = (host: Element) =>
+            [...host.querySelectorAll('[aria-hidden="true"]')].filter(e =>
+                /^[[\]]$/.test(e.textContent!.trim()),
+            )
+        const glyphs = canvasElement.querySelector('[data-glyphs]')!
+        const svgs = [...glyphs.querySelectorAll('svg')] as SVGSVGElement[]
+        const [open, close] = [brackets(glyphs)[2], brackets(glyphs)[3]]
+        const before = bracketInk(open)[0] - artInk(svgs[0])[1]
+        const after = artInk(svgs[2])[0] - bracketInk(close)[1]
+        for (const gap of [before, after]) expect(Math.abs(gap - 8)).toBeLessThan(0.75)
     },
 }

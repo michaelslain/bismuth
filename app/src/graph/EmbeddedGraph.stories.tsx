@@ -9,7 +9,7 @@
 // here — there's no fence for a story to write back into, and the toolbar/canvas render
 // identically either way.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { EmbeddedGraph } from './EmbeddedGraph'
 import type { AsciiGraphStats } from './AsciiGraphRenderer'
 import { settings, setSettings } from '../settings'
@@ -91,6 +91,71 @@ export const ParseErrors: Story = {
     render: () => (
         <EmbeddedGraph source={ERROR_SOURCE} onReveal={noop} onChange={noop} />
     ),
+}
+
+/** The connect tool: the direction pair (`->` / `--`, pick-one icons) appears beside the three
+ *  tools, `--sp-2` apart, with `[+ node]` after it. The story ends in connect mode (the resting
+ *  frame); the tool is a module-level signal, so NodeSelected re-selects `select` itself. */
+export const ConnectTool: Story = {
+    render: () => (
+        <EmbeddedGraph source={SIMPLE_SOURCE} onReveal={noop} onChange={noop} />
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await userEvent.click(c.getByTitle(/^Connect/))
+        await waitFor(() => {
+            expect(c.getByLabelText('directed')).toBeVisible()
+            expect(c.getByLabelText('undirected')).toBeVisible()
+        })
+        expect(c.getByLabelText('directed').getAttribute('aria-pressed')).toBe(
+            'true',
+        )
+        await userEvent.click(c.getByLabelText('undirected'))
+        await waitFor(() =>
+            expect(
+                c.getByLabelText('undirected').getAttribute('aria-pressed'),
+            ).toBe('true'),
+        )
+    },
+}
+
+/** A node selected: the edit row (id, label, `[apply]`, `[delete]`) opens under the canvas. The
+ *  renderer hit-tests a real pointer press-and-release, so the play scans the canvas for a node
+ *  until the edit row appears. Left selected; the next story's remount starts clean. */
+export const NodeSelected: Story = {
+    render: () => (
+        <EmbeddedGraph source={SIMPLE_SOURCE} onReveal={noop} onChange={noop} />
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await waitFor(() => expect(graphStats().zoomPct).toBe(100), {
+            timeout: 3000,
+        })
+        // Make sure the select tool is up (the tool signal outlives a story).
+        await userEvent.click(c.getByTitle(/^Select/))
+        const viewport = canvasElement.querySelector<HTMLElement>(
+            '.asc-graph-viewport',
+        )!
+        const box = viewport.getBoundingClientRect()
+        const opened = () => c.queryByLabelText('id') !== null
+        for (let fy = 0.15; fy < 0.9 && !opened(); fy += 0.05) {
+            for (let fx = 0.1; fx < 0.95 && !opened(); fx += 0.025) {
+                const x = box.left + box.width * fx
+                const y = box.top + box.height * fy
+                const init = {
+                    bubbles: true,
+                    button: 0,
+                    clientX: x,
+                    clientY: y,
+                }
+                viewport.dispatchEvent(new PointerEvent('pointerdown', init))
+                window.dispatchEvent(new PointerEvent('pointerup', init))
+                await settleFrames(1)
+            }
+        }
+        await waitFor(() => expect(c.getByLabelText('id')).toBeVisible())
+        expect(c.getByText('delete')).toBeVisible()
+    },
 }
 
 // EmbeddedGraph mounts a real `AsciiGraphRenderer` (`new AsciiGraphRenderer()` + `.mount()`) —

@@ -49,8 +49,7 @@ const MapControls: Component<MapControlsProps> = props => (
             <IconButton
                 icon="Pin"
                 label={props.armed ? 'Cancel placing pin' : 'Add pin'}
-                variant={props.armed ? 'selected' : 'normal'}
-                aria-pressed={props.armed}
+                variant={props.armed ? 'selected' : 'unselected'}
                 disabled={!props.armed && !!props.blockedReason}
                 title={
                     props.armed

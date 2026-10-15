@@ -1,7 +1,7 @@
 // Shared across KanbanView.stories.tsx / KanbanColumns.stories.tsx / KanbanStoredRows.stories.tsx.
 // `fakeTransport` gives every route a generic 200 ack with no record of the call — enough for a
 // story that only needs the write to succeed, not enough to ASSERT what was written. Wraps it
-// with a `post`/`put` spy (the verb `setProperty`/`rowCreate`/`rowUpdate` all go through) so a
+// with a `post`/`put`/`postJson` spy (the verbs `setProperty`/`rowCreate`/`rowUpdate`/`setProperties` go through) so a
 // play() can inspect exactly what was sent.
 import { fakeTransport } from './_fakeTransport'
 import type { FakeTransportSeed } from './_fakeTransport'
@@ -22,6 +22,10 @@ export function spiedTransport(seed: FakeTransportSeed = {}): {
         put: async (path, body) => {
             calls.push({ path, body })
             return base.put(path, body)
+        },
+        postJson: async (path, body) => {
+            calls.push({ path, body })
+            return base.postJson(path, body)
         },
     }
     return { transport, calls }

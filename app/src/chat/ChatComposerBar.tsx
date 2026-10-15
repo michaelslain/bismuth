@@ -335,7 +335,6 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                         <IconButton
                             icon="Send"
                             label="Send message"
-                            variant="selected"
                             class={styles.send}
                             onClick={doSend}
                             disabled={

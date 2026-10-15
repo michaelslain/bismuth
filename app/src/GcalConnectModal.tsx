@@ -214,7 +214,6 @@ export function GcalConnectModal(props: {
                 </Show>
             </ModalBody>
             <ModalFooter>
-                <TextButton onClick={props.onClose}>close</TextButton>
                 <Show
                     when={status()?.connected}
                     fallback={

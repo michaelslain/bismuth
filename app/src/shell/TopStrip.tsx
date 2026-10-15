@@ -14,7 +14,7 @@ import styles from './TopStrip.module.css'
 // the wordmark span and the flex:1 `.top-strip-spacer` (the strip's largest visual area) are
 // child elements that receive the actual click target, a bare attribute here left almost the
 // entire strip undraggable. "deep" lets any non-interactive descendant trigger the drag; the
-// `.win-btn` window-control buttons stay excluded automatically (Tauri's script never treats a
+// typed window-control buttons (WindowControls) stay excluded automatically (Tauri's script never treats a
 // clickable tag like <button> as a drag target unless IT carries the attribute itself), so no
 // pointer-events juggling is needed. Also requires `core:window:allow-start-dragging` in
 // capabilities/default.json (silently no-ops without it). Double-click-to-maximize on macOS is

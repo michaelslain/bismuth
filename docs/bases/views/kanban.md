@@ -84,7 +84,7 @@ Every edit below needs a saved base file. A kanban inside an embedded ` ```query
 | Reorder columns | Drag a column header | The full column list to `columns` |
 | Recolour a column | Click the header dot | `groupColors` |
 | Rename a column | Hover the column, click **Rename column** | `columns`, any `groupColors` entry, a declared select option, and every card's `groupBy` value |
-| Delete a column | Hover the column, click **Delete column** | The value removed from `columns` and `groupColors`; each card loses its `groupBy` property |
+| Delete a column | Hover the column, click `[delete]` (Delete column) | The value removed from `columns` and `groupColors`; each card loses its `groupBy` property |
 | Add a column | Click **Add a column** after the last column | The new value appended to `columns` |
 | Add a card | Click **Add a card** under a column, type a title, press Enter | A new note (see below) |
 | Edit a card | Click the card | Through the edit modal (see below) |

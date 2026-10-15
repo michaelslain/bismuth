@@ -195,7 +195,7 @@ function resolvedFaint(host: Element) {
 /** The disabled button in `canvasElement` is `--faint` ink alone (full opacity: a dimmed --faint
  *  falls under the 3:1 floor), brackets included; its enabled twin is NOT faint (so the assertion
  *  cannot pass vacuously). */
-function expectDisabledRecipe(canvasElement: HTMLElement) {
+function expectDisabledRecipe(canvasElement: HTMLElement, minBracketSpans = 0) {
     const faint = resolvedFaint(canvasElement)
     const off = canvasElement.querySelector<HTMLButtonElement>('button:disabled')!
     const on = canvasElement.querySelector<HTMLButtonElement>(
@@ -210,6 +210,14 @@ function expectDisabledRecipe(canvasElement: HTMLElement) {
             expect(getComputedStyle(off, part).color).toBe(faint)
         }
     }
+    let spans = 0
+    for (const b of off.querySelectorAll<HTMLElement>('[aria-hidden="true"]')) {
+        if (/^[[\]]$/.test(b.textContent ?? '')) {
+            spans++
+            expect(getComputedStyle(b).color).toBe(faint)
+        }
+    }
+    expect(spans).toBeGreaterThanOrEqual(minBracketSpans)
 }
 
 /** Disabled + selected: faint, not accent — and its brackets (drawn when selected) go faint too. */
@@ -224,7 +232,7 @@ export const IconDisabledSelected: Story = {
             </Button>
         </Row>
     ),
-    play: ({ canvasElement }) => expectDisabledRecipe(canvasElement),
+    play: ({ canvasElement }) => expectDisabledRecipe(canvasElement, 2),
 }
 
 /** Disabled + unselected: faint ink — a visible step below an enabled muted one. */

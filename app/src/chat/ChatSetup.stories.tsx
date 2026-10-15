@@ -28,7 +28,6 @@ export const NoAgent: Story = {
         frame(
             <ChatSetup
                 icon="MessageSquare"
-                iconLabel="Chat"
                 heading="this chat needs an agent"
                 body={
                     <Text>
@@ -48,6 +47,10 @@ export const NoAgent: Story = {
         await expect(canvasElement.textContent).toContain('this chat needs an agent')
         await expect(canvasElement.textContent).toContain('No coding agent is installed yet.')
         await expect(canvasElement.textContent).toContain('set up free agent')
+        const setUp = [...canvasElement.querySelectorAll('button')].find(b =>
+            b.textContent?.includes('set up free agent'),
+        )!
+        await expect(setUp.hasAttribute('data-primary')).toBe(true)
     },
 }
 
@@ -57,7 +60,6 @@ export const AgentMissing: Story = {
         frame(
             <ChatSetup
                 icon="MessageSquare"
-                iconLabel="Chat"
                 heading="this chat needs an agent"
                 body={
                     <Text>
@@ -85,7 +87,6 @@ export const VisibilityRefused: Story = {
         frame(
             <ChatSetup
                 icon="Lock"
-                iconLabel="Visibility"
                 heading="opencode can't honour this vault's hidden notes"
                 body={
                     <p>
@@ -110,7 +111,6 @@ export const WithExtra: Story = {
         frame(
             <ChatSetup
                 icon="MessageSquare"
-                iconLabel="Chat"
                 heading="this chat needs an agent"
                 body={
                     <Text>

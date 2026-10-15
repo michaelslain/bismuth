@@ -6,6 +6,7 @@
 // lowercase (dev warns otherwise — same rule as TextButton). `size`/`bracket` are deprecated
 // and ignored.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import type { JSX } from 'solid-js'
 import { IconTextButton } from './IconTextButton'
 import { IconButton } from './IconButton'
@@ -134,6 +135,36 @@ export const Collapse: Story = {
             </BarFrame>
         </Row>
     ),
+    // The icon sits on the label's x-height centre, not the line box's centre: a lowercase word
+    // has no ascenders to speak of, so a line-box-centred icon reads high. The label's baseline
+    // and x-height come from a baseline-aligned `1ex` inline probe, so bold (primary) labels measure true.
+    play: async ({ canvasElement }) => {
+        const buttons = [
+            ...canvasElement.querySelectorAll<HTMLElement>('button'),
+        ].filter(b => b.querySelector('svg') && b.textContent)
+        expect(buttons.length).toBeGreaterThan(0)
+        const deltas: number[] = []
+        for (const b of buttons.slice(0, 3)) {
+            const word = [
+                ...b.querySelectorAll<HTMLElement>('[data-bar-abbr]'),
+            ].find(w => w.getClientRects().length > 0)
+            if (!word) continue
+            const probe = document.createElement('span')
+            probe.style.cssText =
+                'display:inline-block;width:0;height:1ex;vertical-align:baseline'
+            word.appendChild(probe)
+            const pr = probe.getBoundingClientRect()
+            probe.remove()
+            const label = (pr.top + pr.bottom) / 2
+            const r = b.querySelector('svg')!.getBoundingClientRect()
+            const icon = r.top + r.height / 2
+            deltas.push(Math.round((icon - label) * 100) / 100)
+        }
+        expect(
+            deltas.every(d => Math.abs(d) <= 0.5),
+            `icon vs x-height centre (px): ${deltas}`,
+        ).toBe(true)
+    },
 }
 
 /** A few representative real labels from call sites (new note, saved, sync). */
@@ -143,10 +174,10 @@ export const Examples: Story = {
             <IconTextButton icon="Plus" variant="normal">
                 new note
             </IconTextButton>
-            <IconTextButton icon="Check" variant="selected">
+            <IconTextButton icon="Check" primary>
                 saved
             </IconTextButton>
-            <IconTextButton icon="RefreshCw" variant="unselected">
+            <IconTextButton icon="RefreshCw" variant="normal">
                 sync
             </IconTextButton>
         </Row>

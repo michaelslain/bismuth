@@ -1,0 +1,12 @@
+/* app/src/ui/BarTwin.module.css — only the DEFAULT state of a twin pair: the bare half is hidden.
+   The tier that swaps them lives with the container it measures (ViewBar.module.css for the
+   view bar's early/late tiers, ChatControls.module.css for the chat row), keyed on the
+   `data-bar-twin*` attributes BarTwin.tsx writes. The attribute selector lifts the hide above
+   Button's `.btn { display: inline-flex }`. */
+.twin {
+    display: inline-flex;
+    align-items: center;
+}
+.twin > [data-bar-twin-half='icon'] {
+    display: none;
+}

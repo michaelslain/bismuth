@@ -24,6 +24,8 @@ export interface CommandHandlers {
     // button) so the menu can anchor under that button; falls back to a fixed spot
     // when invoked without an event (e.g. from the command palette).
     openCreateMenu: (e?: MouseEvent) => void
+    // True while the create chooser is open; the toolbar draws its `+` as an on toggle then.
+    createMenuOpen?: () => boolean
     openGraph: () => void
     // Open the daemon page (the living face, crons + services, inbox + log, docked chat) as its
     // own tab. The inbox folded into that page, so `open-inbox` routes here too.
@@ -122,6 +124,9 @@ export interface BoundCommand {
     // observe success before the action has actually resolved (detect-ai, gcal-sync, archive-tasks…).
     // Other callers (palette, toolbar) fire-and-forget and ignore the return value.
     action: (e?: MouseEvent) => unknown
+    // Present only on a command that is a toggle (or a menu trigger): the toolbar draws it
+    // `selected` while this returns true and `unselected` otherwise. Absent = a plain action.
+    isOn?: () => boolean
 }
 
 /** Map each catalog command id to a runnable {id,label,icon,action}. */
@@ -204,6 +209,7 @@ export function bindCommands(
             icon: spec.icon,
             interactive: spec.interactive,
             action,
+            isOn: spec.id === 'create-menu' ? h.createMenuOpen : undefined,
         })
     }
     // Dynamic, user-defined daily-note commands. NOT in the static catalog; the toolbar

@@ -44,8 +44,14 @@
     display: inline-flex;
     align-items: center;
 }
-.actions > * + * {
+.actions > .action + .action {
     margin-left: var(--sp-4);
+}
+/* One action = a worded/icon twin pair (RowAction in ChatControls.tsx); the wrapper is the cluster's
+   unit, so `* + *` above spaces actions, not twins. */
+.action {
+    display: inline-flex;
+    align-items: center;
 }
 
 /* ── The quiet row: muted ui-size mono, no boxes, no fill, no caret (Acceptance). Shared by the
@@ -115,10 +121,11 @@
     text-overflow: ellipsis;
 }
 
-/* ── The row's collapse ladder — ONE tier, `data-row-label`. `[history]`/`[new chat]` render
-   through `IconTextButton` now (ChatControls.tsx), each holding an icon plus its word wrapped in
-   `data-row-label`; below the tier the word drops and the icon alone stands in the bracket
-   (`[⟲]`/`[+]`), freeing the width the floored model word (above) needs to keep its 3 characters.
+/* ── The row's collapse ladder — ONE tier. `history`/`new chat` are BarTwin pairs (ui/BarTwin.tsx,
+   `drop="row"`): a worded `IconTextButton` half and a bare `IconButton` half. Below the tier the
+   worded half hides and the bare half shows, a glyph that brackets only when ON (never `[⟲]` for an
+   off toggle), freeing the width the floored model word (above) needs to keep its 3 characters.
+   The tier is keyed on `data-row-action` (the RowAction wrapper) so it only reaches this row's pairs.
    `data-row-drop` is reserved on the same ladder for a control a future tier needs to hide WHOLE
    (a second, narrower level) rather than just de-label — none of today's four controls needs that,
    so no rule below tags it yet; `chatRowDrop.test.ts` checks whichever `data-row-*` hooks
@@ -136,8 +143,11 @@
    stop fitting, with a few px of margin on the fitting side rather than sitting exactly on the
    edge. */
 @container chatrow (max-width: 280px) {
-    .row [data-row-label] {
+    .row [data-row-action] [data-bar-twin='row'] > [data-bar-twin-half='full'] {
         display: none;
+    }
+    .row [data-row-action] [data-bar-twin='row'] > [data-bar-twin-half='icon'] {
+        display: inline-flex;
     }
 }
 

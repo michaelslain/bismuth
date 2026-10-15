@@ -13,7 +13,7 @@ This page covers editing a table as a user and, last, how the widget works. For 
 
 A table is a header row, a separator row of dashes, and body rows. Editing keeps the markdown column-aligned as above.
 
-A note's table is the same table a chat message shows: its grid is typed with `+ - | =` (a doubled `=` under the header), and each column sizes to its content. Its editing controls stay in that register: hovering shows a `+` past the right edge (add a column) and below the bottom (add a row) and `[∞]` above, a column's `|` turns accent under the pointer where it can be dragged to resize, and the cell being edited takes an accent wash. A one-word column takes that word's width, a prose column takes the wrapping, words wrap only between whole words, and a code path wraps at its `/` and `.`.
+A note's table is the same table a chat message shows: its grid is typed with `+ - | =` (a doubled `=` under the header), and each column sizes to its content. Its editing controls stay in that register: hovering shows a `+` past the right edge (add a column) and below the bottom (add a row) and `∞` above. While extend is on, `[∞]` stays shown at the table's top-left without a hover, and keyboard focus inside the controls shows them too, a column's `|` turns accent under the pointer where it can be dragged to resize, and the cell being edited takes an accent wash. A one-word column takes that word's width, a prose column takes the wrapping, words wrap only between whole words, and a code path wraps at its `/` and `.`.
 
 ## Write a table in markdown
 
@@ -74,7 +74,7 @@ Header cells cannot be merged. The hidden cells keep their text in the file; onl
 
 ## Extend a wide table
 
-A table whose columns cannot fit the page even at their narrowest scrolls sideways inside its own box, and the side with more table to scroll to fades out. Hover a table and press `[∞]` (Extend table horizontally) to put every cell on one line and scroll the table sideways instead of wrapping its columns. Press it again to go back.
+A table whose columns cannot fit the page even at their narrowest scrolls sideways inside its own box, and the side with more table to scroll to fades out. Hover a table and press `∞` (Extend table horizontally) to put every cell on one line and scroll the table sideways instead of wrapping its columns. Press it again to go back.
 
 ## Where table layout is stored
 

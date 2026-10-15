@@ -6,7 +6,7 @@
 // Four controls, in this order: TODAY, prev, the date, next. TODAY is the explicit one-shot jump;
 // the date stays clickable too, as a secondary jump back (see its own comment below).
 import { useCalendarNav, settings } from '../state'
-import { TextButton } from '../../ui/TextButton'
+import BarTwin from '../../ui/BarTwin'
 import { IconButton } from '../../ui/IconButton'
 import { PlainButton } from '../../ui/PlainButton'
 import BarLabel from '../../ui/BarLabel'
@@ -28,29 +28,21 @@ export function DateNav(props: DateNavProps) {
             settings.value.weekStartsOnMonday,
         )
     const step = (dir: -1 | 1) => () =>
-        (nav.date.value = stepDate(
-            nav.date.value,
-            nav.view.value,
-            dir,
-        ))
+        (nav.date.value = stepDate(nav.date.value, nav.view.value, dir))
     const jumpToToday = () => (nav.date.value = new Date())
 
     return (
         <div class={`${styles.nav} ${props.class ?? ''}`}>
-            {/* NOT selected. Today is a one-shot jump, not a toggle. A bracket text button, not an
-                icon: a calendar glyph inside a calendar is the least self-descriptive mark in the
-                app, so the word stays until the whole control goes. It goes WHOLE at the bar's
-                DROP 3 tier (`data-bar-drop="3"`, 570px — ui/ViewBar.module.css), because once every
-                control is bracketed the bar cannot hold it, Categories, the crumb and the date at
-                the narrow tiers — and the date below is itself a jump to today, so the bar loses a
-                shortcut rather than a function. */}
-            <TextButton
-                data-bar-drop="3"
+            {/* Today is a one-shot jump, not a toggle. It is a twin (ui/BarTwin.tsx): the word while
+                there is room, the bare Calendar icon below the late tier — it never
+                vanishes before the date does, and the date beside it is itself a jump to today. */}
+            <BarTwin
+                drop="late"
+                icon="Calendar"
+                label="today"
                 title="Today"
                 onClick={jumpToToday}
-            >
-                today
-            </TextButton>
+            />
             <IconButton
                 icon="ChevronLeft"
                 label="Previous"
@@ -77,11 +69,7 @@ export function DateNav(props: DateNavProps) {
                     <BarLabel long={label().long} short={label().short} />
                 </Text>
             </PlainButton>
-            <IconButton
-                icon="ChevronRight"
-                label="Next"
-                onClick={step(1)}
-            />
+            <IconButton icon="ChevronRight" label="Next" onClick={step(1)} />
         </div>
     )
 }

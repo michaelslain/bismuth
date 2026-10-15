@@ -1,35 +1,13 @@
-// The typed `[-] [+] [x]` titlebar buttons, lifted out of App.tsx verbatim.
-//
-// THE FOUR RULES BEHIND THESE BUTTONS LIVE IN WindowControls.module.css, which hashes every class
-// name — so each one is reached through `styles`, and a bare string literal here would compile,
-// render, and match nothing. The close button carries two of those locals on one element, hence the
-// template-literal concatenation rather than a space inside a single lookup. Bracket access is the
-// repo standard: Vite exposes camelCase aliases only under css.modules.localsConvention, which
-// app/vite.config.ts does not set.
-//
-// The `class` expressions below are build-time CONSTANTS, and must stay that way if a `classList` is
-// ever added to these elements: Solid compiles a dynamic `class` into a guarded className write
-// followed by a classList diff, so a reactive `class` would reset className and leave unchanged
-// classList toggles unrestored. There are no conditional classes here today, so nothing is at risk
-// yet — the constraint is recorded because the rest of the shell extraction hits elements that do
-// carry both.
+// The typed `[-] [+] [x]` titlebar buttons: TextButton `-` / `+` and the shared CloseButton, so they
+// draw the button family's brackets and spacing. They are real <button>s inside the drag-region top
+// strip; Tauri's drag script never treats a <button> as a drag target, so pressing one does not start
+// a window drag (shell/TopStrip.tsx). Each carries an aria-label: the visible text is only the glyph.
 //
 // WHAT DELIBERATELY STAYED IN App.tsx: the `<Show when={isTauri() && !IS_MAC_PLATFORM}>` gate and
-// the three dynamic `@tauri-apps/api/window` calls behind these props. Those are platform
-// integration, not chrome — and keeping them out here is what lets the component mount in Storybook
-// with no Tauri runtime present. macOS runs a transparent Overlay titlebar with native traffic
-// lights instead, so on that platform these buttons never render at all.
-//
-// THE GLYPHS ARE LITERAL TEXT (`[-] [+] [x]`, the typed-controls look), so each button carries an
-// `aria-label`: without one a screen reader announces the brackets ("left bracket, minus, right
-// bracket") as the name. Hover is an ink shift only — no fill — see WindowControls.module.css.
-//
-// These render as `PlainButton` (app/src/ui/PlainButton.tsx), not a bare `<button>` or `ui/Button`:
-// PlainButton is a real `<button>` with its native chrome reset to nothing, so `.win-btn`/
-// `.win-btn--close` below stay the only thing that paint it — `ui/Button`'s `.btn` family would add
-// a border, padding and a size no toolbar-height titlebar control wants. shell/InboxIndicator.tsx
-// uses the same primitive for the same reason.
-import PlainButton from '../ui/PlainButton'
+// the three dynamic `@tauri-apps/api/window` calls behind these props, so the component mounts in
+// Storybook with no Tauri runtime. macOS runs native traffic lights instead.
+import { TextButton } from '../ui/TextButton'
+import CloseButton from '../ui/CloseButton'
 import styles from './WindowControls.module.css'
 
 export function WindowControls(props: {
@@ -39,30 +17,21 @@ export function WindowControls(props: {
 }) {
     return (
         <div class={styles['win-controls']}>
-            <PlainButton
-                class={styles['win-btn']}
+            <TextButton
                 title="Minimize"
                 aria-label="Minimize"
                 onClick={props.onMinimize}
             >
-                [-]
-            </PlainButton>
-            <PlainButton
-                class={styles['win-btn']}
+                -
+            </TextButton>
+            <TextButton
                 title="Maximize"
                 aria-label="Maximize"
                 onClick={props.onToggleMaximize}
             >
-                [+]
-            </PlainButton>
-            <PlainButton
-                class={`${styles['win-btn']} ${styles['win-btn--close']}`}
-                title="Close"
-                aria-label="Close"
-                onClick={props.onClose}
-            >
-                [x]
-            </PlainButton>
+                +
+            </TextButton>
+            <CloseButton label="Close" onClick={props.onClose} />
         </div>
     )
 }

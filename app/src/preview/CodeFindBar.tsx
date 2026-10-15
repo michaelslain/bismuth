@@ -114,10 +114,9 @@ const CodeFindBar: Component<CodeFindBarProps> = props => {
                         }}
                     />
                     <IconButton
-                        icon="CaseSensitive"
+                        glyph="Aa"
                         label="Match case"
                         variant={props.caseSensitive ? 'selected' : 'unselected'}
-                        aria-pressed={!!props.caseSensitive}
                         onClick={() => {
                             props.onToggleCase?.()
                             refocus()

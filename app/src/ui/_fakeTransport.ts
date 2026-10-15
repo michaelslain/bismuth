@@ -639,6 +639,13 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                 const { spec } = body as { spec: SourceSpec }
                 return resolveRows(spec) as unknown as T
             }
+            // api.setProperties posts JSON: same handler and result as the plain-post route,
+            // plus the version bump a versioned fake needs to refetch `/rows`.
+            if (pathname === '/set-properties') {
+                const res = await handlePost(pathname, body)
+                await bump(pathname)
+                return (await res.json()) as T
+            }
             // Mirrors core/src/taskCreate.ts's appendTaskLine: resolve `file` against the
             // seeded vault paths, then append `- [ ] <body>`, inserting the separating newline
             // only when the file doesn't already end in one.

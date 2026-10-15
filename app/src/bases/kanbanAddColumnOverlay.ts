@@ -1,8 +1,8 @@
-// Where KanbanAddColumn places its name input so the input's text lands exactly on the resting
-// trigger's "column" glyph. Pure geometry — the component reads the three measurements off its own
-// tree and hands them here — so the placement follows whatever the trigger's leading geometry is
-// (bracket glyph, icon size setting, gaps, the fixed --h-control height that centres the label)
-// instead of a pixel literal that silently goes stale when any of those change.
+// Where KanbanAddColumn places its name input while editing: BESIDE the trigger, which stays visible
+// as `[+]`. x belongs to the ghost's flex row (the field follows the trigger's right edge at
+// --sp-2, whatever the bracket geometry), so the offset's `left` is 0; y is matched on the glyph's
+// vertical centre. Pure geometry — the component reads the three measurements off its own tree and
+// hands them here — instead of a pixel literal that silently goes stale.
 
 /** A box in viewport coordinates (a `getBoundingClientRect()` subset). */
 export type Box = { left: number; top: number; height: number }
@@ -14,11 +14,10 @@ export type InputInset = { left: number; top: number; contentHeight: number }
 export type OverlayOrigin = { left: number; top: number }
 
 /**
- * The overlay's `left`/`top` relative to `ghost` (its containing block). x: the input's text starts
- * at its left inset, so the overlay starts that far before the glyph. y: a single-line input centres
- * its text in its content box and the trigger centres its label in its own box, so the two are
- * matched on the glyph's vertical CENTRE — which holds for any font, since both render in the one UI
- * face at the one size.
+ * The field's offset from its in-flow position (`position: relative`). x: 0 — the flex row already
+ * puts the field --sp-2 right of the trigger's right edge. y: the field is top-anchored in the
+ * ghost (a refusal line under it must not re-centre it), and a single-line input centres its text
+ * in its content box, so the two are matched on the glyph's vertical CENTRE.
  */
 export function overlayOrigin(
     ghost: Box,
@@ -26,7 +25,7 @@ export function overlayOrigin(
     inset: InputInset,
 ): OverlayOrigin {
     return {
-        left: glyph.left - ghost.left - inset.left,
+        left: 0,
         top:
             glyph.top +
             glyph.height / 2 -

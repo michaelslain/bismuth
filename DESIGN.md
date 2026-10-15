@@ -454,15 +454,21 @@ the accent. An outline appears only when it means something.
   the word and no space inside. No border, no fill, no horizontal padding: **the brackets are the
   edge.** The 24px height is an invisible hit area, so buttons still line up with rows. An icon
   goes inside the brackets: `[✓ label]`. One size only.
-- **Close is `[x]`:** every control that closes, dismisses, removes or cancels — a modal, a tab, a
-  pane, a toast, a list row, an attachment — is a `CloseButton`, a text button reading the letter
-  `x`. Never an `IconButton` with the `X` icon, which renders bracketless.
+- **Close is `[x]`:** every control that closes or dismisses a header, tab, pane, toast, list row
+  or attachment is a `CloseButton`, a text button reading the letter `x`. Never an `IconButton`
+  with the `X` icon, which renders bracketless. A modal footer keeps worded `[cancel]` and
+  `[done]` (both `normal`); a `[close]` footer button is a `CloseButton` in the modal's header
+  instead.
+- **Remove and delete are different controls:** taking an item out of a list row is a
+  `RemoveRowButton` (`[x]`); deleting a real object (a flashcard, a kanban column) is a worded
+  `[delete]` `TextButton` with `danger`. No bare trash `IconButton` exists.
 - **States are colour and weight, nothing drawn:** `normal` `--fg`; `unselected` (a toggle member
   that is off) `--text-muted`; `selected` `--accent` + bold (or `accent`, if set); `primary`
   `--accent` + bold, at most one per view; `danger` `--danger`; disabled `--faint` with no hover. Disabled is `--faint` alone with **no** opacity: 0.45 over `--faint` measures 1.89:1 on `--bg`,
   under the 3:1 floor. `--state-disabled-op` is not applied to a control; its one reader is the sidebar toolbar's switcher dim (see the Don'ts).
 - **Hover:** `unselected` lifts to `--fg`; states already at full ink underline the label
-  (1px) instead of changing colour.
+  (1px) instead of changing colour. `primary` is underlined (1px) at rest and thickens the
+  underline to 2px on hover.
 - **Spacing:** sibling bracket buttons sit `--sp-4` apart — about one monospace cell — so a focus
   ring never touches the next `[`. That is the distance **ink to ink**, one number for every kind
   and size: each bracket's outer side bearing (~0.175em) is pulled into the box edge, and no
@@ -480,7 +486,8 @@ the accent. An outline appears only when it means something.
   between the old and new selection slide. There is no separate butted look.
 - **`accent` recolours a selected toggle** (a category's own colour).
 - **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
-  confirming action in a footer or view, `selected` is a toggle member that is on. A `[cancel]`
+  confirming action in a footer or view, `selected` is a toggle member that is on. A command
+  never wears `selected` as emphasis: `[⟳ sync now]` and `[+ add]` use `primary`. A `[cancel]`
   is `normal`.
 - **Focus:** no outline or ring on any button or clickable card/chip, on any focus — mouse or
   keyboard. Decided 2026-09-27: keyboard users lose the cue; focus is not drawn anywhere in this
@@ -488,9 +495,9 @@ the accent. An outline appears only when it means something.
   focus ring or outline, and none swaps in a replacement cue. Do not add one to a single component.
 - **Icon button — brackets mean "on":** a separate register, no box. A **standalone** icon button
   (`normal`, `danger` included) is the bare icon glyph with `--sp-1` of side room, `--accent` on
-  hover. Only a **`selected`** toggle member draws `[▣]` — generated `[`/`]` glyphs (same device
-  as the text button's brackets, hidden from the accessible name the same way) painted accent with
-  the icon. An **`unselected`** member lays its brackets out invisibly, so it occupies the same
+  hover. Only a **`selected`** toggle member draws `[▣]` — `[`/`]` spans drawn by
+  `IconBrackets` (the one owner of the icon-bracket recipe, also used by the tab rail's active
+  mark), `aria-hidden` so they stay out of the accessible name, painted accent with the icon. An **`unselected`** member lays its brackets out invisibly, so it occupies the same
   width as when on — unless it is in a **pick-one** group (`pickOne`), where it draws no bracket
   space and every member takes the same side room, so unit gaps come out even (see Toggles). Text buttons (`[label]`) and icon-text buttons (`[▣ label]`) are a worded
   command and keep their brackets in every state; the bare-vs-bracketed rule is icon-only.
@@ -510,11 +517,39 @@ the accent. An outline appears only when it means something.
     tab-rail actions and the mini-graph mode switcher (an `IconBar` inside a `ViewBar` slot) all
     draw 12px brackets and glyphs, 8px apart ink to ink, in one `ui/Band` (36px, 12px side
     padding). A plain icon button placed directly in a `ViewBar` keeps that bar's `--fs-ui` register.
-  - **Brackets are drawn only when on** — reversed 2026-10-02 from 2026-09-27's "always drawn":
-    bracketed icon actions sat directly above the tab rail's bare tab icons as two idioms in one
-    column, so brackets now mean "on" app-wide — a selected icon button, the active tab, a
-    checked `[x]`. Rejected alongside: brackets on hover only (they flicker in and out under the
-    pointer) and a boxed "ghost cell" (breaks no-box).
+  - **Brackets are drawn only when on:** they mean "on" app-wide — a selected icon button, the
+    active tab, a checked `[x]`. Brackets on hover only flicker in and out under the pointer, and
+    a boxed "ghost cell" breaks no-box, so neither is used.
+  - **One glyph per toggle.** The brackets carry the state; the glyph never swaps to show it. A
+    property row's visibility is one `Eye`, `[👁]` when visible and bare when hidden; the base
+    source button is one `Code`, `[</>]` while the source panel is open.
+  - **Active means on.** An armed tool (the highlighter, the map pin) and the trigger of an open
+    menu or popover are `selected` while active and `unselected` otherwise. The toolbar's
+    create-menu `+` draws `[+]` while its menu is open.
+  - **A toggle's off state is `unselected`, never `normal`.** The one exception is the chat
+    history toggle in `ChatControls`, a lone toggle that sits beside `normal` commands.
+  - **A label that drops becomes an icon button.** When an icon-text button's label collapses at
+    a narrow width, it renders as an `IconButton`, bare unless on: `[⟲ history]` becomes
+    `⟲`, and `[⟲]` only while on, never `[⟲]` at rest.
+  - **Commands are never a `SegmentedToggle`.** Independent commands (undo and redo) are bare
+    `normal` icon buttons in an `IconBar`; a `SegmentedToggle` is a mutually-exclusive set.
+  - **Toolbar commands can be toggles.** A configured toolbar command whose catalog entry has an
+    `isOn` binding draws `selected` or `unselected` through `CommandButton`'s `on` prop; one
+    without it is an action and stays `normal`.
+  - **One "on" mark per tab row.** The active tab's rail brackets are the row's mark; a pinned
+    tab's pin is a bare `normal` `IconButton`, never `selected`.
+  - **`aria-pressed` comes from the variant.** `IconButton` and `SegmentedToggle look="icon"` set
+    `aria-pressed` to `true` for `selected` and `false` for `unselected`; a `normal` button sets
+    none. Callers do not pass it by hand.
+  - **A disclosure is not a toggle.** Every expand/collapse chevron (outline, companion
+    frontmatter, `Disclosure`) is the shared `DisclosureChevron`: one bare `ChevronRight` that
+    rotates a quarter turn when open, `--text-muted` ink and `--fg` on hover, never bracketed.
+    With `onToggle` it is a button carrying `aria-expanded`; without it, a decorative glyph
+    inside a larger clickable header.
+  - **Picker grids keep their own marks.** A selected cell in a symbol, colour or swatch grid
+    keeps the grid's own selection mark and does not draw `[▣]`.
+  - **One zoom cluster.** Zoom reads `− 100% +` with the percentage as a muted label and an
+    optional `[fit]`, as `preview/PdfZoom.tsx` draws it.
 
 ### Tooltip
 - **One bubble names an icon-only control:** `TooltipHost`, mounted once per document, reads `data-tooltip="<text>"` from the element under the pointer or holding keyboard focus-visible. The text is the control's name as written: no case change, no tracking.
@@ -529,9 +564,11 @@ the accent. An outline appears only when it means something.
 - **Segmented toggle:** a row of `[option]` buttons `--sp-4` apart, same bracket idiom; the on
   option is `selected` (accent + bold). Icon-only tool groups (the drawing dock) render each
   option as an icon button — `[▣]` for the on option, bare for the rest — the same idiom rather
-  than a separate look.
+  than a separate look. It holds mutually-exclusive options only, never independent commands.
 - **On/off toggle row** (`ToggleRow`, settings-form checkboxes): a full `--row-h` row rendering
   `[x]` checked / `[ ]` unchecked (`BracketToggle`) — no box fill, just the bracket glyph flipping.
+  A `[x]`/`[ ]` pair in a toggle row is a checkbox (`BracketToggle`), never a close; close is the
+  `CloseButton` `[x]` in a header, tab, pane or toast.
 
 ### Cards / Containers
 - **Card:** `--surface-1` fill, `--rule` hairline, square, `12px 16px` padding, no shadow.
@@ -581,7 +618,8 @@ the accent. An outline appears only when it means something.
   on `[x]`.
 - **`ModalFooter`:** a full-width `--rule` divider meeting the panel's side borders (never a
   `--rail` fill band). Actions only — no keybind hints (`esc`, `↵`) anywhere in a modal; every
-  modal ends in a real dismiss button (`[cancel]` / `[close]` / `[done]`). Leading edge: leading
+  modal is dismissed by its header `[x]` (`CloseButton`); a footer adds a worded `[cancel]` or `[done]`
+  only when there is an edit to abandon or confirm, and never carries `[close]`. Leading edge: leading
   actions (delete, reset); trailing edge: the primary/secondary actions.
 - **Lists in a modal (`RowList` + `ListRow`):** the daemon crons list is the model. Rows sit
   directly on the modal ground — never in an inset `--surface-2` panel (a box inside the frame) and

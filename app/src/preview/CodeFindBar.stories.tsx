@@ -28,9 +28,14 @@ function Body(props: { children: import('solid-js').JSX.Element }) {
 /** Every step the bar asked for, in order (module-level so play() can read it). */
 let steps: number[] = []
 
-function Harness(props: { query: string; count: string; matches: number }) {
+function Harness(props: {
+    query: string
+    count: string
+    matches: number
+    caseOn?: boolean
+}) {
     const [query, setQuery] = createSignal(props.query)
-    const [matchCase, setMatchCase] = createSignal(false)
+    const [matchCase, setMatchCase] = createSignal(!!props.caseOn)
     steps = []
     return (
         <Body>
@@ -59,6 +64,23 @@ export const Default: Story = {
         fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
         await expect(steps).toEqual([1, -1])
         await expect(canvas.getByLabelText('Next match (Enter)')).toBeEnabled()
+    },
+}
+
+/** Match case on: the toggle is the mono text `Aa` drawn `[Aa]`, no SVG. */
+export const CaseOn: Story = {
+    render: () => <Harness query="return" count="1/3" matches={3} caseOn />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const btn = await canvas.findByLabelText('Match case')
+        await expect(btn).toHaveAttribute('aria-pressed', 'true')
+        await expect(btn.textContent).toContain('Aa')
+        await expect(btn.querySelector('svg')).toBeNull()
+        // `[Aa]` draws at the same scale as its neighbour `[x]` (a text button, brackets generated
+        // from the button's own font): the two buttons' computed font sizes (which size the brackets) must match.
+        const close = canvas.getByLabelText('Close (Esc)')
+        const fs = (el: HTMLElement) => parseFloat(getComputedStyle(el).fontSize)
+        await expect(Math.abs(fs(btn) - fs(close))).toBeLessThanOrEqual(1)
     },
 }
 

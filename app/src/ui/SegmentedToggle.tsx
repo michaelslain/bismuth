@@ -1,10 +1,16 @@
-import { For, type JSX } from 'solid-js'
+import { For, Show, type JSX } from 'solid-js'
+import { Icon } from '../icons/Icon'
 import { Button, type ButtonSize } from './Button'
+import iconSize from './iconSize'
 import styles from './SegmentedToggle.module.css'
 
 export type SegmentedOption<T> = {
     id: T
-    label: JSX.Element
+    /** Text (or any node) drawn in the option. Give `label` or `icon`, not both. */
+    label?: JSX.Element
+    /** Icon name drawn at the app's one icon size, for icon-only groups (`look="icon"`). The
+     *  option's accessible name is `ariaLabel`, else `title`, else `id`. */
+    icon?: string
     title?: string
     disabled?: boolean
     /** Extra class merged onto this option's Button, alongside `segmentClass`. */
@@ -37,6 +43,10 @@ export type SegmentedToggleProps<T> = {
     pickOne?: boolean
 }
 
+/** `size` scales the whole icon cell, glyph and brackets together (one scale per step). md is the
+ *  app's one icon size; lg is Button's own 1.25x step (`.btn--icon.btn--lg`), sm its reciprocal. */
+const ICON_SCALE = { sm: 0.8, md: 1, lg: 1.25 } as const
+
 /**
  * A row of mutually-exclusive buttons: the active one is `selected`, the rest
  * `unselected`. This is THE canonical selected/unselected consumer — graph mode
@@ -52,11 +62,19 @@ export type SegmentedToggleProps<T> = {
  */
 function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
     const kind = () => (props.look === 'icon' ? 'icon' : 'text')
+    const scale = () => ICON_SCALE[props.size ?? 'md']
+    // The brackets read --iconbar-glyph as their font-size. lg already multiplies it by 1.25 in
+    // Button.module.css, and md is the --icon fallback, so only sm needs the variable set here.
+    const rootStyle = () =>
+        props.look === 'icon' && props.size === 'sm'
+            ? { '--iconbar-glyph': `calc(var(--icon) * ${ICON_SCALE.sm})` }
+            : undefined
     return (
         <div
             class={`${styles.segmented} ${props.class ?? ''}`}
             data-look={props.look ?? 'bracket'}
             data-segmented=""
+            style={rootStyle()}
         >
             <For each={props.options}>
                 {opt => (
@@ -67,23 +85,33 @@ function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
                         }
                         size={props.size}
                         pickOne={props.pickOne}
-                        aria-pressed={
-                            kind() === 'text'
-                                ? opt.id === props.value
-                                : undefined
-                        }
+                        aria-pressed={opt.id === props.value}
                         class={`${props.segmentClass ?? ''} ${opt.class ?? ''}`}
                         title={kind() === 'icon' ? undefined : opt.title}
                         data-tooltip={
                             kind() === 'icon'
-                                ? (opt.title ?? opt.ariaLabel)
+                                ? (opt.title ??
+                                  opt.ariaLabel ??
+                                  String(opt.id))
                                 : undefined
                         }
-                        aria-label={opt.ariaLabel}
+                        aria-label={
+                            opt.ariaLabel ??
+                            (kind() === 'icon'
+                                ? (opt.title ?? String(opt.id))
+                                : undefined)
+                        }
                         disabled={opt.disabled}
                         onClick={() => props.onChange(opt.id)}
                     >
-                        {opt.label}
+                        <Show when={opt.icon} fallback={opt.label}>
+                            {name => (
+                                <Icon
+                                    value={name()}
+                                    size={iconSize() * scale()}
+                                />
+                            )}
+                        </Show>
                     </Button>
                 )}
             </For>

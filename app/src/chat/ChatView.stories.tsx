@@ -21,7 +21,7 @@
 // releases the session before restoring the real WebSocket: a leaked global would corrupt every
 // story loaded afterwards in the same Storybook session.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import { onCleanup } from 'solid-js'
 import { ChatView } from './ChatView'
 import { retainFakeChat, type FakeChatFrames } from './_fakeChatSocket'
@@ -560,9 +560,8 @@ export const HistoryOpen: Story = {
     },
     play: async ({ canvasElement }) => {
         await findText(canvasElement, 'anything about your vault')
-        canvasElement
-            .querySelector<HTMLElement>('[data-testid="chat-history"]')!
-            .click()
+        // By role: whichever half of the history twin is laid out at this width is the one found.
+        within(canvasElement).getByRole('button', { name: /history/i }).click()
         await findText(document.body, 'Restyle the daemon page')
         await findText(document.body, 'yesterday')
         // The chat stays mounted underneath the dialog.

@@ -47,7 +47,7 @@ const FreeAgentSetup: Component<FreeAgentSetupProps> = props => {
                     fallback={
                         <>
                             <Show when={!props.buttonless}>
-                                <TextButton onClick={props.onStart}>
+                                <TextButton primary onClick={props.onStart}>
                                     set up free agent
                                 </TextButton>
                             </Show>

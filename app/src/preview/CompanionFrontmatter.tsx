@@ -39,7 +39,7 @@ import type { CompanionStore } from './annotationTypes'
 import { isFrontmatterFolded, setFrontmatterFolded } from './frontmatterFold'
 import FoldedFence from './FoldedFence'
 import { summarizeFrontmatter } from './frontmatterSummary'
-import IconButton from '../ui/IconButton'
+import DisclosureChevron from '../ui/DisclosureChevron'
 import MarkdownField from '../ui/MarkdownField'
 import styles from './CompanionFrontmatter.module.css'
 
@@ -93,12 +93,11 @@ function CompanionFrontmatter(props: CompanionFrontmatterProps) {
                     .join(' ')}
                 data-folded={folded() ? '' : undefined}
             >
-                <IconButton
+                <DisclosureChevron
                     class={styles.chevron}
-                    icon={folded() ? 'ChevronRight' : 'ChevronDown'}
+                    open={!folded()}
                     label={folded() ? 'unfold frontmatter' : 'fold frontmatter'}
-                    aria-expanded={!folded()}
-                    onClick={toggle}
+                    onToggle={toggle}
                 />
                 <Show when={folded()}>
                     <FoldedFence summary={summarizeFrontmatter(store.frontmatter())} />

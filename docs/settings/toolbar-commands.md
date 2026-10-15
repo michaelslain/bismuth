@@ -33,6 +33,8 @@ toolbar:
 | `icon` | An icon name (any Phosphor icon) or an emoji. Required. |
 | `tooltip` | Hover text. Defaults to the command's label. |
 
+A button whose command has an on state draws its icon in brackets while that state is on: the `create-menu` button reads `[+]` while its menu is open. Every other button is a bare icon.
+
 Use `command` or `commands`, not both. If both are present and `commands` is non-empty, `commands` wins.
 
 ## How a button resolves its command
@@ -207,8 +209,8 @@ Notes on individual commands:
 `core/test/commands.test.ts` asserts that ids are unique and that every command has a label and an icon.
 
 `bindCommands(handlers, dailyNotes)` in `app/src/commands.ts` turns the catalog into a `Map<string, BoundCommand>`.
-A `BoundCommand` is `{ id, label, icon, interactive, action }`, and `action` takes an optional `MouseEvent` so the create menu can anchor under the clicked button.
-`App.tsx` passes one `CommandHandlers` object, every field required, so dropping a handler fails the typecheck. The palette, the toolbar, the tab bar and app control all read this one map. A catalog id with no binding is skipped silently.
+A `BoundCommand` is `{ id, label, icon, interactive, action, isOn? }`, and `action` takes an optional `MouseEvent` so the create menu can anchor under the clicked button. `isOn` is set only for a command with an on state (`create-menu`, from the optional `createMenuOpen` handler); `ToolbarButton` in `App.tsx` passes it to `CommandButton`'s `on` prop, which draws the icon `selected` (bracketed) or `unselected`.
+`App.tsx` passes one `CommandHandlers` object, every action field required, so dropping a handler fails the typecheck. The palette, the toolbar, the tab bar and app control all read this one map. A catalog id with no binding is skipped silently.
 
 `resolveButtonCommands(btn, map)` returns the resolvable ids of a button in order. `ToolbarButton` in `App.tsx` takes index `[0]` and renders a disabled `CommandButton` (`app/src/shell/CommandButton.tsx`) when the list is empty. A non-empty `commands` beats `command`; an empty one defers to it.
 

@@ -52,7 +52,12 @@ export const WithBadge: Story = {
     render: () => (
         <div style={{ padding: '12px', background: 'var(--bg)' }}>
             <IconBar label="Toolbar">
-                <CommandButton icon="Inbox" label="Inbox" badge={3} onClick={noop} />
+                <CommandButton
+                    icon="Inbox"
+                    label="Inbox"
+                    badge={3}
+                    onClick={noop}
+                />
             </IconBar>
         </div>
     ),
@@ -89,15 +94,56 @@ export const WithBadgeLarge: Story = {
         <div style={{ padding: '12px', background: 'var(--bg)' }}>
             <IconBar label="Toolbar" iconSize={20}>
                 <CommandButton icon="Search" label="Search" onClick={noop} />
-                <CommandButton icon="Inbox" label="Inbox" badge={3} onClick={noop} />
-                <CommandButton icon="Settings" label="Settings" onClick={noop} />
+                <CommandButton
+                    icon="Inbox"
+                    label="Inbox"
+                    badge={3}
+                    onClick={noop}
+                />
+                <CommandButton
+                    icon="Settings"
+                    label="Settings"
+                    onClick={noop}
+                />
             </IconBar>
             <div style={{ height: '12px' }} />
             <IconBar label="Toolbar" iconSize={11}>
                 <CommandButton icon="Search" label="Search" onClick={noop} />
-                <CommandButton icon="Inbox" label="Inbox" badge={3} onClick={noop} />
-                <CommandButton icon="Settings" label="Settings" onClick={noop} />
+                <CommandButton
+                    icon="Inbox"
+                    label="Inbox"
+                    badge={3}
+                    onClick={noop}
+                />
+                <CommandButton
+                    icon="Settings"
+                    label="Settings"
+                    onClick={noop}
+                />
             </IconBar>
         </div>
+    ),
+}
+
+/** `on` undefined is a plain action (bare glyph); `true` is an on toggle or an open-menu trigger
+ *  (`[+]` accent); `false` is the same control at rest (bare, bracket space reserved so nothing
+ *  moves when it flips). */
+export const OnStates: Story = {
+    render: () => (
+        <IconBar label="Toolbar">
+            <CommandButton icon="Plus" label="Action" onClick={noop} />
+            <CommandButton
+                icon="Plus"
+                label="Menu closed"
+                on={false}
+                onClick={noop}
+            />
+            <CommandButton
+                icon="Plus"
+                label="Menu open"
+                on={true}
+                onClick={noop}
+            />
+        </IconBar>
     ),
 }

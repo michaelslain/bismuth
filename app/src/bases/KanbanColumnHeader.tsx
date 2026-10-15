@@ -8,6 +8,7 @@ import ColorChip from '../ui/ColorChip'
 import IconBar from '../ui/IconBar'
 import IconButton from '../ui/IconButton'
 import StatusDot from '../ui/StatusDot'
+import TextButton from '../ui/TextButton'
 import Text from '../ui/Text'
 import KanbanColumnNameInput from './KanbanColumnNameInput'
 import { padCount } from './kanbanOrder'
@@ -102,11 +103,13 @@ const KanbanColumnHeader: Component<KanbanColumnHeaderProps> = props => {
                         {/* The "(empty)" lane is where cards with no value live — it is not a
                             column that can be deleted. */}
                         <Show when={props.columnKey !== ''}>
-                            <IconButton
-                                icon="Trash2"
-                                label="Delete column"
+                            <TextButton
+                                danger
+                                aria-label="Delete column"
                                 onClick={props.onDelete}
-                            />
+                            >
+                                delete
+                            </TextButton>
                         </Show>
                     </IconBar>
                 </Show>

@@ -152,7 +152,6 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
                 </Show>
             </ModalBody>
             <ModalFooter>
-                <TextButton onClick={props.onClose}>close</TextButton>
                 <TextButton onClick={update} disabled={loading() || running()}>
                     {running() ? 'working…' : 'update'}
                 </TextButton>

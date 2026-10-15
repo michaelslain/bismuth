@@ -80,7 +80,8 @@ const PropertyRowEditor: Component<PropertyRowEditorProps> = props => {
                 }
                 trailing={
                     <IconButton
-                        icon={props.row.hidden ? 'EyeSlash' : 'Eye'}
+                        icon="Eye"
+                        variant={props.row.hidden ? 'unselected' : 'selected'}
                         label={
                             props.row.hidden
                                 ? `Show ${props.row.name || 'property'} on cards/table`

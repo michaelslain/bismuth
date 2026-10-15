@@ -131,7 +131,6 @@ export function BismuthInstallModal(props: { onClose: () => void }) {
                 </Show>
             </ModalBody>
             <ModalFooter>
-                <TextButton onClick={props.onClose}>close</TextButton>
                 <TextButton
                     primary
                     onClick={install}

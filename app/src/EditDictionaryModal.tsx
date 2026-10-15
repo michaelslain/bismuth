@@ -9,7 +9,7 @@ import FormModal from './ui/FormModal'
 import ModalHeader from './ui/ModalHeader'
 import ModalBody from './ui/ModalBody'
 import ModalFooter from './ui/ModalFooter'
-import { IconButton } from './ui/IconButton'
+import RemoveRowButton from './ui/RemoveRowButton'
 import { IconTextButton } from './ui/IconTextButton'
 import { TextButton } from './ui/TextButton'
 import { TextInput } from './ui/TextInput'
@@ -68,11 +68,8 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                             {w => (
                                 <ListRow
                                     trailing={
-                                        <IconButton
-                                            icon="Trash2"
-                                            label={`Remove “${w}”`}
-                                            danger
-                                            size="sm"
+                                        <RemoveRowButton
+                                            label={`remove “${w}”`}
                                             onClick={() => remove(w)}
                                         />
                                     }

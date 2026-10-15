@@ -984,9 +984,9 @@ details.callout > summary::-webkit-details-marker {
  * ============================================================================ */
 
 /* `.app-shell` + `.layout` (the shell frame and its three-cell grid) live in shell/AppFrame.module.css. */
-/* `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` chrome moved into shell/TopStrip.module.css.
-   The Windows/Linux typed window controls that sit at this strip's right edge live in
-   shell/WindowControls.module.css, not here. */
+/* `.top-strip` and `.top-strip-spacer` chrome lives in shell/TopStrip.module.css. The Windows/Linux
+   typed `[-] [+] [x]` window controls at this strip's right edge are shell/WindowControls.tsx,
+   styled by shell/WindowControls.module.css. */
 /* `.status-bar` and its `.status-*` fields moved into shell/StatusBar.module.css. `.status-dot`
    (owned by ui/StatusDot.tsx, in global.css's `ui/ui.css` section) is unrelated and never moved with them. */
 
@@ -1562,33 +1562,88 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 }
 .bismuth-find-count.bismuth-find-empty { color: var(--danger); }
 
+/* The bar's controls. THIRD-PARTY-DOM EXEMPTION: editor/findPanel.ts is a CodeMirror panel built
+   with raw DOM, so it cannot compose the Solid button family; each rule below MIRRORS a component's
+   recipe in ui/Button.module.css + ui/IconBrackets.module.css with the same tokens. Change those and
+   this block together. Ink only in every state: no background fill at rest, hover, press or on, and
+   no focus ring (the family's `.btn:focus` rule). */
+
+/* prev / next — a bare `normal` IconButton: the glyph at --icon, --sp-1 of side room, --fg ink that
+   lifts to --accent under the pointer. */
 .bismuth-find-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
+  height: var(--h-control);
+  padding: 0 var(--sp-1);
   border: none;
   border-radius: var(--r-0);
   background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.bismuth-find-btn svg { width: var(--icon); height: var(--icon); }
+.bismuth-find-btn:hover { color: var(--accent); }
+
+/* `Aa` match case — an icon-only toggle: `unselected` (bare, --text-muted, --fg on hover) when off,
+   `selected` (`[Aa]`, --accent) when on. The brackets are the text register's generated glyphs
+   (`content: '[' / ''` keeps them out of the accessible name) with the outer bearing pulled in so
+   the box edge is the ink edge; off they are laid out but not painted (IconBrackets' `reserved`),
+   so flipping the toggle moves nothing. `Aa` is text in the brackets' own font and size, so it
+   needs none of IconBrackets' trim/lift — that recentres brackets on an SVG, not on letters.
+   The hook is `aria-pressed`, which findPanel.ts sets with the state. */
+.bismuth-find-case {
+  display: inline-flex;
+  align-items: center;
+  height: var(--h-control);
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
-}
-.bismuth-find-btn:hover { background: var(--hover-bg); color: var(--fg); }
-.bismuth-find-btn:active { background: var(--state-active-bg); }
-
-.bismuth-find-case {
-  font-size: var(--fs-micro);
-  font-weight: 600;
-  letter-spacing: 0.02em;
   font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  line-height: var(--lh-tight);
 }
-.bismuth-find-btn.bismuth-find-active {
-  background: var(--accent-soft);
-  color: var(--accent);
+.bismuth-find-case::before { content: '[' / ''; margin-left: -0.175em; visibility: hidden; }
+.bismuth-find-case::after { content: ']' / ''; margin-right: -0.175em; visibility: hidden; }
+.bismuth-find-case:hover { color: var(--fg); }
+.bismuth-find-case[aria-pressed='true'] { color: var(--accent); }
+.bismuth-find-case[aria-pressed='true']::before,
+.bismuth-find-case[aria-pressed='true']::after { visibility: visible; }
+
+/* close — CloseButton's `[x]`, a `normal` text button: --fg ink, brackets always drawn with the
+   outer bearing pulled in, the label alone underlined under the pointer. */
+.bismuth-find-close {
+  display: inline-flex;
+  align-items: center;
+  height: var(--h-control);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  line-height: var(--lh-tight);
 }
+.bismuth-find-close::before { content: '[' / ''; margin-left: -0.175em; }
+.bismuth-find-close::after { content: ']' / ''; margin-right: -0.175em; }
+.bismuth-find-close:hover .bismuth-find-close-label {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: var(--sp-1);
+}
+
+/* Sibling spacing: the bar's own gap is --sp-2 (field, count). Between the trailing controls the
+   family's sibling distance is --sp-4 box edge to box edge (SearchBar's trailing row): the two
+   chevrons' --sp-1 side room already makes it, the two bracket controls add the difference. */
+.bismuth-find-case,
+.bismuth-find-close { margin-left: calc(var(--sp-4) - var(--sp-2)); }
+
+.bismuth-find-btn:focus, .bismuth-find-btn:focus-visible,
+.bismuth-find-case:focus, .bismuth-find-case:focus-visible,
+.bismuth-find-close:focus, .bismuth-find-close:focus-visible { outline: none; }
 
 /* Match highlighting (the panel-gated highlighter from @codemirror/search). Recolor
    to the app accent; !important beats the package's themed `.cm-searchMatch` rules.

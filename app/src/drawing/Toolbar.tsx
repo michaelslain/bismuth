@@ -8,6 +8,7 @@ import IconBar from '../ui/IconBar'
 import Swatch from '../ui/Swatch'
 import { TextButton } from '../ui/TextButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
+import ZoomSteps from '../ui/ZoomSteps'
 import { Icon } from '../icons/Icon'
 import { CATEGORY_SWATCHES, resolveAppearance } from '../themes'
 import { settings } from '../settings'
@@ -229,8 +230,6 @@ export function Toolbar(props: {
         }),
     )
 
-    const zoomPct = () => Math.round((props.zoom?.() ?? 1) * 100)
-
     return (
         // `data-draw-toolbar` is the real cross-file contract: `*.stories.tsx` probes outside
         // this task's file list, InkOverlay.module.css and PageInk.module.css all select on the
@@ -285,9 +284,11 @@ export function Toolbar(props: {
                 {/* Smoothing on top, paper below (paper only when the surface has one — not note ink). */}
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
+                        {/* pickOne when there is no paper row under it to keep columns with. */}
                         <SegmentedToggle
                             look="icon"
                             size="sm"
+                            pickOne={!(props.bg && props.setBackground)}
                             options={smoothOpts}
                             value={t().smoothMode}
                             onChange={v => props.setTools({ smoothMode: v })}
@@ -308,34 +309,22 @@ export function Toolbar(props: {
                 {/* Undo/redo on top, zoom below. */}
                 <div class={styles['draw-group']}>
                     <div class={styles['draw-vstack']}>
-                        {/* Undo/redo are two independent commands, not a mutually-exclusive pair
-                            with an active member — SegmentedToggle's `value` accepts `undefined`
-                            for exactly this (one-global-followups Task 3), so neither segment is
-                            ever "selected" and this composes the real component instead of a raw
-                            duplicate of its markup. */}
-                        <SegmentedToggle
-                            look="icon"
-                            size="sm"
-                            value={undefined}
-                            onChange={id =>
-                                id === 'undo' ? props.onUndo() : props.onRedo()
-                            }
-                            class={styles['draw-vstack-seg']}
-                            options={[
-                                {
-                                    id: 'undo' as const,
-                                    label: <Icon value="Undo2" />,
-                                    title: 'Undo',
-                                    ariaLabel: 'Undo',
-                                },
-                                {
-                                    id: 'redo' as const,
-                                    label: <Icon value="Redo2" />,
-                                    title: 'Redo',
-                                    ariaLabel: 'Redo',
-                                },
-                            ]}
-                        />
+                        {/* Undo/redo are two independent commands, not a toggle: bare `normal`
+                            icons in a bare IconBar, no brackets (brackets mean ON). */}
+                        <IconBar bare>
+                            <IconButton
+                                icon="Undo2"
+                                label="Undo"
+                                size="sm"
+                                onClick={() => props.onUndo()}
+                            />
+                            <IconButton
+                                icon="Redo2"
+                                label="Redo"
+                                size="sm"
+                                onClick={() => props.onRedo()}
+                            />
+                        </IconBar>
                         <Show
                             when={
                                 props.zoom &&
@@ -344,31 +333,26 @@ export function Toolbar(props: {
                                 props.onResetZoom
                             }
                         >
+                            {/* The same `− 100% +` run the PDF zoom draws, plus a bracket
+                                command for the way back (PdfZoom's `[fit]`; here it resets to
+                                100%). */}
                             <IconBar bare>
-                                <IconButton
-                                    icon="ZoomOut"
-                                    label="Zoom out"
+                                <ZoomSteps
+                                    zoom={props.zoom!}
+                                    onZoomOut={() => props.onZoomOut!()}
+                                    onZoomIn={() => props.onZoomIn!()}
+                                    zoomOutDisabled={props.zoom!() <= ZOOM_MIN}
+                                    zoomInDisabled={props.zoom!() >= ZOOM_MAX}
                                     size="sm"
-                                    onClick={() => props.onZoomOut!()}
-                                    disabled={props.zoom!() <= ZOOM_MIN}
+                                    data-testid="draw-zoom-steps"
                                 />
-                                {/* A real bracket TextButton, not a readout — resetting to 100% is
-                                    a command a person clicks (bracket-buttons: PlainButton is for
-                                    non-buttons only). */}
                                 <TextButton
                                     title="Reset zoom"
                                     aria-label="Reset zoom"
                                     onClick={() => props.onResetZoom!()}
                                 >
-                                    {`${zoomPct()}%`}
+                                    reset
                                 </TextButton>
-                                <IconButton
-                                    icon="ZoomIn"
-                                    label="Zoom in"
-                                    size="sm"
-                                    onClick={() => props.onZoomIn!()}
-                                    disabled={props.zoom!() >= ZOOM_MAX}
-                                />
                             </IconBar>
                         </Show>
                     </div>

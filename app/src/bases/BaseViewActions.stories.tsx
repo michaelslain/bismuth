@@ -72,6 +72,27 @@ export const TogglesOpenAndClosed: Story = {
     },
 }
 
+/** Source is ONE `Code` glyph: the brackets carry open/closed, no icon swap. An embedded query's
+ *  source button only reveals the fence (`toggle={false}`), so it is a plain action with no
+ *  pressed state. */
+export const SourceStates: Story = {
+    args,
+    render: () => (
+        <div>
+            <BaseViewActions action="source" when active={false} onAct={() => {}} />
+            <BaseViewActions action="source" when active onAct={() => {}} />
+            <BaseViewActions action="source" when toggle={false} onAct={() => {}} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const [off, on, reveal] = Array.from(canvasElement.querySelectorAll('button'))
+        expect(off.getAttribute('aria-pressed')).toBe('false')
+        expect(on.getAttribute('aria-pressed')).toBe('true')
+        expect(reveal.hasAttribute('aria-pressed')).toBe(false)
+        expect(on.querySelector('svg')!.outerHTML).toBe(off.querySelector('svg')!.outerHTML)
+    },
+}
+
 /** Edit query is a plain action beside Source in an embedded query's bar. */
 export const EditQuery: Story = {
     args,

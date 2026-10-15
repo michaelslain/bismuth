@@ -48,7 +48,7 @@ const NewCategoryForm: Component<NewCategoryFormProps> = props => {
                 />
             }
             trailing={
-                <IconTextButton icon="plus" variant="selected" onClick={submit}>
+                <IconTextButton icon="plus" primary onClick={submit}>
                     add
                 </IconTextButton>
             }

@@ -181,7 +181,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
                 <div class={styles['gcal-actions']}>
                     <IconTextButton
                         icon="refresh-cw"
-                        variant="selected"
+                        primary
                         onClick={syncNow}
                         disabled={busy()}
                     >

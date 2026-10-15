@@ -2178,23 +2178,50 @@ export const livePreview = [
             'z-index': '5',
         },
         '.cm-table-wrap:hover .cm-table-toolbar': { opacity: '1' },
-        // A bracket text button (`[∞]`), the app's text-button idiom: no box, faint ink at rest,
-        // full ink under the pointer, accent while the toggle is on.
+        // An extended wrap is stretched to the page width, so the toolbar's right:0 would float
+        // away from a narrow table at the editor's right edge: anchor it over the table's top-left.
+        '.cm-table-infinity .cm-table-toolbar': { right: 'auto', left: '0' },
+        // A toggle that is ON stays visible at rest: an extended table shows `[∞]` without a hover,
+        // so its state is readable. Keyboard focus inside the toolbar reveals it too.
+        '.cm-table-toolbar:focus-within, .cm-table-toolbar:has([aria-pressed="true"])': {
+            opacity: '1',
+        },
+        // An icon-only toggle (`∞`). THIRD-PARTY-DOM EXEMPTION (tableWidget.ts builds it as raw DOM
+        // inside a CodeMirror widget): it MIRRORS IconButton's `unselected`/`selected` recipe in
+        // ui/Button.module.css + ui/IconBrackets.module.css with the same tokens: off is the bare
+        // glyph in --text-muted (--fg under the pointer), on is `[∞]` in --accent; no box, no fill.
+        // The brackets are generated (`'[' / ''` keeps them out of the accessible name), outer
+        // bearing pulled in so the box edge is the ink edge, and laid out but unpainted when off
+        // (IconBrackets' `reserved`) so the flip moves nothing. The glyph is text in the brackets'
+        // own font and size, so IconBrackets' SVG trim/lift does not apply. Hook: `aria-pressed`.
         '.cm-table-tool': {
             display: 'flex',
             'align-items': 'center',
             padding: '0',
             cursor: 'pointer',
-            color: 'var(--faint)',
+            color: 'var(--text-muted)',
             background: 'transparent',
             border: 'none',
+            outline: 'none',
             'font-family': 'var(--ui-font-stack)',
             'font-size': 'var(--fs-ui)',
             'line-height': '1',
             transition: 'color var(--dur)',
         },
+        '.cm-table-tool::before': {
+            content: "'[' / ''",
+            'margin-left': '-0.175em',
+            visibility: 'hidden',
+        },
+        '.cm-table-tool::after': {
+            content: "']' / ''",
+            'margin-right': '-0.175em',
+            visibility: 'hidden',
+        },
         '.cm-table-tool:hover': { color: 'var(--fg)' },
-        '.cm-table-tool.active': { color: 'var(--accent)' },
+        '.cm-table-tool[aria-pressed="true"]': { color: 'var(--accent)' },
+        '.cm-table-tool[aria-pressed="true"]::before, .cm-table-tool[aria-pressed="true"]::after':
+            { visibility: 'visible' },
         // ── #62 shift-click selected cells + merged (spanned) anchor cell ──────────────────────────
         '.cm-td.cm-td-selected': {
             background: 'color-mix(in srgb, var(--accent) 14%, transparent)',

@@ -18,7 +18,7 @@ import styles from './ChatControls.module.css'
 import type { ChatSession } from './chatSession'
 import { canHandOff } from './chatHandoff'
 import Select from '../ui/Select'
-import { IconTextButton } from '../ui/IconTextButton'
+import BarTwin from '../ui/BarTwin'
 import IconButton from '../ui/IconButton'
 import Text from '../ui/Text'
 import ChatModelMenu from './ChatModelMenu'
@@ -53,44 +53,38 @@ export type ChatControlsView = Pick<
     | 'startNewChat'
 > & { history: Pick<ChatSession['history'], 'open' | 'toggle'> }
 
-/** A bracket control for the row's actions (history/new chat) — `IconTextButton`, the app's
- *  standard command control (button-family migration: every clickable command renders as
- *  TextButton/IconButton/IconTextButton, never a hand-styled PlainButton — PlainButton is reserved
- *  for readouts/rows, not commands). `history` is a TOGGLE (the history panel is open or not), so
- *  it is `variant="selected"` while open and plain `variant="normal"` otherwise, so it inks like its
- *  neighbour; `new chat` passes no `active` at all — a one-shot action, not a toggle member.
- *
- *  The word is wrapped in `data-row-label`, the row's own collapse-ladder hook
- *  (ChatControls.module.css's `@container chatrow` tier) — below that width the label disappears
- *  and the bracket keeps only its icon (`[⟲]`/`[+]`), which is what frees the room the row's
- *  floored model word (ChatModelMenu.module.css) needs to keep its own 3-character minimum. */
+/** A command for the row's actions (history/new chat), drawn as a `BarTwin` (ui/BarTwin.tsx): the
+ *  worded `[⟲ history]` while there is room, the bare icon below the row's own `@container chatrow`
+ *  tier (ChatControls.module.css). `history` is a TOGGLE: `[⟲]` only while open; worded it inks like
+ *  `[+ new chat]` beside it while closed (`offVariant="normal"`, the documented exception).
+ *  `new chat` is a one-shot action. The wrapper carries `data-row-action`, the hook the row's tier
+ *  keys on (chatRowDrop.test.ts checks it is matched inside `@container chatrow`) and the unit the
+ *  cluster's spacing counts once. */
 type RowActionProps = {
     icon: string
     label: string
+    /** A toggle member (history): `active` is whether it is on. Absent = a one-shot action. */
+    toggle?: boolean
     active?: boolean
     testId?: string
     onClick: () => void
     title?: string
-    disabled?: boolean
 }
 
 const RowAction: Component<RowActionProps> = props => {
-    // 'selected' while the toggle is on, 'normal' otherwise — never 'unselected', which inks the
-    // toggle grey beside the near-white `[+ new chat]` it shares a cluster with.
-    const variant = () => (props.active ? 'selected' : 'normal')
     return (
-        <IconTextButton
-            icon={props.icon}
-            variant={variant()}
-            data-testid={props.testId}
-            title={props.title}
-            disabled={props.disabled}
-            onClick={props.onClick}
-        >
-            <Text as="span" inherit data-row-label>
-                {props.label}
-            </Text>
-        </IconTextButton>
+        <Text as="span" inherit class={styles.action} data-row-action>
+            <BarTwin
+                drop="row"
+                icon={props.icon}
+                label={props.label}
+                title={props.title}
+                active={props.toggle ? !!props.active : undefined}
+                offVariant="normal"
+                data-testid={props.testId}
+                onClick={props.onClick}
+            />
+        </Text>
     )
 }
 
@@ -156,13 +150,15 @@ const Actions: Component<{
                 move; disabled while a turn streams, whose tail the move would cut off. */}
             <Show when={props.openInChat}>
                 {open => (
-                    <IconButton
-                        icon="ExternalLink"
-                        label="open in chat"
-                        data-testid="chat-open-in-chat"
-                        disabled={open().disabled}
-                        onClick={open().onClick}
-                    />
+                    <Text as="span" inherit class={styles.action} data-row-action>
+                        <IconButton
+                            icon="ExternalLink"
+                            label="open in chat"
+                            data-testid="chat-open-in-chat"
+                            disabled={open().disabled}
+                            onClick={open().onClick}
+                        />
+                    </Text>
                 )}
             </Show>
             {/* NEVER DROPPED — a row with no way to reach past chats or start a new one is a
@@ -173,6 +169,7 @@ const Actions: Component<{
                 <RowAction
                     icon="RotateCcw"
                     label="history"
+                    toggle
                     active={props.session.history.open()}
                     testId="chat-history"
                     title="Past conversations"

@@ -18,7 +18,8 @@ import { IconButton } from '../ui/IconButton'
 import Text from '../ui/Text'
 import Readout from '../ui/Readout'
 import { type ViewBarSlots } from '../ui/ViewBar'
-import { IconTextButton } from '../ui/IconTextButton'
+import BarTwin from '../ui/BarTwin'
+import TextButton from '../ui/TextButton'
 import BarLabel from '../ui/BarLabel'
 import IconBar from '../ui/IconBar'
 import { parseCombo } from '../ui/ascii/parseCombo'
@@ -138,14 +139,23 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
                 <Readout
                     parts={[
                         <>
-                            <Text as="span" inherit weight="bold" tone="default">
+                            <Text
+                                as="span"
+                                inherit
+                                weight="bold"
+                                tone="default"
+                            >
                                 {state.position()}
                             </Text>{' '}
                             / {state.total()}
                         </>,
                         ...(state.direction()
                             ? [
-                                  <Text as="span" inherit class={styles['card-dir']}>
+                                  <Text
+                                      as="span"
+                                      inherit
+                                      class={styles['card-dir']}
+                                  >
                                       {state.direction()}
                                   </Text>,
                               ]
@@ -175,60 +185,70 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
                at the existing 640 tier takes the tally to ~62px and the same state to 410px, which
                clears 465 by 55px — so the shared ladder absorbs this bar with no near-duplicate
                tier bolted on 4px from an existing one. */
-            <div class={styles['tally']} data-bar-drop="1" data-testid="fc-tally">
-                <Text
-                    as="span"
-                    inherit
-                    class={styles['a']}
-                >
+            <div
+                class={styles['tally']}
+                data-bar-drop="1"
+                data-testid="fc-tally"
+            >
+                <Text as="span" inherit class={styles['a']}>
                     <BarLabel long="HARD" short="H" />{' '}
-                    <Text as="span" inherit weight="bold" class={styles['tally-n']}>
+                    <Text
+                        as="span"
+                        inherit
+                        weight="bold"
+                        class={styles['tally-n']}
+                    >
                         {state.hard()}
                     </Text>
                 </Text>
-                <Text
-                    as="span"
-                    inherit
-                    class={styles['g']}
-                >
+                <Text as="span" inherit class={styles['g']}>
                     <BarLabel long="GOOD" short="G" />{' '}
-                    <Text as="span" inherit weight="bold" class={styles['tally-n']}>
+                    <Text
+                        as="span"
+                        inherit
+                        weight="bold"
+                        class={styles['tally-n']}
+                    >
                         {state.good()}
                     </Text>
                 </Text>
-                <Text
-                    as="span"
-                    inherit
-                    class={styles['e']}
-                >
+                <Text as="span" inherit class={styles['e']}>
                     <BarLabel long="EASY" short="E" />{' '}
-                    <Text as="span" inherit weight="bold" class={styles['tally-n']}>
+                    <Text
+                        as="span"
+                        inherit
+                        weight="bold"
+                        class={styles['tally-n']}
+                    >
                         {state.easy()}
                     </Text>
                 </Text>
             </div>
         ),
         config: (
-            <IconTextButton
-                icon="Zap"
-                title="Cram: review every card, no scheduling changes"
-                variant={state.cram() ? 'selected' : 'normal'}
-                onClick={() => state.onToggleCram()}
-            >
-                {/* LATE, not early. A lightning bolt does not say "cram" — it is the same case as
-                    the calendar's TODAY, whose calendar glyph does not say "today". */}
-                <BarLabel long="cram" drop="late" />
-            </IconTextButton>
+            <>
+                {/* The word goes LATE, not early: a lightning bolt does not say "cram" (the same case
+                    as the calendar's TODAY). Below that tier the twin's bare half takes over, so an
+                    off toggle never draws icon-only brackets (ui/BarTwin.tsx). */}
+                <BarTwin
+                    drop="late"
+                    icon="Zap"
+                    label="cram"
+                    title="Cram: review every card, no scheduling changes"
+                    active={state.cram()}
+                    onClick={() => state.onToggleCram()}
+                />
+            </>
         ),
         actions: (
             <Show when={state.canEditCards()}>
-                <IconTextButton
+                <BarTwin
+                    drop="early"
                     icon="Layers"
+                    label="cards"
                     title="Browse, add, edit, and delete every card in this deck"
                     onClick={() => state.onCards()}
-                >
-                    <BarLabel long="cards" drop="early" />
-                </IconTextButton>
+                />
             </Show>
         ),
     }
@@ -419,8 +439,7 @@ export function FlashcardsView(props: {
         // the keyed mount below swaps to the next card at rest, instead of the SAME card turning
         // back to its front while the write is in flight.
         batch(() => {
-            if (persisted)
-                setPending(p => new Map(p).set(key, pendingDue(c)))
+            if (persisted) setPending(p => new Map(p).set(key, pendingDue(c)))
             setRevealed(false)
         })
         if (response === 'hard') setHardCount(n => n + 1)
@@ -607,7 +626,9 @@ export function FlashcardsView(props: {
                     await restoreRowAt(basePath, note, c.index)
                     if (wasCram)
                         setRetired(
-                            new Set(reindexRetiredAfterInsert(retired(), c.index)),
+                            new Set(
+                                reindexRetiredAfterInsert(retired(), c.index),
+                            ),
                         )
                     setSessionTotal(t => (t === null ? t : t + removed))
                     await props.onReviewed()
@@ -632,13 +653,13 @@ export function FlashcardsView(props: {
                 onClick={resetCurrentCard}
                 size="sm"
             />
-            <IconButton
-                icon="Trash2"
-                label="Delete this card"
+            <TextButton
                 danger
+                aria-label="Delete this card"
                 onClick={deleteCurrent}
-                size="sm"
-            />
+            >
+                delete
+            </TextButton>
         </IconBar>
     )
 
@@ -656,7 +677,8 @@ export function FlashcardsView(props: {
         )
             return
         // Space on a focused action/grade button must activate it; only the flip card flips.
-        if (el?.tagName === 'BUTTON' && !el.hasAttribute('data-flip-card')) return
+        if (el?.tagName === 'BUTTON' && !el.hasAttribute('data-flip-card'))
+            return
         if (!current()) return
         if (matchesKeybinding(e, settings.keybindings['flashcard-flip'])) {
             e.preventDefault()
@@ -792,7 +814,9 @@ export function FlashcardsView(props: {
                                             label={g.response}
                                             combo={settings.keybindings[g.id]}
                                             title={`${g.response} (${gradeKeyLabel(g.id)})`}
-                                            onClick={() => void grade(g.response)}
+                                            onClick={() =>
+                                                void grade(g.response)
+                                            }
                                         />
                                     )}
                                 </For>

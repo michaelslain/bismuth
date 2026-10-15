@@ -15,6 +15,7 @@ import { expect } from 'storybook/test'
 import type { JSX } from 'solid-js'
 import ViewBar, { Crumb } from './ViewBar'
 import { IconTextButton } from './IconTextButton'
+import BarTwin from './BarTwin'
 import { TextButton } from './TextButton'
 import BarLabel from './BarLabel'
 
@@ -35,13 +36,14 @@ function Bar(props: { width: number }): JSX.Element {
             <ViewBar
                 identity={<Crumb icon="Table">Reading List</Crumb>}
                 locus={
-                    <IconTextButton
+                    <BarTwin
                         icon="Calendar"
+                        label="today"
                         title="Jump to today"
+                        drop="late"
+                        onClick={() => {}}
                         data-testid="late-btn"
-                    >
-                        <BarLabel long="today" drop="late" />
-                    </IconTextButton>
+                    />
                 }
                 facet={
                     <TextButton
@@ -63,9 +65,14 @@ function Bar(props: { width: number }): JSX.Element {
                     </IconTextButton>
                 }
                 actions={
-                    <IconTextButton icon="Plus" title="New" data-testid="action-btn">
-                        <BarLabel long="event" drop="early" />
-                    </IconTextButton>
+                    <BarTwin
+                        icon="Plus"
+                        label="event"
+                        title="New"
+                        drop="early"
+                        onClick={() => {}}
+                        data-testid="action-btn"
+                    />
                 }
             />
         </div>
@@ -84,6 +91,25 @@ const visibleText = (root: Element, testid: string) =>
         .map(n => n.textContent)
         .join('')
 
+/** The twin half of `id` that is actually painted at this width, or null. A one-shot command is a
+ *  worded half (`[⚡ today]`) that swaps for a bare icon below its tier. */
+const twinHalf = (root: Element, id: string) =>
+    [
+        root.querySelector(`[data-testid="${id}"]`),
+        root.querySelector(`[data-testid="${id}-icon"]`),
+    ].find(shown) ?? null
+
+/** Icon brackets are aria-hidden `[` `]` spans (IconBrackets.tsx), not pseudo-elements. A bare
+ *  one-shot icon must paint none: brackets mean ON. */
+const bracketSpans = (el: Element) =>
+    [...el.querySelectorAll('[aria-hidden="true"]')].filter(
+        n => n.textContent === '[' || n.textContent === ']',
+    )
+
+/** The visible half of `id` is the worded one (`full`) or the bare one (`icon`). */
+const halfKind = (root: Element, id: string) =>
+    twinHalf(root, id)?.getAttribute('data-bar-twin-half') ?? null
+
 /** WIDE — 1000px. Nothing has collapsed: every word spelled out, every control present. */
 export const Wide: Story = {
     render: () => <Bar width={1000} />,
@@ -91,7 +117,8 @@ export const Wide: Story = {
         const r = canvasElement
         expect(visibleText(r, 'drop1-btn')).toBe('categories')
         expect(visibleText(r, 'abbr-btn')).toBe('month')
-        expect(visibleText(r, 'late-btn')).toBe('today')
+        expect(halfKind(r, 'late-btn')).toBe('full')
+        expect(halfKind(r, 'action-btn')).toBe('full')
         expect(shown(r.querySelector('[data-testid="drop1-btn"]'))).toBe(true)
     },
 }
@@ -104,12 +131,26 @@ export const EarlyLabelsDropped: Story = {
     play: async ({ canvasElement }) => {
         const r = canvasElement
         expect(visibleText(r, 'drop1-btn')).toBe('')
-        expect(visibleText(r, 'action-btn')).toBe('')
+        // The one-shot `event` swaps to its bare twin: no word, and no bracketed off-icon.
+        expect(halfKind(r, 'action-btn')).toBe('icon')
+        expect(bracketSpans(twinHalf(r, 'action-btn')!)).toHaveLength(0)
         expect(visibleText(r, 'abbr-btn')).toBe('month')
-        expect(visibleText(r, 'late-btn')).toBe('today')
+        expect(halfKind(r, 'late-btn')).toBe('full')
         // The button squares up rather than keeping text padding around nothing.
         const btn = r.querySelector<HTMLElement>('[data-testid="drop1-btn"]')!
-        expect(Math.round(btn.getBoundingClientRect().width)).toBe(26)
+        // Asserted as behaviour, not a literal width (the bracket pull makes the exact figure a
+        // Button concern): the label is not rendered, the text padding is gone, and forcing the label
+        // back on would make the button wider. A returning label fails the first check, a returning
+        // padding the second; the third proves the collapse is what holds the width down.
+        const label = btn.querySelector<HTMLElement>('[data-bar-label="early"]')!
+        expect(getComputedStyle(label).display).toBe('none')
+        const cs = getComputedStyle(btn)
+        expect(parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)).toBe(0)
+        const collapsed = btn.getBoundingClientRect().width
+        label.style.setProperty('display', 'inline', 'important')
+        const withLabel = btn.getBoundingClientRect().width
+        label.style.removeProperty('display')
+        expect(withLabel).toBeGreaterThan(collapsed + 8)
     },
 }
 
@@ -121,7 +162,7 @@ export const LabelsAbbreviated: Story = {
     play: async ({ canvasElement }) => {
         const r = canvasElement
         expect(visibleText(r, 'abbr-btn')).toBe('m')
-        expect(visibleText(r, 'late-btn')).toBe('today')
+        expect(halfKind(r, 'late-btn')).toBe('full')
         expect(visibleText(r, 'drop1-btn')).toBe('')
     },
 }
@@ -132,13 +173,15 @@ export const LateLabelAndControlDropped: Story = {
     render: () => <Bar width={470} />,
     play: async ({ canvasElement }) => {
         const r = canvasElement
-        expect(visibleText(r, 'late-btn')).toBe('')
+        // `today` swaps to its bare twin: the word is gone and no off-icon brackets are painted.
+        expect(halfKind(r, 'late-btn')).toBe('icon')
+        expect(bracketSpans(twinHalf(r, 'late-btn')!)).toHaveLength(0)
         expect(shown(r.querySelector('[data-testid="drop1-btn"]'))).toBe(false)
         // The region wrapper goes too — otherwise `.vb-trail`'s gap survives its only child.
         expect(shown(r.querySelector('[data-testid="vb-config"]'))).toBe(false)
         // What must NEVER drop: navigation and the primary action.
-        expect(shown(r.querySelector('[data-testid="late-btn"]'))).toBe(true)
-        expect(shown(r.querySelector('[data-testid="action-btn"]'))).toBe(true)
+        expect(twinHalf(r, 'late-btn')).not.toBeNull()
+        expect(twinHalf(r, 'action-btn')).not.toBeNull()
     },
 }
 
@@ -147,17 +190,19 @@ export const LateLabelAndControlDropped: Story = {
  *  masked edge, so the cut reads as "more this way" rather than as a sliced button, and the
  *  trailing group stays pinned and reachable. */
 export const BelowTheFloor: Story = {
-    render: () => <Bar width={200} />,
+    render: () => <Bar width={150} />,
     play: async ({ canvasElement }) => {
         const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
+        // Precondition: the mask only exists while the lead genuinely overflows, so fail loudly here
+        // if the frame ever stops being narrow enough.
+        expect(lead.scrollWidth).toBeGreaterThan(lead.clientWidth)
         expect(getComputedStyle(lead).overflowX).toBe('auto')
         expect(getComputedStyle(lead).maskImage).not.toBe('none')
         // Scrolling is only honest if there is something to scroll to.
         expect(lead.scrollWidth).toBeGreaterThan(lead.clientWidth)
         // The trailing group is never what scrolls away: + Event stays on screen.
-        const action = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="action-btn"]',
-        )!
+        const action = twinHalf(canvasElement, 'action-btn') as HTMLElement
+        expect(bracketSpans(action)).toHaveLength(0)
         const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
         expect(action.getBoundingClientRect().right).toBeLessThanOrEqual(
             bar.getBoundingClientRect().right,

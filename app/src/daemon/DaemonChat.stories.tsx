@@ -6,7 +6,7 @@
 // (Acceptance: "pixel-identical before and after it is clicked… clicking only focuses it").
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { fireEvent, userEvent, waitFor } from 'storybook/test'
+import { fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { expect } from 'storybook/test'
 import DaemonChat from './DaemonChat'
 import type { ChatSession } from '../chat/chatSession'
@@ -445,9 +445,10 @@ export const HistoryOpenThenClose: Story = {
         await userEvent.keyboard(draftText)
         await waitFor(() => expect(cmContent().textContent).toBe(draftText))
 
-        const historyButton = canvasElement.querySelector<HTMLElement>(
-            '[data-testid="chat-history"]',
-        )!
+        // By role: whichever half of the history twin is laid out at this width is the one found.
+        const historyButton = within(canvasElement).getByRole('button', {
+            name: /history/i,
+        })
         await userEvent.click(historyButton)
 
         const historyInput = () =>

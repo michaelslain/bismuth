@@ -47,13 +47,20 @@
 .bar [data-kind='icon'][data-state='normal'] {
   padding-inline: 0;
 }
+/* The hidden brackets take the room an off toggle's reserved `IconBrackets` take (ui/IconBrackets.module.css:
+   outer bearing 0.145em and inner pull 0.1em pulled in per side), so a plain icon and an off toggle
+   measure the same. */
 .bar [data-kind='icon'][data-state='normal']::before {
   content: '[' / '';
   visibility: hidden;
+  margin-left: -0.145em;
+  margin-right: -0.1em;
 }
 .bar [data-kind='icon'][data-state='normal']::after {
   content: ']' / '';
   visibility: hidden;
+  margin-right: -0.145em;
+  margin-left: -0.1em;
 }
 
 /* An icon group. Its icons already carry their unpainted bracket room either side, so the gap

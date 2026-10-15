@@ -205,3 +205,24 @@ export const CurrentSection: Story = {
         await expect(background?.getAttribute('aria-current')).toBeNull()
     },
 }
+
+/** A leaf keeps the chevron slot a parent uses, so sibling titles start in the same column: the
+ *  top-level parent `Introduction` and the top-level leaf `Methods` share a left edge, as do the
+ *  two leaves under the parent. */
+export const LeafAlignment: Story = {
+    render: () => (
+        <div style={{ width: '260px' }}>
+            <OutlineTree nodes={nodes} onJump={() => {}} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const left = (title: string) =>
+            canvas.getByText(title).getBoundingClientRect().left
+        await waitFor(() => expect(canvas.getByText('Methods')).toBeVisible())
+        expect(Math.abs(left('Introduction') - left('Methods'))).toBeLessThan(
+            0.5,
+        )
+        expect(Math.abs(left('Background') - left('Scope'))).toBeLessThan(0.5)
+    },
+}

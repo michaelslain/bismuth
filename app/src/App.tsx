@@ -1622,6 +1622,7 @@ export default function App() {
                 newSpreadsheet,
                 newDrawing,
                 openCreateMenu,
+                createMenuOpen: () => createMenu() !== null,
                 openGraph,
                 openDaemon,
                 openFeedback,
@@ -3127,6 +3128,7 @@ export default function App() {
                             icon={props2.btn.icon}
                             label={props2.btn.tooltip ?? c().label}
                             onClick={e => c().action(e)}
+                            on={c().isOn?.()}
                             badge={
                                 c().id === 'open-inbox' ? dueCount() : undefined
                             }

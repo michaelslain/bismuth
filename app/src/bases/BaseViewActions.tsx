@@ -12,28 +12,36 @@ export type BaseViewActionsProps = {
     when: boolean
     /** For the two toggles (`settings`, `source`): whether their panel is open. */
     active?: boolean
+    /** Overrides whether the action is a toggle (default: per action). A `source` button that only
+     *  reveals the embedded fence is a one-shot command, not a toggle. */
+    toggle?: boolean
     onAct: () => void
 }
 
 const ACTIONS: Record<
     BaseViewAction,
-    { icon: string; activeIcon?: string; label: string; toggles: boolean }
+    { icon: string; label: string; toggles: boolean }
 > = {
     'add-task': { icon: 'Plus', label: 'New task', toggles: false },
     settings: { icon: 'Settings', label: 'Settings', toggles: true },
     'edit-query': { icon: 'Pencil', label: 'Edit query', toggles: false },
-    source: { icon: 'Code', activeIcon: 'X', label: 'Source', toggles: true },
+    source: { icon: 'Code', label: 'Source', toggles: true },
 }
 
 const BaseViewActions: Component<BaseViewActionsProps> = props => {
     const def = () => ACTIONS[props.action]
+    const toggles = () => props.toggle ?? def().toggles
     return (
         <Show when={props.when}>
             <IconButton
-                icon={props.active && def().activeIcon ? def().activeIcon! : def().icon}
+                icon={def().icon}
                 label={def().label}
                 variant={
-                    def().toggles ? (props.active ? 'selected' : 'unselected') : undefined
+                    toggles()
+                        ? props.active
+                            ? 'selected'
+                            : 'unselected'
+                        : undefined
                 }
                 onClick={() => props.onAct()}
             />

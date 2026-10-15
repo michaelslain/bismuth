@@ -1,16 +1,13 @@
 // app/src/ui/Disclosure.tsx
 // A summary line that opens and closes a body: a button, a chevron, `aria-expanded`, and the
-// height-animating Collapsible. Was built five different ways — chat/ChatToolRow and
-// chat/ChatThinkingBlock swapped a Down/Right icon pair and set no `aria-expanded`;
-// bases/PropertyRowEditor rotated a `chevron-right`; preview/CompanionFrontmatter and
-// preview/OutlineTree each did their own — with the chevron on the OPPOSITE side in two of them and
-// the body indented by a hardcoded 20px or 22px.
+// height-animating Collapsible.
 //
-// THE CHEVRON LEADS (the majority spelling), is ONE glyph that rotates a quarter turn when open, and
-// the body is indented by `--disclosure-indent` (chevron width + gap) so it hangs under the summary
-// text. Controlled: the caller owns `open`, so a disclosure can be driven by a tree or a store.
+// THE CHEVRON LEADS and is the shared `DisclosureChevron` (decorative form): one bare glyph that
+// rotates a quarter turn when open. The body is indented by `--disclosure-indent` (chevron width +
+// gap) so it hangs under the summary text. Controlled: the caller owns `open`, so a disclosure can
+// be driven by a tree or a store.
 import { children, Show, type Component, type JSX } from 'solid-js'
-import { Icon } from '../icons/Icon'
+import DisclosureChevron from './DisclosureChevron'
 import Collapsible from './Collapsible'
 import ListRow from './ListRow'
 import PlainButton from './PlainButton'
@@ -40,10 +37,7 @@ const Disclosure: Component<DisclosureProps> = props => {
             aria-expanded={props.open}
             onClick={() => props.onToggle()}
         >
-            <Icon
-                value="ChevronRight"
-                class={`${styles.chevron} ${props.open ? styles.open : ''}`}
-            />
+            <DisclosureChevron open={props.open} />
             <span class={styles.summary}>{props.summary}</span>
         </PlainButton>
     )

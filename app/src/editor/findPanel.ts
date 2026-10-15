@@ -73,12 +73,15 @@ export function nextMatchFrom(
     return r.done ? null : { from: r.value.from, to: r.value.to }
 }
 
-// inline icons (the registry renders Solid components; the panel is raw
-// DOM, so we inline the same paths).
+// THIRD-PARTY-DOM EXEMPTION: this bar is a CodeMirror panel built with raw DOM, so it cannot
+// compose the Solid button family (ui/IconButton, ui/CloseButton). It mirrors their look instead,
+// one control at a time, in global.css's find section: prev/next are a bare `normal` IconButton,
+// `Aa` is an `unselected`/`selected` toggle (`[Aa]` only when on, its bracket space reserved when
+// off), close is CloseButton's `[x]`. The preview twin, preview/CodeFindBar.tsx, composes the real
+// components. Inline icons: the registry renders Solid components, so we inline the same paths.
 const ICONS = {
     prev: '<path d="m18 15-6-6-6 6"/>',
     next: '<path d="m6 9 6 6 6-6"/>',
-    close: '<path d="M18 6 6 18M6 6l12 12"/>',
 }
 
 function iconButton(svgPath: string, label: string): HTMLButtonElement {
@@ -87,7 +90,7 @@ function iconButton(svgPath: string, label: string): HTMLButtonElement {
     b.className = 'bismuth-find-btn'
     b.title = label
     b.setAttribute('aria-label', label)
-    b.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svgPath}</svg>`
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svgPath}</svg>`
     return b
 }
 
@@ -127,18 +130,33 @@ export function createFindPanel(view: EditorView): Panel {
     const prevBtn = iconButton(ICONS.prev, 'Previous match (Shift+Enter)')
     const nextBtn = iconButton(ICONS.next, 'Next match (Enter)')
 
+    // A toggle: `aria-pressed` is both its state for assistive tech and the CSS hook that paints
+    // the `[` `]` (global.css `.bismuth-find-case`), so the two can never disagree.
     const caseBtn = document.createElement('button')
     caseBtn.type = 'button'
-    caseBtn.className = 'bismuth-find-btn bismuth-find-case'
+    caseBtn.className = 'bismuth-find-case'
     caseBtn.textContent = 'Aa'
     caseBtn.title = 'Match case'
     caseBtn.setAttribute('aria-label', 'Match case')
+    const setCasePressed = (on: boolean) =>
+        caseBtn.setAttribute('aria-pressed', on ? 'true' : 'false')
 
-    const closeBtn = iconButton(ICONS.close, 'Close (Esc)')
+    // CloseButton's `[x]`: the letter in a label span (the hover underline draws under it alone),
+    // the brackets generated around it.
+    const closeBtn = document.createElement('button')
+    closeBtn.type = 'button'
+    closeBtn.className = 'bismuth-find-close'
+    closeBtn.title = 'Close (Esc)'
+    closeBtn.setAttribute('aria-label', 'Close (Esc)')
+    const closeLabel = document.createElement('span')
+    closeLabel.className = 'bismuth-find-close-label'
+    closeLabel.textContent = 'x'
+    closeBtn.append(closeLabel)
 
     dom.append(field, count, prevBtn, nextBtn, caseBtn, closeBtn)
 
     let caseSensitive = getSearchQuery(view.state).caseSensitive
+    setCasePressed(caseSensitive)
 
     const updateCount = () => {
         const q = getSearchQuery(view.state)
@@ -213,7 +231,7 @@ export function createFindPanel(view: EditorView): Panel {
     })
     caseBtn.addEventListener('click', () => {
         caseSensitive = !caseSensitive
-        caseBtn.classList.toggle('bismuth-find-active', caseSensitive)
+        setCasePressed(caseSensitive)
         runQuery()
         input.focus()
     })
@@ -228,7 +246,7 @@ export function createFindPanel(view: EditorView): Panel {
             const q = getSearchQuery(view.state)
             if (q.search) input.value = q.search
             caseSensitive = q.caseSensitive
-            caseBtn.classList.toggle('bismuth-find-active', caseSensitive)
+            setCasePressed(caseSensitive)
             updateCount()
             input.focus()
             input.select()

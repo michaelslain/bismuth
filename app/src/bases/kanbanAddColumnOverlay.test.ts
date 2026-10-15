@@ -8,29 +8,25 @@ describe('overlayOrigin', () => {
     const glyph = { left: 50.6, top: 28.45, height: 12 }
     const inset = { left: 4, top: 4, contentHeight: 18 }
 
-    test('input text x lands on the glyph x', () => {
-        const o = overlayOrigin(ghost, glyph, inset)
-        expect(ghost.left + o.left + inset.left).toBeCloseTo(glyph.left)
+    test('x is owned by the flex row: the offset is 0 whatever the glyph x', () => {
+        expect(overlayOrigin(ghost, glyph, inset).left).toBe(0)
+        expect(
+            overlayOrigin(ghost, { ...glyph, left: glyph.left + 9 }, inset)
+                .left,
+        ).toBe(0)
     })
 
     test('input text centre lands on the glyph centre', () => {
+        // the field is top-anchored on the ghost; the offset closes the rest of the gap
         const o = overlayOrigin(ghost, glyph, inset)
-        const inputGlyphTop =
-            ghost.top +
-            o.top +
-            inset.top +
-            (inset.contentHeight - glyph.height) / 2
-        expect(inputGlyphTop).toBeCloseTo(glyph.top)
+        const inputCentre =
+            ghost.top + o.top + inset.top + inset.contentHeight / 2
+        expect(inputCentre).toBeCloseTo(glyph.top + glyph.height / 2)
     })
 
-    test('follows the trigger when its leading geometry moves', () => {
+    test('follows the trigger when its vertical geometry moves', () => {
         const a = overlayOrigin(ghost, glyph, inset)
-        const b = overlayOrigin(
-            ghost,
-            { ...glyph, left: glyph.left + 4, top: glyph.top + 3 },
-            inset,
-        )
-        expect(b.left - a.left).toBeCloseTo(4)
+        const b = overlayOrigin(ghost, { ...glyph, top: glyph.top + 3 }, inset)
         expect(b.top - a.top).toBeCloseTo(3)
     })
 })

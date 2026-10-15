@@ -117,7 +117,7 @@ export const DeleteOne: Story = {
     render: hosted(PRESETS, { provider: 'claude', model: 'opus', effort: 'max' }),
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await userEvent.click(c.getByLabelText('Delete preset quick'))
+        await userEvent.click(c.getByLabelText('delete preset quick'))
         await waitFor(() => expect(c.queryByText('quick')).toBeNull())
         await expect(c.getByText('deep work')).not.toBeNull()
     },
@@ -132,7 +132,7 @@ export const SaveClickAwayCancels: Story = {
         await c.findByLabelText('Preset name')
         await userEvent.click(c.getByText('quick'))
         await waitFor(() => expect(c.queryByLabelText('Preset name')).toBeNull())
-        await expect(canvasElement.querySelectorAll('[aria-label^="Delete preset"]').length).toBe(2)
+        await expect(canvasElement.querySelectorAll('[aria-label^="delete preset"]').length).toBe(2)
     },
 }
 
@@ -141,7 +141,7 @@ export const SaveClickAwayCancels: Story = {
 export const DeleteClearsTheRule: Story = {
     render: hosted(PRESETS, { provider: 'claude', model: 'opus', effort: 'max' }),
     play: async ({ canvasElement }) => {
-        const btn = within(canvasElement).getByLabelText('Delete preset quick')
+        const btn = within(canvasElement).getByLabelText('delete preset quick')
         // the ListRow root is the nearest ancestor that carries any right padding
         let el: HTMLElement | null = btn
         while (el && getComputedStyle(el).paddingRight === '0px') el = el.parentElement

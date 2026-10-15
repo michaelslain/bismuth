@@ -73,7 +73,7 @@ Three buttons sit on both faces of the card under review:
 
 - **Edit this card** opens a modal with **front** and **back** fields; saving writes the row and the card shows the new text straight away.
 - **Reset this card's progress** removes its scheduling columns (and the `Back` companions on a bidirectional deck), so the card is new again. Front, back and every other column stay.
-- **Delete this card** removes the row at once and moves to the next card, with an **Undo** toast. The session total drops by the deleted card's remaining reviews.
+- **`[delete]`** (Delete this card) removes the row at once and moves to the next card, with an **Undo** toast. The session total drops by the deleted card's remaining reviews.
 
 Each of the three buttons, and grading, is ignored until the previous edit, reset or delete has reloaded the deck, so a second click never lands on a card that has already moved.
 

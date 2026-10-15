@@ -45,6 +45,9 @@ export function CommandButton(props: {
     /** Rendered only when greater than 0. */
     badge?: number
     onClick?: (e: MouseEvent) => void
+    /** undefined = a plain action (bare glyph); true/false = a toggle or an open-menu trigger,
+     *  drawn `selected` / `unselected`. */
+    on?: boolean
 }) {
     return (
         <div class={styles['toolbar-btn-wrap']}>
@@ -53,6 +56,13 @@ export function CommandButton(props: {
                 iconSize={props.iconSize}
                 disabled={props.disabled}
                 label={props.label}
+                variant={
+                    props.on === undefined
+                        ? 'normal'
+                        : props.on
+                          ? 'selected'
+                          : 'unselected'
+                }
                 onClick={props.onClick}
             />
             <Show when={(props.badge ?? 0) > 0}>

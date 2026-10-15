@@ -1273,18 +1273,22 @@ export class TableWidget extends WidgetType {
             glyph: string,
             onToggle: (next: boolean) => void,
         ): HTMLButtonElement => {
+            // THIRD-PARTY-DOM EXEMPTION: this toolbar lives inside a CodeMirror widget built with raw
+            // DOM, so it cannot compose ui/IconButton. It mirrors IconButton's toggle look instead:
+            // the bare glyph when off, `[glyph]` in accent when on, the brackets drawn by
+            // livePreview.ts's `.cm-table-tool` theme from `aria-pressed` (reserved when off, so
+            // nothing moves). `aria-pressed` is the one state: the CSS hook and the toggle's memory.
             const btn = document.createElement('button')
             btn.type = 'button'
-            btn.className = `cm-table-tool ${cls}${active ? ' active' : ''}`
+            btn.className = `cm-table-tool ${cls}`
             btn.title = label
             btn.setAttribute('aria-label', label)
             btn.setAttribute('aria-pressed', active ? 'true' : 'false')
-            btn.textContent = `[${glyph}]` // a bracket button, the app's text-button idiom
+            btn.textContent = glyph
             btn.addEventListener('mousedown', e => {
                 e.preventDefault()
                 e.stopPropagation()
-                const next = !btn.classList.contains('active')
-                btn.classList.toggle('active', next)
+                const next = btn.getAttribute('aria-pressed') !== 'true'
                 btn.setAttribute('aria-pressed', next ? 'true' : 'false')
                 onToggle(next)
             })

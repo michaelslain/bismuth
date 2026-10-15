@@ -97,10 +97,18 @@ export const AddColumn: Story = {
             'name',
         )) as HTMLInputElement
 
-        // The swap into the input must not move the text or reflow the board — the same
-        // measurement KanbanAddColumn.stories' Editing asserts.
+        // The input opens beside the still-visible `[+]` (--sp-2 from its right edge) with its
+        // text level with the glyph, and the board does not reflow — the same measurement
+        // KanbanAddColumn.stories' Editing asserts.
         const editOrigin = inputTextOrigin(input)
-        expect(Math.abs(editOrigin.x - restOrigin.x)).toBeLessThanOrEqual(1)
+        const trigger = ghost.querySelector('button') as HTMLElement
+        const gap =
+            input.getBoundingClientRect().left -
+            trigger.getBoundingClientRect().right
+        expect(Math.abs(gap - 4)).toBeLessThanOrEqual(1)
+        expect(
+            Math.abs(restGlyphOrigin(ghost).x - restOrigin.x),
+        ).toBeLessThanOrEqual(1)
         expect(Math.abs(editOrigin.y - restOrigin.y)).toBeLessThanOrEqual(1)
         expect(boardWidths(canvasElement)).toEqual(restWidths)
 

@@ -565,7 +565,7 @@ export const DragReorder: Story = {
                 'ideas.md',
             ].map((c, i) => ({ ...makeTab(c), pinned: i === 0 })),
         )
-        const [active, setActive] = createSignal(tabs()[1].id)
+        const [active, setActive] = createSignal(tabs()[0].id)
         const viewDrag = createViewDrag((d, target) => {
             if (d.kind === 'tab' && target.kind === 'tabstrip')
                 setTabs(ts => reorderTabs(ts, d.tabId, target.index))

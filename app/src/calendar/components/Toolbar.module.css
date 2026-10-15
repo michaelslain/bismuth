@@ -24,3 +24,16 @@
 .views {
     margin-left: var(--sp-2);
 }
+
+/* Owns the data hook only; takes no box of its own. */
+.yields {
+    display: contents;
+}
+
+/* Below the bar's floor tier (ViewBar.module.css) every pixel counts toward keeping the four period
+   segments whole, so the switcher's extra air against the date nav goes. */
+@container viewbar (max-width: 430px) {
+    .views {
+        margin-left: 0;
+    }
+}

@@ -6,7 +6,7 @@
 // segmentClass?, look? ('icon', default omitted renders the plain [label] bracket).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent } from 'storybook/test'
-import { createSignal } from 'solid-js'
+import { createSignal, For } from 'solid-js'
 import { SegmentedToggle } from './SegmentedToggle'
 import { Icon } from '../icons/Icon'
 
@@ -132,7 +132,7 @@ export const NoSelectionWithOptionExtras: Story = {
                 options={[
                     {
                         id: 'out' as const,
-                        label: <Icon value="ZoomOut" size={17} />,
+                        icon: 'ZoomOut',
                         title: 'Zoom out',
                         ariaLabel: 'Zoom out',
                     },
@@ -145,7 +145,7 @@ export const NoSelectionWithOptionExtras: Story = {
                     },
                     {
                         id: 'in' as const,
-                        label: <Icon value="ZoomIn" size={17} />,
+                        icon: 'ZoomIn',
                         title: 'Zoom in',
                         ariaLabel: 'Zoom in',
                     },
@@ -173,6 +173,7 @@ export const Sizes: Story = {
         const [a, setA] = createSignal('one')
         const [b, setB] = createSignal('one')
         const [c, setC] = createSignal('one')
+        const [d, setD] = createSignal('one')
         const opts = [
             { id: 'one', label: 'One' },
             { id: 'two', label: 'Two' },
@@ -203,8 +204,51 @@ export const Sizes: Story = {
                     size="lg"
                     options={opts}
                 />
+                {/* `size` only changes the icon look: the text look is one size by design. */}
+                <For each={['sm', 'md', 'lg'] as const}>
+                    {size => (
+                        <SegmentedToggle
+                            value={d()}
+                            onChange={setD}
+                            look="icon"
+                            size={size}
+                            options={[
+                                {
+                                    id: 'one',
+                                    icon: 'Pen',
+                                    ariaLabel: `Pen ${size}`,
+                                },
+                                {
+                                    id: 'two',
+                                    icon: 'Eraser',
+                                    ariaLabel: `Eraser ${size}`,
+                                },
+                            ]}
+                        />
+                    )}
+                </For>
             </div>
         )
+    },
+    play: async ({ canvasElement }) => {
+        // `size` scales the whole icon cell: glyph and brackets rise together, sm < md < lg.
+        const measure = (size: string) => {
+            const btn = canvasElement.querySelector<HTMLElement>(
+                `[aria-label="Pen ${size}"]`,
+            )!
+            const svg = btn.querySelector('svg')!.getBoundingClientRect()
+            const bracket = btn
+                .querySelector<HTMLElement>('span[aria-hidden="true"]')!
+                .getBoundingClientRect()
+            return { glyph: svg.width, bracket: bracket.height }
+        }
+        const sm = measure('sm')
+        const md = measure('md')
+        const lg = measure('lg')
+        await expect(sm.glyph).toBeLessThan(md.glyph)
+        await expect(md.glyph).toBeLessThan(lg.glyph)
+        await expect(sm.bracket).toBeLessThan(md.bracket)
+        await expect(md.bracket).toBeLessThan(lg.bracket)
     },
 }
 
@@ -271,19 +315,19 @@ export const IconOption: Story = {
                         id: 'pen',
                         title: 'Pen',
                         ariaLabel: 'Pen',
-                        label: <Icon value="Pen" size={14} />,
+                        icon: 'Pen',
                     },
                     {
                         id: 'eraser',
                         title: 'Eraser',
                         ariaLabel: 'Eraser',
-                        label: <Icon value="Eraser" size={14} />,
+                        icon: 'Eraser',
                     },
                     {
                         id: 'highlighter',
                         title: 'Highlighter',
                         ariaLabel: 'Highlighter',
-                        label: <Icon value="Highlighter" size={14} />,
+                        icon: 'Highlighter',
                     },
                 ]}
             />
@@ -321,19 +365,19 @@ export const IconOptionPickOne: Story = {
                         id: 'pen',
                         title: 'Pen',
                         ariaLabel: 'Pen',
-                        label: <Icon value="Pen" size={14} />,
+                        icon: 'Pen',
                     },
                     {
                         id: 'eraser',
                         title: 'Eraser',
                         ariaLabel: 'Eraser',
-                        label: <Icon value="Eraser" size={14} />,
+                        icon: 'Eraser',
                     },
                     {
                         id: 'highlighter',
                         title: 'Highlighter',
                         ariaLabel: 'Highlighter',
-                        label: <Icon value="Highlighter" size={14} />,
+                        icon: 'Highlighter',
                     },
                 ]}
             />

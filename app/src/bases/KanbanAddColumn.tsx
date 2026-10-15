@@ -61,8 +61,17 @@ const KanbanAddColumn: Component<KanbanAddColumnProps> = props => {
             <IconButton
                 icon="Plus"
                 label="Add a column"
+                variant={editing() ? 'selected' : 'unselected'}
                 class={styles.trigger}
+                onMouseDown={e => e.preventDefault()}
                 onClick={() => {
+                    // The mousedown default is prevented so the click never blurs the input first
+                    // (a blur while empty cancels, and this click would re-open it). While open the
+                    // trigger toggles closed, the same path Escape takes (`onCancel`).
+                    if (editing()) {
+                        setEditing(false)
+                        return
+                    }
                     // Show mounts the input synchronously, so the overlay is placed before paint.
                     setEditing(true)
                     placeOverlay()

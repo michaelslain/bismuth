@@ -7,6 +7,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent } from 'storybook/test'
 import { IconButton } from './IconButton'
 import IconBar from './IconBar'
+import CloseButton from './CloseButton'
 import { Row } from './_storyKit'
 
 const meta = {
@@ -121,7 +122,8 @@ export const NoFocusRing: Story = {
     },
 }
 
-/** A row of icon buttons as used in a view-bar / toolbar (e.g. BaseView's Source toggle). */
+/** A row as used in a view-bar / toolbar: BaseView's Source toggle (on), a plain action, and the
+ *  shared `[x]` for close. */
 export const ToolbarGroup: Story = {
     render: () => (
         <Row
@@ -129,9 +131,9 @@ export const ToolbarGroup: Story = {
             wrap={false}
             gap="var(--bar-icon-gap)"
         >
-            <IconButton icon="Code" label="Source" />
-            <IconButton icon="Settings" label="Settings" variant="selected" />
-            <IconButton icon="X" label="Close" />
+            <IconButton icon="Code" label="Source" variant="selected" />
+            <IconButton icon="Settings" label="Settings" />
+            <CloseButton label="Close" />
         </Row>
     ),
 }

@@ -52,7 +52,7 @@ A calendar draws events when `mode` is absent or `normal`, and tasks when `mode:
 
 ## Move around the calendar
 
-The view bar's grid toggle switches between month, week, 3 day and day. Each calendar base keeps its own grid and date: picking 3 day on one calendar leaves every other calendar on its own grid, and reopening a calendar or switching back to its tab brings back what it showed, until the app reloads. A calendar you have not switched shows the `defaultView` setting. The arrows step by one grid unit: a month, 7 days, 3 days or 1 day. The date between the arrows names the visible range and, when clicked, jumps to today; a **today** button beside the arrows does the same.
+The view bar's grid toggle switches between month, week, 3 day and day. Each calendar base keeps its own grid and date: picking 3 day on one calendar leaves every other calendar on its own grid, and reopening a calendar or switching back to its tab brings back what it showed, until the app reloads. A calendar you have not switched shows the `defaultView` setting. The arrows step by one grid unit: a month, 7 days, 3 days or 1 day. The date between the arrows names the visible range and, when clicked, jumps to today; a **today** button beside the arrows does the same. In a narrow pane the **today** word gives way to a bare calendar icon with the same action, and in the narrowest pane the bar's title hides so the four grid buttons stay whole.
 
 A week, 3-day or day grid opens scrolled so its earliest timed event sits at the top, just under the header. Each new range scrolls once, when its events load; a range with no timed events leaves the scroll where it is.
 

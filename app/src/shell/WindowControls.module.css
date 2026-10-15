@@ -1,40 +1,5 @@
-/* WindowControls.module.css — scoped chrome for shell/WindowControls.tsx (moved out of the global
-   App.css, 2026-08). Class names here are HASHED at build time: they are reachable only through the
-   imported `styles` object, never as a string literal. Nothing outside WindowControls.tsx may target
-   them.
-
-   `win-btn--close` HASHES TOO, even though it is a modifier riding as a second class on the same
-   <button> as `win-btn`. Both names are locals of this module, so the close button is written
-   `class={`${styles["win-btn"]} ${styles["win-btn--close"]}`}` — a bare "win-btn--close" literal
-   would still compile, still render, and match nothing. Bracket access rather than `styles.winBtn`
-   is the repo standard: Vite only exposes camelCase aliases under css.modules.localsConvention,
-   which app/vite.config.ts does not set.
-
-   TWO OF THESE FOUR RULES ARE OUTSIDE THE COMPUTED-STYLE BASELINE'S REACH (`bench/cssBaseline.ts`
-   records the resting state, and CSS :hover follows the real pointer, so no story can pose it). What
-   guards them instead is WindowControls.stories.tsx's play, which reads the two :hover RULES off
-   `document.styleSheets` and asserts each shifts colour and sets no background — so putting a
-   `--hover-bg` wash or a `--danger` plate back on hover fails it. It proves the rules, not the
-   painted pixels.
-
-   `font: inherit` on the button is load-bearing and must stay first in that declaration: these
-   buttons sit inside `.top-strip`, which sets the strip's own font-size, and the UA button default
-   (13.333px Arial) would otherwise win. The `font-family` after it narrows the family only, keeping
-   the inherited size. */
-
-/* Windows/Linux typed window controls (decorations(false) — no native titlebar at all). */
-.win-controls { display: flex; align-items: center; gap: var(--sp-1); }
-.win-btn {
-  font: inherit; font-family: var(--ui-font-stack); cursor: pointer; color: var(--text-muted);
-  background: transparent; border: none; padding: var(--sp-2) var(--sp-4); border-radius: var(--r-0);
-  /* Restores the UA <button> default (text-align: center) that PlainButton's reset sets to
-     `start` — this component owns its own look, so it restates what the bare button had. */
-  text-align: center;
-}
-/* INK ONLY ON HOVER: a hovered control shifts colour and paints no fill (no `--hover-bg` wash, no
-   `--danger` plate) — the same rule every clickable row and bracket button in the app follows.
-   The close button's `--danger` is the one tone that is not `--fg`.
-   `.win-btn--close:hover` is written as `.win-btn.win-btn--close:hover` so it out-ranks `.win-btn:hover`
-   by specificity ((0,3,0) vs (0,2,0)), not by happening to come later in this file. */
-.win-btn:hover { color: var(--fg); }
-.win-btn.win-btn--close:hover { color: var(--danger); }
+/* WindowControls.module.css — scoped chrome for shell/WindowControls.tsx. Class names here are
+   HASHED at build time: reachable only through the imported `styles` object. The buttons are the
+   shared button family (TextButton `-` `+` and CloseButton), so they carry their own ink, hover and
+   bracket pull-in; this row only spaces them the family's `--sp-4`, ink to ink. */
+.win-controls { display: flex; align-items: center; gap: var(--sp-4); }

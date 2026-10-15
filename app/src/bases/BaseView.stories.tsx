@@ -557,9 +557,45 @@ export const FlashcardsTight: Story = {
         expect(isLaidOut(canvas.getByText('H'))).toBe(true)
         // Late words are gone at 480 — CRAM's own label, not the whole control.
         expect(isLaidOut(canvas.getByText('cram'))).toBe(false)
-        expect(canvas.getByTitle(/^Cram:/)).toBeInTheDocument()
+        // The word is gone and the control is the bare IconButton twin: cram off = `unselected`.
+        const cramIcon = canvas.getByLabelText('cram')
+        expect(isLaidOut(cramIcon)).toBe(true)
+        expect(cramIcon.getAttribute('aria-pressed')).toBe('false')
+        expect(isLaidOut(canvas.getByLabelText('cards'))).toBe(true)
         // The two groups still read as two groups. Without the abbreviation this is ~9px.
         expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(crumbGap())
+    },
+}
+
+/** CRAM ON, TIGHT. The same 502px pane as FlashcardsTight (466px content box, under the 480px late
+ *  tier) with a session whose cram flag is on: the cram twin (ui/BarTwin.tsx) is its bare `[⚡]`
+ *  icon half, bracketed because it is ON, and the worded half is gone. Asserts the icon brackets
+ *  are drawn (the aria-hidden spans from ui/IconBrackets.tsx, not pseudo-elements) and the
+ *  pressed state is true — an off cram would draw none. */
+const CRAM_PATH = 'decks/vocab-cram.md'
+saveSession(CRAM_PATH, {
+    cram: true,
+    pos: 0,
+    good: 0,
+    hard: 0,
+    easy: 0,
+    retired: [],
+})
+export const FlashcardsCramOnTight: Story = {
+    render: () => <FlashcardsPane w="502px" path={CRAM_PATH} />,
+    play: async ({ canvasElement }) => {
+        await expectOneBar(canvasElement)
+        const canvas = within(canvasElement)
+        expect(isLaidOut(canvas.getByText('cram'))).toBe(false)
+        const cramIcon = canvas.getByLabelText('cram')
+        expect(isLaidOut(cramIcon)).toBe(true)
+        expect(cramIcon.getAttribute('aria-pressed')).toBe('true')
+        expect(cramIcon.getAttribute('data-bar-twin-half')).toBe('icon')
+        const brackets = [
+            ...cramIcon.querySelectorAll<HTMLElement>('[aria-hidden="true"]'),
+        ].filter(el => /^[\[\]]$/.test((el.textContent ?? '').trim()))
+        expect(brackets.length).toBe(2)
+        for (const b of brackets) expect(isLaidOut(b)).toBe(true)
     },
 }
 
@@ -602,8 +638,8 @@ export const FlashcardsFloor: Story = {
         // What survives: the progress rule (it costs no width, so it never sheds), the count
         // (where am I), and every control still reachable by icon.
         expect(isLaidOut(canvas.getByTestId('fc-progress'))).toBe(true)
-        expect(isLaidOut(canvas.getByTitle(/^Cram:/))).toBe(true)
-        expect(isLaidOut(canvas.getByTitle(/^Browse, add/))).toBe(true)
+        expect(isLaidOut(canvas.getByLabelText('cram'))).toBe(true)
+        expect(isLaidOut(canvas.getByLabelText('cards'))).toBe(true)
         // And the row still fits the band — no control pushed out of the 36px bar.
         const bar = canvasElement.querySelector('[data-viewbar]') as HTMLElement
         const trail = canvasElement.querySelector('[data-testid="vb-trail"]') as HTMLElement

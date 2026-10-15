@@ -2396,6 +2396,144 @@ export const FindPanelOpen: Story = {
     },
 }
 
+/** The find bar with match-case ON: the case toggle reads `[Aa]` in accent (its brackets are laid
+ *  out but unpainted while off, so the flip moves nothing). Turned on by clicking the toggle, the
+ *  way a person does. */
+export const FindPanelCaseOn: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Find Case.md': DEFAULT_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Find Case.md"
+                    initialText={DEFAULT_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+
+        openSearchPanel(view)
+        const caseBtn = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLButtonElement>(
+                '.bismuth-find-case',
+            )
+            if (!el) throw new Error('find bar not mounted yet')
+            return el
+        })
+        const input = canvasElement.querySelector<HTMLInputElement>(
+            '.bismuth-find-input',
+        )
+        if (!input) throw new Error('find input not found')
+        input.value = 'Editor'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+
+        await expect(caseBtn.textContent).toBe('Aa')
+        await expect(caseBtn.getAttribute('aria-pressed')).toBe('false')
+        await expect(getComputedStyle(caseBtn, '::before').visibility).toBe(
+            'hidden',
+        )
+        caseBtn.click()
+        await expect(caseBtn.getAttribute('aria-pressed')).toBe('true')
+        for (const pseudo of ['::before', '::after']) {
+            await expect(getComputedStyle(caseBtn, pseudo).visibility).toBe(
+                'visible',
+            )
+        }
+        // Shoot the at-rest state, not a focus ring.
+        caseBtn.blur()
+    },
+}
+
+const EXTENDED_TABLE_TEXT = [
+    'A table extended horizontally: its toolbar keeps `[∞]` showing with the pointer away.',
+    '',
+    '| file | what changed | status |',
+    '| --- | --- | --- |',
+    '| `app/src/editor/livePreview.ts` | the on toggle stays visible | done |',
+    '| `app/src/Editor.stories.tsx` | a story for it | done |',
+    '',
+].join('\n')
+
+/** An extended (`∞`) table with the pointer away from it: the toolbar stays at full opacity and
+ *  draws `[∞]` in accent, so the table's state reads without a hover. Extended by pressing the
+ *  toggle; the play reads the toolbar's computed opacity. */
+export const TableToolbarExtendedAtRest: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: { 'Extended Table.md': EXTENDED_TABLE_TEXT },
+            }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Extended Table.md"
+                    initialText={EXTENDED_TABLE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const btn = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLButtonElement>(
+                '.cm-table-tool-infinity',
+            )
+            if (!el) throw new Error('table toolbar not rendered yet')
+            return el
+        })
+        // The toggle persists per note + header, so a reload can mount it already on. It flips on
+        // `mousedown` (tableWidget.ts), so a synthetic `.click()` would do nothing.
+        if (btn.getAttribute('aria-pressed') !== 'true') {
+            btn.dispatchEvent(
+                new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+            )
+        }
+        await expect(btn.getAttribute('aria-pressed')).toBe('true')
+        const ae = document.activeElement as HTMLElement | null
+        if (ae && btn.contains(ae)) ae.blur()
+
+        const toolbar = btn.parentElement as HTMLElement
+        await expect(toolbar).not.toBeNull()
+        await expect(toolbar.matches(':hover, :focus-within')).toBe(false)
+        // Opacity transitions over --dur; wait for it to settle rather than read mid-fade.
+        await waitFor(() => {
+            const o = getComputedStyle(toolbar).opacity
+            if (o !== '1') throw new Error(`toolbar opacity ${o}`)
+        })
+        await expect(btn.textContent).toBe('∞')
+        // The toolbar anchors over the table's top-left, never out at the stretched wrap's edge.
+        // The scroll box is the table plus its typed edges' overhang, so it is the table's extent.
+        const table = canvasElement.querySelector<HTMLElement>(
+            '.cm-table-infinity .cm-table-scroll',
+        )
+        await expect(table).not.toBeNull()
+        await expect(getComputedStyle(toolbar).left).toBe('0px')
+        const tr = table!.getBoundingClientRect()
+        const br = toolbar.getBoundingClientRect()
+        await expect(br.left).toBeGreaterThanOrEqual(tr.left - 1)
+        await expect(br.right).toBeLessThanOrEqual(tr.right + 1)
+        for (const pseudo of ['::before', '::after']) {
+            await expect(getComputedStyle(btn, pseudo).visibility).toBe(
+                'visible',
+            )
+        }
+    },
+}
+
 
 /** A note under a folder bound to a named schema (`folderSchemas: { Books: book }`): `author` is
  *  required and missing, `rating` is above the schema's max, and `genre` is not one of the enum's

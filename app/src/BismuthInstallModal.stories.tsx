@@ -8,6 +8,7 @@
 // still renders past the spinner into a real panel — all-"no" rather than a version report —
 // instead of hanging. That's the state Default below shows.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, waitFor } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { BismuthInstallModal } from './BismuthInstallModal'
 import { TextButton } from './ui/TextButton'
@@ -30,7 +31,7 @@ export const Default: Story = {
     render: () => <BismuthInstallModal onClose={noop} />,
 }
 
-/** Interactive: a trigger opens the modal; its own CLOSE button (or Escape) closes it —
+/** Interactive: a trigger opens the modal; its header `[x]` (or Escape) closes it —
  *  exercising the onClose callback Default no-ops. */
 export const Interactive: Story = {
     render: () => {
@@ -48,5 +49,20 @@ export const Interactive: Story = {
                 )}
             </div>
         )
+    },
+    play: async ({ canvasElement }) => {
+        const doc = canvasElement.ownerDocument
+        const close = await waitFor(() => {
+            const b = doc.querySelector<HTMLButtonElement>('button[data-modal-close]')
+            expect(b).not.toBeNull()
+            return b!
+        })
+        expect(close.getAttribute('aria-label')).toBe('Close')
+        // the header `[x]` is a TextButton reading `x`; the brackets are drawn by its style
+        expect(close.textContent?.trim()).toBe('x')
+        const footerClose = [...doc.querySelectorAll('button')].filter(
+            b => b !== close && /^\s*close\s*$/i.test(b.textContent ?? ''),
+        )
+        expect(footerClose.length).toBe(0)
     },
 }

@@ -5,6 +5,7 @@
 // `status()?.connected` is then falsy — it lands on the real DISCONNECTED form (Client
 // ID / Client Secret fields + CONNECT), not stuck on "Loading…".
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, waitFor } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { GcalConnectModal } from './GcalConnectModal'
 import { TextButton } from './ui/TextButton'
@@ -27,7 +28,7 @@ export const Default: Story = {
     render: () => <GcalConnectModal onClose={noop} />,
 }
 
-/** Interactive: a trigger opens the modal; CLOSE (or Escape) closes it — exercising the
+/** Interactive: a trigger opens the modal; its header `[x]` (or Escape) closes it — exercising the
  *  onClose callback Default no-ops. */
 export const Interactive: Story = {
     render: () => {
@@ -43,5 +44,20 @@ export const Interactive: Story = {
                 {open() && <GcalConnectModal onClose={() => setOpen(false)} />}
             </div>
         )
+    },
+    play: async ({ canvasElement }) => {
+        const doc = canvasElement.ownerDocument
+        const close = await waitFor(() => {
+            const b = doc.querySelector<HTMLButtonElement>('button[data-modal-close]')
+            expect(b).not.toBeNull()
+            return b!
+        })
+        expect(close.getAttribute('aria-label')).toBe('Close')
+        // the header `[x]` is a TextButton reading `x`; the brackets are drawn by its style
+        expect(close.textContent?.trim()).toBe('x')
+        const footerClose = [...doc.querySelectorAll('button')].filter(
+            b => b !== close && /^\s*close\s*$/i.test(b.textContent ?? ''),
+        )
+        expect(footerClose.length).toBe(0)
     },
 }

@@ -22,6 +22,7 @@
 // consistency, per the plan's explicit instruction.
 import { Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
+import IconBrackets from '../ui/IconBrackets'
 import { IconButton } from '../ui/IconButton'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
@@ -89,12 +90,20 @@ export function TabRailRow(props: {
         >
             {/* Every rail row shows an icon (fall back to a generic doc) so the
         collapsed icon-column is never empty for an unnamed note. */}
-            <Icon
-                class={styles['tab-rail-icon']}
-                data-tab-rail-icon=""
-                value={props.icon}
-                style={props.color ? { color: props.color } : undefined}
-            />
+            {/* The active mark is ui/IconBrackets, anchored: the brackets hang outside the icon's box so
+        the glyph never moves when the active tab changes. */}
+            <IconBrackets
+                anchored
+                class={styles['tab-rail-brackets']}
+                state={props.active ? 'on' : 'off'}
+            >
+                <Icon
+                    class={styles['tab-rail-icon']}
+                    data-tab-rail-icon=""
+                    value={props.icon}
+                    style={props.color ? { color: props.color } : undefined}
+                />
+            </IconBrackets>
             <Show
                 when={props.renaming}
                 fallback={
@@ -170,7 +179,6 @@ export function TabRailRow(props: {
                     <IconButton
                         class={styles['tab-pin']}
                         size="sm"
-                        variant="selected"
                         icon="Pin"
                         label="Unpin tab"
                         onClick={() => props.onUnpin()}

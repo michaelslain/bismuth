@@ -66,6 +66,7 @@ import { resolveAppearance } from '../themes'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
+import { TextButton } from '../ui/TextButton'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import Readout from '../ui/Readout'
@@ -205,74 +206,90 @@ export function EmbeddedGraph(props: {
         <div class={styles['graph-block-root']}>
             <div class={styles['graph-block-toolbar']}>
                 <Show when={!hasErrors}>
-                    <SegmentedToggle<Tool>
-                        value={tool()}
-                        onChange={t => {
-                            setTool(t)
-                            setPending(null)
-                            selectNode(null)
-                        }}
-                        size="sm"
-                        options={[
-                            {
-                                id: 'select',
-                                title: 'Select — click a node to edit it',
-                                label: (
-                                    <>
-                                        <Icon value="Pencil" />
-                                        <Text as="span" inherit data-btn-label>
-                                            select
-                                        </Text>
-                                    </>
-                                ),
-                            },
-                            {
-                                id: 'connect',
-                                title: 'Connect — click two nodes to link / unlink',
-                                label: (
-                                    <>
-                                        <Icon value="Link" />
-                                        <Text as="span" inherit data-btn-label>
-                                            connect
-                                        </Text>
-                                    </>
-                                ),
-                            },
-                            {
-                                id: 'erase',
-                                title: 'Erase — click a node to delete it',
-                                label: (
-                                    <>
-                                        <Icon value="Eraser" />
-                                        <Text as="span" inherit data-btn-label>
-                                            erase
-                                        </Text>
-                                    </>
-                                ),
-                            },
-                        ]}
-                    />
-                    <Show when={tool() === 'connect'}>
-                        <SegmentedToggle<'dir' | 'undir'>
-                            value={directed() ? 'dir' : 'undir'}
-                            onChange={v => setDirected(v === 'dir')}
+                    <div class={styles['graph-block-tools']}>
+                        <SegmentedToggle<Tool>
+                            value={tool()}
+                            onChange={t => {
+                                setTool(t)
+                                setPending(null)
+                                selectNode(null)
+                            }}
                             size="sm"
                             options={[
                                 {
-                                    id: 'dir',
-                                    title: 'New edges are directed (->)',
-                                    label: <Icon value="ArrowRight" />,
-                                    ariaLabel: 'directed',
+                                    id: 'select',
+                                    title: 'Select — click a node to edit it',
+                                    label: (
+                                        <>
+                                            <Icon value="Pencil" />
+                                            <Text
+                                                as="span"
+                                                inherit
+                                                data-btn-label
+                                            >
+                                                select
+                                            </Text>
+                                        </>
+                                    ),
                                 },
                                 {
-                                    id: 'undir',
-                                    title: 'New edges are undirected (--)',
-                                    label: <Icon value="Minus" />,
-                                    ariaLabel: 'undirected',
+                                    id: 'connect',
+                                    title: 'Connect — click two nodes to link / unlink',
+                                    label: (
+                                        <>
+                                            <Icon value="Link" />
+                                            <Text
+                                                as="span"
+                                                inherit
+                                                data-btn-label
+                                            >
+                                                connect
+                                            </Text>
+                                        </>
+                                    ),
+                                },
+                                {
+                                    id: 'erase',
+                                    title: 'Erase — click a node to delete it',
+                                    label: (
+                                        <>
+                                            <Icon value="Eraser" />
+                                            <Text
+                                                as="span"
+                                                inherit
+                                                data-btn-label
+                                            >
+                                                erase
+                                            </Text>
+                                        </>
+                                    ),
                                 },
                             ]}
                         />
-                    </Show>
+                        <Show when={tool() === 'connect'}>
+                            <SegmentedToggle<'dir' | 'undir'>
+                                value={directed() ? 'dir' : 'undir'}
+                                onChange={v => setDirected(v === 'dir')}
+                                size="sm"
+                                look="icon"
+                                pickOne
+                                options={[
+                                    {
+                                        id: 'dir',
+                                        title: 'New edges are directed (->)',
+                                        icon: 'ArrowRight',
+                                        ariaLabel: 'directed',
+                                    },
+                                    {
+                                        id: 'undir',
+                                        title: 'New edges are undirected (--)',
+                                        icon: 'Minus',
+                                        ariaLabel: 'undirected',
+                                    },
+                                ]}
+                            />
+                        </Show>
+                    </div>
                     <IconTextButton
                         icon="Plus"
                         onClick={() => commit(addNode(spec).spec)}
@@ -285,17 +302,19 @@ export function EmbeddedGraph(props: {
                     value={dim()}
                     onChange={setDim}
                     size="sm"
+                    look="icon"
+                    pickOne
                     options={[
                         {
                             id: '2d',
                             title: 'Flat layout',
-                            label: <Icon value="Square" />,
+                            icon: 'Square',
                             ariaLabel: '2d',
                         },
                         {
                             id: '3d',
                             title: 'Orbit layout',
-                            label: <Icon value="Box" />,
+                            icon: 'Box',
                             ariaLabel: '3d',
                         },
                     ]}
@@ -350,13 +369,12 @@ export function EmbeddedGraph(props: {
                     <IconTextButton icon="Check" onClick={applyEdit}>
                         apply
                     </IconTextButton>
-                    <IconTextButton
-                        icon="Trash2"
+                    <TextButton
                         danger
                         onClick={() => commit(removeNode(spec, selected()!))}
                     >
                         delete
-                    </IconTextButton>
+                    </TextButton>
                 </div>
             </Show>
             <div class={styles['graph-block-footer']}>

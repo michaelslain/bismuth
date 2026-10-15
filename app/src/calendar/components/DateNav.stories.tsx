@@ -171,8 +171,10 @@ export const ClickDateJumpsToToday: Story = {
         const buttons = [
             ...canvasElement.querySelectorAll<HTMLButtonElement>('button'),
         ]
-        // Exactly four controls, in order: TODAY, prev, the date, next.
+        // Four controls, in order: TODAY (a twin, so two buttons: worded then bare), prev, the
+        // date, next. Names read from `title`, or from `data-tooltip` on an icon button.
         expect(buttons.map(b => b.getAttribute('title') ?? b.getAttribute('data-tooltip'))).toEqual([
+            'Today',
             'Today',
             'Previous',
             'Jump to today',
@@ -181,7 +183,7 @@ export const ClickDateJumpsToToday: Story = {
         expect(
             canvasElement.querySelector('[data-testid="range"]')!.textContent,
         ).toContain('2026')
-        buttons[2]!.click()
+        buttons[3]!.click()
         await new Promise(r => setTimeout(r, 0))
         const now = new Date()
         // Catches the click doing nothing, or jumping to the wrong date.
@@ -198,10 +200,10 @@ export const ClickTodayJumpsToToday: Story = {
         const today = canvasElement.querySelector<HTMLButtonElement>(
             '[title="Today"]',
         )!
-        // TODAY is text-only — no icon — and reads exactly "today" once the bracket glyphs
-        // (CSS ::before/::after content, never in textContent) are set aside.
-        expect(today.querySelector('svg')).toBeNull()
-        expect(today.textContent?.trim()).toBe('today')
+        // TODAY is a BarTwin: this first match is the worded half (icon + the word `today`), at a
+        // width above the late tier, with its bare twin hidden.
+        expect(today.getAttribute('data-bar-twin-half')).toBe('full')
+        expect(today.textContent?.replace(/[\[\]]/g, '').trim()).toBe('today')
         today.click()
         await new Promise(r => setTimeout(r, 0))
         const now = new Date()

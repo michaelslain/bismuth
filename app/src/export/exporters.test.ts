@@ -629,10 +629,10 @@ describe('preview shows page separation (sheet per section)', () => {
 // but it is a dependency of the `core` workspace, not `app` — and app's own bun test cannot
 // resolve an undeclared package (confirmed directly: importing it at the top of this file makes
 // bun test fail the whole file with "Cannot find module"). Rather than add it to
-// app/package.json (outside this task's file list, and node_modules here is a symlink this task
-// was told not to `bun install`), the measurement runs in a short-lived subprocess whose script
-// lives OUTSIDE every workspace (a tmp file) — the one place Bun's resolver reaches the
-// already-installed package without a workspace declaration.
+// app/package.json, the measurement runs in a short-lived subprocess whose script lives OUTSIDE
+// every workspace (a tmp file). The test process resolves the installed package from the `core`
+// workspace and hands the subprocess its absolute path, so the script imports it without any
+// workspace declaration and without bun auto-install (it runs under `bun --no-install`).
 describe('the embedded Libron face actually resolves (task 6)', () => {
     test('a prose run measures a different width through the real embedded face than through Georgia alone', async () => {
         const libronFace = DOC_FACES.find(
@@ -682,6 +682,10 @@ describe('the embedded Libron face actually resolves (task 6)', () => {
         )
         expect(embeddedBytes.length).toBeGreaterThan(1000) // a real font file, not a stub
 
+        const canvasPath = Bun.resolveSync(
+            '@napi-rs/canvas',
+            join(import.meta.dir, '../../../core'),
+        )
         const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`
         const fontFile = join(tmpdir(), `task6-libron-${stamp}.woff2`)
         const scriptFile = join(tmpdir(), `task6-measure-${stamp}.ts`)
@@ -696,7 +700,7 @@ describe('the embedded Libron face actually resolves (task 6)', () => {
         // assertion depends on.
         await Bun.write(
             scriptFile,
-            `import { createCanvas, GlobalFonts } from '@napi-rs/canvas'
+            `const { createCanvas, GlobalFonts } = await import(process.argv[3])
 const PANGRAM = 'The quick brown fox jumps over the lazy dog 0123456789'
 const stack = "16px 'Libron', Georgia, serif"
 const canvas = createCanvas(10, 10)
@@ -707,14 +711,23 @@ ctx.font = '16px Georgia'
 const georgiaWidth = ctx.measureText(PANGRAM).width
 const bytes = await Bun.file(process.argv[2]).arrayBuffer()
 const key = GlobalFonts.register(Buffer.from(bytes), 'Libron')
-ctx.font = stack
+// skia caches a font-family list's resolution for the process, so re-reading the identical list
+// returns the stale Georgia fallback; the trailing generic makes it a fresh list with the same order
+ctx.font = "16px 'Libron', Georgia, serif, sans-serif"
 const libronWidth = ctx.measureText(PANGRAM).width
 console.log(JSON.stringify({ beforeRegistering, georgiaWidth, libronWidth, registered: key !== null }))
 `,
         )
         try {
             const proc = Bun.spawn(
-                [process.execPath, 'run', scriptFile, fontFile],
+                [
+                    process.execPath,
+                    '--no-install',
+                    'run',
+                    scriptFile,
+                    fontFile,
+                    canvasPath,
+                ],
                 { stdout: 'pipe', stderr: 'pipe' },
             )
             const [stdout, stderr, exitCode] = await Promise.all([
@@ -748,7 +761,8 @@ console.log(JSON.stringify({ beforeRegistering, georgiaWidth, libronWidth, regis
                 unlink(scriptFile).catch(() => {}),
             ])
         }
-    })
+        // 30s: the subprocess loads a 28 MB native Skia library, which takes over 5s under machine load
+    }, 30_000)
 })
 
 describe('proseFacesFor embeds only the serif the prose stack names', () => {

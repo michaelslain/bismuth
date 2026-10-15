@@ -63,11 +63,9 @@
 
 /* Disclosure slot — a parent's chevron column, ONE character cell wide with one more cell after it
    before the title (`.outline-prefix`'s own margin-right supplies the cell BEFORE it): together
-   `|-- ⌄ Introduction`. A LEAF has no chevron to show, so its slot collapses to zero width and zero
-   margin (`--leaf` below) — the title then follows the connector's own one-cell gap directly:
-   `` `-- Background`` (one cell, not three). `ch` is resolved in the CONNECTOR's font (the family
-   is restated here), so the cells line up with the ASCII prefix beside them. Fix 2: the old 10px
-   slot with a 2px margin glued the chevron to the connector (`|--⌄Introduction`). */
+   `|-- ⌄ Introduction`. A LEAF keeps the same slot, empty (`--leaf` below), so its title starts in
+   the column a parent's title does. `ch` is resolved in the CONNECTOR's font (the family is
+   restated here), so the cells line up with the ASCII prefix beside them. */
 .outline-disclosure {
     position: relative;
     flex-shrink: 0;
@@ -76,15 +74,16 @@
     margin-right: 1ch;
     font-family: var(--ui-font-stack);
 }
+/* A leaf keeps the slot (same width and margin as a parent's), empty, so its title starts in the
+   same column as a parent's title. */
 .outline-disclosure--leaf {
-    width: 0;
-    margin-right: 0;
+    width: 1ch;
 }
 /* The chevron's CLICK TARGET is bigger than its visual column: centred on the one-cell slot and as
    tall as the row (and never narrower), absolutely positioned so it takes no layout width — the
    columns above are untouched. It overhangs the blank cells either side, which are the chevron's
    own breathing room, not part of the connector or the title. */
-/* Targets the chevron IconButton's OWN local class (passed through `IconButton`'s `class` prop
+/* Targets the DisclosureChevron's OWN local class (passed through its `class` prop
    in OutlineTree.tsx) rather than reaching into it from the parent via a `.outline-disclosure
    :global(.btn--icon)` descendant selector — this is the chevron's own instance override, not a
    foreign reach into DOM this stylesheet doesn't render itself. The class is doubled

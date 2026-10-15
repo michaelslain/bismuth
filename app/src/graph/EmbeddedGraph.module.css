@@ -22,11 +22,19 @@
 .graph-block-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: var(--sp-5);
   padding: var(--sp-3) var(--sp-4);
   border-bottom: var(--rule-soft);
   flex-wrap: wrap;
 }
+
+/* Pick-one icon pairs (connect direction, 2d/3d) sit --sp-2 apart: the off member draws no
+   bracket space, so the standard --sp-4 sibling gap reads as two unrelated buttons. */
+.graph-block-toolbar [data-segmented][data-look='icon'] { gap: var(--sp-2); }
+
+/* The tools (and the connect direction pair) keep the standard --sp-4 bracket-sibling gap among
+   themselves; the toolbar's wider --sp-5 then sets `[+ node]` apart as its own action. */
+.graph-block-tools { display: flex; align-items: center; gap: var(--sp-4); }
 
 .graph-block-spacer { flex: 1; }
 

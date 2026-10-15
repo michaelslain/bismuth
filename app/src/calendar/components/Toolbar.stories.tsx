@@ -73,12 +73,23 @@ const visible = (root: Element, sel: string) =>
         .map(n => n.textContent)
         .join('')
 
-/** TODAY is a plain `TextButton` now (icon-brackets/no-button-outline task) — no `BarLabel`, so it
- *  never abbreviates, it only ever disappears whole at its `data-bar-drop="3"` tier. Reading its own
- *  textContent when shown (and '' when the tier has hidden it) is the equivalent of `visible()` for
- *  a control with exactly one form of its label rather than a long/short pair. */
+/** Categories is a worded/icon twin pair: the word is the shown twin's text (the icon twin has none),
+ *  and the control is "shown" when either twin is laid out. */
+const categoryTwins = (root: Element) => [
+    ...root.querySelectorAll('[title="Categories"], [data-tooltip="Categories"]'),
+]
+const categoryWord = (root: Element) =>
+    categoryTwins(root)
+        .filter(shown)
+        // The aria-hidden `[` `]` icon brackets of an unselected twin are layout, not the word.
+        .map(n => (n.textContent ?? '').replace(/[\[\]]/g, '').trim())
+        .join('')
+
+/** TODAY is a `BarTwin` (`drop="late"`): worded `[today]` above the 480px late tier, the bare
+ *  `Calendar` icon below it; it never leaves the bar. `todayText` reads the worded half while it is
+ *  shown and `''` when only the bare half is laid out. */
 const todayText = (root: Element) => {
-    const btn = root.querySelector('[title="Today"]')
+    const btn = root.querySelector('[title="Today"], [data-tooltip="Today"]')
     return shown(btn) ? (btn!.textContent ?? '').trim() : ''
 }
 
@@ -86,10 +97,10 @@ const todayText = (root: Element) => {
  *  rather than only the one thing its own tier changed — a tier that fires EARLY is just as wrong
  *  as one that never fires, and only the whole tuple can see that. */
 const state = (root: Element) => ({
-    actionWords: visible(root, '[title="Categories"]'),
+    actionWords: categoryWord(root),
     viewName: visible(root, '[data-segmented] button:first-child'),
     todayWord: todayText(root),
-    categoriesShown: shown(root.querySelector('[title="Categories"]')),
+    categoriesShown: categoryTwins(root).some(shown),
 })
 
 /** The shipping shape at a comfortable width. Time nav and the date sit left, the period switcher
@@ -197,11 +208,9 @@ export const Narrow620: Story = {
     },
 }
 
-/** TIER 3 — 510px (a 474px container). 474 is under the 570px DROP-3 tier TODAY carries
- *  (`data-bar-drop="3"`), so the whole control is gone here already, one tier earlier than the
- *  view-name/Categories changes that define this story's other assertions — it is the earliest
- *  width in this ladder where TODAY has disappeared. TODAY is a plain `TextButton` (no icon), so
- *  there is no intermediate icon-only form to pass through on the way down. */
+/** TIER 3 — 510px (a 486px content box). Still above the late tier, so TODAY keeps its word; the
+ *  view names are abbreviated and Categories is its bare icon. The step down to TODAY's bare
+ *  `Calendar` twin (ui/BarTwin.tsx) is Narrow480LateWords. */
 export const Narrow510: Story = {
     render: () => {
         setState(new Date(2026, 0, 12), 'day', false)
@@ -211,7 +220,7 @@ export const Narrow510: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'm',
-            todayWord: '',
+            todayWord: 'today',
             categoriesShown: true,
         })
     },
@@ -262,14 +271,15 @@ export const Narrow480LateWords: Story = {
     },
 }
 
-/** BELOW THE FLOOR — 340px. A pane has no minimum width, so this state is always reachable and has
+/** BELOW THE FLOOR — 260px (the segments fit whole down to 340, see Narrow340ViewToggleWhole; the
+ *  identity crumb goes first). A pane has no minimum width, so this state is always reachable and has
  *  to be designed rather than avoided: the leading group scrolls, and its right edge fades so the
  *  cut reads as "more this way" instead of as a sliced button. The date never scrolls away first,
  *  because it is the one thing the bar exists to tell you. */
 export const Narrow340BelowFloor: Story = {
     render: () => {
         setState(new Date(2026, 0, 12), 'day', false)
-        return <InBaseBar width={340} />
+        return <InBaseBar width={260} />
     },
     play: async ({ canvasElement }) => {
         const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
@@ -283,6 +293,46 @@ export const Narrow340BelowFloor: Story = {
         expect(trail.getBoundingClientRect().right).toBeLessThanOrEqual(
             bar.getBoundingClientRect().right + 1,
         )
+    },
+}
+
+/** 340px WITH THE VIEW TOGGLE WHOLE. Before BarTwin the today control was `[today]` down to the
+ *  drop-3 tier and then nothing, and the 340px bar drew its toggle as `[m] [w] [` — the lead
+ *  scrolled and the last two segments were cut off. Today is a twin now (ui/BarTwin.tsx): below the
+ *  late tier it is the bare `Calendar` icon, which is what buys the room. Asserts the
+ *  rendered geometry, not the markup: every segment's box lies inside the lead's visible box (a
+ *  segment clipped to its first glyph fails this), and the today control is the icon half. */
+export const Narrow340ViewToggleWhole: Story = {
+    render: () => {
+        setState(new Date(2026, 0, 12), 'day', false)
+        return <InBaseBar width={340} />
+    },
+    play: async ({ canvasElement }) => {
+        const today = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[title="Today"], [data-tooltip="Today"]',
+            ),
+        ]
+        const shownToday = today.filter(shown)
+        expect(shownToday.length).toBe(1)
+        expect(shownToday[0]!.getAttribute('data-bar-twin-half')).toBe('icon')
+        expect(shownToday[0]!.textContent?.trim()).toBe('')
+        const lead = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="vb-lead"]',
+        )!
+        const box = lead.getBoundingClientRect()
+        const segments = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-segmented] button',
+            ),
+        ]
+        expect(segments.length).toBe(4)
+        for (const seg of segments) {
+            const r = seg.getBoundingClientRect()
+            expect(r.width).toBeGreaterThan(0)
+            expect(r.left).toBeGreaterThanOrEqual(box.left - 0.5)
+            expect(r.right).toBeLessThanOrEqual(box.right + 0.5)
+        }
     },
 }
 
@@ -336,7 +386,9 @@ export const CalendarBaseWithTwoViews: Story = {
         // The period switcher follows DateNav inside `locus`, not the other way round.
         const locus = bar.querySelector('[data-testid="vb-locus"]')!
         const kids = [...locus.children]
-        expect((kids[kids.length - 1] as HTMLElement).hasAttribute('data-segmented')).toBe(true)
+        // (the toggle sits inside Toolbar's own `display: contents` wrapper, so look through it)
+        const last = kids[kids.length - 1] as HTMLElement
+        expect(last.hasAttribute('data-segmented') || last.querySelector(':scope > [data-segmented]') !== null).toBe(true)
     },
 }
 

@@ -293,7 +293,10 @@ export const SlashPopoverNarrow: Story = {
             slashCommands: ['compact', 'clear', 'chrome'],
         })
         return (
-            <div style={{ width: '320px' }} data-testid="narrow-col">
+            <div
+                style={{ width: '320px', 'padding-top': '300px' }}
+                data-testid="narrow-col"
+            >
                 <ChatComposerBar
                     session={session}
                     placeholder="Message Claude"

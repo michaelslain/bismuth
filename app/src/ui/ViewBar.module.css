@@ -252,12 +252,11 @@
    Every control now carries `[`/`]` and every sibling pair sits --sp-4 apart, so the table above
    (taken against bare glyphs at a 0px gap) under-states each state by 60-100px. The tiers were NOT
    moved — the chat bar shares them and the calendar's Narrow* stories pin which state each width is
-   in. Instead the calendar sheds more per tier: TODAY leaves whole at DROP 3 (570) rather than
-   collapsing to `[▣]` at the late tier — the date beside it is itself a jump to today (DateNav.tsx),
-   so the bar loses a shortcut, not a function — and the late tier also drops the crumb's icon and
+   in. Instead the calendar sheds more per tier: TODAY is a BarTwin (drop="late"), worded `[today]`
+   above the 480px late tier and the bare Calendar icon below it, so it never leaves the bar; the
+   late tier also drops the crumb's icon and
    tightens the region seams. Measured, container widths:
        584 (Narrow620)   today word + categories + short date/views     575 needed
-       474 (Narrow510)   today gone, crumb icon gone, seams --sp-4      471 needed
        444 (Narrow480)   + categories gone                               433 needed */
 @container viewbar (max-width: 800px) {
   /* WORDS, EARLY — the early words go. Every button that loses one keeps an icon that already names it and a
@@ -271,10 +270,13 @@
      `gap` only spaces RENDERED flex children, and hiding the label leaves the icon as the sole
      visible child. */
   /* NO fixed `width` on the Button-family half (one-button fix): a collapsed IconTextButton is
-     `[` + glyph + `]`, 26px at --fs-ui (measured 26.28 in ui-barlabel--early-labels-dropped), and a fixed `width: var(--h-control)` (24px, sized for a
+     `[` + glyph + `]`, 22.28px at --fs-ui (measured in ui-barlabel--early-labels-dropped, after the text-button bracket pull), and a fixed `width: var(--h-control)` (24px, sized for a
      bare glyph) clipped the brackets by a pixel and made the collapsed control a different width from
      the `[▣]` IconButton beside it. With no text padding left to remove, shrink-to-fit IS square. */
   .viewbar [data-kind="text"]:has([data-bar-label='early']) { padding: 0; justify-content: center; }
+  /* A BarTwin whose worded half goes at this tier (ui/BarTwin.tsx): the bare IconButton takes over. */
+  .viewbar [data-bar-twin='early'] > [data-bar-twin-half='full'] { display: none; }
+  .viewbar [data-bar-twin='early'] > [data-bar-twin-half='icon'] { display: inline-flex; }
 }
 @container viewbar (max-width: 650px) {
   /* DROP 4 — the first whole control to go anywhere in the app. The chat bar's tool and MCP counts:
@@ -334,6 +336,9 @@
   .viewbar [data-bar-label='late'] { display: none; }
   /* Same widening as the 'early' tier above — see its comment. */
   .viewbar [data-kind="text"]:has([data-bar-label='late']) { padding: 0; justify-content: center; }
+  /* BarTwin, late: see the early tier above. */
+  .viewbar [data-bar-twin='late'] > [data-bar-twin-half='full'] { display: none; }
+  .viewbar [data-bar-twin='late'] > [data-bar-twin-half='icon'] { display: inline-flex; }
   /* The crumb's leading icon goes with the late words (one-button fix). It is decoration — the
      title beside it names the view — and its 20px (glyph + gap) is what the calendar's crumb and date
      need to stay whole at the 510px story once every control carries brackets. Matched by
@@ -372,4 +377,10 @@
      to answer and the date, the one thing the bar exists to say, would be the first thing gone.
      Rigid, the row overflows honestly and the mask says so. */
   .viewbar .vb-lead * { flex-shrink: 0; }
+  /* A bar that opts in with `data-bar-yields-identity` (the calendar's toolbar, around its period
+     switcher) gives up its identity (the crumb's whole region, so no seam is left behind) here: the
+     segments are the control, and below the floor they otherwise draw cut off (`[m] [w] [`). Keyed
+     on that data hook, never a class and not on every segmented toggle (feedback, export and graph
+     brain-mode keep their titles). The crumb's icon already went with the late tier; the date stays. */
+  .viewbar:has([data-bar-yields-identity]) .vbRegion:has(> .crumb) { display: none; }
 }

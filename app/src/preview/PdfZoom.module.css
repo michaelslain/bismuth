@@ -11,17 +11,3 @@
 .wide {
   gap: var(--sp-5);
 }
-
-/* The zoom percentage between − and +: tabular digits in a `100%`-wide box so the cluster does not
-   jitter as the digit count changes. No side padding of its own: `−`, `100%`, `+` and `fit` then
-   sit the same ink distance apart as every other pair of plain controls in the bar (the
-   control-to-control gap is --bar-icon-gap and nothing else). `Label` renders a plain (inline)
-   span, so `text-align: center` is what centres the digits. Digits carry no descenders, so the
-   number reads high beside the icons: the same 1px drop `Button.module.css` gives a button label. */
-.zoom {
-  min-width: 4ch;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  position: relative;
-  top: 1px;
-}

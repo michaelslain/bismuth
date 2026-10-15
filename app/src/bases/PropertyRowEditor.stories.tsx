@@ -158,8 +158,12 @@ export const EyeBesideTheHead: Story = {
         expect(head.textContent).not.toContain('cards/table')
         // A real glyph, not the dashed `?` fallback of an unknown icon name.
         expect(eye.querySelector('svg')).toBeTruthy()
+        // Hidden = off: one Eye glyph, unselected.
+        expect(eye.getAttribute('aria-pressed')).toBe('false')
         await userEvent.click(eye)
         expect(head.getAttribute('aria-expanded')).toBe('false')
-        expect(c.getByLabelText(/^Hide status/)).toBeTruthy()
+        const hide = c.getByLabelText(/^Hide status/)
+        // Visible = on: the same glyph, selected.
+        expect(hide.getAttribute('aria-pressed')).toBe('true')
     },
 }

@@ -786,6 +786,7 @@ export function BaseView(props: {
                             />
                             <BaseViewActions
                                 action="source"
+                                toggle={!props.embeddedSource}
                                 when={!!(editPath() || props.embeddedSource)}
                                 active={!!editPath() && sourceMode()}
                                 onAct={() => {

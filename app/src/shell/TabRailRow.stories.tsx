@@ -8,7 +8,7 @@
 // `data-tab-rail` attribute TabRail.tsx sets on its root — the cross-module hover/focus/pinned
 // reveal rules in `TabRailRow.module.css` key off that attribute, not a class.
 //
-// SEVEN STORIES: `Default` (rest). `Active` — `.active` + its `::before` gradient bar. `Pinned` —
+// EIGHT STORIES: `Default` (rest). `Active` — `.active` + its `::before` gradient bar. `Pinned` —
 // the pin glyph replaces the close X. `Dragging` — `.dragging`, the row as the drop slot. `Renaming` — the `.tab-rename`
 // input in place of the label. `Colored` — a chat tint on the icon (`color` prop). `LongLabel` —
 // the ellipsis. Rendered inside `Shell/TabRail`'s own `.tab-rail`/`.tab-rail-inner`/
@@ -118,6 +118,27 @@ export const Pinned: Story = {
         await waitFor(() => expect(getComputedStyle(pin).opacity).toBe('1'))
         expect(pin.getBoundingClientRect().width).toBeGreaterThan(0)
         expect(c.queryByRole('button', { name: 'Close tab' })).toBeNull()
+    },
+}
+
+/** Active AND pinned — the rail's one bracket mark wraps the row icon, and the pin glyph is bare
+ *  (no brackets of its own, no `aria-pressed`). */
+export const ActivePinned: Story = {
+    render: () => (
+        <Wrap>
+            <TabRailRow {...base} active={true} pinned={true} />
+        </Wrap>
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const pin = c.getByRole('button', { name: 'Unpin tab' })
+        await waitFor(() => expect(getComputedStyle(pin).opacity).toBe('1'))
+        expect(pin.hasAttribute('aria-pressed')).toBe(false)
+        const marks = Array.from(
+            canvasElement.querySelectorAll('[aria-hidden="true"]'),
+        ).filter(e => e.textContent === '[' || e.textContent === ']')
+        expect(marks.map(e => e.textContent)).toEqual(['[', ']'])
+        expect(pin.querySelector('[aria-hidden="true"]')?.textContent).not.toBe('[')
     },
 }
 

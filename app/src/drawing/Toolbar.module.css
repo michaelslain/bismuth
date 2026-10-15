@@ -36,14 +36,9 @@
    alongside its own hashed `.segmented` class) — no more descendant reach into another
    primitive's internals. */
 .draw-vstack-seg { gap: var(--sp-4); justify-content: flex-start; }
-/* The zoom group's own row — zoom-out / the % readout / zoom-in: two plain IconButtons and a
-   TextButton (one-button Task 6). The readout is a real bracket command now (resetting to 100%
-   is a click, not a caption), so TextButton supplies its whole look — no `.draw-zoompct` class
-   needed any more (a fixed width for jitter-free digits would be a width rule on a Button-family
-   control, which the button rule bans).
-   The row itself is `ui/IconBar bare` now (Task 5) — that primitive IS `display: flex;
-   align-items: center; gap: var(--bar-icon-gap)`, the exact three lines this class used to
-   hand-write, so there is no local rule left to keep.
+/* The zoom group's own row — `ui/ZoomSteps` (`− 100% +`, the PDF zoom's shape) and a `[reset]`
+   TextButton, inside `ui/IconBar bare` (that primitive IS the flex + `--bar-icon-gap` row, so there
+   is no local rule to keep). Undo/redo above it are two bare IconButtons in the same IconBar.
 
    The colour options compose `ui/Swatch static` instead of a hand-rolled <svg><rect>. The square
    is a 16px square, and `dotIcon` next to it draws in a 16px box too, so the colour row and the

@@ -1,6 +1,7 @@
 // Visual spec for <InboxActionBar> — the end of an inbox page's transcript: the page's buttons as
-// bracket chips (primary, `selected`, LAST), then the `>` reply prompt. A page that takes no reply
-// right now ends with one status line instead. Warnings and a failure note sit above the chips. Each story is a 1300px pane with a 760px note column.
+// bracket chips (the primary one, `primary` tone, LAST), then the `>` reply prompt. A page that takes
+// no reply right now ends with one status line instead. Warnings and a failure note sit above the
+// chips. Each story is a 1300px pane with a 760px note column.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent } from 'storybook/test'
 import InboxActionBar from './InboxActionBar'
@@ -173,6 +174,10 @@ export const Failed: Story = {
         ).toMatch(/^failed \/\//)
         await expect(field(canvasElement)?.placeholder).toBe('reply to retry, or say what to change')
         await expect(buttons(canvasElement).length).toBe(1)
+        // a failed page's retry chip reads plain: neither the primary nor the danger tone
+        const retry = buttons(canvasElement)[0]
+        await expect(retry.hasAttribute('data-primary')).toBe(false)
+        await expect(retry.hasAttribute('data-danger')).toBe(false)
     },
 }
 
