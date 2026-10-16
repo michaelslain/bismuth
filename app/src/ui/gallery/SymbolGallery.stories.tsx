@@ -79,9 +79,13 @@ export const FocusGuardIgnoresInModalFocus: Story = {
         const decoy = await canvas.findByTestId('decoy')
         // Any OTHER button in the document is a grid cell — Modal portals the panel to
         // document.body, outside canvasElement, so it can't collide with the decoy above.
-        const gridCell = (await body.findAllByRole('button')).find(
-            b => b !== decoy,
-        ) as HTMLElement
+        // The grid fills in after mount (findAllByRole resolves on the decoy alone), so wait for a cell.
+        let gridCell!: HTMLElement
+        await waitFor(() => {
+            const cell = body.queryAllByRole('button').find(b => b !== decoy)
+            expect(cell).toBeTruthy()
+            gridCell = cell as HTMLElement
+        })
 
         // Let the gallery's own re-focus passes (immediate + rAF + 0/50/150ms timeouts) settle
         // first so we're not racing them, then probe the guard well inside its 300ms window.

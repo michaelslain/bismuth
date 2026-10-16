@@ -178,7 +178,8 @@ export const LargeTable: Story = {
     ),
     play: async ({ canvasElement }) => {
         expect(canvasElement.querySelectorAll('tbody tr').length).toBe(2000)
-        expect(canvasElement.querySelectorAll('thead th').length).toBe(8)
+        // the 8 declared columns + the file.name column runView puts first (declaredColumns)
+        expect(canvasElement.querySelectorAll('thead th').length).toBe(9)
     },
 }
 
@@ -669,6 +670,9 @@ export const RightClickOpensRowEditor: Story = {
         await waitFor(() =>
             expect(document.querySelector('[role="dialog"]')).toBeTruthy(),
         )
+        // The editor opens with the title field focused; its first Escape cancels the field
+        // (CardEditModal), the second closes the editor.
+        await userEvent.keyboard('{Escape}')
         await userEvent.keyboard('{Escape}')
         await waitFor(() =>
             expect(document.querySelector('[role="dialog"]')).toBeNull(),

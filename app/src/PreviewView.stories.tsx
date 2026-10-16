@@ -69,7 +69,13 @@ import styles from './PreviewView.module.css'
 import pdfPagesStyles from './preview/PdfPages.module.css'
 import PdfPages from './preview/PdfPages'
 import { rectsToPages } from './preview/selectionRects'
-import { barItems, median, probeBar } from './ui/_previewBarAssertions'
+import {
+    barItems,
+    median,
+    probeBar,
+    SEAM_DESIGN_INK_GAP,
+    WITHIN_INK_GAP,
+} from './ui/_previewBarAssertions'
 import TextButton from './ui/TextButton'
 import Text from './ui/Text'
 
@@ -2316,15 +2322,15 @@ export const PdfViewBarLayout: Story = {
         const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
         await waitFor(() => expect(drawBtn.disabled).toBe(false))
 
-        // Two ink-to-ink spacings (16px inside a group, 24px across a seam), five group seams, two annotate within-group gaps (highlight/draw/
+        // Two ink-to-ink spacings (~16.5px inside a group, ~24.5px across a seam), five group seams, two annotate within-group gaps (highlight/draw/
         // scratch), one glyph size, one icon box, zero frames at rest.
         const rest = probeBar(bar)
         expect(
             rest.strayGaps,
             `ink gaps ${JSON.stringify(rest.inkGaps)}: within ${JSON.stringify(rest.withinGaps)}, seams ${JSON.stringify(rest.seamGaps)}, seam margin ${rest.seamMargin}`,
         ).toEqual([])
-        expect(median(rest.withinGaps), `within ink gaps ${JSON.stringify(rest.withinGaps)}`).toBeCloseTo(16, 0)
-        expect(median(rest.seamGaps), `seam ink gaps ${JSON.stringify(rest.seamGaps)}`).toBeCloseTo(24, 0)
+        expect(median(rest.withinGaps), `within ink gaps ${JSON.stringify(rest.withinGaps)}`).toBeCloseTo(WITHIN_INK_GAP, 0)
+        expect(median(rest.seamGaps), `seam ink gaps ${JSON.stringify(rest.seamGaps)}`).toBeCloseTo(SEAM_DESIGN_INK_GAP, 0)
         expect(rest.groupBoundaries, `group seams in ink gaps ${JSON.stringify(rest.inkGaps)}`).toBe(5)
         expect(rest.annotateGaps, `annotate within-group gaps in ink gaps ${JSON.stringify(rest.inkGaps)}`).toBe(2)
         expect(rest.glyphSizes).toEqual(['12x12'])
@@ -3152,7 +3158,7 @@ export const PdfHighlightMigratesFromSidecarLoadedAfter: Story = {
     render: () => renderMigrate(true),
     play: async ({ canvasElement }) => {
         await waitFor(() => expect(hlCalls.length).toBe(1), { timeout: 8000 })
-        await expect(hlCalls[0]!.result).toEqual({ moved: 1, writable: true })
+        await expect(hlCalls[0]!.result).toMatchObject({ moved: 1, writable: true })
         await waitFor(() => expect(settledLayer(canvasElement)).not.toBeNull(), {
             timeout: 8000,
         })

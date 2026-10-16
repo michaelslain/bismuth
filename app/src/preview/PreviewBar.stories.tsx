@@ -92,7 +92,7 @@ const barOf = (root: HTMLElement) => root.querySelector('[data-viewbar]') as HTM
 
 /** The checks every shape shares: two spacings and nothing else, measured ink to ink (visible glyph
  *  to visible glyph, never box to box) — neighbours inside a group (the annotate group too) all
- *  within 1px of one another and of 16px, group seams all within 1px of one another and of 24px, and at
+ *  within 1px of one another and of ~16.5px, group seams all within 1px of one another and of ~24.5px, and at
  *  least 5px wider than any within-group gap — one glyph size, one icon box (every icon reserves
  *  the same unpainted `[ ]` room, so the box is the same whether the control is a toggle or a plain
  *  icon), all inside the band on one centre line, and a visible filename. `annotatePairs` is the number
@@ -419,7 +419,13 @@ export const WithNativeActions: Story = {
         await expect(p.frames).toBe(0)
         const open = within(bar).getByLabelText('Open in default app')
         const zoomIn = within(bar).getByLabelText('Zoom in')
-        await expect(open.textContent?.trim()).toBe('')
+        // icon-only: no words, and its `[ ]` (IconButton `bracketRoom`) hold an off toggle's room
+        // without painting — a plain icon never reads as ON
+        await expect(open.textContent?.replace(/[[\]]/g, '').trim()).toBe('')
+        const marks = Array.from(open.querySelectorAll<HTMLElement>('[aria-hidden="true"]')).filter(
+            m => /^[[\]]$/.test(m.textContent ?? ''),
+        )
+        await expect(marks.map(m => getComputedStyle(m).visibility)).toEqual(['hidden', 'hidden'])
         await expect(open.getAttribute('data-tooltip')).toBe('Open in default app')
         // a plain icon (Button `normal`), same ink as the other plain icons: not louder than zoom
         await expect(getComputedStyle(open).color).toBe(getComputedStyle(zoomIn).color)

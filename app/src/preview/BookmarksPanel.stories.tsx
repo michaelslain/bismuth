@@ -315,12 +315,12 @@ export const Default: Story = {
             outlinePrefix([], true).trimEnd(),
         )
 
-        // Leaf spacing (polish follow-up): a leaf's title starts exactly ONE character cell after
-        // its connector's own text end — no reserved blank chevron slot any more (Background,
-        // Sampling, Findings are all leaves here). A parent's chevron slot starts at that same
-        // one-cell offset (Introduction, Method) — the cell before the chevron, not the slot
-        // itself, which is why this single measurement covers both halves of the brief: a leaf's
-        // slot is zero-width, so its start IS the title's start.
+        // Leaf spacing: a leaf keeps the chevron slot a parent uses, empty (OutlineTree's
+        // `--leaf` slot is one cell wide, like a parent's), so every title starts in the same
+        // column its siblings' do: one cell after the connector, the one-cell slot, one cell after
+        // it — `|-- ⌄ Introduction`, and a leaf's slot blank in the same place — so both titles sit
+        // three cells after their connectors. Background, Sampling and Findings are leaves; Introduction and
+        // Method are parents.
         const chProbe = document.createElement('span')
         chProbe.style.cssText = 'position:absolute;visibility:hidden;width:1ch'
         prefixEl(olRow).appendChild(chProbe)
@@ -337,32 +337,31 @@ export const Default: Story = {
         ] as const) {
             const p = prefixEl(row).getBoundingClientRect()
             const s = slotEl(row).getBoundingClientRect()
-            expect(
-                Math.abs(s.left - p.right - oneCh),
-                `${name}: connector → slot/chevron is one cell`,
-            ).toBeLessThanOrEqual(1)
-        }
-        // Leaves specifically: title starts directly at the (zero-width) slot's position, i.e.
-        // exactly one cell after the connector — not the three-cell blank slot the old layout
-        // reserved.
-        for (const [name, row] of [
-            ['Background', backgroundRow],
-            ['Sampling', samplingRow],
-            ['Findings', findingsRow],
-        ] as const) {
-            const p = prefixEl(row).getBoundingClientRect()
             const t = titleEl(row).getBoundingClientRect()
             expect(
-                Math.abs(t.left - p.right - oneCh),
-                `${name}: leaf title is one cell after its connector`,
+                Math.abs(s.left - p.right - oneCh),
+                `${name}: connector → slot is one cell`,
+            ).toBeLessThanOrEqual(1)
+            expect(Math.abs(s.width - oneCh), `${name}: slot is one cell wide`).toBeLessThanOrEqual(
+                1,
+            )
+            expect(
+                Math.abs(t.left - p.right - 3 * oneCh),
+                `${name}: title is three cells after its connector`,
             ).toBeLessThanOrEqual(1)
         }
+        // Siblings share a title column whether they are parents or leaves: Introduction (parent)
+        // and Findings (leaf) at depth 0, Background (leaf) and Method (parent) at depth 1.
+        const titleLeft = (row: HTMLElement) => titleEl(row).getBoundingClientRect().left
+        await expect(Math.abs(titleLeft(olRow) - titleLeft(findingsRow))).toBeLessThanOrEqual(0.5)
+        await expect(Math.abs(titleLeft(backgroundRow) - titleLeft(methodRow))).toBeLessThanOrEqual(
+            0.5,
+        )
 
         // A depth-1 PARENT's title starts exactly one prefix-step right of its parent's: the
         // disclosure slot is the SAME fixed width at every depth for two rows THAT ARE BOTH
         // parents (Method, depth 1, vs Introduction, depth 0), so it cancels out of this
-        // difference — only the extra connector segment (one step) should remain. (A leaf can't
-        // stand in for this any more — leaf and parent slots are no longer the same width.)
+        // difference — only the extra connector segment (one step) should remain.
         const introStepWidth =
             prefixEl(methodRow).getBoundingClientRect().width -
             prefixEl(olRow).getBoundingClientRect().width

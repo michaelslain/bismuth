@@ -44,6 +44,10 @@ export const Typed: Story = {
         await expect(labels(canvasElement)).toEqual([])
         await userEvent.type(input(canvasElement), 'yes, send all three')
         await expect(labels(canvasElement)).toEqual(['send'])
+        // `send` is the field's one emphasised action (`primary`), not a toggle that is on
+        const sendBtn = canvasElement.querySelector('button')!
+        await expect(sendBtn.hasAttribute('data-primary')).toBe(true)
+        await expect(sendBtn.getAttribute('data-state')).toBe('normal')
         await userEvent.click(canvasElement.querySelector('button')!)
         await expect(args.onSubmit).toHaveBeenCalledWith('yes, send all three')
         await expect(input(canvasElement).value).toBe('')

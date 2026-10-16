@@ -2,7 +2,7 @@
 // asserts add / expand-one-at-a-time / remove in play().
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import PropertiesFields from './PropertiesFields'
 import { blankPropertyRow, type PropertyFormRow } from './basePropertiesForm'
 
@@ -76,8 +76,11 @@ export const ExpandAndRemove: Story = {
         await expect(c.getAllByPlaceholderText('property name')).toHaveLength(1)
         // opening another collapses the first: one editor at a time
         await userEvent.click(c.getByRole('button', { name: /^priority/ }))
+        // the collapsing row stays mounted until its height transition ends
+        await waitFor(() =>
+            expect(c.getAllByPlaceholderText('property name')).toHaveLength(1),
+        )
         const inputs = c.getAllByPlaceholderText('property name')
-        await expect(inputs).toHaveLength(1)
         await expect((inputs[0] as HTMLInputElement).value).toBe('priority')
         await userEvent.click(c.getByLabelText('Remove property'))
         await expect(c.queryByRole('button', { name: /^priority/ })).toBeNull()

@@ -7,8 +7,9 @@
   flex: 0 0 auto;
 }
 
-/* `wide`: inside a bar whose icons carry unpainted bracket room, one step up keeps `−` `100%` `+`
-   at the same glyph-to-glyph distance as the icon pairs beside them. */
+/* `wide`: inside a bar whose icons carry unpainted bracket room (the step buttons then reserve it
+   too), one step up keeps `−` `100%` `+` at the same glyph-to-glyph distance as the icon pairs
+   beside them: the percentage has no bracket room of its own. */
 .wide {
   gap: var(--sp-5);
 }

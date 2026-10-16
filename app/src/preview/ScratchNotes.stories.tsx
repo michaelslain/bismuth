@@ -123,10 +123,16 @@ async function scrollToPageViaReadout(root: HTMLElement, page1Based: number) {
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 }
 
+/** The document has loaded with `n` pages: read off the bar's page readout (`p. 1 / 12`), since
+ *  PdfPages mounts page rows only for the visible window — counting `[data-pdf-page]` says how
+ *  many pages are near the viewport, not how many the document has. Then at least page 0's row
+ *  is mounted, so geometry probes have something to measure. */
 const waitForPages = (root: HTMLElement, n: number) =>
     waitFor(
         () => {
-            expect(root.querySelectorAll('[data-pdf-page]').length).toBe(n)
+            const readout = root.querySelector('[data-testid="page-readout"]')?.textContent
+            expect(Number(readout?.match(/\/\s*(\d+)/)?.[1] ?? 0)).toBe(n)
+            expect(root.querySelector('[data-pdf-page="0"]')).not.toBeNull()
         },
         { timeout: 8000 },
     )

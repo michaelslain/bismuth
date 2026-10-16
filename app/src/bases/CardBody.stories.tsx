@@ -196,8 +196,8 @@ export const WithExtraColumns: Story = {
 }
 
 /** One card title: what a person WROTE is prose, so the title sits in the prose face (the serif),
- *  at the prose size, medium weight — not the mono bold it used to be. The probe resolves
- *  `--prose-font` on a throwaway element so the assertion reads the token, not a literal. */
+ *  at the card prose size (`--fs-ui-prose`), medium weight — not the mono bold it used to be. The
+ *  probe resolves `--prose-font` and `--fs-ui-prose` on a throwaway element so the assertion reads the token, not a literal. */
 export const TitleIsProse: Story = {
     render: () => (
         <div style={{ width: '220px', padding: '14px' }}>
@@ -209,7 +209,7 @@ export const TitleIsProse: Story = {
         expect(title).toBeTruthy()
         const probe = document.createElement('div')
         probe.style.fontFamily = 'var(--prose-font)'
-        probe.style.fontSize = 'var(--prose-font-size)'
+        probe.style.fontSize = 'var(--fs-ui-prose)'
         canvasElement.appendChild(probe)
         const want = getComputedStyle(probe)
         const got = getComputedStyle(title!)

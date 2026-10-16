@@ -16,6 +16,9 @@
 // `pickOne` marks an icon button as a member of a PICK-ONE group (exactly one member is ever on):
 // its off state draws no bracket space, so `[▣]` and the bare `▣` units sit one gap apart — see
 // `.btn--pick-one` in Button.module.css. Ignored for `kind: 'text'`, whose brackets always paint.
+// `bracketRoom` gives a standalone (`normal`) icon button the unpainted bracket space an off toggle
+// reserves, so a plain icon in a row of toggles has the toggle's footprint — see
+// `.btn--bracket-room`. Icon kind only.
 // `size` is ignored for `kind: 'text'` — every text button renders at one size
 // (--fs-ui). `icon` still takes sm/md/lg.
 export type ButtonKind = 'text' | 'icon'
@@ -46,6 +49,8 @@ export function buttonClass(
         primary?: boolean
         /** Member of a pick-one icon group — see the header. Icon kind only. */
         pickOne?: boolean
+        /** A `normal` icon reserving an off toggle's bracket space — see the header. Icon kind only. */
+        bracketRoom?: boolean
         class?: string
     },
     cls: ButtonClassMap,
@@ -65,6 +70,7 @@ export function buttonClass(
               : '',
         opts.primary ? cls['btn--primary'] : '',
         opts.pickOne && kind === 'icon' ? cls['btn--pick-one'] : '',
+        opts.bracketRoom && kind === 'icon' ? cls['btn--bracket-room'] : '',
         opts.class,
     )
 }

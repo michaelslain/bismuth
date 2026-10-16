@@ -499,7 +499,11 @@ the accent. An outline appears only when it means something.
   `IconBrackets` (the one owner of the icon-bracket recipe, also used by the tab rail's active
   mark), `aria-hidden` so they stay out of the accessible name, painted accent with the icon. An **`unselected`** member lays its brackets out invisibly, so it occupies the same
   width as when on — unless it is in a **pick-one** group (`pickOne`), where it draws no bracket
-  space and every member takes the same side room, so unit gaps come out even (see Toggles). Text buttons (`[label]`) and icon-text buttons (`[▣ label]`) are a worded
+  space and every member takes the same side room, so unit gaps come out even (see Toggles). A
+  standalone icon that sits in a row of toggles (the preview bar's zoom steps, `to markdown`,
+  open, reveal) passes `bracketRoom`: it lays out the same invisible brackets an off toggle does
+  and drops its side room, so a plain icon and an off toggle share one footprint and the row's
+  gaps do not depend on which kind sits where. It never paints them. Text buttons (`[label]`) and icon-text buttons (`[▣ label]`) are a worded
   command and keep their brackets in every state; the bare-vs-bracketed rule is icon-only.
   Where brackets are drawn they are the edge, as on a text button: no collar and no width floor.
   **One bracket size:**

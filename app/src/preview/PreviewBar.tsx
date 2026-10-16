@@ -9,10 +9,10 @@
 //   actions   [to markdown] [bookmarks]  [open-externally reveal]   pdf only · file actions Tauri
 //
 // GROUPS ARE SPACING, NOT DIVIDERS, and the bar has exactly two visible distances, ink to ink:
-// ~18px between neighbours inside a group, ~26px across a group seam. Every icon carries the same
-// unpainted bracket room (a plain icon reserves `[ ]` like an off toggle), so the distance never
-// depends on which kind of icon sits where; two adjacent ON toggles (e.g. DRAW + SCRATCH) keep 8px
-// bracket to bracket, never a fused frame. Text (readouts, `fit`) has no bracket room, so its gaps
+// ~16.5px between neighbours inside a group, ~24.5px across a group seam. Every icon carries the same
+// unpainted bracket room (a plain icon passes IconButton `bracketRoom`, reserving `[ ]` exactly as an
+// off toggle does), so the distance never depends on which kind of icon sits where; two adjacent ON
+// toggles (e.g. DRAW + SCRATCH) keep ~7px bracket to bracket, never a fused frame. Text (readouts, `fit`) has no bracket room, so its gaps
 // are a step wider to land on the same distances (see PreviewBar.module.css, PdfZoom `wide`).
 //
 // ONE THING MEANS ONE THING. Only a toggle that is ON renders `variant="selected"` (HIGHLIGHT while
@@ -234,6 +234,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 tree's PDF and `bismuth pdf md` are other ways in. */}
                             <IconButton
                                 icon="FileText"
+                                bracketRoom
                                 label="Convert to markdown"
                                 title={
                                     props.converting?.()
@@ -268,12 +269,14 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                         >
                             <IconButton
                                 icon="ExternalLink"
+                                bracketRoom
                                 label="Open in default app"
                                 title="Open in default app"
                                 onClick={() => props.onOpenExternal(false)}
                             />
                             <IconButton
                                 icon="FolderOpen"
+                                bracketRoom
                                 label="Reveal in file manager"
                                 title="Reveal in file manager"
                                 onClick={() => props.onOpenExternal(true)}

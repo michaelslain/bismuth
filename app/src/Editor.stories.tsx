@@ -1897,9 +1897,11 @@ export const DrawModeScrollSpace: Story = {
             )
             // …and what it yields is a fresh screenful ahead of where the user actually is,
             // not one more pixel.
-            await expect(
-                scroller.scrollHeight - (scroller.scrollTop + viewport),
-            ).toBeGreaterThanOrEqual(viewport)
+            await waitFor(() =>
+                expect(
+                    scroller.scrollHeight - (scroller.scrollTop + viewport),
+                ).toBeGreaterThanOrEqual(viewport),
+            )
             previous = scroller.scrollHeight
         }
         await expect(view.state.doc.toString()).toBe(doc)

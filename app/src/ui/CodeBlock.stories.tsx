@@ -108,7 +108,8 @@ export const YamlHighlighted: Story = {
     play: async ({ canvasElement }) => {
         const spans = [...canvasElement.querySelectorAll('pre span')]
         const key = spans.find(s => s.textContent === 'appearance')!
-        const value = spans.find(s => s.textContent === 'paper')
+        // Plain scalars (`paper`, `15`) stay unwrapped text; a quoted string is a token of its own.
+        const value = spans.find(s => s.textContent === '"quoted"')
         expect(key).toBeTruthy()
         expect(getComputedStyle(key).color).not.toBe(
             getComputedStyle(canvasElement.querySelector('pre')!).color,

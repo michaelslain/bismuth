@@ -14,7 +14,7 @@
    the icon, not the button's look). */
 
 /* ── Two distances, ink to ink ─────────────────────────────────────────────────────────────────
-   ~18px between neighbours inside a group, ~26px across a group seam (measured glyph to glyph).
+   ~16.5px between neighbours inside a group, ~24.5px across a group seam (measured glyph to glyph).
    `.group` is a readout group (text); `.tools` an icon group. Where two groups share a region
    (config: zoom · annotate; actions: bookmarks · file actions) and between regions, the gap is
    --sp-6, and a group the ladder hides (`display: none`) takes its gap with it. Only DIRECT
@@ -26,7 +26,7 @@
   flex: 0 0 auto;
 }
 /* The readouts are all text (`p. N / M`, `// converting to markdown [cancel]`, `W × H`): text has no
-   bracket room, so the plain --bar-icon-gap left them 8px apart beside 18px icon pairs. --sp-6
+   bracket room, so the plain --bar-icon-gap left them 8px apart beside ~16.5px icon pairs. --sp-6
    lands text-to-text on the same distance as everything else inside a group. */
 .readouts,
 .readouts > .group {
@@ -39,34 +39,15 @@
 
 /* ── One footprint for every icon ──────────────────────────────────────────────────────────────
    An OFF toggle (highlight, draw, scratch, dark, bookmarks) keeps its `[ ]` laid out but unpainted
-   so flipping it moves nothing; a plain icon (zoom steps, to markdown, open, reveal) has no bracket
-   room at all. Side by side that made the icon-to-icon distance depend on which kind each icon
-   was: 10.5px between two plain icons, 18.5px between two toggles, 23px across a group seam. Here
-   every icon reserves the same unpainted brackets (keyed on Button's `data-state` runtime hook), so
-   every icon has one footprint and the gaps below are the only thing that varies. */
-.bar [data-kind='icon'][data-state='normal'] {
-  padding-inline: 0;
-}
-/* The hidden brackets take the room an off toggle's reserved `IconBrackets` take (ui/IconBrackets.module.css:
-   outer bearing 0.145em and inner pull 0.1em pulled in per side), so a plain icon and an off toggle
-   measure the same. */
-.bar [data-kind='icon'][data-state='normal']::before {
-  content: '[' / '';
-  visibility: hidden;
-  margin-left: -0.145em;
-  margin-right: -0.1em;
-}
-.bar [data-kind='icon'][data-state='normal']::after {
-  content: ']' / '';
-  visibility: hidden;
-  margin-right: -0.145em;
-  margin-left: -0.1em;
-}
+   so flipping it moves nothing; a plain icon (zoom steps, to markdown, open, reveal) passes
+   IconButton `bracketRoom` and reserves the very same brackets through ui/IconBrackets, so every
+   icon has one footprint (about 4.3px of room either side of the glyph at the bar's icon size) and
+   the gaps below are the only thing that varies. Nothing in this file sizes a bracket. */
 
 /* An icon group. Its icons already carry their unpainted bracket room either side, so the gap
-   between boxes stays --bar-icon-gap: glyph to glyph that is ~18px, the same as `−` `100%` `+`
-   `fit` (PdfZoom `wide`) and the text readouts, and two ON toggles keep 8px bracket to bracket
-   rather than fusing into one frame. */
+   between boxes stays --bar-icon-gap: glyph to glyph that is ~16.7px, the same (within half a
+   pixel) as `−` `100%` `+` `fit` (PdfZoom `wide`) and the text readouts, and two ON toggles keep
+   ~7px bracket to bracket rather than fusing into one frame. */
 .tools {
   display: inline-flex;
   align-items: center;

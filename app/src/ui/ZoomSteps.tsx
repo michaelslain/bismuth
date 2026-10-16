@@ -19,8 +19,10 @@ export type ZoomStepsProps = {
     zoomInDisabled?: boolean
     /** Forwarded to both step buttons; a bare IconBar publishes no size context. */
     size?: ButtonSize
-    /** The surrounding bar gives every icon unpainted bracket room (preview/PreviewBar): the
-     *  controls then sit one step further apart. Off keeps --bar-icon-gap. */
+    /** The surrounding bar gives every icon unpainted bracket room (preview/PreviewBar): the two
+     *  step buttons reserve it too (IconButton `bracketRoom`), and the run's gap steps up one so
+     *  the percentage, which has no bracket room, sits the same distance from each glyph. Off keeps
+     *  bare glyphs --bar-icon-gap apart. */
     wide?: boolean
     class?: string
     /** Test hook on the run; the preview zoom keeps the default. */
@@ -37,6 +39,7 @@ const ZoomSteps: Component<ZoomStepsProps> = props => {
             <IconButton
                 icon="Minus"
                 size={props.size}
+                bracketRoom={props.wide}
                 label="Zoom out"
                 title="Zoom out"
                 disabled={props.zoomOutDisabled}
@@ -48,6 +51,7 @@ const ZoomSteps: Component<ZoomStepsProps> = props => {
             <IconButton
                 icon="Plus"
                 size={props.size}
+                bracketRoom={props.wide}
                 label="Zoom in"
                 title="Zoom in"
                 disabled={props.zoomInDisabled}

@@ -29,6 +29,10 @@ export type ButtonProps = {
     /** Member of a pick-one icon group (exactly one member is ever on): the off state draws no
      *  bracket space. Icon kind only — see buttonClass.ts. */
     pickOne?: boolean
+    /** A standalone (`normal`) icon in a row of toggles: lays out the same unpainted brackets an
+     *  off toggle reserves (IconBrackets `reserved`), so the two share one footprint. Icon kind
+     *  only — see buttonClass.ts. */
+    bracketRoom?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -47,6 +51,7 @@ function Button(props: ButtonProps) {
         'primary',
         'accent',
         'pickOne',
+        'bracketRoom',
         'class',
         'type',
         'style',
@@ -54,13 +59,16 @@ function Button(props: ButtonProps) {
     ])
     const kind = () => local.kind ?? 'text'
     // Brackets mean ON: `selected` paints them, an `unselected` toggle member reserves their space,
-    // everything else (a standalone `normal` icon, a pick-one off member) is the bare glyph.
+    // everything else (a standalone `normal` icon, a pick-one off member) is the bare glyph — unless
+    // a `normal` icon asks for `bracketRoom`, which reserves the same space an off toggle does.
     const brackets = (): IconBracketsState =>
         local.state === 'selected'
             ? 'on'
             : local.state === 'unselected' && !local.pickOne
               ? 'reserved'
-              : 'off'
+              : (local.state ?? 'normal') === 'normal' && local.bracketRoom
+                ? 'reserved'
+                : 'off'
     const style = (): JSX.CSSProperties | string | undefined => {
         if (!local.accent) return local.style
         if (typeof local.style === 'string') {
@@ -90,6 +98,7 @@ function Button(props: ButtonProps) {
                     danger: local.danger,
                     primary: local.primary,
                     pickOne: local.pickOne,
+                    bracketRoom: local.bracketRoom,
                     class: local.class,
                 },
                 styles,

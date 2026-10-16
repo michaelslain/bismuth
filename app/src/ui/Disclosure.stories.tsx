@@ -40,7 +40,9 @@ export const Closed: Story = {
     play: async ({ canvasElement }) => {
         const btn = canvasElement.querySelector('button') as HTMLElement
         expect(btn.getAttribute('aria-expanded')).toBe('false')
-        const chev = btn.firstElementChild as HTMLElement
+        // the rotating glyph is DisclosureChevron's `data-disclosure-glyph` hook, inside its root
+        // wrapper — the button's first child is that wrapper, which never turns
+        const chev = btn.querySelector('[data-disclosure-glyph]') as HTMLElement
         const sum = btn.lastElementChild as HTMLElement
         // the chevron is to the LEFT of the summary text
         expect(chev.getBoundingClientRect().right).toBeLessThanOrEqual(sum.getBoundingClientRect().left)
@@ -62,7 +64,9 @@ export const Open: Story = {
     play: async ({ canvasElement }) => {
         const btn = canvasElement.querySelector('button') as HTMLElement
         expect(btn.getAttribute('aria-expanded')).toBe('true')
-        const chev = btn.firstElementChild as HTMLElement
+        // the rotating glyph is DisclosureChevron's `data-disclosure-glyph` hook, inside its root
+        // wrapper — the button's first child is that wrapper, which never turns
+        const chev = btn.querySelector('[data-disclosure-glyph]') as HTMLElement
         expect(getComputedStyle(chev).transform).not.toBe('none')
         await waitFor(() => expect(canvasElement.textContent).toContain('three approaches'))
         const body = canvasElement.querySelector('p') as HTMLElement

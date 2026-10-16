@@ -168,6 +168,10 @@
 .btn--icon[data-glyph] { font-size: var(--fs-ui); }
 /* standalone: bare glyph, a hair of side room for the hit area */
 .btn--icon.btn--normal { padding: 0 var(--sp-1); }
+/* standalone among toggles (`bracketRoom`): Button.tsx hands IconBrackets `reserved`, so the
+   unpainted brackets are the edge, exactly as on an off toggle; the side room above would make the
+   plain icon wider than its toggle neighbours. */
+.btn--icon.btn--bracket-room { padding: 0; }
 /* off toggle member: Button.tsx hands IconBrackets `reserved` — brackets laid out but not painted,
    so selecting a sibling moves no one */
 /* PICK-ONE group member (icon-gaps, 2026-10-05): the off members draw NO bracket space. Reserving

@@ -80,7 +80,7 @@ const InboxReplyField: Component<InboxReplyFieldProps> = props => {
                 />
                 <Show when={text().trim()}>
                     <TextButton
-                        variant="selected"
+                        primary
                         disabled={props.disabled}
                         onClick={() => void send()}
                     >

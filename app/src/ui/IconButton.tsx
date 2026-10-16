@@ -28,6 +28,10 @@ export type IconButtonProps = {
      *  draws no bracket space, so the gaps around the one `[▣]` match the gaps between bare glyphs.
      *  Leave it off for a lone on/off toggle — there the reserved space keeps neighbours still. */
     pickOne?: boolean
+    /** A standalone (`normal`) icon sitting in a row of toggles (the preview bar): reserves the
+     *  same unpainted `[ ]` an off toggle does, so both have one footprint and the row's gaps do
+     *  not depend on which kind of icon sits where. Paints nothing. */
+    bracketRoom?: boolean
     /** Icon pixel size. Defaults to the enclosing IconBar's, else the app's one icon size (ui/iconSize.ts); app code never passes it. */
     iconSize?: number
 } & Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'>

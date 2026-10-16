@@ -209,7 +209,7 @@ export const Export: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await waitFor(() => {
-            expect(canvas.getByText(/export note/i)).toBeInTheDocument()
+            expect(canvas.getByText(NOTE_PATH)).toBeInTheDocument()
         })
     },
 }

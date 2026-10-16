@@ -46,6 +46,14 @@ describe('buttonClass', () => {
             'btn btn--text btn--normal',
         )
     })
+    it('emits btn--bracket-room for an icon button only', () => {
+        expect(buttonClass({ kind: 'icon', bracketRoom: true }, id)).toBe(
+            'btn btn--icon btn--normal btn--bracket-room',
+        )
+        expect(buttonClass({ bracketRoom: true }, id)).toBe(
+            'btn btn--text btn--normal',
+        )
+    })
     it('emits btn--primary when primary is set', () => {
         expect(buttonClass({ primary: true }, id)).toBe(
             'btn btn--text btn--normal btn--primary',

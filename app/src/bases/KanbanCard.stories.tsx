@@ -248,6 +248,9 @@ export const KeyboardOpensEdit: Story = {
         face.focus()
         await userEvent.keyboard('{Enter}')
         await within(document.body).findByRole('dialog', { name: 'edit card' })
+        // The modal opens with the title field focused; its first Escape cancels the field
+        // (CardEditModal), the second closes the card.
+        await userEvent.keyboard('{Escape}')
         await userEvent.keyboard('{Escape}')
         await waitFor(() =>
             expect(within(document.body).queryByRole('dialog')).toBeNull(),

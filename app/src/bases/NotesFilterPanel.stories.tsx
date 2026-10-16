@@ -81,14 +81,15 @@ export const AdvancedExpression: Story = {
     },
 }
 
-/** Add then remove a condition — real state, asserted on the compiled where. */
+/** Add then remove a condition — real state, asserted on the compiled where. A fresh row has no
+ *  value yet, and the compiler drops incomplete rows rather than emitting `x == ""`. */
 export const AddAndRemove: Story = {
     render: () => <Harness initial={{ connective: 'and', rows: [] }} />,
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
         await userEvent.click(c.getByText('add condition'))
         await expect(c.getByLabelText('Remove condition')).toBeInTheDocument()
-        await expect(c.getByTestId('where-out').textContent).toBe('file.name == ""')
+        await expect(c.getByTestId('where-out').textContent).toBe('')
         await userEvent.click(c.getByLabelText('Remove condition'))
         await expect(c.queryByLabelText('Remove condition')).not.toBeInTheDocument()
         await expect(c.getByTestId('where-out').textContent).toBe('')

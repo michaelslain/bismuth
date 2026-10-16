@@ -245,14 +245,26 @@ export const Empty: Story = {
     },
 }
 
-/** Without a basePath a card is not a button: its cover title is a NoteLink that opens the note. */
+/** Without a basePath a linkable card is a button whose click opens its note (never the row
+ *  editor). */
 export const ReadOnlyCardOpensNote: Story = {
     render: () => (
         <CardsView result={sampleViewResult()} config={sampleBaseConfig()} />
     ),
     play: async ({ canvasElement }) => {
-        expect(canvasElement.querySelector('[role="button"]')).toBeNull()
-        expect(canvasElement.querySelector('a')).toBeTruthy()
+        const card = canvasElement.querySelector<HTMLElement>('[role="button"]')
+        expect(card).toBeTruthy()
+        const opened: string[] = []
+        const onOpen = (e: Event) =>
+            opened.push((e as CustomEvent<{ path: string }>).detail.path)
+        window.addEventListener('bismuth-open', onOpen)
+        try {
+            await userEvent.click(card!)
+        } finally {
+            window.removeEventListener('bismuth-open', onOpen)
+        }
+        expect(opened).toHaveLength(1)
+        expect(document.querySelector('[role="dialog"]')).toBeNull()
     },
 }
 

@@ -38,13 +38,19 @@ export function accentColor(el: HTMLElement): string {
     return c
 }
 
+/** An icon-only button of the family. Keyed on Button's `data-kind` runtime hook, never on text:
+ *  ui/IconBrackets draws an icon's `[` `]` as real aria-hidden spans, so an icon button's
+ *  textContent is `[]` whether those brackets paint (ON) or only hold their room (off, `bracketRoom`). */
+const isIconButton = (el: HTMLElement) => el.tagName === 'BUTTON' && el.dataset.kind === 'icon'
+
 /** The visible extent of one control, the thing a person measures spacing against: an icon button's
- *  glyph (its `svg`; the unpainted `[ ]` room around it is not ink), a lone percentage's text
- *  (a Range over its text nodes), a text button's own box (Button pulls its bracket bearing in, so
- *  its box edge is its `[` / `]` ink edge — pinned by the numbers in the task 4a report). */
+ *  glyph (its `svg` — the `[ ]` room around it is not ink, and an ON toggle's painted brackets are
+ *  measured as state, not as position: the bar's rhythm is glyph to glyph whatever is selected), a
+ *  lone percentage's text (a Range over its text nodes), a text button's own box (Button pulls its
+ *  bracket bearing in, so its box edge is its `[` / `]` ink edge). */
 export function inkRect(el: HTMLElement): DOMRect {
     const svg = el.querySelector('svg')
-    if (svg && !(el.textContent ?? '').trim()) return svg.getBoundingClientRect()
+    if (svg && isIconButton(el)) return svg.getBoundingClientRect()
     if (el.tagName !== 'BUTTON') {
         const range = document.createRange()
         range.selectNodeContents(el)
@@ -54,7 +60,7 @@ export function inkRect(el: HTMLElement): DOMRect {
 }
 
 /** An ink gap at or above this is a group seam; below it, a neighbour inside a group. The bar's two
- *  distances are 16px and 24px, so the cut sits between them. */
+ *  distances are ~16.5px and ~24.5px, so the cut sits between them. */
 export const SEAM_INK_GAP = 22
 
 /** Every within-group gap must sit this close to the median within-group gap (likewise seams). */
@@ -63,9 +69,14 @@ export const INK_GAP_TOLERANCE = 1
 /** How much wider a seam must read than a within-group gap, ink to ink. */
 export const SEAM_MARGIN = 5
 
-/** The bar's design distances, ink to ink: neighbours inside a group, and across a group seam. */
-export const WITHIN_INK_GAP = 16
-export const SEAM_DESIGN_INK_GAP = 24
+/** The bar's design distances, ink to ink: neighbours inside a group, and across a group seam.
+ *  Not whole pixels, because every icon's unpainted bracket room is ui/IconBrackets' recipe in em
+ *  (a `[` advance less its 0.145em bearing and 0.1em pull, ~4.3px a side at the bar's 11.5px icon
+ *  font): icon to icon is --bar-icon-gap (8) + two rooms = ~16.7, icon to text is one room +
+ *  ZoomSteps' `wide` --sp-5 (12) = ~16.3; a seam adds --sp-6 (16) in place of the 8 = ~24.5. Stories
+ *  compare a median with `toBeCloseTo(x, 0)`, so both kinds of pair land within its ±0.5. */
+export const WITHIN_INK_GAP = 16.5
+export const SEAM_DESIGN_INK_GAP = 24.5
 
 export const median = (xs: number[]) => {
     const s = [...xs].sort((a, b) => a - b)
@@ -178,7 +189,7 @@ export function probeBar(bar: HTMLElement): BarProbe {
         ),
     ]
     const iconOnly = items
-        .filter(el => el.tagName === 'BUTTON' && !(el.textContent ?? '').trim())
+        .filter(isIconButton)
         .map(el => {
             const r = el.getBoundingClientRect()
             return {
