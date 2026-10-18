@@ -50,6 +50,43 @@ export const Default: Story = {
     ),
 }
 
+/** Clicking a submenu row opens its flyout and keeps the menu open — the menu's outside-click
+ *  dismiss ignores clicks that land inside the menu. */
+export const ClickOpensSubmenu: Story = {
+    render: () => {
+        const [open, setOpen] = createSignal(true)
+        return (
+            <div data-menu-state={open() ? 'open' : 'closed'}>
+                {open() && (
+                    <ContextMenu
+                        x={140}
+                        y={90}
+                        items={FILE_ROW_ITEMS}
+                        onClose={() => setOpen(false)}
+                    />
+                )}
+            </div>
+        )
+    },
+    play: async () => {
+        // The dismiss listener is registered a tick after mount.
+        await new Promise(r => setTimeout(r, 20))
+        const parent = [
+            ...document.querySelectorAll<HTMLElement>('[data-popover-row]'),
+        ].find(el => el.textContent?.includes('Move to'))
+        await expect(parent).toBeTruthy()
+        parent!.click()
+        await waitFor(() =>
+            expect(document.body.textContent).toContain('archive/'),
+        )
+        await expect(
+            document.querySelector('[data-menu-state]')?.getAttribute(
+                'data-menu-state',
+            ),
+        ).toBe('open')
+    },
+}
+
 /** A disabled row (DaemonList's "Run now" while already running) plus a quick-action rail —
  *  icon buttons pinned BESIDE the menu rather than competing with a long row list (#67). */
 export const WithQuickActionsAndDisabledRow: Story = {

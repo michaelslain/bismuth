@@ -27,6 +27,9 @@ import { withoutCloudEnv } from './agentBackends/localModel'
 import {
     buildAutoNoteBody,
     extractText,
+    isChatVisibleTo,
+    readChatVisibility,
+    resolveChatVisibility,
     stripInjectedBlocks,
     writeAutoNote,
     type TranscriptEntry,
@@ -1830,6 +1833,20 @@ export async function listChatSessions(
     }
 }
 
+/** The ids of every session in `scope` — what "delete all" in the history dialog removes. Bounded by
+ *  the same scan cap as the list; the caller repeats until nothing is left. */
+export async function listChatSessionIdsInScope(
+    cwd: string,
+    scope: ChatScope,
+): Promise<string[]> {
+    const sessions = await listScopedSessions(
+        cwd,
+        Number.POSITIVE_INFINITY,
+        scope,
+    )
+    return sessions.map(s => s.sessionId)
+}
+
 /**
  * Replay a past session as ChatFrames, in order — the same frames the live drain loop would have
  * produced, via the single translateSdkMessage source of truth (live=false: assistant text/thinking/
@@ -2693,6 +2710,16 @@ export function captureToMemory(
                 | { saveSessions?: unknown }
                 | undefined
             if (saveSessions?.saveSessions !== true) return
+            // A chat hidden from the daemon (its own level or the chat default) is never captured.
+            const chats = await readChatVisibility(cwd)
+            if (
+                !chats.ok ||
+                !isChatVisibleTo(
+                    resolveChatVisibility(sessionId, chats.rules),
+                    'daemon',
+                )
+            )
+                return
             const messages = await getMessages(sessionId, { dir: cwd })
             const entries = messages as TranscriptEntry[]
             // denyPathSet carries BOTH the vault-relative form (matches editor-context paths + a

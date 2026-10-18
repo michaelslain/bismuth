@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { registry } from '../src/registry'
 import { encodeProjectDir } from '../../memory/src'
-import { commandTier } from '../../core/src/visibilityCliGate'
+import { commandTier, decideCliGate } from '../../core/src/visibilityCliGate'
 
 // `history` runs IN-PROCESS against a temp CLAUDE_CONFIG_DIR holding hand-written session logs.
 
@@ -12,7 +12,13 @@ let root: string
 let vault: string
 let sessions: string
 const saved: Record<string, string | undefined> = {}
-const ENV = ['CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_SESSION_ID', 'BISMUTH_VAULT']
+const ENV = [
+    'CLAUDE_CONFIG_DIR',
+    'CLAUDE_CODE_SESSION_ID',
+    'BISMUTH_VAULT',
+    'BISMUTH_AGENT_CHANNEL',
+    'BISMUTH_MCP_CHANNEL',
+]
 
 const entry = (role: 'user' | 'assistant', text: string, timestamp: string) =>
     JSON.stringify({
@@ -120,4 +126,41 @@ test('a vault with no session logs returns an empty list', async () => {
 test('history is refused for an agent in a restricted vault, like chat', () => {
     expect(commandTier(['history', 'bside'])).toBe('refuse-when-restricted')
     expect(commandTier(['history', 'show', 'x'])).toBe('refuse-when-restricted')
+})
+
+const ids = (r: { sessions: { id: string }[] }) => r.sessions.map(s => s.id).sort()
+
+test('history drops the chats hidden from the asking agent, and shows the owner every chat', async () => {
+    writeFileSync(
+        join(vault, '.settings'),
+        'chatVisibility:\n  party: chat-only\n  homework: hidden\n',
+    )
+    expect(ids(await run('history', ['--all', '--vault', vault]))).toEqual(['homework', 'party'])
+    process.env.BISMUTH_AGENT_CHANNEL = 'chat'
+    expect(ids(await run('history', ['--all', '--vault', vault]))).toEqual(['party'])
+    process.env.BISMUTH_AGENT_CHANNEL = 'daemon'
+    expect(ids(await run('history', ['--all', '--vault', vault]))).toEqual([])
+})
+
+test('a hidden default hides every chat without its own level from an agent', async () => {
+    writeFileSync(join(vault, '.settings'), 'chatVisibility:\n  default: hidden\n  party: all\n')
+    process.env.BISMUTH_AGENT_CHANNEL = 'chat'
+    expect(ids(await run('history', ['--all', '--vault', vault]))).toEqual(['party'])
+})
+
+test('history show refuses a chat hidden from the agent', async () => {
+    writeFileSync(join(vault, '.settings'), 'chatVisibility:\n  homework: hidden\n')
+    process.env.BISMUTH_AGENT_CHANNEL = 'chat'
+    await expect(run('history show', ['homework', '--vault', vault])).rejects.toThrow('exit:1')
+})
+
+test('hidden chats alone leave history to its own filter; a hidden note still refuses it', () => {
+    const chat = { rel: '/c/x.jsonl', abs: '/c/x.jsonl', kind: 'chat' as const }
+    const note = { rel: 'secret.md', abs: '/v/secret.md' }
+    const opts = { vaultRoot: '/v' }
+    expect(decideCliGate(['history', '--all'], [chat], opts).allowed).toBe(true)
+    expect(decideCliGate(['history', '--all'], [chat, note], opts).allowed).toBe(false)
+    // Every other unfilterable command is refused as for a hidden note.
+    expect(decideCliGate(['chat', 'list'], [chat], opts).allowed).toBe(false)
+    expect(decideCliGate(['history', 'show', 'x.jsonl'], [chat], opts).allowed).toBe(true)
 })

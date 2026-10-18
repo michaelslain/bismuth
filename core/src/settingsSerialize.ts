@@ -55,6 +55,11 @@ export function serializeSettingsFromText(
                 readFolderVisibilityFrom(data)
             continue
         }
+        if (section === 'chatVisibility') {
+            ;(out as Record<string, unknown>).chatVisibility =
+                readChatVisibilityMapFrom(data)
+            continue
+        }
         if (section === 'toolbar' || section === 'tabBar') {
             // Both are button lists with the same item shape — read the user's array as-is (the generic
             // per-index overlay below would leave a removed button's slot as the DEFAULT's item at that
@@ -284,6 +289,19 @@ export function readFolderIconsFrom(
  *  (setFolderVisibility) and READ (here) so keys already persisted with a slash still enforce. */
 export function normalizeFolderKey(k: string): string {
     return k.replace(/\/+$/, '').replace(/\/{2,}/g, '/')
+}
+
+/** Pull a clean `{sessionId | "default": level}` map out of parsed settings data. Unlike
+ *  folderVisibility, `all` is kept: an explicit `all` beats a restricting default. */
+export function readChatVisibilityMapFrom(
+    data: Record<string, unknown>,
+): Record<string, 'all' | 'chat-only' | 'hidden'> {
+    return readStringMapFrom<'all' | 'chat-only' | 'hidden'>(
+        data,
+        'chatVisibility',
+        (k, v) =>
+            v === 'all' || v === 'chat-only' || v === 'hidden' ? [k, v] : null,
+    )
 }
 
 /** Pull a clean `{folderPath: "chat-only"|"hidden"}` map out of parsed settings data. */

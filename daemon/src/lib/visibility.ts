@@ -31,6 +31,7 @@ import {
     VaultSettingsParseError,
 } from './vaultSettings.ts'
 import { ownerTokenDenyPaths } from './bismuthPaths.ts'
+import { readChatVisibilityFrom, restrictedChatFiles } from '@bismuth/memory'
 
 export type Visibility = 'all' | 'chat-only' | 'hidden'
 /** A file's own explicit frontmatter value; `undefined` = absent = inherit. */
@@ -507,12 +508,14 @@ function applyStemInheritance(files: ResolvedFile[]): void {
  * them. Mirrors core/src/visibility.ts's DenyEntry.
  */
 export interface DenyEntry {
-    /** Vault-relative path (e.g. "private/secret.md"). */
+    /** Vault-relative path (e.g. "private/secret.md"); for a chat log, its absolute path. */
     rel: string
     /** This file's path under the canonical vault root — always `<canonicalRoot>/<rel>`. */
     abs: string
     /** Further absolute paths the same file is readable at; absent when there are none. */
     aliases?: string[]
+    /** `chat` for a past chat's session file; absent for a vault file. Mirrors core. */
+    kind?: 'chat'
 }
 
 /** Every absolute spelling of one entry. */
@@ -661,6 +664,9 @@ async function walkDenyEntries(
     )
         for (const f of resolved) if (inTrash(f.rel)) f.visibility = 'hidden'
 
+    // Past chats hidden from the daemon (`.settings` chatVisibility) are entries too. Mirrors core.
+    const chatEntries = await chatDenyEntries(root, canonicalRoot)
+
     // The absolute spellings one restricted file is readable at, deduped, minus `abs` itself: a
     // symlinked DIRECTORY on the way to it, and the CALLER's own spelling of the vault root when it
     // differs from the canonical one (macOS firmlinks: `/var/…` canonicalizes to `/private/var/…`).
@@ -679,7 +685,31 @@ async function walkDenyEntries(
                     ? { rel: f.rel, abs: f.abs }
                     : { rel: f.rel, abs: f.abs, aliases }
             })
+            .concat(chatEntries)
     )
+}
+
+/** The deny entries for past chats hidden from the daemon. Mirrors core/src/visibility.ts. */
+async function chatDenyEntries(
+    root: string,
+    canonicalRoot: string,
+): Promise<DenyEntry[]> {
+    let doc: unknown
+    try {
+        doc = await readVaultSettingsDoc(root, { strict: true })
+    } catch (e) {
+        if (e instanceof VaultSettingsParseError)
+            throw new VisibilityUndeterminedError(e.message)
+        throw e
+    }
+    const chats = readChatVisibilityFrom(doc)
+    if (!chats.ok) throw new VisibilityUndeterminedError(chats.reason)
+    const files = await restrictedChatFiles(
+        [canonicalRoot, root],
+        chats.rules,
+        'daemon',
+    )
+    return files.map(abs => ({ rel: abs, abs, kind: 'chat' as const }))
 }
 
 /**
@@ -725,7 +755,12 @@ export function sandboxDenyRead(
     vaultRoot: string,
 ): string[] {
     if (entries.length === 0) return []
-    return [...absDenyPaths(entries), join(vaultRoot, '.git')]
+    // `.git` guards earlier copies of NOTES; a vault that hides only chats leaves it readable.
+    const notes = entries.some(e => e.kind !== 'chat')
+    return [
+        ...absDenyPaths(entries),
+        ...(notes ? [join(vaultRoot, '.git')] : []),
+    ]
 }
 
 /**

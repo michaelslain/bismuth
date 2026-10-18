@@ -2304,6 +2304,15 @@
     "max": null,
     "required": false
   },
+  "chatVisibility": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "codex": {
     "type": {
       "kind": "object"
@@ -2790,6 +2799,13 @@
   "keybindings.accept-completion": {
     "type": "keybind",
     "default": "Tab",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.chat-history-delete": {
+    "type": "keybind",
+    "default": "Delete, Backspace",
     "min": null,
     "max": null,
     "required": false

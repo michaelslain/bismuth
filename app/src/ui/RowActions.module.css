@@ -1,0 +1,40 @@
+/* app/src/ui/RowActions.module.css — RowActions.tsx is the ONLY importer.
+   Overlay actions on a row's trailing end. The host row (`data-row-actions-host`) is the
+   positioning context; the actions take no width in its flow. Their backing is the row's ground:
+   `--bg`, plus the selected tint on a `data-selected` row, each fading in from transparent across
+   `--sp-6` so the covered text dissolves under the control instead of meeting a hard edge. Hidden
+   by opacity, never display, so a tabbed-to control stays reachable; touch has no hover, so there
+   they always show. */
+[data-row-actions-host] { position: relative; }
+
+.actions {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: var(--z-local);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding-left: var(--sp-7);
+  padding-right: var(--sp-4);
+  background: linear-gradient(to right, transparent, var(--bg) var(--sp-6));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+[data-row-actions-host][data-selected] > .actions {
+  background:
+    linear-gradient(to right, transparent, var(--state-selected-bg) var(--sp-6)),
+    linear-gradient(to right, transparent, var(--bg) var(--sp-6));
+}
+[data-row-actions-host]:hover > .actions,
+[data-row-actions-host][data-selected] > .actions,
+.actions:focus-within,
+.actions[data-pinned] {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .actions { opacity: 1; pointer-events: auto; }
+}

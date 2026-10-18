@@ -13,7 +13,13 @@
 // core/src/chat.ts; the behaviour here is ChatView's, copied rather than redesigned.
 import type { Accessor } from 'solid-js'
 import type { ChatManifest } from '../../../core/src/chat'
-import type { ChatSessionInfo, ChatSearchHit, ChatScope } from '../api'
+import type {
+    ChatSessionInfo,
+    ChatSearchHit,
+    ChatScope,
+    ChatVisibility,
+} from '../api'
+import { pushToast } from '../ui/toastStore'
 import type { TurnItem } from './chatTranscriptLogic'
 import { isSpeaking } from './chatSpeaking'
 import type { ChatProviderChoice } from './chatProvider'
@@ -151,6 +157,21 @@ export type ChatHistoryState = {
     setScope: (scope: ChatScope) => void
     setQuery: (q: string) => void
     resume: (sessionId: string) => Promise<void>
+    /** The vault-wide level a chat with no level of its own inherits ("hide all" sets this). */
+    defaultVisibility: Accessor<ChatVisibility>
+    /** Set one chat's own level (`null` clears it so it inherits the default). Refetches the list;
+     *  a failure toasts the error. */
+    setVisibility: (
+        sessionId: string,
+        level: ChatVisibility | null,
+    ) => Promise<void>
+    setDefaultVisibility: (level: ChatVisibility) => Promise<void>
+    /** Delete the named chats, or every chat in a scope, at once. Resolves with the ids removed,
+     *  which `restoreChats` (the caller's undo toast) puts back. */
+    deleteChats: (
+        target: { sessionIds: string[] } | { scope: ChatScope },
+    ) => Promise<string[]>
+    restoreChats: (sessionIds: string[]) => Promise<void>
 }
 
 export type ChatSession = {
@@ -424,12 +445,18 @@ export function createChatSession(chatId: string): ChatSession {
     const [historyQuery, setHistoryQuery] = createSignal('')
     const [searchHits, setSearchHits] = createSignal<ChatSearchHit[]>([])
     const [searchLoading, setSearchLoading] = createSignal(false)
+    const [defaultVisibility, setDefaultVisibilityLevel] =
+        createSignal<ChatVisibility>('all')
+    // Bumped after a visibility change or delete so an active content search re-runs: its hits carry
+    // the badge level and must not outlive a chat that was just deleted.
+    const [searchTick, setSearchTick] = createSignal(0)
     // Debounced content search while the panel is open; clears when the query empties or it closes.
     let searchTimer: ReturnType<typeof setTimeout> | undefined
     createEffect(() => {
         const open = historyOpen()
         const q = historyQuery().trim()
         const scope = historyScope() // tracked: flipping the filter re-searches within the new scope
+        searchTick() // tracked: a visibility change or delete re-runs the search
         clearTimeout(searchTimer)
         if (!open || !q) {
             setSearchHits([])
@@ -1272,15 +1299,34 @@ export function createChatSession(chatId: string): ChatSession {
         emitFocusRequest()
     }
 
-    const loadSessions = async () => {
-        setHistoryLoading(true)
+    /** `quiet` keeps the current rows on screen while refetching (after an edit), instead of
+     *  blanking the list to "Loading…". */
+    const loadSessions = async (quiet = false) => {
+        if (!quiet) setHistoryLoading(true)
         try {
-            setSessions(await api.chatSessions(historyScope()))
+            const [list, def] = await Promise.all([
+                api.chatSessions(historyScope()),
+                api.chatVisibilityDefault().catch(() => defaultVisibility()),
+            ])
+            setSessions(list)
+            setDefaultVisibilityLevel(def)
         } catch {
-            setSessions([])
+            if (!quiet) setSessions([])
         } finally {
-            setHistoryLoading(false)
+            if (!quiet) setHistoryLoading(false)
         }
+    }
+
+    /** Run a visibility/delete write, then refetch so badges and rows match the server. The list
+     *  refetch happens even when the write fails — the server state is the truth either way. */
+    const mutateHistory = async (write: () => Promise<unknown>) => {
+        try {
+            await write()
+        } catch (e) {
+            pushToast(`Chat change failed: ${(e as Error).message}`)
+        }
+        await loadSessions(true)
+        setSearchTick(n => n + 1)
     }
 
     const selectHistoryScope = (scope: ChatScope) => {
@@ -1522,6 +1568,19 @@ export function createChatSession(chatId: string): ChatSession {
             setScope: selectHistoryScope,
             setQuery: setHistoryQuery,
             resume: resumeSession,
+            defaultVisibility,
+            setVisibility: (sessionId, level) =>
+                mutateHistory(() => api.setChatVisibility(sessionId, level)),
+            setDefaultVisibility: level =>
+                mutateHistory(() => api.setChatDefaultVisibility(level)),
+            deleteChats: async target => {
+                let ids: string[] = []
+                await mutateHistory(async () => {
+                    ids = await api.deleteChats(target)
+                })
+                return ids
+            },
+            restoreChats: ids => mutateHistory(() => api.restoreChats(ids)),
         },
         onAppend,
         onFocusRequest,

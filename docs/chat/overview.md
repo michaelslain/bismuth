@@ -122,6 +122,18 @@ A **you / daemon / all** toggle chooses whose chats to list; it resets to `you` 
 
 `history` appears only for backends that can list sessions. opencode and Codex conversations still resume per tab but are not in this list. From a shell, `bismuth chat list`, `bismuth chat read <id>` and `bismuth chat search <query>` read the same history ([CLI reference](../cli/reference.md)).
 
+## How do I hide or delete past chats?
+
+Hover a chat in the `history` dialog and press its `[x]` to delete it; an undo toast (`deleted chat: <title> [undo]`) puts it back.
+Right-click a chat for its menu: **Visibility** keeps it away from the daemon or from both AI channels ([visibility](../vault/visibility.md#how-do-i-hide-a-past-chat)), and **Delete chat** deletes it the same way.
+**Manage chats** in the dialog's header sets **Default for all chats** and holds **Delete all your chats**, **Delete all daemon chats** or **Delete every chat**, following the you / daemon / all toggle.
+
+- A delete is immediate, with no confirmation; the undo toast is the way back. A deleted chat waits in a trash beside the agent CLI's session files for 10 minutes, so the undo (or `bismuth chat restore`) works until then; after that the chat is deleted for good. Its transcript note, if the daemon has not processed it yet, goes at once.
+- `Delete` or `Backspace` on the arrow-key row deletes that chat; the keys are rebindable as `chat-history-delete` in [keybindings](../settings/keybindings.md). Typing in the search box never deletes.
+- A restricted chat shows the sidebar's visibility badge. Hiding never restricts you: you still resume and search it.
+
+From a shell: `bismuth chat visibility`, `bismuth chat delete` and `bismuth chat restore` ([CLI reference](../cli/reference.md#chat)).
+
 ## What does the header show?
 
 The chat header names the chat (a `/rename` title, else the conversation's summary) behind a glyph that marks daemon chats.
@@ -306,6 +318,7 @@ The chat's rules sit in pure modules under `app/src/chat/`, each unit-tested, wi
 | `chatProvider.ts` | `CHAT_PROVIDER_OPTIONS`, `resolveChatProvider`, `providerCan`, per-backend model-key namespacing (a Claude model id must never seed an opencode `-m` flag) |
 | `chatComposerKeys.ts` | `classifyComposerKey`: slash popover first, then Escape-to-stop, then send, then history recall, else pass to CodeMirror |
 | `chatHistory.ts` | Prompt-history cursor that stashes the draft on the first Up |
+| `chatVisibility.ts` | Which level the history row menu writes and checks (picking visible under a restricting default writes `all`), and the undo toast's wording |
 | `chatQueueRestore.ts` | Stop restores queued messages into the composer |
 | `chatPermissionMode.ts` | Mode values, the Bypass default, `reconcilePermissionMode` so a re-reported spawn default does not revert your pick |
 | `chatSessionStore.ts` | Tab id to SDK session id, so Reopen closed tab resumes |
@@ -315,4 +328,4 @@ The chat's rules sit in pure modules under `app/src/chat/`, each unit-tested, wi
 
 Messages render through `renderNoteBody`, the same markdown pipeline notes use, so math, code and wikilinks work; a `[[wikilink]]` in a bubble opens in the app. Each markdown table is adopted by `ChatTable.tsx` once the HTML lands and handed to `ui/table/typeTable.ts`, the same call a note's table goes through ([tables](../editor/tables.md)): the `+ - | =` grid, cells that wrap only between whole words, code paths that break at their `/` and `.`, and long runs such as a bare URL that wrap at the cell's edge. What is chat's own is the frame: a table too wide for the transcript even with whole words breaks inside words too, so it always fits (`ui/table/fitTable.ts`), and a vertical scroll over the frame passes to the transcript. The daemon's face is the bot's avatar on the lowest assistant row, with a mood from `chatActivity.ts`.
 
-Source: `core/src/chat.ts`, `core/src/chatModelStore.ts`, `core/src/chatDaemonLegacy.ts`, `core/src/memoryRecall.ts`, `core/src/routes/agents.ts`, `core/src/server.ts` (the `/chat` WebSocket), `core/src/chatProviders/index.ts`, `core/src/chatProviders/privateErase.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `cli/src/commands/chat.ts`, `cli/src/http.ts`, `app/src/quickAsk/`, `app/src/chat/` (`chatEditorContext.ts`, `appSelection.ts`, `paneContextLabel.ts`, `ChatView.tsx`, `ChatControls.tsx`, `ChatModelPicker.tsx`, `ChatSetupGate.tsx`, `ChatComposer.tsx`, `ChatHistoryModal.tsx`, `ChatTable.tsx`, `chatSession.ts`, `chatSessions.ts`), `app/src/ui/table/typeTable.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`
+Source: `core/src/chat.ts`, `core/src/chatModelStore.ts`, `core/src/chatDaemonLegacy.ts`, `core/src/memoryRecall.ts`, `core/src/routes/agents.ts`, `core/src/chatLogs.ts`, `core/src/server.ts` (the `/chat` WebSocket), `core/src/chatProviders/index.ts`, `core/src/chatProviders/privateErase.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `cli/src/commands/chat.ts`, `cli/src/http.ts`, `app/src/quickAsk/`, `app/src/chat/` (`chatEditorContext.ts`, `appSelection.ts`, `paneContextLabel.ts`, `ChatView.tsx`, `ChatControls.tsx`, `ChatModelPicker.tsx`, `ChatSetupGate.tsx`, `ChatComposer.tsx`, `ChatHistoryModal.tsx`, `ChatTable.tsx`, `chatSession.ts`, `chatSessions.ts`), `app/src/ui/table/typeTable.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`

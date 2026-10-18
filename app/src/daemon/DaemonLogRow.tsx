@@ -4,7 +4,8 @@
 // which is a button that unfolds the event's detail underneath — the second-precision time, kind,
 // exact duration and cause (logDetail.ts), the log file the event lives in, any detail text the
 // daemon wrote (error output), and actions on that log: `[ open ]` the file, `[ copy path ]`, and
-// `[ delete ]` this entry, which asks `[ delete ] [ cancel ]` first. Only the line toggles; clicks
+// `[ delete ]` this entry. Hovering a closed line shows an `[x]` past the duration that deletes it
+// too. A delete is immediate; the caller's undo toast brings the entry back. Only the line toggles; clicks
 // inside the detail never collapse it, so its text can be selected. The actions stop their click:
 // the log box (DaemonSection) opens the section on any click it cannot trace to an item still
 // inside it, and the confirm swap unmounts the button that was clicked.
@@ -16,6 +17,8 @@ import { detailMeta, logPath } from './logDetail'
 import PlainButton from '../ui/PlainButton'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
+import CloseButton from '../ui/CloseButton'
+import RowActions from '../ui/RowActions'
 import styles from './DaemonLogRow.module.css'
 
 export type DaemonLogRowProps = {
@@ -42,15 +45,15 @@ function DaemonLogRow(props: DaemonLogRowProps) {
         props.onOpenLog !== undefined ||
         props.onCopyPath !== undefined ||
         props.onDelete !== undefined
-    const [confirming, setConfirming] = createSignal(false)
+    // A delete is immediate; the caller's undo toast is the way back (every delete in the app).
     const [busy, setBusy] = createSignal(false)
-    const commitDelete = async () => {
+    const remove = async () => {
+        if (busy()) return
         setBusy(true)
         try {
             await props.onDelete?.()
         } finally {
             setBusy(false)
-            setConfirming(false)
         }
     }
 
@@ -65,33 +68,46 @@ function DaemonLogRow(props: DaemonLogRowProps) {
             data-expanded={props.expanded ? '' : undefined}
             data-testid="daemon-log-row"
         >
-            <PlainButton
-                class={styles.line}
-                aria-expanded={props.expanded}
-                onClick={() => props.onToggle()}
-            >
-                <Text as="span" inherit class={styles.time}>
-                    {props.clock ? clockTime(props.event.ts) : line().time}
-                </Text>
-                <Text as="span" inherit class={styles.who}>
-                    {line().who}
-                </Text>
-                <Text as="span" inherit class={styles.what}>
-                    {line().what}
-                </Text>
-                <Text
-                    as="span"
-                    inherit
-                    class={styles.note}
-                    classList={{ [styles['note-wrap']]: props.clock }}
-                    title={line().note ?? undefined}
+            <div class={styles['line-row']} data-row-actions-host>
+                <PlainButton
+                    class={styles.line}
+                    aria-expanded={props.expanded}
+                    onClick={() => props.onToggle()}
                 >
-                    {line().note ?? ''}
-                </Text>
-                <Text as="span" inherit class={styles.duration}>
-                    {line().duration ?? ''}
-                </Text>
-            </PlainButton>
+                    <Text as="span" inherit class={styles.time}>
+                        {props.clock ? clockTime(props.event.ts) : line().time}
+                    </Text>
+                    <Text as="span" inherit class={styles.who}>
+                        {line().who}
+                    </Text>
+                    <Text as="span" inherit class={styles.what}>
+                        {line().what}
+                    </Text>
+                    <Text
+                        as="span"
+                        inherit
+                        class={styles.note}
+                        classList={{ [styles['note-wrap']]: props.clock }}
+                        title={line().note ?? undefined}
+                    >
+                        {line().note ?? ''}
+                    </Text>
+                    <Text as="span" inherit class={styles.duration}>
+                        {line().duration ?? ''}
+                    </Text>
+                </PlainButton>
+                {/* The hover `[x]` floats over the line's end (RowActions), taking no width, so the
+                    line runs full width at rest; an open row has the detail's own `[ delete ]`. */}
+                <Show when={props.onDelete && !props.expanded}>
+                    <RowActions>
+                        <CloseButton
+                            label="delete log entry"
+                            disabled={busy()}
+                            onClick={() => void remove()}
+                        />
+                    </RowActions>
+                </Show>
+            </div>
             <Show when={props.expanded}>
                 <div class={styles.detail} data-testid="daemon-log-detail">
                     <Text as="span" size="micro" tone="muted">
@@ -113,68 +129,41 @@ function DaemonLogRow(props: DaemonLogRowProps) {
                     </Show>
                     <Show when={hasActions()}>
                         <div class={styles.actions}>
-                            <Show
-                                when={!confirming()}
-                                fallback={
-                                    <>
-                                        <TextButton
-                                            danger
-                                            disabled={busy()}
-                                            aria-busy={busy()}
-                                            onClick={e => {
-                                                e.stopPropagation()
-                                                void commitDelete()
-                                            }}
-                                        >
-                                            {busy() ? '…' : 'delete'}
-                                        </TextButton>
-                                        <TextButton
-                                            disabled={busy()}
-                                            onClick={e => {
-                                                e.stopPropagation()
-                                                setConfirming(false)
-                                            }}
-                                        >
-                                            cancel
-                                        </TextButton>
-                                    </>
-                                }
-                            >
-                                <Show when={props.onOpenLog}>
-                                    {o => (
-                                        <TextButton
-                                            onClick={e => {
-                                                e.stopPropagation()
-                                                o()()
-                                            }}
-                                        >
-                                            open
-                                        </TextButton>
-                                    )}
-                                </Show>
-                                <Show when={props.onCopyPath}>
-                                    {c => (
-                                        <TextButton
-                                            onClick={e => {
-                                                e.stopPropagation()
-                                                c()()
-                                            }}
-                                        >
-                                            copy path
-                                        </TextButton>
-                                    )}
-                                </Show>
-                                <Show when={props.onDelete}>
+                            <Show when={props.onOpenLog}>
+                                {o => (
                                     <TextButton
-                                        danger="hover"
                                         onClick={e => {
                                             e.stopPropagation()
-                                            setConfirming(true)
+                                            o()()
                                         }}
                                     >
-                                        delete
+                                        open
                                     </TextButton>
-                                </Show>
+                                )}
+                            </Show>
+                            <Show when={props.onCopyPath}>
+                                {c => (
+                                    <TextButton
+                                        onClick={e => {
+                                            e.stopPropagation()
+                                            c()()
+                                        }}
+                                    >
+                                        copy path
+                                    </TextButton>
+                                )}
+                            </Show>
+                            <Show when={props.onDelete}>
+                                <TextButton
+                                    danger="hover"
+                                    disabled={busy()}
+                                    onClick={e => {
+                                        e.stopPropagation()
+                                        void remove()
+                                    }}
+                                >
+                                    delete
+                                </TextButton>
                             </Show>
                         </div>
                     </Show>

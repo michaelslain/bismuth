@@ -39,6 +39,7 @@ const turn = (ask: string, answer: string): ChatFrame[] => [
 
 export type ChatHistoryEntry = { session: ChatSessionInfo; frames: ChatFrame[] }
 
+/** h3 carries its own `hidden` and h4 its own `chat-only`; the rest inherit the chat default. */
 export function chatHistoryFixture(): ChatHistoryEntry[] {
     return [
         {
@@ -72,6 +73,7 @@ export function chatHistoryFixture(): ChatHistoryEntry[] {
                     'Why does the month grid clip its last two week rows on short panes',
                 lastModified: daysBack(1),
                 origin: 'user',
+                ownVisibility: 'hidden',
             },
             frames: turn(
                 'The calendar month view cuts off the bottom rows when the pane is short.',
@@ -84,6 +86,7 @@ export function chatHistoryFixture(): ChatHistoryEntry[] {
                 summary: 'vault-review — orphaned notes',
                 lastModified: daysBack(3),
                 origin: 'daemon',
+                ownVisibility: 'chat-only',
             },
             frames: turn(
                 'Find notes nothing links to.',

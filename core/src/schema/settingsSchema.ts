@@ -861,6 +861,13 @@ export const SETTINGS_SCHEMA: Schema = {
         type: { kind: 'object', fields: {} },
         doc: 'Per-folder AI visibility: map a folder path to "chat-only" or "hidden" (restricts the daemon + in-app chat, not you).',
     },
+    // Per-chat visibility (a chat log has no frontmatter). Free-form `{sessionId: level}` plus a
+    // `default` key every chat without its own level inherits, written via POST /chat/visibility.
+    // See memory/src/chatVisibility.ts.
+    chatVisibility: {
+        type: { kind: 'object', fields: {} },
+        doc: 'Per-chat AI visibility: map a past chat\'s session id to "all", "chat-only" or "hidden"; the "default" key sets the level of every chat without its own (restricts the daemon + in-app chat, not you).',
+    },
     // Sidebar header bar buttons, in order. Each runs a command-palette command.
     // Seeded with the three built-ins so a fresh install is unchanged.
     toolbar: {

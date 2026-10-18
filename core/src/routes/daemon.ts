@@ -13,7 +13,11 @@ import {
 import { join } from 'node:path'
 import { daemonSnapshot } from '../daemonGraph'
 import { setDaemonIdentityName } from '../daemonIdentity'
-import { readActivity, deleteActivityEntry } from '../daemonActivity'
+import {
+    readActivity,
+    deleteActivityEntry,
+    restoreActivityEntry,
+} from '../daemonActivity'
 import {
     listDaemonPages,
     resolvePage,
@@ -177,8 +181,9 @@ export default function daemonRoutes(
             return ok({ ok: true })
         },
 
-        // One event out of the activity log (the daemon page's `[ delete ]` on a log row). The
-        // body names the event's day file and its identifying fields; 404 when no line matches.
+        // One event out of the activity log (the daemon page's `[x]` on a log row). The body names
+        // the event's day file and its identifying fields; the reply carries the removed `line` for
+        // the undo. 404 when no line matches.
         'POST /daemon/logs/delete': async req => {
             if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const b = (await req.json()) as Record<string, unknown>
@@ -194,7 +199,21 @@ export default function daemonRoutes(
                 event: str('event'),
                 outcome: str('outcome') || undefined,
             })
-            return removed ? ok({ ok: true }) : error('no such log entry', 404)
+            return removed === null
+                ? error('no such log entry', 404)
+                : ok({ ok: true, line: removed })
+        },
+
+        // The undo of `POST /daemon/logs/delete`: the removed `line` goes back into its day `file`
+        // in time order. 400 when the line is not an event or the file name is not a day file.
+        'POST /daemon/logs/restore': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const b = (await req.json()) as { file?: unknown; line?: unknown }
+            if (typeof b.file !== 'string' || typeof b.line !== 'string')
+                return error('missing file or line', 400)
+            return restoreActivityEntry(vaultDaemonDir(cfg.vault), b.file, b.line)
+                ? ok({ ok: true })
+                : error('not a log entry', 400)
         },
 
         'POST /daemon/process/delete': async req => {

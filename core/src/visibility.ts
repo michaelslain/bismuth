@@ -26,6 +26,7 @@ import { FRONTMATTER_REGEX, parseFrontmatterData } from './frontmatter'
 import { readFolderVisibilityResult } from './settings'
 import { ownerTokenDenyPaths } from './ownerToken'
 import { mapWithConcurrency } from './concurrency'
+import { readChatVisibility, restrictedChatFiles } from '@bismuth/memory'
 
 export type Visibility = 'all' | 'chat-only' | 'hidden'
 /** A file's own explicit frontmatter value; `undefined` = absent = inherit. */
@@ -489,12 +490,15 @@ function applyStemInheritance(files: ResolvedFile[]): void {
  * buildManagedSettingsDeny, denyPathSet, the isDeniedPath index) emits all of them.
  */
 export interface DenyEntry {
-    /** Vault-relative path (e.g. "private/secret.md"). */
+    /** Vault-relative path (e.g. "private/secret.md"); for a chat log, its absolute path. */
     rel: string
     /** This file's path under the canonical vault root — always `<canonicalRoot>/<rel>`. */
     abs: string
     /** Further absolute paths the same file is readable at; absent when there are none. */
     aliases?: string[]
+    /** `chat` for a past chat's session file (outside the vault, see memory/src/chatVisibility.ts);
+     *  absent for a vault file. */
+    kind?: 'chat'
 }
 
 /** Every absolute spelling of one entry. */
@@ -529,7 +533,7 @@ const READ_CONCURRENCY = 64
  * session, when this vault restricts one or more notes and Bismuth has no VERIFIED mechanism to
  * enforce that on the chosen backend+channel (the per-backend table in docs/vault/visibility.md).
  *
- * Takes only a COUNT of restricted notes/folders, never their names or paths: naming a hidden note
+ * Takes only COUNTS of restricted notes and chats, never their names or paths: naming a hidden note
  * in an error message would defeat the entire point of hiding it. `backendLabel` is the backend's
  * already-resolved display name (e.g. "Cline", "Codex") — this module has no dependency on the
  * backend catalog, so the caller (whichever chokepoint resolves the per-channel capability — see
@@ -542,12 +546,17 @@ const READ_CONCURRENCY = 64
 export function visibilityRefusalMessage(
     backendLabel: string,
     restrictedCount: number,
+    chatCount = 0,
 ): string {
-    const notes = restrictedCount === 1 ? '1 note' : `${restrictedCount} notes`
+    const plural = (n: number, one: string) => (n === 1 ? `1 ${one}` : `${n} ${one}s`)
+    const notes = [
+        ...(restrictedCount || !chatCount ? [plural(restrictedCount, 'note')] : []),
+        ...(chatCount ? [plural(chatCount, 'chat')] : []),
+    ].join(' and ')
     return (
         `This vault marks ${notes} off-limits to AI sessions, and Bismuth has no verified way to enforce ` +
         `that on ${backendLabel}. Rather than run unprotected, this chat won't start — switch to Claude ` +
-        `Code (which does enforce it), or unhide the restricted notes.`
+        `Code (which does enforce it), or unhide them.`
     )
 }
 
@@ -679,6 +688,11 @@ async function walkDenyEntries(
     )
         for (const f of resolved) if (inTrash(f.rel)) f.visibility = 'hidden'
 
+    // Past chats hidden from this channel (`.settings` chatVisibility) are entries too, so every
+    // consumer — the sandbox, managedSettings, the CLI gate, isDeniedPath — denies their session files
+    // exactly as it denies a hidden note. They do not restrict the trash: a chat is not a vault file.
+    const chatEntries = await chatDenyEntries(root, canonicalRoot, channel)
+
     // The absolute spellings one restricted file is readable at, deduped, minus `abs` itself.
     //
     // Two produce an alias, and both are the same class of aliasing:
@@ -702,7 +716,25 @@ async function walkDenyEntries(
                     ? { rel: f.rel, abs: f.abs }
                     : { rel: f.rel, abs: f.abs, aliases }
             })
+            .concat(chatEntries)
     )
+}
+
+/** The deny entries for past chats hidden from `channel`. A `chatVisibility` that does not parse is
+ *  undetermined, as a broken `folderVisibility` is. */
+async function chatDenyEntries(
+    root: string,
+    canonicalRoot: string,
+    channel: VisibilityChannel,
+): Promise<DenyEntry[]> {
+    const chats = await readChatVisibility(root)
+    if (!chats.ok) throw new VisibilityUndeterminedError(chats.reason)
+    const files = await restrictedChatFiles(
+        [canonicalRoot, root],
+        chats.rules,
+        channel,
+    )
+    return files.map(abs => ({ rel: abs, abs, kind: 'chat' as const }))
 }
 
 /**
@@ -756,7 +788,12 @@ export function sandboxDenyRead(
     vaultRoot: string,
 ): string[] {
     if (entries.length === 0) return []
-    return [...absDenyPaths(entries), join(vaultRoot, '.git')]
+    // `.git` guards earlier copies of NOTES; a vault that hides only chats leaves it readable.
+    const notes = entries.some(e => e.kind !== 'chat')
+    return [
+        ...absDenyPaths(entries),
+        ...(notes ? [join(vaultRoot, '.git')] : []),
+    ]
 }
 
 /**

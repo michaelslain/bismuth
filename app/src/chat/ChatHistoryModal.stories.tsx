@@ -8,6 +8,7 @@ import ChatHistoryModal from './ChatHistoryModal'
 import type { ChatHistoryState } from './chatSession'
 import type { ChatScope, ChatSessionInfo } from '../api'
 import { chatHistoryFixture } from './_chatHistoryFixtures'
+import { createFakeHistoryData } from './_chatHistoryState'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
 
@@ -27,11 +28,13 @@ function makeHistory(
 ): ChatHistoryState {
     const [scope, setScope] = createSignal<ChatScope>('all')
     const [query, setQuery] = createSignal('')
+    const data = createFakeHistoryData({ sessions })
     return {
+        ...data,
         open,
         loading: () => false,
         sessions: () =>
-            sessions.filter(s =>
+            data.rows().filter(s =>
                 scope() === 'all'
                     ? true
                     : scope() === 'daemon'

@@ -75,6 +75,36 @@ These silent traps all fail toward more restriction:
 
 An empty `visibility:` counts as absent and inherits.
 
+## How do I hide a past chat?
+
+A past chat takes the same three levels as a note, so you can keep a conversation away from the daemon or from both AI channels while you still read and resume it yourself.
+
+```yaml
+# In the vault's .settings
+chatVisibility:
+  default: chat-only                              # every chat without a level of its own
+  3f2a8c1e-5b7d-4e19-9a0c-2d6f8b1e4c7a: hidden    # one chat, by session id
+  9b1c4d2e-7a3f-4c8b-8e5d-1f0a6b9c3d2e: all       # one chat kept visible under the default
+```
+
+- History dialog: right-click a chat, choose **Visibility**, then pick **Visible to Daemon + Chat**, **Chat only** or **Hidden from both**. **Manage chats** in the dialog's header, then **Default for all chats**, sets the default.
+  A chat inheriting a restricting default shows a disabled `Effective: Hidden — inherited from the chat default` row; picking **Visible to Daemon + Chat** there stores an explicit `all` instead of clearing the chat's level.
+  A restricted chat shows the sidebar's badge.
+- CLI: `bismuth chat visibility <id> hidden`, `bismuth chat visibility <id> --clear`, or `bismuth chat visibility --default chat-only` ([CLI reference](../cli/reference.md#chat)).
+  An AI session cannot run these.
+
+A chat's own level wins; a chat with none takes `default`, and with no `default` it is `all`.
+An explicit `all` on one chat keeps it visible under a restricting default, the way `visibility: all` keeps a note visible inside a hidden folder.
+
+A chat hidden from a channel loses that channel three ways:
+
+- its session file is on the channel's deny list, so the agent's tools and Bash cannot read it;
+- `bismuth history` run by that agent leaves it out, and `bismuth history show <id>` refuses it;
+- a chat hidden from the daemon is never copied into memory, and setting the level removes its transcript note if the `dream` cron has not processed it yet. Facts the dream already took from it stay.
+
+A `chatVisibility` that is not a map, or holds a value other than `all`, `chat-only` or `hidden`, makes the vault unavailable to AI sessions until you fix the file.
+A chat started after an open chat built its deny list is not covered there until that chat re-gates; the daemon rebuilds its list for every message.
+
 ## What does visibility protect, and what does it not?
 
 Visibility is an honesty boundary, not a security boundary.
@@ -145,7 +175,7 @@ The gate classifies every command by name into four tiers, and a command nobody 
 | Always safe | `backends` `doctor` `docs` `install` `uninstall` `app` `daemon` `agent-graph` `folder-icon` `backup` `page` `memory`, most of `settings`, `checkpoint advance` and `checkpoint ref` | Runs. None can return a note body. |
 | Path-scoped | `read` `write` `move` `delete` `restore` `mkdir` `prop` (except `prop check`) `render` `ocr` `highlights` `pdf` | Runs unless an argument names a restricted path. |
 | Filtered | `tree` `templates` `graph` `search` `map` `replace` `rows` `row` `base` `task` `card` `calendar` `gcal` `relay` `note` `daily` `checkpoint diff` `prop check` | Runs with hidden notes left out; an explicit restricted path is still refused. |
-| Refused when the vault restricts anything | `api` `serve` `export` `chat` `history` `update` `checkpoint` (other than `diff`, `advance`, `ref`) `folder-visibility` `settings set` `settings unset` `settings status-bar`, and anything unclassified | Refused. |
+| Refused when the vault restricts anything | `api` `serve` `export` `chat` `history` (only when a note or folder is restricted; see below) `update` `checkpoint` (other than `diff`, `advance`, `ref`) `folder-visibility` `settings set` `settings unset` `settings status-bar`, and anything unclassified | Refused. |
 
 Why each refused command stays refused:
 
@@ -153,7 +183,7 @@ Why each refused command stays refused:
 - `serve` starts a second unauthenticated core that the session could query with `curl`.
 - `export` follows embeds and base sources, so a hidden note could be pulled in by an embed.
 - `chat` holds session transcripts, which have no single path to filter.
-- `history` prints past session transcripts, which quote whatever their session read.
+- `history` prints past session transcripts, which quote whatever their session read. A vault that hides only chats, and no note or folder, lets `history` run: it leaves out the chats hidden from the session's channel.
 - `folder-visibility`, `settings set` and `settings unset` rewrite the rules; a session that could clear a folder's `hidden` could read what it guarded.
 - `settings status-bar` runs shell output and counts notes by a filter, neither of which can be filtered.
 - `update` rebuilds the installed app with owner-level rights.
@@ -259,6 +289,17 @@ Entries are per file, so an explicit `all` inside a hidden folder is honoured by
 `resolveDenyPlan` wraps it with a third state, `determined: false`, for a vault it could not read, which every fail-safe consumer treats as restricted.
 It is recomputed each time, with no cache.
 
+### Resolving a chat's level
+
+`memory/src/chatVisibility.ts` holds the chat rules for every workspace: `readChatVisibilityFrom` parses `.settings` `chatVisibility` (failing closed), `resolveChatVisibility(id, rules)` returns the chat's own level or the default, and `restrictedChatFiles` lists each restricted chat's `<id>.jsonl` and `<id>/` subagent folder under the agent CLI's `projects/<encoded vault>` directory and its `.bismuth-trash/`, for both spellings of the vault root.
+`buildDenyPaths` appends those files as `DenyEntry` objects with `kind: 'chat'` and the absolute path as `rel`, so the sandbox, the managed-settings deny rules, the CLI gate and `isDeniedPath` deny them like a hidden note.
+Chat entries never restrict `.trash`, and a vault that restricts only chats keeps its `.git` readable (`sandboxDenyRead`).
+The non-Claude refusal message counts notes and chats separately.
+
+`core/src/chatLogs.ts` writes the rules (`setChatVisibility`, through `setChatVisibilityEntries` in `core/src/settings.ts`), removes the transcript notes of chats hidden from the daemon (`removeAutoNotes`), deletes chats into a `.bismuth-trash/` folder beside their session files (`deleteChats`, `deleteChatsInScope`), restores them (`restoreChats`), purges the trash after `CHAT_TRASH_TTL_MS` (`purgeChatTrash`), and calls `invalidateChatVisibility()` so open chats re-gate.
+`GET /chat/sessions` and `POST /chat/search` stamp each row with `visibility` and `ownVisibility` from `chatVisibilityFields`.
+Memory capture checks the level before writing: `captureToMemory` in `core/src/chat.ts` for in-app chats and `collectTranscript` in `relay/lib/memory.ts` for terminal sessions.
+
 ### The discovery walk
 
 `listVisibilityFiles` visits every regular file under the vault, any extension, in every directory including dot-directories.
@@ -357,4 +398,4 @@ For the daemon, `resolveDaemonBackend` in `daemon/src/daemon/session.ts` holds t
 Recall is a daemon-facing operation, so the stricter rule applies on every channel.
 Memory frontmatter is parsed by hand; a duplicate `visibility` key resolves to the strictest value, and a malformed head counts as `hidden`.
 
-Source: `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/visibilityCliGate.ts`, `core/src/visibilityFilter.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/routes/vault.ts`, `core/src/vaultEmbed.ts`, `core/src/vaultMap.ts`, `core/src/settings.ts`, `daemon/src/lib/visibility.ts`, `daemon/src/daemon/session.ts`, `memory/src/graph.ts`, `memory/src/search.ts`, `memory/src/query.ts`, `mcp/src/cli.ts`, `cli/src/index.ts`, `cli/src/semantic.ts`, `cli/src/commands/settings.ts`, `app/src/FileTree.tsx`, `app/src/VisibilityBadge.tsx`, `app/src/chat/ChatSetupGate.tsx`
+Source: `core/src/visibility.ts`, `core/src/chatLogs.ts`, `memory/src/chatVisibility.ts`, `relay/lib/memory.ts`, `cli/src/commands/history.ts`, `core/src/ownerToken.ts`, `core/src/visibilityCliGate.ts`, `core/src/visibilityFilter.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/routes/vault.ts`, `core/src/vaultEmbed.ts`, `core/src/vaultMap.ts`, `core/src/settings.ts`, `daemon/src/lib/visibility.ts`, `daemon/src/daemon/session.ts`, `memory/src/graph.ts`, `memory/src/search.ts`, `memory/src/query.ts`, `mcp/src/cli.ts`, `cli/src/index.ts`, `cli/src/semantic.ts`, `cli/src/commands/settings.ts`, `app/src/FileTree.tsx`, `app/src/VisibilityBadge.tsx`, `app/src/chat/ChatSetupGate.tsx`

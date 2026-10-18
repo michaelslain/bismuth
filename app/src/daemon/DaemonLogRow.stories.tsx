@@ -39,6 +39,32 @@ export const Folded: Story = {
     },
 }
 
+/** A folded row's hover `[x]` deletes the entry at once, without opening the detail or toggling
+ *  the row (the host's undo toast is the way back). */
+export const HoverXDeletes: Story = {
+    args: {
+        event: failed,
+        now: NOW,
+        expanded: false,
+        onToggle: fn(),
+        onDelete: fn(async () => {}),
+    },
+    render: args => (
+        <div style={{ width: '420px' }}>
+            <DaemonLogRow {...args} />
+        </div>
+    ),
+    play: async ({ canvasElement, args }) => {
+        const canvas = within(canvasElement)
+        // A synthetic pointer cannot raise CSS :hover, so the hover-revealed `[x]` (pointer-events
+        // none until then) is clicked past that check; real hover is covered by the browser run.
+        await userEvent.click(canvas.getByRole('button', { name: 'delete log entry' }), { pointerEventsCheck: 0 })
+        await expect(args.onDelete).toHaveBeenCalledTimes(1)
+        await expect(args.onToggle).not.toHaveBeenCalled()
+        await expect(canvas.queryByRole('button', { name: /cancel/ })).toBeNull()
+    },
+}
+
 /** Unfolded failure: time // kind // exact duration // cause, the log file it lives in, the
  *  multi-line error kept as written, then `[ open ]` `[ copy path ]` `[ delete ]` on that file. */
 export const ExpandedFailure: Story = {
@@ -65,9 +91,8 @@ export const ExpandedFailure: Story = {
     },
 }
 
-/** `[ delete ]` clicked once: the actions give way to `[ delete ] [ cancel ]` before anything is
- *  removed. */
-export const ConfirmDelete: Story = {
+/** `[ delete ]` in the detail deletes at once, like the `[x]`; there is no second step. */
+export const DetailDelete: Story = {
     args: {
         event: failed,
         now: NOW,
@@ -85,9 +110,8 @@ export const ConfirmDelete: Story = {
     play: async ({ canvasElement, args }) => {
         const canvas = within(canvasElement)
         await userEvent.click(canvas.getByRole('button', { name: /delete/ }))
-        await expect(canvas.getByRole('button', { name: /cancel/ })).toBeInTheDocument()
-        await expect(canvas.queryByRole('button', { name: /copy path/ })).toBeNull()
-        await expect(args.onDelete).not.toHaveBeenCalled()
+        await expect(args.onDelete).toHaveBeenCalledTimes(1)
+        await expect(canvas.queryByRole('button', { name: /cancel/ })).toBeNull()
     },
 }
 

@@ -469,11 +469,21 @@ export function decideCliGate(
         return { allowed: true }
 
     if (tier === 'refuse-when-restricted') {
+        // `history` drops chats hidden from the session's channel itself (cli/src/commands/history.ts),
+        // so hidden chats alone do not refuse it. A hidden NOTE still does: any transcript may quote one.
+        const notes = restricted.filter(e => e.kind !== 'chat').length
+        if (
+            (args[0] ?? '').toLowerCase() === 'history' &&
+            notes === 0 &&
+            !opts.folderRulesRestrict
+        )
+            return { allowed: true }
+        const chats = restricted.length - notes
         return {
             allowed: false,
             reason:
                 `Refused: \`bismuth ${args[0]}\` can return the contents of notes this vault marks off-limits ` +
-                `to AI sessions, and it cannot be filtered per-file. ${restricted.length} note(s) are restricted. ` +
+                `to AI sessions, and it cannot be filtered per-file. ${notes} note(s)${chats ? ` and ${chats} chat file(s)` : ''} are restricted. ` +
                 `The commands that cannot be filtered are ${REFUSED_COMMAND_NAMES}; ` +
                 `ask the user to unhide the notes, or read a specific visible file by path.`,
         }

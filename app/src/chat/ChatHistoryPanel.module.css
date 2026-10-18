@@ -41,6 +41,12 @@
     padding-top: var(--sp-4);
 }
 
+.subtrail {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+}
+
 .body {
     flex: 1 1 auto;
     min-height: 0;

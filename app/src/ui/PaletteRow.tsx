@@ -15,6 +15,7 @@ import { Icon } from '../icons/Icon'
 import { toSegments } from '../palette/rankItems'
 import Label from './Label'
 import Text from './Text'
+import RowActions from './RowActions'
 import styles from './PaletteRow.module.css'
 
 export type PaletteRowProps = {
@@ -25,6 +26,13 @@ export type PaletteRowProps = {
     label: JSX.Element
     /** Second line under the label (a template description, etc.). */
     detail?: JSX.Element
+    /** A small status mark at the row's trailing edge, after the sublabel. It takes a fixed slot, so
+     *  a caller that always passes one (even an empty one) keeps every row's time column aligned. */
+    badge?: JSX.Element
+    /** Controls floating over the row's trailing end while it is hovered or selected (a delete
+     *  `[x]`), through ui/RowActions: they take no width, so the row's text runs full width at rest.
+     *  Their clicks never reach `onPick`. */
+    actions?: JSX.Element
     /** Right-aligned secondary text (a folder, a kind). */
     sublabel?: JSX.Element
     /** Right-edge chord — a string or a `<Kbd muted>`. */
@@ -34,6 +42,8 @@ export type PaletteRowProps = {
     /** NOT A PROP — the commit handler is `onPick`. Declared `never` so a surplus `onClick`, which
      *  this component would otherwise silently drop, is a compile error instead of a dead row. */
     onClick?: never
+    /** Right-click on the row — the caller opens its context menu. */
+    onContextMenu?: (e: MouseEvent) => void
     /** Pointer moved over the row — the caller's `createPointerGuard` sets the selection. */
     onMouseMove?: (e: MouseEvent) => void
     /** DOM id, so the listbox's `aria-activedescendant` can name this row. */
@@ -51,9 +61,11 @@ function PaletteRow(props: PaletteRowProps) {
             id={props.id}
             class={`${styles['palette-row']} ${props.class ?? ''}`}
             data-selected={props.selected ? '' : undefined}
+            data-row-actions-host={props.actions ? '' : undefined}
             data-testid={props.testid}
             onMouseMove={e => props.onMouseMove?.(e)}
             onClick={() => props.onPick?.()}
+            onContextMenu={e => props.onContextMenu?.(e)}
         >
             <Show when={props.icon}>
                 <Text as="span" inherit class={styles['palette-icon']}>
@@ -75,10 +87,18 @@ function PaletteRow(props: PaletteRowProps) {
                     {props.sublabel}
                 </Label>
             </Show>
+            <Show when={props.badge}>
+                <Text as="span" inherit class={styles['palette-badge']}>
+                    {props.badge}
+                </Text>
+            </Show>
             <Show when={props.shortcut}>
                 <Text as="span" inherit class={styles['palette-shortcut']}>
                     {props.shortcut}
                 </Text>
+            </Show>
+            <Show when={props.actions}>
+                <RowActions>{props.actions}</RowActions>
             </Show>
         </div>
     )

@@ -935,6 +935,15 @@ async function mutateSettingsStringMap(
     entryKey: string,
     nextValue: string | undefined,
 ): Promise<boolean> {
+    return mutateSettingsStringMapMany(vault, mapKey, [[entryKey, nextValue]])
+}
+
+/** {@link mutateSettingsStringMap} for several entries in one read-modify-write. */
+async function mutateSettingsStringMapMany(
+    vault: string,
+    mapKey: string,
+    changes: readonly (readonly [string, string | undefined])[],
+): Promise<boolean> {
     return withSettingsMutex(vault, async () => {
         await initializeSettings(vault) // no-op if present; guarantees a file to edit
         const raw = await readNote(vault, SETTINGS_FILE)
@@ -953,14 +962,13 @@ async function mutateSettingsStringMap(
             map = new YAMLMap()
             doc.setIn([mapKey], map)
         }
-        if (nextValue !== undefined) {
-            ;(map as YAMLMap).set(entryKey, nextValue)
-        } else {
-            ;(map as YAMLMap).delete(entryKey)
-            // sparse: an emptied map is its default ({}), so the key goes too
-            if (!(map as YAMLMap).items.length && !hasComment(map))
-                doc.deleteIn([mapKey])
+        for (const [entryKey, nextValue] of changes) {
+            if (nextValue !== undefined) (map as YAMLMap).set(entryKey, nextValue)
+            else (map as YAMLMap).delete(entryKey)
         }
+        // sparse: an emptied map is its default ({}), so the key goes too
+        if (!(map as YAMLMap).items.length && !hasComment(map))
+            doc.deleteIn([mapKey])
         await writeNote(
             vault,
             SETTINGS_FILE,
@@ -1016,6 +1024,21 @@ export async function setFolderVisibility(
             ? visibility
             : undefined,
     )
+}
+
+/**
+ * Set or clear chats' AI visibility in settings.yaml's `chatVisibility` map, in one write. A key is a
+ * session id or `default`; a level sets it and `undefined` deletes it. Returns whether the change
+ * persisted, like {@link setFolderVisibility}.
+ */
+export async function setChatVisibilityEntries(
+    vault: string,
+    changes: readonly (readonly [
+        string,
+        'all' | 'chat-only' | 'hidden' | undefined,
+    ])[],
+): Promise<boolean> {
+    return mutateSettingsStringMapMany(vault, 'chatVisibility', changes)
 }
 
 // The typed, file-merged-over-defaults config the backend reads at runtime (layout

@@ -101,7 +101,9 @@ export function ContextMenu(props: {
                 : right - 2
         const y = rr ? rr.top : props.y
         setSub({ index: i, x, y })
-        subNav.setActive(0)
+        // Start on the first row that can be picked: a disabled lead row (an `Effective:` note) is
+        // information, not a choice.
+        subNav.setActive(Math.max(0, item.submenu.findIndex(it => !it.disabled)))
     }
 
     const parentActivate = (i: number) => {
@@ -166,7 +168,13 @@ export function ContextMenu(props: {
         nav.onKeyDown(e)
     }
 
-    const handleDocClick = () => props.onClose()
+    // A click inside the menu or its flyout is the menu's own: a leaf row closes it through its
+    // pick, and a submenu row must stay open to show its flyout.
+    const handleDocClick = (e: MouseEvent) => {
+        const t = e.target as Node | null
+        if (t && (rootEl?.contains(t) || subEl?.contains(t))) return
+        props.onClose()
+    }
 
     // Global single-menu exclusivity: registering as the active menu closes any menu that
     // was already open on ANY other surface (this is the one funnel every context menu —

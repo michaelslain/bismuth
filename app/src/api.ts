@@ -154,11 +154,25 @@ import type { PdfHighlightRead } from '../../core/src/drawing/pdfHighlights'
 import { plural } from './plural'
 import type {
     ChatFrame,
-    ChatSearchHit,
+    ChatSearchHit as CoreChatSearchHit,
     ChatOrigin,
     ChatScope,
 } from '../../core/src/chat'
-export type { ChatSearchHit, ChatOrigin, ChatScope }
+
+/** The three visibility levels a note has, applied to a chat log: `all` = daemon + chat can read
+ *  it, `chat-only` = hidden from the daemon, `hidden` = hidden from both. */
+export type ChatVisibility = 'all' | 'chat-only' | 'hidden'
+
+/** What the history list adds to a chat row. `visibility` is the RESOLVED level (own entry, else the
+ *  vault-wide chat default), omitted when it resolves to `all`; `ownVisibility` is the chat's own
+ *  entry, omitted when it inherits the default. */
+export type ChatVisibilityFields = {
+    visibility?: 'chat-only' | 'hidden'
+    ownVisibility?: ChatVisibility
+}
+
+export type ChatSearchHit = CoreChatSearchHit & ChatVisibilityFields
+export type { ChatOrigin, ChatScope }
 
 /** Wire shapes of the owner-only `/opencode/*` provider routes (core/src/chatProviders/opencode/
  *  opencodeProviders.ts). Copied, not imported — the app does not import core's server types. */
@@ -192,7 +206,7 @@ const opencodeCall = <T>(run: () => Promise<T>): Promise<T> =>
 
 /** One row in the chat history picker — a past Claude Code session (terminal OR in-app) for the
  *  vault. Mirrors the `GET /chat/sessions` shape; newest first (the SDK store sorts it). */
-export interface ChatSessionInfo {
+export interface ChatSessionInfo extends ChatVisibilityFields {
     sessionId: string
     summary: string
     lastModified: number // ms epoch
@@ -489,15 +503,18 @@ export const api = {
     deleteProcess: (name: string) =>
         post('/daemon/process/delete', { name }).then(() => {}),
     // Remove one event from the activity log's day file; an entry no longer there rejects (404).
+    // Resolves with the removed line, which `restoreDaemonLogEntry` (the undo) writes back.
     deleteDaemonLogEntry: (e: ActivityEvent) =>
-        post('/daemon/logs/delete', {
+        postJson<{ line: string }>('/daemon/logs/delete', {
             file: e.file,
             ts: e.ts,
             kind: e.kind,
             name: e.name,
             event: e.event,
             outcome: e.outcome,
-        }).then(() => {}),
+        }).then(r => r.line),
+    restoreDaemonLogEntry: (file: string, line: string) =>
+        post('/daemon/logs/restore', { file, line }).then(() => {}),
     graphViews: () =>
         getJson<{ second: ViewLayout; third: ViewLayout }>('/graph/views'),
     tree: () => getJson<TreeEntry[]>('/tree'),
@@ -856,6 +873,28 @@ export const api = {
             query,
             scope,
         }).then(r => r.hits),
+    // Chat log visibility — the same three levels notes have. A chat with no own level inherits the
+    // vault-wide chat default (what "hide all" sets). `post`/`postJson` throw on a non-2xx.
+    chatVisibilityDefault: () =>
+        getJson<{ default: ChatVisibility }>('/chat/visibility').then(
+            r => r.default,
+        ),
+    /** `null` clears the chat's own entry so it inherits the default again. */
+    setChatVisibility: (sessionId: string, level: ChatVisibility | null) =>
+        post('/chat/visibility', { sessionId, level }).then(() => {}),
+    setChatDefaultVisibility: (level: ChatVisibility) =>
+        post('/chat/visibility', { default: level }).then(() => {}),
+    /** Delete the named chats, or every chat in a scope (the history dialog's you/daemon/all
+     *  filter). They wait in the server's trash for `restoreChats` — the undo — for 10 minutes. */
+    deleteChats: (target: { sessionIds: string[] } | { scope: ChatScope }) =>
+        postJson<{ deleted: number; sessionIds: string[] }>(
+            '/chat/delete',
+            target,
+        ).then(r => r.sessionIds),
+    restoreChats: (sessionIds: string[]) =>
+        postJson<{ restored: number }>('/chat/restore', { sessionIds }).then(
+            () => {},
+        ),
 
     // opencode provider manager (the chat credentials popover). Owner-only routes over the running
     // `opencode serve`; each throws an Error carrying the route's `message` on a non-2xx (409 =

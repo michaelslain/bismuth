@@ -149,6 +149,7 @@ Each id below is a key under `keybindings:`, with its default combo and the acti
 | `chat-stop` | `Escape` | Stop chat response |
 | `chat-history-prev` | `ArrowUp` | Recall previous chat message |
 | `chat-history-next` | `ArrowDown` | Recall next chat message |
+| `chat-history-delete` | `Delete, Backspace` | Delete chat from history |
 
 ### File tree
 

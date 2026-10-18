@@ -7,6 +7,9 @@
   "types": "src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "description": "Pure markdown memory graph (the 3rd brain): note CRUD + frontmatter + backlinks, keyword search, and the query DSL. Consumed by the daemon (writer/dream), the relay recall/collect hooks, and the per-session MCP memory tools.",
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
   "devDependencies": {
     "@types/bun": "1.4.2",
     "@types/node": "^25",

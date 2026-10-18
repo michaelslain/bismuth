@@ -24,6 +24,21 @@ import {
 import styles from './ChatHistoryPanel.module.css'
 import type { ChatHistoryState } from './chatSession'
 import type { ChatScope } from '../api'
+import { settings } from '../settings'
+import { matchesKeybinding } from '../keybindings'
+import {
+    CHAT_VISIBILITY_ROWS,
+    checkedLevel,
+    deleteAllLabel,
+    deletedChatsMessage,
+    effectiveNote,
+    isDeleteKeyForRow,
+    levelToWrite,
+    visibilityMenuIcon,
+} from './chatVisibility'
+import { pushUndoToast } from '../undoToast'
+import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
+import { IconButton } from '../ui/IconButton'
 import { groupByAge } from './chatHistoryGroups'
 import ChatHistoryRow from './ChatHistoryRow'
 import Text from '../ui/Text'
@@ -52,6 +67,13 @@ const SCOPE_OPTIONS: SegmentedOption<ChatScope>[] = [
 
 /** Below this panel width the scope + new chat leave the prompt line for a line of their own. */
 const NARROW_PX = 480
+
+/** The slice of a list row or search hit the row menu reads. */
+type MenuChat = {
+    sessionId: string
+    visibility?: 'chat-only' | 'hidden'
+    ownVisibility?: 'all' | 'chat-only' | 'hidden'
+}
 
 const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
     // Read `props.history` at each use below, never bind it to a local — this is a Solid
@@ -86,6 +108,110 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
         if (id) void props.history.resume(id)
     }
 
+    // ── Visibility + delete ──────────────────────────────────────────────────────────────────
+    const [menu, setMenu] = createSignal<{
+        x: number
+        y: number
+        flipFrom?: number
+        items: MenuItem[]
+    } | null>(null)
+
+    const levelRows = (
+        check: ReturnType<typeof checkedLevel>,
+        pick: (level: (typeof CHAT_VISIBILITY_ROWS)[number]['value']) => void,
+    ): MenuItem[] =>
+        CHAT_VISIBILITY_ROWS.map(row => ({
+            label: row.label,
+            icon: check === row.value ? 'Check' : undefined,
+            onSelect: () => pick(row.value),
+        }))
+
+    const rowMenu = (chat: MenuChat): MenuItem[] => {
+        const def = props.history.defaultVisibility()
+        const note = effectiveNote(chat.ownVisibility, def)
+        return [
+            {
+                label: 'Visibility',
+                icon: visibilityMenuIcon(chat.visibility),
+                submenu: [
+                    ...(note ? [{ label: note, disabled: true }] : []),
+                    // Picking "Visible" goes through levelToWrite: it clears the chat's own level,
+                    // except under a restricting default, where clearing would leave the chat hidden
+                    // and only an explicit 'all' exposes it.
+                    ...levelRows(checkedLevel(chat.ownVisibility, def), level =>
+                        void props.history.setVisibility(
+                            chat.sessionId,
+                            levelToWrite(level, def),
+                        ),
+                    ),
+                ],
+            },
+            {
+                label: 'Delete chat',
+                icon: 'Trash2',
+                danger: true,
+                separatorBefore: true,
+                onSelect: () =>
+                    void removeChats({ sessionIds: [chat.sessionId] }),
+            },
+        ]
+    }
+    const openRowMenu = (chat: MenuChat, e: MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setMenu({ x: e.clientX, y: e.clientY, items: rowMenu(chat) })
+    }
+
+    const manageMenu = (): MenuItem[] => [
+        {
+            label: 'Default for all chats',
+            icon: 'Eye',
+            submenu: levelRows(props.history.defaultVisibility(), level =>
+                void props.history.setDefaultVisibility(level),
+            ),
+        },
+        {
+            label: deleteAllLabel(props.history.scope()),
+            icon: 'Trash2',
+            danger: true,
+            separatorBefore: true,
+            disabled: props.history.sessions().length === 0,
+            onSelect: () =>
+                void removeChats({ scope: props.history.scope() }),
+        },
+    ]
+    const openManageMenu = (e: MouseEvent) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        setMenu({
+            x: r.left,
+            y: r.bottom + 2,
+            flipFrom: r.top,
+            items: manageMenu(),
+        })
+    }
+
+    /** The title a row shows, for the undo toast. */
+    const titleOf = (id: string) =>
+        [...props.history.sessions(), ...props.history.searchHits()].find(
+            s => s.sessionId === id,
+        )?.summary
+    /** Delete at once, then offer the undo (every delete in the app): the toast puts the chats back
+     *  from the server's trash. */
+    const removeChats = async (
+        target: { sessionIds: string[] } | { scope: ChatScope },
+    ) => {
+        const title = 'sessionIds' in target ? titleOf(target.sessionIds[0]!) : undefined
+        const ids = await props.history.deleteChats(target)
+        if (ids.length)
+            pushUndoToast(deletedChatsMessage(ids.length, title), () =>
+                props.history.restoreChats(ids),
+            )
+    }
+    /** A row's hover `[x]`. */
+    const deleteProps = (sessionId: string) => ({
+        onDelete: () => void removeChats({ sessionIds: [sessionId] }),
+    })
+
     // Up/Down from the search prompt walk the rows, Enter resumes. No row is highlighted until an
     // arrow is pressed — a resting list with its first row lit reads as "already chosen".
     // Escape in the prompt closes through the nav: it preventDefaults the key, so the surrounding
@@ -100,6 +226,26 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
             nav.setActive(-1),
         ),
     )
+    // The delete chord deletes the cursor row. The cursor resets whenever the query changes, so a
+    // live cursor means the user last used the arrows — Backspace while typing never reaches here.
+    const onPromptKeyDown = (e: KeyboardEvent) => {
+        if (
+            isDeleteKeyForRow(
+                matchesKeybinding(e, settings.keybindings['chat-history-delete']),
+                nav.active(),
+            )
+        ) {
+            const id = searching()
+                ? props.history.searchHits()[nav.active()]?.sessionId
+                : props.history.sessions()[nav.active()]?.sessionId
+            if (id) {
+                e.preventDefault()
+                void removeChats({ sessionIds: [id] })
+                return
+            }
+        }
+        nav.onKeyDown(e)
+    }
     // The cursor row is found by its `data-selected` hook (PaletteRow's), not a ref per row.
     createEffect(() => {
         if (nav.active() < 0) return
@@ -133,6 +279,13 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
             )}
         </Show>
     )
+    const manage = () => (
+        <IconButton
+            icon="Settings2"
+            label="Manage chats"
+            onClick={openManageMenu}
+        />
+    )
     const state = (text: string) => (
         <EmptyState compact class={styles.state}>
             {text}
@@ -150,7 +303,7 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                     size="default"
                     value={props.history.query()}
                     onInput={props.history.setQuery}
-                    onKeyDown={nav.onKeyDown}
+                    onKeyDown={onPromptKeyDown}
                     placeholder="conversations"
                     aria-label="Search conversations"
                     aria-activedescendant={
@@ -175,12 +328,16 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                             </Text>
                         </Show>
                         {newChat()}
+                        {manage()}
                     </Show>
                 </SearchBar>
                 <Show when={narrow()}>
                     <div class={styles.subhead}>
                         {scope()}
-                        {newChat()}
+                        <div class={styles.subtrail}>
+                            {newChat()}
+                            {manage()}
+                        </div>
                     </div>
                 </Show>
             </div>
@@ -217,12 +374,21 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                                                             s.lastModified
                                                         }
                                                         origin={s.origin}
+                                                        visibility={
+                                                            s.visibility
+                                                        }
                                                         selected={
                                                             nav.active() === i
                                                         }
                                                         onClick={() =>
                                                             resumeAt(i)
                                                         }
+                                                        onContextMenu={e =>
+                                                            openRowMenu(s, e)
+                                                        }
+                                                        {...deleteProps(
+                                                            s.sessionId,
+                                                        )}
                                                     />
                                                 )}
                                             </For>
@@ -262,8 +428,13 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                                             origin={hit.origin}
                                             snippet={hit.snippet}
                                             query={props.history.query()}
+                                            visibility={hit.visibility}
                                             selected={nav.active() === i()}
                                             onClick={() => resumeAt(i())}
+                                            onContextMenu={e =>
+                                                openRowMenu(hit, e)
+                                            }
+                                            {...deleteProps(hit.sessionId)}
                                         />
                                     )}
                                 </For>
@@ -272,6 +443,17 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                     </Show>
                 </Show>
             </div>
+            <Show when={menu()}>
+                {m => (
+                    <ContextMenu
+                        x={m().x}
+                        y={m().y}
+                        flipFrom={m().flipFrom}
+                        items={m().items}
+                        onClose={() => setMenu(null)}
+                    />
+                )}
+            </Show>
         </div>
     )
 }

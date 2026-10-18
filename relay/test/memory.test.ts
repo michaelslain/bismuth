@@ -1,7 +1,7 @@
 // collectTranscript names the note after the session id; an EMPTY id must fall back to
 // 'unknown' (not leave a trailing dash), which is why memory.ts uses `||`, not `??`.
 import { afterAll, test, expect } from 'bun:test'
-import { readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { collectTranscript } from '../lib/memory'
 import { sweepTempDirs, tempDir } from './tempDirs'
@@ -45,4 +45,17 @@ test('a normal session id is truncated to 8 chars in the name', async () => {
     const mem = join(work, 'mem')
     await collectTranscript(mem, transcript(work), 'abcdef0123456789')
     expect(readdirSync(mem)[0]).toMatch(/-abcdef01\.md$/)
+})
+
+test('a chat hidden from the daemon is not captured', async () => {
+    const vault = tmp()
+    const mem = join(vault, '.daemon', 'memory')
+    writeFileSync(
+        join(vault, '.settings'),
+        'chatVisibility:\n  default: chat-only\n  visible-session: all\n',
+    )
+    await collectTranscript(mem, transcript(vault), 'hidden-session')
+    expect(existsSync(mem) ? readdirSync(mem) : []).toEqual([])
+    await collectTranscript(mem, transcript(vault), 'visible-session')
+    expect(readdirSync(mem)).toHaveLength(1)
 })

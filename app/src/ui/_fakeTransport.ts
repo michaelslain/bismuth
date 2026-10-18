@@ -23,10 +23,12 @@ import type {
     ChatScope,
     ChatSearchHit,
     ChatSessionInfo,
+    ChatVisibility,
     Transport,
     OpencodeProviderList,
 } from '../api'
 import type { ChatFrame } from '../../../core/src/chat'
+import { resolveVisibility } from '../chat/chatVisibility'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
 import { parseFrontmatter } from '../../../core/src/frontmatter'
@@ -84,6 +86,10 @@ export interface FakeTransportSeed {
      *  past conversations, an empty list rather than a throw, because "nothing yet" is exactly what
      *  the real server answers for a fresh vault. */
     chatHistory?: { session: ChatSessionInfo; frames: ChatFrame[] }[]
+    /** GET/POST /chat/visibility — the vault-wide level a chat with no `ownVisibility` of its own
+     *  inherits. Defaults to `all`. The state is real: POSTs change what the next GET /chat/sessions
+     *  returns, and POST /chat/delete removes rows. */
+    chatVisibilityDefault?: ChatVisibility
     /** GET /opencode/providers (and the state the three `/opencode/*` writes mutate — a
      *  successful connect moves the provider from `available` to `connected`, so a refetch
      *  shows it). Defaults to `sampleOpencodeProviders()`. */
@@ -283,6 +289,19 @@ function searchChatHistory(
 }
 
 export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
+    // The chat history is MUTABLE here (a delete removes rows, a visibility write changes the next
+    // list), so it is copied out of the seed once.
+    const chatRows = (seed.chatHistory ?? []).map(h => ({
+        session: { ...h.session },
+        frames: h.frames,
+    }))
+    const chatTrash = new Map<string, (typeof chatRows)[number]>()
+    let chatDefault: ChatVisibility = seed.chatVisibilityDefault ?? 'all'
+    /** A session as GET /chat/sessions sends it: the resolved `visibility` plus its own entry. */
+    const wireSession = (s: ChatSessionInfo): ChatSessionInfo => ({
+        ...s,
+        visibility: resolveVisibility(s.ownVisibility, chatDefault),
+    })
     const files = new Map<string, string>(Object.entries(seed.files ?? {}))
     const binaries = new Map<string, Uint8Array>(
         Object.entries(seed.binaries ?? {}),
@@ -412,6 +431,24 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         pathname: string,
         body: unknown,
     ): Promise<Response> => {
+        // POST /chat/visibility: `{ default }` sets the vault-wide level; `{ sessionId, level }` sets
+        // one chat's own entry (`level: null` clears it so the chat inherits the default again).
+        if (pathname === '/chat/visibility') {
+            const b = body as {
+                default?: ChatVisibility
+                sessionId?: string
+                level?: ChatVisibility | null
+            }
+            if (b.default) chatDefault = b.default
+            else {
+                const row = chatRows.find(
+                    h => h.session.sessionId === b.sessionId,
+                )
+                if (!row) return new Response('no such chat', { status: 404 })
+                row.session.ownVisibility = b.level ?? undefined
+            }
+            return new Response('ok')
+        }
         if (pathname === '/rows') {
             const { spec } = body as { spec: SourceSpec }
             return new Response(JSON.stringify(resolveRows(spec)), {
@@ -558,16 +595,18 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             }
             if (pathname === '/chat/sessions') {
                 const scope = (params.get('scope') ?? 'user') as ChatScope
-                const sessions = (seed.chatHistory ?? [])
-                    .map(h => h.session)
+                const sessions = chatRows
+                    .map(h => wireSession(h.session))
                     .filter(x => inChatScope(x, scope))
                 return { sessions } as unknown as T
             }
+            if (pathname === '/chat/visibility')
+                return { default: chatDefault } as unknown as T
             if (pathname === '/chat/session-messages') {
                 const id = params.get('id')
                 const frames =
-                    seed.chatHistory?.find(h => h.session.sessionId === id)
-                        ?.frames ?? []
+                    chatRows.find(h => h.session.sessionId === id)?.frames ??
+                    []
                 return { frames } as unknown as T
             }
             if (pathname === '/update/progress')
@@ -671,11 +710,47 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     scope?: ChatScope
                 }
                 const hits = searchChatHistory(
-                    seed.chatHistory ?? [],
+                    chatRows.map(h => ({
+                        ...h,
+                        session: wireSession(h.session),
+                    })),
                     query,
                     scope ?? 'user',
                 )
                 return { hits } as unknown as T
+            }
+            // Delete: the named chats, or every chat in a scope, into a trash `/chat/restore` (the
+            // undo) takes them back from. Answers the ids removed.
+            if (pathname === '/chat/delete') {
+                const target = body as
+                    | { sessionIds: string[] }
+                    | { scope: ChatScope }
+                const ids: string[] = []
+                for (let i = chatRows.length - 1; i >= 0; i--) {
+                    const sess = chatRows[i].session
+                    const gone =
+                        'sessionIds' in target
+                            ? target.sessionIds.includes(sess.sessionId)
+                            : inChatScope(sess, target.scope)
+                    if (!gone) continue
+                    chatTrash.set(sess.sessionId, chatRows[i])
+                    chatRows.splice(i, 1)
+                    ids.push(sess.sessionId)
+                }
+                return { deleted: ids.length, sessionIds: ids } as unknown as T
+            }
+            if (pathname === '/chat/restore') {
+                const { sessionIds } = body as { sessionIds: string[] }
+                let restored = 0
+                for (const id of sessionIds) {
+                    const row = chatTrash.get(id)
+                    if (!row) continue
+                    chatTrash.delete(id)
+                    chatRows.push(row)
+                    restored++
+                }
+                chatRows.sort((a, b) => b.session.lastModified - a.session.lastModified)
+                return { restored } as unknown as T
             }
             // Mirrors core's POST /feedback: an id for a payload with a title and a body, else core's
             // 400 text — so the feedback page's host story drives a real send round trip.

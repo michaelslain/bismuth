@@ -262,6 +262,12 @@ export const KEYBINDING_CATALOG = [
         doc: 'Step forward through recalled chat messages, from the last visual line of the draft.',
     },
     {
+        id: 'chat-history-delete',
+        label: 'Delete chat from history',
+        default: 'Delete, Backspace',
+        doc: 'In the chat history dialog, ask to delete the chat the arrow keys have reached (a confirmation always follows).',
+    },
+    {
         id: 'undo-delete',
         label: 'Undo file-tree delete',
         default: 'Mod+Z',

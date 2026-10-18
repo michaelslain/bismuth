@@ -237,13 +237,16 @@ The row form activates when both `--file` and `--index` are present. The three f
 
 ## chat
 
-Reads the owner's chat history (terminal and in-app sessions). The three routes are owner-only, so these commands rely on the [owner token](#understand-owner-identity-on-server-commands) and need a running server. A plain `curl` gets `403`.
+Reads, hides and deletes the owner's chat history (terminal and in-app sessions). The routes are owner-only, so these commands rely on the [owner token](#understand-owner-identity-on-server-commands) and need a running server. A plain `curl` gets `403`.
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
-| `chat list` | `[--scope user\|daemon\|all]` | Lists past sessions. | yes |
+| `chat list` | `[--scope user\|daemon\|all]` | Lists past sessions, each with its `visibility` and `ownVisibility`. | yes |
 | `chat read` | `<id> [--provider <p>]` | Replays one session's messages. | yes |
 | `chat search` | `<query> [--scope user\|daemon\|all]` | Searches sessions by content. | yes |
+| `chat visibility` | `<id> <all\|chat-only\|hidden>`, `<id> --clear`, or `--default <all\|chat-only\|hidden>` | Sets one chat's [visibility](../vault/visibility.md#how-do-i-hide-a-past-chat), clears it so the chat takes the default, or sets the default. | yes |
+| `chat delete` | `<id…>` or `--all [--scope user\|daemon\|all]` | Deletes chats into a trash for 10 minutes, then for good; removes their unprocessed transcript notes at once. `--all` deletes every chat in the scope, `user` when omitted. Prints `{deleted, sessionIds}`. | yes |
+| `chat restore` | `<id…>` | Puts deleted chats back from the trash within those 10 minutes. Prints `{restored}`. | yes |
 
 An agent is refused `chat` whenever the vault restricts anything.
 
@@ -441,6 +444,8 @@ Memory holds the facts the `dream` cron distilled from a conversation; `history`
 |---|---|---|---|
 | `history` | `[query…] [--on <date>\|--since <date> --until <date>\|--days <n>\|--all] [--limit <n>] [--vault <dir>]` | Lists sessions, most recent first, with their dated turns. With query words, only turns containing every word. | no |
 | `history show` | `<session-id> [--vault <dir>]` | Prints one session turn by turn. | no |
+
+Run by an AI session, `history` leaves out the chats [hidden](../vault/visibility.md#how-do-i-hide-a-past-chat) from that session's channel, and `history show` refuses one.
 
 A date is `YYYY-MM-DD`, `today` or `yesterday`, in local time. With no date flag and no `--all`, the range is the last 30 days; `--limit` defaults to 10 sessions.
 Each turn is `{at, you, claude}`: the prompt, its timestamp, and Claude's prose reply; tool calls and their output are left out, and so are subagent and cron sessions.

@@ -3,6 +3,7 @@
 // actions that RECORD their calls (so a play() can assert on them) instead of touching a socket.
 // Call makeStubChatSession() inside a story's render (or its play()'s setup), never at module scope
 // — the signals need a live reactive root, and Bun resolves solid-js to its server build outside one.
+import { createFakeHistoryData } from './_chatHistoryState'
 import { createSignal } from 'solid-js'
 import type { TurnItem } from './chatTranscriptLogic'
 import type { ChatManifest } from '../../../core/src/chat'
@@ -118,9 +119,10 @@ export function makeStubChatSession(
         init.historyOpen ?? false,
     )
     const [historyLoading] = createSignal(init.historyLoading ?? false)
-    const [historySessions] = createSignal<ChatSessionInfo[]>(
-        init.historySessions ?? [],
-    )
+    const historyData = createFakeHistoryData({
+        sessions: init.historySessions ?? [],
+        onWrite: (what, arg) => log(`history.${what}`)(arg),
+    })
     const [historyScope, setHistoryScope] = createSignal<ChatScope>(
         init.historyScope ?? 'user',
     )
@@ -133,7 +135,7 @@ export function makeStubChatSession(
     const history: ChatHistoryState = {
         open: historyOpen,
         loading: historyLoading,
-        sessions: historySessions,
+        sessions: historyData.rows,
         scope: historyScope,
         query: historyQuery,
         searchHits,
@@ -157,6 +159,11 @@ export function makeStubChatSession(
         resume: async sessionId => {
             log('history.resume')(sessionId)
         },
+        defaultVisibility: historyData.defaultVisibility,
+        setVisibility: historyData.setVisibility,
+        setDefaultVisibility: historyData.setDefaultVisibility,
+        deleteChats: historyData.deleteChats,
+        restoreChats: historyData.restoreChats,
     }
 
     const session: StubChatSession = {

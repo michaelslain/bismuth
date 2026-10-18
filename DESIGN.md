@@ -637,6 +637,12 @@ the accent. An outline appears only when it means something.
   `OptionRow` (mark, label, faint sublabel on the trailing edge) and `ToggleRow` are single
   controls that match these metrics without composing `ListRow`. An expanded row hangs its editor off
   a `--rule-soft` tree line from its chevron, not a filled box.
+- **Delete on a log or history row (`RowActions`):** a list whose rows run long — the daemon log,
+  chat history — never reserves a column for its `[x]`. The `[x]` floats over the row's trailing
+  end only while the row is hovered or selected, in full `--fg` ink, on the row's ground (`--bg`,
+  plus the selected tint) fading in over `--sp-6`, so the covered text dissolves under it; a row
+  whose trailing meta is a time or a badge hides that meta while the `[x]` shows. The delete is
+  immediate, with an undo toast.
 - **Popover / menu:** `--pop-bg` with a hairline and `--lift`; 4px inner padding, rows at `--row-h`
   with `8px` horizontal padding, selection in `--state-selected-bg` and accent text.
 

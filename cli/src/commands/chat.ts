@@ -39,7 +39,7 @@
 // agent spawn) — that is what makes the token unreadable to a sandboxed agent's Bash tool in
 // the first place, not this file and not the CLI's env-var gate.
 import type { CommandMap } from '../types'
-import { flag, positionals, fail, out } from '../args'
+import { BOOLEAN_FLAGS, bool, flag, positionals, fail, out } from '../args'
 import { call, needsServer, resolveCore } from '../http'
 
 const unreachable = needsServer('chat history needs a running server')
@@ -64,6 +64,11 @@ async function ownerCall(
 ): Promise<void> {
     out(await call(resolveCore(args), method, path, body, unreachable), args)
 }
+const LEVELS = ['all', 'chat-only', 'hidden']
+const VISIBILITY_USAGE =
+    'usage: bismuth chat visibility <id> <all|chat-only|hidden> | <id> --clear | --default <all|chat-only|hidden>'
+const DELETE_USAGE =
+    'usage: bismuth chat delete <id…> | --all [--scope user|daemon|all]'
 
 export const commands: CommandMap = {
     'chat list': {
@@ -99,6 +104,60 @@ export const commands: CommandMap = {
                 )
             const scope = flag(args, 'scope')
             await ownerCall(args, 'POST', '/chat/search', { query, scope })
+        },
+    },
+    'chat visibility': {
+        summary: `Set a past chat's AI visibility, or the default for every chat, ${OWNER_ONLY}`,
+        usage: '<id> <all|chat-only|hidden> | <id> --clear | --default <all|chat-only|hidden> [--api <url>]',
+        run: async args => {
+            const level = flag(args, 'default')
+            if (level !== undefined) {
+                if (!LEVELS.includes(level)) fail(VISIBILITY_USAGE)
+                await ownerCall(args, 'POST', '/chat/visibility', {
+                    default: level,
+                })
+                return
+            }
+            const [id, value] = positionals(args)
+            if (!id) fail(VISIBILITY_USAGE)
+            if (bool(args, 'clear')) {
+                await ownerCall(args, 'POST', '/chat/visibility', {
+                    sessionId: id,
+                    level: null,
+                })
+                return
+            }
+            if (!value || !LEVELS.includes(value)) fail(VISIBILITY_USAGE)
+            await ownerCall(args, 'POST', '/chat/visibility', {
+                sessionId: id,
+                level: value,
+            })
+        },
+    },
+    'chat delete': {
+        summary: `Delete past chats, by id or every chat in a scope; \`chat restore\` undoes it for 10 minutes, ${OWNER_ONLY}`,
+        usage: '<id…> | --all [--scope user|daemon|all] [--api <url>]',
+        run: async args => {
+            const ids = positionals(args, [...BOOLEAN_FLAGS, 'all'])
+            if (bool(args, 'all')) {
+                if (ids.length) fail(DELETE_USAGE)
+                const scope = flag(args, 'scope') ?? 'user'
+                if (!['user', 'daemon', 'all'].includes(scope))
+                    fail(DELETE_USAGE)
+                await ownerCall(args, 'POST', '/chat/delete', { scope })
+                return
+            }
+            if (!ids.length) fail(DELETE_USAGE)
+            await ownerCall(args, 'POST', '/chat/delete', { sessionIds: ids })
+        },
+    },
+    'chat restore': {
+        summary: `Put deleted chats back while they wait in the trash (10 minutes), ${OWNER_ONLY}`,
+        usage: '<id…> [--api <url>]',
+        run: async args => {
+            const ids = positionals(args)
+            if (!ids.length) fail('usage: bismuth chat restore <id…>')
+            await ownerCall(args, 'POST', '/chat/restore', { sessionIds: ids })
         },
     },
 }

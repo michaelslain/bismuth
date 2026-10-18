@@ -554,6 +554,21 @@ folderVisibility:
 
 ---
 
+## `chatVisibility`
+
+A free-form map from a past chat's session id to `all`, `chat-only` or `hidden`, plus a `default` key that every chat without its own entry takes. A chat log has no frontmatter, so the map holds its level. An explicit `all` keeps one chat visible under a restricting default.
+
+Any other value, or a value that is not a map, makes the vault unavailable to agents. The level limits the daemon's and the in-app chat's own tool calls, not you.
+[Visibility](../vault/visibility.md#how-do-i-hide-a-past-chat) covers what a hidden chat loses.
+
+```yaml
+chatVisibility:
+  default: chat-only
+  3f2a8c1e-5b7d-4e19-9a0c-2d6f8b1e4c7a: hidden
+```
+
+---
+
 ## `toolbar`
 
 The buttons in the sidebar header, in order. Each button runs a command. [Toolbar and commands](toolbar-commands.md) lists the command ids and explains how a button resolves.
@@ -663,6 +678,6 @@ keybindings:
 The enums for `theme`, `chat.provider` and `daemon.backend` are derived from the theme tokens and the agent-backend catalog, `keybindings` from `KEYBINDING_CATALOG`, `toolbar.command` from `COMMAND_IDS`, and `appearance.tokens` from `DESIGN_TOKENS`, so none needs a schema edit when the source grows.
 Lint and autocomplete read the same schema.
 
-`DEFAULTS` is `deriveDefaults(SETTINGS_SCHEMA)`: every leaf's `default`, recursively. Free-form map sections (`properties`, `schemas`, `folderSchemas`, `folderIcons`, `folderVisibility`) materialize to `{}`. The settings overview describes [how defaults and wrong values behave](overview.md#what-happens-to-a-wrong-value).
+`DEFAULTS` is `deriveDefaults(SETTINGS_SCHEMA)`: every leaf's `default`, recursively. Free-form map sections (`properties`, `schemas`, `folderSchemas`, `folderIcons`, `folderVisibility`, `chatVisibility`) materialize to `{}`. The settings overview describes [how defaults and wrong values behave](overview.md#what-happens-to-a-wrong-value).
 
 Source: `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/settingsSerialize.ts`, `core/src/theme/tokens.ts`, `core/src/theme/fontFamilies.ts`, `core/src/keybindings.ts`, `core/src/commands.ts`, `core/src/agentBackends/catalog.ts`

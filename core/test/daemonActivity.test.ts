@@ -9,6 +9,7 @@ import {
     appendActivity,
     readActivity,
     deleteActivityEntry,
+    restoreActivityEntry,
     ACTIVITY_MAX_LIMIT,
     type ActivityEvent,
 } from '../src/daemonActivity'
@@ -207,10 +208,29 @@ test('deleteActivityEntry removes only the matching line and keeps the rest byte
     const keep2 = line({ ts: '2026-08-29T11:00:00.000Z', name: 'c' })
     writeFileSync(join(logsDir, file), [keep1, gone, keep2].join('\n') + '\n')
     const target = readActivity(daemonDir).find(e => e.name === 'b')!
-    expect(deleteActivityEntry(daemonDir, { ...target, file })).toBe(true)
+    expect(deleteActivityEntry(daemonDir, { ...target, file })).toBe(gone)
     expect(readFileSync(join(logsDir, file), 'utf-8')).toBe(
         [keep1, keep2].join('\n') + '\n',
     )
+    // The undo puts the removed line back in its time slot, byte-for-byte.
+    expect(restoreActivityEntry(daemonDir, file, gone)).toBe(true)
+    expect(readFileSync(join(logsDir, file), 'utf-8')).toBe(
+        [keep1, gone, keep2].join('\n') + '\n',
+    )
+})
+
+test('restoreActivityEntry appends the latest entry, recreates a removed day file and refuses a non-event', () => {
+    const file = 'activity-2026-08-29.jsonl'
+    const early = line({ ts: '2026-08-29T09:00:00.000Z' })
+    const late = line({ ts: '2026-08-29T12:00:00.000Z' })
+    writeFileSync(join(logsDir, file), early + '\n')
+    expect(restoreActivityEntry(daemonDir, file, late)).toBe(true)
+    expect(readFileSync(join(logsDir, file), 'utf-8')).toBe([early, late].join('\n') + '\n')
+    const other = 'activity-2026-08-30.jsonl'
+    expect(restoreActivityEntry(daemonDir, other, late)).toBe(true)
+    expect(readFileSync(join(logsDir, other), 'utf-8')).toBe(late + '\n')
+    expect(restoreActivityEntry(daemonDir, file, 'not json')).toBe(false)
+    expect(restoreActivityEntry(daemonDir, 'crons.md', late)).toBe(false)
 })
 
 test('deleteActivityEntry tells an outcome apart and reports a miss', () => {
@@ -223,8 +243,8 @@ test('deleteActivityEntry tells an outcome apart and reports a miss', () => {
         name: 'dream',
         event: 'finished',
     }
-    expect(deleteActivityEntry(daemonDir, { ...ref, outcome: 'failed' })).toBe(false)
-    expect(deleteActivityEntry(daemonDir, { ...ref, outcome: 'success' })).toBe(true)
+    expect(deleteActivityEntry(daemonDir, { ...ref, outcome: 'failed' })).toBeNull()
+    expect(deleteActivityEntry(daemonDir, { ...ref, outcome: 'success' })).not.toBeNull()
     expect(readActivity(daemonDir)).toEqual([])
 })
 
@@ -236,7 +256,7 @@ test('deleteActivityEntry refuses a file name that is not a day file', () => {
         name: 'dream',
         event: 'finished',
     }
-    expect(deleteActivityEntry(daemonDir, { ...ref, file: '../crons.md' })).toBe(false)
-    expect(deleteActivityEntry(daemonDir, { ...ref, file: 'activity-2026-08-30.jsonl' })).toBe(false)
+    expect(deleteActivityEntry(daemonDir, { ...ref, file: '../crons.md' })).toBeNull()
+    expect(deleteActivityEntry(daemonDir, { ...ref, file: 'activity-2026-08-30.jsonl' })).toBeNull()
     expect(readFileSync(join(daemonDir, 'crons.md'), 'utf-8')).toBe(line({}) + '\n')
 })

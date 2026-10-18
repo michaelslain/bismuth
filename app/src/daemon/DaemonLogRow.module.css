@@ -10,7 +10,14 @@
 }
 /* 2px of block padding on the 18px line: a console read, not a table. No hover fill — buttons
    never paint a background; the pointer cursor and the unfolding detail are the affordance. */
+/* The line, and the hover `[x]` (ui/RowActions) floating over its end. */
+.line-row {
+    display: flex;
+    align-items: baseline;
+}
 .line {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: baseline;
     gap: var(--sp-4);

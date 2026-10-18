@@ -13,6 +13,8 @@
 //
 // Busy/talking faces tick every few hundred ms, so two shots of the same mood rarely match — that
 // is the face working, not flake.
+import { pushUndoToast } from '../undoToast'
+import { ToastHost } from '../ui/ToastHost'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import {
     createMemo,
@@ -129,56 +131,72 @@ function overviewRows(
  *  inbox/crons/services/log, all four sections carrying rows. */
 function fullOverview(): JSX.Element {
     const pages = sampleDaemonPages()
-    const events = sampleActivity()
+    // Real local state behind the log's delete, so a row's `[x]` really takes the entry out, with
+    // the page host's undo toast putting it back.
+    const [events, setEvents] = createSignal(sampleActivity())
+    const deleteEvent = async (gone: ActivityEvent) => {
+        setEvents(list => list.filter(e => e !== gone))
+        pushUndoToast(`deleted log entry: ${gone.name || gone.kind}`, () => {
+            setEvents(list =>
+                [...list, gone].sort((a, b) => b.ts.localeCompare(a.ts)),
+            )
+        })
+    }
     return (
-        <DaemonOverview
-            rows={overviewRows(
-                pages,
-                SNAPSHOT.crons,
-                SNAPSHOT.processes,
-                events,
-                true,
-            )}
-            inbox={limit => (
-                <DaemonInbox
-                    pages={pages}
-                    limit={limit()}
-                    onOpenSection={noop}
-                    onOpen={noop}
-                    onChanged={noop}
-                />
-            )}
-            crons={limit => (
-                <DaemonCrons
-                    crons={SNAPSHOT.crons}
-                    daemonRunning
-                    limit={limit()}
-                    onOpenSection={noop}
-                    onOpen={noop}
-                    onRun={noop}
-                    onToggle={noop}
-                    onDelete={async () => {}}
-                />
-            )}
-            services={limit => (
-                <DaemonProcesses
-                    processes={SNAPSHOT.processes}
-                    daemonRunning
-                    limit={limit()}
-                    onOpenSection={noop}
-                    onOpen={noop}
-                    onToggle={noop}
-                    onDelete={async () => {}}
-                />
-            )}
-            log={limit => (
-                <DaemonLog
-                    events={events}
-                    limit={limit()}
-                    onOpenSection={noop}
-                />
-            )}
-        />
+        <>
+            <DaemonOverview
+                rows={overviewRows(
+                    pages,
+                    SNAPSHOT.crons,
+                    SNAPSHOT.processes,
+                    events(),
+                    true,
+                )}
+                inbox={limit => (
+                    <DaemonInbox
+                        pages={pages}
+                        limit={limit()}
+                        onOpenSection={noop}
+                        onOpen={noop}
+                        onChanged={noop}
+                    />
+                )}
+                crons={limit => (
+                    <DaemonCrons
+                        crons={SNAPSHOT.crons}
+                        daemonRunning
+                        limit={limit()}
+                        onOpenSection={noop}
+                        onOpen={noop}
+                        onRun={noop}
+                        onToggle={noop}
+                        onDelete={async () => {}}
+                    />
+                )}
+                services={limit => (
+                    <DaemonProcesses
+                        processes={SNAPSHOT.processes}
+                        daemonRunning
+                        limit={limit()}
+                        onOpenSection={noop}
+                        onOpen={noop}
+                        onToggle={noop}
+                        onDelete={async () => {}}
+                    />
+                )}
+                log={limit => (
+                    <DaemonLog
+                        events={events()}
+                        limit={limit()}
+                        onOpenSection={noop}
+                        onOpen={noop}
+                        onCopyPath={noop}
+                        onDelete={deleteEvent}
+                    />
+                )}
+            />
+            <ToastHost />
+        </>
     )
 }
 
@@ -815,7 +833,17 @@ export const OpenedLog: Story = {
  *  Story-local state stands in for DaemonPageHost — same `opened` / last-opened wiring. */
 function interactivePage(): JSX.Element {
     const pages = sampleDaemonPages()
-    const events = sampleActivity()
+    // Real local state behind the log's delete, so a row's `[x]` really takes the entry out, with
+    // the page host's undo toast putting it back.
+    const [events, setEvents] = createSignal(sampleActivity())
+    const deleteEvent = async (gone: ActivityEvent) => {
+        setEvents(list => list.filter(e => e !== gone))
+        pushUndoToast(`deleted log entry: ${gone.name || gone.kind}`, () => {
+            setEvents(list =>
+                [...list, gone].sort((a, b) => b.ts.localeCompare(a.ts)),
+            )
+        })
+    }
     const [opened, setOpened] = createSignal<DaemonSectionKey | null>(null)
     const lastOpened = createMemo<DaemonSectionKey | null>(
         prev => opened() ?? prev,
@@ -828,7 +856,7 @@ function interactivePage(): JSX.Element {
                 pages,
                 SNAPSHOT.crons,
                 SNAPSHOT.processes,
-                events,
+                events(),
                 true,
             )}
             inbox={limit => (
@@ -865,9 +893,12 @@ function interactivePage(): JSX.Element {
             )}
             log={limit => (
                 <DaemonLog
-                    events={events}
+                    events={events()}
                     limit={limit()}
                     onOpenSection={() => setOpened('log')}
+                    onOpen={noop}
+                    onCopyPath={noop}
+                    onDelete={deleteEvent}
                 />
             )}
         />
@@ -923,7 +954,13 @@ function interactivePage(): JSX.Element {
             </Match>
             <Match when={lastOpened() === 'log'}>
                 <DaemonTakeover title="log" onClose={close}>
-                    <DaemonLog variant="full" events={events} />
+                    <DaemonLog
+                        variant="full"
+                        events={events()}
+                        onOpen={noop}
+                        onCopyPath={noop}
+                        onDelete={deleteEvent}
+                    />
                 </DaemonTakeover>
             </Match>
         </Switch>

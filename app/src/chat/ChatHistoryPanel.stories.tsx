@@ -2,12 +2,21 @@
 // `ChatHistoryState` built per-story (no ChatSession needed; the panel only ever reads this slice).
 // Fixture times are anchored to local calendar days (not "now minus N hours"), so the age groups a
 // story shows hold at any hour — "now minus 26h" is two calendar days back at 1am.
-import { createSignal } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import ChatHistoryPanel from './ChatHistoryPanel'
 import type { ChatHistoryState } from './chatSession'
-import type { ChatScope, ChatSearchHit, ChatSessionInfo } from '../api'
+import type {
+    ChatScope,
+    ChatSearchHit,
+    ChatSessionInfo,
+    ChatVisibility,
+} from '../api'
+import { createFakeHistoryData, inScope } from './_chatHistoryState'
+import Text from '../ui/Text'
+import { TextButton } from '../ui/TextButton'
+import { ToastHost, toasts, dismissToast } from '../ui/ToastHost'
 
 const meta = {
     title: 'Chat/ChatHistoryPanel',
@@ -123,18 +132,28 @@ function makeHistory(init: {
     scope?: ChatScope
     loading?: boolean
     searchLoading?: boolean
+    defaultVisibility?: ChatVisibility
+    /** What the app does on a resume: bind the chat and close the dialog. */
+    onResume?: (sessionId: string) => void
 }): ChatHistoryState {
     const [open, setOpen] = createSignal(true)
     const [loading] = createSignal(init.loading ?? false)
-    const [sessions] = createSignal(init.sessions ?? [])
+    // Real local state behind the visibility + delete writes (see _chatHistoryState.ts): a pick
+    // changes the badges, a delete removes rows, with no timer anywhere.
+    const data = createFakeHistoryData({
+        sessions: init.sessions ?? [],
+        defaultVisibility: init.defaultVisibility,
+    })
     const [scope, setScope] = createSignal<ChatScope>(init.scope ?? 'user')
     const [query, setQuery] = createSignal(init.query ?? '')
     const [searchHits] = createSignal(init.searchHits ?? [])
     const [searchLoading] = createSignal(init.searchLoading ?? false)
     return {
+        ...data,
         open,
         loading,
-        sessions,
+        // The server answers each scope with its own rows; the you / daemon / all toggle filters here.
+        sessions: () => data.rows().filter(s => inScope(s, scope())),
         scope,
         query,
         searchHits,
@@ -143,7 +162,10 @@ function makeHistory(init: {
         close: () => setOpen(false),
         setScope,
         setQuery,
-        resume: async () => {},
+        resume: async sessionId => {
+            init.onResume?.(sessionId)
+            setOpen(false)
+        },
     }
 }
 
@@ -159,14 +181,62 @@ const Frame = (props: { width?: string; children: any }) => (
     </div>
 )
 
+/** The panel's history is built ONCE per story. `history={makeHistory(...)}` written inline is a
+ *  reactive getter in Solid — every read would build a fresh state and silently discard a delete or
+ *  a visibility pick — so each story hands its seed to this host instead. */
+const Host = (p: {
+    init: Parameters<typeof makeHistory>[0]
+    width?: string
+    newChat?: boolean
+}) => {
+    // What the app shows once the dialog closes: the chat it resumed or started. The panel itself
+    // never hides, so without this a resume, new chat or Escape would look like it did nothing.
+    const [outcome, setOutcome] = createSignal('')
+    const history = makeHistory({
+        ...p.init,
+        onResume: id =>
+            setOutcome(
+                `resumed: ${p.init.sessions?.find(s => s.sessionId === id)?.summary ?? id}`,
+            ),
+    })
+    const newChat = () => {
+        setOutcome('started a new chat')
+        history.close()
+    }
+    return (
+        <Frame width={p.width}>
+            <Show
+                when={history.open()}
+                fallback={
+                    <div data-story-closed>
+                        <Text tone="faint">
+                            {outcome() || 'history closed'}
+                        </Text>
+                        <TextButton
+                            onClick={() => {
+                                setOutcome('')
+                                history.toggle()
+                            }}
+                        >
+                            history
+                        </TextButton>
+                    </div>
+                }
+            >
+                <ChatHistoryPanel
+                    {...{ history }}
+                    onNewChat={p.newChat === false ? undefined : newChat}
+                />
+            </Show>
+            {/* The app's toast host: a delete's undo toast shows here as it does in the app. */}
+            <ToastHost />
+        </Frame>
+    )
+}
+
 export const List: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel
-                history={makeHistory({ sessions: SESSIONS, scope: 'all' })}
-                onNewChat={() => {}}
-            />
-        </Frame>
+        <Host init={{ sessions: SESSIONS, scope: 'all' }} />
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -187,12 +257,7 @@ export const List: Story = {
 /** Up/Down from the prompt walk the rows; the reached row takes the selected paint. */
 export const KeyboardCursor: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel
-                history={makeHistory({ sessions: SESSIONS, scope: 'all' })}
-                onNewChat={() => {}}
-            />
-        </Frame>
+        <Host init={{ sessions: SESSIONS, scope: 'all' }} />
     ),
     play: async ({ canvasElement }) => {
         const input = canvasElement.querySelector<HTMLInputElement>(
@@ -211,16 +276,11 @@ export const KeyboardCursor: Story = {
 
 export const Search: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel
-                history={makeHistory({
+        <Host init={{
                     sessions: SESSIONS,
                     searchHits: HITS,
                     query: 'quiet row',
-                })}
-                onNewChat={() => {}}
-            />
-        </Frame>
+                }} />
     ),
     play: async ({ canvasElement }) => {
         const input = canvasElement.querySelector<HTMLInputElement>(
@@ -242,15 +302,11 @@ export const Search: Story = {
  *  the match's own painted box ends inside the line's box. */
 export const LongExcerptKeepsTheMatch: Story = {
     render: () => (
-        <Frame width="440px">
-            <ChatHistoryPanel
-                history={makeHistory({
+        <Host width="440px" init={{
                     sessions: SESSIONS,
                     searchHits: HITS,
                     query: 'quiet row',
-                })}
-            />
-        </Frame>
+                }} newChat={false} />
     ),
     play: async ({ canvasElement }) => {
         const line = within(canvasElement).getByText(/quiet row of chips wraps/)
@@ -270,14 +326,10 @@ export const LongExcerptKeepsTheMatch: Story = {
 
 export const Searching: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel
-                history={makeHistory({
+        <Host init={{
                     query: 'quiet row',
                     searchLoading: true,
-                })}
-            />
-        </Frame>
+                }} newChat={false} />
     ),
     play: async ({ canvasElement }) => {
         await expect(
@@ -288,9 +340,7 @@ export const Searching: Story = {
 
 export const NoMatch: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel history={makeHistory({ query: 'zebra' })} />
-        </Frame>
+        <Host init={{ query: 'zebra' }} newChat={false} />
     ),
     play: async ({ canvasElement }) => {
         await expect(
@@ -303,12 +353,7 @@ export const NoMatch: Story = {
 
 export const Loading: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel
-                history={makeHistory({ loading: true })}
-                onNewChat={() => {}}
-            />
-        </Frame>
+        <Host init={{ loading: true }} />
     ),
     play: async ({ canvasElement }) => {
         await expect(within(canvasElement).getByText('Loading…')).not.toBeNull()
@@ -317,12 +362,7 @@ export const Loading: Story = {
 
 export const Empty: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel
-                history={makeHistory({ sessions: [] })}
-                onNewChat={() => {}}
-            />
-        </Frame>
+        <Host init={{ sessions: [] }} />
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -334,12 +374,7 @@ export const Empty: Story = {
 
 export const EmptyDaemon: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel
-                history={makeHistory({ sessions: [], scope: 'daemon' })}
-                onNewChat={() => {}}
-            />
-        </Frame>
+        <Host init={{ sessions: [], scope: 'daemon' }} />
     ),
     play: async ({ canvasElement }) => {
         await expect(
@@ -350,12 +385,7 @@ export const EmptyDaemon: Story = {
 
 export const EmptyAll: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel
-                history={makeHistory({ sessions: [], scope: 'all' })}
-                onNewChat={() => {}}
-            />
-        </Frame>
+        <Host init={{ sessions: [], scope: 'all' }} />
     ),
     play: async ({ canvasElement }) => {
         await expect(
@@ -367,9 +397,7 @@ export const EmptyAll: Story = {
 /** No `onNewChat` — the header carries only the scope and close. */
 export const WithoutNewChat: Story = {
     render: () => (
-        <Frame>
-            <ChatHistoryPanel history={makeHistory({ sessions: SESSIONS })} />
-        </Frame>
+        <Host init={{ sessions: SESSIONS }} newChat={false} />
     ),
     play: async ({ canvasElement }) => {
         await expect(within(canvasElement).queryByText('new chat')).toBeNull()
@@ -379,12 +407,7 @@ export const WithoutNewChat: Story = {
 /** A column-mode host: the scope + new chat drop to a line of their own under the prompt. */
 export const Narrow: Story = {
     render: () => (
-        <Frame width="300px">
-            <ChatHistoryPanel
-                history={makeHistory({ sessions: SESSIONS, scope: 'all' })}
-                onNewChat={() => {}}
-            />
-        </Frame>
+        <Host width="300px" init={{ sessions: SESSIONS, scope: 'all' }} />
     ),
     play: async ({ canvasElement }) => {
         // The scope must sit on its own line below the prompt, not squeeze the input beside it.
@@ -403,11 +426,260 @@ export const Narrow: Story = {
 /** Wide pane: the rows sit in a centred 720px reading column, header aligned to it. */
 export const Wide: Story = {
     render: () => (
-        <Frame width="1100px">
-            <ChatHistoryPanel
-                history={makeHistory({ sessions: SESSIONS, scope: 'all' })}
-                onNewChat={() => {}}
-            />
-        </Frame>
+        <Host width="1100px" init={{ sessions: SESSIONS, scope: 'all' }} />
     ),
+}
+
+// ── Visibility + delete ──────────────────────────────────────────────────────────────────────
+
+/** Chats with their own levels: s3 hidden, s4 chat-only, the rest inherit the (open) default. */
+const RESTRICTED: ChatSessionInfo[] = SESSIONS.map(s =>
+    s.sessionId === 's3'
+        ? { ...s, ownVisibility: 'hidden' as const }
+        : s.sessionId === 's4'
+          ? { ...s, ownVisibility: 'chat-only' as const }
+          : s,
+)
+
+const rowOf = (root: HTMLElement, text: string) =>
+    within(root).getByText(text).closest('[role="option"]') as HTMLElement
+
+export const RestrictedChats: Story = {
+    render: () => (
+        <Host init={{ sessions: RESTRICTED, scope: 'all' }} />
+    ),
+    play: async ({ canvasElement }) => {
+        await expect(
+            canvasElement.querySelectorAll('[title^="Hidden from"]').length,
+        ).toBe(1)
+        await expect(
+            canvasElement.querySelectorAll('[title^="Chat only"]').length,
+        ).toBe(1)
+    },
+}
+
+/** "Hide all" set the default to hidden; s1 was exposed on its own with an explicit `all`. */
+export const DefaultHidden: Story = {
+    render: () => (
+        <Host init={{
+                    sessions: SESSIONS.map(s =>
+                        s.sessionId === 's1'
+                            ? { ...s, ownVisibility: 'all' as const }
+                            : s,
+                    ),
+                    scope: 'all',
+                    defaultVisibility: 'hidden',
+                }} />
+    ),
+    play: async ({ canvasElement }) => {
+        // six inherit the hidden default, the one exposed chat carries no badge
+        await expect(
+            canvasElement.querySelectorAll('[title^="Hidden from"]').length,
+        ).toBe(6)
+        await expect(
+            rowOf(canvasElement, 'Restyle the daemon page').querySelector(
+                '[title^="Hidden from"]',
+            ),
+        ).toBeNull()
+    },
+}
+
+/** Right-click opens the row menu; Visibility flies out the three levels, a Check on the chat's own. */
+export const RowMenu: Story = {
+    render: () => (
+        <Host init={{ sessions: RESTRICTED, scope: 'all' }} />
+    ),
+    play: async ({ canvasElement }) => {
+        const body = within(document.body)
+        await userEvent.pointer({
+            keys: '[MouseRight]',
+            target: rowOf(canvasElement, 'vault-review — orphaned notes'),
+        })
+        await userEvent.hover(await body.findByText('Visibility'))
+        await expect(await body.findByText('Chat only')).not.toBeNull()
+        await expect(body.getByText('Hidden from both')).not.toBeNull()
+        await expect(body.getByText('Delete chat')).not.toBeNull()
+    },
+}
+
+/** Under a restricting default, a chat with no level of its own says why it is hidden; picking
+ *  "Visible" writes an explicit `all`, so the badge goes away. */
+export const RowMenuInherited: Story = {
+    render: () => (
+        <Host init={{
+                    sessions: SESSIONS,
+                    scope: 'all',
+                    defaultVisibility: 'hidden',
+                }} />
+    ),
+    play: async ({ canvasElement }) => {
+        const body = within(document.body)
+        const row = rowOf(canvasElement, 'Restyle the daemon page')
+        await userEvent.pointer({ keys: '[MouseRight]', target: row })
+        await userEvent.hover(await body.findByText('Visibility'))
+        await expect(
+            await body.findByText(
+                'Effective: Hidden — inherited from the chat default',
+            ),
+        ).not.toBeNull()
+        await userEvent.click(body.getByText('Visible to Daemon + Chat'))
+        // the list re-renders from the new state, so the row is looked up again, not the old node
+        await waitFor(() =>
+            expect(
+                rowOf(canvasElement, 'Restyle the daemon page').querySelector(
+                    '[title^="Hidden from"]',
+                ),
+            ).toBeNull(),
+        )
+    },
+}
+
+/** The header menu: the default level (Check on the current one) and the scope-wide delete. */
+export const ManageMenu: Story = {
+    render: () => (
+        <Host init={{
+                    sessions: RESTRICTED,
+                    scope: 'daemon',
+                    defaultVisibility: 'chat-only',
+                }} />
+    ),
+    play: async ({ canvasElement }) => {
+        const body = within(document.body)
+        await userEvent.click(
+            within(canvasElement).getByRole('button', { name: 'Manage chats' }),
+        )
+        await userEvent.hover(await body.findByText('Default for all chats'))
+        await expect(await body.findByText('Hidden from both')).not.toBeNull()
+        await expect(body.getByText('Delete all daemon chats')).not.toBeNull()
+    },
+}
+
+
+
+/** Backspace while typing in the prompt edits the query: it never reaches the delete chord. */
+export const BackspaceWhileTypingKeepsChats: Story = {
+    render: () => (
+        <Host init={{ sessions: SESSIONS, scope: 'all' }} />
+    ),
+    play: async ({ canvasElement }) => {
+        const input = canvasElement.querySelector<HTMLInputElement>(
+            'input[placeholder="conversations"]',
+        )!
+        input.focus()
+        await userEvent.keyboard('abc{Backspace}')
+        await expect(input.value).toBe('ab')
+        // Emptying the query with Backspace never reaches a row either: every chat is still there.
+        await userEvent.keyboard('{Backspace}{Backspace}')
+        await expect(input.value).toBe('')
+        await waitFor(() =>
+            expect(
+                within(canvasElement).getAllByRole('button', { name: 'delete chat' }).length,
+            ).toBe(SESSIONS.length),
+        )
+    },
+}
+
+
+/** The header menu with nothing to delete: the scope-wide delete is disabled. */
+export const ManageMenuEmpty: Story = {
+    render: () => (
+        <Host init={{ sessions: [], scope: 'daemon' }} />
+    ),
+    play: async ({ canvasElement }) => {
+        const body = within(document.body)
+        await userEvent.click(
+            within(canvasElement).getByRole('button', { name: 'Manage chats' }),
+        )
+        const del = await body.findByText('Delete all daemon chats')
+        await expect(
+            del.closest('.bismuth-popover-row--disabled'),
+        ).not.toBeNull()
+    },
+}
+
+
+/** `new chat` closes the dialog the way the app does (a fresh conversation in the tab), and the
+ *  host's `history` button opens it again. */
+export const NewChatClosesHistory: Story = {
+    render: () => <Host init={{ sessions: SESSIONS, scope: 'all' }} />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(canvas.getByRole('button', { name: /new chat/ }))
+        await expect(canvas.getByText('started a new chat')).not.toBeNull()
+        await userEvent.click(canvas.getByRole('button', { name: /history/ }))
+        await expect(canvas.getByText('Restyle the daemon page')).not.toBeNull()
+    },
+}
+
+
+/** Clear toasts a previous story left, so each play reads only its own. */
+const clearToasts = () => {
+    for (const t of toasts()) dismissToast(t.id)
+}
+
+/** A row's hover `[x]` deletes the chat at once and offers `undo`, which puts it back. */
+export const RowXDeletesWithUndo: Story = {
+    render: () => <Host init={{ sessions: SESSIONS, scope: 'all' }} />,
+    play: async ({ canvasElement }) => {
+        clearToasts()
+        const canvas = within(canvasElement)
+        const body = within(document.body)
+        // A synthetic pointer cannot raise CSS :hover, so the hover-revealed `[x]` (pointer-events
+        // none until then) is clicked past that check; real hover is covered by the browser run.
+        await userEvent.click(canvas.getAllByRole('button', { name: 'delete chat' })[0], { pointerEventsCheck: 0 })
+        await waitFor(() =>
+            expect(canvas.queryByText('Restyle the daemon page')).toBeNull(),
+        )
+        await expect(body.getByText('deleted chat: Restyle the daemon page')).not.toBeNull()
+        await userEvent.click(body.getByRole('button', { name: /undo/ }))
+        await waitFor(() =>
+            expect(canvas.getByText('Restyle the daemon page')).not.toBeNull(),
+        )
+        clearToasts()
+    },
+}
+
+/** Delete on the arrow-key cursor row deletes it at once, with the same undo. */
+export const DeleteKeyDeletesWithUndo: Story = {
+    render: () => <Host init={{ sessions: SESSIONS, scope: 'all' }} />,
+    play: async ({ canvasElement }) => {
+        clearToasts()
+        const canvas = within(canvasElement)
+        const input = canvasElement.querySelector<HTMLInputElement>(
+            'input[placeholder="conversations"]',
+        )!
+        input.focus()
+        await userEvent.keyboard('{ArrowDown}{Delete}')
+        await waitFor(() =>
+            expect(canvas.queryByText('Restyle the daemon page')).toBeNull(),
+        )
+        await expect(canvas.getByText('dream — nightly vault review')).not.toBeNull()
+        await expect(
+            within(document.body).getByText('deleted chat: Restyle the daemon page'),
+        ).not.toBeNull()
+        clearToasts()
+    },
+}
+
+/** Delete all removes every chat in the scope at once; `undo` brings them all back. */
+export const DeleteAllWithUndo: Story = {
+    render: () => <Host init={{ sessions: SESSIONS, scope: 'all' }} />,
+    play: async ({ canvasElement }) => {
+        clearToasts()
+        const canvas = within(canvasElement)
+        const body = within(document.body)
+        await userEvent.click(canvas.getByRole('button', { name: 'Manage chats' }))
+        await userEvent.click(await body.findByText('Delete every chat'))
+        await waitFor(() =>
+            expect(canvas.getByText('No conversations yet.')).not.toBeNull(),
+        )
+        await expect(body.getByText(`deleted ${SESSIONS.length} chats`)).not.toBeNull()
+        await userEvent.click(body.getByRole('button', { name: /undo/ }))
+        await waitFor(() =>
+            expect(canvas.getAllByRole('button', { name: 'delete chat' }).length).toBe(
+                SESSIONS.length,
+            ),
+        )
+        clearToasts()
+    },
 }

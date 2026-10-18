@@ -45,6 +45,7 @@ import { browserStorage } from '../chat/chatSessionPrefs'
 import { createChatDropTarget } from '../chat/createChatDropTarget'
 import DropCue from '../ui/DropCue'
 import styles from './DaemonPageHost.module.css'
+import { pushUndoToast } from '../undoToast'
 import { pushToast } from '../ui/toastStore'
 import { copyChatText } from '../chat/copyChatText'
 import DaemonChat from './DaemonChat'
@@ -141,9 +142,15 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             fail: "Couldn't copy path",
         })
     }
+    // Immediate, with an undo toast that writes the removed line back (every delete in the app).
     const onDeleteLogEntry = async (e: ActivityEvent): Promise<void> => {
         try {
-            await api.deleteDaemonLogEntry(e)
+            const line = await api.deleteDaemonLogEntry(e)
+            if (e.file)
+                pushUndoToast(`deleted log entry: ${e.name || e.kind}`, async () => {
+                    await api.restoreDaemonLogEntry(e.file!, line)
+                    await fetchLogs()
+                })
         } catch (err) {
             pushToast((err as Error).message || "couldn't delete the log entry")
         }

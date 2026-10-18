@@ -18,6 +18,7 @@ test('SETTINGS_SCHEMA nests the app sections, calendar, ui, server, folderIcons 
             'attachments',
             'calendar',
             'chat',
+            'chatVisibility',
             'codex',
             'daemon',
             'dailyNotes',
@@ -270,8 +271,8 @@ test('DEFAULTS.keybindings materializes every catalog combo', () => {
 
 // --- Task 2: the 25 new rebindable-keys ids, on top of the original 24. ---
 
-test('KEYBINDING_CATALOG has exactly 53 entries (24 original + 25 rebindable-keys + 3 file-menu + quick-ask)', () => {
-    expect(KEYBINDING_CATALOG.length).toBe(53)
+test('KEYBINDING_CATALOG has exactly 54 entries (24 original + 25 rebindable-keys + 3 file-menu + quick-ask + chat-history-delete)', () => {
+    expect(KEYBINDING_CATALOG.length).toBe(54)
 })
 
 test('every KEYBINDING_CATALOG id is unique', () => {
@@ -438,6 +439,7 @@ test('DEFAULTS is the plain nested object derived from the schema', () => {
             'attachments',
             'calendar',
             'chat',
+            'chatVisibility',
             'codex',
             'daemon',
             'dailyNotes',

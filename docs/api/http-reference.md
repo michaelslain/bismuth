@@ -369,7 +369,8 @@ Concepts are in the [daemon docs](../daemon/setup.md).
 | `POST /daemon/name` | `{name}` | `{name}`, trimmed to one line. `400` for a blank name. | owner only; sets `name:` in `.daemon/identity.md`, creating the stock file when it is absent |
 | `GET /daemon/snapshot` | none | `{daemon, crons, processes, identity}` for this vault. | open; none |
 | `GET /daemon/logs` | `?limit=&kind=&name=&since=` | Activity events, newest first. | open; none |
-| `POST /daemon/logs/delete` | `{file, ts, kind, name, event, outcome?}` | `{ok: true}`. `404` when no line matches. | owner only; rewrites one day file under `.daemon/logs/` |
+| `POST /daemon/logs/delete` | `{file, ts, kind, name, event, outcome?}` | `{ok: true, line}`, the removed line. `404` when no line matches. | owner only; rewrites one day file under `.daemon/logs/` |
+| `POST /daemon/logs/restore` | `{file, line}` | `{ok: true}`; `400` when `line` is not an event or `file` is not a day file. | owner only; writes the line back into its day file in time order (the undo) |
 | `GET /daemon/install` | none | `{installed, running, binPath}` | open; none |
 | `POST /daemon/setup` | none | `{ok, binPath, error?}` | open; none |
 | `POST /daemon/update` | none | `{ok, binPath, error?}`, the same action as setup. | open; none |
@@ -456,9 +457,13 @@ Chat history routes are owner only because a transcript has no single path to ch
 
 | Route | Request | Response | Access and effects |
 |---|---|---|---|
-| `GET /chat/sessions` | `?scope=` optional | `{sessions: [{sessionId, summary, lastModified, origin}]}` | owner only; none |
+| `GET /chat/sessions` | `?scope=` optional | `{sessions: [{sessionId, summary, lastModified, origin, visibility?, ownVisibility?}]}`; `visibility` is the resolved level, omitted for `all`, and `ownVisibility` the chat's own entry, omitted when it takes the default. | owner only; none |
 | `GET /chat/session-messages` | `?id=&provider=` | `{frames: ChatFrame[]}`, empty without `id`. | owner only; none |
-| `POST /chat/search` | `{query?, scope?}` | `{hits}`, empty for an empty query. | owner only; none |
+| `POST /chat/search` | `{query?, scope?}` | `{hits}`, empty for an empty query; each hit carries `visibility` and `ownVisibility` like a session row. | owner only; none |
+| `GET /chat/visibility` | none | `{default}`, the level of every chat without its own. | owner only; none |
+| `POST /chat/visibility` | `{sessionId, level}` (`level: null` clears it) or `{default: level}` | `{}`; `400` for an unknown level, `409` when `.settings` is invalid. | owner only; writes `.settings` `chatVisibility`, removes the transcript notes of chats now hidden from the daemon, re-gates open chats |
+| `POST /chat/delete` | `{sessionIds}` or `{scope}` (`user`, `daemon` or `all`) | `{deleted, sessionIds}`, the ids moved to the trash; `400` without ids or a valid scope. | owner only; moves each session file and subagent folder to `.bismuth-trash/` beside it, removes unprocessed transcript notes, purges trash older than 10 minutes |
+| `POST /chat/restore` | `{sessionIds}` | `{restored}`; `400` without ids. | owner only; moves the chats back from the trash (the undo) |
 
 `scope` is `user`, `daemon` or `all`; anything else, or absent, is `user`.
 `origin` is `user` or `daemon`.

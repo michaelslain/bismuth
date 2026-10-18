@@ -7,6 +7,9 @@ import { dirname, join } from 'node:path'
 import {
     writeAutoNote,
     buildAutoNoteBody,
+    isChatVisibleTo,
+    readChatVisibility,
+    resolveChatVisibility,
     type TranscriptEntry,
 } from '@bismuth/memory'
 
@@ -51,6 +54,16 @@ export async function collectTranscript(
     transcriptPath: string,
     sessionId?: string,
 ): Promise<void> {
+    // A chat hidden from the daemon is never captured. The memory dir is `<vault>/.daemon/memory`.
+    const chats = await readChatVisibility(dirname(dirname(dir)))
+    if (
+        !chats.ok ||
+        !isChatVisibleTo(
+            resolveChatVisibility(sessionId ?? '', chats.rules),
+            'daemon',
+        )
+    )
+        return
     let raw: string
     try {
         raw = await Bun.file(transcriptPath).text()

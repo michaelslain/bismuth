@@ -5,16 +5,21 @@
 // memory/src/sessionHistory.ts; this file only walks the directory.
 //
 // Visibility: a transcript quotes whatever the session read, with no single path to check, so the
-// CLI gate (core/src/visibilityCliGate.ts) puts `history` in the refuse-when-restricted tier, as it
-// does `chat`.
+// CLI gate (core/src/visibilityCliGate.ts) refuses `history` to an agent whenever the vault hides a
+// note. Chats hidden from the agent's channel (`.settings` chatVisibility) are dropped here instead,
+// so hiding a chat does not cost an agent every other one.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { CommandMap } from '../types'
 import { BOOLEAN_FLAGS, bool, fail, flag, out, positionals } from '../args'
 import { realpathLoose } from '../../../core/src/realPath'
+import { cliGateChannel } from '../../../core/src/visibilityCliGate'
 import { resolveVaultRoot } from '../../../mcp/src/memory'
 import {
+    isChatVisibleTo,
+    readChatVisibility,
+    resolveChatVisibility,
     budgetSessions,
     encodeProjectDir,
     RESULT_BUDGET_CHARS,
@@ -43,6 +48,16 @@ function vaultDir(args: string[]): string {
     } catch {
         return vault
     }
+}
+
+/** Whether the session running this command may see a chat. Always true for the owner's own shell;
+ *  an agent channel loses the chats hidden from it, and an invalid `.settings` hides every chat. */
+async function chatFilter(vault: string): Promise<(id: string) => boolean> {
+    const channel = cliGateChannel()
+    if (channel === null) return () => true
+    const chats = await readChatVisibility(vault)
+    if (!chats.ok) return () => false
+    return id => isChatVisibleTo(resolveChatVisibility(id, chats.rules), channel)
 }
 
 function sessionsDir(vault: string): string {
@@ -98,7 +113,9 @@ export const commands: CommandMap = {
             const words = queryWords(positionals(args, BOOLEANS).join(' '))
             const { since, until } = dateRange(args)
             const limit = Number(flag(args, 'limit') ?? 10)
-            const dir = sessionsDir(vaultDir(args))
+            const vault = vaultDir(args)
+            const dir = sessionsDir(vault)
+            const visible = await chatFilter(vault)
             const self = process.env.CLAUDE_CODE_SESSION_ID
             let files: { name: string; mtime: number }[] = []
             try {
@@ -118,7 +135,7 @@ export const commands: CommandMap = {
             for (const f of files) {
                 if (found.length >= limit) break
                 const id = f.name.slice(0, -'.jsonl'.length)
-                if (id === self) continue
+                if (id === self || !visible(id)) continue
                 const text = readFileSync(join(dir, f.name), 'utf8')
                 const lower = words.length ? text.toLowerCase() : ''
                 if (words.some(w => !lower.includes(w))) continue
@@ -152,7 +169,13 @@ export const commands: CommandMap = {
         run: async args => {
             const [id] = positionals(args)
             if (!id || !/^[\w-]+$/.test(id)) fail('usage: bismuth history show <session-id>')
-            const file = join(sessionsDir(vaultDir(args)), `${id}.jsonl`)
+            const vault = vaultDir(args)
+            if (!(await chatFilter(vault))(id))
+                fail(
+                    `Refused: chat ${id} is marked off-limits to AI sessions by this vault's visibility ` +
+                        `settings. Do not try to reach it another way — tell the user it is hidden if they need to know.`,
+                )
+            const file = join(sessionsDir(vault), `${id}.jsonl`)
             let text: string
             try {
                 text = readFileSync(file, 'utf8')

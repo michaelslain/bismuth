@@ -72,6 +72,9 @@
    `.palette-sub`, so source order alone decided who won. Scoping under `.palette-row` makes it
    (0,2,0) and outranks `.text` regardless of stylesheet order. */
 .palette-row .palette-sub { font-size: var(--fs-micro); margin-left: auto; padding-left: var(--sp-5); }
+/* Status mark (a visibility badge) at the trailing edge: a fixed icon-wide slot, so rows with and
+   without a mark keep their sublabels in one column; never shrinks. */
+.palette-badge { flex-shrink: 0; width: 1.2em; display: inline-flex; align-items: center; justify-content: center; }
 /* Fuzzy-matched characters: accent color carries the emphasis — no bold-on-top-of-color. */
 .palette-match { color: var(--accent); font-weight: var(--fw-regular); }
 /* Shortcut: a layout slot only — the Kbd primitive types the chord, and the caller passes
@@ -88,3 +91,9 @@
 .palette-row .palette-sub + .palette-shortcut {
   margin-left: var(--sp-5);
 }
+/* A row with floating actions (ui/RowActions) clears its trailing meta while they show: the time
+   and the status mark step aside, so the `[x]` sits on empty ground instead of half over them. */
+.palette-row[data-row-actions-host]:hover .palette-sub,
+.palette-row[data-row-actions-host]:hover .palette-badge,
+.palette-row[data-row-actions-host][data-selected] .palette-sub,
+.palette-row[data-row-actions-host][data-selected] .palette-badge { opacity: 0; }

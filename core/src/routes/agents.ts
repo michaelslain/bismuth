@@ -17,12 +17,31 @@ import {
     setProviderKey,
 } from '../chatProviders/opencode/opencodeProviders'
 import { listChatSessions, searchChatSessions, parseChatScope } from '../chat'
+import {
+    deleteChats,
+    deleteChatsInScope,
+    restoreChats,
+    setChatVisibility,
+} from '../chatLogs'
+import {
+    chatVisibilityFields,
+    isChatVisibility,
+    NO_CHAT_RULES,
+    readChatVisibility,
+    type ChatVisibilityRules,
+} from '@bismuth/memory'
 import { ok, error, type Handler, type RouteContext } from './context'
 
 export default function agentsRoutes(
     ctx: RouteContext,
 ): Record<string, Handler> {
     const { cfg, requestChannel } = ctx
+    /** The vault's chat rules for the history list; an invalid `.settings` shows every chat as
+     *  inheriting `all` here, while the deny list (which fails closed) refuses agents. */
+    async function chatRules(): Promise<ChatVisibilityRules> {
+        const res = await readChatVisibility(cfg.vault)
+        return res.ok ? res.rules : NO_CHAT_RULES
+    }
     /** Shared shell of the four /opencode/* provider-connect routes. Owner-only (a connect writes a
      *  credential into the user's opencode store), then the shared opencode server's client — 409
      *  `opencode-missing` when opencode is not installed or its server will not start — then `run`.
@@ -103,12 +122,19 @@ export default function agentsRoutes(
         // picker UI) to read arbitrary past session content over HTTP at all. Refuse outright.
         'GET /chat/sessions': async (req, url) => {
             if (requestChannel(req) !== 'owner') return error('forbidden', 403)
-            return ok({
-                sessions: await listChatSessions(
+            const [sessions, rules] = await Promise.all([
+                listChatSessions(
                     cfg.vault,
                     undefined,
                     parseChatScope(url.searchParams.get('scope')),
                 ),
+                chatRules(),
+            ])
+            return ok({
+                sessions: sessions.map(s => ({
+                    ...s,
+                    ...chatVisibilityFields(s.sessionId, rules),
+                })),
             })
         },
 
@@ -151,12 +177,115 @@ export default function agentsRoutes(
                 query?: string
                 scope?: string
             }
-            return ok({
-                hits: await searchChatSessions(
+            const [hits, rules] = await Promise.all([
+                searchChatSessions(
                     cfg.vault,
                     query ?? '',
                     undefined,
                     parseChatScope(scope),
+                ),
+                chatRules(),
+            ])
+            return ok({
+                hits: hits.map(h => ({
+                    ...h,
+                    ...chatVisibilityFields(h.sessionId, rules),
+                })),
+            })
+        },
+
+        // A past chat's AI visibility (memory/src/chatVisibility.ts): GET reads the chat default;
+        // POST sets one chat's own level (`{sessionId, level}`, `level: null` clears it) or the
+        // default (`{default: level}`). Owner-only: the rules decide what agents may read, so an agent
+        // must never rewrite them, the same reason `folder-visibility` is refused to agents.
+        'GET /chat/visibility': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            return ok({ default: (await chatRules()).default })
+        },
+        'POST /chat/visibility': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const body = (await req.json().catch(() => null)) as {
+                sessionId?: unknown
+                level?: unknown
+                default?: unknown
+            } | null
+            if (!body) return error('expected a JSON body', 400)
+            let persisted: boolean
+            if (body.default !== undefined) {
+                if (!isChatVisibility(body.default))
+                    return error('invalid visibility', 400)
+                persisted = await setChatVisibility(
+                    cfg.vault,
+                    { default: true },
+                    body.default,
+                )
+            } else {
+                if (typeof body.sessionId !== 'string' || !body.sessionId)
+                    return error('missing sessionId', 400)
+                if (body.level !== null && !isChatVisibility(body.level))
+                    return error('invalid visibility', 400)
+                persisted = await setChatVisibility(
+                    cfg.vault,
+                    { sessionId: body.sessionId },
+                    body.level,
+                )
+            }
+            if (!persisted)
+                return error(
+                    'settings file is invalid — fix .settings before changing chat visibility',
+                    409,
+                )
+            return ok()
+        },
+
+        // Delete past chats: `{sessionIds}` or every chat in `{scope}`. They wait in the trash for
+        // `POST /chat/restore` (the undo) until the purge (core/src/chatLogs.ts). Owner-only.
+        'POST /chat/delete': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const body = (await req.json().catch(() => null)) as {
+                sessionIds?: unknown
+                scope?: unknown
+            } | null
+            if (!body) return error('expected a JSON body', 400)
+            if (Array.isArray(body.sessionIds)) {
+                if (!body.sessionIds.every(id => typeof id === 'string' && id))
+                    return error('invalid sessionIds', 400)
+                const ids = await deleteChats(
+                    cfg.vault,
+                    body.sessionIds as string[],
+                )
+                return ok({ deleted: ids.length, sessionIds: ids })
+            }
+            // Strict, unlike the list's lenient parse: an unknown scope must never fall back to
+            // deleting the default scope.
+            if (
+                body.scope !== 'user' &&
+                body.scope !== 'daemon' &&
+                body.scope !== 'all'
+            )
+                return error('missing sessionIds or a valid scope', 400)
+            const ids = await deleteChatsInScope(
+                cfg.vault,
+                parseChatScope(body.scope),
+            )
+            return ok({ deleted: ids.length, sessionIds: ids })
+        },
+
+        // Put deleted chats back from the trash: the undo of `POST /chat/delete`. Owner-only.
+        'POST /chat/restore': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const body = (await req.json().catch(() => null)) as {
+                sessionIds?: unknown
+            } | null
+            if (
+                !Array.isArray(body?.sessionIds) ||
+                !body.sessionIds.every(id => typeof id === 'string' && id)
+            )
+                return error('missing sessionIds', 400)
+            return ok({
+                restored: await restoreChats(
+                    cfg.vault,
+                    body.sessionIds as string[],
                 ),
             })
         },

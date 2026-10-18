@@ -92,3 +92,48 @@ export const Active: Story = {
         onClick: () => {},
     },
 }
+
+/** Chat only: hidden from the daemon, still readable by the in-app chat. */
+export const ChatOnly: Story = {
+    args: {
+        summary: 'vault-review — orphaned notes',
+        lastModified: Date.now() - 3 * 24 * 60 * MIN,
+        origin: 'daemon',
+        visibility: 'chat-only',
+        onClick: () => {},
+    },
+    play: async ({ canvasElement }) => {
+        await expect(
+            canvasElement.querySelector('[title^="Chat only"]'),
+        ).not.toBeNull()
+    },
+}
+
+/** Hidden from both the daemon and the in-app chat. */
+export const Hidden: Story = {
+    args: {
+        summary: 'Why does the month grid clip its last two week rows',
+        lastModified: Date.now() - 24 * 60 * MIN,
+        origin: 'user',
+        visibility: 'hidden',
+        onClick: () => {},
+    },
+    play: async ({ canvasElement }) => {
+        await expect(
+            canvasElement.querySelector('[title^="Hidden from"]'),
+        ).not.toBeNull()
+    },
+}
+
+/** A long title still ellipsises before it pushes the badge or the time off the row. */
+export const HiddenLongTitle: Story = {
+    args: {
+        summary:
+            'Work out why the calendar month grid clips its last two week rows when the pane is short and the event chips wrap',
+        lastModified: Date.now() - 2 * 24 * 60 * MIN,
+        origin: 'user',
+        visibility: 'hidden',
+        selected: true,
+        onClick: () => {},
+    },
+}

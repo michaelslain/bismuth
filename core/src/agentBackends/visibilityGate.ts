@@ -78,13 +78,18 @@ export async function resolveVisibilityGate(
     }
     const restricted = plan.entries
     if (restricted.length === 0) return { allowed: true }
+    // A chat's entry can be a session file and its subagent folder; count chats by session file.
+    const chats = restricted.filter(
+        e => e.kind === 'chat' && e.abs.endsWith('.jsonl'),
+    ).length
+    const notes = restricted.filter(e => e.kind !== 'chat').length
 
     // Unknown id: refuse before backendOf() can degrade it into the default backend's answer.
     if (!isBackendId(backendId)) {
         return {
             allowed: false,
             restrictedCount: restricted.length,
-            message: visibilityRefusalMessage(backendId, restricted.length),
+            message: visibilityRefusalMessage(backendId, notes, chats),
         }
     }
     const d = BACKENDS[backendId]
@@ -92,6 +97,6 @@ export async function resolveVisibilityGate(
     return {
         allowed: false,
         restrictedCount: restricted.length,
-        message: visibilityRefusalMessage(d.label, restricted.length),
+        message: visibilityRefusalMessage(d.label, notes, chats),
     }
 }

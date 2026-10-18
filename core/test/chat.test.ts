@@ -437,6 +437,11 @@ describe('visibilityRefusalMessage (never names a restricted note, only counts t
         expect(visibilityRefusalMessage('Codex', 1)).not.toContain('1 notes')
     })
 
+    test('counts hidden chats beside notes', () => {
+        expect(visibilityRefusalMessage('Codex', 2, 1)).toContain('2 notes and 1 chat off-limits')
+        expect(visibilityRefusalMessage('Codex', 0, 3)).toContain('marks 3 chats off-limits')
+    })
+
     test('never contains a path separator or a file extension — a count, not a listing', () => {
         const text = visibilityRefusalMessage('Gemini CLI', 7)
         expect(text).not.toMatch(/\.md\b/)

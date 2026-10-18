@@ -165,8 +165,8 @@ export const Expanded: Story = {
 
 const deleteOpened = fn()
 
-/** `[ delete ]` asks first — `[ delete ] [ cancel ]` — and the confirmed delete takes the entry
- *  out of the log. Neither click opens the section, though each unmounts before it bubbles. */
+/** A row's `[x]` deletes the entry at once, and the detail's `[ delete ]` does too; neither click
+ *  opens the section. (The page host adds the undo toast.) */
 export const Delete: Story = {
     render: () => {
         const [events, setEvents] = createSignal(sampleActivity())
@@ -188,15 +188,15 @@ export const Delete: Story = {
         deleteOpened.mockClear()
         const total = logRows(canvasElement).length
         const first = logRows(canvasElement)[0] as HTMLElement
-        await userEvent.click(first.querySelector('button')!)
-        const detail = within(first).getByTestId('daemon-log-detail')
-        await userEvent.click(within(detail).getByRole('button', { name: /delete/ }))
-        await expect(within(detail).getByRole('button', { name: /cancel/ })).toBeInTheDocument()
-        await userEvent.click(within(detail).getByRole('button', { name: /cancel/ }))
-        await expect(within(detail).queryByRole('button', { name: /cancel/ })).toBeNull()
-        await userEvent.click(within(detail).getByRole('button', { name: /delete/ }))
-        await userEvent.click(within(detail).getByRole('button', { name: /delete/ }))
+        // A synthetic pointer cannot raise CSS :hover, so the hover-revealed `[x]` (pointer-events
+        // none until then) is clicked past that check; real hover is covered by the browser run.
+        await userEvent.click(within(first).getByRole('button', { name: 'delete log entry' }), { pointerEventsCheck: 0 })
         await expect(logRows(canvasElement).length).toBe(total - 1)
+        const next = logRows(canvasElement)[0] as HTMLElement
+        await userEvent.click(next.querySelector('button')!)
+        const detail = within(next).getByTestId('daemon-log-detail')
+        await userEvent.click(within(detail).getByRole('button', { name: /delete/ }))
+        await expect(logRows(canvasElement).length).toBe(total - 2)
         await expect(deleteOpened).not.toHaveBeenCalled()
     },
 }

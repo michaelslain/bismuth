@@ -186,15 +186,15 @@ const sameEntry = (e: Record<string, unknown>, ref: ActivityEntryRef) =>
 export function deleteActivityEntry(
     daemonDir: string,
     ref: ActivityEntryRef,
-): boolean {
-    if (!FILE_RE.test(ref.file)) return false
+): string | null {
+    if (!FILE_RE.test(ref.file)) return null
     const path = join(daemonDir, 'logs', ref.file)
     for (let attempt = 0; attempt < 5; attempt++) {
         let text: string
         try {
             text = readFileSync(path, 'utf-8')
         } catch {
-            return false
+            return null
         }
         const lines = text.split('\n')
         const at = lines.findIndex(raw => {
@@ -209,10 +209,65 @@ export function deleteActivityEntry(
                 return false
             }
         })
-        if (at === -1) return false
-        lines.splice(at, 1)
+        if (at === -1) return null
+        const [removed] = lines.splice(at, 1)
         if (readFileSync(path, 'utf-8') !== text) continue
         writeFileAtomicSync(path, lines.join('\n'))
+        return removed!
+    }
+    return null
+}
+
+/**
+ * Put a deleted entry's line back into its day file, before the first line stamped later than it,
+ * so the file stays in time order (the undo of {@link deleteActivityEntry}). The line must parse as
+ * an event object with a `ts`. Retries when the daemon appended meanwhile, like the delete.
+ */
+export function restoreActivityEntry(
+    daemonDir: string,
+    file: string,
+    line: string,
+): boolean {
+    if (!FILE_RE.test(file)) return false
+    let ts: string
+    try {
+        const parsed = JSON.parse(line) as Record<string, unknown>
+        if (!parsed || typeof parsed !== 'object' || typeof parsed.ts !== 'string')
+            return false
+        ts = parsed.ts
+    } catch {
+        return false
+    }
+    const path = join(daemonDir, 'logs', file)
+    for (let attempt = 0; attempt < 5; attempt++) {
+        let text = ''
+        try {
+            text = readFileSync(path, 'utf-8')
+        } catch {
+            // the day file went with its last entry; the restore recreates it
+        }
+        const lines = text === '' ? [] : text.split('\n')
+        const at = lines.findIndex(raw => {
+            try {
+                const t = (JSON.parse(raw.trim()) as { ts?: unknown }).ts
+                return typeof t === 'string' && t > ts
+            } catch {
+                return false
+            }
+        })
+        if (at === -1) {
+            const end = lines.length && lines[lines.length - 1] === '' ? lines.length - 1 : lines.length
+            lines.splice(end, 0, line)
+        } else lines.splice(at, 0, line)
+        let now = ''
+        try {
+            now = readFileSync(path, 'utf-8')
+        } catch {}
+        if (now !== text) continue
+        // Always newline-terminated: the daemon appends whole lines, and an unterminated last line
+        // would fuse with the next one.
+        const out = lines.join('\n')
+        writeFileAtomicSync(path, out.endsWith('\n') ? out : `${out}\n`)
         return true
     }
     return false
