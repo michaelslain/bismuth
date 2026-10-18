@@ -3,8 +3,9 @@
 // already exists when this mounts: it is handed in and adopted, not rebuilt. It is the same table a
 // note renders — ui/table/typeTable.ts types its grid, breaks its code paths and gives it the shared
 // cell rules (global.css's "Markdown tables" section) for the note editor and chat alike. What is
-// chat's own is the frame: a table whose narrowest layout is still wider than the transcript scrolls
-// sideways inside it, never widening the transcript.
+// chat's own is the frame: a table too wide for the transcript squeezes to fit (ui/table/fitTable.ts),
+// and the frame scrolls sideways only as a fallback for content that cannot break, never widening
+// the transcript.
 import { onCleanup, onMount, type Component } from 'solid-js'
 import { watchFitTable } from '../ui/table/fitTable'
 import { watchScrollFade } from '../ui/table/scrollFade'
