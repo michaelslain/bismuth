@@ -99,6 +99,12 @@ export const AutoSizedColumns: Story = {
             '[data-testid="overflow"] [data-chat-table]',
         ) as HTMLElement
         await expect(overflow.scrollWidth).toBeGreaterThan(overflow.clientWidth)
+        // it scrolls sideways only: a vertical wheel over it passes to the transcript, which
+        // global.css's app-wide `overscroll-behavior: none` would otherwise stop at the frame
+        await expect(getComputedStyle(overflow).overflowY).toBe('hidden')
+        await expect(getComputedStyle(overflow).overscrollBehaviorY).toBe(
+            'auto',
+        )
         // a path wraps at its joints, never mid-segment: every code token's pieces are intact
         const code = canvasElement.querySelector(
             '[data-testid="narrow"] td code',

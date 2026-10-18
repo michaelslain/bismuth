@@ -818,6 +818,16 @@ export const DenseTable: Story = {
             scroller.clientWidth + 1,
         )
 
+        // 3b. The table's sideways scroll box never takes a vertical wheel from the note. Under
+        //     global.css's app-wide `overscroll-behavior: none`, a box whose `overflow-y` computes
+        //     to `auto` stops the wheel there, and the note does not scroll under a table. A
+        //     synthetic WheelEvent scrolls nothing, so the two properties that hand it up are the
+        //     check.
+        const box = canvasElement.querySelector('.cm-table-scroll') as HTMLElement
+        await expect(box).not.toBeNull()
+        await expect(getComputedStyle(box).overflowY).toBe('hidden')
+        await expect(getComputedStyle(box).overscrollBehaviorY).toBe('auto')
+
         // 4. It wrapped BETWEEN words, not inside them. Cells inherit CodeMirror's own
         //    line-wrapping rule, whose `overflow-wrap: anywhere` breaks a word even when the word
         //    would fit on a line of its own — which in a narrow column is every word, so this

@@ -4,10 +4,14 @@
    the FRAME the table sits in inside a message: a sideways scroller, so a table whose narrowest
    layout is wider than the transcript scrolls here instead of widening it. Every cell's
    `+ - | =` overlay overhangs the cell by half a corner tile, and a scroller clips, so that overhang
-   is the frame's padding and stays inside the visible box. */
+   is the frame's padding and stays inside the visible box. It scrolls sideways only:
+   `overflow-y: hidden` + `overscroll-behavior-y: auto` hand a vertical wheel to the transcript,
+   which global.css's app-wide `overscroll-behavior: none` would otherwise stop at this box. */
 .frame {
     max-width: 100%;
     overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-y: auto;
     margin: 0.55em 0;
     padding: calc(var(--ascii-tile-h, 1.5em) / 2) calc(var(--ascii-corner-w, 1ch) / 2);
 }

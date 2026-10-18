@@ -2007,11 +2007,14 @@ export const livePreview = [
         // SOFT-WRAPS mid-row and the alignment collapses into a jumble ("looks fucked as hell").
         // Force `white-space: pre` on the revealed source lines so each row stays on ONE line and the
         // padded columns actually line up; `overflow-x: auto` lets a too-wide row scroll instead of
-        // clipping. A table that fits the pane is unaffected (no wrap needed either way).
+        // clipping. A table that fits the pane is unaffected (no wrap needed either way). Sideways
+        // only, like `.cm-table-scroll` below: a vertical wheel over a source row scrolls the note.
         '.cm-table': {
             'font-family': MONO_FONT,
             'white-space': 'pre',
             'overflow-x': 'auto',
+            'overflow-y': 'hidden',
+            'overscroll-behavior-y': 'auto',
         },
         // Rendered editable table (the block-replace widget). Cells are contenteditable.
         // The vertical spacing lives on the OUTER `.cm-table-block` as PADDING, not as a margin
@@ -2146,10 +2149,16 @@ export const livePreview = [
         // the table to one line per cell and scrolls it the same way. Its padding is the typed grid's
         // overhang (each cell's `+ - | =` sits half a corner tile outside the cell), so the edges
         // stay inside the box it clips to.
+        // It scrolls sideways only. `overflow-x: auto` alone computes `overflow-y` to `auto`, and
+        // global.css's app-wide `overscroll-behavior: none` then stops a vertical wheel at this box
+        // instead of handing it to the note — the note would not scroll while the pointer sat over
+        // a table. `overflow-y: hidden` + `overscroll-behavior-y: auto` pass it up.
         '.cm-table-scroll': {
             width: 'fit-content',
             'max-width': '100%',
             'overflow-x': 'auto',
+            'overflow-y': 'hidden',
+            'overscroll-behavior-y': 'auto',
             'box-sizing': 'border-box',
             padding:
                 'calc(var(--ascii-tile-h, 1.5em) / 2) calc(var(--ascii-corner-w, 1ch) / 2)',

@@ -74,7 +74,7 @@ Header cells cannot be merged. The hidden cells keep their text in the file; onl
 
 ## Extend a wide table
 
-A table whose columns cannot fit the page even at their narrowest scrolls sideways inside its own box, and the side with more table to scroll to fades out. Hover a table and press `∞` (Extend table horizontally) to put every cell on one line and scroll the table sideways instead of wrapping its columns. Press it again to go back.
+A table whose columns cannot fit the page even at their narrowest scrolls sideways inside its own box, and the side with more table to scroll to fades out. The box scrolls sideways only: scrolling up or down with the pointer over a table scrolls the note. Hover a table and press `∞` (Extend table horizontally) to put every cell on one line and scroll the table sideways instead of wrapping its columns. Press it again to go back.
 
 ## Where table layout is stored
 
