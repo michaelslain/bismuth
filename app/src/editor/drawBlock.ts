@@ -65,6 +65,7 @@ import { INK_LOGICAL_W } from '../../../core/src/drawing/model'
 import { insertionIndexForY } from '../dnd/geometry'
 import { planReorder } from './inkCommit'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
+import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 
 // Ink-logical px reserved above and below a standalone drawing's ink, on both sides — matches
 // the padding a hand-drawn sketch wants to breathe before the next block starts.
@@ -240,6 +241,18 @@ class DrawBlockWidget extends WidgetType {
         readonly standalone: boolean,
     ) {
         super()
+    }
+
+    // Remembered height for CodeMirror's height map while this block is unmeasured (blockHeights.ts).
+    private memoKey?: string
+    get heightKey(): string {
+        return (this.memoKey ??= blockHeightKey(
+            'draw',
+            `${this.standalone}|${JSON.stringify(this.strokes)}`,
+        ))
+    }
+    get estimatedHeight(): number {
+        return estimateBlockHeight(this.heightKey)
     }
 
     eq(other: DrawBlockWidget): boolean {

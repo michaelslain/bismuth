@@ -22,6 +22,7 @@ import openQueryBuilder from './openQueryBuilder'
 import { replaceQueryBody } from './queryBuilderEdit'
 import { QUERY_BLOCK_LOST_MESSAGE } from './queryBuilderInsert'
 import { pushToast } from '../ui/toastStore'
+import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 
 // The ONE embedded block: ```query — the view INTO a base/notes. There is no ```base,
 // ```view, or ```tasks block; everything that reads into a base/notes is a query (a
@@ -86,6 +87,15 @@ class QueryBlockWidget extends WidgetType {
         readonly hostPath: string,
     ) {
         super()
+    }
+
+    // Remembered height for CodeMirror's height map while this block is unmeasured (blockHeights.ts).
+    private memoKey?: string
+    get heightKey(): string {
+        return (this.memoKey ??= blockHeightKey('query', this.source))
+    }
+    get estimatedHeight(): number {
+        return estimateBlockHeight(this.heightKey)
     }
 
     eq(other: QueryBlockWidget): boolean {

@@ -34,6 +34,7 @@ import {
     specForWikiEmbed,
 } from './embedSpec'
 import { clamp } from '../math'
+import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 
 // Kinds whose box can be drag-resized (and the new size persisted as `|WxH`).
 const RESIZABLE_KINDS = new Set<EmbedKind>(['image', 'pdf', 'video', 'html'])
@@ -52,6 +53,19 @@ class EmbedWidget extends WidgetType {
         private readonly ctx: EmbedCtx,
     ) {
         super()
+    }
+
+    // Remembered height for CodeMirror's height map while this block is unmeasured (blockHeights.ts).
+    private memoKey?: string
+    get heightKey(): string {
+        return (this.memoKey ??= blockHeightKey(
+            'embed',
+            JSON.stringify(this.spec),
+        ))
+    }
+    // An inline embed sits in a text line, which CodeMirror sizes itself.
+    get estimatedHeight(): number {
+        return this.inline ? -1 : estimateBlockHeight(this.heightKey)
     }
 
     eq(other: EmbedWidget): boolean {

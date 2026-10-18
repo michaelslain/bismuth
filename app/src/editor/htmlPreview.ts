@@ -27,6 +27,7 @@ import {
 } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import { sanitizeHtml } from '../sanitizeHtml'
+import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 
 // ---- block-level HTML --------------------------------------------------------
 
@@ -157,6 +158,15 @@ class HtmlBlockWidget extends WidgetType {
         private readonly from: number,
     ) {
         super()
+    }
+
+    // Remembered height for CodeMirror's height map while this block is unmeasured (blockHeights.ts).
+    private memoKey?: string
+    get heightKey(): string {
+        return (this.memoKey ??= blockHeightKey('html', this.html))
+    }
+    get estimatedHeight(): number {
+        return estimateBlockHeight(this.heightKey)
     }
 
     eq(other: HtmlBlockWidget): boolean {

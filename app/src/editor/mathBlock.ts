@@ -24,6 +24,7 @@ import {
 } from '@codemirror/view'
 import { renderMath, onMathReady } from './katexLoader'
 import { latexTokenDecorations, texDelim, mathSrcMark } from './latexHighlight'
+import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 
 /** Matches a line whose entire trimmed content is exactly `$$`. */
 const MATH_FENCE = /^\s*\$\$\s*$/
@@ -80,6 +81,15 @@ class MathBlockWidget extends WidgetType {
     constructor(expr: string) {
         super()
         this.expr = expr
+    }
+
+    // Remembered height for CodeMirror's height map while this block is unmeasured (blockHeights.ts).
+    private memoKey?: string
+    get heightKey(): string {
+        return (this.memoKey ??= blockHeightKey('math', this.expr))
+    }
+    get estimatedHeight(): number {
+        return estimateBlockHeight(this.heightKey)
     }
 
     eq(other: MathBlockWidget): boolean {

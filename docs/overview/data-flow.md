@@ -75,6 +75,14 @@ Each consumer decides from `dirty` whether to refetch.
 
 Content-only edits therefore cost the graph and tree nothing, while open bases and editors still see the new text.
 
+## Where does an open note scroll to when its file changes on disk?
+
+An open note stays on the line you were reading when the daemon, an agent or another program rewrites its file. The editor applies the file's text in place and puts the first line on screen back at the same distance from the top of the pane, at that line's place in the rewritten text. If the rewrite drops that line, the reader lands at the same relative position inside the rewritten part.
+
+Tables, query blocks, embeds, drawings, graph blocks, HTML blocks, math blocks and callouts keep their real height while off screen once the editor has shown them, so the scrollbar matches the note's length and scrolling reaches the first and last line. A block the editor has not shown since the app started is sized by estimate until it scrolls into view: a table by its row count times the last measured table's row height, every other block as one line.
+
+A note in a background tab keeps its pixel scroll offset, because a hidden pane has no lines on screen to anchor to.
+
 ## What happens when the live stream drops?
 
 The client keeps one `EventSource` per browser tab and polls `GET /version` as a fallback. The poll runs every 5 seconds while connected and every second while disconnected, and a higher version than the client knows fires a change with empty `paths` and no `dirty`.
@@ -166,10 +174,16 @@ Marked writes are the `mutatingRoutes` entries (only the paths their `pathOf` re
 
 The pure transition function `decideConnectionState` in `app/src/connectionState.ts` takes one of four observations (`sse-open`, `sse-error`, `poll-success`, `poll-failure`) and returns the next state, whether to show or dismiss the toast, and the poll cadence. The decision to refetch the graph is the pure `decideGraphRefresh` in `app/src/graphRefreshGate.ts`; the tree store re-fetches in `app/src/treeStore.ts`; `app/src/bases/changeRelevance.ts` decides whether a change can affect a base. On `beforeunload` the stream and poll timer are closed.
 
+## How it works: open editor reconcile
+
+The open editor's reconcile effect in `app/src/Editor.tsx` reads the file after an event that lists its path, and `decideSseReconcile` (`app/src/editor/sseReconcile.ts`) chooses abort, no-op, own echo or reconcile. A reconcile dispatches `externalReconcileSpec` (`app/src/editor/reconcileDispatch.ts`), one change spanning the common prefix to the common suffix. `mapReaderAnchor` (`app/src/editor/readerAnchor.ts`) maps the top visible line's position into the rewritten text. The editor dispatches that position as a `scrollIntoView` target in a second transaction, because CodeMirror clips a scroll effect against the document its transaction starts from. CodeMirror maps positions inside a replaced span to the span's edge, so its own scroll anchor would throw the reader to the top or bottom of a rewrite.
+
+Block heights come from `app/src/editor/blockHeights.ts`. CodeMirror sizes an unmeasured block widget by its `estimatedHeight`, and the default of -1 counts as one line. Each block widget exposes a `heightKey` (its kind plus a hash of its source) and answers `estimatedHeight` from the cache. `blockHeightRecorder` (`app/src/editor/blockHeightRecorder.ts`) stores each measured block in the viewport on measure-driven updates, skipping a block whose height still equals its estimate. A table also exposes `heightUnits`, its row count, so a table whose content changed falls back to the last measured height per row.
+
 ## How it works: layouts
 
 The graph cache builds `buildGraph` output and passes it to `attachLayout` in `core/src/layout-cache.ts`, so every node reaches the browser with a precomputed 3D `position` and 2D `position2d`; the browser only morphs between them. Layouts are cached in memory and on disk under `~/.bismuth/layout-cache/` (override with `BISMUTH_LAYOUT_CACHE_DIR`), outside the vault so the write cannot trigger the watcher. The file name is the graph signature: a cache version prefix plus a hash of the vault key, the sorted node ids and the sorted `from|to|kind` edge triples. Retargeting a wikilink therefore changes the signature even when node and edge counts stay equal. The next rebuild after an edit warm-starts from the previous full layout, which keeps positions stable, and the 2D layout is seeded from the flattened 3D one, so toggling dimensions flattens in place.
 
 `warmViews` in `core/src/server.ts` keeps the view layouts warm for the current graph, one pass per graph invalidation, but only while an SSE client is connected: with none it waits on `whenSubscribed()` and builds nothing, so a structural edit made with no app open costs no graph build. `GET /graph` includes the 2nd-brain and 3rd-brain view layouts only if they are already cached. `GET /graph/views` computes them and attaches them to the live cached graph object in place, without invalidating it; the next invalidation replaces the object. The algorithm and cache keys are explained in [Graph](../graph/overview.md#layout-cache-and-warm-starts).
 
-Source: `core/src/server.ts`, `core/src/liveWatch.ts`, `core/src/routes/system.ts`, `core/src/routes/graph.ts`, `core/src/sse.ts`, `core/src/changeClassifier.ts`, `core/src/parsedNotes.ts`, `core/src/watchSkip.ts`, `core/src/selfWriteMarks.ts`, `core/src/asyncCache.ts`, `core/src/layout-cache.ts`, `core/src/schema/settingsSchema.ts`, `app/src/serverVersion.ts`, `app/src/connectionState.ts`, `app/src/graphRefreshGate.ts`, `app/src/treeStore.ts`, `app/src/bases/changeRelevance.ts`
+Source: `core/src/server.ts`, `core/src/liveWatch.ts`, `core/src/routes/system.ts`, `core/src/routes/graph.ts`, `core/src/sse.ts`, `core/src/changeClassifier.ts`, `core/src/parsedNotes.ts`, `core/src/watchSkip.ts`, `core/src/selfWriteMarks.ts`, `core/src/asyncCache.ts`, `core/src/layout-cache.ts`, `core/src/schema/settingsSchema.ts`, `app/src/serverVersion.ts`, `app/src/connectionState.ts`, `app/src/graphRefreshGate.ts`, `app/src/treeStore.ts`, `app/src/bases/changeRelevance.ts`, `app/src/Editor.tsx`, `app/src/editor/sseReconcile.ts`, `app/src/editor/reconcileDispatch.ts`, `app/src/editor/readerAnchor.ts`, `app/src/editor/blockHeights.ts`, `app/src/editor/blockHeightRecorder.ts`

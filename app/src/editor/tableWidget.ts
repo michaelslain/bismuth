@@ -83,6 +83,7 @@ import { parseWikilink, resolveNotePath, wikilinkOpenPath } from './wikilink'
 import { isGalleryOpen } from '../ui/gallery/galleryState'
 import { openNote } from '../ui/openNote'
 import { emojiQuickAction, type QuickActionSpec } from './emojiQuickAction'
+import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 // The nested in-cell CodeMirror editor (#15/#49) is imported DYNAMICALLY (see loadCellEditor below):
 // its extension stack pulls in `livePreview`'s Solid `.tsx`, which bun's headless test transform
 // can't compile, so it must stay OUT of this module's static import graph (the widget's own tests
@@ -752,6 +753,21 @@ export class TableWidget extends WidgetType {
         private readonly notePath: string | null = null,
     ) {
         super()
+    }
+
+    // Remembered height for CodeMirror's height map while this block is unmeasured (blockHeights.ts).
+    private memoKey?: string
+    get heightKey(): string {
+        return (this.memoKey ??= blockHeightKey(
+            'table',
+            serializeTable(this.cells, this.aligns),
+        ))
+    }
+    get heightUnits(): number {
+        return this.cells.length
+    }
+    get estimatedHeight(): number {
+        return estimateBlockHeight(this.heightKey, this.heightUnits)
     }
 
     // Re-render only when the rendered content changes. Identical content (e.g. on a

@@ -51,6 +51,7 @@ import {
     FENCE_RE,
     type BlockRegions,
 } from './blockRegions'
+import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 
 // The editor's mono face: Monaspace Xenon, falling back to the platform ui-monospace.
 // Shared across every mono region in the live-preview theme (and reused by embedBlock).
@@ -1304,6 +1305,18 @@ class CalloutWidget extends WidgetType {
         private readonly body: string,
     ) {
         super()
+    }
+
+    // Remembered height for CodeMirror's height map while this block is unmeasured (blockHeights.ts).
+    private memoKey?: string
+    get heightKey(): string {
+        return (this.memoKey ??= blockHeightKey(
+            'callout',
+            `${JSON.stringify(this.header)}|${this.body}`,
+        ))
+    }
+    get estimatedHeight(): number {
+        return estimateBlockHeight(this.heightKey)
     }
 
     eq(other: CalloutWidget): boolean {

@@ -29,6 +29,7 @@ import { mountSolid, disposeSolid } from './solidWidget'
 import { EmbeddedGraph } from '../graph/EmbeddedGraph'
 import { numberedLine, codeLineNumberTheme } from './codeLineNumbers'
 import { locateBlockIndex } from './blockLocate'
+import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 
 const GRAPH_FENCE = /^```graph[ \t]*\n([\s\S]*?)\n```/gm
 
@@ -103,6 +104,15 @@ class GraphBlockWidget extends WidgetType {
 
     constructor(readonly source: string) {
         super()
+    }
+
+    // Remembered height for CodeMirror's height map while this block is unmeasured (blockHeights.ts).
+    private memoKey?: string
+    get heightKey(): string {
+        return (this.memoKey ??= blockHeightKey('graph', this.source))
+    }
+    get estimatedHeight(): number {
+        return estimateBlockHeight(this.heightKey)
     }
 
     eq(other: GraphBlockWidget): boolean {

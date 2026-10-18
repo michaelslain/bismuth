@@ -49,6 +49,7 @@ import {
 } from './editor/tableState'
 import { foldBlocks } from './editor/foldBlocks'
 import { queryBlock, queryScrollPinActive } from './editor/queryBlock'
+import { blockHeightRecorder } from './editor/blockHeightRecorder'
 import { graphBlock } from './editor/graphBlock'
 import { drawBlockExtension } from './editor/drawBlock'
 import {
@@ -143,6 +144,7 @@ import {
     externalReconcileSpec,
 } from './editor/reconcileDispatch'
 import { decideSseReconcile } from './editor/sseReconcile'
+import { mapReaderAnchor } from './editor/readerAnchor'
 import { keepaliveSaveInit } from './editor/keepaliveSave'
 import { openNote } from './ui/openNote'
 import { cursor } from './editor/cursorTheme'
@@ -1673,6 +1675,9 @@ export function Editor(props: {
                       livePreview: ed.livePreview,
                   }),
                   queryBlock(() => path),
+                  // Remembers each block widget's measured height so an external write that
+                  // re-creates blocks off-screen keeps the scroller's extent right (blockHeights.ts).
+                  blockHeightRecorder,
                   graphBlock(),
                   drawBlockExtension(),
                   embedBlock(props.noteNames),
@@ -2201,34 +2206,46 @@ export function Editor(props: {
         // single-region edit becomes a tiny change; scattered edits collapse to one
         // wider change — never worse than the old full replace. (Same pattern already
         // used above for live frontmatter normalization.)
-        // Keep the reader where they were: capture scroll before applying the change
-        // and restore it after (no scrollIntoView, which would jump to the caret —
-        // typically the top — every time the file changes on disk).
-        const scrollTop = view.scrollDOM.scrollTop
-        view.dispatch(externalReconcileSpec(current, onDisk))
-        // Restore the scroll position. The synchronous set covers the simple case, but
-        // CodeMirror re-measures line heights asynchronously after the reconcile when
-        // it touches block widgets (line wrapping + live-preview block widgets change
-        // heights), and that re-measure can clobber scrollTop back to 0 — the "scrolls
-        // to the top" glitch. Re-assert the position inside requestMeasure (after CM's
-        // own layout pass) so it sticks.
+        // Keep the reader where they were, by LINE rather than by pixel: the first line whose top
+        // is on screen goes back to the same distance from the viewport's top, at its position in
+        // the new text (editor/readerAnchor.ts). A pixel scrollTop is the wrong unit — a rewrite
+        // changes the heights above the reader — and CodeMirror's own scroll anchor maps through
+        // the one wide change to its edge, so either alone throws the reader to the top or
+        // bottom of an agent's rewrite. A scrollIntoView target is what CodeMirror's measure loop
+        // re-asserts after the async line-height re-measure, so it sticks where a pinned
+        // scrollTop got clobbered. Never the caret: that jumps to wherever the cursor was.
         // Back off if a query-block task-toggle pin is currently re-asserting scrollTop (B24): both
         // want to own the scroll during the same toggle round-trip, and fighting it causes a flicker.
         // The query-block pin already holds the user's intended position, so let it win this window.
-        if (!queryScrollPinActive) {
-            view.scrollDOM.scrollTop = scrollTop
-            view.requestMeasure({
-                read: () => null,
-                write: () => {
-                    if (
-                        view &&
-                        !queryScrollPinActive &&
-                        view.scrollDOM.scrollTop !== scrollTop
-                    )
-                        view.scrollDOM.scrollTop = scrollTop
-                },
-            })
+        // A hidden pane (a background tab, `display: none`) has no geometry to read a line from;
+        // it keeps its pixel scrollTop as before. The scroll target goes in its OWN transaction,
+        // after the change: CodeMirror clips a scrollIntoView effect against the document the
+        // transaction STARTS from, so riding along with the change would clamp a position past
+        // the old end to the old length.
+        const scrollTop = view.scrollDOM.scrollTop
+        const shown = view.scrollDOM.clientHeight > 0
+        let anchor: { pos: number; yMargin: number } | null = null
+        if (shown && !queryScrollPinActive) {
+            const viewTop =
+                view.scrollDOM.getBoundingClientRect().top - view.documentTop
+            let top = view.lineBlockAtHeight(Math.max(0, viewTop))
+            if (top.top < viewTop - 1 && top.to < current.length)
+                top = view.lineBlockAt(top.to + 1)
+            anchor = {
+                pos: mapReaderAnchor(current, onDisk, top.from),
+                yMargin: Math.max(0, top.top - viewTop),
+            }
         }
+        view.dispatch(externalReconcileSpec(current, onDisk))
+        if (anchor)
+            view.dispatch({
+                effects: EditorView.scrollIntoView(anchor.pos, {
+                    y: 'start',
+                    yMargin: anchor.yMargin,
+                }),
+            })
+        else if (!shown && !queryScrollPinActive)
+            view.scrollDOM.scrollTop = scrollTop
         lastIgnoredVersion = change.version
     })
 
