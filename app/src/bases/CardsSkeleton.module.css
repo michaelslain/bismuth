@@ -1,8 +1,8 @@
 /* ---- cards silhouette ----
    Mirrors CardsView.module.css so the loaded cards land where the placeholders were: `.cards` is its
    `.cards` (padding --view-gutter, a column), `.grid` is its `.cardGrid` (auto-fill columns of at least
-   --card-grid-min, the `ui.cardGridMinWidth` setting, 220px when unset) and `.cover` is
-   CardCover's height — six character rows plus the 1px rule. The card box itself is CardFrame.
+   --card-grid-min, the `ui.cardGridMinWidth` setting, 220px when unset; two columns down to 0.8 of
+   that in a narrow pane) and `.cover` is CardCover's height — six character rows plus the 1px rule. The card box itself is CardFrame.
    The two template declarations are written twice (a stylesheet has one importer); the
    CardsSkeleton story measures both and fails if they ever drift. */
 .cards {
@@ -18,7 +18,7 @@
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(max(calc(var(--card-grid-min, 220px) * 0.8), min(var(--card-grid-min, 220px), calc((100% - var(--sp-5)) / 2))), 1fr));
   gap: var(--sp-5);
   align-items: start;
 }

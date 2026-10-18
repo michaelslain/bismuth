@@ -30,6 +30,7 @@ All keys sit at the top level of the base's config (line 1 of a `.base.jsonl` fi
 ## Properties mode
 
 With `cardContent: properties`, the cards form a responsive grid in sorted and grouped order. The grid fits as many equal columns as it can at or above the minimum width, set vault-wide by the `ui.cardGridMinWidth` setting (default 220 px, range 150 to 360). A base cannot override it.
+A pane too narrow for two columns at that width still shows two, each as narrow as 0.8 of the setting (176 px by default), so a single card never stretches across a side pane. Below that, the grid is one column.
 
 Each card has a cover and a body:
 

@@ -3,12 +3,15 @@
    between groups, hover only on an actionable card — CardFrame gates its own on `interactive`). */
 .cards { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--view-gutter); }
 /* Responsive card grid: as many equal columns as fit at >= --card-grid-min (the
-   ui.cardGridMinWidth setting), each column stretching to share the leftover space.
+   ui.cardGridMinWidth setting), each column stretching to share the leftover space. A pane too
+   narrow for two such columns still gets two, each down to 0.8 of that minimum, rather than one
+   card stretched across the pane with its cover's aspect ratio blowing its height up. 0.8 is
+   the floor where a card's `due  2026-08-10` meta line still fits on one line (CardMeta).
    Row-major flow keeps cards in their sorted order — a CSS-multicol "masonry" reads
    top-to-bottom DOWN each column first, which scrambles the reading order of sorted/
    grouped cards (the #96 regression this replaces). `align-items: start` lets every
    card keep its natural height instead of stretching to the tallest card in its row. */
-.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr)); gap: var(--sp-5); align-items: start; }
+.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(calc(var(--card-grid-min, 220px) * 0.8), min(var(--card-grid-min, 220px), calc((100% - var(--sp-5)) / 2))), 1fr)); gap: var(--sp-5); align-items: start; }
 /* Positioning hook on the rendered <CardFrame> — the card's own background/border/hover styling
    lives on CardFrame itself (its `card` class is CardFrame.module.css's own). */
 .cardSlot { position: relative; }

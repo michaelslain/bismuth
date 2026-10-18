@@ -37,6 +37,6 @@ groupBy:
 - If a row's image value is a list or a link object, that card silently shows the text cover.
 - `cardContent: tasks` is one card per note, narrowed to its checklist; `mode: tasks` is one card per task. They are different settings, and `mode: tasks` overrides the card face.
 - A `body` or `tasks` card is a live editor: a click places the cursor and typing edits the note. Only links inside it navigate.
-- There is no column-count key. The grid fits columns at or above the `.settings` key `ui.cardGridMinWidth` (default 220 px), vault-wide.
+- There is no column-count key. The grid fits columns at or above the `.settings` key `ui.cardGridMinWidth` (default 220 px), vault-wide; a narrow pane keeps two columns down to 0.8 of that width.
 
 Full reference: [docs/bases/views/cards.md](../views/cards.md)
