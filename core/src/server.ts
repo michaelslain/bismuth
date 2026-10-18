@@ -50,6 +50,7 @@ import {
     setPermissionMode as chatSetPermissionMode,
     setModel as chatSetModel,
     setEffort as chatSetEffort,
+    setPrivate as chatSetPrivate,
     resumeSession as chatResume,
     openSession as chatOpen,
 } from './chatProviders'
@@ -1494,6 +1495,7 @@ export function createServer(cfg: CoreConfig) {
                         mode?: string
                         model?: string
                         effort?: string
+                        private?: unknown
                         answers?: Record<string, unknown>
                         cancelled?: boolean
                         provider?: string
@@ -1633,6 +1635,12 @@ export function createServer(cfg: CoreConfig) {
                     ) {
                         // Switch the reasoning-effort level live (FEATURE #63) — mirrors set_model.
                         chatSetEffort(chatId, parsed.effort)
+                    } else if (
+                        parsed.type === 'set_private' &&
+                        typeof parsed.private === 'boolean'
+                    ) {
+                        // The chat's private toggle: the conversation is erased when it ends.
+                        chatSetPrivate(chatId, parsed.private)
                     } else if (parsed.type === 'stop') {
                         chatAbort(chatId)
                     }

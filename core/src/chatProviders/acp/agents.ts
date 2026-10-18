@@ -41,6 +41,26 @@ export interface AcpAgentSpec {
      * free from the CLI's own default, so no per-chat argv is needed.
      */
     sessionKeyArgs?: (chatId: string) => string[]
+    /** A private conversation sends `session/delete` before its process is stopped. */
+    privateDeleteRpc?: boolean
+    /** Which eraser in ../privateErase.ts removes what a private chat left in the agent's own store,
+     *  run after its process exits. Named, not imported, so this table stays free of fs code. Every
+     *  agent names one, so every chat's private toggle works. */
+    privateErase?: PrivateEraser
+}
+
+export type PrivateEraser =
+    | 'codex'
+    | 'claude'
+    | 'gemini'
+    | 'goose-logs'
+    | 'cline'
+    | 'openclaw'
+    | 'hermes'
+
+/** The openclaw Gateway session key for a chat (`--session`), also what its eraser deletes. */
+export function openclawSessionKey(chatId: string): string {
+    return `agent:main:bismuth-${chatId}`
 }
 
 export const ACP_AGENTS: readonly AcpAgentSpec[] = [
@@ -54,6 +74,7 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         label: 'Cline',
         binary: 'cline',
         args: ['--acp'],
+        privateErase: 'cline',
     },
     {
         // `--experimental-acp` is the long-documented flag (multiple 2026 sources, incl. a Feb-2026
@@ -67,6 +88,7 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         binary: 'gemini',
         args: ['--experimental-acp'],
         fallbackArgs: ['--acp'],
+        privateErase: 'gemini',
     },
     {
         // goose's own docs (goose-docs.ai) confirm `goose acp` and that it MERGES our session/new
@@ -75,6 +97,8 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         label: 'Goose',
         binary: 'goose',
         args: ['acp'],
+        privateDeleteRpc: true,
+        privateErase: 'goose-logs',
     },
     {
         // Confirmed live (`openclaw --help` / `openclaw acp --help`, v2026.3.23-2): OpenClaw's own label
@@ -170,7 +194,8 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         label: 'OpenClaw',
         binary: 'openclaw',
         args: ['acp'],
-        sessionKeyArgs: chatId => ['--session', `agent:main:bismuth-${chatId}`],
+        sessionKeyArgs: chatId => ['--session', openclawSessionKey(chatId)],
+        privateErase: 'openclaw',
         supportsSessionMcpServers: false,
     },
     {
@@ -184,6 +209,7 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         label: 'Hermes Agent',
         binary: 'hermes',
         args: ['acp'],
+        privateErase: 'hermes',
     },
     {
         // ADAPTER, not a native agent: this package bridges Claude Code (via Anthropic's own Claude
@@ -196,6 +222,7 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         label: 'Claude Code (ACP)',
         binary: 'npx',
         args: ['-y', '@zed-industries/claude-code-acp'],
+        privateErase: 'claude',
         adapter: true,
     },
     {
@@ -205,6 +232,7 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         label: 'Codex (ACP)',
         binary: 'npx',
         args: ['-y', '@agentclientprotocol/codex-acp'],
+        privateErase: 'codex',
         adapter: true,
     },
 ]

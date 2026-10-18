@@ -92,6 +92,9 @@ export interface ChatBackend {
     setPermissionMode?(chatId: string, mode: string): void
     /** Switch reasoning effort live. Present iff capabilities.effort. */
     setEffort?(chatId: string, effort: string): void
+    /** Mark the conversation private (or not). A private conversation is erased from the agent's own
+     *  store when it ends and never captured to memory (privateErase.ts). Every backend has it. */
+    setPrivate(chatId: string, on: boolean): void
 }
 
 /** The module-level surface claude (chat.ts) and opencode (opencode/opencode.ts) both export. */
@@ -125,6 +128,7 @@ type BackendModule = {
     scheduleClose: ChatBackend['scheduleClose']
     rebindSink: ChatBackend['rebindSink']
     detachSink: ChatBackend['detachSink']
+    setPrivate: ChatBackend['setPrivate']
 }
 
 type BackendExtras = Pick<
@@ -168,6 +172,7 @@ const moduleBackend = (
     scheduleClose: mod.scheduleClose,
     rebindSink: mod.rebindSink,
     detachSink: mod.detachSink,
+    setPrivate: mod.setPrivate,
     ...extras,
 })
 

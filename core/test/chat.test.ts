@@ -8,6 +8,7 @@ import {
     respondPermission,
     setPermissionMode,
     closeChat,
+    setPrivate,
     newChatId,
     chatSessionCount,
     listChatSessions,
@@ -683,6 +684,44 @@ describeOrSkip('visual Claude Code chat driver (live)', () => {
         await waitFor(f => f.type === 'done')
         expect(frames.some(f => f.type === 'assistant-text')).toBe(true)
     }, 180_000)
+
+    test('a conversation toggled private mid-chat is erased on close and never captured to memory', async () => {
+        const cwd = await newTempDir()
+        const memoryDir = join(cwd, '.daemon', 'memory')
+        const prompt =
+            'Reply with one short sentence naming three fruits that are yellow when ripe.'
+        const notes = async () => {
+            const { readdir } = await import('node:fs/promises')
+            return (await readdir(memoryDir, { recursive: true }).catch(() => []))
+                .map(String)
+                .filter(f => f.endsWith('.md'))
+        }
+        const run = async (priv: boolean) => {
+            const chatId = newChatId()
+            chatIds.push(chatId)
+            const { sink, waitFor } = makeCollector()
+            sendMessage(chatId, prompt, cwd, sink, undefined, memoryDir)
+            await waitFor(f => f.type === 'done')
+            // Flipped after the turn has already been written to disk.
+            if (priv) setPrivate(chatId, true)
+            closeChat(chatId)
+        }
+        const settle = async (ok: () => Promise<boolean>) => {
+            for (let i = 0; i < 50 && !(await ok()); i++)
+                await new Promise(r => setTimeout(r, 200))
+        }
+
+        await run(true)
+        await settle(async () => (await listChatSessions(cwd)).length === 0)
+        await new Promise(r => setTimeout(r, 3000))
+        expect(await listChatSessions(cwd)).toEqual([])
+        expect(await notes()).toEqual([])
+
+        await run(false)
+        await settle(async () => (await notes()).length === 1)
+        expect((await listChatSessions(cwd)).length).toBe(1)
+        expect((await notes()).length).toBe(1)
+    }, 300_000)
 
     // The header model picker must be USABLE BEFORE the first message. The backend now fetches the
     // supported-models list EAGERLY on session spawn (Query.supportedModels resolves off the SDK's

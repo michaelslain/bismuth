@@ -109,3 +109,30 @@ export const NoManifest: Story = {
         expect(canvasElement.querySelector('[data-testid="chat-context"]')).toBeNull()
     },
 }
+
+const privateText = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>('[data-testid="chat-private"]')?.textContent ?? ''
+
+/** The private toggle on before the first manifest: `private` alone. */
+export const PrivateOpening: Story = {
+    render: () => <Readouts init={{ isPrivate: true }} />,
+    play: async ({ canvasElement }) => {
+        expect(privateText(canvasElement)).toBe('private')
+        expect(canvasElement.textContent).toBe('private')
+    },
+}
+
+/** The private toggle on mid-conversation: `private // context [###.......] 34%`. */
+export const PrivateWithContext: Story = {
+    render: () => (
+        <Readouts
+            init={{ isPrivate: true, manifest: MANIFEST, context: context(34), mcpConnected: 3 }}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        expect(privateText(canvasElement)).toBe('private')
+        expect(meterText(canvasElement)).toBe('context  [###.......] 34%')
+        // The run's spacing is flex gap, not text: `//` sits between the two with no spaces.
+        expect(canvasElement.textContent).toContain('private//context')
+    },
+}

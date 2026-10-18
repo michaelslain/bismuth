@@ -21,6 +21,7 @@ import type { FileCandidate } from '../editor/atMention'
 
 export type StubChatSessionInit = Partial<{
     chatId: string
+    isPrivate: boolean
     transcript: TurnItem[]
     draft: string
     attachments: ChatAttachment[]
@@ -77,6 +78,7 @@ export function makeStubChatSession(
         init.attachments ?? [],
     )
     const [streaming] = createSignal(init.streaming ?? false)
+    const [isPrivate, setIsPrivate] = createSignal(init.isPrivate ?? false)
     const [awaitingReply] = createSignal(init.awaitingReply ?? false)
     const [manifest] = createSignal<ChatManifest | null>(init.manifest ?? null)
     const [setupError] = createSignal<ChatProviderChoice | null>(
@@ -217,6 +219,11 @@ export function makeStubChatSession(
         setPermissionModeLocal: mode => log('setPermissionModeLocal')(mode),
         switchModel: model => log('switchModel')(model),
         switchEffort: level => log('switchEffort')(level),
+        isPrivate,
+        setPrivate: on => {
+            setIsPrivate(on)
+            log('setPrivate')(on)
+        },
         applyPreset: preset => log('applyPreset')(preset),
         switchProvider: p => log('switchProvider')(p),
         retrySetup: () => log('retrySetup')(),

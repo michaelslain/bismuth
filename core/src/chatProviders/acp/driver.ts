@@ -58,6 +58,7 @@ import {
 import { ACP_AGENTS, type AcpAgentSpec } from './agents'
 import type { FileSink } from 'bun'
 import { titleFromPrompt } from '../titleFromPrompt'
+import { PRIVATE_ERASERS } from '../privateErase'
 import {
     AcpRpcError,
     choosePermissionOption,
@@ -169,6 +170,9 @@ const ABORT_GRACE_MS = 8000
  *  See killWithEscalation's own doc comment below for a CONFIRMED GAP in this escalation: it does
  *  not reach every process it targets. */
 const KILL_ESCALATION_GRACE_MS = 3000
+
+/** How long a private chat waits on `session/delete` before stopping the agent anyway. */
+const PRIVATE_DELETE_TIMEOUT_MS = 3000
 
 /** Send SIGTERM (`proc.kill()`), then SIGKILL after `graceMs` if `proc.exited` hasn't resolved by
  *  then — see KILL_ESCALATION_GRACE_MS's own doc comment for why this is required, not
@@ -289,6 +293,10 @@ interface AcpSession {
     closeTimer?: ReturnType<typeof setTimeout>
     titleSent: boolean
     lastActivityAt: number
+    /** ms epoch the session was created; a private chat's eraser matches files written since. */
+    startedAt: number
+    /** The chat's private toggle (setPrivate): erase the session from the agent's store on close. */
+    private?: boolean
     /** Undecoded tail of the stdout stream (a JSON-RPC line can arrive split across chunks). */
     stdoutPending: string
     /** True once the fallbackArgs respawn has been tried (retried ONCE, never looped). */
@@ -672,6 +680,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             buffer: [],
             titleSent: false,
             lastActivityAt: Date.now(),
+            startedAt: Date.now(),
             stdoutPending: '',
             usedFallbackArgs: false,
             local,
@@ -836,11 +845,40 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         for (const [, p] of s.pendingCalls) p.reject(new Error('chat closed'))
         s.pendingCalls.clear()
         s.pendingPermissions.clear()
+        if (s.private) {
+            void closePrivate(s)
+            return
+        }
         // closeChat() itself stays synchronous (signature/callers unchanged) — killWithEscalation is
         // fire-and-forget and force-kills a process that ignores the graceful signal, rather than
         // leaving it running past this chat indefinitely. See KILL_ESCALATION_GRACE_MS's own doc comment
         // for why this is required for a real agent (openclaw), not speculative hardening.
         if (s.proc) killWithEscalation(s.proc, KILL_ESCALATION_GRACE_MS)
+    }
+
+    /** A private conversation's teardown (setPrivate): `session/delete` while the agent still
+     *  runs (when it offers one), then stop the process, wait for it to exit so it cannot write again,
+     *  and run the agent's eraser over what it left on disk. */
+    async function closePrivate(s: AcpSession): Promise<void> {
+        const proc = s.proc
+        if (agent.privateDeleteRpc && proc && s.sessionId)
+            await Promise.race([
+                call(s, 'session/delete', { sessionId: s.sessionId }).catch(() => {}),
+                new Promise(r => setTimeout(r, PRIVATE_DELETE_TIMEOUT_MS)),
+            ])
+        if (proc) {
+            killWithEscalation(proc, KILL_ESCALATION_GRACE_MS)
+            await proc.exited.catch(() => {})
+        }
+        if (!agent.privateErase) return
+        await PRIVATE_ERASERS[agent.privateErase]({
+            sessionId: s.sessionId ?? '',
+            chatId: s.id,
+            cwd: s.cwd,
+            startedAt: s.startedAt,
+            env: process.env,
+            bin: whichBinary(agent.binary) ?? undefined,
+        }).catch(() => {})
     }
 
     shutdownHooks.push(() => {
@@ -851,6 +889,11 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         id: agentId,
 
         hasSession: chatId => sessions.has(chatId),
+
+        setPrivate: (chatId: string, on: boolean) => {
+            const s = sessions.get(chatId)
+            if (s) s.private = on
+        },
 
         openSession: (ctx: ChatTurnContext) => {
             if (sessions.has(ctx.chatId)) return

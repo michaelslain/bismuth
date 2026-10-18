@@ -38,6 +38,7 @@ The controls row sits under the composer as one line of quiet text. At narrow wi
 | Model word | A lowercase word for what is answering, such as `opus (1m)`, or `default model`. Click it to open the model dialog |
 | Permission mode | Default, Plan, Accept edits or Bypass. Shown only for backends with a mode picker |
 | `history` | Opens past conversations. Shown only for backends that can list sessions |
+| Eye-slash icon | Toggles this conversation private: it is erased when it ends. Bracketed while on. See [private conversations](#how-do-i-keep-a-conversation-private) |
 | `new chat` | Starts a fresh conversation in this tab |
 
 ### The model dialog
@@ -61,6 +62,17 @@ Every chat starts in **Bypass**, which lets the agent run tools, including write
 - **deny** refuses it, and the agent sees "Denied by the user".
 
 Plan and Accept edits follow Claude Code's own meanings. Your last pick carries over to new chats. Closing a chat denies any prompt still open.
+
+## How do I keep a conversation private?
+
+Click the eye-slash icon in the controls row. While it is bracketed, the conversation is erased when it ends: when you close the tab, press `new chat`, or open another conversation from `history`. Each click confirms itself with a toast, `Private: this conversation is erased when it ends` or `This conversation will be kept`, and the header shows `private` beside its readouts and an eye-slash glyph.
+
+- Any time. The toggle can be turned on or off at any point in a conversation; what counts is whether it is on when the conversation ends. Earlier turns are erased too.
+- What is erased. The agent's own record of the conversation. Once erased it is absent from `history` and `bismuth chat list` and cannot be resumed. A private conversation is never written to the daemon's memory.
+- Every agent. Claude Code, opencode, Codex and the ACP agents each keep the conversation on disk while it runs, so it continues normally, and Bismuth deletes that record from the agent's own store once the conversation ends.
+- Every conversation starts with the toggle off, including the one `new chat` opens.
+
+Closing the conversation is what erases it. A force-quit while a conversation is private leaves the agent's copy behind. An agent's database can also keep erased text in free space until it reuses those pages, and opencode keeps oversized tool output in its `tool-output` folder for seven days; neither holds a transcript anything can list or reopen. Your own Claude Code hooks in `~/.claude` still run, so a hook that logs prompts logs these too.
 
 ## How do I write a message?
 
@@ -113,7 +125,7 @@ A **you / daemon / all** toggle chooses whose chats to list; it resets to `you` 
 ## What does the header show?
 
 The chat header names the chat (a `/rename` title, else the conversation's summary) behind a glyph that marks daemon chats.
-Two readouts appear on the right once data arrives: a `context [####......] 42%` meter, which turns danger-toned from 80%, and `N mcp servers down` when a configured MCP server is not connected. When all servers are connected the corner stays quiet.
+While the conversation is [private](#how-do-i-keep-a-conversation-private), the right side leads with `private` and the glyph is an eye-slash. Two readouts appear on the right once data arrives: a `context [####......] 42%` meter, which turns danger-toned from 80%, and `N mcp servers down` when a configured MCP server is not connected. When all servers are connected the corner stays quiet.
 
 ## What goes wrong?
 
@@ -160,6 +172,7 @@ The `open`, `user` and `resume` messages also carry an optional `provider`, whic
 | `{type: "set_permission_mode", mode}` | Switch permission mode live |
 | `{type: "set_model", model}` | Switch model live |
 | `{type: "set_effort", effort}` | Switch effort live |
+| `{type: "set_private", private}` | Toggle the conversation private; the backend erases it when it ends |
 | `{type: "stop"}` | Interrupt the in-flight turn, leaving the session resumable |
 
 The server answers with `ChatFrame` messages, exported from `core/src/chat.ts`:
@@ -185,6 +198,29 @@ The server answers with `ChatFrame` messages, exported from `core/src/chat.ts`:
 
 Assistant prose and thinking stream from `content_block_delta` events (`includePartialMessages: true`). When the final `assistant` message arrives, the loop skips blocks already streamed and emits only its `tool_use` blocks.
 The single `translateSdkMessage(msg, { live })` function serves both the live loop (`live: true`) and history replay (`live: false`), so a replayed conversation renders like a live one.
+
+### Private conversations
+
+The eye-slash toggle sends `set_private`, which the router hands to the owning backend's `setPrivate` (`core/src/chatProviders/index.ts`). Each driver keeps the flag on its session and reads it once, when the session closes, so the conversation keeps its native continuity while it runs.
+
+- Claude (`core/src/chat.ts`). When the drain loop ends (the `claude` child is done writing) with the flag on, `erasePrivateTranscript` drops the conversation's `chatModelStore.ts` entry and deletes `~/.claude/projects/*/<session id>.jsonl` and its `<session id>/` directory. `captureToMemory` returns at once for a private session.
+- opencode. `closeChat` calls `erasePrivateSession`: `DELETE /session/{id}` through the shared server, or `opencode session delete <id>`, after a run-mode child has exited.
+- codex and the ACP agents. The codex driver and the ACP driver's `closePrivate` stop the agent, wait for it to exit, and run its eraser from `core/src/chatProviders/privateErase.ts`, named per agent by `privateErase` in `acp/agents.ts`. goose also sends ACP `session/delete` first (`privateDeleteRpc`). SQLite deletes there run with `secure_delete` on and truncate the write-ahead log.
+
+The app side (`chatSession.ts`) forgets the tab's remembered session id while the toggle is on, so a reopened tab never tries to resume an erased conversation, and resets the toggle whenever the tab starts another conversation.
+
+The erase per backend, from each CLI's own source or docs:
+
+| Backend | Erased when the conversation ends |
+|---|---|
+| `claude`, `claude-code-acp` | `~/.claude/projects/*/<id>.jsonl` and `<id>/` |
+| `opencode` | server `DELETE /session/{id}`, else `opencode session delete <id>` |
+| `codex`, `codex-acp` | the thread's rollout files, shell snapshots and `session_index.jsonl` line, and its rows in `state_5.sqlite` and `thread_history_1.sqlite` |
+| `goose` | ACP `session/delete`, then `llm_request.*.jsonl` logs written since the chat opened |
+| `cline` | `cline history delete --session-id <id>` and `<data dir>/sessions/<id>/` |
+| `gemini` | the session's chat, log, tool-output and session files under `~/.gemini/tmp/*/` |
+| `openclaw` | `openclaw sessions delete <key> --yes`, then the `.jsonl.deleted.*` archive it leaves |
+| `hermes` | `hermes sessions delete <id> --yes` |
 
 ### Messages, permissions and questions
 
@@ -279,4 +315,4 @@ The chat's rules sit in pure modules under `app/src/chat/`, each unit-tested, wi
 
 Messages render through `renderNoteBody`, the same markdown pipeline notes use, so math, code and wikilinks work; a `[[wikilink]]` in a bubble opens in the app. Each markdown table is adopted by `ChatTable.tsx` once the HTML lands and handed to `ui/table/typeTable.ts`, the same call a note's table goes through ([tables](../editor/tables.md)): the `+ - | =` grid, cells that wrap only between whole words, code paths that break at their `/` and `.`, and long runs such as a bare URL that wrap at the cell's edge. What is chat's own is the frame: a table too wide for the transcript even with whole words breaks inside words too, so it always fits (`ui/table/fitTable.ts`), and a vertical scroll over the frame passes to the transcript. The daemon's face is the bot's avatar on the lowest assistant row, with a mood from `chatActivity.ts`.
 
-Source: `core/src/chat.ts`, `core/src/chatModelStore.ts`, `core/src/chatDaemonLegacy.ts`, `core/src/memoryRecall.ts`, `core/src/routes/agents.ts`, `core/src/server.ts` (the `/chat` WebSocket), `core/src/chatProviders/index.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `cli/src/commands/chat.ts`, `cli/src/http.ts`, `app/src/quickAsk/`, `app/src/chat/` (`chatEditorContext.ts`, `appSelection.ts`, `paneContextLabel.ts`, `ChatView.tsx`, `ChatControls.tsx`, `ChatModelPicker.tsx`, `ChatSetupGate.tsx`, `ChatComposer.tsx`, `ChatHistoryModal.tsx`, `ChatTable.tsx`, `chatSession.ts`, `chatSessions.ts`), `app/src/ui/table/typeTable.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`
+Source: `core/src/chat.ts`, `core/src/chatModelStore.ts`, `core/src/chatDaemonLegacy.ts`, `core/src/memoryRecall.ts`, `core/src/routes/agents.ts`, `core/src/server.ts` (the `/chat` WebSocket), `core/src/chatProviders/index.ts`, `core/src/chatProviders/privateErase.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `cli/src/commands/chat.ts`, `cli/src/http.ts`, `app/src/quickAsk/`, `app/src/chat/` (`chatEditorContext.ts`, `appSelection.ts`, `paneContextLabel.ts`, `ChatView.tsx`, `ChatControls.tsx`, `ChatModelPicker.tsx`, `ChatSetupGate.tsx`, `ChatComposer.tsx`, `ChatHistoryModal.tsx`, `ChatTable.tsx`, `chatSession.ts`, `chatSessions.ts`), `app/src/ui/table/typeTable.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`

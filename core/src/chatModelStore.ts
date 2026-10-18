@@ -102,6 +102,14 @@ export function saveSessionModel(
     writeAll(upsertSessionModel(readAll(), sessionId, model, at))
 }
 
+/** Drop a session's remembered model (a private conversation keeps nothing once it ends). */
+export function forgetSessionModel(sessionId: string): void {
+    if (!sessionId) return
+    const list = readAll()
+    const next = list.filter(e => e.sessionId !== sessionId)
+    if (next.length !== list.length) writeAll(next)
+}
+
 /** The remembered model for a session, or null if none was ever saved for it. */
 export function loadSessionModel(sessionId: string): string | null {
     if (!sessionId) return null

@@ -86,8 +86,8 @@
        ancestor it means. */
     container-type: inline-size;
     container-name: chatrow;
-    /* `overflow: hidden` is the BACKSTOP, not the mechanism — the row's four items (the model
-       control, permission mode, history, new chat) are meant to always fit; this only stops a
+    /* `overflow: hidden` is the BACKSTOP, not the mechanism — the row's items (the model
+       control, permission mode, history, private, new chat) are meant to always fit; this only stops a
        pathological model label from ever painting outside the row's own box. There is no longer a
        narrow-width ladder (Task 2: "no pixel ladder") — the model control below is the one thing
        that shrinks. */
@@ -106,7 +106,7 @@
     flex-shrink: 0;
 }
 /* The model control alone gives — everything else in the row (permission mode, history, new chat)
-   keeps its natural width. This is what replaces the old narrow-width ladder: instead of DROPPING
+   keeps its natural width (until a tier below takes a button's word). This is what replaces the old narrow-width ladder: instead of DROPPING
    controls at measured breakpoints, the one control whose text can legitimately vary in length
    (a model's label) shrinks and ellipsizes, and nothing else in the row ever needs to move. */
 .row [data-chat-model] {
@@ -127,7 +127,7 @@
    off toggle), freeing the width the floored model word (above) needs to keep its 3 characters.
    The tier is keyed on `data-row-action` (the RowAction wrapper) so it only reaches this row's pairs.
    `data-row-drop` is reserved on the same ladder for a control a future tier needs to hide WHOLE
-   (a second, narrower level) rather than just de-label — none of today's four controls needs that,
+   (a second, narrower level) rather than just de-label — none of today's controls needs that,
    so no rule below tags it yet; `chatRowDrop.test.ts` checks whichever `data-row-*` hooks
    ChatControls.tsx actually uses, so adding one later re-arms the same guard.
 
@@ -136,8 +136,8 @@
    `data-row-drop`) removes its whole box, pseudo-element included, so its `//` disappears with it
    automatically. Nothing here needs to special-case that.
 
-   280px is the threshold: at 360px (Narrow360) the row's four controls plus a floored 3ch model
-   fit with labels intact — nothing here fires. At 260px (Narrow260) they do not: a floored model
+   280px is the threshold: at 360px (Narrow360) the row's controls plus a floored 3ch model fit
+   with `history` and `new chat` labelled — nothing here fires. At 260px (Narrow260) they do not: a floored model
    word plus `bypass` plus two labelled bracket buttons overflow the box, which is the ellipsis-lead
    defect this task fixes. 280px sits inside the measured 260-280px range where labelled buttons
    stop fitting, with a few px of margin on the fitting side rather than sitting exactly on the

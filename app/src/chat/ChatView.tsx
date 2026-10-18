@@ -91,7 +91,11 @@ export function ChatView(props: ChatViewProps): JSX.Element {
                 {s => (
                     <ChatHeader
                         title={title()}
-                        originIcon={chatOriginIcon(chatOrigin(props.chatId))}
+                        originIcon={
+                            s().isPrivate()
+                                ? 'EyeSlash'
+                                : chatOriginIcon(chatOrigin(props.chatId))
+                        }
                         session={s()}
                     />
                 )}

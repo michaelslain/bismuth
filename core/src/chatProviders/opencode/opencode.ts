@@ -156,6 +156,8 @@ interface OpencodeSession {
     closeTimer?: ReturnType<typeof setTimeout>
     titleSent?: boolean
     lastActivityAt: number
+    /** The chat's private toggle (setPrivate): erase the session from opencode's store on close. */
+    private?: boolean
     /** Permission ids this session has asked about and not yet answered (server mode only) — guards
      *  respondPermission against answering an id twice or one from a stale/foreign session. */
     pendingPermissions: Set<string>
@@ -1263,16 +1265,60 @@ export function closeChat(chatId: string): void {
     if (s.closeTimer) clearTimeout(s.closeTimer)
     s.queue = []
     s.pendingPermissions.clear()
-    if (s.proc) {
+    const proc = s.proc
+    if (proc) {
         try {
-            s.proc.kill()
+            proc.kill()
         } catch {
             /* already exited */
         }
     }
     // Server-mode sessions have no local process to kill — the shared server outlives every chat.
-    // A closed chat does NOT delete the opencode session server-side: the whole point is that it stays
-    // resumable (opencode export / GET /session/{id}/message both still work after this call).
+    // A closed chat keeps its opencode session so it stays resumable (opencode export /
+    // GET /session/{id}/message both still work after this call) — except a private
+    // conversation, which is erased from opencode's store (setPrivate).
+    if (s.private) void erasePrivateSession(s, proc)
+}
+
+/** The chat's private toggle: when on at close, the session is erased from opencode's store. */
+export function setPrivate(chatId: string, on: boolean): void {
+    const s = sessions.get(chatId)
+    if (s) s.private = on
+}
+
+/** Delete a private chat's session from opencode's store: through the shared server in server mode,
+ *  else `opencode session delete`. A run-mode child is awaited first so it cannot write after the
+ *  delete. Best-effort and silent, like every teardown step. */
+export async function erasePrivateSession(
+    s: Pick<OpencodeSession, 'sessionId' | 'mode' | 'bin' | 'cwd'>,
+    proc: { exited: Promise<unknown> } | null,
+    deps: {
+        server?: () => Promise<{
+            client: { session: { delete: (o: unknown) => Promise<unknown> } }
+        } | null>
+        cli?: (bin: string, cwd: string, args: string[]) => Promise<unknown>
+    } = {},
+): Promise<void> {
+    await proc?.exited.catch(() => {})
+    const id = s.sessionId
+    if (!id) return
+    if (s.mode === 'server') {
+        const server = await (deps.server ?? (() => ensureOpencodeServer(s.bin)))().catch(
+            () => null,
+        )
+        if (server) {
+            try {
+                await server.client.session.delete({
+                    path: { id },
+                    query: { directory: s.cwd },
+                })
+                return
+            } catch {
+                /* fall through to the CLI */
+            }
+        }
+    }
+    await (deps.cli ?? runCliText)(s.bin, s.cwd, ['session', 'delete', id]).catch(() => {})
 }
 
 export function scheduleClose(chatId: string, ms: number): void {

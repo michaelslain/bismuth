@@ -2,8 +2,9 @@
 // daemon page). The header's readouts are ChatReadouts.stories.tsx, and ChatHeader.stories.tsx
 // renders them through the real bar.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import ChatControls from './ChatControls'
+import { ToastHost } from '../ui/ToastHost'
 import { makeStubChatSession } from './_stubChatSession'
 import { CONVERSATION_ITEMS } from './_transcriptFixtures'
 import type { ChatManifest } from '../../../core/src/chat'
@@ -59,7 +60,9 @@ export const Row: Story = {
     ),
     play: async ({ canvasElement }) => {
         // Readouts are OMITTED from the row (Acceptance) — the context meter is the header's.
-        expect(canvasElement.querySelector('[data-testid="chat-context"]')).toBeNull()
+        expect(
+            canvasElement.querySelector('[data-testid="chat-context"]'),
+        ).toBeNull()
         await expect(
             canvasElement.querySelector('[data-testid="chat-perm-mode"]'),
         ).not.toBeNull()
@@ -68,8 +71,12 @@ export const Row: Story = {
         ).not.toBeNull()
         // Provider/model/effort no longer render as separate controls — they're folded behind the
         // model word (ChatModelMenu). One control, not three.
-        expect(canvasElement.querySelector('[data-testid="chat-provider"]')).toBeNull()
-        expect(canvasElement.querySelector('[data-testid="chat-effort"]')).toBeNull()
+        expect(
+            canvasElement.querySelector('[data-testid="chat-provider"]'),
+        ).toBeNull()
+        expect(
+            canvasElement.querySelector('[data-testid="chat-effort"]'),
+        ).toBeNull()
         await expect(
             canvasElement.querySelector('[data-testid="chat-model"]'),
         ).not.toBeNull()
@@ -115,12 +122,110 @@ export const Row: Story = {
     },
 }
 
+/** The private toggle, off: a bare eye-slash between `history` and `new chat`. */
+export const PrivateOff: Story = {
+    render: () => (
+        <ChatControls
+            session={makeStubChatSession({
+                manifest: MANIFEST,
+                models: MODELS,
+                displayModel: 'opus',
+                displayModelValue: 'opus',
+                permMode: 'bypassPermissions',
+                effortOptions: EFFORT_OPTIONS,
+                effortValue: 'medium',
+            })}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const toggle = c.getByTestId('chat-private-toggle')
+        expect(toggle.getAttribute('aria-label')).toBe('private')
+        expect(toggle.getAttribute('aria-pressed')).toBe('false')
+        expect(c.getByTestId('chat-history')).not.toBeNull()
+    },
+}
+
+/** The private toggle, on: the conversation is erased when it ends. `history` stays, since opening
+ *  another conversation simply ends this one. */
+export const PrivateOn: Story = {
+    render: () => (
+        <ChatControls
+            session={makeStubChatSession({
+                isPrivate: true,
+                manifest: MANIFEST,
+                models: MODELS,
+                displayModel: 'opus',
+                displayModelValue: 'opus',
+                permMode: 'bypassPermissions',
+                effortOptions: EFFORT_OPTIONS,
+                effortValue: 'medium',
+            })}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const toggle = c.getByTestId('chat-private-toggle')
+        expect(toggle.getAttribute('data-tooltip')).toContain(
+            'erased when it ends',
+        )
+        expect(toggle.getAttribute('aria-pressed')).toBe('true')
+        expect(c.getByTestId('chat-history')).not.toBeNull()
+    },
+}
+
+/** Flipping the toggle mid-chat: one click turns it on, a second turns it back off, and each click
+ *  confirms itself with a toast saying what happens to the conversation, replacing the last one. */
+export const PrivateToggleMidChat: Story = {
+    render: () => (
+        <>
+            <ChatControls
+                session={makeStubChatSession({
+                    manifest: MANIFEST,
+                    transcript: [...CONVERSATION_ITEMS],
+                    models: MODELS,
+                    displayModel: 'opus',
+                    displayModelValue: 'opus',
+                    permMode: 'bypassPermissions',
+                    effortOptions: EFFORT_OPTIONS,
+                    effortValue: 'medium',
+                })}
+            />
+            <ToastHost />
+        </>
+    ),
+    play: async ({ canvasElement }) => {
+        const toggle = within(canvasElement).getByTestId('chat-private-toggle')
+        const title = () => toggle.getAttribute('data-tooltip') ?? ''
+        const toastText = () =>
+            [...document.querySelectorAll('[data-tone]')]
+                .map(t => t.textContent ?? '')
+                .join(' | ')
+        expect(title()).toContain('Make private')
+        toggle.click()
+        await waitFor(() => expect(title()).toContain('erased when it ends'))
+        await waitFor(() =>
+            expect(toastText()).toContain(
+                'Private: this conversation is erased when it ends',
+            ),
+        )
+        toggle.click()
+        await waitFor(() => expect(title()).toContain('Make private'))
+        // The second click replaces the first toast instead of stacking under it.
+        await waitFor(() =>
+            expect(toastText()).toBe('This conversation will be kept'),
+        )
+    },
+}
+
 /** No session yet: the interface says "renders the row disabled at the SAME height" — rendered
  *  here side by side with an armed row at the same width so the play() can prove the height
  *  claim directly rather than assuming it from the markup. */
 export const NoSession: Story = {
     render: () => (
-        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '24px' }}>
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '24px' }}
+        >
             <ChatControls
                 session={makeStubChatSession({
                     manifest: MANIFEST,
@@ -160,7 +265,10 @@ export const NoSession: Story = {
         // THE DISABLED LOOK IS INK, NEVER OPACITY (DESIGN.md:426-428): the row and everything in
         // it paints at full opacity — a dimmed row put the model word at 1.8:1 — and the model
         // word steps down to `--faint` against the armed row's `--text-muted`.
-        for (const el of [noSession, ...Array.from(noSession.querySelectorAll<HTMLElement>('*'))]) {
+        for (const el of [
+            noSession,
+            ...Array.from(noSession.querySelectorAll<HTMLElement>('*')),
+        ]) {
             expect(getComputedStyle(el).opacity).toBe('1')
         }
         const probe = (token: string) => {
@@ -223,8 +331,9 @@ const overflowProof = (widthPx: number, openInChat = false) => ({
         )!
         expect(model.getClientRects().length).toBeGreaterThan(0)
         expect(
-            canvasElement.querySelector('[data-testid="chat-perm-mode"]')!.getClientRects()
-                .length,
+            canvasElement
+                .querySelector('[data-testid="chat-perm-mode"]')!
+                .getClientRects().length,
         ).toBeGreaterThan(0)
         // The row's one collapse tier: below 280px the worded twin (`data-row-label`) of
         // `[history]`/`[new chat]` hides for its bare icon twin, which frees room for the floored
@@ -246,7 +355,9 @@ const overflowProof = (widthPx: number, openInChat = false) => ({
         }
         // The twins swap: exactly one of the pair is ever laid out, and the bare icon never draws
         // a bracket while off (it is a one-shot action, `normal`).
-        expect(getComputedStyle(newChatIcon).display === 'none').toBe(!collapsed)
+        expect(getComputedStyle(newChatIcon).display === 'none').toBe(
+            !collapsed,
+        )
     },
 })
 
@@ -340,7 +451,9 @@ export const OpenInChat: Story = {
         await expect(Math.abs(a.height - b.height)).toBeLessThan(1)
         await expect(a.right).toBeLessThanOrEqual(b.left)
         // Adding it never changes the row's height.
-        const rows = canvasElement.querySelectorAll<HTMLElement>(`.${styles.row}`)
+        const rows = canvasElement.querySelectorAll<HTMLElement>(
+            `.${styles.row}`,
+        )
         await expect(
             Math.abs(rows[0].offsetHeight - rows[1].offsetHeight),
         ).toBeLessThan(1)

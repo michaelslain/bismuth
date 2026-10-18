@@ -198,6 +198,10 @@ export function setEffort(chatId: string, effort: string): void {
     fallbackBackend(chatId).setEffort?.(chatId, effort)
 }
 
+export function setPrivate(chatId: string, on: boolean): void {
+    fallbackBackend(chatId).setPrivate(chatId, on)
+}
+
 export function closeChat(chatId: string): void {
     // Every backend that holds this id, not just the first owner: a resume can leave a torn-down
     // session behind, and closing twice is a no-op per driver.

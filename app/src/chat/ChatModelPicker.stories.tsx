@@ -186,6 +186,8 @@ function liveSession(): ChatControlsView {
         })
     return {
         provider,
+        isPrivate: () => false,
+        setPrivate: () => {},
         models,
         displayModel: modelValue,
         displayModelValue: modelValue,

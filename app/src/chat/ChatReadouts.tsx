@@ -7,8 +7,10 @@
 // changes it — and MCP is a warning rather than a standing count, so the corner is quiet unless
 // something is actually wrong. The meter is `ui/ascii/AsciiMeter`, never a local re-draw.
 //
-// Gated like before: nothing renders until the first manifest arrives, and the meter waits for
-// the first `context` frame. ChatHeader places this in its ViewBar's `readouts` slot.
+// While the chat's private toggle is on, the run leads with the word `private`, before the first
+// manifest too. Everything else is gated like before:
+// nothing renders until the first manifest arrives, and the meter waits for the first `context`
+// frame. ChatHeader places this in its ViewBar's `readouts` slot.
 import { Show, type Component } from 'solid-js'
 import AsciiMeter from '../ui/ascii/AsciiMeter'
 import Text from '../ui/Text'
@@ -17,7 +19,10 @@ import { plural } from '../plural'
 import styles from './ChatReadouts.module.css'
 
 export type ChatReadoutsProps = {
-    session: Pick<ChatSession, 'manifest' | 'context' | 'mcpConnected'>
+    session: Pick<
+        ChatSession,
+        'manifest' | 'context' | 'mcpConnected' | 'isPrivate'
+    >
     /** Merged onto the root, so a caller can adjust one instance without forking this. */
     class?: string
 }
@@ -41,14 +46,30 @@ const ChatReadouts: Component<ChatReadoutsProps> = props => {
         return Math.max(0, m.mcpServers.length - props.session.mcpConnected())
     }
     return (
-        <Show when={props.session.manifest()}>
+        <Show when={props.session.isPrivate() || props.session.manifest()}>
             <Text
                 as="span"
                 size="micro"
                 tone="faint"
                 class={`${styles.readouts} ${props.class ?? ''}`}
             >
-                <Show when={mcpDown() > 0}>
+                <Show when={props.session.isPrivate()}>
+                    <Text
+                        as="span"
+                        inherit
+                        class={styles.private}
+                        data-testid="chat-private"
+                        title="Private: this conversation is erased when it ends and never kept in memory"
+                    >
+                        private
+                    </Text>
+                    <Show when={props.session.manifest() && (mcpDown() > 0 || props.session.context())}>
+                        <Text as="span" inherit data-bar-drop="4">
+                            {'//'}
+                        </Text>
+                    </Show>
+                </Show>
+                <Show when={props.session.manifest() && mcpDown() > 0}>
                     <Text
                         as="span"
                         inherit
@@ -64,7 +85,7 @@ const ChatReadouts: Component<ChatReadoutsProps> = props => {
                         </Text>
                     </Show>
                 </Show>
-                <Show when={props.session.context()}>
+                <Show when={props.session.manifest() && props.session.context()}>
                     {c => (
                         <Text
                             as="span"

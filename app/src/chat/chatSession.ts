@@ -205,6 +205,11 @@ export type ChatSession = {
     setPermissionModeLocal: (mode: PermissionMode) => void
     switchModel: (model: string) => void
     switchEffort: (level: string) => void
+    /** The conversation's private toggle: when on as the conversation ends (tab closed, new chat,
+     *  another conversation opened), the agent's record of it is erased and it never reaches memory.
+     *  Every new conversation starts off. */
+    isPrivate: Accessor<boolean>
+    setPrivate: (on: boolean) => void
     switchProvider: (provider: string) => void
     /** Re-open the SAME provider after its setup problem was fixed (switchProvider is a no-op on
      *  the same provider). Clears the dead end and starts a fresh socket. */
@@ -515,6 +520,8 @@ export function createChatSession(chatId: string): ChatSession {
                     }
                     if (providerCan(provider(), 'effort') && effort())
                         sendJson({ type: 'set_effort', effort: effort() })
+                    // Toggled before the backend session existed: tell it now.
+                    if (isPrivate()) sendJson({ type: 'set_private', private: true })
                     const wasResume = resumedSession
                     resumedSession = false // consumed — later manifests reconcile instead
                     const modelDecision = resolveInitialModel(
@@ -596,8 +603,10 @@ export function createChatSession(chatId: string): ChatSession {
                 publishChatTitle(chatId, frame.title)
                 break
             case 'session':
-                // Keyed by the durable tab id so reopening the tab resumes THIS conversation.
-                rememberChatSession(chatId, frame.sessionId)
+                // Keyed by the durable tab id so reopening the tab resumes THIS conversation — unless
+                // it is private, since it will be erased when it ends.
+                lastSessionId = frame.sessionId
+                if (!isPrivate()) rememberChatSession(chatId, frame.sessionId)
                 publishChatOrigin(chatId, frame.origin)
                 break
             case 'context':
@@ -1138,6 +1147,18 @@ export function createChatSession(chatId: string): ChatSession {
         sendJson({ type: 'set_effort', effort: level })
     }
 
+    // The private toggle. The backend decides at the moment the conversation ends, so flipping it
+    // either way mid-conversation just moves that decision; the tab only remembers a conversation it
+    // will be able to resume.
+    const [isPrivate, setIsPrivate] = createSignal(false)
+    let lastSessionId: string | null = null
+    const setPrivate = (on: boolean) => {
+        setIsPrivate(on)
+        sendJson({ type: 'set_private', private: on })
+        if (on) forgetChatSession(chatId)
+        else if (lastSessionId) rememberChatSession(chatId, lastSessionId)
+    }
+
     // ── New chat / resume / provider switch ───────────────────────────────────────────────────
     /** Wipe the transcript + transient turn state back to empty (shared by New, resume, provider). */
     const resetTranscript = () => {
@@ -1154,6 +1175,9 @@ export function createChatSession(chatId: string): ChatSession {
         clearChatReferences(chatId)
         publishChatTitle(chatId, '')
         publishChatOrigin(chatId, null)
+        // A new conversation starts public; the one just left already carries its own flag.
+        setIsPrivate(false)
+        lastSessionId = null
     }
 
     /** Detach a socket's handlers, then close it — its async close must not schedule a reconnect. */
@@ -1478,6 +1502,8 @@ export function createChatSession(chatId: string): ChatSession {
         setPermissionModeLocal,
         switchModel,
         switchEffort,
+        isPrivate,
+        setPrivate,
         switchProvider,
         retrySetup,
         applyPreset,

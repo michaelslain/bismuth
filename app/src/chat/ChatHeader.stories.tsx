@@ -46,8 +46,14 @@ const MODELS = [
 
 const LONG_TITLE = 'Refactoring the collapse ladder across every view bar'
 
-function InPane(props: { width: number; permMode?: string; mcpConnected?: number }) {
+function InPane(props: {
+    width: number
+    permMode?: string
+    mcpConnected?: number
+    isPrivate?: boolean
+}) {
     const session = makeStubChatSession({
+        isPrivate: props.isPrivate ?? false,
         manifest: MANIFEST,
         models: MODELS,
         displayModel: 'opus',
@@ -66,7 +72,7 @@ function InPane(props: { width: number; permMode?: string; mcpConnected?: number
         <div style={{ width: `${props.width}px`, height: '120px' }}>
             <ChatHeader
                 title={LONG_TITLE}
-                originIcon={chatOriginIcon('user')}
+                originIcon={props.isPrivate ? 'EyeSlash' : chatOriginIcon('user')}
                 session={session}
             />
         </div>
@@ -125,6 +131,26 @@ export const Bypass: Story = {
             canvasElement.querySelector('[data-testid="chat-perm-mode"]'),
         ).toBeNull()
         expect(canvasElement.querySelector('[data-testid="crumb-title"]')).not.toBeNull()
+    },
+}
+
+/** A chat with its private toggle on, through the real bar: the eye-slash crumb and `private`
+ *  leading the readouts. */
+export const Private: Story = {
+    render: () => <InPane width={900} isPrivate />,
+    play: async ({ canvasElement }) => {
+        expect(
+            canvasElement.querySelector('[data-testid="chat-private"]')?.textContent,
+        ).toBe('private')
+    },
+}
+
+/** The private toggle on at the 460px floor: `private` stays when the meter drops. */
+export const PrivateNarrow460: Story = {
+    render: () => <InPane width={460} isPrivate />,
+    play: async ({ canvasElement }) => {
+        const word = canvasElement.querySelector<HTMLElement>('[data-testid="chat-private"]')!
+        expect(word.getBoundingClientRect().width).toBeGreaterThan(0)
     },
 }
 

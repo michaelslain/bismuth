@@ -16,7 +16,12 @@ import {
 } from '@anthropic-ai/claude-agent-sdk'
 import { claudeSpawnEnv, whichClaude } from './claudeWhich'
 import { recallServiceFor, recallWithin } from './memoryRecall'
-import { loadSessionModel, saveSessionModel } from './chatModelStore'
+import {
+    forgetSessionModel,
+    loadSessionModel,
+    saveSessionModel,
+} from './chatModelStore'
+import { eraseClaudeSession } from './chatProviders/privateErase'
 import { can } from './agentBackends/catalog'
 import { withoutCloudEnv } from './agentBackends/localModel'
 import {
@@ -539,6 +544,9 @@ interface ChatSession {
     >
     /** Latch so a grace-timeout close after an explicit close can't write the note twice. */
     captured?: boolean
+    /** The chat's private toggle (setPrivate): when the conversation ends its transcript and saved
+     *  model are erased, and it is never captured to memory. */
+    private?: boolean
     /** Set by abortTurn() right before interrupt(), cleared when the NEXT `result` message is
      *  handled. The SDK reports a user-interrupted turn as an error result (is_error: true,
      *  subtype "error_during_execution") — indistinguishable on the wire from a real failure — so
@@ -2412,6 +2420,8 @@ async function drain(session: ChatSession): Promise<void> {
         // A respawn swapped in a NEW query (and started its own drain) — THIS drain's query was closed
         // deliberately, so ending it here must not read as the session dying. See the pinned `q` above.
         if (session.q !== q) return
+        // The `claude` child is done writing, so a private conversation's transcript can go now.
+        if (session.private && session.sessionId) erasePrivateTranscript(session)
         // If closeChat() tore the session down it was already removed from the registry, so reaching
         // here with the session STILL registered means the drain ended on its OWN — the `claude` child
         // exited (or threw). Evict it (so the next sendMessage re-spawns a fresh session) and tell the
@@ -2662,6 +2672,7 @@ export function extractEditorContextPaths(text: string): string[] {
  * per-turn) by design: simpler and fails toward NOT capturing rather than partially leaking.
  */
 function captureToMemory(s: ChatSession): void {
+    if (s.private) return // a private conversation is never written to memory
     if (!s.memoryDir || !s.sessionId || s.turnCount < 1 || s.captured) return
     s.captured = true
     const sessionId = s.sessionId
@@ -2727,6 +2738,28 @@ function captureToMemory(s: ChatSession): void {
             /* best-effort — memory capture must never surface as a chat error */
         }
     })()
+}
+
+/** Mark a chat's conversation private, or not: decided at the moment it ends (setPrivate can be
+ *  flipped mid-conversation either way). */
+export function setPrivate(chatId: string, on: boolean): void {
+    const s = sessions.get(chatId)
+    if (s) s.private = on
+}
+
+/** Erase a private conversation once its `claude` child has exited: the transcript and subagent
+ *  directory under ~/.claude/projects, and the model chatModelStore.ts saved for it. */
+function erasePrivateTranscript(s: ChatSession): void {
+    const sessionId = s.sessionId
+    if (!sessionId) return
+    forgetSessionModel(sessionId)
+    void eraseClaudeSession({
+        sessionId,
+        chatId: s.id,
+        cwd: s.cwd,
+        startedAt: 0,
+        env: process.env,
+    }).catch(() => {})
 }
 
 /** Tear a session down entirely: interrupt + close the generator, reject pending prompts, drop it. */

@@ -20,6 +20,7 @@ import { canHandOff } from './chatHandoff'
 import Select from '../ui/Select'
 import BarTwin from '../ui/BarTwin'
 import IconButton from '../ui/IconButton'
+import { dismissToast, pushToast } from '../ui/ToastHost'
 import Text from '../ui/Text'
 import ChatModelMenu from './ChatModelMenu'
 import { providerCan, resolveChatProvider } from './chatProvider'
@@ -51,6 +52,8 @@ export type ChatControlsView = Pick<
     | 'switchEffort'
     | 'setPermissionMode'
     | 'startNewChat'
+    | 'isPrivate'
+    | 'setPrivate'
 > & { history: Pick<ChatSession['history'], 'open' | 'toggle'> }
 
 /** A command for the row's actions (history/new chat), drawn as a `BarTwin` (ui/BarTwin.tsx): the
@@ -142,6 +145,8 @@ const Actions: Component<{
     session: ChatControlsView
     openInChat?: OpenInChat
 }> = props => {
+    /** The private toggle's last toast, replaced by the next click. */
+    let privateToast: number | undefined
     return (
         <div class={styles.actions}>
             {/* The daemon page's hand-off: its conversation moves to its own chat tab. Icon only
@@ -150,7 +155,12 @@ const Actions: Component<{
                 move; disabled while a turn streams, whose tail the move would cut off. */}
             <Show when={props.openInChat}>
                 {open => (
-                    <Text as="span" inherit class={styles.action} data-row-action>
+                    <Text
+                        as="span"
+                        inherit
+                        class={styles.action}
+                        data-row-action
+                    >
                         <IconButton
                             icon="ExternalLink"
                             label="open in chat"
@@ -176,6 +186,35 @@ const Actions: Component<{
                     onClick={props.session.history.toggle}
                 />
             </Show>
+            {/* The conversation's private toggle: a bare eye-slash, bracketed while on. The agent's
+                record of the conversation is erased when it ends, so it can be flipped at any point. */}
+            <Text as="span" inherit class={styles.action}>
+                <IconButton
+                    icon="EyeSlash"
+                    label="private"
+                    variant={
+                        props.session.isPrivate() ? 'selected' : 'unselected'
+                    }
+                    data-testid="chat-private-toggle"
+                    title={
+                        props.session.isPrivate()
+                            ? 'Private: this conversation is erased when it ends. Click to keep it'
+                            : 'Make private: erase this conversation when it ends'
+                    }
+                    onClick={() => {
+                        const on = !props.session.isPrivate()
+                        props.session.setPrivate(on)
+                        // Confirms the click: what happens to this conversation when it ends. Each
+                        // click replaces the last one's toast, so quick flips never stack.
+                        if (privateToast !== undefined) dismissToast(privateToast)
+                        privateToast = pushToast(
+                            on
+                                ? 'Private: this conversation is erased when it ends'
+                                : 'This conversation will be kept',
+                        )
+                    }}
+                />
+            </Text>
             <RowAction
                 icon="Plus"
                 label="new chat"
@@ -240,6 +279,8 @@ function buildDisabledSession(chatId?: string): ChatControlsView {
     const model = readLastModel(storage, provider, chatId)
     return {
         provider: () => provider,
+        isPrivate: () => false,
+        setPrivate: () => {},
         models: () => [],
         displayModel: () => model,
         displayModelValue: () => model,

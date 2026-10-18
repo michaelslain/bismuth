@@ -69,6 +69,7 @@ import {
 import { writeAgentsMdBlock } from '../../agentBackends/agentsMd'
 import { writeCodexHooksFiles } from '../../agentBackends/codexHooks'
 import { titleFromPrompt } from '../titleFromPrompt'
+import { eraseCodexThread } from '../privateErase'
 import {
     newCodexTranslateState,
     resetCodexTurnState,
@@ -103,6 +104,8 @@ interface CodexSession {
     bin: string
     /** The CLI's own durable thread id, learned from the first turn's `thread.started` event (or
      *  seeded on resume). `null` until the first turn actually starts. */
+    /** The chat's private toggle (setPrivate): erase the thread from ~/.codex on close. */
+    private?: boolean
     threadId: string | null
     /** Free-form model id for FUTURE turns (no model-list capability — see catalog.ts's rationale —
      *  so this is never populated from a picker today, only settable programmatically). */
@@ -598,13 +601,34 @@ export function closeChat(chatId: string): void {
     sessions.delete(chatId)
     if (s.closeTimer) clearTimeout(s.closeTimer)
     s.queue = []
-    if (s.proc) {
+    const proc = s.proc
+    if (proc) {
         try {
-            s.proc.kill()
+            proc.kill()
         } catch {
             /* already exited */
         }
     }
+    // A private conversation (setPrivate) keeps Codex's native resume while it runs, then its thread
+    // is erased from ~/.codex once the last turn's process has exited.
+    if (s.private)
+        void (async () => {
+            await proc?.exited.catch(() => {})
+            if (!s.threadId) return
+            await eraseCodexThread({
+                sessionId: s.threadId,
+                chatId,
+                cwd: s.cwd,
+                startedAt: 0,
+                env: process.env,
+            }).catch(() => {})
+        })()
+}
+
+/** The chat's private toggle: when on at close, the thread is erased from ~/.codex. */
+export function setPrivate(chatId: string, on: boolean): void {
+    const s = sessions.get(chatId)
+    if (s) s.private = on
 }
 
 export function scheduleClose(chatId: string, ms: number): void {
@@ -650,6 +674,7 @@ export const codexBackend: ChatBackend = {
     rebindSink,
     detachSink,
     setEffort,
+    setPrivate,
     // No respondPermission/respondQuestion/setPermissionMode: codex exec has no live approval-request
     // channel to answer (see catalog.ts's permissionPrompts/permissionModes rationale) — omitting
     // these matches capabilities.permissionModes:false, so the frontend never sends a verb into a void.
