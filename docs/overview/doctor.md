@@ -150,7 +150,8 @@ Ids are unique within a report. The human report pads the id column to at most 3
 | `daemon.unit-missing-binary` | The daemon service points at a binary that does not exist. | removes the service (destructive) |
 | `daemon.unit-old-home` | The daemon service was written under an old home directory. | re-registers the service (safe) |
 | `daemon.binary-skew` | The installed daemon binary differs from the one bundled with this app. | reinstalls it from the bundle (safe) |
-| `daemon.temp-binary` | Half-copied daemon binaries were left in `~/.bismuth/bin`. | unlinks them all (safe) |
+| `daemon.app-removed` | `~/.bismuth/bin/bismuth-daemon` links into a Bismuth.app that is missing, while the daemon service stays registered. | removes the service and the link (safe) |
+| `daemon.temp-binary` | Half-placed daemon binaries or links were left in `~/.bismuth/bin`. | unlinks them all (safe) |
 | `daemon.atomic-tmp` | Leftover atomic-write temp files sit in the daemon directory. | unlinks them all (safe) |
 | `daemon.log-size` | Daemon logs have grown past 10 MB. | keeps the last 1 MiB of each (safe) |
 | `runtime.stale-run-record` | Run records name owner processes that are not alive; the detail lists their vaults. | unlinks them all (safe) |

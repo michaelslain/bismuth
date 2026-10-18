@@ -52,12 +52,15 @@ Every `tauri build` now finds it automatically: a login-keychain code-signing ce
 
 A self-signed certificate stabilises the identity only. It gives you no Apple Team ID, no Gatekeeper trust and no notarization.
 
-The daemon binary is signed with the identifier `com.bismuth.daemon` under the same certificate. If the daemon needs Full Disk Access, grant it once after the first signed install: System Settings, Privacy and Security, Full Disk Access, add `~/.bismuth/bin/bismuth-daemon`, then run `bismuth daemon restart`. The grant survives later updates. To move an already installed ad-hoc daemon onto the certificate without rebuilding:
+macOS asks for each permission once, under the name Bismuth, and the grant covers the daemon too. The daemon runs through `~/.bismuth/bin/bismuth-daemon`, a symlink into the installed app, and macOS attributes a process to the app bundle its executable lives in, so the daemon and every session it starts use Bismuth's grants. To give the daemon Full Disk Access, grant it to Bismuth in System Settings, Privacy and Security, Full Disk Access, then run `bismuth daemon restart`.
+
+The link needs Bismuth in `/Applications` or `~/Applications`. Run from anywhere else (a mounted dmg, `~/Downloads`, a build folder), the daemon is a copy instead, and macOS asks for its permissions separately under the name `bismuth-daemon`. Move Bismuth into `/Applications` and launch it again to switch the daemon to the link. Check which one you have:
 
 ```bash
-codesign --force --sign "<cert name>" --identifier com.bismuth.daemon ~/.bismuth/bin/bismuth-daemon && bismuth daemon restart
-codesign -d -r- ~/.bismuth/bin/bismuth-daemon   # must name the identifier and a certificate, not a cdhash
+ls -l ~/.bismuth/bin/bismuth-daemon   # a link: bismuth-daemon -> /Applications/Bismuth.app/Contents/Resources/...
 ```
+
+Deleting Bismuth.app stops a linked daemon: within about two minutes it removes its own background service and the `~/.bismuth/bin/bismuth-daemon` link, and leaves everything else in `~/.bismuth` in place, so reinstalling Bismuth picks up where it left off. If the Mac was off or the daemon was not running when the app went, `bismuth doctor --fix` removes the leftover service.
 
 ## Develop from source
 
@@ -168,7 +171,7 @@ Three resources are staged next to the sidecar, and `lib.rs` passes their paths 
 |---|---|---|
 | `resources/relay` | `BISMUTH_RELAY_BUNDLE` | Terminal tabs load the relay shim from it |
 | `resources/bismuth-tools` | `BISMUTH_INSTALL_SRC` | `ensureBismuthInstalled` copies the CLI, MCP and `docs/` to `~/.bismuth`, links `bismuth` onto `PATH` and registers the MCP; skipped when the bundled hash in `~/.bismuth/.version` is unchanged |
-| `resources/daemon` | `BISMUTH_DAEMON_BUNDLE` | `installDaemonFromBundle` copies the daemon binary to `~/.bismuth/bin` and registers the launchd or systemd service |
+| `resources/daemon` | `BISMUTH_DAEMON_BUNDLE` | `installDaemonFromBundle` places the daemon at `~/.bismuth/bin` (a link into the app, or a copy) and registers the launchd or systemd service |
 
 A second `externalBin`, `bismuth-notify`, is the daemon's desktop-notification helper. `app/scripts/build-notifier.ts` compiles `app/src-tauri/notifier/main.swift` with `swiftc` into `binaries/bismuth-notify-<target-triple>`; off macOS it writes a stub, because Tauri refuses to build while any `externalBin` is missing. `dev:app` builds it on the spot when it is absent. [Pages](../daemon/pages.md#desktop-notifications) covers how the daemon uses it.
 

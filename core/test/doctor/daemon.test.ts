@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
     existsSync,
+    lstatSync,
     mkdirSync,
     readFileSync,
     statSync,
+    symlinkSync,
     utimesSync,
     writeFileSync,
 } from 'node:fs'
@@ -48,6 +50,29 @@ describe('daemon section', () => {
         expect(existsSync(unit)).toBe(false)
         expect(calls[0]).toEqual(['launchctl', 'unload', unit])
         expect(await f!.repair!.apply()).toEqual([])
+        expect(await daemonSection.check(ctx)).toEqual([])
+    })
+
+    test('a dangling link into a deleted Bismuth.app is a safe app-removed finding that removes unit and link', async () => {
+        const calls: string[][] = []
+        const ctx = fakeCtx({
+            exec: async argv => {
+                calls.push(argv)
+                return { code: 0, stdout: '', stderr: '' }
+            },
+        })
+        const bin = join(ctx.bismuthHome, 'bin', 'bismuth-daemon')
+        put(join(ctx.bismuthHome, 'bin', '.keep'))
+        symlinkSync(join(ctx.home, 'Bismuth.app', 'Contents', 'bismuth-daemon'), bin)
+        const unit = serviceUnitPath('darwin', ctx.home, BISMUTH_DAEMON_UNIT)!
+        put(unit, `<string>${bin}</string>`)
+        const fs = await daemonSection.check(ctx)
+        expect(fs.map(f => f.id)).toEqual(['daemon.app-removed'])
+        expect(fs[0].repair?.risk).toBe('safe')
+        expect(await fs[0].repair!.apply()).toEqual([])
+        expect(existsSync(unit)).toBe(false)
+        expect(() => lstatSync(bin)).toThrow()
+        expect(calls[0]).toEqual(['launchctl', 'unload', unit])
         expect(await daemonSection.check(ctx)).toEqual([])
     })
 

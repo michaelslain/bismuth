@@ -154,6 +154,6 @@ Core reads and lightly writes the daemon's files; it never calls the daemon proc
 
 ### Install and update
 
-The bundled app ships the compiled daemon. On every launch it copies a newer build to `~/.bismuth/bin/bismuth-daemon` and runs `--ensure-installed` (`core/src/daemonInstall.ts`). The daemon updates with the app. [Lifecycle](lifecycle.md#install) has the details.
+The bundled app ships the compiled daemon. On every launch it links `~/.bismuth/bin/bismuth-daemon` to that build (a copy on Linux or outside `/Applications`), and deleting the app removes the daemon's service and runs `--ensure-installed` (`core/src/daemonInstall.ts`). The daemon updates with the app. [Lifecycle](lifecycle.md#install) has the details.
 
 Source: `daemon/src/daemon/{index,session,codexSession,persona,tier,fileWatch,cron,seeds}.ts`, `daemon/src/lib/{config,registry,owner,bismuthPaths,coreBrain}.ts`, `core/src/brain.ts`, `core/src/{daemon,daemonGraph,daemonInstall}.ts`, `core/src/schema/settingsSchema.ts`, `app/src/daemon/{DaemonPage,DaemonPageHost,DaemonHub,DaemonLog,DaemonLogRow,logDetail,activityLine,daemonFaceModel,daemonPageModel}.ts*`, `app/src/chat/chatHandoff.ts`

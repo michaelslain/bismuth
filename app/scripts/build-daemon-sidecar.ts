@@ -4,13 +4,13 @@
 // The core sidecar is a Tauri-managed child that dies with the app. The daemon is the
 // opposite: it must OUTLIVE the app — it keeps firing each vault's crons + supervising its
 // processes while Bismuth is closed. So it can't be a Tauri-spawned child. Instead it ships
-// like bismuth-tools: a resource that core copies to ~/.bismuth/bin on boot and registers as
+// like bismuth-tools: a resource that core places at ~/.bismuth/bin on boot and registers as
 // a launchd LaunchAgent / systemd --user service (run from that stable path, independent of
 // the .app bundle).
 //
 // Unlike the OLD claude-bot (which shipped as source because its daemon spawned `bun run`
 // itself), this single-process runtime compiles cleanly to one executable (~59MB), so a
-// compiled binary is the simplest shippable form. No target-triple suffix — core copies the
+// compiled binary is the simplest shippable form. No target-triple suffix — core places the
 // binary itself rather than Tauri resolving it as a sidecar.
 //
 // Run: cd app && bun run scripts/build-daemon-sidecar.ts   (or `bun run build:daemon-sidecar`)
@@ -25,7 +25,7 @@ const appDir = join(here, '..') // app/
 const repoRoot = join(appDir, '..') // repo root
 const daemonEntry = join(repoRoot, 'daemon', 'src', 'daemon', 'index.ts')
 const outDir = join(appDir, 'src-tauri', 'resources', 'daemon', 'bin')
-const outFile = join(outDir, 'bismuth-daemon') // plain name — core copies it to ~/.bismuth/bin
+const outFile = join(outDir, 'bismuth-daemon') // plain name — core links or copies it to ~/.bismuth/bin
 mkdirSync(outDir, { recursive: true })
 
 console.log(`compiling daemon → ${outFile}`)
@@ -43,6 +43,9 @@ if (build.status !== 0) {
 assertBuiltBinary(outFile, 'daemon binary')
 
 // ── Stable code identity (macOS) ─────────────────────────────────────────────
+// On macOS core links ~/.bismuth/bin/bismuth-daemon to this file inside Bismuth.app, so TCC
+// attributes the daemon to the bundle (com.bismuth.app) and this signature's own identifier
+// only matters for the copy core places when the app runs from outside /Applications.
 // The daemon binary is swapped over the SAME path (~/.bismuth/bin/bismuth-daemon) on every
 // update; with only the default ad-hoc (linker) signature, macOS TCC pins Files-and-Folders
 // grants to the binary's content hash, so EVERY update silently revoked the user's folder

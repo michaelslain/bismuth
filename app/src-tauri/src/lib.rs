@@ -469,7 +469,7 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<(u
         .env("BISMUTH_CORE_SIDECAR", "1");
     // Point the sidecar at bundled resources: relay/ (terminal-tab shim → relay auto-attach +
     // memory injection), bismuth-tools/ (compiled cli + mcp + docs → machine-wide install on
-    // boot), and daemon/ (the compiled per-vault daemon → core copies it to ~/.bismuth/bin +
+    // boot), and daemon/ (the compiled per-vault daemon → core links or copies it to ~/.bismuth/bin +
     // registers the launchd/systemd service). Tauri stages bundle.resources under
     // <resource_dir>/resources/<path>, so prefer that; fall back to <resource_dir> directly.
     if let Ok(res) = app.path().resource_dir() {

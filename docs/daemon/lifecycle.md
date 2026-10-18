@@ -47,10 +47,14 @@ The binary is `~/.bismuth/bin/bismuth-daemon` (override: `BISMUTH_DAEMON_BIN`). 
 
 On every launch the bundled app runs `installDaemonFromBundle()` (`core/src/daemonInstall.ts`). It does nothing in a dev build, because there is no `BISMUTH_DAEMON_BUNDLE`. Otherwise it:
 
-1. Compares the staged binary's size and modification time to the marker `~/.bismuth/.daemon-installed`, and copies only when they differ. The copy goes to a temp file and is renamed over `~/.bismuth/bin/bismuth-daemon`, because a direct write to a running binary fails with `ETXTBSY` on Linux; the old process keeps its inode until the next restart.
+1. Compares the staged binary's size and modification time to the marker `~/.bismuth/.daemon-installed`, and places the binary only when they differ or the placement is wrong. On macOS, for an app in `/Applications` or `~/Applications`, `~/.bismuth/bin/bismuth-daemon` is a symlink to the staged binary inside the app bundle, so macOS privacy prompts and grants belong to Bismuth (`linksDaemon`); from anywhere else, and on Linux, it is a copy. Placing it deletes the daemon's `daemon.bin-sig`, so the next step restarts the daemon onto what was placed. Either is built at a temp name and renamed over the old one, because a direct write to a running binary fails with `ETXTBSY` on Linux; the old process keeps its inode until the next restart.
 2. Runs `<bin> --ensure-installed`.
 
 `--ensure-installed` renders the service definition and chooses an action. With no definition on disk it installs and loads one. With a changed definition it reloads. With an identical definition it reloads only if the daemon is not running, or if `~/.bismuth/bin/bismuth-daemon` differs from the binary the running daemon started from (its size and modification time, which the daemon writes to `daemon.bin-sig` at boot; a missing file counts as different). A healthy, current service is left alone, so opening the app never interrupts a running cron, and an update still restarts the daemon onto the new code. `<bin> --status` prints `{ "installed", "running", "label" }`, where `running` means the pid in `daemon.pid` is alive. Every install function is best-effort and never throws, so a failed install cannot block the app.
+
+### Removal with the app
+
+A daemon linked into Bismuth.app removes its own service when the app is deleted (`appRemovalWatcher`, `daemon/src/lib/appRemoval.ts`). On each reconcile tick it checks that its executable path inside the bundle still exists; after two consecutive misses it deletes the `~/.bismuth/bin/bismuth-daemon` link (only while the link still points at it), deletes the launchd plist and runs `launchctl remove com.bismuth.daemon`, which ends the process through the normal shutdown. Self-update leaves the path missing for seconds, inside one tick, so it never triggers this. Nothing else under `~/.bismuth` is removed. A copied daemon, and every daemon on Linux, has no bundle to watch.
 
 ### Boot order
 

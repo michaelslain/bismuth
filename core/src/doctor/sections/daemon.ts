@@ -5,6 +5,7 @@
 import {
     closeSync,
     existsSync,
+    lstatSync,
     openSync,
     readdirSync,
     readFileSync,
@@ -94,10 +95,51 @@ function truncateInPlace(path: string, keep: number): string[] {
     }
 }
 
+function isLink(path: string): boolean {
+    try {
+        return lstatSync(path).isSymbolicLink()
+    } catch {
+        return false
+    }
+}
+
 function unitFindings(ctx: DoctorContext): Finding[] {
     const unit = serviceUnitPath(ctx.platform, ctx.home, BISMUTH_DAEMON_UNIT)
     if (!unit || !existsSync(unit)) return []
     const bin = join(ctx.bismuthHome, 'bin', 'bismuth-daemon')
+    if (!existsSync(bin) && isLink(bin)) {
+        // The link into Bismuth.app dangles: the app was deleted while the daemon was not running
+        // to remove its own service (daemon/src/lib/appRemoval.ts). Opening Bismuth again relinks.
+        return [
+            {
+                id: 'daemon.app-removed',
+                severity: 'warn',
+                title: 'Bismuth.app was removed but its daemon service is still registered',
+                detail: `${bin} links into an app that no longer exists, so ${unit} fails on every start; reopening Bismuth relinks it`,
+                repair: {
+                    risk: 'safe',
+                    description: `unload and remove ${unit} and the ${bin} link`,
+                    touches: [unit, bin],
+                    apply: async () => {
+                        const warnings = await removeServiceUnit(
+                            {
+                                platform: ctx.platform,
+                                home: ctx.home,
+                                exec: ctx.exec,
+                            },
+                            BISMUTH_DAEMON_UNIT,
+                        )
+                        try {
+                            rmSync(bin, { force: true })
+                        } catch (e) {
+                            warnings.push(`failed to remove ${bin}: ${msg(e)}`)
+                        }
+                        return warnings
+                    },
+                },
+            },
+        ]
+    }
     if (!existsSync(bin)) {
         return [
             {
@@ -178,7 +220,7 @@ function skewFindings(ctx: DoctorContext): Finding[] {
             detail: `bundle ${sig}, installed marker ${prev || 'none'}`,
             repair: {
                 risk: 'safe',
-                description: 'copy the bundled daemon over the installed one',
+                description: 'install the bundled daemon over the installed one',
                 apply: async () => {
                     try {
                         await installDaemonFromBundle()

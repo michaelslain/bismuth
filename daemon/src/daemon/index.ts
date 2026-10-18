@@ -36,6 +36,7 @@ import {
 import { augmentPath } from '../lib/childEnv.ts'
 import { logActivity, pruneActivityLogs } from '../lib/activityLog'
 import { safeTick } from '../lib/safeTick'
+import { appRemovalWatcher } from '../lib/appRemoval'
 import {
     MACHINE_DIR,
     MACHINE_PID_FILE,
@@ -277,7 +278,13 @@ async function main(): Promise<void> {
 
     // Reconcile per-vault process supervision + sessions on a timer so the set of
     // running brains tracks settings.daemon.enabled across all vaults.
+    // A daemon linked into Bismuth.app removes its own service once the app is deleted.
+    const appRemoved = appRemovalWatcher()
     reconcileInterval = setInterval(() => {
+        if (appRemoved?.()) {
+            log('Bismuth.app was removed — removing the daemon service')
+            return
+        }
         void safeTick('reconcile', reconcileVaults)
     }, CRON_CHECK_INTERVAL_MS)
     log('Vault reconcile loop started')

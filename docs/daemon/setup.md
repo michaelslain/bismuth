@@ -145,6 +145,6 @@ Matching notes by meaning, not only by words, is the separate `embeddings.enable
 
 ## How it works
 
-On launch the bundled app copies a newer compiled `bismuth-daemon` binary to `~/.bismuth/bin/bismuth-daemon` and runs it with `--ensure-installed`, which writes a launchd agent (`~/Library/LaunchAgents/com.bismuth.daemon.plist`) on macOS or a systemd user unit (`~/.config/systemd/user/bismuth-daemon.service`) on Linux. Both restart the daemon if it exits. The service is not a child of the app, which is why it outlives it. [Lifecycle](lifecycle.md) covers boot, shutdown and the reconcile loop.
+On launch the bundled app links `~/.bismuth/bin/bismuth-daemon` to the compiled `bismuth-daemon` binary inside the app (a copy on Linux or outside `/Applications`) and runs it with `--ensure-installed`, which writes a launchd agent (`~/Library/LaunchAgents/com.bismuth.daemon.plist`) on macOS or a systemd user unit (`~/.config/systemd/user/bismuth-daemon.service`) on Linux. Both restart the daemon if it exits. The service is not a child of the app, which is why it outlives it. [Lifecycle](lifecycle.md) covers boot, shutdown and the reconcile loop.
 
 Source: `core/src/daemonInstall.ts`, `daemon/src/daemon/index.ts`, `daemon/src/lib/platform.ts`, `daemon/src/lib/registry.ts`, `cli/src/commands/daemon.ts`, `app/src/daemon/DaemonSetupModal.tsx`, `app/src/intro/firstRunHandoff.ts`
